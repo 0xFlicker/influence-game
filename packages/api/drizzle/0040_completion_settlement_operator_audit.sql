@@ -1,0 +1,2 @@
+ALTER TABLE "game_completion_settlement_attempts" DROP CONSTRAINT "game_completion_settlement_attempts_outcome_check";--> statement-breakpoint
+ALTER TABLE "game_completion_settlement_attempts" ADD CONSTRAINT "game_completion_settlement_attempts_outcome_check" CHECK ("game_completion_settlement_attempts"."outcome" IN ('requested', 'succeeded', 'already_completed', 'repair_required', 'repair_blocked', 'invalid_state', 'failed', 'denied'));

@@ -20,7 +20,7 @@ import { eq, inArray, asc, or, and, isNull, ne } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import type { GameStatus } from "../db/schema.js";
+import type { GameCompletionSettlementState, GameStatus } from "../db/schema.js";
 import {
   requireAuth,
   requirePermission,
@@ -30,7 +30,6 @@ import { abortGame, startGame, validateGameStartReadiness } from "../services/ga
 import {
   acquireGameRunOwner,
   markOwnerStartupFailed,
-  revokeActiveGameRunOwner,
 } from "../services/game-ownership.js";
 import {
   getRedactedKernelHealth,
@@ -72,6 +71,10 @@ import { modelLabelFromConfig } from "../lib/model-label.js";
 import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
+  getGameCompletionSettlementState,
+  getGameCompletionSettlementStateMap,
+} from "../services/game-completion-settlement.js";
+import {
   createLlmClientFromEnv,
   generatePersona,
   normalizeGameModelSelection,
@@ -84,8 +87,14 @@ import type { Personality } from "@influence/engine";
 
 const PUBLIC_SUSPENDED_ERROR_INFO = "The game failed and cannot be resumed.";
 
-function publicErrorInfo(status: GameStatus, config: Record<string, unknown>): string | undefined {
+function publicErrorInfo(
+  status: GameStatus,
+  config: Record<string, unknown>,
+  settlementState?: GameCompletionSettlementState | "not_applicable",
+): string | undefined {
   if (status === "suspended") {
+    if (settlementState === "pending") return "Finalizing results.";
+    if (settlementState === "repair_required") return "Results under review.";
     return PUBLIC_SUSPENDED_ERROR_INFO;
   }
   return typeof config.errorInfo === "string" ? config.errorInfo : undefined;
@@ -95,8 +104,12 @@ function publicErrorInfo(status: GameStatus, config: Record<string, unknown>): s
 // Factory — creates a Hono sub-app with injected DB
 // ---------------------------------------------------------------------------
 
-export function createGameRoutes(db: DrizzleDB) {
+export function createGameRoutes(
+  db: DrizzleDB,
+  dependencies: { startGame?: typeof startGame } = {},
+) {
   const app = new Hono<AuthEnv>();
+  const startOwnedGame = dependencies.startGame ?? startGame;
 
   // -------------------------------------------------------------------------
   // POST /api/games — create a new game
@@ -251,9 +264,13 @@ export function createGameRoutes(db: DrizzleDB) {
       rows = await db.select().from(schema.games).where(isNull(schema.games.hiddenAt));
     }
 
-    const kernelHealthByGameId = await getRedactedKernelHealthByGameId(db, rows.map((game) => game.id));
-    const watchSummaryReadsByGameId = await getGameWatchStateSummaryReadsByGameIds(db, rows.map((game) => game.id));
-    const seasonById = await getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId));
+    const gameIds = rows.map((game) => game.id);
+    const [kernelHealthByGameId, watchSummaryReadsByGameId, seasonById, settlementStateByGameId] = await Promise.all([
+      getRedactedKernelHealthByGameId(db, gameIds),
+      getGameWatchStateSummaryReadsByGameIds(db, gameIds),
+      getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId)),
+      getGameCompletionSettlementStateMap(db, gameIds),
+    ]);
 
     const summaries = rows.map((game) => {
       const config = JSON.parse(game.config);
@@ -282,7 +299,7 @@ export function createGameRoutes(db: DrizzleDB) {
         season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
         rated: Boolean(game.seasonId),
         winner: watchState.winner?.name,
-        errorInfo: publicErrorInfo(game.status, config),
+        errorInfo: publicErrorInfo(game.status, config, settlementStateByGameId.get(game.id)),
         kernelHealth: kernelHealthByGameId.get(game.id),
         watchState,
         watchStateSummaryStatus: summaryRead.status,
@@ -313,6 +330,7 @@ export function createGameRoutes(db: DrizzleDB) {
     }
 
     const config = JSON.parse(game.config);
+    const completionSettlementState = await getGameCompletionSettlementState(db, game.id);
 
     const result = await db
       .select()
@@ -358,7 +376,7 @@ export function createGameRoutes(db: DrizzleDB) {
       competitionReceipts: competition?.receipts ?? [],
       winner: watchState.winner?.name,
       tokenUsage: result[0]?.tokenUsage ? JSON.parse(result[0].tokenUsage) : undefined,
-      errorInfo: publicErrorInfo(game.status, config),
+      errorInfo: publicErrorInfo(game.status, config, completionSettlementState),
       kernelHealth: await getRedactedKernelHealth(db, game.id),
       watchState,
       createdAt: game.createdAt,
@@ -726,7 +744,7 @@ export function createGameRoutes(db: DrizzleDB) {
     // (runGameAsync) runs in the background after this returns.
     let startupError: string | undefined;
     try {
-      const result = await startGame(db, gameId, owner.claim.ownerEpoch);
+      const result = await startOwnedGame(db, gameId, owner.claim.ownerEpoch);
       startupError = result.error;
     } catch (error) {
       startupError = error instanceof Error ? error.message : String(error);
@@ -752,76 +770,59 @@ export function createGameRoutes(db: DrizzleDB) {
 
   app.post("/api/games/:id/stop", requireAuth(db), requirePermission("stop_game"), async (c) => {
     const gameId = c.req.param("id");
+    const cancellation = await db.transaction(async (tx) => {
+      // Capture uses this same game-row mutex before sealing completion. The
+      // winner of the race is therefore unambiguous: cancel first, or seal
+      // first and reject cancellation forever.
+      const game = (await tx.select({ status: schema.games.status })
+        .from(schema.games)
+        .where(eq(schema.games.id, gameId))
+        .for("update"))[0];
+      if (!game) return { outcome: "not_found" as const };
+      if (game.status !== "in_progress" && game.status !== "waiting" && game.status !== "suspended") {
+        return { outcome: "invalid_state" as const, status: game.status };
+      }
 
-    const game = (await db
-      .select({ status: schema.games.status })
-      .from(schema.games)
-      .where(eq(schema.games.id, gameId)))[0];
+      const sealed = (await tx.select({ state: schema.gameCompletionSettlements.state })
+        .from(schema.gameCompletionSettlements)
+        .where(eq(schema.gameCompletionSettlements.gameId, gameId))
+        .limit(1))[0];
+      if (sealed) return { outcome: "sealed" as const, state: sealed.state };
 
-    if (!game) {
+      const wasSuspended = game.status === "suspended";
+      const reasonCode = wasSuspended ? "admin_void" : "admin_stop";
+      const endedAt = new Date().toISOString();
+      await tx.update(schema.gameRunOwners)
+        .set({
+          status: "revoked",
+          revokedAt: endedAt,
+          kernelHealth: "suspended",
+          failureReason: reasonCode,
+        })
+        .where(and(
+          eq(schema.gameRunOwners.gameId, gameId),
+          eq(schema.gameRunOwners.status, "active"),
+        ));
+      await tx.update(schema.games)
+        .set({ status: "cancelled", endedAt })
+        .where(eq(schema.games.id, gameId));
+      return { outcome: "cancelled" as const, wasSuspended, reasonCode };
+    });
+
+    if (cancellation.outcome === "not_found") {
       return c.json({ error: "Game not found" }, 404);
     }
-    if (game.status !== "in_progress" && game.status !== "waiting" && game.status !== "suspended") {
+    if (cancellation.outcome === "invalid_state") {
       return c.json({ error: "Game is not running, waiting, or suspended" }, 400);
     }
-
-    const wasSuspended = game.status === "suspended";
-    const reasonCode = wasSuspended ? "admin_void" : "admin_stop";
-
-    if (wasSuspended) {
-      const cancelled = await db.transaction(async (tx) => {
-        const locked = (await tx
-          .select({ status: schema.games.status })
-          .from(schema.games)
-          .where(eq(schema.games.id, gameId))
-          .for("update"))[0];
-
-        if (!locked || (locked.status !== "suspended" && locked.status !== "in_progress")) {
-          return false;
-        }
-
-        const endedAt = new Date().toISOString();
-        await tx.update(schema.games)
-          .set({ status: "cancelled", endedAt })
-          .where(eq(schema.games.id, gameId));
-        await tx.update(schema.gameRunOwners)
-          .set({
-            status: "revoked",
-            revokedAt: endedAt,
-            kernelHealth: "suspended",
-            failureReason: reasonCode,
-          })
-          .where(and(
-            eq(schema.gameRunOwners.gameId, gameId),
-            eq(schema.gameRunOwners.status, "active"),
-          ));
-        return true;
-      });
-      if (!cancelled) {
-        const current = (await db
-          .select({ status: schema.games.status })
-          .from(schema.games)
-          .where(eq(schema.games.id, gameId)))[0];
-        return c.json({ status: current?.status ?? game.status });
-      }
-    } else {
-      abortGame(gameId);
-      await revokeActiveGameRunOwner(db, gameId, reasonCode);
-      const cancelled = await db.update(schema.games)
-        .set({ status: "cancelled", endedAt: new Date().toISOString() })
-        .where(and(
-          eq(schema.games.id, gameId),
-          inArray(schema.games.status, ["in_progress", "waiting"]),
-        ))
-        .returning({ status: schema.games.status });
-      if (cancelled.length === 0) {
-        const current = (await db
-          .select({ status: schema.games.status })
-          .from(schema.games)
-          .where(eq(schema.games.id, gameId)))[0];
-        return c.json({ status: current?.status ?? game.status });
-      }
+    if (cancellation.outcome === "sealed") {
+      return c.json({
+        error: "A sealed completion cannot be stopped or voided.",
+        code: "completion_settlement_sealed",
+      }, 409);
     }
+
+    const { wasSuspended, reasonCode } = cancellation;
 
     abortGame(gameId);
     await tryRefreshGameWatchStateSummary(db, gameId, "game_cancelled");

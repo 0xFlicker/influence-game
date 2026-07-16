@@ -19,6 +19,7 @@ import {
   primaryKey,
   serial,
   text,
+  unique,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
@@ -619,6 +620,17 @@ export const seasonHonors = pgTable("season_honors", {
 export type DurableRunSource = "api" | "simulation_import";
 export type GameRunOwnerStatus = "active" | "closed" | "revoked" | "expired";
 export type KernelHealthStatus = "healthy" | "degraded" | "suspended";
+export type GameCompletionSettlementState = "pending" | "repair_required" | "completed";
+export type GameCompletionSettlementAttemptSource = "runner" | "admin";
+export type GameCompletionSettlementAttemptOutcome =
+  | "requested"
+  | "succeeded"
+  | "already_completed"
+  | "repair_required"
+  | "repair_blocked"
+  | "invalid_state"
+  | "failed"
+  | "denied";
 export type GameWatchStateSummarySource =
   | "durable_projection"
   | "degraded"
@@ -715,6 +727,98 @@ export const gameEvents = pgTable("game_events", {
   check("game_events_envelope_sequence_check", sql`${table.envelope} ? 'sequence' AND ((${table.envelope}->>'sequence')::integer) = ${table.sequence}`),
   check("game_events_envelope_type_check", sql`${table.envelope} ? 'type' AND (${table.envelope}->>'type') = ${table.eventType}`),
   check("game_events_envelope_payload_version_check", sql`${table.envelope} ? 'payloadVersion' AND ((${table.envelope}->>'payloadVersion')::integer) = ${table.payloadVersion}`),
+]);
+
+export const gameCompletionSettlements = pgTable("game_completion_settlements", {
+  id: text("id").primaryKey(), // UUID
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "cascade" }),
+  ownerEpoch: text("owner_epoch").notNull(),
+  finalEventSequence: integer("final_event_sequence").notNull(),
+  finalEventHash: text("final_event_hash").notNull(),
+  payloadSchemaVersion: integer("payload_schema_version").notNull().default(1),
+  payload: jsonb("payload").notNull().$type<Record<string, unknown>>(),
+  payloadHash: text("payload_hash").notNull(),
+  state: text("state").notNull().$type<GameCompletionSettlementState>().default("pending"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  lastSafeFailureCode: text("last_safe_failure_code"),
+  retryReadyAt: text("retry_ready_at"),
+  capturedAt: text("captured_at")
+    .notNull()
+    .default(sql`now()::text`),
+  lastAttemptedAt: text("last_attempted_at"),
+  completedAt: text("completed_at"),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("game_completion_settlements_game_id_unique").on(table.gameId),
+  unique("game_completion_settlements_game_id_id_unique").on(table.gameId, table.id),
+  index("game_completion_settlements_state_idx").on(table.state, table.retryReadyAt),
+  foreignKey({
+    name: "game_completion_settlements_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+  foreignKey({
+    name: "game_completion_settlements_event_boundary_fk",
+    columns: [table.gameId, table.finalEventSequence],
+    foreignColumns: [gameEvents.gameId, gameEvents.sequence],
+  }),
+  check("game_completion_settlements_state_check", sql`${table.state} IN ('pending', 'repair_required', 'completed')`),
+  check("game_completion_settlements_event_sequence_check", sql`${table.finalEventSequence} > 0`),
+  check("game_completion_settlements_payload_schema_version_check", sql`${table.payloadSchemaVersion} = 1`),
+  check("game_completion_settlements_attempt_count_check", sql`${table.attemptCount} >= 0`),
+  check("game_completion_settlements_final_event_hash_check", sql`${table.finalEventHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("game_completion_settlements_payload_hash_check", sql`${table.payloadHash} ~ '^sha256:[0-9a-f]{64}$'`),
+  check("game_completion_settlements_completed_at_check", sql`
+    (${table.state} = 'completed' AND ${table.completedAt} IS NOT NULL)
+    OR (${table.state} <> 'completed' AND ${table.completedAt} IS NULL)
+  `),
+  check("game_completion_settlements_retry_ready_check", sql`
+    ${table.retryReadyAt} IS NULL OR ${table.state} = 'pending'
+  `),
+]);
+
+export const gameCompletionSettlementAttempts = pgTable("game_completion_settlement_attempts", {
+  id: text("id").primaryKey(), // UUID
+  requestAttemptId: text("request_attempt_id"),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "cascade" }),
+  settlementId: text("settlement_id"),
+  source: text("source").notNull().$type<GameCompletionSettlementAttemptSource>(),
+  actorUserId: text("actor_user_id").references(() => users.id),
+  requestedReason: text("requested_reason"),
+  outcome: text("outcome").notNull().$type<GameCompletionSettlementAttemptOutcome>(),
+  priorState: text("prior_state").$type<GameCompletionSettlementState>(),
+  resultingState: text("resulting_state").$type<GameCompletionSettlementState>(),
+  resultHash: text("result_hash"),
+  safeFailureCode: text("safe_failure_code"),
+  safeMetadata: jsonb("safe_metadata").$type<Record<string, unknown>>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  index("game_completion_settlement_attempts_game_id_idx").on(table.gameId, table.createdAt),
+  index("game_completion_settlement_attempts_settlement_id_idx").on(table.settlementId),
+  uniqueIndex("game_completion_settlement_attempts_request_attempt_id_unique").on(table.requestAttemptId),
+  foreignKey({
+    name: "game_completion_settlement_attempts_request_attempt_fk",
+    columns: [table.requestAttemptId],
+    foreignColumns: [table.id],
+  }).onDelete("set null"),
+  foreignKey({
+    name: "game_completion_settlement_attempts_game_settlement_fk",
+    columns: [table.gameId, table.settlementId],
+    foreignColumns: [gameCompletionSettlements.gameId, gameCompletionSettlements.id],
+  }).onDelete("cascade"),
+  check("game_completion_settlement_attempts_source_check", sql`${table.source} IN ('runner', 'admin')`),
+  check("game_completion_settlement_attempts_outcome_check", sql`${table.outcome} IN ('requested', 'succeeded', 'already_completed', 'repair_required', 'repair_blocked', 'invalid_state', 'failed', 'denied')`),
+  check("game_completion_settlement_attempts_prior_state_check", sql`${table.priorState} IS NULL OR ${table.priorState} IN ('pending', 'repair_required', 'completed')`),
+  check("game_completion_settlement_attempts_resulting_state_check", sql`${table.resultingState} IS NULL OR ${table.resultingState} IN ('pending', 'repair_required', 'completed')`),
+  check("game_completion_settlement_attempts_result_hash_check", sql`${table.resultHash} IS NULL OR ${table.resultHash} ~ '^sha256:[0-9a-f]{64}$'`),
 ]);
 
 export const gameWatchStateSummaries = pgTable("game_watch_state_summaries", {

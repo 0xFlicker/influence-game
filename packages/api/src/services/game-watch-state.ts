@@ -189,42 +189,33 @@ export async function buildGameWatchState(
   db: GameWatchDB,
   game: GameRow,
 ): Promise<GameWatchState> {
-  const [players, result] = await Promise.all([
+  const shouldLoadResult = game.status === "completed" || game.status === "cancelled";
+  const [players, result, persistedEvents] = await Promise.all([
     loadPlayerIdentities(db, game.id),
-    loadTerminalResult(db, game.id),
+    shouldLoadResult ? loadTerminalResult(db, game.id) : Promise.resolve(null),
+    getPersistedGameEvents(db, game.id),
   ]);
   const config = parseConfig(game.config);
   const maxRounds = numberFromConfig(config.maxRounds, 10);
-  const persistedEvents = await getPersistedGameEvents(db, game.id);
   const projection = getPersistedGameProjection(persistedEvents);
   const source = classifySource(game.status, result, projection);
+  const committedResult = game.status === "completed" ? result : null;
   const projectedSummary = projection.summary;
   const pressureByPlayerId = projectedSummary
     ? buildPressureByPlayerId(projectedSummary)
     : new Map<string, GameWatchPlayerPressure>();
   const watchPlayers = projectedSummary
     ? buildProjectedPlayers(players, projectedSummary.players.players, pressureByPlayerId)
-    : buildFallbackPlayers(players, result, source);
+    : buildFallbackPlayers(players, committedResult, source);
   const counts = countPlayers(watchPlayers);
-  const winner = projectedSummary?.winner
-    ? {
-        id: projectedSummary.winner.id,
-        name: nameForPlayer(players, projectedSummary.winner.id) ?? projectedSummary.winner.name,
-        method: projectedSummary.winner.method,
-      }
-    : result?.winnerId
-      ? {
-          id: result.winnerId,
-          name: nameForPlayer(players, result.winnerId) ?? result.winnerId,
-        }
-      : undefined;
+  const winner = buildCommittedWinner(players, committedResult, projectedSummary?.winner);
   const currentRound = projectedSummary?.round
-    ?? result?.roundsPlayed
+    ?? committedResult?.roundsPlayed
     ?? 0;
   const currentPhase = projectedSummary?.phase
-    ?? terminalPhaseFor(game.status, result)
+    ?? terminalPhaseFor(game.status, committedResult)
     ?? "INIT";
-  const final = buildFinalState(game.status, source, winner, result);
+  const final = buildFinalState(game.status, source, winner, committedResult);
 
   return {
     schemaVersion: 3,
@@ -782,13 +773,34 @@ function countPlayers(players: readonly GameWatchPlayer[]): GameWatchState["coun
   };
 }
 
+function buildCommittedWinner(
+  players: readonly PlayerIdentity[],
+  result: TerminalResult | null,
+  projectedWinner: NonNullable<PersistedGameProjectionRead["summary"]>["winner"] | undefined,
+): GameWatchState["winner"] | undefined {
+  if (!result) return undefined;
+  if (projectedWinner) {
+    return {
+      id: projectedWinner.id,
+      name: nameForPlayer(players, projectedWinner.id) ?? projectedWinner.name,
+      method: projectedWinner.method,
+    };
+  }
+  if (!result.winnerId) return undefined;
+  return {
+    id: result.winnerId,
+    name: nameForPlayer(players, result.winnerId) ?? result.winnerId,
+  };
+}
+
 function buildFinalState(
   gameStatus: GameStatus,
   source: GameWatchStateSource,
   winner: GameWatchState["winner"] | undefined,
   result: TerminalResult | null,
 ): GameWatchFinalState {
-  const isFinal = gameStatus === "completed" || gameStatus === "cancelled" || winner !== undefined;
+  const isFinal = gameStatus === "cancelled"
+    || (gameStatus === "completed" && result !== null);
   return {
     status: isFinal ? "final" : "not_final",
     ...(winner && {

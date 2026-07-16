@@ -222,6 +222,36 @@ export async function markOwnerStartupFailed(
         "invalid_state",
       );
     }
+
+    const owner = (await tx.select({
+      status: schema.gameRunOwners.status,
+      lastPersistedEventSequence: schema.gameRunOwners.lastPersistedEventSequence,
+    }).from(schema.gameRunOwners).where(and(
+      eq(schema.gameRunOwners.gameId, gameId),
+      eq(schema.gameRunOwners.ownerEpoch, ownerEpoch),
+    )).for("update"))[0];
+    if (owner?.status !== "active" || owner.lastPersistedEventSequence !== 0) {
+      throw new GameOwnerTransitionError(
+        `Owner epoch ${ownerEpoch} is no longer the active pre-play startup owner.`,
+        "stale_owner",
+      );
+    }
+
+    const firstEvent = (await tx.select({ sequence: schema.gameEvents.sequence })
+      .from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, gameId))
+      .limit(1))[0];
+    const settlement = (await tx.select({ id: schema.gameCompletionSettlements.id })
+      .from(schema.gameCompletionSettlements)
+      .where(eq(schema.gameCompletionSettlements.gameId, gameId))
+      .limit(1))[0];
+    if (firstEvent || settlement) {
+      throw new GameOwnerTransitionError(
+        `Owner epoch ${ownerEpoch} has durable game state and cannot return to waiting.`,
+        "stale_owner",
+      );
+    }
+
     const closed = await tx.update(schema.gameRunOwners)
       .set({
         status: "closed",

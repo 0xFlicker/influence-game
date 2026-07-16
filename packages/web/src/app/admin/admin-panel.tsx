@@ -304,12 +304,17 @@ function StatusBadge({ status, errorInfo }: { status: GameSummary["status"]; err
     cancelled: "void",
     suspended: "failed",
   };
+  const label = status === "suspended" && (
+    errorInfo === "Finalizing results." || errorInfo === "Results under review."
+  )
+    ? errorInfo.replace(/\.$/, "")
+    : labels[status];
   return (
     <span
       className={`text-xs px-2 py-0.5 rounded-full ${styles[status]}`}
       title={(status === "cancelled" || status === "suspended") && errorInfo ? `Error: ${errorInfo}` : undefined}
     >
-      {labels[status]}
+      {label}
       {(status === "cancelled" || status === "suspended") && errorInfo ? " ⚠" : ""}
     </span>
   );

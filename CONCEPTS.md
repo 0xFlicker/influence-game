@@ -346,7 +346,7 @@ A validator-derived readiness record for a checkpoint capsule. It reports stamp-
 
 ## Phase-boundary startup resume
 
-The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Suspensions marked `competition_settlement_repair_required` are excluded because replay cannot repair missing or contradictory immutable settlement evidence. Current support covers the original pre-round lobby boundary, persisted normal-round coordinates through reveal, and the first supported endgame-entry coordinate; it is not a promise of mid-phase recovery, in-flight LLM recovery, later endgame boundary recovery, arbitrary old-game repair, or automatic serverless orchestration.
+The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest resume-capable phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Suspensions marked `competition_settlement_repair_required` are excluded because replay cannot repair missing or contradictory immutable settlement evidence. Current support covers the original pre-round lobby boundary, normal-round coordinates through reveal, Reckoning, Tribunal with a validated Accusation Capsule for defense, and Judgment through jury vote; it is not a promise of mid-phase recovery, in-flight LLM recovery, arbitrary old-game repair, or automatic serverless orchestration.
 
 ## Boundary certificate
 
@@ -363,6 +363,14 @@ Structured private runtime state used by supported resume paths or future resume
 ## Owner epoch
 
 The durable single-writer ownership marker for a live game run. An owner epoch lets one worker process and commit accepted game facts while rejecting stale writers; LLM calls may run in parallel inside the owner, but accepted `GameState` and XState mutations stay sequential.
+
+## Completion settlement
+
+The one-way durable boundary between finished gameplay and published results. Before settlement begins, the API seals a strict private terminal envelope to the exact final canonical event sequence, hash, game ID, and owner epoch; a database trigger prevents later mutation of those sealed identity and payload fields. Settlement then atomically writes the completed game/result, transcript, competition receipts and ratings, profile/account counters, postgame initialization, and owner closure. Its state is `pending`, `completed`, or `repair_required`: a sealed completion is never sent back through gameplay recovery, and player or producer read surfaces expose only a redacted status summary rather than the terminal envelope, prompts, model identity, token usage, or private trace content.
+
+## Completion settlement retry
+
+An authenticated human-operator redrive of a captured `pending` completion settlement. It is eligible only after the game is suspended, the exact originating owner is expired with a transient settlement failure, and the retry-ready gate has opened. The admin action requires dedicated permission, an explicit reason, and append-only request plus correlated terminal audit receipts; it reuses the idempotent settlement transaction and never replays gameplay. Startup may make an abandoned pending settlement retry-ready, but it does not execute the retry. `repair_required` evidence conflicts remain blocked for investigation, and Production Game MCP stays read-only.
 
 ## Private evidence manifest
 

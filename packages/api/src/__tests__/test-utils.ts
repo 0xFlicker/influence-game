@@ -45,6 +45,8 @@ const INFLUENCE_TABLES = [
   "game_evidence_manifest_reads",
   "game_evidence_manifests",
   "game_checkpoints",
+  "game_completion_settlement_attempts",
+  "game_completion_settlements",
   "game_watch_state_summaries",
   "game_events",
   "game_run_owners",

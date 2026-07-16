@@ -38,7 +38,23 @@ import {
   type PostgameHighlightsReadStatus,
 } from "../services/postgame-highlights.js";
 import { getAdminPostgameMedia } from "../services/postgame-media.js";
-import { requestPostgameMedia, type PostgameMediaRequestAction } from "../services/postgame-media-coordinator.js";
+import {
+  reconcilePostgameMediaForGame,
+  requestPostgameMedia,
+  type PostgameMediaRequestAction,
+} from "../services/postgame-media-coordinator.js";
+import {
+  buildGameCompletionSettlementSummary,
+  getGameCompletionSettlementSummaryMap,
+} from "../services/game-completion-settlement.js";
+import {
+  GameCompletionSettlementOperatorError,
+  RETRY_GAME_SETTLEMENT_CONFIRMATION,
+  parseGameSettlementRetryReason,
+  recordDeniedGameSettlementRetry,
+  recordInvalidGameSettlementRetry,
+  retryCapturedGameCompletionAsOperator,
+} from "../services/game-completion-settlement-operator.js";
 import { modelLabelFromConfig } from "../lib/model-label.js";
 import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import { generateUniqueSlug } from "../lib/slug.js";
@@ -54,7 +70,12 @@ import {
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createAdminRoutes(db: DrizzleDB) {
+export function createAdminRoutes(
+  db: DrizzleDB,
+  dependencies: {
+    completionSettlement?: Parameters<typeof retryCapturedGameCompletionAsOperator>[2];
+  } = {},
+) {
   const app = new Hono<AuthEnv>();
 
   const requireAdminRead = requirePermission("view_admin", "manage_roles");
@@ -465,6 +486,75 @@ export function createAdminRoutes(db: DrizzleDB) {
     return c.json(result.response);
   });
 
+  app.post("/api/admin/games/:idOrSlug/completion-settlement/retry", async (c) => {
+    const gameId = await findAdminGameId(c.req.param("idOrSlug") ?? "");
+    if (!gameId) return c.json({ error: "Game not found", code: "game_not_found" }, 404);
+
+    const body = await parseJsonBody(c, "POST /api/admin/games/:idOrSlug/completion-settlement/retry");
+    const reason = parseGameSettlementRetryReason(body?.reason);
+    const confirmation = typeof body?.confirmation === "string" ? body.confirmation : "";
+    const user = c.get("user");
+    const permissions = c.get("userPermissions") ?? [];
+
+    if (!permissions.includes("retry_game_settlement")) {
+      await recordDeniedGameSettlementRetry(db, {
+        gameId,
+        actorUserId: user.id,
+        ...(reason && { requestedReason: reason }),
+      });
+      return c.json({ error: "Insufficient permissions", code: "settlement_retry_denied" }, 403);
+    }
+
+    if (!reason || confirmation !== RETRY_GAME_SETTLEMENT_CONFIRMATION) {
+      await recordInvalidGameSettlementRetry(db, {
+        gameId,
+        actorUserId: user.id,
+        ...(reason && { requestedReason: reason }),
+        reasonCode: "invalid_request",
+      });
+      return c.json({
+        error: `A safe reason and exact confirmation ${RETRY_GAME_SETTLEMENT_CONFIRMATION} are required`,
+        code: "settlement_retry_invalid_request",
+      }, 400);
+    }
+
+    try {
+      const result = await retryCapturedGameCompletionAsOperator(db, {
+        gameId,
+        actorUserId: user.id,
+        requestedReason: reason,
+      }, dependencies.completionSettlement);
+      const [watchRefresh, mediaReconciliation] = await Promise.all([
+        tryRefreshGameWatchStateSummary(db, gameId, "completion_settlement_operator_retry"),
+        reconcilePostgameMediaForGame(db, gameId).catch((error) => {
+          console.warn(
+            `[completion-settlement] Media reconciliation failed for game ${gameId}:`,
+            error instanceof Error ? error.name : "UnknownError",
+          );
+          return null;
+        }),
+      ]);
+      return c.json({
+        outcome: result.outcome,
+        settlement: result.settlement,
+        watchRefreshed: watchRefresh?.ok === true,
+        mediaReconciliation,
+      });
+    } catch (error) {
+      if (error instanceof GameCompletionSettlementOperatorError) {
+        return c.json({ error: error.message, code: error.code }, 409);
+      }
+      console.error(
+        `[completion-settlement] Operator retry failed for game ${gameId}:`,
+        error instanceof Error ? error.name : "UnknownError",
+      );
+      return c.json({
+        error: "Completion settlement retry failed. The sealed result remains pending.",
+        code: "settlement_retry_failed",
+      }, 500);
+    }
+  });
+
   app.get("/api/admin/games/:idOrSlug/costs", requireAdminRead, async (c) => {
     const result = await getGameCostDetail(db, c.req.param("idOrSlug"));
     if (!result.ok) {
@@ -562,12 +652,18 @@ export function createAdminRoutes(db: DrizzleDB) {
 
   app.get("/api/admin/games", requireAdminRead, async (c) => {
     const rows = await db.select().from(schema.games);
-    const kernelHealthByGameId = await getRedactedKernelHealthByGameId(db, rows.map((game) => game.id));
-    const costSummaryByGameId = await getGameCostSummaryMap(db, rows.map((game) => game.id));
-    const seasonById = await getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId));
+    const gameIds = rows.map((game) => game.id);
+    const [kernelHealthByGameId, costSummaryByGameId, seasonById, settlementByGameId] = await Promise.all([
+      getRedactedKernelHealthByGameId(db, gameIds),
+      getGameCostSummaryMap(db, gameIds),
+      getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId)),
+      getGameCompletionSettlementSummaryMap(db, gameIds),
+    ]);
 
     const summaries = await Promise.all(rows.map(async (game) => {
       const config = JSON.parse(game.config);
+      const completionSettlement = settlementByGameId.get(game.id)
+        ?? buildGameCompletionSettlementSummary(null);
       const players = await db
         .select()
         .from(schema.gamePlayers)
@@ -606,7 +702,11 @@ export function createAdminRoutes(db: DrizzleDB) {
         season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
         winner: winnerPersona?.name ?? undefined,
         winnerPersona: winnerPersona?.personality ?? undefined,
-        errorInfo: config.errorInfo ?? undefined,
+        errorInfo: completionSettlement.state === "pending"
+          ? "Finalizing results."
+          : completionSettlement.state === "repair_required"
+            ? "Results under review."
+            : config.errorInfo ?? undefined,
         createdAt: game.createdAt,
         startedAt: game.startedAt ?? undefined,
         completedAt: game.endedAt ?? undefined,
@@ -614,9 +714,18 @@ export function createAdminRoutes(db: DrizzleDB) {
         hiddenAt: game.hiddenAt ?? undefined,
         kernelHealth: kernelHealthByGameId.get(game.id),
         cost: costSummaryByGameId.get(game.id) ?? null,
+        completionSettlement,
       };
     }));
 
+    const settlementPriority = { repair_required: 0, pending: 1, completed: 2, not_applicable: 2 } as const;
+    summaries.sort((left, right) => {
+      const settlementOrder = settlementPriority[left.completionSettlement.state]
+        - settlementPriority[right.completionSettlement.state];
+      return settlementOrder !== 0
+        ? settlementOrder
+        : Date.parse(right.createdAt) - Date.parse(left.createdAt);
+    });
     return c.json(summaries);
   });
 

@@ -136,6 +136,12 @@ describe("durable run inspection read model", () => {
       const inspection = await waitForCompletedDurableInspection(db, gameId);
 
       expect(inspection.game.status).toBe("completed");
+      expect(inspection.completionSettlement).toMatchObject({
+        state: "completed",
+        retryEligible: false,
+        resultHash: expect.stringMatching(/^sha256:/),
+      });
+      expect(inspection.completionSettlement).not.toHaveProperty("payload");
       expect(inspection.kernel.owner?.status).toBe("closed");
       expect(inspection.eventLog.status).toBe("complete");
       expect(inspection.eventLog.rowCount).toBeGreaterThan(0);
@@ -212,6 +218,10 @@ describe("durable run inspection read model", () => {
     if (!result.ok) throw new Error(result.error);
     expect(result.response.schemaVersion).toBe(2);
     expect(result.response.game.id).toBe(gameId);
+    expect(result.response.completionSettlement).toMatchObject({
+      state: "not_applicable",
+      retryEligible: false,
+    });
     expect(result.response.kernel.health).toMatchObject({
       status: "healthy",
       durableEventCount: events.length,
@@ -317,7 +327,7 @@ describe("durable run inspection read model", () => {
     expect(result.ok).toBeTrue();
     if (!result.ok) throw new Error(result.error);
     expect(result.response.game.id).toBe(targetId);
-    expect(result.response.game.slug).toBeUndefined();
+    expect(result.response.game.slug).toBe(`test-${targetId}`);
   });
 
   test("reports expired active owners as suspended at inspection time", async () => {

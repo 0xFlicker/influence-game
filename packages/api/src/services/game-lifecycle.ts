@@ -6,8 +6,7 @@
  * and persisting transcripts + results back to the database.
  */
 
-import { and, eq, sql } from "drizzle-orm";
-import { randomUUID } from "crypto";
+import { and, eq } from "drizzle-orm";
 import {
   GameRunner,
   InfluenceAgent,
@@ -44,17 +43,18 @@ import { schema } from "../db/index.js";
 import { PgMemoryStore } from "../db/memory-store.js";
 import { broadcastGameEvent, broadcastRaw, broadcastWatchState, getObserverCount } from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
-import { calculateEloChanges } from "./elo.js";
-import type { PlayerResult } from "./elo.js";
-import { appendGameEvents } from "./game-events.js";
+import { appendGameEvents, hashCanonicalEvent } from "./game-events.js";
 import { getGameWatchState, type GameWatchState } from "./game-watch-state.js";
 import { tryRefreshGameWatchStateSummary } from "./game-watch-state-summary.js";
 import { writeGameCheckpoint } from "./game-checkpoints.js";
 import {
   acquireRecoveryGameRunOwner,
   assertOwnerActive,
+  GameOwnerTransitionError,
   markGameSuspended,
+  markOwnerStartupFailed,
   renewGameRunOwner,
+  type OwnerStartupFailureResult,
 } from "./game-ownership.js";
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
 import { writeCognitiveArtifactsForTrace } from "./cognitive-artifact-writer.js";
@@ -64,11 +64,20 @@ import {
   getSupportedRecovery,
 } from "./game-recovery.js";
 import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
-import { ensureWaitingPostgameMediaRow, reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
+import { reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
+import { CompetitionSettlementRepairRequiredError } from "./competition-completion.js";
 import {
-  CompetitionSettlementRepairRequiredError,
-  completeCompetitionGameInTransaction,
-} from "./competition-completion.js";
+  COMPLETION_SETTLEMENT_REPAIR_REQUIRED,
+  COMPLETION_SETTLEMENT_TRANSIENT_FAILURE,
+  captureGameCompletionSettlement,
+  GameCompletionSettlementError,
+  getGameCompletionSettlementSummary,
+  prepareCapturedCompletionAfterRunnerExit,
+  settleCapturedGameCompletion,
+} from "./game-completion-settlement.js";
+import { serializeTranscriptEntry } from "./transcript-serialization.js";
+
+export { serializeTranscriptEntry } from "./transcript-serialization.js";
 
 // ---------------------------------------------------------------------------
 // Active game tracking
@@ -364,25 +373,6 @@ class ApiTestMockAgent implements IAgent {
   removeFromMemory(_playerName: string): void {}
 }
 
-export function serializeTranscriptEntry(
-  gameId: string,
-  entry: TranscriptEntry,
-): typeof schema.transcripts.$inferInsert {
-  return {
-    gameId,
-    round: entry.round,
-    phase: entry.phase,
-    fromPlayerId: entry.from === "SYSTEM" || entry.from === "House" ? null : entry.from,
-    scope: entry.scope,
-    toPlayerIds: entry.to ? JSON.stringify(entry.to) : null,
-    roomId: entry.roomId ?? null,
-    roomMetadata: entry.roomMetadata ? JSON.stringify(entry.roomMetadata) : null,
-    text: entry.text,
-    thinking: entry.thinking ?? null,
-    timestamp: entry.timestamp,
-  };
-}
-
 interface CompletedGameRunResult {
   winner?: string;
   winnerName?: string;
@@ -392,18 +382,19 @@ interface CompletedGameRunResult {
   rankedPlayerIds: string[];
 }
 
-async function persistCompletedGame(
+async function captureCompletedGame(
   db: DrizzleDB,
   params: {
     gameId: string;
-    ownerEpoch?: string;
+    resultGameId: string;
+    ownerEpoch: string;
     result: CompletedGameRunResult;
     finalEventSequence: number;
+    finalEventHash: string;
     tokenTracker: TokenTracker;
     gameConfig: Record<string, unknown>;
   },
 ): Promise<void> {
-  const now = new Date().toISOString();
   const resolvedModelSelection = resolveModelSelection(
     normalizeGameModelSelection(params.gameConfig.modelSelection),
     params.gameConfig.modelTier as string | undefined,
@@ -411,213 +402,28 @@ async function persistCompletedGame(
   const model = resolvedModelSelection.modelId;
   const usage = params.tokenTracker.getTotalUsage();
   const cost = estimateCostForKnownModel(usage, model);
-  const updatedConfig = { ...params.gameConfig, viewerMode: "replay" };
-
-  await db.transaction(async (tx) => {
-    if (params.ownerEpoch) {
-      await tx.execute(sql`
-        SELECT id
-        FROM game_run_owners
-        WHERE game_id = ${params.gameId}
-          AND owner_epoch = ${params.ownerEpoch}
-        FOR UPDATE
-      `);
-
-      const owner = (await tx
-        .select({
-          status: schema.gameRunOwners.status,
-          expiresAt: schema.gameRunOwners.expiresAt,
-          lastPersistedEventSequence: schema.gameRunOwners.lastPersistedEventSequence,
-        })
-        .from(schema.gameRunOwners)
-        .where(and(
-          eq(schema.gameRunOwners.gameId, params.gameId),
-          eq(schema.gameRunOwners.ownerEpoch, params.ownerEpoch),
-        )))[0];
-      if (!owner) {
-        throw new Error(`No durable owner for game ${params.gameId}`);
-      }
-      if (owner.status !== "active") {
-        throw new Error(`Owner epoch ${params.ownerEpoch} is ${owner.status}`);
-      }
-      if (owner.expiresAt && new Date(owner.expiresAt).getTime() <= Date.now()) {
-        throw new Error(`Owner epoch ${params.ownerEpoch} expired`);
-      }
-      if (owner.lastPersistedEventSequence !== params.finalEventSequence) {
-        throw new Error(
-          `Final persisted event head ${owner.lastPersistedEventSequence} does not match runner head ${params.finalEventSequence}`,
-        );
-      }
-    }
-
-    if (params.result.transcript.length > 0) {
-      const CHUNK_SIZE = 100;
-      for (let i = 0; i < params.result.transcript.length; i += CHUNK_SIZE) {
-        const chunk = params.result.transcript.slice(i, i + CHUNK_SIZE);
-        await tx.insert(schema.transcripts)
-          .values(
-            chunk.map((entry) => serializeTranscriptEntry(params.gameId, entry)),
-          );
-      }
-    }
-
-    await tx.insert(schema.gameResults)
-      .values({
-        id: randomUUID(),
-        gameId: params.gameId,
-        winnerId: params.result.winner ?? null,
-        roundsPlayed: params.result.rounds,
-        tokenUsage: JSON.stringify({
-          promptTokens: usage.promptTokens,
-          cachedTokens: usage.cachedTokens,
-          completionTokens: usage.completionTokens,
-          reasoningTokens: usage.reasoningTokens,
-          totalTokens: usage.totalTokens,
-          emptyResponses: usage.emptyResponses,
-          estimatedCost: cost?.totalCost ?? null,
-          perAction: params.tokenTracker.getAllUsage(),
-        }),
-      });
-
-    const gameRecord = (await tx
-      .select({ trackType: schema.games.trackType, seasonId: schema.games.seasonId })
-      .from(schema.games)
-      .where(eq(schema.games.id, params.gameId)))[0];
-
-    const competition = await completeCompetitionGameInTransaction(tx, {
-      gameId: params.gameId,
+  await captureGameCompletionSettlement(db, {
+    gameId: params.gameId,
+    ownerEpoch: params.ownerEpoch,
+    finalEventSequence: params.finalEventSequence,
+    finalEventHash: params.finalEventHash,
+    terminalResult: {
+      gameId: params.resultGameId,
       winnerId: params.result.winner ?? null,
-      roundsPlayed: params.result.rounds,
-      earnedAt: now,
-    });
-
-    if (!competition.rated) {
-      const playersWithProfiles = (await tx
-        .select()
-        .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, params.gameId)))
-        .filter((p) => p.agentProfileId != null);
-
-      for (const player of playersWithProfiles) {
-        const isWinner = player.id === params.result.winner;
-        await tx.execute(
-          sql`UPDATE agent_profiles
-              SET games_played = games_played + 1,
-                  games_won = games_won + ${isWinner ? 1 : 0},
-                  updated_at = ${now}
-              WHERE id = ${player.agentProfileId}`,
-        );
-      }
-    }
-
-    if (gameRecord?.trackType === "free") {
-      const allPlayers = await tx
-        .select()
-        .from(schema.gamePlayers)
-        .where(eq(schema.gamePlayers.gameId, params.gameId));
-
-      const seenUsers = new Set<string>();
-      const humanPlayers: PlayerResult[] = [];
-      const totalHumans = allPlayers.filter((p) => p.userId != null).length;
-
-      if (totalHumans >= 2) {
-        const playerById = new Map(allPlayers.map((player) => [player.id, player]));
-        const rankedHumanSeats = params.result.rankedPlayerIds
-          .map((playerId) => playerById.get(playerId))
-          .filter((player): player is typeof allPlayers[number] => Boolean(player?.userId))
-          .filter((player) => {
-            if (!player.userId || seenUsers.has(player.userId)) return false;
-            seenUsers.add(player.userId);
-            return true;
-          });
-        for (const [index, p] of rankedHumanSeats.entries()) {
-          humanPlayers.push({
-            userId: p.userId!,
-            placement: index + 1,
-            totalPlayers: rankedHumanSeats.length,
-          });
-        }
-
-        const currentRatings = new Map<string, number>();
-        const currentPeaks = new Map<string, number>();
-        const userIds = [...new Set(humanPlayers.map((player) => player.userId))].sort();
-        for (const userId of userIds) {
-          await tx.execute(sql`SELECT id FROM users WHERE id = ${userId} FOR UPDATE`);
-        }
-        for (const userId of userIds) {
-          const user = (await tx
-            .select({ rating: schema.users.rating, peakRating: schema.users.peakRating })
-            .from(schema.users)
-            .where(eq(schema.users.id, userId)))[0];
-          currentRatings.set(userId, user?.rating ?? 1200);
-          currentPeaks.set(userId, user?.peakRating ?? 1200);
-        }
-
-        const eloChanges = calculateEloChanges(humanPlayers, currentRatings);
-        const winnerUserId = allPlayers.find((player) => player.id === params.result.winner)?.userId ?? null;
-        for (const change of eloChanges) {
-          const isWinner = change.userId === winnerUserId;
-
-          const newPeak = Math.max(currentPeaks.get(change.userId) ?? 1200, change.newRating);
-          await tx.execute(
-            sql`UPDATE users
-                SET rating = ${change.newRating},
-                    games_played = games_played + 1,
-                    games_won = games_won + ${isWinner ? 1 : 0},
-                    peak_rating = ${newPeak},
-                    last_game_at = ${now}
-                WHERE id = ${change.userId}`,
-          );
-          if (gameRecord.seasonId) {
-            await tx.update(schema.competitionReceipts)
-              .set({ accountRatingDelta: change.delta })
-              .where(and(
-                eq(schema.competitionReceipts.gameId, params.gameId),
-                eq(schema.competitionReceipts.ownerId, change.userId),
-              ));
-          }
-        }
-      }
-    }
-
-    const completed = await tx.update(schema.games)
-      .set({
-        status: "completed",
-        endedAt: now,
-        config: JSON.stringify(updatedConfig),
-      })
-      .where(and(eq(schema.games.id, params.gameId), eq(schema.games.status, "in_progress")))
-      .returning({ id: schema.games.id });
-    if (completed.length === 0) {
-      throw new Error(`Game ${params.gameId} could not be completed from its current status`);
-    }
-
-    // Media is deliberately isolated in a savepoint: renderer/coordinator trouble
-    // must never turn a completed game back into an in-progress one.
-    try {
-      await tx.transaction(async (mediaTx) => {
-        await ensureWaitingPostgameMediaRow(mediaTx, params.gameId);
-      });
-    } catch {
-      console.warn("[postgame-media] Could not create completion media placeholder");
-    }
-
-    if (params.ownerEpoch) {
-      const closedOwner = await tx.update(schema.gameRunOwners)
-        .set({
-          status: "closed",
-          closedAt: now,
-        })
-        .where(and(
-          eq(schema.gameRunOwners.gameId, params.gameId),
-          eq(schema.gameRunOwners.ownerEpoch, params.ownerEpoch),
-          eq(schema.gameRunOwners.status, "active"),
-        ))
-        .returning({ ownerEpoch: schema.gameRunOwners.ownerEpoch });
-      if (closedOwner.length === 0) {
-        throw new Error(`Owner epoch ${params.ownerEpoch} could not be closed`);
-      }
-    }
+      winnerName: params.result.winnerName ?? null,
+      rounds: params.result.rounds,
+      transcript: params.result.transcript,
+      eliminationOrder: params.result.eliminationOrder,
+      rankedPlayerIds: params.result.rankedPlayerIds,
+    },
+    tokenUsage: {
+      total: usage,
+      perAction: params.tokenTracker.getAllUsage(),
+    },
+    resolvedModel: model,
+    calculatedCost: cost,
+    completionConfig: { ...params.gameConfig, viewerMode: "replay" },
+    finishedAt: new Date().toISOString(),
   });
 }
 
@@ -965,7 +771,41 @@ export function classifyGameRunFailure(error: unknown): {
       failureDetails: { reason: error.reason, message },
     };
   }
+  if (error instanceof GameCompletionSettlementError) {
+    return {
+      failureReason: error.code,
+      failureDetails: { safeFailureCode: error.safeFailureCode, message },
+    };
+  }
   return { failureReason: "runner_failed", failureDetails: { message } };
+}
+
+export async function tryReturnZeroEventOwnerFailureToWaiting(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+  errorMessage: string,
+): Promise<
+  | { outcome: "returned_to_waiting"; cleanup: OwnerStartupFailureResult }
+  | {
+      outcome: "not_returned";
+      cleanupFailure: { code: "stale_owner" | "invalid_state" | "unknown"; message: string };
+    }
+> {
+  try {
+    return {
+      outcome: "returned_to_waiting",
+      cleanup: await markOwnerStartupFailed(db, gameId, ownerEpoch, errorMessage),
+    };
+  } catch (error) {
+    return {
+      outcome: "not_returned",
+      cleanupFailure: {
+        code: error instanceof GameOwnerTransitionError ? error.code : "unknown",
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
 }
 
 export async function recoverGame(
@@ -1058,34 +898,66 @@ async function runGameAsync(
 ): Promise<void> {
   let clearMemoryOnExit = true;
   let persistedTranscriptEntries = 0;
+  let completionCaptured = false;
   try {
     const result = await runner.run();
-    await persistCompletedGame(db, {
+    if (!ownerEpoch) {
+      throw new Error(`Durable completion owner is required for game ${gameId}`);
+    }
+    const finalEvent = runner.getCanonicalEvents().at(-1);
+    if (!finalEvent) {
+      throw new Error(`Durable completion event boundary is missing for game ${gameId}`);
+    }
+    await captureCompletedGame(db, {
       gameId,
-      ...(ownerEpoch && { ownerEpoch }),
+      resultGameId: runner.getStateSnapshot().gameId,
+      ownerEpoch,
       result,
-      finalEventSequence: runner.getCanonicalEvents().at(-1)?.sequence ?? 0,
+      finalEventSequence: finalEvent.sequence,
+      finalEventHash: hashCanonicalEvent(finalEvent),
       tokenTracker,
       gameConfig,
     });
+    completionCaptured = true;
+    await settleCapturedGameCompletion(db, gameId, { source: "runner" });
     const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion");
     await publishCurrentWatchState(db, gameId, "completion", refresh?.watchState);
     await reconcilePostgameMediaAfterCompletion(db, gameId);
     persistedTranscriptEntries = result.transcript.length;
-    if (ownerEpoch) {
-      broadcastRaw(gameId, {
-        type: "game_over",
-        winner: result.winner,
-        winnerName: result.winnerName,
-        totalRounds: result.rounds,
-      });
-    }
+    broadcastRaw(gameId, {
+      type: "game_over",
+      winner: result.winner,
+      winnerName: result.winnerName,
+      totalRounds: result.rounds,
+    });
 
   } catch (err) {
     // Game failed — owner-backed runs fail closed instead of pretending to cancel/complete.
     const errorMessage = err instanceof Error ? err.message : String(err);
-    const failure = classifyGameRunFailure(err);
+    let failure = classifyGameRunFailure(err);
     console.error(`[game-lifecycle] Game ${gameId} failed:`, errorMessage);
+
+    if (ownerEpoch) {
+      try {
+        const settlement = await getGameCompletionSettlementSummary(db, gameId);
+        if (settlement.state === "completed") {
+          const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "completion_confirmed");
+          await publishCurrentWatchState(db, gameId, "completion confirmed", refresh?.watchState);
+          await reconcilePostgameMediaAfterCompletion(db, gameId);
+          return;
+        }
+        if (settlement.state === "pending" || settlement.state === "repair_required") return;
+      } catch (transitionError) {
+        console.error(
+          `[game-lifecycle] Failed to inspect completion settlement state for game ${gameId}:`,
+          transitionError,
+        );
+      }
+      // Capture may have committed even when the caller observed an ambiguous
+      // transport error. The finally block derives the transition from the
+      // durable row; avoid overwriting it with the generic runner-failure path.
+      if (completionCaptured) return;
+    }
 
     if (!ownerEpoch) {
       // Legacy non-owner path keeps best-effort partial transcripts. Durable runs
@@ -1137,6 +1009,35 @@ async function runGameAsync(
         });
       }
       return;
+    }
+
+    const startupCleanup = ownerEpoch
+      ? await tryReturnZeroEventOwnerFailureToWaiting(
+          db,
+          gameId,
+          ownerEpoch,
+          failure.failureReason,
+        )
+      : null;
+    if (startupCleanup?.outcome === "returned_to_waiting") {
+      if (startupCleanup.cleanup.rosterDisposition === "repair_required") {
+        console.warn("[game-lifecycle] Startup failure roster requires repair", {
+          gameId,
+          ...startupCleanup.cleanup.reconciliationError,
+        });
+      }
+      const refresh = await tryRefreshGameWatchStateSummary(db, gameId, "runner_startup_failed");
+      await publishCurrentWatchState(db, gameId, "runner startup failed", refresh?.watchState);
+      return;
+    }
+    if (startupCleanup?.outcome === "not_returned") {
+      failure = {
+        failureReason: "startup_cleanup_conflict",
+        failureDetails: {
+          originalFailure: failure,
+          cleanupFailure: startupCleanup.cleanupFailure,
+        },
+      };
     }
 
     // Notify live viewers that the game cannot resume.
@@ -1200,5 +1101,33 @@ async function runGameAsync(
       }
     }
     activeGames.delete(gameId);
+    if (ownerEpoch) {
+      try {
+        const prepared = await prepareCapturedCompletionAfterRunnerExit(db, gameId, "runner_exit");
+        if (prepared.prepared
+          && (prepared.state === "pending" || prepared.state === "repair_required")) {
+          const failureReason = prepared.state === "repair_required"
+            ? COMPLETION_SETTLEMENT_REPAIR_REQUIRED
+            : COMPLETION_SETTLEMENT_TRANSIENT_FAILURE;
+          const refresh = await tryRefreshGameWatchStateSummary(db, gameId, failureReason);
+          await publishCurrentWatchState(db, gameId, failureReason, refresh?.watchState);
+          broadcastRaw(gameId, {
+            type: "game_status",
+            gameId,
+            status: "suspended",
+            terminal: true,
+            reasonCode: failureReason,
+            message: prepared.state === "repair_required"
+              ? "Results under review."
+              : "Finalizing results.",
+          });
+        }
+      } catch (error) {
+        console.error(
+          `[game-lifecycle] Failed to prepare sealed completion after runner exit for game ${gameId}:`,
+          error,
+        );
+      }
+    }
   }
 }

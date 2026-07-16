@@ -23,6 +23,7 @@ import {
 import { hashCanonicalEvent } from "../services/game-events.js";
 import { setupTestDB } from "./test-utils.js";
 import { createSeason } from "../services/seasons.js";
+import { captureGameCompletionSettlement } from "../services/game-completion-settlement.js";
 
 const ADMIN_ADDRESS = "0xadmin000000000000000000000000000000000001";
 const GAMER_ADDRESS = "0xgamer000000000000000000000000000000000001";
@@ -105,6 +106,69 @@ function createCostTrace(): PrivateDecisionTrace {
   };
 }
 
+async function createPendingSettlementFixture(
+  db: DrizzleDB,
+  slug: string,
+): Promise<{ gameId: string; ownerEpoch: string }> {
+  const gameId = await insertGame(db, { slug, status: "in_progress" });
+  const ownerEpoch = await insertOwner(db, gameId, {
+    expiresAt: "2099-01-01T00:00:00.000Z",
+  });
+  const events = createCanonicalEventFixture(gameId);
+  await appendGameEvents(db, { gameId, ownerEpoch, events });
+  const finalEvent = events.at(-1)!;
+  await captureGameCompletionSettlement(db, {
+    gameId,
+    ownerEpoch,
+    finalEventSequence: finalEvent.sequence,
+    finalEventHash: hashCanonicalEvent(finalEvent),
+    terminalResult: {
+      gameId,
+      winnerId: null,
+      winnerName: null,
+      rounds: 1,
+      transcript: [{
+        round: 1,
+        phase: Phase.END,
+        timestamp: 1_720_000_000_000,
+        from: "House",
+        scope: "system",
+        text: "private settlement transcript",
+      }],
+      eliminationOrder: [],
+      rankedPlayerIds: [],
+    },
+    tokenUsage: {
+      total: {
+        promptTokens: 0,
+        cachedTokens: 0,
+        completionTokens: 0,
+        reasoningTokens: 0,
+        totalTokens: 0,
+        callCount: 0,
+        emptyResponses: 0,
+      },
+      perAction: {},
+    },
+    resolvedModel: "test-model",
+    calculatedCost: null,
+    completionConfig: { modelTier: "budget", maxRounds: 1 },
+    finishedAt: "2026-07-15T12:00:00.000Z",
+  });
+  await db.update(schema.games).set({ status: "suspended" })
+    .where(eq(schema.games.id, gameId));
+  await db.update(schema.gameRunOwners).set({
+    status: "expired",
+    failureReason: "completion_settlement_transient_failure",
+    closedAt: "2026-07-15T12:01:00.000Z",
+  }).where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch));
+  await db.update(schema.gameCompletionSettlements).set({
+    retryReadyAt: "2026-07-15T12:01:00.000Z",
+    lastSafeFailureCode: "completion_settlement_transient_failure",
+  }).where(eq(schema.gameCompletionSettlements.gameId, gameId));
+  return { gameId, ownerEpoch };
+}
+
 describe("gamer role seed", () => {
   test("resolves to create, fill, and start only", async () => {
     const db = await setupDB();
@@ -122,6 +186,7 @@ describe("gamer role seed", () => {
     expect(resolved.permissions).not.toContain("stop_game");
     expect(resolved.permissions).not.toContain("manage_roles");
     expect(resolved.permissions).not.toContain("view_admin");
+    expect(resolved.permissions).not.toContain("retry_game_settlement");
   });
 });
 
@@ -140,6 +205,7 @@ describe("producer role seed", () => {
     expect(resolved.permissions).toEqual([]);
     expect(resolved.permissions).not.toContain("manage_roles");
     expect(resolved.permissions).not.toContain("view_admin");
+    expect(resolved.permissions).not.toContain("retry_game_settlement");
   });
 });
 
@@ -158,6 +224,8 @@ describe("admin route RBAC", () => {
     adminUserId = await createUser(db, ADMIN_ADDRESS, "Admin");
     const gamerUserId = await createUser(db, GAMER_ADDRESS, "Gamer");
     sysopUserId = await createUser(db, SYSOP_ADDRESS, "Sysop");
+    await assignRole(db, ADMIN_ADDRESS, "admin");
+    await assignRole(db, GAMER_ADDRESS, "gamer");
 
     adminToken = await createSessionToken(adminUserId, {
       roles: ["admin"],
@@ -170,6 +238,7 @@ describe("admin route RBAC", () => {
         "schedule_free_game",
         "hide_game",
         "manage_postgame_media",
+        "retry_game_settlement",
       ],
     });
 
@@ -194,6 +263,7 @@ describe("admin route RBAC", () => {
         "view_admin",
         "manage_cost_accounting",
         "manage_postgame_media",
+        "retry_game_settlement",
         "schedule_free_game",
         "hide_game",
       ],
@@ -211,6 +281,196 @@ describe("admin route RBAC", () => {
     expect(res.status).toBe(200);
   });
 
+  test("grants completion settlement retry only to admin and sysop seed roles", async () => {
+    const admin = await getPermissionsForAddress(db, ADMIN_ADDRESS);
+    const sysop = await getPermissionsForAddress(db, SYSOP_ADDRESS);
+    const gamer = await getPermissionsForAddress(db, GAMER_ADDRESS);
+
+    expect(admin.permissions).toContain("retry_game_settlement");
+    expect(sysop.permissions).toContain("retry_game_settlement");
+    expect(gamer.permissions).not.toContain("retry_game_settlement");
+  });
+
+  test("audits denied, invalid, successful, repeated, and repair-blocked settlement retries", async () => {
+    const deniedFixture = await createPendingSettlementFixture(db, "admin-settlement-denied");
+    const readOnlyUserId = await createUser(
+      db,
+      "0xreadonly0000000000000000000000000000000001",
+      "Read only",
+    );
+    const producerUserId = await createUser(
+      db,
+      "0xproducerretry000000000000000000000000000001",
+      "Producer",
+    );
+    const readOnlyToken = await createSessionToken(readOnlyUserId, {
+      roles: ["admin-reader"],
+      permissions: ["view_admin"],
+    });
+    const producerToken = await createSessionToken(producerUserId, {
+      roles: ["producer"],
+      permissions: [],
+    });
+    const denied = await app.request(
+      `/api/admin/games/${deniedFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${gamerToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "operator review", confirmation: "RETRY_SETTLEMENT" }),
+      },
+    );
+    expect(denied.status).toBe(403);
+    const repeatedDenied = await app.request(
+      `/api/admin/games/${deniedFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${gamerToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "operator review", confirmation: "RETRY_SETTLEMENT" }),
+      },
+    );
+    expect(repeatedDenied.status).toBe(403);
+    for (const token of [readOnlyToken, producerToken]) {
+      const response = await app.request(
+        `/api/admin/games/${deniedFixture.gameId}/completion-settlement/retry`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ reason: "operator review", confirmation: "RETRY_SETTLEMENT" }),
+        },
+      );
+      expect(response.status).toBe(403);
+    }
+
+    const successFixture = await createPendingSettlementFixture(db, "admin-settlement-success");
+    const invalid = await app.request(
+      `/api/admin/games/${successFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "operator review", confirmation: "retry" }),
+      },
+    );
+    expect(invalid.status).toBe(400);
+
+    const completed = await app.request(
+      `/api/admin/games/${successFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "operator verified the runner is gone", confirmation: "RETRY_SETTLEMENT" }),
+      },
+    );
+    expect(completed.status).toBe(200);
+    const completedBody = await completed.json() as Record<string, unknown>;
+    expect(completedBody.outcome).toBe("completed");
+    expect(JSON.stringify(completedBody)).not.toContain("private settlement transcript");
+    expect(JSON.stringify(completedBody)).not.toContain("payload");
+
+    const repeated = await app.request(
+      `/api/admin/games/${successFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${sysopToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "verify idempotent completion", confirmation: "RETRY_SETTLEMENT" }),
+      },
+    );
+    expect(repeated.status).toBe(200);
+    expect((await repeated.json() as Record<string, unknown>).outcome).toBe("already_completed");
+
+    const notReadyFixture = await createPendingSettlementFixture(db, "admin-settlement-not-ready");
+    await db.update(schema.gameCompletionSettlements).set({ retryReadyAt: null })
+      .where(eq(schema.gameCompletionSettlements.gameId, notReadyFixture.gameId));
+    const notReady = await app.request(
+      `/api/admin/games/${notReadyFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "operator review", confirmation: "RETRY_SETTLEMENT" }),
+      },
+    );
+    expect(notReady.status).toBe(409);
+    expect((await notReady.json() as Record<string, unknown>).code).toBe("invalid_state");
+
+    const failedFixture = await createPendingSettlementFixture(db, "admin-settlement-failed");
+    const failureApp = new Hono();
+    failureApp.route("/", createAdminRoutes(db, {
+      completionSettlement: {
+        settleCapturedGameCompletion: async () => {
+          throw new Error("private injected failure detail");
+        },
+      },
+    }));
+    const failed = await failureApp.request(
+      `/api/admin/games/${failedFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "operator review", confirmation: "RETRY_SETTLEMENT" }),
+      },
+    );
+    expect(failed.status).toBe(500);
+    expect(JSON.stringify(await failed.json())).not.toContain("private injected failure detail");
+
+    const repairFixture = await createPendingSettlementFixture(db, "admin-settlement-repair");
+    await db.update(schema.gameCompletionSettlements).set({
+      state: "repair_required",
+      retryReadyAt: null,
+      lastSafeFailureCode: "completion_boundary_conflict",
+    }).where(eq(schema.gameCompletionSettlements.gameId, repairFixture.gameId));
+    const repair = await app.request(
+      `/api/admin/games/${repairFixture.gameId}/completion-settlement/retry`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "operator review", confirmation: "RETRY_SETTLEMENT" }),
+      },
+    );
+    expect(repair.status).toBe(409);
+    expect((await repair.json() as Record<string, unknown>).code).toBe("repair_blocked");
+
+    const settlementAudits = await db.select({
+      id: schema.gameCompletionSettlementAttempts.id,
+      requestAttemptId: schema.gameCompletionSettlementAttempts.requestAttemptId,
+      gameId: schema.gameCompletionSettlementAttempts.gameId,
+      settlementId: schema.gameCompletionSettlementAttempts.settlementId,
+      actorUserId: schema.gameCompletionSettlementAttempts.actorUserId,
+      outcome: schema.gameCompletionSettlementAttempts.outcome,
+      requestedReason: schema.gameCompletionSettlementAttempts.requestedReason,
+      priorState: schema.gameCompletionSettlementAttempts.priorState,
+      resultingState: schema.gameCompletionSettlementAttempts.resultingState,
+      resultHash: schema.gameCompletionSettlementAttempts.resultHash,
+      safeFailureCode: schema.gameCompletionSettlementAttempts.safeFailureCode,
+      safeMetadata: schema.gameCompletionSettlementAttempts.safeMetadata,
+      createdAt: schema.gameCompletionSettlementAttempts.createdAt,
+    }).from(schema.gameCompletionSettlementAttempts);
+    const outcomes = settlementAudits.map((row) => row.outcome);
+    expect(outcomes).toContain("denied");
+    expect(outcomes).toContain("invalid_state");
+    expect(outcomes).toContain("requested");
+    expect(outcomes).toContain("succeeded");
+    expect(outcomes).toContain("already_completed");
+    expect(outcomes).toContain("repair_blocked");
+    expect(outcomes).toContain("failed");
+    expect(outcomes.filter((outcome) => outcome === "denied")).toHaveLength(3);
+    const requestedAudits = settlementAudits.filter((row) => row.outcome === "requested");
+    expect(requestedAudits).toHaveLength(5);
+    for (const requested of requestedAudits) {
+      const terminal = settlementAudits.find((row) => row.requestAttemptId === requested.id);
+      expect(terminal).toBeDefined();
+      expect(terminal).toMatchObject({
+        gameId: requested.gameId,
+        settlementId: requested.settlementId,
+        actorUserId: requested.actorUserId,
+        requestedReason: requested.requestedReason,
+        priorState: requested.priorState,
+        resultHash: requested.resultHash,
+      });
+      expect(terminal?.createdAt).toBeString();
+    }
+    expect(JSON.stringify(settlementAudits))
+      .not.toContain("private settlement transcript");
+  });
+
   test("admin game history uses slug and persisted season identity", async () => {
     const season = await createSeason(db, { slug: "season-zero", name: "Season 0" });
     const gameId = await insertGame(db, { slug: "admin-season-game" });
@@ -226,6 +486,7 @@ describe("admin route RBAC", () => {
       slug: "admin-season-game",
       seasonId: season.id,
       season: { id: season.id, slug: "season-zero", name: "Season 0" },
+      completionSettlement: { state: "not_applicable", retryEligible: false },
     });
     expect(rows[0]).not.toHaveProperty("gameNumber");
   });
