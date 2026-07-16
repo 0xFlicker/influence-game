@@ -233,6 +233,13 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.post("/api/free-queue/draw", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
+    const idempotencyKey = c.req.header("Idempotency-Key")?.trim();
+    if (!idempotencyKey || idempotencyKey.length > 200) {
+      return c.json({
+        error: "Idempotency-Key header must contain between 1 and 200 characters.",
+      }, 400);
+    }
+
     const maxPlayers = 12;
     const minPlayers = 4;
 
@@ -277,14 +284,13 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
         .from(schema.games)
         .where(and(
           eq(schema.games.trackType, "free"),
-          sql`${schema.games.createdAt}::timestamptz >= date_trunc('day', now())`,
+          eq(schema.games.freeDrawRequestKey, idempotencyKey),
         ))
-        .orderBy(desc(schema.games.createdAt))
         .limit(1))[0];
       if (existingDraw) {
         return {
           drawn: false as const,
-          reason: "Today's Daily Free game has already been drawn.",
+          reason: "This draw request has already created a game.",
           gameId: existingDraw.id,
           gameSlug: existingDraw.slug,
         };
@@ -313,6 +319,7 @@ export function createFreeQueueRoutes(db: DrizzleDB) {
           config: JSON.stringify(config),
           status: "waiting",
           trackType: "free",
+          freeDrawRequestKey: idempotencyKey,
           cognitiveArtifactCaptureVersion: 1,
           minPlayers,
           maxPlayers,

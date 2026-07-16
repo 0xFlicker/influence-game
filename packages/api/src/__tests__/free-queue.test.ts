@@ -80,7 +80,10 @@ describe("free queue season admission", () => {
     const standingBefore = await db.select().from(schema.freeGameQueue);
     const response = await app.request("/api/free-queue/draw", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:season-admission",
+      },
     });
     expect(response.status).toBe(201);
     const body = await response.json() as {
@@ -139,7 +142,10 @@ describe("free queue season admission", () => {
     const app = new Hono().route("/", createFreeQueueRoutes(db));
     const draw = await app.request("/api/free-queue/draw", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:closing-season",
+      },
     });
     const drawn = await draw.json() as { gameId: string };
     await db.update(schema.seasons).set({ status: "closing" })
@@ -181,7 +187,10 @@ describe("free queue season admission", () => {
     const app = new Hono().route("/", createFreeQueueRoutes(db));
     await app.request("/api/free-queue/draw", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:final-season",
+      },
     });
     await db.update(schema.seasons).set({ status: "final" })
       .where(eq(schema.seasons.id, season.id));
@@ -212,7 +221,10 @@ describe("free queue season admission", () => {
 
     const response = await app.request("/api/free-queue/draw", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:unrated",
+      },
     });
     expect(response.status).toBe(201);
     const body = await response.json() as { gameId: string; rated: boolean; seasonId: string | null };
@@ -234,7 +246,10 @@ describe("free queue season admission", () => {
     const app = new Hono().route("/", createFreeQueueRoutes(db));
     const request = () => app.request("/api/free-queue/draw", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:concurrent",
+      },
     });
 
     const responses = await Promise.all([request(), request()]);
@@ -242,10 +257,98 @@ describe("free queue season admission", () => {
     const bodies = await Promise.all(responses.map((response) => response.json())) as Array<{
       drawn: boolean;
       gameId: string;
+      reason?: string;
     }>;
     expect(bodies.filter((body) => body.drawn)).toHaveLength(1);
+    expect(bodies.find((body) => !body.drawn)?.reason)
+      .toBe("This draw request has already created a game.");
     expect(new Set(bodies.map((body) => body.gameId))).toEqual(new Set([bodies[0]!.gameId]));
     expect(await db.select().from(schema.games)).toHaveLength(1);
+  });
+
+  test("the database rejects duplicate Daily Free draw request keys", async () => {
+    const db = await setupTestDB();
+    const drawRequestKey = "daily-free:test:database-authority";
+    await db.insert(schema.games).values({
+      id: randomUUID(),
+      slug: "database-authority-one",
+      config: "{}",
+      trackType: "free",
+      freeDrawRequestKey: drawRequestKey,
+    });
+
+    await expect((async () => {
+      await db.insert(schema.games).values({
+        id: randomUUID(),
+        slug: "database-authority-two",
+        config: "{}",
+        trackType: "free",
+        freeDrawRequestKey: drawRequestKey,
+      });
+    })()).rejects.toThrow();
+  });
+
+  test("distinct draw requests on the same UTC date can each create a game", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "operator-distinct-requests");
+    await createQueuedAgent(db, "distinct-alice", "Astra Daily");
+    await createQueuedAgent(db, "distinct-bob", "Sol Daily");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    const recovery = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:schedule:2026-07-15T23:00:00Z",
+      },
+    });
+    expect(recovery.status).toBe(201);
+    const recoveredGame = await recovery.json() as { gameId: string };
+    await db.update(schema.games)
+      .set({ status: "completed" })
+      .where(eq(schema.games.id, recoveredGame.gameId));
+
+    const followingDraw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:schedule:2026-07-16T23:00:00Z",
+      },
+    });
+
+    expect(followingDraw.status).toBe(201);
+    expect((await followingDraw.json() as { gameId: string }).gameId).not.toBe(recoveredGame.gameId);
+    expect(await db.select().from(schema.games)).toHaveLength(2);
+  });
+
+  test("draw requires a nonblank bounded idempotency key", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "operator-invalid-key");
+    await createQueuedAgent(db, "invalid-key-alice", "Cora Daily");
+    await createQueuedAgent(db, "invalid-key-bob", "Tarin Daily");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    for (const idempotencyKey of [undefined, "   ", "x".repeat(201)]) {
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+      if (idempotencyKey !== undefined) headers["Idempotency-Key"] = idempotencyKey;
+      const response = await app.request("/api/free-queue/draw", {
+        method: "POST",
+        headers,
+      });
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({
+        error: "Idempotency-Key header must contain between 1 and 200 characters.",
+      });
+    }
+    expect(await db.select().from(schema.games)).toHaveLength(0);
   });
 
   test("keeps all standing entries and increments only the eligible owner who misses", async () => {
@@ -263,7 +366,10 @@ describe("free queue season admission", () => {
 
     const response = await app.request("/api/free-queue/draw", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:misses",
+      },
     });
 
     expect(response.status).toBe(201);
@@ -297,7 +403,10 @@ describe("free queue season admission", () => {
 
     const response = await app.request("/api/free-queue/draw", {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:eligibility",
+      },
     });
 
     expect(response.status).toBe(201);

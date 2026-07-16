@@ -187,6 +187,7 @@ export const games = pgTable("games", {
   config: text("config").notNull(), // JSON-serialized GameConfig
   status: text("status").notNull().$type<GameStatus>().default("waiting"),
   trackType: text("track_type").notNull().$type<TrackType>().default("custom"),
+  freeDrawRequestKey: text("free_draw_request_key"),
   seasonId: text("season_id").references(() => seasons.id),
   cognitiveArtifactCaptureVersion: integer("cognitive_artifact_capture_version").notNull().default(0),
   minPlayers: integer("min_players").notNull().default(4),
@@ -203,6 +204,13 @@ export const games = pgTable("games", {
   index("games_season_id_status_idx").on(table.seasonId, table.status),
   index("games_status_ended_at_idx").on(table.status, table.endedAt),
   index("games_status_ended_created_idx").on(table.status, table.endedAt, table.createdAt),
+  uniqueIndex("games_free_draw_request_key_unique")
+    .on(table.freeDrawRequestKey)
+    .where(sql`${table.trackType} = 'free' AND ${table.freeDrawRequestKey} IS NOT NULL`),
+  check(
+    "games_free_draw_request_key_length_check",
+    sql`${table.freeDrawRequestKey} IS NULL OR char_length(${table.freeDrawRequestKey}) BETWEEN 1 AND 200`,
+  ),
 ]);
 
 // ---------------------------------------------------------------------------

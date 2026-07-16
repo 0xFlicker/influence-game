@@ -10,6 +10,8 @@
 # Required env vars (via doppler or direct export):
 #   FREE_GAME_API_URL    — API base URL (e.g. http://100.100.251.4:3000)
 #   FREE_GAME_CRON_TOKEN — JWT with schedule_free_game permission
+# Optional env vars:
+#   FREE_GAME_DRAW_KEY   — stable retry key; reuse the missed schedule key for recovery
 #
 # Usage:
 #   doppler run -- ./scripts/free-game-draw.sh
@@ -20,25 +22,40 @@ set -euo pipefail
 : "${FREE_GAME_API_URL:?FREE_GAME_API_URL is required}"
 : "${FREE_GAME_CRON_TOKEN:?FREE_GAME_CRON_TOKEN is required}"
 
+if [ -z "${FREE_GAME_DRAW_KEY:-}" ]; then
+  if command -v uuidgen >/dev/null 2>&1; then
+    DRAW_UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
+  elif [ -r /proc/sys/kernel/random/uuid ]; then
+    DRAW_UUID=$(tr '[:upper:]' '[:lower:]' < /proc/sys/kernel/random/uuid)
+  else
+    echo "Set FREE_GAME_DRAW_KEY because no UUID generator is available." >&2
+    exit 1
+  fi
+  FREE_GAME_DRAW_KEY="daily-free:manual:$DRAW_UUID"
+fi
+
+if [ "${#FREE_GAME_DRAW_KEY}" -gt 200 ] || ! printf '%s' "$FREE_GAME_DRAW_KEY" | grep -q '[^[:space:]]'; then
+  echo "FREE_GAME_DRAW_KEY must contain between 1 and 200 characters." >&2
+  exit 1
+fi
+
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Starting free game draw..."
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Idempotency key: $FREE_GAME_DRAW_KEY"
 
 RESPONSE=$(curl -s -w "\n%{http_code}" \
   -X POST \
   -H "Authorization: Bearer $FREE_GAME_CRON_TOKEN" \
+  -H "Idempotency-Key: $FREE_GAME_DRAW_KEY" \
   -H "Content-Type: application/json" \
   "$FREE_GAME_API_URL/api/free-queue/draw")
 
-HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-BODY=$(echo "$RESPONSE" | head -n -1)
+HTTP_CODE=${RESPONSE##*$'\n'}
+BODY=${RESPONSE%$'\n'*}
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] HTTP $HTTP_CODE: $BODY"
 
 if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Draw completed successfully."
-  exit 0
-elif [ "$HTTP_CODE" -eq 200 ]; then
-  # 200 = idempotent (game already exists for today) or not enough players
-  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Draw skipped (already done or insufficient players)."
   exit 0
 else
   echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Draw failed with HTTP $HTTP_CODE" >&2
