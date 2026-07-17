@@ -7,6 +7,7 @@ import {
   DAILY_AGENT_RETRY_DELAYS_MS,
   dailyAgentPromptBranch,
   shouldLoadDailyAgentPrompt,
+  transitionDailyAgentPromptHandoff,
 } from "../components/standing-daily-agent-prompt-model";
 
 const freePage = readFileSync(
@@ -17,6 +18,10 @@ const adminPanel = readFileSync(
   join(import.meta.dir, "../app/admin/free-queue-panel.tsx"),
   "utf8",
 );
+const providers = readFileSync(
+  join(import.meta.dir, "../app/providers.tsx"),
+  "utf8",
+);
 
 describe("standing Daily Agent acquisition", () => {
   it("selects zero, one, and many-agent branches with bounded delays", () => {
@@ -25,6 +30,41 @@ describe("standing Daily Agent acquisition", () => {
     expect(dailyAgentPromptBranch(2)).toBe("choose");
     expect(DAILY_AGENT_PROMPT_DELAY_MS).toBe(3000);
     expect(DAILY_AGENT_RETRY_DELAYS_MS).toEqual([2000, 5000]);
+  });
+
+  it("consumes an immediate handoff once and delays later queue changes normally", () => {
+    const publicId = "8d91d5d0-bb3f-4559-a51a-64e1d2236f21";
+    const immediate = transitionDailyAgentPromptHandoff(publicId, "eligible");
+    expect(immediate).toEqual({
+      nextPublicId: null,
+      consumedPublicId: publicId,
+      openDelayMs: 0,
+    });
+
+    expect(transitionDailyAgentPromptHandoff(
+      immediate.nextPublicId,
+      "eligible",
+    )).toEqual({
+      nextPublicId: null,
+      consumedPublicId: null,
+      openDelayMs: DAILY_AGENT_PROMPT_DELAY_MS,
+    });
+  });
+
+  it("retains the handoff through retries and consumes conclusive failures", () => {
+    const publicId = "8d91d5d0-bb3f-4559-a51a-64e1d2236f21";
+    expect(transitionDailyAgentPromptHandoff(publicId, "retry")).toEqual({
+      nextPublicId: publicId,
+      consumedPublicId: null,
+      openDelayMs: null,
+    });
+    for (const outcome of ["ineligible", "exhausted"] as const) {
+      expect(transitionDailyAgentPromptHandoff(publicId, outcome)).toEqual({
+        nextPublicId: null,
+        consumedPublicId: publicId,
+        openDelayMs: null,
+      });
+    }
   });
 
   it("keeps keyboard focus inside from edges and outside focus", () => {
@@ -42,6 +82,10 @@ describe("standing Daily Agent acquisition", () => {
     expect(shouldLoadDailyAgentPrompt({ ...ready, signedIn: false })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, hasAuthToken: false })).toBe(false);
     expect(shouldLoadDailyAgentPrompt({ ...ready, sessionDismissed: true })).toBe(false);
+  });
+
+  it("remounts acquisition state when the active public identity changes", () => {
+    expect(providers).toContain('key={identity?.publicId ?? "legacy"}');
   });
 
   it("keeps owner and admin removal direct and free of consequence warnings", () => {

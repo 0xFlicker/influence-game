@@ -60,6 +60,8 @@ Prove the tolerant web build against the old API first. Retain this compatibilit
 
 An old producer can create or authenticate an account without returning or enforcing the identity step. While any old producer remains, a player can temporarily enter without claiming a handle; if an old producer survives past the cutoff, it can also violate the required-new-player experience for that session. This is a rollout risk, not an accepted compatibility mode.
 
+After a successful required or deferrable identity save, that browser session carries an account-scoped, one-shot handoff into standing Daily agent onboarding. The existing queue and agent reads still complete before the “Play for Free” dialog opens, but this handoff skips its ordinary three-second presentation delay. The handoff survives only the prompt's bounded retry sequence and is consumed by an eligible result, queue ineligibility, or exhausted retries. Dismissal, returning complete identities, generic identity updates, profile edits, and reloads keep the ordinary delayed behavior.
+
 ### Gate 4: Drain Proof and Activation
 
 Before the frozen cutoff:

@@ -158,6 +158,16 @@ export function identityPromptDecision(input: {
   return "downstream";
 }
 
+export function identitySaveHandoffPublicId(input: {
+  signedIn: boolean;
+  currentPublicId: string | null;
+  savedPublicId: string;
+}): string | null {
+  return input.signedIn && input.currentPublicId === input.savedPublicId
+    ? input.savedPublicId
+    : null;
+}
+
 export function normalizeAuthenticatedPublicIdentity(
   value: unknown,
 ): AuthenticatedPublicIdentity | null {

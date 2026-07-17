@@ -14,6 +14,7 @@ import {
   derivePublicHandle,
   identityDismissalKey,
   identityPromptDecision,
+  identitySaveHandoffPublicId,
   markIdentitySaveFailed,
   markIdentitySaving,
   normalizeAuthenticatedPublicIdentity,
@@ -204,6 +205,25 @@ describe("public identity onboarding model", () => {
   it("keys browser-session dismissal by immutable public UUID", () => {
     expect(identityDismissalKey("8d91d5d0-bb3f-4559-a51a-64e1d2236f21"))
       .toBe("influence:public-identity:dismissed:8d91d5d0-bb3f-4559-a51a-64e1d2236f21");
+  });
+
+  it("arms a same-session handoff only for the active saved account", () => {
+    const publicId = "8d91d5d0-bb3f-4559-a51a-64e1d2236f21";
+    expect(identitySaveHandoffPublicId({
+      signedIn: true,
+      currentPublicId: publicId,
+      savedPublicId: publicId,
+    })).toBe(publicId);
+    expect(identitySaveHandoffPublicId({
+      signedIn: false,
+      currentPublicId: publicId,
+      savedPublicId: publicId,
+    })).toBeNull();
+    expect(identitySaveHandoffPublicId({
+      signedIn: true,
+      currentPublicId: "1bc88da1-8e1d-4f22-a749-8b80dbba54b4",
+      savedPublicId: publicId,
+    })).toBeNull();
   });
 
   it("keeps client derivation aligned with every server-reserved route", () => {

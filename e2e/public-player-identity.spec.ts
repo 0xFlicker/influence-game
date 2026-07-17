@@ -175,6 +175,13 @@ test.describe("local public player identity", () => {
       await dialog.getByLabel("Handle").fill("required-player");
       await dialog.getByRole("button", { name: "Create public profile" }).click();
       await expect(dialog).toBeHidden();
+      const dailyAgentDialog = page.getByRole("dialog", {
+        name: "Play for Free",
+      });
+      await expect(dailyAgentDialog).toBeVisible({ timeout: 2_500 });
+      await expect(dailyAgentDialog.getByRole("button", {
+        name: "Create an agent",
+      })).toBeVisible();
     } finally {
       await context.close();
     }

@@ -1,6 +1,32 @@
 export const DAILY_AGENT_PROMPT_DELAY_MS = 3000;
 export const DAILY_AGENT_RETRY_DELAYS_MS = [2000, 5000] as const;
 
+export type DailyAgentPromptLoadOutcome =
+  | "eligible"
+  | "ineligible"
+  | "retry"
+  | "exhausted";
+
+export function transitionDailyAgentPromptHandoff(
+  publicId: string | null,
+  outcome: DailyAgentPromptLoadOutcome,
+): {
+  nextPublicId: string | null;
+  consumedPublicId: string | null;
+  openDelayMs: number | null;
+} {
+  const retained = outcome === "retry";
+  return {
+    nextPublicId: retained ? publicId : null,
+    consumedPublicId: retained ? null : publicId,
+    openDelayMs: outcome === "eligible"
+      ? publicId === null
+        ? DAILY_AGENT_PROMPT_DELAY_MS
+        : 0
+      : null,
+  };
+}
+
 export function dailyAgentPromptBranch(agentCount: number): "create" | "single" | "choose" {
   if (agentCount === 0) return "create";
   if (agentCount === 1) return "single";

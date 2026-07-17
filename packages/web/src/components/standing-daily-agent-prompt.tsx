@@ -20,6 +20,8 @@ import {
   DAILY_AGENT_RETRY_DELAYS_MS,
   dailyAgentPromptBranch,
   shouldLoadDailyAgentPrompt,
+  transitionDailyAgentPromptHandoff,
+  type DailyAgentPromptLoadOutcome,
 } from "./standing-daily-agent-prompt-model";
 
 const FOCUSABLE_SELECTOR = "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])";
@@ -28,7 +30,13 @@ function getFocusableElements(dialog: HTMLElement): HTMLElement[] {
   return Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR));
 }
 
-export function StandingDailyAgentPrompt() {
+export function StandingDailyAgentPrompt({
+  immediateHandoffPublicId = null,
+  onImmediateHandoffConsumed,
+}: {
+  immediateHandoffPublicId?: string | null;
+  onImmediateHandoffConsumed?: (publicId: string) => void;
+}) {
   const { authenticated, ready } = usePrivy();
   const e2e = useE2EAuth();
   const { needsInvite } = useInvite();
@@ -45,8 +53,28 @@ export function StandingDailyAgentPrompt() {
   const retryTimerRef = useRef<number | null>(null);
   const retryAttemptRef = useRef(0);
   const requestGeneration = useRef(0);
+  const immediateHandoffRef = useRef(immediateHandoffPublicId);
+  const handoffConsumedCallbackRef = useRef(onImmediateHandoffConsumed);
 
   const signedIn = (ready && authenticated) || (e2e.ready && e2e.authenticated);
+
+  useEffect(() => {
+    handoffConsumedCallbackRef.current = onImmediateHandoffConsumed;
+  }, [onImmediateHandoffConsumed]);
+
+  const transitionImmediateHandoff = useCallback((
+    outcome: DailyAgentPromptLoadOutcome,
+  ) => {
+    const transition = transitionDailyAgentPromptHandoff(
+      immediateHandoffRef.current,
+      outcome,
+    );
+    immediateHandoffRef.current = transition.nextPublicId;
+    if (transition.consumedPublicId !== null) {
+      handoffConsumedCallbackRef.current?.(transition.consumedPublicId);
+    }
+    return transition;
+  }, []);
 
   const load = useCallback(async () => {
     if (!shouldLoadDailyAgentPrompt({
@@ -88,26 +116,35 @@ export function StandingDailyAgentPrompt() {
       if (!status.promptEligible) {
         retryAttemptRef.current = 0;
         setOpen(false);
+        transitionImmediateHandoff("ineligible");
         return;
       }
       const ownedAgents = await listAgents();
       if (generation !== requestGeneration.current) return;
       retryAttemptRef.current = 0;
+      const handoff = transitionImmediateHandoff("eligible");
       setAgents(ownedAgents);
-      timerRef.current = window.setTimeout(() => {
-        if (generation === requestGeneration.current) setOpen(true);
-      }, DAILY_AGENT_PROMPT_DELAY_MS);
+      const openDelay = handoff.openDelayMs ?? DAILY_AGENT_PROMPT_DELAY_MS;
+      if (openDelay === 0) {
+        setOpen(true);
+      } else {
+        timerRef.current = window.setTimeout(() => {
+          if (generation === requestGeneration.current) setOpen(true);
+        }, openDelay);
+      }
     } catch (error) {
       if (generation !== requestGeneration.current) return;
       const retryDelay = DAILY_AGENT_RETRY_DELAYS_MS[retryAttemptRef.current];
       if (retryDelay !== undefined) {
+        transitionImmediateHandoff("retry");
         retryAttemptRef.current += 1;
         retryTimerRef.current = window.setTimeout(() => { void load(); }, retryDelay);
       } else {
+        transitionImmediateHandoff("exhausted");
         console.warn("[StandingDailyAgentPrompt] Failed to load acquisition state:", error);
       }
     }
-  }, [needsInvite, sessionDismissed, signedIn]);
+  }, [needsInvite, sessionDismissed, signedIn, transitionImmediateHandoff]);
 
   useEffect(() => {
     void load();

@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -42,6 +43,7 @@ import {
   classifyAuthenticatedIdentityPayload,
   identityDismissalKey,
   identityPromptDecision,
+  identitySaveHandoffPublicId,
 } from "@/components/public-identity-onboarding-model";
 
 // ---------------------------------------------------------------------------
@@ -136,11 +138,18 @@ function AuthSync({ children }: { children: React.ReactNode }) {
   const [identityResolution, setIdentityResolution] = useState<IdentityResolution>("pending");
   const [identityRetryNonce, setIdentityRetryNonce] = useState(0);
   const [identityDismissed, setIdentityDismissed] = useState(false);
+  const [dailyAgentHandoffPublicId, setDailyAgentHandoffPublicId] =
+    useState<string | null>(null);
   const identityPublicIdRef = useRef<string | null>(null);
   const appContentRef = useRef<HTMLDivElement>(null);
   const identityGateRef = useRef<HTMLDivElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
   const signedIn = (e2e.ready && e2e.authenticated) || authenticated;
+  const signedInRef = useRef(signedIn);
+
+  useLayoutEffect(() => {
+    signedInRef.current = signedIn;
+  }, [signedIn]);
 
   const syncIdentity = useCallback((value: unknown, resolved = value != null) => {
     const payload = resolved
@@ -158,6 +167,8 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     }
 
     identityPublicIdRef.current = nextPublicId;
+    setDailyAgentHandoffPublicId((current) =>
+      current !== null && current !== nextPublicId ? null : current);
     setIdentity(next);
     setIdentityResolution(
       !resolved
@@ -358,6 +369,29 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     setIdentityDismissed(true);
   }
 
+  const handleIdentitySaved = useCallback((
+    updatedIdentity: AuthenticatedPublicIdentity,
+  ) => {
+    const handoffPublicId = identitySaveHandoffPublicId({
+      signedIn: signedInRef.current,
+      currentPublicId: identityPublicIdRef.current,
+      savedPublicId: updatedIdentity.publicId,
+    });
+    if (handoffPublicId === null) return;
+    setDailyAgentHandoffPublicId(handoffPublicId);
+    syncIdentity(updatedIdentity, true);
+  }, [syncIdentity]);
+
+  const consumeDailyAgentHandoff = useCallback((publicId: string) => {
+    setDailyAgentHandoffPublicId((current) =>
+      current === publicId ? null : current);
+  }, []);
+
+  const activeDailyAgentHandoffPublicId =
+    dailyAgentHandoffPublicId === identity?.publicId
+      ? dailyAgentHandoffPublicId
+      : null;
+
   return (
     <InviteContext.Provider value={inviteState}>
       <PublicIdentityContext.Provider value={identity}>
@@ -407,11 +441,17 @@ function AuthSync({ children }: { children: React.ReactNode }) {
         {(promptDecision === "identity-required" || promptDecision === "identity-deferrable") && identity && (
           <PublicIdentityOnboarding
             identity={identity}
-            onSaved={syncIdentity}
+            onSaved={handleIdentitySaved}
             onDismiss={dismissIdentityForSession}
           />
         )}
-        {promptDecision === "downstream" && <StandingDailyAgentPrompt />}
+        {promptDecision === "downstream" && (
+          <StandingDailyAgentPrompt
+            key={identity?.publicId ?? "legacy"}
+            immediateHandoffPublicId={activeDailyAgentHandoffPublicId}
+            onImmediateHandoffConsumed={consumeDailyAgentHandoff}
+          />
+        )}
         <AvatarGenerationActivity />
       </PublicIdentityContext.Provider>
     </InviteContext.Provider>
