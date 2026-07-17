@@ -1,7 +1,9 @@
 import { defineConfig } from "@playwright/test";
 import { existsSync } from "node:fs";
 
-const localIdentityRun = process.env.PLAYWRIGHT_LOCAL_IDENTITY === "1";
+const localIdentityRun =
+  process.env.PLAYWRIGHT_LOCAL_IDENTITY === "1"
+  || process.env.PLAYWRIGHT_BASE_URL === undefined;
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
 export default defineConfig({

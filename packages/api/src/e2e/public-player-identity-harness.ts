@@ -4,7 +4,10 @@ import {
   createTestUser,
   generateTestWallet,
 } from "./test-auth.js";
-import { createTestDb } from "./test-db.js";
+import {
+  createIsolatedTestDb,
+  destroyIsolatedTestDb,
+} from "./test-db.js";
 import {
   startTestServers,
   stopTestServers,
@@ -31,10 +34,12 @@ interface IdentityFixture {
 }
 
 let servers: TestServerHandles | null = null;
+let isolatedDatabaseUrl: string | null = null;
 let stopping = false;
 
 async function main(): Promise<void> {
-  const { db, databaseUrl } = await createTestDb();
+  const { db, databaseUrl } = await createIsolatedTestDb();
+  isolatedDatabaseUrl = databaseUrl;
   const fixture = await seedIdentityFixture(db);
   servers = await startTestServers({
     databaseUrl,
@@ -60,6 +65,10 @@ async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
   if (servers) await stopTestServers(servers);
+  if (isolatedDatabaseUrl) {
+    await destroyIsolatedTestDb(isolatedDatabaseUrl);
+    isolatedDatabaseUrl = null;
+  }
 }
 
 async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {

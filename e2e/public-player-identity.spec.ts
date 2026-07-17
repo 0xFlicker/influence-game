@@ -2,7 +2,9 @@ import { expect, test, type Browser, type BrowserContext } from "@playwright/tes
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
-const LOCAL_IDENTITY_RUN = process.env.PLAYWRIGHT_LOCAL_IDENTITY === "1";
+const LOCAL_IDENTITY_RUN =
+  process.env.PLAYWRIGHT_LOCAL_IDENTITY === "1"
+  || process.env.PLAYWRIGHT_BASE_URL === undefined;
 const PRIVATE_SENTINEL = "PRIVATE_E2E_PROFILE_SENTINEL";
 
 interface IdentityFixture {

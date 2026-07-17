@@ -1,4 +1,7 @@
-import type { PublicIdentityOnboardingState } from "@/lib/api";
+import type {
+  AuthenticatedPublicIdentity,
+  PublicIdentityOnboardingState,
+} from "@/lib/api";
 
 export type IdentityFormStatus = "idle" | "saving" | "error";
 
@@ -34,6 +37,7 @@ export function changeIdentityDisplayName(
   state: PublicIdentityFormState,
   displayName: string,
 ): PublicIdentityFormState {
+  if (state.status === "saving") return state;
   return {
     ...state,
     displayName,
@@ -48,6 +52,7 @@ export function changeIdentityHandle(
   state: PublicIdentityFormState,
   handle: string,
 ): PublicIdentityFormState {
+  if (state.status === "saving") return state;
   return {
     ...state,
     handle,
@@ -87,17 +92,26 @@ export function applyIdentityCollision(
     handle: !state.handleDirty && suggestion ? suggestion : state.handle,
     collisionSuggestion: state.handleDirty ? suggestion : null,
     status: "error",
-    error: state.handleDirty && suggestion
-      ? `That handle is taken. Try ${suggestion}.`
-      : "That handle was taken, so we found another available option.",
+    error: suggestion
+      ? state.handleDirty
+        ? `That handle is taken. Try ${suggestion}.`
+        : "That handle was taken, so we found another available option."
+      : "That handle is taken. Choose a different handle.",
   };
 }
 
 export function applyAvailableIdentitySuggestion(
   state: PublicIdentityFormState,
+  requestedDisplayName: string,
   suggestion: string,
 ): PublicIdentityFormState {
-  if (state.handleDirty) return state;
+  if (
+    state.status === "saving"
+    || state.handleDirty
+    || state.displayName !== requestedDisplayName
+  ) {
+    return state;
+  }
   return {
     ...state,
     handle: suggestion,
@@ -129,6 +143,7 @@ export function identityPromptDecision(input: {
   signedIn: boolean;
   needsInvite: boolean;
   identityState: PublicIdentityOnboardingState | null;
+  identityResolved?: boolean;
   dismissed: boolean;
 }): IdentityPromptDecision {
   if (!input.signedIn) return "none";
@@ -137,8 +152,76 @@ export function identityPromptDecision(input: {
   if (input.identityState === "deferrable" && !input.dismissed) {
     return "identity-deferrable";
   }
-  if (input.identityState === null) return "none";
+  if (input.identityState === null) {
+    return input.identityResolved ? "downstream" : "none";
+  }
   return "downstream";
+}
+
+export function normalizeAuthenticatedPublicIdentity(
+  value: unknown,
+): AuthenticatedPublicIdentity | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = value as Record<string, unknown>;
+  const onboarding = candidate.publicIdentityOnboarding;
+  if (!onboarding || typeof onboarding !== "object") return null;
+  const onboardingRecord = onboarding as Record<string, unknown>;
+  const state = onboardingRecord.state;
+  if (
+    typeof candidate.publicId !== "string"
+    || (candidate.handle !== null && typeof candidate.handle !== "string")
+    || typeof candidate.displayName !== "string"
+    || (state !== "complete" && state !== "required" && state !== "deferrable")
+  ) {
+    return null;
+  }
+
+  const diagnosticCode = onboardingRecord.diagnosticCode;
+  return {
+    publicId: candidate.publicId,
+    handle: candidate.handle,
+    displayName: candidate.displayName,
+    publicIdentityOnboarding: {
+      state,
+      diagnosticCode:
+        diagnosticCode === "created_at_missing"
+        || diagnosticCode === "created_at_invalid"
+        || diagnosticCode === "created_at_timezone_required"
+          ? diagnosticCode
+          : null,
+    },
+  };
+}
+
+export type AuthenticatedIdentityPayload =
+  | {
+      kind: "current";
+      identity: AuthenticatedPublicIdentity;
+    }
+  | {
+      kind: "legacy";
+    }
+  | {
+      kind: "invalid";
+    };
+
+export function classifyAuthenticatedIdentityPayload(
+  value: unknown,
+): AuthenticatedIdentityPayload {
+  const identity = normalizeAuthenticatedPublicIdentity(value);
+  if (identity) return { kind: "current", identity };
+  if (value === undefined) return { kind: "legacy" };
+  if (
+    value
+    && typeof value === "object"
+    && !("publicIdentityOnboarding" in value)
+    && !("publicId" in value)
+    && !("handle" in value)
+    && typeof (value as Record<string, unknown>).id === "string"
+  ) {
+    return { kind: "legacy" };
+  }
+  return { kind: "invalid" };
 }
 
 export function identityDismissalKey(publicId: string): string {

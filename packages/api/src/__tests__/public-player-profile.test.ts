@@ -13,7 +13,10 @@ import {
   getPublicPlayerProfile,
   type PublicPlayerProfileEnvelope,
 } from "../services/public-player-profile.js";
-import { publicPlayerDisplayName } from "../services/public-player-identity.js";
+import {
+  getPublicPlayerIdentityMap,
+  publicPlayerDisplayName,
+} from "../services/public-player-identity.js";
 import { createSeason } from "../services/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -68,6 +71,24 @@ describe("public player profile", () => {
         walletAddress: null,
       })).toBe("Anonymous");
     }
+  });
+
+  test("chunks public identity lookups beyond one query batch", async () => {
+    const users = Array.from({ length: 501 }, (_, index) => ({
+      id: `chunked-player-${index}`,
+      publicId: randomUUID(),
+      displayName: `Chunked Player ${index}`,
+    }));
+    await db.insert(schema.users).values(users);
+
+    const identities = await getPublicPlayerIdentityMap(
+      db,
+      users.map((user) => user.id),
+    );
+
+    expect(identities.size).toBe(users.length);
+    expect(identities.get("chunked-player-500")?.displayName)
+      .toBe("Chunked Player 500");
   });
 
   test("projects one allowlisted profile by handle or UUID from eligible visible Free receipts", async () => {

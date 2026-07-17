@@ -9,7 +9,7 @@ import {
 } from "../lib/public-player-identity.js";
 
 export const PUBLIC_PLAYER_IDENTIFIER_MAX_LENGTH = 36;
-export const PUBLIC_PLAYER_IDENTITY_BATCH_MAX_SIZE = 500;
+const PUBLIC_PLAYER_IDENTITY_QUERY_CHUNK_SIZE = 500;
 
 export interface PublicPlayerIdentityRef {
   publicId: string;
@@ -103,7 +103,7 @@ export async function resolvePublicPlayer(
 }
 
 /**
- * Resolves internal user IDs to safe public identities in one bounded query.
+ * Resolves internal user IDs to safe public identities in bounded queries.
  *
  * Internal IDs remain Map keys for caller-side joins and never become part of
  * a serialized response. Imported users and accounts without a safe public
@@ -116,20 +116,25 @@ export async function getPublicPlayerIdentityMap(
 ): Promise<Map<string, PublicPlayerIdentityRef>> {
   const uniqueIds = [...new Set(internalUserIds.filter(Boolean))];
   if (uniqueIds.length === 0) return new Map();
-  if (uniqueIds.length > PUBLIC_PLAYER_IDENTITY_BATCH_MAX_SIZE) {
-    throw new RangeError(
-      `Public player identity batches are limited to ${PUBLIC_PLAYER_IDENTITY_BATCH_MAX_SIZE} users`,
-    );
+  const chunks: string[][] = [];
+  for (
+    let start = 0;
+    start < uniqueIds.length;
+    start += PUBLIC_PLAYER_IDENTITY_QUERY_CHUNK_SIZE
+  ) {
+    chunks.push(uniqueIds.slice(start, start + PUBLIC_PLAYER_IDENTITY_QUERY_CHUNK_SIZE));
   }
-
-  const rows = await db.select({
-    id: schema.users.id,
-    publicId: schema.users.publicId,
-    handle: schema.users.handle,
-    walletAddress: schema.users.walletAddress,
-    email: schema.users.email,
-    displayName: schema.users.displayName,
-  }).from(schema.users).where(inArray(schema.users.id, uniqueIds));
+  const rows: PublicPlayerIdentityRow[] = [];
+  for (const ids of chunks) {
+    rows.push(...await db.select({
+      id: schema.users.id,
+      publicId: schema.users.publicId,
+      handle: schema.users.handle,
+      walletAddress: schema.users.walletAddress,
+      email: schema.users.email,
+      displayName: schema.users.displayName,
+    }).from(schema.users).where(inArray(schema.users.id, ids)));
+  }
 
   const identities = new Map<string, PublicPlayerIdentityRef>();
   for (const row of rows) {

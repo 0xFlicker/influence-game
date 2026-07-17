@@ -3,8 +3,10 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { PublicIdentityOnboarding } from "../components/public-identity-onboarding";
 import {
+  applyAvailableIdentitySuggestion,
   applyIdentityCollision,
   cancelIdentityChanges,
+  classifyAuthenticatedIdentityPayload,
   changeIdentityDisplayName,
   changeIdentityHandle,
   completeIdentitySave,
@@ -14,6 +16,7 @@ import {
   identityPromptDecision,
   markIdentitySaveFailed,
   markIdentitySaving,
+  normalizeAuthenticatedPublicIdentity,
 } from "../components/public-identity-onboarding-model";
 
 describe("public identity onboarding model", () => {
@@ -60,6 +63,33 @@ describe("public identity onboarding model", () => {
     expect(collided.collisionSuggestion).toBe("flick-2");
   });
 
+  it("locks edits while saving and rejects stale derived-handle suggestions", () => {
+    const flick = changeIdentityDisplayName(
+      createIdentityFormState({ displayName: "Anonymous", handle: null }),
+      "Flick",
+    );
+    const saving = markIdentitySaving(flick);
+    expect(changeIdentityDisplayName(saving, "Later")).toBe(saving);
+    expect(changeIdentityHandle(saving, "later")).toBe(saving);
+    expect(applyAvailableIdentitySuggestion(saving, "Flick", "flick-2")).toBe(saving);
+
+    const later = changeIdentityDisplayName(flick, "Later");
+    expect(applyAvailableIdentitySuggestion(later, "Flick", "flick-2")).toBe(later);
+    expect(applyAvailableIdentitySuggestion(later, "Later", "later-2").handle)
+      .toBe("later-2");
+  });
+
+  it("reports exhausted collision recovery honestly", () => {
+    const derived = changeIdentityDisplayName(
+      createIdentityFormState({ displayName: "Anonymous", handle: null }),
+      "Flick",
+    );
+    expect(applyIdentityCollision(derived, null)).toMatchObject({
+      handle: "flick",
+      error: "That handle is taken. Choose a different handle.",
+    });
+  });
+
   it("preserves values on failure, restores persisted values on cancel, and rebases on success", () => {
     const initial = createIdentityFormState({ displayName: "Flick", handle: "flick" });
     const changed = changeIdentityHandle(
@@ -93,32 +123,82 @@ describe("public identity onboarding model", () => {
       signedIn: true,
       needsInvite: true,
       identityState: "required",
+      identityResolved: true,
       dismissed: false,
     })).toBe("invite");
     expect(identityPromptDecision({
       signedIn: true,
       needsInvite: false,
       identityState: "required",
+      identityResolved: true,
       dismissed: true,
     })).toBe("identity-required");
     expect(identityPromptDecision({
       signedIn: true,
       needsInvite: false,
       identityState: "deferrable",
+      identityResolved: true,
       dismissed: false,
     })).toBe("identity-deferrable");
     expect(identityPromptDecision({
       signedIn: true,
       needsInvite: false,
       identityState: "deferrable",
+      identityResolved: true,
       dismissed: true,
     })).toBe("downstream");
     expect(identityPromptDecision({
       signedIn: false,
       needsInvite: false,
       identityState: null,
+      identityResolved: false,
       dismissed: false,
     })).toBe("none");
+    expect(identityPromptDecision({
+      signedIn: true,
+      needsInvite: false,
+      identityState: null,
+      identityResolved: true,
+      dismissed: false,
+    })).toBe("downstream");
+  });
+
+  it("normalizes mixed-version auth payloads without dereferencing old producers", () => {
+    const legacy = {
+      id: "legacy-internal-id",
+      displayName: "Legacy Player",
+    };
+    expect(normalizeAuthenticatedPublicIdentity(legacy)).toBeNull();
+    expect(classifyAuthenticatedIdentityPayload(legacy)).toEqual({
+      kind: "legacy",
+    });
+    expect(normalizeAuthenticatedPublicIdentity({
+      publicId: "8d91d5d0-bb3f-4559-a51a-64e1d2236f21",
+      handle: "flick",
+      displayName: "Flick",
+      publicIdentityOnboarding: {
+        state: "complete",
+        diagnosticCode: null,
+      },
+    })).toMatchObject({
+      publicId: "8d91d5d0-bb3f-4559-a51a-64e1d2236f21",
+      publicIdentityOnboarding: { state: "complete" },
+    });
+    expect(classifyAuthenticatedIdentityPayload({
+      publicId: "8d91d5d0-bb3f-4559-a51a-64e1d2236f21",
+      displayName: "Broken New Payload",
+      publicIdentityOnboarding: { state: "required" },
+    })).toEqual({
+      kind: "invalid",
+    });
+    expect(classifyAuthenticatedIdentityPayload({
+      id: "internal-id",
+      publicId: "8d91d5d0-bb3f-4559-a51a-64e1d2236f21",
+      handle: "broken-new-payload",
+      displayName: "Broken New Payload",
+    })).toEqual({
+      kind: "invalid",
+    });
   });
 
   it("keys browser-session dismissal by immutable public UUID", () => {

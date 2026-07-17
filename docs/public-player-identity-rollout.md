@@ -97,6 +97,9 @@ Handle changes remain mutable and do not create redirect or alias history. The i
 
 ## Release Evidence Checklist
 
+- Local identity browser story: `bun run test:e2e:identity` executes all seven
+  scenarios against the isolated PostgreSQL/API/web harness. A fully skipped
+  suite is not passing evidence.
 - Gate 1 migration and strict timestamp-preflight output.
 - Old API to tolerant web mixed-version proof.
 - Exact frozen `PUBLIC_IDENTITY_LAUNCH_CUTOFF` recorded for every producer environment.

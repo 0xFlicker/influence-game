@@ -10,6 +10,8 @@ import { createDB } from "../db/index.js";
 import { runMigrations } from "../db/migrate.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import postgres from "postgres";
 
 // Use TEST_DATABASE_URL or hardcoded default — never fall back to DATABASE_URL
 const TEST_DATABASE_URL =
@@ -96,6 +98,51 @@ export async function createTestDb(): Promise<TestDB> {
   await seedRBAC(db);
 
   return { db, databaseUrl: TEST_DATABASE_URL };
+}
+
+/**
+ * Create a per-run PostgreSQL database for browser harnesses that may execute
+ * beside the DB suite. The shared influence_test database is intentionally not
+ * touched.
+ */
+export async function createIsolatedTestDb(): Promise<TestDB> {
+  const databaseName = `influence_e2e_${process.pid}_${randomUUID().replaceAll("-", "")}`;
+  const databaseUrl = withDatabaseName(TEST_DATABASE_URL, databaseName);
+  const admin = postgres(withDatabaseName(TEST_DATABASE_URL, "postgres"), { max: 1 });
+  try {
+    await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
+  } finally {
+    await admin.end();
+  }
+
+  try {
+    await runMigrations(databaseUrl);
+    const db = createDB(databaseUrl);
+    await seedRBAC(db);
+    return { db, databaseUrl };
+  } catch (error) {
+    await destroyIsolatedTestDb(databaseUrl);
+    throw error;
+  }
+}
+
+export async function destroyIsolatedTestDb(databaseUrl: string): Promise<void> {
+  const databaseName = new URL(databaseUrl).pathname.slice(1);
+  if (!/^influence_e2e_[a-zA-Z0-9_]+$/.test(databaseName)) {
+    throw new Error(`Refusing to drop non-isolated test database: ${databaseName}`);
+  }
+  const admin = postgres(withDatabaseName(TEST_DATABASE_URL, "postgres"), { max: 1 });
+  try {
+    await admin.unsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+  } finally {
+    await admin.end();
+  }
+}
+
+function withDatabaseName(databaseUrl: string, databaseName: string): string {
+  const parsed = new URL(databaseUrl);
+  parsed.pathname = `/${databaseName}`;
+  return parsed.toString();
 }
 
 /**

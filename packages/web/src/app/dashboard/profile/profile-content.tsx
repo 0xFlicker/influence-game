@@ -98,7 +98,10 @@ export function ProfileContent() {
   const [nameInput, setNameInput] = useState("");
   const [handleInput, setHandleInput] = useState("");
   const [handleDirty, setHandleDirty] = useState(false);
+  const nameInputRef = useRef("");
   const handleDirtyRef = useRef(false);
+  const savingRef = useRef(false);
+  const suggestionEpochRef = useRef(0);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [handleSuggestion, setHandleSuggestion] = useState<string | null>(null);
@@ -115,6 +118,7 @@ export function ProfileContent() {
         .then((p) => {
           setProfile(p);
           setNameInput(p.displayName === "Anonymous" ? "" : p.displayName);
+          nameInputRef.current = p.displayName === "Anonymous" ? "" : p.displayName;
           setHandleInput(p.handle ?? (p.displayName === "Anonymous" ? "" : derivePublicHandle(p.displayName)));
           setHandleDirty(p.handle !== null);
           handleDirtyRef.current = p.handle !== null;
@@ -136,12 +140,16 @@ export function ProfileContent() {
   }, []);
 
   async function handleSave() {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    suggestionEpochRef.current += 1;
     setSaving(true);
     setSaveError(null);
     try {
       const updated = await updateProfile(nameInput, handleInput);
       setProfile(updated);
       setNameInput(updated.displayName);
+      nameInputRef.current = updated.displayName;
       setHandleInput(updated.handle ?? "");
       setHandleDirty(updated.handle !== null);
       handleDirtyRef.current = updated.handle !== null;
@@ -162,6 +170,7 @@ export function ProfileContent() {
         err instanceof Error ? err.message : "Failed to update profile",
       );
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -209,19 +218,29 @@ export function ProfileContent() {
               <span className="influence-copy-muted text-xs">Display name</span>
               <input
                 type="text"
+                disabled={saving}
                 value={nameInput}
                 onChange={(event) => {
                   const nextName = event.target.value;
                   setNameInput(nextName);
+                  nameInputRef.current = nextName;
                   if (!handleDirtyRef.current) setHandleInput(derivePublicHandle(nextName));
                   setSaveError(null);
                   setHandleSuggestion(null);
                 }}
                 onBlur={() => {
                   if (handleDirtyRef.current || nameInput.trim().length === 0) return;
-                  void suggestProfileHandle(nameInput)
+                  const requestedDisplayName = nameInput;
+                  const suggestionEpoch = ++suggestionEpochRef.current;
+                  void suggestProfileHandle(requestedDisplayName)
                     .then((suggestion) => {
-                      if (!handleDirtyRef.current) setHandleInput(suggestion);
+                      if (
+                        suggestionEpoch === suggestionEpochRef.current
+                        && !handleDirtyRef.current
+                        && nameInputRef.current === requestedDisplayName
+                      ) {
+                        setHandleInput(suggestion);
+                      }
                     })
                     .catch(() => {});
                 }}
@@ -236,6 +255,7 @@ export function ProfileContent() {
                 <span className="influence-copy-muted">@</span>
                 <input
                   type="text"
+                  disabled={saving}
                   value={handleInput}
                   onChange={(event) => {
                     setHandleInput(event.target.value);
@@ -269,8 +289,13 @@ export function ProfileContent() {
               <button
                 type="button"
                 onClick={() => {
+                  suggestionEpochRef.current += 1;
                   setEditing(false);
-                  setNameInput(profile.displayName === "Anonymous" ? "" : profile.displayName);
+                  const displayName = profile.displayName === "Anonymous"
+                    ? ""
+                    : profile.displayName;
+                  setNameInput(displayName);
+                  nameInputRef.current = displayName;
                   setHandleInput(
                     profile.handle
                       ?? (profile.displayName === "Anonymous"
@@ -282,6 +307,7 @@ export function ProfileContent() {
                   setSaveError(null);
                   setHandleSuggestion(null);
                 }}
+                disabled={saving}
                 className="influence-copy hover:text-text-primary text-sm transition-colors"
               >
                 Cancel

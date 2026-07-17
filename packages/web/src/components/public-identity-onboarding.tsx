@@ -39,6 +39,8 @@ export function PublicIdentityOnboarding({
   const dialogRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<HTMLInputElement>(null);
   const previousFocusRef = useRef<HTMLElement | null>(null);
+  const savingRef = useRef(false);
+  const suggestionEpochRef = useRef(0);
   const canDismiss = identity.publicIdentityOnboarding.state === "deferrable";
 
   useEffect(() => {
@@ -81,17 +83,32 @@ export function PublicIdentityOnboarding({
   }, [canDismiss, dismiss]);
 
   async function refreshDerivedSuggestion() {
-    if (form.handleDirty || form.displayName.trim().length === 0) return;
+    if (
+      savingRef.current
+      || form.handleDirty
+      || form.displayName.trim().length === 0
+    ) {
+      return;
+    }
+    const requestedDisplayName = form.displayName;
+    const suggestionEpoch = ++suggestionEpochRef.current;
     try {
-      const suggestion = await suggestProfileHandle(form.displayName);
-      setForm((current) => applyAvailableIdentitySuggestion(current, suggestion));
+      const suggestion = await suggestProfileHandle(requestedDisplayName);
+      if (suggestionEpoch !== suggestionEpochRef.current) return;
+      setForm((current) => applyAvailableIdentitySuggestion(
+        current,
+        requestedDisplayName,
+        suggestion,
+      ));
     } catch {
       // The final atomic write remains authoritative. Advisory failure is silent.
     }
   }
 
   async function save() {
-    if (form.status === "saving") return;
+    if (savingRef.current) return;
+    savingRef.current = true;
+    suggestionEpochRef.current += 1;
     setForm((current) => markIdentitySaving(current));
     try {
       const updated = await updateProfile(form.displayName, form.handle);
@@ -113,6 +130,8 @@ export function PublicIdentityOnboarding({
         ));
       }
       requestAnimationFrame(() => handleRef.current?.focus());
+    } finally {
+      savingRef.current = false;
     }
   }
 
@@ -147,6 +166,7 @@ export function PublicIdentityOnboarding({
             <input
               autoFocus
               type="text"
+              disabled={form.status === "saving"}
               value={form.displayName}
               maxLength={50}
               autoComplete="nickname"
@@ -166,6 +186,7 @@ export function PublicIdentityOnboarding({
               <input
                 ref={handleRef}
                 type="text"
+                disabled={form.status === "saving"}
                 value={form.handle}
                 maxLength={30}
                 autoCapitalize="none"
@@ -197,6 +218,7 @@ export function PublicIdentityOnboarding({
                   {" "}
                   <button
                     type="button"
+                    disabled={form.status === "saving"}
                     className="influence-link"
                     onClick={() => {
                       setForm((current) => changeIdentityHandle(current, form.collisionSuggestion!));
