@@ -65,6 +65,12 @@ import {
   allocateImportedAgentProfileName,
   lockAndLoadImportedAgentProfileNameNamespace,
 } from "../services/imported-agent-profile-names.js";
+import {
+  userDisplayNameForEmailPolicy,
+  userDisplayNameContainsEmailProjection,
+  userEmailAccessProjection,
+  userEmailProjection,
+} from "../services/user-email-policy.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -281,21 +287,41 @@ export function createAdminRoutes(
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/users", requireRoleManagement, async (c) => {
-    const allUsers = await db.select().from(schema.users);
+    const requester = c.get("user");
+    const emailAccessInput = {
+      requesterUserId: requester.id,
+      requesterWalletAddress: requester.walletAddress,
+    };
+    const allUsers = await db.select({
+      id: schema.users.id,
+      walletAddress: schema.users.walletAddress,
+      email: userEmailProjection(emailAccessInput),
+      canReadEmail: userEmailAccessProjection(emailAccessInput),
+      displayNameContainsEmail: userDisplayNameContainsEmailProjection(),
+      displayName: schema.users.displayName,
+      createdAt: schema.users.createdAt,
+    }).from(schema.users);
 
     const usersWithRoles = await Promise.all(allUsers.map(async (user) => {
+      const {
+        canReadEmail,
+        displayNameContainsEmail,
+        ...serializedUser
+      } = user;
       const resolved = user.walletAddress
         ? await getPermissionsForAddress(db, user.walletAddress)
         : { roles: [], permissions: [] };
 
       return {
-        id: user.id,
-        walletAddress: user.walletAddress,
-        email: user.email,
-        displayName: user.displayName,
+        ...serializedUser,
+        displayName: userDisplayNameForEmailPolicy({
+          canReadEmail,
+          displayNameContainsEmail,
+          displayName: user.displayName,
+          walletAddress: user.walletAddress,
+        }),
         roles: resolved.roles,
         permissions: resolved.permissions,
-        createdAt: user.createdAt,
       };
     }));
 
@@ -307,6 +333,11 @@ export function createAdminRoutes(
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/agents", requireAdminRead, async (c) => {
+    const requester = c.get("user");
+    const emailAccessInput = {
+      requesterUserId: requester.id,
+      requesterWalletAddress: requester.walletAddress,
+    };
     const profiles = await db
       .select({
         id: schema.agentProfiles.id,
@@ -323,12 +354,29 @@ export function createAdminRoutes(
         updatedAt: schema.agentProfiles.updatedAt,
         ownerWallet: schema.users.walletAddress,
         ownerDisplayName: schema.users.displayName,
-        ownerEmail: schema.users.email,
+        ownerEmail: userEmailProjection(emailAccessInput),
+        canReadOwnerEmail: userEmailAccessProjection(emailAccessInput),
+        ownerDisplayNameContainsEmail: userDisplayNameContainsEmailProjection(),
       })
       .from(schema.agentProfiles)
       .innerJoin(schema.users, sql`${schema.agentProfiles.userId} = ${schema.users.id}`);
 
-    return c.json(profiles);
+    return c.json(profiles.map((profile) => {
+      const {
+        canReadOwnerEmail,
+        ownerDisplayNameContainsEmail,
+        ...serializedProfile
+      } = profile;
+      return {
+        ...serializedProfile,
+        ownerDisplayName: userDisplayNameForEmailPolicy({
+          canReadEmail: canReadOwnerEmail,
+          displayNameContainsEmail: ownerDisplayNameContainsEmail,
+          displayName: profile.ownerDisplayName,
+          walletAddress: profile.ownerWallet,
+        }),
+      };
+    }));
   });
 
   app.get("/api/admin/free-queue", requireAdminRead, async (c) => {
@@ -777,6 +825,11 @@ export function createAdminRoutes(
   // -------------------------------------------------------------------------
 
   app.get("/api/admin/invite-codes", requireAdminRead, async (c) => {
+    const requester = c.get("user");
+    const emailAccessInput = {
+      requesterUserId: requester.id,
+      requesterWalletAddress: requester.walletAddress,
+    };
     const userId = c.req.query("userId");
     const status = c.req.query("status"); // "available" | "used" | undefined (all)
 
@@ -789,6 +842,9 @@ export function createAdminRoutes(
         usedAt: schema.inviteCodes.usedAt,
         createdAt: schema.inviteCodes.createdAt,
         ownerDisplayName: schema.users.displayName,
+        ownerWalletAddress: schema.users.walletAddress,
+        canReadOwnerEmail: userEmailAccessProjection(emailAccessInput),
+        ownerDisplayNameContainsEmail: userDisplayNameContainsEmailProjection(),
       })
       .from(schema.inviteCodes)
       .innerJoin(schema.users, eq(schema.inviteCodes.ownerId, schema.users.id))
@@ -801,7 +857,23 @@ export function createAdminRoutes(
     if (conditions.length > 0) query = query.where(and(...conditions));
 
     const rows = await query;
-    return c.json(rows);
+    return c.json(rows.map((row) => {
+      const {
+        canReadOwnerEmail,
+        ownerDisplayNameContainsEmail,
+        ownerWalletAddress,
+        ...serializedRow
+      } = row;
+      return {
+        ...serializedRow,
+        ownerDisplayName: userDisplayNameForEmailPolicy({
+          canReadEmail: canReadOwnerEmail,
+          displayNameContainsEmail: ownerDisplayNameContainsEmail,
+          displayName: row.ownerDisplayName,
+          walletAddress: ownerWalletAddress,
+        }),
+      };
+    }));
   });
 
   // -------------------------------------------------------------------------
