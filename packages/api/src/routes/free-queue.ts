@@ -219,9 +219,9 @@ export function createFreeQueueRoutes(
       .orderBy(desc(schema.users.rating))
       .limit(100);
 
-    const identityMap = await getPublicPlayerIdentityMap(db, rows.map((row) => row.id));
-    const leaderboard = rows
-      .filter((r) => r.gamesPlayed > 0)
+    const playedRows = rows.filter((row) => row.gamesPlayed > 0);
+    const identityMap = await getPublicPlayerIdentityMap(db, playedRows.map((row) => row.id));
+    const leaderboard = playedRows
       .map((r, i) => ({
         rank: i + 1,
         player: identityMap.get(r.id) ?? null,

@@ -63,7 +63,6 @@ export function AgentPicker({
       <div className="flex flex-wrap gap-2">
         {agents.map((agent) => {
           const isSelected = selectedId === agent.id;
-          const persona = PERSONAS.find((option) => option.key === agent.personaKey);
           return (
             <div
               key={agent.id}
@@ -75,7 +74,6 @@ export function AgentPicker({
               <AgentAvatarPreview
                 avatarUrl={agent.avatarUrl}
                 personaKey={agent.personaKey}
-                role={persona?.name}
                 name={agent.name}
                 gamesPlayed={agent.gamesPlayed}
                 gamesWon={agent.gamesWon}

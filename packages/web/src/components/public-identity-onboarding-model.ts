@@ -113,14 +113,9 @@ export function cancelIdentityChanges(state: PublicIdentityFormState): PublicIde
 }
 
 export function completeIdentitySave(
-  state: PublicIdentityFormState,
   identity: { displayName: string; handle: string },
 ): PublicIdentityFormState {
-  return {
-    ...createIdentityFormState(identity),
-    persistedDisplayName: identity.displayName,
-    persistedHandle: identity.handle,
-  };
+  return createIdentityFormState(identity);
 }
 
 export type IdentityPromptDecision =

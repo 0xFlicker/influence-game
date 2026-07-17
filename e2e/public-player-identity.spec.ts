@@ -45,7 +45,7 @@ test.describe("local public player identity", () => {
   });
 
   test("uses ordinary sign-in copy without making Privy an onboarding step", async ({ page }) => {
-    await page.goto(requireWebUrl(servers), { waitUntil: "domcontentloaded" });
+    await page.goto(servers.webUrl, { waitUntil: "domcontentloaded" });
 
     await expect(page.getByRole("button", { name: "Sign in", exact: true }))
       .toBeVisible();
@@ -56,7 +56,7 @@ test.describe("local public player identity", () => {
   test("renders the same anonymous public profile by handle and UUID without private data", async ({
     page,
   }) => {
-    const webUrl = requireWebUrl(servers);
+    const webUrl = servers.webUrl;
     const handleResponse = await page.goto(
       `${webUrl}/profile/${fixture.handle}`,
       { waitUntil: "networkidle", timeout: 60_000 },
@@ -101,7 +101,7 @@ test.describe("local public player identity", () => {
     page,
   }) => {
     await page.goto(
-      `${requireWebUrl(servers)}/profile/${fixture.handle}`,
+      `${servers.webUrl}/profile/${fixture.handle}`,
       { waitUntil: "networkidle", timeout: 60_000 },
     );
     const trigger = page.getByRole("button", {
@@ -132,7 +132,7 @@ test.describe("local public player identity", () => {
     const page = await context.newPage();
     try {
       await page.goto(
-        `${requireWebUrl(servers)}/profile/${fixture.handle}`,
+        `${servers.webUrl}/profile/${fixture.handle}`,
         { waitUntil: "networkidle", timeout: 60_000 },
       );
       const trigger = page.getByRole("button", {
@@ -159,7 +159,7 @@ test.describe("local public player identity", () => {
     const context = await authenticatedContext(browser, fixture.requiredJwt);
     const page = await context.newPage();
     try {
-      await page.goto(`${requireWebUrl(servers)}/dashboard`, {
+      await page.goto(`${servers.webUrl}/dashboard`, {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
@@ -184,7 +184,7 @@ test.describe("local public player identity", () => {
     const firstContext = await authenticatedContext(browser, fixture.deferrableJwt);
     const firstPage = await firstContext.newPage();
     try {
-      await firstPage.goto(`${requireWebUrl(servers)}/dashboard/profile`, {
+      await firstPage.goto(`${servers.webUrl}/dashboard/profile`, {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
@@ -203,7 +203,7 @@ test.describe("local public player identity", () => {
     const freshContext = await authenticatedContext(browser, fixture.deferrableJwt);
     const freshPage = await freshContext.newPage();
     try {
-      await freshPage.goto(`${requireWebUrl(servers)}/dashboard/profile`, {
+      await freshPage.goto(`${servers.webUrl}/dashboard/profile`, {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
@@ -222,7 +222,7 @@ test.describe("local public player identity", () => {
     const collisionContext = await authenticatedContext(browser, fixture.collisionJwt);
     const collisionPage = await collisionContext.newPage();
     try {
-      await collisionPage.goto(`${requireWebUrl(servers)}/dashboard`, {
+      await collisionPage.goto(`${servers.webUrl}/dashboard`, {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
@@ -247,7 +247,7 @@ test.describe("local public player identity", () => {
     const completeContext = await authenticatedContext(browser, fixture.completeJwt);
     const completePage = await completeContext.newPage();
     try {
-      await completePage.goto(`${requireWebUrl(servers)}/dashboard/profile`, {
+      await completePage.goto(`${servers.webUrl}/dashboard/profile`, {
         waitUntil: "networkidle",
         timeout: 60_000,
       });
@@ -270,10 +270,6 @@ async function authenticatedContext(
   return context;
 }
 
-function requireWebUrl(handles: LocalIdentityHarness): string {
-  return handles.webUrl;
-}
-
 async function startLocalIdentityHarness(): Promise<{
   process: ChildProcessWithoutNullStreams;
   harness: LocalIdentityHarness;
@@ -287,9 +283,11 @@ async function startLocalIdentityHarness(): Promise<{
       stdio: ["pipe", "pipe", "pipe"],
     },
   );
-  const stderr: string[] = [];
+  let stderrTail = "";
   child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => stderr.push(chunk));
+  child.stderr.on("data", (chunk: string) => {
+    stderrTail = `${stderrTail}${chunk}`.slice(-16_384);
+  });
 
   const lines = createInterface({ input: child.stdout });
   const timeout = setTimeout(() => {
@@ -310,7 +308,7 @@ async function startLocalIdentityHarness(): Promise<{
   }
 
   throw new Error(
-    `Local identity harness exited before it was ready.\n${stderr.join("")}`.trim(),
+    `Local identity harness exited before it was ready.\n${stderrTail}`.trim(),
   );
 }
 

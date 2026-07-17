@@ -164,9 +164,9 @@ export function createProfileRoutes(db: DrizzleDB) {
       .limit(100);
 
     // Only include users who have played at least one game
-    const identityMap = await getPublicPlayerIdentityMap(db, rows.map((row) => row.id));
-    const leaderboard = rows
-      .filter((r) => r.gamesPlayed > 0)
+    const playedRows = rows.filter((row) => row.gamesPlayed > 0);
+    const identityMap = await getPublicPlayerIdentityMap(db, playedRows.map((row) => row.id));
+    const leaderboard = playedRows
       .map((r, i) => ({
         rank: i + 1,
         player: identityMap.get(r.id) ?? null,

@@ -1,7 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { isEmailLike } from "../lib/display-name.js";
+import { getPublicDisplayName } from "../lib/display-name.js";
 import {
   isUuidShapedPublicIdentity,
   normalizePublicPlayerHandle,
@@ -155,23 +155,8 @@ export function publicPlayerDisplayName(input: {
   email: string | null | undefined;
   walletAddress: string | null | undefined;
 }): string {
-  const displayName = input.displayName?.trim();
-  if (
-    !displayName
-    || isEmailLike(displayName)
-    || isWalletAddress(displayName)
-    || isWalletPlaceholder(displayName)
-  ) {
-    return "Anonymous";
-  }
-
-  const normalized = displayName.toLowerCase();
-  if (
-    normalized === "player"
-    || normalized === input.email?.trim().toLowerCase()
-    || normalized === input.walletAddress?.trim().toLowerCase()
-    || normalized === walletPlaceholder(input.walletAddress)?.toLowerCase()
-  ) {
+  const displayName = getPublicDisplayName(input);
+  if (isWalletAddress(displayName) || isWalletPlaceholder(displayName)) {
     return "Anonymous";
   }
   return displayName;
@@ -188,13 +173,6 @@ export function publicPlayerLinkIdentity(
     handle: input.handle,
     displayName,
   };
-}
-
-function walletPlaceholder(
-  walletAddress: string | null | undefined,
-): string | null {
-  if (!walletAddress) return null;
-  return `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
 }
 
 function isWalletAddress(value: string): boolean {

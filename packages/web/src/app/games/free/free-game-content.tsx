@@ -20,7 +20,7 @@ import {
   type GameStatus,
 } from "@/lib/api";
 import { useE2EAuth } from "@/app/providers";
-import { PERSONAS } from "@/lib/personas";
+import { getPersonaLabel } from "@/lib/personas";
 import { ACTIVE_GAME } from "@/lib/product-identity";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import { PlayerProfileLink } from "@/components/player-profile-link";
@@ -224,7 +224,7 @@ export function QueueSection({
       </p>
       <div className="grid gap-2 mb-4">
         {agents.map((agent) => {
-          const persona = PERSONAS.find((p) => p.key === agent.personaKey);
+          const personaLabel = getPersonaLabel(agent.personaKey);
           const isSelected = selectedAgentId === agent.id;
           return (
             <div
@@ -235,7 +235,6 @@ export function QueueSection({
               <AgentAvatarPreview
                 avatarUrl={agent.avatarUrl}
                 personaKey={agent.personaKey}
-                role={persona?.name}
                 name={agent.name}
                 gamesPlayed={agent.gamesPlayed}
                 gamesWon={agent.gamesWon}
@@ -253,7 +252,7 @@ export function QueueSection({
                     {agent.name}
                   </p>
                   <p className="influence-copy-muted text-xs truncate">
-                    {persona?.name ?? agent.personaKey ?? "Agent"}
+                    {personaLabel}
                   </p>
                 </div>
                 {isSelected && (

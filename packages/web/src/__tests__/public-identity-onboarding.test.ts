@@ -78,7 +78,7 @@ describe("public identity onboarding model", () => {
       status: "idle",
     });
 
-    const completed = completeIdentitySave(failed, {
+    const completed = completeIdentitySave({
       displayName: "Ox Flick",
       handle: "oxflick",
     });

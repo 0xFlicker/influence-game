@@ -13,6 +13,7 @@ import {
   type InviteCodesResponse,
 } from "@/lib/api";
 import { derivePublicHandle } from "@/components/public-identity-onboarding-model";
+import { playerProfileHref } from "@/lib/player-profile-links";
 
 export function ProfileIdentitySummary({
   profile,
@@ -41,7 +42,7 @@ export function ProfileIdentitySummary({
       </button>
       {profile.publicIdentityOnboarding.state === "complete" && (
         <Link
-          href={`/profile/${profile.handle ?? profile.publicId}`}
+          href={playerProfileHref(profile)}
           className="influence-link min-h-11 px-3 py-2 text-sm"
         >
           View public profile

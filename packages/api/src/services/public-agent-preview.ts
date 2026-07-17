@@ -3,9 +3,9 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
   getUserSelectableAgentArchetype,
-  isUserSelectableAgentArchetype,
   type AgentArchetypeKey,
 } from "./agent-archetypes.js";
+import { isImportedSyntheticPlayer } from "./public-player-identity.js";
 
 const PUBLIC_RECENT_RESULT_LIMIT = 5;
 type PublicAgentPreviewDB = Pick<DrizzleDB, "select">;
@@ -67,7 +67,7 @@ export async function getPublicAgentPreviewsByProfileIds(
     .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
     .where(inArray(schema.agentProfiles.id, uniqueProfileIds));
   const publicProfiles = rows.filter(
-    (profile) => !profile.ownerWalletAddress?.startsWith("imported-"),
+    (profile) => !isImportedSyntheticPlayer(profile.ownerWalletAddress),
   );
   const aggregateByAgent = await getPublicAgentCompetitionAggregates(
     db,
@@ -101,35 +101,34 @@ export async function getPublicPlayerCompetitionFacts(
     return { agents: [], recentResults: [] };
   }
 
-  const aggregateByAgent = await getPublicAgentCompetitionAggregates(
-    db,
-    profiles.map((profile) => profile.id),
-    internalUserId,
-  );
+  const profileIds = profiles.map((profile) => profile.id);
   const publicReceiptFilter = and(
     eq(schema.competitionReceipts.ownerId, internalUserId),
-    inArray(schema.competitionReceipts.agentProfileId, profiles.map((profile) => profile.id)),
+    inArray(schema.competitionReceipts.agentProfileId, profileIds),
     eq(schema.competitionReceipts.eligibilityStatus, "eligible"),
     eq(schema.games.status, "completed"),
     eq(schema.games.trackType, "free"),
     isNull(schema.games.hiddenAt),
   );
 
-  const recentResults = await db.select({
-    gameSlug: schema.games.slug,
-    agentName: schema.competitionReceipts.agentNameSnapshot,
-    placement: schema.competitionReceipts.placement,
-    lobbySize: schema.competitionReceipts.lobbySize,
-    totalPoints: schema.competitionReceipts.totalPoints,
-    earnedAt: schema.competitionReceipts.earnedAt,
-  }).from(schema.competitionReceipts)
-    .innerJoin(schema.games, eq(schema.competitionReceipts.gameId, schema.games.id))
-    .where(publicReceiptFilter)
-    .orderBy(
-      desc(schema.competitionReceipts.earnedAt),
-      desc(schema.competitionReceipts.id),
-    )
-    .limit(PUBLIC_RECENT_RESULT_LIMIT);
+  const [aggregateByAgent, recentResults] = await Promise.all([
+    getPublicAgentCompetitionAggregates(db, profileIds, internalUserId),
+    db.select({
+      gameSlug: schema.games.slug,
+      agentName: schema.competitionReceipts.agentNameSnapshot,
+      placement: schema.competitionReceipts.placement,
+      lobbySize: schema.competitionReceipts.lobbySize,
+      totalPoints: schema.competitionReceipts.totalPoints,
+      earnedAt: schema.competitionReceipts.earnedAt,
+    }).from(schema.competitionReceipts)
+      .innerJoin(schema.games, eq(schema.competitionReceipts.gameId, schema.games.id))
+      .where(publicReceiptFilter)
+      .orderBy(
+        desc(schema.competitionReceipts.earnedAt),
+        desc(schema.competitionReceipts.id),
+      )
+      .limit(PUBLIC_RECENT_RESULT_LIMIT),
+  ]);
 
   return {
     agents: profiles.map((profile) => (
@@ -204,9 +203,11 @@ function buildPublicAgentPreview(
 }
 
 function publicRole(personaKey: string | null): PublicAgentPreview["role"] {
-  if (!isUserSelectableAgentArchetype(personaKey)) return null;
+  if (!personaKey) return null;
+  const archetype = getUserSelectableAgentArchetype(personaKey);
+  if (!archetype) return null;
   return {
-    key: personaKey,
-    label: getUserSelectableAgentArchetype(personaKey)!.label,
+    key: archetype.key,
+    label: archetype.label,
   };
 }

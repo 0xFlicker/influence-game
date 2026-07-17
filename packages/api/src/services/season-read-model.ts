@@ -231,9 +231,10 @@ export async function getPublicGameCompetitionReceipts(
     .where(or(eq(schema.games.id, gameIdOrSlug), eq(schema.games.slug, gameIdOrSlug))).limit(1))[0];
   if (!game || game.seasonId !== season.id) return null;
   const seasonReceipts = await loadPublicReceiptRows(db, season.id);
+  const gameReceipts = seasonReceipts.filter((receipt) => receipt.gameId === game.id);
   const identities = await getPublicPlayerIdentityMap(
     db,
-    seasonReceipts.map((receipt) => receipt.ownerId),
+    gameReceipts.map((receipt) => receipt.ownerId),
   );
   const seasonTotalPointsByAgent = new Map<string, number>();
   for (const receipt of seasonReceipts) {
@@ -243,9 +244,7 @@ export async function getPublicGameCompetitionReceipts(
       (seasonTotalPointsByAgent.get(receipt.agentProfileId) ?? 0) + receipt.totalPoints,
     );
   }
-  const receipts = seasonReceipts
-    .filter((receipt) => receipt.gameId === game.id)
-    .map((receipt) => ({
+  const receipts = gameReceipts.map((receipt) => ({
       ...publicReceipt(receipt, identities.get(receipt.ownerId) ?? null),
       seasonTotalPoints: seasonTotalPointsByAgent.get(receipt.agentProfileId) ?? 0,
     }));

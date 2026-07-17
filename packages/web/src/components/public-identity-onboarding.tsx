@@ -95,7 +95,7 @@ export function PublicIdentityOnboarding({
     setForm((current) => markIdentitySaving(current));
     try {
       const updated = await updateProfile(form.displayName, form.handle);
-      setForm((current) => completeIdentitySave(current, {
+      setForm(completeIdentitySave({
         displayName: updated.displayName,
         handle: updated.handle ?? form.handle,
       }));
