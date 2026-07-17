@@ -866,8 +866,9 @@ describe("Game REST API", () => {
       const body = (await res.json()) as {
         currentRound: number;
         currentPhase: string;
-        players: Array<{ id: string; status: string }>;
+        players: Array<{ id: string; status: string; currentAgent: unknown }>;
         watchState: {
+          schemaVersion: number;
           source: string;
           currentRound: number;
           currentPhase: string;
@@ -879,11 +880,50 @@ describe("Game REST API", () => {
       expect(body.currentPhase).toBe("LOBBY");
       expect(body.players.filter((player) => player.status === "eliminated")).toHaveLength(1);
       expect(body.watchState).toMatchObject({
+        schemaVersion: 4,
         source: "durable_projection",
         currentRound: 2,
         currentPhase: "LOBBY",
         counts: { alivePlayers: 3, eliminatedPlayers: 1 },
       });
+      expect(body.players.every((player) => player.currentAgent === null)).toBe(true);
+      const serialized = JSON.stringify(body);
+      for (const forbidden of [
+        "\"agentProfileId\"",
+        "\"agentRevisionId\"",
+        "\"ownerId\"",
+        "\"userId\"",
+        "\"walletAddress\"",
+        "\"personality\"",
+        "\"strategyStyle\"",
+      ]) {
+        expect(serialized).not.toContain(forbidden);
+      }
+    });
+
+    test("returns schema v2 replay frames with the same public current-agent projection", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      const ownerEpoch = await insertOwner(db, id);
+      await appendGameEvents(db, {
+        gameId: id,
+        ownerEpoch,
+        events: createResolvedRoundCanonicalEventFixture(id),
+      });
+      await markGameCompleted(db, id);
+
+      const res = await app.request(`/api/games/${id}/replay-watch-frames`);
+      expect(res.status).toBe(200);
+      const frames = (await res.json()) as Array<{
+        schemaVersion: number;
+        players: Array<{ currentAgent: unknown }>;
+      }>;
+
+      expect(frames.length).toBeGreaterThan(0);
+      expect(frames.every((frame) => frame.schemaVersion === 2)).toBe(true);
+      expect(frames.every((frame) => (
+        frame.players.every((player) => player.currentAgent === null)
+      ))).toBe(true);
     });
 
     test("labels older completed games as best-available terminal watch state", async () => {

@@ -10,6 +10,8 @@ import { createDB } from "../db/index.js";
 import { runMigrations } from "../db/migrate.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import postgres from "postgres";
 
 // Use TEST_DATABASE_URL or hardcoded default — never fall back to DATABASE_URL
 const TEST_DATABASE_URL =
@@ -25,19 +27,51 @@ let migrated = false;
 
 // All Influence table names — truncate only these, not unrelated tables.
 const INFLUENCE_TABLES = [
+  "app_settings",
+  "invite_codes",
   "free_track_ratings",
   "free_queue_prompt_suppressions",
   "free_game_queue",
-  "agent_memories",
-  "transcripts",
-  "game_results",
-  "game_players",
-  "agent_profiles",
-  "games",
+  "mcp_oauth_refresh_tokens",
+  "mcp_oauth_access_tokens",
+  "mcp_oauth_authorization_codes",
+  "mcp_oauth_clients",
   "address_roles",
   "role_permissions",
   "roles",
   "permissions",
+  "agent_memories",
+  "game_cognitive_artifact_reads",
+  "game_cognitive_artifacts",
+  "game_postgame_media_audit_events",
+  "game_postgame_media",
+  "game_cost_accounting_audit_events",
+  "game_cost_reconciliations",
+  "game_cost_rollups",
+  "game_provider_spend_entries",
+  "game_evidence_manifest_reads",
+  "game_evidence_manifests",
+  "game_checkpoints",
+  "game_watch_state_summaries",
+  "game_completion_settlement_attempts",
+  "game_completion_settlements",
+  "game_events",
+  "game_run_owners",
+  "season_honors",
+  "competition_receipt_evidence",
+  "competition_receipts",
+  "competition_rating_events",
+  "competition_rating_snapshots",
+  "agent_competition_ratings",
+  "transcripts",
+  "game_results",
+  "game_players",
+  "avatar_change_events",
+  "avatar_generation_requests",
+  "agent_revisions",
+  "agent_profiles",
+  "games",
+  "seasons",
   "users",
 ];
 
@@ -64,6 +98,51 @@ export async function createTestDb(): Promise<TestDB> {
   await seedRBAC(db);
 
   return { db, databaseUrl: TEST_DATABASE_URL };
+}
+
+/**
+ * Create a per-run PostgreSQL database for browser harnesses that may execute
+ * beside the DB suite. The shared influence_test database is intentionally not
+ * touched.
+ */
+export async function createIsolatedTestDb(): Promise<TestDB> {
+  const databaseName = `influence_e2e_${process.pid}_${randomUUID().replaceAll("-", "")}`;
+  const databaseUrl = withDatabaseName(TEST_DATABASE_URL, databaseName);
+  const admin = postgres(withDatabaseName(TEST_DATABASE_URL, "postgres"), { max: 1 });
+  try {
+    await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
+  } finally {
+    await admin.end();
+  }
+
+  try {
+    await runMigrations(databaseUrl);
+    const db = createDB(databaseUrl);
+    await seedRBAC(db);
+    return { db, databaseUrl };
+  } catch (error) {
+    await destroyIsolatedTestDb(databaseUrl);
+    throw error;
+  }
+}
+
+export async function destroyIsolatedTestDb(databaseUrl: string): Promise<void> {
+  const databaseName = new URL(databaseUrl).pathname.slice(1);
+  if (!/^influence_e2e_[a-zA-Z0-9_]+$/.test(databaseName)) {
+    throw new Error(`Refusing to drop non-isolated test database: ${databaseName}`);
+  }
+  const admin = postgres(withDatabaseName(TEST_DATABASE_URL, "postgres"), { max: 1 });
+  try {
+    await admin.unsafe(`DROP DATABASE IF EXISTS "${databaseName}" WITH (FORCE)`);
+  } finally {
+    await admin.end();
+  }
+}
+
+function withDatabaseName(databaseUrl: string, databaseName: string): string {
+  const parsed = new URL(databaseUrl);
+  parsed.pathname = `/${databaseName}`;
+  return parsed.toString();
 }
 
 /**

@@ -359,6 +359,7 @@ export function createGameRoutes(
         ...(player.pressureStatus && { pressureStatus: player.pressureStatus }),
         ...(player.exposeScore !== undefined && { exposeScore: player.exposeScore }),
         ...(player.avatarUrl && { avatarUrl: player.avatarUrl }),
+        currentAgent: player.currentAgent,
       })),
       modelTier: config.modelTier ?? "budget",
       modelLabel: modelLabelFromConfig(config),

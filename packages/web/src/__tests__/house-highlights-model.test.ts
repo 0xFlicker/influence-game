@@ -7,7 +7,7 @@ import {
 } from "./house-highlights-fixtures";
 
 describe("house highlights model", () => {
-  it("maps a main House Cut into fact-forward scene cards", () => {
+  it("maps a main House Cut into fact-forward scene cards with distinct share URLs", () => {
     const model = buildHouseHighlightsViewModel(mainCutFixture(), "edge-smoke-dusk");
 
     expect(model.badge).toBe("House Cut");
@@ -21,13 +21,19 @@ describe("house highlights model", () => {
         primaryAgents: [{
           id: "ember",
           name: "Ember",
-          initials: "E",
+          persona: "deceptive",
           avatarUrl: "https://cdn.example.test/avatars/ember.png",
+          currentAgent: {
+            name: "Ember Prime",
+            avatarUrl: "https://cdn.example.test/avatars/ember-current.png",
+            role: { key: "strategic", label: "Strategic" },
+            competition: { gamesPlayed: 5, wins: 2, winRate: 0.4 },
+          },
         }],
         secondaryAgents: [{
           id: "nova",
           name: "Nova",
-          initials: "N",
+          persona: "",
           avatarUrl: "https://cdn.example.test/avatars/nova.png",
         }],
         factLines: [
@@ -42,9 +48,17 @@ describe("house highlights model", () => {
         href: "/games/edge-smoke-dusk/results#round-1",
         surface: "results",
       },
+      shareHref:
+        "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
       anchorId: "scene-alliance-cut:1:ember",
       isSelected: false,
     });
+
+    expect(model.scenes.map((scene) => scene.shareHref)).toEqual([
+      "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
+      "/games/edge-smoke-dusk/highlights?scene=alliance-formation%3Asmoke-vote#scene-alliance-formation%3Asmoke-vote",
+      "/games/edge-smoke-dusk/highlights?scene=jury-judgment%3Afinal-vote#scene-jury-judgment%3Afinal-vote",
+    ]);
   });
 
   it("marks the selected scene from a share URL", () => {
@@ -162,7 +176,18 @@ export function mainCutFixture(): HouseHighlightsResponse {
             template: "hero_vote_action",
             title: "Ember was cut from inside the pact",
             eyebrow: "Betrayal vote",
-            primaryAgents: [{ id: "ember", name: "Ember", avatarUrl: "https://cdn.example.test/avatars/ember.png" }],
+            primaryAgents: [{
+              id: "ember",
+              name: "Ember",
+              persona: "deceptive",
+              avatarUrl: "https://cdn.example.test/avatars/ember.png",
+              currentAgent: {
+                name: "Ember Prime",
+                avatarUrl: "https://cdn.example.test/avatars/ember-current.png",
+                role: { key: "strategic", label: "Strategic" },
+                competition: { gamesPlayed: 5, wins: 2, winRate: 0.4 },
+              },
+            }],
             secondaryAgents: [{ id: "nova", name: "Nova", avatarUrl: "https://cdn.example.test/avatars/nova.png" }],
             backdrop: "abstract_vote_board",
             facts: [

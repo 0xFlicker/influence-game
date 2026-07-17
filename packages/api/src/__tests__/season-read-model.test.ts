@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import {
   exportOwnedSeasonReceipts,
   getOwnedAgentSeasonAnalysis,
   getProducerSeasonDiagnostics,
+  getCurrentPublicSeasonDashboard,
   getPublicSeasonDashboard,
   getPublicGameCompetitionReceipts,
 } from "../services/season-read-model.js";
@@ -19,6 +21,43 @@ import { createSeasonRoutes } from "../routes/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("season read model", () => {
+  test("selects the current season with active, closing, then final precedence", async () => {
+    const db = await setupTestDB();
+    const ownerId = await insertUser(db, "Season owner");
+    await db.insert(schema.seasons).values([
+      {
+        id: "final-season",
+        slug: "final-season",
+        name: "Final Season",
+        status: "final",
+        createdById: ownerId,
+        createdAt: "2026-07-01T00:00:00.000Z",
+      },
+      {
+        id: "closing-season",
+        slug: "closing-season",
+        name: "Closing Season",
+        status: "closing",
+        createdById: ownerId,
+        createdAt: "2026-07-02T00:00:00.000Z",
+      },
+      {
+        id: "active-season",
+        slug: "active-season",
+        name: "Active Season",
+        status: "active",
+        createdById: ownerId,
+        createdAt: "2026-07-03T00:00:00.000Z",
+      },
+    ]);
+
+    expect((await getCurrentPublicSeasonDashboard(db))?.season.slug).toBe("active-season");
+    await db.delete(schema.seasons).where(eq(schema.seasons.id, "active-season"));
+    expect((await getCurrentPublicSeasonDashboard(db))?.season.slug).toBe("closing-season");
+    await db.delete(schema.seasons).where(eq(schema.seasons.id, "closing-season"));
+    expect((await getCurrentPublicSeasonDashboard(db))?.season.slug).toBe("final-season");
+  });
+
   test("derives both crowns and exact Architect weights from eligible receipts", async () => {
     const fixture = await seedStandingsFixture();
     const dashboard = await getPublicSeasonDashboard(fixture.db, fixture.seasonSlug);
@@ -31,7 +70,7 @@ describe("season read model", () => {
       ["Delta", 6],
     ]);
     expect(dashboard?.architectStandings[0]).toMatchObject({
-      ownerId: fixture.ownerA,
+      owner: { displayName: "Architect A" },
       totalPointsHundredths: 15200,
       contributions: [
         { agentName: "Alpha", sourcePoints: 120, weightPercent: 100, weightedPointsHundredths: 12000 },
@@ -217,17 +256,24 @@ describe("season read model", () => {
     });
 
     expect(rest).not.toBeNull();
+    expect(rest!.schemaVersion).toBe(2);
     expect(mcp.agentStandings).toEqual(rest!.agentStandings);
     expect(mcp.architectStandings).toEqual(rest!.architectStandings);
     expect(rest!.honors?.agentChampion.agentId).toBe(rest!.agentStandings[0]!.agentId);
-    expect(rest!.honors?.architectChampion.ownerId).toBe(rest!.architectStandings[0]!.ownerId);
+    expect(rest!.honors?.architectChampion.owner?.publicId).toBe(
+      rest!.architectStandings[0]!.owner?.publicId,
+    );
     const jsonReceipts = (JSON.parse(jsonExport!.body) as {
       receipts: Array<{ agentId: string; totalPoints: number; lobbySize: number; fieldBonus: number }>;
     }).receipts;
     expect(new Set(jsonReceipts.map((receipt) =>
       `${receipt.lobbySize}:${receipt.fieldBonus > 0 ? "bonus" : "baseline"}`
     )).size).toBeGreaterThanOrEqual(4);
-    const alphaStanding = rest!.agentStandings.find((standing) => standing.ownerId === fixture.ownerA
+    const ownerAPublicId = (await fixture.db.select({
+      publicId: schema.users.publicId,
+    }).from(schema.users).where(eq(schema.users.id, fixture.ownerA)).limit(1))[0]!.publicId;
+    const alphaStanding = rest!.agentStandings.find((standing) =>
+      standing.owner?.publicId === ownerAPublicId
       && standing.agentId === fixture.alphaId)!;
     expect(alphaStanding.totalPoints).toBe(
       jsonReceipts.filter((receipt) => receipt.agentId === fixture.alphaId)
@@ -242,7 +288,10 @@ describe("season read model", () => {
     const publicGame = await getPublicGameCompetitionReceipts(
       fixture.db, fixture.seasonSlug, fixture.firstGameId,
     );
+    expect(publicGame?.receipts[0]?.owner?.publicId).toBe(ownerAPublicId);
     expect(JSON.stringify(publicGame)).not.toContain("revisionId");
+    expect(JSON.stringify(rest)).not.toContain('"ownerId"');
+    expect(JSON.stringify(publicGame)).not.toContain('"ownerId"');
     expect(JSON.parse(jsonExport!.body).receipts[0]).toHaveProperty("revisionId");
     assertNoHiddenCompetitionEvidence(rest);
     assertNoHiddenCompetitionEvidence(mcp);

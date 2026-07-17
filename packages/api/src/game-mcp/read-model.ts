@@ -58,6 +58,7 @@ import {
   getPublicSeasonDashboard,
   listPublicSeasons,
 } from "../services/season-read-model.js";
+import { getPublicPlayerProfile } from "../services/public-player-profile.js";
 
 const DEFAULT_EVENT_LIMIT = 50;
 const MAX_EVENT_LIMIT = 200;
@@ -306,6 +307,10 @@ export class ProductionGameMcpReadModel {
     return { schemaVersion: 1, seasons: await listPublicSeasons(this.db) };
   }
 
+  async readPlayerProfile(identifier: string) {
+    return getPublicPlayerProfile(this.db, identifier);
+  }
+
   async readSeason(seasonIdOrSlug: string) {
     const season = await getPublicSeasonDashboard(this.db, seasonIdOrSlug);
     if (!season) throw new Error("Season not found");
@@ -315,7 +320,7 @@ export class ProductionGameMcpReadModel {
   async readSeasonGameReceipts(seasonIdOrSlug: string, gameIdOrSlug: string) {
     const result = await getPublicGameCompetitionReceipts(this.db, seasonIdOrSlug, gameIdOrSlug);
     if (!result) throw new Error("Season or game not found");
-    return { schemaVersion: 1 as const, ...result };
+    return { schemaVersion: 2 as const, ...result };
   }
 
   async readOwnedAgentSeason(

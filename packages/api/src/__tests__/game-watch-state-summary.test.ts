@@ -28,6 +28,30 @@ describe("GameWatchState summaries", () => {
     db = await setupTestDB();
   });
 
+  test("uses schema v4 so persisted v3 summaries are rebuilt", async () => {
+    expect(GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION).toBe(4);
+    const gameId = await insertGame(db, {
+      slug: "summary-v3-rebuild",
+      status: "waiting",
+      config: gameConfig(),
+    });
+    await refreshGameWatchStateSummary(db, gameId, "test");
+    await db.update(schema.gameWatchStateSummaries)
+      .set({ schemaVersion: 3 })
+      .where(eq(schema.gameWatchStateSummaries.gameId, gameId));
+
+    expect((await getGameWatchStateSummaryReadsByGameIds(db, [gameId])).get(gameId)?.status)
+      .toBe("stale");
+    expect(await backfillGameWatchStateSummaries(db)).toMatchObject({
+      scanned: 1,
+      refreshed: 1,
+      skipped: 0,
+      failed: 0,
+    });
+    expect((await getGameWatchStateSummaryReadsByGameIds(db, [gameId])).get(gameId)?.status)
+      .toBe("current");
+  });
+
   test("refreshes a durable projection summary row", async () => {
     const gameId = await insertGame(db, {
       slug: "summary-live-projection",

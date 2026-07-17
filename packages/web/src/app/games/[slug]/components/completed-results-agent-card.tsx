@@ -1,5 +1,5 @@
 import type { GamePlayer } from "@/lib/api";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import type { CompletedResultsAgentCardModel } from "./completed-results-model";
 
 export function CompletedResultsAgentCard({
@@ -9,16 +9,16 @@ export function CompletedResultsAgentCard({
   card: CompletedResultsAgentCardModel;
   player?: GamePlayer;
 }) {
+  const previewPlayer = player ?? {
+    name: card.player.name,
+    persona: "",
+    currentAgent: null,
+  };
+
   return (
     <article className="rounded-lg border border-white/10 bg-white/[0.04] p-4">
       <div className="flex items-start gap-3">
-        <AgentAvatar
-          avatarUrl={player?.avatarUrl}
-          personaKey={player?.personaKey}
-          persona={player?.persona ?? ""}
-          name={card.player.name}
-          size="10"
-        />
+        <GamePlayerAvatarPreview player={previewPlayer} size="10" />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
             <h4 className="truncate text-sm font-semibold text-white">{card.player.name}</h4>

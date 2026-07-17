@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { TranscriptEntry, GamePlayer, PhaseKey } from "@/lib/api";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 
 /**
  * Single message item in the reveal stage — House messages are centered and
@@ -40,7 +40,7 @@ export function RevealMessageItem({
   return (
     <div className="flex gap-3 animate-[fadePure_0.4s_ease-out]">
       <div className="flex-shrink-0">
-        {player ? <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>}
+        {player ? <GamePlayerAvatarPreview player={player} size="8" /> : <span className="w-7 h-7 rounded-full bg-white/10 flex items-center justify-center text-sm">?</span>}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-xs font-semibold text-white/70 mb-0.5">{name}</p>

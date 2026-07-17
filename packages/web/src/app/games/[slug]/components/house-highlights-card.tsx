@@ -1,7 +1,10 @@
 import Image from "next/image";
-import { resolveApiUrl } from "@/lib/api";
+import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { houseHighlightBackdropClass } from "./house-highlights-backgrounds";
-import type { HouseHighlightsSceneModel } from "./house-highlights-model";
+import type {
+  HouseHighlightCardAgent,
+  HouseHighlightsSceneModel,
+} from "./house-highlights-model";
 
 export function HouseHighlightCard({
   scene,
@@ -84,7 +87,7 @@ function AgentBadge({
   agent,
   emphasis,
 }: {
-  agent: { id: string; name: string; initials: string; avatarUrl: string | null };
+  agent: HouseHighlightCardAgent;
   emphasis: "primary" | "secondary";
 }) {
   const tone =
@@ -94,25 +97,8 @@ function AgentBadge({
 
   return (
     <div className={`flex min-w-0 items-center gap-2 rounded-full border px-2.5 py-1.5 ${tone}`}>
-      {agent.avatarUrl ? (
-        <Image
-          src={resolveHighlightAvatarUrl(agent.avatarUrl)}
-          alt=""
-          width={36}
-          height={36}
-          className="size-9 shrink-0 rounded-full border border-white/18 object-cover"
-          unoptimized
-        />
-      ) : (
-        <div className="grid size-7 shrink-0 place-items-center rounded-full border border-white/18 bg-black/32 text-[11px] font-semibold">
-          {agent.initials}
-        </div>
-      )}
+      <GamePlayerAvatarPreview player={agent} size="10" />
       <div className="min-w-0 truncate text-sm font-semibold">{agent.name}</div>
     </div>
   );
-}
-
-function resolveHighlightAvatarUrl(avatarUrl: string): string {
-  return avatarUrl.startsWith("/api/") ? resolveApiUrl(avatarUrl) : avatarUrl;
 }

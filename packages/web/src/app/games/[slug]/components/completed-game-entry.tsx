@@ -8,6 +8,7 @@ import {
   type PublicPostgameMediaResponse,
 } from "@/lib/api";
 import { completedGameModeHref, gameHighlightsHref } from "@/lib/game-links";
+import { PlayerProfileLink } from "@/components/player-profile-link";
 import { PostgameMediaPlayer } from "./postgame-media-player";
 
 interface CompletedGameEntryProps {
@@ -146,6 +147,15 @@ export function SeasonReceiptSummary({ receipts }: { receipts: GameCompetitionRe
               <div className="text-sm font-medium text-text-primary">{receipt.agentName}</div>
               <div className="influence-copy-muted text-xs">
                 {receipt.placement === null ? "Not eligible" : `Place ${receipt.placement} of ${receipt.lobbySize}`}
+              </div>
+              <div className="influence-copy-muted mt-1 text-xs">
+                Architect:{" "}
+                <PlayerProfileLink
+                  player={receipt.owner}
+                  className="hover:text-phase hover:underline"
+                >
+                  {receipt.ownerName ?? "Anonymous architect"}
+                </PlayerProfileLink>
               </div>
             </div>
             <ReceiptFact

@@ -287,6 +287,7 @@ describe("local CLI session exchange", () => {
       id: "producer-cli-user",
       walletAddress,
       displayName: "Producer CLI",
+      createdAt: "2026-07-17T00:00:00.000Z",
     });
     await assignRoles(db, walletAddress, ["producer", "gamer"]);
     const mcpToken = await issueProducerMcpToken(db, {
@@ -304,12 +305,26 @@ describe("local CLI session exchange", () => {
       console.error("local CLI exchange failure", await res.clone().text());
     }
     expect(res.status).toBe(200);
-    const body = await res.json() as { token: string; user: { roles: string[]; permissions: string[] } };
+    const body = await res.json() as {
+      token: string;
+      user: {
+        publicId: string;
+        handle: string | null;
+        displayName: string;
+        publicIdentityOnboarding: { state: string };
+        roles: string[];
+        permissions: string[];
+      };
+    };
     expect(body.user.roles).toContain("producer");
     expect(body.user.roles).toContain("gamer");
     expect(body.user.permissions).toContain("create_game");
     expect(body.user.permissions).toContain("fill_game");
     expect(body.user.permissions).toContain("start_game");
+    expect(body.user.publicId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body.user.handle).toBeNull();
+    expect(body.user.displayName).toBe("Producer CLI");
+    expect(body.user.publicIdentityOnboarding.state).toBe("required");
     const session = await verifySessionToken(body.token);
     expect(session?.userId).toBe("producer-cli-user");
     expect(session?.permissions).toContain("create_game");
@@ -324,6 +339,101 @@ describe("local CLI session exchange", () => {
 
     expect(res.status).toBe(403);
     expect(await res.json()).toEqual({ error: "Local CLI session exchange is loopback-only" });
+  });
+});
+
+describe("authenticated public identity session projection", () => {
+  let db: DrizzleDB;
+
+  beforeEach(async () => {
+    db = await setupDB();
+  });
+
+  test("/auth/me returns the same safe identity enforcement fields as login", async () => {
+    await db.insert(schema.users).values({
+      id: "identity-session-user",
+      walletAddress: "0x1234567890abcdef1234567890abcdef12345678",
+      email: "identity@example.com",
+      displayName: "0x1234...5678",
+      createdAt: "2026-07-17T00:00:00.000Z",
+    });
+    const token = await createSessionToken("identity-session-user");
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db));
+
+    const res = await app.request("/api/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      publicId: string;
+      handle: string | null;
+      displayName: string;
+      publicIdentityOnboarding: { state: string };
+    };
+    expect(body.publicId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body.handle).toBeNull();
+    expect(body.displayName).toBe("Anonymous");
+    expect(body.publicIdentityOnboarding.state).toBe("required");
+  });
+
+  test("login returns the updated row and retains the resolved user projection", async () => {
+    await db.insert(schema.users).values({
+      id: "did:privy:existing-user",
+      email: "identity@example.com",
+      displayName: "identity@example.com",
+      createdAt: "2026-07-17T00:00:00.000Z",
+    });
+    const walletAddress = "0x1234567890abcdef1234567890abcdef12345678";
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      verifyPrivyToken: async () => "did:privy:existing-user",
+      getPrivyUser: async () => ({
+        id: "did:privy:existing-user",
+        createdAt: new Date(),
+        isGuest: false,
+        customMetadata: {},
+        linkedAccounts: [
+          {
+            type: "wallet",
+            address: walletAddress,
+            chainType: "ethereum",
+            verifiedAt: new Date(),
+            firstVerifiedAt: new Date(),
+            latestVerifiedAt: new Date(),
+          },
+          {
+            type: "email",
+            address: "identity@example.com",
+            verifiedAt: new Date(),
+            firstVerifiedAt: new Date(),
+            latestVerifiedAt: new Date(),
+          },
+        ],
+      }),
+      isInviteRequired: async () => false,
+    }));
+
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: "valid-test-token" }),
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as {
+      token: string;
+      user: {
+        walletAddress: string | null;
+        publicId: string;
+        displayName: string;
+        publicIdentityOnboarding: { state: string };
+      };
+    };
+    expect(body.token).toBeTruthy();
+    expect(body.user.walletAddress).toBe(walletAddress);
+    expect(body.user.publicId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(body.user.displayName).toBe("Anonymous");
+    expect(body.user.publicIdentityOnboarding.state).toBe("required");
   });
 });
 

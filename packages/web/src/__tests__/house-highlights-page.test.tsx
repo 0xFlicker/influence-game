@@ -88,13 +88,17 @@ describe("HouseHighlightsView", () => {
     expect(html).toContain("What happened");
     expect(html).toContain("Ember");
     expect(html).toContain("Nova");
-    expect(html).toContain('src="https://cdn.example.test/avatars/ember.png"');
+    expect(html).toContain('src="https://cdn.example.test/avatars/ember-current.png"');
+    expect(html).toContain('aria-label="View Ember portrait and stats"');
+    expect(html).not.toContain('aria-label="View Ember Prime portrait and stats"');
     expect(html).toContain("Nova voted against Ember in Round 1.");
     expect(html).toContain("Ember was eliminated in Round 1.");
     expect(html).toContain("/games/edge-smoke-dusk/results#round-1");
-    expect(html).toContain('aria-label="Share trailer"');
-    expect(html).toContain("Share trailer");
-    expect(html).not.toContain("Share scene");
+    expect(html).toContain(
+      'aria-label="Share this cut: Ember was cut from inside the pact"',
+    );
+    expect(html).toContain("Share this cut");
+    expect(html).not.toContain('aria-label="Share trailer"');
     expect(html).toContain("/games/edge-smoke-dusk/replay");
     expect(html).toContain("house-highlight-visual-card");
     expect(html).toContain("Trailer");
@@ -341,7 +345,18 @@ function mainCutFixture(): HouseHighlightsResponse {
             template: "hero_vote_action",
             title: "Ember was cut from inside the pact",
             eyebrow: "Betrayal vote",
-            primaryAgents: [{ id: "ember", name: "Ember", avatarUrl: "https://cdn.example.test/avatars/ember.png" }],
+            primaryAgents: [{
+              id: "ember",
+              name: "Ember",
+              persona: "deceptive",
+              avatarUrl: "https://cdn.example.test/avatars/ember.png",
+              currentAgent: {
+                name: "Ember Prime",
+                avatarUrl: "https://cdn.example.test/avatars/ember-current.png",
+                role: { key: "strategic", label: "Strategic" },
+                competition: { gamesPlayed: 5, wins: 2, winRate: 0.4 },
+              },
+            }],
             secondaryAgents: [{ id: "nova", name: "Nova", avatarUrl: "https://cdn.example.test/avatars/nova.png" }],
             backdrop: "abstract_vote_board",
           facts: [

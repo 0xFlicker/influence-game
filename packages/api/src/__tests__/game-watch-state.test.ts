@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
 import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
+import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
@@ -37,7 +38,7 @@ describe("GameWatchState", () => {
 
     expect(state).not.toBeNull();
     expect(state).toMatchObject({
-      schemaVersion: 3,
+      schemaVersion: 4,
       gameId,
       slug: "watch-live-projection",
       source: "durable_projection",
@@ -63,7 +64,19 @@ describe("GameWatchState", () => {
       personaKey: "strategic",
       status: "eliminated",
       shielded: false,
-      avatarUrl: "https://example.test/atlas.png",
+      currentAgent: {
+        name: "Mutable Profile Atlas",
+        avatarUrl: "https://example.test/atlas.png",
+        role: {
+          key: "strategic",
+          label: "Strategic",
+        },
+        competition: {
+          gamesPlayed: 0,
+          wins: 0,
+          winRate: 0,
+        },
+      },
     });
     expect(state?.players.filter((player) => player.status === "eliminated").map((player) => player.id)).toHaveLength(1);
   });
@@ -288,6 +301,7 @@ describe("GameWatchState", () => {
     const mingleFrame = frames?.findLast((frame) => frame.phase === "MINGLE");
 
     expect(mingleFrame).toMatchObject({
+      schemaVersion: 2,
       eventType: "mingle.rooms_allocated",
       players: expect.arrayContaining([
         expect.objectContaining({
@@ -448,6 +462,96 @@ describe("GameWatchState", () => {
     expect(serialized).not.toContain("reasoningContext");
     expect(serialized).not.toContain("ownerEpoch");
     expect(serialized).not.toContain("eventHash");
+    expect(serialized).not.toContain("agentProfileId");
+    expect(serialized).not.toContain("agentRevisionId");
+    expect(serialized).not.toContain("userId");
+    expect(serialized).not.toContain("walletAddress");
+    expect(serialized).not.toContain("strategyStyle");
+    expect(serialized).not.toContain("personality");
+  });
+
+  test("keeps historical identity while resolving mutable current agent facts", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-current-agent",
+      status: "waiting",
+      config: gameConfig(),
+    });
+    await insertFixturePlayers(db, gameId, ["atlas", "echo"]);
+    const atlasSeat = (await db.select({
+      agentProfileId: schema.gamePlayers.agentProfileId,
+    }).from(schema.gamePlayers).where(eq(schema.gamePlayers.id, "atlas")))[0];
+    if (!atlasSeat?.agentProfileId) throw new Error("Expected linked Atlas fixture");
+
+    await db.update(schema.agentProfiles).set({
+      name: "Atlas After Edit",
+      avatarUrl: "https://example.test/atlas-edited.png",
+      personaKey: "diplomat",
+    }).where(eq(schema.agentProfiles.id, atlasSeat.agentProfileId));
+
+    const state = await getGameWatchState(db, gameId);
+    const atlas = state?.players.find((player) => player.id === "atlas");
+    const house = state?.players.find((player) => player.id === "echo");
+
+    expect(atlas).toMatchObject({
+      name: "Atlas Prime",
+      persona: "profiled strategist",
+      personaKey: "strategic",
+      avatarUrl: "https://example.test/atlas-edited.png",
+      currentAgent: {
+        name: "Atlas After Edit",
+        avatarUrl: "https://example.test/atlas-edited.png",
+        role: {
+          key: "diplomat",
+          label: "Diplomat",
+        },
+        competition: {
+          gamesPlayed: 0,
+          wins: 0,
+          winRate: 0,
+        },
+      },
+    });
+    expect(house?.currentAgent).toBeNull();
+  });
+
+  test("does not attach current agent facts for imported synthetic owners", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-imported-agent",
+      status: "waiting",
+      config: gameConfig(),
+    });
+    const importedUserId = `imported-user-${randomUUID()}`;
+    const importedProfileId = randomUUID();
+    await db.insert(schema.users).values({
+      id: importedUserId,
+      walletAddress: `imported-${randomUUID()}`,
+    });
+    await db.insert(schema.agentProfiles).values({
+      id: importedProfileId,
+      userId: importedUserId,
+      name: `Imported ${randomUUID()}`,
+      personality: "private imported prompt",
+      avatarUrl: "https://example.test/imported.png",
+    });
+    await db.insert(schema.gamePlayers).values({
+      id: "imported-seat",
+      gameId,
+      agentProfileId: importedProfileId,
+      persona: JSON.stringify({
+        name: "Historical Imported",
+        personality: "historical persona",
+        personaKey: "honest",
+      }),
+      agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+    });
+
+    const state = await getGameWatchState(db, gameId);
+    expect(state?.players[0]).toMatchObject({
+      name: "Historical Imported",
+      persona: "historical persona",
+      currentAgent: null,
+    });
+    expect(JSON.stringify(state)).not.toContain("private imported prompt");
   });
 });
 

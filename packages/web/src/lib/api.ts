@@ -55,6 +55,7 @@ export class ApiError extends Error {
     message: string,
     public readonly code?: string,
     public readonly retryable?: boolean,
+    public readonly payload?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiError";
@@ -103,6 +104,7 @@ function apiErrorFromResponse(status: number, body: string): ApiError {
           error.error,
           error.code,
           typeof error.retryable === "boolean" ? error.retryable : undefined,
+          error,
         );
       }
     }
@@ -130,6 +132,81 @@ export type PersonaKey =
   | "contrarian"
   | "provocateur"
   | "martyr";
+
+export interface PublicPlayerIdentityRef {
+  publicId: string;
+  handle: string | null;
+  displayName: string;
+}
+
+export interface PublicCompetitionResult {
+  gameSlug: string;
+  agentName: string;
+  placement: number;
+  lobbySize: number;
+  totalPoints: number;
+  earnedAt: string;
+}
+
+export interface PublicAgentPreview {
+  name: string;
+  avatarUrl: string | null;
+  role: null | {
+    key: PersonaKey;
+    label: string;
+  };
+  competition: {
+    gamesPlayed: number;
+    wins: number;
+    winRate: number;
+  };
+}
+
+export interface PublicPlayerProfile {
+  identity: PublicPlayerIdentityRef;
+  currentSeason: null | {
+    season: {
+      slug: string;
+      name: string;
+      status: "active" | "closing" | "final";
+    };
+    architectStanding: null | {
+      rank: number;
+      totalPointsHundredths: number;
+      wins: number;
+      contributions: Array<{
+        agentName: string;
+        sourcePoints: number;
+        weightPercent: 100 | 50 | 25;
+        weightedPointsHundredths: number;
+      }>;
+    };
+    honors: {
+      agentChampion: boolean;
+      architectChampion: boolean;
+    };
+  };
+  career: {
+    rating: number;
+    peakRating: number;
+    gamesPlayed: number;
+    wins: number;
+    winRate: number;
+  };
+  recentResults: PublicCompetitionResult[];
+  agents: PublicAgentPreview[];
+}
+
+export type PublicPlayerProfileEnvelope =
+  | {
+      schemaVersion: 1;
+      status: "found";
+      profile: PublicPlayerProfile;
+    }
+  | {
+      schemaVersion: 1;
+      status: "not_found";
+    };
 
 export type ModelTier = "budget" | "standard" | "premium";
 export type FillStrategy = "random" | "balanced";
@@ -214,6 +291,7 @@ export interface GameWatchPlayer {
   pressureStatus?: GameWatchPlayerPressureStatus;
   exposeScore?: number;
   avatarUrl?: string;
+  currentAgent?: PublicAgentPreview | null;
 }
 
 export interface GameWatchFinalState {
@@ -228,7 +306,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 3;
+  schemaVersion: 3 | 4;
   gameId: string;
   slug: string;
   status: GameStatus;
@@ -254,7 +332,7 @@ export interface GameWatchState {
 }
 
 export interface GameWatchReplayFrame {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   gameId: string;
   slug: string;
   sequence: number;
@@ -929,6 +1007,9 @@ export interface HouseHighlightPlayerRef {
   id: string;
   name: string;
   avatarUrl?: string | null;
+  persona?: string;
+  personaKey?: string;
+  currentAgent?: PublicAgentPreview | null;
 }
 
 export interface HouseHighlightEvidenceRef {
@@ -1449,11 +1530,26 @@ export async function getGameAlliances(gameIdOrSlug: string): Promise<PublicGame
 // Auth API calls
 // ---------------------------------------------------------------------------
 
-export interface AuthMe {
+export type PublicIdentityOnboardingState = "complete" | "required" | "deferrable";
+
+export interface AuthenticatedPublicIdentity {
+  publicId: string;
+  handle: string | null;
+  displayName: string;
+  publicIdentityOnboarding: {
+    state: PublicIdentityOnboardingState;
+    diagnosticCode:
+      | "created_at_missing"
+      | "created_at_invalid"
+      | "created_at_timezone_required"
+      | null;
+  };
+}
+
+export interface AuthMe extends AuthenticatedPublicIdentity {
   id: string;
   walletAddress: string | null;
   email: string | null;
-  displayName: string | null;
   isAdmin: boolean;
   roles: string[];
   permissions: string[];
@@ -1466,7 +1562,10 @@ export async function getMe(): Promise<AuthMe> {
 export async function loginWithPrivyToken(
   privyToken: string,
   inviteCode?: string,
-): Promise<{ token: string }> {
+): Promise<{
+  token: string;
+  user: Omit<AuthMe, "isAdmin">;
+}> {
   return apiFetch("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
@@ -1917,6 +2016,7 @@ export interface GamePlayer {
   pressureStatus?: GameWatchPlayerPressureStatus;
   exposeScore?: number;
   avatarUrl?: string;
+  currentAgent?: PublicAgentPreview | null;
 }
 
 export type TranscriptScope = "public" | "mingle" | "huddle" | "whisper" | "system" | "diary" | "thinking";
@@ -2249,7 +2349,7 @@ interface FreeQueueStatusResponse {
 
 export interface LeaderboardEntry {
   rank: number;
-  userId: string;
+  player?: PublicPlayerIdentityRef | null;
   displayName: string;
   rating: number;
   gamesPlayed: number;
@@ -2292,7 +2392,7 @@ export interface AgentSeasonStanding {
   rank: number;
   agentId: string;
   agentName: string;
-  ownerId: string;
+  owner?: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   totalPoints: number;
   gamesPlayed: number;
@@ -2303,7 +2403,7 @@ export interface AgentSeasonStanding {
 
 export interface ArchitectSeasonStanding {
   rank: number;
-  ownerId: string;
+  owner?: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   totalPointsHundredths: number;
   wins: number;
@@ -2317,14 +2417,20 @@ export interface ArchitectSeasonStanding {
 }
 
 export interface SeasonDashboard {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   season: SeasonIdentity;
   agentStandings: AgentSeasonStanding[];
   architectStandings: ArchitectSeasonStanding[];
   honors: null | {
-    agentChampion: { agentId: string; agentName: string; ownerId: string; ownerName: string | null; points: number };
+    agentChampion: {
+      agentId: string;
+      agentName: string;
+      owner?: PublicPlayerIdentityRef | null;
+      ownerName: string | null;
+      points: number;
+    };
     architectChampion: {
-      ownerId: string;
+      owner?: PublicPlayerIdentityRef | null;
       ownerName: string | null;
       pointsHundredths: number;
       contributions: Array<Record<string, unknown>>;
@@ -2337,7 +2443,7 @@ export interface CompetitionReceipt {
   gameSlug: string | null;
   agentId: string;
   agentName: string;
-  ownerId: string;
+  owner?: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   lobbySize: number;
   placement: number | null;
@@ -2354,7 +2460,8 @@ export interface GameCompetitionReceipt extends CompetitionReceipt {
   seasonTotalPoints: number;
 }
 
-export interface OwnedCompetitionReceipt extends CompetitionReceipt {
+export interface OwnedCompetitionReceipt extends Omit<CompetitionReceipt, "owner"> {
+  ownerId: string;
   revisionId: string;
 }
 
@@ -2451,9 +2558,8 @@ export type FreeTrackLeaderboardEntry = LeaderboardEntry;
 // Player profile types
 // ---------------------------------------------------------------------------
 
-export interface PlayerProfile {
+export interface PlayerProfile extends AuthenticatedPublicIdentity {
   id: string;
-  displayName: string | null;
   walletAddress: string | null;
   email: string | null;
   rating: number;
@@ -2577,11 +2683,21 @@ export async function getProfile(): Promise<PlayerProfile> {
   return apiFetch("/api/profile");
 }
 
-export async function updateProfile(displayName: string): Promise<PlayerProfile> {
+export async function updateProfile(
+  displayName: string,
+  handle: string,
+): Promise<PlayerProfile> {
   return apiFetch("/api/profile", {
     method: "PATCH",
-    body: JSON.stringify({ displayName }),
+    body: JSON.stringify({ displayName, handle }),
   });
+}
+
+export async function suggestProfileHandle(displayName: string): Promise<string> {
+  const result = await apiFetch<{ suggestion: string }>(
+    `/api/profile/handle-suggestion?displayName=${encodeURIComponent(displayName)}`,
+  );
+  return result.suggestion;
 }
 
 // ---------------------------------------------------------------------------

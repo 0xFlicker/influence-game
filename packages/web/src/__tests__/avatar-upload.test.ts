@@ -4,7 +4,7 @@ import { renderToString } from "react-dom/server";
 import { AvatarUpload } from "../components/avatar-upload";
 
 describe("AvatarUpload", () => {
-  it("does not show the persona default when no avatar URL has been selected", () => {
+  it("keeps portrait preview separate from the file-picker action", () => {
     const html = renderToString(
       createElement(AvatarUpload, {
         currentUrl: undefined,
@@ -14,8 +14,11 @@ describe("AvatarUpload", () => {
       }),
     );
 
-    expect(html).not.toContain("/avatars/personas/strategic.png");
-    expect(html).toContain("Atlas avatar placeholder");
+    expect(html).toContain("/avatars/personas/strategic.png");
+    expect(html).toContain('aria-label="View Atlas portrait and stats"');
+    expect(html).toContain("Change portrait");
+    expect(html.match(/<button/g)).toHaveLength(2);
+    expect(html).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/);
   });
 
   it("still renders an explicit avatar URL when one exists", () => {

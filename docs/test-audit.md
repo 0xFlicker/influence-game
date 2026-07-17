@@ -148,14 +148,26 @@ Slow, non-deterministic, costs real tokens. **Run before releasing engine change
 - **Run:** `bun run test:e2e` (runs `bunx playwright test`)
 - **Config:** `playwright.config.ts` - Chromium only, 30s timeout, 1 retry
 
-### 4b. E2E Infrastructure Smoke (packages/api/src/e2e/e2e-smoke.test.ts)
+### 4b. Public Identity Browser Story (e2e/public-player-identity.spec.ts)
+- **Tests:** 7
+- **What it covers:** Ordinary sign-in copy, anonymous handle/UUID parity,
+  public-profile privacy, hover/focus/touch agent previews, required and
+  deferrable onboarding, handle collisions, and zero-invite visibility
+- **Dependencies:** PostgreSQL plus the isolated local API/web harness started
+  by the spec; the harness creates and drops a unique per-run database rather
+  than truncating the shared `influence_test`
+- **Run:** `bun run test:e2e:identity`
+- **Note:** The dedicated command enables the harness automatically. A staging
+  `PLAYWRIGHT_BASE_URL` run deliberately skips this local-only story.
+
+### 4c. E2E Infrastructure Smoke (packages/api/src/e2e/e2e-smoke.test.ts)
 - **Tests:** 8
 - **Duration:** ~30s
 - **What it covers:** Test DB creation with migrations and RBAC, wallet generation, admin/player user creation with JWTs, test server startup and health check, authenticated API requests, Puppeteer browser launch, test DB cleanup
 - **Dependencies:** PostgreSQL, Puppeteer (headless Chrome)
 - **Run:** `cd packages/api && bun test src/e2e/e2e-smoke.test.ts`
 
-### 4c. E2E Full Game Flow (packages/api/src/e2e/game-flow.e2e.test.ts)
+### 4d. E2E Full Game Flow (packages/api/src/e2e/game-flow.e2e.test.ts)
 - **Tests:** 3 (sequential scenarios sharing state)
 - **Duration:** Up to 11 minutes (10min game + 1min buffer)
 - **What it covers:**

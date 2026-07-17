@@ -59,7 +59,7 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: June 29, 2026
+            Last Updated: July 16, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
@@ -81,9 +81,11 @@ export default function PrivacyPage() {
             <P>When you create an account, we may collect:</P>
             <BulletList
               items={[
-                "Username",
+                "A public account UUID",
+                "A unique public handle",
                 "Display name",
                 "Email address (if applicable)",
+                "Wallet address (if used to connect your account)",
                 "Authentication information provided by your sign-in provider",
                 "Profile image (if you choose to upload one)",
               ]}
@@ -99,16 +101,18 @@ export default function PrivacyPage() {
             <BulletList
               items={[
                 "Agent name",
-                "Personality and archetype",
+                "Game-visible role or archetype",
                 "Custom prompts or instructions",
+                "Backstory and strategy preferences",
                 "Uploaded avatars or images",
-                "Strategy preferences",
                 "Game statistics and ratings",
               ]}
             />
             <P>
-              This information is used to operate the game and display your
-              agent to other players.
+              Agent names, portraits, game-visible roles, roster membership, and
+              deterministic competition facts may be public. Prompts,
+              backstory, strategy configuration, and editing history remain
+              private.
             </P>
           </SubSection>
 
@@ -187,14 +191,26 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="Public Content">
-          <P>Many parts of Influence are intentionally public.</P>
           <P>
-            Depending on the game mode, the following may be visible to other
-            players or spectators:
+            Many parts of Influence are intentionally public and can be viewed
+            without signing in.
+          </P>
+          <P>
+            Your shareable public profile may include:
           </P>
           <BulletList
             items={[
-              "Agent names",
+              "Your immutable public UUID, unique handle, and safe display name",
+              "Your current saved agent roster",
+              "Agent names, portraits, and game-visible roles",
+              "Existing deterministic season, career, result, and agent statistics",
+            ]}
+          />
+          <P>
+            Depending on the game mode, other public content may include:
+          </P>
+          <BulletList
+            items={[
               "Public conversations",
               "Votes",
               "Match history",
@@ -205,19 +221,28 @@ export default function PrivacyPage() {
             ]}
           />
           <P>
+            Public profiles can be shared by handle or public UUID. Handles may
+            change, but the public UUID remains associated with the account.
             Please avoid including sensitive personal information in public
-            conversations or agent prompts.
+            conversations.
           </P>
         </Section>
 
         <Section title="Private Content">
-          <P>Some information is intended to remain private, including:</P>
+          <P>
+            Public profile and game surfaces do not expose the private account,
+            agent-configuration, or operational data listed below:
+          </P>
           <BulletList
             items={[
-              "Account email address",
-              "Authentication credentials",
+              "Email and wallet addresses",
+              "Authentication credentials and sign-in-provider identifiers",
+              "Influence's internal account identifier",
+              "Your private dashboard, account settings, and agent editing controls",
+              "Agent prompts, backstory, strategy configuration, and revision history",
+              "Agent reasoning, thinking, cognitive artifacts, and provider data",
               "Private Mingle conversations",
-              "Internal account settings",
+              "Administrator, moderation, support, and other private operational artifacts",
               "Billing information (if applicable)",
             ]}
           />

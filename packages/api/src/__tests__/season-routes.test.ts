@@ -20,9 +20,17 @@ describe("season routes", () => {
     const dashboardResponse = await app.request(`/api/seasons/${fixture.seasonSlug}`);
     expect(dashboardResponse.status).toBe(200);
     const dashboard = await dashboardResponse.json() as {
-      agentStandings: Array<{ agentName: string; totalPoints: number }>;
+      schemaVersion: number;
+      agentStandings: Array<{
+        agentName: string;
+        totalPoints: number;
+        owner: { publicId: string; handle: string | null; displayName: string } | null;
+      }>;
     };
+    expect(dashboard.schemaVersion).toBe(2);
     expect(dashboard.agentStandings[0]).toMatchObject({ agentName: "Atlas", totalPoints: 100 });
+    expect(dashboard.agentStandings[0]?.owner?.displayName).toBe("owner");
+    expect(JSON.stringify(dashboard)).not.toContain('"ownerId"');
     expect(JSON.stringify(dashboard)).not.toContain("sigma");
     expect(JSON.stringify(dashboard)).not.toContain("opponentRatings");
 
@@ -31,9 +39,18 @@ describe("season routes", () => {
     );
     expect(receiptResponse.status).toBe(200);
     const receipt = await receiptResponse.json() as {
-      receipts: Array<{ basePoints: number; fieldBonus: number; totalPoints: number }>;
+      schemaVersion: number;
+      receipts: Array<{
+        basePoints: number;
+        fieldBonus: number;
+        totalPoints: number;
+        owner: { publicId: string; handle: string | null; displayName: string } | null;
+      }>;
     };
+    expect(receipt.schemaVersion).toBe(2);
     expect(receipt.receipts[0]).toMatchObject({ basePoints: 100, fieldBonus: 0, totalPoints: 100 });
+    expect(receipt.receipts[0]?.owner?.displayName).toBe("owner");
+    expect(JSON.stringify(receipt)).not.toContain('"ownerId"');
     expect(JSON.stringify(receipt)).not.toContain("pregameRating");
   });
 

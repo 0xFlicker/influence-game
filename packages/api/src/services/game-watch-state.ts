@@ -19,6 +19,10 @@ import {
   type PersistedGameProjectionRead,
   type ProjectionReplayDiagnostic,
 } from "./game-projection-read-model.js";
+import {
+  getPublicAgentPreviewsByProfileIds,
+  type PublicAgentPreview,
+} from "./public-agent-preview.js";
 
 type GameWatchDB = Pick<DrizzleDB, "select">;
 
@@ -82,6 +86,7 @@ export interface GameWatchPlayer {
   pressureStatus?: GameWatchPlayerPressureStatus;
   exposeScore?: number;
   avatarUrl?: string;
+  currentAgent: PublicAgentPreview | null;
 }
 
 export interface GameWatchFinalState {
@@ -96,7 +101,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 3;
+  schemaVersion: 4;
   gameId: string;
   slug: string;
   status: GameStatus;
@@ -122,7 +127,7 @@ export interface GameWatchState {
 }
 
 export interface GameWatchReplayFrame {
-  schemaVersion: 1;
+  schemaVersion: 2;
   gameId: string;
   slug: string;
   sequence: number;
@@ -147,6 +152,7 @@ interface PlayerIdentity {
   persona: string;
   personaKey?: string;
   avatarUrl?: string;
+  currentAgent: PublicAgentPreview | null;
 }
 
 interface TerminalResult {
@@ -221,7 +227,7 @@ export async function buildGameWatchState(
   const final = buildFinalState(game.status, source, winner, committedResult);
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     gameId: game.id,
     slug: game.slug,
     status: game.status,
@@ -293,7 +299,7 @@ export async function getGameWatchReplayFrames(
       pressureByPlayerId,
     );
     frames.push({
-      schemaVersion: 1,
+      schemaVersion: 2,
       gameId: game.id,
       slug: game.slug,
       sequence: event.sequence,
@@ -318,12 +324,15 @@ async function loadPlayerIdentities(
       id: schema.gamePlayers.id,
       persona: schema.gamePlayers.persona,
       joinedAt: schema.gamePlayers.joinedAt,
-      avatarUrl: schema.agentProfiles.avatarUrl,
+      agentProfileId: schema.gamePlayers.agentProfileId,
     })
     .from(schema.gamePlayers)
-    .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
     .where(eq(schema.gamePlayers.gameId, gameId))
     .orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id));
+  const currentAgentByProfileId = await getPublicAgentPreviewsByProfileIds(
+    db,
+    rows.flatMap((row) => row.agentProfileId ? [row.agentProfileId] : []),
+  );
 
   return rows.map((row) => {
     const persona = parseConfig(row.persona);
@@ -333,12 +342,16 @@ async function loadPlayerIdentities(
       stringFromConfig(persona.personalityBlurb) ??
       stringFromConfig(persona.personality) ??
       personaKey;
+    const currentAgent = row.agentProfileId
+      ? currentAgentByProfileId.get(row.agentProfileId) ?? null
+      : null;
     return {
       id: row.id,
       name: personaName ?? "Unknown",
       persona: personaDescription ?? "Unknown",
       ...(personaKey && { personaKey }),
-      ...(row.avatarUrl && { avatarUrl: row.avatarUrl }),
+      ...(currentAgent?.avatarUrl && { avatarUrl: currentAgent.avatarUrl }),
+      currentAgent,
     };
   });
 }
@@ -723,6 +736,7 @@ function buildProjectedPlayers(
         ...(pressure?.pressureStatus && { pressureStatus: pressure.pressureStatus }),
         ...(pressure?.exposeScore !== undefined && { exposeScore: pressure.exposeScore }),
         ...(identity?.avatarUrl && { avatarUrl: identity.avatarUrl }),
+        currentAgent: identity?.currentAgent ?? null,
       };
     }),
     ...identities
@@ -735,6 +749,7 @@ function buildProjectedPlayers(
         status: "unknown" as const,
         shielded: false,
         ...(identity.avatarUrl && { avatarUrl: identity.avatarUrl }),
+        currentAgent: identity.currentAgent,
       })),
   ];
 }
@@ -760,6 +775,7 @@ function buildFallbackPlayers(
       status: terminalStatus,
       shielded: false,
       ...(identity.avatarUrl && { avatarUrl: identity.avatarUrl }),
+      currentAgent: identity.currentAgent,
     };
   });
 }

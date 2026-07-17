@@ -23,6 +23,7 @@
     "discord:setup-house": "doppler run --project social-strategy-agent --config dev -- bun scripts/setup-house-discord.ts",
     "e2e": "bun scripts/e2e-test.ts",
     "test:e2e": "bunx playwright test",
+    "test:e2e:identity": "PLAYWRIGHT_LOCAL_IDENTITY=1 bunx playwright test e2e/public-player-identity.spec.ts",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run --filter '*' lint",
     "check": "bun run typecheck && bun run lint",

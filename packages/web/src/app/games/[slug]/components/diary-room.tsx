@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { TranscriptEntry, GamePlayer } from "@/lib/api";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { formatTime } from "./constants";
 import type { GroupedMessage, DiaryRoomData } from "./types";
 
@@ -83,24 +83,28 @@ export function DiaryQACard({
 
   return (
     <div className="border border-purple-900/40 bg-purple-950/20 rounded-lg overflow-hidden text-xs">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-purple-900/20 transition-colors"
-      >
+      <div className="flex min-h-11 items-center gap-1 px-2">
         <span className="font-semibold text-purple-400/80 uppercase tracking-wider">
           📔 Diary Room
         </span>
-        {player && (
-          <span className="text-purple-300/60 flex items-center gap-1">
-            <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
-            <span>{player.name}{isJuror ? " (juror)" : ""}</span>
-          </span>
-        )}
-        {!player && targetName && (
-          <span className="text-purple-300/50">{targetName}{isJuror ? " (juror)" : ""}</span>
-        )}
-        <span className="ml-auto text-purple-400/30">{open ? "▲" : "▼"}</span>
-      </button>
+        {player ? (
+          <GamePlayerAvatarPreview player={player} size="6" />
+        ) : null}
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={`${open ? "Collapse" : "Expand"} ${targetName ?? "unknown player"} diary entry`}
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-1 rounded px-1 text-left text-purple-300/60 transition-colors hover:bg-purple-900/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-purple-300/70"
+        >
+          {targetName ? (
+            <span className={player ? "" : "text-purple-300/50"}>
+              {targetName}{isJuror ? " (juror)" : ""}
+            </span>
+          ) : null}
+          <span className="ml-auto text-purple-400/30">{open ? "▲" : "▼"}</span>
+        </button>
+      </div>
 
       {open && (
         <div className="px-3 pb-3 space-y-2">
@@ -111,7 +115,7 @@ export function DiaryQACard({
           {answer ? (
             <div className="ml-3 border-l-2 border-purple-700/40 pl-3">
               <div className="flex items-center gap-1.5 mb-0.5">
-                {player && <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />}
+                {player ? <GamePlayerAvatarPreview player={player} size="6" /> : null}
                 <span className="font-semibold text-white/70">{targetName}</span>
                 <span className="text-white/20 ml-auto flex-shrink-0">
                   {formatTime(answer.timestamp)}
@@ -147,23 +151,23 @@ export function DiaryEntryCard({
 
   return (
     <div className="border border-purple-900/40 bg-purple-950/15 rounded-lg overflow-hidden text-xs">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-purple-900/20 transition-colors"
-      >
+      <div className="flex min-h-11 items-center gap-1 px-2">
         <span className="font-semibold uppercase tracking-wider text-purple-400/70">📔 Diary</span>
-        {player && (
-          <span className="text-purple-300/60 flex items-center gap-1">
-            <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
-            <span>{player.name}</span>
-          </span>
-        )}
-        {!player && playerName && (
-          <span className="text-purple-300/50">{playerName}</span>
-        )}
-        <span className="text-purple-400/35 text-xs ml-auto">{roundLabel}</span>
-        <span className="text-purple-400/30 ml-2">{open ? "▲" : "▼"}</span>
-      </button>
+        {player ? (
+          <GamePlayerAvatarPreview player={player} size="6" />
+        ) : null}
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={`${open ? "Collapse" : "Expand"} ${playerName} diary entry`}
+          onClick={() => setOpen((value) => !value)}
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-1 rounded px-1 text-left text-purple-300/60 transition-colors hover:bg-purple-900/20 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-purple-300/70"
+        >
+          <span className={player ? "" : "text-purple-300/50"}>{playerName}</span>
+          <span className="ml-auto text-xs text-purple-400/35">{roundLabel}</span>
+          <span className="ml-2 text-purple-400/30">{open ? "▲" : "▼"}</span>
+        </button>
+      </div>
 
       {open && (
         <div className="px-3 pb-3">
@@ -301,7 +305,7 @@ export function DiaryRoomChat({
   return (
     <div className="rounded-2xl border border-purple-400/20 bg-black/30 flex flex-1 min-h-0 flex-col overflow-hidden">
       <div className="flex flex-shrink-0 items-center gap-2 px-4 py-2.5 border-b border-purple-900/20">
-        {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} personaKey={room.player.personaKey} persona={room.player.persona} name={room.player.name} size="6" />}
+        {room.player ? <GamePlayerAvatarPreview player={room.player} size="6" /> : null}
         <p className="text-xs font-semibold text-white truncate">{room.playerName}</p>
         <span className="text-[9px] uppercase tracking-[0.2em] text-purple-300/45 ml-auto">Diary</span>
       </div>
@@ -339,7 +343,7 @@ export function DiaryRoomChat({
                     </div>
                   </div>
                   <div className="flex-shrink-0 mt-1">
-                    {room.player ? <AgentAvatar avatarUrl={room.player.avatarUrl} personaKey={room.player.personaKey} persona={room.player.persona} name={room.player.name} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
+                    {room.player ? <GamePlayerAvatarPreview player={room.player} size="6" /> : <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>}
                   </div>
                 </div>
               ) : (
@@ -404,22 +408,31 @@ export function DiaryRoomGridView({
           {/* Room selector — one player at a time */}
           <div className="flex flex-wrap items-center justify-center gap-1.5 mb-4">
             {rooms.map((room, idx) => (
-              <button
+              <div
                 key={room.playerName}
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setActiveRoomIndex(idx); }}
                 className={`rounded-full border px-2.5 py-1 text-[10px] uppercase tracking-[0.15em] transition-colors flex items-center gap-1 ${
                   idx === activeRoomIndex
                     ? "border-purple-300/50 bg-purple-300/15 text-white"
                     : "border-white/10 bg-white/5 text-white/50 hover:border-purple-300/30"
                 }`}
               >
-                {room.player && <AgentAvatar avatarUrl={room.player.avatarUrl} personaKey={room.player.personaKey} persona={room.player.persona} name={room.player.name} size="6" />}
-                <span className="truncate max-w-[6rem]">{room.playerName}</span>
-                {room.entries.length > 0 && (
-                  <span className="text-[8px] text-purple-300/40">{room.entries.length}</span>
-                )}
-              </button>
+                {room.player ? <GamePlayerAvatarPreview player={room.player} size="6" /> : null}
+                <button
+                  type="button"
+                  aria-pressed={idx === activeRoomIndex}
+                  aria-label={`Select ${room.playerName} diary room`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    setActiveRoomIndex(idx);
+                  }}
+                  className="flex min-h-11 min-w-0 items-center gap-1 rounded px-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-purple-300/70"
+                >
+                  <span className="truncate max-w-[6rem]">{room.playerName}</span>
+                  {room.entries.length > 0 && (
+                    <span className="text-[8px] text-purple-300/40">{room.entries.length}</span>
+                  )}
+                </button>
+              </div>
             ))}
           </div>
 

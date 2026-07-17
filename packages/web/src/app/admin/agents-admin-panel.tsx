@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { listAdminAgents, type AdminAgent } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
 import { TruncatedAddress } from "@/components/truncated-address";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 
 function getPersonaInfo(key: string | null) {
   if (!key) return undefined;
@@ -38,10 +38,13 @@ function AgentDetailModal({
         {/* Header */}
         <div className="flex items-start justify-between gap-4 mb-5">
           <div className="flex items-start gap-3 min-w-0">
-            <AgentAvatar
+            <AgentAvatarPreview
               avatarUrl={agent.avatarUrl}
-              persona={agent.personaKey ?? "strategic"}
+              personaKey={agent.personaKey}
+              role={persona?.name}
               name={agent.name}
+              gamesPlayed={agent.gamesPlayed}
+              gamesWon={agent.gamesWon}
               size="12"
             />
             <div className="min-w-0">
@@ -167,12 +170,12 @@ function AgentDetailModal({
 // Agent row
 // ---------------------------------------------------------------------------
 
-function AgentRow({
+export function AgentRow({
   agent,
-  onClick,
+  onDetails,
 }: {
   agent: AdminAgent;
-  onClick: () => void;
+  onDetails: () => void;
 }) {
   const persona = getPersonaInfo(agent.personaKey);
   const winRate =
@@ -181,16 +184,16 @@ function AgentRow({
       : null;
 
   return (
-    <tr
-      onClick={onClick}
-      className="border-t border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer"
-    >
+    <tr className="border-t border-white/5 hover:bg-white/[0.02] transition-colors">
       <td className="py-3 px-4">
         <div className="flex items-center gap-2">
-          <AgentAvatar
+          <AgentAvatarPreview
             avatarUrl={agent.avatarUrl}
-            persona={agent.personaKey ?? "strategic"}
+            personaKey={agent.personaKey}
+            role={persona?.name}
             name={agent.name}
+            gamesPlayed={agent.gamesPlayed}
+            gamesWon={agent.gamesWon}
             size="8"
           />
           <span className="text-white text-sm font-medium">{agent.name}</span>
@@ -234,6 +237,16 @@ function AgentRow({
           month: "short",
           day: "numeric",
         })}
+      </td>
+      <td className="py-3 px-4 text-right">
+        <button
+          type="button"
+          onClick={onDetails}
+          className="min-h-11 rounded-lg px-3 text-xs font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+          aria-label={`View ${agent.name} admin details`}
+        >
+          Details
+        </button>
       </td>
     </tr>
   );
@@ -313,13 +326,13 @@ export function AgentsAdminPanel() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {["Agent", "Archetype", "Owner", "Games", "Wins", "Win %", "ELO", "Created"].map(
+                {["Agent", "Archetype", "Owner", "Games", "Wins", "Win %", "ELO", "Created", "Actions"].map(
                   (h) => (
                     <th
                       key={h}
                       className={`text-left py-3 px-4 text-xs text-white/30 font-medium ${
                         ["Games", "Wins", "Win %", "ELO"].includes(h) ? "text-center" : ""
-                      }`}
+                      } ${h === "Actions" ? "text-right" : ""}`}
                     >
                       {h}
                     </th>
@@ -332,7 +345,7 @@ export function AgentsAdminPanel() {
                 <AgentRow
                   key={agent.id}
                   agent={agent}
-                  onClick={() => setSelectedAgent(agent)}
+                  onDetails={() => setSelectedAgent(agent)}
                 />
               ))}
             </tbody>

@@ -1,7 +1,12 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import type { GamePlayer, TranscriptEntry } from "../lib/api";
-import { buildWhisperStageData, OpenWhisperRoomsView, WhisperAllocationOverview } from "../app/games/[slug]/components/whisper-phase";
+import {
+  buildWhisperStageData,
+  OpenWhisperRoomsView,
+  WhisperAllocationOverview,
+  WhisperRoomDM,
+} from "../app/games/[slug]/components/whisper-phase";
 
 const players: GamePlayer[] = [
   { id: "p1", name: "Atlas", persona: "strategic", status: "alive", shielded: false },
@@ -37,6 +42,83 @@ function entry(overrides: Partial<TranscriptEntry>): TranscriptEntry {
 }
 
 describe("buildWhisperStageData", () => {
+  it("keeps room portrait previews separate from room selection", () => {
+    const currentPlayers: GamePlayer[] = [
+      {
+        ...players[0]!,
+        personaKey: "strategic",
+        currentAgent: {
+          name: "Atlas After Rename",
+          avatarUrl: "/avatars/atlas-current.png",
+          role: { key: "aggressive", label: "Aggressor" },
+          competition: {
+            gamesPlayed: 3,
+            wins: 1,
+            winRate: 1 / 3,
+          },
+        },
+      },
+      players[1]!,
+      players[2]!,
+    ];
+    const html = renderToString(
+      <OpenWhisperRoomsView
+        phaseKey="round-1-mingle"
+        players={currentPlayers}
+        phaseEntries={[
+          entry({
+            text: "Beat 1: Room 12: Atlas, Vera | Room 13: Finn",
+            roomMetadata: {
+              rooms: [
+                { roomId: 12, round: 1, beat: 1, playerIds: ["p1", "p2"] },
+                { roomId: 13, round: 1, beat: 1, playerIds: ["p3"] },
+              ],
+              excluded: [],
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain('aria-label="View Atlas portrait and stats"');
+    expect(html).toContain('aria-label="Select Mingle room R1"');
+    expect(html).toContain("/avatars/atlas-current.png");
+    expect(html).not.toContain("Atlas After Rename");
+    expect(html).not.toContain("-space-x");
+    expect(html).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/);
+  });
+
+  it("exposes room focus as a keyboard-native sibling action", () => {
+    const stage = buildWhisperStageData([
+      entry({
+        text: "Room 1: Atlas & Vera | Commons: Finn",
+      }),
+      entry({
+        id: 2,
+        fromPlayerId: "p1",
+        fromPlayerName: "Atlas",
+        scope: "mingle",
+        toPlayerIds: ["p2"],
+        roomId: 1,
+        text: "Vera, this room is hot.",
+        timestamp: 2,
+      }),
+    ], players);
+    const html = renderToString(
+      <WhisperRoomDM
+        room={stage.rooms[0]!}
+        players={players}
+        focused={false}
+        onFocus={() => undefined}
+      />,
+    );
+
+    expect(html).toContain('aria-label="Focus room 1"');
+    expect(html).toContain("min-h-11");
+    expect(html).toContain('aria-label="View Atlas portrait and stats"');
+    expect(html).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/);
+  });
+
   it("uses roomMetadata for open-room group, singleton, and empty rooms", () => {
     const stage = buildWhisperStageData([
       entry({
@@ -153,7 +235,7 @@ describe("buildWhisperStageData", () => {
       />,
     );
 
-    expect(html).toContain("+<!-- -->4");
+    expect(html).toContain("+<!-- -->7");
     expect(html).toContain("Atlas, Vera, Finn<!-- --> + <!-- -->7<!-- --> more");
     expect(html).toContain(">10<");
     expect(html).toContain("overflow-hidden rounded-xl");

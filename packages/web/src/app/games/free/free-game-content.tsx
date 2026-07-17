@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import {
@@ -20,9 +20,10 @@ import {
   type GameStatus,
 } from "@/lib/api";
 import { useE2EAuth } from "@/app/providers";
-import { PERSONAS } from "@/lib/personas";
+import { getPersonaLabel } from "@/lib/personas";
 import { ACTIVE_GAME } from "@/lib/product-identity";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
+import { PlayerProfileLink } from "@/components/player-profile-link";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -112,7 +113,7 @@ interface QueueSectionProps {
   actionError: string | null;
 }
 
-function QueueSection({
+export function QueueSection({
   queueStatus,
   agents,
   authenticated,
@@ -223,35 +224,44 @@ function QueueSection({
       </p>
       <div className="grid gap-2 mb-4">
         {agents.map((agent) => {
-          const persona = PERSONAS.find((p) => p.key === agent.personaKey);
+          const personaLabel = getPersonaLabel(agent.personaKey);
           const isSelected = selectedAgentId === agent.id;
           return (
-            <button
+            <div
               key={agent.id}
-              onClick={() => setSelectedAgentId(agent.id)}
-              className="influence-selection-card rounded-lg px-4 py-3 flex items-center gap-3 text-left transition-colors"
+              className="influence-selection-card flex items-center gap-2 rounded-lg p-2 text-left transition-colors [&>button:first-child]:p-1.5"
               data-selected={isSelected}
             >
-              <AgentAvatar
+              <AgentAvatarPreview
                 avatarUrl={agent.avatarUrl}
-                persona={agent.personaKey ?? "strategic"}
+                personaKey={agent.personaKey}
                 name={agent.name}
+                gamesPlayed={agent.gamesPlayed}
+                gamesWon={agent.gamesWon}
                 size="8"
               />
-              <div className="min-w-0 flex-1">
-                <p className="text-text-primary text-sm font-medium truncate">
-                  {agent.name}
-                </p>
-                <p className="influence-copy-muted text-xs truncate">
-                  {persona?.name ?? agent.personaKey ?? "Agent"}
-                </p>
-              </div>
-              {isSelected && (
-                <span className="text-phase text-xs font-medium shrink-0">
-                  Selected
-                </span>
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={() => setSelectedAgentId(agent.id)}
+                className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-md px-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
+                aria-pressed={isSelected}
+                aria-label={`Select ${agent.name}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-text-primary text-sm font-medium truncate">
+                    {agent.name}
+                  </p>
+                  <p className="influence-copy-muted text-xs truncate">
+                    {personaLabel}
+                  </p>
+                </div>
+                {isSelected && (
+                  <span className="text-phase text-xs font-medium shrink-0">
+                    Selected
+                  </span>
+                )}
+              </button>
+            </div>
           );
         })}
       </div>
@@ -313,7 +323,7 @@ function TodayGameSection({
 // Leaderboard
 // ---------------------------------------------------------------------------
 
-function Leaderboard({
+export function Leaderboard({
   entries,
   loading,
 }: {
@@ -354,14 +364,20 @@ function Leaderboard({
         </thead>
         <tbody>
           {entries.map((entry) => (
-            <tr key={entry.userId} className="influence-table-row">
+            <tr
+              key={entry.player?.publicId ?? `${entry.rank}:${entry.displayName}`}
+              className="influence-table-row"
+            >
               <td className="py-3 px-4 influence-copy text-sm font-mono">
                 {entry.rank}
               </td>
               <td className="py-3 px-4">
-                <span className="text-text-primary text-sm font-medium truncate">
+                <PlayerProfileLink
+                  player={entry.player}
+                  className="text-text-primary text-sm font-medium truncate hover:text-phase hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/70"
+                >
                   {entry.displayName}
-                </span>
+                </PlayerProfileLink>
               </td>
               <td className="py-3 px-4 text-text-primary text-sm font-semibold font-mono">
                 {entry.rating}
@@ -423,6 +439,13 @@ export function SeasonStandings({
   const empty = tab === "agents"
     ? dashboard.agentStandings.length === 0
     : dashboard.architectStandings.length === 0;
+  const agentChampionOwnerId = dashboard.honors?.agentChampion.owner?.publicId;
+  const architectChampionOwnerId = dashboard.honors?.architectChampion.owner?.publicId;
+  const isDualCrown = Boolean(
+    agentChampionOwnerId
+    && architectChampionOwnerId
+    && agentChampionOwnerId === architectChampionOwnerId,
+  );
   return (
     <div className="influence-panel overflow-hidden rounded-xl">
       <div className="flex flex-col gap-4 border-b border-border-active/60 px-5 py-4 sm:flex-row sm:items-end sm:justify-between">
@@ -475,12 +498,29 @@ export function SeasonStandings({
           <CrownHonor
             label="Agent Champion"
             winner={dashboard.honors.agentChampion.agentName}
-            detail={`${dashboard.honors.agentChampion.points} points · ${dashboard.honors.agentChampion.ownerName ?? "Anonymous architect"}`}
+            detail={(
+              <>
+                {dashboard.honors.agentChampion.points} points ·{" "}
+                <PlayerProfileLink
+                  player={dashboard.honors.agentChampion.owner}
+                  className="hover:text-phase hover:underline"
+                >
+                  {dashboard.honors.agentChampion.ownerName ?? "Anonymous architect"}
+                </PlayerProfileLink>
+              </>
+            )}
           />
           <CrownHonor
             label="Architect Champion"
-            winner={dashboard.honors.architectChampion.ownerName ?? "Anonymous architect"}
-            detail={`${(dashboard.honors.architectChampion.pointsHundredths / 100).toFixed(2)} weighted points${dashboard.honors.agentChampion.ownerId === dashboard.honors.architectChampion.ownerId ? " · Dual Crown sweep" : ""}`}
+            winner={(
+              <PlayerProfileLink
+                player={dashboard.honors.architectChampion.owner}
+                className="hover:text-phase hover:underline"
+              >
+                {dashboard.honors.architectChampion.ownerName ?? "Anonymous architect"}
+              </PlayerProfileLink>
+            )}
+            detail={`${(dashboard.honors.architectChampion.pointsHundredths / 100).toFixed(2)} weighted points${isDualCrown ? " · Dual Crown sweep" : ""}`}
           />
         </div>
       )}
@@ -500,7 +540,14 @@ export function SeasonStandings({
                 <td className="px-4 py-3 font-mono text-lg text-white/45" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</td>
                 <td className="px-4 py-3">
                   <span className="text-sm font-medium text-text-primary">{standing.agentName}</span>
-                  <div className="influence-copy-muted text-xs">{standing.ownerName ?? "Anonymous architect"}</div>
+                  <div className="influence-copy-muted text-xs">
+                    <PlayerProfileLink
+                      player={standing.owner}
+                      className="hover:text-phase hover:underline"
+                    >
+                      {standing.ownerName ?? "Anonymous architect"}
+                    </PlayerProfileLink>
+                  </div>
                 </td>
                 <td className="px-4 py-3 font-mono text-base font-semibold text-text-primary">{standing.totalPoints}</td>
                 <td className="px-4 py-3 text-sm influence-copy">{standing.wins}</td>
@@ -513,10 +560,20 @@ export function SeasonStandings({
       ) : (
         <div id="season-architects-panel" className="divide-y divide-border-active/50" role="tabpanel" aria-labelledby="season-architects-tab">
           {dashboard.architectStandings.map((standing) => (
-            <article key={standing.ownerId} className="group grid gap-3 px-5 py-4 transition-colors hover:bg-white/[0.025] sm:grid-cols-[3rem_1fr_auto] sm:items-center">
+            <article
+              key={standing.owner?.publicId ?? `${standing.rank}:${standing.ownerName ?? "anonymous"}`}
+              className="group grid gap-3 px-5 py-4 transition-colors hover:bg-white/[0.025] sm:grid-cols-[3rem_1fr_auto] sm:items-center"
+            >
               <div className="font-mono text-lg text-white/45" aria-label={`Rank ${standing.rank}`}>{String(standing.rank).padStart(2, '0')}</div>
               <div>
-                <h3 className="text-sm font-medium text-text-primary">{standing.ownerName ?? "Anonymous architect"}</h3>
+                <h3 className="text-sm font-medium text-text-primary">
+                  <PlayerProfileLink
+                    player={standing.owner}
+                    className="hover:text-phase hover:underline"
+                  >
+                    {standing.ownerName ?? "Anonymous architect"}
+                  </PlayerProfileLink>
+                </h3>
                 <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
                   {standing.contributions.map((item) => (
                     <span key={item.agentId} className="text-xs influence-copy-muted">
@@ -537,7 +594,15 @@ export function SeasonStandings({
   );
 }
 
-function CrownHonor({ label, winner, detail }: { label: string; winner: string; detail: string }) {
+function CrownHonor({
+  label,
+  winner,
+  detail,
+}: {
+  label: string;
+  winner: ReactNode;
+  detail: ReactNode;
+}) {
   return (
     <div className="bg-surface px-5 py-4">
       <div className="text-[10px] font-medium uppercase tracking-[0.18em] text-phase">{label}</div>

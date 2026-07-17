@@ -3,7 +3,7 @@
 import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import type { TranscriptEntry, GamePlayer, PhaseKey } from "@/lib/api";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { MessageBubble } from "./message-bubble";
 import { parseJuryQuestion, parseJuryAnswer } from "./message-parsing";
 
@@ -106,7 +106,7 @@ export function JuryDMView({
               return (
                 <div key={msg.id} className="flex gap-2 justify-start animate-[fadeIn_0.3s_ease-out]">
                   <div className="flex-shrink-0 mt-1">
-                    {fromPlayer ? <AgentAvatar avatarUrl={fromPlayer.avatarUrl} personaKey={fromPlayer.personaKey} persona={fromPlayer.persona} name={fromPlayer.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-amber-900/30 flex items-center justify-center text-xs text-amber-300/60">?</span>}
+                    {fromPlayer ? <GamePlayerAvatarPreview player={fromPlayer} size="8" /> : <span className="w-7 h-7 rounded-full bg-amber-900/30 flex items-center justify-center text-xs text-amber-300/60">?</span>}
                   </div>
                   <div className="max-w-[80%]">
                     <p className="text-[10px] text-amber-400/60 mb-0.5">{fromName} <span className="text-white/20">to {question.finalist}</span></p>
@@ -132,7 +132,7 @@ export function JuryDMView({
                     </div>
                   </div>
                   <div className="flex-shrink-0 mt-1">
-                    {fromPlayer ? <AgentAvatar avatarUrl={fromPlayer.avatarUrl} personaKey={fromPlayer.personaKey} persona={fromPlayer.persona} name={fromPlayer.name} size="8" /> : <span className="w-7 h-7 rounded-full bg-amber-900/30 flex items-center justify-center text-xs text-amber-300/60">?</span>}
+                    {fromPlayer ? <GamePlayerAvatarPreview player={fromPlayer} size="8" /> : <span className="w-7 h-7 rounded-full bg-amber-900/30 flex items-center justify-center text-xs text-amber-300/60">?</span>}
                   </div>
                 </div>
               );

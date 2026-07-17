@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { TranscriptEntry, GamePlayer } from "@/lib/api";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { Typewriter } from "@/components/typewriter";
 import type { WhisperRoomStage, WhisperStageData } from "./types";
 
@@ -208,7 +208,7 @@ function AgentInitial({
   size?: "6" | "8" | "10";
 }) {
   if (player) {
-    return <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size={size} />;
+    return <GamePlayerAvatarPreview player={player} size={size} />;
   }
 
   const sizeClass = size === "10" ? "h-10 w-10" : size === "6" ? "h-6 w-6" : "h-8 w-8";
@@ -229,7 +229,7 @@ function RoomAvatarRow({
   size?: "6" | "8" | "10";
 }) {
   const resolved = resolveRoomPlayers(room, players);
-  const visibleCount = size === "6" ? 6 : 5;
+  const visibleCount = size === "6" ? 3 : 5;
   const visibleNames = room.playerNames.slice(0, visibleCount);
   const hiddenCount = Math.max(0, room.playerNames.length - visibleNames.length);
   if (room.playerNames.length === 0) {
@@ -239,7 +239,7 @@ function RoomAvatarRow({
   return (
     <div className="min-w-0">
       <div className="flex max-w-full items-center overflow-hidden">
-        <div className="flex min-w-0 items-center -space-x-1.5">
+        <div className="flex min-w-0 items-center gap-1">
           {visibleNames.map((name, index) => (
             <span key={`${room.roomId}-${name}-${index}`} className="shrink-0 rounded-full ring-2 ring-black/70">
               <AgentInitial player={resolved[index]} name={name} size={size} />
@@ -333,22 +333,26 @@ function MingleMap({
           const state = roomStateLabel(room);
           const hot = !selected && room.messages.length > 0;
           return (
-            <button
+            <div
               key={room.roomId}
-              type="button"
-              onClick={(event) => {
-                event.stopPropagation();
-                onSelectRoom(room.roomId);
-              }}
               className={`min-h-32 overflow-hidden rounded-xl border p-3 text-left transition-colors ${
                 selected
                   ? "border-purple-300/70 bg-purple-500/15"
                   : hot
                     ? "border-blue-400/50 bg-blue-500/10 hover:border-blue-300/70"
-                    : "border-white/10 bg-white/[0.035] hover:border-purple-300/35"
+                  : "border-white/10 bg-white/[0.035] hover:border-purple-300/35"
               }`}
             >
-              <div className="flex items-start justify-between gap-2">
+              <button
+                type="button"
+                aria-label={`Select Mingle room ${roomDisplayLabel(room)}`}
+                aria-pressed={selected}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onSelectRoom(room.roomId);
+                }}
+                className="flex min-h-11 w-full items-start justify-between gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300/70"
+              >
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/85">
                     {roomDisplayLabel(room)}
@@ -361,7 +365,7 @@ function MingleMap({
                   </span>
                   <span className={`h-2 w-2 rounded-full ${hot ? "bg-blue-300" : selected ? "bg-purple-300" : "bg-white/20"}`} />
                 </div>
-              </div>
+              </button>
               <div className="mt-4">
                 <RoomAvatarRow room={room} players={players} size="6" />
               </div>
@@ -377,7 +381,7 @@ function MingleMap({
                   />
                 ))}
               </div>
-            </button>
+            </div>
           );
         })}
       </div>
@@ -609,7 +613,7 @@ function WhisperRoomSealed({
       <div className="p-4 flex flex-col items-center justify-center gap-3 min-h-[120px]">
         <div className="flex items-center gap-3">
           {occupants.slice(0, 4).map((player, index) => player ? (
-            <AgentAvatar key={player.id} avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="8" />
+            <GamePlayerAvatarPreview key={player.id} player={player} size="8" />
           ) : (
             <span key={`unknown-${index}`} className="w-8 h-8 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
           ))}
@@ -666,24 +670,27 @@ export function WhisperRoomDM({
       className={`rounded-2xl border bg-black/30 flex flex-col min-h-0 overflow-hidden transition-all duration-300 flex-1 ${
         focused
           ? "border-purple-400/40 ring-1 ring-purple-400/20 col-span-full"
-          : "border-purple-400/20 cursor-pointer hover:border-purple-400/35"
+          : "border-purple-400/20 hover:border-purple-400/35"
       }`}
-      onClick={(e) => {
-        if (!focused && onFocus) {
-          e.stopPropagation();
-          onFocus();
-        }
-      }}
     >
       <div className="flex items-center justify-between gap-2 px-4 py-2.5 border-b border-purple-900/20 flex-shrink-0">
-        <div className="flex items-center gap-2 min-w-0">
-          <p className="text-[10px] uppercase tracking-[0.2em] text-purple-300/45 flex-shrink-0">
-            Room {room.roomId}
-          </p>
-          <p className="text-xs font-semibold text-white truncate">
-            {room.playerNames.length > 0 ? room.playerNames.join(", ") : "Empty"}
-          </p>
-        </div>
+        {!focused && onFocus ? (
+          <button
+            type="button"
+            aria-label={`Focus room ${room.roomId}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onFocus();
+            }}
+            className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300/70"
+          >
+            <RoomHeading room={room} />
+          </button>
+        ) : (
+          <div className="flex min-h-11 min-w-0 flex-1 items-center gap-2">
+            <RoomHeading room={room} />
+          </div>
+        )}
         <div className="flex items-center gap-2 flex-shrink-0">
           {room.messages.length > 0 && (
             <span className="text-[9px] text-purple-300/40">
@@ -732,7 +739,7 @@ export function WhisperRoomDM({
                 {!isOwner && (
                   <div className="flex-shrink-0 mt-1">
                     {player ? (
-                      <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
+                      <GamePlayerAvatarPreview player={player} size="6" />
                     ) : (
                       <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
                     )}
@@ -758,7 +765,7 @@ export function WhisperRoomDM({
                 {isOwner && (
                   <div className="flex-shrink-0 mt-1">
                     {player ? (
-                      <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="6" />
+                      <GamePlayerAvatarPreview player={player} size="6" />
                     ) : (
                       <span className="w-6 h-6 rounded-full bg-purple-900/30 flex items-center justify-center text-[10px] text-purple-300/60">?</span>
                     )}
@@ -770,6 +777,19 @@ export function WhisperRoomDM({
         )}
       </div>
     </div>
+  );
+}
+
+function RoomHeading({ room }: { room: WhisperRoomStage }) {
+  return (
+    <>
+      <span className="flex-shrink-0 text-[10px] uppercase tracking-[0.2em] text-purple-300/45">
+        Room {room.roomId}
+      </span>
+      <span className="truncate text-xs font-semibold text-white">
+        {room.playerNames.length > 0 ? room.playerNames.join(", ") : "Empty"}
+      </span>
+    </>
   );
 }
 
@@ -837,7 +857,7 @@ export function WhisperAllocationOverview({
                       return (
                         <div key={`${room.roomId}-${name}`} className="flex flex-col items-center gap-1.5">
                           {player ? (
-                            <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="10" />
+                            <GamePlayerAvatarPreview player={player} size="10" />
                           ) : (
                             <span className="w-10 h-10 rounded-full bg-purple-900/30 flex items-center justify-center text-sm text-purple-300/60">?</span>
                           )}
@@ -860,7 +880,7 @@ export function WhisperAllocationOverview({
               <div className="flex items-center justify-center gap-4 flex-wrap">
                 {stage.commons.map((player) => (
                   <div key={player.id} className="flex flex-col items-center gap-1.5">
-                    <AgentAvatar avatarUrl={player.avatarUrl} personaKey={player.personaKey} persona={player.persona} name={player.name} size="8" />
+                    <GamePlayerAvatarPreview player={player} size="8" />
                     <span className="text-xs text-white/60">{player.name}</span>
                   </div>
                 ))}

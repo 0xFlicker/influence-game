@@ -288,6 +288,13 @@
       "when": 1784167464769,
       "tag": "0040_game_completion_settlements",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1784257107669,
+      "tag": "0041_public_player_identity",
+      "breakpoints": true
     }
   ]
 }

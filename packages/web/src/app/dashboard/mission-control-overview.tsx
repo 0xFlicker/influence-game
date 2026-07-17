@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import type { AuthenticatedPublicIdentity } from "@/lib/api";
+import { playerProfileHref } from "@/lib/player-profile-links";
 import type { DashboardMissionControl, DashboardPrimaryAction } from "./dashboard-mission-control";
 
 export interface MissionControlUser {
@@ -14,6 +16,7 @@ interface MissionControlOverviewProps {
   loading: boolean;
   errors: string[];
   onJoinPrimary: (action: DashboardPrimaryAction) => void;
+  publicIdentity: AuthenticatedPublicIdentity | null;
 }
 
 function userLabel(user: MissionControlUser | null): string {
@@ -55,6 +58,7 @@ export function MissionControlOverview({
   loading,
   errors,
   onJoinPrimary,
+  publicIdentity,
 }: MissionControlOverviewProps) {
   const stats = control.stats;
 
@@ -76,6 +80,21 @@ export function MissionControlOverview({
           {control.primaryAction.kind !== "browse-games" && (
             <Link href="/games" className="influence-button-secondary rounded-lg px-5 py-2 text-center text-xs font-medium">
               Browse games
+            </Link>
+          )}
+          {publicIdentity?.publicIdentityOnboarding.state === "complete" ? (
+            <Link
+              href={playerProfileHref(publicIdentity)}
+              className="influence-link min-h-11 px-2 py-2 text-center text-xs font-medium"
+            >
+              View public profile
+            </Link>
+          ) : (
+            <Link
+              href="/dashboard/profile"
+              className="influence-link min-h-11 px-2 py-2 text-center text-xs font-medium"
+            >
+              Complete your public profile
             </Link>
           )}
         </div>

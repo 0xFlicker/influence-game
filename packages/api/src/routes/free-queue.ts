@@ -26,7 +26,10 @@ import {
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { getGameSeasonIdentityMap } from "../lib/game-season.js";
-import { getPublicDisplayName } from "../lib/display-name.js";
+import {
+  getPublicPlayerIdentityMap,
+  publicPlayerDisplayName,
+} from "../services/public-player-identity.js";
 import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   pickAgentNames,
@@ -216,12 +219,13 @@ export function createFreeQueueRoutes(
       .orderBy(desc(schema.users.rating))
       .limit(100);
 
-    const leaderboard = rows
-      .filter((r) => r.gamesPlayed > 0)
+    const playedRows = rows.filter((row) => row.gamesPlayed > 0);
+    const identityMap = await getPublicPlayerIdentityMap(db, playedRows.map((row) => row.id));
+    const leaderboard = playedRows
       .map((r, i) => ({
         rank: i + 1,
-        userId: r.id,
-        displayName: getPublicDisplayName(r),
+        player: identityMap.get(r.id) ?? null,
+        displayName: publicPlayerDisplayName(r),
         rating: r.rating,
         gamesPlayed: r.gamesPlayed,
         gamesWon: r.gamesWon,
