@@ -131,6 +131,81 @@ export type PersonaKey =
   | "provocateur"
   | "martyr";
 
+export interface PublicPlayerIdentityRef {
+  publicId: string;
+  handle: string | null;
+  displayName: string;
+}
+
+export interface PublicCompetitionResult {
+  gameSlug: string;
+  agentName: string;
+  placement: number;
+  lobbySize: number;
+  totalPoints: number;
+  earnedAt: string;
+}
+
+export interface PublicAgentPreview {
+  name: string;
+  avatarUrl: string | null;
+  role: null | {
+    key: PersonaKey;
+    label: string;
+  };
+  competition: {
+    gamesPlayed: number;
+    wins: number;
+    winRate: number;
+  };
+}
+
+export interface PublicPlayerProfile {
+  identity: PublicPlayerIdentityRef;
+  currentSeason: null | {
+    season: {
+      slug: string;
+      name: string;
+      status: "active" | "closing" | "final";
+    };
+    architectStanding: null | {
+      rank: number;
+      totalPointsHundredths: number;
+      wins: number;
+      contributions: Array<{
+        agentName: string;
+        sourcePoints: number;
+        weightPercent: 100 | 50 | 25;
+        weightedPointsHundredths: number;
+      }>;
+    };
+    honors: {
+      agentChampion: boolean;
+      architectChampion: boolean;
+    };
+  };
+  career: {
+    rating: number;
+    peakRating: number;
+    gamesPlayed: number;
+    wins: number;
+    winRate: number;
+  };
+  recentResults: PublicCompetitionResult[];
+  agents: PublicAgentPreview[];
+}
+
+export type PublicPlayerProfileEnvelope =
+  | {
+      schemaVersion: 1;
+      status: "found";
+      profile: PublicPlayerProfile;
+    }
+  | {
+      schemaVersion: 1;
+      status: "not_found";
+    };
+
 export type ModelTier = "budget" | "standard" | "premium";
 export type FillStrategy = "random" | "balanced";
 export type TimingPreset = "fast" | "standard" | "slow" | "custom";
