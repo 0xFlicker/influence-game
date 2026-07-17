@@ -16,7 +16,6 @@ import {
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import {
-  getPublicDisplayName,
   hasSafePublicDisplayName,
   isEmailLike,
 } from "../lib/display-name.js";
@@ -27,6 +26,10 @@ import {
   validatePublicPlayerHandle,
 } from "../lib/public-player-identity.js";
 import { projectAuthenticatedPublicIdentity } from "../services/authenticated-public-identity.js";
+import {
+  getPublicPlayerIdentityMap,
+  publicPlayerDisplayName,
+} from "../services/public-player-identity.js";
 
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
@@ -161,12 +164,13 @@ export function createProfileRoutes(db: DrizzleDB) {
       .limit(100);
 
     // Only include users who have played at least one game
+    const identityMap = await getPublicPlayerIdentityMap(db, rows.map((row) => row.id));
     const leaderboard = rows
       .filter((r) => r.gamesPlayed > 0)
       .map((r, i) => ({
         rank: i + 1,
-        userId: r.id,
-        displayName: getPublicDisplayName(r),
+        player: identityMap.get(r.id) ?? null,
+        displayName: publicPlayerDisplayName(r),
         rating: r.rating,
         gamesPlayed: r.gamesPlayed,
         gamesWon: r.gamesWon,

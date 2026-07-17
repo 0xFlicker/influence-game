@@ -320,7 +320,7 @@ export class ProductionGameMcpReadModel {
   async readSeasonGameReceipts(seasonIdOrSlug: string, gameIdOrSlug: string) {
     const result = await getPublicGameCompetitionReceipts(this.db, seasonIdOrSlug, gameIdOrSlug);
     if (!result) throw new Error("Season or game not found");
-    return { schemaVersion: 1 as const, ...result };
+    return { schemaVersion: 2 as const, ...result };
   }
 
   async readOwnedAgentSeason(

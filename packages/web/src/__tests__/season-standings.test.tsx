@@ -14,6 +14,7 @@ describe("season standings", () => {
     expect(html).toContain("Atlas");
     expect(html).toContain("120");
     expect(html).toContain("Wins lead");
+    expect(html).toContain('href="/profile/architect"');
     expect(html).not.toContain("sigma");
     expect(html).not.toContain("recalibr");
     expect(html).not.toContain("magnitude");
@@ -38,12 +39,20 @@ describe("season standings", () => {
       agentChampion: {
         agentId: "atlas",
         agentName: "Atlas Archive",
-        ownerId: "owner-1",
+        owner: {
+          publicId: "f7ad2112-7471-4a73-ab2c-02685db3ba40",
+          handle: "architect-archive",
+          displayName: "Architect Archive",
+        },
         ownerName: "Architect Archive",
         points: 120,
       },
       architectChampion: {
-        ownerId: "owner-1",
+        owner: {
+          publicId: "f7ad2112-7471-4a73-ab2c-02685db3ba40",
+          handle: "architect-archive",
+          displayName: "Architect Archive",
+        },
         ownerName: "Architect Archive",
         pointsHundredths: 12000,
         contributions: [],
@@ -56,12 +65,39 @@ describe("season standings", () => {
     expect(html).toContain("Atlas Archive");
     expect(html).toContain("Architect Champion");
     expect(html).toContain("Dual Crown sweep");
+    expect(html).toContain('href="/profile/architect-archive"');
+  });
+
+  test("does not invent profile links or a dual crown when identities are absent", () => {
+    const legacy = dashboard();
+    legacy.schemaVersion = 1;
+    legacy.agentStandings[0]!.owner = undefined;
+    legacy.architectStandings[0]!.owner = undefined;
+    legacy.honors = {
+      agentChampion: {
+        agentId: "atlas",
+        agentName: "Atlas",
+        ownerName: "Anonymous architect",
+        points: 120,
+      },
+      architectChampion: {
+        ownerName: "Anonymous architect",
+        pointsHundredths: 12000,
+        contributions: [],
+      },
+    };
+
+    const html = renderToStaticMarkup(
+      <SeasonStandings dashboard={legacy} loading={false} seasons={[legacy.season]} onSelectSeason={() => {}} />,
+    );
+    expect(html).not.toContain('href="/profile/');
+    expect(html).not.toContain("Dual Crown sweep");
   });
 });
 
 function dashboard(): SeasonDashboard {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     season: {
       id: "season-1",
       slug: "summer-2026",
@@ -76,7 +112,11 @@ function dashboard(): SeasonDashboard {
       rank: 1,
       agentId: "atlas",
       agentName: "Atlas",
-      ownerId: "owner-1",
+      owner: {
+        publicId: "8a54b663-f14e-4287-a5e2-40b4dcc8afeb",
+        handle: "architect",
+        displayName: "Architect",
+      },
       ownerName: "Architect",
       totalPoints: 120,
       gamesPlayed: 2,
@@ -86,7 +126,11 @@ function dashboard(): SeasonDashboard {
     }],
     architectStandings: [{
       rank: 1,
-      ownerId: "owner-1",
+      owner: {
+        publicId: "8a54b663-f14e-4287-a5e2-40b4dcc8afeb",
+        handle: "architect",
+        displayName: "Architect",
+      },
       ownerName: "Architect",
       totalPointsHundredths: 12000,
       wins: 1,

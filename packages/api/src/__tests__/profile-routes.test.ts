@@ -53,9 +53,18 @@ describe("public profile surfaces", () => {
     const res = await app.request("/api/leaderboard");
     expect(res.status).toBe(200);
 
-    const body = await res.json() as Array<{ userId: string; displayName: string; email?: string }>;
-    expect(body.find((entry) => entry.userId === "email-user")?.displayName).toBe("Anonymous");
-    expect(body.find((entry) => entry.userId === "named-user")?.displayName).toBe("Named Player");
+    const body = await res.json() as Array<{
+      displayName: string;
+      player: { publicId: string; handle: string | null; displayName: string } | null;
+      email?: string;
+      userId?: string;
+    }>;
+    expect(body.find((entry) => entry.displayName === "Anonymous")?.player).toBeNull();
+    expect(body.find((entry) => entry.displayName === "Named Player")?.player).toMatchObject({
+      handle: "named-player",
+      displayName: "Named Player",
+    });
+    expect(body.every((entry) => !("userId" in entry))).toBe(true);
     expect(body[0]).not.toHaveProperty("email");
   });
 
@@ -63,9 +72,18 @@ describe("public profile surfaces", () => {
     const res = await app.request("/api/free-queue/leaderboard");
     expect(res.status).toBe(200);
 
-    const body = await res.json() as Array<{ userId: string; displayName: string; email?: string }>;
-    expect(body.find((entry) => entry.userId === "email-user")?.displayName).toBe("Anonymous");
-    expect(body.find((entry) => entry.userId === "named-user")?.displayName).toBe("Named Player");
+    const body = await res.json() as Array<{
+      displayName: string;
+      player: { publicId: string; handle: string | null; displayName: string } | null;
+      email?: string;
+      userId?: string;
+    }>;
+    expect(body.find((entry) => entry.displayName === "Anonymous")?.player).toBeNull();
+    expect(body.find((entry) => entry.displayName === "Named Player")?.player).toMatchObject({
+      handle: "named-player",
+      displayName: "Named Player",
+    });
+    expect(body.every((entry) => !("userId" in entry))).toBe(true);
     expect(body[0]).not.toHaveProperty("email");
   });
 

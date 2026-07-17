@@ -12,6 +12,7 @@ import {
   getPublicPlayerProfile,
   type PublicPlayerProfileEnvelope,
 } from "../services/public-player-profile.js";
+import { publicPlayerDisplayName } from "../services/public-player-identity.js";
 import { createSeason } from "../services/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -53,6 +54,19 @@ describe("public player profile", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+  });
+
+  test("never publishes raw or truncated wallet-shaped snapshot copy", () => {
+    for (const displayName of [
+      "0x1234567890abcdef1234567890abcdef12345678",
+      "0x1234...5678",
+    ]) {
+      expect(publicPlayerDisplayName({
+        displayName,
+        email: null,
+        walletAddress: null,
+      })).toBe("Anonymous");
+    }
   });
 
   test("projects one allowlisted profile by handle or UUID from eligible visible Free receipts", async () => {

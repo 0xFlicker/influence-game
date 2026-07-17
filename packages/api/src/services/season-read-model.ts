@@ -7,6 +7,11 @@ import {
   compareArchitectStandings,
   earliestFinalTotalReachedAt,
 } from "./season-policy.js";
+import {
+  getPublicPlayerIdentityMap,
+  publicPlayerDisplayName,
+  type PublicPlayerIdentityRef,
+} from "./public-player-identity.js";
 
 const DEFAULT_EXPORT_LIMIT = 1_000;
 const MAX_EXPORT_LIMIT = 5_000;
@@ -26,7 +31,7 @@ export interface PublicAgentStanding {
   rank: number;
   agentId: string;
   agentName: string;
-  ownerId: string;
+  owner: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   totalPoints: number;
   gamesPlayed: number;
@@ -45,7 +50,7 @@ export interface PublicArchitectContribution {
 
 export interface PublicArchitectStanding {
   rank: number;
-  ownerId: string;
+  owner: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   totalPointsHundredths: number;
   wins: number;
@@ -57,7 +62,7 @@ export interface PublicCompetitionReceipt {
   gameSlug: string | null;
   agentId: string;
   agentName: string;
-  ownerId: string;
+  owner: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   lobbySize: number;
   placement: number | null;
@@ -74,19 +79,42 @@ export interface PublicGameCompetitionReceipt extends PublicCompetitionReceipt {
   seasonTotalPoints: number;
 }
 
-export interface OwnedCompetitionReceipt extends PublicCompetitionReceipt {
+interface PrivateCompetitionReceipt extends Omit<PublicCompetitionReceipt, "owner"> {
+  ownerId: string;
+}
+
+export interface OwnedCompetitionReceipt extends PrivateCompetitionReceipt {
   revisionId: string;
 }
 
 export interface PublicSeasonDashboard {
-  schemaVersion: 1;
+  schemaVersion: 2;
   season: PublicSeasonIdentity;
   agentStandings: PublicAgentStanding[];
   architectStandings: PublicArchitectStanding[];
   honors: null | {
-    agentChampion: { agentId: string; agentName: string; ownerId: string; ownerName: string | null; points: number };
-    architectChampion: { ownerId: string; ownerName: string | null; pointsHundredths: number; contributions: Array<Record<string, unknown>> };
+    agentChampion: {
+      agentId: string;
+      agentName: string;
+      owner: PublicPlayerIdentityRef | null;
+      ownerName: string | null;
+      points: number;
+    };
+    architectChampion: {
+      owner: PublicPlayerIdentityRef | null;
+      ownerName: string | null;
+      pointsHundredths: number;
+      contributions: Array<Record<string, unknown>>;
+    };
   };
+}
+
+interface InternalAgentStanding extends Omit<PublicAgentStanding, "owner"> {
+  ownerId: string;
+}
+
+interface InternalArchitectStanding extends Omit<PublicArchitectStanding, "owner"> {
+  ownerId: string;
 }
 
 export async function listPublicSeasons(db: DrizzleDB): Promise<PublicSeasonIdentity[]> {
@@ -128,8 +156,8 @@ export async function getPublicSeasonDashboard(
   const season = publicSeasonIdentity(seasonRow);
   const receipts = await loadPublicReceiptRows(db, season.id);
   const eligible = receipts.filter((receipt) => receipt.eligibilityStatus === "eligible");
-  const agentStandings = buildAgentStandings(eligible);
-  const architectStandings = buildArchitectStandings(agentStandings, eligible);
+  const internalAgentStandings = buildAgentStandings(eligible);
+  const internalArchitectStandings = buildArchitectStandings(internalAgentStandings, eligible);
   const honor = (await db.select({
     agentChampionAgentProfileId: schema.seasonHonors.agentChampionAgentProfileId,
     agentChampionOwnerId: schema.seasonHonors.agentChampionOwnerId,
@@ -141,8 +169,30 @@ export async function getPublicSeasonDashboard(
     architectChampionPointsHundredths: schema.seasonHonors.architectChampionPointsHundredths,
     architectContributions: schema.seasonHonors.architectContributions,
   }).from(schema.seasonHonors).where(eq(schema.seasonHonors.seasonId, season.id)).limit(1))[0];
+  const identities = await getPublicPlayerIdentityMap(db, [
+    ...receipts.map((receipt) => receipt.ownerId),
+    ...(honor
+      ? [honor.agentChampionOwnerId, honor.architectChampionOwnerId]
+      : []),
+  ]);
+  const agentStandings = internalAgentStandings.map(({ ownerId, ...standing }) => ({
+    ...standing,
+    owner: identities.get(ownerId) ?? null,
+    ownerName: publicOwnerSnapshotName(
+      standing.ownerName,
+      identities.get(ownerId) ?? null,
+    ),
+  }));
+  const architectStandings = internalArchitectStandings.map(({ ownerId, ...standing }) => ({
+    ...standing,
+    owner: identities.get(ownerId) ?? null,
+    ownerName: publicOwnerSnapshotName(
+      standing.ownerName,
+      identities.get(ownerId) ?? null,
+    ),
+  }));
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     season,
     agentStandings,
     architectStandings,
@@ -150,13 +200,19 @@ export async function getPublicSeasonDashboard(
       agentChampion: {
         agentId: honor.agentChampionAgentProfileId,
         agentName: honor.agentChampionNameSnapshot,
-        ownerId: honor.agentChampionOwnerId,
-        ownerName: honor.agentChampionOwnerNameSnapshot,
+        owner: identities.get(honor.agentChampionOwnerId) ?? null,
+        ownerName: publicOwnerSnapshotName(
+          honor.agentChampionOwnerNameSnapshot,
+          identities.get(honor.agentChampionOwnerId) ?? null,
+        ),
         points: honor.agentChampionPoints,
       },
       architectChampion: {
-        ownerId: honor.architectChampionOwnerId,
-        ownerName: honor.architectChampionOwnerNameSnapshot,
+        owner: identities.get(honor.architectChampionOwnerId) ?? null,
+        ownerName: publicOwnerSnapshotName(
+          honor.architectChampionOwnerNameSnapshot,
+          identities.get(honor.architectChampionOwnerId) ?? null,
+        ),
         pointsHundredths: honor.architectChampionPointsHundredths,
         contributions: honor.architectContributions,
       },
@@ -175,6 +231,10 @@ export async function getPublicGameCompetitionReceipts(
     .where(or(eq(schema.games.id, gameIdOrSlug), eq(schema.games.slug, gameIdOrSlug))).limit(1))[0];
   if (!game || game.seasonId !== season.id) return null;
   const seasonReceipts = await loadPublicReceiptRows(db, season.id);
+  const identities = await getPublicPlayerIdentityMap(
+    db,
+    seasonReceipts.map((receipt) => receipt.ownerId),
+  );
   const seasonTotalPointsByAgent = new Map<string, number>();
   for (const receipt of seasonReceipts) {
     if (receipt.eligibilityStatus !== "eligible") continue;
@@ -186,7 +246,7 @@ export async function getPublicGameCompetitionReceipts(
   const receipts = seasonReceipts
     .filter((receipt) => receipt.gameId === game.id)
     .map((receipt) => ({
-      ...publicReceipt(receipt),
+      ...publicReceipt(receipt, identities.get(receipt.ownerId) ?? null),
       seasonTotalPoints: seasonTotalPointsByAgent.get(receipt.agentProfileId) ?? 0,
     }));
   return { season: publicSeasonIdentity(season), receipts };
@@ -467,7 +527,7 @@ async function loadPublicReceiptRows(db: DrizzleDB, seasonId: string) {
     .orderBy(asc(schema.competitionReceipts.earnedAt), asc(schema.competitionReceipts.id));
 }
 
-function buildAgentStandings(rows: ReceiptReadRow[]): PublicAgentStanding[] {
+function buildAgentStandings(rows: ReceiptReadRow[]): InternalAgentStanding[] {
   const groups = new Map<string, ReceiptReadRow[]>();
   for (const row of rows) {
     const group = groups.get(row.agentProfileId) ?? [];
@@ -502,10 +562,10 @@ function buildAgentStandings(rows: ReceiptReadRow[]): PublicAgentStanding[] {
 }
 
 function buildArchitectStandings(
-  agents: PublicAgentStanding[],
+  agents: InternalAgentStanding[],
   receipts: ReceiptReadRow[],
-): PublicArchitectStanding[] {
-  const groups = new Map<string, PublicAgentStanding[]>();
+): InternalArchitectStanding[] {
+  const groups = new Map<string, InternalAgentStanding[]>();
   for (const agent of agents) {
     const group = groups.get(agent.ownerId) ?? [];
     group.push(agent);
@@ -552,7 +612,45 @@ function buildArchitectStandings(
   }));
 }
 
-function publicReceipt(row: ReceiptReadRow): PublicCompetitionReceipt {
+function publicReceipt(
+  row: ReceiptReadRow,
+  owner: PublicPlayerIdentityRef | null,
+): PublicCompetitionReceipt {
+  return {
+    gameId: row.gameId,
+    gameSlug: row.gameSlug,
+    agentId: row.agentProfileId,
+    agentName: row.agentNameSnapshot,
+    owner,
+    ownerName: publicOwnerSnapshotName(row.ownerDisplayNameSnapshot, owner),
+    lobbySize: row.lobbySize,
+    placement: row.placement,
+    basePoints: row.basePoints,
+    fieldBonus: row.fieldBonus,
+    totalPoints: row.totalPoints,
+    eligibilityStatus: row.eligibilityStatus,
+    eligibilityReason: row.eligibilityReason,
+    accountRatingDelta: row.accountRatingDelta,
+    earnedAt: row.earnedAt,
+  };
+}
+
+function publicOwnerSnapshotName(
+  snapshot: string | null,
+  owner: PublicPlayerIdentityRef | null,
+): string | null {
+  if (!snapshot) return owner?.displayName ?? null;
+  const safeSnapshot = publicPlayerDisplayName({
+    displayName: snapshot,
+    email: null,
+    walletAddress: null,
+  });
+  return safeSnapshot === "Anonymous"
+    ? owner?.displayName ?? null
+    : safeSnapshot;
+}
+
+function ownerReceipt(row: ReceiptReadRow): OwnedCompetitionReceipt {
   return {
     gameId: row.gameId,
     gameSlug: row.gameSlug,
@@ -569,11 +667,8 @@ function publicReceipt(row: ReceiptReadRow): PublicCompetitionReceipt {
     eligibilityReason: row.eligibilityReason,
     accountRatingDelta: row.accountRatingDelta,
     earnedAt: row.earnedAt,
+    revisionId: row.agentRevisionId,
   };
-}
-
-function ownerReceipt(row: ReceiptReadRow): OwnedCompetitionReceipt {
-  return { ...publicReceipt(row), revisionId: row.agentRevisionId };
 }
 
 function average(values: number[]): number | null {

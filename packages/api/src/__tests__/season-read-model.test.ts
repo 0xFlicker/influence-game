@@ -70,7 +70,7 @@ describe("season read model", () => {
       ["Delta", 6],
     ]);
     expect(dashboard?.architectStandings[0]).toMatchObject({
-      ownerId: fixture.ownerA,
+      owner: { displayName: "Architect A" },
       totalPointsHundredths: 15200,
       contributions: [
         { agentName: "Alpha", sourcePoints: 120, weightPercent: 100, weightedPointsHundredths: 12000 },
@@ -256,17 +256,24 @@ describe("season read model", () => {
     });
 
     expect(rest).not.toBeNull();
+    expect(rest!.schemaVersion).toBe(2);
     expect(mcp.agentStandings).toEqual(rest!.agentStandings);
     expect(mcp.architectStandings).toEqual(rest!.architectStandings);
     expect(rest!.honors?.agentChampion.agentId).toBe(rest!.agentStandings[0]!.agentId);
-    expect(rest!.honors?.architectChampion.ownerId).toBe(rest!.architectStandings[0]!.ownerId);
+    expect(rest!.honors?.architectChampion.owner?.publicId).toBe(
+      rest!.architectStandings[0]!.owner?.publicId,
+    );
     const jsonReceipts = (JSON.parse(jsonExport!.body) as {
       receipts: Array<{ agentId: string; totalPoints: number; lobbySize: number; fieldBonus: number }>;
     }).receipts;
     expect(new Set(jsonReceipts.map((receipt) =>
       `${receipt.lobbySize}:${receipt.fieldBonus > 0 ? "bonus" : "baseline"}`
     )).size).toBeGreaterThanOrEqual(4);
-    const alphaStanding = rest!.agentStandings.find((standing) => standing.ownerId === fixture.ownerA
+    const ownerAPublicId = (await fixture.db.select({
+      publicId: schema.users.publicId,
+    }).from(schema.users).where(eq(schema.users.id, fixture.ownerA)).limit(1))[0]!.publicId;
+    const alphaStanding = rest!.agentStandings.find((standing) =>
+      standing.owner?.publicId === ownerAPublicId
       && standing.agentId === fixture.alphaId)!;
     expect(alphaStanding.totalPoints).toBe(
       jsonReceipts.filter((receipt) => receipt.agentId === fixture.alphaId)
@@ -281,7 +288,10 @@ describe("season read model", () => {
     const publicGame = await getPublicGameCompetitionReceipts(
       fixture.db, fixture.seasonSlug, fixture.firstGameId,
     );
+    expect(publicGame?.receipts[0]?.owner?.publicId).toBe(ownerAPublicId);
     expect(JSON.stringify(publicGame)).not.toContain("revisionId");
+    expect(JSON.stringify(rest)).not.toContain('"ownerId"');
+    expect(JSON.stringify(publicGame)).not.toContain('"ownerId"');
     expect(JSON.parse(jsonExport!.body).receipts[0]).toHaveProperty("revisionId");
     assertNoHiddenCompetitionEvidence(rest);
     assertNoHiddenCompetitionEvidence(mcp);

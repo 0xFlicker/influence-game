@@ -4,6 +4,7 @@ import { renderToString } from "react-dom/server";
 import {
   CompletedGameEntry,
   postgameMediaStateCopy,
+  SeasonReceiptSummary,
 } from "../app/games/[slug]/components/completed-game-entry";
 import {
   PostgameMediaPlayer,
@@ -92,6 +93,45 @@ describe("CompletedGameEntry", () => {
     expect(html).not.toContain("sigma");
     expect(html).not.toContain("opponentRatings");
     expect(html).not.toContain("recalibr");
+  });
+
+  it("links championship receipt owner copy only from a safe public identity", () => {
+    const baseReceipt = {
+      gameId,
+      gameSlug: gameId,
+      agentId: "agent-atlas",
+      agentName: "Atlas",
+      ownerName: "Architect",
+      lobbySize: 8,
+      placement: 1,
+      basePoints: 100,
+      fieldBonus: 12,
+      totalPoints: 112,
+      eligibilityStatus: "eligible" as const,
+      eligibilityReason: null,
+      accountRatingDelta: 16,
+      earnedAt: "2026-07-16T00:00:00.000Z",
+      seasonTotalPoints: 224,
+    };
+    const linked = renderToString(
+      <SeasonReceiptSummary receipts={[{
+        ...baseReceipt,
+        owner: {
+          publicId: "4b104ba0-285b-4268-a291-39dc637173d8",
+          handle: "architect",
+          displayName: "Architect",
+        },
+      }]} />,
+    );
+    expect(linked).toContain('href="/profile/architect"');
+    expect(linked).toContain("Architect:");
+    expect(linked).toContain("Atlas");
+
+    const legacy = renderToString(
+      <SeasonReceiptSummary receipts={[baseReceipt]} />,
+    );
+    expect(legacy).toContain("Architect");
+    expect(legacy).not.toContain('href="/profile/');
   });
 
   for (const [status, expected] of [

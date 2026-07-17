@@ -37,7 +37,7 @@ export function createSeasonRoutes(db: DrizzleDB) {
       c.req.param("seasonIdOrSlug"),
       c.req.param("gameIdOrSlug"),
     );
-    return result ? c.json({ schemaVersion: 1, ...result }) : c.json({ error: "Season or game not found" }, 404);
+    return result ? c.json({ schemaVersion: 2, ...result }) : c.json({ error: "Season or game not found" }, 404);
   });
 
   app.get("/api/seasons/:seasonIdOrSlug/agents/:agentId", requireAuth(db), async (c) => {

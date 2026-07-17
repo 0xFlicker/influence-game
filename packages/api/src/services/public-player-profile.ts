@@ -73,7 +73,7 @@ export async function getPublicPlayerProfile(
     getCurrentPublicSeasonDashboard(db),
   ]);
   const architectStanding = currentSeasonDashboard?.architectStandings
-    .find((standing) => standing.ownerId === player.internalUserId) ?? null;
+    .find((standing) => standing.owner?.publicId === player.identity.publicId) ?? null;
   const gamesPlayed = player.career.gamesPlayed;
 
   return {
@@ -103,9 +103,11 @@ export async function getPublicPlayerProfile(
               : null,
             honors: {
               agentChampion:
-                currentSeasonDashboard.honors?.agentChampion.ownerId === player.internalUserId,
+                currentSeasonDashboard.honors?.agentChampion.owner?.publicId
+                  === player.identity.publicId,
               architectChampion:
-                currentSeasonDashboard.honors?.architectChampion.ownerId === player.internalUserId,
+                currentSeasonDashboard.honors?.architectChampion.owner?.publicId
+                  === player.identity.publicId,
             },
           }
         : null,

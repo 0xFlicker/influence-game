@@ -2344,7 +2344,7 @@ interface FreeQueueStatusResponse {
 
 export interface LeaderboardEntry {
   rank: number;
-  userId: string;
+  player?: PublicPlayerIdentityRef | null;
   displayName: string;
   rating: number;
   gamesPlayed: number;
@@ -2387,7 +2387,7 @@ export interface AgentSeasonStanding {
   rank: number;
   agentId: string;
   agentName: string;
-  ownerId: string;
+  owner?: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   totalPoints: number;
   gamesPlayed: number;
@@ -2398,7 +2398,7 @@ export interface AgentSeasonStanding {
 
 export interface ArchitectSeasonStanding {
   rank: number;
-  ownerId: string;
+  owner?: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   totalPointsHundredths: number;
   wins: number;
@@ -2412,14 +2412,20 @@ export interface ArchitectSeasonStanding {
 }
 
 export interface SeasonDashboard {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   season: SeasonIdentity;
   agentStandings: AgentSeasonStanding[];
   architectStandings: ArchitectSeasonStanding[];
   honors: null | {
-    agentChampion: { agentId: string; agentName: string; ownerId: string; ownerName: string | null; points: number };
+    agentChampion: {
+      agentId: string;
+      agentName: string;
+      owner?: PublicPlayerIdentityRef | null;
+      ownerName: string | null;
+      points: number;
+    };
     architectChampion: {
-      ownerId: string;
+      owner?: PublicPlayerIdentityRef | null;
       ownerName: string | null;
       pointsHundredths: number;
       contributions: Array<Record<string, unknown>>;
@@ -2432,7 +2438,7 @@ export interface CompetitionReceipt {
   gameSlug: string | null;
   agentId: string;
   agentName: string;
-  ownerId: string;
+  owner?: PublicPlayerIdentityRef | null;
   ownerName: string | null;
   lobbySize: number;
   placement: number | null;
@@ -2449,7 +2455,8 @@ export interface GameCompetitionReceipt extends CompetitionReceipt {
   seasonTotalPoints: number;
 }
 
-export interface OwnedCompetitionReceipt extends CompetitionReceipt {
+export interface OwnedCompetitionReceipt extends Omit<CompetitionReceipt, "owner"> {
+  ownerId: string;
   revisionId: string;
 }
 

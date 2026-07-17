@@ -476,6 +476,55 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(text).toContain("\"ok\": true");
   });
 
+  test("returns the same sanitized season v2 DTO to games and producer callers", async () => {
+    const dashboard = {
+      schemaVersion: 2,
+      season: { slug: "season-zero" },
+      agentStandings: [{
+        agentId: "atlas",
+        owner: {
+          publicId: "4b104ba0-285b-4268-a291-39dc637173d8",
+          handle: "architect",
+          displayName: "Architect",
+        },
+        ownerName: "Historical Architect",
+      }],
+    };
+    const receiptEnvelope = {
+      schemaVersion: 2,
+      receipts: [{
+        agentId: "atlas",
+        owner: dashboard.agentStandings[0]!.owner,
+        ownerName: "Historical Architect",
+      }],
+    };
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      readSeason: async () => dashboard,
+      readSeasonGameReceipts: async () => receiptEnvelope,
+    }));
+
+    for (const auth of [GAMES_AUTH, PRODUCER_AUTH]) {
+      for (const [name, args, expected] of [
+        ["read_season_standings", { seasonIdOrSlug: "season-zero" }, dashboard],
+        [
+          "read_season_game_receipts",
+          { seasonIdOrSlug: "season-zero", gameIdOrSlug: "game-one" },
+          receiptEnvelope,
+        ],
+      ] as const) {
+        const response = await server.handle({
+          jsonrpc: "2.0",
+          id: `${name}-${auth.authProfile}`,
+          method: "tools/call",
+          params: { name, arguments: args },
+        }, auth);
+        const structured = (response?.result as { structuredContent: unknown }).structuredContent;
+        expect(structured).toEqual(expected);
+        expect(JSON.stringify(structured)).not.toContain('"ownerId"');
+      }
+    }
+  });
+
   test("returns the same closed public profile envelope to games and producer callers", async () => {
     const found = publicPlayerFoundFixture();
     const calls: string[] = [];
@@ -1400,8 +1449,8 @@ function fakeReadModel(
     listGames: async () => ({ games: [] }),
     listSeasons: async () => ({ schemaVersion: 1, seasons: [] }),
     readPlayerProfile: async () => ({ schemaVersion: 1, status: "not_found" }),
-    readSeason: async () => ({ schemaVersion: 1 }),
-    readSeasonGameReceipts: async () => ({ schemaVersion: 1, receipts: [] }),
+    readSeason: async () => ({ schemaVersion: 2 }),
+    readSeasonGameReceipts: async () => ({ schemaVersion: 2, receipts: [] }),
     readOwnedAgentSeason: async () => ({ schemaVersion: 1 }),
     exportOwnedSeason: async () => ({ schemaVersion: 1 }),
     readProducerSeasonDiagnostics: async () => ({ schemaVersion: 1 }),
