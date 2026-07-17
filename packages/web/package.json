@@ -17,6 +17,7 @@
     "test:mock": "bun test src/__tests__/"
   },
   "dependencies": {
+    "@floating-ui/react": "^0.26.28",
     "@influence/engine": "workspace:*",
     "@privy-io/react-auth": "^3.17.0",
     "@privy-io/wagmi": "^4.0.2",

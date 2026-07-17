@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { AgentAvatar, resolveAgentAvatarUrl } from "../components/agent-avatar";
-import { AgentAvatarPreview } from "../components/agent-avatar-preview";
+import {
+  AgentAvatarPreview,
+  AgentAvatarPreviewContent,
+  type PublicAgentAvatarPreview,
+} from "../components/agent-avatar-preview";
 import { setApiBase } from "../lib/api";
 import { PERSONAS } from "../lib/personas";
 
@@ -69,7 +73,7 @@ describe("AgentAvatar", () => {
     expect(html).not.toContain("Zara is exuberant and unpredictable.");
   });
 
-  it("renders an accessible portrait preview with role and game stats", () => {
+  it("renders one passive portrait trigger with a tooltip relationship", () => {
     const html = renderToString(
       createElement(AgentAvatarPreview, {
         avatarUrl: null,
@@ -81,6 +85,22 @@ describe("AgentAvatar", () => {
     );
 
     expect(html).toContain('aria-label="View Nova portrait and stats"');
+    expect(html).toContain("aria-describedby=");
+    expect(html.match(/<button/g)).toHaveLength(1);
+    expect(html).not.toContain("<a");
+  });
+
+  it("renders public preview content with role and positive game stats", () => {
+    const html = renderToString(
+      createElement(AgentAvatarPreviewContent, {
+        avatarUrl: null,
+        personaKey: "strategic",
+        name: "Nova",
+        gamesPlayed: 5,
+        gamesWon: 2,
+      }),
+    );
+
     expect(html).toContain("Strategist");
     expect(html).toContain(">games</dt>");
     expect(html).toContain(">5</dd>");
@@ -88,6 +108,77 @@ describe("AgentAvatar", () => {
     expect(html).toContain(">2</dd>");
     expect(html).toContain(">win rate</dt>");
     expect(html).toContain(">40%</dd>");
+    expect(html.toLowerCase()).not.toContain("rating");
+    expect(html).not.toContain("<button");
+    expect(html).not.toContain("<a");
+  });
+
+  it("renders distinct zero-game and unavailable current-stat states", () => {
+    const zeroGameHtml = renderToString(
+      createElement(AgentAvatarPreviewContent, {
+        avatarUrl: null,
+        personaKey: "observer",
+        name: "Echo",
+        gamesPlayed: 0,
+        gamesWon: 0,
+      }),
+    );
+    const unavailableHtml = renderToString(
+      createElement(AgentAvatarPreviewContent, {
+        avatarUrl: null,
+        personaKey: "observer",
+        name: "Echo",
+        gamesPlayed: null,
+        gamesWon: null,
+      }),
+    );
+
+    expect(zeroGameHtml).toContain("No games yet");
+    expect(zeroGameHtml).not.toContain("win rate");
+    expect(unavailableHtml).toContain("Current stats unavailable");
+    expect(unavailableHtml).not.toContain("win rate");
+  });
+
+  it("keeps the smallest and largest portrait sizes available to previews", () => {
+    for (const size of ["6", "32"] as const) {
+      const html = renderToString(
+        createElement(AgentAvatarPreview, {
+          avatarUrl: null,
+          personaKey: "strategic",
+          name: "Nova",
+          gamesPlayed: 0,
+          gamesWon: 0,
+          size,
+        }),
+      );
+
+      expect(html).toContain(`aria-label="View Nova portrait and stats"`);
+    }
+  });
+
+  it("keeps private and admin-only fields out of the public preview type", () => {
+    type PrivatePreviewKey = Extract<
+      keyof PublicAgentAvatarPreview,
+      "backstory" | "strategy" | "reasoning" | "provider" | "revision" | "rating"
+    >;
+    const hasNoPrivatePreviewKeys: PrivatePreviewKey extends never ? true : false = true;
+
+    expect(hasNoPrivatePreviewKeys).toBe(true);
+  });
+
+  it("accepts permissioned richer content outside the public preview data contract", () => {
+    const html = renderToString(
+      createElement(AgentAvatarPreview, {
+        avatarUrl: null,
+        personaKey: "observer",
+        name: "Echo",
+        gamesPlayed: 3,
+        gamesWon: 1,
+        previewContent: createElement("div", null, "Authorized admin details"),
+      }),
+    );
+
+    expect(html).toContain('aria-label="View Echo portrait and stats"');
   });
 
   it("uses useful role labels instead of House personality names", () => {
