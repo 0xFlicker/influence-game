@@ -21,6 +21,7 @@ import {
   text,
   unique,
   uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { AgentGender } from "../lib/agent-gender.js";
@@ -138,7 +139,9 @@ const MCP_OAUTH_REFRESH_SCOPE_CHECK_SQL = sql.raw(
 // ---------------------------------------------------------------------------
 
 export const users = pgTable("users", {
-  id: text("id").primaryKey(), // UUID
+  id: text("id").primaryKey(), // Private authentication/legacy account key.
+  publicId: uuid("public_id").defaultRandom().notNull(),
+  handle: text("handle"),
   walletAddress: text("wallet_address").unique(),
   email: text("email"),
   displayName: text("display_name"),
@@ -150,7 +153,37 @@ export const users = pgTable("users", {
   createdAt: text("created_at")
     .notNull()
     .default(sql`now()::text`),
-});
+}, (table) => [
+  uniqueIndex("users_public_id_unique").on(table.publicId),
+  uniqueIndex("users_handle_lower_unique").on(sql`lower(${table.handle})`),
+  check(
+    "users_public_id_distinct_from_internal_id_check",
+    sql`${table.publicId}::text <> ${table.id}`,
+  ),
+  check(
+    "users_handle_canonical_check",
+    sql`${table.handle} IS NULL OR ${table.handle} = lower(btrim(${table.handle}))`,
+  ),
+  check(
+    "users_handle_length_check",
+    sql`${table.handle} IS NULL OR char_length(${table.handle}) BETWEEN 3 AND 30`,
+  ),
+  check(
+    "users_handle_format_check",
+    sql`${table.handle} IS NULL OR ${table.handle} ~ '^[a-z0-9]([a-z0-9-]*[a-z0-9])$'`,
+  ),
+  check(
+    "users_handle_not_uuid_check",
+    sql`${table.handle} IS NULL OR ${table.handle} !~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'`,
+  ),
+  check(
+    "users_handle_not_reserved_check",
+    sql`${table.handle} IS NULL OR ${table.handle} NOT IN (
+      'about', 'admin', 'anonymous', 'api', 'dashboard', 'games', 'get-mcp', 'health',
+      'house', 'internal', 'oauth', 'privacy', 'profile', 'rules', 'runtime-config', 'system'
+    )`,
+  ),
+]);
 
 // ---------------------------------------------------------------------------
 // Games
