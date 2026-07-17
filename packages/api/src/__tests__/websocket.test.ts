@@ -539,8 +539,13 @@ describe("WebSocket Manager", () => {
     expect(sent).toHaveLength(1);
     const parsed = JSON.parse(sent[0]!);
     expect(parsed.type).toBe("watch_state");
+    expect(parsed.state.schemaVersion).toBe(4);
     expect(parsed.state.gameId).toBe("game-123");
     expect(parsed.state.eventCursor.sequence).toBe(7);
+    expect(parsed.state.players[0].currentAgent).toMatchObject({
+      name: "Current Alice",
+      competition: { gamesPlayed: 3, wins: 1 },
+    });
     expect(JSON.stringify(parsed)).not.toContain("thinking");
     expect(JSON.stringify(parsed)).not.toContain("reasoningContext");
   });
@@ -556,6 +561,7 @@ describe("WebSocket Manager", () => {
     expect(parsed).toMatchObject({
       type: "watch_state",
       state: {
+        schemaVersion: 4,
         gameId: "game-watch",
         eventCursor: { sequence: 11 },
         projection: { availability: "available" },
@@ -577,7 +583,7 @@ describe("WebSocket Manager", () => {
 
 function watchStateFixture(gameId: string, sequence: number): GameWatchState {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     gameId,
     slug: `test-${gameId}`,
     status: "in_progress",
@@ -602,9 +608,21 @@ function watchStateFixture(gameId: string, sequence: number): GameWatchState {
       diagnostics: [],
     },
     players: [
-      { id: "p1", name: "Alice", persona: "strategic", status: "alive", shielded: false },
-      { id: "p2", name: "Bob", persona: "social", status: "alive", shielded: true },
-      { id: "p3", name: "Charlie", persona: "honest", status: "eliminated", shielded: false },
+      {
+        id: "p1",
+        name: "Alice",
+        persona: "strategic",
+        status: "alive",
+        shielded: false,
+        currentAgent: {
+          name: "Current Alice",
+          avatarUrl: "https://example.test/alice.png",
+          role: { key: "strategic", label: "Strategic" },
+          competition: { gamesPlayed: 3, wins: 1, winRate: 1 / 3 },
+        },
+      },
+      { id: "p2", name: "Bob", persona: "social", status: "alive", shielded: true, currentAgent: null },
+      { id: "p3", name: "Charlie", persona: "honest", status: "eliminated", shielded: false, currentAgent: null },
     ],
     counts: {
       totalPlayers: 3,

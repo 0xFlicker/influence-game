@@ -291,6 +291,7 @@ export interface GameWatchPlayer {
   pressureStatus?: GameWatchPlayerPressureStatus;
   exposeScore?: number;
   avatarUrl?: string;
+  currentAgent?: PublicAgentPreview | null;
 }
 
 export interface GameWatchFinalState {
@@ -305,7 +306,7 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 3;
+  schemaVersion: 3 | 4;
   gameId: string;
   slug: string;
   status: GameStatus;
@@ -331,7 +332,7 @@ export interface GameWatchState {
 }
 
 export interface GameWatchReplayFrame {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
   gameId: string;
   slug: string;
   sequence: number;
@@ -2012,6 +2013,7 @@ export interface GamePlayer {
   pressureStatus?: GameWatchPlayerPressureStatus;
   exposeScore?: number;
   avatarUrl?: string;
+  currentAgent?: PublicAgentPreview | null;
 }
 
 export type TranscriptScope = "public" | "mingle" | "huddle" | "whisper" | "system" | "diary" | "thinking";

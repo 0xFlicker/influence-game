@@ -8,6 +8,7 @@ import { ProductionGameMcpReadModel } from "../game-mcp/read-model.js";
 import { ProductionGameMcpJsonRpcServer } from "../game-mcp/server.js";
 import { createPublicPlayerRoutes } from "../routes/public-players.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { getPublicAgentPreviewsByProfileIds } from "../services/public-agent-preview.js";
 import {
   getPublicPlayerProfile,
   type PublicPlayerProfileEnvelope,
@@ -109,6 +110,21 @@ describe("public player profile", () => {
       },
     });
     if (byHandle.status !== "found") throw new Error("Expected found profile");
+
+    const previewByProfileId = await getPublicAgentPreviewsByProfileIds(db, [
+      fixture.zuluProfileId,
+      fixture.zuluProfileId,
+      randomUUID(),
+    ]);
+    expect(previewByProfileId.size).toBe(1);
+    expect(previewByProfileId.get(fixture.zuluProfileId)).toMatchObject({
+      name: "Zulu",
+      competition: {
+        gamesPlayed: 6,
+        wins: 2,
+        winRate: 2 / 6,
+      },
+    });
 
     expect(byHandle.profile.agents).toEqual([
       {
@@ -377,7 +393,12 @@ async function seedPublicPlayerFixture(db: DrizzleDB) {
   });
 
   expect(alpha.currentRevisionId).not.toBeNull();
-  return { userId, publicId, seasonSlug: season.slug };
+  return {
+    userId,
+    publicId,
+    seasonSlug: season.slug,
+    zuluProfileId: zulu.id,
+  };
 }
 
 async function insertReceiptFixture(

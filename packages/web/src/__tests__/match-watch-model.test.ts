@@ -42,7 +42,7 @@ function baseGame(): GameDetail {
 
 function watchState(overrides: Partial<GameWatchState> = {}): GameWatchState {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     gameId: "game-1",
     slug: "public-game",
     status: "in_progress",
@@ -72,6 +72,19 @@ function watchState(overrides: Partial<GameWatchState> = {}): GameWatchState {
         name: "Alice",
         persona: "Alice watches the table carefully.",
         personaKey: "observer",
+        currentAgent: {
+          name: "Current Alice",
+          avatarUrl: "https://example.test/alice-current.png",
+          role: {
+            key: "observer",
+            label: "Observer",
+          },
+          competition: {
+            gamesPlayed: 7,
+            wins: 2,
+            winRate: 2 / 7,
+          },
+        },
         status: "alive",
         shielded: true,
         pressureStatus: "empowered",
@@ -159,7 +172,7 @@ function replayFrame(
   const alivePlayers = players.filter((player) => player.status === "alive").length;
   const eliminatedPlayers = players.filter((player) => player.status === "eliminated").length;
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     gameId: "game-1",
     slug: "public-game",
     sequence: 1,
@@ -189,6 +202,10 @@ describe("match watch model", () => {
       persona: "Alice watches the table carefully.",
       personaKey: "observer",
       pressureStatus: "empowered",
+      currentAgent: {
+        name: "Current Alice",
+        avatarUrl: "https://example.test/alice-current.png",
+      },
     });
     expect(next.players.find((player) => player.id === "p2")?.status).toBe("eliminated");
     expect(next.watchState?.eventCursor.sequence).toBe(12);
@@ -260,6 +277,74 @@ describe("match watch model", () => {
     );
 
     expect(next.players.some((player) => player.pressureStatus || player.exposeScore !== undefined)).toBe(false);
+  });
+
+  it("preserves current agent data from older watch states and honors explicit unavailable state", () => {
+    const currentAgent = watchState().players[0]!.currentAgent;
+    const game = {
+      ...baseGame(),
+      players: baseGame().players.map((player) => (
+        player.id === "p1" ? { ...player, currentAgent } : player
+      )),
+    };
+    const olderState = watchState({
+      schemaVersion: 3,
+      players: watchState().players.map((player) => {
+        const olderPlayer = { ...player };
+        delete olderPlayer.currentAgent;
+        return olderPlayer;
+      }),
+    });
+    const unavailableState = watchState({
+      players: watchState().players.map((player) => (
+        player.id === "p1" ? { ...player, currentAgent: null } : player
+      )),
+    });
+
+    expect(applyWatchStateToGameDetail(game, olderState).players[0]?.currentAgent)
+      .toEqual(currentAgent);
+    expect(applyWatchStateToGameDetail(game, unavailableState).players[0]?.currentAgent)
+      .toBeNull();
+  });
+
+  it("preserves historical replay copy while applying current agent data through reconstruction", () => {
+    const baselineCurrentAgent = watchState().players[0]!.currentAgent;
+    const players = baseGame().players.map((player) => (
+      player.id === "p1" ? { ...player, currentAgent: baselineCurrentAgent } : player
+    ));
+    const frame = replayFrame([
+      {
+        ...players[0]!,
+        name: "Historical Frame Alice",
+        currentAgent: {
+          ...baselineCurrentAgent!,
+          name: "Alice After Edit",
+          avatarUrl: "https://example.test/alice-after-edit.png",
+        },
+      },
+      { ...players[1]!, currentAgent: null },
+    ]);
+
+    const model = buildMatchWatchModel({
+      game: { ...baseGame(), players },
+      messages: [],
+      live: false,
+      playbackState: {
+        round: 1,
+        phase: "MINGLE",
+        players,
+        visibleMessages: [],
+      },
+      replayFrames: [frame],
+    });
+    const alice = model.players.find((card) => card.player.id === "p1")?.player;
+
+    expect(alice?.name).toBe("Alice");
+    expect(alice?.persona).toBe("strategic");
+    expect(alice?.currentAgent).toMatchObject({
+      name: "Alice After Edit",
+      avatarUrl: "https://example.test/alice-after-edit.png",
+    });
   });
 
   it("routes live games and explicit completed transcript replays into the shell", () => {
