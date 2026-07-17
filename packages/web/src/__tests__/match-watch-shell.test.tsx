@@ -65,6 +65,38 @@ function entry(overrides: Partial<TranscriptEntry> = {}): TranscriptEntry {
 }
 
 describe("MatchWatchShell", () => {
+  it("keeps portrait previews separate from cast inspection and historical identity", () => {
+    const currentGame = game();
+    currentGame.players[0] = {
+      ...currentGame.players[0]!,
+      personaKey: "observer",
+      currentAgent: {
+        name: "Atlas After Rename",
+        avatarUrl: "/avatars/atlas-current.png",
+        role: { key: "aggressive", label: "Aggressor" },
+        competition: {
+          gamesPlayed: 9,
+          wins: 3,
+          winRate: 1 / 3,
+        },
+      },
+    };
+    const html = renderToString(
+      <MatchWatchShell
+        game={currentGame}
+        messages={[entry()]}
+        live={false}
+        connStatus="replay"
+      />,
+    );
+
+    expect(html).toContain('aria-label="View Atlas portrait and stats"');
+    expect(html).toContain('aria-label="Inspect Atlas"');
+    expect(html).toContain("/avatars/atlas-current.png");
+    expect(html).not.toContain("Atlas After Rename");
+    expect(html).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/);
+  });
+
   it("renders persistent replay watch chrome around the embedded theater", () => {
     const currentGame = game();
     const html = renderToString(

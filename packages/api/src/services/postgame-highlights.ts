@@ -18,6 +18,10 @@ import {
   type PostgameGameMetadata,
   type PostgameReadStatus,
 } from "./postgame-analysis.js";
+import {
+  getPublicAgentPreviewsByProfileIds,
+  type PublicAgentPreview,
+} from "./public-agent-preview.js";
 import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 
@@ -28,12 +32,29 @@ export type PostgameHighlightsReadStatus = Exclude<
 
 export type PublicHouseHighlightReceipt = Omit<HouseHighlightReceipt, "eventRefs">;
 
-export type PublicHouseHighlightVisualBrief = Pick<
+export type PublicHouseHighlightPlayerRef = PlayerRef & {
+  persona?: string;
+  personaKey?: string;
+  currentAgent: PublicAgentPreview | null;
+};
+
+export type PublicHouseHighlightVisualBrief = Omit<Pick<
   HouseHighlightVisualBrief,
   "visualType" | "templateLabel" | "primaryAgents" | "secondaryAgents" | "backdrop" | "shareFraming"
->;
+>, "primaryAgents" | "secondaryAgents"> & {
+  primaryAgents: PublicHouseHighlightPlayerRef[];
+  secondaryAgents: PublicHouseHighlightPlayerRef[];
+};
 
-export type PublicHouseHighlightSceneCard = Pick<
+export type PublicHouseHighlightVisualCard = Omit<
+  HouseHighlightVisualCard,
+  "primaryAgents" | "secondaryAgents"
+> & {
+  primaryAgents: PublicHouseHighlightPlayerRef[];
+  secondaryAgents: PublicHouseHighlightPlayerRef[];
+};
+
+export type PublicHouseHighlightSceneCard = Omit<Pick<
   HouseHighlightSceneCard,
   | "id"
   | "title"
@@ -45,10 +66,11 @@ export type PublicHouseHighlightSceneCard = Pick<
   | "payoff"
   | "confidence"
   | "deepLink"
-> & {
+>, "involvedAgents"> & {
+  involvedAgents: PublicHouseHighlightPlayerRef[];
   receipts: PublicHouseHighlightReceipt[];
   visualBrief: PublicHouseHighlightVisualBrief;
-  visualCard: HouseHighlightVisualCard;
+  visualCard: PublicHouseHighlightVisualCard;
 };
 
 export type PublicHouseHighlightsCut = Omit<HouseHighlightsCut, "scenes"> & {
@@ -92,6 +114,7 @@ type LoadedHouseHighlightsResult =
       game: PostgameGameMetadata;
       highlights: HouseHighlightsProjection;
       highlightsContext: VisualFactAnalysis;
+      playerIdentityIndex: PlayerIdentityIndex;
     }
   | PostgameHighlightsFailure;
 
@@ -105,7 +128,11 @@ export async function getPostgameHighlights(
     ok: true,
     schemaVersion: 3,
     game: loaded.game,
-    highlights: redactHouseHighlightsDiagnostics(loaded.highlights, loaded.highlightsContext),
+    highlights: redactHouseHighlightsDiagnostics(
+      loaded.highlights,
+      loaded.highlightsContext,
+      loaded.playerIdentityIndex,
+    ),
   };
 }
 
@@ -126,6 +153,7 @@ export async function getPostgameHighlightsDiagnostics(
 export function redactHouseHighlightsDiagnostics(
   projection: HouseHighlightsProjection,
   analysis?: VisualFactAnalysis,
+  playerIdentityIndex: PlayerIdentityIndex = new Map(),
 ): PublicHouseHighlightsProjection {
   const { diagnostics, ...publicProjection } = projection;
   void diagnostics;
@@ -136,42 +164,74 @@ export function redactHouseHighlightsDiagnostics(
     cut: publicProjection.cut
       ? {
           ...publicProjection.cut,
-          scenes: publicProjection.cut.scenes.map((scene) => redactSceneForPublic(scene, context)),
+          scenes: publicProjection.cut.scenes.map((scene) =>
+            redactSceneForPublic(scene, context, playerIdentityIndex)
+          ),
         }
       : null,
-    scenes: publicProjection.scenes.map((scene) => redactSceneForPublic(scene, context)),
+    scenes: publicProjection.scenes.map((scene) =>
+      redactSceneForPublic(scene, context, playerIdentityIndex)
+    ),
   };
 }
 
 function redactSceneForPublic(
   scene: HouseHighlightSceneCard,
   context: VisualFactContext | null,
+  playerIdentityIndex: PlayerIdentityIndex,
 ): PublicHouseHighlightSceneCard {
   return {
     id: scene.id,
     title: scene.title,
     category: scene.category,
-    involvedAgents: scene.involvedAgents,
+    involvedAgents: scene.involvedAgents.map((agent) =>
+      publicPlayerRef(agent, playerIdentityIndex)
+    ),
     houseHook: scene.houseHook,
     setup: scene.setup,
     conflict: scene.conflict,
     payoff: scene.payoff,
     confidence: scene.confidence,
     deepLink: scene.deepLink,
-    visualBrief: redactVisualBriefForPublic(scene.visualBrief),
-    visualCard: visualCardForPublicScene(scene, context),
+    visualBrief: redactVisualBriefForPublic(scene.visualBrief, playerIdentityIndex),
+    visualCard: publicVisualCard(
+      visualCardForPublicScene(scene, context),
+      playerIdentityIndex,
+    ),
     receipts: scene.receipts.map(redactReceiptForPublic),
   };
 }
 
-function redactVisualBriefForPublic(brief: HouseHighlightVisualBrief): PublicHouseHighlightVisualBrief {
+function redactVisualBriefForPublic(
+  brief: HouseHighlightVisualBrief,
+  playerIdentityIndex: PlayerIdentityIndex,
+): PublicHouseHighlightVisualBrief {
   return {
     visualType: brief.visualType,
     templateLabel: brief.templateLabel,
-    primaryAgents: brief.primaryAgents,
-    secondaryAgents: brief.secondaryAgents,
+    primaryAgents: brief.primaryAgents.map((agent) =>
+      publicPlayerRef(agent, playerIdentityIndex)
+    ),
+    secondaryAgents: brief.secondaryAgents.map((agent) =>
+      publicPlayerRef(agent, playerIdentityIndex)
+    ),
     backdrop: brief.backdrop,
     shareFraming: brief.shareFraming,
+  };
+}
+
+function publicVisualCard(
+  card: HouseHighlightVisualCard,
+  playerIdentityIndex: PlayerIdentityIndex,
+): PublicHouseHighlightVisualCard {
+  return {
+    ...card,
+    primaryAgents: card.primaryAgents.map((agent) =>
+      publicPlayerRef(agent, playerIdentityIndex)
+    ),
+    secondaryAgents: card.secondaryAgents.map((agent) =>
+      publicPlayerRef(agent, playerIdentityIndex)
+    ),
   };
 }
 
@@ -457,10 +517,11 @@ async function loadHouseHighlights(
   });
   if (!analysis.ok) return analysis;
 
-  const avatarIndexPromise = loadPlayerAvatarIndex(db, analysis.game.id);
+  const playerIdentityIndexPromise = loadPlayerIdentityIndex(db, analysis.game.id);
   const highlights = buildHouseHighlightsProjection({
     analysis: analysis.analysis,
   });
+  const playerIdentityIndex = await playerIdentityIndexPromise;
 
   return {
     ok: true,
@@ -468,9 +529,10 @@ async function loadHouseHighlights(
     game: analysis.game,
     highlights: enrichProjectionPlayerAvatars(
       highlights,
-      await avatarIndexPromise,
+      playerIdentityIndex,
     ),
     highlightsContext: analysis.analysis,
+    playerIdentityIndex,
   };
 }
 
@@ -548,47 +610,76 @@ function roundNumberForSlot(slot: HouseHighlightVisualSlot | undefined): number 
   return match ? Number(match[0]) : null;
 }
 
-type PlayerAvatarIndex = ReadonlyMap<string, string>;
+interface HistoricalPlayerIdentity {
+  persona?: string;
+  personaKey?: string;
+  avatarUrl?: string;
+  currentAgent: PublicAgentPreview | null;
+}
 
-async function loadPlayerAvatarIndex(
+type PlayerIdentityIndex = ReadonlyMap<string, HistoricalPlayerIdentity>;
+
+async function loadPlayerIdentityIndex(
   db: DrizzleDB,
   gameId: string,
-): Promise<PlayerAvatarIndex> {
+): Promise<PlayerIdentityIndex> {
   const rows = await db
     .select({
       playerId: schema.gamePlayers.id,
-      avatarUrl: schema.agentProfiles.avatarUrl,
+      persona: schema.gamePlayers.persona,
+      agentProfileId: schema.gamePlayers.agentProfileId,
     })
     .from(schema.gamePlayers)
-    .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
     .where(eq(schema.gamePlayers.gameId, gameId));
+  const currentAgentByProfileId = await getPublicAgentPreviewsByProfileIds(
+    db,
+    rows.flatMap((row) => row.agentProfileId ? [row.agentProfileId] : []),
+  );
 
-  return new Map(rows.flatMap((row) =>
-    row.avatarUrl ? [[row.playerId, row.avatarUrl] as const] : []
-  ));
+  return new Map(rows.map((row) => {
+    const persona = parsePlayerPersona(row.persona);
+    const personaKey = stringFromPlayerPersona(persona.personaKey);
+    const personaDescription =
+      stringFromPlayerPersona(persona.personalityBlurb)
+      ?? stringFromPlayerPersona(persona.personality)
+      ?? personaKey;
+    const currentAgent = row.agentProfileId
+      ? currentAgentByProfileId.get(row.agentProfileId) ?? null
+      : null;
+    return [row.playerId, {
+      ...(personaDescription && { persona: personaDescription }),
+      ...(personaKey && { personaKey }),
+      ...(currentAgent?.avatarUrl && { avatarUrl: currentAgent.avatarUrl }),
+      currentAgent,
+    }] as const;
+  }));
 }
 
 function enrichProjectionPlayerAvatars(
   projection: HouseHighlightsProjection,
-  avatarIndex: PlayerAvatarIndex,
+  playerIdentityIndex: PlayerIdentityIndex,
 ): HouseHighlightsProjection {
-  if (avatarIndex.size === 0) return projection;
+  if (playerIdentityIndex.size === 0) return projection;
   return {
     ...projection,
     cut: projection.cut
       ? {
           ...projection.cut,
-          scenes: projection.cut.scenes.map((scene) => enrichScenePlayerAvatars(scene, avatarIndex)),
+          scenes: projection.cut.scenes.map((scene) =>
+            enrichScenePlayerAvatars(scene, playerIdentityIndex)
+          ),
         }
       : null,
-    scenes: projection.scenes.map((scene) => enrichScenePlayerAvatars(scene, avatarIndex)),
+    scenes: projection.scenes.map((scene) =>
+      enrichScenePlayerAvatars(scene, playerIdentityIndex)
+    ),
     diagnostics: {
       ...projection.diagnostics,
       selectedCandidates: projection.diagnostics.selectedCandidates.map((candidate) =>
-        enrichCandidatePlayerAvatars(candidate, avatarIndex)
+        enrichCandidatePlayerAvatars(candidate, playerIdentityIndex)
       ),
       rejectedCandidates: projection.diagnostics.rejectedCandidates.map((candidate) =>
-        enrichCandidatePlayerAvatars(candidate, avatarIndex)
+        enrichCandidatePlayerAvatars(candidate, playerIdentityIndex)
       ),
     },
   };
@@ -596,16 +687,25 @@ function enrichProjectionPlayerAvatars(
 
 function enrichScenePlayerAvatars(
   scene: HouseHighlightSceneCard,
-  avatarIndex: PlayerAvatarIndex,
+  playerIdentityIndex: PlayerIdentityIndex,
 ): HouseHighlightSceneCard {
   return {
     ...scene,
-    involvedAgents: scene.involvedAgents.map((agent) => enrichAgentAvatar(agent, avatarIndex)),
+    involvedAgents: scene.involvedAgents.map((agent) =>
+      enrichAgentAvatar(agent, playerIdentityIndex)
+    ),
     visualBrief: {
       ...scene.visualBrief,
-      primaryAgents: scene.visualBrief.primaryAgents.map((agent) => enrichAgentAvatar(agent, avatarIndex)),
-      secondaryAgents: scene.visualBrief.secondaryAgents.map((agent) => enrichAgentAvatar(agent, avatarIndex)),
-      factualSlots: enrichSlotAvatars(scene.visualBrief.factualSlots, avatarIndex),
+      primaryAgents: scene.visualBrief.primaryAgents.map((agent) =>
+        enrichAgentAvatar(agent, playerIdentityIndex)
+      ),
+      secondaryAgents: scene.visualBrief.secondaryAgents.map((agent) =>
+        enrichAgentAvatar(agent, playerIdentityIndex)
+      ),
+      factualSlots: enrichSlotAvatars(
+        scene.visualBrief.factualSlots,
+        playerIdentityIndex,
+      ),
     },
   };
 }
@@ -614,29 +714,74 @@ function enrichCandidatePlayerAvatars<T extends {
   visualBrief: Pick<HouseHighlightVisualBrief, "factualSlots">;
 }>(
   candidate: T,
-  avatarIndex: PlayerAvatarIndex,
+  playerIdentityIndex: PlayerIdentityIndex,
 ): T {
   return {
     ...candidate,
     visualBrief: {
       ...candidate.visualBrief,
-      factualSlots: enrichSlotAvatars(candidate.visualBrief.factualSlots, avatarIndex),
+      factualSlots: enrichSlotAvatars(
+        candidate.visualBrief.factualSlots,
+        playerIdentityIndex,
+      ),
     },
   };
 }
 
 function enrichSlotAvatars(
   slots: readonly HouseHighlightVisualSlot[],
-  avatarIndex: PlayerAvatarIndex,
+  playerIdentityIndex: PlayerIdentityIndex,
 ): HouseHighlightVisualSlot[] {
   return slots.map((slot) =>
     slot.agents
-      ? { ...slot, agents: slot.agents.map((agent) => enrichAgentAvatar(agent, avatarIndex)) }
+      ? {
+          ...slot,
+          agents: slot.agents.map((agent) =>
+            enrichAgentAvatar(agent, playerIdentityIndex)
+          ),
+        }
       : slot
   );
 }
 
-function enrichAgentAvatar(agent: PlayerRef, avatarIndex: PlayerAvatarIndex): PlayerRef {
-  const avatarUrl = avatarIndex.get(agent.id);
+function enrichAgentAvatar(
+  agent: PlayerRef,
+  playerIdentityIndex: PlayerIdentityIndex,
+): PlayerRef {
+  const avatarUrl = playerIdentityIndex.get(agent.id)?.avatarUrl;
   return avatarUrl ? { ...agent, avatarUrl } : agent;
+}
+
+function publicPlayerRef(
+  agent: PlayerRef,
+  playerIdentityIndex: PlayerIdentityIndex,
+): PublicHouseHighlightPlayerRef {
+  const identity = playerIdentityIndex.get(agent.id);
+  return {
+    ...agent,
+    ...(identity?.avatarUrl && { avatarUrl: identity.avatarUrl }),
+    ...(identity?.persona && { persona: identity.persona }),
+    ...(identity?.personaKey && { personaKey: identity.personaKey }),
+    currentAgent: identity?.currentAgent ?? null,
+  };
+}
+
+function parsePlayerPersona(
+  value: string | Record<string, unknown>,
+): Record<string, unknown> {
+  if (typeof value !== "string") return value;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object"
+      ? parsed as Record<string, unknown>
+      : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringFromPlayerPersona(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0
+    ? value.trim()
+    : undefined;
 }

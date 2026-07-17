@@ -21,13 +21,19 @@ describe("house highlights model", () => {
         primaryAgents: [{
           id: "ember",
           name: "Ember",
-          initials: "E",
+          persona: "deceptive",
           avatarUrl: "https://cdn.example.test/avatars/ember.png",
+          currentAgent: {
+            name: "Ember Prime",
+            avatarUrl: "https://cdn.example.test/avatars/ember-current.png",
+            role: { key: "strategic", label: "Strategic" },
+            competition: { gamesPlayed: 5, wins: 2, winRate: 0.4 },
+          },
         }],
         secondaryAgents: [{
           id: "nova",
           name: "Nova",
-          initials: "N",
+          persona: "",
           avatarUrl: "https://cdn.example.test/avatars/nova.png",
         }],
         factLines: [
@@ -162,7 +168,18 @@ export function mainCutFixture(): HouseHighlightsResponse {
             template: "hero_vote_action",
             title: "Ember was cut from inside the pact",
             eyebrow: "Betrayal vote",
-            primaryAgents: [{ id: "ember", name: "Ember", avatarUrl: "https://cdn.example.test/avatars/ember.png" }],
+            primaryAgents: [{
+              id: "ember",
+              name: "Ember",
+              persona: "deceptive",
+              avatarUrl: "https://cdn.example.test/avatars/ember.png",
+              currentAgent: {
+                name: "Ember Prime",
+                avatarUrl: "https://cdn.example.test/avatars/ember-current.png",
+                role: { key: "strategic", label: "Strategic" },
+                competition: { gamesPlayed: 5, wins: 2, winRate: 0.4 },
+              },
+            }],
             secondaryAgents: [{ id: "nova", name: "Nova", avatarUrl: "https://cdn.example.test/avatars/nova.png" }],
             backdrop: "abstract_vote_board",
             facts: [

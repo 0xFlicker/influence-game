@@ -1,5 +1,7 @@
 "use client";
 
+/* eslint-disable react-hooks/refs -- Floating UI exposes callback refs through `refs`; they are not mutable React ref reads. */
+
 import {
   FloatingPortal,
   autoUpdate,
@@ -27,6 +29,7 @@ import {
 
 export interface PublicAgentAvatarPreview {
   avatarUrl?: string | null;
+  persona?: string | null;
   personaKey?: PersonaKey | null;
   role?: string | null;
   name: string;
@@ -45,6 +48,7 @@ interface AgentAvatarPreviewProps extends PublicAgentAvatarPreview {
 
 export function AgentAvatarPreview({
   avatarUrl,
+  persona,
   personaKey,
   role,
   name,
@@ -122,7 +126,7 @@ export function AgentAvatarPreview({
         <AgentAvatar
           avatarUrl={avatarUrl}
           personaKey={personaKey}
-          persona={personaKey ?? "strategic"}
+          persona={persona ?? personaKey ?? "strategic"}
           name={name}
           size={size}
         />
@@ -141,6 +145,7 @@ export function AgentAvatarPreview({
             {previewContent ?? (
               <AgentAvatarPreviewContent
                 avatarUrl={avatarUrl}
+                persona={persona}
                 personaKey={personaKey}
                 role={role}
                 name={name}
@@ -157,6 +162,7 @@ export function AgentAvatarPreview({
 
 export function AgentAvatarPreviewContent({
   avatarUrl,
+  persona,
   personaKey,
   role,
   name,
@@ -172,7 +178,7 @@ export function AgentAvatarPreviewContent({
         <AgentAvatar
           avatarUrl={avatarUrl}
           personaKey={personaKey}
-          persona={personaKey ?? "strategic"}
+          persona={persona ?? personaKey ?? "strategic"}
           name={name}
           size="32"
         />

@@ -4,7 +4,10 @@ import { join } from "node:path";
 import { renderToString } from "react-dom/server";
 import type { GamePlayer, TranscriptEntry } from "../lib/api";
 import type { DiaryRoomData } from "../app/games/[slug]/components/types";
-import { DiaryRoomChat } from "../app/games/[slug]/components/diary-room";
+import {
+  DiaryQACard,
+  DiaryRoomChat,
+} from "../app/games/[slug]/components/diary-room";
 
 const dramaticReplaySource = readFileSync(
   join(import.meta.dir, "../app/games/[slug]/components/dramatic-replay-viewer.tsx"),
@@ -36,6 +39,45 @@ function entry(overrides: Partial<TranscriptEntry>): TranscriptEntry {
 }
 
 describe("DiaryRoomChat", () => {
+  it("keeps the portrait preview separate from the diary toggle", () => {
+    const currentPlayer: GamePlayer = {
+      ...player,
+      personaKey: "strategic",
+      avatarUrl: "/avatars/mira-historical.png",
+      currentAgent: {
+        name: "Mira After Rename",
+        avatarUrl: "/avatars/mira-current.png",
+        role: { key: "aggressive", label: "Aggressor" },
+        competition: {
+          gamesPlayed: 4,
+          wins: 1,
+          winRate: 0.25,
+        },
+      },
+    };
+    const html = renderToString(
+      <DiaryQACard
+        question={entry({
+          fromPlayerId: "House -> Mira",
+          text: "Mira, what changed?",
+        })}
+        answer={entry({
+          id: 2,
+          fromPlayerId: "Mira",
+          fromPlayerName: "Mira",
+          text: "The room shifted.",
+        })}
+        players={[currentPlayer]}
+      />,
+    );
+
+    expect(html).toContain('aria-label="View Mira portrait and stats"');
+    expect(html).toContain('aria-label="Collapse Mira diary entry"');
+    expect(html).toContain("/avatars/mira-current.png");
+    expect(html).not.toContain("Mira After Rename");
+    expect(html).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/);
+  });
+
   it("keeps long diary content inside a bounded scrollable body", () => {
     const room: DiaryRoomData = {
       playerName: "Mira",

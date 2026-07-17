@@ -1,7 +1,7 @@
 "use client";
 
 import type { GameDetail, GamePlayer, PhaseKey } from "@/lib/api";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { PHASE_LABELS } from "./constants";
 
 export function ConnectionBadge({ status }: { status: "connecting" | "live" | "disconnected" | "reconnecting" | "replay" }) {
@@ -173,7 +173,7 @@ export function PlayerRoster({
                   : ""
               }`}
             >
-              <AgentAvatar avatarUrl={p.avatarUrl} personaKey={p.personaKey} persona={p.persona} name={p.name} size="8" />
+              <GamePlayerAvatarPreview player={p} size="8" />
               <span className={`font-medium ${isEmpowered ? "text-amber-200" : "text-white"}`}>
                 {p.name}
               </span>

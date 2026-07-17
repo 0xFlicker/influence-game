@@ -79,6 +79,33 @@ describe("postgame highlights service", () => {
       ...(firstVoteScene?.visualCard?.primaryAgents ?? []),
       ...(firstVoteScene?.visualCard?.secondaryAgents ?? []),
     ].every((agent) => agent.avatarUrl?.startsWith("https://cdn.example.test/avatars/"))).toBe(true);
+    const historicalAgent = firstVoteScene?.visualCard?.primaryAgents[0] as {
+      id: string;
+      name: string;
+      persona?: string;
+      personaKey?: string;
+      currentAgent?: {
+        name: string;
+        avatarUrl: string | null;
+        role: { key: string; label: string } | null;
+        competition: { gamesPlayed: number; wins: number; winRate: number };
+      } | null;
+    } | undefined;
+    expect(historicalAgent).toMatchObject({
+      personaKey: "strategic",
+      currentAgent: {
+        avatarUrl: expect.stringContaining("https://cdn.example.test/avatars/"),
+        role: { key: "strategic", label: "Strategic" },
+        competition: { gamesPlayed: 0, wins: 0, winRate: 0 },
+      },
+    });
+    expect(historicalAgent?.persona).toContain("fixture persona");
+    expect(Object.keys(historicalAgent?.currentAgent ?? {}).sort()).toEqual([
+      "avatarUrl",
+      "competition",
+      "name",
+      "role",
+    ]);
     expect(firstVoteScene?.visualCard?.factLines.some((line) => /eliminated|voted|alliance/i.test(line.text))).toBe(true);
     expect(firstVoteScene?.visualCard?.factLines.map((line) => line.kind)).not.toContain("elimination");
     expect(firstVoteScene?.visualCard?.factLines.map((line) => line.kind)).not.toContain("outcome");
@@ -104,6 +131,29 @@ describe("postgame highlights service", () => {
     ).some((text) => /[.!?]\s+in Round/i.test(text))).toBe(false);
     expect("diagnostics" in result.highlights).toBe(false);
     expectNoPublicHighlightsLeaks(result);
+  });
+
+  test("marks missing current agents unavailable instead of inventing a zero record", async () => {
+    await insertEdgeSmokeDusk(db, addNamedAllianceOverlay(createEdgeSmokeDuskEvents(EDGE_SMOKE_DUSK_GAME_ID)));
+    const missingPlayerId = EDGE_SMOKE_DUSK_PLAYERS.lilith.id;
+    await db.update(schema.gamePlayers)
+      .set({ agentProfileId: null })
+      .where(eq(schema.gamePlayers.id, missingPlayerId));
+
+    const result = await getPostgameHighlights(db, EDGE_SMOKE_DUSK_EXPECTED.slug);
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const missingAgent = result.highlights.scenes
+      .flatMap((scene) => [
+        ...scene.visualCard.primaryAgents,
+        ...scene.visualCard.secondaryAgents,
+      ])
+      .find((agent) => agent.id === missingPlayerId) as {
+        currentAgent?: unknown;
+      } | undefined;
+    expect(missingAgent).toBeDefined();
+    expect(missingAgent?.currentAgent).toBeNull();
   });
 
   test("returns admin diagnostics with selected and rejected scene rationale", async () => {
@@ -406,6 +456,11 @@ const PUBLIC_HIGHLIGHTS_FORBIDDEN_TERMS = [
   "sourcePointers",
   "payloadVersion",
   "privateReasoning",
+  "strategyStyle",
+  "backstory",
+  "\"personality\"",
+  "\"userId\"",
+  "\"ownerId\"",
   "hiddenTrace",
   "storageKey",
   "rawProviderResponse",

@@ -1,9 +1,11 @@
 import type {
   HouseHighlightCategory,
   HouseHighlightDeepLink,
+  HouseHighlightPlayerRef,
   HouseHighlightSceneCard,
   HouseHighlightsResponse,
   HouseHighlightsState,
+  PublicAgentPreview,
 } from "@/lib/api";
 import {
   completedGameModeHref,
@@ -31,8 +33,8 @@ export interface HouseHighlightsSceneModel {
     title: string;
     eyebrow: string;
     altText: string;
-    primaryAgents: Array<{ id: string; name: string; initials: string; avatarUrl: string | null }>;
-    secondaryAgents: Array<{ id: string; name: string; initials: string; avatarUrl: string | null }>;
+    primaryAgents: HouseHighlightCardAgent[];
+    secondaryAgents: HouseHighlightCardAgent[];
     roundLabel: string | null;
     outcome: string;
     factLines: Array<{
@@ -46,6 +48,15 @@ export interface HouseHighlightsSceneModel {
   proofLink: HouseHighlightsProofLink;
   anchorId: string;
   isSelected: boolean;
+}
+
+export interface HouseHighlightCardAgent {
+  id: string;
+  name: string;
+  persona: string;
+  personaKey?: string;
+  avatarUrl?: string;
+  currentAgent?: PublicAgentPreview | null;
 }
 
 export interface HouseHighlightsViewModel {
@@ -209,40 +220,15 @@ function categoryTone(category: HouseHighlightCategory): string {
   }
 }
 
-const PERSONA_AVATAR_KEYS = [
-  "honest",
-  "strategic",
-  "deceptive",
-  "paranoid",
-  "social",
-  "aggressive",
-  "loyalist",
-  "observer",
-  "diplomat",
-  "wildcard",
-  "contrarian",
-  "provocateur",
-  "martyr",
-] as const;
-
-function cardAgent(agent: { id: string; name: string; avatarUrl?: string | null }) {
+function cardAgent(
+  agent: HouseHighlightPlayerRef,
+): HouseHighlightCardAgent {
   return {
-    ...agent,
-    avatarUrl: agent.avatarUrl ?? fallbackPersonaAvatarUrl(agent.name),
-    initials: agent.name
-      .split(/\s+/)
-      .filter(Boolean)
-      .slice(0, 2)
-      .map((part) => part[0]?.toUpperCase() ?? "")
-      .join("") || "?",
+    id: agent.id,
+    name: agent.name,
+    persona: agent.persona ?? agent.personaKey ?? "",
+    ...(agent.personaKey && { personaKey: agent.personaKey }),
+    ...(agent.avatarUrl && { avatarUrl: agent.avatarUrl }),
+    currentAgent: agent.currentAgent,
   };
-}
-
-function fallbackPersonaAvatarUrl(name: string): string {
-  let hash = 0;
-  for (const char of name) {
-    hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  }
-  const key = PERSONA_AVATAR_KEYS[hash % PERSONA_AVATAR_KEYS.length] ?? "strategic";
-  return `/avatars/personas/${key}.png`;
 }

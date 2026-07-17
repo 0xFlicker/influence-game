@@ -1007,6 +1007,9 @@ export interface HouseHighlightPlayerRef {
   id: string;
   name: string;
   avatarUrl?: string | null;
+  persona?: string;
+  personaKey?: string;
+  currentAgent?: PublicAgentPreview | null;
 }
 
 export interface HouseHighlightEvidenceRef {

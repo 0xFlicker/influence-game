@@ -121,6 +121,39 @@ describe("completed results review components", () => {
     expect(html).not.toContain("Alice owned the jury story.");
   });
 
+  it("keeps the game-time results name while using the current agent portrait", () => {
+    const html = renderToString(
+      <CompletedResultsAgentCard
+        card={{
+          player: { id: "alice", name: "Alice", placement: 1, status: "winner" },
+          placementLabel: "1st",
+          votesCast: 3,
+          votesReceived: 4,
+          tags: ["Winner"],
+        }}
+        player={{
+          id: "alice",
+          name: "Alice",
+          persona: "deceptive",
+          personaKey: "deceptive",
+          status: "alive",
+          shielded: false,
+          avatarUrl: "https://cdn.example.test/alice-historical.png",
+          currentAgent: {
+            name: "Alice Prime",
+            avatarUrl: "https://cdn.example.test/alice-current.png",
+            role: { key: "strategic", label: "Strategic" },
+            competition: { gamesPlayed: 5, wins: 2, winRate: 0.4 },
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('aria-label="View Alice portrait and stats"');
+    expect(html).toContain('src="https://cdn.example.test/alice-current.png"');
+    expect(html).not.toContain('aria-label="View Alice Prime portrait and stats"');
+  });
+
   it("renders completed alliance arcs as public summary plus compact transcript details", () => {
     const html = renderToString(
       <CompletedResultsAllianceArcs

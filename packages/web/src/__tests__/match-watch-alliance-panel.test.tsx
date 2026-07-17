@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
 import { MatchWatchAlliancePanel } from "../app/games/[slug]/components/match-watch-alliance-panel";
 import type { MatchWatchAlliancePanelModel } from "../app/games/[slug]/components/match-watch-alliance-model";
+import type { GamePlayer } from "../lib/api";
 
 function panelModel(): MatchWatchAlliancePanelModel {
   return {
@@ -62,6 +63,40 @@ function panelModel(): MatchWatchAlliancePanelModel {
 }
 
 describe("MatchWatchAlliancePanel", () => {
+  it("keeps member previews separate from alliance expansion", () => {
+    const players: GamePlayer[] = [{
+      id: "p1",
+      name: "Marnie",
+      persona: "strategic",
+      personaKey: "strategic",
+      status: "alive",
+      shielded: false,
+      avatarUrl: "/avatars/marnie-historical.png",
+      currentAgent: {
+        name: "Marnie After Rename",
+        avatarUrl: "/avatars/marnie-current.png",
+        role: { key: "aggressive", label: "Aggressor" },
+        competition: {
+          gamesPlayed: 5,
+          wins: 2,
+          winRate: 0.4,
+        },
+      },
+    }];
+    const html = renderToString(
+      <MatchWatchAlliancePanel
+        allianceModel={panelModel()}
+        players={players}
+      />,
+    );
+
+    expect(html).toContain('aria-label="View Marnie portrait and stats"');
+    expect(html).toContain("/avatars/marnie-current.png");
+    expect(html).not.toContain("Marnie After Rename");
+    expect(html).not.toContain("-space-x");
+    expect(html).not.toMatch(/<summary(?:(?!<\/summary>)[\s\S])*<button/);
+  });
+
   it("renders summary before huddle transcript details", () => {
     const html = renderToString(<MatchWatchAlliancePanel allianceModel={panelModel()} />);
 

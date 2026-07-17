@@ -3,7 +3,7 @@
 import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import Link from "next/link";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { completedGameModeHref } from "@/lib/game-links";
 import {
   getGameAlliances,
@@ -240,30 +240,30 @@ function MobileContextPanel({
 
       <div className="flex gap-2 overflow-x-auto pb-1" aria-label="Cast selection">
         {model.players.map((card) => (
-          <button
+          <div
             key={card.player.id}
-            type="button"
-            onClick={() => onSelectPlayer(card.player.id)}
-            className={`flex h-10 min-w-28 items-center gap-2 rounded-md border px-2 text-left ${
+            className={`flex min-w-36 items-center gap-1 rounded-md border px-1 ${
               card.isSelected
                 ? "border-phase/40 bg-phase/[0.12]"
                 : "border-white/10 bg-white/[0.03]"
             }`}
           >
-            <AgentAvatar
-              avatarUrl={card.player.avatarUrl}
-              personaKey={card.player.personaKey}
-              persona={card.player.persona}
-              name={card.player.name}
-              size="6"
-            />
-            <span className="min-w-0">
-              <span className="block truncate text-[11px] font-medium text-white/85">
-                {card.player.name}
+            <GamePlayerAvatarPreview player={card.player} size="6" />
+            <button
+              type="button"
+              aria-label={`Inspect ${card.player.name}`}
+              aria-pressed={card.isSelected}
+              onClick={() => onSelectPlayer(card.player.id)}
+              className="flex min-h-11 min-w-0 flex-1 items-center rounded px-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-[11px] font-medium text-white/85">
+                  {card.player.name}
+                </span>
+                <CastStatusTags card={card} compact />
               </span>
-              <CastStatusTags card={card} compact />
-            </span>
-          </button>
+            </button>
+          </div>
         ))}
       </div>
 
@@ -413,25 +413,24 @@ function CastRail({
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {model.players.map((card) => (
-          <button
+          <div
             key={card.player.id}
-            type="button"
-            onClick={() => onSelectPlayer(card.player.id)}
-            className={`grid w-full grid-cols-[2.5rem_minmax(0,1fr)_3.5rem] items-center gap-2 rounded-md border px-2 py-2 text-left transition-colors ${
+            className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] items-center gap-1 rounded-md border px-1 py-1 transition-colors ${
               card.isSelected
                 ? "border-phase/40 bg-phase/[0.12] shadow-phase-sm"
                 : "border-transparent hover:border-white/10 hover:bg-white/[0.03]"
             }`}
           >
-            <AgentAvatar
-              avatarUrl={card.player.avatarUrl}
-              personaKey={card.player.personaKey}
-              persona={card.player.persona}
-              name={card.player.name}
-              size="8"
-            />
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-medium text-white/90">
+            <GamePlayerAvatarPreview player={card.player} size="8" />
+            <button
+              type="button"
+              aria-label={`Inspect ${card.player.name}`}
+              aria-pressed={card.isSelected}
+              onClick={() => onSelectPlayer(card.player.id)}
+              className="grid min-h-11 min-w-0 grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-2 rounded px-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
+            >
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium text-white/90">
                 {card.player.name}
               </span>
               <CastStatusTags card={card} />
@@ -439,7 +438,8 @@ function CastRail({
             <span className={`justify-self-end rounded px-1.5 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(card)}`}>
               {card.statusLabel}
             </span>
-          </button>
+            </button>
+          </div>
         ))}
       </div>
     </aside>
@@ -600,7 +600,10 @@ function InspectorPanel({
           <InspectorSection title="Strategy" meta={sectionMeta(intelligence)} section={intelligence.strategy} />
         ) : null}
         {activeTab === "alliance" ? (
-          <MatchWatchAlliancePanel allianceModel={allianceModel} />
+          <MatchWatchAlliancePanel
+            allianceModel={allianceModel}
+            players={model.players.map((card) => card.player)}
+          />
         ) : null}
         {activeTab === "diary" ? (
           <InspectorDiary entries={diaryEntries} />
@@ -615,13 +618,7 @@ function InspectorHero({ card }: { card: MatchWatchPlayerCard }) {
     <div className="relative shrink-0 overflow-hidden border-b border-white/10 px-4 py-4">
       <div className="absolute right-0 top-0 h-28 w-28 rounded-full bg-phase/10 blur-3xl" />
       <div className="relative flex items-start gap-3">
-        <AgentAvatar
-          avatarUrl={card.player.avatarUrl}
-          personaKey={card.player.personaKey}
-          persona={card.player.persona}
-          name={card.player.name}
-          size="16"
-        />
+        <GamePlayerAvatarPreview player={card.player} size="16" />
         <div className="min-w-0 pt-1">
           <h2 className="truncate text-xl font-semibold text-white/95">{card.player.name}</h2>
           <CastStatusTags card={card} />
