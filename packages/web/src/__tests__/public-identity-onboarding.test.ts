@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { PublicIdentityOnboarding } from "../components/public-identity-onboarding";
@@ -19,6 +21,11 @@ import {
   markIdentitySaving,
   normalizeAuthenticatedPublicIdentity,
 } from "../components/public-identity-onboarding-model";
+
+const providersSource = readFileSync(
+  join(import.meta.dir, "../app/providers.tsx"),
+  "utf8",
+);
 
 describe("public identity onboarding model", () => {
   it("tracks an untouched derived handle with display-name edits", () => {
@@ -149,6 +156,13 @@ describe("public identity onboarding model", () => {
       dismissed: true,
     })).toBe("downstream");
     expect(identityPromptDecision({
+      signedIn: true,
+      needsInvite: false,
+      identityState: null,
+      identityResolved: false,
+      dismissed: false,
+    })).toBe("none");
+    expect(identityPromptDecision({
       signedIn: false,
       needsInvite: false,
       identityState: null,
@@ -162,6 +176,15 @@ describe("public identity onboarding model", () => {
       identityResolved: true,
       dismissed: false,
     })).toBe("downstream");
+  });
+
+  it("keeps profile checks completely silent while unresolved", () => {
+    expect(providersSource).not.toContain("Checking your profile");
+    expect(providersSource).not.toContain("We could not refresh your public profile");
+    expect(providersSource).not.toContain("content.inert");
+    expect(providersSource).not.toContain('aria-modal="true"');
+    expect(providersSource).not.toContain('role="status"');
+    expect(providersSource).not.toContain("identityRetryNonce");
   });
 
   it("normalizes mixed-version auth payloads without dereferencing old producers", () => {
