@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  containsEmailLike,
   getPublicDisplayName,
   getSafeDefaultDisplayName,
   hasSafePublicDisplayName,
@@ -9,7 +10,13 @@ import {
 describe("display-name helpers", () => {
   test("detects email-like names", () => {
     expect(isEmailLike("player@example.com")).toBe(true);
+    expect(isEmailLike("\tplayer@localhost\t")).toBe(true);
     expect(isEmailLike("Not An Email")).toBe(false);
+  });
+
+  test("detects email-like values embedded in display names", () => {
+    expect(containsEmailLike("Contact alias@localhost")).toBe(true);
+    expect(containsEmailLike("Not An Email")).toBe(false);
   });
 
   test("uses wallet truncation for default signup name", () => {
@@ -25,7 +32,7 @@ describe("display-name helpers", () => {
 
     expect(
       getPublicDisplayName({
-        displayName: "player@example.com",
+        displayName: "Contact player@example.com",
         email: "player@example.com",
         walletAddress,
       }),

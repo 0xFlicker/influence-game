@@ -1,4 +1,5 @@
-const EMAIL_LIKE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const EMAIL_LIKE_RE = /^[^\s@]+@[^\s@]+$/i;
+const EMBEDDED_EMAIL_LIKE_RE = /[^\s@]+@[^\s@]+/i;
 
 interface DisplayNameInput {
   displayName?: string | null;
@@ -13,6 +14,11 @@ export function truncateWallet(walletAddress: string): string {
 export function isEmailLike(value: string | null | undefined): boolean {
   if (!value) return false;
   return EMAIL_LIKE_RE.test(value.trim());
+}
+
+export function containsEmailLike(value: string | null | undefined): boolean {
+  if (!value) return false;
+  return EMBEDDED_EMAIL_LIKE_RE.test(value);
 }
 
 export function getSafeDefaultDisplayName({
@@ -40,10 +46,10 @@ export function getPublicDisplayName({
       ? truncateWallet(walletAddress).toLowerCase()
       : null;
     const isAuthPlaceholder = normalizedName === "player"
-      || normalizedName === normalizedEmail
+      || (normalizedEmail !== null && normalizedName.includes(normalizedEmail))
       || normalizedName === normalizedWallet
       || normalizedName === truncatedWallet;
-    if (!isEmailLike(normalizedDisplayName) && !isAuthPlaceholder) {
+    if (!containsEmailLike(normalizedDisplayName) && !isAuthPlaceholder) {
       return normalizedDisplayName;
     }
   }

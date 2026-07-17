@@ -8,6 +8,17 @@ Public player facts are limited to the immutable public UUID, optional mutable u
 
 Wallet and email addresses, Privy or other authentication subjects, internal `users.id`, agent prompts and backstory, strategy configuration, revision history, reasoning and cognitive artifacts, provider data, administrator artifacts, and private dashboard, account, and agent-editing controls remain private. This rollout adds no persisted metric, summary, analytics record, or identity state beyond the public UUID and handle.
 
+### Authenticated Email API Boundary
+
+A user's email address may be serialized only to that same authenticated user or to an authenticated caller whose wallet currently carries the named `sysop`, `admin`, or `producer` role. Permissions such as `view_admin` and `manage_roles` do not independently grant email access, and stale role claims in an existing session do not preserve email access after revocation.
+
+The allowed response paths are:
+
+- `POST /api/auth/login`, `POST /api/auth/local-cli-session`, `GET /api/auth/me`, and `GET/PATCH /api/profile`, where the response subject is the authenticated user.
+- `GET /api/admin/users` and `GET /api/admin/agents`, where email fields are returned for the subject user or a caller with a privileged email role. The route's existing permission gate still applies; the email role does not grant endpoint access by itself.
+
+All other REST, MCP, WebSocket, replay, leaderboard, queue, season, and public-player responses must omit email values, including an email copied or embedded in a legacy display-name field. Administrative labels such as invite-code owners use the same display-name redaction even though they never expose an email field. Public identity queries may load email internally only to reject email-derived display names. The generic authenticated request context deliberately omits email so serializing `c.get("user")` cannot expose it.
+
 ## Contract Matrix
 
 | Surface | Rollout contract |

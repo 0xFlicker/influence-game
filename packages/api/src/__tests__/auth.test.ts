@@ -20,6 +20,7 @@ import {
   requireRole,
   optionalAuth,
   type AuthEnv,
+  type AuthUser,
 } from "../middleware/auth.js";
 import { createAuthRoutes } from "../routes/auth.js";
 import { seedRBAC } from "../db/rbac-seed.js";
@@ -156,7 +157,7 @@ describe("requireAuth middleware", () => {
     app.use("/*", requireAuth(db));
     app.get("/test", (c) => {
       const user = c.get("user");
-      return c.json({ userId: user.id, wallet: user.walletAddress });
+      return c.json({ user });
     });
 
     const token = await createSessionToken("real-user");
@@ -164,9 +165,13 @@ describe("requireAuth middleware", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { userId: string; wallet: string };
-    expect(body.userId).toBe("real-user");
-    expect(body.wallet).toBe("0xabc");
+    const body = (await res.json()) as { user: AuthUser };
+    expect(body.user).toEqual({
+      id: "real-user",
+      walletAddress: "0xabc",
+      displayName: "Tester",
+    });
+    expect(body.user).not.toHaveProperty("email");
   });
 
   test("attaches roles and permissions from JWT to context", async () => {
@@ -462,7 +467,6 @@ async function issueProducerMcpToken(
   const authorization = await authorizeMcpOAuth(db, {
     id: user.userId,
     walletAddress: user.walletAddress,
-    email: null,
     displayName: "Producer CLI",
   }, {
     client_id: MCP_OAUTH_CLIENT_ID,
@@ -682,6 +686,7 @@ describe("optionalAuth middleware", () => {
       .values({
         id: "opt-user",
         walletAddress: "0xopt",
+        email: "optional@example.test",
         displayName: "Optional",
       });
 
@@ -689,7 +694,7 @@ describe("optionalAuth middleware", () => {
     app.use("/*", optionalAuth(db));
     app.get("/test", (c) => {
       const user = c.get("user");
-      return c.json({ hasUser: !!user, userId: user?.id });
+      return c.json({ hasUser: !!user, user });
     });
 
     const token = await createSessionToken("opt-user");
@@ -697,9 +702,14 @@ describe("optionalAuth middleware", () => {
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { hasUser: boolean; userId: string };
+    const body = (await res.json()) as { hasUser: boolean; user: AuthUser };
     expect(body.hasUser).toBe(true);
-    expect(body.userId).toBe("opt-user");
+    expect(body.user).toEqual({
+      id: "opt-user",
+      walletAddress: "0xopt",
+      displayName: "Optional",
+    });
+    expect(body.user).not.toHaveProperty("email");
   });
 
   test("continues without user for invalid token", async () => {

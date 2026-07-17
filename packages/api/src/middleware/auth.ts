@@ -19,7 +19,6 @@ import type { DrizzleDB } from "../db/index.js";
 export interface AuthUser {
   id: string;
   walletAddress: string | null;
-  email: string | null;
   displayName: string | null;
 }
 
@@ -173,7 +172,6 @@ export function requireAuth(db: DrizzleDB) {
     c.set("user", {
       id: user.id,
       walletAddress: user.walletAddress,
-      email: user.email,
       displayName: user.displayName,
     });
     c.set("userRoles", session.roles);
@@ -286,7 +284,6 @@ export function optionalAuth(db: DrizzleDB) {
           c.set("user", {
             id: user.id,
             walletAddress: user.walletAddress,
-            email: user.email,
             displayName: user.displayName,
           });
           c.set("userRoles", session.roles);

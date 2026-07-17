@@ -70,12 +70,14 @@ async function createUser(
   db: DrizzleDB,
   walletAddress: string,
   displayName: string,
+  email?: string,
 ) {
   const userId = randomUUID();
   await db.insert(schema.users).values({
     id: userId,
     walletAddress: walletAddress.toLowerCase(),
     displayName,
+    email,
   });
   return userId;
 }
@@ -628,6 +630,227 @@ describe("admin route RBAC", () => {
     });
 
     expect(res.status).toBe(403);
+  });
+
+  test("only returns cross-user email addresses to sysop, admin, or producer roles", async () => {
+    const targetUserId = await createUser(
+      db,
+      "0xpiitarget000000000000000000000000000000001",
+      "\tContact owner@localhost\t",
+      "owner@localhost",
+    );
+    await db.insert(schema.agentProfiles).values({
+      id: "pii-target-agent",
+      userId: targetUserId,
+      name: "PII Target Agent",
+      personality: "Private target personality",
+    });
+    await db.insert(schema.inviteCodes).values({
+      id: "pii-target-invite",
+      code: "PIITEST1",
+      ownerId: targetUserId,
+    });
+
+    const mismatchedEmailUserId = await createUser(
+      db,
+      "0xpiimismatch0000000000000000000000000000001",
+      "\tContact alias@localhost\t",
+      "different@example.test",
+    );
+    await db.insert(schema.agentProfiles).values({
+      id: "pii-mismatch-agent",
+      userId: mismatchedEmailUserId,
+      name: "PII Mismatch Agent",
+      personality: "Email-like display-name fallback fixture",
+    });
+    await db.insert(schema.inviteCodes).values({
+      id: "pii-mismatch-invite",
+      code: "PIITEST2",
+      ownerId: mismatchedEmailUserId,
+    });
+
+    const delegatedUserId = await createUser(
+      db,
+      "0xpiireader000000000000000000000000000000001",
+      "Delegated Reader",
+      "reader@example.test",
+    );
+    await db.insert(schema.agentProfiles).values({
+      id: "pii-reader-agent",
+      userId: delegatedUserId,
+      name: "PII Reader Agent",
+      personality: "Reader-owned personality",
+    });
+
+    const producerWalletAddress = "0xpiiproducer0000000000000000000000000000001";
+    const producerUserId = await createUser(
+      db,
+      producerWalletAddress,
+      "PII Producer",
+      "producer@example.test",
+    );
+    await assignRole(db, producerWalletAddress, "producer");
+
+    const delegatedAdminReadToken = await createSessionToken(delegatedUserId, {
+      roles: ["admin-reader"],
+      permissions: ["view_admin"],
+    });
+    const delegatedRoleManagerToken = await createSessionToken(delegatedUserId, {
+      roles: ["role-manager"],
+      permissions: ["manage_roles"],
+    });
+    const producerReadToken = await createSessionToken(producerUserId, {
+      roles: ["producer"],
+      permissions: ["view_admin"],
+    });
+    const producerOnlyToken = await createSessionToken(producerUserId, {
+      roles: ["producer"],
+      permissions: [],
+    });
+    const producerRoleManagerToken = await createSessionToken(producerUserId, {
+      roles: ["producer"],
+      permissions: ["manage_roles"],
+    });
+    const adminRoleManagerToken = await createSessionToken(adminUserId, {
+      roles: ["admin"],
+      permissions: ["manage_roles"],
+    });
+
+    const delegatedAgentsResponse = await app.request("/api/admin/agents", {
+      headers: { Authorization: `Bearer ${delegatedAdminReadToken}` },
+    });
+    expect(delegatedAgentsResponse.status).toBe(200);
+    const delegatedAgents = await delegatedAgentsResponse.json() as Array<{
+      userId: string;
+      ownerDisplayName: string | null;
+      ownerEmail: string | null;
+    }>;
+    expect(delegatedAgents.find((agent) => agent.userId === targetUserId)?.ownerEmail).toBeNull();
+    expect(delegatedAgents.find((agent) => agent.userId === targetUserId)?.ownerDisplayName)
+      .toBe("Anonymous");
+    expect(delegatedAgents.find((agent) => agent.userId === mismatchedEmailUserId)?.ownerDisplayName)
+      .toBe("Anonymous");
+    expect(delegatedAgents.find((agent) => agent.userId === delegatedUserId)?.ownerEmail)
+      .toBe("reader@example.test");
+
+    for (const token of [adminToken, sysopToken, producerReadToken]) {
+      const response = await app.request("/api/admin/agents", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(200);
+      const agents = await response.json() as Array<{ userId: string; ownerEmail: string | null }>;
+      expect(agents.find((agent) => agent.userId === targetUserId)?.ownerEmail)
+        .toBe("owner@localhost");
+    }
+
+    const delegatedUsersResponse = await app.request("/api/admin/users", {
+      headers: { Authorization: `Bearer ${delegatedRoleManagerToken}` },
+    });
+    expect(delegatedUsersResponse.status).toBe(200);
+    const delegatedUsers = await delegatedUsersResponse.json() as Array<{
+      id: string;
+      displayName: string | null;
+      email: string | null;
+    }>;
+    expect(delegatedUsers.find((user) => user.id === targetUserId)?.email).toBeNull();
+    expect(delegatedUsers.find((user) => user.id === targetUserId)?.displayName)
+      .toBe("Anonymous");
+    expect(delegatedUsers.find((user) => user.id === mismatchedEmailUserId)?.displayName)
+      .toBe("Anonymous");
+    expect(delegatedUsers.find((user) => user.id === delegatedUserId)?.email)
+      .toBe("reader@example.test");
+
+    for (const token of [sysopToken, adminRoleManagerToken, producerRoleManagerToken]) {
+      const response = await app.request("/api/admin/users", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(response.status).toBe(200);
+      const users = await response.json() as Array<{ id: string; email: string | null }>;
+      expect(users.find((user) => user.id === targetUserId)?.email).toBe("owner@localhost");
+    }
+
+    const delegatedInviteCodesResponse = await app.request(
+      `/api/admin/invite-codes?userId=${targetUserId}`,
+      { headers: { Authorization: `Bearer ${delegatedAdminReadToken}` } },
+    );
+    expect(delegatedInviteCodesResponse.status).toBe(200);
+    const delegatedInviteCodes = await delegatedInviteCodesResponse.json() as Array<{
+      ownerDisplayName: string | null;
+    }>;
+    expect(delegatedInviteCodes[0]?.ownerDisplayName).toBe("Anonymous");
+    const mismatchedInviteCodesResponse = await app.request(
+      `/api/admin/invite-codes?userId=${mismatchedEmailUserId}`,
+      { headers: { Authorization: `Bearer ${delegatedAdminReadToken}` } },
+    );
+    expect(mismatchedInviteCodesResponse.status).toBe(200);
+    const mismatchedInviteCodes = await mismatchedInviteCodesResponse.json() as Array<{
+      ownerDisplayName: string | null;
+    }>;
+    expect(mismatchedInviteCodes[0]?.ownerDisplayName).toBe("Anonymous");
+
+    const anonymousAgentsResponse = await app.request("/api/admin/agents");
+    expect(anonymousAgentsResponse.status).toBe(401);
+    const gamerAgentsResponse = await app.request("/api/admin/agents", {
+      headers: { Authorization: `Bearer ${gamerToken}` },
+    });
+    expect(gamerAgentsResponse.status).toBe(403);
+    const producerOnlyAgentsResponse = await app.request("/api/admin/agents", {
+      headers: { Authorization: `Bearer ${producerOnlyToken}` },
+    });
+    expect(producerOnlyAgentsResponse.status).toBe(403);
+
+    const anonymousUsersResponse = await app.request("/api/admin/users");
+    expect(anonymousUsersResponse.status).toBe(401);
+    const gamerUsersResponse = await app.request("/api/admin/users", {
+      headers: { Authorization: `Bearer ${gamerToken}` },
+    });
+    expect(gamerUsersResponse.status).toBe(403);
+    const producerOnlyUsersResponse = await app.request("/api/admin/users", {
+      headers: { Authorization: `Bearer ${producerOnlyToken}` },
+    });
+    expect(producerOnlyUsersResponse.status).toBe(403);
+
+    await db.delete(schema.addressRoles)
+      .where(eq(schema.addressRoles.walletAddress, producerWalletAddress));
+
+    const revokedProducerAgentsResponse = await app.request("/api/admin/agents", {
+      headers: { Authorization: `Bearer ${producerReadToken}` },
+    });
+    expect(revokedProducerAgentsResponse.status).toBe(200);
+    const revokedProducerAgents = await revokedProducerAgentsResponse.json() as Array<{
+      userId: string;
+      ownerDisplayName: string | null;
+      ownerEmail: string | null;
+    }>;
+    expect(revokedProducerAgents.find((agent) => agent.userId === targetUserId)?.ownerEmail)
+      .toBeNull();
+    expect(revokedProducerAgents.find((agent) => agent.userId === targetUserId)?.ownerDisplayName)
+      .toBe("Anonymous");
+
+    const revokedProducerUsersResponse = await app.request("/api/admin/users", {
+      headers: { Authorization: `Bearer ${producerRoleManagerToken}` },
+    });
+    expect(revokedProducerUsersResponse.status).toBe(200);
+    const revokedProducerUsers = await revokedProducerUsersResponse.json() as Array<{
+      id: string;
+      displayName: string | null;
+      email: string | null;
+    }>;
+    expect(revokedProducerUsers.find((user) => user.id === targetUserId)?.email).toBeNull();
+    expect(revokedProducerUsers.find((user) => user.id === targetUserId)?.displayName)
+      .toBe("Anonymous");
+    expect(revokedProducerUsers.find((user) => user.id === producerUserId)?.email)
+      .toBe("producer@example.test");
+
+    const revokedProducerInviteCodesResponse = await app.request(
+      `/api/admin/invite-codes?userId=${targetUserId}`,
+      { headers: { Authorization: `Bearer ${producerReadToken}` } },
+    );
+    expect(revokedProducerInviteCodesResponse.status).toBe(200);
+    const revokedProducerInviteCodes = await revokedProducerInviteCodesResponse.json() as Array<{
+      ownerDisplayName: string | null;
+    }>;
+    expect(revokedProducerInviteCodes[0]?.ownerDisplayName).toBe("Anonymous");
   });
 
   test("shows the practical free queue view and removes an entry directly", async () => {
