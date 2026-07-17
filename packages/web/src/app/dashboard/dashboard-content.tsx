@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
-import { useE2EAuth } from "@/app/providers";
+import { useAuthenticatedPublicIdentity, useE2EAuth } from "@/app/providers";
 import {
   getAuthToken,
   getFreeQueueStatus,
@@ -57,6 +57,7 @@ export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
 export function DashboardContent() {
   const { user, authenticated, login } = usePrivy();
   const e2e = useE2EAuth();
+  const publicIdentity = useAuthenticatedPublicIdentity();
   const effectiveAuthenticated = e2e.isE2E ? e2e.authenticated : authenticated;
   const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
 
@@ -229,6 +230,7 @@ export function DashboardContent() {
           loading={loading}
           errors={errors}
           onJoinPrimary={handlePrimaryAction}
+          publicIdentity={publicIdentity}
         />
 
         <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">

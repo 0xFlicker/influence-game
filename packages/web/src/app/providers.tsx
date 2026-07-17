@@ -6,6 +6,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
@@ -24,15 +25,22 @@ import { mainnet } from "viem/chains";
 import { http } from "wagmi";
 import {
   loginWithPrivyToken,
+  getMe,
   setAuthToken,
   clearAuthToken,
   getAuthToken,
   ApiError,
+  type AuthenticatedPublicIdentity,
 } from "@/lib/api";
 import { isE2EMode } from "@/lib/wallet-adapter";
 import { InviteCodeModal } from "@/components/invite-code-modal";
 import { StandingDailyAgentPrompt } from "@/components/standing-daily-agent-prompt";
 import { AvatarGenerationActivity } from "@/components/avatar-generation-activity";
+import { PublicIdentityOnboarding } from "@/components/public-identity-onboarding";
+import {
+  identityDismissalKey,
+  identityPromptDecision,
+} from "@/components/public-identity-onboarding-model";
 
 // ---------------------------------------------------------------------------
 // Wagmi config (Privy-managed)
@@ -101,6 +109,12 @@ export function useInvite(): InviteState {
   return useContext(InviteContext);
 }
 
+const PublicIdentityContext = createContext<AuthenticatedPublicIdentity | null>(null);
+
+export function useAuthenticatedPublicIdentity(): AuthenticatedPublicIdentity | null {
+  return useContext(PublicIdentityContext);
+}
+
 // ---------------------------------------------------------------------------
 // AuthSync — production Privy → backend JWT sync (skipped in e2e)
 // ---------------------------------------------------------------------------
@@ -112,12 +126,35 @@ function AuthSync({ children }: { children: React.ReactNode }) {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [pendingPrivyToken, setPendingPrivyToken] = useState<string | null>(null);
+  const [identity, setIdentity] = useState<AuthenticatedPublicIdentity | null>(null);
+  const [identityDismissed, setIdentityDismissed] = useState(false);
+  const identityPublicIdRef = useRef<string | null>(null);
+  const signedIn = (e2e.ready && e2e.authenticated) || authenticated;
+
+  const syncIdentity = useCallback((next: AuthenticatedPublicIdentity | null) => {
+    const previousPublicId = identityPublicIdRef.current;
+    const nextPublicId = next?.publicId ?? null;
+
+    if (previousPublicId && previousPublicId !== nextPublicId) {
+      sessionStorage.removeItem(identityDismissalKey(previousPublicId));
+    }
+    if (previousPublicId && nextPublicId && previousPublicId !== nextPublicId) {
+      sessionStorage.removeItem(identityDismissalKey(nextPublicId));
+    }
+
+    identityPublicIdRef.current = nextPublicId;
+    setIdentity(next);
+    setIdentityDismissed(nextPublicId
+      ? sessionStorage.getItem(identityDismissalKey(nextPublicId)) === "true"
+      : false);
+  }, []);
 
   useEffect(() => {
     // In e2e mode, JWT is injected by test harness — skip Privy sync
     if (e2e.isE2E) return;
 
     if (!authenticated) {
+      syncIdentity(null);
       clearAuthToken();
       window.dispatchEvent(new CustomEvent("auth:session-cleared"));
       setNeedsInvite(false);
@@ -128,50 +165,70 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     getAccessToken().then(async (privyToken) => {
       if (!privyToken) return;
       try {
-        const { token } = await loginWithPrivyToken(privyToken);
+        const { token, user } = await loginWithPrivyToken(privyToken);
+        syncIdentity(user);
         setAuthToken(token);
         setNeedsInvite(false);
         setPendingPrivyToken(null);
       } catch (err) {
-        if (err instanceof ApiError) {
-          try {
-            const body = JSON.parse(err.message);
-            if (body.code === "INVITE_REQUIRED") {
-              setPendingPrivyToken(privyToken);
-              setNeedsInvite(true);
-              return;
-            }
-          } catch { /* not JSON, fall through */ }
+        if (err instanceof ApiError && err.code === "INVITE_REQUIRED") {
+          setPendingPrivyToken(privyToken);
+          setNeedsInvite(true);
+          return;
         }
         console.error("[AuthSync] Failed to exchange Privy token:", err);
       }
     });
-  }, [authenticated, getAccessToken, e2e.isE2E]);
+  }, [authenticated, getAccessToken, e2e.isE2E, syncIdentity]);
+
+  useEffect(() => {
+    if (!e2e.isE2E) return;
+    if (!e2e.authenticated || !getAuthToken()) {
+      syncIdentity(null);
+      return;
+    }
+    let active = true;
+    getMe()
+      .then((user) => {
+        if (active) syncIdentity(user);
+      })
+      .catch((error) => {
+        if (active) console.warn("[AuthSync] Failed to hydrate E2E session:", error);
+      });
+    return () => {
+      active = false;
+    };
+  }, [e2e.authenticated, e2e.isE2E, syncIdentity]);
+
+  useEffect(() => {
+    function handleIdentityUpdated(event: Event) {
+      const identity = (event as CustomEvent<AuthenticatedPublicIdentity>).detail;
+      if (identity?.publicId) syncIdentity(identity);
+    }
+    window.addEventListener("auth:identity-updated", handleIdentityUpdated);
+    return () => window.removeEventListener("auth:identity-updated", handleIdentityUpdated);
+  }, [syncIdentity]);
 
   const submitInvite = useCallback(async (inviteCode: string) => {
     if (!pendingPrivyToken) return;
     setSubmitting(true);
     setInviteError(null);
     try {
-      const { token } = await loginWithPrivyToken(pendingPrivyToken, inviteCode);
+      const { token, user } = await loginWithPrivyToken(pendingPrivyToken, inviteCode);
+      syncIdentity(user);
       setAuthToken(token);
       setNeedsInvite(false);
       setPendingPrivyToken(null);
     } catch (err) {
       if (err instanceof ApiError) {
-        try {
-          const body = JSON.parse(err.message);
-          setInviteError(body.error || "Invalid invite code");
-        } catch {
-          setInviteError("Invalid invite code");
-        }
+        setInviteError(err.message || "Invalid invite code");
       } else {
         setInviteError("Something went wrong. Try again.");
       }
     } finally {
       setSubmitting(false);
     }
-  }, [pendingPrivyToken]);
+  }, [pendingPrivyToken, syncIdentity]);
 
   useEffect(() => {
     if (e2e.isE2E) return;
@@ -191,12 +248,34 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     submitting,
   }), [needsInvite, submitInvite, inviteError, submitting]);
 
+  const promptDecision = identityPromptDecision({
+    signedIn,
+    needsInvite,
+    identityState: identity?.publicIdentityOnboarding.state ?? null,
+    dismissed: identityDismissed,
+  });
+
+  function dismissIdentityForSession() {
+    if (!identity || identity.publicIdentityOnboarding.state !== "deferrable") return;
+    sessionStorage.setItem(identityDismissalKey(identity.publicId), "true");
+    setIdentityDismissed(true);
+  }
+
   return (
     <InviteContext.Provider value={inviteState}>
-      {children}
-      <InviteCodeModal />
-      <StandingDailyAgentPrompt />
-      <AvatarGenerationActivity />
+      <PublicIdentityContext.Provider value={identity}>
+        {children}
+        <InviteCodeModal />
+        {(promptDecision === "identity-required" || promptDecision === "identity-deferrable") && identity && (
+          <PublicIdentityOnboarding
+            identity={identity}
+            onSaved={syncIdentity}
+            onDismiss={dismissIdentityForSession}
+          />
+        )}
+        {promptDecision === "downstream" && <StandingDailyAgentPrompt />}
+        <AvatarGenerationActivity />
+      </PublicIdentityContext.Provider>
     </InviteContext.Provider>
   );
 }

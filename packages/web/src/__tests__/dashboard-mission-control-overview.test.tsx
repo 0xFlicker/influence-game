@@ -82,6 +82,7 @@ function renderDashboardSurface(input: {
         loading={false}
         errors={[]}
         onJoinPrimary={() => undefined}
+        publicIdentity={null}
       />
       <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
         <DashboardGamePreview
@@ -246,5 +247,50 @@ describe("dashboard mission-control overview", () => {
     expect(html).toContain("Connect The House to your Influence games");
     expect(html).toContain('href="/get-mcp"');
     expect(html).toContain("without granting maintainer access");
+  });
+
+  it("keeps a public-identity recovery action without replacing gameplay", () => {
+    const control = buildDashboardMissionControl({
+      agents: [agent()],
+      games: [game()],
+      history: [],
+      queueStatus: null,
+    });
+    const incomplete = renderToString(
+      <MissionControlOverview
+        control={control}
+        user={null}
+        loading={false}
+        errors={[]}
+        onJoinPrimary={() => undefined}
+        publicIdentity={{
+          publicId: "8d91d5d0-bb3f-4559-a51a-64e1d2236f21",
+          handle: null,
+          displayName: "Anonymous",
+          publicIdentityOnboarding: { state: "deferrable", diagnosticCode: null },
+        }}
+      />,
+    );
+    expect(incomplete).toContain("Complete your public profile");
+    expect(incomplete).toContain('href="/dashboard/profile"');
+    expect(incomplete).toContain('data-testid="dashboard-primary-action"');
+
+    const complete = renderToString(
+      <MissionControlOverview
+        control={control}
+        user={null}
+        loading={false}
+        errors={[]}
+        onJoinPrimary={() => undefined}
+        publicIdentity={{
+          publicId: "8d91d5d0-bb3f-4559-a51a-64e1d2236f21",
+          handle: "flick",
+          displayName: "Flick",
+          publicIdentityOnboarding: { state: "complete", diagnosticCode: null },
+        }}
+      />,
+    );
+    expect(complete).toContain('href="/profile/flick"');
+    expect(complete).toContain("View public profile");
   });
 });

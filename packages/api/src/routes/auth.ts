@@ -21,13 +21,28 @@ import { parseJsonBody } from "../lib/parse-json-body.js";
 import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
 import { getSafeDefaultDisplayName, isEmailLike } from "../lib/display-name.js";
 import { extractBearerToken, validateGameMcpBearerToken } from "../game-mcp/auth.js";
+import { projectAuthenticatedPublicIdentity } from "../services/authenticated-public-identity.js";
 
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
-export function createAuthRoutes(db: DrizzleDB) {
+interface AuthRouteDependencies {
+  verifyPrivyToken?: typeof verifyPrivyToken;
+  getPrivyUser?: typeof getPrivyUser;
+  isInviteRequired?: typeof isInviteRequired;
+  redeemInviteCode?: typeof redeemInviteCode;
+}
+
+export function createAuthRoutes(
+  db: DrizzleDB,
+  dependencies: AuthRouteDependencies = {},
+) {
   const app = new Hono<AuthEnv>();
+  const verifyPrivyAccessToken = dependencies.verifyPrivyToken ?? verifyPrivyToken;
+  const loadPrivyUser = dependencies.getPrivyUser ?? getPrivyUser;
+  const inviteIsRequired = dependencies.isInviteRequired ?? isInviteRequired;
+  const redeemCode = dependencies.redeemInviteCode ?? redeemInviteCode;
 
   // -------------------------------------------------------------------------
   // POST /api/auth/local-cli-session — exchange local producer MCP OAuth token
@@ -75,7 +90,7 @@ export function createAuthRoutes(db: DrizzleDB) {
         id: user.id,
         walletAddress: user.walletAddress,
         email: user.email,
-        displayName: user.displayName,
+        ...projectAuthenticatedPublicIdentity(user),
         roles: resolved.roles,
         permissions: resolved.permissions,
       },
@@ -93,7 +108,7 @@ export function createAuthRoutes(db: DrizzleDB) {
     }
 
     // Verify Privy access token
-    const privyUserId = await verifyPrivyToken(body.token);
+    const privyUserId = await verifyPrivyAccessToken(body.token);
     if (!privyUserId) {
       return c.json({ error: "Invalid Privy token" }, 401);
     }
@@ -103,7 +118,7 @@ export function createAuthRoutes(db: DrizzleDB) {
     let email: string | null = null;
 
     try {
-      const privyUser = await getPrivyUser(privyUserId);
+      const privyUser = await loadPrivyUser(privyUserId);
 
       // Extract wallet address from linked accounts
       const walletAccount = privyUser.linkedAccounts?.find(
@@ -162,13 +177,14 @@ export function createAuthRoutes(db: DrizzleDB) {
         });
       }
       if (Object.keys(updates).length > 0) {
-        await db.update(schema.users)
+        user = (await db.update(schema.users)
           .set(updates)
-          .where(eq(schema.users.id, user.id));
+          .where(eq(schema.users.id, user.id))
+          .returning())[0] ?? user;
       }
     } else {
       // New user signup — check invite code requirement
-      const inviteRequired = await isInviteRequired(db);
+      const inviteRequired = await inviteIsRequired(db);
 
       if (inviteRequired && !body.inviteCode) {
         return c.json({
@@ -189,7 +205,7 @@ export function createAuthRoutes(db: DrizzleDB) {
 
       // Redeem invite code if provided
       if (inviteRequired && body.inviteCode) {
-        const redeemed = await redeemInviteCode(db, body.inviteCode as string, userId);
+        const redeemed = await redeemCode(db, body.inviteCode as string, userId);
         if (!redeemed) {
           // Roll back user creation
           await db.delete(schema.users).where(eq(schema.users.id, userId));
@@ -223,7 +239,7 @@ export function createAuthRoutes(db: DrizzleDB) {
         id: user.id,
         walletAddress: user.walletAddress,
         email: user.email,
-        displayName: user.displayName,
+        ...projectAuthenticatedPublicIdentity(user),
         roles: resolved.roles,
         permissions: resolved.permissions,
       },
@@ -235,7 +251,7 @@ export function createAuthRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/auth/invite-required", async (c) => {
-    const required = await isInviteRequired(db);
+    const required = await inviteIsRequired(db);
     return c.json({ required });
   });
 
@@ -244,7 +260,14 @@ export function createAuthRoutes(db: DrizzleDB) {
   // -------------------------------------------------------------------------
 
   app.get("/api/auth/me", requireAuth(db), async (c) => {
-    const user = c.get("user");
+    const authUser = c.get("user");
+    const user = (await db
+      .select()
+      .from(schema.users)
+      .where(eq(schema.users.id, authUser.id)))[0];
+    if (!user) {
+      return c.json({ error: "User not found" }, 401);
+    }
     const roles = c.get("userRoles") ?? [];
     const permissions = c.get("userPermissions") ?? [];
 
@@ -257,7 +280,7 @@ export function createAuthRoutes(db: DrizzleDB) {
       id: user.id,
       walletAddress: user.walletAddress,
       email: user.email,
-      displayName: user.displayName,
+      ...projectAuthenticatedPublicIdentity(user),
       isAdmin,
       roles,
       permissions,

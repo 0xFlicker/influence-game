@@ -6,7 +6,7 @@ interface DisplayNameInput {
   walletAddress?: string | null;
 }
 
-function truncateWallet(walletAddress: string): string {
+export function truncateWallet(walletAddress: string): string {
   return `${walletAddress.slice(0, 6)}...${walletAddress.slice(-4)}`;
 }
 
@@ -35,15 +35,22 @@ export function getPublicDisplayName({
 
   if (normalizedDisplayName) {
     const normalizedName = normalizedDisplayName.toLowerCase();
-    if (!isEmailLike(normalizedDisplayName) && normalizedName !== normalizedEmail) {
+    const normalizedWallet = walletAddress?.trim().toLowerCase() ?? null;
+    const truncatedWallet = walletAddress
+      ? truncateWallet(walletAddress).toLowerCase()
+      : null;
+    const isAuthPlaceholder = normalizedName === "player"
+      || normalizedName === normalizedEmail
+      || normalizedName === normalizedWallet
+      || normalizedName === truncatedWallet;
+    if (!isEmailLike(normalizedDisplayName) && !isAuthPlaceholder) {
       return normalizedDisplayName;
     }
-  }
-
-  if (walletAddress) {
-    return truncateWallet(walletAddress);
   }
 
   return "Anonymous";
 }
 
+export function hasSafePublicDisplayName(input: DisplayNameInput): boolean {
+  return getPublicDisplayName(input) !== "Anonymous";
+}

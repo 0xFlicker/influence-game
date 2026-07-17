@@ -55,6 +55,7 @@ export class ApiError extends Error {
     message: string,
     public readonly code?: string,
     public readonly retryable?: boolean,
+    public readonly payload?: Record<string, unknown>,
   ) {
     super(message);
     this.name = "ApiError";
@@ -103,6 +104,7 @@ function apiErrorFromResponse(status: number, body: string): ApiError {
           error.error,
           error.code,
           typeof error.retryable === "boolean" ? error.retryable : undefined,
+          error,
         );
       }
     }
@@ -1524,11 +1526,26 @@ export async function getGameAlliances(gameIdOrSlug: string): Promise<PublicGame
 // Auth API calls
 // ---------------------------------------------------------------------------
 
-export interface AuthMe {
+export type PublicIdentityOnboardingState = "complete" | "required" | "deferrable";
+
+export interface AuthenticatedPublicIdentity {
+  publicId: string;
+  handle: string | null;
+  displayName: string;
+  publicIdentityOnboarding: {
+    state: PublicIdentityOnboardingState;
+    diagnosticCode:
+      | "created_at_missing"
+      | "created_at_invalid"
+      | "created_at_timezone_required"
+      | null;
+  };
+}
+
+export interface AuthMe extends AuthenticatedPublicIdentity {
   id: string;
   walletAddress: string | null;
   email: string | null;
-  displayName: string | null;
   isAdmin: boolean;
   roles: string[];
   permissions: string[];
@@ -1541,7 +1558,10 @@ export async function getMe(): Promise<AuthMe> {
 export async function loginWithPrivyToken(
   privyToken: string,
   inviteCode?: string,
-): Promise<{ token: string }> {
+): Promise<{
+  token: string;
+  user: Omit<AuthMe, "isAdmin">;
+}> {
   return apiFetch("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
@@ -2526,9 +2546,8 @@ export type FreeTrackLeaderboardEntry = LeaderboardEntry;
 // Player profile types
 // ---------------------------------------------------------------------------
 
-export interface PlayerProfile {
+export interface PlayerProfile extends AuthenticatedPublicIdentity {
   id: string;
-  displayName: string | null;
   walletAddress: string | null;
   email: string | null;
   rating: number;
@@ -2652,11 +2671,21 @@ export async function getProfile(): Promise<PlayerProfile> {
   return apiFetch("/api/profile");
 }
 
-export async function updateProfile(displayName: string): Promise<PlayerProfile> {
+export async function updateProfile(
+  displayName: string,
+  handle: string,
+): Promise<PlayerProfile> {
   return apiFetch("/api/profile", {
     method: "PATCH",
-    body: JSON.stringify({ displayName }),
+    body: JSON.stringify({ displayName, handle }),
   });
+}
+
+export async function suggestProfileHandle(displayName: string): Promise<string> {
+  const result = await apiFetch<{ suggestion: string }>(
+    `/api/profile/handle-suggestion?displayName=${encodeURIComponent(displayName)}`,
+  );
+  return result.suggestion;
 }
 
 // ---------------------------------------------------------------------------

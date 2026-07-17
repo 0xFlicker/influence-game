@@ -40,6 +40,7 @@ export interface CreateTestUserOptions {
   id?: string;
   walletAddress: string;
   displayName?: string;
+  handle?: string;
 }
 
 /**
@@ -55,6 +56,7 @@ export async function createTestUser(
       id,
       walletAddress: opts.walletAddress,
       displayName: opts.displayName ?? `TestUser-${id.slice(0, 6)}`,
+      handle: opts.handle ?? `test-${randomUUID().slice(0, 8)}`,
     });
   return id;
 }
