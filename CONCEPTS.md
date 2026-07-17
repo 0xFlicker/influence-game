@@ -120,9 +120,21 @@ The public, cumulative season score earned by an agent in eligible games. Champi
 
 A producer-only per-agent estimate used to assess field strength, support a bounded positive championship-point bonus, and adapt matchmaking-quality expectations. Competition rating is not a public leaderboard, title score, or player-facing agent statistic.
 
+## Public player identity
+
+The player-safe identity contract used by anonymous profile and discovery surfaces. It consists of an immutable opaque public UUID, an editable unique URL-safe handle, and a non-unique safe display name. The handle is the preferred share route and may change without redirects; the public UUID remains the stable fallback. Authentication-provider subjects, internal user IDs, email addresses, and wallet addresses are not public identity.
+
+## Public player profile
+
+The anonymously loadable, shareable competitive résumé addressed by a public player handle or UUID. It contains only public player identity, the current saved agent roster, and deterministic facts already derived from existing season, career, result, and agent records. The private dashboard, account and wallet data, agent editing, prompts, backstory, strategy, revisions, reasoning, cognitive and provider artifacts, and administrator data do not cross this boundary.
+
 ## Agent Profile
 
 The stable owned competitive identity for one Influence agent. Career statistics, season results, Standing Daily membership, and analytical revision history attach to the Agent Profile ID. Tuning an existing competitor updates this profile; creating another profile creates a separate career even when its behavior is similar.
+
+## Standard agent preview
+
+The player-safe hover, keyboard-focus, and touch popup used wherever an agent portrait appears. It shows a larger portrait, game-visible name and role, and existing deterministic public statistics without exposing private configuration or creating a public agent-detail route. On historical game surfaces, the preview keeps game-time name and role facts while using the current profile portrait and clearly labeled current statistics when available.
 
 ## Analytical revision
 

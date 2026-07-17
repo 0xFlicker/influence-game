@@ -95,6 +95,7 @@ Shared rules and game-read tools:
 - `list_open_games`: list joinable waiting custom games with slots and ruleset metadata.
 - `list_games`: games accessible to the subject, or global producer-visible games when granted `producer`.
 - `list_seasons`: list public Influence seasons and their lifecycle status.
+- `read_player_profile`: read one public player profile by mutable handle or immutable public UUID. The version-1 response uses the same allowlisted identity, roster, season, career, and result projection as anonymous `GET /api/players/:identifier`. It requires `games:read` or `producer` and exposes no profile mutation.
 - `read_season_standings`: read public Agent and Architect standings for one season.
 - `read_season_game_receipts`: read player-safe point receipts for one rated game. Game reads include `rated` and `seasonId` so callers can discover this path directly.
 - `list_agent_games`: completed games played by one owned or visible agent, including placement, survival/win state, winner, finalists, jury vote count when available, and `rating_delta_unavailable` diagnostics until per-game rating deltas exist.
@@ -135,6 +136,27 @@ Producer-only tools requiring `producer`:
 - `read_producer_season_diagnostics`: inspect hidden competition ratings, snapshots, revision evidence, and settlement diagnostics for one season.
 
 The postgame tools are denormalized read surfaces over the canonical event log and completed-game result rows. They do not replace canonical events as source of truth and should not reconstruct missing facts from transcripts, thinking, reasoning, private traces, or prose summaries. Tool descriptors for the postgame tools include `outputSchema`, and tool calls return both `structuredContent` and JSON text content so ChatGPT/Claude/Grok-style clients can reason over stable fields without scraping raw logs.
+
+## Public Player Identity and Contract Versions
+
+Public player references contain only the immutable public UUID, optional mutable handle, and safe display name. Handles are preferred for sharing but may change without redirects; the public UUID is the stable fallback. Internal `users.id` values, Privy or other authentication subjects, email addresses, and wallet addresses must not appear in public MCP output.
+
+`read_player_profile` starts at schema version 1 and accepts either a handle or public UUID. Its public roster includes current saved agents and existing deterministic competition facts only. It does not expose prompts, backstory, strategy configuration, revisions, reasoning, cognitive artifacts, provider data, administrator fields, or private dashboard and editing controls. No MCP scope provides a public-profile or handle mutation tool; owners continue to edit identity through authenticated web/account APIs.
+
+The public-contract migration matrix is:
+
+| Surface | Version change |
+|---|---|
+| Public profile REST and `read_player_profile` | New version 1 |
+| Season dashboard | Version 1 to 2 |
+| Season game receipts | Version 1 to 2 |
+| HTTP game watch state and WebSocket `watch_state` | Version 3 to 4 |
+| Replay frame | Version 1 to 2 |
+| Public leaderboards and outer game detail | Unversioned; intentional breaking removal of internal owner fields in favor of public references |
+| `list_seasons` | Remains version 1 |
+| Private owner and producer contracts | Unchanged |
+
+Consumers must tolerate absent public references during the rolling deploy and render unresolved, House-controlled, imported, or synthetic owners as plain text. They must never fall back to legacy internal IDs. Keep that compatibility path until every old producer is proven drained; the operational sequence and rollback boundary are documented in `docs/public-player-identity-rollout.md`.
 
 ### Agent identity and revision loop
 
@@ -215,7 +237,7 @@ Before calling the slice ready on staging:
 4. `POST /mcp/producer` is not registered.
 5. Unauthenticated `POST /mcp` returns a `401` challenge for the single `/mcp` protected-resource metadata path.
 6. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
-7. A valid `agents:read games:read` token can initialize, list accessible games and seasons, discover a rated game's `seasonId`, read public season standings and game receipts, list visible agent games, read an accessible completed-game brief/jury/player/turning-point postgame surface, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, and cannot discover or call trace tools or active-match action tools.
+7. A valid `agents:read games:read` token can initialize, list accessible games and seasons, read a public player profile by handle and public UUID with matching version-1 allowlisted output, discover a rated game's `seasonId`, read public season standings and game receipts, list visible agent games, read an accessible completed-game brief/jury/player/turning-point postgame surface, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, and cannot discover or call trace tools or active-match action tools.
 8. The same token can read and export only its owner's agent-season analysis; another owner's agent remains unavailable.
 9. A valid `agents:read agents:write games:read` token can also create/update owned agents and join/leave supported pre-match queues. In a manual LLM exercise, ask the client to improve an already-owned enrolled agent: it should resolve the stable `agentId`, call `update_agent`, and explain the revision/enrollment receipt without calling `create_agent` or switching Standing Daily membership.
 10. A valid `producer` token issued to a current producer-role user can list producer tools, read producer postgame and season diagnostics, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured.
@@ -227,7 +249,7 @@ Before calling the slice ready on staging:
 
 - User-facing private trace representation, trace-derived summaries, or trace-backed fallback reads.
 - Polished cognitive artifact UX; this slice exposes raw authorized split artifacts and minimal API/client types only.
-- App-side rate limiting. Put rate limiting behind a real gateway in a later durable deploy hardening pass.
+- General MCP app-side per-tool rate limiting. The separate anonymous player-profile REST endpoint has a required gateway rate-limit deployment gate documented in `docs/public-player-identity-rollout.md`.
 - Producer refresh tokens.
 - Confidential-client management, client secrets, and a general third-party OAuth app platform.
 - Active-match mutation tools, game lifecycle controls, or moderator controls through MCP.
