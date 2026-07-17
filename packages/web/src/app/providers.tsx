@@ -38,7 +38,6 @@ import { InviteCodeModal } from "@/components/invite-code-modal";
 import { StandingDailyAgentPrompt } from "@/components/standing-daily-agent-prompt";
 import { AvatarGenerationActivity } from "@/components/avatar-generation-activity";
 import { PublicIdentityOnboarding } from "@/components/public-identity-onboarding";
-import { containedFocusTargetIndex } from "@/components/standing-daily-agent-prompt-model";
 import {
   classifyAuthenticatedIdentityPayload,
   identityDismissalKey,
@@ -114,8 +113,6 @@ export function useInvite(): InviteState {
 }
 
 const PublicIdentityContext = createContext<AuthenticatedPublicIdentity | null>(null);
-const IDENTITY_GATE_FOCUSABLE =
-  "button:not([disabled]), [tabindex]:not([tabindex='-1'])";
 
 export function useAuthenticatedPublicIdentity(): AuthenticatedPublicIdentity | null {
   return useContext(PublicIdentityContext);
@@ -136,14 +133,10 @@ function AuthSync({ children }: { children: React.ReactNode }) {
   const [pendingPrivyToken, setPendingPrivyToken] = useState<string | null>(null);
   const [identity, setIdentity] = useState<AuthenticatedPublicIdentity | null>(null);
   const [identityResolution, setIdentityResolution] = useState<IdentityResolution>("pending");
-  const [identityRetryNonce, setIdentityRetryNonce] = useState(0);
   const [identityDismissed, setIdentityDismissed] = useState(false);
   const [dailyAgentHandoffPublicId, setDailyAgentHandoffPublicId] =
     useState<string | null>(null);
   const identityPublicIdRef = useRef<string | null>(null);
-  const appContentRef = useRef<HTMLDivElement>(null);
-  const identityGateRef = useRef<HTMLDivElement>(null);
-  const previousFocusRef = useRef<HTMLElement | null>(null);
   const signedIn = (e2e.ready && e2e.authenticated) || authenticated;
   const signedInRef = useRef(signedIn);
 
@@ -235,7 +228,6 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     authenticated,
     getAccessToken,
     e2e.isE2E,
-    identityRetryNonce,
     syncIdentity,
   ]);
 
@@ -259,7 +251,7 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, [e2e.authenticated, e2e.isE2E, identityRetryNonce, syncIdentity]);
+  }, [e2e.authenticated, e2e.isE2E, syncIdentity]);
 
   useEffect(() => {
     function handleIdentityUpdated(event: Event) {
@@ -316,52 +308,6 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     identityResolved: identityResolution === "legacy",
     dismissed: identityDismissed,
   });
-  const identityCheckBlocked = signedIn
-    && !needsInvite
-    && (identityResolution === "pending" || identityResolution === "error");
-
-  useEffect(() => {
-    const content = appContentRef.current;
-    if (content) content.inert = identityCheckBlocked;
-    if (!identityCheckBlocked) return;
-
-    const gate = identityGateRef.current;
-    if (!gate) return;
-    previousFocusRef.current = document.activeElement as HTMLElement | null;
-    const focusables = Array.from(
-      gate.querySelectorAll<HTMLElement>(IDENTITY_GATE_FOCUSABLE),
-    );
-    (focusables[0] ?? gate).focus();
-
-    function keepFocusInsideGate(event: KeyboardEvent) {
-      if (event.key !== "Tab") return;
-      const items = Array.from(
-        gate!.querySelectorAll<HTMLElement>(IDENTITY_GATE_FOCUSABLE),
-      );
-      if (items.length === 0) {
-        event.preventDefault();
-        gate!.focus();
-        return;
-      }
-      const activeIndex = items.indexOf(document.activeElement as HTMLElement);
-      const nextIndex = containedFocusTargetIndex(
-        items.length,
-        activeIndex,
-        event.shiftKey,
-      );
-      if (nextIndex !== null) {
-        event.preventDefault();
-        items[nextIndex]?.focus();
-      }
-    }
-
-    document.addEventListener("keydown", keepFocusInsideGate);
-    return () => {
-      document.removeEventListener("keydown", keepFocusInsideGate);
-      if (content) content.inert = false;
-      previousFocusRef.current?.focus();
-    };
-  }, [identityCheckBlocked]);
 
   function dismissIdentityForSession() {
     if (!identity || identity.publicIdentityOnboarding.state !== "deferrable") return;
@@ -395,49 +341,10 @@ function AuthSync({ children }: { children: React.ReactNode }) {
   return (
     <InviteContext.Provider value={inviteState}>
       <PublicIdentityContext.Provider value={identity}>
-        <div ref={appContentRef} className="contents">
+        <div className="contents">
           {children}
         </div>
         <InviteCodeModal />
-        {identityCheckBlocked && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/75 p-4">
-            <div
-              ref={identityGateRef}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="identity-check-title"
-              tabIndex={-1}
-              className="influence-panel w-full max-w-md rounded-2xl p-6 text-center shadow-2xl"
-            >
-              <p className="influence-section-title">Your public profile</p>
-              <h2
-                id="identity-check-title"
-                className="mt-2 text-xl font-bold text-text-primary"
-              >
-                {identityResolution === "error"
-                  ? "We could not check your profile"
-                  : "Checking your profile…"}
-              </h2>
-              {identityResolution === "error" && (
-                <>
-                  <p className="influence-copy mt-2 text-sm">
-                    Retry before continuing to your dashboard.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIdentityResolution("pending");
-                      setIdentityRetryNonce((current) => current + 1);
-                    }}
-                    className="influence-button-primary mt-5 min-h-11 rounded-lg px-5 py-2.5 text-sm font-semibold"
-                  >
-                    Retry profile check
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        )}
         {(promptDecision === "identity-required" || promptDecision === "identity-deferrable") && identity && (
           <PublicIdentityOnboarding
             identity={identity}
