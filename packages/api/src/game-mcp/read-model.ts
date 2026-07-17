@@ -58,6 +58,7 @@ import {
   getPublicSeasonDashboard,
   listPublicSeasons,
 } from "../services/season-read-model.js";
+import { getPublicPlayerProfile } from "../services/public-player-profile.js";
 
 const DEFAULT_EVENT_LIMIT = 50;
 const MAX_EVENT_LIMIT = 200;
@@ -304,6 +305,10 @@ export class ProductionGameMcpReadModel {
 
   async listSeasons(): Promise<{ schemaVersion: 1; seasons: Awaited<ReturnType<typeof listPublicSeasons>> }> {
     return { schemaVersion: 1, seasons: await listPublicSeasons(this.db) };
+  }
+
+  async readPlayerProfile(identifier: string) {
+    return getPublicPlayerProfile(this.db, identifier);
   }
 
   async readSeason(seasonIdOrSlug: string) {

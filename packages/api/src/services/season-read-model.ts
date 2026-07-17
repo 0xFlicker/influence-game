@@ -103,6 +103,22 @@ export async function listPublicSeasons(db: DrizzleDB): Promise<PublicSeasonIden
   return rows;
 }
 
+export async function getCurrentPublicSeasonDashboard(
+  db: DrizzleDB,
+): Promise<PublicSeasonDashboard | null> {
+  const seasons = await db.select({
+    id: schema.seasons.id,
+    status: schema.seasons.status,
+  }).from(schema.seasons)
+    .orderBy(desc(schema.seasons.createdAt), desc(schema.seasons.id));
+  const statusOrder = ["active", "closing", "final"] as const;
+  for (const status of statusOrder) {
+    const season = seasons.find((candidate) => candidate.status === status);
+    if (season) return getPublicSeasonDashboard(db, season.id);
+  }
+  return null;
+}
+
 export async function getPublicSeasonDashboard(
   db: DrizzleDB,
   idOrSlug: string,

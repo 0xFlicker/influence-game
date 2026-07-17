@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import {
   exportOwnedSeasonReceipts,
   getOwnedAgentSeasonAnalysis,
   getProducerSeasonDiagnostics,
+  getCurrentPublicSeasonDashboard,
   getPublicSeasonDashboard,
   getPublicGameCompetitionReceipts,
 } from "../services/season-read-model.js";
@@ -19,6 +21,43 @@ import { createSeasonRoutes } from "../routes/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("season read model", () => {
+  test("selects the current season with active, closing, then final precedence", async () => {
+    const db = await setupTestDB();
+    const ownerId = await insertUser(db, "Season owner");
+    await db.insert(schema.seasons).values([
+      {
+        id: "final-season",
+        slug: "final-season",
+        name: "Final Season",
+        status: "final",
+        createdById: ownerId,
+        createdAt: "2026-07-01T00:00:00.000Z",
+      },
+      {
+        id: "closing-season",
+        slug: "closing-season",
+        name: "Closing Season",
+        status: "closing",
+        createdById: ownerId,
+        createdAt: "2026-07-02T00:00:00.000Z",
+      },
+      {
+        id: "active-season",
+        slug: "active-season",
+        name: "Active Season",
+        status: "active",
+        createdById: ownerId,
+        createdAt: "2026-07-03T00:00:00.000Z",
+      },
+    ]);
+
+    expect((await getCurrentPublicSeasonDashboard(db))?.season.slug).toBe("active-season");
+    await db.delete(schema.seasons).where(eq(schema.seasons.id, "active-season"));
+    expect((await getCurrentPublicSeasonDashboard(db))?.season.slug).toBe("closing-season");
+    await db.delete(schema.seasons).where(eq(schema.seasons.id, "closing-season"));
+    expect((await getCurrentPublicSeasonDashboard(db))?.season.slug).toBe("final-season");
+  });
+
   test("derives both crowns and exact Architect weights from eligible receipts", async () => {
     const fixture = await seedStandingsFixture();
     const dashboard = await getPublicSeasonDashboard(fixture.db, fixture.seasonSlug);

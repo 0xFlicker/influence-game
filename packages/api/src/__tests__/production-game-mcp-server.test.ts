@@ -98,6 +98,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
       "list_seasons",
+      "read_player_profile",
       "read_season_standings",
       "read_season_game_receipts",
       "list_agent_games",
@@ -139,6 +140,30 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(briefTool)).toContain("roundSummaries");
     expect(JSON.stringify(briefTool)).toContain("derivedVoteCohorts");
     expect(JSON.stringify(briefTool)).toContain("postgame");
+    const playerProfileTool = tools.find(
+      (tool) => (tool as { name: string }).name === "read_player_profile",
+    ) as {
+      inputSchema: Record<string, unknown>;
+      outputSchema: Record<string, unknown>;
+    };
+    expect(playerProfileTool.inputSchema).toMatchObject({
+      type: "object",
+      required: ["identifier"],
+      additionalProperties: false,
+      properties: {
+        identifier: {
+          type: "string",
+          minLength: 1,
+          maxLength: 36,
+        },
+      },
+    });
+    assertEveryObjectSchemaIsClosed(playerProfileTool.outputSchema);
+    expectMatchesJsonSchema(publicPlayerFoundFixture(), playerProfileTool.outputSchema);
+    expectMatchesJsonSchema(
+      { schemaVersion: 1, status: "not_found" },
+      playerProfileTool.outputSchema,
+    );
     const listAgentGamesTool = tools.find((tool) => (tool as { name: string }).name === "list_agent_games") as {
       inputSchema: { oneOf?: unknown };
       outputSchema: unknown;
@@ -191,6 +216,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(tools.map((tool) => (tool as { name: string }).name)).toEqual([
       "list_games",
       "list_seasons",
+      "read_player_profile",
       "read_season_standings",
       "read_season_game_receipts",
       "list_agent_games",
@@ -448,6 +474,146 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(result.structuredContent).toEqual({ ok: true });
     const text = result.content[0]?.text;
     expect(text).toContain("\"ok\": true");
+  });
+
+  test("returns the same closed public profile envelope to games and producer callers", async () => {
+    const found = publicPlayerFoundFixture();
+    const calls: string[] = [];
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      readPlayerProfile: async (identifier: string) => {
+        calls.push(identifier);
+        return found;
+      },
+    }));
+
+    for (const auth of [GAMES_AUTH, PRODUCER_AUTH]) {
+      const response = await server.handle({
+        jsonrpc: "2.0",
+        id: `profile-${auth.authProfile}`,
+        method: "tools/call",
+        params: {
+          name: "read_player_profile",
+          arguments: { identifier: "flick" },
+        },
+      }, auth);
+      expect(response?.error).toBeUndefined();
+      const result = response?.result as {
+        structuredContent: unknown;
+        content: Array<{ text: string }>;
+      };
+      expect(result.structuredContent).toEqual(found);
+      expect(JSON.parse(result.content[0]!.text)).toEqual(found);
+    }
+    expect(calls).toEqual(["flick", "flick"]);
+  });
+
+  test("returns schema-valid not_found and rejects malformed input before the read model", async () => {
+    let calls = 0;
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      readPlayerProfile: async () => {
+        calls += 1;
+        return { schemaVersion: 1, status: "not_found" };
+      },
+    }));
+
+    const missing = await server.handle({
+      jsonrpc: "2.0",
+      id: "missing-profile",
+      method: "tools/call",
+      params: {
+        name: "read_player_profile",
+        arguments: { identifier: "unknown-player" },
+      },
+    }, GAMES_AUTH);
+    expect(missing?.error).toBeUndefined();
+    expect((missing?.result as { structuredContent: unknown }).structuredContent).toEqual({
+      schemaVersion: 1,
+      status: "not_found",
+    });
+
+    for (const args of [
+      { identifier: "flick", extra: true },
+      { identifier: "x".repeat(37) },
+      {},
+    ]) {
+      const invalid = await server.handle({
+        jsonrpc: "2.0",
+        id: "invalid-profile-input",
+        method: "tools/call",
+        params: {
+          name: "read_player_profile",
+          arguments: args,
+        },
+      }, GAMES_AUTH);
+      expect(invalid?.result).toBeUndefined();
+      expect(invalid?.error?.message).toContain("arguments");
+    }
+    expect(calls).toBe(1);
+  });
+
+  test("rejects extra public profile output fields before either output channel is emitted", async () => {
+    const invalidEnvelopes = [
+      {
+        ...publicPlayerFoundFixture(),
+        ownerId: "PRIVATE_ROOT_SENTINEL",
+      },
+      {
+        ...publicPlayerFoundFixture(),
+        profile: {
+          ...publicPlayerFoundFixture().profile,
+          identity: {
+            ...publicPlayerFoundFixture().profile.identity,
+            email: "PRIVATE_NESTED_SENTINEL",
+          },
+        },
+      },
+    ];
+
+    for (const invalid of invalidEnvelopes) {
+      const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+        readPlayerProfile: async () => invalid,
+      }));
+      const response = await server.handle({
+        jsonrpc: "2.0",
+        id: "invalid-profile-output",
+        method: "tools/call",
+        params: {
+          name: "read_player_profile",
+          arguments: { identifier: "flick" },
+        },
+      }, GAMES_AUTH);
+
+      expect(response?.result).toBeUndefined();
+      expect(response?.error?.message).toContain("must contain exactly");
+      expect(JSON.stringify(response)).not.toContain("PRIVATE_");
+    }
+  });
+
+  test("requires games read authority before resolving a public player profile", async () => {
+    let called = false;
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      readPlayerProfile: async () => {
+        called = true;
+        return { schemaVersion: 1, status: "not_found" };
+      },
+    }));
+    const agentsOnly = {
+      ...GAMES_AUTH,
+      scope: "agents:read",
+      scopes: ["agents:read"] as GameMcpAuthContext["scopes"],
+    };
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "profile-no-scope",
+      method: "tools/call",
+      params: {
+        name: "read_player_profile",
+        arguments: { identifier: "flick" },
+      },
+    }, agentsOnly);
+
+    expect(response?.error?.message).toBe("Missing required MCP scope: games:read or producer");
+    expect(called).toBe(false);
   });
 
   test("routes postgame tool calls with compact arguments", async () => {
@@ -1233,6 +1399,7 @@ function fakeReadModel(
   return {
     listGames: async () => ({ games: [] }),
     listSeasons: async () => ({ schemaVersion: 1, seasons: [] }),
+    readPlayerProfile: async () => ({ schemaVersion: 1, status: "not_found" }),
     readSeason: async () => ({ schemaVersion: 1 }),
     readSeasonGameReceipts: async () => ({ schemaVersion: 1, receipts: [] }),
     readOwnedAgentSeason: async () => ({ schemaVersion: 1 }),
@@ -1257,6 +1424,50 @@ function fakeReadModel(
     readCognitiveArtifact: async () => ({ artifact: null }),
     ...overrides,
   } as unknown as ProductionGameMcpReadModel;
+}
+
+function publicPlayerFoundFixture() {
+  return {
+    schemaVersion: 1 as const,
+    status: "found" as const,
+    profile: {
+      identity: {
+        publicId: "f5f24bbd-8294-4a74-b6ef-365c6e742b6c",
+        handle: "flick",
+        displayName: "Flick",
+      },
+      currentSeason: null,
+      career: {
+        rating: 1540,
+        peakRating: 1600,
+        gamesPlayed: 8,
+        wins: 5,
+        winRate: 0.625,
+      },
+      recentResults: [],
+      agents: [{
+        name: "Atlas Prime",
+        avatarUrl: null,
+        role: { key: "strategic" as const, label: "Strategic" },
+        competition: { gamesPlayed: 2, wins: 1, winRate: 0.5 },
+      }],
+    },
+  };
+}
+
+function assertEveryObjectSchemaIsClosed(value: unknown, path = "$"): void {
+  if (Array.isArray(value)) {
+    value.forEach((child, index) => assertEveryObjectSchemaIsClosed(child, `${path}[${index}]`));
+    return;
+  }
+  if (!value || typeof value !== "object") return;
+  const record = value as Record<string, unknown>;
+  if (record.type === "object") {
+    expect(record.additionalProperties, `${path} should be closed`).toBe(false);
+  }
+  for (const [key, child] of Object.entries(record)) {
+    assertEveryObjectSchemaIsClosed(child, `${path}.${key}`);
+  }
 }
 
 class FakeElement {

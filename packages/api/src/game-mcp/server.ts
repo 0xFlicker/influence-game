@@ -45,6 +45,12 @@ import {
   listOpenGames,
 } from "../services/queue-enrollment.js";
 import { agentCommandOutputSchema } from "./agent-tool-schemas.js";
+import {
+  PUBLIC_PLAYER_PROFILE_TOOL_INPUT_SCHEMA,
+  PUBLIC_PLAYER_PROFILE_TOOL_OUTPUT_SCHEMA,
+  assertPublicPlayerProfileEnvelope,
+  parsePublicPlayerProfileToolInput,
+} from "./public-player-tool-schema.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -181,6 +187,13 @@ export class ProductionGameMcpJsonRpcServer {
       if (name === "list_seasons") {
         requireAnyScope(auth, ["games:read", "producer"]);
         return content(await this.readModel.listSeasons());
+      }
+      if (name === "read_player_profile") {
+        requireAnyScope(auth, ["games:read", "producer"]);
+        const input = parsePublicPlayerProfileToolInput(request.arguments);
+        return publicPlayerProfileContent(
+          await this.readModel.readPlayerProfile(input.identifier),
+        );
       }
       if (name === "read_season_standings") {
         requireAnyScope(auth, ["games:read", "producer"]);
@@ -447,6 +460,14 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       properties: {},
       scopes: gameReadScopes,
       readOnlyHint: true,
+    }),
+    tool({
+      name: "read_player_profile",
+      description: "Read one anonymous public player résumé and agent roster by handle or public UUID.",
+      inputSchema: PUBLIC_PLAYER_PROFILE_TOOL_INPUT_SCHEMA,
+      scopes: gameReadScopes,
+      readOnlyHint: true,
+      outputSchema: PUBLIC_PLAYER_PROFILE_TOOL_OUTPUT_SCHEMA,
     }),
     tool({
       name: "read_season_standings",
@@ -1375,6 +1396,22 @@ function summarizePostgameContent(value: unknown): string {
 }
 
 function content(value: unknown): { structuredContent: unknown; content: Array<{ type: "text"; text: string }> } {
+  return {
+    structuredContent: value,
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify(value, null, 2),
+      },
+    ],
+  };
+}
+
+function publicPlayerProfileContent(value: unknown): {
+  structuredContent: unknown;
+  content: Array<{ type: "text"; text: string }>;
+} {
+  assertPublicPlayerProfileEnvelope(value);
   return {
     structuredContent: value,
     content: [
