@@ -8,6 +8,7 @@ import {
 } from "../app/games/[slug]/components/completed-game-entry";
 import {
   PostgameMediaPlayer,
+  sharePostgameLink,
   sharePostgameTrailer,
 } from "../app/games/[slug]/components/postgame-media-player";
 import type { PublicPostgameMediaResponse } from "../lib/api";
@@ -195,6 +196,46 @@ describe("CompletedGameEntry", () => {
       url: `https://thehouse.game/games/${gameId}`,
     });
     expect(result).toEqual({ tone: "success", message: "Share dialog opened." });
+  });
+
+  it("opens native sharing with a scene-specific House Cut URL", async () => {
+    let sharedData: ShareData | undefined;
+    const result = await sharePostgameLink({
+      href: "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
+      origin: "https://thehouse.game",
+      title: "Ember was cut from inside the pact — House Highlights",
+      text: "Nova voted against Ember in Round 1.",
+      unavailableMessage: "Unable to share this cut right now.",
+      share: async (data) => {
+        sharedData = data;
+      },
+    });
+
+    expect(sharedData).toEqual({
+      title: "Ember was cut from inside the pact — House Highlights",
+      text: "Nova voted against Ember in Round 1.",
+      url: "https://thehouse.game/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
+    });
+    expect(result).toEqual({ tone: "success", message: "Share dialog opened." });
+  });
+
+  it("copies the scene-specific House Cut URL when native sharing is unavailable", async () => {
+    let copiedUrl = "";
+    const result = await sharePostgameLink({
+      href: "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
+      origin: "https://thehouse.game",
+      title: "Ember was cut from inside the pact — House Highlights",
+      text: "Nova voted against Ember in Round 1.",
+      unavailableMessage: "Unable to share this cut right now.",
+      copy: async (url) => {
+        copiedUrl = url;
+      },
+    });
+
+    expect(copiedUrl).toBe(
+      "https://thehouse.game/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
+    );
+    expect(result).toEqual({ tone: "success", message: "Share link copied." });
   });
 
   it("does not copy the trailer URL when native sharing is cancelled", async () => {

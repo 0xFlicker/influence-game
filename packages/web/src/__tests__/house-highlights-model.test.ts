@@ -7,7 +7,7 @@ import {
 } from "./house-highlights-fixtures";
 
 describe("house highlights model", () => {
-  it("maps a main House Cut into fact-forward scene cards", () => {
+  it("maps a main House Cut into fact-forward scene cards with distinct share URLs", () => {
     const model = buildHouseHighlightsViewModel(mainCutFixture(), "edge-smoke-dusk");
 
     expect(model.badge).toBe("House Cut");
@@ -48,9 +48,17 @@ describe("house highlights model", () => {
         href: "/games/edge-smoke-dusk/results#round-1",
         surface: "results",
       },
+      shareHref:
+        "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
       anchorId: "scene-alliance-cut:1:ember",
       isSelected: false,
     });
+
+    expect(model.scenes.map((scene) => scene.shareHref)).toEqual([
+      "/games/edge-smoke-dusk/highlights?scene=alliance-cut%3A1%3Aember#scene-alliance-cut%3A1%3Aember",
+      "/games/edge-smoke-dusk/highlights?scene=alliance-formation%3Asmoke-vote#scene-alliance-formation%3Asmoke-vote",
+      "/games/edge-smoke-dusk/highlights?scene=jury-judgment%3Afinal-vote#scene-jury-judgment%3Afinal-vote",
+    ]);
   });
 
   it("marks the selected scene from a share URL", () => {

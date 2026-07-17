@@ -39,7 +39,35 @@ export async function sharePostgameTrailer({
   share?: (data: ShareData) => Promise<void>;
   copy?: (url: string) => Promise<void>;
 }): Promise<ShareFeedback> {
-  const url = new URL(gameHref(gameId), origin).toString();
+  return sharePostgameLink({
+    href: gameHref(gameId),
+    origin,
+    title,
+    text,
+    unavailableMessage: "Unable to share this trailer right now.",
+    share,
+    copy,
+  });
+}
+
+export async function sharePostgameLink({
+  href,
+  origin,
+  title,
+  text,
+  unavailableMessage,
+  share,
+  copy,
+}: {
+  href: string;
+  origin: string;
+  title: string;
+  text: string;
+  unavailableMessage: string;
+  share?: (data: ShareData) => Promise<void>;
+  copy?: (url: string) => Promise<void>;
+}): Promise<ShareFeedback> {
+  const url = new URL(href, origin).toString();
 
   if (share) {
     try {
@@ -62,7 +90,40 @@ export async function sharePostgameTrailer({
     }
   }
 
-  return { tone: "error", message: "Unable to share this trailer right now." };
+  return { tone: "error", message: unavailableMessage };
+}
+
+export function usePostgameShare({
+  href,
+  title,
+  text,
+  unavailableMessage,
+}: {
+  href: string;
+  title: string;
+  text: string;
+  unavailableMessage: string;
+}) {
+  const [feedback, setFeedback] = useState<ShareFeedback | null>(null);
+
+  async function shareLink(): Promise<void> {
+    const result = await sharePostgameLink({
+      href,
+      origin: window.location.origin,
+      title,
+      text,
+      unavailableMessage,
+      share: typeof navigator.share === "function"
+        ? (data) => navigator.share(data)
+        : undefined,
+      copy: navigator.clipboard?.writeText
+        ? (url) => navigator.clipboard.writeText(url)
+        : undefined,
+    });
+    setFeedback(result);
+  }
+
+  return { feedback, shareLink };
 }
 
 export function usePostgameTrailerShare({
@@ -74,25 +135,13 @@ export function usePostgameTrailerShare({
   title: string;
   text: string;
 }) {
-  const [feedback, setFeedback] = useState<ShareFeedback | null>(null);
-
-  async function shareTrailer(): Promise<void> {
-    const result = await sharePostgameTrailer({
-      gameId,
-      origin: window.location.origin,
-      title,
-      text,
-      share: typeof navigator.share === "function"
-        ? (data) => navigator.share(data)
-        : undefined,
-      copy: navigator.clipboard?.writeText
-        ? (url) => navigator.clipboard.writeText(url)
-        : undefined,
-    });
-    setFeedback(result);
-  }
-
-  return { feedback, shareTrailer };
+  const { feedback, shareLink } = usePostgameShare({
+    href: gameHref(gameId),
+    title,
+    text,
+    unavailableMessage: "Unable to share this trailer right now.",
+  });
+  return { feedback, shareTrailer: shareLink };
 }
 
 export function PostgameMediaPlayer({

@@ -9,6 +9,7 @@ import type {
 } from "@/lib/api";
 import {
   completedGameModeHref,
+  gameHighlightSceneHref,
   houseHighlightSceneAnchor,
 } from "@/lib/game-links";
 import { houseHighlightGeneratedBackgroundAsset } from "./house-highlights-backgrounds";
@@ -46,6 +47,7 @@ export interface HouseHighlightsSceneModel {
     visualType: string;
   };
   proofLink: HouseHighlightsProofLink;
+  shareHref: string;
   anchorId: string;
   isSelected: boolean;
 }
@@ -141,6 +143,7 @@ function sceneModel(
       visualType: scene.visualBrief.visualType,
     },
     proofLink: proofLink(scene.deepLink, gameSlug),
+    shareHref: gameHighlightSceneHref(gameSlug, scene.id),
     anchorId: houseHighlightSceneAnchor(scene.id),
     isSelected: selectedSceneId === scene.id,
   };

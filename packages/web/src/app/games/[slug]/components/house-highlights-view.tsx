@@ -10,7 +10,7 @@ import {
 import { HouseHighlightCard } from "./house-highlights-card";
 import {
   shareFeedbackClassName,
-  usePostgameTrailerShare,
+  usePostgameShare,
 } from "./postgame-media-player";
 
 export function HouseHighlightsView({
@@ -57,8 +57,6 @@ export function HouseHighlightsView({
               key={scene.id}
               scene={scene}
               index={index}
-              gameSlug={gameSlug}
-              shareCaption={model.shareCaption}
             />
           ))}
         </section>
@@ -98,18 +96,15 @@ export function HouseHighlightsView({
 function SceneCard({
   scene,
   index,
-  gameSlug,
-  shareCaption,
 }: {
   scene: HouseHighlightsSceneModel;
   index: number;
-  gameSlug: string;
-  shareCaption: string;
 }) {
-  const { feedback, shareTrailer } = usePostgameTrailerShare({
-    gameId: gameSlug,
-    title: "House Highlights",
-    text: shareCaption,
+  const { feedback, shareLink } = usePostgameShare({
+    href: scene.shareHref,
+    title: `${scene.title} — House Highlights`,
+    text: scene.visualCard.altText,
+    unavailableMessage: "Unable to share this cut right now.",
   });
 
   return (
@@ -157,11 +152,11 @@ function SceneCard({
           <div className="flex flex-col items-start gap-1">
             <button
               type="button"
-              onClick={() => void shareTrailer()}
+              onClick={() => void shareLink()}
               className="inline-flex rounded-lg border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white/70 transition-colors hover:bg-white/[0.1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/60"
-              aria-label="Share trailer"
+              aria-label={`Share this cut: ${scene.title}`}
             >
-              Share trailer
+              Share this cut
             </button>
             <p
               className={shareFeedbackClassName(feedback)}

@@ -94,9 +94,11 @@ describe("HouseHighlightsView", () => {
     expect(html).toContain("Nova voted against Ember in Round 1.");
     expect(html).toContain("Ember was eliminated in Round 1.");
     expect(html).toContain("/games/edge-smoke-dusk/results#round-1");
-    expect(html).toContain('aria-label="Share trailer"');
-    expect(html).toContain("Share trailer");
-    expect(html).not.toContain("Share scene");
+    expect(html).toContain(
+      'aria-label="Share this cut: Ember was cut from inside the pact"',
+    );
+    expect(html).toContain("Share this cut");
+    expect(html).not.toContain('aria-label="Share trailer"');
     expect(html).toContain("/games/edge-smoke-dusk/replay");
     expect(html).toContain("house-highlight-visual-card");
     expect(html).toContain("Trailer");
