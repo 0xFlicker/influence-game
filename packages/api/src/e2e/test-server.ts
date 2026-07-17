@@ -27,6 +27,8 @@ export interface StartTestServersOptions {
   adminAddress?: string;
   /** JWT secret for token signing */
   jwtSecret?: string;
+  /** Frozen identity-onboarding cutoff shared by every test producer. */
+  publicIdentityLaunchCutoff?: string;
   /** Skip starting the web server (useful for API-only tests) */
   skipWeb?: boolean;
 }
@@ -71,6 +73,8 @@ export async function startTestServers(
   const webPort = opts.skipWeb ? null : (opts.webPort ?? randomPort());
   const jwtSecret = opts.jwtSecret ?? "e2e-test-jwt-secret";
   const adminAddress = opts.adminAddress ?? "0xe2eadmin0000000000000000000000000000dead";
+  const publicIdentityLaunchCutoff =
+    opts.publicIdentityLaunchCutoff ?? "2026-07-01T00:00:00.000Z";
 
   const apiEnv: Record<string, string> = {
     ...process.env as Record<string, string>,
@@ -82,6 +86,7 @@ export async function startTestServers(
     // Dummy Privy credentials — e2e tests bypass Privy auth
     PRIVY_APP_ID: "e2e-test-privy-app-id",
     PRIVY_APP_SECRET: "e2e-test-privy-app-secret",
+    PUBLIC_IDENTITY_LAUNCH_CUTOFF: publicIdentityLaunchCutoff,
     // Allow CORS from the test web server
     CORS_ORIGINS: webPort ? `http://localhost:${webPort}` : "",
   };
@@ -109,6 +114,8 @@ export async function startTestServers(
       ...process.env as Record<string, string>,
       NODE_ENV: "development",
       PORT: String(webPort),
+      API_URL: apiUrl,
+      API_BACKEND_URL: apiUrl,
       NEXT_PUBLIC_API_URL: apiUrl,
       PRIVY_APP_ID: "e2e-test-privy-app-id-001",
       NEXT_PUBLIC_PRIVY_APP_ID: "e2e-test-privy-app-id-001",

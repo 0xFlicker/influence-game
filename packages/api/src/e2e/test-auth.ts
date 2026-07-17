@@ -38,9 +38,11 @@ export function generateTestWallet(): TestWallet {
 
 export interface CreateTestUserOptions {
   id?: string;
+  publicId?: string;
   walletAddress: string;
-  displayName?: string;
-  handle?: string;
+  displayName?: string | null;
+  handle?: string | null;
+  createdAt?: string;
 }
 
 /**
@@ -54,9 +56,15 @@ export async function createTestUser(
   await db.insert(schema.users)
     .values({
       id,
+      ...(opts.publicId ? { publicId: opts.publicId } : {}),
       walletAddress: opts.walletAddress,
-      displayName: opts.displayName ?? `TestUser-${id.slice(0, 6)}`,
-      handle: opts.handle ?? `test-${randomUUID().slice(0, 8)}`,
+      displayName: opts.displayName === undefined
+        ? `TestUser-${id.slice(0, 6)}`
+        : opts.displayName,
+      handle: opts.handle === undefined
+        ? `test-${randomUUID().slice(0, 8)}`
+        : opts.handle,
+      ...(opts.createdAt ? { createdAt: opts.createdAt } : {}),
     });
   return id;
 }
@@ -169,11 +177,15 @@ export interface PlayerUserResult {
 export async function createPlayerUser(
   db: DrizzleDB,
   index: number,
+  opts: Omit<CreateTestUserOptions, "walletAddress"> = {},
 ): Promise<PlayerUserResult> {
   const wallet = generateTestWallet();
   const userId = await createTestUser(db, {
+    ...opts,
     walletAddress: wallet.address,
-    displayName: `Player ${index + 1}`,
+    displayName: opts.displayName === undefined
+      ? `Player ${index + 1}`
+      : opts.displayName,
   });
   await assignRole(db, { walletAddress: wallet.address, roleName: "player" });
 
