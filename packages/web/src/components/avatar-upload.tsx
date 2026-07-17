@@ -1,15 +1,15 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { uploadProfilePicture } from "@/lib/api";
-import { AgentAvatar } from "./agent-avatar";
+import { uploadProfilePicture, type PersonaKey } from "@/lib/api";
+import { AgentAvatarPreview } from "./agent-avatar-preview";
 
 const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"];
 const MAX_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
 
 interface AvatarUploadProps {
   currentUrl?: string | null;
-  persona: string;
+  persona: PersonaKey;
   name: string;
   onUploaded: (publicUrl: string) => void;
 }
@@ -59,39 +59,25 @@ export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUp
   }
 
   const displayUrl = previewUrl ?? currentUrl;
-  const hasAvatar = Boolean(displayUrl);
 
   return (
     <div className="flex flex-col items-center gap-2">
-      <button
-        type="button"
-        onClick={() => inputRef.current?.click()}
-        disabled={uploading}
-        className="relative group cursor-pointer disabled:cursor-wait"
-      >
-        {hasAvatar ? (
-          <AgentAvatar avatarUrl={displayUrl} persona={persona} name={name} size="16" />
-        ) : (
-          <span
-            aria-label={`${name} avatar placeholder`}
-            className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-white/20 bg-white/5 text-lg font-semibold text-white/45 ring-1 ring-white/10"
-          >
-            {name.trim().charAt(0).toUpperCase() || "A"}
-          </span>
-        )}
-
-        {/* Hover overlay */}
-        <div className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-          <span className="text-white text-[10px] font-medium">
-            {uploading ? "Uploading..." : "Change"}
-          </span>
-        </div>
-
-        {/* Loading spinner ring */}
+      <div className="relative">
+        <AgentAvatarPreview
+          avatarUrl={displayUrl}
+          personaKey={persona}
+          name={name}
+          gamesPlayed={null}
+          gamesWon={null}
+          size="16"
+        />
         {uploading && (
-          <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-indigo-500 animate-spin" />
+          <div
+            className="pointer-events-none absolute inset-0 rounded-full border-2 border-transparent border-t-indigo-500 animate-spin"
+            aria-hidden="true"
+          />
         )}
-      </button>
+      </div>
 
       <input
         ref={inputRef}
@@ -100,6 +86,15 @@ export function AvatarUpload({ currentUrl, persona, name, onUploaded }: AvatarUp
         onChange={handleFileChange}
         className="hidden"
       />
+
+      <button
+        type="button"
+        onClick={() => inputRef.current?.click()}
+        disabled={uploading}
+        className="min-h-11 rounded-lg px-3 text-xs font-medium text-white/60 transition-colors hover:bg-white/5 hover:text-white disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-400"
+      >
+        {uploading ? "Uploading..." : "Change portrait"}
+      </button>
 
       {error && <p className="text-red-400 text-xs text-center max-w-48">{error}</p>}
     </div>

@@ -13,7 +13,7 @@ import {
   type CreateAgentParams,
 } from "@/lib/api";
 import { PERSONAS } from "@/lib/personas";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import { AgentForm } from "./agents/agent-form";
 
 // ---------------------------------------------------------------------------
@@ -30,7 +30,7 @@ interface JoinGameModalProps {
 // Agent picker
 // ---------------------------------------------------------------------------
 
-function AgentPicker({
+export function AgentPicker({
   agents,
   selectedId,
   onSelect,
@@ -63,29 +63,39 @@ function AgentPicker({
       <div className="flex flex-wrap gap-2">
         {agents.map((agent) => {
           const isSelected = selectedId === agent.id;
+          const persona = PERSONAS.find((option) => option.key === agent.personaKey);
           return (
-            <button
+            <div
               key={agent.id}
-              type="button"
-              onClick={() => (isSelected ? onClear() : onSelect(agent))}
-              className={`influence-selection-card flex items-center gap-2 px-3 py-2 rounded-lg text-xs transition-all ${
+              className={`influence-selection-card flex items-center gap-1 rounded-lg p-1 text-xs transition-all [&>button:first-child]:p-2.5 ${
                 isSelected ? "text-text-primary" : "influence-copy"
               }`}
               data-selected={isSelected}
             >
-              <AgentAvatar
+              <AgentAvatarPreview
                 avatarUrl={agent.avatarUrl}
-                persona={agent.personaKey ?? "strategic"}
+                personaKey={agent.personaKey}
+                role={persona?.name}
                 name={agent.name}
+                gamesPlayed={agent.gamesPlayed}
+                gamesWon={agent.gamesWon}
                 size="6"
               />
-              <span>{agent.name}</span>
-              {agent.gamesPlayed > 0 && (
-                <span className="influence-copy-muted">
-                  {agent.gamesWon}W/{agent.gamesPlayed - agent.gamesWon}L
-                </span>
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={() => (isSelected ? onClear() : onSelect(agent))}
+                className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-md px-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
+                aria-pressed={isSelected}
+                aria-label={`${isSelected ? "Deselect" : "Select"} ${agent.name}`}
+              >
+                <span>{agent.name}</span>
+                {agent.gamesPlayed > 0 && (
+                  <span className="influence-copy-muted">
+                    {agent.gamesWon}W/{agent.gamesPlayed - agent.gamesWon}L
+                  </span>
+                )}
+              </button>
+            </div>
           );
         })}
         <button

@@ -22,7 +22,7 @@ import {
 import { useE2EAuth } from "@/app/providers";
 import { PERSONAS } from "@/lib/personas";
 import { ACTIVE_GAME } from "@/lib/product-identity";
-import { AgentAvatar } from "@/components/agent-avatar";
+import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
 import { PlayerProfileLink } from "@/components/player-profile-link";
 
 // ---------------------------------------------------------------------------
@@ -113,7 +113,7 @@ interface QueueSectionProps {
   actionError: string | null;
 }
 
-function QueueSection({
+export function QueueSection({
   queueStatus,
   agents,
   authenticated,
@@ -227,32 +227,42 @@ function QueueSection({
           const persona = PERSONAS.find((p) => p.key === agent.personaKey);
           const isSelected = selectedAgentId === agent.id;
           return (
-            <button
+            <div
               key={agent.id}
-              onClick={() => setSelectedAgentId(agent.id)}
-              className="influence-selection-card rounded-lg px-4 py-3 flex items-center gap-3 text-left transition-colors"
+              className="influence-selection-card flex items-center gap-2 rounded-lg p-2 text-left transition-colors [&>button:first-child]:p-1.5"
               data-selected={isSelected}
             >
-              <AgentAvatar
+              <AgentAvatarPreview
                 avatarUrl={agent.avatarUrl}
-                persona={agent.personaKey ?? "strategic"}
+                personaKey={agent.personaKey}
+                role={persona?.name}
                 name={agent.name}
+                gamesPlayed={agent.gamesPlayed}
+                gamesWon={agent.gamesWon}
                 size="8"
               />
-              <div className="min-w-0 flex-1">
-                <p className="text-text-primary text-sm font-medium truncate">
-                  {agent.name}
-                </p>
-                <p className="influence-copy-muted text-xs truncate">
-                  {persona?.name ?? agent.personaKey ?? "Agent"}
-                </p>
-              </div>
-              {isSelected && (
-                <span className="text-phase text-xs font-medium shrink-0">
-                  Selected
-                </span>
-              )}
-            </button>
+              <button
+                type="button"
+                onClick={() => setSelectedAgentId(agent.id)}
+                className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-md px-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
+                aria-pressed={isSelected}
+                aria-label={`Select ${agent.name}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="text-text-primary text-sm font-medium truncate">
+                    {agent.name}
+                  </p>
+                  <p className="influence-copy-muted text-xs truncate">
+                    {persona?.name ?? agent.personaKey ?? "Agent"}
+                  </p>
+                </div>
+                {isSelected && (
+                  <span className="text-phase text-xs font-medium shrink-0">
+                    Selected
+                  </span>
+                )}
+              </button>
+            </div>
           );
         })}
       </div>
