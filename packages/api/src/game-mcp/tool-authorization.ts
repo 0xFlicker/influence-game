@@ -18,22 +18,35 @@ export type GameMcpEligibilityIdentity = Pick<
   "userId" | "clientId" | "resource"
 >;
 
+export interface GameMcpEligibilityRequest extends GameMcpEligibilityIdentity {
+  needsProducerRole: boolean;
+}
+
 export interface GameMcpEligibilitySnapshot {
   clientScopes: readonly McpOAuthScope[];
   hasProducerRole: boolean;
 }
 
 export type GameMcpEligibilityResolver = (
-  identity: GameMcpEligibilityIdentity,
+  request: GameMcpEligibilityRequest,
 ) => Promise<GameMcpEligibilitySnapshot | null>;
 
 export function createGameMcpEligibilityResolver(
   db: DrizzleDB,
 ): GameMcpEligibilityResolver {
-  return async (identity) => {
+  return async (request) => {
+    const clientScopesPromise = resolveMcpOAuthClientScopeEnvelope(
+      db,
+      request.clientId,
+    );
+    if (!request.needsProducerRole) {
+      const clientScopes = await clientScopesPromise;
+      return clientScopes ? { clientScopes, hasProducerRole: false } : null;
+    }
+
     const [clientScopes, hasProducerRole] = await Promise.all([
-      resolveMcpOAuthClientScopeEnvelope(db, identity.clientId),
-      hasCurrentProducerRoleForUserId(db, identity.userId),
+      clientScopesPromise,
+      hasCurrentProducerRoleForUserId(db, request.userId),
     ]);
     if (!clientScopes || hasProducerRole === null) return null;
     return { clientScopes, hasProducerRole };
@@ -174,6 +187,12 @@ export function isGameMcpToolName(name: string): name is GameMcpToolName {
   return Object.hasOwn(GAME_MCP_TOOL_ACCESS, name);
 }
 
+export function gameMcpToolNeedsProducerRole(name: GameMcpToolName): boolean {
+  return GAME_MCP_TOOL_ACCESS[name].scopeAlternatives.some(
+    (alternative) => alternative.requiredRole === "producer",
+  );
+}
+
 export function resolveGameMcpToolAccess(
   name: string,
   auth: GameMcpAuthContext,
@@ -215,6 +234,10 @@ export function resolveGameMcpToolInvocation(
   }
 
   const context = accessContext(auth, eligibility);
+  if (!mcpOAuthScopeSetIsSubset(context.authScopes, context.clientScopes)) {
+    return { outcome: "unavailable" };
+  }
+
   const alternatives = GAME_MCP_TOOL_ACCESS[name].scopeAlternatives;
   if (alternatives.some((alternative) => invocationAllows(alternative, context))) {
     return { outcome: "allowed" };

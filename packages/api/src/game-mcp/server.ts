@@ -57,6 +57,7 @@ import {
 } from "./public-player-tool-schema.js";
 import {
   createGameMcpEligibilityResolver,
+  gameMcpToolNeedsProducerRole,
   isGameMcpToolName,
   resolveGameMcpToolAccess,
   resolveGameMcpToolInvocation,
@@ -102,11 +103,24 @@ export class ProductionGameMcpJsonRpcServer {
     }
 
     try {
-      const eligibility = await this.resolveRequestEligibility(request, auth);
+      const toolName = request.method === "tools/call"
+        ? requestGameMcpToolName(request.params)
+        : undefined;
+      const eligibility = await this.resolveRequestEligibility(
+        request,
+        auth,
+        toolName,
+      );
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
-        result: await this.route(request.method, request.params, auth, eligibility),
+        result: await this.route(
+          request.method,
+          request.params,
+          auth,
+          eligibility,
+          toolName,
+        ),
       };
     } catch (error) {
       return {
@@ -128,6 +142,7 @@ export class ProductionGameMcpJsonRpcServer {
     params: unknown,
     auth: GameMcpAuthContext,
     eligibility: GameMcpEligibilitySnapshot | null | undefined,
+    toolName: GameMcpToolName | undefined,
   ): Promise<unknown> {
     const isProducer = hasScope(auth, "producer");
     if (method === "initialize") {
@@ -202,7 +217,10 @@ export class ProductionGameMcpJsonRpcServer {
 
     if (method === "tools/call") {
       const request = asRecord(params);
-      const name = String(request.name ?? "");
+      if (!toolName) {
+        throw new Error("Unknown or unauthorized MCP tool");
+      }
+      const name = toolName;
       const args = asRecord(request.arguments);
       const invocation = resolveGameMcpToolInvocation(
         name,
@@ -446,12 +464,10 @@ export class ProductionGameMcpJsonRpcServer {
   private async resolveRequestEligibility(
     request: JsonRpcRequest,
     auth: GameMcpAuthContext,
+    toolName: GameMcpToolName | undefined,
   ): Promise<GameMcpEligibilitySnapshot | null | undefined> {
     const requiresEligibility = request.method === "tools/list" ||
-      (
-        request.method === "tools/call" &&
-        isGameMcpToolName(String(asRecord(request.params).name ?? ""))
-      );
+      (request.method === "tools/call" && toolName !== undefined);
     if (!requiresEligibility) return undefined;
 
     try {
@@ -459,6 +475,8 @@ export class ProductionGameMcpJsonRpcServer {
         userId: auth.userId,
         clientId: auth.clientId,
         resource: auth.resource,
+        needsProducerRole: request.method === "tools/list" ||
+          (toolName !== undefined && gameMcpToolNeedsProducerRole(toolName)),
       });
     } catch (error) {
       throw new GameMcpEligibilityDependencyError(error);
@@ -480,6 +498,13 @@ class GameMcpEligibilityDependencyError extends Error {
   constructor(cause: unknown) {
     super("Game MCP eligibility resolution failed", { cause });
   }
+}
+
+function requestGameMcpToolName(params: unknown): GameMcpToolName | undefined {
+  const rawName = asRecord(params).name;
+  return typeof rawName === "string" && isGameMcpToolName(rawName)
+    ? rawName
+    : undefined;
 }
 
 function hasScope(auth: GameMcpAuthContext, scope: McpOAuthScope): boolean {

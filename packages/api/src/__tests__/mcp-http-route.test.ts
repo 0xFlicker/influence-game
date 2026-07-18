@@ -343,6 +343,7 @@ describe("/mcp Streamable HTTP route", () => {
     const hostileNames: unknown[] = [
       "definitely_unknown",
       { injected: true },
+      ["list_games"],
       "x".repeat(2_000),
       "quoted\"\n\u0000control",
       "Bearer private-token-value",
