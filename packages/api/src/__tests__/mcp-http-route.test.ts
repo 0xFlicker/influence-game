@@ -19,6 +19,7 @@ import {
 import { setupTestDB } from "./test-utils.js";
 
 const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
+const MCP_OAUTH_AGENT_READ_SCOPE = "agents:read";
 const MCP_OAUTH_FULL_USER_SCOPE = "agents:read agents:write games:read";
 const MCP_OAUTH_SCOPE = "producer";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
@@ -513,7 +514,7 @@ describe("/mcp Streamable HTTP route", () => {
       expect(await narrowed.json()).toMatchObject({
         error: {
           code: -32000,
-          message: "Unknown or unauthorized MCP tool is not supported for granted scopes: list_archetypes",
+          message: "Unknown or unauthorized MCP tool",
         },
       });
 
@@ -524,6 +525,45 @@ describe("/mcp Streamable HTTP route", () => {
       expect(await deleted.json()).toMatchObject({
         result: { tools: [] },
       });
+    });
+
+    test("returns eligible agent-write challenges over HTTP without mutating", async () => {
+      const issued = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000010",
+        scope: MCP_OAUTH_AGENT_READ_SCOPE,
+      });
+      const app = createMcpRoutes(db);
+
+      for (const name of ["create_agent", "update_agent", "join_queue", "leave_queue"]) {
+        const response = await app.request("/mcp", {
+          method: "POST",
+          headers: jsonHeaders({ Authorization: `Bearer ${issued.accessToken}` }),
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: name,
+            method: "tools/call",
+            params: { name, arguments: { ignoredUntilAuthorized: true } },
+          }),
+        });
+
+        expect(response.status).toBe(200);
+        const body = await response.json() as {
+          result?: {
+            isError?: boolean;
+            _meta?: Record<string, unknown>;
+          };
+          error?: unknown;
+        };
+        expect(body.error).toBeUndefined();
+        expect(body.result?.isError).toBe(true);
+        const challenges = body.result?._meta?.["mcp/www_authenticate"];
+        expect(challenges).toEqual([expect.any(String)]);
+        expect((challenges as string[])[0]).toContain(
+          'scope="agents:read agents:write"',
+        );
+      }
+
+      expect(await db.select().from(schema.agentProfiles)).toEqual([]);
     });
 
     test("accepts producer tokens on /mcp and invalidates them after role removal", async () => {
@@ -560,6 +600,9 @@ describe("/mcp Streamable HTTP route", () => {
       });
 
       expect(roleRemoved.status).toBe(401);
+      expect(roleRemoved.headers.get("www-authenticate")).toContain(
+        'scope="agents:read games:read"',
+      );
       expect(await roleRemoved.json()).toMatchObject({
         error: "invalid_token",
         error_description: "inactive_token",
@@ -644,6 +687,7 @@ async function issueMcpAccessToken(
     resourceUri?: string;
     revokedAt?: string;
     scope?:
+      | typeof MCP_OAUTH_AGENT_READ_SCOPE
       | typeof MCP_OAUTH_DEFAULT_READ_SCOPE
       | typeof MCP_OAUTH_FULL_USER_SCOPE
       | typeof MCP_OAUTH_SCOPE;

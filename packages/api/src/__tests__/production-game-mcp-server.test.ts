@@ -18,6 +18,7 @@ import type { GameMcpAuthContext } from "../game-mcp/auth.js";
 import {
   createGameMcpEligibilityResolver,
   resolveGameMcpToolAccess,
+  resolveGameMcpToolInvocation,
   type GameMcpEligibilitySnapshot,
 } from "../game-mcp/tool-authorization.js";
 import { seedRBAC } from "../db/rbac-seed.js";
@@ -43,6 +44,18 @@ const PRODUCER_AUTH: GameMcpAuthContext = {
   scopes: ["producer"],
   authProfile: "producer",
   expiresAt: 1_800_000_000,
+};
+
+const AGENT_READ_AUTH: GameMcpAuthContext = {
+  ...GAMES_AUTH,
+  scope: "agents:read",
+  scopes: ["agents:read"],
+};
+
+const AGENT_WRITE_AUTH: GameMcpAuthContext = {
+  ...GAMES_AUTH,
+  scope: "agents:read agents:write",
+  scopes: ["agents:read", "agents:write"],
 };
 
 const FULL_ELIGIBILITY: GameMcpEligibilitySnapshot = {
@@ -159,6 +172,14 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       grantSatisfied: true,
       invocationAllowed: false,
     });
+    expect(resolveGameMcpToolInvocation("update_agent", {
+      ...GAMES_AUTH,
+      scope: "agents:read games:read",
+      scopes: ["agents:read", "games:read"],
+    }, {
+      clientScopes: ["agents:read", "agents:write"],
+      hasProducerRole: false,
+    })).toEqual({ outcome: "unavailable" });
   });
 
   test("fails closed with a bounded internal error when eligibility resolution fails", async () => {
@@ -216,11 +237,120 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const narrowed = await server.handle({ ...request, id: "narrowed" }, GAMES_AUTH);
 
     expect(allowed?.error).toBeUndefined();
-    expect(narrowed?.error?.message).toBe(
-      "Unknown or unauthorized MCP tool is not supported for granted scopes: list_games",
-    );
+    expect(narrowed?.error).toEqual({
+      code: -32000,
+      message: "Unknown or unauthorized MCP tool",
+    });
     expect(eligibilityCalls).toBe(2);
     expect(listGamesCalls).toBe(1);
+  });
+
+  test("returns non-mutating scoped challenges for every eligible agent mutation", async () => {
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+
+    for (const name of ["create_agent", "update_agent", "join_queue", "leave_queue"]) {
+      const response = await server.handle({
+        jsonrpc: "2.0",
+        id: name,
+        method: "tools/call",
+        params: { name, arguments: { ignoredUntilAuthorized: true } },
+      }, AGENT_READ_AUTH);
+
+      expectInsufficientScopeChallenge(response, "agents:read agents:write");
+    }
+  });
+
+  test("preserves canonical current grants in an eligible producer challenge without reading traces", async () => {
+    let traceReads = 0;
+    const server = new ProductionGameMcpJsonRpcServerBase(
+      fakeReadModel({
+        readTraceContent: async () => {
+          traceReads += 1;
+          return { content: "private trace" };
+        },
+      }),
+      undefined,
+      async () => ({ ...FULL_ELIGIBILITY, hasProducerRole: true }),
+    );
+    const narrowProducerEligibleAuth: GameMcpAuthContext = {
+      ...GAMES_AUTH,
+      userId: "producer-eligible",
+      scope: "agents:read games:read",
+      scopes: ["agents:read", "games:read"],
+    };
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "producer-step-up",
+      method: "tools/call",
+      params: {
+        name: "read_trace_content",
+        arguments: { manifestId: "must-not-be-read" },
+      },
+    }, narrowProducerEligibleAuth);
+
+    expectInsufficientScopeChallenge(
+      response,
+      "agents:read games:read producer",
+    );
+    expect(traceReads).toBe(0);
+  });
+
+  test("uses one terminal denial for ineligible, unknown, malformed, and active-match calls", async () => {
+    let traceReads = 0;
+    const server = new ProductionGameMcpJsonRpcServerBase(
+      fakeReadModel({
+        readTraceContent: async () => {
+          traceReads += 1;
+          return { content: "private trace" };
+        },
+      }),
+      undefined,
+      async () => ({ ...FULL_ELIGIBILITY, hasProducerRole: false }),
+    );
+    const gamesOnlyAuth: GameMcpAuthContext = {
+      ...GAMES_AUTH,
+      scope: "games:read",
+      scopes: ["games:read"],
+    };
+    const formerProducerAuth: GameMcpAuthContext = {
+      ...GAMES_AUTH,
+      userId: "former-producer",
+      scope: "agents:read games:read",
+      scopes: ["agents:read", "games:read"],
+    };
+    const scenarios: Array<{
+      id: string;
+      name: unknown;
+      auth: GameMcpAuthContext;
+    }> = [
+      { id: "games-only-agent-write", name: "update_agent", auth: gamesOnlyAuth },
+      { id: "normal-user-producer", name: "read_trace_content", auth: GAMES_AUTH },
+      { id: "cached-producer-after-role-loss", name: "read_trace_content", auth: formerProducerAuth },
+      { id: "unknown", name: "definitely_unknown", auth: GAMES_AUTH },
+      { id: "malformed", name: { injected: true }, auth: GAMES_AUTH },
+      { id: "active-match", name: "vote", auth: GAMES_AUTH },
+    ];
+
+    for (const scenario of scenarios) {
+      const response = await server.handle({
+        jsonrpc: "2.0",
+        id: scenario.id,
+        method: "tools/call",
+        params: { name: scenario.name, arguments: {} },
+      }, scenario.auth);
+
+      expect(response).toEqual({
+        jsonrpc: "2.0",
+        id: scenario.id,
+        error: {
+          code: -32000,
+          message: "Unknown or unauthorized MCP tool",
+        },
+      });
+      expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
+    }
+    expect(traceReads).toBe(0);
   });
 
   test("resolves static and dynamic clients plus current producer role from authoritative records", async () => {
@@ -835,7 +965,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }
   });
 
-  test("requires games read authority before resolving a public player profile", async () => {
+  test("terminally denies an ineligible public profile read before resolving it", async () => {
     let called = false;
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
       readPlayerProfile: async () => {
@@ -858,7 +988,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       },
     }, agentsOnly);
 
-    expect(response?.error?.message).toBe("Missing required MCP scope: games:read or producer");
+    expect(response?.error).toEqual({
+      code: -32000,
+      message: "Unknown or unauthorized MCP tool",
+    });
+    expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
     expect(called).toBe(false);
   });
 
@@ -1077,7 +1211,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
           avatarUrl: "https://cdn.example/lillith.png",
         },
       },
-    }, GAMES_AUTH);
+    }, AGENT_WRITE_AUTH);
     expect(createdResponse?.error).toBeUndefined();
     const created = (createdResponse?.result as {
       structuredContent: {
@@ -1251,6 +1385,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         supportedArchetypes: expect.arrayContaining(["diplomat", "martyr"]),
       },
     });
+    expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
   });
 
   test("reports MCP avatar completion status without exposing a standalone image tool", async () => {
@@ -1472,8 +1607,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }, PRODUCER_AUTH);
 
     expect(response?.error?.message).toBe(
-      "Unknown or unauthorized MCP tool is not supported for granted scopes: start_game",
+      "Unknown or unauthorized MCP tool",
     );
+    expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
   });
 
   test("rejects producer-only tools for games-scope auth", async () => {
@@ -1485,9 +1621,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       params: { name: "read_trace_content", arguments: { manifestId: "m1" } },
     }, GAMES_AUTH);
 
-    expect(response?.error?.message).toBe(
-      "Missing required MCP scope: producer",
-    );
+    expect(response?.error).toEqual({
+      code: -32000,
+      message: "Unknown or unauthorized MCP tool",
+    });
+    expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
   });
 
   test("rejects active-match-shaped user tool calls", async () => {
@@ -1500,9 +1638,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         params: { name, arguments: { gameIdOrSlug: "game-1" } },
       }, GAMES_AUTH);
 
-      expect(response?.error?.message).toBe(
-        `Unknown or unauthorized MCP tool is not supported for granted scopes: ${name}`,
-      );
+      expect(response?.error).toEqual({
+        code: -32000,
+        message: "Unknown or unauthorized MCP tool",
+      });
+      expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
     }
   });
 
@@ -1638,6 +1778,35 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     }
   });
 });
+
+function expectInsufficientScopeChallenge(
+  response: Awaited<ReturnType<ProductionGameMcpJsonRpcServerBase["handle"]>>,
+  expectedScope: string,
+): void {
+  expect(response?.error).toBeUndefined();
+  const result = response?.result as {
+    isError?: boolean;
+    content?: Array<{ type?: string; text?: string }>;
+    _meta?: Record<string, unknown>;
+  };
+  expect(result.isError).toBe(true);
+  expect(result.content).toEqual([{
+    type: "text",
+    text: "Additional authorization is required to use this tool.",
+  }]);
+  const challenges = result._meta?.["mcp/www_authenticate"];
+  expect(challenges).toEqual([expect.any(String)]);
+  const challenge = (challenges as string[])[0] ?? "";
+  expect(challenge).toContain("Bearer ");
+  expect(challenge).toContain(
+    'resource_metadata="http://127.0.0.1:3000/.well-known/oauth-protected-resource/mcp"',
+  );
+  expect(challenge).toContain('error="insufficient_scope"');
+  expect(challenge).toContain(
+    'error_description="Additional authorization is required to use this tool."',
+  );
+  expect(challenge).toContain(`scope="${expectedScope}"`);
+}
 
 function fakeReadModel(
   overrides: Partial<Record<keyof ProductionGameMcpReadModel, unknown>> = {},

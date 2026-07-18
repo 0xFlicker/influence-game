@@ -1,5 +1,9 @@
 import { createDB, type DrizzleDB } from "../db/index.js";
-import type { GameMcpAuthContext } from "./auth.js";
+import {
+  bearerChallenge,
+  GAME_MCP_STEP_UP_DESCRIPTION,
+  type GameMcpAuthContext,
+} from "./auth.js";
 import type { McpOAuthScope } from "../services/mcp-scope-policy.js";
 import {
   ProductionGameMcpReadModel,
@@ -55,6 +59,7 @@ import {
   createGameMcpEligibilityResolver,
   isGameMcpToolName,
   resolveGameMcpToolAccess,
+  resolveGameMcpToolInvocation,
   type GameMcpEligibilityResolver,
   type GameMcpEligibilitySnapshot,
 } from "./tool-authorization.js";
@@ -198,18 +203,16 @@ export class ProductionGameMcpJsonRpcServer {
       const request = asRecord(params);
       const name = String(request.name ?? "");
       const args = asRecord(request.arguments);
-      if (isGameMcpToolName(name)) {
-        if (!eligibility) {
-          throw new Error(
-            `Unknown or unauthorized MCP tool is not supported for granted scopes: ${name}`,
-          );
-        }
-        const access = resolveGameMcpToolAccess(name, auth, eligibility);
-        if (access.grantSatisfied && !access.invocationAllowed) {
-          throw new Error(
-            `Unknown or unauthorized MCP tool is not supported for granted scopes: ${name}`,
-          );
-        }
+      const invocation = resolveGameMcpToolInvocation(
+        name,
+        auth,
+        eligibility ?? null,
+      );
+      if (invocation.outcome === "step_up") {
+        return insufficientScopeResult(invocation.challengeScopes);
+      }
+      if (invocation.outcome === "unavailable") {
+        throw new Error("Unknown or unauthorized MCP tool");
       }
 
       if (name === "list_games") {
@@ -426,7 +429,7 @@ export class ProductionGameMcpJsonRpcServer {
         }, auth));
       }
 
-      throw new Error(`Unknown or unauthorized MCP tool is not supported for granted scopes: ${name}`);
+      throw new Error("Unknown or unauthorized MCP tool");
     }
 
     throw new Error(`Unsupported MCP method: ${method}`);
@@ -1468,6 +1471,27 @@ function content(value: unknown): { structuredContent: unknown; content: Array<{
         text: JSON.stringify(value, null, 2),
       },
     ],
+  };
+}
+
+function insufficientScopeResult(scopes: readonly McpOAuthScope[]): {
+  content: Array<{ type: "text"; text: string }>;
+  isError: true;
+  _meta: { "mcp/www_authenticate": string[] };
+} {
+  return {
+    content: [{
+      type: "text",
+      text: GAME_MCP_STEP_UP_DESCRIPTION,
+    }],
+    isError: true,
+    _meta: {
+      "mcp/www_authenticate": [bearerChallenge({
+        scopes,
+        error: "insufficient_scope",
+        errorDescription: GAME_MCP_STEP_UP_DESCRIPTION,
+      })],
+    },
   };
 }
 

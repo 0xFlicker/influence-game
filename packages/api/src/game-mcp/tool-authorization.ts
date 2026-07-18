@@ -1,4 +1,9 @@
-import type { McpOAuthScope } from "../services/mcp-scope-policy.js";
+import {
+  invalidMcpOAuthScopeSetReason,
+  mcpOAuthScopeSetIsSubset,
+  mcpOAuthScopesToArray,
+  type McpOAuthScope,
+} from "../services/mcp-scope-policy.js";
 import type { DrizzleDB } from "../db/index.js";
 import {
   hasCurrentProducerRoleForUserId,
@@ -157,6 +162,20 @@ export type GameMcpToolAccessDecision =
       invocationAllowed: boolean;
     };
 
+export type GameMcpToolInvocationDecision =
+  | {
+      outcome: "allowed";
+      requiredScopes: readonly McpOAuthScope[];
+    }
+  | {
+      outcome: "step_up";
+      requiredScopes: readonly McpOAuthScope[];
+      challengeScopes: readonly McpOAuthScope[];
+    }
+  | {
+      outcome: "unavailable";
+    };
+
 export function isGameMcpToolName(name: string): name is GameMcpToolName {
   return Object.hasOwn(GAME_MCP_TOOL_ACCESS, name);
 }
@@ -198,6 +217,63 @@ export function resolveGameMcpToolAccess(
       clientAllows(alternative) &&
       grantAllows(alternative)
     ),
+  };
+}
+
+export function resolveGameMcpToolInvocation(
+  name: string,
+  auth: GameMcpAuthContext,
+  eligibility: GameMcpEligibilitySnapshot | null,
+): GameMcpToolInvocationDecision {
+  if (!eligibility || !isGameMcpToolName(name)) {
+    return { outcome: "unavailable" };
+  }
+
+  const authScopes = new Set(auth.scopes);
+  const clientScopes = new Set(eligibility.clientScopes);
+  const alternatives = GAME_MCP_TOOL_ACCESS[name].scopeAlternatives;
+  const roleAllows = (alternative: GameMcpToolScopeAlternative) =>
+    alternative.requiredRole !== "producer" || eligibility.hasProducerRole;
+  const clientAllows = (alternative: GameMcpToolScopeAlternative) =>
+    alternative.clientEnvelopeScopes.every((scope) => clientScopes.has(scope));
+  const grantAllows = (alternative: GameMcpToolScopeAlternative) =>
+    alternative.requiredScopes.every((scope) => authScopes.has(scope));
+
+  const allowed = alternatives.find((alternative) =>
+    roleAllows(alternative) &&
+    clientAllows(alternative) &&
+    grantAllows(alternative)
+  );
+  if (allowed) {
+    return {
+      outcome: "allowed",
+      requiredScopes: allowed.requiredScopes,
+    };
+  }
+
+  const stepUp = alternatives.find((alternative) =>
+    roleAllows(alternative) &&
+    clientAllows(alternative) &&
+    alternative.catalogBaselineScopes.every((scope) => authScopes.has(scope))
+  );
+  if (!stepUp) return { outcome: "unavailable" };
+
+  const challengeScopeSet = new Set<McpOAuthScope>([
+    ...auth.scopes,
+    ...stepUp.requiredScopes,
+  ]);
+  if (
+    invalidMcpOAuthScopeSetReason(challengeScopeSet) ||
+    !mcpOAuthScopeSetIsSubset(challengeScopeSet, clientScopes) ||
+    (challengeScopeSet.has("producer") && !eligibility.hasProducerRole)
+  ) {
+    return { outcome: "unavailable" };
+  }
+
+  return {
+    outcome: "step_up",
+    requiredScopes: stepUp.requiredScopes,
+    challengeScopes: mcpOAuthScopesToArray(challengeScopeSet),
   };
 }
 
