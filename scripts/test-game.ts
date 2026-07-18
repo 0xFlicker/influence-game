@@ -6,8 +6,8 @@
  *   doppler run -- bun scripts/test-game.ts [options]
  *
  * Options:
- *   --api-url <url>       API base URL (default: http://localhost:3001)
- *   --web-url <url>       Web base URL for viewer link (default: http://localhost:3000)
+ *   --api-url <url>       API base URL (default: http://127.0.0.1:3000)
+ *   --web-url <url>       Web base URL for viewer link (default: http://localhost:3001)
  *   --players <n>         Player count (default: 6)
  *   --model <tier>        Model tier: budget|standard|premium (default: budget)
  *   --timing <preset>     Timing preset: fast|standard|slow (default: fast)
@@ -32,8 +32,8 @@ import { createDB, schema } from "../packages/api/src/db/index.js";
 
 const { values: args } = parseArgs({
   options: {
-    "api-url": { type: "string", default: "http://localhost:3001" },
-    "web-url": { type: "string", default: "http://localhost:3000" },
+    "api-url": { type: "string", default: "http://127.0.0.1:3000" },
+    "web-url": { type: "string", default: "http://localhost:3001" },
     players: { type: "string", default: "6" },
     model: { type: "string", default: "budget" },
     timing: { type: "string", default: "fast" },

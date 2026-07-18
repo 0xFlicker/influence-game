@@ -26,6 +26,9 @@ COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_module
 ENV PATH="/app/node_modules/.bin:$PATH"
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DOCKER_BUILD=1
+# The web container listens on :3000; server rendering must call the API service,
+# not recurse through the web container's browser-facing fallback.
+ENV API_BACKEND_URL=http://api:3001
 ARG PRIVY_APP_ID
 ENV PRIVY_APP_ID=${PRIVY_APP_ID}
 
@@ -44,6 +47,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
+ENV API_BACKEND_URL=http://api:3001
 
 # Copy standalone build
 COPY --from=build /app/packages/web/.next/standalone ./

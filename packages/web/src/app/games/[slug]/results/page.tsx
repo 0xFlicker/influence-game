@@ -1,5 +1,6 @@
 import { Nav } from "@/components/nav";
-import { getGame, type GameDetail } from "@/lib/api";
+import type { GameDetail } from "@/lib/api";
+import { getServerGame } from "@/lib/server-api";
 import { GameViewer } from "../game-viewer";
 
 interface Props {
@@ -19,7 +20,7 @@ export default async function GameResultsPage({ params }: Props) {
   let initialGame: GameDetail | undefined;
 
   try {
-    initialGame = await getGame(slug);
+    initialGame = await getServerGame(slug);
   } catch (err) {
     console.error(`[GameResultsPage] SSR fetch failed for slug="${slug}":`, err);
   }

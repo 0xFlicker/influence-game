@@ -171,7 +171,7 @@ The API runs on `http://127.0.0.1:3000` by default. It connects to a local Postg
 bun run dev:web
 ```
 
-The frontend runs on `http://localhost:3001`. Doppler injects Privy/admin/runtime config for the web app; the `env ...` overrides keep Next.js off the API port and make browser API calls use IPv4 `127.0.0.1` instead of `localhost`.
+The frontend runs on `http://localhost:3001`. Doppler injects Privy/admin/runtime config for the web app; the `env ...` overrides keep Next.js off the API port and make browser API calls use IPv4 `127.0.0.1` instead of `localhost`. Server components must use `serverApiFetch` (or its typed helpers) so they resolve through `API_BACKEND_URL`; importing the browser `apiFetch` client into a server component can recurse into the web container in Docker.
 
 **Terminal 3 -- Start the House Highlights render worker:**
 
@@ -320,6 +320,7 @@ NEXT_PUBLIC_PRIVY_APP_ID=<your-privy-app-id>
 NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:3000
 NEXT_PUBLIC_ADMIN_ADDRESS=<your-wallet-address>
+API_BACKEND_URL=http://127.0.0.1:3000
 EOF
 ```
 
@@ -329,6 +330,7 @@ EOF
 | `NEXT_PUBLIC_API_URL` | Yes | Backend API URL |
 | `NEXT_PUBLIC_WS_URL` | Yes | WebSocket URL for live game events |
 | `NEXT_PUBLIC_ADMIN_ADDRESS` | Yes | Wallet address for admin panel access |
+| `API_BACKEND_URL` | Yes | Server-only API origin used by SSR (`http://api:3001` in the deployed Docker network) |
 
 > If you see "Access denied" in the admin panel, check that `NEXT_PUBLIC_ADMIN_ADDRESS` is set.
 

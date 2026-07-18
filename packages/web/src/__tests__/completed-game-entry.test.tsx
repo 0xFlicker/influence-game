@@ -11,8 +11,11 @@ import {
   sharePostgameLink,
   sharePostgameTrailer,
 } from "../app/games/[slug]/components/postgame-media-player";
-import type { PublicPostgameMediaResponse } from "../lib/api";
-import { setApiBase } from "../lib/api";
+import {
+  resolveApiUrl,
+  setApiBase,
+  type PublicPostgameMediaResponse,
+} from "../lib/api";
 import GameViewerPage, { generateMetadata } from "../app/games/[slug]/page";
 import { GameViewer } from "../app/games/[slug]/game-viewer";
 
@@ -336,9 +339,12 @@ describe("CompletedGameEntry", () => {
   });
 
   it("server-loads media only for completed games and passes it to the root viewer", async () => {
+    const originalApiBackendUrl = process.env.API_BACKEND_URL;
+    const originalApiBase = resolveApiUrl("/").replace(/\/$/, "");
     const originalFetch = globalThis.fetch;
     const requestedUrls: string[] = [];
-    setApiBase("http://127.0.0.1:3000");
+    process.env.API_BACKEND_URL = "http://api:3001";
+    setApiBase("http://web:3000");
     globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
       requestedUrls.push(String(url));
       if (String(url).endsWith(`/api/games/${gameId}`)) {
@@ -367,19 +373,28 @@ describe("CompletedGameEntry", () => {
       const viewer = findElementByType(page, GameViewer);
 
       expect(requestedUrls).toEqual([
-        `http://127.0.0.1:3000/api/games/${gameId}`,
-        `http://127.0.0.1:3000/api/games/${gameId}/postgame/media`,
+        `http://api:3001/api/games/${gameId}`,
+        `http://api:3001/api/games/${gameId}/postgame/media`,
       ]);
       expect(viewer?.props.initialPostgameMedia).toEqual(readyMedia());
     } finally {
+      if (originalApiBackendUrl === undefined) {
+        delete process.env.API_BACKEND_URL;
+      } else {
+        process.env.API_BACKEND_URL = originalApiBackendUrl;
+      }
+      setApiBase(originalApiBase);
       globalThis.fetch = originalFetch;
     }
   });
 
   it("does not server-fetch media for games that are still in progress", async () => {
+    const originalApiBackendUrl = process.env.API_BACKEND_URL;
+    const originalApiBase = resolveApiUrl("/").replace(/\/$/, "");
     const originalFetch = globalThis.fetch;
     const requestedUrls: string[] = [];
-    setApiBase("http://127.0.0.1:3000");
+    process.env.API_BACKEND_URL = "http://api:3001";
+    setApiBase("http://web:3000");
     globalThis.fetch = (async (url: Parameters<typeof fetch>[0]) => {
       requestedUrls.push(String(url));
       return new Response(JSON.stringify({
@@ -399,8 +414,14 @@ describe("CompletedGameEntry", () => {
 
     try {
       await GameViewerPage({ params: Promise.resolve({ slug: gameId }) });
-      expect(requestedUrls).toEqual([`http://127.0.0.1:3000/api/games/${gameId}`]);
+      expect(requestedUrls).toEqual([`http://api:3001/api/games/${gameId}`]);
     } finally {
+      if (originalApiBackendUrl === undefined) {
+        delete process.env.API_BACKEND_URL;
+      } else {
+        process.env.API_BACKEND_URL = originalApiBackendUrl;
+      }
+      setApiBase(originalApiBase);
       globalThis.fetch = originalFetch;
     }
   });

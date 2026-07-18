@@ -66,6 +66,12 @@ export async function apiFetch<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
+  if (typeof window === "undefined" && process.env.NEXT_RUNTIME) {
+    throw new Error(
+      "apiFetch is browser-only in Next.js; use serverApiFetch for server-side requests",
+    );
+  }
+
   const token = getAuthToken();
   const isFormData = options?.body instanceof FormData;
   const headers: Record<string, string> = {

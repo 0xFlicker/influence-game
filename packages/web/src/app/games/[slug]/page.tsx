@@ -2,12 +2,12 @@ import { Nav } from "@/components/nav";
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { GameViewer } from "./game-viewer";
-import {
-  getGame,
-  type GameDetail,
-} from "@/lib/api";
+import type { GameDetail } from "@/lib/api";
 import { gameHref } from "@/lib/game-links";
-import { getServerPostgameMedia } from "@/lib/server-api";
+import {
+  getServerGame,
+  getServerPostgameMedia,
+} from "@/lib/server-api";
 
 interface Props {
   params: Promise<{ slug: string }>;
@@ -18,7 +18,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { slug } = await params;
 
   try {
-    const game = await getGame(slug);
+    const game = await getServerGame(slug);
     if (game.status === "completed") {
       const media = await getServerPostgameMedia(slug);
       if (media.status === "ready") {
@@ -95,7 +95,7 @@ export default async function GameViewerPage({ params, searchParams }: Props) {
   let initialPostgameMedia: Awaited<ReturnType<typeof getServerPostgameMedia>> | undefined;
 
   try {
-    initialGame = await getGame(slug);
+    initialGame = await getServerGame(slug);
     if (initialGame.status === "completed") {
       try {
         initialPostgameMedia = await getServerPostgameMedia(slug);

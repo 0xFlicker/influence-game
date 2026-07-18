@@ -1,12 +1,14 @@
 import { Nav } from "@/components/nav";
-import {
-  getGame,
-  getGameReplayWatchFrames,
-  getGameTranscript,
-  type GameDetail,
-  type GameWatchReplayFrame,
-  type TranscriptEntry,
+import type {
+  GameDetail,
+  GameWatchReplayFrame,
+  TranscriptEntry,
 } from "@/lib/api";
+import {
+  getServerGame,
+  getServerGameReplayWatchFrames,
+  getServerGameTranscript,
+} from "@/lib/server-api";
 import { GameViewer } from "../game-viewer";
 
 interface Props {
@@ -28,11 +30,11 @@ export default async function GameReplayPage({ params }: Props) {
   let initialReplayFrames: GameWatchReplayFrame[] | undefined;
 
   try {
-    initialGame = await getGame(slug);
+    initialGame = await getServerGame(slug);
     if (initialGame.status === "completed" || initialGame.status === "cancelled") {
       [initialMessages, initialReplayFrames] = await Promise.all([
-        getGameTranscript(slug),
-        getGameReplayWatchFrames(slug),
+        getServerGameTranscript(slug),
+        getServerGameReplayWatchFrames(slug),
       ]);
     }
   } catch (err) {

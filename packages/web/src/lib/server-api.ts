@@ -1,9 +1,12 @@
 import { gamePathSegment } from "./game-links";
 import { getPublicRuntimeConfig } from "./server-runtime-config";
 import type {
+  GameDetail,
+  GameWatchReplayFrame,
   HouseHighlightsResponse,
   PublicPlayerProfileEnvelope,
   PublicPostgameMediaResponse,
+  TranscriptEntry,
 } from "./api";
 
 const DEFAULT_SERVER_API_TIMEOUT_MS = 8_000;
@@ -81,6 +84,36 @@ function timeoutSignal(
       existingSignal?.removeEventListener("abort", abortFromExisting);
     },
   };
+}
+
+export function getServerGame(
+  gameIdOrSlug: string,
+  options?: RequestInit,
+): Promise<GameDetail> {
+  return serverApiFetch(
+    `/api/games/${gamePathSegment(gameIdOrSlug)}`,
+    { cache: "no-store", ...options },
+  );
+}
+
+export function getServerGameTranscript(
+  gameIdOrSlug: string,
+  options?: RequestInit,
+): Promise<TranscriptEntry[]> {
+  return serverApiFetch(
+    `/api/games/${gamePathSegment(gameIdOrSlug)}/transcript`,
+    { cache: "no-store", ...options },
+  );
+}
+
+export function getServerGameReplayWatchFrames(
+  gameIdOrSlug: string,
+  options?: RequestInit,
+): Promise<GameWatchReplayFrame[]> {
+  return serverApiFetch(
+    `/api/games/${gamePathSegment(gameIdOrSlug)}/replay-watch-frames`,
+    { cache: "no-store", ...options },
+  );
 }
 
 export function getServerPostgameHighlights(
