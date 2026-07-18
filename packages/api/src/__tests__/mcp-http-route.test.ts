@@ -24,6 +24,7 @@ import { setupTestDB } from "./test-utils.js";
 const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
 const MCP_OAUTH_AGENT_READ_SCOPE = "agents:read";
 const MCP_OAUTH_FULL_USER_SCOPE = "agents:read agents:write games:read";
+const MCP_OAUTH_ALL_SCOPE = "agents:read agents:write games:read producer";
 const MCP_OAUTH_SCOPE = "producer";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
 const PRODUCER_RESOURCE_URI = RESOURCE_URI;
@@ -35,7 +36,7 @@ beforeAll(() => {
 });
 
 describe("/mcp Streamable HTTP route", () => {
-  test("returns an OAuth bearer challenge when auth is missing", async () => {
+  test("returns a full-scope OAuth bearer challenge when auth is missing", async () => {
     const auditEvents: GameMcpAuditEvent[] = [];
     const app = createTestApp({}, {
       auditLogger: (event) => auditEvents.push(event),
@@ -50,7 +51,9 @@ describe("/mcp Streamable HTTP route", () => {
     expect(response.headers.get("www-authenticate")).toContain(
       "/.well-known/oauth-protected-resource",
     );
-    expect(response.headers.get("www-authenticate")).toContain("scope=\"agents:read games:read\"");
+    expect(response.headers.get("www-authenticate")).toContain(
+      `scope="${MCP_OAUTH_ALL_SCOPE}"`,
+    );
     expect(auditEvents).toContainEqual(expect.objectContaining({
       result: "failure",
       status: 401,
