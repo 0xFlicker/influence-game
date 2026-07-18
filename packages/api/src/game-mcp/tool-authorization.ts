@@ -1,7 +1,9 @@
 import {
   invalidMcpOAuthScopeSetReason,
+  mcpOAuthScopeSetIncludesAll,
   mcpOAuthScopeSetIsSubset,
   mcpOAuthScopesToArray,
+  type McpOAuthRequiredRole,
   type McpOAuthScope,
 } from "../services/mcp-scope-policy.js";
 import type { DrizzleDB } from "../db/index.js";
@@ -38,13 +40,11 @@ export function createGameMcpEligibilityResolver(
   };
 }
 
-type GameMcpRequiredRole = "producer";
-
 interface GameMcpToolScopeAlternative {
   requiredScopes: readonly McpOAuthScope[];
   catalogBaselineScopes: readonly McpOAuthScope[];
   clientEnvelopeScopes: readonly McpOAuthScope[];
-  requiredRole?: GameMcpRequiredRole;
+  requiredRole?: McpOAuthRequiredRole;
 }
 
 export interface GameMcpToolAccessSpec {
@@ -144,10 +144,6 @@ export const GAME_MCP_TOOL_ACCESS = {
   ...specsFor(PRODUCER_TOOLS, [PRODUCER_ALTERNATIVE]),
 } satisfies Record<GameMcpToolName, GameMcpToolAccessSpec>;
 
-export const GAME_MCP_TOOL_NAMES = Object.freeze(
-  Object.keys(GAME_MCP_TOOL_ACCESS) as GameMcpToolName[],
-);
-
 export type GameMcpToolAccessDecision =
   | {
       known: false;
@@ -165,11 +161,9 @@ export type GameMcpToolAccessDecision =
 export type GameMcpToolInvocationDecision =
   | {
       outcome: "allowed";
-      requiredScopes: readonly McpOAuthScope[];
     }
   | {
       outcome: "step_up";
-      requiredScopes: readonly McpOAuthScope[];
       challengeScopes: readonly McpOAuthScope[];
     }
   | {
@@ -194,28 +188,19 @@ export function resolveGameMcpToolAccess(
     };
   }
 
-  const authScopes = new Set(auth.scopes);
-  const clientScopes = new Set(eligibility.clientScopes);
+  const context = accessContext(auth, eligibility);
   const alternatives = GAME_MCP_TOOL_ACCESS[name].scopeAlternatives;
-  const roleAllows = (alternative: GameMcpToolScopeAlternative) =>
-    alternative.requiredRole !== "producer" || eligibility.hasProducerRole;
-  const clientAllows = (alternative: GameMcpToolScopeAlternative) =>
-    alternative.clientEnvelopeScopes.every((scope) => clientScopes.has(scope));
-  const grantAllows = (alternative: GameMcpToolScopeAlternative) =>
-    alternative.requiredScopes.every((scope) => authScopes.has(scope));
 
   return {
     known: true,
     catalogEligible: alternatives.some((alternative) =>
-      roleAllows(alternative) &&
-      clientAllows(alternative) &&
-      alternative.catalogBaselineScopes.every((scope) => authScopes.has(scope))
+      catalogAllows(alternative, context)
     ),
-    grantSatisfied: alternatives.some(grantAllows),
+    grantSatisfied: alternatives.some((alternative) =>
+      grantAllows(alternative, context)
+    ),
     invocationAllowed: alternatives.some((alternative) =>
-      roleAllows(alternative) &&
-      clientAllows(alternative) &&
-      grantAllows(alternative)
+      invocationAllows(alternative, context)
     ),
   };
 }
@@ -229,32 +214,14 @@ export function resolveGameMcpToolInvocation(
     return { outcome: "unavailable" };
   }
 
-  const authScopes = new Set(auth.scopes);
-  const clientScopes = new Set(eligibility.clientScopes);
+  const context = accessContext(auth, eligibility);
   const alternatives = GAME_MCP_TOOL_ACCESS[name].scopeAlternatives;
-  const roleAllows = (alternative: GameMcpToolScopeAlternative) =>
-    alternative.requiredRole !== "producer" || eligibility.hasProducerRole;
-  const clientAllows = (alternative: GameMcpToolScopeAlternative) =>
-    alternative.clientEnvelopeScopes.every((scope) => clientScopes.has(scope));
-  const grantAllows = (alternative: GameMcpToolScopeAlternative) =>
-    alternative.requiredScopes.every((scope) => authScopes.has(scope));
-
-  const allowed = alternatives.find((alternative) =>
-    roleAllows(alternative) &&
-    clientAllows(alternative) &&
-    grantAllows(alternative)
-  );
-  if (allowed) {
-    return {
-      outcome: "allowed",
-      requiredScopes: allowed.requiredScopes,
-    };
+  if (alternatives.some((alternative) => invocationAllows(alternative, context))) {
+    return { outcome: "allowed" };
   }
 
   const stepUp = alternatives.find((alternative) =>
-    roleAllows(alternative) &&
-    clientAllows(alternative) &&
-    alternative.catalogBaselineScopes.every((scope) => authScopes.has(scope))
+    catalogAllows(alternative, context)
   );
   if (!stepUp) return { outcome: "unavailable" };
 
@@ -264,17 +231,78 @@ export function resolveGameMcpToolInvocation(
   ]);
   if (
     invalidMcpOAuthScopeSetReason(challengeScopeSet) ||
-    !mcpOAuthScopeSetIsSubset(challengeScopeSet, clientScopes) ||
-    (challengeScopeSet.has("producer") && !eligibility.hasProducerRole)
+    !mcpOAuthScopeSetIsSubset(challengeScopeSet, context.clientScopes) ||
+    (challengeScopeSet.has("producer") && !context.hasProducerRole)
   ) {
     return { outcome: "unavailable" };
   }
 
   return {
     outcome: "step_up",
-    requiredScopes: stepUp.requiredScopes,
     challengeScopes: mcpOAuthScopesToArray(challengeScopeSet),
   };
+}
+
+interface GameMcpToolAccessContext {
+  authScopes: ReadonlySet<McpOAuthScope>;
+  clientScopes: ReadonlySet<McpOAuthScope>;
+  hasProducerRole: boolean;
+}
+
+function accessContext(
+  auth: GameMcpAuthContext,
+  eligibility: GameMcpEligibilitySnapshot,
+): GameMcpToolAccessContext {
+  return {
+    authScopes: new Set(auth.scopes),
+    clientScopes: new Set(eligibility.clientScopes),
+    hasProducerRole: eligibility.hasProducerRole,
+  };
+}
+
+function roleAllows(
+  alternative: GameMcpToolScopeAlternative,
+  context: GameMcpToolAccessContext,
+): boolean {
+  return alternative.requiredRole !== "producer" || context.hasProducerRole;
+}
+
+function clientAllows(
+  alternative: GameMcpToolScopeAlternative,
+  context: GameMcpToolAccessContext,
+): boolean {
+  return mcpOAuthScopeSetIncludesAll(
+    context.clientScopes,
+    alternative.clientEnvelopeScopes,
+  );
+}
+
+function grantAllows(
+  alternative: GameMcpToolScopeAlternative,
+  context: GameMcpToolAccessContext,
+): boolean {
+  return mcpOAuthScopeSetIncludesAll(context.authScopes, alternative.requiredScopes);
+}
+
+function catalogAllows(
+  alternative: GameMcpToolScopeAlternative,
+  context: GameMcpToolAccessContext,
+): boolean {
+  return roleAllows(alternative, context) &&
+    clientAllows(alternative, context) &&
+    mcpOAuthScopeSetIncludesAll(
+      context.authScopes,
+      alternative.catalogBaselineScopes,
+    );
+}
+
+function invocationAllows(
+  alternative: GameMcpToolScopeAlternative,
+  context: GameMcpToolAccessContext,
+): boolean {
+  return roleAllows(alternative, context) &&
+    clientAllows(alternative, context) &&
+    grantAllows(alternative, context);
 }
 
 function specsFor<TName extends GameMcpToolName>(

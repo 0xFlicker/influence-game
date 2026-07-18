@@ -62,6 +62,7 @@ import {
   resolveGameMcpToolInvocation,
   type GameMcpEligibilityResolver,
   type GameMcpEligibilitySnapshot,
+  type GameMcpToolName,
 } from "./tool-authorization.js";
 
 export interface JsonRpcRequest {
@@ -192,7 +193,7 @@ export class ProductionGameMcpJsonRpcServer {
       return {
         tools: eligibility
           ? productionGameMcpTools(auth, eligibility).filter((candidate) =>
-            resolveGameMcpToolAccess(String(asRecord(candidate).name ?? ""), auth, eligibility)
+            resolveGameMcpToolAccess(candidate.name, auth, eligibility)
               .catalogEligible
           )
           : [],
@@ -505,18 +506,16 @@ function requireAnyScope(auth: GameMcpAuthContext, requiredScopes: readonly McpO
 function productionGameMcpTools(
   auth: GameMcpAuthContext,
   eligibility: GameMcpEligibilitySnapshot,
-): unknown[] {
+): GameMcpToolDescriptor[] {
   const clientScopes = new Set(eligibility.clientScopes);
   const producerEligible = eligibility.hasProducerRole && clientScopes.has("producer");
-  const sharedGameReadVariant = hasScope(auth, "producer") && producerEligible
-    ? "producer"
-    : hasScope(auth, "games:read") && clientScopes.has("games:read")
-      ? "games:read"
-      : producerEligible
-        ? "producer"
-        : null;
+  const sharedGameReadVariant = resolveSharedGameReadVariant(
+    auth,
+    clientScopes,
+    producerEligible,
+  );
   const includeProducerVariant = sharedGameReadVariant === "producer";
-  const tools: unknown[] = [];
+  const tools: GameMcpToolDescriptor[] = [];
 
   if (sharedGameReadVariant) {
     const gameReadScopes: McpOAuthScope[] = [sharedGameReadVariant];
@@ -831,7 +830,20 @@ function productionGameMcpTools(
   return tools;
 }
 
-function gameRulesTools(): unknown[] {
+function resolveSharedGameReadVariant(
+  auth: GameMcpAuthContext,
+  clientScopes: ReadonlySet<McpOAuthScope>,
+  producerEligible: boolean,
+): "producer" | "games:read" | null {
+  if (hasScope(auth, "producer") && producerEligible) return "producer";
+  if (hasScope(auth, "games:read") && clientScopes.has("games:read")) {
+    return "games:read";
+  }
+  if (producerEligible) return "producer";
+  return null;
+}
+
+function gameRulesTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: "get_rules",
@@ -854,7 +866,7 @@ function gameRulesTools(): unknown[] {
   ];
 }
 
-function userAgentReadTools(): unknown[] {
+function userAgentReadTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: "list_archetypes",
@@ -940,7 +952,7 @@ function userAgentReadTools(): unknown[] {
   ];
 }
 
-function userAgentWriteTools(): unknown[] {
+function userAgentWriteTools(): GameMcpToolDescriptor[] {
   const writeScopes: readonly McpOAuthScope[] = ["agents:read", "agents:write"];
   return [
     tool({
@@ -1007,7 +1019,7 @@ function userAgentWriteTools(): unknown[] {
 }
 
 function tool(input: {
-  name: string;
+  name: GameMcpToolName;
   description: string;
   properties?: Record<string, unknown>;
   inputSchema?: Record<string, unknown>;
@@ -1018,7 +1030,7 @@ function tool(input: {
   idempotentHint?: boolean;
   appMeta?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
-}): unknown {
+}) {
   const securityScheme = oauthSecurityScheme(input.scopes);
   return {
     name: input.name,
@@ -1044,6 +1056,8 @@ function tool(input: {
     },
   };
 }
+
+type GameMcpToolDescriptor = ReturnType<typeof tool>;
 
 function postgameOutputSchema(kind: string): Record<string, unknown> {
   const playerRefSchema = {

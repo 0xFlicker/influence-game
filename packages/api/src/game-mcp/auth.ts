@@ -9,6 +9,7 @@ import {
   type McpAuthProfile,
 } from "../services/mcp-oauth.js";
 import {
+  MCP_OAUTH_DEFAULT_SCOPES,
   mcpOAuthScopeSetHasProducer,
   mcpOAuthScopesToArray,
   normalizeMcpOAuthScopeSet,
@@ -44,7 +45,7 @@ export function bearerChallenge(options: BearerChallengeOptions = {}): string {
     MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
     getMcpOAuthResourceUri(),
   ).toString();
-  const scopes = options.scopes ?? ["agents:read", "games:read"];
+  const scopes = options.scopes ?? MCP_OAUTH_DEFAULT_SCOPES;
   const parameters = [
     'Bearer realm="influence-game-mcp"',
     `resource_metadata=${quoteBearerChallengeValue(metadataUrl)}`,
