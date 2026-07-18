@@ -1,7 +1,10 @@
 import { beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-import { createMcpRoutes } from "../routes/mcp.js";
+import {
+  createMcpRoutes,
+  type GameMcpAuditEvent,
+} from "../routes/mcp.js";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { seedRBAC } from "../db/rbac-seed.js";
 import { createSessionToken } from "../middleware/auth.js";
@@ -33,7 +36,10 @@ beforeAll(() => {
 
 describe("/mcp Streamable HTTP route", () => {
   test("returns an OAuth bearer challenge when auth is missing", async () => {
-    const app = createTestApp();
+    const auditEvents: GameMcpAuditEvent[] = [];
+    const app = createTestApp({}, {
+      auditLogger: (event) => auditEvents.push(event),
+    });
     const response = await app.request("/mcp", {
       method: "POST",
       headers: jsonHeaders(),
@@ -45,6 +51,11 @@ describe("/mcp Streamable HTTP route", () => {
       "/.well-known/oauth-protected-resource",
     );
     expect(response.headers.get("www-authenticate")).toContain("scope=\"agents:read games:read\"");
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      result: "failure",
+      status: 401,
+      denialReason: "missing_bearer_token",
+    }));
   });
 
   test("derives the OAuth bearer challenge from the canonical MCP resource origin", async () => {
@@ -142,7 +153,7 @@ describe("/mcp Streamable HTTP route", () => {
   });
 
   test("audits JSON-RPC failures without raw error messages", async () => {
-    const auditEvents: Array<{ status: number; denialReason?: string }> = [];
+    const auditEvents: GameMcpAuditEvent[] = [];
     const app = createTestApp({
       handle: async (request) => ({
         jsonrpc: "2.0",
@@ -160,14 +171,222 @@ describe("/mcp Streamable HTTP route", () => {
 
     expect(response.status).toBe(200);
     expect(auditEvents).toContainEqual(expect.objectContaining({
+      result: "failure",
       status: 200,
+      tool: "unknown_tool",
       denialReason: "json_rpc_error",
     }));
     expect(JSON.stringify(auditEvents)).not.toContain("private-key-detail");
   });
 
+  test("audits insufficient-scope tool results as bounded failures", async () => {
+    const auditEvents: GameMcpAuditEvent[] = [];
+    const privateChallenge = [
+      "Bearer resource_metadata=\"https://chatgpt.com/connector_platform_oauth_redirect\",",
+      "scope=\"agents:read agents:write\", error=\"insufficient_scope\",",
+      "error_description=\"private authorization detail\", token=\"secret-token\"",
+    ].join(" ");
+    const app = createTestApp({
+      handle: async (request) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: {
+          isError: true,
+          content: [{ type: "text", text: "private authorization detail" }],
+          _meta: { "mcp/www_authenticate": [privateChallenge] },
+        },
+      }),
+    }, {
+      auditLogger: (event) => auditEvents.push(event),
+    });
+
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "step-up",
+        method: "tools/call",
+        params: { name: "update_agent", arguments: {} },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      result: "failure",
+      status: 200,
+      tool: "update_agent",
+      denialReason: "insufficient_scope",
+    }));
+    const serializedAudit = JSON.stringify(auditEvents);
+    expect(serializedAudit).not.toContain("mcp/www_authenticate");
+    expect(serializedAudit).not.toContain("connector_platform_oauth_redirect");
+    expect(serializedAudit).not.toContain("secret-token");
+    expect(serializedAudit).not.toContain("private authorization detail");
+  });
+
+  test("audits ordinary errored tool results without trusting result fields", async () => {
+    const auditEvents: GameMcpAuditEvent[] = [];
+    const app = createTestApp({
+      handle: async (request) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: {
+          isError: true,
+          denialReason: "attacker_controlled",
+          content: [{ type: "text", text: "database row and stack trace" }],
+          _meta: {
+            denialReason: "attacker_meta_value",
+            "mcp/www_authenticate": ["https://evil.example/callback?code=private-code"],
+            callbackUri: "https://evil.example/callback?code=private-code",
+            accessToken: "private-access-token",
+          },
+        },
+      }),
+    }, {
+      auditLogger: (event) => auditEvents.push(event),
+    });
+
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "domain-error",
+        method: "tools/call",
+        params: { name: "update_agent", arguments: {} },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      result: "failure",
+      status: 200,
+      tool: "update_agent",
+      denialReason: "tool_error",
+    }));
+    const serializedAudit = JSON.stringify(auditEvents);
+    expect(serializedAudit).not.toContain("attacker_controlled");
+    expect(serializedAudit).not.toContain("attacker_meta_value");
+    expect(serializedAudit).not.toContain("database row and stack trace");
+    expect(serializedAudit).not.toContain("evil.example");
+    expect(serializedAudit).not.toContain("private-code");
+    expect(serializedAudit).not.toContain("private-access-token");
+  });
+
+  test("audits successful retried tool calls as success with the canonical name", async () => {
+    const auditEvents: GameMcpAuditEvent[] = [];
+    const app = createTestApp({
+      handle: async (request) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { content: [{ type: "text", text: "updated" }] },
+      }),
+    }, {
+      auditLogger: (event) => auditEvents.push(event),
+    });
+
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "authorized-retry",
+        method: "tools/call",
+        params: { name: "update_agent", arguments: {} },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      result: "success",
+      status: 200,
+      tool: "update_agent",
+      denialReason: undefined,
+    }));
+  });
+
+  test("audits eligibility internal errors without dependency details", async () => {
+    const auditEvents: GameMcpAuditEvent[] = [];
+    const app = createTestApp({
+      handle: async (request) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        error: {
+          code: -32603,
+          message: "Internal error: postgres role lookup private failure",
+          data: { stack: "private database stack" },
+        },
+      }),
+    }, {
+      auditLogger: (event) => auditEvents.push(event),
+    });
+
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({ jsonrpc: "2.0", id: "eligibility-error", method: "tools/list" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      result: "failure",
+      status: 200,
+      denialReason: "internal_error",
+    }));
+    const serializedAudit = JSON.stringify(auditEvents);
+    expect(serializedAudit).not.toContain("postgres role lookup");
+    expect(serializedAudit).not.toContain("private database stack");
+  });
+
+  test("uses one bounded audit sentinel for hostile unknown tool names", async () => {
+    const hostileNames: unknown[] = [
+      "definitely_unknown",
+      { injected: true },
+      "x".repeat(2_000),
+      "quoted\"\n\u0000control",
+      "Bearer private-token-value",
+      "https://evil.example/callback?code=private-code",
+    ];
+    const auditEvents: GameMcpAuditEvent[] = [];
+    const app = createTestApp({
+      handle: async (request) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        error: { code: -32000, message: "Unknown or unauthorized MCP tool" },
+      }),
+    }, {
+      auditLogger: (event) => auditEvents.push(event),
+    });
+
+    for (const [index, name] of hostileNames.entries()) {
+      const response = await app.request("/mcp", {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: `hostile-${index}`,
+          method: "tools/call",
+          params: { name, arguments: {} },
+        }),
+      });
+      expect(response.status).toBe(200);
+    }
+
+    const toolEvents = auditEvents.filter((event) => event.method === "tools/call");
+    expect(toolEvents).toHaveLength(hostileNames.length);
+    expect(toolEvents.every((event) => event.tool === "unknown_tool")).toBe(true);
+    const serializedAudit = JSON.stringify(auditEvents);
+    expect(serializedAudit).not.toContain("definitely_unknown");
+    expect(serializedAudit).not.toContain("quoted");
+    expect(serializedAudit).not.toContain("private-token-value");
+    expect(serializedAudit).not.toContain("evil.example");
+    expect(serializedAudit).not.toContain("private-code");
+    expect(serializedAudit).not.toContain("x".repeat(160));
+  });
+
   test("audits MCP App stages and provider hints without changing authorization", async () => {
-    const auditEvents: Array<Record<string, unknown>> = [];
+    const auditEvents: GameMcpAuditEvent[] = [];
     const app = createTestApp({
       handle: async (request) => ({
         jsonrpc: "2.0",
@@ -532,7 +751,10 @@ describe("/mcp Streamable HTTP route", () => {
         walletAddress: "0xmcphttp00000000000000000000000000000010",
         scope: MCP_OAUTH_AGENT_READ_SCOPE,
       });
-      const app = createMcpRoutes(db);
+      const auditEvents: GameMcpAuditEvent[] = [];
+      const app = createMcpRoutes(db, {
+        auditLogger: (event) => auditEvents.push(event),
+      });
 
       for (const name of ["create_agent", "update_agent", "join_queue", "leave_queue"]) {
         const response = await app.request("/mcp", {
@@ -564,6 +786,21 @@ describe("/mcp Streamable HTTP route", () => {
       }
 
       expect(await db.select().from(schema.agentProfiles)).toEqual([]);
+      expect(auditEvents).toHaveLength(4);
+      expect(auditEvents.every((event) =>
+        event.result === "failure" &&
+        event.status === 200 &&
+        event.denialReason === "insufficient_scope"
+      )).toBe(true);
+      expect(auditEvents.map((event) => event.tool)).toEqual([
+        "create_agent",
+        "update_agent",
+        "join_queue",
+        "leave_queue",
+      ]);
+      const serializedAudit = JSON.stringify(auditEvents);
+      expect(serializedAudit).not.toContain("mcp/www_authenticate");
+      expect(serializedAudit).not.toContain("resource_metadata");
     });
 
     test("accepts producer tokens on /mcp and invalidates them after role removal", async () => {
@@ -614,7 +851,7 @@ describe("/mcp Streamable HTTP route", () => {
 function createTestApp(
   serverOverrides: Partial<ProductionGameMcpJsonRpcServer> = {},
   options: {
-    auditLogger?: (event: { status: number; denialReason?: string }) => void;
+    auditLogger?: (event: GameMcpAuditEvent) => void;
     maxPostBytes?: number;
     tokenValidator?: () => Promise<GameMcpAuthResult>;
   } = {},
@@ -664,7 +901,7 @@ function restoreOptionalEnv(name: string, value: string | undefined): void {
 function createDbBackedTestApp(
   db: DrizzleDB,
   serverOverrides: Partial<ProductionGameMcpJsonRpcServer> = {},
-  auditLogger: (event: { status: number; userId?: string; clientId?: string; resource?: string }) => void = () => undefined,
+  auditLogger: (event: GameMcpAuditEvent) => void = () => undefined,
 ) {
   return createMcpRoutes(db, {
     server: {
