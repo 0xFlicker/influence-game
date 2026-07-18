@@ -51,6 +51,13 @@ import {
   assertPublicPlayerProfileEnvelope,
   parsePublicPlayerProfileToolInput,
 } from "./public-player-tool-schema.js";
+import {
+  createGameMcpEligibilityResolver,
+  isGameMcpToolName,
+  resolveGameMcpToolAccess,
+  type GameMcpEligibilityResolver,
+  type GameMcpEligibilitySnapshot,
+} from "./tool-authorization.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -76,7 +83,8 @@ function oauthSecurityScheme(scopes: readonly McpOAuthScope[]) {
 export class ProductionGameMcpJsonRpcServer {
   constructor(
     private readonly readModel: ProductionGameMcpReadModel,
-    private readonly db?: DrizzleDB,
+    private readonly db: DrizzleDB | undefined,
+    private readonly eligibilityResolver: GameMcpEligibilityResolver,
   ) {}
 
   async handle(
@@ -88,18 +96,21 @@ export class ProductionGameMcpJsonRpcServer {
     }
 
     try {
+      const eligibility = await this.resolveRequestEligibility(request, auth);
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
-        result: await this.route(request.method, request.params, auth),
+        result: await this.route(request.method, request.params, auth, eligibility),
       };
     } catch (error) {
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
         error: {
-          code: -32000,
-          message: error instanceof Error ? error.message : String(error),
+          code: error instanceof GameMcpEligibilityDependencyError ? -32603 : -32000,
+          message: error instanceof GameMcpEligibilityDependencyError
+            ? "Internal error"
+            : error instanceof Error ? error.message : String(error),
           ...jsonRpcErrorData(error),
         },
       };
@@ -110,6 +121,7 @@ export class ProductionGameMcpJsonRpcServer {
     method: string,
     params: unknown,
     auth: GameMcpAuthContext,
+    eligibility: GameMcpEligibilitySnapshot | null | undefined,
   ): Promise<unknown> {
     const isProducer = hasScope(auth, "producer");
     if (method === "initialize") {
@@ -172,13 +184,33 @@ export class ProductionGameMcpJsonRpcServer {
     }
 
     if (method === "tools/list") {
-      return { tools: productionGameMcpTools(auth) };
+      return {
+        tools: eligibility
+          ? productionGameMcpTools(auth).filter((candidate) =>
+            resolveGameMcpToolAccess(String(asRecord(candidate).name ?? ""), auth, eligibility)
+              .invocationAllowed
+          )
+          : [],
+      };
     }
 
     if (method === "tools/call") {
       const request = asRecord(params);
       const name = String(request.name ?? "");
       const args = asRecord(request.arguments);
+      if (isGameMcpToolName(name)) {
+        if (!eligibility) {
+          throw new Error(
+            `Unknown or unauthorized MCP tool is not supported for granted scopes: ${name}`,
+          );
+        }
+        const access = resolveGameMcpToolAccess(name, auth, eligibility);
+        if (access.grantSatisfied && !access.invocationAllowed) {
+          throw new Error(
+            `Unknown or unauthorized MCP tool is not supported for granted scopes: ${name}`,
+          );
+        }
+      }
 
       if (name === "list_games") {
         requireAnyScope(auth, ["games:read", "producer"]);
@@ -406,12 +438,44 @@ export class ProductionGameMcpJsonRpcServer {
     }
     return this.db;
   }
+
+  private async resolveRequestEligibility(
+    request: JsonRpcRequest,
+    auth: GameMcpAuthContext,
+  ): Promise<GameMcpEligibilitySnapshot | null | undefined> {
+    const requiresEligibility = request.method === "tools/list" ||
+      (
+        request.method === "tools/call" &&
+        isGameMcpToolName(String(asRecord(request.params).name ?? ""))
+      );
+    if (!requiresEligibility) return undefined;
+
+    try {
+      return await this.eligibilityResolver({
+        userId: auth.userId,
+        clientId: auth.clientId,
+        resource: auth.resource,
+      });
+    } catch (error) {
+      throw new GameMcpEligibilityDependencyError(error);
+    }
+  }
 }
 
 export function createProductionGameMcpServer(
   db: DrizzleDB = createDB(),
 ): ProductionGameMcpJsonRpcServer {
-  return new ProductionGameMcpJsonRpcServer(new ProductionGameMcpReadModel(db), db);
+  return new ProductionGameMcpJsonRpcServer(
+    new ProductionGameMcpReadModel(db),
+    db,
+    createGameMcpEligibilityResolver(db),
+  );
+}
+
+class GameMcpEligibilityDependencyError extends Error {
+  constructor(cause: unknown) {
+    super("Game MCP eligibility resolution failed", { cause });
+  }
 }
 
 function hasScope(auth: GameMcpAuthContext, scope: McpOAuthScope): boolean {

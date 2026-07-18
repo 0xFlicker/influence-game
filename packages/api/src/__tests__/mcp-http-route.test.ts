@@ -19,6 +19,7 @@ import {
 import { setupTestDB } from "./test-utils.js";
 
 const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
+const MCP_OAUTH_FULL_USER_SCOPE = "agents:read agents:write games:read";
 const MCP_OAUTH_SCOPE = "producer";
 const RESOURCE_URI = "http://127.0.0.1:3000/mcp";
 const PRODUCER_RESOURCE_URI = RESOURCE_URI;
@@ -471,6 +472,60 @@ describe("/mcp Streamable HTTP route", () => {
       expect(calls).toEqual([]);
     });
 
+    test("revalidates dynamic client deletion and envelope narrowing in the real MCP chain", async () => {
+      const clientId = "influence-game-mcp-client-http-eligibility";
+      await db.insert(schema.mcpOauthClients).values({
+        clientId,
+        redirectUris: ["http://127.0.0.1:43124/callback"],
+        grantTypes: ["authorization_code", "refresh_token"],
+        responseTypes: ["code"],
+        scope: MCP_OAUTH_FULL_USER_SCOPE,
+        tokenEndpointAuthMethod: "none",
+      });
+      const issued = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000009",
+        clientId,
+        scope: MCP_OAUTH_FULL_USER_SCOPE,
+      });
+      const app = createMcpRoutes(db);
+      const request = (id: string, method: string, params?: unknown) =>
+        app.request("/mcp", {
+          method: "POST",
+          headers: jsonHeaders({ Authorization: `Bearer ${issued.accessToken}` }),
+          body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+        });
+
+      const listed = await request("listed", "tools/list");
+      expect(listed.status).toBe(200);
+      expect(JSON.stringify(await listed.json())).toContain("create_agent");
+
+      await db.update(schema.mcpOauthClients)
+        .set({ scope: "games:read" })
+        .where(eq(schema.mcpOauthClients.clientId, clientId));
+      const narrowed = await request("narrowed", "tools/call", {
+        name: "list_archetypes",
+        arguments: {
+          clientId: MCP_OAUTH_CLIENT_ID,
+          securitySchemes: [{ scopes: ["agents:read"] }],
+        },
+      });
+      expect(narrowed.status).toBe(200);
+      expect(await narrowed.json()).toMatchObject({
+        error: {
+          code: -32000,
+          message: "Unknown or unauthorized MCP tool is not supported for granted scopes: list_archetypes",
+        },
+      });
+
+      await db.delete(schema.mcpOauthClients)
+        .where(eq(schema.mcpOauthClients.clientId, clientId));
+      const deleted = await request("deleted", "tools/list");
+      expect(deleted.status).toBe(200);
+      expect(await deleted.json()).toMatchObject({
+        result: { tools: [] },
+      });
+    });
+
     test("accepts producer tokens on /mcp and invalidates them after role removal", async () => {
       const producer = await issueMcpAccessToken(db, {
         walletAddress: "0xmcphttp00000000000000000000000000000005",
@@ -588,7 +643,11 @@ async function issueMcpAccessToken(
     expiresAt?: string;
     resourceUri?: string;
     revokedAt?: string;
-    scope?: typeof MCP_OAUTH_DEFAULT_READ_SCOPE | typeof MCP_OAUTH_SCOPE;
+    scope?:
+      | typeof MCP_OAUTH_DEFAULT_READ_SCOPE
+      | typeof MCP_OAUTH_FULL_USER_SCOPE
+      | typeof MCP_OAUTH_SCOPE;
+    clientId?: string;
     requiresMcpRole?: boolean;
   },
 ): Promise<{ accessToken: string; userId: string; walletAddress: string }> {
@@ -603,7 +662,7 @@ async function issueMcpAccessToken(
     tokenHash: hashOpaqueSecret(accessToken),
     userId,
     walletAddress,
-    clientId: MCP_OAUTH_CLIENT_ID,
+    clientId: params.clientId ?? MCP_OAUTH_CLIENT_ID,
     resourceUri: params.resourceUri ?? RESOURCE_URI,
     scope: params.scope ?? MCP_OAUTH_DEFAULT_READ_SCOPE,
     audience: MCP_OAUTH_AUDIENCE,

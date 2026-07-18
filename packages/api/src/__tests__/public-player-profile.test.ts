@@ -258,7 +258,14 @@ describe("public player profile", () => {
     const found = await foundResponse.json() as PublicPlayerProfileEnvelope;
     const readModel = new ProductionGameMcpReadModel(db);
     const mcp = await readModel.readPlayerProfile(fixture.publicId);
-    const server = new ProductionGameMcpJsonRpcServer(readModel);
+    const server = new ProductionGameMcpJsonRpcServer(
+      readModel,
+      undefined,
+      async (identity) => ({
+        clientScopes: ["games:read", "producer"],
+        hasProducerRole: identity.userId === "admin-user",
+      }),
+    );
 
     expect(foundResponse.status).toBe(200);
     expect(foundResponse.headers.get("Cache-Control")).toBe("no-store");

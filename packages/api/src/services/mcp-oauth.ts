@@ -266,6 +266,53 @@ export async function hasCurrentProducerRole(
   return resolved.roles.includes("producer");
 }
 
+export async function hasCurrentProducerRoleForUserId(
+  db: DrizzleDB,
+  userId: string,
+): Promise<boolean | null> {
+  const user = (await db
+    .select({ walletAddress: schema.users.walletAddress })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId)))[0];
+  if (!user) return null;
+  return hasCurrentProducerRole(db, user);
+}
+
+export async function resolveMcpOAuthClientScopeEnvelope(
+  db: DrizzleDB,
+  clientId: string,
+): Promise<McpOAuthScope[] | null> {
+  if (clientId === MCP_OAUTH_CLIENT_ID) {
+    return [...MCP_OAUTH_SCOPE_VALUES];
+  }
+  if (!clientId.startsWith(MCP_OAUTH_DYNAMIC_CLIENT_ID_PREFIX)) {
+    return null;
+  }
+
+  const client = (await db
+    .select({
+      redirectUris: schema.mcpOauthClients.redirectUris,
+      grantTypes: schema.mcpOauthClients.grantTypes,
+      responseTypes: schema.mcpOauthClients.responseTypes,
+      scope: schema.mcpOauthClients.scope,
+      tokenEndpointAuthMethod: schema.mcpOauthClients.tokenEndpointAuthMethod,
+    })
+    .from(schema.mcpOauthClients)
+    .where(eq(schema.mcpOauthClients.clientId, clientId)))[0];
+  if (
+    !client ||
+    client.redirectUris.length === 0 ||
+    !client.grantTypes.includes("authorization_code") ||
+    !client.responseTypes.includes("code") ||
+    client.tokenEndpointAuthMethod !== "none"
+  ) {
+    return null;
+  }
+
+  const parsed = parseAndValidateMcpOAuthScopes(client.scope);
+  return parsed.ok ? mcpOAuthScopesToArray(parsed.scopes) : null;
+}
+
 export async function authorizeMcpOAuth(
   db: DrizzleDB,
   user: AuthUser,

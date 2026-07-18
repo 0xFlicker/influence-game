@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { eq } from "drizzle-orm";
 import {
-  ProductionGameMcpJsonRpcServer,
+  ProductionGameMcpJsonRpcServer as ProductionGameMcpJsonRpcServerBase,
   createProductionGameMcpServer,
 } from "../game-mcp/server.js";
 import {
@@ -14,12 +15,19 @@ import {
 } from "../game-mcp/read-model.js";
 import type { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import type { GameMcpAuthContext } from "../game-mcp/auth.js";
+import {
+  createGameMcpEligibilityResolver,
+  resolveGameMcpToolAccess,
+  type GameMcpEligibilitySnapshot,
+} from "../game-mcp/tool-authorization.js";
+import { seedRBAC } from "../db/rbac-seed.js";
+import { MCP_OAUTH_CLIENT_ID } from "../services/mcp-oauth.js";
 import { createSeason } from "../services/seasons.js";
 import { setupTestDB } from "./test-utils.js";
 
 const GAMES_AUTH: GameMcpAuthContext = {
   userId: "user-1",
-  clientId: "client-1",
+  clientId: MCP_OAUTH_CLIENT_ID,
   resource: "http://127.0.0.1:3000/mcp",
   scope: "agents:read agents:write games:read",
   scopes: ["agents:read", "agents:write", "games:read"],
@@ -29,13 +37,31 @@ const GAMES_AUTH: GameMcpAuthContext = {
 
 const PRODUCER_AUTH: GameMcpAuthContext = {
   userId: "producer-1",
-  clientId: "client-1",
+  clientId: MCP_OAUTH_CLIENT_ID,
   resource: "http://127.0.0.1:3000/mcp",
   scope: "producer",
   scopes: ["producer"],
   authProfile: "producer",
   expiresAt: 1_800_000_000,
 };
+
+const FULL_ELIGIBILITY: GameMcpEligibilitySnapshot = {
+  clientScopes: ["agents:read", "agents:write", "games:read", "producer"],
+  hasProducerRole: false,
+};
+
+class ProductionGameMcpJsonRpcServer extends ProductionGameMcpJsonRpcServerBase {
+  constructor(readModel: ProductionGameMcpReadModel) {
+    super(
+      readModel,
+      undefined,
+      async (identity) => ({
+        ...FULL_ELIGIBILITY,
+        hasProducerRole: identity.userId === PRODUCER_AUTH.userId,
+      }),
+    );
+  }
+}
 
 function expectMatchesJsonSchema(value: unknown, schema: unknown): void {
   const errors = validateJsonSchema(value, schema, "$");
@@ -85,6 +111,177 @@ function validateJsonSchema(value: unknown, rawSchema: unknown, path: string): s
 }
 
 describe("ProductionGameMcpJsonRpcServer", () => {
+  test("keeps current grants separate from live catalog eligibility", () => {
+    const auth = {
+      ...GAMES_AUTH,
+      scope: "agents:read",
+      scopes: ["agents:read"] as GameMcpAuthContext["scopes"],
+    };
+
+    expect(resolveGameMcpToolAccess("create_agent", auth, FULL_ELIGIBILITY)).toMatchObject({
+      known: true,
+      catalogEligible: true,
+      grantSatisfied: false,
+      invocationAllowed: false,
+    });
+    expect(auth.scopes).toEqual(["agents:read"]);
+    expect(resolveGameMcpToolAccess("create_agent", auth, {
+      ...FULL_ELIGIBILITY,
+      clientScopes: ["agents:read", "games:read"],
+    })).toMatchObject({
+      known: true,
+      catalogEligible: false,
+      grantSatisfied: false,
+      invocationAllowed: false,
+    });
+    expect(resolveGameMcpToolAccess("read_trace_content", auth, {
+      ...FULL_ELIGIBILITY,
+      hasProducerRole: true,
+    })).toMatchObject({
+      known: true,
+      catalogEligible: true,
+      grantSatisfied: false,
+      invocationAllowed: false,
+    });
+    expect(resolveGameMcpToolAccess("read_trace_content", auth, FULL_ELIGIBILITY)).toMatchObject({
+      known: true,
+      catalogEligible: false,
+      grantSatisfied: false,
+      invocationAllowed: false,
+    });
+    expect(resolveGameMcpToolAccess(
+      "read_trace_content",
+      PRODUCER_AUTH,
+      FULL_ELIGIBILITY,
+    )).toMatchObject({
+      known: true,
+      catalogEligible: false,
+      grantSatisfied: true,
+      invocationAllowed: false,
+    });
+  });
+
+  test("fails closed with a bounded internal error when eligibility resolution fails", async () => {
+    const server = new ProductionGameMcpJsonRpcServerBase(
+      fakeReadModel(),
+      undefined,
+      async () => {
+        throw new Error("private database dependency detail");
+      },
+    );
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "eligibility-failure",
+      method: "tools/list",
+    }, GAMES_AUTH);
+
+    expect(response).toEqual({
+      jsonrpc: "2.0",
+      id: "eligibility-failure",
+      error: { code: -32603, message: "Internal error" },
+    });
+    expect(JSON.stringify(response)).not.toContain("private database dependency detail");
+    expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
+  });
+
+  test("revalidates the current client envelope before every granted tool call", async () => {
+    let listGamesCalls = 0;
+    let eligibilityCalls = 0;
+    const server = new ProductionGameMcpJsonRpcServerBase(
+      fakeReadModel({
+        listGames: async () => {
+          listGamesCalls += 1;
+          return { games: [] };
+        },
+      }),
+      undefined,
+      async () => {
+        eligibilityCalls += 1;
+        return {
+          ...FULL_ELIGIBILITY,
+          clientScopes: eligibilityCalls === 1
+            ? FULL_ELIGIBILITY.clientScopes
+            : ["agents:read", "agents:write"],
+        };
+      },
+    );
+
+    const request = {
+      jsonrpc: "2.0" as const,
+      method: "tools/call",
+      params: { name: "list_games", arguments: {} },
+    };
+    const allowed = await server.handle({ ...request, id: "allowed" }, GAMES_AUTH);
+    const narrowed = await server.handle({ ...request, id: "narrowed" }, GAMES_AUTH);
+
+    expect(allowed?.error).toBeUndefined();
+    expect(narrowed?.error?.message).toBe(
+      "Unknown or unauthorized MCP tool is not supported for granted scopes: list_games",
+    );
+    expect(eligibilityCalls).toBe(2);
+    expect(listGamesCalls).toBe(1);
+  });
+
+  test("resolves static and dynamic clients plus current producer role from authoritative records", async () => {
+    const db = await setupTestDB();
+    await seedRBAC(db);
+    await db.insert(schema.users).values([
+      {
+        id: "normal-eligibility-user",
+        walletAddress: "0xeligibilitynormal000000000000000000000001",
+      },
+      {
+        id: "producer-eligibility-user",
+        walletAddress: "0xeligibilityproducer000000000000000000001",
+      },
+    ]);
+    const producerRole = (await db
+      .select({ id: schema.roles.id })
+      .from(schema.roles)
+      .where(eq(schema.roles.name, "producer")))[0];
+    if (!producerRole) throw new Error("Missing producer role fixture");
+    await db.insert(schema.addressRoles).values({
+      walletAddress: "0xeligibilityproducer000000000000000000001",
+      roleId: producerRole.id,
+    });
+    const dynamicClientId = "influence-game-mcp-client-eligibility-test";
+    await db.insert(schema.mcpOauthClients).values({
+      clientId: dynamicClientId,
+      redirectUris: ["http://127.0.0.1:43123/callback"],
+      grantTypes: ["authorization_code", "refresh_token"],
+      responseTypes: ["code"],
+      scope: "agents:read games:read",
+      tokenEndpointAuthMethod: "none",
+    });
+    const resolveEligibility = createGameMcpEligibilityResolver(db);
+
+    await expect(resolveEligibility({
+      userId: "normal-eligibility-user",
+      clientId: MCP_OAUTH_CLIENT_ID,
+      resource: GAMES_AUTH.resource,
+    })).resolves.toEqual({
+      clientScopes: ["agents:read", "agents:write", "games:read", "producer"],
+      hasProducerRole: false,
+    });
+    await expect(resolveEligibility({
+      userId: "producer-eligibility-user",
+      clientId: dynamicClientId,
+      resource: GAMES_AUTH.resource,
+    })).resolves.toEqual({
+      clientScopes: ["agents:read", "games:read"],
+      hasProducerRole: true,
+    });
+
+    await db.delete(schema.mcpOauthClients)
+      .where(eq(schema.mcpOauthClients.clientId, dynamicClientId));
+    await expect(resolveEligibility({
+      userId: "producer-eligibility-user",
+      clientId: dynamicClientId,
+      resource: GAMES_AUTH.resource,
+    })).resolves.toBeNull();
+  });
+
   test("advertises deployed read-only tools with MCP auth metadata", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
     const response = await server.handle({
