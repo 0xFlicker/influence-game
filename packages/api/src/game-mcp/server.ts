@@ -1,5 +1,9 @@
 import { createDB, type DrizzleDB } from "../db/index.js";
-import type { GameMcpAuthContext } from "./auth.js";
+import {
+  bearerChallenge,
+  GAME_MCP_STEP_UP_DESCRIPTION,
+  type GameMcpAuthContext,
+} from "./auth.js";
 import type { McpOAuthScope } from "../services/mcp-scope-policy.js";
 import {
   ProductionGameMcpReadModel,
@@ -51,6 +55,16 @@ import {
   assertPublicPlayerProfileEnvelope,
   parsePublicPlayerProfileToolInput,
 } from "./public-player-tool-schema.js";
+import {
+  createGameMcpEligibilityResolver,
+  gameMcpToolNeedsProducerRole,
+  isGameMcpToolName,
+  resolveGameMcpToolAccess,
+  resolveGameMcpToolInvocation,
+  type GameMcpEligibilityResolver,
+  type GameMcpEligibilitySnapshot,
+  type GameMcpToolName,
+} from "./tool-authorization.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -76,7 +90,8 @@ function oauthSecurityScheme(scopes: readonly McpOAuthScope[]) {
 export class ProductionGameMcpJsonRpcServer {
   constructor(
     private readonly readModel: ProductionGameMcpReadModel,
-    private readonly db?: DrizzleDB,
+    private readonly db: DrizzleDB | undefined,
+    private readonly eligibilityResolver: GameMcpEligibilityResolver,
   ) {}
 
   async handle(
@@ -88,18 +103,34 @@ export class ProductionGameMcpJsonRpcServer {
     }
 
     try {
+      const toolName = request.method === "tools/call"
+        ? requestGameMcpToolName(request.params)
+        : undefined;
+      const eligibility = await this.resolveRequestEligibility(
+        request,
+        auth,
+        toolName,
+      );
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
-        result: await this.route(request.method, request.params, auth),
+        result: await this.route(
+          request.method,
+          request.params,
+          auth,
+          eligibility,
+          toolName,
+        ),
       };
     } catch (error) {
       return {
         jsonrpc: "2.0",
         id: request.id ?? null,
         error: {
-          code: -32000,
-          message: error instanceof Error ? error.message : String(error),
+          code: error instanceof GameMcpEligibilityDependencyError ? -32603 : -32000,
+          message: error instanceof GameMcpEligibilityDependencyError
+            ? "Internal error"
+            : error instanceof Error ? error.message : String(error),
           ...jsonRpcErrorData(error),
         },
       };
@@ -110,6 +141,8 @@ export class ProductionGameMcpJsonRpcServer {
     method: string,
     params: unknown,
     auth: GameMcpAuthContext,
+    eligibility: GameMcpEligibilitySnapshot | null | undefined,
+    toolName: GameMcpToolName | undefined,
   ): Promise<unknown> {
     const isProducer = hasScope(auth, "producer");
     if (method === "initialize") {
@@ -172,13 +205,34 @@ export class ProductionGameMcpJsonRpcServer {
     }
 
     if (method === "tools/list") {
-      return { tools: productionGameMcpTools(auth) };
+      return {
+        tools: eligibility
+          ? productionGameMcpTools(auth, eligibility).filter((candidate) =>
+            resolveGameMcpToolAccess(candidate.name, auth, eligibility)
+              .catalogEligible
+          )
+          : [],
+      };
     }
 
     if (method === "tools/call") {
       const request = asRecord(params);
-      const name = String(request.name ?? "");
+      if (!toolName) {
+        throw new Error("Unknown or unauthorized MCP tool");
+      }
+      const name = toolName;
       const args = asRecord(request.arguments);
+      const invocation = resolveGameMcpToolInvocation(
+        name,
+        auth,
+        eligibility ?? null,
+      );
+      if (invocation.outcome === "step_up") {
+        return insufficientScopeResult(invocation.challengeScopes);
+      }
+      if (invocation.outcome === "unavailable") {
+        throw new Error("Unknown or unauthorized MCP tool");
+      }
 
       if (name === "list_games") {
         requireAnyScope(auth, ["games:read", "producer"]);
@@ -394,7 +448,7 @@ export class ProductionGameMcpJsonRpcServer {
         }, auth));
       }
 
-      throw new Error(`Unknown or unauthorized MCP tool is not supported for granted scopes: ${name}`);
+      throw new Error("Unknown or unauthorized MCP tool");
     }
 
     throw new Error(`Unsupported MCP method: ${method}`);
@@ -406,12 +460,51 @@ export class ProductionGameMcpJsonRpcServer {
     }
     return this.db;
   }
+
+  private async resolveRequestEligibility(
+    request: JsonRpcRequest,
+    auth: GameMcpAuthContext,
+    toolName: GameMcpToolName | undefined,
+  ): Promise<GameMcpEligibilitySnapshot | null | undefined> {
+    const requiresEligibility = request.method === "tools/list" ||
+      (request.method === "tools/call" && toolName !== undefined);
+    if (!requiresEligibility) return undefined;
+
+    try {
+      return await this.eligibilityResolver({
+        userId: auth.userId,
+        clientId: auth.clientId,
+        resource: auth.resource,
+        needsProducerRole: request.method === "tools/list" ||
+          (toolName !== undefined && gameMcpToolNeedsProducerRole(toolName)),
+      });
+    } catch (error) {
+      throw new GameMcpEligibilityDependencyError(error);
+    }
+  }
 }
 
 export function createProductionGameMcpServer(
   db: DrizzleDB = createDB(),
 ): ProductionGameMcpJsonRpcServer {
-  return new ProductionGameMcpJsonRpcServer(new ProductionGameMcpReadModel(db), db);
+  return new ProductionGameMcpJsonRpcServer(
+    new ProductionGameMcpReadModel(db),
+    db,
+    createGameMcpEligibilityResolver(db),
+  );
+}
+
+class GameMcpEligibilityDependencyError extends Error {
+  constructor(cause: unknown) {
+    super("Game MCP eligibility resolution failed", { cause });
+  }
+}
+
+function requestGameMcpToolName(params: unknown): GameMcpToolName | undefined {
+  const rawName = asRecord(params).name;
+  return typeof rawName === "string" && isGameMcpToolName(rawName)
+    ? rawName
+    : undefined;
 }
 
 function hasScope(auth: GameMcpAuthContext, scope: McpOAuthScope): boolean {
@@ -435,16 +528,26 @@ function requireAnyScope(auth: GameMcpAuthContext, requiredScopes: readonly McpO
   }
 }
 
-function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
-  const includeProducerTools = hasScope(auth, "producer");
-  const tools: unknown[] = [];
+function productionGameMcpTools(
+  auth: GameMcpAuthContext,
+  eligibility: GameMcpEligibilitySnapshot,
+): GameMcpToolDescriptor[] {
+  const clientScopes = new Set(eligibility.clientScopes);
+  const producerEligible = eligibility.hasProducerRole && clientScopes.has("producer");
+  const sharedGameReadVariant = resolveSharedGameReadVariant(
+    auth,
+    clientScopes,
+    producerEligible,
+  );
+  const includeProducerVariant = sharedGameReadVariant === "producer";
+  const tools: GameMcpToolDescriptor[] = [];
 
-  if (canReadGames(auth)) {
-    const gameReadScopes: McpOAuthScope[] = includeProducerTools ? ["producer"] : ["games:read"];
+  if (sharedGameReadVariant) {
+    const gameReadScopes: McpOAuthScope[] = [sharedGameReadVariant];
     tools.push(
     tool({
       name: "list_games",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "List recent deployed games with event-log and projection status."
         : "List your Influence games with event-log and projection status. Call for game inspection, not for active-match actions.",
       properties: {
@@ -452,7 +555,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       },
       scopes: gameReadScopes,
       readOnlyHint: true,
-      appMeta: includeProducerTools ? undefined : createInfluenceMcpAppToolMeta(),
+      appMeta: includeProducerVariant ? undefined : createInfluenceMcpAppToolMeta(),
     }),
     tool({
       name: "list_seasons",
@@ -569,7 +672,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_round_facts",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Read sanitized revealed vote, power, Council, and player-status facts for one deployed game round without private trace content or raw canonical envelopes."
         : "Read sanitized revealed vote, power, Council, and player-status facts for one accessible game round.",
       properties: {
@@ -582,7 +685,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_agent_alliances",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Read one player's owner-scoped named-alliance facts: involved proposals, member alliances, huddle messages, and member-safe huddle outcomes."
         : "Read your agent's named-alliance facts: proposals involving them, alliances they belong to, huddle messages, and member-safe huddle outcomes.",
       properties: {
@@ -598,7 +701,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "filter_events",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit."
         : "Filter player-visible canonical events by game, type, phase, actor, sequence range, or limit.",
       properties: {
@@ -608,7 +711,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
         actor: { type: "string" },
         visibilityMode: {
           type: "string",
-          enum: includeProducerTools ? ["public", "player", "producer"] : ["public", "player"],
+          enum: includeProducerVariant ? ["public", "player", "producer"] : ["public", "player"],
         },
         fromSequence: { type: "number" },
         toSequence: { type: "number" },
@@ -620,7 +723,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "player_timeline",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Return canonical events that mention a player ID or name."
         : "Return player-visible canonical events that mention a player ID or name in an accessible game.",
       properties: {
@@ -628,7 +731,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
         player: { type: "string" },
         visibilityMode: {
           type: "string",
-          enum: includeProducerTools ? ["public", "player", "producer"] : ["public", "player"],
+          enum: includeProducerVariant ? ["public", "player", "producer"] : ["public", "player"],
         },
         limit: { type: "number" },
       },
@@ -638,7 +741,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "list_cognitive_artifacts",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "List split reasoning, thinking, and strategy artifact metadata for one deployed game without returning payload bodies."
         : "List authorized reasoning, thinking, and strategy artifact metadata for one game you participated in.",
       properties: {
@@ -653,7 +756,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_cognitive_artifact",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Read one authorized split cognitive artifact payload, or producer diagnostics for unavailable split artifacts."
         : "Read one authorized split cognitive artifact payload by game, artifact id, artifact type, and actor player id. Reasoning is owner-only; thinking and strategy are participant-visible except private huddle artifacts, which remain owner-only.",
       properties: {
@@ -664,7 +767,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
         actorPlayerId: { type: "string" },
         purpose: { type: "string" },
       },
-      required: includeProducerTools
+      required: includeProducerVariant
         ? ["gameIdOrSlug", "artifactId"]
         : ["gameIdOrSlug", "artifactId", "artifactType", "actorPlayerId"],
       scopes: gameReadScopes,
@@ -673,20 +776,10 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     );
   }
 
-  if (hasScope(auth, "games:read")) {
-    tools.push(...gameRulesTools());
-  }
-  if (hasScope(auth, "agents:read")) {
-    tools.push(...userAgentReadTools());
-  }
-  if (hasScope(auth, "agents:write")) {
-    tools.push(...userAgentWriteTools());
-  }
-  if (!includeProducerTools) {
-    return tools;
-  }
-  return [
-    ...tools,
+  tools.push(...gameRulesTools());
+  tools.push(...userAgentReadTools());
+  tools.push(...userAgentWriteTools());
+  tools.push(
     tool({
       name: "read_producer_season_diagnostics",
       description: "Read producer-only hidden competition ratings, rating events, and receipt evidence for one season.",
@@ -758,10 +851,24 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       scopes: ["producer"],
       readOnlyHint: true,
     }),
-  ];
+  );
+  return tools;
 }
 
-function gameRulesTools(): unknown[] {
+function resolveSharedGameReadVariant(
+  auth: GameMcpAuthContext,
+  clientScopes: ReadonlySet<McpOAuthScope>,
+  producerEligible: boolean,
+): "producer" | "games:read" | null {
+  if (hasScope(auth, "producer") && producerEligible) return "producer";
+  if (hasScope(auth, "games:read") && clientScopes.has("games:read")) {
+    return "games:read";
+  }
+  if (producerEligible) return "producer";
+  return null;
+}
+
+function gameRulesTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: "get_rules",
@@ -784,7 +891,7 @@ function gameRulesTools(): unknown[] {
   ];
 }
 
-function userAgentReadTools(): unknown[] {
+function userAgentReadTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: "list_archetypes",
@@ -870,7 +977,7 @@ function userAgentReadTools(): unknown[] {
   ];
 }
 
-function userAgentWriteTools(): unknown[] {
+function userAgentWriteTools(): GameMcpToolDescriptor[] {
   const writeScopes: readonly McpOAuthScope[] = ["agents:read", "agents:write"];
   return [
     tool({
@@ -906,6 +1013,7 @@ function userAgentWriteTools(): unknown[] {
       required: ["agentId"],
       scopes: writeScopes,
       readOnlyHint: false,
+      destructiveHint: true,
       outputSchema: agentCommandOutputSchema(),
     }),
     tool({
@@ -919,6 +1027,7 @@ function userAgentWriteTools(): unknown[] {
       required: ["queueType", "agentId"],
       scopes: writeScopes,
       readOnlyHint: false,
+      destructiveHint: true,
     }),
     tool({
       name: "leave_queue",
@@ -928,21 +1037,25 @@ function userAgentWriteTools(): unknown[] {
       },
       scopes: writeScopes,
       readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
     }),
   ];
 }
 
 function tool(input: {
-  name: string;
+  name: GameMcpToolName;
   description: string;
   properties?: Record<string, unknown>;
   inputSchema?: Record<string, unknown>;
   required?: string[];
   scopes: readonly McpOAuthScope[];
   readOnlyHint: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
   appMeta?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
-}): unknown {
+}) {
   const securityScheme = oauthSecurityScheme(input.scopes);
   return {
     name: input.name,
@@ -956,6 +1069,11 @@ function tool(input: {
     securitySchemes: [securityScheme],
     annotations: {
       readOnlyHint: input.readOnlyHint,
+      openWorldHint: false,
+      destructiveHint: input.destructiveHint ?? false,
+      ...(input.idempotentHint === undefined
+        ? {}
+        : { idempotentHint: input.idempotentHint }),
     },
     _meta: {
       securitySchemes: [securityScheme],
@@ -963,6 +1081,8 @@ function tool(input: {
     },
   };
 }
+
+type GameMcpToolDescriptor = ReturnType<typeof tool>;
 
 function postgameOutputSchema(kind: string): Record<string, unknown> {
   const playerRefSchema = {
@@ -1404,6 +1524,27 @@ function content(value: unknown): { structuredContent: unknown; content: Array<{
         text: JSON.stringify(value, null, 2),
       },
     ],
+  };
+}
+
+function insufficientScopeResult(scopes: readonly McpOAuthScope[]): {
+  content: Array<{ type: "text"; text: string }>;
+  isError: true;
+  _meta: { "mcp/www_authenticate": string[] };
+} {
+  return {
+    content: [{
+      type: "text",
+      text: GAME_MCP_STEP_UP_DESCRIPTION,
+    }],
+    isError: true,
+    _meta: {
+      "mcp/www_authenticate": [bearerChallenge({
+        scopes,
+        error: "insufficient_scope",
+        errorDescription: GAME_MCP_STEP_UP_DESCRIPTION,
+      })],
+    },
   };
 }
 

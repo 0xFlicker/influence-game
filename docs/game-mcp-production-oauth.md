@@ -75,7 +75,9 @@ LINODE_PRIVATE_CONTENT_BUCKET=...
 
 ## OAuth Behavior
 
-Dynamic client registration is enabled for public MCP clients. Registered clients may store any supported non-empty scope set. If a generic loopback client omits scope, registration defaults to `agents:read games:read`. If a code-owned provider-hosted client omits scope, registration stores the full supported scope envelope so provider action-level OAuth requests can reach the consent screen; the consent preview still defaults to the safe non-producer scopes and keeps `producer` explicitly role-gated.
+Dynamic client registration is enabled for public MCP clients. Registered clients may store any supported non-empty scope set. If a generic loopback client omits scope, registration defaults to the safe read-only `agents:read games:read` envelope. If a code-owned provider-hosted client omits scope, registration stores the full supported scope envelope so provider action-level OAuth requests can reach the consent screen. That broad registration envelope is eligibility, not a grant: the authorization request, human selection, authorization code, and access token remain narrow, and `producer` remains explicitly role-gated.
+
+Provider classification never authorizes a redirect. A provider-hosted callback is trusted only when its exact URI appears in the checked-in provider compatibility config. A recognized provider hostname, request argument, or audit field is not redirect or scope authority.
 
 Authorization requests must ask for one or more supported scopes. The browser consent screen previews the requested scopes, hides scopes the current user cannot grant, and submits the exact selected scope set as `selected_scope`.
 
@@ -85,7 +87,23 @@ Refresh tokens are supported only for grants that do not include `producer`. A n
 
 ## Tools
 
-Tool discovery is scope-aware. The server lists only tools allowed by the granted scopes, and tool calls re-check scope requirements before read models or mutations run.
+Tool discovery uses catalog eligibility; invocation uses the token's actual granted scopes. The two decisions are deliberately separate:
+
+- The catalog is resolved request-locally from the validated bearer subject and client ID, the active registered-client scope envelope, the current DB role, and a closed server-owned tool registry.
+- A bearer with `agents:read` may discover `create_agent`, `update_agent`, `join_queue`, and `leave_queue` when its client envelope also permits `agents:write`, even when the token does not yet hold `agents:write`.
+- A current producer-role subject may discover producer descriptors when the client envelope permits `producer`, even when the token does not yet hold `producer`. A subject without the current producer role is not eligible for that catalog or its authorization challenge.
+- Every tool call revalidates current client activity, the client envelope, the current producer role where applicable, and the exact granted scope closure before a read model, mutation, or private trace access runs. Descriptor exposure is never authorization.
+
+Every descriptor declares its exact OAuth scope closure in top-level `securitySchemes` and an identical `_meta.securitySchemes` mirror. It also explicitly declares non-null `readOnlyHint`, `openWorldHint`, and `destructiveHint` annotations. These fields help a host frame consent and confirmation UX; clients and the server must not treat them as proof of authorization. Reads are read-only, bounded, and non-destructive. `create_agent` is non-read-only and non-destructive; `update_agent`, `join_queue`, and `leave_queue` are non-read-only and destructive because they overwrite or remove standing state.
+
+Authorization failures have distinct transport shapes:
+
+- A missing, malformed, expired, revoked, wrong-resource, wrong-audience, or role-invalid producer bearer fails at the HTTP boundary with `401` and `WWW-Authenticate`.
+- A valid bearer calling a catalog-eligible tool without its exact scope returns HTTP `200` with a JSON-RPC result whose MCP `CallToolResult` has `isError: true` and `_meta["mcp/www_authenticate"]`. The challenge requests the canonical current valid grant plus the tool's exact scope closure, bounded by the current client and account eligibility.
+- An unknown tool, a known but ineligible tool, or an active-match action attempt terminates with the same generic JSON-RPC error and no scope challenge.
+- A client-envelope or role lookup failure fails closed as JSON-RPC `-32603` with public message `Internal error`, no descriptor leak, and no scope challenge.
+
+The server continues to negotiate MCP `2025-06-18`. MCP `2025-11-25`, HTTP `403`, and Client ID Metadata Documents (CIMD) are deferred to a separate protocol migration.
 
 Shared rules and game-read tools:
 
@@ -197,6 +215,8 @@ codex mcp add the-house-influence --url https://<api-host>/mcp
 codex mcp login the-house-influence --scopes "agents:read games:read"
 ```
 
+Codex can request its intended grant explicitly with `--scopes`; that full-scope login path remains supported and does not depend on descriptor-driven step-up.
+
 Claude Code setup:
 
 ```bash
@@ -214,9 +234,10 @@ Producer setup uses the same `/mcp` URL. Request scope `producer` only when the 
 ChatGPT/App SDK compatibility depends on:
 
 - HTTPS well-known protected resource metadata for `/mcp`.
-- `WWW-Authenticate` challenges that point at the protected-resource metadata and required scopes.
+- HTTP `401` `WWW-Authenticate` challenges for invalid transport authentication.
 - Authorization server metadata with authorization endpoint, token endpoint, PKCE S256, dynamic registration, and `scopes_supported`.
-- Tool descriptors carrying OAuth security schemes for the active scopes.
+- Catalog-eligible tool descriptors carrying exact OAuth security schemes before the token necessarily contains those scopes.
+- HTTP `200` errored `CallToolResult` responses with `_meta["mcp/www_authenticate"]` for eligible missing grants.
 - An app manifest/component configuration that can fetch `ui://influence/app` and render the returned HTML resource in the host iframe.
 
 Public app submission, polished app UX, per-tool linking policy, and broad tester rollout remain out of scope.
@@ -227,23 +248,25 @@ The first MCP App release is production-learning oriented. A useful v1 result is
 
 For manual notes, use the same plain-language checkpoints: discovery, OAuth start, callback/token exchange, token refresh when exercised, app resource fetch, iframe boot, and first `list_games` call. If a host still warns about refresh tokens, capture the exact warning text and server correlation ID so the next debugging pass can separate metadata, registration, and refresh-grant behavior.
 
+ChatGPT may retain the descriptors from an existing connection or conversation. After an ordinary production deployment, use a fresh reconnect, descriptor rescan, or fresh conversation before judging discovery. The hosted ChatGPT proof therefore happens after the normal deployment path; it is acceptance evidence, not a separate preflight, rollout gate, or reason to stop a deployment.
+
 ## Operational Checks
 
-Before calling the slice ready on staging:
+For local and deployed verification:
 
 1. `GET https://<api-host>/.well-known/oauth-protected-resource` returns `resource: https://<api-host>/mcp` and `scopes_supported: ["agents:read", "agents:write", "games:read", "producer"]`.
 2. `GET https://<api-host>/.well-known/oauth-protected-resource/mcp` returns the same resource and scope support.
 3. `GET https://<api-host>/.well-known/oauth-authorization-server` returns authorization/token/revocation/registration endpoints, `grant_types_supported: ["authorization_code", "refresh_token"]`, all supported scopes, and `code_challenge_methods_supported: ["S256"]`.
 4. `POST /mcp/producer` is not registered.
 5. Unauthenticated `POST /mcp` returns a `401` challenge for the single `/mcp` protected-resource metadata path.
-6. Wrong resource, wrong scope, expired, revoked, or app-session tokens fail before any read model runs.
-7. A valid `agents:read games:read` token can initialize, list accessible games and seasons, read a public player profile by handle and public UUID with matching version-1 allowlisted output, discover a rated game's `seasonId`, read public season standings and game receipts, list visible agent games, read an accessible completed-game brief/jury/player/turning-point postgame surface, read an accessible projection, read revealed round facts, filter player-visible events, list/read authorized cognitive artifacts, inspect rules/archetypes/owned agents, and cannot discover or call trace tools or active-match action tools.
+6. Wrong-resource, wrong-audience, expired, revoked, and app-session tokens fail at the HTTP boundary before any read model runs. A valid bearer missing an eligible tool scope follows the tool-level challenge path and likewise performs no domain read or mutation.
+7. For a normal user, a valid `agents:read games:read` token on a client whose envelope includes `agents:write` can initialize, perform the documented game and agent reads, and discover the four agent-management descriptors without already holding `agents:write`. It cannot mutate until the missing-grant challenge is completed, and it cannot discover or call trace tools or active-match action tools.
 8. The same token can read and export only its owner's agent-season analysis; another owner's agent remains unavailable.
-9. A valid `agents:read agents:write games:read` token can also create/update owned agents and join/leave supported pre-match queues. In a manual LLM exercise, ask the client to improve an already-owned enrolled agent: it should resolve the stable `agentId`, call `update_agent`, and explain the revision/enrollment receipt without calling `create_agent` or switching Standing Daily membership.
-10. A valid `producer` token issued to a current producer-role user can list producer tools, read producer postgame and season diagnostics, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured.
+9. Calling one of those catalog-eligible management tools without `agents:write` returns HTTP `200` with an errored `CallToolResult` challenge; retrying with the human-selected `agents:read agents:write` grant can create/update owned agents and join/leave supported pre-match queues. In a manual LLM exercise, ask the client to improve an already-owned enrolled agent: it should resolve the stable `agentId`, call `update_agent`, and explain the revision/enrollment receipt without calling `create_agent` or switching Standing Daily membership.
+10. A narrow token issued to a current producer-role user can list producer descriptors only when the client envelope includes `producer`; a missing producer grant receives the tool-level challenge. A valid `producer` token can read producer postgame and season diagnostics, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured. Removing the DB role makes subsequent discovery and calls fail closed without producer data or a new producer challenge.
 11. A valid non-producer refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family.
 12. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, grant type when present, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Audits never include raw tokens, auth headers, authorization codes, refresh tokens, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
-13. Manual staging or production install attempts for ChatGPT, Claude, and Grok have notes with date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available.
+13. After the ordinary production deployment, hosted ChatGPT acceptance uses a fresh reconnect/rescan/conversation, completes real incremental consent and host write confirmation, and records date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available. This hosted observation is not a deployment gate.
 
 ## Out Of Scope
 
@@ -263,3 +286,4 @@ Before calling the slice ready on staging:
 - Codex MCP configuration: https://developers.openai.com/codex/mcp
 - OpenAI Apps SDK authentication: https://developers.openai.com/apps-sdk/build/auth
 - Claude Code MCP reference: https://docs.anthropic.com/en/docs/claude-code/mcp
+- Corrective discovery plan: `docs/plans/2026-07-17-001-fix-chatgpt-mcp-tool-discovery-plan.md`

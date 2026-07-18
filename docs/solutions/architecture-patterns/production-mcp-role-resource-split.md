@@ -43,7 +43,16 @@ POST /mcp
   producer     -> global producer reads, current producer role required, private trace tools
 ```
 
-Build the tool catalog as an allowlist. Descriptor generation should list only tools allowed by the granted scopes, and tool calls must re-check scope requirements before read models or mutations run. Unknown, missing-scope, or producer-only tool names should fail before a read model runs.
+Build the tool catalog as an allowlist, but do not confuse catalog eligibility with the current grant. Descriptor generation uses request-local eligibility from the validated bearer subject and client ID, the active registered-client scope envelope, the current DB role, and a closed server-owned tool registry. Tool calls separately re-check the current client, role, exact granted scope closure, ownership, and domain rules before read models or mutations run.
+
+The discovery rules are:
+
+- An `agents:read` bearer may discover agent-management tools when its client envelope permits `agents:write`, even before the token holds that write scope.
+- A current producer-role subject may discover producer descriptors when its client envelope permits `producer`, even before the token holds `producer`.
+- A normal user or read-only client registration must not receive a producer catalog or an ungrantable write challenge.
+- Current client activity and producer role are revalidated; results are not positively cached across requests.
+
+Descriptor exposure is useful host metadata, not authority. A valid bearer that invokes an eligible tool without its exact grant receives an HTTP `200` JSON-RPC result containing an errored `CallToolResult` and `_meta["mcp/www_authenticate"]`. Invalid transport authentication instead receives HTTP `401` with `WWW-Authenticate`. Unknown, ineligible, and active-match tool names terminate generically without a challenge; eligibility dependency failure returns JSON-RPC `-32603` with `Internal error`.
 
 The current game-read inventory requires `games:read` or `producer`:
 
@@ -65,7 +74,7 @@ The producer inventory requires `producer`:
 - Shared game reads and cognitive artifact reads with producer visibility.
 - `inspect_durable_run`, `list_trace_manifests`, `read_trace_content`, `search_reasoning_traces`.
 
-Never expose active-match actions on the user-facing MCP. Their absence is the product contract, not an implementation gap. Tool descriptions should say when not to call a tool and whether it has side effects. Descriptors must mark reads with `readOnlyHint: true` and mutations with `readOnlyHint: false`.
+Never expose active-match actions on the user-facing MCP. Their absence is the product contract, not an implementation gap. Tool descriptions should say when not to call a tool and whether it has side effects. Every descriptor must publish its exact top-level `securitySchemes` and an identical `_meta.securitySchemes` mirror, plus explicit non-null `readOnlyHint`, `openWorldHint`, and `destructiveHint` annotations. Reads are read-only, bounded, and non-destructive. `create_agent` is non-read-only and non-destructive; `update_agent`, `join_queue`, and `leave_queue` are non-read-only and destructive. These declarations help the host frame consent and confirmation UX; they are never authorization evidence.
 
 Keep archetypes as structured machine vocabulary. The shared user-selectable catalog should drive rules, schemas, validation, and tests. `list_archetypes` exists because rules prose and create/update schemas drift when clients have to scrape copy. `broker` is not user-selectable in this surface until a product decision enables it.
 
@@ -89,7 +98,7 @@ Repeat the identity rule at initialization, owned-agent discovery, rules/help, a
 
 ## Why This Matters
 
-MCP clients infer behavior from tool names, descriptions, schemas, annotations, and returned payloads. If the user-facing grant advertises a live-match-shaped tool, a provider may try to use it. If a mutation is marked read-only, a host may treat it as safe exploration. If trace tools are discoverable without `producer`, private producer evidence becomes one prompt away from accidental exposure.
+MCP clients infer behavior from tool names, descriptions, schemas, annotations, and returned payloads. If the catalog advertises a live-match-shaped tool, a provider may try to use it. If a mutation is marked read-only, a host may treat it as safe exploration. Role-filtered producer discovery is still the intended catalog behavior, but descriptor privacy is not the producer security boundary: a producer read model or private trace access must remain unreachable without the actual grant and current DB role even if a descriptor is retained or exposed.
 
 The scoped single-resource model lets Influence expose useful end-user capability without weakening producer debugging. Players can create or tune agents and enter supported pre-match flows from AI apps, while raw trace metadata/content, global corpus inspection, and producer visibility stay behind the `producer` scope plus the current `producer` role.
 
@@ -122,8 +131,19 @@ tool({
     gameIdOrSlug: { type: "string" },
   },
   required: ["queueType", "agentId"],
-  scope,
-  readOnlyHint: false,
+  securitySchemes: [
+    { type: "oauth2", scopes: ["agents:read", "agents:write"] },
+  ],
+  annotations: {
+    readOnlyHint: false,
+    openWorldHint: false,
+    destructiveHint: true,
+  },
+  _meta: {
+    securitySchemes: [
+      { type: "oauth2", scopes: ["agents:read", "agents:write"] },
+    ],
+  },
 });
 ```
 
@@ -165,22 +185,26 @@ Boundary checklist for a new MCP tool:
 
 ```text
 1. Which scope owns it: agents:read, agents:write, games:read, producer, or a combination?
-2. Which scopes should appear in descriptor security schemes?
-3. Does it mutate state? If yes, readOnlyHint must be false.
-4. Does it act inside an active match? If yes, it does not belong on /mcp.
-5. Does it expose private trace metadata/content? If yes, producer only.
-6. Does authorization come entirely from bearer token and DB context?
-7. Is the response rich enough for an LLM client to explain the result?
-8. Is there a regression test for inventory, auth boundary, and failure shape?
-9. If it changes an agent, does discovery preserve an existing Agent Profile instead of accidentally creating another career?
+2. What account role, baseline grant, and registered-client envelope make it catalog-eligible?
+3. Which exact scopes appear in both copies of descriptor security schemes?
+4. Does it mutate or remove state? Set all three annotations explicitly from the real behavior.
+5. Does it act inside an active match? If yes, it does not belong on /mcp.
+6. Does it expose private trace metadata/content? If yes, producer only.
+7. Does authorization come entirely from the validated bearer, current client/role, and DB context?
+8. Is the response rich enough for an LLM client to explain the result?
+9. Is there a regression test for inventory, challenge, retry, authorization boundary, and failure shape?
+10. If it changes an agent, does discovery preserve an existing Agent Profile instead of accidentally creating another career?
 ```
 
 Readiness checks for this surface should cover:
 
-- Scope-filtered tool inventory for `/mcp`.
-- OAuth security schemes and scopes in tool descriptors.
-- Correct `readOnlyHint` annotations for reads and mutations.
-- Producer trace tools not discoverable or callable without `producer`.
+- Eligibility-filtered tool inventory for `/mcp`, independent of current grant possession.
+- Exact OAuth security schemes mirrored in `_meta.securitySchemes`.
+- Explicit `readOnlyHint`, `openWorldHint`, and `destructiveHint` annotations for every descriptor.
+- Agent-write discovery from an `agents:read` baseline plus write-capable client envelope, followed by challenge and granted retry.
+- Producer discovery from a producer-capable client envelope plus current DB role; producer invocation remains impossible without both current role and actual grant.
+- HTTP `401` transport challenges remain distinct from HTTP `200` eligible missing-scope tool challenges.
+- Unknown, ineligible, and active-match calls stay generic and challenge-free; lookup failure stays `-32603`.
 - Active-match-shaped names rejected without depending on the read model.
 - `list_archetypes` and create/update schemas exclude non-user-selectable archetypes.
 - Owned-agent list/search/update cannot cross users or leak another user's prompt.
@@ -198,7 +222,8 @@ Use Bun for validation. If a DB-backed test or local API read reports `ECONNREFU
 ## Related
 
 - `docs/game-mcp-production-oauth.md` is the canonical production MCP OAuth and scope contract.
-- `packages/api/src/game-mcp/server.ts` owns JSON-RPC routing, tool descriptors, read/write annotations, and scope-filtered inventory.
+- `packages/api/src/game-mcp/server.ts` owns JSON-RPC routing, tool descriptors, annotations, eligibility-filtered inventory, and tool-level OAuth challenges.
+- `packages/api/src/game-mcp/tool-authorization.ts` owns the closed tool-access registry and request-local catalog/invocation decisions.
 - `packages/api/src/game-mcp/rules.ts` and `packages/api/src/services/agent-archetypes.ts` keep rules/archetype vocabulary structured and aligned with validation.
 - `packages/api/src/services/agent-profile-management.ts` owns subject-scoped agent reads/mutations, rating provenance, immutable-field rejection, and rich agent serialization.
 - `packages/api/src/services/queue-enrollment.ts` owns daily-free/open-game enrollment semantics and unsupported queue errors.
@@ -206,3 +231,4 @@ Use Bun for validation. If a DB-backed test or local API read reports `ECONNREFU
 - `CONCEPTS.md` defines MCP scopes, Management-only MCP, Producer MCP, Production Game MCP, cognitive artifacts, and private trace terms.
 - `docs/solutions/runtime-errors/production-game-mcp-raw-trace-read-limit.md` covers producer trace response sizing. It is adjacent, not a substitute for this management-surface boundary.
 - `docs/solutions/architecture-patterns/agent-strategy-observability-spine.md` covers the broader separation between player-visible state, canonical events, and producer/debug evidence.
+- `docs/plans/2026-07-17-001-fix-chatgpt-mcp-tool-discovery-plan.md` records the corrective discovery contract and hosted acceptance boundaries.

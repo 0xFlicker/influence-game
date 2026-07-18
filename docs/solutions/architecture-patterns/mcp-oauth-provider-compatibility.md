@@ -105,7 +105,24 @@ When a provider omits optional OAuth `resource`, tolerate omission only because 
 
 When a provider-hosted dynamic client omits registration `scope`, register the full supported scope envelope for that exact provider callback. ChatGPT can request action-level OAuth scopes later, and a narrow generic default can otherwise reject the request before the consent screen has a chance to narrow it. Keep the grant defaults safe: non-producer scopes remain selected by default, while `producer` is only available to current producer-role users and must be explicitly selected.
 
+Keep four scope states separate:
+
+```text
+registered envelope -> what this client may request
+requested scopes    -> what this authorization attempt asks for
+selected scopes     -> what the human approves
+granted scopes      -> what the resulting token may invoke
+```
+
+A provider-hosted omitted registration scope may therefore store the broad supported envelope without auto-granting it. A generic omitted registration scope remains the safe read-only `agents:read games:read` envelope. Codex and similar tool-first clients continue to request their intended grant explicitly, including Codex's `mcp login ... --scopes` path.
+
+Discovery adds one more separate decision: catalog eligibility. An `agents:read` bearer on a write-capable registered client can see the agent-write descriptors before it holds `agents:write`. A current producer-role subject on a producer-capable client can see producer descriptors before it holds `producer`. Invocation still requires the token's actual grant, current client envelope, current DB role, ownership, and domain authorization; descriptor visibility and host confirmation are not permission.
+
+For a valid bearer missing an eligible tool scope, return HTTP `200` with an errored MCP `CallToolResult` carrying `_meta["mcp/www_authenticate"]`. Keep invalid bearer failures at HTTP `401` with `WWW-Authenticate`. Unknown, ineligible, and active-match tool calls remain generic and challenge-free, while an eligibility lookup failure returns JSON-RPC `-32603` with `Internal error`. Every descriptor must publish exact top-level OAuth `securitySchemes`, an identical `_meta.securitySchemes` mirror, and explicit `readOnlyHint`, `openWorldHint`, and `destructiveHint` annotations. Those fields and any host write confirmation are UX, not authorization.
+
 Refresh tokens are non-producer only. Provider clients may register `refresh_token`, and the authorization server may advertise `authorization_code` plus `refresh_token`, but issuance stays limited to grants that do not include `producer`.
+
+The resource continues to negotiate MCP `2025-06-18`. A move to MCP `2025-11-25`, HTTP `403`, or Client ID Metadata Documents (CIMD) is separate work.
 
 ## Why This Matters
 
@@ -115,7 +132,7 @@ Exact callback config protects both compatibility and trust. Provider-owned call
 
 Separating local loopback, legacy exact env allowlists, exact provider config, and optional dynamic HTTPS diagnostics keeps each compatibility lane understandable. Future agents can add one observed provider callback, test it, and ship without weakening local tool clients or production OAuth boundaries.
 
-The single-resource scope model keeps provider convenience from leaking into producer power. Hosted MCP Apps can request broad app scopes, but normal users will not be shown `producer`, and producer-role users still have to explicitly select it.
+The single-resource scope model keeps provider convenience from leaking into producer power. A provider registration may have a broad envelope while the selected token grant remains narrow. Normal users cannot invoke producer tools, and producer-role users still have to explicitly select `producer`; current role is revalidated rather than preserved by old descriptor or token metadata.
 
 ## When to Apply
 
@@ -239,8 +256,10 @@ Operational checklist for the next provider:
 3. Read registrationRedirectUris[0].host/path/hasQuery/uriHash/matchSource.
 4. Add only the exact observed callback to MCP_OAUTH_PROVIDER_REDIRECT_URIS.
 5. Add provider-profile tests for exact accept and nearby reject.
-6. Re-run provider install through discovery, OAuth, callback/token, refresh if exercised, app resource fetch, iframe boot, and first list_games.
-7. Update docs/game-mcp-production-oauth.md with the exact callback and any tested provider-specific tolerance.
+6. After the ordinary deployment, reconnect or refresh the provider connection, rescan descriptors, and use a fresh conversation if the host retains an older catalog.
+7. Re-run provider install through discovery, incremental OAuth, host confirmation, callback/token, refresh if exercised, granted retry, app resource fetch, iframe boot, and first list_games.
+8. Treat hosted ChatGPT results as acceptance evidence, not a separate preflight or rollout gate.
+9. Update docs/game-mcp-production-oauth.md with the exact callback and any tested provider-specific tolerance.
 ```
 
 ## Related
@@ -254,3 +273,4 @@ Operational checklist for the next provider:
 - `packages/api/src/routes/mcp.ts` emits expected MCP resource challenge failures such as `missing_bearer_token`; do not confuse those with DCR callback rejection.
 - `packages/api/src/__tests__/mcp-oauth-routes.test.ts` covers exact Claude, ChatGPT, and Grok hosted callbacks, redacted rejected-callback audits, Grok resource omission, refresh tokens, producer no-refresh behavior, and editable consent behavior.
 - `packages/api/src/__tests__/mcp-provider-profiles.test.ts` covers bounded provider IDs, exact provider callback config, redacted audit detail shape, and nearby rejected provider-hosted callbacks.
+- `docs/plans/2026-07-17-001-fix-chatgpt-mcp-tool-discovery-plan.md` records the catalog-eligibility correction and hosted acceptance contract.

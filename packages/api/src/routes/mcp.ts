@@ -24,9 +24,20 @@ import {
   type McpAppAuditStage,
   type McpAppProviderId,
 } from "../game-mcp/provider-profiles.js";
+import {
+  GAME_MCP_TOOL_ACCESS,
+  isGameMcpToolName,
+} from "../game-mcp/tool-authorization.js";
 
 const DEFAULT_MAX_POST_BYTES = 1024 * 1024;
 const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26"]);
+const UNKNOWN_TOOL_AUDIT_NAME = "unknown_tool";
+
+type GameMcpJsonRpcAuditDenialReason =
+  | "insufficient_scope"
+  | "tool_error"
+  | "json_rpc_error"
+  | "internal_error";
 
 export interface GameMcpAuditEvent {
   event: "mcp.http.request";
@@ -201,10 +212,11 @@ function registerMcpResource(
     }
 
     const response = await params.server.handle(validation.request, auth.context);
+    const auditOutcome = classifyJsonRpcResponseForAudit(response);
     emitAudit(params.auditLogger, {
       event: "mcp.http.request",
       correlationId,
-      result: response?.error ? "failure" : "success",
+      result: auditOutcome.result,
       status: response ? 200 : 202,
       userId: auth.context.userId,
       clientId: auth.context.clientId,
@@ -216,7 +228,7 @@ function registerMcpResource(
       providerId: providerIdHint(c),
       appStage: appStageForRequest(validation.request),
       appResourceUri: appResourceUriForRequest(validation.request),
-      denialReason: response?.error ? "json_rpc_error" : undefined,
+      denialReason: auditOutcome.denialReason,
     });
 
     if (!response) return c.body(null, 202);
@@ -440,7 +452,47 @@ function toolName(request: JsonRpcRequest): string | undefined {
   if (request.method !== "tools/call") return undefined;
   const params = isRecord(request.params) ? request.params : {};
   const name = params.name;
-  return typeof name === "string" ? name.slice(0, 160) : undefined;
+  return typeof name === "string" && isGameMcpToolName(name)
+    ? GAME_MCP_TOOL_ACCESS[name].name
+    : UNKNOWN_TOOL_AUDIT_NAME;
+}
+
+function classifyJsonRpcResponseForAudit(response: JsonRpcResponse | null):
+  | { result: "success"; denialReason?: undefined }
+  | { result: "failure"; denialReason: GameMcpJsonRpcAuditDenialReason } {
+  if (!response) return { result: "success" };
+  if (response.error) {
+    return {
+      result: "failure",
+      denialReason: response.error.code === -32603
+        ? "internal_error"
+        : "json_rpc_error",
+    };
+  }
+  if (!isErroredToolResult(response.result)) return { result: "success" };
+  return {
+    result: "failure",
+    denialReason: hasMcpAuthorizationChallenge(response.result)
+      ? "insufficient_scope"
+      : "tool_error",
+  };
+}
+
+function isErroredToolResult(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && value.isError === true;
+}
+
+function hasMcpAuthorizationChallenge(result: Record<string, unknown>): boolean {
+  const meta = result._meta;
+  if (!isRecord(meta) || !Object.hasOwn(meta, "mcp/www_authenticate")) {
+    return false;
+  }
+  const challenges = meta["mcp/www_authenticate"];
+  return Array.isArray(challenges) &&
+    challenges.length === 1 &&
+    typeof challenges[0] === "string" &&
+    challenges[0].startsWith("Bearer ") &&
+    challenges[0].includes('error="insufficient_scope"');
 }
 
 function appStageForRequest(request: JsonRpcRequest | undefined): McpAppAuditStage | undefined {

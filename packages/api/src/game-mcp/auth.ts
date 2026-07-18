@@ -9,8 +9,10 @@ import {
   type McpAuthProfile,
 } from "../services/mcp-oauth.js";
 import {
+  MCP_OAUTH_DEFAULT_SCOPES,
   mcpOAuthScopeSetHasProducer,
   mcpOAuthScopesToArray,
+  normalizeMcpOAuthScopeSet,
   parseAndValidateMcpOAuthScopes,
   type McpOAuthScope,
 } from "../services/mcp-scope-policy.js";
@@ -29,16 +31,35 @@ export type GameMcpAuthResult =
   | { ok: true; context: GameMcpAuthContext }
   | { ok: false; status: 401 | 403; reason: string };
 
-export function bearerChallenge(): string {
+export const GAME_MCP_STEP_UP_DESCRIPTION =
+  "Additional authorization is required to use this tool.";
+
+export interface BearerChallengeOptions {
+  scopes?: readonly McpOAuthScope[];
+  error?: "insufficient_scope";
+  errorDescription?: string;
+}
+
+export function bearerChallenge(options: BearerChallengeOptions = {}): string {
   const metadataUrl = new URL(
     MCP_OAUTH_PROTECTED_RESOURCE_METADATA_PATH,
     getMcpOAuthResourceUri(),
   ).toString();
-  return [
+  const scopes = options.scopes ?? MCP_OAUTH_DEFAULT_SCOPES;
+  const parameters = [
     'Bearer realm="influence-game-mcp"',
-    `resource_metadata="${metadataUrl}"`,
-    'scope="agents:read games:read"',
-  ].join(", ");
+    `resource_metadata=${quoteBearerChallengeValue(metadataUrl)}`,
+    `scope=${quoteBearerChallengeValue(normalizeMcpOAuthScopeSet(scopes))}`,
+  ];
+  if (options.error) {
+    parameters.push(`error=${quoteBearerChallengeValue(options.error)}`);
+  }
+  if (options.errorDescription) {
+    parameters.push(
+      `error_description=${quoteBearerChallengeValue(options.errorDescription)}`,
+    );
+  }
+  return parameters.join(", ");
 }
 
 export function extractBearerToken(header: string | undefined): string | null {
@@ -97,4 +118,12 @@ export function originIsAllowed(origin: string | undefined): boolean {
   );
   allowed.add(new URL(getMcpOAuthResourceUri()).origin);
   return allowed.has(origin);
+}
+
+function quoteBearerChallengeValue(value: string): string {
+  const safe = value
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+  return `"${safe}"`;
 }
