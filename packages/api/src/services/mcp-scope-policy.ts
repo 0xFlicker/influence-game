@@ -137,10 +137,6 @@ export function mcpOAuthScopeSetHasProducer(scopes: ReadonlySet<McpOAuthScope>):
   return scopes.has("producer");
 }
 
-export function mcpOAuthScopeSetIsRefreshEligible(scopes: ReadonlySet<McpOAuthScope>): boolean {
-  return !mcpOAuthScopeSetHasProducer(scopes);
-}
-
 export function mcpOAuthScopesToArray(scopes: ReadonlySet<McpOAuthScope>): McpOAuthScope[] {
   return MCP_OAUTH_SCOPE_VALUES.filter((scope) => scopes.has(scope));
 }

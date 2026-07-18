@@ -15,7 +15,6 @@ import {
   MCP_OAUTH_SCOPE_VALUES,
   mcpOAuthScopeSetHasProducer,
   mcpOAuthScopeSetIncludesAll,
-  mcpOAuthScopeSetIsRefreshEligible,
   mcpOAuthScopeSetIsSubset,
   mcpOAuthScopesToArray,
   normalizeMcpOAuthScopeSet,
@@ -628,9 +627,7 @@ export async function exchangeMcpOAuthCode(
     return invalidGrant("Producer role is no longer active for this user", codeAudit);
   }
 
-  const shouldIssueRefreshToken =
-    mcpOAuthScopeSetIsRefreshEligible(codeScopes.scopes) &&
-    await clientAllowsMcpRefreshTokens(db, codeRow.clientId);
+  const shouldIssueRefreshToken = await clientAllowsMcpRefreshTokens(db, codeRow.clientId);
   const rawToken = generateOpaqueSecret();
   const rawRefreshToken = shouldIssueRefreshToken ? generateOpaqueSecret() : undefined;
   const refreshTokenId = rawRefreshToken ? randomUUID() : undefined;
@@ -745,7 +742,7 @@ async function refreshMcpOAuthAccessToken(
     grantType: "refresh_token",
   };
 
-  if (!tokenScopes.ok || !mcpOAuthScopeSetIsRefreshEligible(tokenScopes.scopes)) {
+  if (!tokenScopes.ok) {
     return invalidGrant("Refresh token is not valid for this MCP grant", audit);
   }
   if (
@@ -773,6 +770,9 @@ async function refreshMcpOAuthAccessToken(
     .where(eq(schema.users.id, tokenRow.userId)))[0];
   if (!user) {
     return invalidGrant("Authorization subject is no longer active", audit);
+  }
+  if (mcpOAuthScopeSetHasProducer(tokenScopes.scopes) && !(await hasCurrentProducerRole(db, user))) {
+    return invalidGrant("Producer role is no longer active for this user", audit);
   }
 
   const rawAccessToken = generateOpaqueSecret();
