@@ -436,6 +436,44 @@ describe("MCP OAuth routes", () => {
     }));
   });
 
+  test("keeps explicit full-scope Codex producer authorization non-refreshable", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "Codex full-scope producer client",
+        redirect_uris: [DYNAMIC_REDIRECT_URI],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        scope: MCP_OAUTH_ALL_SCOPE,
+        token_endpoint_auth_method: "none",
+      }),
+    });
+
+    expect(registration.status).toBe(201);
+    const dynamicClientId = String((await jsonObject(registration)).client_id);
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
+    const code = await authorizeCode(sessionToken, "codex-full-scope", "codex-full-scope", {
+      clientId: dynamicClientId,
+      redirectUri: DYNAMIC_REDIRECT_URI,
+      scope: MCP_OAUTH_ALL_SCOPE,
+      selectedScope: MCP_OAUTH_ALL_SCOPE,
+    });
+    const token = await exchangeCode(code, "codex-full-scope", {
+      clientId: dynamicClientId,
+      redirectUri: DYNAMIC_REDIRECT_URI,
+    });
+
+    expect(token.status).toBe(200);
+    const tokenJson = await jsonObject(token);
+    expect(tokenJson).toMatchObject({
+      token_type: "Bearer",
+      scope: MCP_OAUTH_ALL_SCOPE,
+      resource: RESOURCE_URI,
+    });
+    expect(tokenJson).not.toHaveProperty("refresh_token");
+  });
+
   test("accepts code-owned Claude OAuth callback for dynamic and static clients", async () => {
     const registration = await app.request("/api/oauth/mcp/register", {
       method: "POST",
@@ -569,6 +607,150 @@ describe("MCP OAuth routes", () => {
     }));
   });
 
+  test("preserves reselected scopes and honors partial consent during provider step-up", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "ChatGPT step-up connector",
+        redirect_uris: [CHATGPT_REDIRECT_URIS[1]],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }),
+    });
+
+    expect(registration.status).toBe(201);
+    const registrationJson = await jsonObject(registration);
+    expect(registrationJson.scope).toBe(MCP_OAUTH_ALL_SCOPE);
+    const dynamicClientId = String(registrationJson.client_id);
+    const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
+
+    const preservedCode = await authorizeCode(
+      sessionToken,
+      "provider-step-up-preserved",
+      "provider-step-up-preserved",
+      {
+        clientId: dynamicClientId,
+        redirectUri: CHATGPT_REDIRECT_URIS[1],
+        scope: MCP_OAUTH_FULL_USER_SCOPE,
+        selectedScope: MCP_OAUTH_FULL_USER_SCOPE,
+      },
+    );
+    const preservedToken = await exchangeCode(preservedCode, "provider-step-up-preserved", {
+      clientId: dynamicClientId,
+      redirectUri: CHATGPT_REDIRECT_URIS[1],
+    });
+    expect(preservedToken.status).toBe(200);
+    expect(await jsonObject(preservedToken)).toMatchObject({
+      scope: MCP_OAUTH_FULL_USER_SCOPE,
+      resource: RESOURCE_URI,
+    });
+
+    const partialScope = "agents:read agents:write";
+    const partialCode = await authorizeCode(
+      sessionToken,
+      "provider-step-up-partial",
+      "provider-step-up-partial",
+      {
+        clientId: dynamicClientId,
+        redirectUri: CHATGPT_REDIRECT_URIS[1],
+        scope: MCP_OAUTH_FULL_USER_SCOPE,
+        selectedScope: partialScope,
+      },
+    );
+    const partialToken = await exchangeCode(partialCode, "provider-step-up-partial", {
+      clientId: dynamicClientId,
+      redirectUri: CHATGPT_REDIRECT_URIS[1],
+    });
+    expect(partialToken.status).toBe(200);
+    const partialTokenJson = await jsonObject(partialToken);
+    expect(partialTokenJson).toMatchObject({
+      scope: partialScope,
+      resource: RESOURCE_URI,
+    });
+    expect(typeof partialTokenJson.refresh_token).toBe("string");
+    expect(auditEvents).toContainEqual(expect.objectContaining({
+      event: "mcp.oauth.authorize",
+      clientId: dynamicClientId,
+      requestedScope: MCP_OAUTH_FULL_USER_SCOPE,
+      selectedScope: partialScope,
+      scope: partialScope,
+      result: "success",
+    }));
+  });
+
+  test("rejects unrequested, dependency-invalid, and role-ineligible step-up selections", async () => {
+    const registration = await app.request("/api/oauth/mcp/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        client_name: "ChatGPT step-up selection client",
+        redirect_uris: [CHATGPT_REDIRECT_URIS[1]],
+        grant_types: ["authorization_code", "refresh_token"],
+        response_types: ["code"],
+        token_endpoint_auth_method: "none",
+      }),
+    });
+    expect(registration.status).toBe(201);
+    const dynamicClientId = String((await jsonObject(registration)).client_id);
+    const { token: sessionToken } = await createUserSession(db, NON_MCP_ADDRESS);
+
+    const unrequested = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        clientId: dynamicClientId,
+        redirectUri: CHATGPT_REDIRECT_URIS[1],
+        scope: "agents:read agents:write",
+        selectedScope: MCP_OAUTH_FULL_USER_SCOPE,
+        decision: "approve",
+      })),
+    });
+    expect(unrequested.status).toBe(400);
+    expect(await jsonObject(unrequested)).toMatchObject({
+      error: "invalid_scope",
+      error_description: "selected_scope must be a subset of the requested MCP scopes",
+    });
+
+    const dependencyInvalid = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        clientId: dynamicClientId,
+        redirectUri: CHATGPT_REDIRECT_URIS[1],
+        scope: MCP_OAUTH_FULL_USER_SCOPE,
+        selectedScope: "agents:write",
+        decision: "approve",
+      })),
+    });
+    expect(dependencyInvalid.status).toBe(400);
+    expect(await jsonObject(dependencyInvalid)).toMatchObject({
+      error: "invalid_scope",
+      error_description: "agents:write requires agents:read",
+    });
+
+    const roleIneligible = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        clientId: dynamicClientId,
+        redirectUri: CHATGPT_REDIRECT_URIS[1],
+        scope: MCP_OAUTH_ALL_SCOPE,
+        selectedScope: MCP_OAUTH_ALL_SCOPE,
+        decision: "approve",
+      })),
+    });
+    expect(roleIneligible.status).toBe(403);
+    expect(await jsonObject(roleIneligible)).toMatchObject({
+      error: "access_denied",
+      error_description: "selected_scope includes an MCP scope the current user cannot grant",
+    });
+
+    const rows = await db.select().from(schema.mcpOauthAuthorizationCodes);
+    expect(rows).toHaveLength(0);
+  });
+
   test("keeps omitted scope read-only for generic dynamic clients", async () => {
     const registration = await app.request("/api/oauth/mcp/register", {
       method: "POST",
@@ -591,23 +773,25 @@ describe("MCP OAuth routes", () => {
     const dynamicClientId = String(registrationJson.client_id);
     const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
 
-    const preview = await app.request("/api/oauth/mcp/authorize", {
-      method: "POST",
-      headers: jsonAuthHeaders(sessionToken),
-      body: JSON.stringify(authorizeBody({
-        clientId: dynamicClientId,
-        redirectUri: DYNAMIC_REDIRECT_URI,
-        codeVerifier: "generic-default-scope",
-        scope: MCP_OAUTH_ALL_SCOPE,
-        decision: "inspect",
-      })),
-    });
+    for (const requestedScope of ["agents:read agents:write", MCP_OAUTH_SCOPE]) {
+      const preview = await app.request("/api/oauth/mcp/authorize", {
+        method: "POST",
+        headers: jsonAuthHeaders(sessionToken),
+        body: JSON.stringify(authorizeBody({
+          clientId: dynamicClientId,
+          redirectUri: DYNAMIC_REDIRECT_URI,
+          codeVerifier: "generic-default-scope",
+          scope: requestedScope,
+          decision: "inspect",
+        })),
+      });
 
-    expect(preview.status).toBe(400);
-    expect(await jsonObject(preview)).toMatchObject({
-      error: "invalid_scope",
-      error_description: "scope is not registered for this client",
-    });
+      expect(preview.status).toBe(400);
+      expect(await jsonObject(preview)).toMatchObject({
+        error: "invalid_scope",
+        error_description: "scope is not registered for this client",
+      });
+    }
   });
 
   test("accepts code-owned Grok OAuth callback during dynamic registration", async () => {
@@ -1134,6 +1318,43 @@ describe("MCP OAuth routes", () => {
     expect(redirect.searchParams.get("state")).toBe("test-state");
   });
 
+  test("re-checks producer role after consent preview and before approval", async () => {
+    const { token: sessionToken } = await createUserSession(db, MCP_ADDRESS, "producer");
+    const preview = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        scope: MCP_OAUTH_ALL_SCOPE,
+        decision: "inspect",
+      })),
+    });
+    expect(preview.status).toBe(200);
+    expect(await jsonObject(preview)).toMatchObject({
+      hasProducerRole: true,
+      blockedScopes: [],
+    });
+
+    await revokeRole(db, MCP_ADDRESS, "producer");
+
+    const authorize = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(sessionToken),
+      body: JSON.stringify(authorizeBody({
+        scope: MCP_OAUTH_ALL_SCOPE,
+        selectedScope: MCP_OAUTH_ALL_SCOPE,
+        decision: "approve",
+      })),
+    });
+    expect(authorize.status).toBe(403);
+    expect(await jsonObject(authorize)).toMatchObject({
+      error: "access_denied",
+      error_description: "selected_scope includes an MCP scope the current user cannot grant",
+    });
+
+    const rows = await db.select().from(schema.mcpOauthAuthorizationCodes);
+    expect(rows).toHaveLength(0);
+  });
+
   test("accepts equivalent loopback resource aliases for local authorization", async () => {
     const previousNodeEnv = process.env.NODE_ENV;
     const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
@@ -1410,6 +1631,7 @@ describe("MCP OAuth routes", () => {
       clientId?: string;
       redirectUri?: string;
       scope?: string;
+      selectedScope?: string;
       resource?: string;
     },
   ): Promise<string> {
