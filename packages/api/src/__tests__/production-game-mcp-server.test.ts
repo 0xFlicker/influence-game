@@ -123,6 +123,32 @@ function validateJsonSchema(value: unknown, rawSchema: unknown, path: string): s
   return errors;
 }
 
+interface ListedToolDescriptor {
+  name: string;
+  securitySchemes: Array<{ type: string; scopes: string[] }>;
+  annotations: {
+    readOnlyHint: boolean;
+    openWorldHint: boolean;
+    destructiveHint: boolean;
+    idempotentHint?: boolean;
+  };
+  _meta: { securitySchemes: unknown[] };
+}
+
+async function listToolDescriptors(
+  server: ProductionGameMcpJsonRpcServerBase,
+  auth: GameMcpAuthContext,
+): Promise<ListedToolDescriptor[]> {
+  const response = await server.handle({
+    jsonrpc: "2.0",
+    id: "catalog",
+    method: "tools/list",
+  }, auth);
+
+  expect(response?.error).toBeUndefined();
+  return (response?.result as { tools: ListedToolDescriptor[] }).tools;
+}
+
 describe("ProductionGameMcpJsonRpcServer", () => {
   test("keeps current grants separate from live catalog eligibility", () => {
     const auth = {
@@ -180,6 +206,92 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       clientScopes: ["agents:read", "agents:write"],
       hasProducerRole: false,
     })).toEqual({ outcome: "unavailable" });
+  });
+
+  test("advertises eligible agent mutations before their scopes are granted", async () => {
+    const fullEnvelopeTools = await listToolDescriptors(
+      new ProductionGameMcpJsonRpcServer(fakeReadModel()),
+      AGENT_READ_AUTH,
+    );
+    const fullEnvelopeNames = fullEnvelopeTools.map((tool) => tool.name);
+
+    expect(fullEnvelopeNames).toEqual([
+      "list_archetypes",
+      "list_agents",
+      "get_agent",
+      "search_agents",
+      "get_queue_status",
+      "list_open_games",
+      "read_agent_season",
+      "export_agent_season_data",
+      "create_agent",
+      "update_agent",
+      "join_queue",
+      "leave_queue",
+    ]);
+    expect(AGENT_READ_AUTH.scopes).toEqual(["agents:read"]);
+
+    const readOnlyClient = new ProductionGameMcpJsonRpcServerBase(
+      fakeReadModel(),
+      undefined,
+      async () => ({ clientScopes: ["agents:read"], hasProducerRole: false }),
+    );
+    const readOnlyNames = (await listToolDescriptors(readOnlyClient, AGENT_READ_AUTH))
+      .map((tool) => tool.name);
+    expect(readOnlyNames).not.toContain("create_agent");
+    expect(readOnlyNames).not.toContain("update_agent");
+    expect(readOnlyNames).not.toContain("join_queue");
+    expect(readOnlyNames).not.toContain("leave_queue");
+  });
+
+  test("advertises producer-eligible tools before producer scope is granted", async () => {
+    const producerEligibleServer = new ProductionGameMcpJsonRpcServerBase(
+      fakeReadModel(),
+      undefined,
+      async () => ({ ...FULL_ELIGIBILITY, hasProducerRole: true }),
+    );
+    const tools = await listToolDescriptors(producerEligibleServer, AGENT_READ_AUTH);
+    const names = tools.map((tool) => tool.name);
+
+    expect(names).toContain("list_games");
+    expect(names).toContain("read_producer_season_diagnostics");
+    expect(names).toContain("read_trace_content");
+    expect(names).toContain("search_reasoning_traces");
+    expect(tools.find((tool) => tool.name === "list_games")?.securitySchemes).toEqual([
+      { type: "oauth2", scopes: ["producer"] },
+    ]);
+
+    const normalNames = (await listToolDescriptors(
+      new ProductionGameMcpJsonRpcServer(fakeReadModel()),
+      AGENT_READ_AUTH,
+    )).map((tool) => tool.name);
+    expect(normalNames).not.toContain("read_producer_season_diagnostics");
+    expect(normalNames).not.toContain("read_trace_content");
+  });
+
+  test("selects shared game descriptors by grant and eligibility precedence", async () => {
+    const normalServer = new ProductionGameMcpJsonRpcServer(fakeReadModel());
+    const producerEligibleServer = new ProductionGameMcpJsonRpcServerBase(
+      fakeReadModel(),
+      undefined,
+      async () => ({ ...FULL_ELIGIBILITY, hasProducerRole: true }),
+    );
+    const roleRevokedServer = new ProductionGameMcpJsonRpcServerBase(
+      fakeReadModel(),
+      undefined,
+      async () => ({ ...FULL_ELIGIBILITY, hasProducerRole: false }),
+    );
+    const scopesForListGames = async (
+      server: ProductionGameMcpJsonRpcServerBase,
+      auth: GameMcpAuthContext,
+    ) => (await listToolDescriptors(server, auth))
+      .find((tool) => tool.name === "list_games")?.securitySchemes[0]?.scopes;
+
+    expect(await scopesForListGames(producerEligibleServer, PRODUCER_AUTH)).toEqual(["producer"]);
+    expect(await scopesForListGames(normalServer, GAMES_AUTH)).toEqual(["games:read"]);
+    expect(await scopesForListGames(producerEligibleServer, AGENT_READ_AUTH)).toEqual(["producer"]);
+    expect(await scopesForListGames(normalServer, AGENT_READ_AUTH)).toBeUndefined();
+    expect(await scopesForListGames(roleRevokedServer, PRODUCER_AUTH)).toBeUndefined();
   });
 
   test("fails closed with a bounded internal error when eligibility resolution fails", async () => {
@@ -587,22 +699,70 @@ describe("ProductionGameMcpJsonRpcServer", () => {
 
   test("marks user-facing management reads and mutations accurately", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
-    const response = await server.handle({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/list",
-    }, GAMES_AUTH);
-
-    expect(response?.error).toBeUndefined();
-    const tools = ((response?.result as { tools: Array<{ name: string; annotations: { readOnlyHint: boolean }; inputSchema: unknown; outputSchema?: unknown; description: string }> }).tools);
+    const tools = await listToolDescriptors(server, GAMES_AUTH) as Array<
+      ListedToolDescriptor & {
+        inputSchema: unknown;
+        outputSchema?: unknown;
+        description: string;
+      }
+    >;
     const byName = new Map(tools.map((tool) => [tool.name, tool]));
 
-    expect(byName.get("list_archetypes")?.annotations.readOnlyHint).toBe(true);
-    expect(byName.get("list_agents")?.annotations.readOnlyHint).toBe(true);
-    expect(byName.get("create_agent")?.annotations.readOnlyHint).toBe(false);
-    expect(byName.get("update_agent")?.annotations.readOnlyHint).toBe(false);
-    expect(byName.get("join_queue")?.annotations.readOnlyHint).toBe(false);
-    expect(byName.get("leave_queue")?.annotations.readOnlyHint).toBe(false);
+    for (const tool of tools) {
+      expect(tool._meta.securitySchemes).toEqual(tool.securitySchemes);
+      expect(tool.annotations.openWorldHint).toBe(false);
+      expect(typeof tool.annotations.readOnlyHint).toBe("boolean");
+      expect(typeof tool.annotations.destructiveHint).toBe("boolean");
+
+      const expectedScopes = ["create_agent", "update_agent", "join_queue", "leave_queue"]
+          .includes(tool.name)
+        ? ["agents:read", "agents:write"]
+        : [
+              "list_archetypes",
+              "list_agents",
+              "get_agent",
+              "search_agents",
+              "get_queue_status",
+              "list_open_games",
+              "read_agent_season",
+              "export_agent_season_data",
+            ].includes(tool.name)
+          ? ["agents:read"]
+          : ["games:read"];
+      expect(tool.securitySchemes).toEqual([{ type: "oauth2", scopes: expectedScopes }]);
+    }
+
+    expect(byName.get("list_archetypes")?.annotations).toEqual({
+      readOnlyHint: true,
+      openWorldHint: false,
+      destructiveHint: false,
+    });
+    expect(byName.get("list_agents")?.annotations).toEqual({
+      readOnlyHint: true,
+      openWorldHint: false,
+      destructiveHint: false,
+    });
+    expect(byName.get("create_agent")?.annotations).toEqual({
+      readOnlyHint: false,
+      openWorldHint: false,
+      destructiveHint: false,
+    });
+    expect(byName.get("update_agent")?.annotations).toEqual({
+      readOnlyHint: false,
+      openWorldHint: false,
+      destructiveHint: true,
+    });
+    expect(byName.get("join_queue")?.annotations).toEqual({
+      readOnlyHint: false,
+      openWorldHint: false,
+      destructiveHint: true,
+    });
+    expect(byName.get("leave_queue")?.annotations).toEqual({
+      readOnlyHint: false,
+      openWorldHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+    });
     expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).toContain("diplomat");
     expect(JSON.stringify(byName.get("create_agent")?.inputSchema)).not.toContain("broker");
     expect(byName.get("search_agents")?.description).toContain("use update_agent");
@@ -614,6 +774,26 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(byName.get("create_agent")?.outputSchema)).toContain("profileRevision");
     expect(JSON.stringify(byName.get("update_agent")?.outputSchema)).toContain("waitingSeats");
     expect(byName.get("join_queue")?.description).toContain("Side effect");
+  });
+
+  test("uses complete metadata for producer inventory without active-match tools", async () => {
+    const tools = await listToolDescriptors(
+      new ProductionGameMcpJsonRpcServer(fakeReadModel()),
+      PRODUCER_AUTH,
+    );
+
+    for (const tool of tools) {
+      expect(tool.securitySchemes).toEqual([{ type: "oauth2", scopes: ["producer"] }]);
+      expect(tool._meta.securitySchemes).toEqual(tool.securitySchemes);
+      expect(tool.annotations).toEqual({
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+      });
+    }
+    expect(tools.map((tool) => tool.name)).not.toContain("vote");
+    expect(tools.map((tool) => tool.name)).not.toContain("mingle_message");
+    expect(tools.map((tool) => tool.name)).not.toContain("ready_check");
   });
 
   test("initialization prefers update_agent for every existing owned identity", async () => {

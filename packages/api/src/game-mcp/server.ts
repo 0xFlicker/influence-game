@@ -191,9 +191,9 @@ export class ProductionGameMcpJsonRpcServer {
     if (method === "tools/list") {
       return {
         tools: eligibility
-          ? productionGameMcpTools(auth).filter((candidate) =>
+          ? productionGameMcpTools(auth, eligibility).filter((candidate) =>
             resolveGameMcpToolAccess(String(asRecord(candidate).name ?? ""), auth, eligibility)
-              .invocationAllowed
+              .catalogEligible
           )
           : [],
       };
@@ -502,16 +502,28 @@ function requireAnyScope(auth: GameMcpAuthContext, requiredScopes: readonly McpO
   }
 }
 
-function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
-  const includeProducerTools = hasScope(auth, "producer");
+function productionGameMcpTools(
+  auth: GameMcpAuthContext,
+  eligibility: GameMcpEligibilitySnapshot,
+): unknown[] {
+  const clientScopes = new Set(eligibility.clientScopes);
+  const producerEligible = eligibility.hasProducerRole && clientScopes.has("producer");
+  const sharedGameReadVariant = hasScope(auth, "producer") && producerEligible
+    ? "producer"
+    : hasScope(auth, "games:read") && clientScopes.has("games:read")
+      ? "games:read"
+      : producerEligible
+        ? "producer"
+        : null;
+  const includeProducerVariant = sharedGameReadVariant === "producer";
   const tools: unknown[] = [];
 
-  if (canReadGames(auth)) {
-    const gameReadScopes: McpOAuthScope[] = includeProducerTools ? ["producer"] : ["games:read"];
+  if (sharedGameReadVariant) {
+    const gameReadScopes: McpOAuthScope[] = [sharedGameReadVariant];
     tools.push(
     tool({
       name: "list_games",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "List recent deployed games with event-log and projection status."
         : "List your Influence games with event-log and projection status. Call for game inspection, not for active-match actions.",
       properties: {
@@ -519,7 +531,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       },
       scopes: gameReadScopes,
       readOnlyHint: true,
-      appMeta: includeProducerTools ? undefined : createInfluenceMcpAppToolMeta(),
+      appMeta: includeProducerVariant ? undefined : createInfluenceMcpAppToolMeta(),
     }),
     tool({
       name: "list_seasons",
@@ -636,7 +648,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_round_facts",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Read sanitized revealed vote, power, Council, and player-status facts for one deployed game round without private trace content or raw canonical envelopes."
         : "Read sanitized revealed vote, power, Council, and player-status facts for one accessible game round.",
       properties: {
@@ -649,7 +661,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_agent_alliances",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Read one player's owner-scoped named-alliance facts: involved proposals, member alliances, huddle messages, and member-safe huddle outcomes."
         : "Read your agent's named-alliance facts: proposals involving them, alliances they belong to, huddle messages, and member-safe huddle outcomes.",
       properties: {
@@ -665,7 +677,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "filter_events",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit."
         : "Filter player-visible canonical events by game, type, phase, actor, sequence range, or limit.",
       properties: {
@@ -675,7 +687,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
         actor: { type: "string" },
         visibilityMode: {
           type: "string",
-          enum: includeProducerTools ? ["public", "player", "producer"] : ["public", "player"],
+          enum: includeProducerVariant ? ["public", "player", "producer"] : ["public", "player"],
         },
         fromSequence: { type: "number" },
         toSequence: { type: "number" },
@@ -687,7 +699,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "player_timeline",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Return canonical events that mention a player ID or name."
         : "Return player-visible canonical events that mention a player ID or name in an accessible game.",
       properties: {
@@ -695,7 +707,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
         player: { type: "string" },
         visibilityMode: {
           type: "string",
-          enum: includeProducerTools ? ["public", "player", "producer"] : ["public", "player"],
+          enum: includeProducerVariant ? ["public", "player", "producer"] : ["public", "player"],
         },
         limit: { type: "number" },
       },
@@ -705,7 +717,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "list_cognitive_artifacts",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "List split reasoning, thinking, and strategy artifact metadata for one deployed game without returning payload bodies."
         : "List authorized reasoning, thinking, and strategy artifact metadata for one game you participated in.",
       properties: {
@@ -720,7 +732,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     }),
     tool({
       name: "read_cognitive_artifact",
-      description: includeProducerTools
+      description: includeProducerVariant
         ? "Read one authorized split cognitive artifact payload, or producer diagnostics for unavailable split artifacts."
         : "Read one authorized split cognitive artifact payload by game, artifact id, artifact type, and actor player id. Reasoning is owner-only; thinking and strategy are participant-visible except private huddle artifacts, which remain owner-only.",
       properties: {
@@ -731,7 +743,7 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
         actorPlayerId: { type: "string" },
         purpose: { type: "string" },
       },
-      required: includeProducerTools
+      required: includeProducerVariant
         ? ["gameIdOrSlug", "artifactId"]
         : ["gameIdOrSlug", "artifactId", "artifactType", "actorPlayerId"],
       scopes: gameReadScopes,
@@ -740,20 +752,10 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
     );
   }
 
-  if (hasScope(auth, "games:read")) {
-    tools.push(...gameRulesTools());
-  }
-  if (hasScope(auth, "agents:read")) {
-    tools.push(...userAgentReadTools());
-  }
-  if (hasScope(auth, "agents:write")) {
-    tools.push(...userAgentWriteTools());
-  }
-  if (!includeProducerTools) {
-    return tools;
-  }
-  return [
-    ...tools,
+  tools.push(...gameRulesTools());
+  tools.push(...userAgentReadTools());
+  tools.push(...userAgentWriteTools());
+  tools.push(
     tool({
       name: "read_producer_season_diagnostics",
       description: "Read producer-only hidden competition ratings, rating events, and receipt evidence for one season.",
@@ -825,7 +827,8 @@ function productionGameMcpTools(auth: GameMcpAuthContext): unknown[] {
       scopes: ["producer"],
       readOnlyHint: true,
     }),
-  ];
+  );
+  return tools;
 }
 
 function gameRulesTools(): unknown[] {
@@ -973,6 +976,7 @@ function userAgentWriteTools(): unknown[] {
       required: ["agentId"],
       scopes: writeScopes,
       readOnlyHint: false,
+      destructiveHint: true,
       outputSchema: agentCommandOutputSchema(),
     }),
     tool({
@@ -986,6 +990,7 @@ function userAgentWriteTools(): unknown[] {
       required: ["queueType", "agentId"],
       scopes: writeScopes,
       readOnlyHint: false,
+      destructiveHint: true,
     }),
     tool({
       name: "leave_queue",
@@ -995,6 +1000,8 @@ function userAgentWriteTools(): unknown[] {
       },
       scopes: writeScopes,
       readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
     }),
   ];
 }
@@ -1007,6 +1014,8 @@ function tool(input: {
   required?: string[];
   scopes: readonly McpOAuthScope[];
   readOnlyHint: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
   appMeta?: Record<string, unknown>;
   outputSchema?: Record<string, unknown>;
 }): unknown {
@@ -1023,6 +1032,11 @@ function tool(input: {
     securitySchemes: [securityScheme],
     annotations: {
       readOnlyHint: input.readOnlyHint,
+      openWorldHint: false,
+      destructiveHint: input.destructiveHint ?? false,
+      ...(input.idempotentHint === undefined
+        ? {}
+        : { idempotentHint: input.idempotentHint }),
     },
     _meta: {
       securitySchemes: [securityScheme],
