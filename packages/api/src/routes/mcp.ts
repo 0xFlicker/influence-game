@@ -24,6 +24,7 @@ import {
   type McpAppAuditStage,
   type McpAppProviderId,
 } from "../game-mcp/provider-profiles.js";
+import { MCP_OAUTH_SCOPE_VALUES } from "../services/mcp-scope-policy.js";
 import {
   GAME_MCP_TOOL_ACCESS,
   isGameMcpToolName,
@@ -282,7 +283,9 @@ async function preflight(
 
   const token = extractBearerToken(c.req.header("Authorization"));
   if (!token) {
-    c.header("WWW-Authenticate", bearerChallenge());
+    c.header("WWW-Authenticate", bearerChallenge({
+      scopes: MCP_OAUTH_SCOPE_VALUES,
+    }));
     emitAudit(auditLogger, {
       event: "mcp.http.request",
       correlationId,

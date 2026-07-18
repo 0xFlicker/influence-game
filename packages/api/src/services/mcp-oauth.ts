@@ -11,7 +11,6 @@ import {
   type McpOAuthRedirectMatchSource,
 } from "../game-mcp/oauth-provider-compat.js";
 import {
-  MCP_OAUTH_DEFAULT_SCOPES,
   MCP_OAUTH_SCOPE_DEFINITIONS,
   MCP_OAUTH_SCOPE_VALUES,
   mcpOAuthScopeSetHasProducer,
@@ -1557,7 +1556,7 @@ function validateClientRegistrationInput(input: McpOAuthClientRegistrationInput)
   }
 
   const requestedScope = input.scope === undefined
-    ? defaultRegisteredScopeForRedirectUris(redirectUris)
+    ? normalizeMcpOAuthScopeSet(MCP_OAUTH_SCOPE_VALUES)
     : parseMcpOAuthRegistrationScope(input.scope);
   if (!requestedScope) {
     return clientRegistrationError(
@@ -1596,15 +1595,6 @@ function clientRegistrationError(
   errorDescription: string,
 ): { ok: false; error: string; errorDescription: string } {
   return { ok: false, error, errorDescription };
-}
-
-function defaultRegisteredScopeForRedirectUris(redirectUris: readonly string[]): string {
-  const hasProviderHostedRedirect = redirectUris.some((redirectUri) =>
-    providerRedirectRuleForUri(redirectUri)
-  );
-  return normalizeMcpOAuthScopeSet(
-    hasProviderHostedRedirect ? MCP_OAUTH_SCOPE_VALUES : MCP_OAUTH_DEFAULT_SCOPES,
-  );
 }
 
 function isAllowedRedirectUri(redirectUri: string): boolean {
