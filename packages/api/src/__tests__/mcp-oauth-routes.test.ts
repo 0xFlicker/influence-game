@@ -436,7 +436,7 @@ describe("MCP OAuth routes", () => {
     }));
   });
 
-  test("keeps explicit full-scope Codex producer authorization non-refreshable", async () => {
+  test("rotates full-scope producer refresh tokens only while the role remains current", async () => {
     const registration = await app.request("/api/oauth/mcp/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -468,10 +468,50 @@ describe("MCP OAuth routes", () => {
     const tokenJson = await jsonObject(token);
     expect(tokenJson).toMatchObject({
       token_type: "Bearer",
+      expires_in: 3600,
       scope: MCP_OAUTH_ALL_SCOPE,
       resource: RESOURCE_URI,
     });
-    expect(tokenJson).not.toHaveProperty("refresh_token");
+    expect(typeof tokenJson.refresh_token).toBe("string");
+    const firstAccessToken = String(tokenJson.access_token);
+    const firstRefreshToken = String(tokenJson.refresh_token);
+
+    const refreshed = await refreshAccess(firstRefreshToken, {
+      clientId: dynamicClientId,
+      resource: RESOURCE_URI,
+      scope: MCP_OAUTH_ALL_SCOPE,
+    });
+    expect(refreshed.status).toBe(200);
+    const refreshedJson = await jsonObject(refreshed);
+    expect(refreshedJson).toMatchObject({
+      token_type: "Bearer",
+      expires_in: 3600,
+      scope: MCP_OAUTH_ALL_SCOPE,
+      resource: RESOURCE_URI,
+    });
+    expect(typeof refreshedJson.refresh_token).toBe("string");
+    const secondAccessToken = String(refreshedJson.access_token);
+    const secondRefreshToken = String(refreshedJson.refresh_token);
+    expect(secondRefreshToken).not.toBe(firstRefreshToken);
+
+    await revokeRole(db, MCP_ADDRESS, "producer");
+
+    const roleRevokedRefresh = await refreshAccess(secondRefreshToken, {
+      clientId: dynamicClientId,
+      resource: RESOURCE_URI,
+      scope: MCP_OAUTH_ALL_SCOPE,
+    });
+    expect(roleRevokedRefresh.status).toBe(400);
+    expect(await jsonObject(roleRevokedRefresh)).toMatchObject({
+      error: "invalid_grant",
+      error_description: "Producer role is no longer active for this user",
+    });
+    const [firstIntrospection, secondIntrospection] = await Promise.all([
+      introspect(firstAccessToken),
+      introspect(secondAccessToken),
+    ]);
+    expect(await jsonObject(firstIntrospection)).toEqual({ active: false });
+    expect(await jsonObject(secondIntrospection)).toEqual({ active: false });
   });
 
   test("accepts code-owned Claude OAuth callback for dynamic and static clients", async () => {
@@ -1261,7 +1301,7 @@ describe("MCP OAuth routes", () => {
       resource: PRODUCER_RESOURCE_URI,
     });
     expect(typeof tokenJson.access_token).toBe("string");
-    expect(tokenJson).not.toHaveProperty("refresh_token");
+    expect(typeof tokenJson.refresh_token).toBe("string");
 
     const introspection = await introspect(tokenJson.access_token as string);
     expect(introspection.status).toBe(200);

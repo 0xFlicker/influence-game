@@ -85,7 +85,7 @@ The initial missing-bearer `401` challenge advertises the full supported scope s
 
 Authorization codes and access tokens store the selected normalized scope string. Token validation re-checks the current `producer` role before honoring any token that includes scope `producer`.
 
-Refresh tokens are supported only for grants that do not include `producer`. A non-producer authorization-code exchange issues a refresh token for the static Influence client and for dynamic clients that registered the `refresh_token` grant. Refresh tokens are opaque, stored only as hashes, expire on a 30-day sliding window, rotate on every successful refresh, and revoke the whole token family plus related access tokens if a replaced token is reused. `POST /api/oauth/mcp/revoke` accepts access or refresh tokens; unknown tokens return success, and refresh-token revocation revokes the family.
+Authorization-code exchanges issue a refresh token for the static Influence client and for dynamic clients that registered the `refresh_token` grant, including grants that contain `producer`. Producer-bearing refreshes re-check the user's current DB role before issuing another access token; losing the role makes both existing producer access tokens and later refresh attempts fail closed. Refresh tokens are opaque, stored only as hashes, expire on a 30-day sliding window, rotate on every successful refresh, and revoke the whole token family plus related access tokens if a replaced token is reused. `POST /api/oauth/mcp/revoke` accepts access or refresh tokens; unknown tokens return success, and refresh-token revocation revokes the family.
 
 ## Tools
 
@@ -229,7 +229,7 @@ Use the client's MCP authentication flow when it reports OAuth is needed. Client
 
 ### Producer Setup
 
-Producer setup uses the same `/mcp` URL. Request scope `producer` only when the logged-in user has the `producer` role and needs developer/global inspection or private trace tools. Producer-bearing grants are short-lived access-token grants only; refresh tokens are not issued for them.
+Producer setup uses the same `/mcp` URL. Request scope `producer` only when the logged-in user has the `producer` role and needs developer/global inspection or private trace tools. Producer-bearing access tokens remain short-lived at one hour, but eligible clients receive rotating refresh tokens so the host can renew them without hourly user interaction. Every refresh and every producer-token validation re-checks the current DB role.
 
 ## ChatGPT Developer Mode / Apps SDK
 
@@ -266,16 +266,15 @@ For local and deployed verification:
 8. The same token can read and export only its owner's agent-season analysis; another owner's agent remains unavailable.
 9. Calling one of those catalog-eligible management tools without `agents:write` returns HTTP `200` with an errored `CallToolResult` challenge; retrying with the human-selected `agents:read agents:write` grant can create/update owned agents and join/leave supported pre-match queues. In a manual LLM exercise, ask the client to improve an already-owned enrolled agent: it should resolve the stable `agentId`, call `update_agent`, and explain the revision/enrollment receipt without calling `create_agent` or switching Standing Daily membership.
 10. A narrow token issued to a current producer-role user can list producer descriptors only when the client envelope includes `producer`; a missing producer grant receives the tool-level challenge. A valid `producer` token can read producer postgame and season diagnostics, list/read split cognitive artifacts with producer visibility, and read/search private trace content when storage is configured. Removing the DB role makes subsequent discovery and calls fail closed without producer data or a new producer challenge.
-11. A valid non-producer refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family.
+11. A valid refresh token can refresh once, returns a new access token and rotated refresh token, and the replaced token cannot be reused without revoking the family. A producer-bearing refresh succeeds only while the user's current DB role still includes `producer`; removing that role makes the refresh fail with `invalid_grant`.
 12. Resource-selected OAuth events and MCP request events include correlation ID, method/tool, user/client/resource, issued scope, auth profile, grant type when present, result, status, provider hint when supplied, app stage when derivable, redirect URI family when present, and denial reason. Audits never include raw tokens, auth headers, authorization codes, refresh tokens, PKCE verifiers, raw prompts, raw responses, reasoning bodies, private trace content, or storage credentials.
-13. After the ordinary production deployment, a fresh hosted ChatGPT install requests all supported scopes without opening Advanced OAuth settings; consent keeps `producer` role-gated and opt-in. Existing connections may use a fresh reconnect/rescan/conversation. Complete one real host write confirmation and record date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available. This hosted observation is not a deployment gate.
+13. After the ordinary production deployment, a fresh hosted ChatGPT install requests all supported scopes without opening Advanced OAuth settings; consent keeps `producer` role-gated and opt-in. A producer connection authorized before producer refresh support shipped needs one final reconnect because its already-issued access token has no refresh token; producer grants issued afterward renew without hourly interaction while the role remains current. Existing descriptor catalogs may still use a rescan or fresh conversation. Complete one real host write confirmation and record date, provider, last visible checkpoint, host-visible error, screenshot if useful, and server correlation ID when available. This hosted observation is not a deployment gate.
 
 ## Out Of Scope
 
 - User-facing private trace representation, trace-derived summaries, or trace-backed fallback reads.
 - Polished cognitive artifact UX; this slice exposes raw authorized split artifacts and minimal API/client types only.
 - General MCP app-side per-tool rate limiting. The separate anonymous player-profile REST endpoint has a required gateway rate-limit deployment gate documented in `docs/public-player-identity-rollout.md`.
-- Producer refresh tokens.
 - Confidential-client management, client secrets, and a general third-party OAuth app platform.
 - Active-match mutation tools, game lifecycle controls, or moderator controls through MCP.
 - Ranked queues, tournament queues, party queues, invitation-code queues, spectator flows, avatar generation/upload, and true per-agent ELO.

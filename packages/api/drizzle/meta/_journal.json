@@ -295,6 +295,13 @@
       "when": 1784257107669,
       "tag": "0041_public_player_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1784367345893,
+      "tag": "0042_wise_tarantula",
+      "breakpoints": true
     }
   ]
 }

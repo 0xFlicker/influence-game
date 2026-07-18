@@ -127,12 +127,6 @@ export interface PostgameMediaUploadTargetMetadata {
 const MCP_OAUTH_SCOPE_CHECK_SQL = sql.raw(
   `(${MCP_OAUTH_SCOPE_CHECK_VALUES.map((scope) => `'${scope}'`).join(", ")})`,
 );
-const MCP_OAUTH_REFRESH_SCOPE_CHECK_SQL = sql.raw(
-  `(${MCP_OAUTH_SCOPE_CHECK_VALUES
-    .filter((scope) => !scope.split(/\s+/).includes("producer"))
-    .map((scope) => `'${scope}'`)
-    .join(", ")})`,
-);
 
 // ---------------------------------------------------------------------------
 // Users
@@ -1687,7 +1681,7 @@ export const mcpOauthRefreshTokens = pgTable("mcp_oauth_refresh_tokens", {
   index("mcp_oauth_refresh_tokens_user_id_idx").on(table.userId),
   index("mcp_oauth_refresh_tokens_resource_uri_idx").on(table.resourceUri),
   index("mcp_oauth_refresh_tokens_expires_at_idx").on(table.expiresAt),
-  check("mcp_oauth_refresh_tokens_scope_check", sql`${table.scope} IN ${MCP_OAUTH_REFRESH_SCOPE_CHECK_SQL}`),
+  check("mcp_oauth_refresh_tokens_scope_check", sql`${table.scope} IN ${MCP_OAUTH_SCOPE_CHECK_SQL}`),
   check("mcp_oauth_refresh_tokens_audience_check", sql`${table.audience} = 'game-mcp'`),
   check("mcp_oauth_refresh_tokens_purpose_check", sql`${table.purpose} = 'mcp_access'`),
 ]);

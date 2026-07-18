@@ -120,7 +120,7 @@ Discovery adds one more separate decision: catalog eligibility. An `agents:read`
 
 For a valid bearer missing an eligible tool scope, return HTTP `200` with an errored MCP `CallToolResult` carrying `_meta["mcp/www_authenticate"]`. Keep invalid bearer failures at HTTP `401` with `WWW-Authenticate`. Unknown, ineligible, and active-match tool calls remain generic and challenge-free, while an eligibility lookup failure returns JSON-RPC `-32603` with `Internal error`. Every descriptor must publish exact top-level OAuth `securitySchemes`, an identical `_meta.securitySchemes` mirror, and explicit `readOnlyHint`, `openWorldHint`, and `destructiveHint` annotations. Those fields and any host write confirmation are UX, not authorization.
 
-Refresh tokens are non-producer only. Provider clients may register `refresh_token`, and the authorization server may advertise `authorization_code` plus `refresh_token`, but issuance stays limited to grants that do not include `producer`.
+Provider clients may register `refresh_token`, and the authorization server advertises `authorization_code` plus `refresh_token`. Producer-bearing grants may receive rotating refresh tokens, but the server must re-check the user's current DB producer role before every refresh and before honoring every producer access token.
 
 The resource continues to negotiate MCP `2025-06-18`. A move to MCP `2025-11-25`, HTTP `403`, or Client ID Metadata Documents (CIMD) is separate work.
 
@@ -155,7 +155,7 @@ mcp.oauth.authorize or mcp.oauth.token failure
   authorization request, resource/scope, PKCE, code, or token-exchange problem
 ```
 
-Do not apply it as a reason to accept generic provider domains, move provider callbacks into deployment env vars, issue producer refresh tokens, reinterpret `producer` as user-scoped, or auto-grant write scopes without explicit consent.
+Do not apply it as a reason to accept generic provider domains, move provider callbacks into deployment env vars, refresh producer grants without a current-role check, reinterpret `producer` as user-scoped, or auto-grant write scopes without explicit consent.
 
 ## Examples
 
@@ -236,7 +236,7 @@ expect(await jsonObject(preview)).toMatchObject({
 });
 ```
 
-Producer refresh-token coverage should keep the negative assertion:
+Producer refresh-token coverage should prove successful rotation while the role is current and denial after role removal:
 
 ```ts
 const tokenJson = await jsonObject(producerTokenExchange);
@@ -245,7 +245,18 @@ expect(tokenJson).toMatchObject({
   scope: "producer",
   resource: RESOURCE_URI,
 });
-expect(tokenJson).not.toHaveProperty("refresh_token");
+expect(typeof tokenJson.refresh_token).toBe("string");
+
+const refreshed = await refreshAccess(String(tokenJson.refresh_token));
+expect(refreshed.status).toBe(200);
+
+await revokeRole(db, producerAddress, "producer");
+const denied = await refreshAccess(String((await jsonObject(refreshed)).refresh_token));
+expect(denied.status).toBe(400);
+expect(await jsonObject(denied)).toMatchObject({
+  error: "invalid_grant",
+  error_description: "Producer role is no longer active for this user",
+});
 ```
 
 Operational checklist for the next provider:
@@ -271,6 +282,6 @@ Operational checklist for the next provider:
 - `packages/api/src/services/mcp-oauth.ts` owns DCR validation, loopback/provider/legacy redirect separation, resource omission tolerance, authorization-code exchange, refresh-token issuance, and refresh-token constraints.
 - `packages/api/src/routes/mcp-oauth.ts` emits `mcp.oauth.register`, authorize, token, revoke, and introspection audit events with provider hints and redacted registration diagnostics.
 - `packages/api/src/routes/mcp.ts` emits expected MCP resource challenge failures such as `missing_bearer_token`; do not confuse those with DCR callback rejection.
-- `packages/api/src/__tests__/mcp-oauth-routes.test.ts` covers exact Claude, ChatGPT, and Grok hosted callbacks, redacted rejected-callback audits, Grok resource omission, refresh tokens, producer no-refresh behavior, and editable consent behavior.
+- `packages/api/src/__tests__/mcp-oauth-routes.test.ts` covers exact Claude, ChatGPT, and Grok hosted callbacks, redacted rejected-callback audits, Grok resource omission, refresh-token rotation, current-role enforcement for producer refreshes, and editable consent behavior.
 - `packages/api/src/__tests__/mcp-provider-profiles.test.ts` covers bounded provider IDs, exact provider callback config, redacted audit detail shape, and nearby rejected provider-hosted callbacks.
 - `docs/plans/2026-07-17-001-fix-chatgpt-mcp-tool-discovery-plan.md` records the catalog-eligibility correction and hosted acceptance contract.

@@ -1,0 +1,2 @@
+ALTER TABLE "mcp_oauth_refresh_tokens" DROP CONSTRAINT "mcp_oauth_refresh_tokens_scope_check";--> statement-breakpoint
+ALTER TABLE "mcp_oauth_refresh_tokens" ADD CONSTRAINT "mcp_oauth_refresh_tokens_scope_check" CHECK ("mcp_oauth_refresh_tokens"."scope" IN ('agents:read', 'agents:read agents:write', 'games:read', 'agents:read games:read', 'agents:read agents:write games:read', 'producer', 'agents:read producer', 'agents:read agents:write producer', 'games:read producer', 'agents:read games:read producer', 'agents:read agents:write games:read producer'));
