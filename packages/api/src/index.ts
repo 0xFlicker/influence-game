@@ -15,7 +15,9 @@ import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
 import {
   createAuthRoutes,
+  readManagedAuthMode,
   readPrivyCompatibilityBridgeEnabled,
+  type ManagedAuthMode,
 } from "./routes/auth.js";
 import { createMcpOAuthRoutes } from "./routes/mcp-oauth.js";
 import { createMcpRoutes } from "./routes/mcp.js";
@@ -64,17 +66,12 @@ const REQUIRED_ENV = [
   "ADMIN_ADDRESS",
 ] as const;
 
-const MANAGED_AUTH_MODES = [
-  "disabled",
-  "existing-only",
-  "full",
-] as const;
-type ManagedAuthMode = (typeof MANAGED_AUTH_MODES)[number];
-
-const managedAuthMode = (process.env.MANAGED_AUTH_MODE ?? "disabled").trim();
-if (!MANAGED_AUTH_MODES.includes(managedAuthMode as ManagedAuthMode)) {
+let managedAuthMode: ManagedAuthMode;
+try {
+  managedAuthMode = readManagedAuthMode();
+} catch (error) {
   console.error(
-    '\n  Managed authentication configuration error:\n\n    MANAGED_AUTH_MODE must be one of "disabled", "existing-only", or "full".\n',
+    `\n  Managed authentication configuration error:\n\n    ${(error as Error).message}\n`,
   );
   process.exit(1);
 }

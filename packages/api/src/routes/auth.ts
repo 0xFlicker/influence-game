@@ -26,6 +26,7 @@ import {
   createClerkSdkDependencies,
   createPrivyAuthenticationVerifier,
   type ClerkAuthenticationProviderVerifier,
+  type VerifiedProviderEvidence,
 } from "../services/authentication-providers.js";
 import {
   createManagedAccountAuthentication,
@@ -138,12 +139,6 @@ export function createAuthRoutes(
     if (verification.status === "invalid") {
       return c.json({ error: "Invalid Privy token" }, 401);
     }
-    if (
-      verification.status === "setup_incomplete"
-      || verification.status === "locked"
-    ) {
-      return c.json({ error: "Invalid Privy token" }, 401);
-    }
 
     const provider = verification.status === "verified"
       ? verification.evidence.provider
@@ -209,19 +204,13 @@ export function createAuthRoutes(
     if (availability) return availability;
     const request = await readStrictTokenRequest(c, ["token"]);
     if (!request.ok) return request.response;
-    const limited = enforcePreVerificationLimit(c, managedRateLimiter);
-    if (limited) return limited;
-
-    const verification = await clerkVerifier!.verify(request.body.token);
-    if (verification.status !== "verified") {
-      return managedVerificationFailure(c, verification);
-    }
-    const postLimited = enforcePostVerificationLimit(
+    const verification = await verifyManagedEvidence(
       c,
+      clerkVerifier!,
       managedRateLimiter,
-      verification.evidence.subject,
+      request.body.token,
     );
-    if (postLimited) return postLimited;
+    if (!verification.ok) return verification.response;
 
     return managedOutcomeResponse(
       c,
@@ -239,19 +228,13 @@ export function createAuthRoutes(
     if (availability) return availability;
     const request = await readStrictTokenRequest(c, ["token", "confirm"], true);
     if (!request.ok) return request.response;
-    const limited = enforcePreVerificationLimit(c, managedRateLimiter);
-    if (limited) return limited;
-
-    const verification = await clerkVerifier!.verify(request.body.token);
-    if (verification.status !== "verified") {
-      return managedVerificationFailure(c, verification);
-    }
-    const postLimited = enforcePostVerificationLimit(
+    const verification = await verifyManagedEvidence(
       c,
+      clerkVerifier!,
       managedRateLimiter,
-      verification.evidence.subject,
+      request.body.token,
     );
-    if (postLimited) return postLimited;
+    if (!verification.ok) return verification.response;
 
     return managedOutcomeResponse(
       c,
@@ -273,20 +256,15 @@ export function createAuthRoutes(
       true,
     );
     if (!request.ok) return request.response;
-    const limited = enforcePreVerificationLimit(c, managedRateLimiter);
-    if (limited) return limited;
     const influenceUserId = await readInfluenceUserId(c);
-
-    const verification = await clerkVerifier!.verify(request.body.token);
-    if (verification.status !== "verified") {
-      return managedVerificationFailure(c, verification);
-    }
-    const postLimited = enforcePostVerificationLimit(
+    const verification = await verifyManagedEvidence(
       c,
+      clerkVerifier!,
       managedRateLimiter,
-      influenceUserId ?? verification.evidence.subject,
+      request.body.token,
+      (evidence) => influenceUserId ?? evidence.subject,
     );
-    if (postLimited) return postLimited;
+    if (!verification.ok) return verification.response;
 
     let ownerEvidence;
     if (request.body.privyToken) {
@@ -408,7 +386,7 @@ export function readManagedAuthMode(
     return mode;
   }
   throw new Error(
-    'MANAGED_AUTH_MODE must be "disabled", "existing-only", or "full"',
+    'MANAGED_AUTH_MODE must be one of "disabled", "existing-only", or "full"',
   );
 }
 
@@ -568,6 +546,38 @@ function managedVerificationFailure(
         code: "MANAGED_AUTH_FAILED",
       }, 401);
   }
+}
+
+async function verifyManagedEvidence(
+  c: Context,
+  verifier: ClerkAuthenticationProviderVerifier,
+  limiter: AuthRateLimiter,
+  token: string,
+  postVerificationKey: (evidence: VerifiedProviderEvidence) => string =
+    (evidence) => evidence.subject,
+): Promise<
+  | { ok: true; evidence: VerifiedProviderEvidence }
+  | { ok: false; response: Response }
+> {
+  const limited = enforcePreVerificationLimit(c, limiter);
+  if (limited) return { ok: false, response: limited };
+
+  const verification = await verifier.verify(token);
+  if (verification.status !== "verified") {
+    return {
+      ok: false,
+      response: managedVerificationFailure(c, verification),
+    };
+  }
+
+  const postLimited = enforcePostVerificationLimit(
+    c,
+    limiter,
+    postVerificationKey(verification.evidence),
+  );
+  return postLimited
+    ? { ok: false, response: postLimited }
+    : { ok: true, evidence: verification.evidence };
 }
 
 async function managedOutcomeResponse(

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPostgresConstraintName } from "../lib/postgres-errors.js";
@@ -58,11 +58,16 @@ const RETRYABLE_AUTH_CONSTRAINTS = new Set([
 
 class InvalidInviteError extends Error {}
 
-export interface ExplicitAccountLinkInput {
+export interface ManagedAccountLinkInput {
   userId?: string;
   evidence: VerifiedProviderEvidence;
   /** Current Privy owner proof, required when adding Clerk to a wallet owner. */
   privyOwnerEvidence?: VerifiedProviderEvidence;
+}
+
+export interface PrivyAccountLinkInput {
+  userId: string;
+  evidence: VerifiedProviderEvidence;
 }
 
 /**
@@ -75,21 +80,17 @@ export async function resolveAccountAuthentication(
   db: DrizzleDB,
   input: ResolveAccountAuthenticationInput,
 ): Promise<AccountAuthenticationOutcome> {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      return await db.transaction((tx) => resolveInTransaction(tx, input));
-    } catch (error) {
-      if (error instanceof InvalidInviteError) {
-        return { status: "invalid_invite" };
-      }
-      const constraint = getPostgresConstraintName(error);
-      if (attempt === 0 && constraint && RETRYABLE_AUTH_CONSTRAINTS.has(constraint)) {
-        continue;
-      }
-      throw error;
+  try {
+    return await runAuthenticationTransaction(
+      db,
+      (tx) => resolveInTransaction(tx, input),
+    );
+  } catch (error) {
+    if (error instanceof InvalidInviteError) {
+      return { status: "invalid_invite" };
     }
+    throw error;
   }
-  return { status: "support_blocked" };
 }
 
 /**
@@ -143,7 +144,7 @@ export async function createManagedAccountAuthentication(
  */
 export async function linkManagedAuthenticationCredential(
   db: DrizzleDB,
-  input: ExplicitAccountLinkInput,
+  input: ManagedAccountLinkInput,
 ): Promise<AccountAuthenticationOutcome> {
   if (input.evidence.provider !== "clerk" || input.evidence.owner.kind !== "email") {
     return { status: "support_blocked" };
@@ -159,8 +160,6 @@ export async function linkManagedAuthenticationCredential(
       if (input.userId && credential.userId !== input.userId) {
         return { status: "support_blocked" };
       }
-      const user = await loadUser(tx, credential.userId);
-      if (!user) return { status: "support_blocked" };
       return authenticateKnownCredential(tx, credential, input.evidence);
     }
 
@@ -212,12 +211,6 @@ export async function linkManagedAuthenticationCredential(
       ) {
         return { status: "support_blocked" };
       }
-      if (
-        user.walletAddress
-        && !getVerifiedWalletFacts(ownerProof).includes(user.walletAddress)
-      ) {
-        return { status: "support_blocked" };
-      }
     }
 
     await insertCredentialAndClaim(tx, user.id, input.evidence);
@@ -231,66 +224,36 @@ export async function linkManagedAuthenticationCredential(
  */
 export async function linkPrivyAuthenticationCredential(
   db: DrizzleDB,
-  input: ExplicitAccountLinkInput,
+  input: PrivyAccountLinkInput,
 ): Promise<AccountAuthenticationOutcome> {
   if (input.evidence.provider !== "privy") return { status: "support_blocked" };
-  if (!input.userId) return { status: "reauth_required" };
-  const targetUserId = input.userId;
   return runAuthenticationTransaction(db, async (tx) => {
-    const user = await loadUser(tx, targetUserId);
-    if (!user) return { status: "support_blocked" };
-
     const credential = await findCredential(tx, "privy", input.evidence.subject);
     if (credential) {
-      if (credential.userId !== user.id) return { status: "support_blocked" };
+      if (credential.userId !== input.userId) return { status: "support_blocked" };
       return authenticateKnownCredential(tx, credential, input.evidence);
     }
 
+    const user = await loadUser(tx, input.userId);
+    if (!user) return { status: "support_blocked" };
+
     const activeClerkCredential = (await tx
-      .select()
+      .select({ id: schema.authenticationCredentials.id })
       .from(schema.authenticationCredentials)
       .where(and(
         eq(schema.authenticationCredentials.userId, user.id),
         eq(schema.authenticationCredentials.provider, "clerk"),
-      ))).find((candidate) => !candidate.retiredAt);
+        isNull(schema.authenticationCredentials.retiredAt),
+      ))
+      .limit(1))[0];
     if (!activeClerkCredential) return { status: "support_blocked" };
 
-    if (input.evidence.owner.kind === "email") {
-      const claim = await findEmailClaim(
-        tx,
-        input.evidence.owner.normalizedEmail,
-      );
-      if (
-        !claim
-        || claim.state !== "active"
-        || claim.userId !== user.id
-      ) {
-        return { status: "support_blocked" };
-      }
-    } else if (input.evidence.owner.kind !== "external_wallet") {
+    if (!await knownEvidenceIsConsistent(tx, user, input.evidence)) {
       return { status: "support_blocked" };
-    }
-
-    const walletFacts = getVerifiedWalletFacts(input.evidence);
-    if (walletFacts.length > 0) {
-      const walletUsers = await tx
-        .select({ id: schema.users.id })
-        .from(schema.users)
-        .where(inArray(schema.users.walletAddress, walletFacts));
-      if (walletUsers.some((candidate) => candidate.id !== user.id)) {
-        return { status: "support_blocked" };
-      }
     }
 
     const projectedWallet = getProjectedWalletAddress(input.evidence);
     let linkedUser = user;
-    if (
-      user.walletAddress
-      && walletFacts.length > 0
-      && !walletFacts.includes(user.walletAddress)
-    ) {
-      return { status: "support_blocked" };
-    }
 
     await insertCredentialAndClaim(tx, user.id, input.evidence);
     if (!user.walletAddress && projectedWallet) {

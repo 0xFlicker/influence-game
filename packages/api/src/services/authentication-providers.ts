@@ -38,25 +38,36 @@ export interface VerifiedProviderEvidence {
   productWalletAddress: string | null;
 }
 
-export type ProviderVerificationResult =
+export type PrivyProviderVerificationResult =
   | { status: "verified"; evidence: VerifiedProviderEvidence }
-  | { status: "profile_unavailable"; provider: AuthenticationProviderName; subject: string }
+  | { status: "profile_unavailable"; provider: "privy"; subject: string }
+  | { status: "invalid" };
+
+export type ClerkProviderVerificationResult =
+  | { status: "verified"; evidence: VerifiedProviderEvidence }
+  | { status: "profile_unavailable" }
   | { status: "setup_incomplete" }
   | { status: "locked" }
   | { status: "invalid" };
 
-export interface AuthenticationProviderVerifier {
+export type ProviderVerificationResult =
+  | PrivyProviderVerificationResult
+  | ClerkProviderVerificationResult;
+
+export interface AuthenticationProviderVerifier<
+  Result extends ProviderVerificationResult,
+> {
   readonly provider: AuthenticationProviderName;
-  verify(token: string): Promise<ProviderVerificationResult>;
+  verify(token: string): Promise<Result>;
 }
 
 export interface PrivyAuthenticationProviderVerifier
-  extends AuthenticationProviderVerifier {
+  extends AuthenticationProviderVerifier<PrivyProviderVerificationResult> {
   readonly provider: "privy";
 }
 
 export interface ClerkAuthenticationProviderVerifier
-  extends AuthenticationProviderVerifier {
+  extends AuthenticationProviderVerifier<ClerkProviderVerificationResult> {
   readonly provider: "clerk";
 }
 
@@ -151,7 +162,7 @@ export function createClerkAuthenticationVerifier(
           timeoutMs,
         );
       } catch {
-        return { status: "profile_unavailable", provider: "clerk", subject: "" };
+        return { status: "profile_unavailable" };
       }
       if (!subject) return { status: "invalid" };
 
@@ -159,7 +170,7 @@ export function createClerkAuthenticationVerifier(
       try {
         user = await withTimeout(dependencies.loadUser(subject), timeoutMs);
       } catch {
-        return { status: "profile_unavailable", provider: "clerk", subject };
+        return { status: "profile_unavailable" };
       }
       if (user.id !== subject) return { status: "invalid" };
       if (user.locked || user.banned) return { status: "locked" };

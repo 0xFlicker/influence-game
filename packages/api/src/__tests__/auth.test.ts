@@ -791,8 +791,6 @@ describe("managed authentication routes", () => {
     })).status).toBe(423);
     result = {
       status: "profile_unavailable",
-      provider: "clerk",
-      subject: "opaque",
     };
     expect((await managedRequest(app, "/api/auth/managed/exchange", {
       token: "timeout",

@@ -207,8 +207,6 @@ describe("Clerk authentication verification", () => {
 
     expect(await verifier.verify("stalled")).toEqual({
       status: "profile_unavailable",
-      provider: "clerk",
-      subject: "",
     });
   });
 });
