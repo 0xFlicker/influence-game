@@ -60,6 +60,7 @@ interface AuthRouteDependencies {
     postVerification: number;
     windowMs: number;
   };
+  privyTimeoutMs?: number;
   now?: () => number;
 }
 
@@ -80,6 +81,7 @@ export function createAuthRoutes(
   const privyVerifier = createPrivyAuthenticationVerifier({
     verifyAccessToken: verifyPrivyAccessToken,
     loadUser: loadPrivyUser,
+    timeoutMs: dependencies.privyTimeoutMs,
   });
   const managedRateLimiter = new AuthRateLimiter(
     dependencies.managedRateLimits ?? {
@@ -142,13 +144,19 @@ export function createAuthRoutes(
     if (verification.status === "invalid") {
       return c.json({ error: "Invalid Privy token" }, 401);
     }
+    const subject = verification.status === "verified"
+      ? verification.evidence.subject
+      : verification.subject;
+    if (subject === null) {
+      return c.json({
+        error: "Authentication provider profile is temporarily unavailable",
+        code: "AUTH_PROVIDER_UNAVAILABLE",
+      }, 503);
+    }
 
     const provider = verification.status === "verified"
       ? verification.evidence.provider
       : verification.provider;
-    const subject = verification.status === "verified"
-      ? verification.evidence.subject
-      : verification.subject;
     const authentication = await resolveAccountAuthentication(db, {
       provider,
       subject,

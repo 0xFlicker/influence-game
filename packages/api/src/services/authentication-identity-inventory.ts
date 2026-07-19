@@ -588,26 +588,41 @@ export function createPrivyRestPageSource(input: {
   appSecret: string;
   fetch?: typeof globalThis.fetch;
   baseUrl?: string;
+  timeoutMs?: number;
 }): PrivyInventoryPageSource {
   assertSecret("Privy app id", input.appId);
   assertSecret("Privy app secret", input.appSecret);
   const request = input.fetch ?? globalThis.fetch;
   const baseUrl = input.baseUrl ?? "https://api.privy.io/v1/users";
+  const timeoutMs = input.timeoutMs ?? 10_000;
   return {
     async getPage(cursor, limit) {
       const url = new URL(baseUrl);
       url.searchParams.set("limit", String(Math.min(Math.max(limit, 1), 100)));
       if (cursor) url.searchParams.set("cursor", cursor);
       let response: Response;
+      const controller = new AbortController();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
-        response = await request(url, {
-          headers: {
-            Authorization: `Basic ${Buffer.from(`${input.appId}:${input.appSecret}`).toString("base64")}`,
-            "privy-app-id": input.appId,
-          },
-        });
+        response = await Promise.race([
+          request(url, {
+            headers: {
+              Authorization: `Basic ${Buffer.from(`${input.appId}:${input.appSecret}`).toString("base64")}`,
+              "privy-app-id": input.appId,
+            },
+            signal: controller.signal,
+          }),
+          new Promise<never>((_, reject) => {
+            timeout = setTimeout(() => {
+              controller.abort();
+              reject(new PrivyPageSourceError(true));
+            }, timeoutMs);
+          }),
+        ]);
       } catch {
         throw new PrivyPageSourceError(true);
+      } finally {
+        if (timeout) clearTimeout(timeout);
       }
       if (!response.ok) {
         throw new PrivyPageSourceError(

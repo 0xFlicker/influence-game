@@ -49,7 +49,11 @@ export function verifiedWalletAddresses(
 
 export type PrivyProviderVerificationResult =
   | { status: "verified"; evidence: VerifiedProviderEvidence }
-  | { status: "profile_unavailable"; provider: "privy"; subject: string }
+  | {
+      status: "profile_unavailable";
+      provider: "privy";
+      subject: string | null;
+    }
   | { status: "invalid" };
 
 export type ClerkProviderVerificationResult =
@@ -210,6 +214,7 @@ export function createClerkAuthenticationVerifier(
 export interface PrivyAdapterDependencies {
   verifyAccessToken(token: string): Promise<string | null>;
   loadUser(subject: string): Promise<unknown>;
+  timeoutMs?: number;
 }
 
 /**
@@ -220,16 +225,32 @@ export interface PrivyAdapterDependencies {
 export function createPrivyAuthenticationVerifier(
   dependencies: PrivyAdapterDependencies,
 ): PrivyAuthenticationProviderVerifier {
+  const timeoutMs = dependencies.timeoutMs ?? 4_000;
   return {
     provider: "privy",
     async verify(token) {
-      const subject = await dependencies.verifyAccessToken(token);
+      let subject: string | null;
+      try {
+        subject = await withTimeout(
+          dependencies.verifyAccessToken(token),
+          timeoutMs,
+        );
+      } catch {
+        return {
+          status: "profile_unavailable",
+          provider: "privy",
+          subject: null,
+        };
+      }
       if (!subject) return { status: "invalid" };
 
       try {
         return {
           status: "verified",
-          evidence: classifyPrivyUser(subject, await dependencies.loadUser(subject)),
+          evidence: classifyPrivyUser(
+            subject,
+            await withTimeout(dependencies.loadUser(subject), timeoutMs),
+          ),
         };
       } catch {
         return { status: "profile_unavailable", provider: "privy", subject };

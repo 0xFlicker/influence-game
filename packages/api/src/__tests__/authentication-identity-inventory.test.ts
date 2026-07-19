@@ -212,6 +212,33 @@ describe("authentication identity inventory", () => {
     expect(JSON.stringify(result)).not.toContain(CURSOR);
   });
 
+  test("bounds stalled REST pages and exhausts the existing retry policy", async () => {
+    let attempts = 0;
+    const source = createPrivyRestPageSource({
+      appId: "privy-app-id-long-enough",
+      appSecret: "privy-app-secret-long-enough",
+      timeoutMs: 5,
+      fetch: (async () => {
+        attempts += 1;
+        return new Promise(() => {});
+      }) as unknown as typeof fetch,
+    });
+
+    const result = await runAuthenticationIdentityInventory(db, {
+      mode: "dry-run",
+      pageSource: source,
+      checkpointStore: memoryCheckpointStore(),
+      hmacKey: HMAC_KEY,
+      maxRetries: 1,
+      sleep: async () => {},
+    });
+
+    expect(result.status).toBe("blocked");
+    expect(result.issues.map((entry) => entry.code))
+      .toContain("provider_page_retry_exhausted");
+    expect(attempts).toBe(2);
+  });
+
   test("counts only imported-* users as non-authenticatable", async () => {
     await insertUser(db, "imported-user", "imported-simulation-42");
     await insertUser(db, "ordinary-user");

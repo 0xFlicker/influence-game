@@ -4,6 +4,7 @@ import { normalizeVerifiedEmail } from "../lib/verified-email.js";
 import {
   createClerkAuthenticationVerifier,
   createClerkSdkDependencies,
+  createPrivyAuthenticationVerifier,
   classifyPrivyUser,
   type VerifiedProviderEvidence,
 } from "../services/authentication-providers.js";
@@ -118,6 +119,34 @@ describe("Privy identity classification", () => {
     expect(contradictory.owner).toEqual({
       kind: "unclassified",
       reason: "contradictory_owners",
+    });
+  });
+});
+
+describe("Privy authentication verification", () => {
+  test("bounds stalled token and profile calls without accepting late completion", async () => {
+    const stalledToken = createPrivyAuthenticationVerifier({
+      timeoutMs: 5,
+      verifyAccessToken: async () => new Promise(() => {}),
+      loadUser: async () => {
+        throw new Error("must not load");
+      },
+    });
+    const stalledProfile = createPrivyAuthenticationVerifier({
+      timeoutMs: 5,
+      verifyAccessToken: async () => "did:privy:stalled-profile",
+      loadUser: async () => new Promise(() => {}),
+    });
+
+    expect(await stalledToken.verify("stalled-token")).toEqual({
+      status: "profile_unavailable",
+      provider: "privy",
+      subject: null,
+    });
+    expect(await stalledProfile.verify("stalled-profile")).toEqual({
+      status: "profile_unavailable",
+      provider: "privy",
+      subject: "did:privy:stalled-profile",
     });
   });
 });
@@ -664,6 +693,22 @@ describe("account authentication resolver", () => {
     if (linked.status !== "authenticated") return;
     expect(linked.user.walletAddress).toBe(EMBEDDED_WALLET);
     expect(await credentials(db)).toHaveLength(2);
+  });
+
+  test("reverse Privy link rejects an unrelated wallet-owned identity", async () => {
+    const clerk = managedEvidence("clerk-walletless", "walletless@example.com");
+    const created = await createManagedAccountAuthentication(db, clerk);
+    expect(created.status).toBe("authenticated");
+    if (created.status !== "authenticated") return;
+
+    const linked = await linkPrivyAuthenticationCredential(db, {
+      userId: created.user.id,
+      evidence: externalEvidence("did:privy:unrelated-wallet"),
+    });
+
+    expect(linked).toEqual({ status: "support_blocked" });
+    expect(await credentials(db)).toHaveLength(1);
+    expect((await db.select().from(schema.users))[0]?.walletAddress).toBeNull();
   });
 
   test("conflicting managed subject and email mappings support-block atomically", async () => {

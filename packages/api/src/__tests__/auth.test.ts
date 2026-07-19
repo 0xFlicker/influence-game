@@ -562,6 +562,30 @@ describe("authenticated public identity session projection", () => {
     expect(body.token).toBeTruthy();
     expect(body.user.id).toBe("durable-known-user");
   });
+
+  test("stalled Privy token verification returns unavailable without mutation", async () => {
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      privyTimeoutMs: 5,
+      verifyPrivyToken: async () => new Promise(() => {}),
+      getPrivyUser: async () => {
+        throw new Error("must not load");
+      },
+    }));
+
+    const response = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "stalled-token" }),
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "AUTH_PROVIDER_UNAVAILABLE",
+    });
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+  });
 });
 
 describe("managed authentication routes", () => {
@@ -629,6 +653,54 @@ describe("managed authentication routes", () => {
     expect(exchangeBody.user.id).toBe("existing-only-user");
     expect((await verifySessionToken(exchangeBody.token))?.userId)
       .toBe("existing-only-user");
+  });
+
+  test("mutation routes reject missing or false confirmation before verification", async () => {
+    await db.insert(schema.users).values({
+      id: "confirmation-user",
+      displayName: "Confirmation user",
+    });
+    const influenceToken = await createSessionToken("confirmation-user");
+    let clerkCalls = 0;
+    let privyCalls = 0;
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => {
+        clerkCalls += 1;
+        return verifiedClerk("clerk-confirm", "confirm@example.com");
+      }),
+      verifyPrivyToken: async () => {
+        privyCalls += 1;
+        return "did:privy:confirm";
+      },
+    }));
+
+    const routes = [
+      { path: "/api/auth/managed/create", influenceToken: undefined },
+      { path: "/api/auth/managed/link", influenceToken },
+      { path: "/api/auth/privy/link", influenceToken },
+    ];
+    for (const route of routes) {
+      for (const body of [
+        { token: "provider-token" },
+        { token: "provider-token", confirm: false },
+        { token: "provider-token", confirm: "yes" },
+      ]) {
+        const response = await managedRequest(
+          app,
+          route.path,
+          body,
+          route.influenceToken,
+        );
+        expect(response.status).toBe(400);
+      }
+    }
+
+    expect(clerkCalls).toBe(0);
+    expect(privyCalls).toBe(0);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+    expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(0);
   });
 
   test("unknown completed session requires explicit create and then exchanges repeatably", async () => {

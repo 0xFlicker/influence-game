@@ -227,7 +227,12 @@ export async function linkPrivyAuthenticationCredential(
   db: DrizzleDB,
   input: PrivyAccountLinkInput,
 ): Promise<AccountAuthenticationOutcome> {
-  if (input.evidence.provider !== "privy") return { status: "support_blocked" };
+  if (
+    input.evidence.provider !== "privy"
+    || input.evidence.owner.kind !== "email"
+  ) {
+    return { status: "support_blocked" };
+  }
   return runAuthenticationTransaction(db, async (tx) => {
     const credential = await findCredential(tx, "privy", input.evidence.subject);
     if (credential) {

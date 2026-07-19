@@ -137,6 +137,34 @@ describe("Influence session coordinator", () => {
     expect(coordinator.getSnapshot().authenticated).toBe(true);
   });
 
+  it("restarts initial hydration when another attempt changes the generation", async () => {
+    const shared = createSharedState("existing-jwt");
+    const firstHydration = deferred<TestAccount>();
+    let hydrations = 0;
+    const { coordinator } = createCoordinator({
+      shared,
+      hydrate: async () => {
+        hydrations += 1;
+        if (hydrations === 1) return firstHydration.promise;
+        return { id: "user-after-retry", email: null };
+      },
+    });
+
+    const bootstrap = coordinator.bootstrap();
+    coordinator.beginProviderAttempt();
+    firstHydration.resolve({ id: "stale-user", email: null });
+    await bootstrap;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(hydrations).toBe(2);
+    expect(coordinator.getSnapshot()).toEqual({
+      ready: true,
+      authenticated: true,
+      account: { id: "user-after-retry", email: null },
+      hydrationError: false,
+    });
+  });
+
   it("does not clear a valid Influence JWT when a provider signs out", async () => {
     const shared = createSharedState("existing-jwt");
     const { coordinator } = createCoordinator({ shared });

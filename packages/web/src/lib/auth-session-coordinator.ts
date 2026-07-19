@@ -156,6 +156,7 @@ export class InfluenceSessionCoordinator<Account> {
         this.persistence.getGeneration() !== generation
         || this.persistence.getToken() !== token
       ) {
+        this.restartBootstrap();
         return;
       }
       this.updateSnapshot({
@@ -169,6 +170,7 @@ export class InfluenceSessionCoordinator<Account> {
         this.persistence.getGeneration() !== generation
         || this.persistence.getToken() !== token
       ) {
+        this.restartBootstrap();
         return;
       }
       if (isUnauthorized(error)) {
@@ -228,6 +230,12 @@ export class InfluenceSessionCoordinator<Account> {
 
   private isCurrentAttempt(attempt: ProviderAuthenticationAttempt): boolean {
     return this.persistence.getGeneration() === attempt.generation;
+  }
+
+  private restartBootstrap(): void {
+    queueMicrotask(() => {
+      void this.bootstrap();
+    });
   }
 
   private exit(transition: "logout" | "expired"): Promise<void> {
