@@ -2,12 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClerkPasswordFlow, type ManagedAuthMode, type PasswordFlowIntent } from "@/components/clerk-password-flow";
-import {
-  E2ELayeredPasswordFlow,
-  isLayeredAuthE2EAdapterEnabled,
-} from "@/components/e2e-layered-password-flow";
+import { E2ELayeredPasswordFlow } from "@/components/e2e-layered-password-flow";
 import { useAuth } from "@/hooks/use-auth";
 import type { ProviderAuthenticationAttempt } from "@/lib/auth-session-coordinator";
+import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
 
 type AuthenticationRequestDetail = {
   intent?: PasswordFlowIntent;

@@ -132,7 +132,7 @@ async function main(): Promise<void> {
         NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
       },
       stdout: "ignore",
-      stderr: "pipe",
+      stderr: "inherit",
     },
   );
   await waitForHealth(webUrl, 60_000);
@@ -365,48 +365,40 @@ async function verifyInjectedPrivyToken(token: string): Promise<string | null> {
   }
 }
 
+type InjectedLinkedAccount =
+  | ReturnType<typeof emailAccount>
+  | ReturnType<typeof embeddedWallet>
+  | ReturnType<typeof externalWallet>;
+
+const linkedAccountsBySubject: Record<
+  string,
+  () => InjectedLinkedAccount[]
+> = {
+  "did:privy:existing": () => [
+    emailAccount("existing@example.test"),
+    embeddedWallet(EMBEDDED_WALLET),
+  ],
+  "did:privy:ui-existing": () => [
+    emailAccount("ui-existing@example.test"),
+    embeddedWallet(UI_EMBEDDED_WALLET),
+  ],
+  "did:privy:reverse": () => [emailAccount("reverse@example.test")],
+  "did:privy:ui-reverse": () => [emailAccount("ui-reverse@example.test")],
+  "did:privy:ui-wallet": () => [
+    embeddedWallet("0x5555555555555555555555555555555555555555"),
+    externalWallet(EXTERNAL_WALLET),
+  ],
+  "did:privy:wallet": () => [
+    embeddedWallet("0x3333333333333333333333333333333333333333"),
+    externalWallet(EXTERNAL_WALLET),
+  ],
+};
+
 async function loadInjectedPrivyUser(subject: string) {
-  const linkedAccounts = subject === "did:privy:existing"
-    ? [
-        emailAccount("existing@example.test"),
-        embeddedWallet(EMBEDDED_WALLET),
-      ]
-    : subject === "did:privy:ui-existing"
-      ? [
-          emailAccount("ui-existing@example.test"),
-          embeddedWallet(UI_EMBEDDED_WALLET),
-        ]
-    : subject === "did:privy:reverse"
-      ? [emailAccount("reverse@example.test")]
-      : subject === "did:privy:ui-reverse"
-        ? [emailAccount("ui-reverse@example.test")]
-        : subject === "did:privy:ui-wallet"
-          ? [
-              embeddedWallet(
-                "0x5555555555555555555555555555555555555555",
-              ),
-              {
-                type: "wallet" as const,
-                address: EXTERNAL_WALLET,
-                chainType: "ethereum" as const,
-                walletClientType: "metamask",
-                verifiedAt: new Date(),
-                firstVerifiedAt: new Date(),
-                latestVerifiedAt: new Date(),
-              },
-            ]
-      : [
-          embeddedWallet("0x3333333333333333333333333333333333333333"),
-          {
-            type: "wallet" as const,
-            address: EXTERNAL_WALLET,
-            chainType: "ethereum" as const,
-            walletClientType: "metamask",
-            verifiedAt: new Date(),
-            firstVerifiedAt: new Date(),
-            latestVerifiedAt: new Date(),
-          },
-        ];
+  const linkedAccounts = (
+    linkedAccountsBySubject[subject]
+    ?? linkedAccountsBySubject["did:privy:wallet"]!
+  )();
   return {
     id: subject,
     createdAt: new Date(),
@@ -438,6 +430,18 @@ function embeddedWallet(address: string) {
   };
 }
 
+function externalWallet(address: string) {
+  return {
+    type: "wallet" as const,
+    address,
+    chainType: "ethereum" as const,
+    walletClientType: "metamask",
+    verifiedAt: new Date(),
+    firstVerifiedAt: new Date(),
+    latestVerifiedAt: new Date(),
+  };
+}
+
 function randomPort(): number {
   return 10_000 + Math.floor(Math.random() * 50_000);
 }
@@ -453,11 +457,7 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
     }
     await Bun.sleep(250);
   }
-  const stderrPipe = webProcess?.stderr;
-  const stderr = stderrPipe && typeof stderrPipe !== "number"
-    ? await new Response(stderrPipe).text()
-    : "";
-  throw new Error(`Web harness did not start at ${url}\n${stderr}`.trim());
+  throw new Error(`Web harness did not start at ${url}`);
 }
 
 async function shutdown(): Promise<void> {

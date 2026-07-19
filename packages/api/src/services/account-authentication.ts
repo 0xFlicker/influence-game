@@ -8,6 +8,7 @@ import type {
   AuthenticationProviderName,
   VerifiedProviderEvidence,
 } from "./authentication-providers.js";
+import { verifiedWalletAddresses } from "./authentication-providers.js";
 
 type AuthenticationTransaction =
   Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
@@ -456,7 +457,7 @@ async function knownEvidenceIsConsistent(
 ): Promise<boolean> {
   if (evidence.owner.kind === "unclassified") return false;
 
-  const candidateAddresses = getVerifiedWalletFacts(evidence);
+  const candidateAddresses = verifiedWalletAddresses(evidence);
   if (candidateAddresses.length > 0) {
     const mappedUsers = await tx
       .select({ id: schema.users.id })
@@ -498,7 +499,7 @@ async function resolveLegacyUser(
   const subjectUser = await loadUser(tx, evidence.subject);
   if (subjectUser) candidates.set(subjectUser.id, subjectUser);
 
-  const addresses = getVerifiedWalletFacts(evidence);
+  const addresses = verifiedWalletAddresses(evidence);
   if (addresses.length > 0) {
     const walletUsers = await tx
       .select()
@@ -602,11 +603,4 @@ function getProjectedWalletAddress(evidence: VerifiedProviderEvidence): string |
   return evidence.owner.kind === "external_wallet"
     ? evidence.owner.address
     : null;
-}
-
-function getVerifiedWalletFacts(evidence: VerifiedProviderEvidence): string[] {
-  const addresses = new Set<string>();
-  if (evidence.productWalletAddress) addresses.add(evidence.productWalletAddress);
-  if (evidence.owner.kind === "external_wallet") addresses.add(evidence.owner.address);
-  return [...addresses];
 }

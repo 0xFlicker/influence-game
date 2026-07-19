@@ -29,11 +29,13 @@ export async function issueInfluenceSession(
   db: DrizzleDB,
   user: AuthenticatedAccount,
 ) {
-  const resolved = user.walletAddress
-    ? await getPermissionsForAddress(db, user.walletAddress)
-    : { roles: [], permissions: [] };
+  const [resolved, loginMethods] = await Promise.all([
+    user.walletAddress
+      ? getPermissionsForAddress(db, user.walletAddress)
+      : Promise.resolve({ roles: [], permissions: [] }),
+    projectLoginMethods(db, user.id),
+  ]);
   const token = await createSessionToken(user.id, resolved);
-  const loginMethods = await projectLoginMethods(db, user.id);
 
   return {
     token,

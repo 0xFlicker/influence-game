@@ -13,7 +13,7 @@ import {
 } from "react";
 import { ClerkProvider, useClerk } from "@clerk/nextjs";
 import { AuthenticationWrapper } from "@/components/authentication-wrapper";
-import { isLayeredAuthE2EAdapterEnabled } from "@/components/e2e-layered-password-flow";
+import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
 import {
   RuntimeConfigProvider,
   useRuntimeConfig,

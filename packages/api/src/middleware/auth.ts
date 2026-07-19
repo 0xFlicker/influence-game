@@ -22,10 +22,38 @@ export interface AuthUser {
   displayName: string | null;
 }
 
+export interface AuthContextUser extends AuthUser {
+  publicId: string;
+  handle: string | null;
+  email: string | null;
+  createdAt: string;
+}
+
+function projectAuthUser(user: AuthContextUser): AuthUser {
+  return {
+    id: user.id,
+    walletAddress: user.walletAddress,
+    displayName: user.displayName,
+  };
+}
+
+function projectAuthContextUser(user: AuthContextUser): AuthContextUser {
+  return {
+    id: user.id,
+    publicId: user.publicId,
+    handle: user.handle,
+    walletAddress: user.walletAddress,
+    email: user.email,
+    displayName: user.displayName,
+    createdAt: user.createdAt,
+  };
+}
+
 // Hono variable typing
 export type AuthEnv = {
   Variables: {
     user: AuthUser;
+    authContextUser: AuthContextUser;
     db: DrizzleDB;
     userRoles: string[];
     userPermissions: string[];
@@ -169,11 +197,8 @@ export function requireAuth(db: DrizzleDB) {
       return c.json({ error: "User not found" }, 401);
     }
 
-    c.set("user", {
-      id: user.id,
-      walletAddress: user.walletAddress,
-      displayName: user.displayName,
-    });
+    c.set("user", projectAuthUser(user));
+    c.set("authContextUser", projectAuthContextUser(user));
     c.set("userRoles", session.roles);
     c.set("userPermissions", session.permissions);
 
@@ -281,11 +306,7 @@ export function optionalAuth(db: DrizzleDB) {
           .where(eq(schema.users.id, session.userId)))[0];
 
         if (user) {
-          c.set("user", {
-            id: user.id,
-            walletAddress: user.walletAddress,
-            displayName: user.displayName,
-          });
+          c.set("user", projectAuthUser(user));
           c.set("userRoles", session.roles);
           c.set("userPermissions", session.permissions);
         }

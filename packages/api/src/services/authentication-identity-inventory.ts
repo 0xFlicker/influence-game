@@ -9,9 +9,11 @@ import { readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { and, eq, inArray, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { normalizeVerifiedEmail } from "../lib/verified-email.js";
 import { isImportedSyntheticPlayer } from "./public-player-identity.js";
 import {
   classifyPrivyUser,
+  verifiedWalletAddresses,
   type VerifiedProviderEvidence,
 } from "./authentication-providers.js";
 
@@ -201,40 +203,23 @@ export async function runAuthenticationIdentityInventory(
     }
     const before = { ...checkpoint.counts };
     try {
-      if (options.mode === "write") {
-        const delta = await db.transaction(async (tx) => {
-          const batchDelta = emptyCounts();
-          for (let index = 0; index < evidence.length; index += 1) {
-            await inventoryIdentity(
-              tx,
-              evidence[index]!,
-              batchDelta,
-              options.hmacKey,
-              true,
-              simulated,
-            );
-            await options.afterIdentityWrite?.(index + 1);
-          }
-          return batchDelta;
-        });
-        addCounts(checkpoint.counts, delta);
-      } else {
-        const delta = await db.transaction(async (tx) => {
-          const batchDelta = emptyCounts();
-          for (const identity of evidence) {
-            await inventoryIdentity(
-              tx,
-              identity,
-              batchDelta,
-              options.hmacKey,
-              false,
-              simulated,
-            );
-          }
-          return batchDelta;
-        });
-        addCounts(checkpoint.counts, delta);
-      }
+      const write = options.mode === "write";
+      const delta = await db.transaction(async (tx) => {
+        const batchDelta = emptyCounts();
+        for (let index = 0; index < evidence.length; index += 1) {
+          await inventoryIdentity(
+            tx,
+            evidence[index]!,
+            batchDelta,
+            options.hmacKey,
+            write,
+            simulated,
+          );
+          if (write) await options.afterIdentityWrite?.(index + 1);
+        }
+        return batchDelta;
+      });
+      addCounts(checkpoint.counts, delta);
     } catch (error) {
       checkpoint.counts = before;
       if (error instanceof InventoryBatchBlockedError) {
@@ -354,7 +339,7 @@ async function inventoryIdentity(
     .where(eq(schema.users.id, evidence.subject)))[0];
   if (subjectUser) candidates.add(subjectUser.id);
 
-  const walletFacts = verifiedWalletFacts(evidence);
+  const walletFacts = verifiedWalletAddresses(evidence);
   if (walletFacts.length > 0) {
     const walletUsers = await tx.select({ id: schema.users.id })
       .from(schema.users)
@@ -393,7 +378,7 @@ async function inventoryIdentity(
   if (
     evidence.owner.kind === "email"
     && mappedUser.email
-    && normalizeEmailForMismatch(mappedUser.email)
+    && normalizeVerifiedEmail(mappedUser.email)
       !== evidence.owner.normalizedEmail
   ) {
     throw new InventoryBatchBlockedError([
@@ -794,17 +779,6 @@ function sameInventoryBaseline(
     && current.counts.credentialsInserted === 0
     && current.counts.activeClaimsInserted === 0
     && current.counts.claimsConvertedToConflict === 0;
-}
-
-function verifiedWalletFacts(evidence: VerifiedProviderEvidence): string[] {
-  const facts = new Set<string>();
-  if (evidence.productWalletAddress) facts.add(evidence.productWalletAddress);
-  if (evidence.owner.kind === "external_wallet") facts.add(evidence.owner.address);
-  return [...facts];
-}
-
-function normalizeEmailForMismatch(value: string): string {
-  return value.trim().toLowerCase();
 }
 
 function issue(code: InventoryIssueCode, identity: string, hmacKey: string): InventoryIssue {

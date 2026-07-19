@@ -38,6 +38,15 @@ export interface VerifiedProviderEvidence {
   productWalletAddress: string | null;
 }
 
+export function verifiedWalletAddresses(
+  evidence: VerifiedProviderEvidence,
+): string[] {
+  const addresses = new Set<string>();
+  if (evidence.productWalletAddress) addresses.add(evidence.productWalletAddress);
+  if (evidence.owner.kind === "external_wallet") addresses.add(evidence.owner.address);
+  return [...addresses];
+}
+
 export type PrivyProviderVerificationResult =
   | { status: "verified"; evidence: VerifiedProviderEvidence }
   | { status: "profile_unavailable"; provider: "privy"; subject: string }

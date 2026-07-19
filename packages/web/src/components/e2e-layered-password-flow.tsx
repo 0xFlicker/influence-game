@@ -36,11 +36,6 @@ const TOKEN_BY_EMAIL: Record<string, string> = {
   "ui-outage@example.test": "clerk:ui-outage",
 };
 
-export function isLayeredAuthE2EAdapterEnabled(): boolean {
-  return process.env.NODE_ENV !== "production"
-    && process.env.NEXT_PUBLIC_E2E_LAYERED_AUTH === "true";
-}
-
 export function E2ELayeredPasswordFlow({
   intent,
   mode,

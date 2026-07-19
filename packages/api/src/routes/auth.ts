@@ -351,14 +351,7 @@ export function createAuthRoutes(
   // -------------------------------------------------------------------------
 
   app.get("/api/auth/me", requireAuth(db), async (c) => {
-    const authUser = c.get("user");
-    const user = (await db
-      .select()
-      .from(schema.users)
-      .where(eq(schema.users.id, authUser.id)))[0];
-    if (!user) {
-      return c.json({ error: "User not found" }, 401);
-    }
+    const user = c.get("authContextUser");
     const roles = c.get("userRoles") ?? [];
     const permissions = c.get("userPermissions") ?? [];
     const loginMethods = await projectLoginMethods(db, user.id);

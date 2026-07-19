@@ -22,11 +22,13 @@ import {
 import {
   InfluenceSessionCoordinator,
   ProviderAuthenticationSettlement,
+  type AuthSessionEvent,
   type AuthSessionPersistence,
   type AuthSessionRemoteMessage,
   type AuthSessionTransport,
   type ProviderAuthenticationAttempt,
 } from "@/lib/auth-session-coordinator";
+import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
 
 const AUTH_GENERATION_KEY = "influence_auth_generation";
 const AUTH_BROADCAST_KEY = "influence_auth_broadcast";
@@ -41,11 +43,6 @@ declare global {
       walletProofToken?: string | null;
     };
   }
-}
-
-function isLayeredAuthE2EAdapterEnabled(): boolean {
-  return process.env.NODE_ENV !== "production"
-    && process.env.NEXT_PUBLIC_E2E_LAYERED_AUTH === "true";
 }
 
 export interface InfluenceSessionResponse {
@@ -183,7 +180,7 @@ function createBrowserTransport(): AuthSessionTransport {
   };
 }
 
-function emitAuthEvent(event: string): void {
+function emitAuthEvent(event: AuthSessionEvent): void {
   if (typeof window === "undefined") return;
   window.dispatchEvent(
     new CustomEvent(event, {
