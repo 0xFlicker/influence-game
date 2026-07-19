@@ -6,6 +6,9 @@ import { eq, and, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
+export type InviteCodeReadExecutor = Pick<DrizzleDB, "select">;
+export type InviteCodeExecutor = Pick<DrizzleDB, "select" | "update">;
+
 /**
  * Generate a random 8-character alphanumeric invite code.
  */
@@ -23,7 +26,7 @@ export function generateInviteCode(): string {
 /**
  * Check if invite codes are required for signup.
  */
-export async function isInviteRequired(db: DrizzleDB): Promise<boolean> {
+export async function isInviteRequired(db: InviteCodeReadExecutor): Promise<boolean> {
   const setting = (await db
     .select({ value: schema.appSettings.value })
     .from(schema.appSettings)
@@ -36,7 +39,7 @@ export async function isInviteRequired(db: DrizzleDB): Promise<boolean> {
  * Returns the code row if valid, null if invalid/used.
  */
 export async function redeemInviteCode(
-  db: DrizzleDB,
+  db: InviteCodeExecutor,
   code: string,
   userId: string,
 ): Promise<boolean> {
@@ -54,13 +57,16 @@ export async function redeemInviteCode(
 
   if (!codeRow) return false;
 
-  await db.update(schema.inviteCodes)
+  const redeemed = await db.update(schema.inviteCodes)
     .set({
       usedById: userId,
       usedAt: new Date().toISOString(),
     })
-    .where(eq(schema.inviteCodes.id, codeRow.id));
+    .where(and(
+      eq(schema.inviteCodes.id, codeRow.id),
+      isNull(schema.inviteCodes.usedById),
+    ))
+    .returning({ id: schema.inviteCodes.id });
 
-  return true;
+  return redeemed.length === 1;
 }
-

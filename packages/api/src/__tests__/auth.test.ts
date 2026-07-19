@@ -403,6 +403,7 @@ describe("authenticated public identity session projection", () => {
             type: "wallet",
             address: walletAddress,
             chainType: "ethereum",
+            walletClientType: "privy",
             verifiedAt: new Date(),
             firstVerifiedAt: new Date(),
             latestVerifiedAt: new Date(),
@@ -435,10 +436,45 @@ describe("authenticated public identity session projection", () => {
       };
     };
     expect(body.token).toBeTruthy();
-    expect(body.user.walletAddress).toBe(walletAddress);
+    expect(body.user.walletAddress).toBeNull();
     expect(body.user.publicId).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.user.displayName).toBe("Anonymous");
     expect(body.user.publicIdentityOnboarding.state).toBe("required");
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+    expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(1);
+  });
+
+  test("known Privy credentials ignore profile and invite-service outages", async () => {
+    await db.insert(schema.users).values({
+      id: "durable-known-user",
+      displayName: "Known",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "durable-known-user",
+      provider: "privy",
+      providerSubject: "did:privy:known-outage",
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      verifyPrivyToken: async () => "did:privy:known-outage",
+      getPrivyUser: async () => {
+        throw new Error("profile unavailable");
+      },
+      isInviteRequired: async () => {
+        throw new Error("invite setting should not be read for an existing account");
+      },
+    }));
+
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: "valid-test-token" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { token: string; user: { id: string } };
+    expect(body.token).toBeTruthy();
+    expect(body.user.id).toBe("durable-known-user");
   });
 });
 

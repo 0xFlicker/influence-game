@@ -19,9 +19,10 @@ import {
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { isInviteRequired, redeemInviteCode } from "../lib/invite-codes.js";
-import { getSafeDefaultDisplayName, isEmailLike } from "../lib/display-name.js";
 import { extractBearerToken, validateGameMcpBearerToken } from "../game-mcp/auth.js";
 import { projectAuthenticatedPublicIdentity } from "../services/authenticated-public-identity.js";
+import { createPrivyAuthenticationVerifier } from "../services/authentication-providers.js";
+import { resolveAccountAuthentication } from "../services/account-authentication.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -43,6 +44,10 @@ export function createAuthRoutes(
   const loadPrivyUser = dependencies.getPrivyUser ?? getPrivyUser;
   const inviteIsRequired = dependencies.isInviteRequired ?? isInviteRequired;
   const redeemCode = dependencies.redeemInviteCode ?? redeemInviteCode;
+  const privyVerifier = createPrivyAuthenticationVerifier({
+    verifyAccessToken: verifyPrivyAccessToken,
+    loadUser: loadPrivyUser,
+  });
 
   // -------------------------------------------------------------------------
   // POST /api/auth/local-cli-session — exchange local producer MCP OAuth token
@@ -107,120 +112,58 @@ export function createAuthRoutes(
       return c.json({ error: "token is required" }, 400);
     }
 
-    // Verify Privy access token
-    const privyUserId = await verifyPrivyAccessToken(body.token);
-    if (!privyUserId) {
+    const verification = await privyVerifier.verify(body.token);
+    if (verification.status === "invalid") {
       return c.json({ error: "Invalid Privy token" }, 401);
     }
 
-    // Get full Privy user to extract wallet/email
-    let walletAddress: string | null = null;
-    let email: string | null = null;
+    const provider = verification.status === "verified"
+      ? verification.evidence.provider
+      : verification.provider;
+    const subject = verification.status === "verified"
+      ? verification.evidence.subject
+      : verification.subject;
+    const authentication = await resolveAccountAuthentication(db, {
+      provider,
+      subject,
+      evidence: verification.status === "verified" ? verification.evidence : null,
+      checkInviteRequired: (tx) => inviteIsRequired(tx),
+      redeemInvite: typeof body.inviteCode === "string"
+        ? (tx, userId) => redeemCode(tx, body.inviteCode as string, userId)
+        : undefined,
+    });
 
-    try {
-      const privyUser = await loadPrivyUser(privyUserId);
-
-      // Extract wallet address from linked accounts
-      const walletAccount = privyUser.linkedAccounts?.find(
-        (a: { type: string }) => a.type === "wallet",
-      );
-      if (walletAccount && "address" in walletAccount) {
-        walletAddress = (walletAccount.address as string).toLowerCase();
-      }
-
-      // Extract email from linked accounts
-      const emailAccount = privyUser.linkedAccounts?.find(
-        (a: { type: string }) => a.type === "email",
-      );
-      if (emailAccount && "address" in emailAccount) {
-        email = emailAccount.address as string;
-      }
-    } catch (err) {
-      // Non-fatal: we can still create a session without full user details
-      console.warn("[auth] Failed to fetch Privy user details:", err instanceof Error ? err.message : err);
+    if (authentication.status === "profile_unavailable") {
+      return c.json({
+        error: "Authentication provider profile is temporarily unavailable",
+        code: "AUTH_PROVIDER_UNAVAILABLE",
+      }, 503);
     }
-
-    // Upsert user in our database
-    // Look up by wallet first, then by Privy subject ID stored in users.id
-    let user = walletAddress
-      ? (await db
-          .select()
-          .from(schema.users)
-          .where(eq(schema.users.walletAddress, walletAddress)))[0]
-      : null;
-
-    if (!user) {
-      // Check if we have a user with this Privy ID already
-      user = (await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.id, privyUserId)))[0];
+    if (authentication.status === "link_required") {
+      return c.json({
+        error: "This sign-in method must be linked to the existing account",
+        code: "ACCOUNT_LINK_REQUIRED",
+      }, 409);
     }
-
-    if (user) {
-      // Update existing user with latest info
-      const updates: Record<string, string> = {};
-      if (walletAddress && !user.walletAddress) {
-        updates.walletAddress = walletAddress;
-      }
-      if (email && !user.email) {
-        updates.email = email;
-      }
-      if (
-        !user.displayName ||
-        isEmailLike(user.displayName) ||
-        (user.email &&
-          user.displayName.trim().toLowerCase() === user.email.trim().toLowerCase())
-      ) {
-        updates.displayName = getSafeDefaultDisplayName({
-          walletAddress: walletAddress ?? user.walletAddress,
-        });
-      }
-      if (Object.keys(updates).length > 0) {
-        user = (await db.update(schema.users)
-          .set(updates)
-          .where(eq(schema.users.id, user.id))
-          .returning())[0] ?? user;
-      }
-    } else {
-      // New user signup — check invite code requirement
-      const inviteRequired = await inviteIsRequired(db);
-
-      if (inviteRequired && !body.inviteCode) {
-        return c.json({
-          error: "Invite code required",
-          code: "INVITE_REQUIRED",
-        }, 403);
-      }
-
-      // Create new user
-      const userId = privyUserId;
-      await db.insert(schema.users)
-        .values({
-          id: userId,
-          walletAddress,
-          email,
-          displayName: getSafeDefaultDisplayName({ walletAddress }),
-        });
-
-      // Redeem invite code if provided
-      if (inviteRequired && body.inviteCode) {
-        const redeemed = await redeemCode(db, body.inviteCode as string, userId);
-        if (!redeemed) {
-          // Roll back user creation
-          await db.delete(schema.users).where(eq(schema.users.id, userId));
-          return c.json({
-            error: "Invalid or already used invite code",
-            code: "INVALID_INVITE_CODE",
-          }, 403);
-        }
-      }
-
-      user = (await db
-        .select()
-        .from(schema.users)
-        .where(eq(schema.users.id, userId)))[0]!;
+    if (authentication.status === "invite_required") {
+      return c.json({
+        error: "Invite code required",
+        code: "INVITE_REQUIRED",
+      }, 403);
     }
+    if (authentication.status === "invalid_invite") {
+      return c.json({
+        error: "Invalid or already used invite code",
+        code: "INVALID_INVITE_CODE",
+      }, 403);
+    }
+    if (authentication.status === "support_blocked") {
+      return c.json({
+        error: "This account needs support before it can sign in",
+        code: "ACCOUNT_SUPPORT_REQUIRED",
+      }, 409);
+    }
+    const user = authentication.user;
 
     // Resolve RBAC roles and permissions for wallet address
     const resolved = user.walletAddress
