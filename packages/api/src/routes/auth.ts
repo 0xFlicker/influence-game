@@ -36,7 +36,10 @@ import {
   resolveAccountAuthentication,
   type AccountAuthenticationOutcome,
 } from "../services/account-authentication.js";
-import { issueInfluenceSession } from "../services/session-issuance.js";
+import {
+  issueInfluenceSession,
+  projectLoginMethods,
+} from "../services/session-issuance.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -358,6 +361,7 @@ export function createAuthRoutes(
     }
     const roles = c.get("userRoles") ?? [];
     const permissions = c.get("userPermissions") ?? [];
+    const loginMethods = await projectLoginMethods(db, user.id);
 
     const isAdmin =
       roles.includes("sysop") ||
@@ -372,6 +376,7 @@ export function createAuthRoutes(
       isAdmin,
       roles,
       permissions,
+      loginMethods,
     });
   });
 

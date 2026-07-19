@@ -386,6 +386,47 @@ describe("authenticated public identity session projection", () => {
     expect(body.publicIdentityOnboarding.state).toBe("required");
   });
 
+  test("/auth/me projects login methods without exposing provider subjects", async () => {
+    await db.insert(schema.users).values({
+      id: "private-login-method-user",
+      email: "methods@example.com",
+    });
+    await db.insert(schema.authenticationCredentials).values([
+      {
+        userId: "private-login-method-user",
+        provider: "privy",
+        providerSubject: "did:privy:must-stay-private",
+      },
+      {
+        userId: "private-login-method-user",
+        provider: "clerk",
+        providerSubject: "user_must_stay_private",
+      },
+      {
+        userId: "private-login-method-user",
+        provider: "clerk",
+        providerSubject: "user_retired_must_stay_private",
+        retiredAt: "2026-07-19T00:00:00.000Z",
+      },
+    ]);
+    const token = await createSessionToken("private-login-method-user");
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db));
+
+    const res = await app.request("/api/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.loginMethods).toEqual({
+      privy: true,
+      emailPassword: true,
+    });
+    expect(JSON.stringify(body)).not.toContain("did:privy:must-stay-private");
+    expect(JSON.stringify(body)).not.toContain("user_must_stay_private");
+    expect(JSON.stringify(body)).not.toContain("user_retired_must_stay_private");
+  });
+
   test("login returns the updated row and retains the resolved user projection", async () => {
     await db.insert(schema.users).values({
       id: "did:privy:existing-user",
@@ -622,9 +663,19 @@ describe("managed authentication routes", () => {
     ]);
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
-    const firstBody = await first.json() as { token: string; user: { id: string } };
+    const firstBody = await first.json() as {
+      token: string;
+      user: {
+        id: string;
+        loginMethods: { privy: boolean; emailPassword: boolean };
+      };
+    };
     const secondBody = await second.json() as { token: string; user: { id: string } };
     expect(firstBody.user.id).toBe(secondBody.user.id);
+    expect(firstBody.user.loginMethods).toEqual({
+      privy: false,
+      emailPassword: true,
+    });
     expect((await verifySessionToken(firstBody.token))?.userId).toBe(firstBody.user.id);
     expect(await db.select().from(schema.users)).toHaveLength(1);
 

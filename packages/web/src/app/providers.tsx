@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { ClerkProvider, useClerk } from "@clerk/nextjs";
+import { AuthenticationWrapper } from "@/components/authentication-wrapper";
 import {
   RuntimeConfigProvider,
   useRuntimeConfig,
@@ -273,16 +274,19 @@ const E2E_PRIVY_APP_ID = "e2e-test-privy-app-id-001";
 
 function ClerkInfluenceAuth({
   children,
+  managedAuthMode,
 }: {
   children: React.ReactNode;
+  managedAuthMode: "existing-only" | "full";
 }) {
   const clerk = useClerk();
   const clerkLogout = useCallback(async () => {
     await clerk.signOut();
   }, [clerk]);
   return (
-    <InfluenceAuthProvider clerkLogout={clerkLogout}>
+    <InfluenceAuthProvider clerkLogout={clerkLogout} managedAuthEnabled>
       <AuthExperience>{children}</AuthExperience>
+      <AuthenticationWrapper managedAuthMode={managedAuthMode} />
     </InfluenceAuthProvider>
   );
 }
@@ -305,7 +309,9 @@ function InfluenceAuthLayer({
   }
   return (
     <ClerkProvider publishableKey={clerkPublishableKey}>
-      <ClerkInfluenceAuth>{children}</ClerkInfluenceAuth>
+      <ClerkInfluenceAuth managedAuthMode={managedAuthMode}>
+        {children}
+      </ClerkInfluenceAuth>
     </ClerkProvider>
   );
 }

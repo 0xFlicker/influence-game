@@ -45,7 +45,10 @@ export interface InfluenceAuthState {
   hydrationError: boolean;
   openSignIn: () => void;
   openCreateAccount: () => void;
+  openPrivySignIn: () => void;
+  requestPrivyProof: () => Promise<string | null>;
   beginAuthenticationAttempt: () => ProviderAuthenticationAttempt;
+  cancelAuthenticationAttempt: () => void;
   completeAuthenticationAttempt: (
     attempt: ProviderAuthenticationAttempt,
     exchange: () => Promise<InfluenceSessionResponse>,
@@ -169,9 +172,11 @@ function emitAuthEvent(event: string): void {
 export function InfluenceAuthProvider({
   children,
   clerkLogout,
+  managedAuthEnabled = false,
 }: {
   children: React.ReactNode;
   clerkLogout?: () => Promise<unknown>;
+  managedAuthEnabled?: boolean;
 }) {
   const { getAccessToken, logout: privyLogout } = usePrivy();
   const privyLogoutRef = useRef(privyLogout);
@@ -198,6 +203,10 @@ export function InfluenceAuthProvider({
   const [snapshot, setSnapshot] = useState(coordinator.getSnapshot);
   const pendingPrivyAttempt = useRef<ProviderAuthenticationAttempt | null>(null);
   const pendingPrivyToken = useRef<string | null>(null);
+  const pendingPrivyPurpose = useRef<"authentication" | "proof" | null>(null);
+  const pendingPrivyProofResolution = useRef<
+    ((token: string | null) => void) | null
+  >(null);
   const [needsInvite, setNeedsInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [submittingInvite, setSubmittingInvite] = useState(false);
@@ -213,24 +222,42 @@ export function InfluenceAuthProvider({
     };
   }), [coordinator]);
 
-  const completePrivyAttemptRef = useRef<() => Promise<void>>(async () => {});
+  const completePrivyLoginRef = useRef<() => Promise<void>>(async () => {});
   const { login: openPrivyLogin } = useLogin({
     onComplete: () => {
-      void completePrivyAttemptRef.current();
+      void completePrivyLoginRef.current();
     },
     onError: () => {
+      const wasProofRequest = pendingPrivyPurpose.current === "proof";
+      pendingPrivyProofResolution.current?.(null);
+      pendingPrivyProofResolution.current = null;
+      pendingPrivyPurpose.current = null;
       pendingPrivyAttempt.current = null;
       pendingPrivyToken.current = null;
-      coordinator.cancelProviderAttempt();
+      if (!wasProofRequest) coordinator.cancelProviderAttempt();
     },
   });
 
   const completePrivyAttempt = useCallback(async () => {
+    if (pendingPrivyPurpose.current === "proof") {
+      const resolveProof = pendingPrivyProofResolution.current;
+      let providerToken: string | null = null;
+      try {
+        providerToken = await getAccessToken();
+      } catch (error) {
+        console.error("[InfluenceAuth] Privy proof retrieval failed:", error);
+      }
+      pendingPrivyProofResolution.current = null;
+      pendingPrivyPurpose.current = null;
+      resolveProof?.(providerToken);
+      return;
+    }
     const attempt = pendingPrivyAttempt.current;
     if (!attempt) return;
     const providerToken = await getAccessToken();
     if (!providerToken) {
       pendingPrivyAttempt.current = null;
+      pendingPrivyPurpose.current = null;
       coordinator.cancelProviderAttempt();
       return;
     }
@@ -245,6 +272,7 @@ export function InfluenceAuthProvider({
       }
       pendingPrivyAttempt.current = null;
       pendingPrivyToken.current = null;
+      pendingPrivyPurpose.current = null;
     } catch (error) {
       if (error instanceof ApiError && error.code === "INVITE_REQUIRED") {
         pendingPrivyToken.current = providerToken;
@@ -253,11 +281,12 @@ export function InfluenceAuthProvider({
       }
       pendingPrivyAttempt.current = null;
       pendingPrivyToken.current = null;
+      pendingPrivyPurpose.current = null;
       coordinator.cancelProviderAttempt();
       console.error("[InfluenceAuth] Privy exchange failed:", error);
     }
   }, [completeAuthenticationAttempt, coordinator, getAccessToken]);
-  completePrivyAttemptRef.current = completePrivyAttempt;
+  completePrivyLoginRef.current = completePrivyAttempt;
 
   useEffect(() => {
     coordinator.start();
@@ -294,13 +323,44 @@ export function InfluenceAuthProvider({
     [coordinator],
   );
 
-  const openSignIn = useCallback(() => {
+  const cancelAuthenticationAttempt = useCallback(() => {
+    pendingPrivyProofResolution.current?.(null);
+    pendingPrivyProofResolution.current = null;
+    pendingPrivyPurpose.current = null;
+    pendingPrivyAttempt.current = null;
+    pendingPrivyToken.current = null;
+    coordinator.cancelProviderAttempt();
+  }, [coordinator]);
+
+  const openPrivySignIn = useCallback(() => {
+    pendingPrivyProofResolution.current?.(null);
+    pendingPrivyProofResolution.current = null;
+    pendingPrivyPurpose.current = "authentication";
     pendingPrivyAttempt.current = coordinator.beginProviderAttempt();
     pendingPrivyToken.current = null;
     setNeedsInvite(false);
     setInviteError(null);
     openPrivyLogin();
   }, [coordinator, openPrivyLogin]);
+
+  const requestPrivyProof = useCallback(() => {
+    pendingPrivyProofResolution.current?.(null);
+    pendingPrivyPurpose.current = "proof";
+    pendingPrivyAttempt.current = null;
+    pendingPrivyToken.current = null;
+    return new Promise<string | null>((resolve) => {
+      pendingPrivyProofResolution.current = resolve;
+      openPrivyLogin();
+    });
+  }, [openPrivyLogin]);
+
+  const openSignIn = useCallback(() => {
+    if (!managedAuthEnabled) {
+      openPrivySignIn();
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("auth:open-sign-in"));
+  }, [managedAuthEnabled, openPrivySignIn]);
 
   const openCreateAccount = useCallback(() => {
     if (typeof window !== "undefined") {
@@ -309,6 +369,9 @@ export function InfluenceAuthProvider({
   }, []);
 
   const logout = useCallback(async () => {
+    pendingPrivyProofResolution.current?.(null);
+    pendingPrivyProofResolution.current = null;
+    pendingPrivyPurpose.current = null;
     pendingPrivyAttempt.current = null;
     pendingPrivyToken.current = null;
     setNeedsInvite(false);
@@ -331,6 +394,7 @@ export function InfluenceAuthProvider({
         setNeedsInvite(false);
         pendingPrivyAttempt.current = null;
         pendingPrivyToken.current = null;
+        pendingPrivyPurpose.current = null;
       }
     } catch (error) {
       setInviteError(
@@ -350,7 +414,10 @@ export function InfluenceAuthProvider({
         ...snapshot,
         openSignIn,
         openCreateAccount,
+        openPrivySignIn,
+        requestPrivyProof,
         beginAuthenticationAttempt,
+        cancelAuthenticationAttempt,
         completeAuthenticationAttempt,
         logout,
         needsInvite,

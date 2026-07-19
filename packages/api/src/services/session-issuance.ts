@@ -1,8 +1,25 @@
+import { and, eq, isNull } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
+import { schema } from "../db/index.js";
 import { getPermissionsForAddress } from "../db/rbac.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { projectAuthenticatedPublicIdentity } from "./authenticated-public-identity.js";
 import type { AuthenticatedAccount } from "./account-authentication.js";
+
+export async function projectLoginMethods(db: DrizzleDB, userId: string) {
+  const credentials = await db
+    .select({ provider: schema.authenticationCredentials.provider })
+    .from(schema.authenticationCredentials)
+    .where(and(
+      eq(schema.authenticationCredentials.userId, userId),
+      isNull(schema.authenticationCredentials.retiredAt),
+    ));
+  const providers = new Set(credentials.map((credential) => credential.provider));
+  return {
+    privy: providers.has("privy"),
+    emailPassword: providers.has("clerk"),
+  };
+}
 
 /**
  * One post-commit session projection for every login provider. Roles and
@@ -16,6 +33,7 @@ export async function issueInfluenceSession(
     ? await getPermissionsForAddress(db, user.walletAddress)
     : { roles: [], permissions: [] };
   const token = await createSessionToken(user.id, resolved);
+  const loginMethods = await projectLoginMethods(db, user.id);
 
   return {
     token,
@@ -26,6 +44,7 @@ export async function issueInfluenceSession(
       ...projectAuthenticatedPublicIdentity(user),
       roles: resolved.roles,
       permissions: resolved.permissions,
+      loginMethods,
     },
   };
 }

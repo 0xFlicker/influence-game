@@ -10,12 +10,14 @@ export const metadata: Metadata = {
 function Section({
   title,
   children,
+  id,
 }: {
   title: string;
   children: React.ReactNode;
+  id?: string;
 }) {
   return (
-    <section className="mb-12">
+    <section id={id} className="mb-12 scroll-mt-24">
       <h2 className="influence-section-title mb-5">{title}</h2>
       <div className="influence-copy space-y-4 leading-relaxed">{children}</div>
     </section>
@@ -347,7 +349,7 @@ export default function PrivacyPage() {
           </P>
         </Section>
 
-        <Section title="Contact">
+        <Section id="contact" title="Contact">
           <P>
             If you have questions about this Privacy Policy, please contact us
             through the support channels listed on the Influence website.

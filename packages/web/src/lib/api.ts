@@ -1587,6 +1587,10 @@ export interface AuthMe extends AuthenticatedPublicIdentity {
   isAdmin: boolean;
   roles: string[];
   permissions: string[];
+  loginMethods: {
+    privy: boolean;
+    emailPassword: boolean;
+  };
 }
 
 export async function getMe(): Promise<AuthMe> {
@@ -1603,6 +1607,53 @@ export async function loginWithPrivyToken(
   return providerAuthFetch("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
+  });
+}
+
+export type InfluenceSessionResult = {
+  token: string;
+  user: Omit<AuthMe, "isAdmin">;
+};
+
+export async function exchangeManagedAuthentication(
+  token: string,
+  correlationId?: string,
+): Promise<InfluenceSessionResult> {
+  return providerAuthFetch("/api/auth/managed/exchange", {
+    method: "POST",
+    headers: correlationId ? { "x-correlation-id": correlationId } : undefined,
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function createManagedAuthentication(
+  token: string,
+  correlationId?: string,
+): Promise<InfluenceSessionResult> {
+  return providerAuthFetch("/api/auth/managed/create", {
+    method: "POST",
+    headers: correlationId ? { "x-correlation-id": correlationId } : undefined,
+    body: JSON.stringify({ token, confirm: true }),
+  });
+}
+
+export async function linkManagedAuthentication(
+  token: string,
+  privyToken?: string,
+  correlationId?: string,
+): Promise<InfluenceSessionResult> {
+  const influenceToken = getAuthToken();
+  return providerAuthFetch("/api/auth/managed/link", {
+    method: "POST",
+    headers: {
+      ...(influenceToken ? { Authorization: `Bearer ${influenceToken}` } : {}),
+      ...(correlationId ? { "x-correlation-id": correlationId } : {}),
+    },
+    body: JSON.stringify({
+      token,
+      confirm: true,
+      ...(privyToken ? { privyToken } : {}),
+    }),
   });
 }
 
