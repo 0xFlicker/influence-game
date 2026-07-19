@@ -36,6 +36,8 @@ const INFLUENCE_TABLES = [
   "mcp_oauth_refresh_tokens",
   "mcp_oauth_authorization_codes",
   "mcp_oauth_clients",
+  "authentication_credentials",
+  "verified_email_claims",
   "game_cognitive_artifact_reads",
   "game_cognitive_artifacts",
   "game_cost_accounting_audit_events",
