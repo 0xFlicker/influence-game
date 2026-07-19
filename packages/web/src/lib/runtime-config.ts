@@ -14,8 +14,12 @@ import { setWsBase } from "@/app/games/[slug]/components/use-game-websocket";
 // Types
 // ---------------------------------------------------------------------------
 
+export type ManagedAuthMode = "disabled" | "existing-only" | "full";
+
 export interface RuntimeConfig {
   PRIVY_APP_ID: string;
+  CLERK_PUBLISHABLE_KEY: string;
+  MANAGED_AUTH_MODE: ManagedAuthMode;
   API_URL: string;
   WS_URL: string;
   ADMIN_ADDRESS: string;
@@ -35,6 +39,8 @@ const hasLocalDefaults = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID;
 
 const defaults: RuntimeConfig = {
   PRIVY_APP_ID: process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "",
+  CLERK_PUBLISHABLE_KEY: "",
+  MANAGED_AUTH_MODE: "disabled",
   API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3000",
   WS_URL: process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:3000",
   ADMIN_ADDRESS: process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? "",
