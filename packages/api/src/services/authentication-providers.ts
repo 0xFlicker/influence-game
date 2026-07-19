@@ -1,4 +1,5 @@
 import { normalizeVerifiedEmail } from "../lib/verified-email.js";
+import { createClerkClient } from "@clerk/backend";
 
 export type AuthenticationProviderName = "privy" | "clerk";
 
@@ -40,6 +41,8 @@ export interface VerifiedProviderEvidence {
 export type ProviderVerificationResult =
   | { status: "verified"; evidence: VerifiedProviderEvidence }
   | { status: "profile_unavailable"; provider: AuthenticationProviderName; subject: string }
+  | { status: "setup_incomplete" }
+  | { status: "locked" }
   | { status: "invalid" };
 
 export interface AuthenticationProviderVerifier {
@@ -52,10 +55,136 @@ export interface PrivyAuthenticationProviderVerifier
   readonly provider: "privy";
 }
 
-/** Implemented in U5; defined here so account resolution remains provider-neutral. */
 export interface ClerkAuthenticationProviderVerifier
   extends AuthenticationProviderVerifier {
   readonly provider: "clerk";
+}
+
+export interface ClerkVerifiedUser {
+  id: string;
+  passwordEnabled: boolean;
+  locked: boolean;
+  banned: boolean;
+  primaryEmailAddress: {
+    emailAddress: string;
+    verification: { status: string } | null;
+  } | null;
+}
+
+export interface ClerkAdapterDependencies {
+  authenticateSessionToken(token: string): Promise<string | null>;
+  loadUser(subject: string): Promise<ClerkVerifiedUser>;
+  timeoutMs?: number;
+}
+
+export interface ClerkVerifierConfiguration {
+  secretKey: string;
+  publishableKey: string;
+  jwtKey: string;
+  authorizedParties: string[];
+  timeoutMs?: number;
+}
+
+/**
+ * Verifies a Clerk session token with the pinned backend SDK. Pending sessions
+ * are deliberately treated as signed out so unfinished session tasks can
+ * never become an Influence session.
+ */
+export function createClerkSdkDependencies(
+  configuration: ClerkVerifierConfiguration,
+): ClerkAdapterDependencies {
+  const client = createClerkClient({
+    secretKey: configuration.secretKey,
+    publishableKey: configuration.publishableKey,
+  });
+  const requestOrigin = configuration.authorizedParties[0] ?? "https://invalid.local";
+
+  return {
+    timeoutMs: configuration.timeoutMs,
+    async authenticateSessionToken(token) {
+      const state = await client.authenticateRequest(
+        new Request(requestOrigin, {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        {
+          acceptsToken: "session_token",
+          publishableKey: configuration.publishableKey,
+          authorizedParties: configuration.authorizedParties,
+          jwtKey: configuration.jwtKey,
+        },
+      );
+      if (!state.isAuthenticated) return null;
+      const auth = state.toAuth({ treatPendingAsSignedOut: true });
+      return auth.isAuthenticated ? auth.userId : null;
+    },
+    async loadUser(subject) {
+      const user = await client.users.getUser(subject);
+      return {
+        id: user.id,
+        passwordEnabled: user.passwordEnabled,
+        locked: user.locked,
+        banned: user.banned,
+        primaryEmailAddress: user.primaryEmailAddress
+          ? {
+              emailAddress: user.primaryEmailAddress.emailAddress,
+              verification: user.primaryEmailAddress.verification
+                ? { status: user.primaryEmailAddress.verification.status }
+                : null,
+            }
+          : null,
+      };
+    },
+  };
+}
+
+export function createClerkAuthenticationVerifier(
+  dependencies: ClerkAdapterDependencies,
+): ClerkAuthenticationProviderVerifier {
+  const timeoutMs = dependencies.timeoutMs ?? 4_000;
+  return {
+    provider: "clerk",
+    async verify(token) {
+      let subject: string | null;
+      try {
+        subject = await withTimeout(
+          dependencies.authenticateSessionToken(token),
+          timeoutMs,
+        );
+      } catch {
+        return { status: "profile_unavailable", provider: "clerk", subject: "" };
+      }
+      if (!subject) return { status: "invalid" };
+
+      let user: ClerkVerifiedUser;
+      try {
+        user = await withTimeout(dependencies.loadUser(subject), timeoutMs);
+      } catch {
+        return { status: "profile_unavailable", provider: "clerk", subject };
+      }
+      if (user.id !== subject) return { status: "invalid" };
+      if (user.locked || user.banned) return { status: "locked" };
+      const primary = user.primaryEmailAddress;
+      if (
+        !user.passwordEnabled
+        || !primary
+        || primary.verification?.status !== "verified"
+      ) {
+        return { status: "setup_incomplete" };
+      }
+      const normalizedEmail = normalizeVerifiedEmail(primary.emailAddress);
+      if (!normalizedEmail) return { status: "setup_incomplete" };
+
+      return {
+        status: "verified",
+        evidence: {
+          provider: "clerk",
+          subject,
+          owner: { kind: "email", normalizedEmail },
+          productWalletAddress: null,
+        },
+      };
+    },
+  };
 }
 
 export interface PrivyAdapterDependencies {
@@ -183,4 +312,21 @@ function isEthereumAddress(value: unknown): value is string {
 
 function unique(values: string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("authentication provider timed out")),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

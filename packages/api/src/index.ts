@@ -98,6 +98,7 @@ if (missing.length > 0) {
 
 if (managedAuthMode !== "disabled") {
   const requiredClerkEnv = [
+    "CLERK_PUBLISHABLE_KEY",
     "CLERK_SECRET_KEY",
     "CLERK_JWT_KEY",
     "CLERK_AUTHORIZED_PARTIES",

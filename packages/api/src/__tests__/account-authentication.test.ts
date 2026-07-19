@@ -2,10 +2,18 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { normalizeVerifiedEmail } from "../lib/verified-email.js";
 import {
+  createClerkAuthenticationVerifier,
+  createClerkSdkDependencies,
   classifyPrivyUser,
   type VerifiedProviderEvidence,
 } from "../services/authentication-providers.js";
-import { resolveAccountAuthentication } from "../services/account-authentication.js";
+import {
+  createManagedAccountAuthentication,
+  exchangeExistingAccountAuthentication,
+  linkManagedAuthenticationCredential,
+  linkPrivyAuthenticationCredential,
+  resolveAccountAuthentication,
+} from "../services/account-authentication.js";
 import { setupTestDB } from "./test-utils.js";
 
 const EMBEDDED_WALLET = "0x1111111111111111111111111111111111111111";
@@ -110,6 +118,97 @@ describe("Privy identity classification", () => {
     expect(contradictory.owner).toEqual({
       kind: "unclassified",
       reason: "contradictory_owners",
+    });
+  });
+});
+
+describe("Clerk authentication verification", () => {
+  test("configured SDK verification includes the required publishable-key boundary", async () => {
+    const dependencies = createClerkSdkDependencies({
+      secretKey: "sk_test_private",
+      publishableKey: "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
+      jwtKey: "not-used-for-a-malformed-token",
+      authorizedParties: ["https://example.test"],
+    });
+
+    expect(await dependencies.authenticateSessionToken("not-a-session-token"))
+      .toBeNull();
+  });
+
+  test("accepts only password-enabled users with a verified primary email", async () => {
+    const verifier = createClerkAuthenticationVerifier({
+      authenticateSessionToken: async () => "user_clerk",
+      loadUser: async () => ({
+        id: "user_clerk",
+        passwordEnabled: true,
+        locked: false,
+        banned: false,
+        primaryEmailAddress: {
+          emailAddress: " Person+tag@Example.COM ",
+          verification: { status: "verified" },
+        },
+      }),
+    });
+
+    expect(await verifier.verify("session")).toEqual({
+      status: "verified",
+      evidence: managedEvidence("user_clerk", "person+tag@example.com"),
+    });
+  });
+
+  test("fails closed for pending, locked, and unverified provider state", async () => {
+    const pending = createClerkAuthenticationVerifier({
+      authenticateSessionToken: async () => null,
+      loadUser: async () => {
+        throw new Error("must not load a pending session");
+      },
+    });
+    const locked = createClerkAuthenticationVerifier({
+      authenticateSessionToken: async () => "locked",
+      loadUser: async () => ({
+        id: "locked",
+        passwordEnabled: true,
+        locked: true,
+        banned: false,
+        primaryEmailAddress: {
+          emailAddress: "locked@example.com",
+          verification: { status: "verified" },
+        },
+      }),
+    });
+    const unverified = createClerkAuthenticationVerifier({
+      authenticateSessionToken: async () => "unverified",
+      loadUser: async () => ({
+        id: "unverified",
+        passwordEnabled: true,
+        locked: false,
+        banned: false,
+        primaryEmailAddress: {
+          emailAddress: "unverified@example.com",
+          verification: { status: "unverified" },
+        },
+      }),
+    });
+
+    expect(await pending.verify("pending")).toEqual({ status: "invalid" });
+    expect(await locked.verify("locked")).toEqual({ status: "locked" });
+    expect(await unverified.verify("unverified"))
+      .toEqual({ status: "setup_incomplete" });
+  });
+
+  test("bounds a stalled provider call without accepting late completion", async () => {
+    const verifier = createClerkAuthenticationVerifier({
+      timeoutMs: 5,
+      authenticateSessionToken: async () => new Promise(() => {}),
+      loadUser: async () => {
+        throw new Error("must not load");
+      },
+    });
+
+    expect(await verifier.verify("stalled")).toEqual({
+      status: "profile_unavailable",
+      provider: "clerk",
+      subject: "",
     });
   });
 });
@@ -454,6 +553,141 @@ describe("account authentication resolver", () => {
 
     expect(outcome).toEqual({ status: "support_blocked" });
   });
+
+  test("managed exchange never creates, while explicit completion is resumable and convergent", async () => {
+    const evidence = managedEvidence("clerk-new", "managed-new@example.com");
+    expect(await exchangeExistingAccountAuthentication(db, evidence))
+      .toEqual({ status: "setup_incomplete" });
+
+    await expect(createManagedAccountAuthentication(
+      db,
+      evidence,
+      async () => {
+        throw new Error("injected database failure");
+      },
+    )).rejects.toThrow("injected database failure");
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+    expect(await credentials(db)).toHaveLength(0);
+
+    const outcomes = await Promise.all([
+      createManagedAccountAuthentication(db, evidence),
+      createManagedAccountAuthentication(db, evidence),
+    ]);
+    expect(outcomes.every((outcome) => outcome.status === "authenticated")).toBe(true);
+    const userIds = outcomes.flatMap((outcome) => (
+      outcome.status === "authenticated" ? [outcome.user.id] : []
+    ));
+    expect(new Set(userIds).size).toBe(1);
+    expect(await db.select().from(schema.users)).toHaveLength(1);
+    expect(await credentials(db)).toHaveLength(1);
+    expect((await db.select().from(schema.users))[0]?.walletAddress).toBeNull();
+  });
+
+  test("matching email-owned Privy account requires confirmation then links without Privy proof", async () => {
+    const privy = emailEvidence(
+      "did:privy:managed-link",
+      "same-owner@example.com",
+    );
+    const created = await resolveAccountAuthentication(db, {
+      provider: "privy",
+      subject: privy.subject,
+      evidence: privy,
+    });
+    expect(created.status).toBe("authenticated");
+    if (created.status !== "authenticated") return;
+
+    const clerk = managedEvidence("clerk-link", "same-owner@example.com");
+    expect(await exchangeExistingAccountAuthentication(db, clerk))
+      .toEqual({ status: "link_required" });
+    const linked = await linkManagedAuthenticationCredential(db, {
+      evidence: clerk,
+    });
+    expect(linked.status).toBe("authenticated");
+    expect(await credentials(db)).toHaveLength(2);
+    expect(await claims(db)).toHaveLength(1);
+  });
+
+  test("wallet-owned account requires matching current external-owner proof", async () => {
+    const privy = externalEvidence("did:privy:wallet-link");
+    const created = await resolveAccountAuthentication(db, {
+      provider: "privy",
+      subject: privy.subject,
+      evidence: privy,
+    });
+    expect(created.status).toBe("authenticated");
+    if (created.status !== "authenticated") return;
+    const clerk = managedEvidence("clerk-wallet-link", "wallet-link@example.com");
+
+    expect(await linkManagedAuthenticationCredential(db, {
+      userId: created.user.id,
+      evidence: clerk,
+    })).toEqual({ status: "reauth_required" });
+    expect(await credentials(db)).toHaveLength(1);
+
+    const embeddedOnly = emailEvidence(
+      privy.subject,
+      "unrelated@example.com",
+      EMBEDDED_WALLET,
+    );
+    expect(await linkManagedAuthenticationCredential(db, {
+      userId: created.user.id,
+      evidence: clerk,
+      privyOwnerEvidence: embeddedOnly,
+    })).toEqual({ status: "support_blocked" });
+
+    const linked = await linkManagedAuthenticationCredential(db, {
+      userId: created.user.id,
+      evidence: clerk,
+      privyOwnerEvidence: privy,
+    });
+    expect(linked.status).toBe("authenticated");
+    expect(await credentials(db)).toHaveLength(2);
+  });
+
+  test("explicit reverse Privy link attaches its credential and product wallet", async () => {
+    const clerk = managedEvidence("clerk-reverse", "reverse@example.com");
+    const created = await createManagedAccountAuthentication(db, clerk);
+    expect(created.status).toBe("authenticated");
+    if (created.status !== "authenticated") return;
+    expect(created.user.walletAddress).toBeNull();
+
+    const privy = emailEvidence("did:privy:reverse", "reverse@example.com");
+    expect(await resolveAccountAuthentication(db, {
+      provider: "privy",
+      subject: privy.subject,
+      evidence: privy,
+    })).toEqual({ status: "link_required" });
+
+    const linked = await linkPrivyAuthenticationCredential(db, {
+      userId: created.user.id,
+      evidence: privy,
+    });
+    expect(linked.status).toBe("authenticated");
+    if (linked.status !== "authenticated") return;
+    expect(linked.user.walletAddress).toBe(EMBEDDED_WALLET);
+    expect(await credentials(db)).toHaveLength(2);
+  });
+
+  test("conflicting managed subject and email mappings support-block atomically", async () => {
+    await insertUser(db, "first", null, "first@example.com");
+    await insertUser(db, "second", null, "second@example.com");
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "first",
+      provider: "clerk",
+      providerSubject: "clerk-conflict",
+    });
+    await db.insert(schema.verifiedEmailClaims).values({
+      normalizedEmail: "second@example.com",
+      userId: "second",
+      state: "active",
+    });
+
+    expect(await exchangeExistingAccountAuthentication(
+      db,
+      managedEvidence("clerk-conflict", "second@example.com"),
+    )).toEqual({ status: "support_blocked" });
+    expect(await credentials(db)).toHaveLength(1);
+  });
 });
 
 function emailEvidence(
@@ -494,6 +728,21 @@ function externalEvidence(
       },
     ],
   });
+}
+
+function managedEvidence(
+  subject: string,
+  email: string,
+): VerifiedProviderEvidence {
+  return {
+    provider: "clerk",
+    subject,
+    owner: {
+      kind: "email",
+      normalizedEmail: normalizeVerifiedEmail(email),
+    },
+    productWalletAddress: null,
+  };
 }
 
 async function insertUser(

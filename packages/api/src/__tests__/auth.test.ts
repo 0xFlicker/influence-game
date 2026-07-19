@@ -30,6 +30,10 @@ import {
   exchangeMcpOAuthCode,
   MCP_OAUTH_CLIENT_ID,
 } from "../services/mcp-oauth.js";
+import type {
+  ClerkAuthenticationProviderVerifier,
+  ProviderVerificationResult,
+} from "../services/authentication-providers.js";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -519,6 +523,295 @@ describe("authenticated public identity session projection", () => {
   });
 });
 
+describe("managed authentication routes", () => {
+  let db: DrizzleDB;
+
+  beforeEach(async () => {
+    db = await setupDB();
+  });
+
+  test("mode gates hide disabled routes and make existing-only mutation-free", async () => {
+    let calls = 0;
+    const verifier = clerkVerifier(async () => {
+      calls += 1;
+      return verifiedClerk("clerk-mode", "mode@example.com");
+    });
+    const disabled = new Hono();
+    disabled.route("/", createAuthRoutes(db, {
+      managedAuthMode: "disabled",
+      clerkVerifier: verifier,
+    }));
+    expect((await disabled.request("/api/auth/managed/exchange", {
+      method: "POST",
+      body: JSON.stringify({ token: "token" }),
+    })).status).toBe(404);
+
+    const existingOnly = new Hono();
+    existingOnly.route("/", createAuthRoutes(db, {
+      managedAuthMode: "existing-only",
+      clerkVerifier: verifier,
+    }));
+    const mutation = await existingOnly.request("/api/auth/managed/create", {
+      method: "POST",
+      body: JSON.stringify({ token: "token", confirm: true }),
+    });
+    expect(mutation.status).toBe(403);
+    expect(calls).toBe(0);
+
+    await db.insert(schema.users).values({
+      id: "existing-only-user",
+      email: "mode@example.com",
+      displayName: "Existing password user",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "existing-only-user",
+      provider: "clerk",
+      providerSubject: "clerk-mode",
+    });
+    await db.insert(schema.verifiedEmailClaims).values({
+      normalizedEmail: "mode@example.com",
+      userId: "existing-only-user",
+      state: "active",
+    });
+
+    const exchange = await managedRequest(
+      existingOnly,
+      "/api/auth/managed/exchange",
+      { token: "token" },
+    );
+    expect(exchange.status).toBe(200);
+    expect(calls).toBe(1);
+    const exchangeBody = await exchange.json() as {
+      token: string;
+      user: { id: string };
+    };
+    expect(exchangeBody.user.id).toBe("existing-only-user");
+    expect((await verifySessionToken(exchangeBody.token))?.userId)
+      .toBe("existing-only-user");
+  });
+
+  test("unknown completed session requires explicit create and then exchanges repeatably", async () => {
+    const verifier = clerkVerifier(async () => (
+      verifiedClerk("clerk-create", "created@example.com")
+    ));
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: verifier,
+    }));
+
+    const exchangeBefore = await managedRequest(
+      app,
+      "/api/auth/managed/exchange",
+      { token: "completed" },
+    );
+    expect(exchangeBefore.status).toBe(409);
+    expect(await exchangeBefore.json()).toMatchObject({
+      code: "ACCOUNT_SETUP_INCOMPLETE",
+    });
+
+    const [first, second] = await Promise.all([
+      managedRequest(app, "/api/auth/managed/create", {
+        token: "completed",
+        confirm: true,
+      }),
+      managedRequest(app, "/api/auth/managed/create", {
+        token: "completed",
+        confirm: true,
+      }),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const firstBody = await first.json() as { token: string; user: { id: string } };
+    const secondBody = await second.json() as { token: string; user: { id: string } };
+    expect(firstBody.user.id).toBe(secondBody.user.id);
+    expect((await verifySessionToken(firstBody.token))?.userId).toBe(firstBody.user.id);
+    expect(await db.select().from(schema.users)).toHaveLength(1);
+
+    const later = await managedRequest(
+      app,
+      "/api/auth/managed/exchange",
+      { token: "completed" },
+    );
+    expect(later.status).toBe(200);
+  });
+
+  test("email collision asks for confirmation and authenticated link preserves the account", async () => {
+    await db.insert(schema.users).values({
+      id: "email-owner",
+      email: "owner@example.com",
+      displayName: "Owner",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "email-owner",
+      provider: "privy",
+      providerSubject: "did:privy:email-owner",
+    });
+    await db.insert(schema.verifiedEmailClaims).values({
+      normalizedEmail: "owner@example.com",
+      userId: "email-owner",
+      state: "active",
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => (
+        verifiedClerk("clerk-owner", "owner@example.com")
+      )),
+    }));
+
+    const collision = await managedRequest(
+      app,
+      "/api/auth/managed/exchange",
+      { token: "completed" },
+    );
+    expect(collision.status).toBe(409);
+    expect(await collision.json()).toMatchObject({
+      code: "ACCOUNT_LINK_CONFIRMATION_REQUIRED",
+    });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+
+    const linked = await managedRequest(
+      app,
+      "/api/auth/managed/link",
+      { token: "completed", confirm: true },
+    );
+    expect(linked.status).toBe(200);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(2);
+  });
+
+  test("wallet link survives expired Privy proof and succeeds after matching owner reauth", async () => {
+    const embedded = "0x1111111111111111111111111111111111111111";
+    const external = "0x2222222222222222222222222222222222222222";
+    await db.insert(schema.users).values({
+      id: "wallet-owner",
+      walletAddress: embedded,
+      displayName: "Wallet owner",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "wallet-owner",
+      provider: "privy",
+      providerSubject: "did:privy:wallet-owner",
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => (
+        verifiedClerk("clerk-wallet-owner", "wallet-owner@example.com")
+      )),
+      verifyPrivyToken: async (token) => (
+        token === "fresh-privy" ? "did:privy:wallet-owner" : null
+      ),
+      getPrivyUser: async () => ({
+        id: "did:privy:wallet-owner",
+        createdAt: new Date(),
+        isGuest: false,
+        customMetadata: {},
+        linkedAccounts: [
+          {
+            type: "wallet",
+            address: embedded,
+            chainType: "ethereum",
+            walletClientType: "privy",
+            verifiedAt: new Date(),
+            firstVerifiedAt: new Date(),
+            latestVerifiedAt: new Date(),
+          },
+          {
+            type: "wallet",
+            address: external,
+            chainType: "ethereum",
+            walletClientType: "metamask",
+            verifiedAt: new Date(),
+            firstVerifiedAt: new Date(),
+            latestVerifiedAt: new Date(),
+          },
+        ],
+      }),
+    }));
+    const influenceToken = await createSessionToken("wallet-owner");
+
+    const expired = await managedRequest(
+      app,
+      "/api/auth/managed/link",
+      { token: "clerk", privyToken: "expired", confirm: true },
+      influenceToken,
+    );
+    expect(expired.status).toBe(401);
+    expect(await expired.json()).toMatchObject({ code: "WALLET_REAUTH_REQUIRED" });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+
+    const linked = await managedRequest(
+      app,
+      "/api/auth/managed/link",
+      { token: "clerk", privyToken: "fresh-privy", confirm: true },
+      influenceToken,
+    );
+    expect(linked.status).toBe(200);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(2);
+  });
+
+  test("pending, locked, malformed, oversized, timed-out, and burst requests issue no session", async () => {
+    let calls = 0;
+    let result: ProviderVerificationResult = { status: "invalid" };
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => {
+        calls += 1;
+        return result;
+      }),
+      managedRateLimits: {
+        preVerification: 4,
+        postVerification: 4,
+        windowMs: 60_000,
+      },
+    }));
+
+    const malformed = await app.request("/api/auth/managed/exchange", {
+      method: "POST",
+      body: "{",
+    });
+    expect(malformed.status).toBe(400);
+    const oversized = await app.request("/api/auth/managed/exchange", {
+      method: "POST",
+      headers: { "content-length": "20000" },
+      body: JSON.stringify({ token: "tiny" }),
+    });
+    expect(oversized.status).toBe(413);
+    expect(calls).toBe(0);
+
+    result = { status: "setup_incomplete" };
+    expect((await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "pending",
+    })).status).toBe(409);
+    result = { status: "locked" };
+    expect((await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "locked",
+    })).status).toBe(423);
+    result = {
+      status: "profile_unavailable",
+      provider: "clerk",
+      subject: "opaque",
+    };
+    expect((await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "timeout",
+    })).status).toBe(503);
+
+    result = { status: "invalid" };
+    expect((await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "one-more",
+    })).status).toBe(401);
+    const limited = await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "limited",
+    });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+    expect(calls).toBe(4);
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+  });
+});
+
 async function assignRoles(db: DrizzleDB, walletAddress: string, roleNames: string[]): Promise<void> {
   const roles = await db
     .select({ id: schema.roles.id, name: schema.roles.name })
@@ -529,6 +822,45 @@ async function assignRoles(db: DrizzleDB, walletAddress: string, roleNames: stri
     roleId: role.id,
     grantedBy: "test",
   })));
+}
+
+function clerkVerifier(
+  verify: (token: string) => Promise<ProviderVerificationResult>,
+): ClerkAuthenticationProviderVerifier {
+  return { provider: "clerk", verify };
+}
+
+function verifiedClerk(
+  subject: string,
+  normalizedEmail: string,
+): ProviderVerificationResult {
+  return {
+    status: "verified",
+    evidence: {
+      provider: "clerk",
+      subject,
+      owner: { kind: "email", normalizedEmail },
+      productWalletAddress: null,
+    },
+  };
+}
+
+async function managedRequest(
+  app: Hono,
+  path: string,
+  body: Record<string, unknown>,
+  influenceToken?: string,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-forwarded-for": "203.0.113.10",
+  };
+  if (influenceToken) headers.authorization = `Bearer ${influenceToken}`;
+  return app.request(path, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
 }
 
 async function issueProducerMcpToken(

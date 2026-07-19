@@ -60,6 +60,7 @@ describe("API managed authentication startup config", () => {
     const result = await runApiStartup({ MANAGED_AUTH_MODE: "existing-only" });
 
     expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain("CLERK_PUBLISHABLE_KEY");
     expect(result.stderr).toContain("CLERK_SECRET_KEY");
     expect(result.stderr).toContain("CLERK_JWT_KEY");
     expect(result.stderr).toContain("CLERK_AUTHORIZED_PARTIES");
@@ -69,6 +70,7 @@ describe("API managed authentication startup config", () => {
     const result = await runApiStartup({ MANAGED_AUTH_MODE: "disabled" });
 
     expect(result.stderr).not.toContain("CLERK_SECRET_KEY");
+    expect(result.stderr).not.toContain("CLERK_PUBLISHABLE_KEY");
     expect(result.stderr).not.toContain("CLERK_JWT_KEY");
     expect(result.stderr).not.toContain("CLERK_AUTHORIZED_PARTIES");
   });
@@ -76,6 +78,7 @@ describe("API managed authentication startup config", () => {
   it("accepts complete Clerk server config in full mode", async () => {
     const result = await runApiStartup({
       MANAGED_AUTH_MODE: "full",
+      CLERK_PUBLISHABLE_KEY: "pk_test_ZXhhbXBsZS5jbGVyay5hY2NvdW50cy5kZXYk",
       CLERK_SECRET_KEY: "sk_test_private",
       CLERK_JWT_KEY: "test-public-pem",
       CLERK_AUTHORIZED_PARTIES: "http://127.0.0.1:3001, https://example.test",
@@ -83,6 +86,7 @@ describe("API managed authentication startup config", () => {
 
     expect(result.stderr).not.toContain("Managed authentication configuration error");
     expect(result.stderr).not.toContain("CLERK_SECRET_KEY is required");
+    expect(result.stderr).not.toContain("CLERK_PUBLISHABLE_KEY is required");
     expect(result.stderr).not.toContain("CLERK_JWT_KEY is required");
     expect(result.stderr).not.toContain("CLERK_AUTHORIZED_PARTIES is required");
   });

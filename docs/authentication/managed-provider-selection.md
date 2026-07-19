@@ -55,7 +55,7 @@ mutation authority.
 | Variable | Consumer | Required |
 | --- | --- | --- |
 | `MANAGED_AUTH_MODE` | API and web server | Optional; defaults to `disabled` |
-| `CLERK_PUBLISHABLE_KEY` | Web server, then public runtime config | Required in `existing-only` and `full` |
+| `CLERK_PUBLISHABLE_KEY` | API SDK validation and web public runtime config | Required in `existing-only` and `full` |
 | `CLERK_SECRET_KEY` | API only | Required in `existing-only` and `full` |
 | `CLERK_JWT_KEY` | API only | Required in `existing-only` and `full` |
 | `CLERK_AUTHORIZED_PARTIES` | API only | Required in `existing-only` and `full`; comma-separated exact `http`/`https` origins with no paths |

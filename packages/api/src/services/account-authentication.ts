@@ -25,6 +25,8 @@ export interface AuthenticatedAccount {
 export type AccountAuthenticationOutcome =
   | { status: "authenticated"; user: AuthenticatedAccount; created: boolean }
   | { status: "profile_unavailable" }
+  | { status: "setup_incomplete" }
+  | { status: "reauth_required" }
   | { status: "support_blocked" }
   | { status: "link_required" }
   | { status: "invite_required" }
@@ -43,6 +45,7 @@ export interface ResolveAccountAuthenticationInput {
     tx: AuthenticationTransaction,
     userId: string,
   ) => Promise<boolean>;
+  beforeCommit?: (tx: AuthenticationTransaction) => Promise<void>;
 }
 
 const RETRYABLE_AUTH_CONSTRAINTS = new Set([
@@ -54,6 +57,13 @@ const RETRYABLE_AUTH_CONSTRAINTS = new Set([
 ]);
 
 class InvalidInviteError extends Error {}
+
+export interface ExplicitAccountLinkInput {
+  userId?: string;
+  evidence: VerifiedProviderEvidence;
+  /** Current Privy owner proof, required when adding Clerk to a wallet owner. */
+  privyOwnerEvidence?: VerifiedProviderEvidence;
+}
 
 /**
  * Resolve verified provider evidence to one durable Influence account.
@@ -72,6 +82,240 @@ export async function resolveAccountAuthentication(
       if (error instanceof InvalidInviteError) {
         return { status: "invalid_invite" };
       }
+      const constraint = getPostgresConstraintName(error);
+      if (attempt === 0 && constraint && RETRYABLE_AUTH_CONSTRAINTS.has(constraint)) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  return { status: "support_blocked" };
+}
+
+/**
+ * Exchange an already-linked credential. Unlike the direct Privy resolver,
+ * this never creates or links an account from new managed-provider evidence.
+ */
+export async function exchangeExistingAccountAuthentication(
+  db: DrizzleDB,
+  evidence: VerifiedProviderEvidence,
+): Promise<AccountAuthenticationOutcome> {
+  return runAuthenticationTransaction(db, async (tx) => {
+    const credential = await findCredential(tx, evidence.provider, evidence.subject);
+    if (credential) {
+      return authenticateKnownCredential(tx, credential, evidence);
+    }
+    if (evidence.owner.kind !== "email") return { status: "support_blocked" };
+    const claim = await findEmailClaim(tx, evidence.owner.normalizedEmail);
+    if (!claim) return { status: "setup_incomplete" };
+    return claim.state === "active"
+      ? { status: "link_required" }
+      : { status: "support_blocked" };
+  });
+}
+
+/**
+ * Explicitly complete creation after provider signup. A claimed email still
+ * returns link_required; creation is never an implicit merge operation.
+ */
+export async function createManagedAccountAuthentication(
+  db: DrizzleDB,
+  evidence: VerifiedProviderEvidence,
+  beforeCommit?: (tx: AuthenticationTransaction) => Promise<void>,
+): Promise<AccountAuthenticationOutcome> {
+  if (evidence.provider !== "clerk" || evidence.owner.kind !== "email") {
+    return { status: "support_blocked" };
+  }
+  return resolveAccountAuthentication(db, {
+    provider: evidence.provider,
+    subject: evidence.subject,
+    evidence,
+    compatibilityBridgeEnabled: false,
+    beforeCommit,
+  });
+}
+
+/**
+ * Attach a verified provider credential to the authenticated Influence account.
+ * Email-owned Privy accounts are authorized by the agreeing active email claim.
+ * Wallet-owned accounts additionally need a current, matching external-wallet
+ * Privy proof. Embedded Privy product wallets are never ownership proof.
+ */
+export async function linkManagedAuthenticationCredential(
+  db: DrizzleDB,
+  input: ExplicitAccountLinkInput,
+): Promise<AccountAuthenticationOutcome> {
+  if (input.evidence.provider !== "clerk" || input.evidence.owner.kind !== "email") {
+    return { status: "support_blocked" };
+  }
+  const normalizedEmail = input.evidence.owner.normalizedEmail;
+  return runAuthenticationTransaction(db, async (tx) => {
+    const credential = await findCredential(
+      tx,
+      input.evidence.provider,
+      input.evidence.subject,
+    );
+    if (credential) {
+      if (input.userId && credential.userId !== input.userId) {
+        return { status: "support_blocked" };
+      }
+      const user = await loadUser(tx, credential.userId);
+      if (!user) return { status: "support_blocked" };
+      return authenticateKnownCredential(tx, credential, input.evidence);
+    }
+
+    const claim = await findEmailClaim(
+      tx,
+      normalizedEmail,
+    );
+    if (claim?.state === "conflict") return { status: "support_blocked" };
+    if (
+      claim?.state === "active"
+      && input.userId
+      && claim.userId !== input.userId
+    ) {
+      return { status: "support_blocked" };
+    }
+    const targetUserId = input.userId
+      ?? (claim?.state === "active" ? claim.userId : null);
+    if (!targetUserId) return { status: "reauth_required" };
+    const user = await loadUser(tx, targetUserId);
+    if (!user) return { status: "support_blocked" };
+
+    const claimAttachment = await validateClaimAttachment(
+      tx,
+      user.id,
+      input.evidence,
+    );
+    if (claimAttachment !== "ok") return { status: claimAttachment };
+
+    if (!claim) {
+      const ownerProof = input.privyOwnerEvidence;
+      if (!ownerProof) return { status: "reauth_required" };
+      if (
+        ownerProof.provider !== "privy"
+        || ownerProof.owner.kind !== "external_wallet"
+      ) {
+        return { status: "support_blocked" };
+      }
+      if (!user.walletAddress) return { status: "support_blocked" };
+      const privyCredential = await findCredential(
+        tx,
+        "privy",
+        ownerProof.subject,
+      );
+      if (
+        !privyCredential
+        || privyCredential.retiredAt
+        || privyCredential.userId !== user.id
+        || !await knownEvidenceIsConsistent(tx, user, ownerProof)
+      ) {
+        return { status: "support_blocked" };
+      }
+      if (
+        user.walletAddress
+        && !getVerifiedWalletFacts(ownerProof).includes(user.walletAddress)
+      ) {
+        return { status: "support_blocked" };
+      }
+    }
+
+    await insertCredentialAndClaim(tx, user.id, input.evidence);
+    return { status: "authenticated", user, created: false };
+  });
+}
+
+/**
+ * Explicit reverse-link after direct Privy login encounters a password-owned
+ * email claim. The current Influence session names the target account.
+ */
+export async function linkPrivyAuthenticationCredential(
+  db: DrizzleDB,
+  input: ExplicitAccountLinkInput,
+): Promise<AccountAuthenticationOutcome> {
+  if (input.evidence.provider !== "privy") return { status: "support_blocked" };
+  if (!input.userId) return { status: "reauth_required" };
+  const targetUserId = input.userId;
+  return runAuthenticationTransaction(db, async (tx) => {
+    const user = await loadUser(tx, targetUserId);
+    if (!user) return { status: "support_blocked" };
+
+    const credential = await findCredential(tx, "privy", input.evidence.subject);
+    if (credential) {
+      if (credential.userId !== user.id) return { status: "support_blocked" };
+      return authenticateKnownCredential(tx, credential, input.evidence);
+    }
+
+    const activeClerkCredential = (await tx
+      .select()
+      .from(schema.authenticationCredentials)
+      .where(and(
+        eq(schema.authenticationCredentials.userId, user.id),
+        eq(schema.authenticationCredentials.provider, "clerk"),
+      ))).find((candidate) => !candidate.retiredAt);
+    if (!activeClerkCredential) return { status: "support_blocked" };
+
+    if (input.evidence.owner.kind === "email") {
+      const claim = await findEmailClaim(
+        tx,
+        input.evidence.owner.normalizedEmail,
+      );
+      if (
+        !claim
+        || claim.state !== "active"
+        || claim.userId !== user.id
+      ) {
+        return { status: "support_blocked" };
+      }
+    } else if (input.evidence.owner.kind !== "external_wallet") {
+      return { status: "support_blocked" };
+    }
+
+    const walletFacts = getVerifiedWalletFacts(input.evidence);
+    if (walletFacts.length > 0) {
+      const walletUsers = await tx
+        .select({ id: schema.users.id })
+        .from(schema.users)
+        .where(inArray(schema.users.walletAddress, walletFacts));
+      if (walletUsers.some((candidate) => candidate.id !== user.id)) {
+        return { status: "support_blocked" };
+      }
+    }
+
+    const projectedWallet = getProjectedWalletAddress(input.evidence);
+    let linkedUser = user;
+    if (
+      user.walletAddress
+      && walletFacts.length > 0
+      && !walletFacts.includes(user.walletAddress)
+    ) {
+      return { status: "support_blocked" };
+    }
+
+    await insertCredentialAndClaim(tx, user.id, input.evidence);
+    if (!user.walletAddress && projectedWallet) {
+      const [updated] = await tx
+        .update(schema.users)
+        .set({ walletAddress: projectedWallet })
+        .where(eq(schema.users.id, user.id))
+        .returning();
+      if (!updated) return { status: "support_blocked" };
+      linkedUser = updated;
+    }
+    return { status: "authenticated", user: linkedUser, created: false };
+  });
+}
+
+async function runAuthenticationTransaction(
+  db: DrizzleDB,
+  operation: (
+    tx: AuthenticationTransaction,
+  ) => Promise<AccountAuthenticationOutcome>,
+): Promise<AccountAuthenticationOutcome> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await db.transaction(operation);
+    } catch (error) {
       const constraint = getPostgresConstraintName(error);
       if (attempt === 0 && constraint && RETRYABLE_AUTH_CONSTRAINTS.has(constraint)) {
         continue;
@@ -178,6 +422,7 @@ async function resolveInTransaction(
   if (inviteRequired && input.redeemInvite && !await input.redeemInvite(tx, userId)) {
     throw new InvalidInviteError();
   }
+  await input.beforeCommit?.(tx);
 
   return { status: "authenticated", user: createdUser, created: true };
 }
@@ -202,6 +447,33 @@ async function findCredential(
       eq(schema.authenticationCredentials.provider, provider),
       eq(schema.authenticationCredentials.providerSubject, subject),
     )))[0];
+}
+
+async function findEmailClaim(
+  tx: AuthenticationTransaction,
+  normalizedEmail: string,
+) {
+  return (await tx
+    .select()
+    .from(schema.verifiedEmailClaims)
+    .where(eq(schema.verifiedEmailClaims.normalizedEmail, normalizedEmail)))[0];
+}
+
+async function authenticateKnownCredential(
+  tx: AuthenticationTransaction,
+  credential: typeof schema.authenticationCredentials.$inferSelect,
+  evidence: VerifiedProviderEvidence,
+): Promise<AccountAuthenticationOutcome> {
+  if (credential.retiredAt) return { status: "support_blocked" };
+  const user = await loadUser(tx, credential.userId);
+  if (
+    !user
+    || !evidenceMatchesBinding(evidence, credential.provider, credential.providerSubject)
+    || !await knownEvidenceIsConsistent(tx, user, evidence)
+  ) {
+    return { status: "support_blocked" };
+  }
+  return { status: "authenticated", user, created: false };
 }
 
 async function loadUser(
@@ -246,7 +518,7 @@ async function knownEvidenceIsConsistent(
         schema.verifiedEmailClaims.normalizedEmail,
         evidence.owner.normalizedEmail,
       )))[0];
-    if (claim && (claim.state !== "active" || claim.userId !== user.id)) return false;
+    if (!claim || claim.state !== "active" || claim.userId !== user.id) return false;
   }
   return true;
 }
