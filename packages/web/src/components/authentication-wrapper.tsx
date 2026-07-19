@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ClerkPasswordFlow, type ManagedAuthMode, type PasswordFlowIntent } from "@/components/clerk-password-flow";
+import {
+  E2ELayeredPasswordFlow,
+  isLayeredAuthE2EAdapterEnabled,
+} from "@/components/e2e-layered-password-flow";
 import { useAuth } from "@/hooks/use-auth";
 import type { ProviderAuthenticationAttempt } from "@/lib/auth-session-coordinator";
 
@@ -42,6 +46,7 @@ export function AuthenticationWrapper({
   const [email, setEmail] = useState(initialEmail);
   const [attempt, setAttempt] =
     useState<ProviderAuthenticationAttempt | null>(null);
+  const [reversePrivyToken, setReversePrivyToken] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const invokingControlRef = useRef<HTMLElement | null>(null);
 
@@ -53,10 +58,22 @@ export function AuthenticationWrapper({
 
   const close = useCallback((cancelAttempt: boolean) => {
     if (cancelAttempt) cancelAuthenticationAttempt();
-    setOpen(false);
+    setReversePrivyToken(null);
     setAttempt(null);
-    if (presentation === "modal") restoreInvokingFocus();
-  }, [cancelAuthenticationAttempt, presentation, restoreInvokingFocus]);
+    if (presentation === "inline") {
+      setIntent("sign_in");
+      setEmail("");
+      queueMicrotask(() => setAttempt(beginAuthenticationAttempt()));
+      return;
+    }
+    setOpen(false);
+    restoreInvokingFocus();
+  }, [
+    beginAuthenticationAttempt,
+    cancelAuthenticationAttempt,
+    presentation,
+    restoreInvokingFocus,
+  ]);
 
   const start = useCallback((request: AuthenticationRequestDetail) => {
     cancelAuthenticationAttempt();
@@ -66,6 +83,7 @@ export function AuthenticationWrapper({
         : null;
     setIntent(request.intent ?? "sign_in");
     setEmail(request.email ?? "");
+    setReversePrivyToken(null);
     setAttempt(beginAuthenticationAttempt());
     setOpen(true);
   }, [beginAuthenticationAttempt, cancelAuthenticationAttempt]);
@@ -153,16 +171,29 @@ export function AuthenticationWrapper({
     };
   }, [close, open, presentation]);
 
-  if (!open || !attempt) return null;
+  if (!open || (!attempt && !reversePrivyToken)) return null;
 
-  const flow = (
-    <ClerkPasswordFlow
+  const PasswordFlow = isLayeredAuthE2EAdapterEnabled()
+    ? E2ELayeredPasswordFlow
+    : ClerkPasswordFlow;
+  const flow = reversePrivyToken && !attempt ? (
+    <ReversePrivyLinkConfirmation
+      mode={managedAuthMode}
+      onContinue={() => {
+        setIntent("sign_in");
+        setAttempt(beginAuthenticationAttempt());
+      }}
+      onCancel={() => close(true)}
+    />
+  ) : attempt ? (
+    <PasswordFlow
       key={`${intent}:${attempt.generation}`}
       intent={intent}
       mode={managedAuthMode}
       attempt={attempt}
       initialEmail={email}
       presentation={presentation}
+      reversePrivyToken={reversePrivyToken ?? undefined}
       onIntentChange={setIntent}
       onComplete={() => {
         if (presentation === "inline") {
@@ -173,18 +204,19 @@ export function AuthenticationWrapper({
       }}
       onCancel={() => close(true)}
       onContinueWithPrivy={() => {
-        if (presentation === "modal") {
-          close(true);
-          openPrivySignIn();
-          return;
-        }
         setAttempt(null);
-        openPrivySignIn((completed) => {
-          if (!completed) setAttempt(beginAuthenticationAttempt());
+        openPrivySignIn((outcome) => {
+          if (outcome.kind === "link_required") {
+            setReversePrivyToken(outcome.token);
+            return;
+          }
+          if (outcome.kind === "cancelled") {
+            setAttempt(beginAuthenticationAttempt());
+          }
         });
       }}
     />
-  );
+  ) : null;
 
   if (presentation === "inline") {
     return (
@@ -220,6 +252,50 @@ export function AuthenticationWrapper({
         </button>
         <div className="pr-16">{flow}</div>
       </div>
+    </div>
+  );
+}
+
+function ReversePrivyLinkConfirmation({
+  mode,
+  onContinue,
+  onCancel,
+}: {
+  mode: ManagedAuthMode;
+  onContinue: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="space-y-5">
+      <h2 tabIndex={-1} className="influence-section-title text-xl outline-none">
+        Link Privy to your account?
+      </h2>
+      <p className="influence-copy text-sm">
+        This Privy email belongs to an existing email/password account. Sign in
+        with that password to prove the account is yours. We will add Privy to
+        the existing account; no new account will be created.
+      </p>
+      {mode === "full" ? (
+        <button
+          type="button"
+          className="influence-button-primary rounded-lg px-4 py-2 text-sm"
+          onClick={onContinue}
+        >
+          Continue with email/password
+        </button>
+      ) : (
+        <p role="alert" className="text-sm text-amber-300">
+          Linking a new sign-in method is temporarily unavailable. You can
+          still sign in with your existing email/password.
+        </p>
+      )}
+      <button
+        type="button"
+        className="influence-button-secondary rounded-lg px-4 py-2 text-sm"
+        onClick={onCancel}
+      >
+        Cancel
+      </button>
     </div>
   );
 }

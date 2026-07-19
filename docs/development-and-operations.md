@@ -193,7 +193,8 @@ Do not wrap `bun run dev:api` or `bun run dev:web` in another `doppler run`.
 **Then:**
 
 1. Open `http://localhost:3001` in your browser
-2. Sign in via Privy (wallet or email) for admin operations
+2. Sign in via Privy (wallet or email), or via managed email/password when the
+   environment has enabled it
 3. Use the admin panel to create a new game, configure player count, and start it
 4. Open the game URL to watch it live; basic watching is public-by-URL, while fill/admin operations and private evidence remain auth-gated
 
@@ -211,7 +212,20 @@ bun test
 
 # Type check everything
 bun run typecheck
+
+# Deterministic layered-auth browser/API coverage (local Docker PostgreSQL)
+bun run test:e2e:layered-auth
+
+# Real Clerk development-instance coverage (explicit credentials required)
+bun run test:e2e:layered-auth:clerk
 ```
+
+The deterministic layered-auth project injects provider assertions but drives
+the visible unified authentication wrapper and real Influence API/session
+coordinator. The real Clerk project is a separate, credential-gated lane and
+must not be reported as passed when skipped. See
+[`authentication/layered-identity-rollout.md`](authentication/layered-identity-rollout.md)
+for staging, cutover, rollback, support, and OpenAI reviewer acceptance.
 
 ### 5. Close out code-backed work
 
@@ -266,6 +280,12 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | No | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off` |
 | `PRIVY_APP_ID` | Yes | -- | Privy app ID for auth |
 | `PRIVY_APP_SECRET` | Yes | -- | Privy app secret for auth |
+| `MANAGED_AUTH_MODE` | No | `disabled` | `disabled`, `existing-only`, or `full`; API and web must use the same value |
+| `CLERK_PUBLISHABLE_KEY` | Required when managed auth is enabled | -- | Clerk instance publishable key; the only Clerk key exposed through web runtime config |
+| `CLERK_SECRET_KEY` | Required when managed auth is enabled | -- | API-only Clerk backend key |
+| `CLERK_JWT_KEY` | Required when managed auth is enabled | -- | API-only Clerk session-token verification key |
+| `CLERK_AUTHORIZED_PARTIES` | Required when managed auth is enabled | -- | Comma-separated exact browser origins accepted for Clerk session assertions |
+| `PRIVY_COMPATIBILITY_BRIDGE_ENABLED` | No | `true` | Transitional legacy Privy mapping bridge; set `false` only after a zero final delta |
 | `JWT_SECRET` | Yes | -- | Secret for signing session JWTs |
 | `ADMIN_ADDRESS` | No | -- | EVM wallet address granted admin access |
 | `PORT` | No | `3000` | HTTP server port |
@@ -317,6 +337,7 @@ If you are not running the web app through Doppler, create this file manually:
 ```bash
 cat > packages/web/.env.local << 'EOF'
 NEXT_PUBLIC_PRIVY_APP_ID=<your-privy-app-id>
+MANAGED_AUTH_MODE=disabled
 NEXT_PUBLIC_API_URL=http://127.0.0.1:3000
 NEXT_PUBLIC_WS_URL=ws://127.0.0.1:3000
 NEXT_PUBLIC_ADMIN_ADDRESS=<your-wallet-address>
@@ -327,6 +348,8 @@ EOF
 | Variable | Required | Description |
 |---|---|---|
 | `NEXT_PUBLIC_PRIVY_APP_ID` | Yes | Privy app ID (same as API) |
+| `MANAGED_AUTH_MODE` | No | Server-owned managed-auth rollout mode; must match the API |
+| `CLERK_PUBLISHABLE_KEY` | Required when managed auth is enabled | Public Clerk key returned by server runtime config; never place Clerk secret/JWT keys in the web environment |
 | `NEXT_PUBLIC_API_URL` | Yes | Backend API URL |
 | `NEXT_PUBLIC_WS_URL` | Yes | WebSocket URL for live game events |
 | `NEXT_PUBLIC_ADMIN_ADDRESS` | Yes | Wallet address for admin panel access |

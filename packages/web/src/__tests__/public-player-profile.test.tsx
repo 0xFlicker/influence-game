@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { renderToString } from "react-dom/server";
+import type { ReactNode } from "react";
 import PublicPlayerProfilePage, {
   generateMetadata,
 } from "../app/profile/[id]/page";
@@ -20,6 +21,37 @@ import {
   getServerPublicPlayerProfile,
   ServerApiError,
 } from "../lib/server-api";
+import {
+  InfluenceAuthContext,
+  type InfluenceAuthState,
+} from "../hooks/use-auth";
+
+const anonymousAuthState: InfluenceAuthState = {
+  ready: true,
+  authenticated: false,
+  account: null,
+  hydrationError: false,
+  openSignIn: () => {},
+  openCreateAccount: () => {},
+  openPrivySignIn: () => {},
+  requestPrivyProof: async () => null,
+  beginAuthenticationAttempt: () => ({ generation: "profile-test" }),
+  cancelAuthenticationAttempt: () => {},
+  completeAuthenticationAttempt: async () => false,
+  logout: async () => {},
+  needsInvite: false,
+  submitInvite: async () => {},
+  inviteError: null,
+  submittingInvite: false,
+};
+
+function renderWithAnonymousAuth(node: ReactNode): string {
+  return renderToString(
+    <InfluenceAuthContext.Provider value={anonymousAuthState}>
+      {node}
+    </InfluenceAuthContext.Provider>,
+  );
+}
 
 const profileFixture: PublicPlayerProfile = {
   identity: {
@@ -173,7 +205,7 @@ describe("public player profile", () => {
       const page = await PublicPlayerProfilePage({
         params: Promise.resolve({ id: profileFixture.identity.publicId }),
       });
-      const html = renderToString(page);
+      const html = renderWithAnonymousAuth(page);
 
       expect(metadata.alternates?.canonical).toBe("/profile/flick");
       expect(metadata.openGraph?.url).toBe("/profile/flick");
@@ -257,14 +289,14 @@ describe("public player profile", () => {
   });
 
   it("provides explicit generic loading, retry, and terminal not-found surfaces", () => {
-    const loadingHtml = renderToString(<PublicPlayerProfileLoading />);
-    const errorHtml = renderToString(
+    const loadingHtml = renderWithAnonymousAuth(<PublicPlayerProfileLoading />);
+    const errorHtml = renderWithAnonymousAuth(
       <PublicPlayerProfileError
         error={new Error("PRIVATE_UPSTREAM_DETAIL")}
         reset={() => {}}
       />,
     );
-    const notFoundHtml = renderToString(<PublicPlayerProfileNotFound />);
+    const notFoundHtml = renderWithAnonymousAuth(<PublicPlayerProfileNotFound />);
 
     expect(loadingHtml).toContain('aria-label="Loading player profile"');
     expect(errorHtml).toContain("Try again");

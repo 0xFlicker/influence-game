@@ -13,6 +13,7 @@ import {
 } from "react";
 import { ClerkProvider, useClerk } from "@clerk/nextjs";
 import { AuthenticationWrapper } from "@/components/authentication-wrapper";
+import { isLayeredAuthE2EAdapterEnabled } from "@/components/e2e-layered-password-flow";
 import {
   RuntimeConfigProvider,
   useRuntimeConfig,
@@ -300,6 +301,18 @@ function InfluenceAuthLayer({
   managedAuthMode: PublicRuntimeConfig["MANAGED_AUTH_MODE"];
   clerkPublishableKey: string;
 }) {
+  if (isLayeredAuthE2EAdapterEnabled()) {
+    return (
+      <InfluenceAuthProvider managedAuthEnabled>
+        <AuthExperience>{children}</AuthExperience>
+        <AuthenticationWrapper
+          managedAuthMode={
+            managedAuthMode === "disabled" ? "existing-only" : managedAuthMode
+          }
+        />
+      </InfluenceAuthProvider>
+    );
+  }
   if (managedAuthMode === "disabled") {
     return (
       <InfluenceAuthProvider>

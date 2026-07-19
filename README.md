@@ -31,7 +31,7 @@ That split makes the system useful to inspect:
 | Durable event history | API-backed games persist canonical game events in PostgreSQL and rebuild read models from those events. CLI simulations write the same event envelope to JSONL artifacts. |
 | Replay and inspection | Simulation artifacts include events, turns, progress, transcripts, and projections; the Game MCP can list sessions, filter events, read timelines, and return linked records. |
 | MCP and OAuth | The deployed `/mcp` surface separates `agents:read`, `agents:write`, `games:read`, and `producer` scopes. Local helpers support OAuth-gated MCP evaluation. |
-| Identity and permissions | The web/API stack uses Privy auth, wallet/account identity, scoped MCP tokens, and producer-only access for sensitive trace/evidence tools. |
+| Identity and permissions | Influence owns durable account/session identity; permanent first-class Privy login and managed Clerk email/password login resolve through provider-neutral credentials. Scoped MCP tokens and current roles protect sensitive tools. |
 | Persistence | PostgreSQL stores API game state and read models; local MinIO/S3-compatible storage is used for private trace-content development; media artifacts are published through API-owned storage paths. |
 | Model/provider abstraction | The engine uses a model catalog and provider profiles for hosted OpenAI, local OpenAI-compatible servers, and Katana/IMGNAI model routes. |
 | Postgame analysis | Completed-game APIs and MCP tools expose game briefs, jury breakdowns, player summaries, turning points, momentum, and structured vote cohorts derived from canonical events. |
@@ -90,6 +90,7 @@ flowchart LR
 - Detailed setup, simulation, MCP, deployment, and operations notes: [docs/development-and-operations.md](docs/development-and-operations.md)
 - Render-worker deployment contract: [docs/deployment/house-highlights-render-worker.md](docs/deployment/house-highlights-render-worker.md)
 - MCP/OAuth production notes: [docs/game-mcp-production-oauth.md](docs/game-mcp-production-oauth.md)
+- Layered identity rollout and reviewer acceptance: [docs/authentication/layered-identity-rollout.md](docs/authentication/layered-identity-rollout.md)
 - Postgame analysis design: [docs/endgame-analysis-v0.1.0.md](docs/endgame-analysis-v0.1.0.md)
 - Reasoning and transcript observability: [docs/reasoning-transcript-observability.md](docs/reasoning-transcript-observability.md)
 

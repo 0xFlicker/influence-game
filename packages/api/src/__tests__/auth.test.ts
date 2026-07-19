@@ -731,6 +731,87 @@ describe("managed authentication routes", () => {
     expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(2);
   });
 
+  test("reverse Privy collision requires password proof and explicit link confirmation", async () => {
+    await db.insert(schema.users).values({
+      id: "password-owner",
+      email: "reverse@example.com",
+      displayName: "Password owner",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "password-owner",
+      provider: "clerk",
+      providerSubject: "clerk-reverse-owner",
+    });
+    await db.insert(schema.verifiedEmailClaims).values({
+      normalizedEmail: "reverse@example.com",
+      userId: "password-owner",
+      state: "active",
+    });
+
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => (
+        verifiedClerk("clerk-reverse-owner", "reverse@example.com")
+      )),
+      verifyPrivyToken: async (token) => (
+        token === "verified-privy" ? "did:privy:reverse-owner" : null
+      ),
+      getPrivyUser: async () => ({
+        id: "did:privy:reverse-owner",
+        createdAt: new Date(),
+        isGuest: false,
+        customMetadata: {},
+        linkedAccounts: [{
+          type: "email",
+          address: "reverse@example.com",
+          verifiedAt: new Date(),
+          firstVerifiedAt: new Date(),
+          latestVerifiedAt: new Date(),
+        }],
+      }),
+    }));
+
+    const collision = await app.request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ token: "verified-privy" }),
+    });
+    expect(collision.status).toBe(409);
+    expect(await collision.json()).toMatchObject({
+      code: "ACCOUNT_LINK_REQUIRED",
+    });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+
+    const passwordSession = await managedRequest(
+      app,
+      "/api/auth/managed/exchange",
+      { token: "verified-clerk" },
+    );
+    expect(passwordSession.status).toBe(200);
+    const passwordSessionBody = await passwordSession.json() as {
+      token: string;
+      user: { id: string };
+    };
+    expect(passwordSessionBody.user.id).toBe("password-owner");
+
+    const linked = await app.request("/api/auth/privy/link", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${passwordSessionBody.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ token: "verified-privy", confirm: true }),
+    });
+    expect(linked.status).toBe(200);
+    expect(await linked.json()).toMatchObject({
+      user: {
+        id: "password-owner",
+        loginMethods: { privy: true, emailPassword: true },
+      },
+    });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(2);
+  });
+
   test("wallet link survives expired Privy proof and succeeds after matching owner reauth", async () => {
     const embedded = "0x1111111111111111111111111111111111111111";
     const external = "0x2222222222222222222222222222222222222222";

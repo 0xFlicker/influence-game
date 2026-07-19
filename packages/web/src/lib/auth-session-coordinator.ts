@@ -48,18 +48,20 @@ export interface ProviderAuthenticationAttempt {
  * replacement settles the prior attempt as cancelled, and settling is
  * destructive so an old provider callback cannot leak into a later attempt.
  */
-export class ProviderAuthenticationSettlement {
-  private pending: ((completed: boolean) => void) | null = null;
+export class ProviderAuthenticationSettlement<Result> {
+  private pending: ((result: Result) => void) | null = null;
 
-  begin(onSettled?: (completed: boolean) => void): void {
-    this.settle(false);
+  constructor(private readonly cancelledResult: Result) {}
+
+  begin(onSettled?: (result: Result) => void): void {
+    this.settle(this.cancelledResult);
     this.pending = onSettled ?? null;
   }
 
-  settle(completed: boolean): void {
+  settle(result: Result): void {
     const onSettled = this.pending;
     this.pending = null;
-    onSettled?.(completed);
+    onSettled?.(result);
   }
 }
 

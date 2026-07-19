@@ -5,6 +5,7 @@ import { AUTHENTICATION_METHOD_MATRIX } from "../components/clerk-password-flow"
 import {
   ApiError,
   AUTH_TOKEN_KEY,
+  linkPrivyAuthentication,
   linkManagedAuthentication,
 } from "../lib/api";
 
@@ -72,11 +73,24 @@ describe("unified authentication wrapper", () => {
   });
 
   it("restores a fresh inline password attempt after Privy cancellation", () => {
-    expect(wrapperSource).toContain('if (presentation === "modal")');
-    expect(wrapperSource).toContain("openPrivySignIn((completed) =>");
+    expect(wrapperSource).toContain("openPrivySignIn((outcome) =>");
     expect(wrapperSource).toContain(
-      "if (!completed) setAttempt(beginAuthenticationAttempt());",
+      'if (outcome.kind === "cancelled")',
     );
+    expect(wrapperSource).toContain(
+      "setAttempt(beginAuthenticationAttempt());",
+    );
+  });
+
+  it("confirms reverse Privy linking and keeps the assertion in component memory", () => {
+    expect(wrapperSource).toContain("Link Privy to your account?");
+    expect(wrapperSource).toContain("Continue with email/password");
+    expect(wrapperSource).toContain("no new account will be created");
+    expect(wrapperSource).toContain("setReversePrivyToken(outcome.token)");
+    expect(wrapperSource).not.toContain("localStorage");
+    expect(passwordFlowSource).toContain("reversePrivyToken");
+    expect(passwordFlowSource).toContain("const managedSession");
+    expect(passwordFlowSource).toContain("linkPrivyAuthentication(");
   });
 
   it("uses one privacy-safe request reference and preserves Influence session semantics on link 401", () => {
@@ -175,6 +189,45 @@ describe("unified authentication wrapper", () => {
       } else {
         delete (globalThis as { localStorage?: unknown }).localStorage;
       }
+    }
+  });
+
+  it("sends reverse Privy linking with the just-issued Influence token", async () => {
+    const originalFetch = globalThis.fetch;
+    let requestHeaders: HeadersInit | undefined;
+    let requestBody = "";
+    try {
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        value: async (_input: RequestInfo | URL, init?: RequestInit) => {
+          requestHeaders = init?.headers;
+          requestBody = String(init?.body);
+          return new Response(JSON.stringify({
+            token: "final-influence-jwt",
+            user: { id: "durable-user" },
+          }), { status: 200 });
+        },
+      });
+
+      await linkPrivyAuthentication(
+        "private-privy-token",
+        "intermediate-influence-jwt",
+        "AUTH-REVERSE",
+      );
+
+      expect(requestHeaders).toMatchObject({
+        Authorization: "Bearer intermediate-influence-jwt",
+        "x-correlation-id": "AUTH-REVERSE",
+      });
+      expect(JSON.parse(requestBody)).toEqual({
+        token: "private-privy-token",
+        confirm: true,
+      });
+    } finally {
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        value: originalFetch,
+      });
     }
   });
 });

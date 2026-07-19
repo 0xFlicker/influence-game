@@ -1657,6 +1657,24 @@ export async function linkManagedAuthentication(
   });
 }
 
+export async function linkPrivyAuthentication(
+  privyToken: string,
+  influenceToken: string,
+  correlationId?: string,
+): Promise<InfluenceSessionResult> {
+  return providerAuthFetch("/api/auth/privy/link", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${influenceToken}`,
+      ...(correlationId ? { "x-correlation-id": correlationId } : {}),
+    },
+    body: JSON.stringify({
+      token: privyToken,
+      confirm: true,
+    }),
+  });
+}
+
 export async function checkInviteRequired(): Promise<{ required: boolean }> {
   return apiFetch("/api/auth/invite-required");
 }

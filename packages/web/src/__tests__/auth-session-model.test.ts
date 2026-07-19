@@ -307,7 +307,7 @@ describe("Influence session coordinator", () => {
 describe("provider authentication settlement", () => {
   it("settles successful provider completion exactly once", () => {
     const outcomes: boolean[] = [];
-    const settlement = new ProviderAuthenticationSettlement();
+    const settlement = new ProviderAuthenticationSettlement<boolean>(false);
 
     settlement.begin((completed) => outcomes.push(completed));
     settlement.settle(true);
@@ -320,7 +320,7 @@ describe("provider authentication settlement", () => {
     const outcomes: boolean[] = [];
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const settlement = new ProviderAuthenticationSettlement();
+      const settlement = new ProviderAuthenticationSettlement<boolean>(false);
       settlement.begin((completed) => outcomes.push(completed));
       settlement.settle(false);
     }
@@ -331,7 +331,7 @@ describe("provider authentication settlement", () => {
   it("cancels a replaced callback without leaking it into the next attempt", () => {
     const first: boolean[] = [];
     const second: boolean[] = [];
-    const settlement = new ProviderAuthenticationSettlement();
+    const settlement = new ProviderAuthenticationSettlement<boolean>(false);
 
     settlement.begin((completed) => first.push(completed));
     settlement.begin((completed) => second.push(completed));

@@ -7,6 +7,7 @@ import {
   ApiError,
   createManagedAuthentication,
   exchangeManagedAuthentication,
+  linkPrivyAuthentication,
   linkManagedAuthentication,
   type InfluenceSessionResult,
 } from "@/lib/api";
@@ -69,6 +70,7 @@ export function ClerkPasswordFlow({
   onComplete,
   onCancel,
   onContinueWithPrivy,
+  reversePrivyToken,
 }: {
   intent: PasswordFlowIntent;
   mode: ManagedAuthMode;
@@ -79,6 +81,7 @@ export function ClerkPasswordFlow({
   onComplete: () => void;
   onCancel: () => void;
   onContinueWithPrivy: () => void;
+  reversePrivyToken?: string;
 }) {
   const clerk = useClerk();
   const { signIn, errors: signInErrors, fetchStatus: signInFetchStatus } =
@@ -224,6 +227,20 @@ export function ClerkPasswordFlow({
       return;
     }
     try {
+      if (reversePrivyToken) {
+        await completeInfluenceSession(async () => {
+          const managedSession = await exchangeManagedAuthentication(
+            token,
+            correlationId,
+          );
+          return linkPrivyAuthentication(
+            reversePrivyToken,
+            managedSession.token,
+            correlationId,
+          );
+        });
+        return;
+      }
       if (intent === "create_account") {
         await completeInfluenceSession(
           () => createManagedAuthentication(token, correlationId),
@@ -704,7 +721,7 @@ export function ClerkPasswordFlow({
         </button>
       </form>
 
-      {isSignIn && (
+      {isSignIn && !reversePrivyToken && (
         <>
           <div className="flex items-center gap-3" aria-hidden="true">
             <span className="h-px flex-1 bg-border-subtle" />

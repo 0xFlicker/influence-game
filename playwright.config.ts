@@ -4,14 +4,22 @@ import { existsSync } from "node:fs";
 const localIdentityRun =
   process.env.PLAYWRIGHT_LOCAL_IDENTITY === "1"
   || process.env.PLAYWRIGHT_BASE_URL === undefined;
+const layeredAuthRun = process.env.PLAYWRIGHT_LAYERED_AUTH;
+const localSerialRun = localIdentityRun || layeredAuthRun === "deterministic";
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+const chromiumUse = {
+  browserName: "chromium" as const,
+  ...(existsSync(macChrome)
+    ? { launchOptions: { executablePath: macChrome } }
+    : {}),
+};
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: 30_000,
-  fullyParallel: !localIdentityRun,
-  workers: localIdentityRun ? 1 : undefined,
-  retries: localIdentityRun ? 0 : 1,
+  timeout: layeredAuthRun ? 90_000 : 30_000,
+  fullyParallel: !localSerialRun,
+  workers: localSerialRun ? 1 : undefined,
+  retries: localSerialRun ? 0 : 1,
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://influence-staging",
     extraHTTPHeaders: {
@@ -20,15 +28,15 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [
-    {
-      name: "chromium",
-      use: {
-        browserName: "chromium",
-        ...(existsSync(macChrome)
-          ? { launchOptions: { executablePath: macChrome } }
-          : {}),
-      },
-    },
-  ],
+  projects: layeredAuthRun
+    ? [
+        {
+          name: layeredAuthRun === "real-clerk"
+            ? "layered-auth-real-clerk"
+            : "layered-auth-deterministic",
+          testMatch: /layered-authentication\.spec\.ts/,
+          use: chromiumUse,
+        },
+      ]
+    : [{ name: "chromium", use: chromiumUse }],
 });

@@ -34,10 +34,29 @@ const AUTH_CHANNEL = "influence_auth";
 
 type SessionAccountInput = Omit<AuthMe, "isAdmin"> | AuthMe;
 
+declare global {
+  interface Window {
+    __INFLUENCE_E2E_AUTH__?: {
+      privyToken?: string | null;
+      walletProofToken?: string | null;
+    };
+  }
+}
+
+function isLayeredAuthE2EAdapterEnabled(): boolean {
+  return process.env.NODE_ENV !== "production"
+    && process.env.NEXT_PUBLIC_E2E_LAYERED_AUTH === "true";
+}
+
 export interface InfluenceSessionResponse {
   token: string;
   user: SessionAccountInput;
 }
+
+export type PrivyAuthenticationOutcome =
+  | { kind: "completed" }
+  | { kind: "cancelled" }
+  | { kind: "link_required"; token: string };
 
 export interface InfluenceAuthState {
   ready: boolean;
@@ -46,7 +65,9 @@ export interface InfluenceAuthState {
   hydrationError: boolean;
   openSignIn: () => void;
   openCreateAccount: () => void;
-  openPrivySignIn: (onSettled?: (completed: boolean) => void) => void;
+  openPrivySignIn: (
+    onSettled?: (outcome: PrivyAuthenticationOutcome) => void,
+  ) => void;
   requestPrivyProof: () => Promise<string | null>;
   beginAuthenticationAttempt: () => ProviderAuthenticationAttempt;
   cancelAuthenticationAttempt: () => void;
@@ -61,7 +82,8 @@ export interface InfluenceAuthState {
   submittingInvite: boolean;
 }
 
-const InfluenceAuthContext = createContext<InfluenceAuthState | null>(null);
+export const InfluenceAuthContext =
+  createContext<InfluenceAuthState | null>(null);
 
 function normalizeSessionAccount(user: SessionAccountInput): AuthMe {
   if ("isAdmin" in user) return user;
@@ -192,6 +214,7 @@ export function InfluenceAuthProvider({
       hydrate: getMe,
       providerLogouts: [
         async () => {
+          if (isLayeredAuthE2EAdapterEnabled()) return;
           await privyLogoutRef.current();
         },
         async () => {
@@ -209,7 +232,9 @@ export function InfluenceAuthProvider({
     ((token: string | null) => void) | null
   >(null);
   const [privyAuthenticationSettlement] = useState(
-    () => new ProviderAuthenticationSettlement(),
+    () => new ProviderAuthenticationSettlement<PrivyAuthenticationOutcome>({
+      kind: "cancelled",
+    }),
   );
   const [needsInvite, setNeedsInvite] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
@@ -240,7 +265,7 @@ export function InfluenceAuthProvider({
       pendingPrivyToken.current = null;
       if (!wasProofRequest) {
         coordinator.cancelProviderAttempt();
-        privyAuthenticationSettlement.settle(false);
+        privyAuthenticationSettlement.settle({ kind: "cancelled" });
       }
     },
   });
@@ -266,7 +291,7 @@ export function InfluenceAuthProvider({
       pendingPrivyAttempt.current = null;
       pendingPrivyPurpose.current = null;
       coordinator.cancelProviderAttempt();
-      privyAuthenticationSettlement.settle(false);
+      privyAuthenticationSettlement.settle({ kind: "cancelled" });
       return;
     }
     try {
@@ -281,18 +306,31 @@ export function InfluenceAuthProvider({
       pendingPrivyAttempt.current = null;
       pendingPrivyToken.current = null;
       pendingPrivyPurpose.current = null;
-      privyAuthenticationSettlement.settle(completed);
+      privyAuthenticationSettlement.settle({
+        kind: completed ? "completed" : "cancelled",
+      });
     } catch (error) {
       if (error instanceof ApiError && error.code === "INVITE_REQUIRED") {
         pendingPrivyToken.current = providerToken;
         setNeedsInvite(true);
         return;
       }
+      if (error instanceof ApiError && error.code === "ACCOUNT_LINK_REQUIRED") {
+        pendingPrivyAttempt.current = null;
+        pendingPrivyToken.current = null;
+        pendingPrivyPurpose.current = null;
+        coordinator.cancelProviderAttempt();
+        privyAuthenticationSettlement.settle({
+          kind: "link_required",
+          token: providerToken,
+        });
+        return;
+      }
       pendingPrivyAttempt.current = null;
       pendingPrivyToken.current = null;
       pendingPrivyPurpose.current = null;
       coordinator.cancelProviderAttempt();
-      privyAuthenticationSettlement.settle(false);
+      privyAuthenticationSettlement.settle({ kind: "cancelled" });
       console.error("[InfluenceAuth] Privy exchange failed:", error);
     }
   }, [
@@ -345,11 +383,11 @@ export function InfluenceAuthProvider({
     pendingPrivyAttempt.current = null;
     pendingPrivyToken.current = null;
     coordinator.cancelProviderAttempt();
-    privyAuthenticationSettlement.settle(false);
+    privyAuthenticationSettlement.settle({ kind: "cancelled" });
   }, [coordinator, privyAuthenticationSettlement]);
 
   const openPrivySignIn = useCallback((
-    onSettled?: (completed: boolean) => void,
+    onSettled?: (outcome: PrivyAuthenticationOutcome) => void,
   ) => {
     privyAuthenticationSettlement.begin(onSettled);
     pendingPrivyProofResolution.current?.(null);
@@ -359,10 +397,60 @@ export function InfluenceAuthProvider({
     pendingPrivyToken.current = null;
     setNeedsInvite(false);
     setInviteError(null);
+    if (isLayeredAuthE2EAdapterEnabled()) {
+      const attempt = pendingPrivyAttempt.current;
+      const providerToken = window.__INFLUENCE_E2E_AUTH__?.privyToken ?? null;
+      void Promise.resolve().then(async () => {
+        if (!attempt || !providerToken) {
+          pendingPrivyAttempt.current = null;
+          pendingPrivyPurpose.current = null;
+          coordinator.cancelProviderAttempt();
+          privyAuthenticationSettlement.settle({ kind: "cancelled" });
+          return;
+        }
+        try {
+          const completed = await completeAuthenticationAttempt(
+            attempt,
+            () => loginWithPrivyToken(providerToken),
+          );
+          pendingPrivyAttempt.current = null;
+          pendingPrivyPurpose.current = null;
+          privyAuthenticationSettlement.settle({
+            kind: completed ? "completed" : "cancelled",
+          });
+        } catch (error) {
+          pendingPrivyAttempt.current = null;
+          pendingPrivyPurpose.current = null;
+          coordinator.cancelProviderAttempt();
+          if (
+            error instanceof ApiError
+            && error.code === "ACCOUNT_LINK_REQUIRED"
+          ) {
+            privyAuthenticationSettlement.settle({
+              kind: "link_required",
+              token: providerToken,
+            });
+            return;
+          }
+          privyAuthenticationSettlement.settle({ kind: "cancelled" });
+        }
+      });
+      return;
+    }
     openPrivyLogin();
-  }, [coordinator, openPrivyLogin, privyAuthenticationSettlement]);
+  }, [
+    completeAuthenticationAttempt,
+    coordinator,
+    openPrivyLogin,
+    privyAuthenticationSettlement,
+  ]);
 
   const requestPrivyProof = useCallback(() => {
+    if (isLayeredAuthE2EAdapterEnabled()) {
+      return Promise.resolve(
+        window.__INFLUENCE_E2E_AUTH__?.walletProofToken ?? null,
+      );
+    }
     pendingPrivyProofResolution.current?.(null);
     pendingPrivyPurpose.current = "proof";
     pendingPrivyAttempt.current = null;
@@ -393,7 +481,7 @@ export function InfluenceAuthProvider({
     pendingPrivyPurpose.current = null;
     pendingPrivyAttempt.current = null;
     pendingPrivyToken.current = null;
-    privyAuthenticationSettlement.settle(false);
+    privyAuthenticationSettlement.settle({ kind: "cancelled" });
     setNeedsInvite(false);
     setInviteError(null);
     await coordinator.logout();
@@ -415,9 +503,25 @@ export function InfluenceAuthProvider({
         pendingPrivyAttempt.current = null;
         pendingPrivyToken.current = null;
         pendingPrivyPurpose.current = null;
-        privyAuthenticationSettlement.settle(true);
+        privyAuthenticationSettlement.settle({ kind: "completed" });
       }
     } catch (error) {
+      if (
+        error instanceof ApiError
+        && error.code === "ACCOUNT_LINK_REQUIRED"
+        && providerToken
+      ) {
+        setNeedsInvite(false);
+        pendingPrivyAttempt.current = null;
+        pendingPrivyToken.current = null;
+        pendingPrivyPurpose.current = null;
+        coordinator.cancelProviderAttempt();
+        privyAuthenticationSettlement.settle({
+          kind: "link_required",
+          token: providerToken,
+        });
+        return;
+      }
       setInviteError(
         error instanceof ApiError
           ? error.message || "Invalid invite code"
@@ -426,7 +530,11 @@ export function InfluenceAuthProvider({
     } finally {
       setSubmittingInvite(false);
     }
-  }, [completeAuthenticationAttempt, privyAuthenticationSettlement]);
+  }, [
+    completeAuthenticationAttempt,
+    coordinator,
+    privyAuthenticationSettlement,
+  ]);
 
   return createElement(
     InfluenceAuthContext.Provider,
