@@ -27,22 +27,26 @@ export function resolveApiUrl(pathOrUrl: string): string {
 // Auth token storage (client-side only)
 // ---------------------------------------------------------------------------
 
-const TOKEN_KEY = "influence_session";
+export const AUTH_TOKEN_KEY = "influence_session";
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+export function storeAuthToken(token: string): void {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(AUTH_TOKEN_KEY, token);
 }
 
 export function setAuthToken(token: string): void {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token);
+  storeAuthToken(token);
   window.dispatchEvent(new CustomEvent("auth:session-ready"));
 }
 
 export function clearAuthToken(): void {
   if (typeof window === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(AUTH_TOKEN_KEY);
 }
 
 // ---------------------------------------------------------------------------
@@ -91,9 +95,34 @@ export async function apiFetch<T>(
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     if (res.status === 401 && typeof window !== "undefined" && token) {
-      clearAuthToken();
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
+    throw apiErrorFromResponse(res.status, text);
+  }
+  return res.json() as Promise<T>;
+}
+
+/**
+ * Provider assertions are deliberately exchanged without the Influence JWT.
+ * A provider-auth 401 belongs to that explicit attempt and must never expire a
+ * still-valid Influence browser session.
+ */
+export async function providerAuthFetch<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<T> {
+  const isFormData = options?.body instanceof FormData;
+  const headers: Record<string, string> = {
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
+    ...(options?.headers as Record<string, string> | undefined),
+  };
+  const url = resolveApiUrl(path);
+  const res = await fetch(url, {
+    ...options,
+    headers,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
     throw apiErrorFromResponse(res.status, text);
   }
   return res.json() as Promise<T>;
@@ -617,7 +646,6 @@ export async function fillGame(id: string): Promise<FillGameResponse> {
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
     if (res.status === 401 && typeof window !== "undefined" && token) {
-      clearAuthToken();
       window.dispatchEvent(new CustomEvent("auth:expired"));
     }
     throw new ApiError(res.status, text);
@@ -1572,7 +1600,7 @@ export async function loginWithPrivyToken(
   token: string;
   user: Omit<AuthMe, "isAdmin">;
 }> {
-  return apiFetch("/api/auth/login", {
+  return providerAuthFetch("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
   });

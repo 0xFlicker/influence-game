@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePrivy } from "@privy-io/react-auth";
-import { useE2EAuth, useInvite } from "@/app/providers";
+import { useInvite } from "@/app/providers";
+import { useAuth } from "@/hooks/use-auth";
 import { AgentForm } from "@/app/dashboard/agents/agent-form";
 import {
   createAgent,
-  getAuthToken,
   getFreeQueueStatus,
   joinFreeQueue,
   listAgents,
@@ -37,8 +36,7 @@ export function StandingDailyAgentPrompt({
   immediateHandoffPublicId?: string | null;
   onImmediateHandoffConsumed?: (publicId: string) => void;
 }) {
-  const { authenticated, ready } = usePrivy();
-  const e2e = useE2EAuth();
+  const { authenticated, ready } = useAuth();
   const { needsInvite } = useInvite();
   const [agents, setAgents] = useState<SavedAgent[] | null>(null);
   const [open, setOpen] = useState(false);
@@ -56,7 +54,7 @@ export function StandingDailyAgentPrompt({
   const immediateHandoffRef = useRef(immediateHandoffPublicId);
   const handoffConsumedCallbackRef = useRef(onImmediateHandoffConsumed);
 
-  const signedIn = (ready && authenticated) || (e2e.ready && e2e.authenticated);
+  const signedIn = ready && authenticated;
 
   useEffect(() => {
     handoffConsumedCallbackRef.current = onImmediateHandoffConsumed;
@@ -80,7 +78,7 @@ export function StandingDailyAgentPrompt({
     if (!shouldLoadDailyAgentPrompt({
       signedIn,
       needsInvite,
-      hasAuthToken: Boolean(getAuthToken()),
+      hasAuthToken: authenticated,
       sessionDismissed,
     })) {
       requestGeneration.current += 1;
@@ -144,7 +142,13 @@ export function StandingDailyAgentPrompt({
         console.warn("[StandingDailyAgentPrompt] Failed to load acquisition state:", error);
       }
     }
-  }, [needsInvite, sessionDismissed, signedIn, transitionImmediateHandoff]);
+  }, [
+    authenticated,
+    needsInvite,
+    sessionDismissed,
+    signedIn,
+    transitionImmediateHandoff,
+  ]);
 
   useEffect(() => {
     void load();

@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { usePrivy } from "@privy-io/react-auth";
 import { usePermissions } from "@/hooks/use-permissions";
-import { useE2EAuth } from "@/app/providers";
+import { useAuth } from "@/hooks/use-auth";
 import { HOUSE_VENUE } from "@/lib/product-identity";
 
 function HamburgerIcon() {
@@ -28,12 +27,8 @@ function CloseIcon() {
 
 export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
-  const e2e = useE2EAuth();
-  const { ready, authenticated, login, logout } = usePrivy();
+  const { ready, authenticated, openSignIn, logout } = useAuth();
   const { isAdmin } = usePermissions();
-
-  const effectiveReady = e2e.isE2E ? e2e.ready : ready;
-  const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
 
   const navLinks = (
     <>
@@ -57,26 +52,26 @@ export function Nav() {
         Privacy
       </Link>
 
-      {effectiveAuth && (
+      {authenticated && (
         <Link href="/dashboard" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Dashboard
         </Link>
       )}
 
-      {effectiveAuth && (
+      {authenticated && (
         <Link href="/dashboard/profile" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Profile
         </Link>
       )}
 
-      {effectiveAuth && isAdmin && (
+      {authenticated && isAdmin && (
         <Link href="/admin" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Admin
         </Link>
       )}
 
-      {effectiveReady && (
-        effectiveAuth ? (
+      {ready && (
+        authenticated ? (
           <button
             onClick={() => { setMobileOpen(false); logout(); }}
             className="influence-copy-muted hover:text-text-primary transition-colors"
@@ -85,7 +80,7 @@ export function Nav() {
           </button>
         ) : (
           <button
-            onClick={() => { setMobileOpen(false); login(); }}
+            onClick={() => { setMobileOpen(false); openSignIn(); }}
             className="influence-button-primary px-4 py-1.5 rounded-md"
           >
             Sign in

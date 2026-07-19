@@ -78,7 +78,7 @@ function renderDashboardSurface(input: {
       <McpSetupCard hasHistory={input.history.length > 0} />
       <MissionControlOverview
         control={control}
-        user={{ email: { address: "owner@example.test" } }}
+        user={{ email: "owner@example.test", walletAddress: null }}
         loading={false}
         errors={[]}
         onJoinPrimary={() => undefined}
@@ -106,6 +106,51 @@ function withoutReactTextMarkers(html: string): string {
 }
 
 describe("dashboard mission-control overview", () => {
+  it("renders the private Influence account email without a Privy user", () => {
+    const control = buildDashboardMissionControl({
+      agents: [],
+      games: [],
+      history: [],
+      queueStatus: null,
+    });
+    const html = renderToString(
+      <MissionControlOverview
+        control={control}
+        user={{ email: "managed@example.test", walletAddress: null }}
+        loading={false}
+        errors={[]}
+        onJoinPrimary={() => undefined}
+        publicIdentity={null}
+      />,
+    );
+
+    expect(html).toContain("managed@example.test");
+  });
+
+  it("falls back to the Influence wallet projection for wallet-owned accounts", () => {
+    const control = buildDashboardMissionControl({
+      agents: [],
+      games: [],
+      history: [],
+      queueStatus: null,
+    });
+    const html = renderToString(
+      <MissionControlOverview
+        control={control}
+        user={{
+          email: null,
+          walletAddress: "0x1234567890abcdef",
+        }}
+        loading={false}
+        errors={[]}
+        onJoinPrimary={() => undefined}
+        publicIdentity={null}
+      />,
+    );
+
+    expect(html).toContain("0x12345678");
+  });
+
   it("renders the primary action before supporting modules", () => {
     const html = renderDashboardSurface({
       agents: [agent()],

@@ -11,12 +11,13 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
+import { ClerkProvider, useClerk } from "@clerk/nextjs";
 import {
   RuntimeConfigProvider,
   useRuntimeConfig,
   type PublicRuntimeConfig,
 } from "@/lib/runtime-config";
-import { PrivyProvider, usePrivy } from "@privy-io/react-auth";
+import { PrivyProvider } from "@privy-io/react-auth";
 import {
   WagmiProvider as PrivyWagmiProvider,
   createConfig as createPrivyConfig,
@@ -25,14 +26,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { mainnet } from "viem/chains";
 import { http } from "wagmi";
 import {
-  loginWithPrivyToken,
-  getMe,
-  setAuthToken,
-  clearAuthToken,
   getAuthToken,
-  ApiError,
   type AuthenticatedPublicIdentity,
 } from "@/lib/api";
+import { InfluenceAuthProvider, useAuth } from "@/hooks/use-auth";
 import { isE2EMode } from "@/lib/wallet-adapter";
 import { InviteCodeModal } from "@/components/invite-code-modal";
 import { StandingDailyAgentPrompt } from "@/components/standing-daily-agent-prompt";
@@ -121,23 +118,25 @@ export function useAuthenticatedPublicIdentity(): AuthenticatedPublicIdentity | 
 type IdentityResolution = "pending" | "available" | "legacy" | "error";
 
 // ---------------------------------------------------------------------------
-// AuthSync — production Privy → backend JWT sync (skipped in e2e)
+// AuthExperience — Influence-session-owned onboarding and downstream prompts
 // ---------------------------------------------------------------------------
 
-function AuthSync({ children }: { children: React.ReactNode }) {
-  const { authenticated, getAccessToken, logout } = usePrivy();
-  const e2e = useE2EAuth();
-  const [needsInvite, setNeedsInvite] = useState(false);
-  const [inviteError, setInviteError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [pendingPrivyToken, setPendingPrivyToken] = useState<string | null>(null);
+function AuthExperience({ children }: { children: React.ReactNode }) {
+  const {
+    authenticated,
+    account,
+    needsInvite,
+    submitInvite,
+    inviteError,
+    submittingInvite,
+  } = useAuth();
   const [identity, setIdentity] = useState<AuthenticatedPublicIdentity | null>(null);
   const [identityResolution, setIdentityResolution] = useState<IdentityResolution>("pending");
   const [identityDismissed, setIdentityDismissed] = useState(false);
   const [dailyAgentHandoffPublicId, setDailyAgentHandoffPublicId] =
     useState<string | null>(null);
   const identityPublicIdRef = useRef<string | null>(null);
-  const signedIn = (e2e.ready && e2e.authenticated) || authenticated;
+  const signedIn = authenticated;
   const signedInRef = useRef(signedIn);
 
   useLayoutEffect(() => {
@@ -178,80 +177,12 @@ function AuthSync({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // In e2e mode, JWT is injected by test harness — skip Privy sync
-    if (e2e.isE2E) return;
-
     if (!authenticated) {
       syncIdentity(null, false);
-      clearAuthToken();
-      window.dispatchEvent(new CustomEvent("auth:session-cleared"));
-      setNeedsInvite(false);
-      setPendingPrivyToken(null);
       return;
     }
-
-    let active = true;
-    void (async () => {
-      let privyToken: string | null = null;
-      try {
-        privyToken = await getAccessToken();
-        if (!active) return;
-        if (!privyToken) {
-          setIdentityResolution("error");
-          return;
-        }
-        const { token, user } = await loginWithPrivyToken(privyToken);
-        if (!active) return;
-        syncIdentity(user, true);
-        setAuthToken(token);
-        setNeedsInvite(false);
-        setPendingPrivyToken(null);
-      } catch (err) {
-        if (
-          privyToken
-          && err instanceof ApiError
-          && err.code === "INVITE_REQUIRED"
-        ) {
-          if (!active) return;
-          setPendingPrivyToken(privyToken);
-          setNeedsInvite(true);
-          return;
-        }
-        if (active) setIdentityResolution("error");
-        console.error("[AuthSync] Failed to exchange Privy token:", err);
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [
-    authenticated,
-    getAccessToken,
-    e2e.isE2E,
-    syncIdentity,
-  ]);
-
-  useEffect(() => {
-    if (!e2e.isE2E) return;
-    if (!e2e.authenticated || !getAuthToken()) {
-      syncIdentity(null, false);
-      return;
-    }
-    let active = true;
-    getMe()
-      .then((user) => {
-        if (active) syncIdentity(user, true);
-      })
-      .catch((error) => {
-        if (active) {
-          setIdentityResolution("error");
-          console.warn("[AuthSync] Failed to hydrate E2E session:", error);
-        }
-      });
-    return () => {
-      active = false;
-    };
-  }, [e2e.authenticated, e2e.isE2E, syncIdentity]);
+    if (account) syncIdentity(account, true);
+  }, [account, authenticated, syncIdentity]);
 
   useEffect(() => {
     function handleIdentityUpdated(event: Event) {
@@ -262,44 +193,12 @@ function AuthSync({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("auth:identity-updated", handleIdentityUpdated);
   }, [syncIdentity]);
 
-  const submitInvite = useCallback(async (inviteCode: string) => {
-    if (!pendingPrivyToken) return;
-    setSubmitting(true);
-    setInviteError(null);
-    try {
-      const { token, user } = await loginWithPrivyToken(pendingPrivyToken, inviteCode);
-      syncIdentity(user, true);
-      setAuthToken(token);
-      setNeedsInvite(false);
-      setPendingPrivyToken(null);
-    } catch (err) {
-      if (err instanceof ApiError) {
-        setInviteError(err.message || "Invalid invite code");
-      } else {
-        setInviteError("Something went wrong. Try again.");
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  }, [pendingPrivyToken, syncIdentity]);
-
-  useEffect(() => {
-    if (e2e.isE2E) return;
-
-    const handleExpired = () => {
-      console.warn("[AuthSync] Session expired (401). Logging out.");
-      logout();
-    };
-    window.addEventListener("auth:expired", handleExpired);
-    return () => window.removeEventListener("auth:expired", handleExpired);
-  }, [logout, e2e.isE2E]);
-
   const inviteState = useMemo<InviteState>(() => ({
     needsInvite,
     submitInvite,
     inviteError,
-    submitting,
-  }), [needsInvite, submitInvite, inviteError, submitting]);
+    submitting: submittingInvite,
+  }), [needsInvite, submitInvite, inviteError, submittingInvite]);
 
   const promptDecision = identityPromptDecision({
     signedIn,
@@ -372,6 +271,45 @@ function AuthSync({ children }: { children: React.ReactNode }) {
 // Dummy Privy app ID for e2e mode (Privy SDK requires a non-empty string)
 const E2E_PRIVY_APP_ID = "e2e-test-privy-app-id-001";
 
+function ClerkInfluenceAuth({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  const clerk = useClerk();
+  const clerkLogout = useCallback(async () => {
+    await clerk.signOut();
+  }, [clerk]);
+  return (
+    <InfluenceAuthProvider clerkLogout={clerkLogout}>
+      <AuthExperience>{children}</AuthExperience>
+    </InfluenceAuthProvider>
+  );
+}
+
+function InfluenceAuthLayer({
+  children,
+  managedAuthMode,
+  clerkPublishableKey,
+}: {
+  children: React.ReactNode;
+  managedAuthMode: PublicRuntimeConfig["MANAGED_AUTH_MODE"];
+  clerkPublishableKey: string;
+}) {
+  if (managedAuthMode === "disabled") {
+    return (
+      <InfluenceAuthProvider>
+        <AuthExperience>{children}</AuthExperience>
+      </InfluenceAuthProvider>
+    );
+  }
+  return (
+    <ClerkProvider publishableKey={clerkPublishableKey}>
+      <ClerkInfluenceAuth>{children}</ClerkInfluenceAuth>
+    </ClerkProvider>
+  );
+}
+
 export function Providers({
   children,
   initialRuntimeConfig,
@@ -423,9 +361,12 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
       >
         <QueryClientProvider client={queryClient}>
           <PrivyWagmiProvider config={wagmiConfig}>
-            <AuthSync>
+            <InfluenceAuthLayer
+              managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
+              clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
+            >
               {children}
-            </AuthSync>
+            </InfluenceAuthLayer>
           </PrivyWagmiProvider>
         </QueryClientProvider>
       </PrivyProvider>

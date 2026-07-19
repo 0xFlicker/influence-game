@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import Link from "next/link";
-import { usePrivy } from "@privy-io/react-auth";
 import {
   getAuthToken,
   getFreeQueueStatus,
@@ -19,7 +18,7 @@ import {
   type SavedAgent,
   type GameStatus,
 } from "@/lib/api";
-import { useE2EAuth } from "@/app/providers";
+import { useAuth } from "@/hooks/use-auth";
 import { getPersonaLabel } from "@/lib/personas";
 import { ACTIVE_GAME } from "@/lib/product-identity";
 import { AgentAvatarPreview } from "@/components/agent-avatar-preview";
@@ -617,9 +616,7 @@ function CrownHonor({
 // ---------------------------------------------------------------------------
 
 export function FreeGameContent() {
-  const e2e = useE2EAuth();
-  const { authenticated, login } = usePrivy();
-  const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
+  const { authenticated, openSignIn } = useAuth();
 
   const [queueStatus, setQueueStatus] = useState<FreeQueueStatus | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>(
@@ -810,8 +807,8 @@ export function FreeGameContent() {
         <QueueSection
           queueStatus={queueStatus}
           agents={agents}
-          authenticated={effectiveAuth}
-          login={login}
+          authenticated={authenticated}
+          login={openSignIn}
           onJoin={handleJoin}
           onLeave={handleLeave}
           actionLoading={actionLoading}
