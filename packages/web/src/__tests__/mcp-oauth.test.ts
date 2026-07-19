@@ -1,10 +1,17 @@
 import { describe, expect, it } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   MCP_OAUTH_CLIENT_ID,
   MCP_OAUTH_SCOPE,
   buildMcpOAuthAuthorizeBody,
   parseMcpOAuthSearchParams,
 } from "../lib/mcp-oauth";
+
+const authorizeClientSource = readFileSync(
+  join(import.meta.dir, "../app/oauth/mcp/authorize/authorize-client.tsx"),
+  "utf8",
+);
 
 describe("parseMcpOAuthSearchParams", () => {
   it("parses a complete authorization-code request", () => {
@@ -111,5 +118,26 @@ describe("buildMcpOAuthAuthorizeBody", () => {
       ...parsed.request,
       decision: "approve",
     });
+  });
+});
+
+describe("MCP OAuth authentication boundary", () => {
+  it("uses the Influence session and keeps managed authentication inline", () => {
+    expect(authorizeClientSource).toContain('import { useAuth } from "@/hooks/use-auth"');
+    expect(authorizeClientSource).not.toContain("usePrivy");
+    expect(authorizeClientSource).not.toContain("useE2EAuth");
+    expect(authorizeClientSource).toContain("<AuthenticationWrapper");
+    expect(authorizeClientSource).toContain('presentation="inline"');
+  });
+
+  it("retains the parsed request in the mounted authorization client", () => {
+    expect(authorizeClientSource).toContain(
+      "authorizeMcpOAuth(parsed.request, \"inspect\")",
+    );
+    expect(authorizeClientSource).toContain(
+      "submitDecision(parsed.request, decision, selectedScopes)",
+    );
+    expect(authorizeClientSource).not.toContain("router.push");
+    expect(authorizeClientSource).not.toContain("router.replace");
   });
 });

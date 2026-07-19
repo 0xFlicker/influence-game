@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import {
   InfluenceSessionCoordinator,
+  ProviderAuthenticationSettlement,
   type AuthSessionPersistence,
   type AuthSessionRemoteMessage,
   type AuthSessionTransport,
@@ -300,6 +301,44 @@ describe("Influence session coordinator", () => {
     expect(shared.token).toBe("privy-influence-jwt");
     expect(coordinator.getSnapshot().account?.id).toBe("privy-user");
     expect(events).toContain("auth:session-ready");
+  });
+});
+
+describe("provider authentication settlement", () => {
+  it("settles successful provider completion exactly once", () => {
+    const outcomes: boolean[] = [];
+    const settlement = new ProviderAuthenticationSettlement();
+
+    settlement.begin((completed) => outcomes.push(completed));
+    settlement.settle(true);
+    settlement.settle(false);
+
+    expect(outcomes).toEqual([true]);
+  });
+
+  it("reports cancellation, provider error, and logout as unsuccessful settlement", () => {
+    const outcomes: boolean[] = [];
+
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const settlement = new ProviderAuthenticationSettlement();
+      settlement.begin((completed) => outcomes.push(completed));
+      settlement.settle(false);
+    }
+
+    expect(outcomes).toEqual([false, false, false]);
+  });
+
+  it("cancels a replaced callback without leaking it into the next attempt", () => {
+    const first: boolean[] = [];
+    const second: boolean[] = [];
+    const settlement = new ProviderAuthenticationSettlement();
+
+    settlement.begin((completed) => first.push(completed));
+    settlement.begin((completed) => second.push(completed));
+    settlement.settle(true);
+
+    expect(first).toEqual([false]);
+    expect(second).toEqual([true]);
   });
 });
 

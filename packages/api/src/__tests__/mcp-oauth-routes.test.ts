@@ -436,6 +436,65 @@ describe("MCP OAuth routes", () => {
     }));
   });
 
+  test("keeps a walletless account's durable subject stable across browser sessions", async () => {
+    const { userId, token: firstSession } = await createUserSession(db, null);
+    const secondSession = await createSessionToken(userId);
+
+    const preview = await app.request("/api/oauth/mcp/authorize", {
+      method: "POST",
+      headers: jsonAuthHeaders(firstSession),
+      body: JSON.stringify(authorizeBody({
+        codeVerifier: "walletless-preview",
+        scope: MCP_OAUTH_ALL_SCOPE,
+        decision: "inspect",
+      })),
+    });
+    expect(preview.status).toBe(200);
+    expect(await jsonObject(preview)).toMatchObject({
+      walletAddress: null,
+      authProfile: "subject",
+      hasProducerRole: false,
+      scope: MCP_OAUTH_FULL_USER_SCOPE,
+      blockedScopes: [expect.objectContaining({ scope: "producer" })],
+    });
+    expect(
+      await db.select().from(schema.mcpOauthAuthorizationCodes),
+    ).toHaveLength(0);
+
+    let firstRefreshToken = "";
+    for (const [sessionToken, label] of [
+      [firstSession, "walletless-first"],
+      [secondSession, "walletless-second"],
+    ] as const) {
+      const code = await authorizeCode(sessionToken, label, label);
+      const exchanged = await exchangeCode(code, label);
+      expect(exchanged.status).toBe(200);
+      const exchangedJson = await jsonObject(exchanged);
+      firstRefreshToken ||= String(exchangedJson.refresh_token);
+
+      expect(await jsonObject(
+        await introspect(String(exchangedJson.access_token)),
+      )).toMatchObject({
+        active: true,
+        sub: userId,
+        scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+        resource: RESOURCE_URI,
+      });
+    }
+
+    const refreshed = await refreshAccess(firstRefreshToken);
+    expect(refreshed.status).toBe(200);
+    const refreshedJson = await jsonObject(refreshed);
+    expect(await jsonObject(
+      await introspect(String(refreshedJson.access_token)),
+    )).toMatchObject({
+      active: true,
+      sub: userId,
+      scope: MCP_OAUTH_DEFAULT_READ_SCOPE,
+      resource: RESOURCE_URI,
+    });
+  });
+
   test("rotates full-scope producer refresh tokens only while the role remains current", async () => {
     const registration = await app.request("/api/oauth/mcp/register", {
       method: "POST",
@@ -1843,17 +1902,20 @@ function jsonAuthHeaders(sessionToken: string): Record<string, string> {
 
 async function createUserSession(
   db: DrizzleDB,
-  walletAddress: string,
+  walletAddress: string | null,
   roleName?: string,
 ): Promise<{ userId: string; token: string }> {
   const userId = randomUUID();
   await db.insert(schema.users).values({
     id: userId,
-    walletAddress: walletAddress.toLowerCase(),
-    displayName: `Test ${walletAddress.slice(2, 8)}`,
+    walletAddress: walletAddress?.toLowerCase() ?? null,
+    displayName: walletAddress ? `Test ${walletAddress.slice(2, 8)}` : "Test Walletless",
   });
 
   if (roleName) {
+    if (!walletAddress) {
+      throw new Error("A wallet address is required to assign a role");
+    }
     await assignRole(db, walletAddress, roleName);
   }
 

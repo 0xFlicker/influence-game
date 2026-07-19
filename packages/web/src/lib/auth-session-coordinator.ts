@@ -43,6 +43,26 @@ export interface ProviderAuthenticationAttempt {
   generation: string;
 }
 
+/**
+ * Owns the optional completion callback for one provider UI attempt. Starting a
+ * replacement settles the prior attempt as cancelled, and settling is
+ * destructive so an old provider callback cannot leak into a later attempt.
+ */
+export class ProviderAuthenticationSettlement {
+  private pending: ((completed: boolean) => void) | null = null;
+
+  begin(onSettled?: (completed: boolean) => void): void {
+    this.settle(false);
+    this.pending = onSettled ?? null;
+  }
+
+  settle(completed: boolean): void {
+    const onSettled = this.pending;
+    this.pending = null;
+    onSettled?.(completed);
+  }
+}
+
 interface InfluenceSessionCoordinatorOptions<Account> {
   persistence: AuthSessionPersistence;
   transport: AuthSessionTransport;

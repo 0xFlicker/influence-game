@@ -1,8 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePrivy } from "@privy-io/react-auth";
-import { useE2EAuth } from "@/app/providers";
+import { useAuth } from "@/hooks/use-auth";
 import { useRuntimeConfig } from "@/lib/runtime-config";
 import {
   buildMcpSetupClients,
@@ -150,10 +149,7 @@ export function GetMcpSetupContent({
 
 export function GetMcpClient() {
   const runtimeConfig = useRuntimeConfig();
-  const e2e = useE2EAuth();
-  const { ready, authenticated, login } = usePrivy();
-  const authReady = e2e.isE2E ? e2e.ready : ready;
-  const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
+  const { ready, authenticated, openSignIn } = useAuth();
   const browserOrigin =
     typeof window === "undefined" ? undefined : window.location.origin;
   const mcpUrl = getMcpResourceUrl(runtimeConfig.API_URL, browserOrigin);
@@ -161,9 +157,9 @@ export function GetMcpClient() {
   return (
     <GetMcpSetupContent
       mcpUrl={mcpUrl}
-      authReady={authReady}
-      authenticated={effectiveAuth}
-      onSignIn={login}
+      authReady={ready && runtimeConfig.ready}
+      authenticated={authenticated}
+      onSignIn={openSignIn}
     />
   );
 }

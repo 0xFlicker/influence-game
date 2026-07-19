@@ -71,6 +71,14 @@ describe("unified authentication wrapper", () => {
     expect(wrapperSource).toContain('aria-label="Authentication"');
   });
 
+  it("restores a fresh inline password attempt after Privy cancellation", () => {
+    expect(wrapperSource).toContain('if (presentation === "modal")');
+    expect(wrapperSource).toContain("openPrivySignIn((completed) =>");
+    expect(wrapperSource).toContain(
+      "if (!completed) setAttempt(beginAuthenticationAttempt());",
+    );
+  });
+
   it("uses one privacy-safe request reference and preserves Influence session semantics on link 401", () => {
     expect(apiSource).toContain('"x-correlation-id"');
     expect(passwordFlowSource).toContain("Reference:");

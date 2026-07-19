@@ -58,6 +58,15 @@ describe("/get-mcp setup page", () => {
     expect(combinedSource).toContain("GetMcpClient");
   });
 
+  it("keeps the public setup page signed-in state provider-neutral", () => {
+    expect(getMcpClientSource).toContain('import { useAuth } from "@/hooks/use-auth"');
+    expect(getMcpClientSource).toContain(
+      "const { ready, authenticated, openSignIn } = useAuth();",
+    );
+    expect(getMcpClientSource).not.toContain("usePrivy");
+    expect(getMcpClientSource).not.toContain("useE2EAuth");
+  });
+
   it("keeps setup metadata in prose instead of extra cards", () => {
     expect(combinedSource).toContain("The MCP endpoint is");
     expect(combinedSource).toContain("Authorization happens in your browser");

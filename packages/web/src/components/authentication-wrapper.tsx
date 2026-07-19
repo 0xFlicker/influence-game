@@ -173,8 +173,15 @@ export function AuthenticationWrapper({
       }}
       onCancel={() => close(true)}
       onContinueWithPrivy={() => {
-        close(true);
-        openPrivySignIn();
+        if (presentation === "modal") {
+          close(true);
+          openPrivySignIn();
+          return;
+        }
+        setAttempt(null);
+        openPrivySignIn((completed) => {
+          if (!completed) setAttempt(beginAuthenticationAttempt());
+        });
       }}
     />
   );

@@ -217,6 +217,16 @@ Items are ordered by current priority.
 - Promotion trigger: viewers need chapter navigation or a visible transcript to understand longer trailers.
 - Suggested slice if promoted: derive viewer-safe chapters from the existing cue contract without exposing internal cue IDs, worker diagnostics, or music filenames.
 
+### W16. Stateful application-intention URLs
+
+- Status: `future`
+- Consolidates: layered identity authentication scope boundary.
+- Sources: `docs/plans/2026-07-18-001-feat-layered-identity-authentication-plan.md`
+- Signal: ordinary authentication entry uses the application's existing redirect behavior. The MCP OAuth authorization page preserves its already-parsed request by keeping the page mounted and rendering authentication inline, but other interrupted application actions are not encoded into durable URLs and are not replayed after sign-in.
+- Concrete seam: route-owned return destinations, validated intention identifiers, authentication cancellation, and post-auth navigation.
+- Promotion trigger: users measurably abandon important actions because signing in returns them to a page without enough state to resume, or a new flow cannot preserve its request safely by remaining mounted.
+- Suggested slice if promoted: define a small allowlisted return/intention contract with expiry and tamper protection. Do not serialize arbitrary application state, OAuth secrets, provider tokens, or mutation payloads into URLs.
+
 ## Closed / Removed
 
 - R1 API-backed local run harness: implemented by `b4dcee91`. `bun run simulate:api` now authenticates, creates, fills, and starts real API games, waits for durable advancement, and prints the game URL. Evidence includes launcher argument/config tests, API lifecycle integration and component coverage, and local-model documentation; there is not a standalone end-to-end launcher test.
