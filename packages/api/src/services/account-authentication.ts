@@ -112,12 +112,15 @@ async function resolveInTransaction(
     return { status: "support_blocked" };
   }
 
-  const legacyUser = input.compatibilityBridgeEnabled === false
-    ? { status: "none" as const }
-    : await resolveLegacyUser(tx, input.evidence);
+  // Even after adoption is disabled, inspect exact legacy subject/wallet facts
+  // so an unbound legacy row cannot be mistaken for a brand-new account.
+  const legacyUser = await resolveLegacyUser(tx, input.evidence);
 
   if (legacyUser.status === "conflict") return { status: "support_blocked" };
   if (legacyUser.status === "found") {
+    if (input.compatibilityBridgeEnabled === false) {
+      return { status: "support_blocked" };
+    }
     const claimOutcome = await validateClaimAttachment(tx, legacyUser.user.id, input.evidence);
     if (claimOutcome !== "ok") return { status: claimOutcome };
 

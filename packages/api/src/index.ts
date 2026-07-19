@@ -13,7 +13,10 @@ import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
-import { createAuthRoutes } from "./routes/auth.js";
+import {
+  createAuthRoutes,
+  readPrivyCompatibilityBridgeEnabled,
+} from "./routes/auth.js";
 import { createMcpOAuthRoutes } from "./routes/mcp-oauth.js";
 import { createMcpRoutes } from "./routes/mcp.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
@@ -72,6 +75,15 @@ const managedAuthMode = (process.env.MANAGED_AUTH_MODE ?? "disabled").trim();
 if (!MANAGED_AUTH_MODES.includes(managedAuthMode as ManagedAuthMode)) {
   console.error(
     '\n  Managed authentication configuration error:\n\n    MANAGED_AUTH_MODE must be one of "disabled", "existing-only", or "full".\n',
+  );
+  process.exit(1);
+}
+
+try {
+  readPrivyCompatibilityBridgeEnabled();
+} catch (error) {
+  console.error(
+    `\n  Privy compatibility bridge configuration error:\n\n    ${(error as Error).message}\n`,
   );
   process.exit(1);
 }

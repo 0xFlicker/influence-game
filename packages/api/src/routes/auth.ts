@@ -33,6 +33,7 @@ interface AuthRouteDependencies {
   getPrivyUser?: typeof getPrivyUser;
   isInviteRequired?: typeof isInviteRequired;
   redeemInviteCode?: typeof redeemInviteCode;
+  compatibilityBridgeEnabled?: boolean;
 }
 
 export function createAuthRoutes(
@@ -44,6 +45,8 @@ export function createAuthRoutes(
   const loadPrivyUser = dependencies.getPrivyUser ?? getPrivyUser;
   const inviteIsRequired = dependencies.isInviteRequired ?? isInviteRequired;
   const redeemCode = dependencies.redeemInviteCode ?? redeemInviteCode;
+  const compatibilityBridgeEnabled = dependencies.compatibilityBridgeEnabled
+    ?? readPrivyCompatibilityBridgeEnabled();
   const privyVerifier = createPrivyAuthenticationVerifier({
     verifyAccessToken: verifyPrivyAccessToken,
     loadUser: loadPrivyUser,
@@ -127,6 +130,7 @@ export function createAuthRoutes(
       provider,
       subject,
       evidence: verification.status === "verified" ? verification.evidence : null,
+      compatibilityBridgeEnabled,
       checkInviteRequired: (tx) => inviteIsRequired(tx),
       redeemInvite: typeof body.inviteCode === "string"
         ? (tx, userId) => redeemCode(tx, body.inviteCode as string, userId)
@@ -231,6 +235,22 @@ export function createAuthRoutes(
   });
 
   return app;
+}
+
+/**
+ * The bridge is intentionally on by default during inventory rollout. After a
+ * zero final delta, set PRIVY_COMPATIBILITY_BRIDGE_ENABLED=false so an
+ * unbound legacy row cannot authenticate through subject/wallet inference.
+ */
+export function readPrivyCompatibilityBridgeEnabled(
+  value = process.env.PRIVY_COMPATIBILITY_BRIDGE_ENABLED,
+): boolean {
+  if (value === undefined || value.trim() === "") return true;
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new Error(
+    'PRIVY_COMPATIBILITY_BRIDGE_ENABLED must be "true" or "false"',
+  );
 }
 
 function isLoopbackHost(hostHeader: string | undefined, requestUrl?: string): boolean {

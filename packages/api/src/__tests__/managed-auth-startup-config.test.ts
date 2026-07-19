@@ -45,6 +45,17 @@ describe("API managed authentication startup config", () => {
     );
   });
 
+  it("rejects an invalid Privy compatibility bridge mode", async () => {
+    const result = await runApiStartup({
+      PRIVY_COMPATIBILITY_BRIDGE_ENABLED: "sometimes",
+    });
+
+    expect(result.exitCode).toBe(1);
+    expect(result.stderr).toContain(
+      'PRIVY_COMPATIBILITY_BRIDGE_ENABLED must be "true" or "false"',
+    );
+  });
+
   it("requires Clerk server credentials only when managed auth is enabled", async () => {
     const result = await runApiStartup({ MANAGED_AUTH_MODE: "existing-only" });
 

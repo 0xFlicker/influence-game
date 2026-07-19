@@ -298,6 +298,23 @@ describe("account authentication resolver", () => {
     expect((await db.select().from(schema.users))).toHaveLength(1);
   });
 
+  test("bridge-disabled legacy inference blocks without creating a duplicate", async () => {
+    const subject = "did:privy:bridge-disabled-legacy";
+    await insertUser(db, subject, null, "legacy@example.com");
+
+    const outcome = await resolveAccountAuthentication(db, {
+      provider: "privy",
+      subject,
+      evidence: emailEvidence(subject, "legacy@example.com"),
+      compatibilityBridgeEnabled: false,
+    });
+
+    expect(outcome).toEqual({ status: "support_blocked" });
+    expect(await credentials(db)).toHaveLength(0);
+    expect(await claims(db)).toHaveLength(0);
+    expect((await db.select().from(schema.users))).toHaveLength(1);
+  });
+
   test("known credentials authenticate during profile outage without mutation", async () => {
     await insertUser(db, "known-user", null, null);
     await db.insert(schema.authenticationCredentials).values({

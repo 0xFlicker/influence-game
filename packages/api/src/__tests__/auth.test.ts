@@ -444,6 +444,47 @@ describe("authenticated public identity session projection", () => {
     expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(1);
   });
 
+  test("login route passes the disabled compatibility bridge to account resolution", async () => {
+    const subject = "did:privy:route-bridge-disabled";
+    await db.insert(schema.users).values({
+      id: subject,
+      email: "legacy-route@example.com",
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      verifyPrivyToken: async () => subject,
+      getPrivyUser: async () => ({
+        id: subject,
+        createdAt: new Date(),
+        isGuest: false,
+        customMetadata: {},
+        linkedAccounts: [{
+          type: "email",
+          address: "legacy-route@example.com",
+          verifiedAt: new Date(),
+          firstVerifiedAt: new Date(),
+          latestVerifiedAt: new Date(),
+        }],
+      }),
+      isInviteRequired: async () => false,
+      compatibilityBridgeEnabled: false,
+    }));
+
+    const response = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "verified-token" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This account needs support before it can sign in",
+      code: "ACCOUNT_SUPPORT_REQUIRED",
+    });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+    expect(await db.select().from(schema.users)).toHaveLength(1);
+  });
+
   test("known Privy credentials ignore profile and invite-service outages", async () => {
     await db.insert(schema.users).values({
       id: "durable-known-user",
