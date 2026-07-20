@@ -395,11 +395,7 @@ export function ClerkPasswordFlow({
       if (signIn.status !== "complete") {
         throw new Error("Password reset is incomplete.");
       }
-      await finalizeSignIn();
-      setStep("success");
-      setStatus("Password reset. Your other Influence sessions were not changed.");
-      if (intent === "reset_password") return;
-      onIntentChange("sign_in");
+      await exchangeAfterVerification(await finalizeSignIn());
     }, "Saving new password…");
   }
 

@@ -43,6 +43,7 @@
     "render-worker:health": "cd packages/web && bun run render-worker:health"
   },
   "devDependencies": {
+    "@clerk/backend": "3.11.7",
     "@clerk/testing": "2.2.10",
     "@playwright/test": "^1.58.2",
     "puppeteer": "^24.40.0"

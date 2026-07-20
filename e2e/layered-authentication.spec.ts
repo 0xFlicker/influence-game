@@ -445,6 +445,7 @@ test.describe("real Clerk development project", () => {
   const email = `influence-${randomUUID()}+clerk_test@example.com`;
   const initialPassword = `E2E-${randomUUID()}-aA1!`;
   const resetPassword = `Reset-${randomUUID()}-bB2!`;
+  const profileHandle = `clerk-${randomUUID().slice(0, 8)}`;
 
   test.beforeAll(async () => {
     if (missingEnvironment.length > 0 || !disposableEnvironment) return;
@@ -490,6 +491,15 @@ test.describe("real Clerk development project", () => {
     await page.getByLabel("Verification code").fill("424242");
     await page.getByRole("button", { name: "Verify code" }).click();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await expect(page.getByRole("heading", {
+      name: "Choose how players know you",
+    })).toBeVisible();
+    await page.getByLabel("Display name").fill("Clerk E2E");
+    await page.getByLabel("Handle").fill(profileHandle);
+    await page.getByRole("button", { name: "Create public profile" }).click();
+    await expect(page.getByRole("heading", {
+      name: "Choose how players know you",
+    })).toBeHidden();
 
     await page.getByRole("button", { name: "Sign out" }).click();
     await clickNavigationSignIn(page);
@@ -508,7 +518,8 @@ test.describe("real Clerk development project", () => {
     await page.getByLabel("New password").fill(resetPassword);
     await page.getByRole("button", { name: "Reset password" }).click();
 
-    await page.getByRole("button", { name: "Close" }).click();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await page.getByRole("button", { name: "Sign out" }).click();
     await clickNavigationSignIn(page);
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill(resetPassword);
