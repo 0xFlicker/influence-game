@@ -70,6 +70,24 @@ export function resolveAgentProfileGenerationLlm(
     : null;
 }
 
+function buildAgentProfileGenerationSystemPrompt(isRefine: boolean): string {
+  return `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote to eliminate players. Think Big Brother or Survivor but with rich, human-like personalities.
+
+Generate a complete agent personality profile. The character should feel like a real person — not a game bot. Give them depth, quirks, and a communication style that makes them interesting to watch in social situations.
+
+${isRefine ? "The user is refining an existing profile. Improve and flesh out the provided details while respecting the original direction." : "Create a fresh character based on the provided hints."}
+
+Respond with JSON only:
+{
+  "name": "A distinctive full first and last name for the character (creative, memorable)",
+  "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
+  "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations. Refer to them by their first name or pronouns, never their full name.",
+  "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict. Refer to them by their first name or pronouns, never their full name.",
+  "personaKey": "One of: ${formatUserSelectableAgentArchetypeKeys()} — the closest archetype match.",
+  "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice."
+}`;
+}
+
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
 // ---------------------------------------------------------------------------
@@ -164,21 +182,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
       ? gender
       : isAgentGender(existingProfile?.gender) ? existingProfile.gender : undefined;
 
-    const systemPrompt = `You are a character designer for "Influence", a social strategy game where AI agents negotiate, form alliances, betray each other, and vote to eliminate players. Think Big Brother or Survivor but with rich, human-like personalities.
-
-Generate a complete agent personality profile. The character should feel like a real person — not a game bot. Give them depth, quirks, and a communication style that makes them interesting to watch in social situations.
-
-${isRefine ? "The user is refining an existing profile. Improve and flesh out the provided details while respecting the original direction." : "Create a fresh character based on the provided hints."}
-
-Respond with JSON only:
-{
-  "name": "A distinctive full first and last name for the character (creative, memorable)",
-  "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
-  "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations. Refer to them by their first name or pronouns, never their full name.",
-  "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict. Refer to them by their first name or pronouns, never their full name.",
-  "personaKey": "One of: ${formatUserSelectableAgentArchetypeKeys()} — the closest archetype match.",
-  "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice."
-}`;
+    const systemPrompt = buildAgentProfileGenerationSystemPrompt(isRefine);
 
     const userParts: string[] = [];
     if (isRefine && existingProfile) {
