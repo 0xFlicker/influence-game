@@ -289,7 +289,7 @@ describe("dashboard mission-control overview", () => {
     const html = withoutReactTextMarkers(renderToString(<McpSetupCard hasHistory />));
 
     expect(html).toContain('data-testid="dashboard-mcp-setup-card"');
-    expect(html).toContain("Connect The House to your Influence games");
+    expect(html).toContain("Connect The House to your Chatbot or AI Agent");
     expect(html).toContain('href="/get-mcp"');
     expect(html).toContain("without granting maintainer access");
   });

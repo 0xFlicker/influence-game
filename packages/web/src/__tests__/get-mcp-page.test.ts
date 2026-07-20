@@ -17,15 +17,9 @@ describe("/get-mcp setup page", () => {
   it("defines player-facing command snippets for Codex and Claude Code", () => {
     const clients = buildMcpSetupClients("https://api.influence.example/mcp");
     const commands = clients.flatMap((client) => client.commands);
-    const refreshCommands = clients.flatMap(
-      (client) => client.refreshCommands ?? [],
-    );
 
     expect(commands).toContain(
       "codex mcp add the-house-influence --url https://api.influence.example/mcp",
-    );
-    expect(refreshCommands).toContain(
-      'codex mcp login the-house-influence --scopes "agents:read games:read"',
     );
     expect(commands).toContain(
       "claude mcp add --transport http the-house-influence https://api.influence.example/mcp",
@@ -46,33 +40,27 @@ describe("/get-mcp setup page", () => {
   });
 
 
-  it("includes sign-in and browser OAuth guidance", () => {
-    expect(combinedSource).toContain("Connect {HOUSE_VENUE.name} to your {ACTIVE_GAME.name} games");
-    expect(combinedSource).toContain("owned agents, rules, and supported pre-match queues");
-    expect(combinedSource).toContain("sign in before completing");
-    expect(combinedSource).toContain("OAuth-backed setup");
-    expect(combinedSource).toContain("Authorization happens in your browser");
-    expect(combinedSource).toContain("If the token expires");
-    expect(combinedSource).toContain("restart Codex or Claude Code");
-    expect(combinedSource).toContain("new tools are loaded");
+  it("keeps MCP setup copy concise", () => {
+    expect(combinedSource).toContain("Connect {HOUSE_VENUE.name} to your AI.");
+    expect(combinedSource).toContain("let your AI inspect your {ACTIVE_GAME.name} games");
     expect(combinedSource).toContain("GetMcpClient");
+    expect(combinedSource).not.toContain("If the token expires");
+    expect(combinedSource).not.toContain("Use login later if the saved MCP token expires");
+    expect(combinedSource).not.toContain("OAuth-backed setup");
+    expect(combinedSource).not.toContain("restart Codex or Claude Code");
   });
 
-  it("keeps the public setup page signed-in state provider-neutral", () => {
-    expect(getMcpClientSource).toContain('import { useAuth } from "@/hooks/use-auth"');
-    expect(getMcpClientSource).toContain(
-      "const { ready, authenticated, openSignIn } = useAuth();",
-    );
+  it("does not add an authentication prompt to setup", () => {
+    expect(getMcpClientSource).not.toContain('import { useAuth } from "@/hooks/use-auth"');
     expect(getMcpClientSource).not.toContain("usePrivy");
     expect(getMcpClientSource).not.toContain("useE2EAuth");
+    expect(getMcpClientSource).not.toContain("Sign in");
   });
 
   it("keeps setup metadata in prose instead of extra cards", () => {
     expect(combinedSource).toContain("The MCP endpoint is");
-    expect(combinedSource).toContain("Authorization happens in your browser");
     expect(combinedSource).toContain("Copy MCP endpoint");
     expect(combinedSource).toContain("command={mcpUrl}");
-    expect(combinedSource).toContain("Sign in");
     expect(combinedSource).toContain("max-w-3xl space-y-3");
     expect(combinedSource).not.toContain("<aside");
     expect(combinedSource).not.toContain("The grant covers Influence games");

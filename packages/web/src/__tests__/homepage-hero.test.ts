@@ -14,7 +14,7 @@ describe("homepage MCP CTA", () => {
     expect(source).toContain('href="/get-mcp"');
     expect(source).toContain("Codex / Claude");
     expect(source).toContain("THE_HOUSE_PRESENTS_INFLUENCE");
-    expect(source).toContain("Connect The House to your Influence games in Codex or Claude Code");
+    expect(source).toContain("Connect The House to your Chatbot or AI Agent");
   });
 
   it("does not point homepage visitors at protocol or producer endpoints", () => {

@@ -27,9 +27,7 @@ describe("buildMcpSetupClients", () => {
     expect(clients[0]?.commands).toEqual([
       "codex mcp add the-house-influence --url https://api.influence.example/mcp",
     ]);
-    expect(clients[0]?.refreshCommands).toEqual([
-      'codex mcp login the-house-influence --scopes "agents:read games:read"',
-    ]);
+    expect(clients[0]).not.toHaveProperty("refreshCommands");
     expect(clients[1]?.commands).toEqual([
       "claude mcp add --transport http the-house-influence https://api.influence.example/mcp",
     ]);

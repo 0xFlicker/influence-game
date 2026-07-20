@@ -35,7 +35,7 @@ export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
         <div>
           <p className="influence-section-title">Games MCP</p>
           <h2 className="mt-2 text-lg font-semibold text-text-primary">
-            Connect {HOUSE_VENUE.name} to your {ACTIVE_GAME.name} games
+            Connect {HOUSE_VENUE.name} to your Chatbot or AI Agent
           </h2>
           <p className="influence-copy mt-2 max-w-2xl text-sm leading-6">
             {hasHistory

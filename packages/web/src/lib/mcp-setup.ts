@@ -6,9 +6,7 @@ export type McpSetupClientId = "codex" | "claude-code";
 export interface McpSetupClient {
   id: McpSetupClientId;
   name: string;
-  summary: string;
   commands: string[];
-  refreshCommands?: string[];
   authHint: string;
 }
 
@@ -46,19 +44,14 @@ export function buildMcpSetupClients(
     {
       id: "codex",
       name: "Codex",
-      summary: "Add the Streamable HTTP server. Codex opens browser authorization when setup needs OAuth.",
       commands: [
         `codex mcp add ${serverName} --url ${mcpUrl}`,
       ],
-      refreshCommands: [
-        `codex mcp login ${serverName} --scopes "agents:read games:read"`,
-      ],
-      authHint: "Use login later if the saved MCP token expires and Codex needs a refresh.",
+      authHint: "Complete browser authorization when Codex prompts.",
     },
     {
       id: "claude-code",
       name: "Claude Code",
-      summary: "Add the HTTP MCP server, then authenticate when Claude Code prompts.",
       commands: [
         `claude mcp add --transport http ${serverName} ${mcpUrl}`,
       ],

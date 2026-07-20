@@ -11,7 +11,7 @@ describe("dashboard MCP setup card", () => {
   it("adds a contextual dashboard bridge to the setup page", () => {
     expect(source).toContain("McpSetupCard");
     expect(source).toContain('href="/get-mcp"');
-    expect(source).toContain("Connect {HOUSE_VENUE.name} to your {ACTIVE_GAME.name} games");
+    expect(source).toContain("Connect {HOUSE_VENUE.name} to your Chatbot or AI Agent");
     expect(source).toContain("control.stats.gamesPlayed > 0");
   });
 
