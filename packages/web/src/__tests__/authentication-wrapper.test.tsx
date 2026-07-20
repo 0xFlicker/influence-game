@@ -17,6 +17,10 @@ const passwordFlowSource = readFileSync(
   join(import.meta.dir, "../components/clerk-password-flow.tsx"),
   "utf8",
 );
+const authenticationRouteSource = readFileSync(
+  join(import.meta.dir, "../components/authentication-route.tsx"),
+  "utf8",
+);
 const apiSource = readFileSync(
   join(import.meta.dir, "../lib/api.ts"),
   "utf8",
@@ -70,6 +74,31 @@ describe("unified authentication wrapper", () => {
     expect(wrapperSource).toContain("cancelAuthenticationAttempt");
     expect(wrapperSource).toContain('presentation === "inline"');
     expect(wrapperSource).toContain('aria-label="Authentication"');
+  });
+
+  it("provides stable Clerk fallback routes without duplicating auth logic", () => {
+    expect(authenticationRouteSource).toContain(
+      'intent: "sign_in" | "create_account"',
+    );
+    expect(authenticationRouteSource).toContain("openSignIn()");
+    expect(authenticationRouteSource).toContain("openCreateAccount()");
+    expect(authenticationRouteSource).toContain(
+      'MANAGED_AUTH_MODE === "full"',
+    );
+    expect(authenticationRouteSource).toContain('href="/sign-in"');
+    expect(authenticationRouteSource).toContain('href="/sign-up"');
+  });
+
+  it("reads Clerk status from the post-operation resource", () => {
+    expect(passwordFlowSource).toContain("updatedClerkResource");
+    expect(passwordFlowSource).toContain("signInRef.current");
+    expect(passwordFlowSource).toContain("signUpRef.current");
+    expect(passwordFlowSource).not.toContain(
+      'if (signIn.status === "needs_new_password")',
+    );
+    expect(passwordFlowSource).not.toContain(
+      'if (signIn.status !== "complete")',
+    );
   });
 
   it("restores a fresh inline password attempt after Privy cancellation", () => {

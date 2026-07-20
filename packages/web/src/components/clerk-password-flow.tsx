@@ -52,6 +52,18 @@ function clerkErrorMessage(
   return result.error.longMessage ?? result.error.message ?? fallback;
 }
 
+async function updatedClerkResource<T extends object>(
+  readCurrent: () => T,
+  previous: T,
+): Promise<T> {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const current = readCurrent();
+    if (current !== previous) return current;
+  }
+  return readCurrent();
+}
+
 function supportReference(): string {
   const value =
     typeof crypto !== "undefined" && "randomUUID" in crypto
@@ -88,6 +100,10 @@ export function ClerkPasswordFlow({
     useSignIn();
   const { signUp, errors: signUpErrors, fetchStatus: signUpFetchStatus } =
     useSignUp();
+  const signInRef = useRef(signIn);
+  const signUpRef = useRef(signUp);
+  signInRef.current = signIn;
+  signUpRef.current = signUp;
   const {
     completeAuthenticationAttempt,
     requestPrivyProof,
@@ -161,14 +177,14 @@ export function ClerkPasswordFlow({
   }, [getActiveClerkToken, intent, signUp.status]);
 
   async function finalizeSignIn(): Promise<string> {
-    const result = await signIn.finalize();
+    const result = await signInRef.current.finalize();
     const message = clerkErrorMessage(result, "Could not finish sign in.");
     if (message) throw new Error(message);
     return getActiveClerkToken();
   }
 
   async function finalizeSignUp(): Promise<string> {
-    const result = await signUp.finalize();
+    const result = await signUpRef.current.finalize();
     const message = clerkErrorMessage(result, "Could not finish account setup.");
     if (message) throw new Error(message);
     return getActiveClerkToken();
@@ -295,17 +311,22 @@ export function ClerkPasswordFlow({
 
     if (intent === "sign_in") {
       await run(async () => {
+        const previousSignIn = signIn;
         const result = await signIn.password({
           emailAddress: email.trim(),
           password,
         });
         const message = clerkErrorMessage(result, "Could not sign in.");
         if (message) throw new Error(message);
-        if (signIn.status === "needs_new_password") {
+        const currentSignIn = await updatedClerkResource(
+          () => signInRef.current,
+          previousSignIn,
+        );
+        if (currentSignIn.status === "needs_new_password") {
           setStep("new_password");
           return;
         }
-        if (signIn.status !== "complete") {
+        if (currentSignIn.status !== "complete") {
           throw new Error(
             "This account needs another provider step before it can sign in.",
           );
@@ -317,17 +338,22 @@ export function ClerkPasswordFlow({
 
     await run(async () => {
       currentSignupOwnsCompletionRef.current = true;
+      const previousSignUp = signUp;
       const result = await signUp.password({
         emailAddress: email.trim(),
         password,
       });
       const message = clerkErrorMessage(result, "Could not create the account.");
       if (message) throw new Error(message);
-      if (signUp.status === "complete") {
+      const currentSignUp = await updatedClerkResource(
+        () => signUpRef.current,
+        previousSignUp,
+      );
+      if (currentSignUp.status === "complete") {
         await exchangeAfterVerification(await finalizeSignUp());
         return;
       }
-      const sent = await signUp.verifications.sendEmailCode();
+      const sent = await currentSignUp.verifications.sendEmailCode();
       const sendError = clerkErrorMessage(
         sent,
         "Could not send a verification code.",
@@ -340,6 +366,7 @@ export function ClerkPasswordFlow({
 
   async function verifyEmail(): Promise<void> {
     await run(async () => {
+      const previousSignUp = signUp;
       const result = await signUp.verifications.verifyEmailCode({
         code: code.trim(),
       });
@@ -348,7 +375,11 @@ export function ClerkPasswordFlow({
         "That verification code is invalid or expired.",
       );
       if (message) throw new Error(message);
-      if (signUp.status !== "complete") {
+      const currentSignUp = await updatedClerkResource(
+        () => signUpRef.current,
+        previousSignUp,
+      );
+      if (currentSignUp.status !== "complete") {
         throw new Error("Email verification is incomplete. Request a new code.");
       }
       await exchangeAfterVerification(await finalizeSignUp());
@@ -369,6 +400,7 @@ export function ClerkPasswordFlow({
 
   async function verifyResetCode(): Promise<void> {
     await run(async () => {
+      const previousSignIn = signIn;
       const result = await signIn.resetPasswordEmailCode.verifyCode({
         code: code.trim(),
       });
@@ -377,7 +409,11 @@ export function ClerkPasswordFlow({
         "That reset code is invalid or expired.",
       );
       if (message) throw new Error(message);
-      if (signIn.status !== "needs_new_password") {
+      const currentSignIn = await updatedClerkResource(
+        () => signInRef.current,
+        previousSignIn,
+      );
+      if (currentSignIn.status !== "needs_new_password") {
         throw new Error("Password reset is not ready. Request a new code.");
       }
       setStep("new_password");
@@ -387,12 +423,17 @@ export function ClerkPasswordFlow({
 
   async function submitNewPassword(): Promise<void> {
     await run(async () => {
+      const previousSignIn = signIn;
       const result = await signIn.resetPasswordEmailCode.submitPassword({
         password: newPassword,
       });
       const message = clerkErrorMessage(result, "Could not reset the password.");
       if (message) throw new Error(message);
-      if (signIn.status !== "complete") {
+      const currentSignIn = await updatedClerkResource(
+        () => signInRef.current,
+        previousSignIn,
+      );
+      if (currentSignIn.status !== "complete") {
         throw new Error("Password reset is incomplete.");
       }
       await exchangeAfterVerification(await finalizeSignIn());

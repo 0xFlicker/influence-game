@@ -469,6 +469,7 @@ test.describe("real Clerk development project", () => {
   });
 
   test("signs up, logs out/in, and resets with Clerk test credentials @real-clerk", async ({
+    browser,
     page,
   }) => {
     test.skip(
@@ -480,14 +481,18 @@ test.describe("real Clerk development project", () => {
       "Real Clerk tests require a disposable Influence database.",
     );
     await setupClerkTestingToken({ page });
-    await page.goto("/");
-    await clickNavigationSignIn(page);
-    await page.getByRole("button", {
-      name: "Create an email/password account",
-    }).click();
+    await page.goto("/sign-up");
+    await expect(page.getByRole("heading", {
+      name: "Create account",
+    })).toBeVisible();
+    const authenticationDialog = page.getByRole("dialog", {
+      name: "Influence authentication",
+    });
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill(initialPassword);
-    await page.getByRole("button", { name: "Create account" }).click();
+    await authenticationDialog.getByRole("button", {
+      name: "Create account",
+    }).click();
     await page.getByLabel("Verification code").fill("424242");
     await page.getByRole("button", { name: "Verify code" }).click();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
@@ -502,29 +507,43 @@ test.describe("real Clerk development project", () => {
     })).toBeHidden();
 
     await page.getByRole("button", { name: "Sign out" }).click();
-    await clickNavigationSignIn(page);
-    await page.getByLabel("Email").fill(email);
-    await page.getByLabel("Password").fill(initialPassword);
-    await page.getByRole("button", { name: "Sign in with email" }).click();
-    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    const signInContext = await browser.newContext();
+    const signInPage = await signInContext.newPage();
+    await setupClerkTestingToken({ page: signInPage });
+    await signInPage.goto("/sign-in");
+    await signInPage.getByLabel("Email").fill(email);
+    await signInPage.getByLabel("Password").fill(initialPassword);
+    await signInPage
+      .getByRole("button", { name: "Sign in with email" })
+      .click();
+    await expect(
+      signInPage.getByRole("button", { name: "Sign out" }),
+    ).toBeVisible();
 
-    await page.getByRole("button", { name: "Sign out" }).click();
-    await clickNavigationSignIn(page);
-    await page.getByRole("button", { name: "Forgot password?" }).click();
-    await page.getByLabel("Email").fill(email);
-    await page.getByRole("button", { name: "Send reset code" }).click();
-    await page.getByLabel("Verification code").fill("424242");
-    await page.getByRole("button", { name: "Verify code" }).click();
-    await page.getByLabel("New password").fill(resetPassword);
-    await page.getByRole("button", { name: "Reset password" }).click();
+    await signInPage.getByRole("button", { name: "Sign out" }).click();
+    await clickNavigationSignIn(signInPage);
+    await signInPage.getByRole("button", { name: "Forgot password?" }).click();
+    await signInPage.getByLabel("Email").fill(email);
+    await signInPage.getByRole("button", { name: "Send reset code" }).click();
+    await signInPage.getByLabel("Verification code").fill("424242");
+    await signInPage.getByRole("button", { name: "Verify code" }).click();
+    await signInPage.getByLabel("New password").fill(resetPassword);
+    await signInPage.getByRole("button", { name: "Reset password" }).click();
 
-    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
-    await page.getByRole("button", { name: "Sign out" }).click();
-    await clickNavigationSignIn(page);
-    await page.getByLabel("Email").fill(email);
-    await page.getByLabel("Password").fill(resetPassword);
-    await page.getByRole("button", { name: "Sign in with email" }).click();
-    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await expect(
+      signInPage.getByRole("button", { name: "Sign out" }),
+    ).toBeVisible();
+    await signInPage.getByRole("button", { name: "Sign out" }).click();
+    await clickNavigationSignIn(signInPage);
+    await signInPage.getByLabel("Email").fill(email);
+    await signInPage.getByLabel("Password").fill(resetPassword);
+    await signInPage
+      .getByRole("button", { name: "Sign in with email" })
+      .click();
+    await expect(
+      signInPage.getByRole("button", { name: "Sign out" }),
+    ).toBeVisible();
+    await signInContext.close();
   });
 });
 
