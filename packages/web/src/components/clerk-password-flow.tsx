@@ -775,18 +775,7 @@ export function ClerkPasswordFlow({
           <button type="button" disabled={busy} className="influence-link text-sm" onClick={() => onIntentChange("reset_password")}>
             Forgot password?
           </button>
-          {mode === "full" && (
-            <button type="button" disabled={busy} className="influence-link text-sm" onClick={() => onIntentChange("create_account")}>
-              Create an email/password account
-            </button>
-          )}
         </>
-      )}
-
-      {intent === "create_account" && (
-        <button type="button" disabled={busy} className="influence-link text-sm" onClick={() => onIntentChange("sign_in")}>
-          Already have an account? Sign in
-        </button>
       )}
 
       {isReset && (

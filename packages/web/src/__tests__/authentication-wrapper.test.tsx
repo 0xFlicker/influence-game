@@ -36,7 +36,8 @@ describe("unified authentication wrapper", () => {
       "email_password",
     ]);
     expect(passwordFlowSource).toContain("Continue with Privy");
-    expect(passwordFlowSource).toContain("Create an email/password account");
+    expect(wrapperSource).toContain('role="tablist"');
+    expect(wrapperSource).toContain("Create account");
     expect(passwordFlowSource).not.toContain("Create account with Privy");
   });
 
@@ -74,6 +75,11 @@ describe("unified authentication wrapper", () => {
     expect(wrapperSource).toContain("cancelAuthenticationAttempt");
     expect(wrapperSource).toContain('presentation === "inline"');
     expect(wrapperSource).toContain('aria-label="Authentication"');
+    expect(wrapperSource).not.toContain('className="pr-16"');
+    expect(wrapperSource).toContain("grid flex-1 grid-cols-2");
+    expect(passwordFlowSource).not.toContain(
+      "Create an email/password account",
+    );
   });
 
   it("provides stable Clerk fallback routes without duplicating auth logic", () => {

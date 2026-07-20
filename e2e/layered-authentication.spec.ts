@@ -79,12 +79,14 @@ test.describe("deterministic layered authentication", () => {
     });
 
     await clickNavigationSignIn(page);
-    await page.getByRole("button", {
-      name: "Create an email/password account",
-    }).click();
+    await page.getByRole("tab", { name: "Create account" }).click();
     await page.getByLabel("Email").fill("ui-new+e2e@example.test");
     await page.getByLabel("Password").fill("test-password");
-    await page.getByRole("button", { name: "Create account" }).click();
+    await page
+      .getByRole("dialog", { name: "Influence authentication" })
+      .locator("form")
+      .getByRole("button", { name: "Create account" })
+      .click();
     await expect(page.getByRole("heading", { name: "Verify your email" }))
       .toBeVisible();
     await page.getByLabel("Verification code").fill("424242");
@@ -490,9 +492,10 @@ test.describe("real Clerk development project", () => {
     });
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill(initialPassword);
-    await authenticationDialog.getByRole("button", {
-      name: "Create account",
-    }).click();
+    await authenticationDialog
+      .locator("form")
+      .getByRole("button", { name: "Create account" })
+      .click();
     await page.getByLabel("Verification code").fill("424242");
     await page.getByRole("button", { name: "Verify code" }).click();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();

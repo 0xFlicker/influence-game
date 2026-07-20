@@ -86,6 +86,21 @@ export function AuthenticationWrapper({
     setOpen(true);
   }, [beginAuthenticationAttempt, cancelAuthenticationAttempt]);
 
+  const selectPrimaryIntent = useCallback((
+    nextIntent: "sign_in" | "create_account",
+  ) => {
+    if (nextIntent === intent) return;
+    cancelAuthenticationAttempt();
+    setIntent(nextIntent);
+    setEmail("");
+    setReversePrivyToken(null);
+    setAttempt(beginAuthenticationAttempt());
+  }, [
+    beginAuthenticationAttempt,
+    cancelAuthenticationAttempt,
+    intent,
+  ]);
+
   useEffect(() => {
     if (presentation === "inline") {
       let cancelled = false;
@@ -215,10 +230,20 @@ export function AuthenticationWrapper({
       }}
     />
   ) : null;
+  const primaryTabs = managedAuthMode === "full"
+    && (intent === "sign_in" || intent === "create_account")
+    ? (
+      <PrimaryIntentTabs
+        intent={intent}
+        onSelect={selectPrimaryIntent}
+      />
+    )
+    : null;
 
   if (presentation === "inline") {
     return (
       <section aria-label="Authentication" className="influence-panel rounded-xl p-6">
+        {primaryTabs}
         {flow}
       </section>
     );
@@ -240,16 +265,82 @@ export function AuthenticationWrapper({
         tabIndex={-1}
         className="influence-panel relative max-h-full w-full max-w-md overflow-y-auto rounded-xl p-6 shadow-2xl outline-none"
       >
-        <button
-          type="button"
-          aria-label="Close authentication"
-          className="influence-button-secondary absolute right-4 top-4 min-h-11 min-w-11 rounded-lg px-3 py-2 text-sm"
-          onClick={() => close(true)}
-        >
-          Close
-        </button>
-        <div className="pr-16">{flow}</div>
+        <div className="mb-6 flex flex-col-reverse items-stretch gap-4 sm:flex-row sm:items-center">
+          {primaryTabs}
+          <button
+            type="button"
+            aria-label="Close authentication"
+            className="influence-button-secondary min-h-11 min-w-11 self-end rounded-lg px-3 py-2 text-sm sm:self-auto"
+            onClick={() => close(true)}
+          >
+            Close
+          </button>
+        </div>
+        <div>{flow}</div>
       </div>
+    </div>
+  );
+}
+
+function PrimaryIntentTabs({
+  intent,
+  onSelect,
+}: {
+  intent: "sign_in" | "create_account";
+  onSelect: (intent: "sign_in" | "create_account") => void;
+}) {
+  const tabs = [
+    { intent: "sign_in" as const, label: "Sign in" },
+    { intent: "create_account" as const, label: "Create account" },
+  ];
+  const tabRefs = useRef<Record<
+    "sign_in" | "create_account",
+    HTMLButtonElement | null
+  >>({
+    sign_in: null,
+    create_account: null,
+  });
+
+  const selectFromKeyboard = (
+    nextIntent: "sign_in" | "create_account",
+  ) => {
+    onSelect(nextIntent);
+    window.requestAnimationFrame(() => tabRefs.current[nextIntent]?.focus());
+  };
+
+  return (
+    <div
+      role="tablist"
+      aria-label="Authentication view"
+      className="grid flex-1 grid-cols-2 rounded-lg border border-border-active bg-black/20 p-1"
+    >
+      {tabs.map((tab, index) => {
+        const selected = intent === tab.intent;
+        return (
+          <button
+            key={tab.intent}
+            ref={(element) => {
+              tabRefs.current[tab.intent] = element;
+            }}
+            type="button"
+            role="tab"
+            aria-selected={selected}
+            tabIndex={selected ? 0 : -1}
+            data-active={selected}
+            className="min-h-10 rounded-md px-3 py-2 text-sm font-medium text-text-secondary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-phase/70 data-[active=true]:bg-white/10 data-[active=true]:text-text-primary"
+            onClick={() => onSelect(tab.intent)}
+            onKeyDown={(event) => {
+              if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
+                return;
+              }
+              event.preventDefault();
+              selectFromKeyboard(tabs[index === 0 ? 1 : 0].intent);
+            }}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

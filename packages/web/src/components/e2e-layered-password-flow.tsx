@@ -306,19 +306,9 @@ export function E2ELayeredPasswordFlow({
         </button>
       </form>
       {intent === "sign_in" && !reversePrivyToken && (
-        <>
-          <button type="button" onClick={onContinueWithPrivy}>
-            Continue with Privy
-          </button>
-          {mode === "full" && (
-            <button
-              type="button"
-              onClick={() => onIntentChange("create_account")}
-            >
-              Create an email/password account
-            </button>
-          )}
-        </>
+        <button type="button" onClick={onContinueWithPrivy}>
+          Continue with Privy
+        </button>
       )}
       <button type="button" onClick={onCancel}>Cancel</button>
       <Message error={error} />
