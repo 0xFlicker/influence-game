@@ -6,7 +6,7 @@ import {
   randomBytes,
 } from "node:crypto";
 import { readFile, rename, unlink, writeFile } from "node:fs/promises";
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { normalizeVerifiedEmail } from "../lib/verified-email.js";
@@ -47,6 +47,7 @@ export interface InventoryIssue {
 
 export interface InventoryCounts {
   providerIdentities: number;
+  providerOnlyIdentities: number;
   mappedIdentities: number;
   credentialsInserted: number;
   activeClaimsInserted: number;
@@ -253,7 +254,7 @@ export async function runAuthenticationIdentityInventory(
   if (options.mode === "final-delta") {
     if (!finalDeltaBaseline?.complete) {
       issues.push(issue("incomplete_pagination", "missing-baseline", options.hmacKey));
-    } else if (!sameInventoryBaseline(finalDeltaBaseline, checkpoint)) {
+    } else if (inventoryRequiresWrites(checkpoint)) {
       issues.push(issue("final_delta_drift", "inventory-counts", options.hmacKey));
     }
     if (
@@ -348,6 +349,13 @@ async function inventoryIdentity(
   }
 
   if (candidates.size === 0) {
+    if (
+      evidence.owner.kind !== "email"
+      || !await hasEmailOverlap(tx, evidence.owner.normalizedEmail)
+    ) {
+      counts.providerOnlyIdentities += 1;
+      return;
+    }
     throw new InventoryBatchBlockedError([
       issue("unmapped_privy_identity", evidence.subject, hmacKey),
     ]);
@@ -427,6 +435,25 @@ async function inventoryIdentity(
       simulated,
     );
   }
+}
+
+async function hasEmailOverlap(
+  tx: InventoryTransaction,
+  normalizedEmail: string,
+): Promise<boolean> {
+  const [user, claim] = await Promise.all([
+    tx.select({ id: schema.users.id })
+      .from(schema.users)
+      .where(sql`lower(btrim(${schema.users.email})) = ${normalizedEmail}`)
+      .limit(1)
+      .then((rows) => rows[0]),
+    tx.select({ normalizedEmail: schema.verifiedEmailClaims.normalizedEmail })
+      .from(schema.verifiedEmailClaims)
+      .where(eq(schema.verifiedEmailClaims.normalizedEmail, normalizedEmail))
+      .limit(1)
+      .then((rows) => rows[0]),
+  ]);
+  return Boolean(user || claim);
 }
 
 async function inventoryEmailClaim(
@@ -761,6 +788,7 @@ function emptyCheckpoint(): InventoryCheckpoint {
 function emptyCounts(): InventoryCounts {
   return {
     providerIdentities: 0,
+    providerOnlyIdentities: 0,
     mappedIdentities: 0,
     credentialsInserted: 0,
     activeClaimsInserted: 0,
@@ -785,15 +813,10 @@ function addCounts(target: InventoryCounts, delta: InventoryCounts): void {
   }
 }
 
-function sameInventoryBaseline(
-  baseline: InventoryCheckpoint,
-  current: InventoryCheckpoint,
-): boolean {
-  return baseline.counts.providerIdentities === current.counts.providerIdentities
-    && baseline.counts.mappedIdentities === current.counts.mappedIdentities
-    && current.counts.credentialsInserted === 0
-    && current.counts.activeClaimsInserted === 0
-    && current.counts.claimsConvertedToConflict === 0;
+function inventoryRequiresWrites(current: InventoryCheckpoint): boolean {
+  return current.counts.credentialsInserted !== 0
+    || current.counts.activeClaimsInserted !== 0
+    || current.counts.claimsConvertedToConflict !== 0;
 }
 
 function issue(code: InventoryIssueCode, identity: string, hmacKey: string): InventoryIssue {
@@ -825,7 +848,17 @@ function validateCheckpoint(value: unknown): InventoryCheckpoint {
   ) {
     throw new Error("invalid checkpoint");
   }
-  return checkpoint;
+  const counts = checkpoint.counts as Partial<InventoryCounts>;
+  const normalizedCounts = emptyCounts();
+  for (const key of Object.keys(normalizedCounts) as Array<keyof InventoryCounts>) {
+    const count = counts[key];
+    if (key === "providerOnlyIdentities" && count === undefined) continue;
+    if (typeof count !== "number" || !Number.isFinite(count) || count < 0) {
+      throw new Error("invalid checkpoint");
+    }
+    normalizedCounts[key] = count;
+  }
+  return { ...checkpoint, counts: normalizedCounts };
 }
 
 function assertSecret(label: string, value: string): void {

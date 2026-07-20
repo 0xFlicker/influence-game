@@ -115,17 +115,28 @@ bun run auth:identity-inventory -- --mode final-delta
 - `dry-run` reads Privy and the database without writing either.
 - `write` stores one provider page per transaction and advances the checkpoint
   only after commit. Rerun it after interruption to resume.
-- `final-delta` rereads Privy without writing and confirms every current Privy
-  identity has an active credential.
+- `final-delta` rereads Privy without writing and confirms every Privy identity
+  that overlaps an Influence account already has an active credential. Privy
+  identities that have never created an Influence account do not need one.
 
 Proceed only when `final-delta` reports `status: "ready"`, complete pagination,
 no issues, no inferred writes, and no ordinary users without credentials.
 
 The inventory may map by an existing Privy credential, an exact legacy
 `users.id` subject match during this transition, or an exact verified owner or
-embedded-wallet match. It never merges by `users.email`. Conflicting facts,
-unmapped identities, duplicate verified email ownership across durable
-accounts, pagination failure, or drift stop the run.
+embedded-wallet match. It never merges by `users.email`.
+
+`providerOnlyIdentities` counts valid Privy identities with no credential,
+durable user, wallet match, email metadata match, or verified-email claim in
+Influence. They are not Influence accounts, need no migration, and do not stop
+the inventory or final delta. Do not delete them merely to make the inventory
+pass; a provider record may own an embedded wallet and can safely complete the
+normal signup path later.
+
+An unmapped identity that overlaps any Influence email metadata or verified
+email claim still stops the run, as do conflicting mapping facts, unclassified
+owners, duplicate verified email ownership across durable accounts, pagination
+failure, or a current Influence account that would require an inventory write.
 
 When a run stops, use its fixed reason code and `identity-ref:v1:...` reference
 to investigate from a machine with the same environment secrets. Do not paste
