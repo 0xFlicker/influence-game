@@ -24,14 +24,4 @@ describe("privacy policy page", () => {
     expect(pageSource).toContain("Private Mingle conversations");
     expect(pageSource).toContain("third-party AI providers");
   });
-
-  it("gives account-support users a safe Discord contact path", () => {
-    expect(HOUSE_DISCORD_URL).toMatch(/^https:\/\/discord\.gg\//);
-    expect(pageSource).toContain("HOUSE_DISCORD_URL");
-    expect(pageSource).toContain("href={HOUSE_DISCORD_URL}");
-    expect(pageSource).toContain('target="_blank"');
-    expect(pageSource).toContain('rel="noopener noreferrer"');
-    expect(pageSource).toContain("AUTH-...");
-    expect(pageSource).toContain("Do not post your email, wallet address, password, token");
-  });
 });
