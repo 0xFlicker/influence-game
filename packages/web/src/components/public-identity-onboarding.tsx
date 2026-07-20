@@ -137,6 +137,9 @@ export function PublicIdentityOnboarding({
 
   const handleChanged = identity.handle !== null
     && form.handle.trim().toLowerCase() !== identity.handle.toLowerCase();
+  const canSave = form.status !== "saving"
+    && form.displayName.trim().length > 0
+    && form.handle.trim().length > 0;
 
   return (
     <div
@@ -152,110 +155,112 @@ export function PublicIdentityOnboarding({
         aria-labelledby="public-identity-title"
         className="influence-panel max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl p-6 shadow-2xl"
       >
-        <p className="influence-section-title">Your public profile</p>
-        <h2 id="public-identity-title" className="mt-2 text-2xl font-bold text-text-primary">
-          Choose how players know you
-        </h2>
-        <p className="influence-copy mt-2 text-sm leading-6">
-          Your display name appears in Influence. Your unique handle becomes your shareable profile URL.
-        </p>
+        <form
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (canSave) void save();
+          }}
+        >
+          <p className="influence-section-title">Your public profile</p>
+          <h2 id="public-identity-title" className="mt-2 text-2xl font-bold text-text-primary">
+            Choose how players know you
+          </h2>
+          <p className="influence-copy mt-2 text-sm leading-6">
+            Your display name appears in Influence. Your unique handle becomes your shareable profile URL.
+          </p>
 
-        <div className="mt-6 space-y-4">
-          <label className="block">
-            <span className="influence-section-title">Display name</span>
-            <input
-              autoFocus
-              type="text"
-              disabled={form.status === "saving"}
-              value={form.displayName}
-              maxLength={50}
-              autoComplete="nickname"
-              onChange={(event) => {
-                setForm((current) => changeIdentityDisplayName(current, event.target.value));
-              }}
-              onBlur={() => void refreshDerivedSuggestion()}
-              className="influence-field mt-2 min-h-11 w-full rounded-lg px-4 py-2.5 text-sm"
-              placeholder="Flick"
-            />
-          </label>
-
-          <label className="block">
-            <span className="influence-section-title">Handle</span>
-            <div className="influence-field mt-2 flex min-h-11 items-center rounded-lg px-4">
-              <span className="influence-copy-muted text-sm" aria-hidden="true">@</span>
+          <div className="mt-6 space-y-4">
+            <label className="block">
+              <span className="influence-section-title">Display name</span>
               <input
-                ref={handleRef}
+                autoFocus
                 type="text"
                 disabled={form.status === "saving"}
-                value={form.handle}
-                maxLength={30}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
+                value={form.displayName}
+                maxLength={50}
+                autoComplete="nickname"
                 onChange={(event) => {
-                  setForm((current) => changeIdentityHandle(current, event.target.value));
+                  setForm((current) => changeIdentityDisplayName(current, event.target.value));
                 }}
-                className="min-w-0 flex-1 bg-transparent px-1 py-2.5 text-sm text-text-primary outline-none"
-                placeholder="flick"
+                onBlur={() => void refreshDerivedSuggestion()}
+                className="influence-field mt-2 min-h-11 w-full rounded-lg px-4 py-2.5 text-sm"
+                placeholder="Flick"
               />
-            </div>
-            <span className="influence-copy-muted mt-1 block text-xs">
-              Letters, numbers, and hyphens. Handles are unique.
-            </span>
-          </label>
+            </label>
 
-          {handleChanged && (
-            <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
-              Changing your handle breaks links that use @{identity.handle}. Your public UUID link stays stable.
-            </p>
-          )}
+            <label className="block">
+              <span className="influence-section-title">Handle</span>
+              <div className="influence-field mt-2 flex min-h-11 items-center rounded-lg px-4">
+                <span className="influence-copy-muted text-sm" aria-hidden="true">@</span>
+                <input
+                  ref={handleRef}
+                  type="text"
+                  disabled={form.status === "saving"}
+                  value={form.handle}
+                  maxLength={30}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  onChange={(event) => {
+                    setForm((current) => changeIdentityHandle(current, event.target.value));
+                  }}
+                  className="min-w-0 flex-1 bg-transparent px-1 py-2.5 text-sm text-text-primary outline-none"
+                  placeholder="flick"
+                />
+              </div>
+              <span className="influence-copy-muted mt-1 block text-xs">
+                Letters, numbers, and hyphens. Handles are unique.
+              </span>
+            </label>
 
-          {form.error && (
-            <p role="alert" className="text-sm text-red-400">
-              {form.error}
-              {form.collisionSuggestion && (
-                <>
-                  {" "}
-                  <button
-                    type="button"
-                    disabled={form.status === "saving"}
-                    className="influence-link"
-                    onClick={() => {
-                      setForm((current) => changeIdentityHandle(current, form.collisionSuggestion!));
-                    }}
-                  >
-                    Use @{form.collisionSuggestion}
-                  </button>
-                </>
-              )}
-            </p>
-          )}
-        </div>
+            {handleChanged && (
+              <p className="rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-xs text-amber-100">
+                Changing your handle breaks links that use @{identity.handle}. Your public UUID link stays stable.
+              </p>
+            )}
 
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
-          {canDismiss && (
+            {form.error && (
+              <p role="alert" className="text-sm text-red-400">
+                {form.error}
+                {form.collisionSuggestion && (
+                  <>
+                    {" "}
+                    <button
+                      type="button"
+                      disabled={form.status === "saving"}
+                      className="influence-link"
+                      onClick={() => {
+                        setForm((current) => changeIdentityHandle(current, form.collisionSuggestion!));
+                      }}
+                    >
+                      Use @{form.collisionSuggestion}
+                    </button>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+            {canDismiss && (
+              <button
+                type="button"
+                disabled={form.status === "saving"}
+                onClick={dismiss}
+                className="influence-button-secondary min-h-11 rounded-lg px-5 py-2.5 text-sm"
+              >
+                Not now
+              </button>
+            )}
             <button
-              type="button"
-              disabled={form.status === "saving"}
-              onClick={dismiss}
-              className="influence-button-secondary min-h-11 rounded-lg px-5 py-2.5 text-sm"
+              type="submit"
+              disabled={!canSave}
+              className="influence-button-primary min-h-11 rounded-lg px-5 py-2.5 text-sm font-semibold"
             >
-              Not now
+              {form.status === "saving" ? "Saving…" : "Create public profile"}
             </button>
-          )}
-          <button
-            type="button"
-            disabled={
-              form.status === "saving"
-              || form.displayName.trim().length === 0
-              || form.handle.trim().length === 0
-            }
-            onClick={() => void save()}
-            className="influence-button-primary min-h-11 rounded-lg px-5 py-2.5 text-sm font-semibold"
-          >
-            {form.status === "saving" ? "Saving…" : "Create public profile"}
-          </button>
-        </div>
+          </div>
+        </form>
       </div>
     </div>
   );

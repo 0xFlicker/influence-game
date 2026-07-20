@@ -97,7 +97,7 @@ test.describe("deterministic layered authentication", () => {
     })).toBeVisible();
     await page.getByLabel("Display name").fill("Layered Auth E2E");
     await page.getByLabel("Handle").fill("e2e-layered-auth");
-    await page.getByRole("button", { name: "Create public profile" }).click();
+    await page.getByLabel("Handle").press("Enter");
     await expect(page.getByRole("heading", {
       name: "Choose how players know you",
     })).toBeHidden();
