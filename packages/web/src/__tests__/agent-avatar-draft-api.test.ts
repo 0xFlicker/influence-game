@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import {
+  avatarDraftProfileFingerprint,
   getDraftAgentAvatarGeneration,
   requestDraftAgentAvatarGeneration,
   setApiBase,
@@ -13,6 +14,19 @@ afterEach(() => {
 });
 
 describe("draft agent portrait API", () => {
+  test("keeps a completed draft portrait valid when only the agent name changes", () => {
+    const profile = {
+      gender: "female" as const,
+      backstory: "A practiced mediator.",
+      personality: "Patient and incisive.",
+      strategyStyle: "Build stable coalitions.",
+      personaKey: "diplomat" as const,
+    };
+
+    expect(avatarDraftProfileFingerprint({ ...profile, name: "Nova Quinn" }))
+      .toBe(avatarDraftProfileFingerprint({ ...profile, name: "Nova Hartwell" }));
+  });
+
   test("starts from generated personality fields and polls the owned request", async () => {
     setApiBase("http://127.0.0.1:3333");
     const requests: Array<{ url: string; init?: RequestInit }> = [];

@@ -2032,7 +2032,6 @@ export interface DraftAgentAvatarParams {
 
 export function avatarDraftProfileFingerprint(params: DraftAgentAvatarParams): string {
   return JSON.stringify([
-    params.name.trim(),
     params.gender,
     params.backstory?.trim() || null,
     params.personality.trim(),

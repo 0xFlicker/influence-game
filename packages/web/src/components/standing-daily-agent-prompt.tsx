@@ -265,7 +265,7 @@ export function StandingDailyAgentPrompt({
         role="dialog"
         aria-modal="true"
         aria-labelledby="daily-agent-title"
-        className="influence-panel max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl p-6 shadow-2xl"
+        className="influence-panel max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-2xl p-6 shadow-2xl sm:p-8"
       >
         <h2 id="daily-agent-title" className="text-xl font-bold text-text-primary">
           Play for Free
@@ -277,6 +277,7 @@ export function StandingDailyAgentPrompt({
               onSubmit={createAndEnter}
               onCancel={() => setCreating(false)}
               submitLabel="Create and enter"
+              compact
             />
           </div>
         ) : (

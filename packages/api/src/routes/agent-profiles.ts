@@ -47,6 +47,12 @@ import { lockProfileAfterLiveRosterGames } from "../services/owned-seat-projecti
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 
 const AGENT_PROFILE_GENERATION_CATALOG_ID = "openai:gpt-5-nano";
+const GENERATED_AGENT_SURNAMES = [
+  "Hartwell", "Langford", "Marlowe", "Sorrell", "Voss", "Ashford", "Bellamy", "Caldwell",
+  "Dunmore", "Ellery", "Fairchild", "Grantham", "Hollis", "Iverson", "Kestrel", "Lockwood",
+  "Mercer", "North", "Orsini", "Prescott", "Quill", "Rutherford", "Sinclair", "Tallis",
+] as const;
+const MAX_GENERATED_AGENT_NAME_LENGTH = 80;
 
 export function resolveAgentProfileGenerationLlm(
   env: NodeJS.ProcessEnv = process.env,
@@ -166,10 +172,10 @@ ${isRefine ? "The user is refining an existing profile. Improve and flesh out th
 
 Respond with JSON only:
 {
-  "name": "A first name for the character (creative, memorable)",
-  "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others.",
-  "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations.",
-  "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict.",
+  "name": "A distinctive full first and last name for the character (creative, memorable)",
+  "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
+  "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations. Refer to them by their first name or pronouns, never their full name.",
+  "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict. Refer to them by their first name or pronouns, never their full name.",
   "personaKey": "One of: ${formatUserSelectableAgentArchetypeKeys()} — the closest archetype match.",
   "gender": "One of: male, female, non-binary. Keep the character's pronouns and details consistent with this choice."
 }`;
@@ -234,12 +240,25 @@ Respond with JSON only:
         isUserSelectableAgentArchetype(generated.personaKey)
           ? generated.personaKey
           : "strategic";
-
-      return c.json({
+      const existingNames = await db
+        .select({ name: schema.agentProfiles.name })
+        .from(schema.agentProfiles);
+      const generatedName = allocateGeneratedAgentName(
+        generated.name ?? name ?? "Unknown",
+        new Set(existingNames.map((profile) => profile.name)),
+      );
+      const profile = updateGeneratedProfileNameReferences({
         name: generated.name ?? name ?? "Unknown",
         backstory: generated.backstory ?? null,
         personality: generated.personality ?? "A mysterious player.",
         strategyStyle: generated.strategyStyle ?? null,
+      }, generatedName.name);
+
+      return c.json({
+        name: profile.name,
+        backstory: profile.backstory,
+        personality: profile.personality,
+        strategyStyle: profile.strategyStyle,
         personaKey: validatedPersonaKey,
         gender: resolveGeneratedAgentGender(generated, requestedGender),
       });
@@ -629,6 +648,73 @@ export function resolveGeneratedAgentGender(generated: {
   if (femalePronouns > malePronouns) return "female";
   if (malePronouns > femalePronouns) return "male";
   return "non-binary";
+}
+
+export function allocateGeneratedAgentName(
+  generatedName: string,
+  occupiedNames: Set<string>,
+): { name: string; changed: boolean } {
+  const requestedName = generatedName.trim().replace(/\s+/g, " ").slice(0, MAX_GENERATED_AGENT_NAME_LENGTH).trimEnd() || "Agent";
+  const normalizedOccupiedNames = new Set(
+    [...occupiedNames].map(normalizeAgentProfileName),
+  );
+  if (hasLastName(requestedName) && !normalizedOccupiedNames.has(normalizeAgentProfileName(requestedName))) {
+    return { name: requestedName, changed: false };
+  }
+
+  const firstNames = requestedName.split(" ").slice(0, -1).join(" ")
+    || requestedName.split(" ")[0]
+    || "Agent";
+  for (const surname of GENERATED_AGENT_SURNAMES) {
+    const candidate = generatedNameCandidate(firstNames, surname);
+    if (!normalizedOccupiedNames.has(normalizeAgentProfileName(candidate))) {
+      return { name: candidate, changed: true };
+    }
+  }
+
+  for (let ordinal = 2; ordinal < 10_000; ordinal += 1) {
+    const candidate = generatedNameCandidate(firstNames, `${GENERATED_AGENT_SURNAMES[0]} ${ordinal}`);
+    if (!normalizedOccupiedNames.has(normalizeAgentProfileName(candidate))) {
+      return { name: candidate, changed: true };
+    }
+  }
+
+  throw new Error("Could not allocate a unique generated agent name");
+}
+
+export function updateGeneratedProfileNameReferences<T extends {
+  name: string;
+  backstory: string | null;
+  personality: string;
+  strategyStyle: string | null;
+}>(profile: T, name: string): T {
+  if (profile.name === name) return profile;
+  const nameReference = new RegExp(escapeRegExp(profile.name), "gi");
+  const replaceName = (value: string | null) => value?.replace(nameReference, name) ?? null;
+  return {
+    ...profile,
+    name,
+    backstory: replaceName(profile.backstory),
+    personality: replaceName(profile.personality) ?? profile.personality,
+    strategyStyle: replaceName(profile.strategyStyle),
+  };
+}
+
+function hasLastName(name: string): boolean {
+  return name.trim().split(/\s+/).length >= 2;
+}
+
+function generatedNameCandidate(firstNames: string, surname: string): string {
+  const maxFirstNameLength = MAX_GENERATED_AGENT_NAME_LENGTH - surname.length - 1;
+  return `${firstNames.slice(0, maxFirstNameLength).trimEnd() || "Agent"} ${surname}`;
+}
+
+function normalizeAgentProfileName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function playerSafeAgentProfile(profile: typeof schema.agentProfiles.$inferSelect) {

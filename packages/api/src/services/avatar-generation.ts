@@ -383,7 +383,6 @@ export async function consumeOwnedDraftAvatarCompletion(
 
 export function avatarProfileFingerprint(profile: AvatarPromptProfile): string {
   return JSON.stringify([
-    profile.name.trim(),
     profile.gender,
     profile.backstory?.trim() ?? null,
     profile.personality.trim(),

@@ -452,6 +452,31 @@ describe("Agent Profile API", () => {
       expect(duplicate.status).toBe(400);
     });
 
+    test("accepts a renamed agent after its completed draft portrait", async () => {
+      await insertCompletedDraft(db, {
+        id: "renamed-draft-request",
+        agentProfileId: "draft-renamed-nova",
+        profile: {
+          ...VALID_DRAFT_PROFILE,
+          name: "Nova Quinn",
+        },
+      });
+
+      const createRes = await app.request(
+        "/api/agent-profiles",
+        jsonReq({
+          name: "Nova Hartwell",
+          gender: "female",
+          personality: "A patient mediator.",
+          personaKey: "diplomat",
+          avatarGenerationRequestId: "renamed-draft-request",
+        }, tokenA),
+      );
+
+      expect(createRes.status).toBe(201);
+      expect((await createRes.json() as { name: string }).name).toBe("Nova Hartwell");
+    });
+
     test("does not consume a completed draft when profile validation fails", async () => {
       const profile = {
         ...VALID_DRAFT_PROFILE,
