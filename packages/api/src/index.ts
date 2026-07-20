@@ -13,7 +13,12 @@ import { createDB, schema } from "./db/index.js";
 import { runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
-import { createAuthRoutes } from "./routes/auth.js";
+import {
+  createAuthRoutes,
+  readManagedAuthMode,
+  readPrivyCompatibilityBridgeEnabled,
+  type ManagedAuthMode,
+} from "./routes/auth.js";
 import { createMcpOAuthRoutes } from "./routes/mcp-oauth.js";
 import { createMcpRoutes } from "./routes/mcp.js";
 import { createAgentProfileRoutes } from "./routes/agent-profiles.js";
@@ -61,12 +66,71 @@ const REQUIRED_ENV = [
   "ADMIN_ADDRESS",
 ] as const;
 
+let managedAuthMode: ManagedAuthMode;
+try {
+  managedAuthMode = readManagedAuthMode();
+} catch (error) {
+  console.error(
+    `\n  Managed authentication configuration error:\n\n    ${(error as Error).message}\n`,
+  );
+  process.exit(1);
+}
+
+try {
+  readPrivyCompatibilityBridgeEnabled();
+} catch (error) {
+  console.error(
+    `\n  Privy compatibility bridge configuration error:\n\n    ${(error as Error).message}\n`,
+  );
+  process.exit(1);
+}
+
 const missing = REQUIRED_ENV.filter((key) => !process.env[key]);
 if (missing.length > 0) {
   console.error(
     `\n  Missing required environment variables:\n\n${missing.map((k) => `    - ${k}`).join("\n")}\n\n  Set these in Doppler or your .env file and restart.\n`,
   );
   process.exit(1);
+}
+
+if (managedAuthMode !== "disabled") {
+  const requiredClerkEnv = [
+    "CLERK_PUBLISHABLE_KEY",
+    "CLERK_SECRET_KEY",
+    "CLERK_JWT_KEY",
+    "CLERK_AUTHORIZED_PARTIES",
+  ] as const;
+  const missingClerkEnv = requiredClerkEnv.filter(
+    (key) => !process.env[key]?.trim(),
+  );
+  if (missingClerkEnv.length > 0) {
+    console.error(
+      `\n  Managed authentication configuration error:\n\n${missingClerkEnv.map((key) => `    - ${key} is required when MANAGED_AUTH_MODE is ${managedAuthMode}`).join("\n")}\n\n  Set these in Doppler or your environment and restart.\n`,
+    );
+    process.exit(1);
+  }
+
+  const authorizedParties = process.env.CLERK_AUTHORIZED_PARTIES!
+    .split(",")
+    .map((party) => party.trim())
+    .filter(Boolean);
+  const invalidAuthorizedParties = authorizedParties.filter((party) => {
+    try {
+      const url = new URL(party);
+      return (
+        !["http:", "https:"].includes(url.protocol) ||
+        url.origin !== party
+      );
+    } catch {
+      return true;
+    }
+  });
+  if (invalidAuthorizedParties.length > 0) {
+    console.error(
+      "\n  Managed authentication configuration error:\n\n    CLERK_AUTHORIZED_PARTIES must be a comma-separated list of exact http(s) origins.\n",
+    );
+    process.exit(1);
+  }
 }
 
 // Optional: object storage for PFP uploads.

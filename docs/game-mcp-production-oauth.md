@@ -77,6 +77,24 @@ LINODE_PRIVATE_CONTENT_BUCKET=...
 
 Dynamic client registration is enabled for public MCP clients. Registered clients may store any supported non-empty scope set. If any client omits scope, registration stores the full supported scope envelope so the client-agnostic missing-bearer challenge can reach the consent screen for every redirect family. That broad registration envelope is eligibility, not a grant: the authorization request, human selection, authorization code, and access token remain narrow, and `producer` remains explicitly role-gated and opt-in.
 
+The browser authorization page uses the Influence application session as its
+only authentication prerequisite. A user may establish that session with
+email/password or Privy; the provider assertion is exchanged before the MCP
+authorization boundary and never becomes an MCP subject. The authorization
+page keeps its parsed request mounted and renders the authentication wrapper
+inline, so verification, password reset, Privy cancellation, logout, and retry
+do not reconstruct or mutate callback, resource, scope, state, or PKCE values.
+No authorization code is created until the authenticated user explicitly
+approves consent.
+
+MCP access tokens and refresh families use the durable Influence `users.id` as
+`sub`. A walletless password account therefore receives the same subject-scoped
+ordinary grants as any other account. `producer` remains controlled by the
+current Influence role and is not implied by a wallet, Privy login, password
+login, or authentication-provider metadata. Password linking, password reset,
+and browser-session logout do not revoke or rewrite an already-issued MCP token
+family; MCP revocation remains an explicit, separate operation.
+
 Provider classification never authorizes a redirect. A provider-hosted callback is trusted only when its exact URI appears in the checked-in provider compatibility config. A recognized provider hostname, request argument, or audit field is not redirect or scope authority.
 
 Authorization requests must ask for one or more supported scopes. The browser consent screen previews the requested scopes, hides scopes the current user cannot grant, and submits the exact selected scope set as `selected_scope`.
@@ -207,6 +225,10 @@ Management failures return stable JSON-RPC error data with `code`, HTTP-like `st
 Player-facing setup lives at `/get-mcp`. Send players there for the current environment's `/mcp` URL, Codex commands, Claude Code commands, sign-in guidance, and browser OAuth explanation for their Influence games, agents, rules, and supported pre-match queues.
 
 Do not send players directly to `/mcp`; it is the Streamable HTTP MCP resource endpoint, not a human setup page.
+
+`/get-mcp` remains public. Its signed-in message and Sign in action read the
+provider-neutral Influence session, so the page behaves the same for
+email/password, Privy email, and Privy wallet users.
 
 The protected-resource metadata for `/mcp` advertises all supported scopes. Ready means a fresh client can initialize, complete OAuth in the browser, store/use a token, call `list_games`, inspect rules/archetypes/owned agents, and call at least one accessible game-specific tool such as `read_projection` or `filter_events`.
 

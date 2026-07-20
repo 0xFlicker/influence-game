@@ -48,6 +48,9 @@ ENV NEXT_TELEMETRY_DISABLED=1
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 ENV API_BACKEND_URL=http://api:3001
+# Clerk's publishable key and mode are non-secret runtime config. Keep
+# CLERK_SECRET_KEY and CLERK_JWT_KEY out of this browser-facing image.
+ENV MANAGED_AUTH_MODE=disabled
 
 # Copy standalone build
 COPY --from=build /app/packages/web/.next/standalone ./

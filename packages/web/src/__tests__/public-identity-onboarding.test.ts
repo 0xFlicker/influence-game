@@ -297,4 +297,23 @@ describe("public identity onboarding model", () => {
     }));
     expect(deferrable).toContain("Not now");
   });
+
+  it("submits the public profile form when an input triggers form submission", () => {
+    const rendered = renderToString(createElement(PublicIdentityOnboarding, {
+      identity: {
+        publicId: "8d91d5d0-bb3f-4559-a51a-64e1d2236f21",
+        handle: null,
+        displayName: "Flick",
+        publicIdentityOnboarding: {
+          state: "required" as const,
+          diagnosticCode: null,
+        },
+      },
+      onSaved: () => undefined,
+      onDismiss: () => undefined,
+    }));
+
+    expect(rendered).toContain("<form");
+    expect(rendered).toContain('type="submit"');
+  });
 });

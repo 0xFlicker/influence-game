@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { usePrivy } from "@privy-io/react-auth";
-import { useE2EAuth } from "@/app/providers";
+import { AuthenticationWrapper } from "@/components/authentication-wrapper";
+import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
 import {
   ApiError,
@@ -13,6 +13,7 @@ import {
   type McpOAuthScope,
   type McpOAuthScopePreview,
 } from "@/lib/api";
+import { useRuntimeConfig } from "@/lib/runtime-config";
 import {
   parseMcpOAuthSearchParams,
   type McpOAuthAuthorizeRequest,
@@ -35,11 +36,9 @@ export function McpOAuthAuthorizeClient() {
     [searchKey],
   );
 
-  const e2e = useE2EAuth();
-  const { ready, authenticated, login } = usePrivy();
+  const { ready, authenticated, openSignIn } = useAuth();
+  const runtimeConfig = useRuntimeConfig();
   const { loading: permissionsLoading, user, authError } = usePermissions();
-  const effectiveReady = e2e.isE2E ? e2e.ready : ready;
-  const effectiveAuth = e2e.isE2E ? e2e.authenticated : authenticated;
 
   const [flow, setFlow] = useState<FlowState>({ kind: "checking" });
   const [submitting, setSubmitting] = useState<McpOAuthDecision | null>(null);
@@ -56,12 +55,12 @@ export function McpOAuthAuthorizeClient() {
       return;
     }
 
-    if (!effectiveReady) {
+    if (!ready || !runtimeConfig.ready) {
       setFlow({ kind: "checking" });
       return;
     }
 
-    if (!effectiveAuth) {
+    if (!authenticated) {
       setFlow({ kind: "signin" });
       return;
     }
@@ -112,7 +111,15 @@ export function McpOAuthAuthorizeClient() {
     return () => {
       cancelled = true;
     };
-  }, [parsed, effectiveReady, effectiveAuth, permissionsLoading, user, authError]);
+  }, [
+    parsed,
+    ready,
+    authenticated,
+    permissionsLoading,
+    user,
+    authError,
+    runtimeConfig.ready,
+  ]);
 
   const submitDecision = useCallback(async (
     request: McpOAuthAuthorizeRequest,
@@ -165,13 +172,20 @@ export function McpOAuthAuthorizeClient() {
               <p className="influence-copy">
                 Sign in to continue the Game MCP authorization flow.
               </p>
-              <button
-                type="button"
-                onClick={login}
-                className="influence-button-primary rounded-lg px-5 py-2 text-sm font-medium"
-              >
-                Sign in
-              </button>
+              {runtimeConfig.MANAGED_AUTH_MODE === "disabled" ? (
+                <button
+                  type="button"
+                  onClick={openSignIn}
+                  className="influence-button-primary rounded-lg px-5 py-2 text-sm font-medium"
+                >
+                  Sign in
+                </button>
+              ) : (
+                <AuthenticationWrapper
+                  managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
+                  presentation="inline"
+                />
+              )}
             </div>
           )}
 

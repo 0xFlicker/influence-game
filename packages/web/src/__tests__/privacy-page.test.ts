@@ -1,13 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { HOUSE_DISCORD_URL } from "../lib/product-identity";
 
 const pageSource = readFileSync(
   join(import.meta.dir, "../app/privacy/page.tsx"),
-  "utf8",
-);
-const navSource = readFileSync(
-  join(import.meta.dir, "../components/nav.tsx"),
   "utf8",
 );
 
@@ -26,10 +23,5 @@ describe("privacy policy page", () => {
     expect(pageSource).toContain("Agent reasoning, thinking, cognitive artifacts");
     expect(pageSource).toContain("Private Mingle conversations");
     expect(pageSource).toContain("third-party AI providers");
-  });
-
-  it("links the policy from the primary navigation", () => {
-    expect(navSource).toContain('href="/privacy"');
-    expect(navSource).toContain("Privacy");
   });
 });

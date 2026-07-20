@@ -16,11 +16,13 @@
     "db:migrate": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/migrate.ts",
     "db:seed": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/seed.ts",
     "backfill:watch-summaries": "bun run src/scripts/backfill-game-watch-state-summaries.ts",
+    "auth:identity-inventory": "bun run src/scripts/preflight-auth-identities.ts",
     "mcp:trace": "bun run src/trace-mcp/server.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1078.0",
     "@aws-sdk/s3-request-presigner": "3.1078.0",
+    "@clerk/backend": "3.11.7",
     "@influence/engine": "workspace:*",
     "@privy-io/server-auth": "^1.32.5",
     "drizzle-orm": "^0.45.1",

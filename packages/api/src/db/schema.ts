@@ -179,6 +179,65 @@ export const users = pgTable("users", {
   ),
 ]);
 
+export type AuthenticationProvider = "privy" | "clerk";
+
+export const authenticationCredentials = pgTable("authentication_credentials", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  provider: text("provider").notNull().$type<AuthenticationProvider>(),
+  providerSubject: text("provider_subject").notNull(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+  retiredAt: text("retired_at"),
+}, (table) => [
+  uniqueIndex("authentication_credentials_provider_subject_unique")
+    .on(table.provider, table.providerSubject),
+  index("authentication_credentials_active_user_id_idx")
+    .on(table.userId)
+    .where(sql`${table.retiredAt} IS NULL`),
+  check(
+    "authentication_credentials_provider_check",
+    sql`${table.provider} IN ('privy', 'clerk')`,
+  ),
+]);
+
+export type VerifiedEmailClaimState = "active" | "conflict";
+
+export const verifiedEmailClaims = pgTable("verified_email_claims", {
+  normalizedEmail: text("normalized_email").primaryKey(),
+  userId: text("user_id")
+    .references(() => users.id, { onDelete: "restrict" }),
+  state: text("state").notNull().$type<VerifiedEmailClaimState>(),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("verified_email_claims_active_user_id_unique")
+    .on(table.userId)
+    .where(sql`${table.state} = 'active'`),
+  check(
+    "verified_email_claims_state_check",
+    sql`${table.state} IN ('active', 'conflict')`,
+  ),
+  check(
+    "verified_email_claims_state_user_check",
+    sql`(
+      (${table.state} = 'active' AND ${table.userId} IS NOT NULL)
+      OR (${table.state} = 'conflict' AND ${table.userId} IS NULL)
+    )`,
+  ),
+  check(
+    "verified_email_claims_normalized_email_canonical_check",
+    sql`lower(btrim(${table.normalizedEmail})) = ${table.normalizedEmail}`,
+  ),
+]);
+
 // ---------------------------------------------------------------------------
 // Games
 // ---------------------------------------------------------------------------

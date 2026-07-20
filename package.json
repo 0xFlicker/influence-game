@@ -24,6 +24,8 @@
     "e2e": "bun scripts/e2e-test.ts",
     "test:e2e": "bunx playwright test",
     "test:e2e:identity": "PLAYWRIGHT_LOCAL_IDENTITY=1 bunx playwright test e2e/public-player-identity.spec.ts",
+    "test:e2e:layered-auth": "PLAYWRIGHT_LAYERED_AUTH=deterministic bunx playwright test e2e/layered-authentication.spec.ts --project=layered-auth-deterministic",
+    "test:e2e:layered-auth:clerk": "PLAYWRIGHT_LAYERED_AUTH=real-clerk bunx playwright test e2e/layered-authentication.spec.ts --project=layered-auth-real-clerk",
     "typecheck": "bun run --filter '*' typecheck",
     "lint": "bun run --filter '*' lint",
     "check": "bun run typecheck && bun run lint",
@@ -41,6 +43,8 @@
     "render-worker:health": "cd packages/web && bun run render-worker:health"
   },
   "devDependencies": {
+    "@clerk/backend": "3.11.7",
+    "@clerk/testing": "2.2.10",
     "@playwright/test": "^1.58.2",
     "puppeteer": "^24.40.0"
   }

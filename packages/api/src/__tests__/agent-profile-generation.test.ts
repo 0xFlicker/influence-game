@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  allocateGeneratedAgentName,
   resolveAgentProfileGenerationLlm,
   resolveGeneratedAgentGender,
+  updateGeneratedProfileNameReferences,
 } from "../routes/agent-profiles.js";
 
 describe("agent profile generation LLM selection", () => {
@@ -44,5 +46,49 @@ describe("generated agent gender", () => {
       backstory: "He learned diplomacy from his grandfather.",
       personality: "His humor disarms rivals.",
     })).toBe("male");
+  });
+});
+
+describe("generated agent names", () => {
+  test("keeps a distinct full name and replaces only the surname on a collision", () => {
+    const occupiedNames = new Set(["nova quinn"]);
+
+    expect(allocateGeneratedAgentName("Nova Quinn", occupiedNames)).toEqual({
+      name: "Nova Hartwell",
+      changed: true,
+    });
+    expect(allocateGeneratedAgentName("Mira Vale", occupiedNames)).toEqual({
+      name: "Mira Vale",
+      changed: false,
+    });
+  });
+
+  test("adds a surname when the model returns only a first name", () => {
+    expect(allocateGeneratedAgentName("Nova", new Set())).toEqual({
+      name: "Nova Hartwell",
+      changed: true,
+    });
+  });
+
+  test("keeps a fallback full name within the saved profile limit", () => {
+    const name = "A".repeat(80);
+    expect(allocateGeneratedAgentName(name, new Set([name]))).toMatchObject({
+      name: `${"A".repeat(71)} Hartwell`,
+      changed: true,
+    });
+  });
+
+  test("keeps generated copy consistent when a collision changes the full name", () => {
+    expect(updateGeneratedProfileNameReferences({
+      name: "Nova Quinn",
+      backstory: "Nova Quinn learned patience at the poker table.",
+      personality: "Nova Quinn has a warm but calculating presence.",
+      strategyStyle: "Nova Quinn builds alliances before making a move.",
+    }, "Nova Hartwell")).toEqual({
+      name: "Nova Hartwell",
+      backstory: "Nova Hartwell learned patience at the poker table.",
+      personality: "Nova Hartwell has a warm but calculating presence.",
+      strategyStyle: "Nova Hartwell builds alliances before making a move.",
+    });
   });
 });

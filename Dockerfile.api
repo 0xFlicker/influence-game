@@ -24,7 +24,8 @@ COPY --from=deps /app/packages/engine/node_modules ./packages/engine/node_module
 WORKDIR /app/packages/api
 RUN bun build src/index.ts --target=bun --outdir=dist --sourcemap=external \
   && bun build src/scripts/backfill-game-watch-state-summaries.ts --target=bun --outdir=dist --entry-naming=backfill-game-watch-state-summaries.js --sourcemap=external \
-  && bun build src/scripts/backfill-agent-revisions.ts --target=bun --outdir=dist --entry-naming=backfill-agent-revisions.js --sourcemap=external
+  && bun build src/scripts/backfill-agent-revisions.ts --target=bun --outdir=dist --entry-naming=backfill-agent-revisions.js --sourcemap=external \
+  && bun build src/scripts/preflight-auth-identities.ts --target=bun --outdir=dist --entry-naming=preflight-auth-identities.js --sourcemap=external
 
 # Slim runtime — no node_modules needed
 FROM oven/bun:1-slim AS runtime
@@ -42,6 +43,13 @@ ENV NODE_ENV=production
 ENV PORT=3001
 ENV HOST=0.0.0.0
 ENV DRIZZLE_MIGRATIONS_DIR=/app/drizzle
+# Override at runtime to existing-only or full only when Doppler also injects
+# CLERK_PUBLISHABLE_KEY, CLERK_SECRET_KEY, CLERK_JWT_KEY, and
+# CLERK_AUTHORIZED_PARTIES.
+ENV MANAGED_AUTH_MODE=disabled
+# Transitional legacy adoption is enabled through inventory/backfill. Set false
+# only after a zero final delta; Privy login itself remains first-class.
+ENV PRIVY_COMPATIBILITY_BRIDGE_ENABLED=true
 # DATABASE_URL must be provided at runtime (e.g. via docker run -e or compose)
 
 EXPOSE 3001

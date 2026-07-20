@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import {
   InviteCodesSection,
+  LoginMethodsSection,
   ProfileIdentitySummary,
 } from "../app/dashboard/profile/profile-content";
 
@@ -68,5 +69,44 @@ describe("private profile public identity controls", () => {
     }));
     expect(available).toContain("Invite Codes");
     expect(available).toContain("JOIN-US");
+  });
+
+  it("offers only additive email/password controls and exposes no provider subjects", () => {
+    const add = renderToString(createElement(LoginMethodsSection, {
+      email: "owner@example.test",
+      loginMethods: { privy: true, emailPassword: false },
+      onAddPassword: () => undefined,
+      onResetPassword: () => undefined,
+    }));
+    expect(add).toContain("Privy");
+    expect(add).toContain("Add email/password");
+    expect(add).not.toContain("Reset password");
+
+    const reset = renderToString(createElement(LoginMethodsSection, {
+      email: "owner@example.test",
+      loginMethods: { privy: true, emailPassword: true },
+      onAddPassword: () => undefined,
+      onResetPassword: () => undefined,
+    }));
+    expect(reset).toContain("Reset password");
+    expect(reset).not.toContain("Add email/password");
+
+    const combined = `${add}${reset}`;
+    expect(combined).not.toContain("Unlink");
+    expect(combined).not.toContain("Change email");
+    expect(combined).not.toContain("Passkey");
+    expect(combined).not.toContain("MFA");
+    expect(combined).not.toContain("did:privy");
+    expect(combined).not.toContain("user_");
+
+    const existingOnly = renderToString(createElement(LoginMethodsSection, {
+      email: "owner@example.test",
+      loginMethods: { privy: true, emailPassword: false },
+      canAddPassword: false,
+      onAddPassword: () => undefined,
+      onResetPassword: () => undefined,
+    }));
+    expect(existingOnly).not.toContain("Add email/password");
+    expect(existingOnly).toContain("temporarily unavailable");
   });
 });

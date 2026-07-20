@@ -124,6 +124,30 @@ A producer-only per-agent estimate used to assess field strength, support a boun
 
 The player-safe identity contract used by anonymous profile and discovery surfaces. It consists of an immutable opaque public UUID, an editable unique URL-safe handle, and a non-unique safe display name. The handle is the preferred share route and may change without redirects; the public UUID remains the stable fallback. Authentication-provider subjects, internal user IDs, email addresses, and wallet addresses are not public identity.
 
+## Influence account
+
+The private, durable ownership and authorization identity for one player. Its internal ID is an opaque key that remains stable across authentication methods: existing Privy-shaped IDs are preserved, while accounts first created through other providers use random UUIDs. Authentication-provider subjects, email addresses, wallet addresses, and public player identity may resolve to or describe an Influence account, but none of them replaces its ownership key.
+
+## Linked authentication credential
+
+A verified external authentication identity, such as a Privy subject or a managed password-provider subject, that is explicitly associated with one Influence account and can establish its browser session. A newly verified managed email may link to an email-owned Privy account only when it exactly matches that account's unambiguous verified Privy email. A verified Privy email may symmetrically link to one password-first account that already claims it. A wallet-owned Privy account instead requires authentication through its external owning wallet before a managed credential can be linked.
+
+## Authentication wrapper
+
+The provider-neutral entry surface for establishing an Influence browser session. It separates Sign in from Create account: Sign in supports managed email/password and the existing combined Privy email-or-wallet flow, while Create account supports managed email/password only. OAuth renders it in place while keeping the authorization request mounted; other entry points use existing redirect behavior without preserving or replaying an interrupted application action.
+
+## Managed-provider exit
+
+The planned replacement of the conventional-password authority without replacing the durable Influence account or permanent Privy support. An exit remaps verified identity continuity to a replacement credential while preserving ownership, roles, history, and MCP grants. Users may need to reset passwords or re-enroll MFA; password-only accounts have no separate emergency login during a provider outage.
+
+## Privy login owner
+
+The authentication identity through which an Influence user enters Privy: either a verified email or an external owning wallet. An embedded Privy wallet created for an email-owned user is wallet capability, not the login owner. Influence does not expose Privy identity-linking controls, so password linking uses the verified email for an email-owned account and requires the external owning wallet for a wallet-owned account.
+
+## Verified email claim
+
+The private duplicate-prevention rule that assigns one normalized verified email to at most one Influence account. Normalization trims whitespace and compares case-insensitively without collapsing dots, plus-tags, or provider-specific aliases. The claim may block account creation or select an unambiguous existing email-owned account for linking, but it is not the account's ownership key or public identity.
+
 ## Public player profile
 
 The anonymously loadable, shareable competitive résumé addressed by a public player handle or UUID. It contains only public player identity, the current saved agent roster, and deterministic facts already derived from existing season, career, result, and agent records. The private dashboard, account and wallet data, agent editing, prompts, backstory, strategy, revisions, reasoning, cognitive and provider artifacts, and administrator data do not cross this boundary.

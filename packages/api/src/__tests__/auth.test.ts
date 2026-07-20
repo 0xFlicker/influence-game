@@ -30,6 +30,10 @@ import {
   exchangeMcpOAuthCode,
   MCP_OAUTH_CLIENT_ID,
 } from "../services/mcp-oauth.js";
+import type {
+  ClerkAuthenticationProviderVerifier,
+  ProviderVerificationResult,
+} from "../services/authentication-providers.js";
 
 // ---------------------------------------------------------------------------
 // Environment
@@ -382,6 +386,47 @@ describe("authenticated public identity session projection", () => {
     expect(body.publicIdentityOnboarding.state).toBe("required");
   });
 
+  test("/auth/me projects login methods without exposing provider subjects", async () => {
+    await db.insert(schema.users).values({
+      id: "private-login-method-user",
+      email: "methods@example.com",
+    });
+    await db.insert(schema.authenticationCredentials).values([
+      {
+        userId: "private-login-method-user",
+        provider: "privy",
+        providerSubject: "did:privy:must-stay-private",
+      },
+      {
+        userId: "private-login-method-user",
+        provider: "clerk",
+        providerSubject: "user_must_stay_private",
+      },
+      {
+        userId: "private-login-method-user",
+        provider: "clerk",
+        providerSubject: "user_retired_must_stay_private",
+        retiredAt: "2026-07-19T00:00:00.000Z",
+      },
+    ]);
+    const token = await createSessionToken("private-login-method-user");
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db));
+
+    const res = await app.request("/api/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.loginMethods).toEqual({
+      privy: true,
+      emailPassword: true,
+    });
+    expect(JSON.stringify(body)).not.toContain("did:privy:must-stay-private");
+    expect(JSON.stringify(body)).not.toContain("user_must_stay_private");
+    expect(JSON.stringify(body)).not.toContain("user_retired_must_stay_private");
+  });
+
   test("login returns the updated row and retains the resolved user projection", async () => {
     await db.insert(schema.users).values({
       id: "did:privy:existing-user",
@@ -403,6 +448,7 @@ describe("authenticated public identity session projection", () => {
             type: "wallet",
             address: walletAddress,
             chainType: "ethereum",
+            walletClientType: "privy",
             verifiedAt: new Date(),
             firstVerifiedAt: new Date(),
             latestVerifiedAt: new Date(),
@@ -435,10 +481,536 @@ describe("authenticated public identity session projection", () => {
       };
     };
     expect(body.token).toBeTruthy();
-    expect(body.user.walletAddress).toBe(walletAddress);
+    expect(body.user.walletAddress).toBeNull();
     expect(body.user.publicId).toMatch(/^[0-9a-f-]{36}$/);
     expect(body.user.displayName).toBe("Anonymous");
     expect(body.user.publicIdentityOnboarding.state).toBe("required");
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+    expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(1);
+  });
+
+  test("login route passes the disabled compatibility bridge to account resolution", async () => {
+    const subject = "did:privy:route-bridge-disabled";
+    await db.insert(schema.users).values({
+      id: subject,
+      email: "legacy-route@example.com",
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      verifyPrivyToken: async () => subject,
+      getPrivyUser: async () => ({
+        id: subject,
+        createdAt: new Date(),
+        isGuest: false,
+        customMetadata: {},
+        linkedAccounts: [{
+          type: "email",
+          address: "legacy-route@example.com",
+          verifiedAt: new Date(),
+          firstVerifiedAt: new Date(),
+          latestVerifiedAt: new Date(),
+        }],
+      }),
+      isInviteRequired: async () => false,
+      compatibilityBridgeEnabled: false,
+    }));
+
+    const response = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "verified-token" }),
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({
+      error: "This account needs support before it can sign in",
+      code: "ACCOUNT_SUPPORT_REQUIRED",
+    });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+    expect(await db.select().from(schema.users)).toHaveLength(1);
+  });
+
+  test("known Privy credentials ignore profile and invite-service outages", async () => {
+    await db.insert(schema.users).values({
+      id: "durable-known-user",
+      displayName: "Known",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "durable-known-user",
+      provider: "privy",
+      providerSubject: "did:privy:known-outage",
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      verifyPrivyToken: async () => "did:privy:known-outage",
+      getPrivyUser: async () => {
+        throw new Error("profile unavailable");
+      },
+      isInviteRequired: async () => {
+        throw new Error("invite setting should not be read for an existing account");
+      },
+    }));
+
+    const res = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: "valid-test-token" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json() as { token: string; user: { id: string } };
+    expect(body.token).toBeTruthy();
+    expect(body.user.id).toBe("durable-known-user");
+  });
+
+  test("stalled Privy token verification returns unavailable without mutation", async () => {
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      privyTimeoutMs: 5,
+      verifyPrivyToken: async () => new Promise(() => {}),
+      getPrivyUser: async () => {
+        throw new Error("must not load");
+      },
+    }));
+
+    const response = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: "stalled-token" }),
+    });
+
+    expect(response.status).toBe(503);
+    expect(await response.json()).toMatchObject({
+      code: "AUTH_PROVIDER_UNAVAILABLE",
+    });
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+  });
+});
+
+describe("managed authentication routes", () => {
+  let db: DrizzleDB;
+
+  beforeEach(async () => {
+    db = await setupDB();
+  });
+
+  test("mode gates hide disabled routes and make existing-only mutation-free", async () => {
+    let calls = 0;
+    const verifier = clerkVerifier(async () => {
+      calls += 1;
+      return verifiedClerk("clerk-mode", "mode@example.com");
+    });
+    const disabled = new Hono();
+    disabled.route("/", createAuthRoutes(db, {
+      managedAuthMode: "disabled",
+      clerkVerifier: verifier,
+    }));
+    expect((await disabled.request("/api/auth/managed/exchange", {
+      method: "POST",
+      body: JSON.stringify({ token: "token" }),
+    })).status).toBe(404);
+
+    const existingOnly = new Hono();
+    existingOnly.route("/", createAuthRoutes(db, {
+      managedAuthMode: "existing-only",
+      clerkVerifier: verifier,
+    }));
+    const mutation = await existingOnly.request("/api/auth/managed/create", {
+      method: "POST",
+      body: JSON.stringify({ token: "token", confirm: true }),
+    });
+    expect(mutation.status).toBe(403);
+    expect(calls).toBe(0);
+
+    await db.insert(schema.users).values({
+      id: "existing-only-user",
+      email: "mode@example.com",
+      displayName: "Existing password user",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "existing-only-user",
+      provider: "clerk",
+      providerSubject: "clerk-mode",
+    });
+    await db.insert(schema.verifiedEmailClaims).values({
+      normalizedEmail: "mode@example.com",
+      userId: "existing-only-user",
+      state: "active",
+    });
+
+    const exchange = await managedRequest(
+      existingOnly,
+      "/api/auth/managed/exchange",
+      { token: "token" },
+    );
+    expect(exchange.status).toBe(200);
+    expect(calls).toBe(1);
+    const exchangeBody = await exchange.json() as {
+      token: string;
+      user: { id: string };
+    };
+    expect(exchangeBody.user.id).toBe("existing-only-user");
+    expect((await verifySessionToken(exchangeBody.token))?.userId)
+      .toBe("existing-only-user");
+  });
+
+  test("mutation routes reject missing or false confirmation before verification", async () => {
+    await db.insert(schema.users).values({
+      id: "confirmation-user",
+      displayName: "Confirmation user",
+    });
+    const influenceToken = await createSessionToken("confirmation-user");
+    let clerkCalls = 0;
+    let privyCalls = 0;
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => {
+        clerkCalls += 1;
+        return verifiedClerk("clerk-confirm", "confirm@example.com");
+      }),
+      verifyPrivyToken: async () => {
+        privyCalls += 1;
+        return "did:privy:confirm";
+      },
+    }));
+
+    const routes = [
+      { path: "/api/auth/managed/create", influenceToken: undefined },
+      { path: "/api/auth/managed/link", influenceToken },
+      { path: "/api/auth/privy/link", influenceToken },
+    ];
+    for (const route of routes) {
+      for (const body of [
+        { token: "provider-token" },
+        { token: "provider-token", confirm: false },
+        { token: "provider-token", confirm: "yes" },
+      ]) {
+        const response = await managedRequest(
+          app,
+          route.path,
+          body,
+          route.influenceToken,
+        );
+        expect(response.status).toBe(400);
+      }
+    }
+
+    expect(clerkCalls).toBe(0);
+    expect(privyCalls).toBe(0);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+    expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(0);
+  });
+
+  test("unknown completed session requires explicit create and then exchanges repeatably", async () => {
+    const verifier = clerkVerifier(async () => (
+      verifiedClerk("clerk-create", "created@example.com")
+    ));
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: verifier,
+    }));
+
+    const exchangeBefore = await managedRequest(
+      app,
+      "/api/auth/managed/exchange",
+      { token: "completed" },
+    );
+    expect(exchangeBefore.status).toBe(409);
+    expect(await exchangeBefore.json()).toMatchObject({
+      code: "ACCOUNT_SETUP_INCOMPLETE",
+    });
+
+    const [first, second] = await Promise.all([
+      managedRequest(app, "/api/auth/managed/create", {
+        token: "completed",
+        confirm: true,
+      }),
+      managedRequest(app, "/api/auth/managed/create", {
+        token: "completed",
+        confirm: true,
+      }),
+    ]);
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const firstBody = await first.json() as {
+      token: string;
+      user: {
+        id: string;
+        loginMethods: { privy: boolean; emailPassword: boolean };
+      };
+    };
+    const secondBody = await second.json() as { token: string; user: { id: string } };
+    expect(firstBody.user.id).toBe(secondBody.user.id);
+    expect(firstBody.user.loginMethods).toEqual({
+      privy: false,
+      emailPassword: true,
+    });
+    expect((await verifySessionToken(firstBody.token))?.userId).toBe(firstBody.user.id);
+    expect(await db.select().from(schema.users)).toHaveLength(1);
+
+    const later = await managedRequest(
+      app,
+      "/api/auth/managed/exchange",
+      { token: "completed" },
+    );
+    expect(later.status).toBe(200);
+  });
+
+  test("email collision asks for confirmation and authenticated link preserves the account", async () => {
+    await db.insert(schema.users).values({
+      id: "email-owner",
+      email: "owner@example.com",
+      displayName: "Owner",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "email-owner",
+      provider: "privy",
+      providerSubject: "did:privy:email-owner",
+    });
+    await db.insert(schema.verifiedEmailClaims).values({
+      normalizedEmail: "owner@example.com",
+      userId: "email-owner",
+      state: "active",
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => (
+        verifiedClerk("clerk-owner", "owner@example.com")
+      )),
+    }));
+
+    const collision = await managedRequest(
+      app,
+      "/api/auth/managed/exchange",
+      { token: "completed" },
+    );
+    expect(collision.status).toBe(409);
+    expect(await collision.json()).toMatchObject({
+      code: "ACCOUNT_LINK_CONFIRMATION_REQUIRED",
+    });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+
+    const linked = await managedRequest(
+      app,
+      "/api/auth/managed/link",
+      { token: "completed", confirm: true },
+    );
+    expect(linked.status).toBe(200);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(2);
+  });
+
+  test("reverse Privy collision requires password proof and explicit link confirmation", async () => {
+    await db.insert(schema.users).values({
+      id: "password-owner",
+      email: "reverse@example.com",
+      displayName: "Password owner",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "password-owner",
+      provider: "clerk",
+      providerSubject: "clerk-reverse-owner",
+    });
+    await db.insert(schema.verifiedEmailClaims).values({
+      normalizedEmail: "reverse@example.com",
+      userId: "password-owner",
+      state: "active",
+    });
+
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => (
+        verifiedClerk("clerk-reverse-owner", "reverse@example.com")
+      )),
+      verifyPrivyToken: async (token) => (
+        token === "verified-privy" ? "did:privy:reverse-owner" : null
+      ),
+      getPrivyUser: async () => ({
+        id: "did:privy:reverse-owner",
+        createdAt: new Date(),
+        isGuest: false,
+        customMetadata: {},
+        linkedAccounts: [{
+          type: "email",
+          address: "reverse@example.com",
+          verifiedAt: new Date(),
+          firstVerifiedAt: new Date(),
+          latestVerifiedAt: new Date(),
+        }],
+      }),
+    }));
+
+    const collision = await app.request("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ token: "verified-privy" }),
+    });
+    expect(collision.status).toBe(409);
+    expect(await collision.json()).toMatchObject({
+      code: "ACCOUNT_LINK_REQUIRED",
+    });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+
+    const passwordSession = await managedRequest(
+      app,
+      "/api/auth/managed/exchange",
+      { token: "verified-clerk" },
+    );
+    expect(passwordSession.status).toBe(200);
+    const passwordSessionBody = await passwordSession.json() as {
+      token: string;
+      user: { id: string };
+    };
+    expect(passwordSessionBody.user.id).toBe("password-owner");
+
+    const linked = await app.request("/api/auth/privy/link", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${passwordSessionBody.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ token: "verified-privy", confirm: true }),
+    });
+    expect(linked.status).toBe(200);
+    expect(await linked.json()).toMatchObject({
+      user: {
+        id: "password-owner",
+        loginMethods: { privy: true, emailPassword: true },
+      },
+    });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(2);
+  });
+
+  test("wallet link survives expired Privy proof and succeeds after matching owner reauth", async () => {
+    const embedded = "0x1111111111111111111111111111111111111111";
+    const external = "0x2222222222222222222222222222222222222222";
+    await db.insert(schema.users).values({
+      id: "wallet-owner",
+      walletAddress: embedded,
+      displayName: "Wallet owner",
+    });
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "wallet-owner",
+      provider: "privy",
+      providerSubject: "did:privy:wallet-owner",
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => (
+        verifiedClerk("clerk-wallet-owner", "wallet-owner@example.com")
+      )),
+      verifyPrivyToken: async (token) => (
+        token === "fresh-privy" ? "did:privy:wallet-owner" : null
+      ),
+      getPrivyUser: async () => ({
+        id: "did:privy:wallet-owner",
+        createdAt: new Date(),
+        isGuest: false,
+        customMetadata: {},
+        linkedAccounts: [
+          {
+            type: "wallet",
+            address: embedded,
+            chainType: "ethereum",
+            walletClientType: "privy",
+            verifiedAt: new Date(),
+            firstVerifiedAt: new Date(),
+            latestVerifiedAt: new Date(),
+          },
+          {
+            type: "wallet",
+            address: external,
+            chainType: "ethereum",
+            walletClientType: "metamask",
+            verifiedAt: new Date(),
+            firstVerifiedAt: new Date(),
+            latestVerifiedAt: new Date(),
+          },
+        ],
+      }),
+    }));
+    const influenceToken = await createSessionToken("wallet-owner");
+
+    const expired = await managedRequest(
+      app,
+      "/api/auth/managed/link",
+      { token: "clerk", privyToken: "expired", confirm: true },
+      influenceToken,
+    );
+    expect(expired.status).toBe(401);
+    expect(await expired.json()).toMatchObject({ code: "WALLET_REAUTH_REQUIRED" });
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+
+    const linked = await managedRequest(
+      app,
+      "/api/auth/managed/link",
+      { token: "clerk", privyToken: "fresh-privy", confirm: true },
+      influenceToken,
+    );
+    expect(linked.status).toBe(200);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(2);
+  });
+
+  test("pending, locked, malformed, oversized, timed-out, and burst requests issue no session", async () => {
+    let calls = 0;
+    let result: ProviderVerificationResult = { status: "invalid" };
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => {
+        calls += 1;
+        return result;
+      }),
+      managedRateLimits: {
+        preVerification: 4,
+        postVerification: 4,
+        windowMs: 60_000,
+      },
+    }));
+
+    const malformed = await app.request("/api/auth/managed/exchange", {
+      method: "POST",
+      body: "{",
+    });
+    expect(malformed.status).toBe(400);
+    const oversized = await app.request("/api/auth/managed/exchange", {
+      method: "POST",
+      headers: { "content-length": "20000" },
+      body: JSON.stringify({ token: "tiny" }),
+    });
+    expect(oversized.status).toBe(413);
+    expect(calls).toBe(0);
+
+    result = { status: "setup_incomplete" };
+    expect((await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "pending",
+    })).status).toBe(409);
+    result = { status: "locked" };
+    expect((await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "locked",
+    })).status).toBe(423);
+    result = {
+      status: "profile_unavailable",
+    };
+    expect((await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "timeout",
+    })).status).toBe(503);
+
+    result = { status: "invalid" };
+    expect((await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "one-more",
+    })).status).toBe(401);
+    const limited = await managedRequest(app, "/api/auth/managed/exchange", {
+      token: "limited",
+    });
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("retry-after")).toBe("60");
+    expect(calls).toBe(4);
+    expect(await db.select().from(schema.users)).toHaveLength(0);
   });
 });
 
@@ -452,6 +1024,45 @@ async function assignRoles(db: DrizzleDB, walletAddress: string, roleNames: stri
     roleId: role.id,
     grantedBy: "test",
   })));
+}
+
+function clerkVerifier(
+  verify: (token: string) => Promise<ProviderVerificationResult>,
+): ClerkAuthenticationProviderVerifier {
+  return { provider: "clerk", verify };
+}
+
+function verifiedClerk(
+  subject: string,
+  normalizedEmail: string,
+): ProviderVerificationResult {
+  return {
+    status: "verified",
+    evidence: {
+      provider: "clerk",
+      subject,
+      owner: { kind: "email", normalizedEmail },
+      productWalletAddress: null,
+    },
+  };
+}
+
+async function managedRequest(
+  app: Hono,
+  path: string,
+  body: Record<string, unknown>,
+  influenceToken?: string,
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    "x-forwarded-for": "203.0.113.10",
+  };
+  if (influenceToken) headers.authorization = `Bearer ${influenceToken}`;
+  return app.request(path, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
 }
 
 async function issueProducerMcpToken(

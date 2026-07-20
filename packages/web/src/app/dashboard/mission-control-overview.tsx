@@ -6,8 +6,8 @@ import { playerProfileHref } from "@/lib/player-profile-links";
 import type { DashboardMissionControl, DashboardPrimaryAction } from "./dashboard-mission-control";
 
 export interface MissionControlUser {
-  email?: { address?: string | null } | null;
-  wallet?: { address?: string | null } | null;
+  email: string | null;
+  walletAddress: string | null;
 }
 
 interface MissionControlOverviewProps {
@@ -20,7 +20,7 @@ interface MissionControlOverviewProps {
 }
 
 function userLabel(user: MissionControlUser | null): string {
-  return user?.email?.address ?? user?.wallet?.address?.slice(0, 10) ?? "Player";
+  return user?.email ?? user?.walletAddress?.slice(0, 10) ?? "Player";
 }
 
 function PrimaryActionButton({

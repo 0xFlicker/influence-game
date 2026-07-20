@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, useCallback } from "react";
-import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
 import {
   getGame,
   getGameReplayWatchFrames,
   getGameTranscript,
-  getAuthToken,
   type GameDetail,
   type GameSummary,
   type GameStatus,
@@ -16,6 +14,7 @@ import {
   type WsGameEvent,
   type PhaseKey,
 } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 import { audioCue } from "@/lib/audio-cues";
 import { completedGameModeHref } from "@/lib/game-links";
 import { JoinGameModal } from "@/app/dashboard/join-game-modal";
@@ -74,7 +73,7 @@ export function GameViewer({
   initialReplayFrames,
   initialPostgameMedia,
 }: GameViewerProps) {
-  const { authenticated, login } = usePrivy();
+  const { authenticated, openSignIn } = useAuth();
   const router = useRouter();
   const [joinModalOpen, setJoinModalOpen] = useState(false);
   const [joinedSuccess, setJoinedSuccess] = useState(false);
@@ -139,10 +138,6 @@ export function GameViewer({
   useEffect(() => {
     mobileTabRef.current = mobileTab;
   }, [mobileTab]);
-  // Auth state (for diary room gate)
-  const [isAuthenticated, setIsAuthenticated] = useState(() =>
-    typeof window !== "undefined" ? !!getAuthToken() : false,
-  );
   // Player card badges
   // empoweredPlayerId is set by the reveal choreography (INF-76) — null until then
   const [empoweredPlayerId] = useState<string | null>(null);
@@ -385,18 +380,6 @@ export function GameViewer({
     isSpeedrun,
     activeTransition,
   ]);
-
-  // Auth session events from Privy / login flow
-  useEffect(() => {
-    const onReady = () => setIsAuthenticated(true);
-    const onExpired = () => setIsAuthenticated(false);
-    window.addEventListener("auth:session-ready", onReady);
-    window.addEventListener("auth:expired", onExpired);
-    return () => {
-      window.removeEventListener("auth:session-ready", onReady);
-      window.removeEventListener("auth:expired", onExpired);
-    };
-  }, []);
 
   // Trigger endgame entry screens when alive count crosses a threshold
   useEffect(() => {
@@ -842,7 +825,7 @@ export function GameViewer({
 
   function handleJoinClick() {
     if (!authenticated) {
-      login();
+      openSignIn();
       return;
     }
     setJoinModalOpen(true);
@@ -1018,7 +1001,7 @@ export function GameViewer({
           <DiaryRoomPanel
             messages={isReplay ? messages : visibleMessages}
             players={game.players}
-            isAuthenticated={isAuthenticated}
+            isAuthenticated={authenticated}
             isReplay={isReplay}
           />
         )}
@@ -1166,7 +1149,7 @@ export function GameViewer({
             <DiaryRoomPanel
               messages={isReplay ? messages : visibleMessages}
               players={game.players}
-              isAuthenticated={isAuthenticated}
+              isAuthenticated={authenticated}
               isReplay={isReplay}
             />
           )}

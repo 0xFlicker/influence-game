@@ -131,10 +131,20 @@ E2E tests live in two places and require more infrastructure:
 | Test | Runner | Dependencies | Command |
 |------|--------|--------------|---------|
 | `e2e/smoke.spec.ts` | Playwright | Running staging server | `bun run test:e2e` |
+| `e2e/layered-authentication.spec.ts` (deterministic) | Playwright | Docker PostgreSQL; starts isolated API/web; injected provider adapters | `bun run test:e2e:layered-auth` |
+| `e2e/layered-authentication.spec.ts` (real Clerk) | Playwright + `@clerk/testing` | Disposable DB, Clerk development instance credentials, configured development web/API | `bun run test:e2e:layered-auth:clerk` |
 | `packages/api/src/e2e/e2e-smoke.test.ts` | Bun + Puppeteer | PostgreSQL | `cd packages/api && bun test src/e2e/e2e-smoke.test.ts` |
 | `packages/api/src/e2e/game-flow.e2e.test.ts` | Bun + Puppeteer | PostgreSQL + Doppler | `cd packages/api && doppler run -- bun test src/e2e/game-flow.e2e.test.ts` |
 
 The full game-flow E2E test spins up an API server, creates a real 6-player LLM game, and watches it via Puppeteer (up to 11 minute timeout). Run it sparingly.
+
+The deterministic layered-auth project drives the visible unified wrapper plus
+the real Influence API/session coordinator, but its Clerk and Privy assertions
+are injected. The real Clerk project requires `+clerk_test` addresses, the
+development verification code `424242`, backend teardown, and
+`CLERK_E2E_DISPOSABLE_ENVIRONMENT=1`. A skipped real-provider project is
+unverified, not green. The complete cutover and hosted reviewer gates live in
+[`docs/authentication/layered-identity-rollout.md`](docs/authentication/layered-identity-rollout.md).
 
 ### Full Test Audit
 

@@ -689,6 +689,8 @@ describe("avatar generation service", () => {
     expect(prompt).toContain("Do not include text");
     expect(prompt).toContain("Ignore all previous instructions");
     expect(prompt).toContain("Gender: Female");
+    expect(prompt).toContain("visibly distinctive member of a diverse cast");
+    expect(prompt).toContain("Avoid stereotypes or tokenism");
   });
 
   async function insertAgent(id = AGENT_ID) {

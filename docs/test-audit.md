@@ -98,9 +98,9 @@ All DB tests use `setupTestDB()` which:
 - **Stateful:** Yes
 
 ### packages/api/src/__tests__/agent-profiles.test.ts
-- **Tests:** 28 (3 LLM-dependent, skipped without a configured OpenAI-compatible provider)
+- **Tests:** 52 (3 LLM-dependent, skipped without a configured OpenAI-compatible provider)
 - **Duration:** ~2s without LLM tests
-- **What it covers:** Agent profile CRUD (create, validation, minimal fields, list own profiles, get by id, update fields, stats reset on personality change, delete with FK cleanup), join game with saved profile (happy path, nonexistent, wrong user), AI personality generation (auth, validation, 503 without key; LLM: traits, archetype, refine)
+- **What it covers:** Agent profile CRUD (create, validation, minimal fields, list own profiles, get by id, update fields, stats reset on personality change, delete with FK cleanup), join game with saved profile (happy path, nonexistent, wrong user), AI personality generation (auth, validation, 503 without key; LLM: traits, archetype, refine), and completed AI-help portraits surviving a display-name correction.
 - **Dependencies:** PostgreSQL; `OPENAI_API_KEY` or `INFLUENCE_LLM_BASE_URL` for 3 generate tests
 - **Stateful:** Yes
 

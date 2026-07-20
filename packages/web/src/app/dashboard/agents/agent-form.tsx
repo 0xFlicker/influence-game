@@ -23,9 +23,10 @@ interface AgentFormProps {
   onSubmit: (params: CreateAgentParams) => Promise<void>;
   onCancel: () => void;
   submitLabel?: string;
+  compact?: boolean;
 }
 
-export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Agent" }: AgentFormProps) {
+export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Agent", compact = false }: AgentFormProps) {
   const isEditing = Boolean(initial);
   const [name, setName] = useState(initial?.name ?? "");
   const [backstory, setBackstory] = useState(initial?.backstory ?? "");
@@ -39,7 +40,6 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
   const [generating, setGenerating] = useState(false);
   const [portraitStarting, setPortraitStarting] = useState(false);
   const [draftAvatarCompletion, setDraftAvatarCompletion] = useState<AvatarCompletion | null>(null);
-  const [generatedWithAi, setGeneratedWithAi] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const selectedPersona = PERSONAS.find((p) => p.key === personaKey)!;
@@ -61,17 +61,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
   const portraitPending = draftAvatarCompletion
     ? isAvatarCompletionPending(draftAvatarCompletion) && !draftIsStale
     : false;
-  const generationActivity = resolveGenerationActivity({
-    generating,
-    portraitStarting,
-    portraitPending,
-    draftAvatarCompletion,
-    draftIsStale,
-    submitting,
-    generatedWithAi,
-    isEditing,
-    hasAvatar: Boolean(avatarUrl),
-  });
+  const generationPending = generating || portraitStarting || portraitPending;
 
   useEffect(() => {
     const requestId = draftAvatarCompletion?.generationRequestId;
@@ -112,7 +102,6 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
 
   async function handleGenerate() {
     setGenerating(true);
-    setGeneratedWithAi(false);
     setError(null);
     try {
       const params: GeneratePersonalityParams = {};
@@ -137,7 +126,6 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
       setStrategyStyle(result.strategyStyle ?? "");
       setPersonaKey(result.personaKey);
       setGender(result.gender);
-      setGeneratedWithAi(true);
       setGenerating(false);
 
       if (!explicitAvatarUrl) {
@@ -216,10 +204,12 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
     }
   }
 
+  const fullWidthClass = compact ? "md:col-span-2" : "";
+
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
+    <form onSubmit={handleSubmit} className={compact ? "grid grid-cols-1 gap-5 md:grid-cols-2" : "space-y-5"}>
       {/* Avatar upload */}
-      <div className="flex justify-center">
+      <div className={`${fullWidthClass} flex justify-center`}>
         <AvatarUpload
           currentUrl={avatarUrl}
           persona={personaKey}
@@ -229,7 +219,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
       </div>
 
       {/* AI Help */}
-      <div className="influence-panel-dashed flex items-center gap-3 rounded-lg p-3">
+      <div className={`${fullWidthClass} influence-panel-dashed flex items-center gap-3 rounded-lg p-3`}>
         <div className="flex-1 min-w-0">
           <p className="influence-copy text-xs">
             {name.trim() || personality.trim()
@@ -240,31 +230,16 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
         <button
           type="button"
           onClick={handleGenerate}
-          disabled={generating || portraitStarting || portraitPending}
+          disabled={generationPending}
           className="influence-button-primary shrink-0 text-xs px-3 py-1.5 rounded-lg font-medium"
+          aria-live="polite"
         >
-          {generating ? "Generating..." : portraitStarting || portraitPending ? "Generating portrait..." : "AI Help"}
+          {generationPending && (
+            <span className="mr-1.5 inline-block h-3 w-3 animate-spin rounded-full border-2 border-current/30 border-t-current align-[-1px]" aria-hidden="true" />
+          )}
+          {generationButtonLabel({ generating, portraitStarting, portraitPending })}
         </button>
       </div>
-      {generationActivity && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="influence-panel flex items-start gap-3 rounded-lg px-3 py-2.5"
-        >
-          {generationActivity.busy && (
-            <span className="mt-0.5 h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent" aria-hidden="true" />
-          )}
-          <div className="min-w-0 text-xs">
-            <p className="text-text-primary font-medium">
-              {generationActivity.title}
-            </p>
-            <p className="influence-copy-muted mt-0.5">
-              {generationActivity.detail}
-            </p>
-          </div>
-        </div>
-      )}
       {!explicitAvatarUrl && (draftIsStale || (draftAvatarCompletion && !isAvatarCompletionPending(draftAvatarCompletion))) && gender && name.trim() && personality.trim() && (
         <button
           type="button"
@@ -277,7 +252,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
             personaKey,
           })}
           disabled={portraitStarting}
-          className="influence-button-secondary w-full rounded-lg px-3 py-2 text-xs"
+          className={`${fullWidthClass} influence-button-secondary w-full rounded-lg px-3 py-2 text-xs`}
         >
           Regenerate portrait
         </button>
@@ -291,7 +266,10 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
         <input
           type="text"
           value={name}
-          onChange={(e) => setName(e.target.value)}
+          onChange={(e) => {
+            setName(e.target.value);
+            setError(null);
+          }}
           placeholder="e.g. ShadowPlay-7"
           maxLength={32}
           className="influence-field w-full rounded-lg px-4 py-2.5 text-sm"
@@ -329,7 +307,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
       </fieldset>
 
       {/* Persona selection */}
-      <div>
+      <div className={fullWidthClass}>
         <label className="influence-section-title block mb-2">
           Base Persona
         </label>
@@ -382,7 +360,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
           value={personality}
           onChange={(e) => setPersonality(e.target.value)}
           placeholder="How does your agent behave in social situations? How do they speak? What makes them tick?"
-          rows={3}
+          rows={4}
           maxLength={500}
           className="influence-field w-full rounded-lg px-4 py-2.5 text-sm resize-none"
         />
@@ -390,7 +368,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
       </div>
 
       {/* Strategy style */}
-      <div>
+      <div className={fullWidthClass}>
         <label className="influence-section-title block mb-2">
           Strategy Style{" "}
           <span className="influence-copy-muted normal-case font-normal">(optional)</span>
@@ -407,13 +385,13 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
 
       {/* Error */}
       {error && (
-        <p role="alert" className="text-red-400 text-sm rounded-lg px-4 py-2.5 border border-red-400/30 bg-red-400/10">
+        <p role="alert" className={`${fullWidthClass} text-red-400 text-sm rounded-lg px-4 py-2.5 border border-red-400/30 bg-red-400/10`}>
           {error}
         </p>
       )}
 
       {/* Actions */}
-      <div className="flex gap-3 pt-1">
+      <div className={`${fullWidthClass} flex gap-3 pt-1`}>
         <button
           type="button"
           onClick={onCancel}
@@ -441,69 +419,16 @@ export function agentSaveErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to save agent.";
 }
 
-function resolveGenerationActivity(input: {
+export function generationButtonLabel(input: {
   generating: boolean;
   portraitStarting: boolean;
   portraitPending: boolean;
-  draftAvatarCompletion: AvatarCompletion | null;
-  draftIsStale: boolean;
-  submitting: boolean;
-  generatedWithAi: boolean;
-  isEditing: boolean;
-  hasAvatar: boolean;
-}): { title: string; detail: string; busy: boolean } | null {
+}): string {
   if (input.generating) {
-    return {
-      title: "Generating agent details...",
-      detail: "Portrait generation starts as soon as these details are ready.",
-      busy: true,
-    };
+    return "Generating...";
   }
   if (input.portraitStarting || input.portraitPending) {
-    return {
-      title: "Generating portrait...",
-      detail: "You can review the agent while the portrait is being created.",
-      busy: true,
-    };
+    return "Generating portrait...";
   }
-  if (input.draftIsStale) {
-    return {
-      title: "Portrait needs refresh",
-      detail: "Agent details changed. Regenerate the portrait before saving.",
-      busy: false,
-    };
-  }
-  if (input.draftAvatarCompletion?.status === "completed") {
-    return {
-      title: "Portrait ready",
-      detail: "The generated portrait will be saved with this agent.",
-      busy: false,
-    };
-  }
-  if (input.draftAvatarCompletion) {
-    return {
-      title: "Portrait not generated",
-      detail: input.draftAvatarCompletion.reason ?? "Portrait generation could not be completed.",
-      busy: false,
-    };
-  }
-  if (input.submitting) {
-    return {
-      title: input.isEditing
-        ? "Saving changes..."
-        : input.hasAvatar ? "Creating agent..." : "Creating agent and starting portrait...",
-      detail: !input.hasAvatar && !input.isEditing
-        ? "Portrait status will stay visible after this form closes."
-        : "Review the details, then save when ready.",
-      busy: true,
-    };
-  }
-  if (input.generatedWithAi) {
-    return {
-      title: input.isEditing ? "Updated details ready" : "Agent details ready",
-      detail: "Review the details, then save when ready.",
-      busy: false,
-    };
-  }
-  return null;
+  return "Generate";
 }

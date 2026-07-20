@@ -3,6 +3,8 @@ export const HOUSE_VENUE = {
   domain: "thehouse.game",
 } as const;
 
+export const HOUSE_DISCORD_URL = "https://discord.gg/XfsmWr26xW";
+
 export const ACTIVE_GAME = {
   id: "influence",
   name: "Influence",
@@ -12,4 +14,3 @@ export const ACTIVE_GAME = {
 } as const;
 
 export const THE_HOUSE_PRESENTS_INFLUENCE = `${HOUSE_VENUE.name} presents ${ACTIVE_GAME.name}`;
-

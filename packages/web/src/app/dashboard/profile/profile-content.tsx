@@ -14,6 +14,8 @@ import {
 } from "@/lib/api";
 import { derivePublicHandle } from "@/components/public-identity-onboarding-model";
 import { playerProfileHref } from "@/lib/player-profile-links";
+import { useAuth } from "@/hooks/use-auth";
+import { useRuntimeConfig } from "@/lib/runtime-config";
 
 export function ProfileIdentitySummary({
   profile,
@@ -88,7 +90,78 @@ export function InviteCodesSection({
   );
 }
 
+export function LoginMethodsSection({
+  email,
+  loginMethods,
+  onAddPassword,
+  onResetPassword,
+  canAddPassword = true,
+}: {
+  email: string | null;
+  loginMethods: {
+    privy: boolean;
+    emailPassword: boolean;
+  };
+  onAddPassword: () => void;
+  onResetPassword: () => void;
+  canAddPassword?: boolean;
+}) {
+  return (
+    <section className="influence-panel rounded-xl p-6">
+      <h2 className="influence-section-title mb-4">Sign-in methods</h2>
+      <div className="space-y-4">
+        {loginMethods.privy && (
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="influence-copy-strong text-sm">Privy</p>
+              <p className="influence-copy-muted text-xs">
+                Email or wallet sign-in remains available.
+              </p>
+            </div>
+            <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-3 py-1 text-xs text-emerald-300">
+              Active
+            </span>
+          </div>
+        )}
+        <div className="flex flex-col gap-3 border-t border-border-subtle pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="influence-copy-strong text-sm">Email/password</p>
+            <p className="influence-copy-muted text-xs">
+              {loginMethods.emailPassword
+                ? `Active${email ? ` for ${email}` : ""}`
+                : "Add a verified email and password as another way to sign in."}
+            </p>
+          </div>
+          {loginMethods.emailPassword ? (
+            <button
+              type="button"
+              className="influence-button-secondary min-h-11 rounded-lg px-4 py-2 text-sm"
+              onClick={onResetPassword}
+            >
+              Reset password
+            </button>
+          ) : canAddPassword ? (
+            <button
+              type="button"
+              className="influence-button-primary min-h-11 rounded-lg px-4 py-2 text-sm"
+              onClick={onAddPassword}
+            >
+              Add email/password
+            </button>
+          ) : (
+            <span className="influence-copy-muted text-xs">
+              New sign-in methods are temporarily unavailable.
+            </span>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function ProfileContent() {
+  const { account } = useAuth();
+  const runtimeConfig = useRuntimeConfig();
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -408,6 +481,25 @@ export function ProfileContent() {
           </div>
         </div>
       </section>
+
+      <LoginMethodsSection
+        email={account?.email ?? profile.email}
+        loginMethods={account?.loginMethods ?? {
+          privy: false,
+          emailPassword: false,
+        }}
+        onAddPassword={() => {
+          window.dispatchEvent(new CustomEvent("auth:open-link-password", {
+            detail: { email: account?.email ?? profile.email ?? "" },
+          }));
+        }}
+        onResetPassword={() => {
+          window.dispatchEvent(new CustomEvent("auth:open-reset-password", {
+            detail: { email: account?.email ?? profile.email ?? "" },
+          }));
+        }}
+        canAddPassword={runtimeConfig.MANAGED_AUTH_MODE === "full"}
+      />
 
       {/* Invite Codes */}
       <InviteCodesSection
