@@ -25,6 +25,10 @@ const apiSource = readFileSync(
   join(import.meta.dir, "../lib/api.ts"),
   "utf8",
 );
+const authHookSource = readFileSync(
+  join(import.meta.dir, "../hooks/use-auth.ts"),
+  "utf8",
+);
 
 describe("unified authentication wrapper", () => {
   it("matches the settled sign-in and create-account method matrix", () => {
@@ -167,6 +171,18 @@ describe("unified authentication wrapper", () => {
     );
   });
 
+  it("resumes password linking from an existing Clerk session", () => {
+    expect(passwordFlowSource).toContain("useSession()");
+    expect(passwordFlowSource).toContain('intent !== "link_password"');
+    expect(passwordFlowSource).toContain("!clerkSession");
+    expect(passwordFlowSource).toContain(
+      "managedToken ?? await getActiveClerkToken()",
+    );
+    expect(passwordFlowSource).toContain(
+      "Your verified email/password sign-in is ready to link.",
+    );
+  });
+
   it("does not expire the Influence session when wallet proof must be retried", async () => {
     const originalFetch = globalThis.fetch;
     const windowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
@@ -225,6 +241,24 @@ describe("unified authentication wrapper", () => {
         delete (globalThis as { localStorage?: unknown }).localStorage;
       }
     }
+  });
+
+  it("reuses an active Privy session before opening wallet authentication", () => {
+    const currentProof = authHookSource.indexOf(
+      "currentPrivyProof(getAccessToken)",
+    );
+    const interactiveLogin = authHookSource.indexOf(
+      "openPrivyLogin();",
+      currentProof,
+    );
+    expect(currentProof).toBeGreaterThan(0);
+    expect(interactiveLogin).toBeGreaterThan(currentProof);
+    expect(authHookSource).toContain(
+      "pendingPrivyProofResolution.current !== resolve",
+    );
+    expect(authHookSource).toContain(
+      "pendingPrivyProofResolution.current !== resolveProof",
+    );
   });
 
   it("sends reverse Privy linking with the just-issued Influence token", async () => {

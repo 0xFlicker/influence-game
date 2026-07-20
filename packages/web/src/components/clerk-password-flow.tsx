@@ -1,6 +1,6 @@
 "use client";
 
-import { useClerk, useSignIn, useSignUp } from "@clerk/nextjs";
+import { useClerk, useSession, useSignIn, useSignUp } from "@clerk/nextjs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -96,6 +96,7 @@ export function ClerkPasswordFlow({
   reversePrivyToken?: string;
 }) {
   const clerk = useClerk();
+  const { session: clerkSession } = useSession();
   const { signIn, errors: signInErrors, fetchStatus: signInFetchStatus } =
     useSignIn();
   const { signUp, errors: signUpErrors, fetchStatus: signUpFetchStatus } =
@@ -154,6 +155,20 @@ export function ClerkPasswordFlow({
     setSupportId(null);
     setStep("credentials");
   }, [initialEmail, intent]);
+
+  useEffect(() => {
+    if (
+      resumedCompletionRef.current
+      || currentSignupOwnsCompletionRef.current
+      || intent !== "link_password"
+      || !clerkSession
+    ) {
+      return;
+    }
+    resumedCompletionRef.current = true;
+    setStep("link_confirmation");
+    setStatus("Your verified email/password sign-in is ready to link.");
+  }, [clerkSession, intent]);
 
   useEffect(() => {
     if (
@@ -441,11 +456,11 @@ export function ClerkPasswordFlow({
   }
 
   async function confirmLink(privyToken?: string): Promise<void> {
-    if (!managedToken) {
-      setError("The verified provider session expired. Start again.");
-      return;
-    }
-    await run(() => performLink(managedToken, privyToken), "Linking sign-in method…");
+    await run(async () => {
+      const token = managedToken ?? await getActiveClerkToken();
+      setManagedToken(token);
+      await performLink(token, privyToken);
+    }, "Linking sign-in method…");
   }
 
   async function performLink(token: string, privyToken?: string): Promise<void> {
@@ -544,8 +559,8 @@ export function ClerkPasswordFlow({
     return (
       <FlowPanel heading="Link this sign-in to your account?" headingRef={headingRef}>
         <p className="influence-copy text-sm">
-          This verified email belongs to an existing Influence account. We will
-          add email/password to that account; no new account was created.
+          This verified email/password sign-in is ready to be added to your
+          current Influence account; no new account was created.
         </p>
         <div className="flex flex-wrap gap-3">
           <button type="button" disabled={busy} className="influence-button-primary rounded-lg px-4 py-2 text-sm" onClick={() => void confirmLink()}>

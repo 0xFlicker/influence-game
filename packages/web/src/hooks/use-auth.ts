@@ -29,6 +29,7 @@ import {
   type ProviderAuthenticationAttempt,
 } from "@/lib/auth-session-coordinator";
 import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
+import { currentPrivyProof } from "@/lib/privy-proof";
 
 const AUTH_GENERATION_KEY = "influence_auth_generation";
 const AUTH_BROADCAST_KEY = "influence_auth_broadcast";
@@ -276,6 +277,12 @@ export function InfluenceAuthProvider({
       } catch (error) {
         console.error("[InfluenceAuth] Privy proof retrieval failed:", error);
       }
+      if (
+        pendingPrivyProofResolution.current !== resolveProof
+        || pendingPrivyPurpose.current !== "proof"
+      ) {
+        return;
+      }
       pendingPrivyProofResolution.current = null;
       pendingPrivyPurpose.current = null;
       resolveProof?.(providerToken);
@@ -454,9 +461,29 @@ export function InfluenceAuthProvider({
     pendingPrivyToken.current = null;
     return new Promise<string | null>((resolve) => {
       pendingPrivyProofResolution.current = resolve;
-      openPrivyLogin();
+      void currentPrivyProof(getAccessToken).then((providerToken) => {
+        if (
+          pendingPrivyProofResolution.current !== resolve
+          || pendingPrivyPurpose.current !== "proof"
+        ) {
+          return;
+        }
+        if (providerToken) {
+          pendingPrivyProofResolution.current = null;
+          pendingPrivyPurpose.current = null;
+          resolve(providerToken);
+          return;
+        }
+        try {
+          openPrivyLogin();
+        } catch {
+          pendingPrivyProofResolution.current = null;
+          pendingPrivyPurpose.current = null;
+          resolve(null);
+        }
+      });
     });
-  }, [openPrivyLogin]);
+  }, [getAccessToken, openPrivyLogin]);
 
   const openSignIn = useCallback(() => {
     if (!managedAuthEnabled) {
