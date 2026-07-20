@@ -10,6 +10,7 @@ import {
   runAuthenticationIdentityInventory,
   type InventoryCheckpoint,
   type InventoryCheckpointStore,
+  type InventoryCounts,
   type PrivyInventoryPage,
   type PrivyInventoryPageSource,
 } from "../services/authentication-identity-inventory.js";
@@ -258,11 +259,14 @@ describe("authentication identity inventory", () => {
     expect(JSON.stringify(result)).not.toContain("ordinary-user");
   });
 
-  test("blocks an unclassified or unmapped Privy identity without writing", async () => {
-    const source = staticSource([page([{
-      id: "did:privy:unknown",
-      linked_accounts: [{ type: "email", address: EMAIL }],
-    }])]);
+  test("counts provider-only identities and writes only mapped identities", async () => {
+    const providerOnlySubject = "did:privy:provider-only";
+    const mappedSubject = "did:privy:mapped-after-provider-only";
+    await insertUser(db, mappedSubject);
+    const source = mapSource(new Map([
+      [null, page([emailProfile(providerOnlySubject, EMAIL)], CURSOR)],
+      [CURSOR, page([emailProfile(mappedSubject, "mapped@example.com")])],
+    ]));
     const result = await run(
       db,
       "write",
@@ -270,12 +274,98 @@ describe("authentication identity inventory", () => {
       memoryCheckpointStore(),
     );
 
+    expect(result.status).toBe("ready");
+    expect(result.complete).toBe(true);
+    expect(result.batches).toBe(2);
+    expect(result.counts.providerIdentities).toBe(2);
+    expect(result.counts.providerOnlyIdentities).toBe(1);
+    expect(result.counts.mappedIdentities).toBe(1);
+    expect(result.issues).toEqual([]);
+    expect(await db.select().from(schema.authenticationCredentials)).toEqual([
+      expect.objectContaining({
+        userId: mappedSubject,
+        providerSubject: mappedSubject,
+      }),
+    ]);
+    expect(JSON.stringify(result)).not.toContain(providerOnlySubject);
+    expect(JSON.stringify(result)).not.toContain(EMAIL);
+  });
+
+  test("counts a provider-only wallet identity without writing in either pass", async () => {
+    const subject = "did:privy:provider-only-wallet";
+    const profile = walletProfile(subject, EXTERNAL_WALLET, EMBEDDED_WALLET);
+    const store = memoryCheckpointStore();
+
+    const written = await run(
+      db,
+      "write",
+      staticSource([page([profile])]),
+      store,
+    );
+    const finalDelta = await run(
+      db,
+      "final-delta",
+      staticSource([page([profile])]),
+      store,
+    );
+
+    for (const result of [written, finalDelta]) {
+      expect(result.status).toBe("ready");
+      expect(result.counts.providerOnlyIdentities).toBe(1);
+      expect(result.issues).toEqual([]);
+    }
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+  });
+
+  test("blocks an unmapped email identity when its verified email overlaps Influence", async () => {
+    await insertUser(db, "durable-email-owner", null, EMAIL);
+    const result = await run(
+      db,
+      "write",
+      staticSource([page([emailProfile("did:privy:overlapping-email", EMAIL)])]),
+      memoryCheckpointStore(),
+    );
+
     expect(result.status).toBe("blocked");
+    expect(result.counts.providerOnlyIdentities).toBe(0);
     expect(result.issues.map((entry) => entry.code))
       .toContain("unmapped_privy_identity");
     expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
-    expect(JSON.stringify(result)).not.toContain("did:privy:unknown");
+    expect(JSON.stringify(result)).not.toContain("did:privy:overlapping-email");
     expect(JSON.stringify(result)).not.toContain(EMAIL);
+  });
+
+  test("blocks an unmapped email identity when a verified email claim overlaps Influence", async () => {
+    await db.insert(schema.verifiedEmailClaims).values({
+      normalizedEmail: EMAIL,
+      userId: null,
+      state: "conflict",
+    });
+    const result = await run(
+      db,
+      "dry-run",
+      staticSource([page([emailProfile("did:privy:claim-overlap", EMAIL)])]),
+      memoryCheckpointStore(),
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.counts.providerOnlyIdentities).toBe(0);
+    expect(result.issues.map((entry) => entry.code))
+      .toContain("unmapped_privy_identity");
+  });
+
+  test("continues to block Privy identities whose owner cannot be classified", async () => {
+    const result = await run(
+      db,
+      "dry-run",
+      staticSource([page([{ id: "did:privy:unclassified", linked_accounts: [] }])]),
+      memoryCheckpointStore(),
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.counts.providerOnlyIdentities).toBe(0);
+    expect(result.issues.map((entry) => entry.code))
+      .toContain("unclassified_privy_identity");
   });
 
   test("blocks users.email metadata mismatch without using it as merge authority", async () => {
@@ -375,7 +465,38 @@ describe("authentication identity inventory", () => {
     expect(await store.load()).toEqual(checkpoint);
   });
 
-  test("final delta is read-only and fails when provider inventory drifts", async () => {
+  test("loads checkpoints written before provider-only counts were added", async () => {
+    const path = join(
+      process.env.TMPDIR ?? "/tmp",
+      `auth-inventory-legacy-${crypto.randomUUID()}.checkpoint`,
+    );
+    checkpointFiles.push(path);
+    const store = createEncryptedFileCheckpointStore({
+      path,
+      encryptionKey: CHECKPOINT_KEY,
+    });
+    const legacyCounts: Omit<InventoryCounts, "providerOnlyIdentities"> = {
+      providerIdentities: 0,
+      mappedIdentities: 0,
+      credentialsInserted: 0,
+      activeClaimsInserted: 0,
+      claimsConvertedToConflict: 0,
+      conflictClaimsRetained: 0,
+      nonAuthenticatableUsers: 0,
+      ordinaryUsersWithoutCredential: 0,
+    };
+    await store.save({
+      version: 1,
+      cursor: CURSOR,
+      batches: 1,
+      complete: false,
+      counts: legacyCounts as InventoryCounts,
+    });
+
+    expect((await store.load())?.counts.providerOnlyIdentities).toBe(0);
+  });
+
+  test("final delta remains ready when a new provider-only identity appears", async () => {
     const subject = "did:privy:delta";
     await insertUser(db, subject);
     const store = memoryCheckpointStore();
@@ -404,12 +525,42 @@ describe("authentication identity inventory", () => {
     );
 
     expect(stable.status).toBe("ready");
-    expect(drift.status).toBe("blocked");
-    expect(drift.issues.map((entry) => entry.code))
-      .toContain("unmapped_privy_identity");
+    expect(drift.status).toBe("ready");
+    expect(drift.counts.providerOnlyIdentities).toBe(1);
+    expect(drift.issues).toEqual([]);
     expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(
       credentialCount,
     );
+  });
+
+  test("final delta still blocks a newly matchable identity that needs a credential", async () => {
+    const originalSubject = "did:privy:delta-original";
+    const newSubject = "did:privy:delta-needs-write";
+    await insertUser(db, originalSubject);
+    const store = memoryCheckpointStore();
+    await run(
+      db,
+      "write",
+      staticSource([page([emailProfile(originalSubject, "original@example.com")])]),
+      store,
+    );
+    await insertUser(db, newSubject);
+
+    const result = await run(
+      db,
+      "final-delta",
+      staticSource([page([
+        emailProfile(originalSubject, "original@example.com"),
+        emailProfile(newSubject, "new-user@example.com"),
+      ])]),
+      store,
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.counts.credentialsInserted).toBe(1);
+    expect(result.issues.map((entry) => entry.code)).toContain("final_delta_drift");
+    expect(result.issues.map((entry) => entry.code))
+      .toContain("dual_write_invariant_failed");
   });
 
   test("final delta blocks a stale active Privy credential absent from provider inventory", async () => {
@@ -584,6 +735,7 @@ function memoryCheckpointStore(): InventoryCheckpointStore & {
 function zeroCounts() {
   return {
     providerIdentities: 0,
+    providerOnlyIdentities: 0,
     mappedIdentities: 0,
     credentialsInserted: 0,
     activeClaimsInserted: 0,
