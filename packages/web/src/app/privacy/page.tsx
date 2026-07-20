@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Nav } from "@/components/nav";
+import { HOUSE_DISCORD_URL } from "@/lib/product-identity";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — Influence",
@@ -351,8 +352,15 @@ export default function PrivacyPage() {
 
         <Section id="contact" title="Contact">
           <P>
-            If you have questions about this Privacy Policy, please contact us
-            through the support channels listed on the Influence website.
+            For privacy or account-support questions, contact us through{" "}
+            <a
+              href={HOUSE_DISCORD_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-primary underline underline-offset-4 hover:text-accent"
+            >
+              The House Discord
+            </a>.
           </P>
         </Section>
       </main>

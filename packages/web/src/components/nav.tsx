@@ -44,14 +44,6 @@ export function Nav() {
         Rules
       </Link>
 
-      <Link href="/about" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
-        About
-      </Link>
-
-      <Link href="/privacy" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
-        Privacy
-      </Link>
-
       {authenticated && (
         <Link href="/dashboard" className="influence-copy hover:text-text-primary transition-colors" onClick={() => setMobileOpen(false)}>
           Dashboard

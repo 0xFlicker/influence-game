@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
+import { SiteFooter } from "@/components/site-footer";
 import {
   ACTIVE_GAME,
   THE_HOUSE_PRESENTS_INFLUENCE,
@@ -66,6 +67,7 @@ export default function RootLayout({
       <body>
         <Providers initialRuntimeConfig={getPublicRuntimeConfig()}>
           {children}
+          <SiteFooter />
         </Providers>
       </body>
     </html>
