@@ -278,6 +278,17 @@ export class ContextBuilder {
           : "";
         return `${prefix}: ${speaker} ${kindLabel}${addressee}: "${event.payload.text}"`;
       }
+      case "endgame.speech_recorded": {
+        const speaker = this.name(event.payload.playerId);
+        const kindLabel = event.payload.speechKind.replaceAll("_", " ");
+        const target = event.payload.targetId
+          ? ` targeting ${this.name(event.payload.targetId)}`
+          : "";
+        const counterpart = event.payload.counterpartId
+          ? ` re ${this.name(event.payload.counterpartId)}`
+          : "";
+        return `${prefix}: ${speaker} ${kindLabel}${target}${counterpart}: "${event.payload.text}"`;
+      }
       case "round.result_recorded":
         return `${prefix}: Round result recorded: empowered=${this.name(event.payload.result.empoweredId)}, candidates=${this.formatPlayerList(event.payload.result.candidates)}, power=${event.payload.result.powerAction}, shield granted=${this.name(event.payload.result.shieldGranted)}, eliminated=${this.name(event.payload.result.eliminated)}.`;
     }

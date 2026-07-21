@@ -369,6 +369,10 @@ export function applyCanonicalEvent(
       // Accepted public speech fact — no board mutation.
       break;
     }
+    case "endgame.speech_recorded": {
+      // Accepted public Reckoning/Tribunal speech fact — no board mutation.
+      break;
+    }
     case "round.result_recorded": {
       projection.roundResults.push({ ...event.payload.result });
       break;

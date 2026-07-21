@@ -14,6 +14,8 @@ import type {
   CanonicalGameEvent,
   CanonicalGameEventType,
   CanonicalSourcePointer,
+  EndgameSpeechKind,
+  FormalSpeechProvenance,
   JudgmentSpeechKind,
   JudgmentSpeechProvenance,
 } from "./canonical-events";
@@ -1156,6 +1158,96 @@ export class GameState {
         text,
         provenance,
         ...(addresseeId ? { addresseeId } : {}),
+      },
+      {
+        phase,
+        visibility: "public",
+        sourcePointers: input.sourcePointers ?? [],
+      },
+    );
+  }
+
+  /**
+   * Record accepted public Reckoning/Tribunal formal speech as a durable fact.
+   * Distinct from Judgment (`judgment.speech_recorded`) but shares accepted-value construction.
+   * Keyed by round, phase, speech kind, player, and target/counterpart.
+   * Identical retry is a no-op; different accepted content conflicts.
+   */
+  recordEndgameSpeech(input: {
+    speechKind: EndgameSpeechKind;
+    playerId: UUID;
+    text: string;
+    provenance: FormalSpeechProvenance;
+    phase: Phase;
+    correlationKey: string;
+    targetId?: UUID;
+    counterpartId?: UUID;
+    sourcePointers?: CanonicalSourcePointer[];
+  }): CanonicalGameEvent {
+    const {
+      speechKind,
+      playerId,
+      text,
+      provenance,
+      phase,
+      correlationKey,
+      targetId,
+      counterpartId,
+    } = input;
+    if (!playerId) throw new Error("recordEndgameSpeech requires playerId");
+    if (!speechKind) throw new Error("recordEndgameSpeech requires speechKind");
+    if (typeof text !== "string" || text.length === 0) {
+      throw new Error("recordEndgameSpeech requires non-empty public text");
+    }
+    if (typeof correlationKey !== "string" || correlationKey.length === 0) {
+      throw new Error("recordEndgameSpeech requires correlationKey");
+    }
+    if (speechKind === "accusation" && !targetId) {
+      throw new Error("recordEndgameSpeech accusation requires targetId");
+    }
+    if (speechKind === "defense" && !counterpartId) {
+      throw new Error("recordEndgameSpeech defense requires counterpartId");
+    }
+
+    const existing = this.canonicalEvents.list().find(
+      (event): event is Extract<CanonicalGameEvent, { type: "endgame.speech_recorded" }> => {
+        if (event.type !== "endgame.speech_recorded") return false;
+        if (event.round !== this._round || event.phase !== phase) return false;
+        if (event.payload.speechKind !== speechKind) return false;
+        if (event.payload.playerId !== playerId) return false;
+        if (speechKind === "accusation") {
+          return event.payload.targetId === targetId;
+        }
+        if (speechKind === "defense") {
+          return event.payload.counterpartId === counterpartId;
+        }
+        return true;
+      },
+    );
+    if (existing) {
+      const sameText = existing.payload.text === text;
+      const sameProvenance = existing.payload.provenance === provenance;
+      const sameTarget = existing.payload.targetId === targetId;
+      const sameCounterpart = existing.payload.counterpartId === counterpartId;
+      const sameKey = existing.payload.correlationKey === correlationKey;
+      if (sameText && sameProvenance && sameTarget && sameCounterpart && sameKey) {
+        return existing;
+      }
+      throw new Error(
+        `recordEndgameSpeech conflict for ${speechKind} player=${playerId} phase=${phase}`,
+      );
+    }
+
+    return this.appendCanonicalEvent(
+      "endgame.speech_recorded",
+      {
+        speechKind,
+        playerId,
+        text,
+        provenance,
+        correlationKey,
+        ...(targetId ? { targetId } : {}),
+        ...(counterpartId ? { counterpartId } : {}),
       },
       {
         phase,
