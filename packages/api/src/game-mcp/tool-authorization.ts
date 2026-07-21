@@ -88,6 +88,11 @@ const SHARED_GAME_READ_TOOLS = [
 const GAME_READ_TOOLS = [
   "get_rules",
   "search_rules",
+  // Match-completeness subject tools (U8): games:read only — no producer-role
+  // alternative that would silently widen private lanes.
+  "read_match_manifest",
+  "read_match_transcript",
+  "read_owned_match_cognition",
 ] as const;
 
 const AGENT_READ_TOOLS = [

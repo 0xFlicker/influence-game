@@ -65,6 +65,27 @@ import {
   type GameMcpEligibilitySnapshot,
   type GameMcpToolName,
 } from "./tool-authorization.js";
+import {
+  READ_MATCH_MANIFEST_DESCRIPTION,
+  READ_MATCH_MANIFEST_INPUT_SCHEMA,
+  READ_MATCH_MANIFEST_OUTPUT_SCHEMA,
+  READ_MATCH_MANIFEST_TOOL,
+  READ_MATCH_TRANSCRIPT_DESCRIPTION,
+  READ_MATCH_TRANSCRIPT_INPUT_SCHEMA,
+  READ_MATCH_TRANSCRIPT_OUTPUT_SCHEMA,
+  READ_MATCH_TRANSCRIPT_TOOL,
+  READ_OWNED_MATCH_COGNITION_DESCRIPTION,
+  READ_OWNED_MATCH_COGNITION_INPUT_SCHEMA,
+  READ_OWNED_MATCH_COGNITION_OUTPUT_SCHEMA,
+  READ_OWNED_MATCH_COGNITION_TOOL,
+  assertMatchCognitionPageResult,
+  assertMatchTranscriptPageResult,
+  assertMcpMatchManifestResult,
+  toMcpMatchManifestResult,
+} from "./contracts.js";
+import type { MatchManifestResult } from "../services/match-completeness.js";
+import type { MatchTranscriptPageResult } from "../services/match-transcript-read-model.js";
+import type { MatchCognitionPageResult } from "../services/match-cognition-read-model.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -307,6 +328,26 @@ export class ProductionGameMcpJsonRpcServer {
       if (name === "read_cognitive_artifact") {
         requireAnyScope(auth, ["games:read", "producer"]);
         return content(await this.readModel.readCognitiveArtifact(cognitiveArtifactReadArgs(args), auth));
+      }
+      if (name === READ_MATCH_MANIFEST_TOOL) {
+        // Subject tool: games:read only; ownership enforced in the read model.
+        requireScopes(auth, ["games:read"]);
+        return matchManifestContent(
+          await this.readModel.readMatchManifest(args, auth),
+        );
+      }
+      if (name === READ_MATCH_TRANSCRIPT_TOOL) {
+        requireScopes(auth, ["games:read"]);
+        return matchTranscriptContent(
+          await this.readModel.readMatchTranscript(args, auth),
+        );
+      }
+      if (name === READ_OWNED_MATCH_COGNITION_TOOL) {
+        // Explicit subject_owner lane via readOwnedMatchCognition → subjectUserId only.
+        requireScopes(auth, ["games:read"]);
+        return matchCognitionContent(
+          await this.readModel.readOwnedMatchCognition(args, auth),
+        );
       }
       if (name === "get_rules") {
         requireScopes(auth, ["games:read"]);
@@ -776,6 +817,8 @@ function productionGameMcpTools(
     );
   }
 
+  // Subject match-completeness tools are games:read only (no producer widening).
+  tools.push(...matchCompletenessTools());
   tools.push(...gameRulesTools());
   tools.push(...userAgentReadTools());
   tools.push(...userAgentWriteTools());
@@ -868,6 +911,35 @@ function resolveSharedGameReadVariant(
   return null;
 }
 
+function matchCompletenessTools(): GameMcpToolDescriptor[] {
+  return [
+    tool({
+      name: READ_MATCH_MANIFEST_TOOL,
+      description: READ_MATCH_MANIFEST_DESCRIPTION,
+      inputSchema: READ_MATCH_MANIFEST_INPUT_SCHEMA,
+      scopes: ["games:read"],
+      readOnlyHint: true,
+      outputSchema: READ_MATCH_MANIFEST_OUTPUT_SCHEMA,
+    }),
+    tool({
+      name: READ_MATCH_TRANSCRIPT_TOOL,
+      description: READ_MATCH_TRANSCRIPT_DESCRIPTION,
+      inputSchema: READ_MATCH_TRANSCRIPT_INPUT_SCHEMA,
+      scopes: ["games:read"],
+      readOnlyHint: true,
+      outputSchema: READ_MATCH_TRANSCRIPT_OUTPUT_SCHEMA,
+    }),
+    tool({
+      name: READ_OWNED_MATCH_COGNITION_TOOL,
+      description: READ_OWNED_MATCH_COGNITION_DESCRIPTION,
+      inputSchema: READ_OWNED_MATCH_COGNITION_INPUT_SCHEMA,
+      scopes: ["games:read"],
+      readOnlyHint: true,
+      outputSchema: READ_OWNED_MATCH_COGNITION_OUTPUT_SCHEMA,
+    }),
+  ];
+}
+
 function gameRulesTools(): GameMcpToolDescriptor[] {
   return [
     tool({
@@ -889,6 +961,40 @@ function gameRulesTools(): GameMcpToolDescriptor[] {
       readOnlyHint: true,
     }),
   ];
+}
+
+function matchManifestContent(value: MatchManifestResult): {
+  structuredContent: unknown;
+  content: Array<{ type: "text"; text: string }>;
+} {
+  const mapped = toMcpMatchManifestResult(value);
+  assertMcpMatchManifestResult(mapped);
+  return {
+    structuredContent: mapped,
+    content: [{ type: "text", text: JSON.stringify(mapped, null, 2) }],
+  };
+}
+
+function matchTranscriptContent(value: MatchTranscriptPageResult): {
+  structuredContent: unknown;
+  content: Array<{ type: "text"; text: string }>;
+} {
+  assertMatchTranscriptPageResult(value);
+  return {
+    structuredContent: value,
+    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+  };
+}
+
+function matchCognitionContent(value: MatchCognitionPageResult): {
+  structuredContent: unknown;
+  content: Array<{ type: "text"; text: string }>;
+} {
+  assertMatchCognitionPageResult(value);
+  return {
+    structuredContent: value,
+    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+  };
 }
 
 function userAgentReadTools(): GameMcpToolDescriptor[] {
