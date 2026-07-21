@@ -470,6 +470,30 @@ export class GameRunner {
     };
   }
 
+  /**
+   * Product-dialogue-only projection for checkpoint-aligned durable watermarking.
+   * Diary/thinking and any row without a positive entrySequence are excluded.
+   */
+  private buildProductDialogueProjection(): TranscriptEntry[] {
+    return this.logger.transcript
+      .filter(
+        (entry) =>
+          typeof entry.entrySequence === "number" &&
+          entry.entrySequence >= 1 &&
+          (entry.scope === "public" ||
+            entry.scope === "mingle" ||
+            entry.scope === "huddle" ||
+            entry.scope === "whisper" ||
+            entry.scope === "system"),
+      )
+      .map((entry) => {
+        const safeEntry = { ...entry };
+        delete safeEntry.thinking;
+        delete safeEntry.reasoningContext;
+        return structuredClone(safeEntry) as TranscriptEntry;
+      });
+  }
+
   private phaseForActorCoordinate(coordinate: string): Phase | undefined {
     switch (coordinate) {
       case "lobby":
@@ -638,6 +662,8 @@ export class GameRunner {
       playerContinuityCapsules,
       houseContinuityCapsule,
       transcriptReplay: hasRuntimeSnapshot ? this.buildTranscriptReplay() : null,
+      // Transient write input for API product-dialogue watermark; not player-facing.
+      productDialogueProjection: this.buildProductDialogueProjection(),
       runtimeSnapshot,
       transcriptCursor,
       tokenCostCursor: tokenCursor,

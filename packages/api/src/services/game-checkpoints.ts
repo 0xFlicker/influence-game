@@ -5,6 +5,16 @@ import { sealBoundaryIdentity } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { sha256StableJson } from "./stable-hash.js";
+import {
+  isCurrentTranscriptCapture,
+  persistProductDialogueAtBoundary,
+  ProductDialoguePersistenceError,
+  productEvidenceMatchesState,
+  parseProductDialogueEvidence,
+  lockGameTranscriptState,
+  extractProductDialogueProjection,
+  type ProductDialogueEvidence,
+} from "./game-transcript-persistence.js";
 
 function sealRuntimeSnapshot(
   runtimeSnapshot: RuntimeSnapshotV1 | null | undefined,
@@ -109,6 +119,19 @@ async function markCheckpointDegraded(
     ));
 }
 
+function mergeTranscriptCursor(
+  base: GameCheckpointCapsule["transcriptCursor"],
+  productEvidence: ProductDialogueEvidence | null,
+): Record<string, unknown> {
+  const cursor: Record<string, unknown> = {
+    ...(base ?? { entries: 0 }),
+  };
+  if (productEvidence) {
+    cursor.productDialogue = productEvidence;
+  }
+  return cursor;
+}
+
 export async function writeGameCheckpoint(
   db: DrizzleDB,
   params: {
@@ -123,6 +146,7 @@ export async function writeGameCheckpoint(
         throw new Error("checkpoint gameId does not match API game");
       }
 
+      // Owner lock first (shared lock order: owner → transcript state).
       await tx.execute(sql`
         SELECT id
         FROM game_run_owners
@@ -165,24 +189,13 @@ export async function writeGameCheckpoint(
       const projectionHash = sha256StableJson(params.checkpoint.projection);
       const actorCoordinate = checkpointActorCoordinate(params.checkpoint);
 
-      const existing = (await tx
-        .select({
-          id: schema.gameCheckpoints.id,
-          projectionHash: schema.gameCheckpoints.projectionHash,
-        })
-        .from(schema.gameCheckpoints)
-        .where(and(
-          eq(schema.gameCheckpoints.gameId, params.gameId),
-          eq(schema.gameCheckpoints.lastEventSequence, params.checkpoint.lastEventSequence),
-          eq(schema.gameCheckpoints.checkpointKind, params.checkpoint.checkpointKind),
-          eq(schema.gameCheckpoints.actorCoordinate, actorCoordinate),
-        )))[0];
-      if (existing) {
-        if (existing.projectionHash !== projectionHash) {
-          throw new Error("conflicting checkpoint projection hash at event boundary");
-        }
-        return;
-      }
+      const gameCapture = (await tx
+        .select({ transcriptCaptureVersion: schema.games.transcriptCaptureVersion })
+        .from(schema.games)
+        .where(eq(schema.games.id, params.gameId))
+        .limit(1))[0];
+      const transcriptCaptureVersion = gameCapture?.transcriptCaptureVersion ?? 0;
+      const currentCapture = isCurrentTranscriptCapture(transcriptCaptureVersion);
 
       const eventHead = params.checkpoint.lastEventSequence > 0
         ? (await tx
@@ -196,6 +209,73 @@ export async function writeGameCheckpoint(
 
       if (!eventHead) {
         throw new Error("checkpoint event boundary not found");
+      }
+
+      // Product dialogue persistence (current-capture only) before checkpoint insert.
+      let productEvidence: ProductDialogueEvidence | null = null;
+      if (currentCapture) {
+        const productProjection =
+          params.checkpoint.productDialogueProjection ??
+          (params.checkpoint.transcriptReplay
+            ? extractProductDialogueProjection(params.checkpoint.transcriptReplay.entries)
+            : []);
+
+        // Sequence 0 has no canonical event row; do not store the synthetic
+        // "sha256:empty" token (fails game_transcript_states hash check).
+        const boundaryEventHash = params.checkpoint.lastEventSequence > 0
+          ? eventHead.eventHash
+          : null;
+        const persistResult = await persistProductDialogueAtBoundary(tx, {
+          gameId: params.gameId,
+          ownerEpoch: params.ownerEpoch,
+          boundaryEventSequence: params.checkpoint.lastEventSequence,
+          boundaryEventHash,
+          productDialogueProjection: productProjection,
+          transcriptCaptureVersion,
+        });
+        productEvidence = persistResult.evidence;
+      }
+
+      const existing = (await tx
+        .select({
+          id: schema.gameCheckpoints.id,
+          projectionHash: schema.gameCheckpoints.projectionHash,
+          transcriptCursor: schema.gameCheckpoints.transcriptCursor,
+          lastEventSequence: schema.gameCheckpoints.lastEventSequence,
+          eventHeadHash: schema.gameCheckpoints.eventHeadHash,
+        })
+        .from(schema.gameCheckpoints)
+        .where(and(
+          eq(schema.gameCheckpoints.gameId, params.gameId),
+          eq(schema.gameCheckpoints.lastEventSequence, params.checkpoint.lastEventSequence),
+          eq(schema.gameCheckpoints.checkpointKind, params.checkpoint.checkpointKind),
+          eq(schema.gameCheckpoints.actorCoordinate, actorCoordinate),
+        )))[0];
+
+      if (existing) {
+        if (existing.projectionHash !== projectionHash) {
+          throw new Error("conflicting checkpoint projection hash at event boundary");
+        }
+        // Projection equality alone is insufficient: product dialogue evidence must agree.
+        if (currentCapture) {
+          const state = await lockGameTranscriptState(tx, params.gameId);
+          if (!state) {
+            throw new Error("transcript state missing during checkpoint reconcile");
+          }
+          const storedEvidence = parseProductDialogueEvidence(existing.transcriptCursor);
+          if (!storedEvidence || !productEvidence) {
+            throw new Error("checkpoint retry missing product dialogue evidence");
+          }
+          if (
+            !productEvidenceMatchesState(storedEvidence, state) ||
+            !productEvidenceMatchesState(productEvidence, state)
+          ) {
+            throw new Error(
+              "checkpoint retry product dialogue evidence does not match durable transcript state",
+            );
+          }
+        }
+        return;
       }
 
       // Persist evidence only; the hydration passport derives readiness from these facts on read.
@@ -246,6 +326,7 @@ export async function writeGameCheckpoint(
           }
         : legacySnapshot;
 
+      // productDialogueProjection is transient write input only — never stored as a player-facing field.
       await tx.insert(schema.gameCheckpoints)
         .values({
           id: randomUUID(),
@@ -259,14 +340,18 @@ export async function writeGameCheckpoint(
           eventHeadHash: eventHead.eventHash,
           projectionHash,
           snapshot: snapshotPayload,
-          transcriptCursor: params.checkpoint.transcriptCursor,
+          transcriptCursor: mergeTranscriptCursor(params.checkpoint.transcriptCursor, productEvidence),
           tokenCostCursor: tokenCostCursor as Record<string, unknown> | null | undefined,
         });
     });
 
     return { ok: true };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = error instanceof Error
+      ? (error instanceof ProductDialoguePersistenceError
+        ? `product_dialogue_${error.code}: ${error.message}`
+        : error.message)
+      : String(error);
     await markCheckpointDegraded(db, params.gameId, params.ownerEpoch, message).catch(() => {});
     return { ok: false, error: message };
   }

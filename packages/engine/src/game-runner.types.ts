@@ -295,6 +295,12 @@ export interface GameCheckpointCapsule {
     version: 1 | 2;
     entries: TranscriptEntry[];
   } | null;
+  /**
+   * Transient product-dialogue projection (dialogue scopes with entrySequence only).
+   * Consumed by the API checkpoint write path to append the durable dialogue suffix.
+   * Not a player-facing checkpoint field and must not be re-exposed from checkpoint reads.
+   */
+  productDialogueProjection?: readonly TranscriptEntry[];
   /** Phase-boundary runtime evidence for hydration passport validation (v1). */
   runtimeSnapshot?: RuntimeSnapshotV1 | null;
   transcriptCursor: {

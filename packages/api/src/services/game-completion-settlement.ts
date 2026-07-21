@@ -14,6 +14,11 @@ import {
 import { ensureWaitingPostgameMediaRow } from "./postgame-media-coordinator.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { serializeTranscriptEntry } from "./transcript-serialization.js";
+import {
+  isCurrentTranscriptCapture,
+  ProductDialoguePersistenceError,
+  reconcileTerminalProductDialogue,
+} from "./game-transcript-persistence.js";
 
 export const GAME_COMPLETION_ENVELOPE_SCHEMA = "influence.game-completion" as const;
 /** Historical completion envelope version (completed V1 records remain valid). */
@@ -44,6 +49,8 @@ const GAME_COMPLETION_SETTLEMENT_SAFE_FAILURE_CODES = [
   "completion_envelope_hash_mismatch",
   "completion_boundary_conflict",
   "completion_game_state_conflict",
+  "transcript_content_conflict",
+  "transcript_state_conflict",
 ] as const;
 
 const GAME_COMPLETION_SETTLEMENT_SAFE_FAILURE_CODE_SET = new Set<string>(
@@ -959,20 +966,53 @@ export async function settleCapturedGameCompletion(
         );
       }
 
-      if (envelope.result.transcript.length > 0) {
+      {
         const gameCapture = (await tx
           .select({ transcriptCaptureVersion: schema.games.transcriptCaptureVersion })
           .from(schema.games)
           .where(eq(schema.games.id, gameId))
           .limit(1))[0];
         const transcriptCaptureVersion = gameCapture?.transcriptCaptureVersion ?? 0;
-        const chunkSize = 100;
-        for (let index = 0; index < envelope.result.transcript.length; index += chunkSize) {
-          await tx.insert(schema.transcripts).values(
-            envelope.result.transcript
-              .slice(index, index + chunkSize)
-              .map((entry) => serializeTranscriptEntry(gameId, entry, { transcriptCaptureVersion })),
-          );
+
+        if (isCurrentTranscriptCapture(transcriptCaptureVersion)) {
+          // Current-capture: full V2 sequence/digest reconcile + terminal seal.
+          // Identical live prefixes are no-ops; missing suffixes insert; conflicts
+          // become typed repair-required failures (never a hybrid complete narrative).
+          try {
+            await reconcileTerminalProductDialogue(tx, {
+              gameId,
+              ownerEpoch: settlement.ownerEpoch,
+              boundaryEventSequence: settlement.finalEventSequence,
+              boundaryEventHash: settlement.finalEventHash,
+              transcript: envelope.result.transcript,
+              transcriptCaptureVersion,
+            });
+          } catch (error) {
+            if (error instanceof ProductDialoguePersistenceError) {
+              const safeCode =
+                error.code === "content_conflict" ||
+                error.code === "sequence_mismatch" ||
+                error.code === "sparse_suffix" ||
+                error.code === "sequence_gap"
+                  ? "transcript_content_conflict"
+                  : "transcript_state_conflict";
+              throw new DeterministicSettlementError(
+                safeCode,
+                `Terminal transcript reconcile failed (${error.code}): ${error.message}`,
+              );
+            }
+            throw error;
+          }
+        } else if (envelope.result.transcript.length > 0) {
+          // Legacy version 0: previous terminal write path (blind insert, no watermark).
+          const chunkSize = 100;
+          for (let index = 0; index < envelope.result.transcript.length; index += chunkSize) {
+            await tx.insert(schema.transcripts).values(
+              envelope.result.transcript
+                .slice(index, index + chunkSize)
+                .map((entry) => serializeTranscriptEntry(gameId, entry, { transcriptCaptureVersion })),
+            );
+          }
         }
       }
 
