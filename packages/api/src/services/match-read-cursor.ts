@@ -1,11 +1,14 @@
 /**
- * AES-GCM opaque cursor codec for match transcript pagination (U4).
+ * AES-GCM opaque cursor codec for match transcript (U4) and owned cognition (U5)
+ * pagination.
  *
- * Tokens are bound to subject, game, filter fingerprint, ownership fingerprint,
- * capture version, pinned read-through boundary, and internal keyset position.
- * Active-key-only rotation intentionally invalidates outstanding cursors.
+ * Tokens are bound to purpose, subject, game, filter fingerprint, ownership
+ * fingerprint, capture version, pinned read-through boundary, and internal
+ * keyset position. Active-key-only rotation intentionally invalidates
+ * outstanding cursors.
  *
  * Reject oversized / structurally malformed tokens before any database access.
+ * Wrong-purpose tokens fail closed (AAD + claim purpose mismatch).
  */
 
 import {
@@ -26,6 +29,9 @@ export const MATCH_READ_CURSOR_KEY_VERSION = 1 as const;
 /** Purpose claim for authorized transcript page/catch-up walks. */
 export const MATCH_TRANSCRIPT_CURSOR_PURPOSE = "match_transcript" as const;
 
+/** Purpose claim for owned thinking/strategy timeline walks. */
+export const MATCH_COGNITION_CURSOR_PURPOSE = "match_cognition" as const;
+
 /** Domain separator for AES-256 key derivation from API secret material. */
 const KEY_DOMAIN = "influence.match.read_cursor.aes.v1";
 
@@ -40,8 +46,13 @@ const IV_BYTES = 12;
 const AUTH_TAG_BYTES = 16;
 
 export type MatchTranscriptCursorPurpose = typeof MATCH_TRANSCRIPT_CURSOR_PURPOSE;
+export type MatchCognitionCursorPurpose = typeof MATCH_COGNITION_CURSOR_PURPOSE;
+export type MatchReadCursorPurpose =
+  | MatchTranscriptCursorPurpose
+  | MatchCognitionCursorPurpose;
 
 export type MatchTranscriptCursorMode = "snapshot" | "catchup";
+export type MatchCognitionCursorMode = "snapshot" | "catchup";
 
 /**
  * Internal keyset position after which the next page continues.
@@ -65,9 +76,8 @@ export interface MatchReadThroughBoundary {
 }
 
 /**
- * Normalized filters sealed into the cursor so resume walks reapply the same
- * dimensional predicates without trusting client re-supply alone.
- * Fingerprint remains the binding check against any client-supplied filters.
+ * Normalized filters sealed into the transcript cursor so resume walks reapply
+ * the same dimensional predicates without trusting client re-supply alone.
  */
 export interface MatchTranscriptCursorFilters {
   phase: string | null;
@@ -80,7 +90,7 @@ export interface MatchTranscriptCursorFilters {
 }
 
 /**
- * Sealed cursor claims. Never log plaintext claims or ownership fingerprints.
+ * Sealed transcript cursor claims. Never log plaintext claims or ownership fingerprints.
  */
 export interface MatchTranscriptCursorClaims {
   version: typeof MATCH_READ_CURSOR_VERSION;
@@ -104,8 +114,63 @@ export interface MatchTranscriptCursorClaims {
   filters: MatchTranscriptCursorFilters;
 }
 
+/**
+ * Cognition timeline keyset: exclusive lower bound for DESC (createdAt, id).
+ */
+export interface MatchCognitionKeyset {
+  afterCreatedAt: string | null;
+  afterId: string | null;
+}
+
+/**
+ * Pinned inclusive newest boundary for a cognition snapshot walk.
+ * Rows newer than this boundary are deferred to catch-up.
+ */
+export interface MatchCognitionReadThroughBoundary {
+  throughCreatedAt: string | null;
+  throughId: string | null;
+}
+
+/**
+ * Normalized cognition filters sealed into the cursor.
+ */
+export interface MatchCognitionCursorFilters {
+  artifactType: "thinking" | "strategy" | null;
+  actorPlayerId: string | null;
+  /** Original player filter token for echo (never ownership list). */
+  player: string | null;
+  phase: string | null;
+  round: number | null;
+  action: string | null;
+}
+
+/**
+ * Sealed cognition cursor claims. Never log plaintext claims or ownership fingerprints.
+ */
+export interface MatchCognitionCursorClaims {
+  version: typeof MATCH_READ_CURSOR_VERSION;
+  purpose: MatchCognitionCursorPurpose;
+  keyVersion: number;
+  nonce: string;
+  issuedAtMs: number;
+  expiresAtMs: number;
+  subjectUserId: string;
+  gameId: string;
+  filterFingerprint: string;
+  ownershipFingerprint: string;
+  captureVersion: number;
+  mode: MatchCognitionCursorMode;
+  readThrough: MatchCognitionReadThroughBoundary;
+  keyset: MatchCognitionKeyset;
+  filters: MatchCognitionCursorFilters;
+}
+
 export type MatchReadCursorDecodeResult =
   | { status: "ok"; claims: MatchTranscriptCursorClaims }
+  | { status: "invalid" };
+
+export type MatchCognitionCursorDecodeResult =
+  | { status: "ok"; claims: MatchCognitionCursorClaims }
   | { status: "invalid" };
 
 export interface IssueMatchTranscriptCursorInput {
@@ -123,6 +188,21 @@ export interface IssueMatchTranscriptCursorInput {
   /** Optional TTL override clamped to MAX. */
   ttlMs?: number;
   /** Inject nonce for deterministic tests. */
+  nonce?: string;
+}
+
+export interface IssueMatchCognitionCursorInput {
+  subjectUserId: string;
+  gameId: string;
+  filterFingerprint: string;
+  ownershipFingerprint: string;
+  captureVersion: number;
+  mode: MatchCognitionCursorMode;
+  readThrough: MatchCognitionReadThroughBoundary;
+  keyset: MatchCognitionKeyset;
+  filters: MatchCognitionCursorFilters;
+  nowMs?: number;
+  ttlMs?: number;
   nonce?: string;
 }
 
@@ -157,6 +237,26 @@ export function fingerprintMatchTranscriptFilters(filters: {
     playerId: filters.playerId,
     fromTimestampMs: filters.fromTimestampMs,
     toTimestampMs: filters.toTimestampMs,
+  });
+}
+
+/**
+ * Normalize closed cognition filters into a stable fingerprint string.
+ */
+export function fingerprintMatchCognitionFilters(filters: {
+  artifactType: "thinking" | "strategy" | null;
+  actorPlayerId: string | null;
+  phase: string | null;
+  round: number | null;
+  action: string | null;
+}): string {
+  return sha256StableJson({
+    domain: "influence.match.cognition.filters.v1",
+    artifactType: filters.artifactType,
+    actorPlayerId: filters.actorPlayerId,
+    phase: filters.phase,
+    round: filters.round,
+    action: filters.action,
   });
 }
 
@@ -207,11 +307,58 @@ export function issueMatchTranscriptCursor(
     },
   };
 
-  return sealClaims(claims, secretMaterial);
+  return sealClaims(claims, MATCH_TRANSCRIPT_CURSOR_PURPOSE, secretMaterial);
 }
 
 /**
- * Decode and validate a sealed cursor without database access.
+ * Seal an owned-cognition timeline pagination cursor.
+ */
+export function issueMatchCognitionCursor(
+  input: IssueMatchCognitionCursorInput,
+  secretMaterial: string = requireApiSecret(),
+): string {
+  const nowMs = input.nowMs ?? Date.now();
+  const ttlMs = Math.min(
+    Math.max(1, input.ttlMs ?? MATCH_READ_CURSOR_MAX_TTL_MS),
+    MATCH_READ_CURSOR_MAX_TTL_MS,
+  );
+  const nonce = input.nonce ?? randomBytes(16).toString("hex");
+  const claims: MatchCognitionCursorClaims = {
+    version: MATCH_READ_CURSOR_VERSION,
+    purpose: MATCH_COGNITION_CURSOR_PURPOSE,
+    keyVersion: MATCH_READ_CURSOR_KEY_VERSION,
+    nonce,
+    issuedAtMs: nowMs,
+    expiresAtMs: nowMs + ttlMs,
+    subjectUserId: input.subjectUserId,
+    gameId: input.gameId,
+    filterFingerprint: input.filterFingerprint,
+    ownershipFingerprint: input.ownershipFingerprint,
+    captureVersion: input.captureVersion,
+    mode: input.mode,
+    readThrough: {
+      throughCreatedAt: input.readThrough.throughCreatedAt,
+      throughId: input.readThrough.throughId,
+    },
+    keyset: {
+      afterCreatedAt: input.keyset.afterCreatedAt,
+      afterId: input.keyset.afterId,
+    },
+    filters: {
+      artifactType: input.filters.artifactType,
+      actorPlayerId: input.filters.actorPlayerId,
+      player: input.filters.player,
+      phase: input.filters.phase,
+      round: input.filters.round,
+      action: input.filters.action,
+    },
+  };
+
+  return sealClaims(claims, MATCH_COGNITION_CURSOR_PURPOSE, secretMaterial);
+}
+
+/**
+ * Decode and validate a sealed transcript cursor without database access.
  * Returns a uniform `invalid` for every local failure mode.
  */
 export function decodeMatchTranscriptCursor(
@@ -225,6 +372,152 @@ export function decodeMatchTranscriptCursor(
     nowMs?: number;
   } = {},
 ): MatchReadCursorDecodeResult {
+  const expectedPurpose = options.purpose ?? MATCH_TRANSCRIPT_CURSOR_PURPOSE;
+  const result = decodeSealedClaims(token, {
+    secretMaterial: options.secretMaterial,
+    purpose: expectedPurpose,
+    activeKeyVersion: options.activeKeyVersion,
+    nowMs: options.nowMs,
+  });
+  if (result.status !== "ok") return { status: "invalid" };
+  if (!isTranscriptClaims(result.claims)) return { status: "invalid" };
+  return { status: "ok", claims: result.claims };
+}
+
+/**
+ * Decode and validate a sealed cognition cursor without database access.
+ */
+export function decodeMatchCognitionCursor(
+  token: string,
+  options: {
+    secretMaterial?: string;
+    purpose?: MatchCognitionCursorPurpose;
+    activeKeyVersion?: number;
+    nowMs?: number;
+  } = {},
+): MatchCognitionCursorDecodeResult {
+  const expectedPurpose = options.purpose ?? MATCH_COGNITION_CURSOR_PURPOSE;
+  const result = decodeSealedClaims(token, {
+    secretMaterial: options.secretMaterial,
+    purpose: expectedPurpose,
+    activeKeyVersion: options.activeKeyVersion,
+    nowMs: options.nowMs,
+  });
+  if (result.status !== "ok") return { status: "invalid" };
+  if (!isCognitionClaims(result.claims)) return { status: "invalid" };
+  return { status: "ok", claims: result.claims };
+}
+
+/**
+ * Validate that decoded transcript claims still match the live request binding.
+ * Call after MatchAccessContext resolution; failures are authorization-stale
+ * or query-mismatch and must surface as uniform cursor_invalid_or_stale.
+ */
+export function bindMatchTranscriptCursor(params: {
+  claims: MatchTranscriptCursorClaims;
+  subjectUserId: string;
+  gameId: string;
+  ownershipFingerprint: string;
+  filterFingerprint: string;
+  captureVersion: number;
+}): boolean {
+  return bindMatchReadCursorCommon({
+    claims: params.claims,
+    subjectUserId: params.subjectUserId,
+    gameId: params.gameId,
+    ownershipFingerprint: params.ownershipFingerprint,
+    filterFingerprint: params.filterFingerprint,
+    captureVersion: params.captureVersion,
+  });
+}
+
+/**
+ * Validate that decoded cognition claims still match the live request binding.
+ */
+export function bindMatchCognitionCursor(params: {
+  claims: MatchCognitionCursorClaims;
+  subjectUserId: string;
+  gameId: string;
+  ownershipFingerprint: string;
+  filterFingerprint: string;
+  captureVersion: number;
+}): boolean {
+  return bindMatchReadCursorCommon({
+    claims: params.claims,
+    subjectUserId: params.subjectUserId,
+    gameId: params.gameId,
+    ownershipFingerprint: params.ownershipFingerprint,
+    filterFingerprint: params.filterFingerprint,
+    captureVersion: params.captureVersion,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Internals
+// ---------------------------------------------------------------------------
+
+function bindMatchReadCursorCommon(params: {
+  claims: {
+    subjectUserId: string;
+    gameId: string;
+    ownershipFingerprint: string;
+    filterFingerprint: string;
+    captureVersion: number;
+  };
+  subjectUserId: string;
+  gameId: string;
+  ownershipFingerprint: string;
+  filterFingerprint: string;
+  captureVersion: number;
+}): boolean {
+  const { claims } = params;
+  return (
+    equalUtf8(claims.subjectUserId, params.subjectUserId)
+    && equalUtf8(claims.gameId, params.gameId)
+    && equalUtf8(claims.ownershipFingerprint, params.ownershipFingerprint)
+    && equalUtf8(claims.filterFingerprint, params.filterFingerprint)
+    && claims.captureVersion === params.captureVersion
+  );
+}
+
+function sealClaims(
+  claims: MatchTranscriptCursorClaims | MatchCognitionCursorClaims,
+  purpose: MatchReadCursorPurpose,
+  secretMaterial: string,
+): string {
+  try {
+    const key = deriveActiveKey(secretMaterial, claims.keyVersion);
+    const iv = randomBytes(IV_BYTES);
+    const cipher = createCipheriv(AES_ALGORITHM, key, iv);
+    cipher.setAAD(aadBytes(claims.version, claims.keyVersion, purpose));
+    const plaintext = Buffer.from(JSON.stringify(claims), "utf8");
+    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    const envelope = {
+      v: claims.version,
+      kv: claims.keyVersion,
+      iv: iv.toString("base64url"),
+      tag: tag.toString("base64url"),
+      ct: ciphertext.toString("base64url"),
+    };
+    return Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
+  } catch (error) {
+    throw new MatchReadCursorError(
+      "encode_failed",
+      error instanceof Error ? error.message : "Failed to seal match read cursor",
+    );
+  }
+}
+
+function decodeSealedClaims(
+  token: string,
+  options: {
+    secretMaterial?: string;
+    purpose: MatchReadCursorPurpose;
+    activeKeyVersion?: number;
+    nowMs?: number;
+  },
+): { status: "ok"; claims: unknown } | { status: "invalid" } {
   if (typeof token !== "string" || token.length === 0) {
     return { status: "invalid" };
   }
@@ -239,7 +532,7 @@ export function decodeMatchTranscriptCursor(
     return { status: "invalid" };
   }
 
-  const expectedPurpose = options.purpose ?? MATCH_TRANSCRIPT_CURSOR_PURPOSE;
+  const expectedPurpose = options.purpose;
   const activeKeyVersion = options.activeKeyVersion ?? MATCH_READ_CURSOR_KEY_VERSION;
   const nowMs = options.nowMs ?? Date.now();
 
@@ -288,77 +581,33 @@ export function decodeMatchTranscriptCursor(
     return { status: "invalid" };
   }
 
-  let claims: MatchTranscriptCursorClaims;
+  let claims: unknown;
   try {
-    const parsed: unknown = JSON.parse(plaintext);
-    if (!isClaims(parsed)) return { status: "invalid" };
-    claims = parsed;
+    claims = JSON.parse(plaintext);
   } catch {
     return { status: "invalid" };
   }
 
-  if (claims.version !== MATCH_READ_CURSOR_VERSION) return { status: "invalid" };
-  if (claims.purpose !== expectedPurpose) return { status: "invalid" };
-  if (claims.keyVersion !== activeKeyVersion) return { status: "invalid" };
-  if (claims.expiresAtMs < nowMs) return { status: "invalid" };
-  if (claims.issuedAtMs > nowMs + 60_000) return { status: "invalid" }; // clock skew guard
-  if (claims.expiresAtMs - claims.issuedAtMs > MATCH_READ_CURSOR_MAX_TTL_MS) {
+  if (!claims || typeof claims !== "object") return { status: "invalid" };
+  const record = claims as Record<string, unknown>;
+  if (record.version !== MATCH_READ_CURSOR_VERSION) return { status: "invalid" };
+  if (record.purpose !== expectedPurpose) return { status: "invalid" };
+  if (typeof record.keyVersion !== "number" || record.keyVersion !== activeKeyVersion) {
+    return { status: "invalid" };
+  }
+  if (typeof record.issuedAtMs !== "number" || !Number.isFinite(record.issuedAtMs)) {
+    return { status: "invalid" };
+  }
+  if (typeof record.expiresAtMs !== "number" || !Number.isFinite(record.expiresAtMs)) {
+    return { status: "invalid" };
+  }
+  if (record.expiresAtMs < nowMs) return { status: "invalid" };
+  if (record.issuedAtMs > nowMs + 60_000) return { status: "invalid" };
+  if (record.expiresAtMs - record.issuedAtMs > MATCH_READ_CURSOR_MAX_TTL_MS) {
     return { status: "invalid" };
   }
 
   return { status: "ok", claims };
-}
-
-/**
- * Validate that decoded claims still match the live request binding.
- * Call after MatchAccessContext resolution; failures are authorization-stale
- * or query-mismatch and must surface as uniform cursor_invalid_or_stale.
- */
-export function bindMatchTranscriptCursor(params: {
-  claims: MatchTranscriptCursorClaims;
-  subjectUserId: string;
-  gameId: string;
-  ownershipFingerprint: string;
-  filterFingerprint: string;
-  captureVersion: number;
-}): boolean {
-  const { claims } = params;
-  return (
-    equalUtf8(claims.subjectUserId, params.subjectUserId)
-    && equalUtf8(claims.gameId, params.gameId)
-    && equalUtf8(claims.ownershipFingerprint, params.ownershipFingerprint)
-    && equalUtf8(claims.filterFingerprint, params.filterFingerprint)
-    && claims.captureVersion === params.captureVersion
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Internals
-// ---------------------------------------------------------------------------
-
-function sealClaims(claims: MatchTranscriptCursorClaims, secretMaterial: string): string {
-  try {
-    const key = deriveActiveKey(secretMaterial, claims.keyVersion);
-    const iv = randomBytes(IV_BYTES);
-    const cipher = createCipheriv(AES_ALGORITHM, key, iv);
-    cipher.setAAD(aadBytes(claims.version, claims.keyVersion, claims.purpose));
-    const plaintext = Buffer.from(JSON.stringify(claims), "utf8");
-    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-    const tag = cipher.getAuthTag();
-    const envelope = {
-      v: claims.version,
-      kv: claims.keyVersion,
-      iv: iv.toString("base64url"),
-      tag: tag.toString("base64url"),
-      ct: ciphertext.toString("base64url"),
-    };
-    return Buffer.from(JSON.stringify(envelope), "utf8").toString("base64url");
-  } catch (error) {
-    throw new MatchReadCursorError(
-      "encode_failed",
-      error instanceof Error ? error.message : "Failed to seal match read cursor",
-    );
-  }
 }
 
 function deriveActiveKey(secretMaterial: string, keyVersion: number): Buffer {
@@ -405,7 +654,7 @@ function isEnvelope(value: unknown): value is {
   );
 }
 
-function isClaims(value: unknown): value is MatchTranscriptCursorClaims {
+function isTranscriptClaims(value: unknown): value is MatchTranscriptCursorClaims {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   if (record.version !== MATCH_READ_CURSOR_VERSION) return false;
@@ -422,13 +671,36 @@ function isClaims(value: unknown): value is MatchTranscriptCursorClaims {
     return false;
   }
   if (record.mode !== "snapshot" && record.mode !== "catchup") return false;
-  if (!isReadThrough(record.readThrough)) return false;
-  if (!isKeyset(record.keyset)) return false;
-  if (!isFilters(record.filters)) return false;
+  if (!isTranscriptReadThrough(record.readThrough)) return false;
+  if (!isTranscriptKeyset(record.keyset)) return false;
+  if (!isTranscriptFilters(record.filters)) return false;
   return true;
 }
 
-function isFilters(value: unknown): value is MatchTranscriptCursorFilters {
+function isCognitionClaims(value: unknown): value is MatchCognitionCursorClaims {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  if (record.version !== MATCH_READ_CURSOR_VERSION) return false;
+  if (record.purpose !== MATCH_COGNITION_CURSOR_PURPOSE) return false;
+  if (typeof record.keyVersion !== "number") return false;
+  if (typeof record.nonce !== "string" || record.nonce.length === 0) return false;
+  if (typeof record.issuedAtMs !== "number" || !Number.isFinite(record.issuedAtMs)) return false;
+  if (typeof record.expiresAtMs !== "number" || !Number.isFinite(record.expiresAtMs)) return false;
+  if (typeof record.subjectUserId !== "string" || record.subjectUserId.length === 0) return false;
+  if (typeof record.gameId !== "string" || record.gameId.length === 0) return false;
+  if (typeof record.filterFingerprint !== "string") return false;
+  if (typeof record.ownershipFingerprint !== "string") return false;
+  if (typeof record.captureVersion !== "number" || !Number.isInteger(record.captureVersion)) {
+    return false;
+  }
+  if (record.mode !== "snapshot" && record.mode !== "catchup") return false;
+  if (!isCognitionReadThrough(record.readThrough)) return false;
+  if (!isCognitionKeyset(record.keyset)) return false;
+  if (!isCognitionFilters(record.filters)) return false;
+  return true;
+}
+
+function isTranscriptFilters(value: unknown): value is MatchTranscriptCursorFilters {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return (
@@ -442,11 +714,28 @@ function isFilters(value: unknown): value is MatchTranscriptCursorFilters {
   );
 }
 
+function isCognitionFilters(value: unknown): value is MatchCognitionCursorFilters {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  const artifactType = record.artifactType;
+  const artifactTypeOk = artifactType === null
+    || artifactType === "thinking"
+    || artifactType === "strategy";
+  return (
+    artifactTypeOk
+    && isNullOrString(record.actorPlayerId)
+    && isNullOrString(record.player)
+    && isNullOrString(record.phase)
+    && isNullOrInt(record.round)
+    && isNullOrString(record.action)
+  );
+}
+
 function isNullOrString(value: unknown): value is string | null {
   return value === null || typeof value === "string";
 }
 
-function isReadThrough(value: unknown): value is MatchReadThroughBoundary {
+function isTranscriptReadThrough(value: unknown): value is MatchReadThroughBoundary {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return (
@@ -456,7 +745,13 @@ function isReadThrough(value: unknown): value is MatchReadThroughBoundary {
   );
 }
 
-function isKeyset(value: unknown): value is MatchReadKeyset {
+function isCognitionReadThrough(value: unknown): value is MatchCognitionReadThroughBoundary {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return isNullOrString(record.throughCreatedAt) && isNullOrString(record.throughId);
+}
+
+function isTranscriptKeyset(value: unknown): value is MatchReadKeyset {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return (
@@ -464,6 +759,12 @@ function isKeyset(value: unknown): value is MatchReadKeyset {
     && isNullOrInt(record.afterLegacyTimestamp)
     && isNullOrInt(record.afterLegacyId)
   );
+}
+
+function isCognitionKeyset(value: unknown): value is MatchCognitionKeyset {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return isNullOrString(record.afterCreatedAt) && isNullOrString(record.afterId);
 }
 
 function isNullOrInt(value: unknown): value is number | null {

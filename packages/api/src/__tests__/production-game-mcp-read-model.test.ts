@@ -26,6 +26,7 @@ import { captureGameCompletionSettlement } from "../services/game-completion-set
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { findForbiddenTranscriptDtoKeys } from "../services/transcript-serialization.js";
 import { readMatchTranscriptPage } from "../services/match-transcript-read-model.js";
+import { readMatchCognitionPage } from "../services/match-cognition-read-model.js";
 import { setupTestDB } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
@@ -1801,6 +1802,407 @@ describe("ProductionGameMcpReadModel match transcript pagination (U4)", () => {
     expect(malformed).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
   });
 });
+
+// ---------------------------------------------------------------------------
+// U5 — owned thinking and strategy timeline
+// ---------------------------------------------------------------------------
+
+describe("ProductionGameMcpReadModel owned match cognition (U5)", () => {
+  let db: DrizzleDB;
+
+  beforeEach(async () => {
+    db = await setupTestDB();
+    process.env.JWT_SECRET = CURSOR_SECRET;
+  });
+
+  test("owners page thinking/strategy for every owned seat; reasoning stays off timeline", async () => {
+    const fixture = await seedCognitionOwnerGame(db);
+    const { gameId, userId, ownerA, ownerB, peer } = fixture;
+
+    const thinkingA = randomUUID();
+    const strategyB = randomUUID();
+    const reasoningA = randomUUID();
+    const peerThinking = randomUUID();
+
+    await insertCognitionArtifact(db, {
+      id: thinkingA,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: { thinking: "seat-a thought" },
+      createdAt: "2026-07-21T10:00:02.000Z",
+    });
+    await insertCognitionArtifact(db, {
+      id: strategyB,
+      gameId,
+      actorPlayerId: ownerB,
+      actorUserId: userId,
+      artifactType: "strategy",
+      payload: { decisionLog: "seat-b strategy" },
+      createdAt: "2026-07-21T10:00:01.000Z",
+    });
+    await insertCognitionArtifact(db, {
+      id: reasoningA,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "reasoning",
+      payload: { reasoningContext: "should not appear on timeline" },
+      createdAt: "2026-07-21T10:00:03.000Z",
+    });
+    await insertCognitionArtifact(db, {
+      id: peerThinking,
+      gameId,
+      actorPlayerId: peer,
+      artifactType: "thinking",
+      payload: { thinking: "peer secret" },
+      createdAt: "2026-07-21T10:00:04.000Z",
+    });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const page = await readModel.readOwnedMatchCognition(
+      { gameIdOrSlug: gameId, limit: 10 },
+      { userId, authProfile: "subject" },
+    );
+    expect(page.ok).toBe(true);
+    if (!page.ok) throw new Error(page.error);
+    expect(page.entries.map((e) => e.id).sort()).toEqual([thinkingA, strategyB].sort());
+    expect(page.entries.every((e) => e.authority === "cognition")).toBe(true);
+    expect(page.entries.some((e) => e.id === reasoningA)).toBe(false);
+    expect(page.entries.some((e) => e.id === peerThinking)).toBe(false);
+    expect(JSON.stringify(page)).not.toContain("peer secret");
+    expect(JSON.stringify(page)).not.toContain("reasoningContext");
+    expect(JSON.stringify(page)).not.toContain("should not appear");
+
+    const thinkingEntry = page.entries.find((e) => e.id === thinkingA);
+    expect(thinkingEntry?.thinkingProse).toEqual({
+      thinking: "seat-a thought",
+      contentTrust: "untrusted_game_authored",
+    });
+    expect(thinkingEntry?.strategyProse).toBeUndefined();
+
+    const strategyEntry = page.entries.find((e) => e.id === strategyB);
+    expect(strategyEntry?.strategyProse?.decisionLog).toBe("seat-b strategy");
+    expect(strategyEntry?.strategyProse?.contentTrust).toBe("untrusted_game_authored");
+  });
+
+  test("hundreds of newer non-owned rows cannot hide an older owned artifact", async () => {
+    const fixture = await seedCognitionOwnerGame(db);
+    const { gameId, userId, ownerA, peer } = fixture;
+    const ownedId = randomUUID();
+
+    await insertCognitionArtifact(db, {
+      id: ownedId,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: { thinking: "older owned" },
+      createdAt: "2026-07-21T09:00:00.000Z",
+    });
+    for (let i = 0; i < 200; i++) {
+      await insertCognitionArtifact(db, {
+        id: randomUUID(),
+        gameId,
+        actorPlayerId: peer,
+        artifactType: "thinking",
+        payload: { thinking: `noise-${i}` },
+        createdAt: `2026-07-21T12:${String(i % 60).padStart(2, "0")}:00.000Z`,
+      });
+    }
+
+    const page = await readMatchCognitionPage(db, { gameIdOrSlug: gameId, limit: 5 }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) throw new Error(page.error);
+    expect(page.entries.map((e) => e.id)).toEqual([ownedId]);
+    expect(JSON.stringify(page)).not.toContain("noise-");
+  });
+
+  test("Production MCP list/read enforce subject_owner (non-owned thinking denied)", async () => {
+    const fixture = await seedCognitionOwnerGame(db);
+    const { gameId, userId, ownerA, peer } = fixture;
+    const ownedThinking = randomUUID();
+    const peerThinking = randomUUID();
+
+    await insertCognitionArtifact(db, {
+      id: ownedThinking,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: { thinking: "mine" },
+    });
+    await insertCognitionArtifact(db, {
+      id: peerThinking,
+      gameId,
+      actorPlayerId: peer,
+      artifactType: "thinking",
+      payload: { thinking: "theirs" },
+    });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const listed = await readModel.listCognitiveArtifacts(
+      { gameIdOrSlug: gameId },
+      { userId, authProfile: "subject" },
+    );
+    const body = listed.cognitiveArtifacts as {
+      ok: boolean;
+      artifacts: Array<{ id: string; actorPlayerId?: string }>;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.artifacts.map((a) => a.id)).toEqual([ownedThinking]);
+    expect(body.artifacts.every((a) => a.actorPlayerId === ownerA || a.actorPlayerId === fixture.ownerB)).toBe(true);
+
+    const denied = await readModel.readCognitiveArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: peerThinking,
+      artifactType: "thinking",
+      actorPlayerId: peer,
+    }, { userId, authProfile: "subject" });
+    const deniedBody = denied.cognitiveArtifacts as { ok: boolean; status?: string };
+    expect(deniedBody.ok).toBe(false);
+    expect(deniedBody.status).toBe("denied");
+
+    // Subject with producer/sysop metadata still subject_owner only.
+    const elevatedList = await readModel.listCognitiveArtifacts(
+      { gameIdOrSlug: gameId },
+      { userId, authProfile: "subject" },
+    );
+    const elevatedBody = elevatedList.cognitiveArtifacts as {
+      ok: boolean;
+      artifacts: Array<{ id: string }>;
+    };
+    expect(elevatedBody.artifacts.map((a) => a.id)).toEqual([ownedThinking]);
+
+    // Explicit producer surface still sees all.
+    const producerList = await readModel.listCognitiveArtifacts(
+      { gameIdOrSlug: gameId },
+      PRODUCER_ACCESS,
+    );
+    const producerBody = producerList.cognitiveArtifacts as {
+      ok: boolean;
+      artifacts: Array<{ id: string }>;
+    };
+    expect(producerBody.ok).toBe(true);
+    expect(producerBody.artifacts.map((a) => a.id).sort()).toEqual(
+      [ownedThinking, peerThinking].sort(),
+    );
+  });
+
+  test("cursor reuse across game/subject/filter/ownership fails; pagination is stable", async () => {
+    const a = await seedCognitionOwnerGame(db);
+    const b = await seedCognitionOwnerGame(db);
+
+    for (const [i, id] of [randomUUID(), randomUUID(), randomUUID()].entries()) {
+      await insertCognitionArtifact(db, {
+        id,
+        gameId: a.gameId,
+        actorPlayerId: a.ownerA,
+        actorUserId: a.userId,
+        artifactType: "thinking",
+        payload: { thinking: `a-${i}` },
+        createdAt: `2026-07-21T10:00:0${i}.000Z`,
+      });
+    }
+
+    const page1 = await readMatchCognitionPage(db, { gameIdOrSlug: a.gameId, limit: 1 }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page1.ok).toBe(true);
+    if (!page1.ok) throw new Error(page1.error);
+    expect(page1.entries).toHaveLength(1);
+    expect(page1.nextCursor).toBeTruthy();
+
+    const page2 = await readMatchCognitionPage(db, {
+      gameIdOrSlug: a.gameId,
+      cursor: page1.nextCursor!,
+      limit: 1,
+    }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page2.ok).toBe(true);
+    if (!page2.ok) throw new Error(page2.error);
+    expect(page2.entries).toHaveLength(1);
+    expect(page2.entries[0]!.id).not.toBe(page1.entries[0]!.id);
+
+    // Cursor from game A reused against game B (B's owner) fails binding.
+    const wrongGame = await readMatchCognitionPage(db, {
+      gameIdOrSlug: b.gameId,
+      cursor: page1.nextCursor!,
+    }, {
+      subjectUserId: b.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongGame).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+
+    // Same game, different subject fails binding (or access).
+    const wrongSubject = await readMatchCognitionPage(db, {
+      gameIdOrSlug: a.gameId,
+      cursor: page1.nextCursor!,
+    }, {
+      subjectUserId: b.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongSubject.ok).toBe(false);
+    if (wrongSubject.ok) throw new Error("expected failure");
+    expect(["cursor_invalid_or_stale", "not_accessible", "denied"]).toContain(wrongSubject.status);
+
+    const wrongFilter = await readMatchCognitionPage(db, {
+      gameIdOrSlug: a.gameId,
+      cursor: page1.nextCursor!,
+      artifactType: "strategy",
+    }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongFilter).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+  });
+
+  test("rejects reasoning filter and unknown keys; degraded cognition omits without fallback", async () => {
+    const fixture = await seedCognitionOwnerGame(db);
+    const { gameId, userId, ownerA } = fixture;
+
+    const degradedId = randomUUID();
+    const goodId = randomUUID();
+    await insertCognitionArtifact(db, {
+      id: degradedId,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: {},
+      visibilityStatus: "capture_degraded",
+      createdAt: "2026-07-21T11:00:00.000Z",
+    });
+    await insertCognitionArtifact(db, {
+      id: goodId,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: { thinking: "good" },
+      createdAt: "2026-07-21T10:00:00.000Z",
+    });
+
+    const page = await readMatchCognitionPage(db, { gameIdOrSlug: gameId }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) throw new Error(page.error);
+    expect(page.entries.map((e) => e.id)).toEqual([goodId]);
+    expect(JSON.stringify(page)).not.toContain(degradedId);
+
+    const reasoningFilter = await readMatchCognitionPage(db, {
+      gameIdOrSlug: gameId,
+      artifactType: "reasoning",
+    }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(reasoningFilter).toMatchObject({
+      ok: false,
+      status: "invalid_input",
+      field: "artifactType",
+    });
+
+    const unknownKey = await readMatchCognitionPage(db, {
+      gameIdOrSlug: gameId,
+      unknownField: true,
+    }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(unknownKey).toMatchObject({ ok: false, status: "invalid_input" });
+  });
+
+  test("creator-only and inaccessible games are non-enumerating denied", async () => {
+    const creatorId = randomUUID();
+    await db.insert(schema.users).values({ id: creatorId });
+    const gameId = await insertGame(db, {
+      slug: `creator-only-${randomUUID().slice(0, 8)}`,
+      status: "in_progress",
+    });
+    await db.update(schema.games).set({
+      cognitiveArtifactCaptureVersion: 1,
+      createdById: creatorId,
+    }).where(eq(schema.games.id, gameId));
+
+    const denied = await readMatchCognitionPage(db, { gameIdOrSlug: gameId }, {
+      subjectUserId: creatorId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(denied).toMatchObject({ ok: false, status: "denied" });
+
+    const unknown = await readMatchCognitionPage(db, { gameIdOrSlug: randomUUID() }, {
+      subjectUserId: creatorId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(unknown).toMatchObject({ ok: false, status: "not_accessible" });
+  });
+});
+
+async function seedCognitionOwnerGame(db: DrizzleDB): Promise<{
+  gameId: string;
+  userId: string;
+  ownerA: string;
+  ownerB: string;
+  peer: string;
+}> {
+  const userId = randomUUID();
+  await db.insert(schema.users).values({
+    id: userId,
+    walletAddress: `0x${userId.replace(/-/g, "").slice(0, 40)}`,
+  });
+  const gameId = await insertGame(db, {
+    slug: `cog-${randomUUID().slice(0, 8)}`,
+    status: "in_progress",
+  });
+  await db.update(schema.games).set({
+    cognitiveArtifactCaptureVersion: 1,
+    transcriptCaptureVersion: 1,
+  }).where(eq(schema.games.id, gameId));
+  const ownerA = await insertGamePlayer(db, { gameId, userId, name: "OwnerA" });
+  const ownerB = await insertGamePlayer(db, { gameId, userId, name: "OwnerB" });
+  const peer = await insertGamePlayer(db, { gameId, name: "Peer" });
+  return { gameId, userId, ownerA, ownerB, peer };
+}
+
+async function insertCognitionArtifact(
+  db: DrizzleDB,
+  params: {
+    id: string;
+    gameId: string;
+    actorPlayerId: string;
+    actorUserId?: string;
+    artifactType: "reasoning" | "thinking" | "strategy";
+    payload: Record<string, unknown>;
+    createdAt?: string;
+    visibilityStatus?: "active" | "capture_degraded";
+  },
+): Promise<void> {
+  await db.insert(schema.gameCognitiveArtifacts).values({
+    id: params.id,
+    gameId: params.gameId,
+    artifactType: params.artifactType,
+    actorRole: "player",
+    actorPlayerId: params.actorPlayerId,
+    actorUserId: params.actorUserId,
+    action: "vote",
+    phase: "LOBBY",
+    round: 1,
+    payloadByteLength: Buffer.byteLength(JSON.stringify(params.payload), "utf8"),
+    payload: params.payload,
+    visibilityStatus: params.visibilityStatus ?? "active",
+    ...(params.createdAt && { createdAt: params.createdAt }),
+  });
+}
 
 async function seedModernOwnerGame(
   db: DrizzleDB,

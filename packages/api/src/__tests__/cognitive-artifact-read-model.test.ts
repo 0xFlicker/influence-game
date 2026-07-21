@@ -4,11 +4,13 @@ import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { CognitiveArtifactReadModel } from "../services/cognitive-artifact-read-model.js";
+import { buildMatchAccessContext } from "../services/match-access-context.js";
 import { setupTestDB } from "./test-utils.js";
 
 const PRODUCER_ACCESS = {
   userId: "producer-user",
   authProfile: "producer" as const,
+  surfaceCapability: "producer" as const,
 };
 
 describe("CognitiveArtifactReadModel", () => {
@@ -63,6 +65,7 @@ describe("CognitiveArtifactReadModel", () => {
     const participantAccess = {
       userId: participantUserId,
       authProfile: "subject" as const,
+      surfaceCapability: "participant_web" as const,
     };
     const participantList = await readModel.listArtifacts({ gameIdOrSlug: gameId }, participantAccess);
     expect(participantList.ok).toBe(true);
@@ -107,6 +110,7 @@ describe("CognitiveArtifactReadModel", () => {
     }, {
       userId: ownerUserId,
       authProfile: "subject" as const,
+      surfaceCapability: "participant_web" as const,
     });
     expect(ownerReasoning.ok).toBe(true);
     if (!ownerReasoning.ok) throw new Error(ownerReasoning.error);
@@ -187,6 +191,7 @@ describe("CognitiveArtifactReadModel", () => {
     const participantAccess = {
       userId: participantUserId,
       authProfile: "subject" as const,
+      surfaceCapability: "participant_web" as const,
     };
     const participantList = await readModel.listArtifacts({ gameIdOrSlug: gameId }, participantAccess);
     expect(participantList.ok).toBe(true);
@@ -217,6 +222,7 @@ describe("CognitiveArtifactReadModel", () => {
     }, {
       userId: ownerUserId,
       authProfile: "subject" as const,
+      surfaceCapability: "participant_web" as const,
     });
     expect(ownerHuddleStrategy.ok).toBe(true);
 
@@ -228,6 +234,7 @@ describe("CognitiveArtifactReadModel", () => {
     }, {
       userId: ownerUserId,
       authProfile: "subject" as const,
+      surfaceCapability: "participant_web" as const,
     });
     expect(ownerAllianceStrategy.ok).toBe(true);
 
@@ -236,6 +243,140 @@ describe("CognitiveArtifactReadModel", () => {
       artifactId: huddleThinkingId,
     }, PRODUCER_ACCESS);
     expect(producerHuddleThinking.ok).toBe(true);
+  });
+
+  test("subject_owner hides non-owned thinking/strategy and survives non-owned scan pressure", async () => {
+    const gameId = randomUUID();
+    const ownerUserId = randomUUID();
+    const otherUserId = randomUUID();
+    const ownerPlayerId = randomUUID();
+    const otherPlayerId = randomUUID();
+    const ownedThinkingId = randomUUID();
+    const ownedStrategyId = randomUUID();
+    const ownedReasoningId = randomUUID();
+
+    await insertUsers(ownerUserId, otherUserId);
+    await insertGame(gameId, { captureVersion: 1 });
+    await insertPlayer(gameId, ownerPlayerId, ownerUserId);
+    await insertPlayer(gameId, otherPlayerId, otherUserId);
+
+    // Hundreds of newer non-owned rows must not hide older owned artifacts.
+    const nonOwnedIds: string[] = [];
+    for (let i = 0; i < 120; i++) {
+      const id = randomUUID();
+      nonOwnedIds.push(id);
+      await insertArtifact({
+        id,
+        gameId,
+        actorPlayerId: otherPlayerId,
+        actorUserId: otherUserId,
+        artifactType: i % 2 === 0 ? "thinking" : "strategy",
+        payload: { thinking: `noise-${i}` },
+        createdAt: `2026-07-21T12:00:${String(i % 60).padStart(2, "0")}.000Z`,
+      });
+    }
+    await insertArtifact({
+      id: ownedThinkingId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      payload: { thinking: "owned thought" },
+      createdAt: "2026-07-21T10:00:00.000Z",
+    });
+    await insertArtifact({
+      id: ownedStrategyId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "strategy",
+      payload: { decisionLog: "owned strategy" },
+      createdAt: "2026-07-21T10:00:01.000Z",
+    });
+    await insertArtifact({
+      id: ownedReasoningId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "reasoning",
+      payload: { reasoningContext: "owned reasoning" },
+      createdAt: "2026-07-21T10:00:02.000Z",
+    });
+
+    const matchAccess = buildMatchAccessContext({
+      subjectUserId: ownerUserId,
+      gameId,
+      gameSlug: `test-${gameId}`,
+      gameStatus: "in_progress",
+      transcriptCaptureVersion: 1,
+      isCreator: false,
+      hasParticipatingOwnership: true,
+      hasCanonicalAccess: true,
+      ownedPlayerIds: new Set([ownerPlayerId]),
+      ownedAgentProfileIds: new Set(),
+      ownedSeats: [{ playerId: ownerPlayerId, name: "Owner", agentProfileId: null }],
+      roster: [
+        { id: ownerPlayerId, name: "Owner", userId: ownerUserId, agentProfileId: null },
+        { id: otherPlayerId, name: "Other", userId: otherUserId, agentProfileId: null },
+      ],
+    });
+
+    const subjectOwnerAccess = {
+      userId: ownerUserId,
+      authProfile: "subject" as const,
+      surfaceCapability: "subject_owner" as const,
+      matchAccess,
+    };
+
+    const listed = await readModel.listArtifacts({ gameIdOrSlug: gameId, limit: 10 }, subjectOwnerAccess);
+    expect(listed.ok).toBe(true);
+    if (!listed.ok) throw new Error(listed.error);
+    const listedIds = listed.artifacts.map((a) => a.id).sort();
+    expect(listedIds).toEqual([ownedReasoningId, ownedStrategyId, ownedThinkingId].sort());
+    for (const noiseId of nonOwnedIds.slice(0, 5)) {
+      expect(listedIds).not.toContain(noiseId);
+    }
+
+    const deniedOtherThinking = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: nonOwnedIds[0]!,
+      artifactType: "thinking",
+      actorPlayerId: otherPlayerId,
+    }, subjectOwnerAccess);
+    expect(deniedOtherThinking).toMatchObject({ ok: false, status: "denied" });
+
+    // Non-owned artifact id with owned actor context is non-enumerating.
+    const missingAsNotCaptured = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: nonOwnedIds[0]!,
+      artifactType: "thinking",
+      actorPlayerId: ownerPlayerId,
+    }, subjectOwnerAccess);
+    expect(missingAsNotCaptured).toMatchObject({ ok: false, status: "not_captured" });
+
+    const ownedReasoning = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: ownedReasoningId,
+      artifactType: "reasoning",
+      actorPlayerId: ownerPlayerId,
+    }, subjectOwnerAccess);
+    expect(ownedReasoning.ok).toBe(true);
+
+    // Producer/sysop metadata on subject_owner must not widen access.
+    const elevatedSubject = {
+      ...subjectOwnerAccess,
+      roles: ["sysop", "producer"],
+      permissions: ["view_admin", "manage_roles"],
+    };
+    const stillOwnerOnly = await readModel.listArtifacts({ gameIdOrSlug: gameId, limit: 50 }, elevatedSubject);
+    expect(stillOwnerOnly.ok).toBe(true);
+    if (!stillOwnerOnly.ok) throw new Error(stillOwnerOnly.error);
+    expect(stillOwnerOnly.artifacts.every((a) =>
+      a.actorPlayerId === ownerPlayerId
+    )).toBe(true);
+    expect(stillOwnerOnly.artifacts.map((a) => a.id).sort()).toEqual(
+      [ownedReasoningId, ownedStrategyId, ownedThinkingId].sort(),
+    );
   });
 
   test("denies created-only users before exposing old-game no-capture state", async () => {
@@ -322,6 +463,7 @@ describe("CognitiveArtifactReadModel", () => {
     }, {
       userId,
       authProfile: "subject" as const,
+      surfaceCapability: "participant_web" as const,
     });
     expect(userResult).toMatchObject({ ok: false, status: "capture_degraded" });
     expect(userResult.ok ? undefined : userResult.diagnostics).toBeUndefined();
@@ -379,6 +521,7 @@ describe("CognitiveArtifactReadModel", () => {
     phase?: string;
     visibilityStatus?: "active" | "capture_degraded";
     diagnostics?: Record<string, unknown>;
+    createdAt?: string;
   }): Promise<void> {
     await db.insert(schema.gameCognitiveArtifacts).values({
       id: params.id,
@@ -393,6 +536,7 @@ describe("CognitiveArtifactReadModel", () => {
       payload: params.payload,
       visibilityStatus: params.visibilityStatus ?? "active",
       diagnostics: params.diagnostics,
+      ...(params.createdAt && { createdAt: params.createdAt }),
     });
   }
 });

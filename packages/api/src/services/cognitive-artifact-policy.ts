@@ -9,7 +9,7 @@ import { hasPrivateMatchLaneAccess } from "./match-access-context.js";
 export type CognitiveArtifactAuthProfile = "subject" | "producer" | "admin_api";
 
 /**
- * Explicit cognition surface capability (U5 will enforce fully).
+ * Explicit cognition surface capability.
  * Callers must pass a capability rather than relying on incidental role metadata.
  * Producer/sysop claim metadata must never widen a subject_owner surface.
  */
@@ -17,6 +17,11 @@ export type CognitionSurfaceCapability =
   | "subject_owner"
   | "participant_web"
   | "producer";
+
+/** Artifact types returned by the owned match cognition timeline (U5). */
+export const SUBJECT_OWNER_TIMELINE_ARTIFACT_TYPES = ["thinking", "strategy"] as const;
+export type SubjectOwnerTimelineArtifactType =
+  (typeof SUBJECT_OWNER_TIMELINE_ARTIFACT_TYPES)[number];
 
 export interface CognitiveArtifactAccessor {
   userId?: string;
@@ -30,8 +35,9 @@ export interface CognitiveArtifactAccessor {
    */
   matchAccess?: MatchAccessContext;
   /**
-   * Explicit surface capability. U5 applies subject_owner to Production MCP;
-   * absent capability preserves pre-U5 behavior for existing call sites.
+   * Explicit surface capability. Production MCP subject tools use subject_owner;
+   * web/API uses participant_web; producer tools use producer.
+   * Absent capability preserves pre-U5 behavior for legacy call sites.
    */
   surfaceCapability?: CognitionSurfaceCapability;
 }
@@ -47,14 +53,25 @@ export interface CognitiveArtifactPolicyContext {
   actorAgentProfileId?: string | null;
 }
 
+export function isSubjectOwnerTimelineArtifactType(
+  artifactType: CognitiveArtifactType,
+): artifactType is SubjectOwnerTimelineArtifactType {
+  return artifactType === "thinking" || artifactType === "strategy";
+}
+
+/**
+ * Whether this accessor is operating as an explicit producer surface.
+ * subject_owner never widens via roles/permissions/sysop metadata.
+ */
 export function hasProducerCognitiveArtifactAccess(accessor: CognitiveArtifactAccessor): boolean {
-  // Explicit subject_owner surfaces never widen via producer/sysop metadata.
   if (accessor.surfaceCapability === "subject_owner") {
     return false;
   }
   if (accessor.surfaceCapability === "producer") {
     return true;
   }
+  // participant_web and unset: incidental producer roles may still elevate
+  // (admin web route upgrades explicitly to surfaceCapability producer).
   const roles = new Set(accessor.roles ?? []);
   const permissions = new Set(accessor.permissions ?? []);
   return accessor.authProfile === "producer" ||
@@ -96,6 +113,13 @@ export function ownsCognitiveArtifactActor(
   return false;
 }
 
+/**
+ * Actor roles visible on subject surfaces. House/system/producer stay producer-only.
+ */
+export function isSubjectVisibleActorRole(actorRole: CognitiveArtifactActorRole): boolean {
+  return actorRole === "player" || actorRole === "juror";
+}
+
 export function canReadCognitiveArtifact(
   accessor: CognitiveArtifactAccessor,
   context: CognitiveArtifactPolicyContext,
@@ -105,19 +129,17 @@ export function canReadCognitiveArtifact(
 
   if (!subjectHasParticipatingGameAccess(accessor, context.gameId)) return false;
 
-  if (
-    context.actorRole === "house" ||
-    context.actorRole === "system" ||
-    context.actorRole === "producer"
-  ) {
+  if (!isSubjectVisibleActorRole(context.actorRole)) {
     return false;
   }
 
-  // subject_owner (U5 Production MCP) requires ownership for every artifact type.
+  // subject_owner (Production MCP + owned timeline) requires ownership for every type.
   if (accessor.surfaceCapability === "subject_owner") {
     return ownsCognitiveArtifactActor(accessor, context);
   }
 
+  // participant_web (and unset legacy): reasoning + alliance huddle owner-only;
+  // ordinary thinking/strategy remain participant-visible.
   if (context.artifactType === "reasoning") {
     return ownsCognitiveArtifactActor(accessor, context);
   }
@@ -155,6 +177,10 @@ function subjectHasParticipatingGameAccess(
   const matchAccess = accessor.matchAccess;
   if (matchAccess && matchAccess.gameId === gameId) {
     return hasPrivateMatchLaneAccess(matchAccess);
+  }
+  // subject_owner without a resolved match snapshot cannot open the private lane.
+  if (accessor.surfaceCapability === "subject_owner") {
+    return false;
   }
   return Boolean(accessor.claims?.joinedGameIds.has(gameId));
 }

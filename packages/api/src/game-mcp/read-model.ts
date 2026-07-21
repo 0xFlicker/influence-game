@@ -39,6 +39,7 @@ import {
   type ListCognitiveArtifactsParams,
   type ReadCognitiveArtifactParams,
 } from "../services/cognitive-artifact-read-model.js";
+import type { CognitiveArtifactAccessor } from "../services/cognitive-artifact-policy.js";
 import {
   buildCompactPostgameBrief,
   buildPostgameDerivedVoteCohorts,
@@ -59,6 +60,11 @@ import {
   type MatchTranscriptPageResult,
   type ReadMatchTranscriptInput,
 } from "../services/match-transcript-read-model.js";
+import {
+  readMatchCognitionPage,
+  type MatchCognitionPageResult,
+  type ReadMatchCognitionInput,
+} from "../services/match-cognition-read-model.js";
 import {
   exportOwnedSeasonReceipts,
   getOwnedAgentSeasonAnalysis,
@@ -388,6 +394,27 @@ export class ProductionGameMcpReadModel {
       };
     }
     return readMatchTranscriptPage(this.db, input, {
+      subjectUserId: access.userId,
+    });
+  }
+
+  /**
+   * Owner-authorized thinking/strategy timeline (U5 read model).
+   * MCP tool registration is U8; this is the protocol-neutral service entry.
+   * Reasoning remains on dedicated cognitive-artifact reads only.
+   */
+  async readOwnedMatchCognition(
+    input: ReadMatchCognitionInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchCognitionPageResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchCognitionPage(this.db, input, {
       subjectUserId: access.userId,
     });
   }
@@ -835,7 +862,7 @@ export class ProductionGameMcpReadModel {
       this.cognitiveArtifacts.listArtifacts({
         gameIdOrSlug: game.id,
         limit: 50,
-      }, access),
+      }, this.producerCognitiveAccessor(access)),
       this.privateTrace.listManifests(game.id, 50),
     ]);
     return {
@@ -935,9 +962,10 @@ export class ProductionGameMcpReadModel {
     schemaVersion: 1;
     cognitiveArtifacts: unknown;
   }> {
+    const accessor = await this.cognitiveAccessorForMcp(params.gameIdOrSlug, access);
     return {
       schemaVersion: 1,
-      cognitiveArtifacts: await this.cognitiveArtifacts.listArtifacts(params, access),
+      cognitiveArtifacts: await this.cognitiveArtifacts.listArtifacts(params, accessor),
     };
   }
 
@@ -948,9 +976,48 @@ export class ProductionGameMcpReadModel {
     schemaVersion: 1;
     cognitiveArtifacts: unknown;
   }> {
+    const accessor = await this.cognitiveAccessorForMcp(params.gameIdOrSlug, access);
     return {
       schemaVersion: 1,
-      cognitiveArtifacts: await this.cognitiveArtifacts.readArtifact(params, access),
+      cognitiveArtifacts: await this.cognitiveArtifacts.readArtifact(params, accessor),
+    };
+  }
+
+  /**
+   * Explicit surface-capability dispatch for Production MCP cognition tools.
+   * Subject tools always use subject_owner (never widened by producer/sysop
+   * claim metadata). Producer tools use surfaceCapability producer.
+   */
+  private async cognitiveAccessorForMcp(
+    gameIdOrSlug: string,
+    access: ProductionGameMcpAccess,
+  ): Promise<CognitiveArtifactAccessor> {
+    if (access.authProfile === "producer") {
+      return this.producerCognitiveAccessor(access);
+    }
+    if (!access.userId) {
+      return {
+        authProfile: "subject",
+        surfaceCapability: "subject_owner",
+      };
+    }
+    const resolution = await resolveMatchAccessContext(this.db, {
+      subjectUserId: access.userId,
+      gameIdOrSlug,
+    });
+    return {
+      userId: access.userId,
+      authProfile: "subject",
+      surfaceCapability: "subject_owner",
+      ...(resolution.status === "resolved" && { matchAccess: resolution.context }),
+    };
+  }
+
+  private producerCognitiveAccessor(access: ProductionGameMcpAccess): CognitiveArtifactAccessor {
+    return {
+      userId: access.userId,
+      authProfile: "producer",
+      surfaceCapability: "producer",
     };
   }
 

@@ -45,23 +45,41 @@ export function createCognitiveArtifactRoutes(db: DrizzleDB) {
   return app;
 }
 
+/**
+ * Explicit surface capability dispatch for the web/API route:
+ * - producer (admin/sysop) → surfaceCapability producer
+ * - ordinary subject → surfaceCapability participant_web
+ *
+ * Never uses subject_owner (that is Production MCP only).
+ * Probe uses subject profile so authProfile alone cannot elevate; only roles
+ * and permissions decide admin elevation.
+ */
 function accessorFromContext(c: Context<AuthEnv>): CognitiveArtifactAccessor {
   const user = c.get("user");
   const roles = c.get("userRoles") ?? [];
   const permissions = c.get("userPermissions") ?? [];
-  const subjectAccessor: CognitiveArtifactAccessor = {
+  const roleProbe: CognitiveArtifactAccessor = {
     userId: user.id,
     authProfile: "subject",
     roles,
     permissions,
   };
-  if (hasProducerCognitiveArtifactAccess(subjectAccessor)) {
+  if (hasProducerCognitiveArtifactAccess(roleProbe)) {
     return {
-      ...subjectAccessor,
+      userId: user.id,
       authProfile: "admin_api",
+      roles,
+      permissions,
+      surfaceCapability: "producer",
     };
   }
-  return subjectAccessor;
+  return {
+    userId: user.id,
+    authProfile: "subject",
+    roles,
+    permissions,
+    surfaceCapability: "participant_web",
+  };
 }
 
 function optionalQuery(value: string | undefined): string | undefined {

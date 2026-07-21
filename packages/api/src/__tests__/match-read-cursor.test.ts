@@ -1,14 +1,20 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
+  MATCH_COGNITION_CURSOR_PURPOSE,
   MATCH_READ_CURSOR_KEY_VERSION,
   MATCH_READ_CURSOR_MAX_TOKEN_CHARS,
   MATCH_READ_CURSOR_MAX_TTL_MS,
   MATCH_TRANSCRIPT_CURSOR_PURPOSE,
+  bindMatchCognitionCursor,
   bindMatchTranscriptCursor,
+  decodeMatchCognitionCursor,
   decodeMatchTranscriptCursor,
+  fingerprintMatchCognitionFilters,
   fingerprintMatchTranscriptFilters,
+  issueMatchCognitionCursor,
   issueMatchTranscriptCursor,
   matchReadCursorKeyMaterialFingerprint,
+  type MatchCognitionCursorClaims,
   type MatchTranscriptCursorClaims,
 } from "../services/match-read-cursor.js";
 
@@ -281,5 +287,73 @@ describe("match-read-cursor AES-GCM codec", () => {
     if (decoded.status !== "ok") return;
     expect(decoded.claims.expiresAtMs - decoded.claims.issuedAtMs)
       .toBe(MATCH_READ_CURSOR_MAX_TTL_MS);
+  });
+
+  test("cognition purpose is isolated from transcript purpose", () => {
+    const cognitionToken = issueMatchCognitionCursor({
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      filterFingerprint: fingerprintMatchCognitionFilters({
+        artifactType: "thinking",
+        actorPlayerId: null,
+        phase: null,
+        round: null,
+        action: null,
+      }),
+      ownershipFingerprint: "sha256:ownership-1",
+      captureVersion: 1,
+      mode: "snapshot",
+      readThrough: {
+        throughCreatedAt: "2026-07-21T12:00:00.000Z",
+        throughId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      },
+      keyset: {
+        afterCreatedAt: "2026-07-21T11:00:00.000Z",
+        afterId: "11111111-2222-3333-4444-555555555555",
+      },
+      filters: {
+        artifactType: "thinking",
+        actorPlayerId: null,
+        player: null,
+        phase: null,
+        round: null,
+        action: null,
+      },
+      nowMs: NOW,
+    }, SECRET_A);
+
+    const asTranscript = decodeMatchTranscriptCursor(cognitionToken, {
+      secretMaterial: SECRET_A,
+      nowMs: NOW,
+    });
+    expect(asTranscript).toEqual({ status: "invalid" });
+
+    const asCognition = decodeMatchCognitionCursor(cognitionToken, {
+      secretMaterial: SECRET_A,
+      nowMs: NOW,
+    });
+    expect(asCognition.status).toBe("ok");
+    if (asCognition.status !== "ok") return;
+    const claims: MatchCognitionCursorClaims = asCognition.claims;
+    expect(claims.purpose).toBe(MATCH_COGNITION_CURSOR_PURPOSE);
+    expect(claims.filters.artifactType).toBe("thinking");
+    expect(claims.keyset.afterCreatedAt).toBe("2026-07-21T11:00:00.000Z");
+
+    expect(bindMatchCognitionCursor({
+      claims,
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      ownershipFingerprint: "sha256:ownership-1",
+      filterFingerprint: claims.filterFingerprint,
+      captureVersion: 1,
+    })).toBe(true);
+    expect(bindMatchCognitionCursor({
+      claims,
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      ownershipFingerprint: "sha256:different",
+      filterFingerprint: claims.filterFingerprint,
+      captureVersion: 1,
+    })).toBe(false);
   });
 });
