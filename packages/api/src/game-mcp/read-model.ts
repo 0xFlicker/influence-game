@@ -51,6 +51,10 @@ import {
 import type { GameMcpAuthContext } from "./auth.js";
 import { resolveGamesMcpClaims } from "./claims.js";
 import {
+  resolveMatchAccessContext,
+  type MatchAccessContext,
+} from "../services/match-access-context.js";
+import {
   exportOwnedSeasonReceipts,
   getOwnedAgentSeasonAnalysis,
   getProducerSeasonDiagnostics,
@@ -929,17 +933,42 @@ export class ProductionGameMcpReadModel {
     gameIdOrSlug: string,
     access: ProductionGameMcpAccess,
   ): Promise<ProductionGameMcpGameIdentity> {
-    const game = await this.resolveGame(gameIdOrSlug);
     if (isGamesSubjectAccess(access)) {
-      if (!game) throw new Error("Game is not accessible for MCP scope: games:read");
-      const claims = await resolveGamesMcpClaims(this.db, access.userId);
-      if (!claims.gameIds.has(game.id)) {
+      // MatchAccessContext makes unknown and inaccessible games indistinguishable.
+      const resolution = await resolveMatchAccessContext(this.db, {
+        subjectUserId: access.userId,
+        gameIdOrSlug,
+      });
+      if (resolution.status !== "resolved") {
         throw new Error("Game is not accessible for MCP scope: games:read");
       }
-    } else if (!game) {
+      const game = await this.resolveGame(resolution.context.gameId);
+      if (!game) {
+        throw new Error("Game is not accessible for MCP scope: games:read");
+      }
+      return game;
+    }
+    const game = await this.resolveGame(gameIdOrSlug);
+    if (!game) {
       throw new Error(`Unknown game: ${gameIdOrSlug}`);
     }
     return game;
+  }
+
+  /**
+   * Ownership snapshot for subject match reads (transcript/cognition/manifest hooks).
+   * Returns null when the subject lacks canonical access (non-enumerating).
+   */
+  async resolveSubjectMatchAccess(
+    gameIdOrSlug: string,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchAccessContext | null> {
+    if (!isGamesSubjectAccess(access)) return null;
+    const resolution = await resolveMatchAccessContext(this.db, {
+      subjectUserId: access.userId,
+      gameIdOrSlug,
+    });
+    return resolution.status === "resolved" ? resolution.context : null;
   }
 
   private async accessibleGameIds(access: ProductionGameMcpAccess): Promise<string[] | null> {
@@ -962,11 +991,16 @@ export class ProductionGameMcpReadModel {
     access: ProductionGameMcpAccess,
   ): Promise<GamePlayerRow[]> {
     if (!isGamesSubjectAccess(access)) return [...players];
-    const claims = await resolveGamesMcpClaims(this.db, access.userId);
-    if (!claims.gameIds.has(gameId)) return [];
+    const resolution = await resolveMatchAccessContext(this.db, {
+      subjectUserId: access.userId,
+      gameIdOrSlug: gameId,
+    });
+    if (resolution.status !== "resolved") return [];
+    const owned = resolution.context.ownedPlayerIds;
+    const ownedProfiles = resolution.context.ownedAgentProfileIds;
     return players.filter((player) =>
-      claims.playerIds.has(player.id) ||
-      Boolean(player.agentProfileId && claims.agentProfileIds.has(player.agentProfileId))
+      owned.has(player.id) ||
+      Boolean(player.agentProfileId && ownedProfiles.has(player.agentProfileId))
     );
   }
 
