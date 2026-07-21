@@ -101,9 +101,24 @@ export interface TranscriptEntry {
    * Captured separately from the agent's "thinking" field for richer simulation traces.
    */
   reasoningContext?: string;
+  /**
+   * Additive normalized product-dialogue context on modern capture (actor identity,
+   * audience player IDs, dialogue kind, formal-speech correlation key). Diary/thinking
+   * rows stay outside dialogue identity. Local simulation formatting continues to use
+   * the human-facing fields above; production match-read DTOs serialize only the
+   * allowlisted subset (authority, visibility, speaker, audience, safeContext, text).
+   */
   ...
 }
 ```
+
+Current-capture product dialogue carries normalized actor/audience/context fields so
+owner match-read MCP tools can page authorized speech without re-deriving membership
+from free text. Inline `thinking` and `reasoningContext` remain local simulation /
+debug lanes and **must not** appear on owner transcript DTOs (`contentTrust:
+untrusted_game_authored` labels player/model prose; structural `nextReads` and filters
+are never derived from that prose). Owned thinking/strategy for Production MCP live on
+`read_owned_match_cognition`, not on transcript pages.
 
 Public websocket `message` events do not publish the internal `TranscriptEntry`
 object directly. `packages/api/src/services/ws-manager.ts` builds a
@@ -120,7 +135,9 @@ Transcript entries with `scope: "huddle"` are not published through the generic
 public websocket transcript or public transcript export. Public web/replay
 alliance inspection uses the dedicated alliance projection instead, which may
 show huddle speech while omitting hidden thinking, House scheduling rationale,
-raw envelopes, source pointers, and producer/debug evidence.
+raw envelopes, source pointers, and producer/debug evidence. Production Game MCP
+owner transcript pages may include member-private huddles authorized through owned
+seats; that is a separate owner policy surface from public watch.
 
 For `--chatty` live viewing (`simulate.ts`):
 

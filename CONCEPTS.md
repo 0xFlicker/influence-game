@@ -4,9 +4,19 @@ Shared domain vocabulary for this project — entities, named processes, and sta
 
 ## TranscriptEntry
 
-The canonical record of everything that happened in a game for viewers, replays, and analysis. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from players) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public player text never contains hidden reasoning.
+The canonical record of everything that happened in a game for viewers, replays, and analysis. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from players) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public player text never contains hidden reasoning. Modern product capture may also carry normalized actor identity, audience player IDs, dialogue kind, and formal-speech correlation context used by owner match-read DTOs; diary/thinking rows stay outside dialogue identity.
 
 Public websocket `message` events expose a selected `PublicWsTranscriptEntry` subset for live watchers rather than copying the full internal entry. Viewer-safe `thinking`, public room metadata (`rooms` and `excluded` only), anonymous rumor metadata (`anonymous` and `displayOrder`), sender, scope, text, phase, round, recipients, and timestamps may cross that boundary; `reasoningContext`, room allocation diagnostics, private trace pointers, raw prompts/responses, storage keys, source pointers, and decision logs may not. Entries with `scope: "huddle"` are hidden alliance-room evidence and are not published to generic public websocket watchers or public transcript export by default. The public web/replay alliance projection is a separate audience surface that may show huddle speech while omitting thinking and producer/debug internals.
+
+## Match-read lanes (Production Game MCP)
+
+Three independent authority lanes for loading a watchable match story over MCP (`games:read`):
+
+- **Canonical facts** — accepted board outcomes from the event log and projection (`filter_events`, `read_projection`, `read_round_facts`, timelines, postgame briefs). Transcript prose never repairs a missing vote, power, elimination, or winner.
+- **Transcript** — authorized dialogue order and text via `read_match_transcript` (viewer-safe public/system, authorized Mingle, owner-unified huddles). Dialogue-only; no thinking/strategy payloads. Player/model prose is `untrusted_game_authored`.
+- **Cognition** — optional owned thinking/strategy via `read_owned_match_cognition` under `subject_owner` policy. Non-owned cognition is never enumerated. Missing cognition does not degrade narrative completeness.
+
+`read_match_manifest` reports each lane's availability, completeness, watermarks, and typed `nextReads` (registered tool names + starter arguments). Formal-speech parity is a cross-lane diagnostic only. Red lines: no private-trace backfill, no historical reconstruction, no hidden-row leakage through pagination or denials.
 
 ## Mingle I
 
@@ -323,6 +333,18 @@ The OAuth scopes for the deployed `/mcp` resource are `agents:read`, `agents:wri
 ## Games MCP read scope
 
 The user-facing `games:read` OAuth scope for MCP clients that should be described as "read your Influence games." A token with `games:read` can inspect accessible games, visible events, projections, timelines, rules, and authorized first-class cognitive artifacts. It does not grant producer/global corpus access, developer evidence access, private trace content, private trace metadata, owned-agent writes, or active-match action authority.
+
+## MCP match-read manifest
+
+The first-call Production Game MCP overview for loading one accessible live or completed match. It reports separate availability, authorization, cursors, and completeness for the canonical fact, authorized transcript, and owned cognition lanes, plus cross-lane formal endgame speech parity diagnostics, then directs the client to bounded detail reads. The manifest is a guide to the authority lanes, not a merged source of truth.
+
+## Authorized match transcript
+
+The owner-scoped Production Game MCP dialogue timeline for a game in which the user owns at least one participating player. Its default view includes viewer-safe public and system dialogue, authorized Mingle speech, and huddles visible through every owned player's membership at the time each huddle occurred. Thinking and strategy for owned players may be requested as separately typed overlays; non-owned cognition, reasoning context, and producer private traces are not transcript dialogue.
+
+## MCP match completeness
+
+The lane-specific health contract for reconstructing a watchable game through Production Game MCP. Canonical fact integrity, authorized transcript coverage, and owned cognitive-artifact availability are reported independently, while formal endgame speech parity is a cross-lane diagnostic. A healthy event log does not prove a complete narrative, transcript prose cannot repair board truth, and private traces cannot repair any player-facing lane, including cognition.
 
 ## Management-only MCP
 

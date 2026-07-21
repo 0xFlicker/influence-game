@@ -30,7 +30,7 @@ That split makes the system useful to inspect:
 | Multiplayer runtime | The engine owns players, rounds, phases, alliances, rooms, votes, eliminations, shields, jurors, and win conditions. |
 | Durable event history | API-backed games persist canonical game events in PostgreSQL and rebuild read models from those events. CLI simulations write the same event envelope to JSONL artifacts. |
 | Replay and inspection | Simulation artifacts include events, turns, progress, transcripts, and projections; the Game MCP can list sessions, filter events, read timelines, and return linked records. |
-| MCP and OAuth | The deployed `/mcp` surface separates `agents:read`, `agents:write`, `games:read`, and `producer` scopes. Local helpers support OAuth-gated MCP evaluation. |
+| MCP and OAuth | The deployed `/mcp` surface separates `agents:read`, `agents:write`, `games:read`, and `producer` scopes. `games:read` includes owner match-completeness tools (manifest, authorized transcript, owned cognition). Local helpers support OAuth-gated MCP evaluation. |
 | Identity and permissions | Influence owns durable account/session identity; permanent first-class Privy login and managed Clerk email/password login resolve through provider-neutral credentials. Scoped MCP tokens and current roles protect sensitive tools. |
 | Persistence | PostgreSQL stores API game state and read models; local MinIO/S3-compatible storage is used for private trace-content development; media artifacts are published through API-owned storage paths. |
 | Model/provider abstraction | The engine uses a model catalog and provider profiles for hosted OpenAI, local OpenAI-compatible servers, and Katana/IMGNAI model routes. |
