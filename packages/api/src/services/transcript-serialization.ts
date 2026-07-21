@@ -7,6 +7,7 @@ import {
   isViewerSafeDialogueKind,
   TRANSCRIPT_CAPTURE_VERSION,
 } from "./transcript-capture.js";
+import type { TranscriptVisibilityClass } from "./transcript-visibility-policy.js";
 
 export class TranscriptSerializationError extends Error {
   constructor(message: string) {
@@ -193,4 +194,201 @@ function defaultDialogueKind(scope: TranscriptEntry["scope"]): TranscriptDialogu
     default:
       return null;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Owner match-read DTO serialization (U4) — explicit allowlist, never redaction
+// ---------------------------------------------------------------------------
+
+/** Authority lane label for dialogue pages. */
+export const TRANSCRIPT_AUTHORITY_LANE = "transcript" as const;
+
+/** Trust label: all player/model prose is untrusted game-authored content. */
+export const UNTRUSTED_GAME_AUTHORED = "untrusted_game_authored" as const;
+
+/** Keys that must never appear on owner transcript DTOs (recursive). */
+export const TRANSCRIPT_DTO_FORBIDDEN_KEYS = [
+  "thinking",
+  "reasoningContext",
+  "reasoning_context",
+  "roomDiagnostics",
+  "room_diagnostics",
+  "roomMetadata",
+  "room_metadata",
+  "prompt",
+  "prompts",
+  "provider",
+  "providerResponse",
+  "provider_response",
+  "decisionLog",
+  "decision_log",
+  "trace",
+  "traceId",
+  "traceKey",
+  "storage",
+  "storageKey",
+  "storage_key",
+  "cognition",
+  "cognitiveArtifact",
+  "privateTrace",
+] as const;
+
+export type TranscriptOrderingQuality = "sequence" | "deterministic_approximate";
+
+export interface MatchTranscriptSpeakerDto {
+  playerId: string | null;
+  name: string | null;
+}
+
+export interface MatchTranscriptAudienceDto {
+  playerIds: string[];
+}
+
+export interface MatchTranscriptLegacyContextDto {
+  captureVersion: 0;
+  orderingQuality: "deterministic_approximate";
+}
+
+/**
+ * Dialogue-only owner transcript entry. Constructed by allowlist only —
+ * never by stripping fields from a raw DB/engine row.
+ */
+export interface MatchTranscriptEntryDto {
+  authority: typeof TRANSCRIPT_AUTHORITY_LANE;
+  visibility: TranscriptVisibilityClass;
+  entrySequence: number | null;
+  rowId: number;
+  timestamp: number;
+  timestampIso: string;
+  round: number;
+  phase: string;
+  scope: string;
+  dialogueKind: string | null;
+  speaker: MatchTranscriptSpeakerDto | null;
+  audience: MatchTranscriptAudienceDto | null;
+  text: string;
+  safeContext: TranscriptSafeContext | null;
+  legacyContext?: MatchTranscriptLegacyContextDto;
+  contentTrust: typeof UNTRUSTED_GAME_AUTHORED;
+}
+
+export interface BuildMatchTranscriptEntryInput {
+  id: number;
+  entrySequence: number | null;
+  scope: string;
+  visibilityClass: TranscriptVisibilityClass;
+  round: number;
+  phase: string;
+  timestamp: number;
+  text: string;
+  speakerPlayerId: string | null;
+  fromPlayerId: string | null;
+  audiencePlayerIds: string[] | null;
+  dialogueKind: string | null;
+  safeContext: TranscriptSafeContext | null;
+  captureVersion: number | null;
+  resolvePlayerName: (playerId: string) => string | null;
+  /** When true, attach legacyContext (capture version 0 walks). */
+  legacyOrdering: boolean;
+}
+
+/**
+ * Build an explicit allowlisted owner transcript DTO.
+ * Never copies thinking, room diagnostics, prompts, or producer fields.
+ */
+export function buildMatchTranscriptEntryDto(
+  input: BuildMatchTranscriptEntryInput,
+): MatchTranscriptEntryDto {
+  const speakerId = input.speakerPlayerId
+    ?? (input.fromPlayerId && input.fromPlayerId !== "SYSTEM" && input.fromPlayerId !== "House"
+      ? input.fromPlayerId
+      : null);
+
+  const speaker: MatchTranscriptSpeakerDto | null = speakerId
+    ? {
+        playerId: looksLikeUuid(speakerId) ? speakerId : null,
+        name: input.resolvePlayerName(speakerId)
+          ?? (looksLikeUuid(speakerId) ? null : speakerId),
+      }
+    : input.scope === "system" || input.scope === "public"
+      ? { playerId: null, name: "House" }
+      : null;
+
+  const audienceIds = Array.isArray(input.audiencePlayerIds)
+    ? [...new Set(input.audiencePlayerIds)].sort()
+    : null;
+
+  const safeContext = sanitizeSafeContext(input.safeContext);
+
+  const dto: MatchTranscriptEntryDto = {
+    authority: TRANSCRIPT_AUTHORITY_LANE,
+    visibility: input.visibilityClass,
+    entrySequence: input.entrySequence,
+    rowId: input.id,
+    timestamp: input.timestamp,
+    timestampIso: new Date(input.timestamp).toISOString(),
+    round: input.round,
+    phase: input.phase,
+    scope: input.scope,
+    dialogueKind: input.dialogueKind,
+    speaker,
+    audience: audienceIds ? { playerIds: audienceIds } : null,
+    text: input.text,
+    safeContext,
+    contentTrust: UNTRUSTED_GAME_AUTHORED,
+  };
+
+  if (input.legacyOrdering) {
+    dto.legacyContext = {
+      captureVersion: 0,
+      orderingQuality: "deterministic_approximate",
+    };
+  }
+
+  return dto;
+}
+
+/**
+ * Recursive forbidden-key scan for privacy tests. Returns matching paths.
+ */
+export function findForbiddenTranscriptDtoKeys(
+  value: unknown,
+  path: string = "$",
+): string[] {
+  const hits: string[] = [];
+  if (value === null || value === undefined) return hits;
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      hits.push(...findForbiddenTranscriptDtoKeys(item, `${path}[${index}]`));
+    });
+    return hits;
+  }
+  if (typeof value !== "object") return hits;
+  for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    if ((TRANSCRIPT_DTO_FORBIDDEN_KEYS as readonly string[]).includes(key)) {
+      hits.push(`${path}.${key}`);
+    }
+    hits.push(...findForbiddenTranscriptDtoKeys(child, `${path}.${key}`));
+  }
+  return hits;
+}
+
+function sanitizeSafeContext(
+  value: TranscriptSafeContext | null,
+): TranscriptSafeContext | null {
+  if (!value || value.version !== 1) return null;
+  const out: TranscriptSafeContext = { version: 1 };
+  if (typeof value.roomId === "number") out.roomId = value.roomId;
+  if (typeof value.allianceId === "string") out.allianceId = value.allianceId;
+  if (typeof value.scheduleId === "string") out.scheduleId = value.scheduleId;
+  if (typeof value.sessionId === "string") out.sessionId = value.sessionId;
+  if (typeof value.window === "string") out.window = value.window;
+  if (Array.isArray(value.sessionAudiencePlayerIds)) {
+    out.sessionAudiencePlayerIds = [...value.sessionAudiencePlayerIds];
+  }
+  return out;
+}
+
+function looksLikeUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }

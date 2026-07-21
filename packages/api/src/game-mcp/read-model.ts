@@ -55,6 +55,11 @@ import {
   type MatchAccessContext,
 } from "../services/match-access-context.js";
 import {
+  readMatchTranscriptPage,
+  type MatchTranscriptPageResult,
+  type ReadMatchTranscriptInput,
+} from "../services/match-transcript-read-model.js";
+import {
   exportOwnedSeasonReceipts,
   getOwnedAgentSeasonAnalysis,
   getProducerSeasonDiagnostics,
@@ -365,6 +370,26 @@ export class ProductionGameMcpReadModel {
     const result = await getProducerSeasonDiagnostics(this.db, seasonIdOrSlug);
     if (!result) throw new Error("Season not found");
     return result;
+  }
+
+  /**
+   * Owner-authorized match transcript page (U4 read model).
+   * MCP tool registration is U8; this is the protocol-neutral service entry.
+   */
+  async readMatchTranscript(
+    input: ReadMatchTranscriptInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchTranscriptPageResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchTranscriptPage(this.db, input, {
+      subjectUserId: access.userId,
+    });
   }
 
   async resolveGame(idOrSlug: string): Promise<ProductionGameMcpGameIdentity | null> {
