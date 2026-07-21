@@ -95,16 +95,20 @@ function useIsE2EMode(): boolean {
 
 interface InviteState {
   needsInvite: boolean;
+  dismissInvite: () => void;
   submitInvite: (code: string) => Promise<void>;
   inviteError: string | null;
   submitting: boolean;
+  logout: () => Promise<void>;
 }
 
 const InviteContext = createContext<InviteState>({
   needsInvite: false,
+  dismissInvite: () => {},
   submitInvite: async () => {},
   inviteError: null,
   submitting: false,
+  logout: async () => {},
 });
 
 export function useInvite(): InviteState {
@@ -128,9 +132,11 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
     authenticated,
     account,
     needsInvite,
+    dismissInvite,
     submitInvite,
     inviteError,
     submittingInvite,
+    logout,
   } = useAuth();
   const [identity, setIdentity] = useState<AuthenticatedPublicIdentity | null>(null);
   const [identityResolution, setIdentityResolution] = useState<IdentityResolution>("pending");
@@ -197,10 +203,19 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
 
   const inviteState = useMemo<InviteState>(() => ({
     needsInvite,
+    dismissInvite,
     submitInvite,
     inviteError,
     submitting: submittingInvite,
-  }), [needsInvite, submitInvite, inviteError, submittingInvite]);
+    logout,
+  }), [
+    needsInvite,
+    dismissInvite,
+    submitInvite,
+    inviteError,
+    submittingInvite,
+    logout,
+  ]);
 
   const promptDecision = identityPromptDecision({
     signedIn,

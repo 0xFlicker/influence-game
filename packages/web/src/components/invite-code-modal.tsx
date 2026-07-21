@@ -4,7 +4,14 @@ import { useState } from "react";
 import { useInvite } from "@/app/providers";
 
 export function InviteCodeModal() {
-  const { needsInvite, submitInvite, inviteError, submitting } = useInvite();
+  const {
+    needsInvite,
+    dismissInvite,
+    submitInvite,
+    inviteError,
+    submitting,
+    logout,
+  } = useInvite();
   const [code, setCode] = useState("");
 
   if (!needsInvite) return null;
@@ -44,6 +51,24 @@ export function InviteCodeModal() {
           >
             {submitting ? "Verifying..." : "Submit"}
           </button>
+
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <button
+              type="button"
+              onClick={dismissInvite}
+              className="influence-button-secondary rounded-lg py-3 text-sm font-medium"
+            >
+              Close
+            </button>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              disabled={submitting}
+              className="influence-button-secondary rounded-lg py-3 text-sm font-medium"
+            >
+              Sign out
+            </button>
+          </div>
         </form>
       </div>
     </div>
