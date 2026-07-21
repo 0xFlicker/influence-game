@@ -177,3 +177,141 @@ describe("GameState canonical append timing", () => {
     expect(gs.currentVoteTally.empowerVotes.alice).toBe("bob");
   });
 });
+
+describe("judgment.speech_recorded", () => {
+  it("appends a public closing speech with phase CLOSING_ARGUMENTS", () => {
+    const gs = new GameState(
+      [
+        { id: "iris", name: "Iris" },
+        { id: "maya", name: "Maya" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+
+    const event = gs.recordJudgmentSpeech({
+      speechKind: "closing_argument",
+      playerId: "iris",
+      text: "My game was clean.",
+      provenance: "agent",
+      phase: Phase.CLOSING_ARGUMENTS,
+    });
+
+    expect(event.type).toBe("judgment.speech_recorded");
+    expect(event.phase).toBe(Phase.CLOSING_ARGUMENTS);
+    expect(event.visibility).toBe("public");
+    expect(event.payload).toEqual({
+      speechKind: "closing_argument",
+      playerId: "iris",
+      text: "My game was clean.",
+      provenance: "agent",
+    });
+    expect(canonicalEventIsVisibleTo(event, "public")).toBe(true);
+    expect(canonicalEventIsVisibleTo(event, "player")).toBe(true);
+    expect(canonicalEventIsVisibleTo(event, "producer")).toBe(true);
+  });
+
+  it("is idempotent for the same key and payload, and throws on conflict", () => {
+    const gs = new GameState(
+      [
+        { id: "iris", name: "Iris" },
+        { id: "maya", name: "Maya" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+
+    const first = gs.recordJudgmentSpeech({
+      speechKind: "closing_argument",
+      playerId: "iris",
+      text: "My game was clean.",
+      provenance: "agent",
+      phase: Phase.CLOSING_ARGUMENTS,
+    });
+    const second = gs.recordJudgmentSpeech({
+      speechKind: "closing_argument",
+      playerId: "iris",
+      text: "My game was clean.",
+      provenance: "agent",
+      phase: Phase.CLOSING_ARGUMENTS,
+    });
+    expect(second.sequence).toBe(first.sequence);
+    expect(gs.getCanonicalEvents().filter((e) => e.type === "judgment.speech_recorded")).toHaveLength(1);
+
+    expect(() =>
+      gs.recordJudgmentSpeech({
+        speechKind: "closing_argument",
+        playerId: "iris",
+        text: "Different text",
+        provenance: "agent",
+        phase: Phase.CLOSING_ARGUMENTS,
+      }),
+    ).toThrow(/conflict/);
+  });
+
+  it("allows multiple jury answers from the same finalist to different jurors", () => {
+    const gs = new GameState(
+      [
+        { id: "iris", name: "Iris" },
+        { id: "maya", name: "Maya" },
+        { id: "juror-a", name: "JurorA" },
+        { id: "juror-b", name: "JurorB" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_answer",
+      playerId: "iris",
+      text: "Answer A",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: "juror-a",
+    });
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_answer",
+      playerId: "iris",
+      text: "Answer B",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: "juror-b",
+    });
+
+    const answers = gs
+      .getCanonicalEvents()
+      .filter((e) => e.type === "judgment.speech_recorded" && e.payload.speechKind === "jury_answer");
+    expect(answers).toHaveLength(2);
+  });
+
+  it("rejects empty playerId, missing speech text, and jury_answer without addresseeId", () => {
+    const gs = new GameState([{ id: "iris", name: "Iris" }], { gameId: "game-fixed" });
+
+    expect(() =>
+      gs.recordJudgmentSpeech({
+        speechKind: "closing_argument",
+        playerId: "",
+        text: "hi",
+        provenance: "agent",
+        phase: Phase.CLOSING_ARGUMENTS,
+      }),
+    ).toThrow(/playerId/);
+
+    expect(() =>
+      gs.recordJudgmentSpeech({
+        speechKind: "closing_argument",
+        playerId: "iris",
+        text: "",
+        provenance: "agent",
+        phase: Phase.CLOSING_ARGUMENTS,
+      }),
+    ).toThrow(/non-empty/);
+
+    expect(() =>
+      gs.recordJudgmentSpeech({
+        speechKind: "jury_answer",
+        playerId: "iris",
+        text: "answer",
+        provenance: "agent",
+        phase: Phase.JURY_QUESTIONS,
+      }),
+    ).toThrow(/addresseeId/);
+  });
+});

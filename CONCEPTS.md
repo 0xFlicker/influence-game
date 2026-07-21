@@ -228,6 +228,8 @@ A named alliance whose living membership equals all alive players. Before a vote
 
 A durable domain fact accepted by the game engine at the moment game state changes. Canonical game events are emitted by `GameState`, written to simulator `game-N-events.jsonl`, and distinct from transcript entries and `AgentTurnEvent` observability records: they are the replayable source for rebuilding board state, while transcripts and agent turns explain or display what happened.
 
+Judgment public speeches (opening statements, jury questions/answers, and closing arguments) are accepted public speech facts of type `judgment.speech_recorded`. They carry the public speech text and provenance only — not prompts, thinking, or private traces — and stamp the speech phase so MCP `filter_events` can query `CLOSING_ARGUMENTS` and related Judgment phases. Pre-fix Season 0 games may still have complete envelope logs without these speech events; durable-run `finaleIntegrity` surfaces that gap without invalidating `eventLogStatus`.
+
 ## Game projection
 
 A derived read model rebuilt from canonical game events, such as current board state, a vote ledger, player timeline, room conversation view, or MCP search index. Projections may be cached or indexed, but they must stay rebuildable from the canonical event log and must not infer XState phase transitions.

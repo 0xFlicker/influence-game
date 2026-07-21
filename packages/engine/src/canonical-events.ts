@@ -78,7 +78,16 @@ export type CanonicalGameEventType =
   | "endgame.elimination_resolved"
   | "jury.vote_cast"
   | "jury.winner_determined"
+  | "judgment.speech_recorded"
   | "round.result_recorded";
+
+export type JudgmentSpeechKind =
+  | "opening_statement"
+  | "jury_question"
+  | "jury_answer"
+  | "closing_argument";
+
+export type JudgmentSpeechProvenance = "agent" | "timeout" | "fallback";
 
 const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "game.roster_initialized",
@@ -113,6 +122,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "endgame.elimination_resolved",
   "jury.vote_cast",
   "jury.winner_determined",
+  "judgment.speech_recorded",
   "round.result_recorded",
 ]);
 
@@ -268,6 +278,16 @@ export type CanonicalGameEvent =
         winnerId: UUID;
         method: "majority" | "empower_tiebreaker" | "random_tiebreaker";
         voteCounts: Array<{ id: UUID; name: string; votes: number }>;
+      }
+    >
+  | CanonicalEventEnvelope<
+      "judgment.speech_recorded",
+      {
+        speechKind: JudgmentSpeechKind;
+        playerId: UUID;
+        text: string;
+        provenance: JudgmentSpeechProvenance;
+        addresseeId?: UUID;
       }
     >
   | CanonicalEventEnvelope<"round.result_recorded", { result: RoundResult }>;

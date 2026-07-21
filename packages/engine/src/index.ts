@@ -28,6 +28,8 @@ export type {
   CanonicalGameEventType,
   CanonicalSourcePointer,
   CanonicalSourcePointerKind,
+  JudgmentSpeechKind,
+  JudgmentSpeechProvenance,
 } from "./canonical-events";
 export {
   applyCanonicalEvent,

@@ -2444,6 +2444,26 @@ describe("Full game - endgame integration", () => {
     // Should have a winner
     expect(result.winner).toBeDefined();
     expect(result.winnerName).toBeDefined();
+
+    const events = runner.getCanonicalEvents();
+    const openings = events.filter(
+      (e): e is Extract<CanonicalGameEvent, { type: "judgment.speech_recorded" }> =>
+        e.type === "judgment.speech_recorded" && e.payload.speechKind === "opening_statement",
+    );
+    const closings = events.filter(
+      (e): e is Extract<CanonicalGameEvent, { type: "judgment.speech_recorded" }> =>
+        e.type === "judgment.speech_recorded" && e.payload.speechKind === "closing_argument",
+    );
+    const juryVotes = events.filter((e) => e.type === "jury.vote_cast");
+    expect(openings).toHaveLength(2);
+    expect(closings).toHaveLength(2);
+    expect(openings.every((e) => e.phase === Phase.OPENING_STATEMENTS && e.visibility === "public")).toBe(true);
+    expect(closings.every((e) => e.phase === Phase.CLOSING_ARGUMENTS && e.visibility === "public")).toBe(true);
+    if (juryVotes.length > 0) {
+      const maxClosingSeq = Math.max(...closings.map((e) => e.sequence));
+      const minVoteSeq = Math.min(...juryVotes.map((e) => e.sequence));
+      expect(maxClosingSeq).toBeLessThan(minVoteSeq);
+    }
   });
 
   it("6-player game exercises all endgame stages", async () => {

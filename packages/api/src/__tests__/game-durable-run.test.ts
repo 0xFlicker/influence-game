@@ -7,6 +7,7 @@ import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js
 import { writeGameCheckpoint } from "../services/game-checkpoints.js";
 import { createEvidenceManifest } from "../services/game-evidence.js";
 import {
+  buildFinaleIntegrity,
   getDurableRunInspection,
 } from "../services/game-durable-run.js";
 import { getPersistedGameProjectionBeforeTerminalOutcome } from "../services/game-projection-read-model.js";
@@ -32,6 +33,62 @@ import {
 } from "./durable-run-test-utils.js";
 
 const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
+
+describe("buildFinaleIntegrity", () => {
+  test("is not_applicable without jury.winner_determined", () => {
+    expect(buildFinaleIntegrity([{ type: "round.started", payload: { round: 1 } }])).toMatchObject({
+      judgmentDetected: false,
+      status: "not_applicable",
+      findings: [],
+    });
+  });
+
+  test("flags missing openings and closings for completed Judgment logs", () => {
+    const integrity = buildFinaleIntegrity([
+      {
+        type: "jury.winner_determined",
+        payload: { winnerId: "iris", method: "majority", tally: { votes: {} }, voteCounts: [] },
+      },
+    ]);
+    expect(integrity.judgmentDetected).toBe(true);
+    expect(integrity.status).toBe("incomplete");
+    expect(integrity.findings.map((f) => f.code).sort()).toEqual([
+      "judgment_closing_argument_missing",
+      "judgment_opening_statement_missing",
+    ]);
+  });
+
+  test("is complete when two openings and two closings are present", () => {
+    const integrity = buildFinaleIntegrity([
+      {
+        type: "judgment.speech_recorded",
+        payload: { speechKind: "opening_statement", playerId: "a", text: "o1", provenance: "agent" },
+      },
+      {
+        type: "judgment.speech_recorded",
+        payload: { speechKind: "opening_statement", playerId: "b", text: "o2", provenance: "agent" },
+      },
+      {
+        type: "judgment.speech_recorded",
+        payload: { speechKind: "closing_argument", playerId: "a", text: "c1", provenance: "agent" },
+      },
+      {
+        type: "judgment.speech_recorded",
+        payload: { speechKind: "closing_argument", playerId: "b", text: "c2", provenance: "timeout" },
+      },
+      {
+        type: "jury.winner_determined",
+        payload: { winnerId: "a", method: "majority", tally: { votes: {} }, voteCounts: [] },
+      },
+    ]);
+    expect(integrity).toMatchObject({
+      status: "complete",
+      openingStatementCount: 2,
+      closingArgumentCount: 2,
+      findings: [],
+    });
+  });
+});
 
 async function waitForCompletedDurableInspection(db: DrizzleDB, gameId: string) {
   for (let attempt = 0; attempt < 100; attempt++) {

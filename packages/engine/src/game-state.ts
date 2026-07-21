@@ -8,7 +8,15 @@
 
 import { randomUUID } from "crypto";
 import { CanonicalEventLog, type CanonicalEventListener, type CanonicalEventSubscriptionOptions } from "./canonical-event-log";
-import type { CanonicalEventSource, CanonicalEventVisibility, CanonicalGameEvent, CanonicalGameEventType, CanonicalSourcePointer } from "./canonical-events";
+import type {
+  CanonicalEventSource,
+  CanonicalEventVisibility,
+  CanonicalGameEvent,
+  CanonicalGameEventType,
+  CanonicalSourcePointer,
+  JudgmentSpeechKind,
+  JudgmentSpeechProvenance,
+} from "./canonical-events";
 import {
   resolveInitialExposureBench,
   resolveShieldReplacement,
@@ -1093,6 +1101,68 @@ export class GameState {
       visibility: "public",
     });
     this._players.set(playerId, { ...player, lastMessage: message });
+  }
+
+  /**
+   * Record an accepted public Judgment speech as a durable canonical fact.
+   * Transcript/agent-turn emission remains the caller's responsibility.
+   */
+  recordJudgmentSpeech(input: {
+    speechKind: JudgmentSpeechKind;
+    playerId: UUID;
+    text: string;
+    provenance: JudgmentSpeechProvenance;
+    phase: Phase;
+    addresseeId?: UUID;
+    sourcePointers?: CanonicalSourcePointer[];
+  }): CanonicalGameEvent {
+    const { speechKind, playerId, text, provenance, phase, addresseeId } = input;
+    if (!playerId) throw new Error("recordJudgmentSpeech requires playerId");
+    if (!speechKind) throw new Error("recordJudgmentSpeech requires speechKind");
+    if (typeof text !== "string" || text.length === 0) {
+      throw new Error("recordJudgmentSpeech requires non-empty public text");
+    }
+    if (speechKind === "jury_answer" && !addresseeId) {
+      throw new Error("recordJudgmentSpeech jury_answer requires addresseeId");
+    }
+
+    const existing = this.canonicalEvents.list().find(
+      (event): event is Extract<CanonicalGameEvent, { type: "judgment.speech_recorded" }> => {
+        if (event.type !== "judgment.speech_recorded") return false;
+        if (event.round !== this._round || event.phase !== phase) return false;
+        if (event.payload.speechKind !== speechKind) return false;
+        if (event.payload.playerId !== playerId) return false;
+        if (speechKind === "jury_answer") {
+          return event.payload.addresseeId === addresseeId;
+        }
+        return true;
+      },
+    );
+    if (existing) {
+      const sameText = existing.payload.text === text;
+      const sameProvenance = existing.payload.provenance === provenance;
+      const sameAddressee = existing.payload.addresseeId === addresseeId;
+      if (sameText && sameProvenance && sameAddressee) return existing;
+      throw new Error(
+        `recordJudgmentSpeech conflict for ${speechKind} player=${playerId} phase=${phase}`,
+      );
+    }
+
+    return this.appendCanonicalEvent(
+      "judgment.speech_recorded",
+      {
+        speechKind,
+        playerId,
+        text,
+        provenance,
+        ...(addresseeId ? { addresseeId } : {}),
+      },
+      {
+        phase,
+        visibility: "public",
+        sourcePointers: input.sourcePointers ?? [],
+      },
+    );
   }
 
   /**

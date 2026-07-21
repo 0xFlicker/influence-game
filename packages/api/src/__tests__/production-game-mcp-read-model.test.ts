@@ -915,6 +915,73 @@ describe("ProductionGameMcpReadModel", () => {
     });
   });
 
+  test("filters Judgment closing speeches by phase for public and producer visibility", async () => {
+    const gameId = await insertGame(db, {
+      slug: "mcp-judgment-speech-filter",
+      status: "completed",
+    });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const base = createCanonicalEventFixture(gameId);
+    const last = base.at(-1)!;
+    const closings: CanonicalGameEvent[] = [
+      {
+        sequence: last.sequence + 1,
+        gameId,
+        round: 2,
+        phase: Phase.CLOSING_ARGUMENTS,
+        type: "judgment.speech_recorded",
+        timestamp: "2026-06-20T00:00:10.000Z",
+        source: "engine",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          speechKind: "closing_argument",
+          playerId: "atlas",
+          text: "My game was clean and earned.",
+          provenance: "agent",
+        },
+      },
+      {
+        sequence: last.sequence + 2,
+        gameId,
+        round: 2,
+        phase: Phase.CLOSING_ARGUMENTS,
+        type: "judgment.speech_recorded",
+        timestamp: "2026-06-20T00:00:11.000Z",
+        source: "engine",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          speechKind: "closing_argument",
+          playerId: "echo",
+          text: "Vote for the social game.",
+          provenance: "timeout",
+        },
+      },
+    ];
+    await appendGameEvents(db, { gameId, ownerEpoch, events: [...base, ...closings] });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const producer = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      phase: Phase.CLOSING_ARGUMENTS,
+      visibilityMode: "producer",
+    }, PRODUCER_ACCESS);
+    expect(producer.canonicalGameFacts.events).toHaveLength(2);
+    expect(producer.canonicalGameFacts.events.every((row) => row.eventType === "judgment.speech_recorded")).toBe(true);
+    expect(JSON.stringify(producer.canonicalGameFacts.events)).toContain("My game was clean and earned.");
+    expect(JSON.stringify(producer.canonicalGameFacts.events)).not.toContain("thinking");
+
+    const publicMode = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      phase: Phase.CLOSING_ARGUMENTS,
+      visibilityMode: "public",
+    }, PRODUCER_ACCESS);
+    expect(publicMode.canonicalGameFacts.events).toHaveLength(2);
+  });
+
   test("requires an explicit agent selector when a user owns multiple players in a game", async () => {
     const userId = randomUUID();
     await db.insert(schema.users).values({

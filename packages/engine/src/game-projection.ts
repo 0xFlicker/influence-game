@@ -365,6 +365,10 @@ export function applyCanonicalEvent(
       };
       break;
     }
+    case "judgment.speech_recorded": {
+      // Accepted public speech fact — no board mutation.
+      break;
+    }
     case "round.result_recorded": {
       projection.roundResults.push({ ...event.payload.result });
       break;
