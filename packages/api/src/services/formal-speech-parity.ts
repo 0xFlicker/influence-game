@@ -330,7 +330,7 @@ export function buildFormalSpeechParity(
     }
   }
 
-  for (const [key, transcript] of transcriptsByKey) {
+  for (const [key] of transcriptsByKey) {
     if (eventsByKey.has(key)) continue;
     const parsed = parseCorrelationKeyLaneKind(key);
     findings.push({
