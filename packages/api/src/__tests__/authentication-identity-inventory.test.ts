@@ -240,9 +240,12 @@ describe("authentication identity inventory", () => {
     expect(attempts).toBe(2);
   });
 
-  test("counts only imported-* users as non-authenticatable", async () => {
+  test("excludes imported, service, and test users from credential readiness", async () => {
     await insertUser(db, "imported-user", "imported-simulation-42");
-    await insertUser(db, "ordinary-user");
+    await insertUser(db, "scheduler-user", "0x0000000000000000000000000000000000000000");
+    await insertUser(db, "staging-bot-user");
+    await insertUser(db, "email-user", null, "player@example.com");
+    await insertUser(db, "wallet-user", "0x1111111111111111111111111111111111111111");
 
     const result = await run(
       db,
@@ -252,11 +255,30 @@ describe("authentication identity inventory", () => {
     );
 
     expect(result.status).toBe("blocked");
-    expect(result.counts.nonAuthenticatableUsers).toBe(1);
-    expect(result.counts.ordinaryUsersWithoutCredential).toBe(1);
+    expect(result.counts.nonAuthenticatableUsers).toBe(3);
+    expect(result.counts.ordinaryUsersWithoutCredential).toBe(2);
     expect(result.issues.map((entry) => entry.code))
       .toContain("ordinary_user_missing_credential");
-    expect(JSON.stringify(result)).not.toContain("ordinary-user");
+    expect(JSON.stringify(result)).not.toContain("email-user");
+    expect(JSON.stringify(result)).not.toContain("wallet-user");
+  });
+
+  test("preserves a provider-backed user whose local identity fields are blank", async () => {
+    const subject = "did:privy:provider-backed-blank-user";
+    await insertUser(db, subject);
+
+    const result = await run(
+      db,
+      "dry-run",
+      staticSource([page([emailProfile(subject, EMAIL)])]),
+      memoryCheckpointStore(),
+    );
+
+    expect(result.status).toBe("ready");
+    expect(result.counts.mappedIdentities).toBe(1);
+    expect(result.counts.credentialsInserted).toBe(1);
+    expect(result.counts.nonAuthenticatableUsers).toBe(0);
+    expect(result.counts.ordinaryUsersWithoutCredential).toBe(0);
   });
 
   test("counts provider-only identities and writes only mapped identities", async () => {
@@ -312,7 +334,7 @@ describe("authentication identity inventory", () => {
   test("dry-run readiness still blocks ordinary users without a simulated credential", async () => {
     const mappedSubject = "did:privy:dry-run-mapped";
     await insertUser(db, mappedSubject);
-    await insertUser(db, "unresolved-user");
+    await insertUser(db, "unresolved-user", null, "unresolved@example.com");
 
     const result = await run(
       db,
@@ -428,7 +450,7 @@ describe("authentication identity inventory", () => {
 
   test("retired credentials block and do not satisfy ordinary-user readiness", async () => {
     const subject = "did:privy:retired";
-    await insertUser(db, subject);
+    await insertUser(db, subject, null, EMAIL);
     await db.insert(schema.authenticationCredentials).values({
       userId: subject,
       provider: "privy",

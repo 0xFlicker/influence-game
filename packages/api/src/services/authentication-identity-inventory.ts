@@ -21,6 +21,7 @@ export const INVENTORY_RESULT_VERSION = "authentication-identity-inventory/v1";
 const CHECKPOINT_VERSION = 1;
 const DEFAULT_PAGE_SIZE = 100;
 const DEFAULT_MAX_RETRIES = 3;
+const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
 export type AuthenticationIdentityInventoryMode =
   | "dry-run"
@@ -573,6 +574,7 @@ async function addDatabaseReadiness(
     db.select({
       id: schema.users.id,
       walletAddress: schema.users.walletAddress,
+      email: schema.users.email,
     }).from(schema.users),
     db.select({ userId: schema.authenticationCredentials.userId })
       .from(schema.authenticationCredentials)
@@ -583,15 +585,24 @@ async function addDatabaseReadiness(
     ...simulated.credentialUsersBySubject.values(),
   ]);
   for (const user of users) {
-    if (isImportedSyntheticPlayer(user.walletAddress)) {
+    if (bound.has(user.id)) continue;
+    if (isNonAuthenticatableDatabaseUser(user)) {
       counts.nonAuthenticatableUsers += 1;
       continue;
     }
-    if (!bound.has(user.id)) {
-      counts.ordinaryUsersWithoutCredential += 1;
-      issues.push(issue("ordinary_user_missing_credential", user.id, hmacKey));
-    }
+    counts.ordinaryUsersWithoutCredential += 1;
+    issues.push(issue("ordinary_user_missing_credential", user.id, hmacKey));
   }
+}
+
+function isNonAuthenticatableDatabaseUser(user: {
+  walletAddress: string | null;
+  email: string | null;
+}): boolean {
+  if (isImportedSyntheticPlayer(user.walletAddress)) return true;
+  const walletAddress = user.walletAddress?.trim().toLowerCase();
+  if (walletAddress === ZERO_ADDRESS) return true;
+  return !walletAddress && !user.email?.trim();
 }
 
 function evidenceFromPrivyRestUser(profile: unknown): VerifiedProviderEvidence {
