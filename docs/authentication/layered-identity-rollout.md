@@ -113,6 +113,9 @@ bun run auth:identity-inventory -- --mode final-delta
 ```
 
 - `dry-run` reads Privy and the database without writing either.
+  Its readiness result includes the credential bindings it proved it would
+  insert, so `ordinaryUsersWithoutCredential` contains only users still
+  unresolved after the proposed inventory.
 - `write` stores one provider page per transaction and advances the checkpoint
   only after commit. Rerun it after interruption to resume.
 - `final-delta` rereads Privy without writing and confirms every Privy identity
