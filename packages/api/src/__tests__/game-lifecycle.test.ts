@@ -466,6 +466,43 @@ describe("Game lifecycle integration", () => {
 
     expect(row.fromPlayerId).toBeNull();
     expect(row.roomMetadata ? JSON.parse(row.roomMetadata) : null).toEqual(roomMetadata);
+    // Legacy capture leaves modern product columns null.
+    expect(row.entrySequence).toBeNull();
+    expect(row.audiencePlayerIds).toBeNull();
+  });
+
+  test("serializeTranscriptEntry stamps modern fields for current-capture dialogue", () => {
+    const row = serializeTranscriptEntry("game-modern", {
+      round: 1,
+      phase: Phase.LOBBY,
+      timestamp: 123,
+      from: "Alice",
+      scope: "public",
+      text: "Hello",
+      speakerPlayerId: "player-alice",
+      entrySequence: 1,
+      dialogueKind: "public_speech",
+      audiencePlayerIds: [],
+      dialogueContext: { version: 1 },
+    }, { transcriptCaptureVersion: 1 });
+
+    expect(row.entrySequence).toBe(1);
+    expect(row.speakerPlayerId).toBe("player-alice");
+    expect(row.audiencePlayerIds).toEqual([]);
+    expect(row.captureVersion).toBe(1);
+    expect(row.dialogueKind).toBe("public_speech");
+    expect(row.safeContext).toEqual({ version: 1 });
+  });
+
+  test("serializeTranscriptEntry rejects legacy-shaped dialogue in current-capture games", () => {
+    expect(() => serializeTranscriptEntry("game-modern", {
+      round: 1,
+      phase: Phase.LOBBY,
+      timestamp: 123,
+      from: "Alice",
+      scope: "public",
+      text: "Hello",
+    }, { transcriptCaptureVersion: 1 })).toThrow(/entrySequence/);
   });
 
   test("GameRunner produces transcript and results", async () => {

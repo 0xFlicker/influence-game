@@ -963,12 +963,20 @@ async function runGameAsync(
       try {
         const partialTranscript = runner.transcriptLog.slice(persistedTranscriptEntries);
         if (partialTranscript.length > 0) {
+          const captureRow = (await db
+            .select({ transcriptCaptureVersion: schema.games.transcriptCaptureVersion })
+            .from(schema.games)
+            .where(eq(schema.games.id, gameId))
+            .limit(1))[0];
+          const transcriptCaptureVersion = captureRow?.transcriptCaptureVersion ?? 0;
           const CHUNK_SIZE = 100;
           for (let i = 0; i < partialTranscript.length; i += CHUNK_SIZE) {
             const chunk = partialTranscript.slice(i, i + CHUNK_SIZE);
             await db.insert(schema.transcripts)
               .values(
-                chunk.map((entry) => serializeTranscriptEntry(gameId, entry)),
+                chunk.map((entry) => serializeTranscriptEntry(gameId, entry, {
+                  transcriptCaptureVersion,
+                })),
               );
           }
           console.error(`[game-lifecycle] Saved ${partialTranscript.length} partial transcript entries for game ${gameId}`);

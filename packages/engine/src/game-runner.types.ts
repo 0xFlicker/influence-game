@@ -291,7 +291,8 @@ export interface GameCheckpointCapsule {
   playerContinuityCapsules?: PlayerContinuityCapsule[];
   houseContinuityCapsule?: HouseContinuityCapsule | null;
   transcriptReplay?: {
-    version: 1;
+    /** 1 = legacy safe-entry shape; 2 = normalized dialogue identity fields. */
+    version: 1 | 2;
     entries: TranscriptEntry[];
   } | null;
   /** Phase-boundary runtime evidence for hydration passport validation (v1). */
@@ -1090,6 +1091,34 @@ export interface RecentDecisionContextEntry {
 // Transcript entry
 // ---------------------------------------------------------------------------
 
+/** Viewer-safe dialogue kind for product transcript capture (current contract). */
+export type TranscriptDialogueKind =
+  | "public_speech"
+  | "mingle_speech"
+  | "huddle_speech"
+  | "whisper_speech"
+  | "system_phase_banner"
+  | "system_room_allocation"
+  | "system_elimination"
+  | "system_announcement";
+
+/**
+ * Versioned viewer-safe dialogue context. Excludes room diagnostics, cognition,
+ * prompts, and producer metadata.
+ */
+export interface TranscriptDialogueContextV1 {
+  version: 1;
+  roomId?: number;
+  allianceId?: string;
+  scheduleId?: string;
+  sessionId?: string;
+  window?: string;
+  /** Exact session-time membership (huddles); IDs only. */
+  sessionAudiencePlayerIds?: string[];
+}
+
+export type TranscriptDialogueContext = TranscriptDialogueContextV1;
+
 export interface TranscriptEntry {
   round: number;
   phase: Phase;
@@ -1118,4 +1147,18 @@ export interface TranscriptEntry {
     excluded: string[];
     diagnostics?: MingleSessionDiagnostics;
   };
+  // --- Current-capture product dialogue fields (absent on legacy replay seeds) ---
+  /** Normalized speaker player UUID; null/omitted for House/system without a player actor. */
+  speakerPlayerId?: string | null;
+  /**
+   * 1-based game-local product dialogue sequence. Present only for public, mingle,
+   * whisper, huddle, and allowlisted system dialogue. Never set on diary/thinking.
+   */
+  entrySequence?: number;
+  /** Viewer-safe dialogue kind for modern system/public classification. */
+  dialogueKind?: TranscriptDialogueKind;
+  /** Exact audience player UUIDs at emission time; empty array = public/all-viewers. */
+  audiencePlayerIds?: string[];
+  /** Versioned viewer-safe context (no diagnostics). */
+  dialogueContext?: TranscriptDialogueContext;
 }

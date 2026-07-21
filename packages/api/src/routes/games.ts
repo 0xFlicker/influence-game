@@ -32,6 +32,10 @@ import {
   markOwnerStartupFailed,
 } from "../services/game-ownership.js";
 import {
+  currentCaptureVersionFields,
+  initialGameTranscriptStateValues,
+} from "../services/transcript-capture.js";
+import {
   getRedactedKernelHealth,
   getRedactedKernelHealthByGameId,
 } from "../services/game-kernel-health.js";
@@ -230,17 +234,22 @@ export function createGameRoutes(
     });
 
     const user = c.get("user");
-    await db.insert(schema.games)
-      .values({
-        id: gameId,
-        slug,
-        config: JSON.stringify(config),
-        status: "waiting",
-        cognitiveArtifactCaptureVersion: 1,
-        minPlayers,
-        maxPlayers,
-        createdById: user?.id ?? null,
-      });
+    await db.transaction(async (tx) => {
+      await tx.insert(schema.games)
+        .values({
+          id: gameId,
+          slug,
+          config: JSON.stringify(config),
+          status: "waiting",
+          ...currentCaptureVersionFields(),
+          minPlayers,
+          maxPlayers,
+          createdById: user?.id ?? null,
+        });
+      await tx.insert(schema.gameTranscriptStates).values(
+        initialGameTranscriptStateValues(gameId),
+      );
+    });
     await tryRefreshGameWatchStateSummary(db, gameId, "game_created");
 
     return c.json({ id: gameId, slug }, 201);

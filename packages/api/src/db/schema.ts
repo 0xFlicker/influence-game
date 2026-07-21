@@ -277,6 +277,10 @@ export const games = pgTable("games", {
   freeDrawRequestKey: text("free_draw_request_key"),
   seasonId: text("season_id").references(() => seasons.id),
   cognitiveArtifactCaptureVersion: integer("cognitive_artifact_capture_version").notNull().default(0),
+  /** Product dialogue capture contract. 0 = legacy/historical; 1 = current sequenced capture. */
+  transcriptCaptureVersion: integer("transcript_capture_version").notNull().default(0),
+  /** Formal endgame speech capture contract. 0 = legacy/historical; 1 = current dual-write. */
+  formalSpeechCaptureVersion: integer("formal_speech_capture_version").notNull().default(0),
   minPlayers: integer("min_players").notNull().default(4),
   maxPlayers: integer("max_players").notNull().default(12),
   createdById: text("created_by_id").references(() => users.id),
@@ -487,6 +491,38 @@ export const gamePlayers = pgTable("game_players", {
 
 export type TranscriptScope = "public" | "mingle" | "huddle" | "whisper" | "system" | "diary" | "thinking";
 
+/** Viewer-safe dialogue kind for current-capture system/public classification. */
+export type TranscriptDialogueKind =
+  | "public_speech"
+  | "mingle_speech"
+  | "huddle_speech"
+  | "whisper_speech"
+  | "system_phase_banner"
+  | "system_room_allocation"
+  | "system_elimination"
+  | "system_announcement";
+
+export type GameTranscriptTerminalState =
+  | "unset"
+  | "complete"
+  | "partial"
+  | "unavailable"
+  | "degraded";
+
+/** Versioned viewer-safe dialogue context stored on modern transcript rows. */
+export type TranscriptSafeContextV1 = {
+  version: 1;
+  roomId?: number;
+  allianceId?: string;
+  scheduleId?: string;
+  sessionId?: string;
+  window?: string;
+  /** Session-time membership snapshot for huddles (IDs only). */
+  sessionAudiencePlayerIds?: string[];
+};
+
+export type TranscriptSafeContext = TranscriptSafeContextV1;
+
 export const transcripts = pgTable("transcripts", {
   id: serial("id").primaryKey(),
   gameId: text("game_id")
@@ -494,7 +530,7 @@ export const transcripts = pgTable("transcripts", {
     .references(() => games.id),
   round: integer("round").notNull(),
   phase: text("phase").notNull(), // Phase enum value
-  fromPlayerId: text("from_player_id"), // null for system messages
+  fromPlayerId: text("from_player_id"), // null for system messages; historically name-valued
   scope: text("scope").notNull().$type<TranscriptScope>().default("public"),
   toPlayerIds: text("to_player_ids"), // JSON array for Mingle room messages (or legacy whispers), null otherwise
   roomId: integer("room_id"), // Mingle room ID (1-indexed; legacy whisper too), null for non-room entries
@@ -502,10 +538,78 @@ export const transcripts = pgTable("transcripts", {
   text: text("text").notNull(),
   thinking: text("thinking"), // Per-message thinking (null for old entries / system messages)
   timestamp: bigint("timestamp", { mode: "number" }).notNull(), // Unix ms
+  // --- Current-capture product dialogue identity (nullable; never backfilled on legacy rows) ---
+  /** 1-based game-local product dialogue sequence; null for legacy and diary/thinking. */
+  entrySequence: integer("entry_sequence"),
+  /** First durable canonical event sequence known when this row was sealed (U2 fills). */
+  firstDurableEventSequence: integer("first_durable_event_sequence"),
+  /** Normalized speaker player UUID; null for House/system without a player actor. */
+  speakerPlayerId: text("speaker_player_id"),
+  /** Session-time / room audience player UUIDs; empty array means public/all-viewers. */
+  audiencePlayerIds: text("audience_player_ids").array(),
+  /** Capture version of the game when this row was written; null on legacy rows. */
+  captureVersion: integer("capture_version"),
+  /** Viewer-safe dialogue kind; required for current-capture system dialogue. */
+  dialogueKind: text("dialogue_kind").$type<TranscriptDialogueKind>(),
+  /** Versioned viewer-safe context (no diagnostics/cognition). */
+  safeContext: jsonb("safe_context").$type<TranscriptSafeContext>(),
   createdAt: text("created_at")
     .notNull()
     .default(sql`now()::text`),
-});
+}, (table) => [
+  uniqueIndex("transcripts_game_id_entry_sequence_unique")
+    .on(table.gameId, table.entrySequence)
+    .where(sql`${table.entrySequence} IS NOT NULL`),
+  index("transcripts_game_id_entry_sequence_idx")
+    .on(table.gameId, table.entrySequence)
+    .where(sql`${table.entrySequence} IS NOT NULL`),
+  index("transcripts_game_id_timestamp_id_idx").on(table.gameId, table.timestamp, table.id),
+  index("transcripts_audience_player_ids_gin_idx").using("gin", table.audiencePlayerIds),
+  index("transcripts_speaker_player_id_idx").on(table.gameId, table.speakerPlayerId),
+  check(
+    "transcripts_entry_sequence_positive_check",
+    sql`${table.entrySequence} IS NULL OR ${table.entrySequence} > 0`,
+  ),
+  check(
+    "transcripts_first_durable_event_sequence_positive_check",
+    sql`${table.firstDurableEventSequence} IS NULL OR ${table.firstDurableEventSequence} > 0`,
+  ),
+  check(
+    "transcripts_capture_version_positive_check",
+    sql`${table.captureVersion} IS NULL OR ${table.captureVersion} > 0`,
+  ),
+  // Current-capture dialogue scopes require sequence, audience, and context.
+  check(
+    "transcripts_current_capture_dialogue_fields_check",
+    sql`
+      ${table.captureVersion} IS NULL
+      OR ${table.captureVersion} < 1
+      OR ${table.scope} IN ('diary', 'thinking')
+      OR (
+        ${table.entrySequence} IS NOT NULL
+        AND ${table.audiencePlayerIds} IS NOT NULL
+        AND ${table.safeContext} IS NOT NULL
+        AND (
+          ${table.scope} <> 'system'
+          OR ${table.dialogueKind} IS NOT NULL
+        )
+      )
+    `,
+  ),
+  // Diary/thinking never participate in product dialogue identity.
+  check(
+    "transcripts_non_dialogue_scope_fields_check",
+    sql`
+      ${table.scope} NOT IN ('diary', 'thinking')
+      OR (
+        ${table.entrySequence} IS NULL
+        AND ${table.audiencePlayerIds} IS NULL
+        AND ${table.safeContext} IS NULL
+        AND ${table.dialogueKind} IS NULL
+      )
+    `,
+  ),
+]);
 
 // ---------------------------------------------------------------------------
 // Game Results
@@ -786,6 +890,69 @@ export const gameRunOwners = pgTable("game_run_owners", {
   check("game_run_owners_last_persisted_event_sequence_check", sql`${table.lastPersistedEventSequence} >= 0`),
 ]);
 
+/**
+ * Per-game product dialogue watermark and terminal settlement seal.
+ * One row per current-capture game; created at game creation or clean first-start upgrade.
+ * Monotonic advance is enforced by the U2 transaction service; DB only checks nonnegativity.
+ */
+export const gameTranscriptStates = pgTable("game_transcript_states", {
+  gameId: text("game_id")
+    .primaryKey()
+    .references(() => games.id, { onDelete: "cascade" }),
+  captureVersion: integer("capture_version").notNull().default(1),
+  /** Owner epoch of the last successful product watermark advance; null until first boundary. */
+  ownerEpoch: text("owner_epoch"),
+  /** Canonical event sequence of the last published product boundary; 0 = none yet. */
+  durableEventSequence: integer("durable_event_sequence").notNull().default(0),
+  durableEventHash: text("durable_event_hash"),
+  /** Contiguous max product dialogue sequence published (1-based); 0 = empty. */
+  durableSequence: integer("durable_sequence").notNull().default(0),
+  /** Count of product dialogue rows through durableSequence. */
+  durableCount: integer("durable_count").notNull().default(0),
+  /** Chained SHA-256 prefix digest over sequences 1..durableSequence. */
+  prefixDigest: text("prefix_digest").notNull(),
+  terminalState: text("terminal_state").notNull().$type<GameTranscriptTerminalState>().default("unset"),
+  terminalCount: integer("terminal_count"),
+  terminalDigest: text("terminal_digest"),
+  safeDegradationCode: text("safe_degradation_code"),
+  createdAt: text("created_at")
+    .notNull()
+    .default(sql`now()::text`),
+  updatedAt: text("updated_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  check("game_transcript_states_capture_version_check", sql`${table.captureVersion} > 0`),
+  check("game_transcript_states_durable_event_sequence_check", sql`${table.durableEventSequence} >= 0`),
+  check("game_transcript_states_durable_sequence_check", sql`${table.durableSequence} >= 0`),
+  check("game_transcript_states_durable_count_check", sql`${table.durableCount} >= 0`),
+  check(
+    "game_transcript_states_prefix_digest_check",
+    sql`${table.prefixDigest} ~ '^sha256:[0-9a-f]{64}$'`,
+  ),
+  check(
+    "game_transcript_states_terminal_state_check",
+    sql`${table.terminalState} IN ('unset', 'complete', 'partial', 'unavailable', 'degraded')`,
+  ),
+  check(
+    "game_transcript_states_terminal_count_check",
+    sql`${table.terminalCount} IS NULL OR ${table.terminalCount} >= 0`,
+  ),
+  check(
+    "game_transcript_states_terminal_digest_check",
+    sql`${table.terminalDigest} IS NULL OR ${table.terminalDigest} ~ '^sha256:[0-9a-f]{64}$'`,
+  ),
+  check(
+    "game_transcript_states_durable_event_hash_check",
+    sql`${table.durableEventHash} IS NULL OR ${table.durableEventHash} ~ '^sha256:[0-9a-f]{64}$'`,
+  ),
+  foreignKey({
+    name: "game_transcript_states_game_owner_fk",
+    columns: [table.gameId, table.ownerEpoch],
+    foreignColumns: [gameRunOwners.gameId, gameRunOwners.ownerEpoch],
+  }),
+]);
+
 export const gameEvents = pgTable("game_events", {
   id: serial("id").primaryKey(),
   gameId: text("game_id")
@@ -862,7 +1029,7 @@ export const gameCompletionSettlements = pgTable("game_completion_settlements", 
   }),
   check("game_completion_settlements_state_check", sql`${table.state} IN ('pending', 'repair_required', 'completed')`),
   check("game_completion_settlements_event_sequence_check", sql`${table.finalEventSequence} > 0`),
-  check("game_completion_settlements_payload_schema_version_check", sql`${table.payloadSchemaVersion} = 1`),
+  check("game_completion_settlements_payload_schema_version_check", sql`${table.payloadSchemaVersion} IN (1, 2)`),
   check("game_completion_settlements_attempt_count_check", sql`${table.attemptCount} >= 0`),
   check("game_completion_settlements_final_event_hash_check", sql`${table.finalEventHash} ~ '^sha256:[0-9a-f]{64}$'`),
   check("game_completion_settlements_payload_hash_check", sql`${table.payloadHash} ~ '^sha256:[0-9a-f]{64}$'`),

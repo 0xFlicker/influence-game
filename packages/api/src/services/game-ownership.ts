@@ -1,4 +1,4 @@
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -12,6 +12,13 @@ import {
   type RosterFreezeErrorCode,
   type RosterFreezeErrorReason,
 } from "./roster-freeze.js";
+import {
+  FORMAL_SPEECH_CAPTURE_VERSION,
+  initialGameTranscriptStateValues,
+  TRANSCRIPT_CAPTURE_VERSION,
+} from "./transcript-capture.js";
+
+type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
 export interface GameOwnerClaim {
   ownerEpoch: string;
@@ -67,7 +74,11 @@ export async function acquireGameRunOwner(
   try {
     const claim = await db.transaction(async (tx) => {
       const game = (await tx
-        .select({ status: schema.games.status })
+        .select({
+          status: schema.games.status,
+          transcriptCaptureVersion: schema.games.transcriptCaptureVersion,
+          formalSpeechCaptureVersion: schema.games.formalSpeechCaptureVersion,
+        })
         .from(schema.games)
         .where(eq(schema.games.id, gameId))
         .for("update"))[0];
@@ -81,6 +92,15 @@ export async function acquireGameRunOwner(
             ? "Game is already running"
             : "Game can only be started from waiting status",
           statusCode: game.status === "in_progress" ? 409 as const : 400 as const,
+        };
+      }
+
+      const captureUpgrade = await bootstrapTranscriptCaptureAtFirstStart(tx, gameId, game);
+      if (!captureUpgrade.ok) {
+        return {
+          ok: false as const,
+          error: captureUpgrade.error,
+          statusCode: 400 as const,
         };
       }
 
@@ -128,6 +148,120 @@ export async function acquireGameRunOwner(
       }),
     };
   }
+}
+
+type FirstStartCaptureGame = {
+  transcriptCaptureVersion: number;
+  formalSpeechCaptureVersion: number;
+};
+
+/**
+ * Locked first-start only: upgrade a pre-deployment waiting game to current
+ * transcript/formal-speech capture versions when absence checks prove no
+ * gameplay, transcript, checkpoint, run owner, settlement, or result exists.
+ * Ambiguous waiting records fail start rather than becoming live version-0 games.
+ */
+async function bootstrapTranscriptCaptureAtFirstStart(
+  tx: DrizzleTransaction,
+  gameId: string,
+  game: FirstStartCaptureGame,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const currentTranscript = game.transcriptCaptureVersion === TRANSCRIPT_CAPTURE_VERSION;
+  const currentFormal = game.formalSpeechCaptureVersion === FORMAL_SPEECH_CAPTURE_VERSION;
+
+  if (currentTranscript && currentFormal) {
+    // Ensure state row exists for current-capture games created before state stamping.
+    const existingState = (await tx
+      .select({ gameId: schema.gameTranscriptStates.gameId })
+      .from(schema.gameTranscriptStates)
+      .where(eq(schema.gameTranscriptStates.gameId, gameId))
+      .limit(1))[0];
+    if (!existingState) {
+      await tx.insert(schema.gameTranscriptStates).values(
+        initialGameTranscriptStateValues(gameId, TRANSCRIPT_CAPTURE_VERSION),
+      );
+    }
+    return { ok: true };
+  }
+
+  // Partial / non-zero non-current versions are ambiguous — fail closed.
+  if (
+    game.transcriptCaptureVersion !== 0
+    || game.formalSpeechCaptureVersion !== 0
+  ) {
+    return {
+      ok: false,
+      error:
+        "Game capture versions are incomplete or unsupported for start; refuse to upgrade ambiguous waiting game",
+    };
+  }
+
+  const evidence = await loadPreStartCaptureEvidence(tx, gameId);
+  if (evidence.hasAny) {
+    return {
+      ok: false,
+      error:
+        "Pre-deployment waiting game has prior gameplay, transcript, checkpoint, run, settlement, or result evidence; refuse capture upgrade",
+    };
+  }
+
+  await tx.update(schema.games)
+    .set({
+      transcriptCaptureVersion: TRANSCRIPT_CAPTURE_VERSION,
+      formalSpeechCaptureVersion: FORMAL_SPEECH_CAPTURE_VERSION,
+    })
+    .where(eq(schema.games.id, gameId));
+
+  await tx.insert(schema.gameTranscriptStates).values(
+    initialGameTranscriptStateValues(gameId, TRANSCRIPT_CAPTURE_VERSION),
+  );
+
+  return { ok: true };
+}
+
+async function loadPreStartCaptureEvidence(
+  tx: DrizzleTransaction,
+  gameId: string,
+): Promise<{ hasAny: boolean }> {
+  const [eventRow] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.gameEvents)
+    .where(eq(schema.gameEvents.gameId, gameId));
+  const [transcriptRow] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.transcripts)
+    .where(eq(schema.transcripts.gameId, gameId));
+  const [checkpointRow] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.gameCheckpoints)
+    .where(eq(schema.gameCheckpoints.gameId, gameId));
+  const [ownerRow] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.gameRunOwners)
+    .where(eq(schema.gameRunOwners.gameId, gameId));
+  const [settlementRow] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.gameCompletionSettlements)
+    .where(eq(schema.gameCompletionSettlements.gameId, gameId));
+  const [resultRow] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.gameResults)
+    .where(eq(schema.gameResults.gameId, gameId));
+  const [stateRow] = await tx
+    .select({ n: sql<number>`count(*)::int` })
+    .from(schema.gameTranscriptStates)
+    .where(eq(schema.gameTranscriptStates.gameId, gameId));
+
+  const counts = [
+    eventRow?.n ?? 0,
+    transcriptRow?.n ?? 0,
+    checkpointRow?.n ?? 0,
+    ownerRow?.n ?? 0,
+    settlementRow?.n ?? 0,
+    resultRow?.n ?? 0,
+    stateRow?.n ?? 0,
+  ];
+  return { hasAny: counts.some((n) => n > 0) };
 }
 
 export async function acquireRecoveryGameRunOwner(

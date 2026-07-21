@@ -154,6 +154,68 @@ describe("Database Schema", () => {
         .where(eq(schema.games.id, gameId));
 
       expect(rows[0]!.cognitiveArtifactCaptureVersion).toBe(0);
+      expect(rows[0]!.transcriptCaptureVersion).toBe(0);
+      expect(rows[0]!.formalSpeechCaptureVersion).toBe(0);
+    });
+
+    test("transcript entry_sequence is partially unique per game and allows null legacy rows", async () => {
+      const gameId = randomUUID();
+      await db.insert(schema.games)
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
+
+      await db.insert(schema.transcripts).values([
+        {
+          gameId,
+          round: 1,
+          phase: "LOBBY",
+          scope: "public",
+          text: "legacy a",
+          timestamp: 1,
+          entrySequence: null,
+        },
+        {
+          gameId,
+          round: 1,
+          phase: "LOBBY",
+          scope: "public",
+          text: "legacy b",
+          timestamp: 2,
+          entrySequence: null,
+        },
+        {
+          gameId,
+          round: 1,
+          phase: "LOBBY",
+          scope: "public",
+          text: "modern 1",
+          timestamp: 3,
+          entrySequence: 1,
+          audiencePlayerIds: [],
+          captureVersion: 1,
+          dialogueKind: "public_speech",
+          safeContext: { version: 1 },
+        },
+      ]);
+
+      let threw = false;
+      try {
+        await db.insert(schema.transcripts).values({
+          gameId,
+          round: 1,
+          phase: "LOBBY",
+          scope: "public",
+          text: "duplicate sequence",
+          timestamp: 4,
+          entrySequence: 1,
+          audiencePlayerIds: [],
+          captureVersion: 1,
+          dialogueKind: "public_speech",
+          safeContext: { version: 1 },
+        });
+      } catch {
+        threw = true;
+      }
+      expect(threw).toBe(true);
     });
 
     test("game status transitions", async () => {

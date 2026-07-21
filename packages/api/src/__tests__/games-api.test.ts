@@ -369,6 +369,17 @@ describe("Game REST API", () => {
         .from(schema.games)
         .where(eq(schema.games.id, body.id)))[0]!;
       expect(game.cognitiveArtifactCaptureVersion).toBe(1);
+      expect(game.transcriptCaptureVersion).toBe(1);
+      expect(game.formalSpeechCaptureVersion).toBe(1);
+      const transcriptState = (await db
+        .select()
+        .from(schema.gameTranscriptStates)
+        .where(eq(schema.gameTranscriptStates.gameId, body.id)))[0]!;
+      expect(transcriptState.captureVersion).toBe(1);
+      expect(transcriptState.durableSequence).toBe(0);
+      expect(transcriptState.durableCount).toBe(0);
+      expect(transcriptState.terminalState).toBe("unset");
+      expect(transcriptState.prefixDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
       const config = JSON.parse(game.config);
       expect(config.modelTier).toBe("budget");
       expect(config.modelSelection).toEqual({
