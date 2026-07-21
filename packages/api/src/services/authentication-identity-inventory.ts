@@ -248,7 +248,13 @@ export async function runAuthenticationIdentityInventory(
   }
 
   if (complete) {
-    await addDatabaseReadiness(db, checkpoint.counts, issues, options.hmacKey);
+    await addDatabaseReadiness(
+      db,
+      checkpoint.counts,
+      issues,
+      options.hmacKey,
+      simulated,
+    );
   }
 
   if (options.mode === "final-delta") {
@@ -561,6 +567,7 @@ async function addDatabaseReadiness(
   counts: InventoryCounts,
   issues: InventoryIssue[],
   hmacKey: string,
+  simulated: InventorySimulationState,
 ): Promise<void> {
   const [users, credentialUsers] = await Promise.all([
     db.select({
@@ -571,7 +578,10 @@ async function addDatabaseReadiness(
       .from(schema.authenticationCredentials)
       .where(isNull(schema.authenticationCredentials.retiredAt)),
   ]);
-  const bound = new Set(credentialUsers.map((row) => row.userId));
+  const bound = new Set([
+    ...credentialUsers.map((row) => row.userId),
+    ...simulated.credentialUsersBySubject.values(),
+  ]);
   for (const user of users) {
     if (isImportedSyntheticPlayer(user.walletAddress)) {
       counts.nonAuthenticatableUsers += 1;

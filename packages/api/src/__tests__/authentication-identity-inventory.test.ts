@@ -291,6 +291,45 @@ describe("authentication identity inventory", () => {
     expect(JSON.stringify(result)).not.toContain(EMAIL);
   });
 
+  test("dry-run readiness includes credentials simulated by the inventory", async () => {
+    const subject = "did:privy:dry-run-mapped";
+    await insertUser(db, subject);
+
+    const result = await run(
+      db,
+      "dry-run",
+      staticSource([page([emailProfile(subject, EMAIL)])]),
+      memoryCheckpointStore(),
+    );
+
+    expect(result.status).toBe("ready");
+    expect(result.counts.credentialsInserted).toBe(1);
+    expect(result.counts.ordinaryUsersWithoutCredential).toBe(0);
+    expect(result.issues).toEqual([]);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+  });
+
+  test("dry-run readiness still blocks ordinary users without a simulated credential", async () => {
+    const mappedSubject = "did:privy:dry-run-mapped";
+    await insertUser(db, mappedSubject);
+    await insertUser(db, "unresolved-user");
+
+    const result = await run(
+      db,
+      "dry-run",
+      staticSource([page([emailProfile(mappedSubject, EMAIL)])]),
+      memoryCheckpointStore(),
+    );
+
+    expect(result.status).toBe("blocked");
+    expect(result.counts.credentialsInserted).toBe(1);
+    expect(result.counts.ordinaryUsersWithoutCredential).toBe(1);
+    expect(result.issues.map((entry) => entry.code)).toEqual([
+      "ordinary_user_missing_credential",
+    ]);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+  });
+
   test("counts a provider-only wallet identity without writing in either pass", async () => {
     const subject = "did:privy:provider-only-wallet";
     const profile = walletProfile(subject, EXTERNAL_WALLET, EMBEDDED_WALLET);
