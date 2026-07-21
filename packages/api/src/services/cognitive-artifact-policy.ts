@@ -3,8 +3,20 @@ import type {
   CognitiveArtifactType,
 } from "../db/schema.js";
 import type { GamesMcpClaims } from "../game-mcp/claims.js";
+import type { MatchAccessContext } from "./match-access-context.js";
+import { hasPrivateMatchLaneAccess } from "./match-access-context.js";
 
 export type CognitiveArtifactAuthProfile = "subject" | "producer" | "admin_api";
+
+/**
+ * Explicit cognition surface capability (U5 will enforce fully).
+ * Callers must pass a capability rather than relying on incidental role metadata.
+ * Producer/sysop claim metadata must never widen a subject_owner surface.
+ */
+export type CognitionSurfaceCapability =
+  | "subject_owner"
+  | "participant_web"
+  | "producer";
 
 export interface CognitiveArtifactAccessor {
   userId?: string;
@@ -12,6 +24,16 @@ export interface CognitiveArtifactAccessor {
   roles?: readonly string[];
   permissions?: readonly string[];
   claims?: GamesMcpClaims;
+  /**
+   * Optional per-game ownership snapshot. When present for a matching gameId,
+   * ownership checks prefer this immutable seat set over cross-game claims.
+   */
+  matchAccess?: MatchAccessContext;
+  /**
+   * Explicit surface capability. U5 applies subject_owner to Production MCP;
+   * absent capability preserves pre-U5 behavior for existing call sites.
+   */
+  surfaceCapability?: CognitionSurfaceCapability;
 }
 
 export interface CognitiveArtifactPolicyContext {
@@ -26,6 +48,13 @@ export interface CognitiveArtifactPolicyContext {
 }
 
 export function hasProducerCognitiveArtifactAccess(accessor: CognitiveArtifactAccessor): boolean {
+  // Explicit subject_owner surfaces never widen via producer/sysop metadata.
+  if (accessor.surfaceCapability === "subject_owner") {
+    return false;
+  }
+  if (accessor.surfaceCapability === "producer") {
+    return true;
+  }
   const roles = new Set(accessor.roles ?? []);
   const permissions = new Set(accessor.permissions ?? []);
   return accessor.authProfile === "producer" ||
@@ -38,13 +67,32 @@ export function hasProducerCognitiveArtifactAccess(accessor: CognitiveArtifactAc
 
 export function ownsCognitiveArtifactActor(
   accessor: CognitiveArtifactAccessor,
-  context: Pick<CognitiveArtifactPolicyContext, "actorPlayerId" | "actorUserId" | "actorAgentProfileId">,
+  context: Pick<CognitiveArtifactPolicyContext, "actorPlayerId" | "actorUserId" | "actorAgentProfileId"> & {
+    gameId?: string;
+  },
 ): boolean {
   if (!accessor.userId) return false;
-  const claims = accessor.claims;
   if (context.actorUserId && context.actorUserId === accessor.userId) return true;
+
+  const matchAccess = accessor.matchAccess;
+  if (matchAccess && (!context.gameId || matchAccess.gameId === context.gameId)) {
+    if (context.actorPlayerId && matchAccess.ownedPlayerIds.has(context.actorPlayerId)) {
+      return true;
+    }
+    if (
+      context.actorAgentProfileId
+      && matchAccess.ownedAgentProfileIds.has(context.actorAgentProfileId)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
+  const claims = accessor.claims;
   if (context.actorPlayerId && claims?.playerIds.has(context.actorPlayerId)) return true;
-  if (context.actorAgentProfileId && claims?.agentProfileIds.has(context.actorAgentProfileId)) return true;
+  if (context.actorAgentProfileId && claims?.agentProfileIds.has(context.actorAgentProfileId)) {
+    return true;
+  }
   return false;
 }
 
@@ -54,8 +102,9 @@ export function canReadCognitiveArtifact(
 ): boolean {
   if (hasProducerCognitiveArtifactAccess(accessor)) return true;
   if (accessor.authProfile !== "subject") return false;
-  const claims = accessor.claims;
-  if (!claims?.joinedGameIds.has(context.gameId)) return false;
+
+  if (!subjectHasParticipatingGameAccess(accessor, context.gameId)) return false;
+
   if (
     context.actorRole === "house" ||
     context.actorRole === "system" ||
@@ -63,6 +112,12 @@ export function canReadCognitiveArtifact(
   ) {
     return false;
   }
+
+  // subject_owner (U5 Production MCP) requires ownership for every artifact type.
+  if (accessor.surfaceCapability === "subject_owner") {
+    return ownsCognitiveArtifactActor(accessor, context);
+  }
+
   if (context.artifactType === "reasoning") {
     return ownsCognitiveArtifactActor(accessor, context);
   }
@@ -86,5 +141,20 @@ export function canListCognitiveArtifactsForGame(
 ): boolean {
   if (hasProducerCognitiveArtifactAccess(accessor)) return true;
   return accessor.authProfile === "subject" &&
-    Boolean(accessor.claims?.joinedGameIds.has(gameId));
+    subjectHasParticipatingGameAccess(accessor, gameId);
+}
+
+/**
+ * Participating ownership for cognition — creator-only is not enough when a
+ * MatchAccessContext is supplied (private lane semantics).
+ */
+function subjectHasParticipatingGameAccess(
+  accessor: CognitiveArtifactAccessor,
+  gameId: string,
+): boolean {
+  const matchAccess = accessor.matchAccess;
+  if (matchAccess && matchAccess.gameId === gameId) {
+    return hasPrivateMatchLaneAccess(matchAccess);
+  }
+  return Boolean(accessor.claims?.joinedGameIds.has(gameId));
 }
