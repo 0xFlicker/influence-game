@@ -133,9 +133,13 @@ function validateAccumulatorRegistryForRecovery(params: {
     return { ok: false, reason: "unsafe_accumulator_registry" };
   }
 
-  if (hasBlockedMingleInbox(runtimeSnapshot) &&
-      (mingleInboxReplay.entries.length === 0 || mingleInboxReplay.unresolvedRecipientNames.length > 0)) {
-    return { ok: false, reason: "unsafe_accumulator_registry" };
+  if (hasBlockedMingleInbox(runtimeSnapshot)) {
+    if (mingleInboxReplay.unresolvedRecipientNames.length > 0) {
+      return { ok: false, reason: "mingle_inbox_unresolved_recipients" };
+    }
+    if (mingleInboxReplay.entries.length === 0) {
+      return { ok: false, reason: "mingle_inbox_rebuild_empty" };
+    }
   }
 
   if (actorCoordinate === "tribunal_defense" && !currentAccusations) {

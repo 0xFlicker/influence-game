@@ -11,7 +11,14 @@ function nameKey(name: string): string {
 }
 
 function isMingleMessagePhase(phase: Phase): boolean {
-  return phase === Phase.MINGLE || phase === Phase.POST_VOTE_MINGLE;
+  // Mingle I writes the same private room inbox + scope:"mingle" transcript rows as
+  // classic Mingle / post-vote Mingle. Rebuild must include it or phase-boundary
+  // recovery fails closed on Mingle-I leftovers (e.g. vote / post_vote_mingle).
+  return (
+    phase === Phase.MINGLE ||
+    phase === Phase.MINGLE_I ||
+    phase === Phase.POST_VOTE_MINGLE
+  );
 }
 
 function latestMingleMessageRound(transcriptReplay: readonly TranscriptEntry[]): number | null {
