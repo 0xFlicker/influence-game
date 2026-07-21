@@ -1,7 +1,7 @@
 ---
 title: "fix: Persist Judgment public speech canonical events"
 type: fix
-status: active
+status: completed
 date: 2026-07-20
 deepened: false
 ---
