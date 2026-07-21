@@ -116,6 +116,9 @@ bun run auth:identity-inventory -- --mode final-delta
   Its readiness result includes the credential bindings it proved it would
   insert, so `ordinaryUsersWithoutCredential` contains only users still
   unresolved after the proposed inventory.
+  Imported players, the zero-address scheduler, and database-only service or
+  test users with neither an email nor wallet identity are reported as
+  `nonAuthenticatableUsers`; they do not require provider credentials.
 - `write` stores one provider page per transaction and advances the checkpoint
   only after commit. Rerun it after interruption to resume.
 - `final-delta` rereads Privy without writing and confirms every Privy identity
