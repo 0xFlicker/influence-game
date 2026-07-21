@@ -79,6 +79,7 @@ export type CanonicalGameEventType =
   | "jury.vote_cast"
   | "jury.winner_determined"
   | "judgment.speech_recorded"
+  | "endgame.speech_recorded"
   | "round.result_recorded";
 
 export type JudgmentSpeechKind =
@@ -87,7 +88,12 @@ export type JudgmentSpeechKind =
   | "jury_answer"
   | "closing_argument";
 
+export type EndgameSpeechKind = "plea" | "accusation" | "defense";
+
 export type JudgmentSpeechProvenance = "agent" | "timeout" | "fallback";
+
+/** Shared provenance for accepted public formal speech (Judgment + endgame). */
+export type FormalSpeechProvenance = JudgmentSpeechProvenance;
 
 const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "game.roster_initialized",
@@ -123,6 +129,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "jury.vote_cast",
   "jury.winner_determined",
   "judgment.speech_recorded",
+  "endgame.speech_recorded",
   "round.result_recorded",
 ]);
 
@@ -288,6 +295,21 @@ export type CanonicalGameEvent =
         text: string;
         provenance: JudgmentSpeechProvenance;
         addresseeId?: UUID;
+      }
+    >
+  | CanonicalEventEnvelope<
+      "endgame.speech_recorded",
+      {
+        speechKind: EndgameSpeechKind;
+        playerId: UUID;
+        text: string;
+        provenance: FormalSpeechProvenance;
+        /** Accusation target (accused). Present for accusation. */
+        targetId?: UUID;
+        /** Safe counterpart — accuser for defense. */
+        counterpartId?: UUID;
+        /** Deterministic correlation key for transcript/event parity. */
+        correlationKey: string;
       }
     >
   | CanonicalEventEnvelope<"round.result_recorded", { result: RoundResult }>;

@@ -315,3 +315,254 @@ describe("judgment.speech_recorded", () => {
     ).toThrow(/addresseeId/);
   });
 });
+
+describe("endgame.speech_recorded", () => {
+  it("appends public plea/accusation/defense with safe provenance and no cognitive fields", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "carol", name: "Carol" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+
+    const plea = gs.recordEndgameSpeech({
+      speechKind: "plea",
+      playerId: "alice",
+      text: "I played hard.",
+      provenance: "agent",
+      phase: Phase.PLEA,
+      correlationKey: "endgame:plea:r0:PLEA:alice",
+    });
+    expect(plea.type).toBe("endgame.speech_recorded");
+    expect(plea.visibility).toBe("public");
+    expect(plea.phase).toBe(Phase.PLEA);
+    expect(plea.payload).toEqual({
+      speechKind: "plea",
+      playerId: "alice",
+      text: "I played hard.",
+      provenance: "agent",
+      correlationKey: "endgame:plea:r0:PLEA:alice",
+    });
+    expect(plea.payload).not.toHaveProperty("thinking");
+    expect(plea.payload).not.toHaveProperty("strategy");
+    expect(canonicalEventIsVisibleTo(plea, "public")).toBe(true);
+
+    const accusation = gs.recordEndgameSpeech({
+      speechKind: "accusation",
+      playerId: "bob",
+      text: "Alice cut deals.",
+      provenance: "timeout",
+      phase: Phase.ACCUSATION,
+      targetId: "alice",
+      correlationKey: "endgame:accusation:r0:ACCUSATION:bob:talice",
+    });
+    expect(accusation.type).toBe("endgame.speech_recorded");
+    if (accusation.type !== "endgame.speech_recorded") throw new Error("expected endgame speech");
+    expect(accusation.payload.speechKind).toBe("accusation");
+    expect(accusation.payload.targetId).toBe("alice");
+    expect(accusation.payload.provenance).toBe("timeout");
+
+    const defense = gs.recordEndgameSpeech({
+      speechKind: "defense",
+      playerId: "alice",
+      text: "Those deals kept me alive.",
+      provenance: "fallback",
+      phase: Phase.DEFENSE,
+      counterpartId: "bob",
+      correlationKey: "endgame:defense:r0:DEFENSE:alice:cbob",
+    });
+    expect(defense.type).toBe("endgame.speech_recorded");
+    if (defense.type !== "endgame.speech_recorded") throw new Error("expected endgame speech");
+    expect(defense.payload.speechKind).toBe("defense");
+    expect(defense.payload.counterpartId).toBe("bob");
+    expect(defense.payload.provenance).toBe("fallback");
+  });
+
+  it("is idempotent for the same key and payload, and throws on conflict", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+
+    const first = gs.recordEndgameSpeech({
+      speechKind: "plea",
+      playerId: "alice",
+      text: "My plea.",
+      provenance: "agent",
+      phase: Phase.PLEA,
+      correlationKey: "endgame:plea:r0:PLEA:alice",
+    });
+    const second = gs.recordEndgameSpeech({
+      speechKind: "plea",
+      playerId: "alice",
+      text: "My plea.",
+      provenance: "agent",
+      phase: Phase.PLEA,
+      correlationKey: "endgame:plea:r0:PLEA:alice",
+    });
+    expect(second.sequence).toBe(first.sequence);
+    expect(gs.getCanonicalEvents().filter((e) => e.type === "endgame.speech_recorded")).toHaveLength(1);
+
+    expect(() =>
+      gs.recordEndgameSpeech({
+        speechKind: "plea",
+        playerId: "alice",
+        text: "Different plea.",
+        provenance: "agent",
+        phase: Phase.PLEA,
+        correlationKey: "endgame:plea:r0:PLEA:alice",
+      }),
+    ).toThrow(/conflict/);
+
+    expect(() =>
+      gs.recordEndgameSpeech({
+        speechKind: "plea",
+        playerId: "alice",
+        text: "My plea.",
+        provenance: "timeout",
+        phase: Phase.PLEA,
+        correlationKey: "endgame:plea:r0:PLEA:alice",
+      }),
+    ).toThrow(/conflict/);
+  });
+
+  it("keys accusations by player+target and defenses by player+counterpart", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "carol", name: "Carol" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+
+    gs.recordEndgameSpeech({
+      speechKind: "accusation",
+      playerId: "alice",
+      text: "vs bob",
+      provenance: "agent",
+      phase: Phase.ACCUSATION,
+      targetId: "bob",
+      correlationKey: "endgame:accusation:r0:ACCUSATION:alice:tbob",
+    });
+    gs.recordEndgameSpeech({
+      speechKind: "accusation",
+      playerId: "alice",
+      text: "vs carol",
+      provenance: "agent",
+      phase: Phase.ACCUSATION,
+      targetId: "carol",
+      correlationKey: "endgame:accusation:r0:ACCUSATION:alice:tcarol",
+    });
+    const accusations = gs
+      .getCanonicalEvents()
+      .filter((e) => e.type === "endgame.speech_recorded" && e.payload.speechKind === "accusation");
+    expect(accusations).toHaveLength(2);
+
+    expect(() =>
+      gs.recordEndgameSpeech({
+        speechKind: "accusation",
+        playerId: "alice",
+        text: "different text same target",
+        provenance: "agent",
+        phase: Phase.ACCUSATION,
+        targetId: "bob",
+        correlationKey: "endgame:accusation:r0:ACCUSATION:alice:tbob",
+      }),
+    ).toThrow(/conflict/);
+
+    expect(() =>
+      gs.recordEndgameSpeech({
+        speechKind: "accusation",
+        playerId: "bob",
+        text: "no target",
+        provenance: "agent",
+        phase: Phase.ACCUSATION,
+        correlationKey: "endgame:accusation:r0:ACCUSATION:bob",
+      }),
+    ).toThrow(/targetId/);
+
+    expect(() =>
+      gs.recordEndgameSpeech({
+        speechKind: "defense",
+        playerId: "bob",
+        text: "no counterpart",
+        provenance: "agent",
+        phase: Phase.DEFENSE,
+        correlationKey: "endgame:defense:r0:DEFENSE:bob",
+      }),
+    ).toThrow(/counterpartId/);
+  });
+});
+
+describe("AcceptedFormalSpeech factory", () => {
+  it("rejects private/cognitive construction and requires accusation target", async () => {
+    const {
+      createAcceptedFormalSpeech,
+      buildFormalSpeechCorrelationKey,
+      FORMAL_SPEECH_VOCABULARY,
+    } = await import("../accepted-formal-speech");
+
+    expect(FORMAL_SPEECH_VOCABULARY.endgameKinds).toEqual(["plea", "accusation", "defense"]);
+    expect(FORMAL_SPEECH_VOCABULARY.eventTypes.endgame).toBe("endgame.speech_recorded");
+    expect(FORMAL_SPEECH_VOCABULARY.eventTypes.judgment).toBe("judgment.speech_recorded");
+
+    const speech = createAcceptedFormalSpeech({
+      kind: "plea",
+      playerId: "alice",
+      text: "Please.",
+      provenance: "agent",
+      phase: Phase.PLEA,
+      round: 3,
+    });
+    expect(speech.correlationKey).toBe(
+      buildFormalSpeechCorrelationKey({
+        kind: "plea",
+        playerId: "alice",
+        round: 3,
+        phase: Phase.PLEA,
+      }),
+    );
+    expect(speech).not.toHaveProperty("thinking");
+    expect(speech).not.toHaveProperty("reasoningContext");
+    expect(speech).not.toHaveProperty("strategy");
+
+    expect(() =>
+      createAcceptedFormalSpeech({
+        kind: "accusation",
+        playerId: "alice",
+        text: "You!",
+        provenance: "agent",
+        phase: Phase.ACCUSATION,
+        round: 1,
+      }),
+    ).toThrow(/targetId/);
+
+    expect(() =>
+      createAcceptedFormalSpeech({
+        kind: "defense",
+        playerId: "bob",
+        text: "No.",
+        provenance: "agent",
+        phase: Phase.DEFENSE,
+        round: 1,
+      }),
+    ).toThrow(/counterpartId/);
+
+    expect(() =>
+      createAcceptedFormalSpeech({
+        kind: "plea",
+        playerId: "alice",
+        text: "",
+        provenance: "agent",
+        phase: Phase.PLEA,
+        round: 1,
+      }),
+    ).toThrow(/non-empty/);
+  });
+});

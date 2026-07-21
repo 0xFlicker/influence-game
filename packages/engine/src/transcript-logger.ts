@@ -146,7 +146,14 @@ export class TranscriptLogger {
     fromId: string,
     text: string,
     phase: Phase,
-    opts?: { anonymous?: boolean; displayOrder?: number; thinking?: string; reasoningContext?: string },
+    opts?: {
+      anonymous?: boolean;
+      displayOrder?: number;
+      thinking?: string;
+      reasoningContext?: string;
+      /** Optional modern dialogue context (e.g. formal-speech correlation). */
+      dialogueContext?: TranscriptDialogueContext;
+    },
   ): void {
     const name = this.gameState.getPlayerName(fromId);
     this.publicMessages.push({
@@ -157,6 +164,9 @@ export class TranscriptLogger {
       ...(opts?.anonymous && { anonymous: true }),
       ...(opts?.displayOrder != null && { displayOrder: opts.displayOrder }),
     });
+    const dialogueContext: TranscriptDialogueContext = opts?.dialogueContext
+      ? { ...opts.dialogueContext, version: 1 }
+      : { version: 1 };
     const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase,
@@ -168,7 +178,7 @@ export class TranscriptLogger {
       entrySequence: this.nextDialogueSequence(),
       dialogueKind: "public_speech",
       audiencePlayerIds: [],
-      dialogueContext: { version: 1 },
+      dialogueContext,
       ...(opts?.anonymous && { anonymous: true }),
       ...(opts?.displayOrder != null && { displayOrder: opts.displayOrder }),
       ...(opts?.thinking && { thinking: opts.thinking }),

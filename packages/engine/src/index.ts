@@ -28,9 +28,33 @@ export type {
   CanonicalGameEventType,
   CanonicalSourcePointer,
   CanonicalSourcePointerKind,
+  EndgameSpeechKind,
+  FormalSpeechProvenance,
   JudgmentSpeechKind,
   JudgmentSpeechProvenance,
 } from "./canonical-events";
+export {
+  buildFormalSpeechCorrelationKey,
+  commitAcceptedFormalSpeech,
+  createAcceptedFormalSpeech,
+  formalSpeechDisplayText,
+  formalSpeechLaneForKind,
+  ENDGAME_SPEECH_EVENT_TYPE,
+  ENDGAME_SPEECH_KINDS,
+  FORMAL_SPEECH_KINDS,
+  FORMAL_SPEECH_VOCABULARY,
+  JUDGMENT_SPEECH_EVENT_TYPE,
+  JUDGMENT_SPEECH_KINDS,
+} from "./accepted-formal-speech";
+export type {
+  AcceptedFormalSpeech,
+  CommitAcceptedFormalSpeechResult,
+  CreateAcceptedFormalSpeechInput,
+  FormalSpeechAgentTurnInput,
+  FormalSpeechKind,
+  FormalSpeechLane,
+  FormalSpeechVocabulary,
+} from "./accepted-formal-speech";
 export {
   applyCanonicalEvent,
   createEmptyProjection,

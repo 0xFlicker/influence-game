@@ -117,6 +117,75 @@ describe("canonical event replay", () => {
 
     expect(() => replayCanonicalEvents([first, skipped])).toThrow("expected 2 but got 3");
   });
+
+  it("replays endgame and judgment speech as non-mutating accepted facts", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "carol", name: "Carol" },
+      ],
+      { gameId: "game-fixed", now: fixedClock() },
+    );
+
+    const beforeSpeech = gs.getDomainProjection();
+
+    gs.recordEndgameSpeech({
+      speechKind: "plea",
+      playerId: "alice",
+      text: "I deserve the final.",
+      provenance: "agent",
+      phase: Phase.PLEA,
+      correlationKey: "endgame:plea:r0:PLEA:alice",
+    });
+    gs.recordEndgameSpeech({
+      speechKind: "accusation",
+      playerId: "bob",
+      text: "Alice backstabbed me.",
+      provenance: "agent",
+      phase: Phase.ACCUSATION,
+      targetId: "alice",
+      correlationKey: "endgame:accusation:r0:ACCUSATION:bob:talice",
+    });
+    gs.recordEndgameSpeech({
+      speechKind: "defense",
+      playerId: "alice",
+      text: "I did what I had to.",
+      provenance: "agent",
+      phase: Phase.DEFENSE,
+      counterpartId: "bob",
+      correlationKey: "endgame:defense:r0:DEFENSE:alice:cbob",
+    });
+    gs.recordJudgmentSpeech({
+      speechKind: "closing_argument",
+      playerId: "alice",
+      text: "Vote for the better game.",
+      provenance: "agent",
+      phase: Phase.CLOSING_ARGUMENTS,
+    });
+
+    const afterSpeech = gs.getDomainProjection();
+    const replayed = replayCanonicalEvents(gs.getCanonicalEvents());
+
+    // Board projection fields that speech must never mutate (phase/sequence advance only).
+    expect(afterSpeech.players).toEqual(beforeSpeech.players);
+    expect(afterSpeech.playerOrder).toEqual(beforeSpeech.playerOrder);
+    expect(afterSpeech.juryVoteTally).toEqual(beforeSpeech.juryVoteTally);
+    expect(afterSpeech.acceptedOutcomes).toEqual(beforeSpeech.acceptedOutcomes);
+    expect(afterSpeech.currentVoteTally).toEqual(beforeSpeech.currentVoteTally);
+    expect(afterSpeech.endgameStage).toEqual(beforeSpeech.endgameStage);
+    expect(afterSpeech.empoweredId).toEqual(beforeSpeech.empoweredId);
+    expect(afterSpeech.roundResults).toEqual(beforeSpeech.roundResults);
+
+    expect(replayed).toEqual(afterSpeech);
+    expect(replayed.players).toEqual(beforeSpeech.players);
+    expect(
+      gs.getCanonicalEvents().filter((e) => e.type === "endgame.speech_recorded"),
+    ).toHaveLength(3);
+    expect(
+      gs.getCanonicalEvents().filter((e) => e.type === "judgment.speech_recorded"),
+    ).toHaveLength(1);
+  });
 });
 
 describe("GameRunner canonical events", () => {

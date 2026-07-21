@@ -1121,6 +1121,12 @@ export interface TranscriptDialogueContextV1 {
   window?: string;
   /** Exact session-time membership (huddles); IDs only. */
   sessionAudiencePlayerIds?: string[];
+  /**
+   * Deterministic formal-speech correlation key shared with accepted public
+   * speech events (`judgment.speech_recorded` / `endgame.speech_recorded`).
+   * Enables parity without fuzzy text matching. Optional so legacy rows remain valid.
+   */
+  formalSpeechCorrelationKey?: string;
 }
 
 export type TranscriptDialogueContext = TranscriptDialogueContextV1;
