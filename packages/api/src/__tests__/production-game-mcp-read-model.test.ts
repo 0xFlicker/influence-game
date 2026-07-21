@@ -2148,6 +2148,50 @@ describe("ProductionGameMcpReadModel owned match cognition (U5)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// U6 — match manifest via ProductionGameMcpReadModel
+// ---------------------------------------------------------------------------
+
+describe("ProductionGameMcpReadModel match manifest (U6)", () => {
+  let db: DrizzleDB;
+
+  beforeEach(async () => {
+    db = await setupTestDB();
+  });
+
+  test("readMatchManifest returns protocol-neutral lanes and follow-ups for owner", async () => {
+    const { gameId, userId } = await seedModernOwnerGame(db, { watermark: 4 });
+    const readModel = new ProductionGameMcpReadModel(db);
+    const result = await readModel.readMatchManifest(
+      { gameIdOrSlug: gameId },
+      { userId, authProfile: "subject" },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.schemaVersion).toBe(1);
+    expect(result.manifest.lanes.facts.authority).toBe("canonical_facts");
+    expect(result.manifest.lanes.transcript.authority).toBe("transcript");
+    expect(result.manifest.lanes.cognition.authority).toBe("cognition");
+    expect(result.manifest.formalSpeechParity.authority).toBe("formal_speech_parity");
+    expect(result.manifest.lanes.transcript.readThrough.throughEntrySequence).toBe(4);
+    expect(result.manifest.overall.live).toBe(true);
+    expect(result.manifest.overall.state).not.toBe("complete");
+    for (const cap of result.manifest.nextReads) {
+      expect(cap.starterArguments.gameIdOrSlug).toBeTruthy();
+      expect(JSON.stringify(cap)).not.toMatch(/"toolName"|read_match_manifest/);
+    }
+  });
+
+  test("empty userId is non-enumerating not_accessible", async () => {
+    const readModel = new ProductionGameMcpReadModel(db);
+    const result = await readModel.readMatchManifest(
+      { gameIdOrSlug: randomUUID() },
+      { userId: "", authProfile: "subject" },
+    );
+    expect(result).toMatchObject({ ok: false, status: "not_accessible" });
+  });
+});
+
 async function seedCognitionOwnerGame(db: DrizzleDB): Promise<{
   gameId: string;
   userId: string;

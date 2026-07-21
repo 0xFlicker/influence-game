@@ -166,6 +166,9 @@ function modernFieldsForCurrentCapture(
     ...(entry.dialogueContext?.sessionAudiencePlayerIds && {
       sessionAudiencePlayerIds: [...entry.dialogueContext.sessionAudiencePlayerIds],
     }),
+    ...(entry.dialogueContext?.formalSpeechCorrelationKey && {
+      formalSpeechCorrelationKey: entry.dialogueContext.formalSpeechCorrelationKey,
+    }),
   };
 
   return {
@@ -385,6 +388,12 @@ function sanitizeSafeContext(
   if (typeof value.window === "string") out.window = value.window;
   if (Array.isArray(value.sessionAudiencePlayerIds)) {
     out.sessionAudiencePlayerIds = [...value.sessionAudiencePlayerIds];
+  }
+  if (
+    typeof value.formalSpeechCorrelationKey === "string" &&
+    value.formalSpeechCorrelationKey.length > 0
+  ) {
+    out.formalSpeechCorrelationKey = value.formalSpeechCorrelationKey;
   }
   return out;
 }

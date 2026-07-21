@@ -224,6 +224,9 @@ export function getPersistedGameProjection(
  * Project only facts that are safe before the terminal settlement commits.
  * Jury ballots are withheld, and the winner event plus every later event are
  * excluded so neither the winner nor the losing finalist can be inferred.
+ *
+ * U6 match completeness marks this path with settlementSafeProjection when
+ * completion settlement is pending or repair-required.
  */
 export function getPersistedGameProjectionBeforeTerminalOutcome(
   persistedEvents: PersistedGameEventsRead,

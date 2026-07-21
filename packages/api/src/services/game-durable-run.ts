@@ -156,7 +156,11 @@ export interface DurableRunInspectionResponse {
     entries: DurableCheckpointSummary[];
   };
   evidence: DurableEvidenceSummary;
-  /** Separate from envelope eventLogStatus — missing speeches do not invalidate the log. */
+  /**
+   * Separate from envelope eventLogStatus — missing speeches do not invalidate the log.
+   * U6 match-manifest formal-speech parity is the broader cross-lane diagnostic;
+   * this field remains the durable-inspection Judgment opening/closing summary.
+   */
   finaleIntegrity: DurableRunFinaleIntegrity;
   diagnostics: DurableRunDiagnostic[];
 }

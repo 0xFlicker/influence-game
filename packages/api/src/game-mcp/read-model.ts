@@ -66,6 +66,11 @@ import {
   type ReadMatchCognitionInput,
 } from "../services/match-cognition-read-model.js";
 import {
+  readMatchManifest,
+  type MatchManifestResult,
+  type ReadMatchManifestInput,
+} from "../services/match-completeness.js";
+import {
   exportOwnedSeasonReceipts,
   getOwnedAgentSeasonAnalysis,
   getProducerSeasonDiagnostics,
@@ -382,6 +387,26 @@ export class ProductionGameMcpReadModel {
    * Owner-authorized match transcript page (U4 read model).
    * MCP tool registration is U8; this is the protocol-neutral service entry.
    */
+  /**
+   * Match-read manifest: lane availability, completeness, watermarks, parity,
+   * and typed follow-up capabilities (U6). MCP tool registration is U8.
+   */
+  async readMatchManifest(
+    input: ReadMatchManifestInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchManifestResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchManifest(this.db, input, {
+      subjectUserId: access.userId,
+    });
+  }
+
   async readMatchTranscript(
     input: ReadMatchTranscriptInput | Record<string, unknown>,
     access: ProductionGameMcpAccess,

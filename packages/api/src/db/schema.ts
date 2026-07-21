@@ -519,6 +519,13 @@ export type TranscriptSafeContextV1 = {
   window?: string;
   /** Session-time membership snapshot for huddles (IDs only). */
   sessionAudiencePlayerIds?: string[];
+  /**
+   * Deterministic formal-speech correlation key shared with accepted public
+   * speech events. Enables U6 parity without fuzzy text matching. Optional so
+   * ordinary dialogue and legacy rows remain valid. Not part of product-dialogue
+   * digest identity (CanonicalDialogueContextV2 omits it).
+   */
+  formalSpeechCorrelationKey?: string;
 };
 
 export type TranscriptSafeContext = TranscriptSafeContextV1;
