@@ -140,6 +140,7 @@ describe("groupNarrativeMembers", () => {
       preset: "strategic",
       detail: "full",
       inferenceWindowMs: 500,
+      includeUnpaired: true,
     });
 
     expect(result.groups.every((g) => g.correlation.kind === "uncorrelated")).toBe(true);
@@ -166,6 +167,7 @@ describe("groupNarrativeMembers", () => {
       preset: "strategic",
       detail: "full",
       inferenceWindowMs: 500,
+      includeUnpaired: true,
     });
 
     expect(result.groups).toHaveLength(2);
@@ -192,6 +194,7 @@ describe("groupNarrativeMembers", () => {
       ],
       preset: "strategic",
       detail: "full",
+      includeUnpaired: true,
     });
 
     expect(result.groups).toHaveLength(2);
@@ -213,16 +216,36 @@ describe("groupNarrativeMembers", () => {
     expect(result.limitations.some((l) => l.code === "oversized_member_truncated")).toBe(true);
   });
 
-  test("sparse strategy-only groups are retained", () => {
+  test("sparse strategy-only groups are retained when includeUnpaired", () => {
     const result = groupNarrativeMembers({
       members: [cognition({ artifactId: "s1", kind: "strategy", decisionId: "dec-solo" })],
       preset: "strategic",
       detail: "full",
+      includeUnpaired: true,
     });
 
     expect(result.groups).toHaveLength(1);
     expect(result.groups[0]!.members[0]!.kind).toBe("strategy");
     expect(result.groups[0]!.correlation.kind).toBe("decision_id");
+    expect(result.correlationSummary.idStampedSingleton).toBe(1);
+    expect(result.correlationSummary.exactCrossLane).toBe(0);
+  });
+
+  test("strategic default omits unpaired strategy", () => {
+    const result = groupNarrativeMembers({
+      members: [
+        dialogue({ rowId: 1, text: "hi", decisionId: "dec-pair" }),
+        cognition({ artifactId: "s1", kind: "strategy", decisionId: "dec-pair" }),
+        cognition({ artifactId: "s2", kind: "strategy", decisionId: "dec-solo" }),
+      ],
+      preset: "strategic",
+      detail: "full",
+    });
+
+    expect(result.groups).toHaveLength(1);
+    expect(result.groups[0]!.decisionId).toBe("dec-pair");
+    expect(result.correlationSummary.unpairedOmitted).toBe(1);
+    expect(result.correlationSummary.exactCrossLane).toBe(1);
   });
 
   test("members do not restate contentTrust", () => {

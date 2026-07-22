@@ -107,9 +107,23 @@ export interface NarrativeGroup {
 }
 
 export interface NarrativeCorrelationSummary {
+  /**
+   * @deprecated Prefer exactCrossLane + idStampedSingleton. Kept as
+   * exactCrossLane + idStampedSingleton for v1 clients.
+   */
   exact: number;
+  /** Groups with ≥2 lane kinds among dialogue/thinking/strategy sharing exact/inferred join. */
+  exactCrossLane: number;
+  /** Single-member groups that still carry decisionId. */
+  idStampedSingleton: number;
   inferred: number;
   uncorrelated: number;
+  /** Groups with both dialogue and at least one cognition lane (or action-linked). */
+  paired: number;
+  /** Groups with only one lane kind present. */
+  unpaired: number;
+  /** Unpaired groups dropped by strategic default selection. */
+  unpairedOmitted: number;
 }
 
 export interface NarrativeGroupingLimitation {
@@ -128,6 +142,12 @@ export interface GroupNarrativeMembersInput {
   inferenceWindowMs?: number;
   /** Soft max characters for dialogue text in compact mode. */
   compactDialogueMaxChars?: number;
+  /**
+   * When false (default for strategic), omit unpaired cognition-only groups
+   * that are not action-class decisions. full_cognition / dialogue_only ignore
+   * this and keep all groups from the preset filter.
+   */
+  includeUnpaired?: boolean;
 }
 
 export interface GroupNarrativeMembersResult {
@@ -135,6 +155,117 @@ export interface GroupNarrativeMembersResult {
   correlationSummary: NarrativeCorrelationSummary;
   limitations: NarrativeGroupingLimitation[];
   contentTrust: typeof NARRATIVE_CONTENT_TRUST;
+}
+
+/** Agent actions that are board-linked even without dialogue. */
+const ACTION_CLASS_ACTIONS = new Set([
+  "vote",
+  "empower-revote",
+  "power",
+  "council-vote",
+  "council_vote",
+  "endgame-vote",
+  "jury-vote",
+]);
+
+function memberLaneKinds(group: NarrativeGroup): Set<"dialogue" | "thinking" | "strategy"> {
+  const kinds = new Set<"dialogue" | "thinking" | "strategy">();
+  for (const m of group.members) {
+    kinds.add(m.kind);
+  }
+  return kinds;
+}
+
+function isCrossLane(group: NarrativeGroup): boolean {
+  const kinds = memberLaneKinds(group);
+  const hasDialogue = kinds.has("dialogue");
+  const hasCognition = kinds.has("thinking") || kinds.has("strategy");
+  return hasDialogue && hasCognition;
+}
+
+function isActionClassGroup(group: NarrativeGroup): boolean {
+  if (group.action && ACTION_CLASS_ACTIONS.has(group.action)) return true;
+  return group.members.some(
+    (m) => m.kind !== "dialogue" && m.action != null && ACTION_CLASS_ACTIONS.has(m.action),
+  );
+}
+
+function isPairedGroup(group: NarrativeGroup): boolean {
+  if (isCrossLane(group)) return true;
+  // Action-class cognition with relatedActionRefs or action-class action string.
+  if (isActionClassGroup(group) && !memberLaneKinds(group).has("dialogue")) {
+    return group.members.some((m) => m.kind === "strategy" || m.kind === "thinking");
+  }
+  return false;
+}
+
+export function summarizeNarrativeGroups(
+  groups: readonly NarrativeGroup[],
+  unpairedOmitted = 0,
+): NarrativeCorrelationSummary {
+  let exactCrossLane = 0;
+  let idStampedSingleton = 0;
+  let inferred = 0;
+  let uncorrelated = 0;
+  let paired = 0;
+  let unpaired = 0;
+
+  for (const g of groups) {
+    const kinds = memberLaneKinds(g);
+    const cross = isCrossLane(g);
+    if (g.correlation.kind === "decision_id") {
+      if (cross) exactCrossLane += 1;
+      else if (kinds.size === 1) idStampedSingleton += 1;
+      else exactCrossLane += 1; // e.g. thinking+strategy without dialogue
+    } else if (g.correlation.kind === "inferred") {
+      inferred += 1;
+    } else {
+      uncorrelated += 1;
+    }
+    if (isPairedGroup(g) || cross) paired += 1;
+    else unpaired += 1;
+  }
+
+  return {
+    exact: exactCrossLane + idStampedSingleton,
+    exactCrossLane,
+    idStampedSingleton,
+    inferred,
+    uncorrelated,
+    paired,
+    unpaired,
+    unpairedOmitted,
+  };
+}
+
+/**
+ * Strategic default: drop unpaired cognition-only groups unless includeUnpaired
+ * or action-class. dialogue_only / full_cognition keep all groups already filtered
+ * by member kind.
+ */
+export function selectNarrativeGroups(
+  groups: readonly NarrativeGroup[],
+  preset: NarrativePreset,
+  includeUnpaired: boolean,
+): { groups: NarrativeGroup[]; unpairedOmitted: number } {
+  if (preset !== "strategic" || includeUnpaired) {
+    return { groups: [...groups], unpairedOmitted: 0 };
+  }
+
+  const kept: NarrativeGroup[] = [];
+  let omitted = 0;
+  for (const g of groups) {
+    if (isCrossLane(g) || isPairedGroup(g) || memberLaneKinds(g).has("dialogue")) {
+      kept.push(g);
+    } else {
+      omitted += 1;
+    }
+  }
+  // Re-number group ids after selection.
+  kept.forEach((g, i) => {
+    g.groupId = `g${i + 1}`;
+  });
+  return { groups: kept, unpairedOmitted: omitted };
 }
 
 const DEFAULT_INFERENCE_WINDOW_MS = 5_000;
@@ -435,11 +566,12 @@ export function groupNarrativeMembers(
     g.groupId = `g${i + 1}`;
   });
 
-  const correlationSummary: NarrativeCorrelationSummary = {
-    exact: groups.filter((g) => g.correlation.kind === "decision_id").length,
-    inferred: groups.filter((g) => g.correlation.kind === "inferred").length,
-    uncorrelated: groups.filter((g) => g.correlation.kind === "uncorrelated").length,
-  };
+  const includeUnpaired = input.includeUnpaired === true;
+  const selected = selectNarrativeGroups(groups, input.preset, includeUnpaired);
+  const correlationSummary = summarizeNarrativeGroups(
+    selected.groups,
+    selected.unpairedOmitted,
+  );
 
   // Dedupe limitation codes (page-local).
   const seenCodes = new Set<string>();
@@ -450,7 +582,7 @@ export function groupNarrativeMembers(
   });
 
   return {
-    groups,
+    groups: selected.groups,
     correlationSummary,
     limitations: uniqueLimitations,
     contentTrust: NARRATIVE_CONTENT_TRUST,

@@ -43,6 +43,11 @@ export interface CanonicalSourcePointer {
   action?: string;
   round?: number;
   phase?: Phase;
+  /**
+   * Private-decision id linking this accepted action to cognition/dialogue.
+   * Forward-path only; not a public narrative of thought content.
+   */
+  decisionId?: UUID;
 }
 
 export type CanonicalGameEventType =

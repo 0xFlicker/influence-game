@@ -21,7 +21,13 @@ import {
   type MatchAccessContext,
 } from "./match-access-context.js";
 import {
+  encodeCompactV2Page,
+  type CompactV2Page,
+  MATCH_NARRATIVE_SCHEMA_VERSION_V2,
+} from "./match-narrative-compact-v2.js";
+import {
   groupNarrativeMembers,
+  summarizeNarrativeGroups,
   type NarrativeCognitionMemberInput,
   type NarrativeCorrelationSummary,
   type NarrativeDetail,
@@ -78,6 +84,10 @@ export type MatchNarrativeSurfaceCapability = MatchNarrativeSurface;
 export interface MatchNarrativeNormalizedFilters {
   preset: NarrativePreset;
   detail: NarrativeDetail;
+  /** Response shape: 2 = compact-v2 (default), 1 = legacy members[]. */
+  schemaVersion: 1 | 2;
+  /** When true, strategic preset keeps unpaired cognition groups. */
+  includeUnpaired: boolean;
   playerId: string | null;
   player: string | null;
   phase: string | null;
@@ -119,7 +129,7 @@ export interface MatchNarrativeReadThroughDto {
   };
 }
 
-export interface MatchNarrativePageOk {
+export interface MatchNarrativePageOkV1 {
   ok: true;
   schemaVersion: 1;
   game: {
@@ -145,6 +155,9 @@ export interface MatchNarrativePageOk {
   nextCursorKind: "page" | null;
 }
 
+/** Domain success: v1 members[] or v2 compact slots. */
+export type MatchNarrativePageOk = MatchNarrativePageOkV1 | CompactV2Page;
+
 export type MatchNarrativePageError =
   | { ok: false; status: "not_accessible"; error: string }
   | { ok: false; status: "denied"; error: string }
@@ -162,6 +175,9 @@ export interface ReadMatchNarrativeInput {
   gameIdOrSlug: string;
   preset?: string;
   detail?: string;
+  /** 1 = legacy members[]; 2 = compact slots (default). */
+  schemaVersion?: number;
+  includeUnpaired?: boolean;
   player?: string;
   phase?: string;
   round?: number;
@@ -176,6 +192,8 @@ const KNOWN_INPUT_KEYS = new Set([
   "gameIdOrSlug",
   "preset",
   "detail",
+  "schemaVersion",
+  "includeUnpaired",
   "player",
   "phase",
   "round",
@@ -630,6 +648,7 @@ function assembleNarrativePage(params: {
     members: params.members,
     preset: params.appliedFilters.preset,
     detail: params.appliedFilters.detail,
+    includeUnpaired: params.appliedFilters.includeUnpaired,
   });
 
   // Page by groups using exclusive (sortKey, stableMemberKey) keyset.
@@ -649,10 +668,11 @@ function assembleNarrativePage(params: {
   const pageGroups = groups.slice(0, params.limit);
 
   // Recompute page-local correlation summary from emitted groups only.
+  // Preserve unpairedOmitted from full strategic selection (not just this page).
+  const pageSummary = summarizeNarrativeGroups(pageGroups, 0);
   const correlationSummary: NarrativeCorrelationSummary = {
-    exact: pageGroups.filter((g) => g.correlation.kind === "decision_id").length,
-    inferred: pageGroups.filter((g) => g.correlation.kind === "inferred").length,
-    uncorrelated: pageGroups.filter((g) => g.correlation.kind === "uncorrelated").length,
+    ...pageSummary,
+    unpairedOmitted: grouped.correlationSummary.unpairedOmitted,
   };
 
   const limitations = buildPageLimitations({
@@ -701,6 +721,55 @@ function assembleNarrativePage(params: {
         ? "completed_snapshot"
         : "live_snapshot";
 
+  const readThrough: MatchNarrativeReadThroughDto = {
+    transcript: {
+      mode: transcriptMode,
+      throughEntrySequence: params.dualReadThrough.transcript.throughEntrySequence,
+      throughLegacyTimestamp: params.dualReadThrough.transcript.throughLegacyTimestamp,
+      throughLegacyId: params.dualReadThrough.transcript.throughLegacyId,
+    },
+    cognition: {
+      mode: cognitionMode,
+      throughCreatedAt: params.dualReadThrough.cognition.throughCreatedAt,
+      throughId: params.dualReadThrough.cognition.throughId,
+    },
+  };
+
+  if (params.appliedFilters.schemaVersion === MATCH_NARRATIVE_SCHEMA_VERSION_V2) {
+    return encodeCompactV2Page({
+      game: params.game,
+      surface: params.surface,
+      access: {
+        surface: params.access.surface,
+        privateLaneAuthorized: params.access.privateLaneAuthorized,
+        ...(params.access.ownedSeatCount != null
+          ? { ownedSeatCount: params.access.ownedSeatCount }
+          : {}),
+      },
+      preset: params.appliedFilters.preset,
+      detail: params.appliedFilters.detail,
+      filters: {
+        preset: params.appliedFilters.preset,
+        detail: params.appliedFilters.detail,
+        schemaVersion: params.appliedFilters.schemaVersion,
+        includeUnpaired: params.appliedFilters.includeUnpaired,
+        player: params.appliedFilters.player,
+        playerId: params.appliedFilters.playerId,
+        phase: params.appliedFilters.phase,
+        round: params.appliedFilters.round,
+        action: params.appliedFilters.action,
+        fromTimestampMs: params.appliedFilters.fromTimestampMs,
+        toTimestampMs: params.appliedFilters.toTimestampMs,
+      },
+      readThrough,
+      correlationSummary,
+      limitations,
+      groups: pageGroups,
+      nextCursor,
+      nextCursorKind,
+    });
+  }
+
   return {
     ok: true,
     schemaVersion: 1,
@@ -710,19 +779,7 @@ function assembleNarrativePage(params: {
     preset: params.appliedFilters.preset,
     detail: params.appliedFilters.detail,
     filters: params.appliedFilters,
-    readThrough: {
-      transcript: {
-        mode: transcriptMode,
-        throughEntrySequence: params.dualReadThrough.transcript.throughEntrySequence,
-        throughLegacyTimestamp: params.dualReadThrough.transcript.throughLegacyTimestamp,
-        throughLegacyId: params.dualReadThrough.transcript.throughLegacyId,
-      },
-      cognition: {
-        mode: cognitionMode,
-        throughCreatedAt: params.dualReadThrough.cognition.throughCreatedAt,
-        throughId: params.dualReadThrough.cognition.throughId,
-      },
-    },
+    readThrough,
     correlationSummary,
     limitations,
     contentTrust: UNTRUSTED_GAME_AUTHORED,
@@ -740,6 +797,61 @@ function emptyOwnerSuccess(params: {
   filters: MatchNarrativeNormalizedFilters;
   playerEcho: string;
 }): MatchNarrativePageOk {
+  const emptySummary: NarrativeCorrelationSummary = {
+    exact: 0,
+    exactCrossLane: 0,
+    idStampedSingleton: 0,
+    inferred: 0,
+    uncorrelated: 0,
+    paired: 0,
+    unpaired: 0,
+    unpairedOmitted: 0,
+  };
+  const readThrough: MatchNarrativeReadThroughDto = {
+    transcript: {
+      mode: params.context.gameStatus === "completed"
+        ? "completed_terminal"
+        : "live_watermark",
+      throughEntrySequence: null,
+      throughLegacyTimestamp: null,
+      throughLegacyId: null,
+    },
+    cognition: {
+      mode: "empty",
+      throughCreatedAt: null,
+      throughId: null,
+    },
+  };
+  const filters = {
+    ...params.filters,
+    playerId: null,
+    player: params.playerEcho,
+  };
+  if (params.filters.schemaVersion === 2) {
+    return encodeCompactV2Page({
+      game: {
+        id: params.context.gameId,
+        slug: params.context.gameSlug,
+        status: params.context.gameStatus,
+        transcriptCaptureVersion: params.context.transcriptCaptureVersion,
+        cognitiveArtifactCaptureVersion: params.cognitiveCaptureVersion,
+      },
+      surface: "subject_owner",
+      access: {
+        surface: "subject_owner",
+        privateLaneAuthorized: true,
+        ownedSeatCount: params.context.ownedPlayerIds.size,
+      },
+      preset: params.filters.preset,
+      detail: params.filters.detail,
+      filters,
+      readThrough,
+      correlationSummary: emptySummary,
+      groups: [],
+      nextCursor: null,
+      nextCursorKind: null,
+    });
+  }
   return {
     ok: true,
     schemaVersion: 1,
@@ -758,27 +870,9 @@ function emptyOwnerSuccess(params: {
     },
     preset: params.filters.preset,
     detail: params.filters.detail,
-    filters: {
-      ...params.filters,
-      playerId: null,
-      player: params.playerEcho,
-    },
-    readThrough: {
-      transcript: {
-        mode: params.context.gameStatus === "completed"
-          ? "completed_terminal"
-          : "live_watermark",
-        throughEntrySequence: null,
-        throughLegacyTimestamp: null,
-        throughLegacyId: null,
-      },
-      cognition: {
-        mode: "empty",
-        throughCreatedAt: null,
-        throughId: null,
-      },
-    },
-    correlationSummary: { exact: 0, inferred: 0, uncorrelated: 0 },
+    filters,
+    readThrough,
+    correlationSummary: emptySummary,
     limitations: [],
     contentTrust: UNTRUSTED_GAME_AUTHORED,
     notBoardAuthority: true,
@@ -1556,6 +1650,8 @@ type ParsedNarrativeInput = {
   gameIdOrSlug: string;
   preset: NarrativePreset;
   detail: NarrativeDetail;
+  schemaVersion: 1 | 2;
+  includeUnpaired: boolean;
   player: string | null;
   phase: string | null;
   round: number | null;
@@ -1634,6 +1730,32 @@ function parseReadMatchNarrativeInput(
       };
     }
     detail = record.detail;
+  }
+
+  let schemaVersion: 1 | 2 = 2;
+  if (record.schemaVersion !== undefined) {
+    if (record.schemaVersion !== 1 && record.schemaVersion !== 2) {
+      return {
+        ok: false,
+        status: "invalid_input",
+        error: "schemaVersion must be 1 or 2",
+        field: "schemaVersion",
+      };
+    }
+    schemaVersion = record.schemaVersion;
+  }
+
+  let includeUnpaired = false;
+  if (record.includeUnpaired !== undefined) {
+    if (typeof record.includeUnpaired !== "boolean") {
+      return {
+        ok: false,
+        status: "invalid_input",
+        error: "includeUnpaired must be a boolean",
+        field: "includeUnpaired",
+      };
+    }
+    includeUnpaired = record.includeUnpaired;
   }
 
   let player: string | null = null;
@@ -1785,6 +1907,8 @@ function parseReadMatchNarrativeInput(
       gameIdOrSlug: record.gameIdOrSlug.trim(),
       preset,
       detail,
+      schemaVersion,
+      includeUnpaired,
       player,
       phase,
       round,
@@ -1837,6 +1961,8 @@ function buildFilters(
   return {
     preset: input.preset,
     detail: input.detail,
+    schemaVersion: input.schemaVersion,
+    includeUnpaired: input.includeUnpaired,
     playerId,
     player: input.player,
     phase: input.phase,
@@ -1853,6 +1979,9 @@ function filtersFromSealed(
   return {
     preset: sealed.preset,
     detail: sealed.detail,
+    // Cursor resumes use v2 by default; sealed filters do not carry schema yet.
+    schemaVersion: 2,
+    includeUnpaired: false,
     playerId: sealed.playerId,
     player: sealed.player,
     phase: sealed.phase,

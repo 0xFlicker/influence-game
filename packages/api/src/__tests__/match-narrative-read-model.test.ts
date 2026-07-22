@@ -69,7 +69,7 @@ describe("match-narrative-read-model dual surface", () => {
 
     const page = await readMatchNarrativePage(
       db,
-      { gameIdOrSlug: fixture.gameId, preset: "strategic", limit: 50 },
+      { gameIdOrSlug: fixture.gameId, preset: "strategic", limit: 50, schemaVersion: 2 },
       {
         subjectUserId: fixture.producerUserId,
         surface: "producer",
@@ -82,17 +82,14 @@ describe("match-narrative-read-model dual surface", () => {
     expect(page.surface).toBe("producer");
     expect(page.notBoardAuthority).toBe(true);
     expect(page.preset).toBe("strategic");
+    expect(page.schemaVersion).toBe(2);
 
-    const strategyLogs = page.groups.flatMap((g) =>
-      g.members
-        .filter((m) => m.kind === "strategy")
-        .map((m) => m.fields.decisionLog)
-    );
+    const strategyLogs = page.groups
+      .map((g) => ("strategy" in g ? g.strategy : undefined))
+      .filter((s): s is string => typeof s === "string");
     expect(strategyLogs.sort()).toEqual(["alice plan", "bob plan"]);
     expect(JSON.stringify(page)).not.toContain("bob secret thought");
-    expect(page.groups.every((g) =>
-      g.members.every((m) => m.authority === "transcript" || m.authority === "cognition")
-    )).toBe(true);
+    expect(JSON.stringify(page)).not.toContain("\"members\"");
   });
 
   test("strategic omits thinking; full_cognition includes it", async () => {
@@ -121,9 +118,39 @@ describe("match-narrative-read-model dual surface", () => {
       createdAt: "2026-07-21T10:00:02.000Z",
     });
 
+    // Pair dialogue+strategy via shared decisionId so strategic selection keeps them.
+    const decisionId = randomUUID();
+    await insertDialogue(db, {
+      gameId: fixture.gameId,
+      sequence: 2,
+      speakerPlayerId: fixture.playerA,
+      text: "paired line",
+      timestamp: 2000,
+      decisionId,
+    });
+    // Re-stamp strategy with decisionId for pairing — insert another strategy.
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      artifactType: "strategy",
+      decisionId,
+      payload: { decisionLog: "paired plan" },
+      createdAt: "2026-07-21T10:00:04.000Z",
+    });
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      artifactType: "thinking",
+      decisionId,
+      payload: { thinking: "paired thought" },
+      createdAt: "2026-07-21T10:00:05.000Z",
+    });
+
     const strategic = await readMatchNarrativePage(
       db,
-      { gameIdOrSlug: fixture.gameId, preset: "strategic" },
+      { gameIdOrSlug: fixture.gameId, preset: "strategic", schemaVersion: 2 },
       {
         subjectUserId: fixture.ownerUserId,
         surface: "subject_owner",
@@ -132,12 +159,12 @@ describe("match-narrative-read-model dual surface", () => {
     );
     expect(strategic.ok).toBe(true);
     if (!strategic.ok) return;
-    expect(strategic.groups.some((g) => g.members.some((m) => m.kind === "thinking"))).toBe(false);
-    expect(strategic.groups.some((g) => g.members.some((m) => m.kind === "strategy"))).toBe(true);
+    expect(strategic.groups.some((g) => "thinking" in g && g.thinking)).toBe(false);
+    expect(strategic.groups.some((g) => "strategy" in g && g.strategy)).toBe(true);
 
     const full = await readMatchNarrativePage(
       db,
-      { gameIdOrSlug: fixture.gameId, preset: "full_cognition" },
+      { gameIdOrSlug: fixture.gameId, preset: "full_cognition", schemaVersion: 2 },
       {
         subjectUserId: fixture.ownerUserId,
         surface: "subject_owner",
@@ -146,17 +173,19 @@ describe("match-narrative-read-model dual surface", () => {
     );
     expect(full.ok).toBe(true);
     if (!full.ok) return;
-    expect(full.groups.some((g) => g.members.some((m) => m.kind === "thinking"))).toBe(true);
+    expect(full.groups.some((g) => "thinking" in g && typeof g.thinking === "string")).toBe(true);
   });
 
   test("owner only sees owned cognition; non-owned player filter is empty success", async () => {
     const fixture = await seedNarrativeGame(db);
+    const decisionId = randomUUID();
     await insertDialogue(db, {
       gameId: fixture.gameId,
       sequence: 1,
       speakerPlayerId: fixture.playerA,
       text: "public from owner",
       timestamp: 1000,
+      decisionId,
     });
     await insertCognition(db, {
       id: randomUUID(),
@@ -164,6 +193,7 @@ describe("match-narrative-read-model dual surface", () => {
       actorPlayerId: fixture.playerA,
       actorUserId: fixture.ownerUserId,
       artifactType: "strategy",
+      decisionId,
       payload: { decisionLog: "owned strategy" },
       createdAt: "2026-07-21T10:00:01.000Z",
     });
@@ -337,7 +367,7 @@ describe("match-narrative-read-model dual surface", () => {
 
     const page = await readMatchNarrativePage(
       db,
-      { gameIdOrSlug: fixture.gameId, preset: "strategic" },
+      { gameIdOrSlug: fixture.gameId, preset: "strategic", schemaVersion: 2 },
       {
         subjectUserId: fixture.ownerUserId,
         surface: "subject_owner",
@@ -347,13 +377,102 @@ describe("match-narrative-read-model dual surface", () => {
     expect(page.ok).toBe(true);
     if (!page.ok) return;
 
-    const exact = page.groups.filter((g) => g.correlation.kind === "decision_id");
-    expect(exact.length).toBeGreaterThanOrEqual(1);
-    const group = exact.find((g) => g.decisionId === decisionId);
+    expect(page.schemaVersion).toBe(2);
+    const group = page.groups.find((g) => g.decisionId === decisionId);
     expect(group).toBeTruthy();
-    expect(group?.members.some((m) => m.kind === "dialogue")).toBe(true);
-    expect(group?.members.some((m) => m.kind === "strategy")).toBe(true);
-    expect(page.correlationSummary.exact).toBeGreaterThanOrEqual(1);
+    expect(group?.text).toContain("I vote for Bob");
+    expect(group?.strategy).toContain("vote Bob");
+    expect(group?.corr).toBe("exact");
+    expect(page.correlationSummary.exactCrossLane).toBeGreaterThanOrEqual(1);
+  });
+
+  test("compact-v2 is smaller than v1 members shape on paired fixture", async () => {
+    const fixture = await seedNarrativeGame(db);
+    const decisionId = randomUUID();
+    await insertDialogue(db, {
+      gameId: fixture.gameId,
+      sequence: 1,
+      speakerPlayerId: fixture.playerA,
+      text: "One signal I’d broadcast this round to prove Lantern Pact alignment is a public post-Round-2 check-in.",
+      timestamp: 5_000,
+      decisionId,
+    });
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "thinking",
+      decisionId,
+      payload: {
+        thinking:
+          "I’ll private-message Atlas and Sage with a concise plan: propose a single public signal after Round 2.",
+      },
+      createdAt: "2026-07-21T10:00:05.000Z",
+    });
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "strategy",
+      decisionId,
+      payload: {
+        decisionLog:
+          "Mingle turn to Atlas and Sage. Propose a lean Lantern Pact signal after Round 2, request candor and quick check-in.",
+      },
+      createdAt: "2026-07-21T10:00:06.000Z",
+    });
+    // Unpaired noise strategy that v1 would ship and v2 strategic should omit.
+    for (let i = 0; i < 10; i++) {
+      await insertCognition(db, {
+        id: randomUUID(),
+        gameId: fixture.gameId,
+        actorPlayerId: fixture.playerA,
+        actorUserId: fixture.ownerUserId,
+        artifactType: "strategy",
+        decisionId: randomUUID(),
+        payload: { decisionLog: `unpaired reflection ${i} with extra filler text for size` },
+        createdAt: `2026-07-21T10:01:0${i}.000Z`,
+      });
+    }
+
+    const v1 = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 1,
+        includeUnpaired: true,
+        limit: 50,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    const v2 = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 2,
+        limit: 50,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(v1.ok && v2.ok).toBe(true);
+    if (!v1.ok || !v2.ok) return;
+    const v1Chars = Buffer.byteLength(JSON.stringify(v1), "utf8");
+    const v2Chars = Buffer.byteLength(JSON.stringify(v2), "utf8");
+    // Structural + unpaired omission should beat 50% of bloated v1+unpaired.
+    expect(v2Chars).toBeLessThanOrEqual(Math.floor(v1Chars * 0.5));
+    expect(v2.correlationSummary.unpairedOmitted).toBeGreaterThanOrEqual(10);
   });
 });
 
@@ -461,6 +580,7 @@ async function insertCognition(
     payload: Record<string, unknown>;
     createdAt: string;
     decisionId?: string;
+    action?: string;
   },
 ): Promise<void> {
   await db.insert(schema.gameCognitiveArtifacts).values({
@@ -470,7 +590,7 @@ async function insertCognition(
     actorRole: "player",
     actorPlayerId: params.actorPlayerId,
     actorUserId: params.actorUserId,
-    action: "vote",
+    action: params.action ?? "mingle-turn",
     phase: "LOBBY",
     round: 1,
     decisionId: params.decisionId,

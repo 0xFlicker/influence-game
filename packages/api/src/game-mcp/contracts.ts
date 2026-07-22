@@ -1698,6 +1698,20 @@ export function assertMatchNarrativePageResult(
     if (!Array.isArray(record.groups)) {
       throw new Error("match narrative result.groups must be an array");
     }
+    const schemaVersion = record.schemaVersion;
+    if (schemaVersion === 2) {
+      // compact-v2: slot-based groups (text/thinking/strategy), no members[].
+      for (const [index, group] of record.groups.entries()) {
+        const groupRecord = requireRecord(group, `groups[${index}]`);
+        if ("members" in groupRecord) {
+          throw new Error(`groups[${index}] must not include members in schemaVersion 2`);
+        }
+        if (groupRecord.corr !== "exact" && groupRecord.corr !== "inferred" && groupRecord.corr !== "uncorrelated") {
+          throw new Error(`groups[${index}].corr must be exact|inferred|uncorrelated`);
+        }
+      }
+      return;
+    }
     for (const [index, group] of record.groups.entries()) {
       const groupRecord = requireRecord(group, `groups[${index}]`);
       if (!Array.isArray(groupRecord.members)) {

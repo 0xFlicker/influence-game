@@ -75,8 +75,16 @@ export async function runVotePhase(
       const votes = await agent.getVotes(phaseCtx);
 
       await assertCanAcceptCommit(ctx);
+      const voteDecisionId = agent.getLastPrivateDecisionId?.();
       gameState.recordVote(player.id, votes.empowerTarget, votes.exposeTarget, [
-        agentTurnSourcePointer(player.id, "vote", gameState.round, Phase.VOTE),
+        agentTurnSourcePointer(
+          player.id,
+          "vote",
+          gameState.round,
+          Phase.VOTE,
+          undefined,
+          voteDecisionId,
+        ),
       ]);
 
       const empowerName = gameState.getPlayerName(votes.empowerTarget);
