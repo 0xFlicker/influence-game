@@ -274,6 +274,12 @@ export interface MatchNarrativeCursorFilters {
 /**
  * Sealed narrative cursor claims. Surface is required; owner walks also bind
  * ownershipFingerprint while producer walks use a fixed sentinel.
+ *
+ * `canonicalLastTrustedSequence` pins the trusted canonical event prefix used
+ * for decisionId→vote.cast linkage on this walk:
+ * - number ≥ 0: fresh/linked walk; continuations ignore later events and go
+ *   stale if the trusted prefix shrinks below the pin
+ * - null: legacy cursor without a pin (unlinked walk; reissue preserves null)
  */
 export interface MatchNarrativeCursorClaims {
   version: typeof MATCH_READ_CURSOR_VERSION | typeof MATCH_READ_CURSOR_VERSION_V1;
@@ -294,6 +300,11 @@ export interface MatchNarrativeCursorClaims {
   readThrough: MatchNarrativeDualReadThrough;
   keyset: MatchNarrativeKeyset;
   filters: MatchNarrativeCursorFilters;
+  /**
+   * Internal pin for trusted canonical-event linkage. Not part of public
+   * `readThrough` response DTO (avoids recurring token overhead).
+   */
+  canonicalLastTrustedSequence: number | null;
 }
 
 export type MatchReadCursorDecodeResult =
@@ -354,6 +365,12 @@ export interface IssueMatchNarrativeCursorInput {
   readThrough: MatchNarrativeDualReadThrough;
   keyset: MatchNarrativeKeyset;
   filters: MatchNarrativeCursorFilters;
+  /**
+   * Trusted canonical event prefix pin. Fresh reads pass lastTrustedSequence;
+   * continuations re-seal the decoded pin (including null for legacy walks).
+   * Defaults to null when omitted (tests / legacy).
+   */
+  canonicalLastTrustedSequence?: number | null;
   nowMs?: number;
   ttlMs?: number;
 }
@@ -541,6 +558,9 @@ export function issueMatchNarrativeCursor(
   const nowMs = input.nowMs ?? Date.now();
   const ttlMs = clampTtlMs(input.ttlMs);
   const filters = normalizeNarrativeFilters(input.filters);
+  const pin = normalizeCanonicalLastTrustedSequence(
+    input.canonicalLastTrustedSequence ?? null,
+  );
   const claims: MatchNarrativeCursorClaims = {
     version: MATCH_READ_CURSOR_VERSION,
     purpose: MATCH_NARRATIVE_CURSOR_PURPOSE,
@@ -569,6 +589,7 @@ export function issueMatchNarrativeCursor(
     readThrough: normalizeNarrativeDualReadThrough(input.readThrough),
     keyset: normalizeNarrativeKeyset(input.keyset),
     filters,
+    canonicalLastTrustedSequence: pin,
   };
 
   return sealClaimsV2(claims, MATCH_NARRATIVE_CURSOR_PURPOSE, secretMaterial);
@@ -1067,6 +1088,13 @@ function decodeSealedClaimsV1(
     if (filters.schemaVersion === undefined) filters.schemaVersion = 2;
     if (filters.includeUnpaired === undefined) filters.includeUnpaired = false;
   }
+  // Legacy V1 narrative cursors have no canonical pin — preserve unlinked walks.
+  if (
+    expectedPurpose === MATCH_NARRATIVE_CURSOR_PURPOSE
+    && record.canonicalLastTrustedSequence === undefined
+  ) {
+    record.canonicalLastTrustedSequence = null;
+  }
 
   // V1 narrative keysets sealed joined member ids; live pages now use digests.
   // Migrate so exclusive continuation stays in the same string space as sort/keyset.
@@ -1136,7 +1164,9 @@ function encodeClaimsTuple(
     ];
   }
   const c = claims as MatchNarrativeCursorClaims;
-  return [
+  // Length 12 = legacy unlinked walk (no pin). Length 13 seals the pin so
+  // continuations freeze the trusted event prefix used for vote.cast linkage.
+  const base: MsgpackValue[] = [
     c.issuedAtMs,
     c.expiresAtMs,
     c.subjectUserId,
@@ -1153,6 +1183,10 @@ function encodeClaimsTuple(
     encodeNarrativeKeyset(c.keyset),
     encodeNarrativeFilters(c.filters),
   ];
+  if (c.canonicalLastTrustedSequence !== null) {
+    base.push(c.canonicalLastTrustedSequence);
+  }
+  return base;
 }
 
 function claimsFromTuple(
@@ -1246,8 +1280,8 @@ function claimsFromTuple(
     };
   }
 
-  // Narrative
-  if (value.length !== 12) return null;
+  // Narrative: length 12 = legacy (no pin → null); length 13 = pin present.
+  if (value.length !== 12 && value.length !== 13) return null;
   const issuedAtMs = value[0];
   const expiresAtMs = value[1];
   if (!validateTimeWindow(issuedAtMs, expiresAtMs, nowMs)) return null;
@@ -1265,6 +1299,12 @@ function claimsFromTuple(
   const keyset = decodeNarrativeKeyset(value[10]);
   const filters = decodeNarrativeFilters(value[11]);
   if (!transcriptRt || !cognitionRt || !keyset || !filters) return null;
+  let canonicalLastTrustedSequence: number | null = null;
+  if (value.length === 13) {
+    const pin = value[12];
+    if (typeof pin !== "number" || !Number.isInteger(pin) || pin < 0) return null;
+    canonicalLastTrustedSequence = pin;
+  }
   return {
     version: MATCH_READ_CURSOR_VERSION,
     purpose: MATCH_NARRATIVE_CURSOR_PURPOSE,
@@ -1281,6 +1321,7 @@ function claimsFromTuple(
     readThrough: { transcript: transcriptRt, cognition: cognitionRt },
     keyset,
     filters,
+    canonicalLastTrustedSequence,
     filterFingerprint: fingerprintMatchNarrativeFilters({
       preset: filters.preset,
       detail: filters.detail,
@@ -1336,6 +1377,16 @@ function encodeCognitionFilters(f: MatchCognitionCursorFilters): MsgpackValue[] 
     f.round,
     f.action,
   ];
+}
+
+function normalizeCanonicalLastTrustedSequence(
+  value: number | null | undefined,
+): number | null {
+  if (value == null) return null;
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    return null;
+  }
+  return value;
 }
 
 function encodeNarrativeKeyset(ks: MatchNarrativeKeyset): MsgpackValue[] {
@@ -1764,6 +1815,18 @@ function isNarrativeClaims(value: unknown): value is MatchNarrativeCursorClaims 
   if (!isNarrativeDualReadThrough(record.readThrough)) return false;
   if (!isNarrativeKeyset(record.keyset)) return false;
   if (!isNarrativeFilters(record.filters)) return false;
+  // Legacy V1/decoded claims may omit the pin; treat as null (unlinked walk).
+  if (
+    record.canonicalLastTrustedSequence !== undefined
+    && record.canonicalLastTrustedSequence !== null
+    && (
+      typeof record.canonicalLastTrustedSequence !== "number"
+      || !Number.isInteger(record.canonicalLastTrustedSequence)
+      || record.canonicalLastTrustedSequence < 0
+    )
+  ) {
+    return false;
+  }
   return true;
 }
 

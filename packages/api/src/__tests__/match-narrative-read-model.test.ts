@@ -1,11 +1,20 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
+import { Phase, type CanonicalGameEvent } from "@influence/engine";
 import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import {
+  decodeMatchNarrativeCursor,
+  issueMatchNarrativeCursor,
+} from "../services/match-read-cursor.js";
 import { readMatchNarrativePage } from "../services/match-narrative-read-model.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
-import { insertGame } from "./durable-run-test-utils.js";
+import {
+  insertCanonicalEventRows,
+  insertGame,
+  insertOwner,
+} from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 const CURSOR_SECRET = "test-jwt-secret-match-narrative-u3u4-aaaa";
@@ -507,6 +516,372 @@ describe("match-narrative-read-model dual surface", () => {
     expect(page.correlationSummary.exactCrossLane).toBeGreaterThanOrEqual(1);
   });
 
+  test("trusted vote.cast decisionId linkage on owner and producer compact narratives", async () => {
+    const fixture = await seedNarrativeGame(db);
+    const decisionId = randomUUID();
+    const ownerEpoch = await insertOwner(db, fixture.gameId);
+
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "strategy",
+      decisionId,
+      action: "vote",
+      phase: "VOTE",
+      round: 2,
+      payload: { decisionLog: "empower Mira, expose Echo" },
+      createdAt: "2026-07-21T10:00:10.000Z",
+    });
+    await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
+      makeVoteCastEvent({
+        gameId: fixture.gameId,
+        sequence: 1,
+        voterId: fixture.playerA,
+        decisionId,
+        round: 2,
+      }),
+    ]);
+
+    const ownerPage = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 2,
+        includeUnpaired: true,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(ownerPage.ok).toBe(true);
+    if (!ownerPage.ok) return;
+    const ownerGroup = ownerPage.groups.find((g) => g.decisionId === decisionId);
+    expect(ownerGroup).toBeTruthy();
+    if (!ownerGroup || !("actions" in ownerGroup)) throw new Error("expected actions");
+    expect(ownerGroup.actions).toEqual([{ seq: 1, type: "vote.cast" }]);
+    // Public readThrough must not grow a canonical pin field.
+    expect(JSON.stringify(ownerPage.readThrough)).not.toContain("lastTrustedSequence");
+    expect(JSON.stringify(ownerPage)).not.toContain("empowerTarget");
+    expect(JSON.stringify(ownerPage)).not.toContain("sourcePointers");
+
+    const producerPage = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 2,
+        includeUnpaired: true,
+      },
+      {
+        subjectUserId: fixture.producerUserId,
+        surface: "producer",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(producerPage.ok).toBe(true);
+    if (!producerPage.ok) return;
+    const producerGroup = producerPage.groups.find((g) => g.decisionId === decisionId);
+    expect(producerGroup).toBeTruthy();
+    if (!producerGroup || !("actions" in producerGroup)) throw new Error("expected actions");
+    expect(producerGroup.actions).toEqual([{ seq: 1, type: "vote.cast" }]);
+  });
+
+  test("non-owned cognition does not emit vote.cast citation on owner surface", async () => {
+    const fixture = await seedNarrativeGame(db);
+    const decisionId = randomUUID();
+    const ownerEpoch = await insertOwner(db, fixture.gameId);
+
+    // Bob's vote cognition is not owned by Alice's owner user.
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerB,
+      artifactType: "strategy",
+      decisionId,
+      action: "vote",
+      phase: "VOTE",
+      round: 2,
+      payload: { decisionLog: "bob vote plan" },
+      createdAt: "2026-07-21T10:00:10.000Z",
+    });
+    await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
+      makeVoteCastEvent({
+        gameId: fixture.gameId,
+        sequence: 1,
+        voterId: fixture.playerB,
+        decisionId,
+        round: 2,
+      }),
+    ]);
+
+    const page = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 2,
+        includeUnpaired: true,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+    expect(page.groups.some((g) => g.decisionId === decisionId)).toBe(false);
+    expect(JSON.stringify(page)).not.toContain("vote.cast");
+    expect(JSON.stringify(page)).not.toContain("bob vote plan");
+  });
+
+  test("pinned walk ignores vote.cast events appended after page one", async () => {
+    const fixture = await seedNarrativeGame(db);
+    const decisionOld = randomUUID();
+    const decisionNew = randomUUID();
+    const ownerEpoch = await insertOwner(db, fixture.gameId);
+
+    // Two strategy rows so limit=1 forces pagination.
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "strategy",
+      decisionId: decisionOld,
+      action: "vote",
+      phase: "VOTE",
+      round: 2,
+      payload: { decisionLog: "first vote plan" },
+      createdAt: "2026-07-21T10:00:01.000Z",
+    });
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "strategy",
+      decisionId: decisionNew,
+      action: "vote",
+      phase: "VOTE",
+      round: 2,
+      payload: { decisionLog: "second vote plan" },
+      createdAt: "2026-07-21T10:00:02.000Z",
+    });
+    await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
+      makeVoteCastEvent({
+        gameId: fixture.gameId,
+        sequence: 1,
+        voterId: fixture.playerA,
+        decisionId: decisionOld,
+        round: 2,
+      }),
+    ]);
+
+    const page1 = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 2,
+        includeUnpaired: true,
+        limit: 1,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(page1.ok).toBe(true);
+    if (!page1.ok || !page1.nextCursor) throw new Error("expected page1 cursor");
+    const decoded = decodeMatchNarrativeCursor(page1.nextCursor, {
+      secretMaterial: CURSOR_SECRET,
+      expectedSurface: "subject_owner",
+    });
+    expect(decoded.status).toBe("ok");
+    if (decoded.status !== "ok") return;
+    expect(decoded.claims.canonicalLastTrustedSequence).toBe(1);
+
+    // Append a later trusted vote after page one was sealed.
+    await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
+      makeVoteCastEvent({
+        gameId: fixture.gameId,
+        sequence: 2,
+        voterId: fixture.playerA,
+        decisionId: decisionNew,
+        round: 2,
+      }),
+    ]);
+    await db
+      .update(schema.gameRunOwners)
+      .set({ lastPersistedEventSequence: 2 })
+      .where(eq(schema.gameRunOwners.gameId, fixture.gameId));
+
+    const page2 = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        cursor: page1.nextCursor,
+        schemaVersion: 2,
+        includeUnpaired: true,
+        limit: 1,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(page2.ok).toBe(true);
+    if (!page2.ok) return;
+    // Continuation is pinned at seq 1 — the new vote.cast must not link.
+    const page2Group = page2.groups.find((g) => g.decisionId === decisionNew);
+    expect(page2Group).toBeTruthy();
+    if (!page2Group) return;
+    expect("actions" in page2Group ? page2Group.actions : undefined).toBeUndefined();
+
+    // Fresh read sees the new event.
+    const fresh = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 2,
+        includeUnpaired: true,
+        limit: 50,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(fresh.ok).toBe(true);
+    if (!fresh.ok) return;
+    const freshNew = fresh.groups.find((g) => g.decisionId === decisionNew);
+    expect(freshNew && "actions" in freshNew ? freshNew.actions : undefined).toEqual([
+      { seq: 2, type: "vote.cast" },
+    ]);
+  });
+
+  test("legacy unlinked cursor continues without vote.cast linkage", async () => {
+    const fixture = await seedNarrativeGame(db);
+    const decisionId = randomUUID();
+    const ownerEpoch = await insertOwner(db, fixture.gameId);
+
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "strategy",
+      decisionId,
+      action: "vote",
+      phase: "VOTE",
+      round: 2,
+      payload: { decisionLog: "vote plan" },
+      createdAt: "2026-07-21T10:00:01.000Z",
+    });
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "strategy",
+      decisionId: randomUUID(),
+      action: "vote",
+      phase: "VOTE",
+      round: 2,
+      payload: { decisionLog: "later plan" },
+      createdAt: "2026-07-21T10:00:02.000Z",
+    });
+    await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
+      makeVoteCastEvent({
+        gameId: fixture.gameId,
+        sequence: 1,
+        voterId: fixture.playerA,
+        decisionId,
+        round: 2,
+      }),
+    ]);
+
+    const page1 = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        limit: 1,
+        includeUnpaired: true,
+        schemaVersion: 2,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(page1.ok).toBe(true);
+    if (!page1.ok || !page1.nextCursor) throw new Error("expected cursor");
+    const decoded = decodeMatchNarrativeCursor(page1.nextCursor, {
+      secretMaterial: CURSOR_SECRET,
+      expectedSurface: "subject_owner",
+    });
+    expect(decoded.status).toBe("ok");
+    if (decoded.status !== "ok") return;
+    // Fresh page1 sealed a pin; strip it to simulate a legacy unlinked walk.
+    expect(decoded.claims.canonicalLastTrustedSequence).toBe(1);
+
+    const unlinked = issueMatchNarrativeCursor({
+      subjectUserId: decoded.claims.subjectUserId,
+      gameId: decoded.claims.gameId,
+      surface: decoded.claims.surface,
+      ownershipFingerprint: decoded.claims.ownershipFingerprint,
+      transcriptCaptureVersion: decoded.claims.transcriptCaptureVersion,
+      cognitiveCaptureVersion: decoded.claims.cognitiveCaptureVersion,
+      mode: "snapshot",
+      readThrough: decoded.claims.readThrough,
+      keyset: decoded.claims.keyset,
+      filters: decoded.claims.filters,
+      canonicalLastTrustedSequence: null,
+    }, CURSOR_SECRET);
+
+    const continued = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        cursor: unlinked,
+        includeUnpaired: true,
+        schemaVersion: 2,
+        limit: 10,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(continued.ok).toBe(true);
+    if (!continued.ok) return;
+    for (const g of continued.groups) {
+      expect("actions" in g ? g.actions : undefined).toBeUndefined();
+    }
+    if (continued.nextCursor) {
+      const reissued = decodeMatchNarrativeCursor(continued.nextCursor, {
+        secretMaterial: CURSOR_SECRET,
+        expectedSurface: "subject_owner",
+      });
+      expect(reissued.status).toBe("ok");
+      if (reissued.status === "ok") {
+        expect(reissued.claims.canonicalLastTrustedSequence).toBeNull();
+      }
+    }
+  });
+
   test("compact-v2 is smaller than v1 members shape on paired fixture", async () => {
     const fixture = await seedNarrativeGame(db);
     const decisionId = randomUUID();
@@ -702,6 +1077,8 @@ async function insertCognition(
     createdAt: string;
     decisionId?: string;
     action?: string;
+    phase?: string;
+    round?: number;
   },
 ): Promise<void> {
   await db.insert(schema.gameCognitiveArtifacts).values({
@@ -712,12 +1089,49 @@ async function insertCognition(
     actorPlayerId: params.actorPlayerId,
     actorUserId: params.actorUserId,
     action: params.action ?? "mingle-turn",
-    phase: "LOBBY",
-    round: 1,
+    phase: params.phase ?? "LOBBY",
+    round: params.round ?? 1,
     decisionId: params.decisionId,
     payloadByteLength: Buffer.byteLength(JSON.stringify(params.payload), "utf8"),
     payload: params.payload,
     visibilityStatus: "active",
     createdAt: params.createdAt,
   });
+}
+
+function makeVoteCastEvent(params: {
+  gameId: string;
+  sequence: number;
+  voterId: string;
+  decisionId: string;
+  round: number;
+  empowerTarget?: string;
+  exposeTarget?: string;
+}): CanonicalGameEvent {
+  return {
+    sequence: params.sequence,
+    gameId: params.gameId,
+    round: params.round,
+    phase: Phase.VOTE,
+    type: "vote.cast",
+    timestamp: "2026-07-21T12:00:00.000Z",
+    source: "engine",
+    visibility: "producer",
+    payloadVersion: 1,
+    sourcePointers: [
+      {
+        kind: "agent_turn",
+        actorId: params.voterId,
+        action: "vote",
+        round: params.round,
+        phase: Phase.VOTE,
+        decisionId: params.decisionId,
+      },
+    ],
+    payload: {
+      voterId: params.voterId,
+      empowerTarget: params.empowerTarget ?? randomUUID(),
+      exposeTarget: params.exposeTarget ?? randomUUID(),
+    },
+  };
 }

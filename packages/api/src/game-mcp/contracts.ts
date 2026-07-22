@@ -1222,9 +1222,10 @@ const narrativeGroupSchema = closedObject(
     relatedActionRefs: {
       type: "array",
       items: closedObject(
-        ["eventSequence", "phase", "round", "action"],
+        ["eventSequence", "eventType", "phase", "round", "action"],
         {
           eventSequence: { type: "number" },
+          eventType: { type: "string" },
           phase: nullableStringSchema,
           round: nullableNumberSchema,
           action: nullableStringSchema,
@@ -1234,7 +1235,143 @@ const narrativeGroupSchema = closedObject(
   },
 );
 
-const matchNarrativeOkSchema = closedObject(
+/** Shared page envelope fields for v1 and v2 narrative success contracts. */
+const matchNarrativePageSharedProps = {
+  ok: { type: "boolean", const: true },
+  game: closedObject(
+    ["id", "slug", "status", "transcriptCaptureVersion", "cognitiveArtifactCaptureVersion"],
+    {
+      id: { type: "string" },
+      slug: { type: "string" },
+      status: { type: "string" },
+      transcriptCaptureVersion: { type: "number" },
+      cognitiveArtifactCaptureVersion: { type: "number" },
+    },
+  ),
+  surface: { type: "string", enum: ["subject_owner", "producer"] },
+  access: closedObject(
+    ["surface", "privateLaneAuthorized", "ownedSeatCount"],
+    {
+      surface: { type: "string", enum: ["subject_owner", "producer"] },
+      privateLaneAuthorized: { type: "boolean" },
+      ownedSeatCount: nullableNumberSchema,
+    },
+  ),
+  preset: {
+    type: "string",
+    enum: ["strategic", "dialogue_only", "full_cognition"],
+  },
+  detail: { type: "string", enum: ["compact", "full"] },
+  filters: closedObject(
+    [
+      "preset",
+      "detail",
+      "playerId",
+      "player",
+      "phase",
+      "round",
+      "action",
+      "fromTimestampMs",
+      "toTimestampMs",
+      "schemaVersion",
+      "includeUnpaired",
+    ],
+    {
+      preset: {
+        type: "string",
+        enum: ["strategic", "dialogue_only", "full_cognition"],
+      },
+      detail: { type: "string", enum: ["compact", "full"] },
+      playerId: nullableStringSchema,
+      player: nullableStringSchema,
+      phase: nullableStringSchema,
+      round: nullableNumberSchema,
+      action: nullableStringSchema,
+      fromTimestampMs: nullableNumberSchema,
+      toTimestampMs: nullableNumberSchema,
+      schemaVersion: { type: "number", enum: [1, 2] },
+      includeUnpaired: { type: "boolean" },
+    },
+  ),
+  readThrough: closedObject(
+    ["transcript", "cognition"],
+    {
+      transcript: closedObject(
+        [
+          "mode",
+          "throughEntrySequence",
+          "throughLegacyTimestamp",
+          "throughLegacyId",
+        ],
+        {
+          mode: {
+            type: "string",
+            enum: ["live_watermark", "completed_terminal", "legacy_terminal"],
+          },
+          throughEntrySequence: nullableNumberSchema,
+          throughLegacyTimestamp: nullableNumberSchema,
+          throughLegacyId: nullableNumberSchema,
+        },
+      ),
+      cognition: closedObject(
+        ["mode", "throughCreatedAt", "throughId"],
+        {
+          mode: {
+            type: "string",
+            enum: ["live_snapshot", "completed_snapshot", "empty"],
+          },
+          throughCreatedAt: nullableStringSchema,
+          throughId: nullableStringSchema,
+        },
+      ),
+    },
+  ),
+  correlationSummary: closedObject(
+    [
+      "exact",
+      "exactCrossLane",
+      "idStampedSingleton",
+      "inferred",
+      "uncorrelated",
+      "paired",
+      "unpaired",
+      "unpairedOmitted",
+    ],
+    {
+      exact: { type: "number" },
+      exactCrossLane: { type: "number" },
+      idStampedSingleton: { type: "number" },
+      inferred: { type: "number" },
+      uncorrelated: { type: "number" },
+      paired: { type: "number" },
+      unpaired: { type: "number" },
+      unpairedOmitted: { type: "number" },
+    },
+  ),
+  limitations: {
+    type: "array",
+    items: closedObject(
+      ["code", "message"],
+      {
+        code: { type: "string" },
+        message: { type: "string" },
+      },
+    ),
+  },
+  contentTrust: contentTrustSchema,
+  notBoardAuthority: { type: "boolean", const: true },
+  pageSize: { type: "number" },
+  nextCursor: nullableStringSchema,
+  nextCursorKind: {
+    anyOf: [
+      { type: "string", enum: ["page"] },
+      { type: "null" },
+    ],
+  },
+} as const;
+
+/** Legacy members[] envelope (schemaVersion 1). */
+const matchNarrativeOkSchemaV1 = closedObject(
   [
     "ok",
     "schemaVersion",
@@ -1255,123 +1392,84 @@ const matchNarrativeOkSchema = closedObject(
     "nextCursorKind",
   ],
   {
-    ok: { type: "boolean", const: true },
+    ...matchNarrativePageSharedProps,
     schemaVersion: { type: "number", const: 1 },
-    game: closedObject(
-      ["id", "slug", "status", "transcriptCaptureVersion", "cognitiveArtifactCaptureVersion"],
-      {
-        id: { type: "string" },
-        slug: { type: "string" },
-        status: { type: "string" },
-        transcriptCaptureVersion: { type: "number" },
-        cognitiveArtifactCaptureVersion: { type: "number" },
-      },
-    ),
-    surface: { type: "string", enum: ["subject_owner", "producer"] },
-    access: closedObject(
-      ["surface", "privateLaneAuthorized", "ownedSeatCount"],
-      {
-        surface: { type: "string", enum: ["subject_owner", "producer"] },
-        privateLaneAuthorized: { type: "boolean" },
-        ownedSeatCount: nullableNumberSchema,
-      },
-    ),
-    preset: {
-      type: "string",
-      enum: ["strategic", "dialogue_only", "full_cognition"],
-    },
-    detail: { type: "string", enum: ["compact", "full"] },
-    filters: closedObject(
-      [
-        "preset",
-        "detail",
-        "playerId",
-        "player",
-        "phase",
-        "round",
-        "action",
-        "fromTimestampMs",
-        "toTimestampMs",
-      ],
-      {
-        preset: {
-          type: "string",
-          enum: ["strategic", "dialogue_only", "full_cognition"],
-        },
-        detail: { type: "string", enum: ["compact", "full"] },
-        playerId: nullableStringSchema,
-        player: nullableStringSchema,
-        phase: nullableStringSchema,
-        round: nullableNumberSchema,
-        action: nullableStringSchema,
-        fromTimestampMs: nullableNumberSchema,
-        toTimestampMs: nullableNumberSchema,
-      },
-    ),
-    readThrough: closedObject(
-      ["transcript", "cognition"],
-      {
-        transcript: closedObject(
-          [
-            "mode",
-            "throughEntrySequence",
-            "throughLegacyTimestamp",
-            "throughLegacyId",
-          ],
-          {
-            mode: {
-              type: "string",
-              enum: ["live_watermark", "completed_terminal", "legacy_terminal"],
-            },
-            throughEntrySequence: nullableNumberSchema,
-            throughLegacyTimestamp: nullableNumberSchema,
-            throughLegacyId: nullableNumberSchema,
-          },
-        ),
-        cognition: closedObject(
-          ["mode", "throughCreatedAt", "throughId"],
-          {
-            mode: {
-              type: "string",
-              enum: ["live_snapshot", "completed_snapshot", "empty"],
-            },
-            throughCreatedAt: nullableStringSchema,
-            throughId: nullableStringSchema,
-          },
-        ),
-      },
-    ),
-    correlationSummary: closedObject(
-      ["exact", "inferred", "uncorrelated"],
-      {
-        exact: { type: "number" },
-        inferred: { type: "number" },
-        uncorrelated: { type: "number" },
-      },
-    ),
-    limitations: {
-      type: "array",
-      items: closedObject(
-        ["code", "message"],
-        {
-          code: { type: "string" },
-          message: { type: "string" },
-        },
-      ),
-    },
-    contentTrust: contentTrustSchema,
-    notBoardAuthority: { type: "boolean", const: true },
     groups: { type: "array", items: narrativeGroupSchema },
-    pageSize: { type: "number" },
-    nextCursor: nullableStringSchema,
-    nextCursorKind: {
-      anyOf: [
-        { type: "string", enum: ["page"] },
-        { type: "null" },
-      ],
-    },
   },
 );
+
+/**
+ * Compact-v2 slot groups. Optional `actions` are canonical event citations
+ * (`{seq,type}`) — not board outcomes. Never payloads, targets, or pointers.
+ */
+const compactV2ActionCitationSchema = closedObject(
+  ["seq", "type"],
+  {
+    seq: { type: "number" },
+    type: { type: "string" },
+  },
+);
+
+const compactV2GroupSchema = closedObject(
+  ["corr"],
+  {
+    decisionId: { type: "string" },
+    corr: { type: "string", enum: ["exact", "inferred", "uncorrelated"] },
+    actor: { type: "string" },
+    playerId: { type: "string" },
+    phase: { type: "string" },
+    round: { type: "number" },
+    action: { type: "string" },
+    text: { type: "string" },
+    thinking: { type: "string" },
+    strategy: { type: "string" },
+    lens: { type: "string" },
+    scope: { type: "string" },
+    seq: { type: "number" },
+    actions: {
+      type: "array",
+      items: compactV2ActionCitationSchema,
+    },
+    truncated: { type: "boolean" },
+    refs: closedObject(
+      [],
+      {
+        thinkingId: { type: "string" },
+        strategyId: { type: "string" },
+        dialogueRowId: { type: "string" },
+      },
+    ),
+  },
+);
+
+const matchNarrativeOkSchemaV2 = closedObject(
+  [
+    "ok",
+    "schemaVersion",
+    "game",
+    "surface",
+    "preset",
+    "detail",
+    "readThrough",
+    "correlationSummary",
+    "contentTrust",
+    "notBoardAuthority",
+    "groups",
+    "pageSize",
+    "nextCursor",
+    "nextCursorKind",
+  ],
+  {
+    ...matchNarrativePageSharedProps,
+    schemaVersion: { type: "number", const: 2 },
+    // access/filters/limitations optional under compact omit-nulls encoder.
+    groups: { type: "array", items: compactV2GroupSchema },
+  },
+);
+
+const matchNarrativeOkSchema = {
+  anyOf: [matchNarrativeOkSchemaV2, matchNarrativeOkSchemaV1],
+};
 
 const matchNarrativeErrorSchema = {
   anyOf: [
@@ -1446,17 +1544,19 @@ export const READ_OWNED_MATCH_COGNITION_DESCRIPTION = [
 
 export const READ_OWNED_MATCH_NARRATIVE_DESCRIPTION = [
   "Page grouped match narrative for a participating owner: authorized dialogue plus owned-seat thinking/strategy.",
-  "Default preset is strategic (dialogue + strategy, omit raw thinking); detail defaults to compact.",
+  "Default preset is strategic (dialogue + strategy, omit raw thinking); detail defaults to compact; schemaVersion 2 collapses members into text/thinking/strategy slots.",
   "Exact decisionId joins when stamped; otherwise honest inferred/uncorrelated correlation.",
-  "Not board-fact authority (notBoardAuthority=true). Members carry authority transcript|cognition only — never reasoning or private traces.",
+  "Optional group actions[{seq,type}] cite trusted canonical events (e.g. vote.cast) for already-authorized owned cognition — citations only, not board outcomes. Use filter_events/read_round_facts for board facts.",
+  "Not board-fact authority (notBoardAuthority=true). Never returns payloads, vote targets, source pointers, reasoning, or private traces.",
   "Producer credentials do not silently widen non-owned cognition on this tool.",
   "Requires games:read and participating ownership. Read-only.",
 ].join(" ");
 
 export const READ_PRODUCER_MATCH_NARRATIVE_DESCRIPTION = [
   "Page grouped match narrative for a producer: full product dialogue scopes plus all player/juror thinking/strategy.",
-  "Default preset is strategic (dialogue + strategy); detail defaults to compact.",
-  "No ownership required. Does not return private-trace bodies or reasoning dumps inside members.",
+  "Default preset is strategic (dialogue + strategy); detail defaults to compact; schemaVersion 2 uses slot groups.",
+  "Optional group actions[{seq,type}] are trusted canonical event citations for groups with authorized cognition — not board outcomes and never unlocked by public dialogue alone.",
+  "No ownership required. Does not return private-trace bodies, reasoning dumps, payloads, or source pointers.",
   "Not board-fact authority. games:read alone does not grant this tool; requires producer scope and current producer role.",
   "Read-only. Prefer this over client-side merges of producer analysis + traces for token-efficient story reconstruction.",
 ].join(" ");
@@ -1658,6 +1758,28 @@ export function assertMatchCognitionPageResult(
   throw new Error("match cognition result has invalid ok shape");
 }
 
+function assertNarrativeActionCitations(value: unknown, path: string): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    throw new Error(`${path} must be an array when present`);
+  }
+  for (const [index, item] of value.entries()) {
+    const record = requireRecord(item, `${path}[${index}]`);
+    if (typeof record.seq !== "number" || !Number.isFinite(record.seq)) {
+      throw new Error(`${path}[${index}].seq must be a number`);
+    }
+    if (typeof record.type !== "string" || record.type.length === 0) {
+      throw new Error(`${path}[${index}].type must be a non-empty string`);
+    }
+    // Compact citations are {seq,type} only.
+    for (const key of Object.keys(record)) {
+      if (key !== "seq" && key !== "type") {
+        throw new Error(`${path}[${index}] must only include seq and type`);
+      }
+    }
+  }
+}
+
 export function assertMatchNarrativePageResult(
   value: unknown,
 ): asserts value is MatchNarrativePageResult {
@@ -1709,6 +1831,19 @@ export function assertMatchNarrativePageResult(
         if (groupRecord.corr !== "exact" && groupRecord.corr !== "inferred" && groupRecord.corr !== "uncorrelated") {
           throw new Error(`groups[${index}].corr must be exact|inferred|uncorrelated`);
         }
+        assertNarrativeActionCitations(groupRecord.actions, `groups[${index}].actions`);
+        // Hard red lines: never serialize board payloads through narrative.
+        for (const banned of [
+          "payload",
+          "sourcePointers",
+          "empowerTarget",
+          "exposeTarget",
+          "voterId",
+        ] as const) {
+          if (banned in groupRecord) {
+            throw new Error(`groups[${index}] must not include ${banned}`);
+          }
+        }
       }
       return;
     }
@@ -1716,6 +1851,27 @@ export function assertMatchNarrativePageResult(
       const groupRecord = requireRecord(group, `groups[${index}]`);
       if (!Array.isArray(groupRecord.members)) {
         throw new Error(`groups[${index}].members must be an array`);
+      }
+      if (groupRecord.relatedActionRefs !== undefined) {
+        if (!Array.isArray(groupRecord.relatedActionRefs)) {
+          throw new Error(`groups[${index}].relatedActionRefs must be an array`);
+        }
+        for (const [rIndex, ref] of groupRecord.relatedActionRefs.entries()) {
+          const refRecord = requireRecord(
+            ref,
+            `groups[${index}].relatedActionRefs[${rIndex}]`,
+          );
+          if (typeof refRecord.eventSequence !== "number") {
+            throw new Error(
+              `groups[${index}].relatedActionRefs[${rIndex}].eventSequence must be a number`,
+            );
+          }
+          if (typeof refRecord.eventType !== "string" || refRecord.eventType.length === 0) {
+            throw new Error(
+              `groups[${index}].relatedActionRefs[${rIndex}].eventType must be a non-empty string`,
+            );
+          }
+        }
       }
       for (const [mIndex, member] of groupRecord.members.entries()) {
         const memberRecord = requireRecord(member, `groups[${index}].members[${mIndex}]`);

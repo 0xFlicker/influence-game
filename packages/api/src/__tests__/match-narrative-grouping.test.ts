@@ -259,7 +259,7 @@ describe("groupNarrativeMembers", () => {
     expect(result.contentTrust).toBe("untrusted_game_authored");
   });
 
-  test("relatedActionRefs soft-derived from cognition eventSequence", () => {
+  test("does not soft-derive relatedActionRefs from cognition eventSequence", () => {
     const result = groupNarrativeMembers({
       members: [
         cognition({
@@ -269,19 +269,14 @@ describe("groupNarrativeMembers", () => {
           action: "vote",
           phase: "vote",
           round: 2,
+          decisionId: "dec-vote",
         }),
       ],
       preset: "strategic",
       detail: "full",
     });
 
-    expect(result.groups[0]!.relatedActionRefs).toEqual([
-      {
-        eventSequence: 42,
-        phase: "vote",
-        round: 2,
-        action: "vote",
-      },
-    ]);
+    // Citations come only from the trusted canonical join in the read model.
+    expect(result.groups[0]!.relatedActionRefs).toBeUndefined();
   });
 });

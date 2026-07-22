@@ -89,8 +89,11 @@ export interface NarrativeGroupMember {
 
 export interface NarrativeRelatedActionRef {
   eventSequence: number;
+  /** Canonical event type (e.g. "vote.cast"). Compact v2 emits as `type`. */
+  eventType: string;
   phase: string | null;
   round: number | null;
+  /** Agent action string from the trusted source pointer (e.g. "vote"). */
   action: string | null;
 }
 
@@ -383,26 +386,6 @@ function actorFromMembers(members: readonly NarrativeMemberInput[]): NarrativeAc
   };
 }
 
-function relatedActionRefs(
-  members: readonly NarrativeMemberInput[],
-): NarrativeRelatedActionRef[] | undefined {
-  const refs: NarrativeRelatedActionRef[] = [];
-  const seen = new Set<number>();
-  for (const m of members) {
-    if (m.kind === "dialogue") continue;
-    if (m.eventSequence == null || m.eventSequence <= 0) continue;
-    if (seen.has(m.eventSequence)) continue;
-    seen.add(m.eventSequence);
-    refs.push({
-      eventSequence: m.eventSequence,
-      phase: m.phase,
-      round: m.round,
-      action: m.action,
-    });
-  }
-  return refs.length > 0 ? refs : undefined;
-}
-
 function groupMeta(members: readonly NarrativeMemberInput[]): {
   phase: string | null;
   round: number | null;
@@ -487,7 +470,9 @@ export function groupNarrativeMembers(
       });
     }
 
-    const refs = relatedActionRefs(members);
+    // relatedActionRefs are attached post-grouping from the trusted canonical
+    // vote.cast index (decisionId join). Cognition eventSequence is not a
+    // citation source — narrative never soft-derives board refs from it.
     groups.push({
       groupId: nextGroupId(),
       decisionId: correlation.kind === "decision_id" ? meta.decisionId : null,
@@ -498,7 +483,6 @@ export function groupNarrativeMembers(
       action: meta.action,
       sortKey: meta.sortKey,
       members: groupMembers,
-      ...(refs ? { relatedActionRefs: refs } : {}),
     });
   };
 
