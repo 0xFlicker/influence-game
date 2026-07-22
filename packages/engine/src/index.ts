@@ -28,7 +28,33 @@ export type {
   CanonicalGameEventType,
   CanonicalSourcePointer,
   CanonicalSourcePointerKind,
+  EndgameSpeechKind,
+  FormalSpeechProvenance,
+  JudgmentSpeechKind,
+  JudgmentSpeechProvenance,
 } from "./canonical-events";
+export {
+  buildFormalSpeechCorrelationKey,
+  commitAcceptedFormalSpeech,
+  createAcceptedFormalSpeech,
+  formalSpeechDisplayText,
+  formalSpeechLaneForKind,
+  ENDGAME_SPEECH_EVENT_TYPE,
+  ENDGAME_SPEECH_KINDS,
+  FORMAL_SPEECH_KINDS,
+  FORMAL_SPEECH_VOCABULARY,
+  JUDGMENT_SPEECH_EVENT_TYPE,
+  JUDGMENT_SPEECH_KINDS,
+} from "./accepted-formal-speech";
+export type {
+  AcceptedFormalSpeech,
+  CommitAcceptedFormalSpeechResult,
+  CreateAcceptedFormalSpeechInput,
+  FormalSpeechAgentTurnInput,
+  FormalSpeechKind,
+  FormalSpeechLane,
+  FormalSpeechVocabulary,
+} from "./accepted-formal-speech";
 export {
   applyCanonicalEvent,
   createEmptyProjection,
@@ -226,7 +252,7 @@ export type {
 
 // Game runner
 export { GameRunner } from "./game-runner";
-export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, GameStreamEvent, GameStateSnapshot } from "./game-runner";
 export { buildMingleInboxReplayFromTranscript, hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
 export {
   accumulatorProof,

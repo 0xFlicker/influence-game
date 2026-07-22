@@ -43,6 +43,11 @@ export interface CanonicalSourcePointer {
   action?: string;
   round?: number;
   phase?: Phase;
+  /**
+   * Private-decision id linking this accepted action to cognition/dialogue.
+   * Forward-path only; not a public narrative of thought content.
+   */
+  decisionId?: UUID;
 }
 
 export type CanonicalGameEventType =
@@ -78,7 +83,22 @@ export type CanonicalGameEventType =
   | "endgame.elimination_resolved"
   | "jury.vote_cast"
   | "jury.winner_determined"
+  | "judgment.speech_recorded"
+  | "endgame.speech_recorded"
   | "round.result_recorded";
+
+export type JudgmentSpeechKind =
+  | "opening_statement"
+  | "jury_question"
+  | "jury_answer"
+  | "closing_argument";
+
+export type EndgameSpeechKind = "plea" | "accusation" | "defense";
+
+export type JudgmentSpeechProvenance = "agent" | "timeout" | "fallback";
+
+/** Shared provenance for accepted public formal speech (Judgment + endgame). */
+export type FormalSpeechProvenance = JudgmentSpeechProvenance;
 
 const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "game.roster_initialized",
@@ -113,6 +133,8 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "endgame.elimination_resolved",
   "jury.vote_cast",
   "jury.winner_determined",
+  "judgment.speech_recorded",
+  "endgame.speech_recorded",
   "round.result_recorded",
 ]);
 
@@ -268,6 +290,31 @@ export type CanonicalGameEvent =
         winnerId: UUID;
         method: "majority" | "empower_tiebreaker" | "random_tiebreaker";
         voteCounts: Array<{ id: UUID; name: string; votes: number }>;
+      }
+    >
+  | CanonicalEventEnvelope<
+      "judgment.speech_recorded",
+      {
+        speechKind: JudgmentSpeechKind;
+        playerId: UUID;
+        text: string;
+        provenance: JudgmentSpeechProvenance;
+        addresseeId?: UUID;
+      }
+    >
+  | CanonicalEventEnvelope<
+      "endgame.speech_recorded",
+      {
+        speechKind: EndgameSpeechKind;
+        playerId: UUID;
+        text: string;
+        provenance: FormalSpeechProvenance;
+        /** Accusation target (accused). Present for accusation. */
+        targetId?: UUID;
+        /** Safe counterpart — accuser for defense. */
+        counterpartId?: UUID;
+        /** Deterministic correlation key for transcript/event parity. */
+        correlationKey: string;
       }
     >
   | CanonicalEventEnvelope<"round.result_recorded", { result: RoundResult }>;

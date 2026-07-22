@@ -442,6 +442,9 @@ async function completeHuddleSession(
 ): Promise<void> {
   const speakerIds = schedule.memberIds.filter((memberId) => ctx.gameState.getPlayer(memberId)?.status === "alive");
   const conversationHistory: Array<{ from: string; text: string }> = [];
+  // Canonical session identity is created before any message so modern huddle
+  // rows carry alliance/schedule/session IDs plus exact session-time audience.
+  const sessionId = createUUID();
   const huddle: AllianceHuddlePromptContext = {
     allianceId: alliance.id,
     allianceName: alliance.name,
@@ -451,6 +454,13 @@ async function completeHuddleSession(
     window: schedule.window,
     scheduleId: schedule.id,
     pass: schedule.pass,
+  };
+  const huddleMessageContext = {
+    allianceId: alliance.id,
+    scheduleId: schedule.id,
+    sessionId,
+    window: schedule.window,
+    sessionAudiencePlayerIds: speakerIds,
   };
   for (const speakerId of speakerIds) {
     await assertCanAcceptCommit(ctx);
@@ -464,6 +474,7 @@ async function completeHuddleSession(
         phase,
         turn.thinking,
         turn.reasoningContext,
+        huddleMessageContext,
       );
       conversationHistory.push({ from: ctx.gameState.getPlayerName(speakerId), text: message });
     }
@@ -476,6 +487,7 @@ async function completeHuddleSession(
         scheduleId: schedule.id,
         allianceId: alliance.id,
         allianceName: alliance.name,
+        sessionId,
         action: message ? "talk" : "no_reply",
         message,
         ...strategicDecisionResponse(turn),
@@ -488,7 +500,7 @@ async function completeHuddleSession(
 
   const completedAt = new Date().toISOString();
   const session: AllianceHuddleSessionRecord = {
-    id: createUUID(),
+    id: sessionId,
     scheduleId: schedule.id,
     allianceId: alliance.id,
     window: schedule.window,

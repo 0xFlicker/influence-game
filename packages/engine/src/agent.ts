@@ -5,6 +5,7 @@
  * Uses direct structured output — no ElizaOS runtime.
  */
 
+import { randomUUID } from "crypto";
 import OpenAI from "openai";
 import type {
   ChatCompletion,
@@ -1096,6 +1097,8 @@ export class InfluenceAgent implements IAgent {
   private readonly strategyInstructions?: string;
   private readonly temperature: number;
   private tokenTracker: TokenTracker | null = null;
+  /** Most recent private-decision id minted while emitting a private decision trace. */
+  private lastPrivateDecisionId: string | undefined;
   private gameId: UUID = "";
   private allPlayers: Array<{ id: UUID; name: string }> = [];
   private memoryStore: MemoryStore | null = null;
@@ -1138,6 +1141,10 @@ export class InfluenceAgent implements IAgent {
     this.temperature = options.temperature ?? 0.7;
     this.backstory = backstory ?? AGENT_BACKSTORIES[name] ?? "";
     this.memoryStore = memoryStore ?? null;
+  }
+
+  getLastPrivateDecisionId(): string | undefined {
+    return this.lastPrivateDecisionId;
   }
 
   /** Attach a token tracker to record LLM usage. */
@@ -1508,8 +1515,11 @@ export class InfluenceAgent implements IAgent {
     toolName?: string;
     toolArguments?: unknown;
     providerReasoningSummary?: ProviderReasoningSummary;
-  }): Promise<void> {
-    if (!this.privateTraceSink || !params.options?.privateTrace) return;
+  }): Promise<string | undefined> {
+    if (!this.privateTraceSink || !params.options?.privateTrace) return undefined;
+
+    const decisionId = randomUUID();
+    this.lastPrivateDecisionId = decisionId;
 
     const response = params.response;
     let message: unknown;
@@ -1550,6 +1560,7 @@ export class InfluenceAgent implements IAgent {
       version: 2,
       ...(traceContext.gameId && { gameId: traceContext.gameId }),
       ...(traceContext.ownerEpoch && { ownerEpoch: traceContext.ownerEpoch }),
+      decisionId,
       action: traceContext.action,
       actor: traceContext.actor,
       ...(traceContext.phase && { phase: traceContext.phase }),
@@ -1604,6 +1615,7 @@ export class InfluenceAgent implements IAgent {
     } catch (error) {
       console.warn(`[trace-sink] agent="${this.name}" action=${trace.action} failed:`, error);
     }
+    return decisionId;
   }
 
   private scrubEliminatedPlayerNames(text: string, eliminatedNames: string[]): string {

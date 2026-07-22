@@ -24,6 +24,7 @@
     "@aws-sdk/s3-request-presigner": "3.1078.0",
     "@clerk/backend": "3.11.7",
     "@influence/engine": "workspace:*",
+    "@msgpack/msgpack": "^3.1.2",
     "@privy-io/server-auth": "^1.32.5",
     "drizzle-orm": "^0.45.1",
     "hono": "^4.7.0",

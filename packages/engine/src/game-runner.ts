@@ -24,7 +24,7 @@ import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 import { hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
 import type { AccumulatorEntryV1, BoundaryCertificate, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
 import {
@@ -460,7 +460,7 @@ export class GameRunner {
 
   private buildTranscriptReplay(): NonNullable<GameCheckpointCapsule["transcriptReplay"]> {
     return {
-      version: 1,
+      version: 2,
       entries: this.logger.transcript.map((entry) => {
         const safeEntry = { ...entry };
         delete safeEntry.thinking;
@@ -468,6 +468,30 @@ export class GameRunner {
         return structuredClone(safeEntry) as TranscriptEntry;
       }),
     };
+  }
+
+  /**
+   * Product-dialogue-only projection for checkpoint-aligned durable watermarking.
+   * Diary/thinking and any row without a positive entrySequence are excluded.
+   */
+  private buildProductDialogueProjection(): TranscriptEntry[] {
+    return this.logger.transcript
+      .filter(
+        (entry) =>
+          typeof entry.entrySequence === "number" &&
+          entry.entrySequence >= 1 &&
+          (entry.scope === "public" ||
+            entry.scope === "mingle" ||
+            entry.scope === "huddle" ||
+            entry.scope === "whisper" ||
+            entry.scope === "system"),
+      )
+      .map((entry) => {
+        const safeEntry = { ...entry };
+        delete safeEntry.thinking;
+        delete safeEntry.reasoningContext;
+        return structuredClone(safeEntry) as TranscriptEntry;
+      });
   }
 
   private phaseForActorCoordinate(coordinate: string): Phase | undefined {
@@ -638,6 +662,8 @@ export class GameRunner {
       playerContinuityCapsules,
       houseContinuityCapsule,
       transcriptReplay: hasRuntimeSnapshot ? this.buildTranscriptReplay() : null,
+      // Transient write input for API product-dialogue watermark; not player-facing.
+      productDialogueProjection: this.buildProductDialogueProjection(),
       runtimeSnapshot,
       transcriptCursor,
       tokenCostCursor: tokenCursor,

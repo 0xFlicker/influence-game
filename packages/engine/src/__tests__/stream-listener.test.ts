@@ -69,6 +69,20 @@ describe("GameRunner stream listener", () => {
     );
     expect(scopes.has("public")).toBe(true);
     expect(scopes.has("system")).toBe(true);
+
+    const dialogueEntries = transcriptEntries
+      .filter((e): e is Extract<GameStreamEvent, { type: "transcript_entry" }> => e.type === "transcript_entry")
+      .map((e) => e.entry)
+      .filter((entry) => entry.scope === "public" || entry.scope === "system" || entry.scope === "mingle" || entry.scope === "huddle");
+    expect(dialogueEntries.length).toBeGreaterThan(0);
+    for (const entry of dialogueEntries) {
+      expect(entry.entrySequence).toBeGreaterThan(0);
+      expect(Array.isArray(entry.audiencePlayerIds)).toBe(true);
+      expect(entry.dialogueContext?.version).toBe(1);
+      expect(entry.dialogueKind).toBeTruthy();
+    }
+    const sequences = dialogueEntries.map((e) => e.entrySequence!);
+    expect(new Set(sequences).size).toBe(sequences.length);
   });
 
   it("emits phase_change events", async () => {

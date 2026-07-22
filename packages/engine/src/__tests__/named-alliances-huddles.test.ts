@@ -114,12 +114,26 @@ describe("named alliance huddle windows", () => {
       { decision: "skipped", allianceId: "alliance-ef" },
     ]);
     expect(huddleTurns).toEqual(["alice", "bob", "charlie", "dana"]);
-    expect(logger.transcript.filter((entry) => entry.scope === "huddle").map((entry) => entry.from)).toEqual([
+    const huddleEntries = logger.transcript.filter((entry) => entry.scope === "huddle");
+    expect(huddleEntries.map((entry) => entry.from)).toEqual([
       "Alice",
       "Bob",
       "Charlie",
       "Dana",
     ]);
+    // Session identity exists before messages; two same-roster-style huddles get distinct session context.
+    const sessionIds = new Set(huddleEntries.map((entry) => entry.dialogueContext?.sessionId));
+    expect(sessionIds.size).toBe(2);
+    for (const entry of huddleEntries) {
+      expect(entry.entrySequence).toBeGreaterThan(0);
+      expect(entry.dialogueKind).toBe("huddle_speech");
+      expect(entry.speakerPlayerId).toBeTruthy();
+      expect(entry.audiencePlayerIds?.length).toBe(2);
+      expect(entry.dialogueContext?.allianceId).toBeTruthy();
+      expect(entry.dialogueContext?.scheduleId).toBeTruthy();
+      expect(entry.dialogueContext?.sessionId).toBeTruthy();
+      expect(entry.dialogueContext?.sessionAudiencePlayerIds?.length).toBe(2);
+    }
     expect(gameState.getAllianceHuddleOutcomes()).toHaveLength(2);
     expect(gameState.getAllianceHuddleOutcomes()[0]).toMatchObject({
       posture: "coordinating",

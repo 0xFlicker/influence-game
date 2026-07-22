@@ -241,3 +241,15 @@ export async function getPersistedGameEvents(
 
   return validatePersistedGameEventRows(gameId, rows);
 }
+
+/**
+ * Trusted contiguous canonical prefix for authorization consumers (U3 huddle
+ * session-time membership). Identical to getPersistedGameEvents: stops at the
+ * first integrity break so untrusted tail events never authorize private rows.
+ */
+export async function getTrustedCanonicalEventPrefix(
+  db: GameEventReadDB,
+  gameId: string,
+): Promise<PersistedGameEventsRead> {
+  return getPersistedGameEvents(db, gameId);
+}

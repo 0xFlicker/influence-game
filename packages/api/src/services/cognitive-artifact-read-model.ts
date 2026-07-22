@@ -1,4 +1,4 @@
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, inArray, or, type SQL } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type {
@@ -11,6 +11,7 @@ import {
   canListCognitiveArtifactsForGame,
   canReadCognitiveArtifact,
   hasProducerCognitiveArtifactAccess,
+  isSubjectVisibleActorRole,
   type CognitiveArtifactAccessor,
 } from "./cognitive-artifact-policy.js";
 import { COGNITIVE_ARTIFACT_CAPTURE_VERSION } from "./cognitive-artifact-writer.js";
@@ -123,7 +124,7 @@ export class CognitiveArtifactReadModel {
     }
 
     const limit = clamp(params.limit ?? DEFAULT_LIST_LIMIT, 1, MAX_LIST_LIMIT);
-    const conditions = [
+    const conditions: SQL[] = [
       eq(schema.gameCognitiveArtifacts.gameId, game.id),
     ];
     if (params.artifactType) {
@@ -133,14 +134,29 @@ export class CognitiveArtifactReadModel {
       conditions.push(eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId));
     }
 
+    const producer = hasProducerCognitiveArtifactAccess(access);
+    const subjectOwner = access.surfaceCapability === "subject_owner";
+
+    // subject_owner: apply ownership + actor-role filters in SQL before limit so
+    // non-owned rows cannot exhaust a scan window (U5 / KTD11).
+    if (subjectOwner && !producer) {
+      const ownership = ownershipSqlConditions(access);
+      if (!ownership) {
+        return { ok: true, game, artifacts: [] };
+      }
+      conditions.push(ownership);
+      conditions.push(inArray(schema.gameCognitiveArtifacts.actorRole, ["player", "juror"]));
+    }
+
+    const fetchLimit = producer || subjectOwner ? limit : USER_LIST_SCAN_LIMIT;
+
     const rows = await this.db
       .select()
       .from(schema.gameCognitiveArtifacts)
       .where(and(...conditions))
       .orderBy(desc(schema.gameCognitiveArtifacts.createdAt))
-      .limit(hasProducerCognitiveArtifactAccess(access) ? limit : USER_LIST_SCAN_LIMIT);
+      .limit(fetchLimit);
 
-    const producer = hasProducerCognitiveArtifactAccess(access);
     const artifacts = rows
       .filter((row) => canReadCognitiveArtifact(access, artifactPolicyContext(row)))
       .slice(0, limit)
@@ -224,6 +240,7 @@ export class CognitiveArtifactReadModel {
           outcome: "denied",
           denialReason: "artifact_context_not_accessible",
         });
+        // subject_owner: non-owned context is non-enumerating (same as denied).
         return {
           ok: false,
           status: "denied",
@@ -283,6 +300,26 @@ export class CognitiveArtifactReadModel {
     }
 
     if (!canReadCognitiveArtifact(access, artifactPolicyContext(row))) {
+      await this.audit({
+        artifact: row,
+        accessor: access,
+        purpose,
+        outcome: "denied",
+        denialReason: "artifact_not_accessible",
+      });
+      return {
+        ok: false,
+        status: "denied",
+        error: "Cognitive artifact is not accessible",
+        game,
+      };
+    }
+
+    // subject surfaces never reveal house/system/producer rows even if mis-tagged.
+    if (
+      access.authProfile === "subject"
+      && !isSubjectVisibleActorRole(row.actorRole)
+    ) {
       await this.audit({
         artifact: row,
         accessor: access,
@@ -359,6 +396,10 @@ export class CognitiveArtifactReadModel {
     if (accessor.authProfile !== "subject" || accessor.claims || !accessor.userId) {
       return accessor;
     }
+    // subject_owner prefers MatchAccessContext; skip cross-game claims when present.
+    if (accessor.surfaceCapability === "subject_owner" && accessor.matchAccess) {
+      return accessor;
+    }
     return {
       ...accessor,
       claims: await resolveGamesMcpClaims(this.db, accessor.userId),
@@ -388,6 +429,39 @@ export class CognitiveArtifactReadModel {
         denialReason: params.denialReason,
       });
   }
+}
+
+/**
+ * Build SQL ownership predicate for subject_owner list. Returns null when the
+ * accessor has no ownership material (empty page, not a scan of all rows).
+ */
+function ownershipSqlConditions(access: CognitiveArtifactAccessor): SQL | null {
+  const clauses: SQL[] = [];
+  if (access.userId) {
+    clauses.push(eq(schema.gameCognitiveArtifacts.actorUserId, access.userId));
+  }
+  const matchAccess = access.matchAccess;
+  if (matchAccess) {
+    const playerIds = [...matchAccess.ownedPlayerIds];
+    const profileIds = [...matchAccess.ownedAgentProfileIds];
+    if (playerIds.length > 0) {
+      clauses.push(inArray(schema.gameCognitiveArtifacts.actorPlayerId, playerIds));
+    }
+    if (profileIds.length > 0) {
+      clauses.push(inArray(schema.gameCognitiveArtifacts.actorAgentProfileId, profileIds));
+    }
+  } else if (access.claims) {
+    const playerIds = [...access.claims.playerIds];
+    const profileIds = [...access.claims.agentProfileIds];
+    if (playerIds.length > 0) {
+      clauses.push(inArray(schema.gameCognitiveArtifacts.actorPlayerId, playerIds));
+    }
+    if (profileIds.length > 0) {
+      clauses.push(inArray(schema.gameCognitiveArtifacts.actorAgentProfileId, profileIds));
+    }
+  }
+  if (clauses.length === 0) return null;
+  return or(...clauses) ?? null;
 }
 
 function artifactPolicyContext(row: CognitiveArtifactRow) {

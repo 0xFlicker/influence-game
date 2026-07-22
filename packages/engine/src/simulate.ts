@@ -56,6 +56,11 @@
  * and `alliance-huddle-outcome` records capture the compact memory artifact
  * that carries forward. Huddle transcript entries use `scope: "huddle"` and
  * are producer/debug evidence, not public/player-safe live transcript.
+ * Modern product-dialogue capture also carries additive normalized actor
+ * identity, audience, dialogue kind, and formal-speech correlation context for
+ * durable API match-read surfaces; local `--chatty` formatting and simulation
+ * artifacts remain first-class and continue to surface thinking / reasoningContext
+ * for human review without treating them as public speech.
  * Specialized `empower-revote` and `candidate-selection` records are written
  * when vote mechanics create private empowered-player choices. Shield pull-up
  * choices are bundled into the private `power-action` record when Protect

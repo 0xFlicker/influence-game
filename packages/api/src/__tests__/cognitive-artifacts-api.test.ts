@@ -81,6 +81,29 @@ describe("cognitive artifact API routes", () => {
     expect(body.artifact.payload).toEqual({ reasoningContext: "owner reasoning" });
   });
 
+  test("participant_web surface remains unchanged; admin uses producer surface", async () => {
+    const fixture = await insertCapturedGameFixture();
+
+    // Ordinary participant still sees non-owned thinking/strategy (web policy).
+    const listRes = await app.request(
+      `/api/games/${fixture.gameId}/cognitive-artifacts`,
+      authGet(participantToken),
+    );
+    expect(listRes.status).toBe(200);
+    const listBody = await listRes.json() as { ok: boolean; artifacts: Array<{ id: string }> };
+    expect(listBody.artifacts.map((a) => a.id).sort()).toEqual([
+      fixture.strategyId,
+      fixture.thinkingId,
+    ].sort());
+
+    // Admin/sysop still reads reasoning via producer surface.
+    const adminRes = await app.request(
+      `/api/games/${fixture.gameId}/cognitive-artifacts/${fixture.reasoningId}`,
+      authGet(adminToken),
+    );
+    expect(adminRes.status).toBe(200);
+  });
+
   test("returns old-game no-capture after participant authorization", async () => {
     const gameId = randomUUID();
     const playerId = randomUUID();

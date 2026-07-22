@@ -45,7 +45,9 @@ function isRuntimeSnapshotV1(value: unknown): value is RuntimeSnapshotV1 {
 }
 
 function readTranscriptReplay(value: unknown): TranscriptEntry[] | null {
-  if (!isRecord(value) || value.version !== 1 || !Array.isArray(value.entries)) return null;
+  if (!isRecord(value) || !Array.isArray(value.entries)) return null;
+  // V1 = legacy safe-entry shape; V2 = normalized dialogue identity fields.
+  if (value.version !== 1 && value.version !== 2) return null;
   return value.entries.map((entry) => ({ ...(entry as TranscriptEntry) }));
 }
 
@@ -133,9 +135,13 @@ function validateAccumulatorRegistryForRecovery(params: {
     return { ok: false, reason: "unsafe_accumulator_registry" };
   }
 
-  if (hasBlockedMingleInbox(runtimeSnapshot) &&
-      (mingleInboxReplay.entries.length === 0 || mingleInboxReplay.unresolvedRecipientNames.length > 0)) {
-    return { ok: false, reason: "unsafe_accumulator_registry" };
+  if (hasBlockedMingleInbox(runtimeSnapshot)) {
+    if (mingleInboxReplay.unresolvedRecipientNames.length > 0) {
+      return { ok: false, reason: "mingle_inbox_unresolved_recipients" };
+    }
+    if (mingleInboxReplay.entries.length === 0) {
+      return { ok: false, reason: "mingle_inbox_rebuild_empty" };
+    }
   }
 
   if (actorCoordinate === "tribunal_defense" && !currentAccusations) {

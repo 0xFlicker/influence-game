@@ -32,6 +32,10 @@ import {
   markOwnerStartupFailed,
 } from "../services/game-ownership.js";
 import {
+  currentCaptureVersionFields,
+  initialGameTranscriptStateValues,
+} from "../services/transcript-capture.js";
+import {
   getRedactedKernelHealth,
   getRedactedKernelHealthByGameId,
 } from "../services/game-kernel-health.js";
@@ -75,15 +79,14 @@ import {
   getGameCompletionSettlementStateMap,
 } from "../services/game-completion-settlement.js";
 import {
-  createLlmClientFromEnv,
   generatePersona,
   normalizeGameModelSelection,
   pickAgentNames,
   pickArchetypes,
-  resolveModelForTier,
   resolveModelSelection,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
+import { resolveOpenAIBudgetGenerationLlm } from "../lib/openai-budget-generation-llm.js";
 
 const PUBLIC_SUSPENDED_ERROR_INFO = "The game failed and cannot be resumed.";
 
@@ -230,17 +233,22 @@ export function createGameRoutes(
     });
 
     const user = c.get("user");
-    await db.insert(schema.games)
-      .values({
-        id: gameId,
-        slug,
-        config: JSON.stringify(config),
-        status: "waiting",
-        cognitiveArtifactCaptureVersion: 1,
-        minPlayers,
-        maxPlayers,
-        createdById: user?.id ?? null,
-      });
+    await db.transaction(async (tx) => {
+      await tx.insert(schema.games)
+        .values({
+          id: gameId,
+          slug,
+          config: JSON.stringify(config),
+          status: "waiting",
+          ...currentCaptureVersionFields(),
+          minPlayers,
+          maxPlayers,
+          createdById: user?.id ?? null,
+        });
+      await tx.insert(schema.gameTranscriptStates).values(
+        initialGameTranscriptStateValues(gameId),
+      );
+    });
     await tryRefreshGameWatchStateSummary(db, gameId, "game_created");
 
     return c.json({ id: gameId, slug }, 201);
@@ -646,15 +654,22 @@ export function createGameRoutes(
     await tryRefreshGameWatchStateSummary(db, gameId, "players_filled");
 
     // Fill progress stays on the authenticated HTTP operation path, not the product watch stream.
-    const openai = createLlmClientFromEnv()?.client ?? null;
+    // House-fill blurbs always use catalog-paired openai:gpt-5-nano — never env local base URL.
+    // Game-runtime models still come from the game's modelSelection at start.
+    const generationLlm = resolveOpenAIBudgetGenerationLlm();
 
-    if (openai) {
+    if (generationLlm) {
       void (async () => {
         const updatedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
 
         for (const player of addedPlayers) {
           try {
-            const generated = await generatePersona(openai, player.name, player.archetype as Personality, resolveModelForTier("budget"));
+            const generated = await generatePersona(
+              generationLlm.client,
+              player.name,
+              player.archetype as Personality,
+              generationLlm.modelId,
+            );
 
             const existing = (await db
               .select()

@@ -2444,6 +2444,52 @@ describe("Full game - endgame integration", () => {
     // Should have a winner
     expect(result.winner).toBeDefined();
     expect(result.winnerName).toBeDefined();
+
+    const events = runner.getCanonicalEvents();
+    const openings = events.filter(
+      (e): e is Extract<CanonicalGameEvent, { type: "judgment.speech_recorded" }> =>
+        e.type === "judgment.speech_recorded" && e.payload.speechKind === "opening_statement",
+    );
+    const closings = events.filter(
+      (e): e is Extract<CanonicalGameEvent, { type: "judgment.speech_recorded" }> =>
+        e.type === "judgment.speech_recorded" && e.payload.speechKind === "closing_argument",
+    );
+    const juryVotes = events.filter((e) => e.type === "jury.vote_cast");
+    expect(openings).toHaveLength(2);
+    expect(closings).toHaveLength(2);
+    expect(openings.every((e) => e.phase === Phase.OPENING_STATEMENTS && e.visibility === "public")).toBe(true);
+    expect(closings.every((e) => e.phase === Phase.CLOSING_ARGUMENTS && e.visibility === "public")).toBe(true);
+    if (juryVotes.length > 0) {
+      const maxClosingSeq = Math.max(...closings.map((e) => e.sequence));
+      const minVoteSeq = Math.min(...juryVotes.map((e) => e.sequence));
+      expect(maxClosingSeq).toBeLessThan(minVoteSeq);
+    }
+
+    // Tribunal formal speech dual-writes (4-player game hits tribunal, not reckoning).
+    const accusations = events.filter(
+      (e): e is Extract<CanonicalGameEvent, { type: "endgame.speech_recorded" }> =>
+        e.type === "endgame.speech_recorded" && e.payload.speechKind === "accusation",
+    );
+    const defenses = events.filter(
+      (e): e is Extract<CanonicalGameEvent, { type: "endgame.speech_recorded" }> =>
+        e.type === "endgame.speech_recorded" && e.payload.speechKind === "defense",
+    );
+    expect(accusations.length).toBeGreaterThan(0);
+    expect(defenses.length).toBeGreaterThan(0);
+    expect(accusations.every((e) => e.visibility === "public" && e.phase === Phase.ACCUSATION)).toBe(true);
+    expect(defenses.every((e) => e.visibility === "public" && e.phase === Phase.DEFENSE)).toBe(true);
+    expect(accusations.every((e) => typeof e.payload.correlationKey === "string" && e.payload.correlationKey.length > 0)).toBe(true);
+    expect(accusations.every((e) => typeof e.payload.targetId === "string")).toBe(true);
+    expect(accusations.every((e) => !("thinking" in e.payload))).toBe(true);
+
+    // Modern transcript rows for formal speech carry correlation keys.
+    const formalTranscript = transcript.filter(
+      (e) =>
+        e.scope === "public" &&
+        (e.phase === Phase.ACCUSATION || e.phase === Phase.DEFENSE || e.phase === Phase.OPENING_STATEMENTS || e.phase === Phase.CLOSING_ARGUMENTS) &&
+        e.dialogueContext?.formalSpeechCorrelationKey,
+    );
+    expect(formalTranscript.length).toBeGreaterThan(0);
   });
 
   it("6-player game exercises all endgame stages", async () => {
@@ -2483,5 +2529,134 @@ describe("Full game - endgame integration", () => {
       (e) => e.scope === "system" && e.text.includes("JURY VOTE"),
     );
     expect(juryVoteEntries.length).toBeGreaterThan(0);
+
+    // 6-player path hits Reckoning; pleas must dual-write once.
+    const events = runner.getCanonicalEvents();
+    const pleas = events.filter(
+      (e): e is Extract<CanonicalGameEvent, { type: "endgame.speech_recorded" }> =>
+        e.type === "endgame.speech_recorded" && e.payload.speechKind === "plea",
+    );
+    expect(pleas.length).toBeGreaterThan(0);
+    expect(pleas.every((e) => e.visibility === "public" && e.phase === Phase.PLEA)).toBe(true);
+    expect(pleas.every((e) => typeof e.payload.text === "string" && e.payload.text.length > 0)).toBe(true);
+  });
+});
+
+describe("Tribunal accusation stable commit order", () => {
+  it("selects the same defense context regardless of promise completion order", async () => {
+    const { runTribunalAccusation } = await import("../phases/endgame");
+    const { TranscriptLogger } = await import("../transcript-logger");
+    const { ContextBuilder } = await import("../context-builder");
+    const { DEFAULT_CONFIG } = await import("../types");
+
+    const ids = {
+      first: createUUID(),
+      second: createUUID(),
+      target: createUUID(),
+    };
+    // Roster order: first, second, target — last accuser of target in roster order is `second`.
+    const players = [
+      { id: ids.first, name: "First" },
+      { id: ids.second, name: "Second" },
+      { id: ids.target, name: "Target" },
+    ];
+
+    async function runWithDelays(delaysMs: Record<string, number>) {
+      const gs = new GameState(players, { gameId: "game-acc-order", now: () => 1_700_000_000_000 });
+      gs.startRound();
+
+      class DelayedAccuser extends MockAgent {
+        constructor(
+          id: string,
+          name: string,
+          private readonly delayMs: number,
+          private readonly fixedTarget: string,
+        ) {
+          super(id, name);
+        }
+
+        override async getAccusation(ctx: PhaseContext) {
+          await new Promise((r) => setTimeout(r, this.delayMs));
+          const target = ctx.alivePlayers.find((p) => p.id === this.fixedTarget);
+          if (!target) throw new Error("missing target");
+          return {
+            targetId: target.id,
+            text: `Accusation from ${this.name}`,
+            thinking: `delay=${this.delayMs}`,
+          };
+        }
+      }
+
+      const agents = new Map<string, MockAgent>([
+        [ids.first, new DelayedAccuser(ids.first, "First", delaysMs[ids.first] ?? 0, ids.target)],
+        [ids.second, new DelayedAccuser(ids.second, "Second", delaysMs[ids.second] ?? 0, ids.target)],
+        [ids.target, new DelayedAccuser(ids.target, "Target", delaysMs[ids.target] ?? 0, ids.first)],
+      ]);
+
+      const logger = new TranscriptLogger(gs);
+      const mingleInbox = new Map<string, Array<{ from: string; text: string }>>();
+      const contextBuilder = new ContextBuilder(gs, logger, mingleInbox, players.length);
+      const accusations = new Map<string, { accuserId: string; accuserName: string; text: string }>();
+
+      const fakeActor = {
+        send: () => undefined,
+      };
+
+      await runTribunalAccusation(
+        {
+          gameState: gs,
+          agents,
+          config: { ...DEFAULT_CONFIG, agentActionTimeoutMs: 0 },
+          logger,
+          contextBuilder,
+          diaryRoom: null as never,
+          houseInterviewer: null as never,
+          mingleInbox,
+          eliminationOrder: [],
+        },
+        fakeActor as never,
+        accusations,
+      );
+
+      return {
+        defenseContext: accusations.get(ids.target),
+        accusationEvents: gs
+          .getCanonicalEvents()
+          .filter(
+            (e): e is Extract<CanonicalGameEvent, { type: "endgame.speech_recorded" }> =>
+              e.type === "endgame.speech_recorded" && e.payload.speechKind === "accusation",
+          ),
+      };
+    }
+
+    // First completes last (slow); second completes first (fast) — still second wins by roster order.
+    const a = await runWithDelays({
+      [ids.first]: 40,
+      [ids.second]: 1,
+      [ids.target]: 5,
+    });
+    // Opposite timing
+    const b = await runWithDelays({
+      [ids.first]: 1,
+      [ids.second]: 40,
+      [ids.target]: 5,
+    });
+
+    expect(a.defenseContext?.accuserId).toBe(ids.second);
+    expect(a.defenseContext?.accuserName).toBe("Second");
+    expect(a.defenseContext?.text).toBe("Accusation from Second");
+    expect(b.defenseContext).toEqual(a.defenseContext);
+
+    // All three accusations dual-written; order is roster order not completion order.
+    expect(a.accusationEvents.map((e) => e.payload.playerId)).toEqual([
+      ids.first,
+      ids.second,
+      ids.target,
+    ]);
+    expect(b.accusationEvents.map((e) => e.payload.playerId)).toEqual([
+      ids.first,
+      ids.second,
+      ids.target,
+    ]);
   });
 });

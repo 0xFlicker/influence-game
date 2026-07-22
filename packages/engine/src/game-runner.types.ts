@@ -291,9 +291,16 @@ export interface GameCheckpointCapsule {
   playerContinuityCapsules?: PlayerContinuityCapsule[];
   houseContinuityCapsule?: HouseContinuityCapsule | null;
   transcriptReplay?: {
-    version: 1;
+    /** 1 = legacy safe-entry shape; 2 = normalized dialogue identity fields. */
+    version: 1 | 2;
     entries: TranscriptEntry[];
   } | null;
+  /**
+   * Transient product-dialogue projection (dialogue scopes with entrySequence only).
+   * Consumed by the API checkpoint write path to append the durable dialogue suffix.
+   * Not a player-facing checkpoint field and must not be re-exposed from checkpoint reads.
+   */
+  productDialogueProjection?: readonly TranscriptEntry[];
   /** Phase-boundary runtime evidence for hydration passport validation (v1). */
   runtimeSnapshot?: RuntimeSnapshotV1 | null;
   transcriptCursor: {
@@ -325,6 +332,11 @@ export interface AgentResponse {
   strategicLens?: StrategicLens;
   /** Compact private rationale for the selected strategic lens. */
   strategicLensRationale?: string;
+  /**
+   * Durable private-decision id minted with the private decision trace when present.
+   * Used to correlate dialogue with owned cognition; not board-fact authority.
+   */
+  decisionId?: UUID;
 }
 
 export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "system" | "producer";
@@ -379,6 +391,12 @@ export interface PrivateDecisionTrace {
   version: 2;
   gameId?: UUID;
   ownerEpoch?: string;
+  /**
+   * Durable id for one private decision commit. Shared by thinking/strategy
+   * artifacts and resulting dialogue rows for exact narrative correlation.
+   * Forward-path only; never invented at read time for legacy rows.
+   */
+  decisionId?: UUID;
   action: string;
   actor: PrivateDecisionTraceActor;
   phase?: Phase;
@@ -840,6 +858,11 @@ export interface StrategicReflectionOptions {
 export interface IAgent {
   readonly id: UUID;
   readonly name: string;
+  /**
+   * Most recent private-decision id minted for this agent in the live run, when
+   * the implementation emits private decision traces. Optional for mock agents.
+   */
+  getLastPrivateDecisionId?(): UUID | undefined;
   /** Called once when the game starts */
   onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void;
   /** Called at the start of each phase with current game context */
@@ -1090,6 +1113,46 @@ export interface RecentDecisionContextEntry {
 // Transcript entry
 // ---------------------------------------------------------------------------
 
+/** Viewer-safe dialogue kind for product transcript capture (current contract). */
+export type TranscriptDialogueKind =
+  | "public_speech"
+  | "mingle_speech"
+  | "huddle_speech"
+  | "whisper_speech"
+  | "system_phase_banner"
+  | "system_room_allocation"
+  | "system_elimination"
+  | "system_announcement";
+
+/**
+ * Versioned viewer-safe dialogue context. Excludes room diagnostics, cognition,
+ * prompts, and producer metadata.
+ */
+export interface TranscriptDialogueContextV1 {
+  version: 1;
+  roomId?: number;
+  allianceId?: string;
+  scheduleId?: string;
+  sessionId?: string;
+  window?: string;
+  /** Exact session-time membership (huddles); IDs only. */
+  sessionAudiencePlayerIds?: string[];
+  /**
+   * Deterministic formal-speech correlation key shared with accepted public
+   * speech events (`judgment.speech_recorded` / `endgame.speech_recorded`).
+   * Enables parity without fuzzy text matching. Optional so legacy rows remain valid.
+   */
+  formalSpeechCorrelationKey?: string;
+  /**
+   * Durable private-decision id linking this speech to thinking/strategy from the
+   * same decision commit. Optional; forward-path only. Outside product-dialogue
+   * digest identity. Not exposed on owner match-transcript DTOs.
+   */
+  decisionId?: string;
+}
+
+export type TranscriptDialogueContext = TranscriptDialogueContextV1;
+
 export interface TranscriptEntry {
   round: number;
   phase: Phase;
@@ -1118,4 +1181,18 @@ export interface TranscriptEntry {
     excluded: string[];
     diagnostics?: MingleSessionDiagnostics;
   };
+  // --- Current-capture product dialogue fields (absent on legacy replay seeds) ---
+  /** Normalized speaker player UUID; null/omitted for House/system without a player actor. */
+  speakerPlayerId?: string | null;
+  /**
+   * 1-based game-local product dialogue sequence. Present only for public, mingle,
+   * whisper, huddle, and allowlisted system dialogue. Never set on diary/thinking.
+   */
+  entrySequence?: number;
+  /** Viewer-safe dialogue kind for modern system/public classification. */
+  dialogueKind?: TranscriptDialogueKind;
+  /** Exact audience player UUIDs at emission time; empty array = public/all-viewers. */
+  audiencePlayerIds?: string[];
+  /** Versioned viewer-safe context (no diagnostics). */
+  dialogueContext?: TranscriptDialogueContext;
 }

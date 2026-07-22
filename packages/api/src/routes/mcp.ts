@@ -29,10 +29,16 @@ import {
   GAME_MCP_TOOL_ACCESS,
   isGameMcpToolName,
 } from "../game-mcp/tool-authorization.js";
+import {
+  MATCH_COMPLETENESS_TOOL_NAMES,
+  classifyMatchToolResult,
+  type MatchToolResultClass,
+} from "../game-mcp/contracts.js";
 
 const DEFAULT_MAX_POST_BYTES = 1024 * 1024;
 const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-06-18", "2025-03-26"]);
 const UNKNOWN_TOOL_AUDIT_NAME = "unknown_tool";
+const MATCH_TOOL_NAME_SET = new Set<string>(MATCH_COMPLETENESS_TOOL_NAMES);
 
 type GameMcpJsonRpcAuditDenialReason =
   | "insufficient_scope"
@@ -52,6 +58,11 @@ export interface GameMcpAuditEvent {
   authProfile?: string;
   method?: string;
   tool?: string;
+  /**
+   * Privacy-safe match-tool result class only (ok/status). Never includes
+   * response prose, cognition, audiences, cursors, or ownership fingerprints.
+   */
+  toolResultClass?: MatchToolResultClass;
   providerId?: McpAppProviderId;
   appStage?: McpAppAuditStage;
   appResourceUri?: string;
@@ -214,6 +225,7 @@ function registerMcpResource(
 
     const response = await params.server.handle(validation.request, auth.context);
     const auditOutcome = classifyJsonRpcResponseForAudit(response);
+    const auditedTool = toolName(validation.request);
     emitAudit(params.auditLogger, {
       event: "mcp.http.request",
       correlationId,
@@ -225,7 +237,9 @@ function registerMcpResource(
       scope: auth.context.scope,
       authProfile: auth.context.authProfile,
       method: validation.request.method,
-      tool: toolName(validation.request),
+      tool: auditedTool,
+      // Privacy-safe class only — never response bodies, cursors, or prose.
+      toolResultClass: matchToolResultClass(auditedTool, response),
       providerId: providerIdHint(c),
       appStage: appStageForRequest(validation.request),
       appResourceUri: appResourceUriForRequest(validation.request),
@@ -458,6 +472,22 @@ function toolName(request: JsonRpcRequest): string | undefined {
   return typeof name === "string" && isGameMcpToolName(name)
     ? GAME_MCP_TOOL_ACCESS[name].name
     : UNKNOWN_TOOL_AUDIT_NAME;
+}
+
+/**
+ * Extract only the closed ok/status class from match-tool structuredContent.
+ * Never copies text, entries, cognition, audiences, or cursor tokens into audits.
+ */
+function matchToolResultClass(
+  tool: string | undefined,
+  response: JsonRpcResponse | null,
+): MatchToolResultClass | undefined {
+  if (!tool || !MATCH_TOOL_NAME_SET.has(tool) || !response || response.error) {
+    return undefined;
+  }
+  const result = response.result;
+  if (!isRecord(result) || !("structuredContent" in result)) return undefined;
+  return classifyMatchToolResult(result.structuredContent);
 }
 
 function classifyJsonRpcResponseForAudit(response: JsonRpcResponse | null):

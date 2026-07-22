@@ -41,6 +41,10 @@ import {
   acquireGameRunOwner,
   markOwnerStartupFailed,
 } from "../services/game-ownership.js";
+import {
+  currentCaptureVersionFields,
+  initialGameTranscriptStateValues,
+} from "../services/transcript-capture.js";
 import { getRedactedKernelHealth } from "../services/game-kernel-health.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import { bindFreeGameToActiveSeason } from "../services/seasons.js";
@@ -328,11 +332,14 @@ export function createFreeQueueRoutes(
           status: "waiting",
           trackType: "free",
           freeDrawRequestKey: idempotencyKey,
-          cognitiveArtifactCaptureVersion: 1,
+          ...currentCaptureVersionFields(),
           minPlayers,
           maxPlayers,
           createdById: user?.id ?? null,
         });
+      await tx.insert(schema.gameTranscriptStates).values(
+        initialGameTranscriptStateValues(gameId),
+      );
 
       // Add picked players to the game.
       for (const entry of picked) {

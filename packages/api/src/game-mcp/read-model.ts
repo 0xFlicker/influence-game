@@ -39,6 +39,7 @@ import {
   type ListCognitiveArtifactsParams,
   type ReadCognitiveArtifactParams,
 } from "../services/cognitive-artifact-read-model.js";
+import type { CognitiveArtifactAccessor } from "../services/cognitive-artifact-policy.js";
 import {
   buildCompactPostgameBrief,
   buildPostgameDerivedVoteCohorts,
@@ -50,6 +51,30 @@ import {
 } from "../services/postgame-analysis.js";
 import type { GameMcpAuthContext } from "./auth.js";
 import { resolveGamesMcpClaims } from "./claims.js";
+import {
+  resolveMatchAccessContext,
+  type MatchAccessContext,
+} from "../services/match-access-context.js";
+import {
+  readMatchTranscriptPage,
+  type MatchTranscriptPageResult,
+  type ReadMatchTranscriptInput,
+} from "../services/match-transcript-read-model.js";
+import {
+  readMatchCognitionPage,
+  type MatchCognitionPageResult,
+  type ReadMatchCognitionInput,
+} from "../services/match-cognition-read-model.js";
+import {
+  readMatchNarrativePage,
+  type MatchNarrativePageResult,
+  type ReadMatchNarrativeInput,
+} from "../services/match-narrative-read-model.js";
+import {
+  readMatchManifest,
+  type MatchManifestResult,
+  type ReadMatchManifestInput,
+} from "../services/match-completeness.js";
 import {
   exportOwnedSeasonReceipts,
   getOwnedAgentSeasonAnalysis,
@@ -361,6 +386,109 @@ export class ProductionGameMcpReadModel {
     const result = await getProducerSeasonDiagnostics(this.db, seasonIdOrSlug);
     if (!result) throw new Error("Season not found");
     return result;
+  }
+
+  /**
+   * Owner-authorized match transcript page (U4 read model).
+   * MCP tool registration is U8; this is the protocol-neutral service entry.
+   */
+  /**
+   * Match-read manifest: lane availability, completeness, watermarks, parity,
+   * and typed follow-up capabilities (U6). MCP tool registration is U8.
+   */
+  async readMatchManifest(
+    input: ReadMatchManifestInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchManifestResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchManifest(this.db, input, {
+      subjectUserId: access.userId,
+    });
+  }
+
+  async readMatchTranscript(
+    input: ReadMatchTranscriptInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchTranscriptPageResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchTranscriptPage(this.db, input, {
+      subjectUserId: access.userId,
+    });
+  }
+
+  /**
+   * Owner-authorized thinking/strategy timeline (U5 read model).
+   * MCP tool registration is U8; this is the protocol-neutral service entry.
+   * Reasoning remains on dedicated cognitive-artifact reads only.
+   */
+  async readOwnedMatchCognition(
+    input: ReadMatchCognitionInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchCognitionPageResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchCognitionPage(this.db, input, {
+      subjectUserId: access.userId,
+    });
+  }
+
+  /**
+   * Owned-seat match narrative (subject_owner surface). Surface is fixed by this
+   * adapter — never taken from client input.
+   */
+  async readOwnedMatchNarrative(
+    input: ReadMatchNarrativeInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchNarrativePageResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchNarrativePage(this.db, input, {
+      subjectUserId: access.userId,
+      surface: "subject_owner",
+    });
+  }
+
+  /**
+   * Producer match narrative (producer surface). Requires producer tool auth at
+   * the catalog layer; domain does not re-check producer role.
+   */
+  async readProducerMatchNarrative(
+    input: ReadMatchNarrativeInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchNarrativePageResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchNarrativePage(this.db, input, {
+      subjectUserId: access.userId,
+      surface: "producer",
+    });
   }
 
   async resolveGame(idOrSlug: string): Promise<ProductionGameMcpGameIdentity | null> {
@@ -806,7 +934,7 @@ export class ProductionGameMcpReadModel {
       this.cognitiveArtifacts.listArtifacts({
         gameIdOrSlug: game.id,
         limit: 50,
-      }, access),
+      }, this.producerCognitiveAccessor(access)),
       this.privateTrace.listManifests(game.id, 50),
     ]);
     return {
@@ -906,9 +1034,10 @@ export class ProductionGameMcpReadModel {
     schemaVersion: 1;
     cognitiveArtifacts: unknown;
   }> {
+    const accessor = await this.cognitiveAccessorForMcp(params.gameIdOrSlug, access);
     return {
       schemaVersion: 1,
-      cognitiveArtifacts: await this.cognitiveArtifacts.listArtifacts(params, access),
+      cognitiveArtifacts: await this.cognitiveArtifacts.listArtifacts(params, accessor),
     };
   }
 
@@ -919,9 +1048,48 @@ export class ProductionGameMcpReadModel {
     schemaVersion: 1;
     cognitiveArtifacts: unknown;
   }> {
+    const accessor = await this.cognitiveAccessorForMcp(params.gameIdOrSlug, access);
     return {
       schemaVersion: 1,
-      cognitiveArtifacts: await this.cognitiveArtifacts.readArtifact(params, access),
+      cognitiveArtifacts: await this.cognitiveArtifacts.readArtifact(params, accessor),
+    };
+  }
+
+  /**
+   * Explicit surface-capability dispatch for Production MCP cognition tools.
+   * Subject tools always use subject_owner (never widened by producer/sysop
+   * claim metadata). Producer tools use surfaceCapability producer.
+   */
+  private async cognitiveAccessorForMcp(
+    gameIdOrSlug: string,
+    access: ProductionGameMcpAccess,
+  ): Promise<CognitiveArtifactAccessor> {
+    if (access.authProfile === "producer") {
+      return this.producerCognitiveAccessor(access);
+    }
+    if (!access.userId) {
+      return {
+        authProfile: "subject",
+        surfaceCapability: "subject_owner",
+      };
+    }
+    const resolution = await resolveMatchAccessContext(this.db, {
+      subjectUserId: access.userId,
+      gameIdOrSlug,
+    });
+    return {
+      userId: access.userId,
+      authProfile: "subject",
+      surfaceCapability: "subject_owner",
+      ...(resolution.status === "resolved" && { matchAccess: resolution.context }),
+    };
+  }
+
+  private producerCognitiveAccessor(access: ProductionGameMcpAccess): CognitiveArtifactAccessor {
+    return {
+      userId: access.userId,
+      authProfile: "producer",
+      surfaceCapability: "producer",
     };
   }
 
@@ -929,17 +1097,42 @@ export class ProductionGameMcpReadModel {
     gameIdOrSlug: string,
     access: ProductionGameMcpAccess,
   ): Promise<ProductionGameMcpGameIdentity> {
-    const game = await this.resolveGame(gameIdOrSlug);
     if (isGamesSubjectAccess(access)) {
-      if (!game) throw new Error("Game is not accessible for MCP scope: games:read");
-      const claims = await resolveGamesMcpClaims(this.db, access.userId);
-      if (!claims.gameIds.has(game.id)) {
+      // MatchAccessContext makes unknown and inaccessible games indistinguishable.
+      const resolution = await resolveMatchAccessContext(this.db, {
+        subjectUserId: access.userId,
+        gameIdOrSlug,
+      });
+      if (resolution.status !== "resolved") {
         throw new Error("Game is not accessible for MCP scope: games:read");
       }
-    } else if (!game) {
+      const game = await this.resolveGame(resolution.context.gameId);
+      if (!game) {
+        throw new Error("Game is not accessible for MCP scope: games:read");
+      }
+      return game;
+    }
+    const game = await this.resolveGame(gameIdOrSlug);
+    if (!game) {
       throw new Error(`Unknown game: ${gameIdOrSlug}`);
     }
     return game;
+  }
+
+  /**
+   * Ownership snapshot for subject match reads (transcript/cognition/manifest hooks).
+   * Returns null when the subject lacks canonical access (non-enumerating).
+   */
+  async resolveSubjectMatchAccess(
+    gameIdOrSlug: string,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchAccessContext | null> {
+    if (!isGamesSubjectAccess(access)) return null;
+    const resolution = await resolveMatchAccessContext(this.db, {
+      subjectUserId: access.userId,
+      gameIdOrSlug,
+    });
+    return resolution.status === "resolved" ? resolution.context : null;
   }
 
   private async accessibleGameIds(access: ProductionGameMcpAccess): Promise<string[] | null> {
@@ -962,11 +1155,16 @@ export class ProductionGameMcpReadModel {
     access: ProductionGameMcpAccess,
   ): Promise<GamePlayerRow[]> {
     if (!isGamesSubjectAccess(access)) return [...players];
-    const claims = await resolveGamesMcpClaims(this.db, access.userId);
-    if (!claims.gameIds.has(gameId)) return [];
+    const resolution = await resolveMatchAccessContext(this.db, {
+      subjectUserId: access.userId,
+      gameIdOrSlug: gameId,
+    });
+    if (resolution.status !== "resolved") return [];
+    const owned = resolution.context.ownedPlayerIds;
+    const ownedProfiles = resolution.context.ownedAgentProfileIds;
     return players.filter((player) =>
-      claims.playerIds.has(player.id) ||
-      Boolean(player.agentProfileId && claims.agentProfileIds.has(player.agentProfileId))
+      owned.has(player.id) ||
+      Boolean(player.agentProfileId && ownedProfiles.has(player.agentProfileId))
     );
   }
 

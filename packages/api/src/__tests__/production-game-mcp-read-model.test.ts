@@ -23,6 +23,10 @@ import {
 import { PRIVATE_TRACE_EVIDENCE_TYPE } from "../services/private-trace-writer.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import { captureGameCompletionSettlement } from "../services/game-completion-settlement.js";
+import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
+import { findForbiddenTranscriptDtoKeys } from "../services/transcript-serialization.js";
+import { readMatchTranscriptPage } from "../services/match-transcript-read-model.js";
+import { readMatchCognitionPage } from "../services/match-cognition-read-model.js";
 import { setupTestDB } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
@@ -38,6 +42,8 @@ const PRODUCER_ACCESS = {
   userId: "producer-reviewer",
   authProfile: "producer" as const,
 };
+
+const CURSOR_SECRET = "test-jwt-secret-match-transcript-pagination";
 
 class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
   private readonly objects = new Map<string, { body: string; contentType: string }>();
@@ -915,6 +921,73 @@ describe("ProductionGameMcpReadModel", () => {
     });
   });
 
+  test("filters Judgment closing speeches by phase for public and producer visibility", async () => {
+    const gameId = await insertGame(db, {
+      slug: "mcp-judgment-speech-filter",
+      status: "completed",
+    });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const base = createCanonicalEventFixture(gameId);
+    const last = base.at(-1)!;
+    const closings: CanonicalGameEvent[] = [
+      {
+        sequence: last.sequence + 1,
+        gameId,
+        round: 2,
+        phase: Phase.CLOSING_ARGUMENTS,
+        type: "judgment.speech_recorded",
+        timestamp: "2026-06-20T00:00:10.000Z",
+        source: "engine",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          speechKind: "closing_argument",
+          playerId: "atlas",
+          text: "My game was clean and earned.",
+          provenance: "agent",
+        },
+      },
+      {
+        sequence: last.sequence + 2,
+        gameId,
+        round: 2,
+        phase: Phase.CLOSING_ARGUMENTS,
+        type: "judgment.speech_recorded",
+        timestamp: "2026-06-20T00:00:11.000Z",
+        source: "engine",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          speechKind: "closing_argument",
+          playerId: "echo",
+          text: "Vote for the social game.",
+          provenance: "timeout",
+        },
+      },
+    ];
+    await appendGameEvents(db, { gameId, ownerEpoch, events: [...base, ...closings] });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const producer = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      phase: Phase.CLOSING_ARGUMENTS,
+      visibilityMode: "producer",
+    }, PRODUCER_ACCESS);
+    expect(producer.canonicalGameFacts.events).toHaveLength(2);
+    expect(producer.canonicalGameFacts.events.every((row) => row.eventType === "judgment.speech_recorded")).toBe(true);
+    expect(JSON.stringify(producer.canonicalGameFacts.events)).toContain("My game was clean and earned.");
+    expect(JSON.stringify(producer.canonicalGameFacts.events)).not.toContain("thinking");
+
+    const publicMode = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      phase: Phase.CLOSING_ARGUMENTS,
+      visibilityMode: "public",
+    }, PRODUCER_ACCESS);
+    expect(publicMode.canonicalGameFacts.events).toHaveLength(2);
+  });
+
   test("requires an explicit agent selector when a user owns multiple players in a game", async () => {
     const userId = randomUUID();
     await db.insert(schema.users).values({
@@ -1170,4 +1243,1096 @@ async function insertGamePlayer(
     agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
   });
   return playerId;
+}
+
+// ---------------------------------------------------------------------------
+// U4 — stable authorized match transcript pagination
+// ---------------------------------------------------------------------------
+
+describe("ProductionGameMcpReadModel match transcript pagination (U4)", () => {
+  let db: DrizzleDB;
+
+  beforeEach(async () => {
+    db = await setupTestDB();
+    process.env.JWT_SECRET = CURSOR_SECRET;
+  });
+
+  test("page size 1 walks mixed public/private without gaps or duplicates", async () => {
+    const fixture = await seedModernOwnerGame(db, { watermark: 5 });
+    const { gameId, userId, ownerPlayerId, peerPlayerId } = fixture;
+
+    await db.insert(schema.transcripts).values([
+      modernPublicRow(gameId, 1, "Public A", 1000),
+      modernMingleRow(gameId, 2, {
+        speakerPlayerId: ownerPlayerId,
+        audiencePlayerIds: [ownerPlayerId, peerPlayerId],
+        text: "Private mingle",
+        timestamp: 1000, // identical timestamp
+      }),
+      modernPublicRow(gameId, 3, "Public B", 1000),
+      modernMingleRow(gameId, 4, {
+        speakerPlayerId: peerPlayerId,
+        audiencePlayerIds: [peerPlayerId, "unrelated"],
+        text: "Hidden other room",
+        timestamp: 1001,
+      }),
+      modernPublicRow(gameId, 5, "Public C", 1002),
+    ]);
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const seen: string[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    for (;;) {
+      const page = cursor
+        ? await readMatchTranscriptPage(db, { gameIdOrSlug: gameId, cursor, limit: 1 }, {
+            subjectUserId: userId,
+            cursorSecret: CURSOR_SECRET,
+          })
+        : await readModel.readMatchTranscript(
+            { gameIdOrSlug: gameId, limit: 1 },
+            { userId, authProfile: "subject" },
+          );
+      expect(page.ok).toBe(true);
+      if (!page.ok) return;
+      pages += 1;
+      for (const entry of page.entries) {
+        seen.push(`${entry.entrySequence}:${entry.text}`);
+      }
+      if (page.nextCursorKind === "catchup" || page.nextCursor == null) break;
+      if (page.entries.length === 0) break;
+      cursor = page.nextCursor ?? undefined;
+      if (pages > 20) throw new Error("pagination did not terminate");
+    }
+
+    // Hidden seq 4 never appears; authorized 1,2,3,5 with no gaps/dupes.
+    expect(seen).toEqual([
+      "1:Public A",
+      "2:Private mingle",
+      "3:Public B",
+      "5:Public C",
+    ]);
+    expect(JSON.stringify(seen)).not.toContain("Hidden");
+  });
+
+  test("concurrent appends do not change first walk; catch-up returns newer rows", async () => {
+    const fixture = await seedModernOwnerGame(db, { watermark: 2 });
+    const { gameId, userId, ownerPlayerId } = fixture;
+
+    await db.insert(schema.transcripts).values([
+      modernPublicRow(gameId, 1, "First", 1),
+      modernPublicRow(gameId, 2, "Second", 2),
+    ]);
+
+    const first = await readMatchTranscriptPage(db, { gameIdOrSlug: gameId, limit: 10 }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.entries.map((e) => e.text)).toEqual(["First", "Second"]);
+    expect(first.nextCursorKind).toBe("catchup");
+    expect(first.readThrough.throughEntrySequence).toBe(2);
+
+    // Append beyond pinned watermark and advance durable state.
+    await db.insert(schema.transcripts).values([
+      modernPublicRow(gameId, 3, "Third after pin", 3),
+      modernMingleRow(gameId, 4, {
+        speakerPlayerId: ownerPlayerId,
+        audiencePlayerIds: [ownerPlayerId],
+        text: "Fourth after pin",
+        timestamp: 4,
+      }),
+    ]);
+    await db.update(schema.gameTranscriptStates).set({
+      durableSequence: 4,
+      durableCount: 4,
+    }).where(eq(schema.gameTranscriptStates.gameId, gameId));
+
+    // Re-walking without cursor still sees only new pin if we don't catch up —
+    // first-page re-read pins current watermark 4.
+    const fresh = await readMatchTranscriptPage(db, { gameIdOrSlug: gameId, limit: 10 }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(fresh.ok).toBe(true);
+    if (!fresh.ok) return;
+    expect(fresh.entries.map((e) => e.text)).toEqual([
+      "First",
+      "Second",
+      "Third after pin",
+      "Fourth after pin",
+    ]);
+
+    // Catch-up from original first walk returns only rows after prior watermark.
+    const catchup = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: gameId,
+      cursor: first.nextCursor!,
+      limit: 10,
+    }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(catchup.ok).toBe(true);
+    if (!catchup.ok) return;
+    expect(catchup.entries.map((e) => e.text)).toEqual([
+      "Third after pin",
+      "Fourth after pin",
+    ]);
+  });
+
+  test("cursor reuse with another game/subject/filter/ownership fails uniformly", async () => {
+    const a = await seedModernOwnerGame(db, { watermark: 2, slug: "cursor-game-a" });
+    const b = await seedModernOwnerGame(db, { watermark: 2, slug: "cursor-game-b" });
+    // Seat user A into game B so game B is accessible but cursor game binding still fails.
+    await insertGamePlayer(db, { gameId: b.gameId, userId: a.userId, name: "A-in-B" });
+    // Seat user B into game A so subject mismatch is distinguishable from not_accessible.
+    await insertGamePlayer(db, { gameId: a.gameId, userId: b.userId, name: "B-in-A" });
+
+    await db.insert(schema.transcripts).values([
+      modernPublicRow(a.gameId, 1, "A1", 1),
+      modernPublicRow(a.gameId, 2, "A2", 2),
+      modernPublicRow(b.gameId, 1, "B1", 1),
+      modernPublicRow(b.gameId, 2, "B2", 2),
+    ]);
+
+    const pageA = await readMatchTranscriptPage(db, { gameIdOrSlug: a.gameId, limit: 1 }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(pageA.ok).toBe(true);
+    if (!pageA.ok) return;
+    expect(pageA.nextCursor).toBeTruthy();
+    const cursorA = pageA.nextCursor;
+    if (!cursorA) return;
+
+    // Wrong game (accessible, but cursor bound to A)
+    const wrongGame = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: b.gameId,
+      cursor: cursorA,
+    }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongGame).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+
+    // Wrong subject (B can access game A but ownership fingerprint differs)
+    const wrongSubject = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: a.gameId,
+      cursor: cursorA,
+    }, {
+      subjectUserId: b.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongSubject).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+
+    // Conflicting filter
+    const wrongFilter = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: a.gameId,
+      cursor: cursorA,
+      phase: "VOTE",
+    }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongFilter).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+  });
+
+  test("ownership change between pages invalidates cursor", async () => {
+    const fixture = await seedModernOwnerGame(db, { watermark: 3 });
+    const { gameId, userId, ownerPlayerId } = fixture;
+    await db.insert(schema.transcripts).values([
+      modernPublicRow(gameId, 1, "One", 1),
+      modernPublicRow(gameId, 2, "Two", 2),
+      modernPublicRow(gameId, 3, "Three", 3),
+    ]);
+
+    const page1 = await readMatchTranscriptPage(db, { gameIdOrSlug: gameId, limit: 1 }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page1.ok).toBe(true);
+    if (!page1.ok) return;
+
+    // Transfer ownership off the subject mid-walk.
+    await db.update(schema.gamePlayers)
+      .set({ userId: null })
+      .where(eq(schema.gamePlayers.id, ownerPlayerId));
+
+    const page2 = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: gameId,
+      cursor: page1.nextCursor!,
+    }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    // No longer participating → denied or not_accessible (non-enumerating).
+    expect(page2.ok).toBe(false);
+    if (page2.ok) return;
+    expect(["denied", "not_accessible", "cursor_invalid_or_stale"]).toContain(page2.status);
+  });
+
+  test("closed parser rejects unknown keys, bad enums, fractional limits, invalid timestamps", async () => {
+    const fixture = await seedModernOwnerGame(db, { watermark: 0 });
+    const cases: Array<{ input: Record<string, unknown>; field?: string }> = [
+      { input: { gameIdOrSlug: fixture.gameId, unknownField: true }, field: "unknownField" },
+      { input: { gameIdOrSlug: fixture.gameId, scope: "diary" }, field: "scope" },
+      { input: { gameIdOrSlug: fixture.gameId, limit: 1.5 }, field: "limit" },
+      { input: { gameIdOrSlug: fixture.gameId, limit: 999 }, field: "limit" },
+      { input: { gameIdOrSlug: fixture.gameId, fromTimestamp: "not-a-date" }, field: "fromTimestamp" },
+      {
+        input: {
+          gameIdOrSlug: fixture.gameId,
+          fromTimestamp: "2026-01-02T00:00:00.000Z",
+          toTimestamp: "2026-01-01T00:00:00.000Z",
+        },
+        field: "fromTimestamp",
+      },
+      { input: { gameIdOrSlug: fixture.gameId, cursor: "x".repeat(5000) }, field: "cursor" },
+    ];
+
+    for (const c of cases) {
+      const result = await readMatchTranscriptPage(db, c.input, {
+        subjectUserId: fixture.userId,
+        cursorSecret: CURSOR_SECRET,
+      });
+      expect(result.ok).toBe(false);
+      if (result.ok) continue;
+      expect(result.status).toBe("invalid_input");
+    }
+  });
+
+  test("player filter returns non-owned public speech but never private room dialogue", async () => {
+    const fixture = await seedModernOwnerGame(db, { watermark: 4 });
+    const { gameId, userId, ownerPlayerId, peerPlayerId } = fixture;
+
+    await db.insert(schema.transcripts).values([
+      modernPublicRow(gameId, 1, "Peer public", 1, peerPlayerId),
+      modernMingleRow(gameId, 2, {
+        speakerPlayerId: peerPlayerId,
+        audiencePlayerIds: [peerPlayerId, "other"],
+        text: "Peer private room",
+        timestamp: 2,
+      }),
+      modernMingleRow(gameId, 3, {
+        speakerPlayerId: ownerPlayerId,
+        audiencePlayerIds: [ownerPlayerId, peerPlayerId],
+        text: "Shared mingle",
+        timestamp: 3,
+      }),
+      modernPublicRow(gameId, 4, "Owner public", 4, ownerPlayerId),
+    ]);
+
+    const page = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: gameId,
+      player: peerPlayerId,
+      limit: 50,
+    }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+
+    const texts = page.entries.map((e) => e.text);
+    // Player filter is speaker-scoped: peer public speech is visible; peer private room is not
+    // even when the owner could not see it either. Shared mingle has owner as speaker so it
+    // does not match the peer speaker filter. Owner public is excluded.
+    expect(texts).toEqual(["Peer public"]);
+    expect(texts).not.toContain("Peer private room");
+    expect(texts).not.toContain("Shared mingle");
+    expect(texts).not.toContain("Owner public");
+    expect(JSON.stringify(page)).not.toContain("Peer private room");
+  });
+
+  test("Season 0 / capture v0 omits all system rows and reports version-wide limitation", async () => {
+    const userId = randomUUID();
+    await db.insert(schema.users).values({
+      id: userId,
+      walletAddress: `0x${userId.replace(/-/g, "").slice(0, 40)}`,
+    });
+    const gameId = await insertGame(db, { slug: "season0-legacy", status: "completed" });
+    // leave transcriptCaptureVersion at 0
+    const ownerPlayerId = await insertGamePlayer(db, { gameId, userId, name: "Owner" });
+    const peerPlayerId = await insertGamePlayer(db, { gameId, name: "Peer" });
+
+    await db.insert(schema.transcripts).values([
+      {
+        gameId,
+        round: 1,
+        phase: "LOBBY",
+        fromPlayerId: null,
+        scope: "system",
+        text: "=== PHASE BANNER ===",
+        timestamp: 1,
+      },
+      {
+        gameId,
+        round: 1,
+        phase: "LOBBY",
+        fromPlayerId: null,
+        scope: "system",
+        text: "timeout diagnostic internal",
+        timestamp: 2,
+      },
+      {
+        gameId,
+        round: 1,
+        phase: "LOBBY",
+        fromPlayerId: "Owner",
+        scope: "public",
+        text: "Hello lobby",
+        timestamp: 3,
+      },
+      {
+        gameId,
+        round: 1,
+        phase: "VOTE",
+        fromPlayerId: null,
+        scope: "system",
+        text: "viewer narration",
+        timestamp: 4,
+      },
+      {
+        gameId,
+        round: 1,
+        phase: "MINGLE_I",
+        fromPlayerId: "Owner",
+        scope: "mingle",
+        toPlayerIds: JSON.stringify(["Peer"]),
+        text: "Secret plan",
+        timestamp: 5,
+      },
+    ]);
+
+    const page = await readMatchTranscriptPage(db, { gameIdOrSlug: gameId, limit: 50 }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+
+    expect(page.orderingQuality).toBe("deterministic_approximate");
+    expect(page.limitations).toEqual([{
+      code: "legacy_system_dialogue_unclassified",
+      message: expect.stringContaining("Capture version 0"),
+      scope: "capture_version",
+    }]);
+    expect(page.entries.every((e) => e.scope !== "system")).toBe(true);
+    expect(page.entries.map((e) => e.text)).toEqual(["Hello lobby", "Secret plan"]);
+    // No system-row counts anywhere.
+    expect(JSON.stringify(page)).not.toContain("omittedCount");
+    expect(JSON.stringify(page)).not.toContain("systemCount");
+    void ownerPlayerId;
+    void peerPlayerId;
+  });
+
+  test("legacy equal-timestamp fixtures remain deterministic across pages", async () => {
+    const userId = randomUUID();
+    await db.insert(schema.users).values({
+      id: userId,
+      walletAddress: `0x${userId.replace(/-/g, "").slice(0, 40)}`,
+    });
+    const gameId = await insertGame(db, { slug: "legacy-equal-ts", status: "completed" });
+    await insertGamePlayer(db, { gameId, userId, name: "Owner" });
+
+    const sameTs = 5_000;
+    await db.insert(schema.transcripts).values([
+      { gameId, round: 1, phase: "LOBBY", scope: "public", text: "A", timestamp: sameTs, fromPlayerId: "Owner" },
+      { gameId, round: 1, phase: "LOBBY", scope: "public", text: "B", timestamp: sameTs, fromPlayerId: "Owner" },
+      { gameId, round: 1, phase: "LOBBY", scope: "public", text: "C", timestamp: sameTs, fromPlayerId: "Owner" },
+    ]);
+
+    const texts: string[] = [];
+    let cursor: string | undefined;
+    for (let i = 0; i < 5; i++) {
+      const page = await readMatchTranscriptPage(db, {
+        gameIdOrSlug: gameId,
+        limit: 1,
+        ...(cursor ? { cursor } : {}),
+      }, {
+        subjectUserId: userId,
+        cursorSecret: CURSOR_SECRET,
+      });
+      expect(page.ok).toBe(true);
+      if (!page.ok) return;
+      expect(page.orderingQuality).toBe("deterministic_approximate");
+      texts.push(...page.entries.map((e) => e.text));
+      if (!page.nextCursor || page.nextCursorKind == null) break;
+      cursor = page.nextCursor;
+    }
+    expect(texts).toEqual(["A", "B", "C"]);
+  });
+
+  test("high hidden-row density does not create empty intermediate pages", async () => {
+    const fixture = await seedModernOwnerGame(db, { watermark: 20 });
+    const { gameId, userId, ownerPlayerId } = fixture;
+
+    const rows = [];
+    for (let i = 1; i <= 20; i++) {
+      if (i % 5 === 0) {
+        rows.push(modernPublicRow(gameId, i, `Visible ${i}`, i, ownerPlayerId));
+      } else {
+        rows.push(modernMingleRow(gameId, i, {
+          speakerPlayerId: "foreign-a",
+          audiencePlayerIds: ["foreign-a", "foreign-b"],
+          text: `Hidden ${i}`,
+          timestamp: i,
+        }));
+      }
+    }
+    await db.insert(schema.transcripts).values(rows);
+
+    const page = await readMatchTranscriptPage(db, { gameIdOrSlug: gameId, limit: 2 }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+    // First page should contain authorized rows, not empty due to hidden density.
+    expect(page.entries.length).toBe(2);
+    expect(page.entries.every((e) => e.text.startsWith("Visible"))).toBe(true);
+    expect(page.entries.length).not.toBe(0);
+  });
+
+  test("DTO sanitization excludes thinking and forbidden keys recursively", async () => {
+    const fixture = await seedModernOwnerGame(db, { watermark: 1 });
+    const { gameId, userId, ownerPlayerId } = fixture;
+
+    await db.insert(schema.transcripts).values([{
+      ...modernPublicRow(gameId, 1, "Said aloud", 1, ownerPlayerId),
+      thinking: "NEVER LEAK THIS THINKING",
+      roomMetadata: JSON.stringify({ diagnostic: "secret room allocation" }),
+    }]);
+
+    const page = await readMatchTranscriptPage(db, { gameIdOrSlug: gameId, limit: 10 }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+
+    expect(page.entries).toHaveLength(1);
+    expect(page.entries[0]?.text).toBe("Said aloud");
+    const forbidden = findForbiddenTranscriptDtoKeys(page);
+    expect(forbidden).toEqual([]);
+    expect(JSON.stringify(page)).not.toContain("NEVER LEAK");
+    expect(JSON.stringify(page)).not.toContain("thinking");
+    expect(JSON.stringify(page)).not.toContain("roomMetadata");
+    expect(page.entries[0]?.contentTrust).toBe("untrusted_game_authored");
+    expect(page.entries[0]?.authority).toBe("transcript");
+  });
+
+  test("creator-only access is denied without revealing rows; unknown game is non-enumerating", async () => {
+    const creatorId = randomUUID();
+    await db.insert(schema.users).values({
+      id: creatorId,
+      walletAddress: `0x${creatorId.replace(/-/g, "").slice(0, 40)}`,
+    });
+    const gameId = await insertGame(db, { slug: "creator-only-tx", status: "in_progress" });
+    await db.update(schema.games).set({
+      createdById: creatorId,
+      transcriptCaptureVersion: 1,
+    }).where(eq(schema.games.id, gameId));
+    await db.insert(schema.gameTranscriptStates).values(initialGameTranscriptStateValues(gameId, 1));
+    await db.insert(schema.transcripts).values([modernPublicRow(gameId, 1, "Secret", 1)]);
+    await db.update(schema.gameTranscriptStates).set({
+      durableSequence: 1,
+      durableCount: 1,
+    }).where(eq(schema.gameTranscriptStates.gameId, gameId));
+
+    const denied = await readMatchTranscriptPage(db, { gameIdOrSlug: gameId }, {
+      subjectUserId: creatorId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(denied.ok).toBe(false);
+    if (denied.ok) return;
+    expect(denied.status).toBe("denied");
+
+    const unknown = await readMatchTranscriptPage(db, { gameIdOrSlug: randomUUID() }, {
+      subjectUserId: creatorId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(unknown.ok).toBe(false);
+    if (unknown.ok) return;
+    expect(unknown.status).toBe("not_accessible");
+  });
+
+  test("malformed/expired/rotated cursor fails with uniform cursor_invalid_or_stale", async () => {
+    const fixture = await seedModernOwnerGame(db, { watermark: 1 });
+    await db.insert(schema.transcripts).values([
+      modernPublicRow(fixture.gameId, 1, "Only", 1),
+    ]);
+
+    const page = await readMatchTranscriptPage(db, { gameIdOrSlug: fixture.gameId, limit: 1 }, {
+      subjectUserId: fixture.userId,
+      cursorSecret: CURSOR_SECRET,
+      nowMs: 1_720_000_000_000,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+
+    const expired = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: fixture.gameId,
+      cursor: page.nextCursor!,
+    }, {
+      subjectUserId: fixture.userId,
+      cursorSecret: CURSOR_SECRET,
+      nowMs: 1_720_000_000_000 + 31 * 60 * 1000,
+    });
+    expect(expired).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+
+    const rotated = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: fixture.gameId,
+      cursor: page.nextCursor!,
+    }, {
+      subjectUserId: fixture.userId,
+      cursorSecret: "different-rotated-secret-material",
+      nowMs: 1_720_000_000_000,
+    });
+    expect(rotated).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+
+    const malformed = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: fixture.gameId,
+      cursor: "%%%not-a-cursor%%%",
+    }, {
+      subjectUserId: fixture.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(malformed).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U5 — owned thinking and strategy timeline
+// ---------------------------------------------------------------------------
+
+describe("ProductionGameMcpReadModel owned match cognition (U5)", () => {
+  let db: DrizzleDB;
+
+  beforeEach(async () => {
+    db = await setupTestDB();
+    process.env.JWT_SECRET = CURSOR_SECRET;
+  });
+
+  test("owners page thinking/strategy for every owned seat; reasoning stays off timeline", async () => {
+    const fixture = await seedCognitionOwnerGame(db);
+    const { gameId, userId, ownerA, ownerB, peer } = fixture;
+
+    const thinkingA = randomUUID();
+    const strategyB = randomUUID();
+    const reasoningA = randomUUID();
+    const peerThinking = randomUUID();
+
+    await insertCognitionArtifact(db, {
+      id: thinkingA,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: { thinking: "seat-a thought" },
+      createdAt: "2026-07-21T10:00:02.000Z",
+    });
+    await insertCognitionArtifact(db, {
+      id: strategyB,
+      gameId,
+      actorPlayerId: ownerB,
+      actorUserId: userId,
+      artifactType: "strategy",
+      payload: { decisionLog: "seat-b strategy" },
+      createdAt: "2026-07-21T10:00:01.000Z",
+    });
+    await insertCognitionArtifact(db, {
+      id: reasoningA,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "reasoning",
+      payload: { reasoningContext: "should not appear on timeline" },
+      createdAt: "2026-07-21T10:00:03.000Z",
+    });
+    await insertCognitionArtifact(db, {
+      id: peerThinking,
+      gameId,
+      actorPlayerId: peer,
+      artifactType: "thinking",
+      payload: { thinking: "peer secret" },
+      createdAt: "2026-07-21T10:00:04.000Z",
+    });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const page = await readModel.readOwnedMatchCognition(
+      { gameIdOrSlug: gameId, limit: 10 },
+      { userId, authProfile: "subject" },
+    );
+    expect(page.ok).toBe(true);
+    if (!page.ok) throw new Error(page.error);
+    expect(page.entries.map((e) => e.id).sort()).toEqual([thinkingA, strategyB].sort());
+    expect(page.entries.every((e) => e.authority === "cognition")).toBe(true);
+    expect(page.entries.some((e) => e.id === reasoningA)).toBe(false);
+    expect(page.entries.some((e) => e.id === peerThinking)).toBe(false);
+    expect(JSON.stringify(page)).not.toContain("peer secret");
+    expect(JSON.stringify(page)).not.toContain("reasoningContext");
+    expect(JSON.stringify(page)).not.toContain("should not appear");
+
+    const thinkingEntry = page.entries.find((e) => e.id === thinkingA);
+    expect(thinkingEntry?.thinkingProse).toEqual({
+      thinking: "seat-a thought",
+      contentTrust: "untrusted_game_authored",
+    });
+    expect(thinkingEntry?.strategyProse).toBeUndefined();
+
+    const strategyEntry = page.entries.find((e) => e.id === strategyB);
+    expect(strategyEntry?.strategyProse?.decisionLog).toBe("seat-b strategy");
+    expect(strategyEntry?.strategyProse?.contentTrust).toBe("untrusted_game_authored");
+  });
+
+  test("hundreds of newer non-owned rows cannot hide an older owned artifact", async () => {
+    const fixture = await seedCognitionOwnerGame(db);
+    const { gameId, userId, ownerA, peer } = fixture;
+    const ownedId = randomUUID();
+
+    await insertCognitionArtifact(db, {
+      id: ownedId,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: { thinking: "older owned" },
+      createdAt: "2026-07-21T09:00:00.000Z",
+    });
+    for (let i = 0; i < 200; i++) {
+      await insertCognitionArtifact(db, {
+        id: randomUUID(),
+        gameId,
+        actorPlayerId: peer,
+        artifactType: "thinking",
+        payload: { thinking: `noise-${i}` },
+        createdAt: `2026-07-21T12:${String(i % 60).padStart(2, "0")}:00.000Z`,
+      });
+    }
+
+    const page = await readMatchCognitionPage(db, { gameIdOrSlug: gameId, limit: 5 }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) throw new Error(page.error);
+    expect(page.entries.map((e) => e.id)).toEqual([ownedId]);
+    expect(JSON.stringify(page)).not.toContain("noise-");
+  });
+
+  test("Production MCP list/read enforce subject_owner (non-owned thinking denied)", async () => {
+    const fixture = await seedCognitionOwnerGame(db);
+    const { gameId, userId, ownerA, peer } = fixture;
+    const ownedThinking = randomUUID();
+    const peerThinking = randomUUID();
+
+    await insertCognitionArtifact(db, {
+      id: ownedThinking,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: { thinking: "mine" },
+    });
+    await insertCognitionArtifact(db, {
+      id: peerThinking,
+      gameId,
+      actorPlayerId: peer,
+      artifactType: "thinking",
+      payload: { thinking: "theirs" },
+    });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const listed = await readModel.listCognitiveArtifacts(
+      { gameIdOrSlug: gameId },
+      { userId, authProfile: "subject" },
+    );
+    const body = listed.cognitiveArtifacts as {
+      ok: boolean;
+      artifacts: Array<{ id: string; actorPlayerId?: string }>;
+    };
+    expect(body.ok).toBe(true);
+    expect(body.artifacts.map((a) => a.id)).toEqual([ownedThinking]);
+    expect(body.artifacts.every((a) => a.actorPlayerId === ownerA || a.actorPlayerId === fixture.ownerB)).toBe(true);
+
+    const denied = await readModel.readCognitiveArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: peerThinking,
+      artifactType: "thinking",
+      actorPlayerId: peer,
+    }, { userId, authProfile: "subject" });
+    const deniedBody = denied.cognitiveArtifacts as { ok: boolean; status?: string };
+    expect(deniedBody.ok).toBe(false);
+    expect(deniedBody.status).toBe("denied");
+
+    // Subject with producer/sysop metadata still subject_owner only.
+    const elevatedList = await readModel.listCognitiveArtifacts(
+      { gameIdOrSlug: gameId },
+      { userId, authProfile: "subject" },
+    );
+    const elevatedBody = elevatedList.cognitiveArtifacts as {
+      ok: boolean;
+      artifacts: Array<{ id: string }>;
+    };
+    expect(elevatedBody.artifacts.map((a) => a.id)).toEqual([ownedThinking]);
+
+    // Explicit producer surface still sees all.
+    const producerList = await readModel.listCognitiveArtifacts(
+      { gameIdOrSlug: gameId },
+      PRODUCER_ACCESS,
+    );
+    const producerBody = producerList.cognitiveArtifacts as {
+      ok: boolean;
+      artifacts: Array<{ id: string }>;
+    };
+    expect(producerBody.ok).toBe(true);
+    expect(producerBody.artifacts.map((a) => a.id).sort()).toEqual(
+      [ownedThinking, peerThinking].sort(),
+    );
+  });
+
+  test("cursor reuse across game/subject/filter/ownership fails; pagination is stable", async () => {
+    const a = await seedCognitionOwnerGame(db);
+    const b = await seedCognitionOwnerGame(db);
+
+    for (const [i, id] of [randomUUID(), randomUUID(), randomUUID()].entries()) {
+      await insertCognitionArtifact(db, {
+        id,
+        gameId: a.gameId,
+        actorPlayerId: a.ownerA,
+        actorUserId: a.userId,
+        artifactType: "thinking",
+        payload: { thinking: `a-${i}` },
+        createdAt: `2026-07-21T10:00:0${i}.000Z`,
+      });
+    }
+
+    const page1 = await readMatchCognitionPage(db, { gameIdOrSlug: a.gameId, limit: 1 }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page1.ok).toBe(true);
+    if (!page1.ok) throw new Error(page1.error);
+    expect(page1.entries).toHaveLength(1);
+    expect(page1.nextCursor).toBeTruthy();
+
+    const page2 = await readMatchCognitionPage(db, {
+      gameIdOrSlug: a.gameId,
+      cursor: page1.nextCursor!,
+      limit: 1,
+    }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page2.ok).toBe(true);
+    if (!page2.ok) throw new Error(page2.error);
+    expect(page2.entries).toHaveLength(1);
+    expect(page2.entries[0]!.id).not.toBe(page1.entries[0]!.id);
+
+    // Cursor from game A reused against game B (B's owner) fails binding.
+    const wrongGame = await readMatchCognitionPage(db, {
+      gameIdOrSlug: b.gameId,
+      cursor: page1.nextCursor!,
+    }, {
+      subjectUserId: b.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongGame).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+
+    // Same game, different subject fails binding (or access).
+    const wrongSubject = await readMatchCognitionPage(db, {
+      gameIdOrSlug: a.gameId,
+      cursor: page1.nextCursor!,
+    }, {
+      subjectUserId: b.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongSubject.ok).toBe(false);
+    if (wrongSubject.ok) throw new Error("expected failure");
+    expect(["cursor_invalid_or_stale", "not_accessible", "denied"]).toContain(wrongSubject.status);
+
+    const wrongFilter = await readMatchCognitionPage(db, {
+      gameIdOrSlug: a.gameId,
+      cursor: page1.nextCursor!,
+      artifactType: "strategy",
+    }, {
+      subjectUserId: a.userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(wrongFilter).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+  });
+
+  test("rejects reasoning filter and unknown keys; degraded cognition omits without fallback", async () => {
+    const fixture = await seedCognitionOwnerGame(db);
+    const { gameId, userId, ownerA } = fixture;
+
+    const degradedId = randomUUID();
+    const goodId = randomUUID();
+    await insertCognitionArtifact(db, {
+      id: degradedId,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: {},
+      visibilityStatus: "capture_degraded",
+      createdAt: "2026-07-21T11:00:00.000Z",
+    });
+    await insertCognitionArtifact(db, {
+      id: goodId,
+      gameId,
+      actorPlayerId: ownerA,
+      actorUserId: userId,
+      artifactType: "thinking",
+      payload: { thinking: "good" },
+      createdAt: "2026-07-21T10:00:00.000Z",
+    });
+
+    const page = await readMatchCognitionPage(db, { gameIdOrSlug: gameId }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) throw new Error(page.error);
+    expect(page.entries.map((e) => e.id)).toEqual([goodId]);
+    expect(JSON.stringify(page)).not.toContain(degradedId);
+
+    const reasoningFilter = await readMatchCognitionPage(db, {
+      gameIdOrSlug: gameId,
+      artifactType: "reasoning",
+    }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(reasoningFilter).toMatchObject({
+      ok: false,
+      status: "invalid_input",
+      field: "artifactType",
+    });
+
+    const unknownKey = await readMatchCognitionPage(db, {
+      gameIdOrSlug: gameId,
+      unknownField: true,
+    }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(unknownKey).toMatchObject({ ok: false, status: "invalid_input" });
+  });
+
+  test("creator-only and inaccessible games are non-enumerating denied", async () => {
+    const creatorId = randomUUID();
+    await db.insert(schema.users).values({ id: creatorId });
+    const gameId = await insertGame(db, {
+      slug: `creator-only-${randomUUID().slice(0, 8)}`,
+      status: "in_progress",
+    });
+    await db.update(schema.games).set({
+      cognitiveArtifactCaptureVersion: 1,
+      createdById: creatorId,
+    }).where(eq(schema.games.id, gameId));
+
+    const denied = await readMatchCognitionPage(db, { gameIdOrSlug: gameId }, {
+      subjectUserId: creatorId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(denied).toMatchObject({ ok: false, status: "denied" });
+
+    const unknown = await readMatchCognitionPage(db, { gameIdOrSlug: randomUUID() }, {
+      subjectUserId: creatorId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(unknown).toMatchObject({ ok: false, status: "not_accessible" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U6 — match manifest via ProductionGameMcpReadModel
+// ---------------------------------------------------------------------------
+
+describe("ProductionGameMcpReadModel match manifest (U6)", () => {
+  let db: DrizzleDB;
+
+  beforeEach(async () => {
+    db = await setupTestDB();
+  });
+
+  test("readMatchManifest returns protocol-neutral lanes and follow-ups for owner", async () => {
+    const { gameId, userId } = await seedModernOwnerGame(db, { watermark: 4 });
+    const readModel = new ProductionGameMcpReadModel(db);
+    const result = await readModel.readMatchManifest(
+      { gameIdOrSlug: gameId },
+      { userId, authProfile: "subject" },
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.manifest.schemaVersion).toBe(1);
+    expect(result.manifest.lanes.facts.authority).toBe("canonical_facts");
+    expect(result.manifest.lanes.transcript.authority).toBe("transcript");
+    expect(result.manifest.lanes.cognition.authority).toBe("cognition");
+    expect(result.manifest.formalSpeechParity.authority).toBe("formal_speech_parity");
+    expect(result.manifest.lanes.transcript.readThrough.throughEntrySequence).toBe(4);
+    expect(result.manifest.overall.live).toBe(true);
+    expect(result.manifest.overall.state).not.toBe("complete");
+    for (const cap of result.manifest.nextReads) {
+      expect(cap.starterArguments.gameIdOrSlug).toBeTruthy();
+      expect(JSON.stringify(cap)).not.toMatch(/"toolName"|read_match_manifest/);
+    }
+  });
+
+  test("empty userId is non-enumerating not_accessible", async () => {
+    const readModel = new ProductionGameMcpReadModel(db);
+    const result = await readModel.readMatchManifest(
+      { gameIdOrSlug: randomUUID() },
+      { userId: "", authProfile: "subject" },
+    );
+    expect(result).toMatchObject({ ok: false, status: "not_accessible" });
+  });
+});
+
+async function seedCognitionOwnerGame(db: DrizzleDB): Promise<{
+  gameId: string;
+  userId: string;
+  ownerA: string;
+  ownerB: string;
+  peer: string;
+}> {
+  const userId = randomUUID();
+  await db.insert(schema.users).values({
+    id: userId,
+    walletAddress: `0x${userId.replace(/-/g, "").slice(0, 40)}`,
+  });
+  const gameId = await insertGame(db, {
+    slug: `cog-${randomUUID().slice(0, 8)}`,
+    status: "in_progress",
+  });
+  await db.update(schema.games).set({
+    cognitiveArtifactCaptureVersion: 1,
+    transcriptCaptureVersion: 1,
+  }).where(eq(schema.games.id, gameId));
+  const ownerA = await insertGamePlayer(db, { gameId, userId, name: "OwnerA" });
+  const ownerB = await insertGamePlayer(db, { gameId, userId, name: "OwnerB" });
+  const peer = await insertGamePlayer(db, { gameId, name: "Peer" });
+  return { gameId, userId, ownerA, ownerB, peer };
+}
+
+async function insertCognitionArtifact(
+  db: DrizzleDB,
+  params: {
+    id: string;
+    gameId: string;
+    actorPlayerId: string;
+    actorUserId?: string;
+    artifactType: "reasoning" | "thinking" | "strategy";
+    payload: Record<string, unknown>;
+    createdAt?: string;
+    visibilityStatus?: "active" | "capture_degraded";
+  },
+): Promise<void> {
+  await db.insert(schema.gameCognitiveArtifacts).values({
+    id: params.id,
+    gameId: params.gameId,
+    artifactType: params.artifactType,
+    actorRole: "player",
+    actorPlayerId: params.actorPlayerId,
+    actorUserId: params.actorUserId,
+    action: "vote",
+    phase: "LOBBY",
+    round: 1,
+    payloadByteLength: Buffer.byteLength(JSON.stringify(params.payload), "utf8"),
+    payload: params.payload,
+    visibilityStatus: params.visibilityStatus ?? "active",
+    ...(params.createdAt && { createdAt: params.createdAt }),
+  });
+}
+
+async function seedModernOwnerGame(
+  db: DrizzleDB,
+  params: { watermark: number; slug?: string },
+): Promise<{
+  gameId: string;
+  userId: string;
+  ownerPlayerId: string;
+  peerPlayerId: string;
+}> {
+  const userId = randomUUID();
+  await db.insert(schema.users).values({
+    id: userId,
+    walletAddress: `0x${userId.replace(/-/g, "").slice(0, 40)}`,
+  });
+  const gameId = await insertGame(db, {
+    slug: params.slug ?? `tx-${randomUUID().slice(0, 8)}`,
+    status: "in_progress",
+  });
+  await db.update(schema.games).set({
+    transcriptCaptureVersion: 1,
+    formalSpeechCaptureVersion: 1,
+  }).where(eq(schema.games.id, gameId));
+  await db.insert(schema.gameTranscriptStates).values({
+    ...initialGameTranscriptStateValues(gameId, 1),
+    durableSequence: params.watermark,
+    durableCount: params.watermark,
+  });
+  const ownerPlayerId = await insertGamePlayer(db, { gameId, userId, name: "Owner" });
+  const peerPlayerId = await insertGamePlayer(db, { gameId, name: "Peer" });
+  return { gameId, userId, ownerPlayerId, peerPlayerId };
+}
+
+function modernPublicRow(
+  gameId: string,
+  sequence: number,
+  text: string,
+  timestamp: number,
+  speakerPlayerId?: string,
+) {
+  return {
+    gameId,
+    round: 1,
+    phase: "LOBBY",
+    fromPlayerId: speakerPlayerId ?? null,
+    scope: "public" as const,
+    toPlayerIds: null,
+    text,
+    thinking: null as string | null,
+    timestamp,
+    entrySequence: sequence,
+    speakerPlayerId: speakerPlayerId ?? null,
+    audiencePlayerIds: [] as string[],
+    captureVersion: 1,
+    dialogueKind: "public_speech" as const,
+    safeContext: { version: 1 as const },
+  };
+}
+
+function modernMingleRow(
+  gameId: string,
+  sequence: number,
+  params: {
+    speakerPlayerId: string;
+    audiencePlayerIds: string[];
+    text: string;
+    timestamp: number;
+  },
+) {
+  return {
+    gameId,
+    round: 1,
+    phase: "MINGLE_I",
+    fromPlayerId: params.speakerPlayerId,
+    scope: "mingle" as const,
+    toPlayerIds: JSON.stringify(
+      params.audiencePlayerIds.filter((id) => id !== params.speakerPlayerId),
+    ),
+    text: params.text,
+    thinking: null as string | null,
+    timestamp: params.timestamp,
+    entrySequence: sequence,
+    speakerPlayerId: params.speakerPlayerId,
+    audiencePlayerIds: params.audiencePlayerIds,
+    captureVersion: 1,
+    dialogueKind: "mingle_speech" as const,
+    safeContext: { version: 1 as const, roomId: 1 },
+  };
 }

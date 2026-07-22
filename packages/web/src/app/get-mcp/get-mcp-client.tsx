@@ -78,6 +78,15 @@ export function GetMcpSetupContent({
                       <CopyCommandButton command={command} />
                     </div>
                   ))}
+                  {client.steps && client.steps.length > 0 ? (
+                    <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-text-secondary sm:text-base sm:leading-7">
+                      {client.steps.map((step) => (
+                        <li key={step} className="min-w-0 pl-1">
+                          <span className="text-text-primary">{step}</span>
+                        </li>
+                      ))}
+                    </ol>
+                  ) : null}
                 </div>
 
                 <p className="influence-copy-muted mt-4 text-xs leading-5">

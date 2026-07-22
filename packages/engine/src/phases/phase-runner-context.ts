@@ -36,6 +36,7 @@ export function agentTurnSourcePointer(
   round: number,
   phase: Phase,
   turnPass?: number,
+  decisionId?: UUID,
 ): CanonicalSourcePointer {
   return {
     kind: "agent_turn",
@@ -44,6 +45,7 @@ export function agentTurnSourcePointer(
     round,
     phase,
     ...(turnPass != null ? { turnPass } : {}),
+    ...(decisionId ? { decisionId } : {}),
   };
 }
 
@@ -52,13 +54,15 @@ export async function assertCanAcceptCommit(ctx: PhaseRunnerContext): Promise<vo
 }
 
 export function transcriptThinkingFor(
-  _agent: IAgent,
+  agent: IAgent,
   thinking?: string,
   reasoningContext?: string,
-): { thinking?: string; reasoningContext?: string } {
+): { thinking?: string; reasoningContext?: string; decisionId?: string } {
+  const decisionId = agent.getLastPrivateDecisionId?.();
   return {
     ...(thinking && { thinking }),
     ...(reasoningContext && { reasoningContext }),
+    ...(decisionId && { decisionId }),
   };
 }
 

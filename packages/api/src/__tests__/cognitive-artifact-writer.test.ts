@@ -55,9 +55,10 @@ describe("cognitive artifact writer", () => {
     return { gameId, userId, agentProfileId, playerId };
   }
 
-  function traceForPlayer(playerId: string): PrivateDecisionTrace {
+  function traceForPlayer(playerId: string, decisionId?: string): PrivateDecisionTrace {
     return {
       version: 2,
+      ...(decisionId ? { decisionId } : {}),
       action: "vote",
       actor: {
         id: playerId,
@@ -145,7 +146,8 @@ describe("cognitive artifact writer", () => {
 
   test("extracts only whitelisted reasoning, thinking, and strategy fields", async () => {
     const { gameId, playerId, userId, agentProfileId } = await createGamePlayer();
-    const trace = traceForPlayer(playerId);
+    const decisionId = randomUUID();
+    const trace = traceForPlayer(playerId, decisionId);
 
     const drafts = extractCognitiveArtifactDrafts(trace);
     expect(drafts.map((draft) => draft.artifactType).sort()).toEqual(["reasoning", "strategy", "thinking"]);
@@ -167,6 +169,7 @@ describe("cognitive artifact writer", () => {
     expect(rows.every((row) => row.actorPlayerId === playerId)).toBe(true);
     expect(rows.every((row) => row.actorUserId === userId)).toBe(true);
     expect(rows.every((row) => row.actorAgentProfileId === agentProfileId)).toBe(true);
+    expect(rows.every((row) => row.decisionId === decisionId)).toBe(true);
 
     const serializedPayloads = JSON.stringify(rows.map((row) => row.payload));
     expect(serializedPayloads).toContain("Native reasoning says the vote math points at Vera.");

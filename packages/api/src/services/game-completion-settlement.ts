@@ -14,9 +14,17 @@ import {
 import { ensureWaitingPostgameMediaRow } from "./postgame-media-coordinator.js";
 import { sha256StableJson } from "./stable-hash.js";
 import { serializeTranscriptEntry } from "./transcript-serialization.js";
+import {
+  isCurrentTranscriptCapture,
+  ProductDialoguePersistenceError,
+  reconcileTerminalProductDialogue,
+} from "./game-transcript-persistence.js";
 
 export const GAME_COMPLETION_ENVELOPE_SCHEMA = "influence.game-completion" as const;
+/** Historical completion envelope version (completed V1 records remain valid). */
 export const GAME_COMPLETION_ENVELOPE_VERSION = 1 as const;
+/** Current-capture completion envelope version (normalized dialogue identity). */
+export const GAME_COMPLETION_ENVELOPE_VERSION_V2 = 2 as const;
 export const GAME_COMPLETION_SETTLEMENT_SUMMARY_VERSION = 1 as const;
 export const COMPLETION_SETTLEMENT_TRANSIENT_FAILURE = "completion_settlement_transient_failure" as const;
 export const COMPLETION_SETTLEMENT_REPAIR_REQUIRED = "completion_settlement_repair_required" as const;
@@ -41,6 +49,8 @@ const GAME_COMPLETION_SETTLEMENT_SAFE_FAILURE_CODES = [
   "completion_envelope_hash_mismatch",
   "completion_boundary_conflict",
   "completion_game_state_conflict",
+  "transcript_content_conflict",
+  "transcript_state_conflict",
 ] as const;
 
 const GAME_COMPLETION_SETTLEMENT_SAFE_FAILURE_CODE_SET = new Set<string>(
@@ -83,6 +93,32 @@ export interface GameCompletionEnvelopeV1 {
   completionConfig: Record<string, unknown>;
   finishedAt: string;
 }
+
+/**
+ * V2 terminal result uses the same structural fields as V1 but requires
+ * normalized dialogue identity on dialogue-bearing transcript entries.
+ */
+export interface GameCompletionTerminalResultV2 extends GameCompletionTerminalResultV1 {}
+
+export interface GameCompletionEnvelopeV2 {
+  schema: typeof GAME_COMPLETION_ENVELOPE_SCHEMA;
+  version: typeof GAME_COMPLETION_ENVELOPE_VERSION_V2;
+  boundary: {
+    ownerEpoch: string;
+    finalEventSequence: number;
+    finalEventHash: string;
+  };
+  result: GameCompletionTerminalResultV2;
+  tokenUsage: GameCompletionTokenUsageV1;
+  model: {
+    resolvedModel: string;
+    calculatedCost: CostEstimate | null;
+  };
+  completionConfig: Record<string, unknown>;
+  finishedAt: string;
+}
+
+export type GameCompletionEnvelope = GameCompletionEnvelopeV1 | GameCompletionEnvelopeV2;
 
 export interface CaptureGameCompletionSettlementInput {
   gameId: string;
@@ -228,10 +264,41 @@ class DeterministicSettlementError extends Error {
 }
 
 /**
+ * Version-dispatched completion envelope validation. V1 preserves historical
+ * completed-record semantics; V2 requires normalized dialogue fields.
+ */
+export function assertGameCompletionEnvelope(value: unknown): GameCompletionEnvelope {
+  const record = assertRecord(value, "Invalid completion envelope");
+  if (record.version === GAME_COMPLETION_ENVELOPE_VERSION_V2) {
+    return assertGameCompletionEnvelopeV2(value);
+  }
+  return assertGameCompletionEnvelopeV1(value);
+}
+
+/**
  * Validate and normalize a v1 terminal envelope. Unknown fields fail closed;
  * JSON snapshots remain opaque but must contain only JSON-safe values.
  */
 export function assertGameCompletionEnvelopeV1(value: unknown): GameCompletionEnvelopeV1 {
+  return assertGameCompletionEnvelopeAtVersion(value, GAME_COMPLETION_ENVELOPE_VERSION);
+}
+
+export function assertGameCompletionEnvelopeV2(value: unknown): GameCompletionEnvelopeV2 {
+  return assertGameCompletionEnvelopeAtVersion(value, GAME_COMPLETION_ENVELOPE_VERSION_V2);
+}
+
+function assertGameCompletionEnvelopeAtVersion(
+  value: unknown,
+  expectedVersion: typeof GAME_COMPLETION_ENVELOPE_VERSION,
+): GameCompletionEnvelopeV1;
+function assertGameCompletionEnvelopeAtVersion(
+  value: unknown,
+  expectedVersion: typeof GAME_COMPLETION_ENVELOPE_VERSION_V2,
+): GameCompletionEnvelopeV2;
+function assertGameCompletionEnvelopeAtVersion(
+  value: unknown,
+  expectedVersion: typeof GAME_COMPLETION_ENVELOPE_VERSION | typeof GAME_COMPLETION_ENVELOPE_VERSION_V2,
+): GameCompletionEnvelope {
   const record = assertRecord(value, "Invalid completion envelope");
   assertExactKeys(record, [
     "schema",
@@ -246,8 +313,8 @@ export function assertGameCompletionEnvelopeV1(value: unknown): GameCompletionEn
   if (record.schema !== GAME_COMPLETION_ENVELOPE_SCHEMA) {
     throw new Error("Invalid completion envelope schema");
   }
-  if (record.version !== GAME_COMPLETION_ENVELOPE_VERSION) {
-    throw new Error("Invalid completion envelope version");
+  if (record.version !== expectedVersion) {
+    throw new Error(`Invalid completion envelope version: expected ${expectedVersion}`);
   }
 
   const boundary = assertRecord(record.boundary, "Invalid completion envelope boundary");
@@ -258,7 +325,9 @@ export function assertGameCompletionEnvelopeV1(value: unknown): GameCompletionEn
     finalEventHash: assertSha256(boundary.finalEventHash, "Invalid completion event hash"),
   };
 
-  const result = assertTerminalResult(record.result);
+  const result = expectedVersion === GAME_COMPLETION_ENVELOPE_VERSION_V2
+    ? assertTerminalResultV2(record.result)
+    : assertTerminalResult(record.result);
   const tokenUsage = assertTokenUsageSnapshot(record.tokenUsage);
   const model = assertRecord(record.model, "Invalid completion model snapshot");
   assertExactKeys(model, ["resolvedModel", "calculatedCost"], "completion model snapshot");
@@ -270,6 +339,19 @@ export function assertGameCompletionEnvelopeV1(value: unknown): GameCompletionEn
 
   const completionConfig = assertJsonRecord(record.completionConfig, "Invalid completion config snapshot");
   const finishedAt = assertIsoTimestamp(record.finishedAt, "Invalid completion finish time");
+
+  if (expectedVersion === GAME_COMPLETION_ENVELOPE_VERSION_V2) {
+    return {
+      schema: GAME_COMPLETION_ENVELOPE_SCHEMA,
+      version: GAME_COMPLETION_ENVELOPE_VERSION_V2,
+      boundary: normalizedBoundary,
+      result,
+      tokenUsage,
+      model: { resolvedModel, calculatedCost },
+      completionConfig,
+      finishedAt,
+    };
+  }
 
   return {
     schema: GAME_COMPLETION_ENVELOPE_SCHEMA,
@@ -284,7 +366,7 @@ export function assertGameCompletionEnvelopeV1(value: unknown): GameCompletionEn
 }
 
 export function hashGameCompletionEnvelope(value: unknown): string {
-  return sha256StableJson(assertGameCompletionEnvelopeV1(value));
+  return sha256StableJson(assertGameCompletionEnvelope(value));
 }
 
 export function buildGameCompletionSettlementSummary(
@@ -667,9 +749,9 @@ export async function captureGameCompletionSettlement(
       .where(eq(schema.gameCompletionSettlements.gameId, input.gameId))
       .limit(1))[0];
     if (existing) {
-      let storedEnvelope: GameCompletionEnvelopeV1;
+      let storedEnvelope: GameCompletionEnvelope;
       try {
-        storedEnvelope = assertGameCompletionEnvelopeV1(existing.payload);
+        storedEnvelope = assertGameCompletionEnvelope(existing.payload);
       } catch (error) {
         throw new GameCompletionSettlementCaptureError(
           "stored_payload_invalid",
@@ -685,7 +767,10 @@ export async function captureGameCompletionSettlement(
       const exactBoundary = existing.ownerEpoch === input.ownerEpoch
         && existing.finalEventSequence === input.finalEventSequence
         && existing.finalEventHash === input.finalEventHash
-        && existing.payloadSchemaVersion === GAME_COMPLETION_ENVELOPE_VERSION;
+        && (
+          existing.payloadSchemaVersion === GAME_COMPLETION_ENVELOPE_VERSION
+          || existing.payloadSchemaVersion === GAME_COMPLETION_ENVELOPE_VERSION_V2
+        );
       if (!exactBoundary || existing.payloadHash !== payloadHash) {
         throw new GameCompletionSettlementCaptureError(
           "conflicting_capture",
@@ -881,14 +966,53 @@ export async function settleCapturedGameCompletion(
         );
       }
 
-      if (envelope.result.transcript.length > 0) {
-        const chunkSize = 100;
-        for (let index = 0; index < envelope.result.transcript.length; index += chunkSize) {
-          await tx.insert(schema.transcripts).values(
-            envelope.result.transcript
-              .slice(index, index + chunkSize)
-              .map((entry) => serializeTranscriptEntry(gameId, entry)),
-          );
+      {
+        const gameCapture = (await tx
+          .select({ transcriptCaptureVersion: schema.games.transcriptCaptureVersion })
+          .from(schema.games)
+          .where(eq(schema.games.id, gameId))
+          .limit(1))[0];
+        const transcriptCaptureVersion = gameCapture?.transcriptCaptureVersion ?? 0;
+
+        if (isCurrentTranscriptCapture(transcriptCaptureVersion)) {
+          // Current-capture: full V2 sequence/digest reconcile + terminal seal.
+          // Identical live prefixes are no-ops; missing suffixes insert; conflicts
+          // become typed repair-required failures (never a hybrid complete narrative).
+          try {
+            await reconcileTerminalProductDialogue(tx, {
+              gameId,
+              ownerEpoch: settlement.ownerEpoch,
+              boundaryEventSequence: settlement.finalEventSequence,
+              boundaryEventHash: settlement.finalEventHash,
+              transcript: envelope.result.transcript,
+              transcriptCaptureVersion,
+            });
+          } catch (error) {
+            if (error instanceof ProductDialoguePersistenceError) {
+              const safeCode =
+                error.code === "content_conflict" ||
+                error.code === "sequence_mismatch" ||
+                error.code === "sparse_suffix" ||
+                error.code === "sequence_gap"
+                  ? "transcript_content_conflict"
+                  : "transcript_state_conflict";
+              throw new DeterministicSettlementError(
+                safeCode,
+                `Terminal transcript reconcile failed (${error.code}): ${error.message}`,
+              );
+            }
+            throw error;
+          }
+        } else if (envelope.result.transcript.length > 0) {
+          // Legacy version 0: previous terminal write path (blind insert, no watermark).
+          const chunkSize = 100;
+          for (let index = 0; index < envelope.result.transcript.length; index += chunkSize) {
+            await tx.insert(schema.transcripts).values(
+              envelope.result.transcript
+                .slice(index, index + chunkSize)
+                .map((entry) => serializeTranscriptEntry(gameId, entry, { transcriptCaptureVersion })),
+            );
+          }
         }
       }
 
@@ -1067,16 +1191,19 @@ type SettlementTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>
 function validateStoredSettlement(
   settlement: typeof schema.gameCompletionSettlements.$inferSelect,
   gameId: string,
-): GameCompletionEnvelopeV1 {
-  if (settlement.payloadSchemaVersion !== GAME_COMPLETION_ENVELOPE_VERSION) {
+): GameCompletionEnvelope {
+  if (
+    settlement.payloadSchemaVersion !== GAME_COMPLETION_ENVELOPE_VERSION
+    && settlement.payloadSchemaVersion !== GAME_COMPLETION_ENVELOPE_VERSION_V2
+  ) {
     throw new DeterministicSettlementError(
       "completion_envelope_invalid",
       `Unsupported completion envelope version for game ${gameId}`,
     );
   }
-  let envelope: GameCompletionEnvelopeV1;
+  let envelope: GameCompletionEnvelope;
   try {
-    envelope = assertGameCompletionEnvelopeV1(settlement.payload);
+    envelope = assertGameCompletionEnvelope(settlement.payload);
   } catch {
     throw new DeterministicSettlementError(
       "completion_envelope_invalid",
@@ -1323,6 +1450,17 @@ function isSafeFailureCode(value: string): value is GameCompletionSettlementSafe
 }
 
 function assertTerminalResult(value: unknown): GameCompletionTerminalResultV1 {
+  return assertTerminalResultAtMode(value, "v1");
+}
+
+function assertTerminalResultV2(value: unknown): GameCompletionTerminalResultV2 {
+  return assertTerminalResultAtMode(value, "v2");
+}
+
+function assertTerminalResultAtMode(
+  value: unknown,
+  mode: "v1" | "v2",
+): GameCompletionTerminalResultV1 {
   const record = assertRecord(value, "Invalid completion terminal result");
   assertExactKeys(record, [
     "gameId",
@@ -1342,7 +1480,9 @@ function assertTerminalResult(value: unknown): GameCompletionTerminalResultV1 {
   }
   const rounds = assertInteger(record.rounds, "Invalid completion round count", 0);
   if (!Array.isArray(record.transcript)) throw new Error("Invalid completion transcript");
-  const transcript = record.transcript.map(assertTranscriptEntry);
+  const transcript = record.transcript.map((entry) =>
+    mode === "v2" ? assertTranscriptEntryV2(entry) : assertTranscriptEntry(entry),
+  );
   const eliminationOrder = assertTextArray(record.eliminationOrder, "Invalid completion elimination order");
   const rankedPlayerIds = assertTextArray(record.rankedPlayerIds, "Invalid completion ranking");
   if (new Set(rankedPlayerIds).size !== rankedPlayerIds.length) {
@@ -1363,7 +1503,23 @@ function assertTerminalResult(value: unknown): GameCompletionTerminalResultV1 {
   };
 }
 
+const TRANSCRIPT_MODERN_OPTIONAL_KEYS = [
+  "speakerPlayerId",
+  "entrySequence",
+  "dialogueKind",
+  "audiencePlayerIds",
+  "dialogueContext",
+] as const;
+
 function assertTranscriptEntry(value: unknown): TranscriptEntry {
+  return assertTranscriptEntryAtMode(value, "v1");
+}
+
+function assertTranscriptEntryV2(value: unknown): TranscriptEntry {
+  return assertTranscriptEntryAtMode(value, "v2");
+}
+
+function assertTranscriptEntryAtMode(value: unknown, mode: "v1" | "v2"): TranscriptEntry {
   const record = assertRecord(value, "Invalid completion transcript entry");
   assertExactKeys(record, [
     "round",
@@ -1379,6 +1535,7 @@ function assertTranscriptEntry(value: unknown): TranscriptEntry {
     "displayOrder",
     "roomId",
     "roomMetadata",
+    ...TRANSCRIPT_MODERN_OPTIONAL_KEYS,
   ], "completion transcript entry", [
     "to",
     "thinking",
@@ -1387,6 +1544,7 @@ function assertTranscriptEntry(value: unknown): TranscriptEntry {
     "displayOrder",
     "roomId",
     "roomMetadata",
+    ...TRANSCRIPT_MODERN_OPTIONAL_KEYS,
   ]);
 
   const phase = assertText(record.phase, "Invalid transcript phase");
@@ -1394,7 +1552,14 @@ function assertTranscriptEntry(value: unknown): TranscriptEntry {
   const scope = assertText(record.scope, "Invalid transcript scope") as TranscriptEntry["scope"];
   if (!TRANSCRIPT_SCOPES.has(scope)) throw new Error("Invalid transcript scope");
 
-  return {
+  const isDialogueScope =
+    scope === "public"
+    || scope === "mingle"
+    || scope === "huddle"
+    || scope === "whisper"
+    || scope === "system";
+
+  const base: TranscriptEntry = {
     round: assertInteger(record.round, "Invalid transcript round", 0),
     phase: phase as Phase,
     timestamp: assertFiniteNumber(record.timestamp, "Invalid transcript timestamp"),
@@ -1415,6 +1580,84 @@ function assertTranscriptEntry(value: unknown): TranscriptEntry {
       roomMetadata: assertJsonRecord(record.roomMetadata, "Invalid transcript room metadata") as TranscriptEntry["roomMetadata"],
     }),
   };
+
+  const modern = assertModernTranscriptFields(record, scope, isDialogueScope, mode);
+  return { ...base, ...modern };
+}
+
+function assertModernTranscriptFields(
+  record: Record<string, unknown>,
+  scope: TranscriptEntry["scope"],
+  isDialogueScope: boolean,
+  mode: "v1" | "v2",
+): Partial<TranscriptEntry> {
+  const out: Partial<TranscriptEntry> = {};
+
+  if (record.speakerPlayerId !== undefined) {
+    out.speakerPlayerId = record.speakerPlayerId === null
+      ? null
+      : assertText(record.speakerPlayerId, "Invalid transcript speakerPlayerId");
+  }
+  if (record.entrySequence !== undefined) {
+    out.entrySequence = assertInteger(record.entrySequence, "Invalid transcript entrySequence", 1);
+  }
+  if (record.dialogueKind !== undefined) {
+    out.dialogueKind = assertText(record.dialogueKind, "Invalid transcript dialogueKind") as TranscriptEntry["dialogueKind"];
+  }
+  if (record.audiencePlayerIds !== undefined) {
+    out.audiencePlayerIds = assertTextArray(record.audiencePlayerIds, "Invalid transcript audiencePlayerIds");
+  }
+  if (record.dialogueContext !== undefined) {
+    const context = assertRecord(record.dialogueContext, "Invalid transcript dialogueContext");
+    if (context.version !== 1) throw new Error("Invalid transcript dialogueContext version");
+    out.dialogueContext = {
+      version: 1,
+      ...(context.roomId !== undefined && {
+        roomId: assertInteger(context.roomId, "Invalid dialogueContext roomId", 1),
+      }),
+      ...(context.allianceId !== undefined && {
+        allianceId: assertText(context.allianceId, "Invalid dialogueContext allianceId"),
+      }),
+      ...(context.scheduleId !== undefined && {
+        scheduleId: assertText(context.scheduleId, "Invalid dialogueContext scheduleId"),
+      }),
+      ...(context.sessionId !== undefined && {
+        sessionId: assertText(context.sessionId, "Invalid dialogueContext sessionId"),
+      }),
+      ...(context.window !== undefined && {
+        window: assertText(context.window, "Invalid dialogueContext window"),
+      }),
+      ...(context.sessionAudiencePlayerIds !== undefined && {
+        sessionAudiencePlayerIds: assertTextArray(
+          context.sessionAudiencePlayerIds,
+          "Invalid dialogueContext sessionAudiencePlayerIds",
+        ),
+      }),
+    };
+  }
+
+  if (mode === "v2") {
+    if (isDialogueScope) {
+      if (out.entrySequence == null) {
+        throw new Error(`V2 dialogue transcript entry missing entrySequence (scope=${scope})`);
+      }
+      if (!Array.isArray(out.audiencePlayerIds)) {
+        throw new Error(`V2 dialogue transcript entry missing audiencePlayerIds (scope=${scope})`);
+      }
+      if (!out.dialogueContext) {
+        throw new Error(`V2 dialogue transcript entry missing dialogueContext (scope=${scope})`);
+      }
+      if (scope === "system" && !out.dialogueKind) {
+        throw new Error("V2 system transcript entry missing dialogueKind");
+      }
+    } else {
+      if (out.entrySequence != null || out.audiencePlayerIds != null || out.dialogueContext != null || out.dialogueKind != null) {
+        throw new Error(`V2 non-dialogue scope ${scope} must not carry dialogue identity fields`);
+      }
+    }
+  }
+
+  return out;
 }
 
 function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {

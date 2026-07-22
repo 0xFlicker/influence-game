@@ -6,6 +6,14 @@ import {
   evaluateSupportedRecovery,
   type SupportedRecoveryResumeInput,
 } from "./game-recovery-support.js";
+import {
+  isCurrentTranscriptCapture,
+  parseProductDialogueEvidence,
+  productEvidenceMatchesState,
+  readGameTranscriptState,
+  type LockedTranscriptState,
+  type ProductDialogueEvidence,
+} from "./game-transcript-persistence.js";
 
 export type SupportedRecoveryResult =
   | {
@@ -101,6 +109,7 @@ export async function getSupportedRecovery(
       actorCoordinate: schema.gameCheckpoints.actorCoordinate,
       snapshot: schema.gameCheckpoints.snapshot,
       tokenCostCursor: schema.gameCheckpoints.tokenCostCursor,
+      transcriptCursor: schema.gameCheckpoints.transcriptCursor,
     })
     .from(schema.gameCheckpoints)
     .where(and(
@@ -113,6 +122,16 @@ export async function getSupportedRecovery(
     return { ok: false, gameId, reason: "missing_checkpoint" };
   }
 
+  const gameCapture = (await db
+    .select({ transcriptCaptureVersion: schema.games.transcriptCaptureVersion })
+    .from(schema.games)
+    .where(eq(schema.games.id, gameId))
+    .limit(1))[0];
+  const transcriptCaptureVersion = gameCapture?.transcriptCaptureVersion ?? 0;
+  const productState = isCurrentTranscriptCapture(transcriptCaptureVersion)
+    ? await readGameTranscriptState(db, gameId)
+    : null;
+
   const persisted = await getPersistedGameEvents(db, gameId);
   let firstFailureReason: string | null = null;
   for (const checkpoint of checkpoints) {
@@ -120,6 +139,21 @@ export async function getSupportedRecovery(
       firstFailureReason ??= `unsupported_checkpoint_kind:${checkpoint.checkpointKind}`;
       continue;
     }
+
+    // Product rows are dialogue authority. Never fall back to an older prefix
+    // already superseded by published product state, and never advance beyond it.
+    if (productState && isCurrentTranscriptCapture(transcriptCaptureVersion)) {
+      const productGate = evaluateProductDialogueRecoveryGate({
+        checkpointLastEventSequence: checkpoint.lastEventSequence,
+        transcriptCursor: checkpoint.transcriptCursor,
+        productState,
+      });
+      if (!productGate.ok) {
+        firstFailureReason ??= productGate.reason;
+        continue;
+      }
+    }
+
     const evaluated = evaluateSupportedRecovery({
       gameStatus: game.status,
       checkpoint,
@@ -139,4 +173,50 @@ export async function getSupportedRecovery(
   }
 
   return { ok: false, gameId, reason: firstFailureReason ?? "missing_supported_checkpoint" };
+}
+
+/**
+ * A recovery candidate must match the published product dialogue count/digest/boundary
+ * exactly when modern capture is active and a watermark has been published.
+ */
+export function evaluateProductDialogueRecoveryGate(params: {
+  checkpointLastEventSequence: number;
+  transcriptCursor: unknown;
+  productState: LockedTranscriptState;
+}): { ok: true; evidence: ProductDialogueEvidence | null } | { ok: false; reason: string } {
+  const { productState } = params;
+
+  // No product dialogue published yet — any hydration-valid checkpoint is eligible.
+  if (
+    productState.durableSequence === 0 &&
+    productState.durableEventSequence === 0 &&
+    productState.terminalState === "unset"
+  ) {
+    return { ok: true, evidence: null };
+  }
+
+  // Refuse older checkpoints once product state has advanced past them.
+  if (params.checkpointLastEventSequence < productState.durableEventSequence) {
+    return {
+      ok: false,
+      reason: `product_transcript_superseded:checkpoint_${params.checkpointLastEventSequence}_behind_durable_${productState.durableEventSequence}`,
+    };
+  }
+
+  // Refuse candidates ahead of the published product boundary.
+  if (params.checkpointLastEventSequence > productState.durableEventSequence) {
+    return {
+      ok: false,
+      reason: `product_transcript_ahead:checkpoint_${params.checkpointLastEventSequence}_beyond_durable_${productState.durableEventSequence}`,
+    };
+  }
+
+  const evidence = parseProductDialogueEvidence(params.transcriptCursor);
+  if (!evidence) {
+    return { ok: false, reason: "product_transcript_evidence_missing" };
+  }
+  if (!productEvidenceMatchesState(evidence, productState)) {
+    return { ok: false, reason: "product_transcript_evidence_mismatch" };
+  }
+  return { ok: true, evidence };
 }

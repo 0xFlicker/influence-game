@@ -120,6 +120,27 @@ export interface DurableEvidenceSummary {
   };
 }
 
+export type FinaleIntegrityCode =
+  | "judgment_closing_argument_missing"
+  | "judgment_opening_statement_missing";
+
+export interface FinaleIntegrityFinding {
+  code: FinaleIntegrityCode;
+  severity: "warning";
+  message: string;
+}
+
+export interface DurableRunFinaleIntegrity {
+  /** Whether Judgment completion evidence was detected. */
+  judgmentDetected: boolean;
+  status: "not_applicable" | "complete" | "incomplete";
+  openingStatementCount: number;
+  closingArgumentCount: number;
+  expectedOpeningStatements: number | null;
+  expectedClosingArguments: number | null;
+  findings: FinaleIntegrityFinding[];
+}
+
 export interface DurableRunInspectionResponse {
   schemaVersion: 2;
   game: DurableRunGameIdentity;
@@ -135,7 +156,68 @@ export interface DurableRunInspectionResponse {
     entries: DurableCheckpointSummary[];
   };
   evidence: DurableEvidenceSummary;
+  /**
+   * Separate from envelope eventLogStatus — missing speeches do not invalidate the log.
+   * U6 match-manifest formal-speech parity is the broader cross-lane diagnostic;
+   * this field remains the durable-inspection Judgment opening/closing summary.
+   */
+  finaleIntegrity: DurableRunFinaleIntegrity;
   diagnostics: DurableRunDiagnostic[];
+}
+
+export function buildFinaleIntegrity(
+  events: ReadonlyArray<{ type?: string; payload?: Record<string, unknown> }>,
+): DurableRunFinaleIntegrity {
+  const hasWinner = events.some((event) => event.type === "jury.winner_determined");
+  if (!hasWinner) {
+    return {
+      judgmentDetected: false,
+      status: "not_applicable",
+      openingStatementCount: 0,
+      closingArgumentCount: 0,
+      expectedOpeningStatements: null,
+      expectedClosingArguments: null,
+      findings: [],
+    };
+  }
+
+  let openingStatementCount = 0;
+  let closingArgumentCount = 0;
+  for (const event of events) {
+    if (event.type !== "judgment.speech_recorded") continue;
+    const kind = event.payload?.speechKind;
+    if (kind === "opening_statement") openingStatementCount += 1;
+    if (kind === "closing_argument") closingArgumentCount += 1;
+  }
+
+  // Two finalists reach Judgment in the current ruleset.
+  const expectedOpeningStatements = 2;
+  const expectedClosingArguments = 2;
+  const findings: FinaleIntegrityFinding[] = [];
+  if (openingStatementCount < expectedOpeningStatements) {
+    findings.push({
+      code: "judgment_opening_statement_missing",
+      severity: "warning",
+      message: `Expected ${expectedOpeningStatements} Judgment opening statements but found ${openingStatementCount}.`,
+    });
+  }
+  if (closingArgumentCount < expectedClosingArguments) {
+    findings.push({
+      code: "judgment_closing_argument_missing",
+      severity: "warning",
+      message: `Expected ${expectedClosingArguments} Judgment closing arguments but found ${closingArgumentCount}.`,
+    });
+  }
+
+  return {
+    judgmentDetected: true,
+    status: findings.length === 0 ? "complete" : "incomplete",
+    openingStatementCount,
+    closingArgumentCount,
+    expectedOpeningStatements,
+    expectedClosingArguments,
+    findings,
+  };
 }
 
 export type GetDurableRunInspectionResult =
@@ -524,6 +606,12 @@ export async function getDurableRunInspection(
       ...checkpointDiagnostics,
       ...evidence.diagnostics,
     ];
+    const finaleIntegrity = buildFinaleIntegrity(
+      persistedEvents.events.map((event) => ({
+        type: event.envelope.type,
+        payload: event.envelope.payload as Record<string, unknown>,
+      })),
+    );
 
     return {
       ok: true,
@@ -564,6 +652,7 @@ export async function getDurableRunInspection(
           entries: checkpoints,
         },
         evidence: evidence.summary,
+        finaleIntegrity,
         diagnostics,
       },
     };
