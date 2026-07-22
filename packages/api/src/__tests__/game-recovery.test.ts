@@ -624,6 +624,43 @@ describe("game startup recovery", () => {
     });
   }, 60000);
 
+  test("startup recovery resumes post_vote_mingle when only Mingle I left blocked inbox state", async () => {
+    // Moss-shaped: Mingle I wrote private room speech; inbox stays non-empty through
+    // vote into post_vote_mingle until that phase clears it. Rebuild must include MINGLE_I.
+    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "post_vote_mingle", {
+      config: recoveryConfigWithMingle,
+      playerCount: 6,
+      requireBlockedMingleInbox: true,
+    });
+
+    const candidate = await getSupportedRecovery(db, gameId);
+    expect(candidate.ok).toBeTrue();
+    if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
+    expect(candidate.resumeFrom.mingleInboxReplay?.entries.length).toBeGreaterThan(0);
+    expect(candidate.resumeFrom.mingleInboxReplay?.unresolvedRecipientNames).toEqual([]);
+    expect(candidate.resumeFrom.actorCoordinate).toBe("post_vote_mingle");
+
+    const suspendedInspection = await getDurableRunInspection(db, gameId);
+    expect(suspendedInspection.ok).toBeTrue();
+    if (!suspendedInspection.ok) throw new Error("durable inspection failed");
+    const supportedBoundary = findCheckpointBoundary(suspendedInspection, {
+      lastEventSequence: interruptedAtSequence,
+      actorCoordinate: "post_vote_mingle",
+    });
+    expect(supportedBoundary?.resumeAvailable).toBeTrue();
+
+    const recovery = await recoverGamesOnStartup(db);
+    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
+
+    await assertRecoveredGameCompleted({
+      db,
+      gameId,
+      originalOwnerEpoch: ownerEpoch,
+      interruptedAtSequence,
+      expectedIntroductionCount: 6,
+    });
+  }, 60000);
+
   test("startup recovery skips a newer unsupported same-head checkpoint and uses the newest resume-capable boundary", async () => {
     const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "reveal", {
       config: recoveryConfigWithEndgame,

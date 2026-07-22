@@ -12,10 +12,6 @@
 
 import { Hono, type Context } from "hono";
 import { eq, and } from "drizzle-orm";
-import {
-  createLlmClientFromEnv,
-  resolveModelSelection,
-} from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -23,6 +19,9 @@ import {
   type AuthEnv,
 } from "../middleware/auth.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
+import {
+  resolveOpenAIBudgetGenerationLlm,
+} from "../lib/openai-budget-generation-llm.js";
 import {
   formatUserSelectableAgentArchetypeKeys,
   isUserSelectableAgentArchetype,
@@ -46,7 +45,6 @@ import { acquireDailyFreeLocks } from "../services/queue-enrollment.js";
 import { lockProfileAfterLiveRosterGames } from "../services/owned-seat-projection.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
 
-const AGENT_PROFILE_GENERATION_CATALOG_ID = "openai:gpt-5-nano";
 const GENERATED_AGENT_SURNAMES = [
   "Hartwell", "Langford", "Marlowe", "Sorrell", "Voss", "Ashford", "Bellamy", "Caldwell",
   "Dunmore", "Ellery", "Fairchild", "Grantham", "Hollis", "Iverson", "Kestrel", "Lockwood",
@@ -54,20 +52,11 @@ const GENERATED_AGENT_SURNAMES = [
 ] as const;
 const MAX_GENERATED_AGENT_NAME_LENGTH = 80;
 
+/** @deprecated Prefer resolveOpenAIBudgetGenerationLlm — kept as a stable export for callers/tests. */
 export function resolveAgentProfileGenerationLlm(
   env: NodeJS.ProcessEnv = process.env,
 ) {
-  const selection = resolveModelSelection(
-    { catalogId: AGENT_PROFILE_GENERATION_CATALOG_ID },
-    null,
-  );
-  const llmConfig = createLlmClientFromEnv(env, {
-    providerProfileId: selection.providerProfile.id,
-  });
-
-  return llmConfig
-    ? { ...llmConfig, modelId: selection.modelId }
-    : null;
+  return resolveOpenAIBudgetGenerationLlm(env);
 }
 
 function buildAgentProfileGenerationSystemPrompt(isRefine: boolean): string {
