@@ -695,7 +695,7 @@ describe("match-read-cursor V1 compatibility decoder", () => {
     })).toBe(true);
   });
 
-  test("legacy V1 narrative fixture restores filters with schema defaults", () => {
+  test("legacy V1 narrative fixture migrates joined keyset to digest and restores filter defaults", () => {
     const claims: MatchNarrativeCursorClaims = {
       version: MATCH_READ_CURSOR_VERSION,
       purpose: MATCH_NARRATIVE_CURSOR_PURPOSE,
@@ -751,7 +751,11 @@ describe("match-read-cursor V1 compatibility decoder", () => {
     expect(decoded.status).toBe("ok");
     if (decoded.status !== "ok") return;
     expect(decoded.claims.version).toBe(1);
-    expect(decoded.claims.keyset.afterGroupId).toBe("d:1|c:2");
+    // Joined member ids migrate into the digest space used by live keyset/sort.
+    expect(decoded.claims.keyset.afterGroupId).toBe(
+      digestNarrativeGroupMembers(["d:1", "c:2"]),
+    );
+    expect(decoded.claims.keyset.afterGroupId).not.toContain("|");
     // Compatibility defaults applied for fields V1 did not seal.
     expect(decoded.claims.filters.schemaVersion).toBe(2);
     expect(decoded.claims.filters.includeUnpaired).toBe(false);

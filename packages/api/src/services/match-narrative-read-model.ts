@@ -656,8 +656,9 @@ function assembleNarrativePage(params: {
     includeUnpaired: params.appliedFilters.includeUnpaired,
   });
 
-  // Page by groups using exclusive (sortKey, stableMemberKey) keyset.
-  // stableMemberKey is a join of member ids so tie-breaks stay lexicographically safe.
+  // Page by groups using exclusive (sortKey, memberDigest) keyset.
+  // Secondary key is SHA-256 Base64URL of sorted member ids — same digest used
+  // for equal-sort-key ordering in grouping (and for V1→digest migration on decode).
   let groups = grouped.groups;
   if (params.keyset.afterSortKey != null && params.keyset.afterGroupId != null) {
     const afterKey = params.keyset.afterSortKey;
@@ -1904,7 +1905,9 @@ function parseReadMatchNarrativeInput(
     || fromTimestampMs != null
     || toTimestampMs != null
     || record.preset !== undefined
-    || record.detail !== undefined;
+    || record.detail !== undefined
+    || record.schemaVersion !== undefined
+    || record.includeUnpaired !== undefined;
 
   return {
     ok: true,

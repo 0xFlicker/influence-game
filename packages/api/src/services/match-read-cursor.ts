@@ -772,6 +772,16 @@ function sealClaimsV2(
 ): string {
   try {
     const keyVersion = claims.keyVersion;
+    if (
+      !Number.isInteger(keyVersion)
+      || keyVersion < 1
+      || keyVersion > 255
+    ) {
+      throw new MatchReadCursorError(
+        "encode_failed",
+        "keyVersion must be an integer in 1..255",
+      );
+    }
     const purposeCode = PURPOSE_CODE[purpose];
     const header = Buffer.alloc(HEADER_BYTES);
     header[0] = MATCH_READ_CURSOR_VERSION;
@@ -1058,7 +1068,28 @@ function decodeSealedClaimsV1(
     if (filters.includeUnpaired === undefined) filters.includeUnpaired = false;
   }
 
+  // V1 narrative keysets sealed joined member ids; live pages now use digests.
+  // Migrate so exclusive continuation stays in the same string space as sort/keyset.
+  if (
+    expectedPurpose === MATCH_NARRATIVE_CURSOR_PURPOSE
+    && isRecord(record.keyset)
+    && typeof record.keyset.afterGroupId === "string"
+  ) {
+    record.keyset.afterGroupId = migrateV1NarrativeGroupKey(record.keyset.afterGroupId);
+  }
+
   return { status: "ok", claims };
+}
+
+/**
+ * Convert a legacy V1 afterGroupId (joined member ids or single id) into the
+ * fixed-size digest used by V2 keyset + equal-sort-key ordering.
+ */
+function migrateV1NarrativeGroupKey(afterGroupId: string): string {
+  if (afterGroupId.includes("|")) {
+    return digestNarrativeGroupMembers(afterGroupId.split("|"));
+  }
+  return digestNarrativeGroupMembers([afterGroupId]);
 }
 
 // ---------------------------------------------------------------------------
