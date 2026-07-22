@@ -41,6 +41,7 @@ import {
 import {
   bindMatchNarrativeCursor,
   decodeMatchNarrativeCursor,
+  digestNarrativeGroupMembers,
   fingerprintMatchNarrativeFilters,
   issueMatchNarrativeCursor,
   MATCH_NARRATIVE_PRODUCER_OWNERSHIP_FINGERPRINT,
@@ -302,6 +303,8 @@ async function readProducerNarrativePage(
     action: filters.action,
     fromTimestampMs: filters.fromTimestampMs,
     toTimestampMs: filters.toTimestampMs,
+    schemaVersion: filters.schemaVersion,
+    includeUnpaired: filters.includeUnpaired,
   });
 
   let appliedFilters: MatchNarrativeNormalizedFilters;
@@ -493,6 +496,8 @@ async function readOwnerNarrativePage(
         action: filters.action,
         fromTimestampMs: filters.fromTimestampMs,
         toTimestampMs: filters.toTimestampMs,
+        schemaVersion: filters.schemaVersion,
+        includeUnpaired: filters.includeUnpaired,
       });
 
       let appliedFilters: MatchNarrativeNormalizedFilters;
@@ -1979,9 +1984,8 @@ function filtersFromSealed(
   return {
     preset: sealed.preset,
     detail: sealed.detail,
-    // Cursor resumes use v2 by default; sealed filters do not carry schema yet.
-    schemaVersion: 2,
-    includeUnpaired: false,
+    schemaVersion: sealed.schemaVersion,
+    includeUnpaired: sealed.includeUnpaired,
     playerId: sealed.playerId,
     player: sealed.player,
     phase: sealed.phase,
@@ -2005,12 +2009,17 @@ function sealedFiltersFrom(
     action: filters.action,
     fromTimestampMs: filters.fromTimestampMs,
     toTimestampMs: filters.toTimestampMs,
+    schemaVersion: filters.schemaVersion,
+    includeUnpaired: filters.includeUnpaired,
   };
 }
 
-/** Stable secondary key for group keyset (member ids, not renumbered groupId). */
+/**
+ * Stable secondary key for group keyset + equal-sort-key ordering.
+ * Fixed-size SHA-256 Base64URL digest of sorted member ids (not renumbered groupId).
+ */
 function groupStableKey(group: NarrativeGroup): string {
-  const ids = group.members.map((m) => m.id).sort();
-  if (ids.length === 0) return group.groupId;
-  return ids.join("|");
+  const ids = group.members.map((m) => m.id);
+  if (ids.length === 0) return digestNarrativeGroupMembers([group.groupId]);
+  return digestNarrativeGroupMembers(ids);
 }

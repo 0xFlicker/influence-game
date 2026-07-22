@@ -342,6 +342,124 @@ describe("match-narrative-read-model dual surface", () => {
     });
   });
 
+  test("V2 cursor paginates without gaps, restores sealed filters, and nulls terminal cursor", async () => {
+    const fixture = await seedNarrativeGame(db);
+    // Same timestamp → equal sortKey ties broken by group digest.
+    for (let i = 0; i < 5; i++) {
+      await insertDialogue(db, {
+        gameId: fixture.gameId,
+        sequence: i + 1,
+        speakerPlayerId: fixture.playerA,
+        text: `line-${i}`,
+        timestamp: 10_000,
+      });
+    }
+
+    const page1 = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        limit: 2,
+        schemaVersion: 2,
+        includeUnpaired: true,
+        preset: "dialogue_only",
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(page1.ok).toBe(true);
+    if (!page1.ok) return;
+    expect(page1.nextCursor).toBeTruthy();
+    expect(page1.nextCursorKind).toBe("page");
+    expect(page1.nextCursor?.startsWith("mr2.")).toBe(true);
+    expect(page1.nextCursor!.length).toBeLessThanOrEqual(800);
+    expect(page1.filters?.schemaVersion).toBe(2);
+    expect(page1.filters?.includeUnpaired).toBe(true);
+    expect(page1.filters?.preset).toBe("dialogue_only");
+    const page1Texts = page1.groups
+      .map((g) => ("text" in g ? g.text : undefined))
+      .filter((t): t is string => typeof t === "string");
+    expect(page1Texts.length).toBe(2);
+
+    // Cursor-only continuation restores sealed filters (no explicit filters).
+    const page2 = await readMatchNarrativePage(
+      db,
+      { gameIdOrSlug: fixture.gameId, cursor: page1.nextCursor ?? undefined, limit: 2 },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(page2.ok).toBe(true);
+    if (!page2.ok) return;
+    expect(page2.filters?.schemaVersion).toBe(2);
+    expect(page2.filters?.includeUnpaired).toBe(true);
+    expect(page2.filters?.preset).toBe("dialogue_only");
+    const page2Texts = page2.groups
+      .map((g) => ("text" in g ? g.text : undefined))
+      .filter((t): t is string => typeof t === "string");
+    for (const text of page2Texts) {
+      expect(page1Texts).not.toContain(text);
+    }
+
+    // Explicit filter mismatch fails closed.
+    const mismatch = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        cursor: page1.nextCursor ?? undefined,
+        preset: "strategic",
+        limit: 2,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(mismatch).toMatchObject({
+      ok: false,
+      status: "cursor_invalid_or_stale",
+    });
+
+    // Drain remaining pages; terminal page nulls both cursor fields.
+    let cursor = page2.nextCursor ?? null;
+    const seen = new Set([...page1Texts, ...page2Texts]);
+    let guard = 0;
+    while (cursor != null && guard < 10) {
+      guard += 1;
+      const page = await readMatchNarrativePage(
+        db,
+        { gameIdOrSlug: fixture.gameId, cursor, limit: 2 },
+        {
+          subjectUserId: fixture.ownerUserId,
+          surface: "subject_owner",
+          cursorSecret: CURSOR_SECRET,
+        },
+      );
+      expect(page.ok).toBe(true);
+      if (!page.ok) return;
+      for (const g of page.groups) {
+        const text = "text" in g ? g.text : undefined;
+        if (typeof text === "string") {
+          expect(seen.has(text)).toBe(false);
+          seen.add(text);
+        }
+      }
+      if (page.nextCursor == null) {
+        expect(page.nextCursor).toBeNull();
+        expect(page.nextCursorKind).toBeNull();
+        break;
+      }
+      cursor = page.nextCursor;
+    }
+    expect(seen.size).toBe(5);
+  });
+
   test("decisionId exact group when stamped on dialogue and cognition", async () => {
     const fixture = await seedNarrativeGame(db);
     const decisionId = randomUUID();
@@ -380,9 +498,12 @@ describe("match-narrative-read-model dual surface", () => {
     expect(page.schemaVersion).toBe(2);
     const group = page.groups.find((g) => g.decisionId === decisionId);
     expect(group).toBeTruthy();
-    expect(group?.text).toContain("I vote for Bob");
-    expect(group?.strategy).toContain("vote Bob");
-    expect(group?.corr).toBe("exact");
+    if (!group || !("text" in group) || !("strategy" in group) || !("corr" in group)) {
+      throw new Error("expected compact-v2 group slots");
+    }
+    expect(group.text).toContain("I vote for Bob");
+    expect(group.strategy).toContain("vote Bob");
+    expect(group.corr).toBe("exact");
     expect(page.correlationSummary.exactCrossLane).toBeGreaterThanOrEqual(1);
   });
 

@@ -4,8 +4,11 @@ import {
   MATCH_NARRATIVE_CURSOR_PURPOSE,
   MATCH_NARRATIVE_PRODUCER_OWNERSHIP_FINGERPRINT,
   MATCH_READ_CURSOR_KEY_VERSION,
-  MATCH_READ_CURSOR_MAX_TOKEN_CHARS,
+  MATCH_READ_CURSOR_MAX_TOKEN_CHARS_V1,
+  MATCH_READ_CURSOR_MAX_TOKEN_CHARS_V2,
   MATCH_READ_CURSOR_MAX_TTL_MS,
+  MATCH_READ_CURSOR_V2_PREFIX,
+  MATCH_READ_CURSOR_VERSION,
   MATCH_TRANSCRIPT_CURSOR_PURPOSE,
   bindMatchCognitionCursor,
   bindMatchNarrativeCursor,
@@ -13,14 +16,18 @@ import {
   decodeMatchCognitionCursor,
   decodeMatchNarrativeCursor,
   decodeMatchTranscriptCursor,
+  digestNarrativeGroupMembers,
   fingerprintMatchCognitionFilters,
   fingerprintMatchNarrativeFilters,
   fingerprintMatchTranscriptFilters,
+  issueLegacyMatchReadCursorV1ForTests,
   issueMatchCognitionCursor,
   issueMatchNarrativeCursor,
   issueMatchTranscriptCursor,
   matchReadCursorKeyMaterialFingerprint,
   type MatchCognitionCursorClaims,
+  type MatchNarrativeCursorClaims,
+  type MatchNarrativeCursorFilters,
   type MatchTranscriptCursorClaims,
 } from "../services/match-read-cursor.js";
 
@@ -28,7 +35,7 @@ const SECRET_A = "test-jwt-secret-match-read-cursor-aaaa";
 const SECRET_B = "test-jwt-secret-match-read-cursor-bbbb";
 const NOW = 1_720_000_000_000;
 
-const emptyFilters = {
+const emptyTranscriptFilters = {
   phase: null,
   round: null,
   scope: null,
@@ -38,18 +45,24 @@ const emptyFilters = {
   toTimestampMs: null,
 };
 
+const emptyNarrativeFilters: MatchNarrativeCursorFilters = {
+  preset: "strategic",
+  detail: "compact",
+  playerId: null,
+  player: null,
+  phase: null,
+  round: null,
+  action: null,
+  fromTimestampMs: null,
+  toTimestampMs: null,
+  schemaVersion: 2,
+  includeUnpaired: false,
+};
+
 function issueDefault(overrides: Partial<Parameters<typeof issueMatchTranscriptCursor>[0]> = {}) {
   return issueMatchTranscriptCursor({
     subjectUserId: "user-1",
     gameId: "game-1",
-    filterFingerprint: fingerprintMatchTranscriptFilters({
-      phase: null,
-      round: null,
-      scope: null,
-      playerId: null,
-      fromTimestampMs: null,
-      toTimestampMs: null,
-    }),
     ownershipFingerprint: "sha256:ownership-1",
     captureVersion: 1,
     mode: "snapshot",
@@ -63,19 +76,52 @@ function issueDefault(overrides: Partial<Parameters<typeof issueMatchTranscriptC
       afterLegacyTimestamp: null,
       afterLegacyId: null,
     },
-    filters: emptyFilters,
+    filters: emptyTranscriptFilters,
     nowMs: NOW,
     ...overrides,
   }, SECRET_A);
 }
 
-describe("match-read-cursor AES-GCM codec", () => {
+function issueNarrativeDefault(
+  overrides: Partial<Parameters<typeof issueMatchNarrativeCursor>[0]> = {},
+) {
+  return issueMatchNarrativeCursor({
+    subjectUserId: "user-1",
+    gameId: "game-1",
+    surface: "subject_owner",
+    ownershipFingerprint: "sha256:ownership-1",
+    transcriptCaptureVersion: 1,
+    cognitiveCaptureVersion: 1,
+    mode: "snapshot",
+    readThrough: {
+      transcript: {
+        throughEntrySequence: 10,
+        throughLegacyTimestamp: null,
+        throughLegacyId: null,
+      },
+      cognition: {
+        throughCreatedAt: "2026-07-21T12:00:00.000Z",
+        throughId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      },
+    },
+    keyset: {
+      afterSortKey: 3,
+      afterGroupId: digestNarrativeGroupMembers(["d:1", "c:abc"]),
+    },
+    filters: emptyNarrativeFilters,
+    nowMs: NOW,
+    ...overrides,
+  }, SECRET_A);
+}
+
+describe("match-read-cursor AES-GCM codec (V2)", () => {
   beforeEach(() => {
     process.env.JWT_SECRET = SECRET_A;
   });
 
-  test("round-trips sealed claims with domain-separated key", () => {
-    const token = issueDefault({ nonce: "abc123" });
+  test("issues mr2. tokens and round-trips sealed transcript claims", () => {
+    const token = issueDefault();
+    expect(token.startsWith(MATCH_READ_CURSOR_V2_PREFIX)).toBe(true);
     expect(token.length).toBeGreaterThan(20);
     expect(token).not.toContain("game-1");
     expect(token).not.toContain("user-1");
@@ -88,29 +134,36 @@ describe("match-read-cursor AES-GCM codec", () => {
     if (decoded.status !== "ok") return;
 
     const claims: MatchTranscriptCursorClaims = decoded.claims;
+    expect(claims.version).toBe(MATCH_READ_CURSOR_VERSION);
     expect(claims.purpose).toBe(MATCH_TRANSCRIPT_CURSOR_PURPOSE);
     expect(claims.keyVersion).toBe(MATCH_READ_CURSOR_KEY_VERSION);
     expect(claims.subjectUserId).toBe("user-1");
     expect(claims.gameId).toBe("game-1");
-    expect(claims.nonce).toBe("abc123");
     expect(claims.readThrough.throughEntrySequence).toBe(10);
     expect(claims.keyset.afterEntrySequence).toBe(3);
     expect(claims.mode).toBe("snapshot");
     expect(claims.expiresAtMs - claims.issuedAtMs).toBeLessThanOrEqual(MATCH_READ_CURSOR_MAX_TTL_MS);
+    expect(claims.filterFingerprint).toBe(fingerprintMatchTranscriptFilters({
+      phase: null,
+      round: null,
+      scope: null,
+      playerId: null,
+      fromTimestampMs: null,
+      toTimestampMs: null,
+    }));
   });
 
-  test("nonce reuse changes no semantics (same claims except nonce)", () => {
-    const a = issueDefault({ nonce: "same-nonce" });
-    const b = issueDefault({ nonce: "same-nonce" });
-    // Ciphertexts differ because IV is random; claims match after decode.
+  test("random IV yields distinct tokens with identical claims", () => {
+    const a = issueDefault();
+    const b = issueDefault();
     expect(a).not.toBe(b);
     const da = decodeMatchTranscriptCursor(a, { secretMaterial: SECRET_A, nowMs: NOW });
     const db = decodeMatchTranscriptCursor(b, { secretMaterial: SECRET_A, nowMs: NOW });
     expect(da.status).toBe("ok");
     expect(db.status).toBe("ok");
     if (da.status !== "ok" || db.status !== "ok") return;
-    expect(da.claims.nonce).toBe(db.claims.nonce);
     expect(da.claims.keyset).toEqual(db.claims.keyset);
+    expect(da.claims.filterFingerprint).toBe(db.claims.filterFingerprint);
   });
 
   test("expired cursor fails closed", () => {
@@ -118,6 +171,15 @@ describe("match-read-cursor AES-GCM codec", () => {
     const decoded = decodeMatchTranscriptCursor(token, {
       secretMaterial: SECRET_A,
       nowMs: NOW + 120_000,
+    });
+    expect(decoded).toEqual({ status: "invalid" });
+  });
+
+  test("future issue time fails closed", () => {
+    const token = issueDefault({ nowMs: NOW + 120_000 });
+    const decoded = decodeMatchTranscriptCursor(token, {
+      secretMaterial: SECRET_A,
+      nowMs: NOW,
     });
     expect(decoded).toEqual({ status: "invalid" });
   });
@@ -143,17 +205,27 @@ describe("match-read-cursor AES-GCM codec", () => {
     expect(decoded).toEqual({ status: "invalid" });
   });
 
-  test("wrong purpose fails closed", () => {
+  test("tampered ciphertext fails closed", () => {
     const token = issueDefault();
-    // Tamper AAD purpose by asking decoder for a different purpose string via casting path:
-    // decode always uses MATCH_TRANSCRIPT_CURSOR_PURPOSE; wrong-purpose is covered by
-    // tampering ciphertext envelope purpose in claims after decrypt failure on AAD mismatch.
-    // Direct claim purpose mismatch: seal then corrupt is equivalent to invalid tag.
-    const decoded = decodeMatchTranscriptCursor(token + "x", {
+    const body = token.slice(MATCH_READ_CURSOR_V2_PREFIX.length);
+    const buf = Buffer.from(body, "base64url");
+    const mid = Math.floor(buf.length / 2);
+    const previous = buf.at(mid);
+    if (previous === undefined) throw new Error("empty token buffer");
+    buf[mid] = previous ^ 0xff;
+    const tampered = MATCH_READ_CURSOR_V2_PREFIX + buf.toString("base64url");
+    expect(decodeMatchTranscriptCursor(tampered, {
       secretMaterial: SECRET_A,
       nowMs: NOW,
-    });
-    expect(decoded).toEqual({ status: "invalid" });
+    })).toEqual({ status: "invalid" });
+  });
+
+  test("wrong purpose fails closed via AAD / header", () => {
+    const token = issueDefault();
+    expect(decodeMatchCognitionCursor(token, {
+      secretMaterial: SECRET_A,
+      nowMs: NOW,
+    })).toEqual({ status: "invalid" });
   });
 
   test("oversized and malformed tokens fail before useful work", () => {
@@ -167,23 +239,18 @@ describe("match-read-cursor AES-GCM codec", () => {
       nowMs: NOW,
     })).toEqual({ status: "invalid" });
 
-    const oversized = "a".repeat(MATCH_READ_CURSOR_MAX_TOKEN_CHARS + 1);
-    expect(decodeMatchTranscriptCursor(oversized, {
+    const oversizedV2 = MATCH_READ_CURSOR_V2_PREFIX + "a".repeat(
+      MATCH_READ_CURSOR_MAX_TOKEN_CHARS_V2,
+    );
+    expect(oversizedV2.length).toBeGreaterThan(MATCH_READ_CURSOR_MAX_TOKEN_CHARS_V2);
+    expect(decodeMatchTranscriptCursor(oversizedV2, {
       secretMaterial: SECRET_A,
       nowMs: NOW,
     })).toEqual({ status: "invalid" });
-  });
 
-  test("tampered ciphertext fails closed", () => {
-    const token = issueDefault();
-    const buf = Buffer.from(token, "base64url");
-    // Flip a middle byte.
-    const mid = Math.floor(buf.length / 2);
-    const previous = buf.at(mid);
-    if (previous === undefined) throw new Error("empty token buffer");
-    buf[mid] = previous ^ 0xff;
-    const tampered = buf.toString("base64url");
-    expect(decodeMatchTranscriptCursor(tampered, {
+    // Legacy V1 path still allows up to 4096; 4097 fails.
+    const oversizedV1 = "a".repeat(MATCH_READ_CURSOR_MAX_TOKEN_CHARS_V1 + 1);
+    expect(decodeMatchTranscriptCursor(oversizedV1, {
       secretMaterial: SECRET_A,
       nowMs: NOW,
     })).toEqual({ status: "invalid" });
@@ -299,13 +366,6 @@ describe("match-read-cursor AES-GCM codec", () => {
     const cognitionToken = issueMatchCognitionCursor({
       subjectUserId: "user-1",
       gameId: "game-1",
-      filterFingerprint: fingerprintMatchCognitionFilters({
-        artifactType: "thinking",
-        actorPlayerId: null,
-        phase: null,
-        round: null,
-        action: null,
-      }),
       ownershipFingerprint: "sha256:ownership-1",
       captureVersion: 1,
       mode: "snapshot",
@@ -328,6 +388,8 @@ describe("match-read-cursor AES-GCM codec", () => {
       nowMs: NOW,
     }, SECRET_A);
 
+    expect(cognitionToken.startsWith(MATCH_READ_CURSOR_V2_PREFIX)).toBe(true);
+
     const asTranscript = decodeMatchTranscriptCursor(cognitionToken, {
       secretMaterial: SECRET_A,
       nowMs: NOW,
@@ -344,6 +406,13 @@ describe("match-read-cursor AES-GCM codec", () => {
     expect(claims.purpose).toBe(MATCH_COGNITION_CURSOR_PURPOSE);
     expect(claims.filters.artifactType).toBe("thinking");
     expect(claims.keyset.afterCreatedAt).toBe("2026-07-21T11:00:00.000Z");
+    expect(claims.filterFingerprint).toBe(fingerprintMatchCognitionFilters({
+      artifactType: "thinking",
+      actorPlayerId: null,
+      phase: null,
+      round: null,
+      action: null,
+    }));
 
     expect(bindMatchCognitionCursor({
       claims,
@@ -364,50 +433,7 @@ describe("match-read-cursor AES-GCM codec", () => {
   });
 
   test("narrative surface is sealed and cross-surface decode fails", () => {
-    const filterFingerprint = fingerprintMatchNarrativeFilters({
-      preset: "strategic",
-      detail: "compact",
-      playerId: null,
-      phase: null,
-      round: null,
-      action: null,
-      fromTimestampMs: null,
-      toTimestampMs: null,
-    });
-    const ownerToken = issueMatchNarrativeCursor({
-      subjectUserId: "user-1",
-      gameId: "game-1",
-      surface: "subject_owner",
-      filterFingerprint,
-      ownershipFingerprint: "sha256:ownership-1",
-      transcriptCaptureVersion: 1,
-      cognitiveCaptureVersion: 1,
-      mode: "snapshot",
-      readThrough: {
-        transcript: {
-          throughEntrySequence: 10,
-          throughLegacyTimestamp: null,
-          throughLegacyId: null,
-        },
-        cognition: {
-          throughCreatedAt: "2026-07-21T12:00:00.000Z",
-          throughId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
-        },
-      },
-      keyset: { afterSortKey: 3, afterGroupId: "d:1|c:abc" },
-      filters: {
-        preset: "strategic",
-        detail: "compact",
-        playerId: null,
-        player: null,
-        phase: null,
-        round: null,
-        action: null,
-        fromTimestampMs: null,
-        toTimestampMs: null,
-      },
-      nowMs: NOW,
-    }, SECRET_A);
+    const ownerToken = issueNarrativeDefault({ surface: "subject_owner" });
 
     const ownerOk = decodeMatchNarrativeCursor(ownerToken, {
       secretMaterial: SECRET_A,
@@ -418,6 +444,8 @@ describe("match-read-cursor AES-GCM codec", () => {
     if (ownerOk.status !== "ok") return;
     expect(ownerOk.claims.purpose).toBe(MATCH_NARRATIVE_CURSOR_PURPOSE);
     expect(ownerOk.claims.surface).toBe("subject_owner");
+    expect(ownerOk.claims.filters.schemaVersion).toBe(2);
+    expect(ownerOk.claims.filters.includeUnpaired).toBe(false);
 
     expect(decodeMatchNarrativeCursor(ownerToken, {
       secretMaterial: SECRET_A,
@@ -429,6 +457,20 @@ describe("match-read-cursor AES-GCM codec", () => {
       secretMaterial: SECRET_A,
       nowMs: NOW,
     })).toEqual({ status: "invalid" });
+
+    const filterFingerprint = fingerprintMatchNarrativeFilters({
+      preset: "strategic",
+      detail: "compact",
+      playerId: null,
+      phase: null,
+      round: null,
+      action: null,
+      fromTimestampMs: null,
+      toTimestampMs: null,
+      schemaVersion: 2,
+      includeUnpaired: false,
+    });
+    expect(ownerOk.claims.filterFingerprint).toBe(filterFingerprint);
 
     expect(bindMatchNarrativeCursor({
       claims: ownerOk.claims,
@@ -451,5 +493,306 @@ describe("match-read-cursor AES-GCM codec", () => {
       transcriptCaptureVersion: 1,
       cognitiveCaptureVersion: 1,
     })).toBe(false);
+  });
+
+  test("producer narrative cursor round-trips and seals schemaVersion/includeUnpaired", () => {
+    const token = issueNarrativeDefault({
+      surface: "producer",
+      ownershipFingerprint: MATCH_NARRATIVE_PRODUCER_OWNERSHIP_FINGERPRINT,
+      filters: {
+        ...emptyNarrativeFilters,
+        schemaVersion: 2,
+        includeUnpaired: true,
+        phase: "VOTE",
+        round: 2,
+      },
+    });
+    const decoded = decodeMatchNarrativeCursor(token, {
+      secretMaterial: SECRET_A,
+      expectedSurface: "producer",
+      nowMs: NOW,
+    });
+    expect(decoded.status).toBe("ok");
+    if (decoded.status !== "ok") return;
+    const claims: MatchNarrativeCursorClaims = decoded.claims;
+    expect(claims.surface).toBe("producer");
+    expect(claims.filters.includeUnpaired).toBe(true);
+    expect(claims.filters.schemaVersion).toBe(2);
+    expect(claims.filters.phase).toBe("VOTE");
+    expect(claims.filters.round).toBe(2);
+    expect(claims.filterFingerprint).toBe(fingerprintMatchNarrativeFilters({
+      preset: "strategic",
+      detail: "compact",
+      playerId: null,
+      phase: "VOTE",
+      round: 2,
+      action: null,
+      fromTimestampMs: null,
+      toTimestampMs: null,
+      schemaVersion: 2,
+      includeUnpaired: true,
+    }));
+  });
+
+  test("group digest is deterministic, order-independent, and fixed-size", () => {
+    const a = digestNarrativeGroupMembers(["c:b", "d:a"]);
+    const b = digestNarrativeGroupMembers(["d:a", "c:b"]);
+    const c = digestNarrativeGroupMembers(["d:a", "c:c"]);
+    expect(a).toBe(b);
+    expect(a).not.toBe(c);
+    // SHA-256 base64url is 43 chars (no padding).
+    expect(a.length).toBe(43);
+    expect(a).not.toContain("|");
+  });
+
+  test("size budgets: representative and max-filter cursors stay compact", () => {
+    const narrativeRep = issueNarrativeDefault();
+    expect(narrativeRep.length).toBeLessThanOrEqual(800);
+
+    const maxFilters: MatchNarrativeCursorFilters = {
+      preset: "full_cognition",
+      detail: "full",
+      playerId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      player: "VeryLongPlayerDisplayName_ForFilterEcho_XXXXXXXX",
+      phase: "POST_VOTE_MINGLE",
+      round: 12,
+      action: "empower.revote.cast",
+      fromTimestampMs: 1_720_000_000_000,
+      toTimestampMs: 1_720_000_900_000,
+      schemaVersion: 2,
+      includeUnpaired: true,
+    };
+    const narrativeMax = issueNarrativeDefault({
+      filters: maxFilters,
+      keyset: {
+        afterSortKey: 1_720_000_500_000,
+        afterGroupId: digestNarrativeGroupMembers([
+          "d:aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+          "c:11111111-2222-3333-4444-555555555555",
+          "c:99999999-8888-7777-6666-555555555555",
+        ]),
+      },
+      ownershipFingerprint: "sha256:" + "ab".repeat(32),
+      subjectUserId: "user_" + "x".repeat(40),
+      gameId: "game_" + "y".repeat(40),
+    });
+    expect(narrativeMax.length).toBeLessThanOrEqual(1_200);
+
+    const transcript = issueDefault({
+      filters: {
+        phase: "POST_VOTE_MINGLE",
+        round: 12,
+        scope: "public",
+        playerId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        player: "VeryLongPlayerDisplayName_ForFilterEcho_XXXXXXXX",
+        fromTimestampMs: 1_720_000_000_000,
+        toTimestampMs: 1_720_000_900_000,
+      },
+      ownershipFingerprint: "sha256:" + "cd".repeat(32),
+      subjectUserId: "user_" + "x".repeat(40),
+      gameId: "game_" + "y".repeat(40),
+    });
+    expect(transcript.length).toBeLessThanOrEqual(900);
+
+    const cognition = issueMatchCognitionCursor({
+      subjectUserId: "user_" + "x".repeat(40),
+      gameId: "game_" + "y".repeat(40),
+      ownershipFingerprint: "sha256:" + "ef".repeat(32),
+      captureVersion: 1,
+      mode: "catchup",
+      readThrough: {
+        throughCreatedAt: "2026-07-21T12:00:00.000Z",
+        throughId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+      },
+      keyset: {
+        afterCreatedAt: "2026-07-21T11:00:00.000Z",
+        afterId: "11111111-2222-3333-4444-555555555555",
+      },
+      filters: {
+        artifactType: "strategy",
+        actorPlayerId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        player: "VeryLongPlayerDisplayName_ForFilterEcho_XXXXXXXX",
+        phase: "POST_VOTE_MINGLE",
+        round: 12,
+        action: "empower.revote.cast",
+      },
+      nowMs: NOW,
+    }, SECRET_A);
+    expect(cognition.length).toBeLessThanOrEqual(900);
+  });
+});
+
+describe("match-read-cursor V1 compatibility decoder", () => {
+  beforeEach(() => {
+    process.env.JWT_SECRET = SECRET_A;
+  });
+
+  test("legacy V1 transcript fixture still decodes and binds", () => {
+    const v2Shape: MatchTranscriptCursorClaims = {
+      version: MATCH_READ_CURSOR_VERSION,
+      purpose: MATCH_TRANSCRIPT_CURSOR_PURPOSE,
+      keyVersion: MATCH_READ_CURSOR_KEY_VERSION,
+      issuedAtMs: NOW,
+      expiresAtMs: NOW + MATCH_READ_CURSOR_MAX_TTL_MS,
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      filterFingerprint: fingerprintMatchTranscriptFilters({
+        phase: "MINGLE_I",
+        round: 1,
+        scope: null,
+        playerId: "p1",
+        fromTimestampMs: null,
+        toTimestampMs: null,
+      }),
+      ownershipFingerprint: "sha256:ownership-1",
+      captureVersion: 1,
+      mode: "snapshot",
+      readThrough: {
+        throughEntrySequence: 42,
+        throughLegacyTimestamp: null,
+        throughLegacyId: null,
+      },
+      keyset: {
+        afterEntrySequence: 10,
+        afterLegacyTimestamp: null,
+        afterLegacyId: null,
+      },
+      filters: {
+        phase: "MINGLE_I",
+        round: 1,
+        scope: null,
+        playerId: "p1",
+        player: "Alice",
+        fromTimestampMs: null,
+        toTimestampMs: null,
+      },
+    };
+
+    const token = issueLegacyMatchReadCursorV1ForTests(
+      v2Shape,
+      MATCH_TRANSCRIPT_CURSOR_PURPOSE,
+      SECRET_A,
+    );
+    expect(token.startsWith(MATCH_READ_CURSOR_V2_PREFIX)).toBe(false);
+
+    const decoded = decodeMatchTranscriptCursor(token, {
+      secretMaterial: SECRET_A,
+      nowMs: NOW + 1_000,
+    });
+    expect(decoded.status).toBe("ok");
+    if (decoded.status !== "ok") return;
+    expect(decoded.claims.version).toBe(1);
+    expect(decoded.claims.gameId).toBe("game-1");
+    expect(decoded.claims.keyset.afterEntrySequence).toBe(10);
+    expect(decoded.claims.filters.player).toBe("Alice");
+    expect(bindMatchTranscriptCursor({
+      claims: decoded.claims,
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      ownershipFingerprint: "sha256:ownership-1",
+      filterFingerprint: decoded.claims.filterFingerprint,
+      captureVersion: 1,
+    })).toBe(true);
+  });
+
+  test("legacy V1 narrative fixture restores filters with schema defaults", () => {
+    const claims: MatchNarrativeCursorClaims = {
+      version: MATCH_READ_CURSOR_VERSION,
+      purpose: MATCH_NARRATIVE_CURSOR_PURPOSE,
+      keyVersion: MATCH_READ_CURSOR_KEY_VERSION,
+      issuedAtMs: NOW,
+      expiresAtMs: NOW + MATCH_READ_CURSOR_MAX_TTL_MS,
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      surface: "subject_owner",
+      filterFingerprint: "placeholder",
+      ownershipFingerprint: "sha256:ownership-1",
+      transcriptCaptureVersion: 1,
+      cognitiveCaptureVersion: 1,
+      mode: "snapshot",
+      readThrough: {
+        transcript: {
+          throughEntrySequence: 10,
+          throughLegacyTimestamp: null,
+          throughLegacyId: null,
+        },
+        cognition: {
+          throughCreatedAt: "2026-07-21T12:00:00.000Z",
+          throughId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        },
+      },
+      keyset: { afterSortKey: 5, afterGroupId: "d:1|c:2" },
+      filters: {
+        preset: "strategic",
+        detail: "compact",
+        playerId: null,
+        player: null,
+        phase: null,
+        round: null,
+        action: null,
+        fromTimestampMs: null,
+        toTimestampMs: null,
+        schemaVersion: 2,
+        includeUnpaired: false,
+      },
+    };
+
+    const token = issueLegacyMatchReadCursorV1ForTests(
+      claims,
+      MATCH_NARRATIVE_CURSOR_PURPOSE,
+      SECRET_A,
+    );
+
+    const decoded = decodeMatchNarrativeCursor(token, {
+      secretMaterial: SECRET_A,
+      expectedSurface: "subject_owner",
+      nowMs: NOW + 1_000,
+    });
+    expect(decoded.status).toBe("ok");
+    if (decoded.status !== "ok") return;
+    expect(decoded.claims.version).toBe(1);
+    expect(decoded.claims.keyset.afterGroupId).toBe("d:1|c:2");
+    // Compatibility defaults applied for fields V1 did not seal.
+    expect(decoded.claims.filters.schemaVersion).toBe(2);
+    expect(decoded.claims.filters.includeUnpaired).toBe(false);
+    // V1 sealed fingerprint (old domain) is preserved, not recomputed to v2.
+    expect(decoded.claims.filterFingerprint).not.toBe("placeholder");
+    expect(decoded.claims.filterFingerprint.startsWith("sha256:")).toBe(true);
+  });
+
+  test("V1 wrong secret fails closed", () => {
+    const claims: MatchTranscriptCursorClaims = {
+      version: MATCH_READ_CURSOR_VERSION,
+      purpose: MATCH_TRANSCRIPT_CURSOR_PURPOSE,
+      keyVersion: MATCH_READ_CURSOR_KEY_VERSION,
+      issuedAtMs: NOW,
+      expiresAtMs: NOW + MATCH_READ_CURSOR_MAX_TTL_MS,
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      filterFingerprint: "sha256:x",
+      ownershipFingerprint: "sha256:ownership-1",
+      captureVersion: 1,
+      mode: "snapshot",
+      readThrough: {
+        throughEntrySequence: 1,
+        throughLegacyTimestamp: null,
+        throughLegacyId: null,
+      },
+      keyset: {
+        afterEntrySequence: null,
+        afterLegacyTimestamp: null,
+        afterLegacyId: null,
+      },
+      filters: emptyTranscriptFilters,
+    };
+    const token = issueLegacyMatchReadCursorV1ForTests(
+      claims,
+      MATCH_TRANSCRIPT_CURSOR_PURPOSE,
+      SECRET_A,
+    );
+    expect(decodeMatchTranscriptCursor(token, {
+      secretMaterial: SECRET_B,
+      nowMs: NOW,
+    })).toEqual({ status: "invalid" });
   });
 });

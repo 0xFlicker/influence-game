@@ -7,6 +7,7 @@
  * feed this module after surface-specific authorization.
  */
 
+import { digestNarrativeGroupMembers } from "./match-read-cursor.js";
 import { UNTRUSTED_GAME_AUTHORED } from "./transcript-serialization.js";
 
 export const NARRATIVE_CONTENT_TRUST = UNTRUSTED_GAME_AUTHORED;
@@ -559,7 +560,14 @@ export function groupNarrativeMembers(
     remainingIds.delete(memberId(m));
   }
 
-  groups.sort((a, b) => a.sortKey - b.sortKey || a.groupId.localeCompare(b.groupId));
+  // Equal sortKey ties break on the same fixed-size member digest used for
+  // cursor keyset continuation (not renumbered page-local groupId).
+  groups.sort((a, b) => {
+    if (a.sortKey !== b.sortKey) return a.sortKey - b.sortKey;
+    const da = groupMemberDigest(a);
+    const db = groupMemberDigest(b);
+    return da < db ? -1 : da > db ? 1 : 0;
+  });
 
   // Re-number group ids in sorted order for stable page-local ids.
   groups.forEach((g, i) => {
@@ -587,4 +595,11 @@ export function groupNarrativeMembers(
     limitations: uniqueLimitations,
     contentTrust: NARRATIVE_CONTENT_TRUST,
   };
+}
+
+/** Fixed-size digest of sorted member ids — shared with cursor keyset continuation. */
+function groupMemberDigest(group: NarrativeGroup): string {
+  const ids = group.members.map((m) => m.id);
+  if (ids.length === 0) return digestNarrativeGroupMembers([group.groupId]);
+  return digestNarrativeGroupMembers(ids);
 }

@@ -51,15 +51,16 @@ export interface CompactV2Page {
   preset: string;
   detail: string;
   filters?: Record<string, unknown>;
-  readThrough: Record<string, unknown>;
+  readThrough: unknown;
   correlationSummary: NarrativeCorrelationSummary;
   limitations?: Array<{ code: string; message: string }>;
   contentTrust: typeof NARRATIVE_CONTENT_TRUST;
   notBoardAuthority: true;
   groups: CompactV2Group[];
   pageSize: number;
-  nextCursor?: string;
-  nextCursorKind?: "page";
+  /** Opaque pagination token; explicit null on terminal pages (MCP contract). */
+  nextCursor: string | null;
+  nextCursorKind: "page" | null;
 }
 
 function corrKind(kind: string): CompactV2Corr {
@@ -180,7 +181,7 @@ export function encodeCompactV2Page(input: {
   preset: string;
   detail: string;
   filters?: Record<string, unknown>;
-  readThrough: Record<string, unknown>;
+  readThrough: unknown;
   correlationSummary: NarrativeCorrelationSummary;
   limitations?: Array<{ code: string; message: string }>;
   groups: readonly NarrativeGroup[];
@@ -213,16 +214,15 @@ export function encodeCompactV2Page(input: {
     notBoardAuthority: true,
     groups,
     pageSize: groups.length,
+    // Explicit nulls on terminal pages — required by MCP outputSchema.
+    nextCursor: input.nextCursor,
+    nextCursorKind: input.nextCursorKind,
   };
 
   if (input.access) page.access = input.access;
   if (input.filters) page.filters = omitNulls(input.filters);
   if (input.limitations && input.limitations.length > 0) {
     page.limitations = input.limitations;
-  }
-  if (input.nextCursor) {
-    page.nextCursor = input.nextCursor;
-    page.nextCursorKind = "page";
   }
 
   return page;
