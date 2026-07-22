@@ -1,11 +1,11 @@
 /**
- * AES-GCM opaque cursor codec for match transcript (U4) and owned cognition (U5)
- * pagination.
+ * AES-GCM opaque cursor codec for match transcript, owned cognition, and
+ * dual-surface match narrative pagination.
  *
  * Tokens are bound to purpose, subject, game, filter fingerprint, ownership
- * fingerprint, capture version, pinned read-through boundary, and internal
- * keyset position. Active-key-only rotation intentionally invalidates
- * outstanding cursors.
+ * fingerprint (owner surfaces), capture version, pinned read-through boundary,
+ * and internal keyset position. Narrative cursors also seal surface capability
+ * so owner and producer walks cannot resume each other.
  *
  * Reject oversized / structurally malformed tokens before any database access.
  * Wrong-purpose tokens fail closed (AAD + claim purpose mismatch).
@@ -32,6 +32,13 @@ export const MATCH_TRANSCRIPT_CURSOR_PURPOSE = "match_transcript" as const;
 /** Purpose claim for owned thinking/strategy timeline walks. */
 export const MATCH_COGNITION_CURSOR_PURPOSE = "match_cognition" as const;
 
+/**
+ * Purpose claim for dual-surface match narrative pages.
+ * Surface (`subject_owner` | `producer`) is sealed into claims and AAD is
+ * purpose-only; wrong-surface resume fails bind / claims validation.
+ */
+export const MATCH_NARRATIVE_CURSOR_PURPOSE = "match_narrative" as const;
+
 /** Domain separator for AES-256 key derivation from API secret material. */
 const KEY_DOMAIN = "influence.match.read_cursor.aes.v1";
 
@@ -41,18 +48,29 @@ export const MATCH_READ_CURSOR_MAX_TOKEN_CHARS = 4096;
 /** Maximum cursor lifetime (30 minutes). */
 export const MATCH_READ_CURSOR_MAX_TTL_MS = 30 * 60 * 1000;
 
+/**
+ * Producer narrative cursors seal this constant instead of an ownership set.
+ * Owner surfaces always use the real ownership fingerprint.
+ */
+export const MATCH_NARRATIVE_PRODUCER_OWNERSHIP_FINGERPRINT = "producer:none" as const;
+
 const AES_ALGORITHM = "aes-256-gcm" as const;
 const IV_BYTES = 12;
 const AUTH_TAG_BYTES = 16;
 
 export type MatchTranscriptCursorPurpose = typeof MATCH_TRANSCRIPT_CURSOR_PURPOSE;
 export type MatchCognitionCursorPurpose = typeof MATCH_COGNITION_CURSOR_PURPOSE;
+export type MatchNarrativeCursorPurpose = typeof MATCH_NARRATIVE_CURSOR_PURPOSE;
 export type MatchReadCursorPurpose =
   | MatchTranscriptCursorPurpose
-  | MatchCognitionCursorPurpose;
+  | MatchCognitionCursorPurpose
+  | MatchNarrativeCursorPurpose;
 
 export type MatchTranscriptCursorMode = "snapshot" | "catchup";
 export type MatchCognitionCursorMode = "snapshot" | "catchup";
+export type MatchNarrativeCursorMode = "snapshot";
+
+export type MatchNarrativeSurface = "subject_owner" | "producer";
 
 /**
  * Internal keyset position after which the next page continues.
@@ -165,12 +183,73 @@ export interface MatchCognitionCursorClaims {
   filters: MatchCognitionCursorFilters;
 }
 
+/**
+ * Dual-lane narrative read-through pins sealed on first page.
+ */
+export interface MatchNarrativeDualReadThrough {
+  transcript: MatchReadThroughBoundary;
+  cognition: MatchCognitionReadThroughBoundary;
+}
+
+/**
+ * Group-level keyset for narrative pages (exclusive lower bound).
+ */
+export interface MatchNarrativeKeyset {
+  afterSortKey: number | null;
+  afterGroupId: string | null;
+}
+
+/**
+ * Normalized narrative filters sealed into the cursor (includes preset/detail).
+ */
+export interface MatchNarrativeCursorFilters {
+  preset: "strategic" | "dialogue_only" | "full_cognition";
+  detail: "compact" | "full";
+  playerId: string | null;
+  player: string | null;
+  phase: string | null;
+  round: number | null;
+  action: string | null;
+  fromTimestampMs: number | null;
+  toTimestampMs: number | null;
+}
+
+/**
+ * Sealed narrative cursor claims. Surface is required; owner walks also bind
+ * ownershipFingerprint while producer walks use a fixed sentinel.
+ */
+export interface MatchNarrativeCursorClaims {
+  version: typeof MATCH_READ_CURSOR_VERSION;
+  purpose: MatchNarrativeCursorPurpose;
+  keyVersion: number;
+  nonce: string;
+  issuedAtMs: number;
+  expiresAtMs: number;
+  subjectUserId: string;
+  gameId: string;
+  surface: MatchNarrativeSurface;
+  filterFingerprint: string;
+  ownershipFingerprint: string;
+  /** Transcript capture version bound for resume. */
+  transcriptCaptureVersion: number;
+  /** Cognitive artifact capture version bound for resume. */
+  cognitiveCaptureVersion: number;
+  mode: MatchNarrativeCursorMode;
+  readThrough: MatchNarrativeDualReadThrough;
+  keyset: MatchNarrativeKeyset;
+  filters: MatchNarrativeCursorFilters;
+}
+
 export type MatchReadCursorDecodeResult =
   | { status: "ok"; claims: MatchTranscriptCursorClaims }
   | { status: "invalid" };
 
 export type MatchCognitionCursorDecodeResult =
   | { status: "ok"; claims: MatchCognitionCursorClaims }
+  | { status: "invalid" };
+
+export type MatchNarrativeCursorDecodeResult =
+  | { status: "ok"; claims: MatchNarrativeCursorClaims }
   | { status: "invalid" };
 
 export interface IssueMatchTranscriptCursorInput {
@@ -201,6 +280,23 @@ export interface IssueMatchCognitionCursorInput {
   readThrough: MatchCognitionReadThroughBoundary;
   keyset: MatchCognitionKeyset;
   filters: MatchCognitionCursorFilters;
+  nowMs?: number;
+  ttlMs?: number;
+  nonce?: string;
+}
+
+export interface IssueMatchNarrativeCursorInput {
+  subjectUserId: string;
+  gameId: string;
+  surface: MatchNarrativeSurface;
+  filterFingerprint: string;
+  ownershipFingerprint: string;
+  transcriptCaptureVersion: number;
+  cognitiveCaptureVersion: number;
+  mode: MatchNarrativeCursorMode;
+  readThrough: MatchNarrativeDualReadThrough;
+  keyset: MatchNarrativeKeyset;
+  filters: MatchNarrativeCursorFilters;
   nowMs?: number;
   ttlMs?: number;
   nonce?: string;
@@ -257,6 +353,32 @@ export function fingerprintMatchCognitionFilters(filters: {
     phase: filters.phase,
     round: filters.round,
     action: filters.action,
+  });
+}
+
+/**
+ * Normalize closed narrative filters (including preset/detail) into a fingerprint.
+ */
+export function fingerprintMatchNarrativeFilters(filters: {
+  preset: "strategic" | "dialogue_only" | "full_cognition";
+  detail: "compact" | "full";
+  playerId: string | null;
+  phase: string | null;
+  round: number | null;
+  action: string | null;
+  fromTimestampMs: number | null;
+  toTimestampMs: number | null;
+}): string {
+  return sha256StableJson({
+    domain: "influence.match.narrative.filters.v1",
+    preset: filters.preset,
+    detail: filters.detail,
+    playerId: filters.playerId,
+    phase: filters.phase,
+    round: filters.round,
+    action: filters.action,
+    fromTimestampMs: filters.fromTimestampMs,
+    toTimestampMs: filters.toTimestampMs,
   });
 }
 
@@ -358,6 +480,65 @@ export function issueMatchCognitionCursor(
 }
 
 /**
+ * Seal a dual-surface match narrative pagination cursor.
+ */
+export function issueMatchNarrativeCursor(
+  input: IssueMatchNarrativeCursorInput,
+  secretMaterial: string = requireApiSecret(),
+): string {
+  const nowMs = input.nowMs ?? Date.now();
+  const ttlMs = Math.min(
+    Math.max(1, input.ttlMs ?? MATCH_READ_CURSOR_MAX_TTL_MS),
+    MATCH_READ_CURSOR_MAX_TTL_MS,
+  );
+  const nonce = input.nonce ?? randomBytes(16).toString("hex");
+  const claims: MatchNarrativeCursorClaims = {
+    version: MATCH_READ_CURSOR_VERSION,
+    purpose: MATCH_NARRATIVE_CURSOR_PURPOSE,
+    keyVersion: MATCH_READ_CURSOR_KEY_VERSION,
+    nonce,
+    issuedAtMs: nowMs,
+    expiresAtMs: nowMs + ttlMs,
+    subjectUserId: input.subjectUserId,
+    gameId: input.gameId,
+    surface: input.surface,
+    filterFingerprint: input.filterFingerprint,
+    ownershipFingerprint: input.ownershipFingerprint,
+    transcriptCaptureVersion: input.transcriptCaptureVersion,
+    cognitiveCaptureVersion: input.cognitiveCaptureVersion,
+    mode: input.mode,
+    readThrough: {
+      transcript: {
+        throughEntrySequence: input.readThrough.transcript.throughEntrySequence,
+        throughLegacyTimestamp: input.readThrough.transcript.throughLegacyTimestamp,
+        throughLegacyId: input.readThrough.transcript.throughLegacyId,
+      },
+      cognition: {
+        throughCreatedAt: input.readThrough.cognition.throughCreatedAt,
+        throughId: input.readThrough.cognition.throughId,
+      },
+    },
+    keyset: {
+      afterSortKey: input.keyset.afterSortKey,
+      afterGroupId: input.keyset.afterGroupId,
+    },
+    filters: {
+      preset: input.filters.preset,
+      detail: input.filters.detail,
+      playerId: input.filters.playerId,
+      player: input.filters.player,
+      phase: input.filters.phase,
+      round: input.filters.round,
+      action: input.filters.action,
+      fromTimestampMs: input.filters.fromTimestampMs,
+      toTimestampMs: input.filters.toTimestampMs,
+    },
+  };
+
+  return sealClaims(claims, MATCH_NARRATIVE_CURSOR_PURPOSE, secretMaterial);
+}
+
+/**
  * Decode and validate a sealed transcript cursor without database access.
  * Returns a uniform `invalid` for every local failure mode.
  */
@@ -409,6 +590,38 @@ export function decodeMatchCognitionCursor(
 }
 
 /**
+ * Decode and validate a sealed narrative cursor without database access.
+ */
+export function decodeMatchNarrativeCursor(
+  token: string,
+  options: {
+    secretMaterial?: string;
+    purpose?: MatchNarrativeCursorPurpose;
+    /** When set, claims.surface must match (cross-surface resume fails closed). */
+    expectedSurface?: MatchNarrativeSurface;
+    activeKeyVersion?: number;
+    nowMs?: number;
+  } = {},
+): MatchNarrativeCursorDecodeResult {
+  const expectedPurpose = options.purpose ?? MATCH_NARRATIVE_CURSOR_PURPOSE;
+  const result = decodeSealedClaims(token, {
+    secretMaterial: options.secretMaterial,
+    purpose: expectedPurpose,
+    activeKeyVersion: options.activeKeyVersion,
+    nowMs: options.nowMs,
+  });
+  if (result.status !== "ok") return { status: "invalid" };
+  if (!isNarrativeClaims(result.claims)) return { status: "invalid" };
+  if (
+    options.expectedSurface != null
+    && result.claims.surface !== options.expectedSurface
+  ) {
+    return { status: "invalid" };
+  }
+  return { status: "ok", claims: result.claims };
+}
+
+/**
  * Validate that decoded transcript claims still match the live request binding.
  * Call after MatchAccessContext resolution; failures are authorization-stale
  * or query-mismatch and must surface as uniform cursor_invalid_or_stale.
@@ -452,6 +665,31 @@ export function bindMatchCognitionCursor(params: {
   });
 }
 
+/**
+ * Validate that decoded narrative claims still match the live request binding.
+ */
+export function bindMatchNarrativeCursor(params: {
+  claims: MatchNarrativeCursorClaims;
+  subjectUserId: string;
+  gameId: string;
+  surface: MatchNarrativeSurface;
+  ownershipFingerprint: string;
+  filterFingerprint: string;
+  transcriptCaptureVersion: number;
+  cognitiveCaptureVersion: number;
+}): boolean {
+  const { claims } = params;
+  return (
+    equalUtf8(claims.subjectUserId, params.subjectUserId)
+    && equalUtf8(claims.gameId, params.gameId)
+    && claims.surface === params.surface
+    && equalUtf8(claims.ownershipFingerprint, params.ownershipFingerprint)
+    && equalUtf8(claims.filterFingerprint, params.filterFingerprint)
+    && claims.transcriptCaptureVersion === params.transcriptCaptureVersion
+    && claims.cognitiveCaptureVersion === params.cognitiveCaptureVersion
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Internals
 // ---------------------------------------------------------------------------
@@ -481,7 +719,10 @@ function bindMatchReadCursorCommon(params: {
 }
 
 function sealClaims(
-  claims: MatchTranscriptCursorClaims | MatchCognitionCursorClaims,
+  claims:
+    | MatchTranscriptCursorClaims
+    | MatchCognitionCursorClaims
+    | MatchNarrativeCursorClaims,
   purpose: MatchReadCursorPurpose,
   secretMaterial: string,
 ): string {
@@ -700,6 +941,39 @@ function isCognitionClaims(value: unknown): value is MatchCognitionCursorClaims 
   return true;
 }
 
+function isNarrativeClaims(value: unknown): value is MatchNarrativeCursorClaims {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  if (record.version !== MATCH_READ_CURSOR_VERSION) return false;
+  if (record.purpose !== MATCH_NARRATIVE_CURSOR_PURPOSE) return false;
+  if (typeof record.keyVersion !== "number") return false;
+  if (typeof record.nonce !== "string" || record.nonce.length === 0) return false;
+  if (typeof record.issuedAtMs !== "number" || !Number.isFinite(record.issuedAtMs)) return false;
+  if (typeof record.expiresAtMs !== "number" || !Number.isFinite(record.expiresAtMs)) return false;
+  if (typeof record.subjectUserId !== "string" || record.subjectUserId.length === 0) return false;
+  if (typeof record.gameId !== "string" || record.gameId.length === 0) return false;
+  if (record.surface !== "subject_owner" && record.surface !== "producer") return false;
+  if (typeof record.filterFingerprint !== "string") return false;
+  if (typeof record.ownershipFingerprint !== "string") return false;
+  if (
+    typeof record.transcriptCaptureVersion !== "number"
+    || !Number.isInteger(record.transcriptCaptureVersion)
+  ) {
+    return false;
+  }
+  if (
+    typeof record.cognitiveCaptureVersion !== "number"
+    || !Number.isInteger(record.cognitiveCaptureVersion)
+  ) {
+    return false;
+  }
+  if (record.mode !== "snapshot") return false;
+  if (!isNarrativeDualReadThrough(record.readThrough)) return false;
+  if (!isNarrativeKeyset(record.keyset)) return false;
+  if (!isNarrativeFilters(record.filters)) return false;
+  return true;
+}
+
 function isTranscriptFilters(value: unknown): value is MatchTranscriptCursorFilters {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
@@ -728,6 +1002,26 @@ function isCognitionFilters(value: unknown): value is MatchCognitionCursorFilter
     && isNullOrString(record.phase)
     && isNullOrInt(record.round)
     && isNullOrString(record.action)
+  );
+}
+
+function isNarrativeFilters(value: unknown): value is MatchNarrativeCursorFilters {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  const presetOk = record.preset === "strategic"
+    || record.preset === "dialogue_only"
+    || record.preset === "full_cognition";
+  const detailOk = record.detail === "compact" || record.detail === "full";
+  return (
+    presetOk
+    && detailOk
+    && isNullOrString(record.playerId)
+    && isNullOrString(record.player)
+    && isNullOrString(record.phase)
+    && isNullOrInt(record.round)
+    && isNullOrString(record.action)
+    && isNullOrInt(record.fromTimestampMs)
+    && isNullOrInt(record.toTimestampMs)
   );
 }
 
@@ -765,6 +1059,21 @@ function isCognitionKeyset(value: unknown): value is MatchCognitionKeyset {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return isNullOrString(record.afterCreatedAt) && isNullOrString(record.afterId);
+}
+
+function isNarrativeDualReadThrough(value: unknown): value is MatchNarrativeDualReadThrough {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    isTranscriptReadThrough(record.transcript)
+    && isCognitionReadThrough(record.cognition)
+  );
+}
+
+function isNarrativeKeyset(value: unknown): value is MatchNarrativeKeyset {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return isNullOrInt(record.afterSortKey) && isNullOrString(record.afterGroupId);
 }
 
 function isNullOrInt(value: unknown): value is number | null {

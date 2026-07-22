@@ -1,17 +1,23 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   MATCH_COGNITION_CURSOR_PURPOSE,
+  MATCH_NARRATIVE_CURSOR_PURPOSE,
+  MATCH_NARRATIVE_PRODUCER_OWNERSHIP_FINGERPRINT,
   MATCH_READ_CURSOR_KEY_VERSION,
   MATCH_READ_CURSOR_MAX_TOKEN_CHARS,
   MATCH_READ_CURSOR_MAX_TTL_MS,
   MATCH_TRANSCRIPT_CURSOR_PURPOSE,
   bindMatchCognitionCursor,
+  bindMatchNarrativeCursor,
   bindMatchTranscriptCursor,
   decodeMatchCognitionCursor,
+  decodeMatchNarrativeCursor,
   decodeMatchTranscriptCursor,
   fingerprintMatchCognitionFilters,
+  fingerprintMatchNarrativeFilters,
   fingerprintMatchTranscriptFilters,
   issueMatchCognitionCursor,
+  issueMatchNarrativeCursor,
   issueMatchTranscriptCursor,
   matchReadCursorKeyMaterialFingerprint,
   type MatchCognitionCursorClaims,
@@ -354,6 +360,96 @@ describe("match-read-cursor AES-GCM codec", () => {
       ownershipFingerprint: "sha256:different",
       filterFingerprint: claims.filterFingerprint,
       captureVersion: 1,
+    })).toBe(false);
+  });
+
+  test("narrative surface is sealed and cross-surface decode fails", () => {
+    const filterFingerprint = fingerprintMatchNarrativeFilters({
+      preset: "strategic",
+      detail: "compact",
+      playerId: null,
+      phase: null,
+      round: null,
+      action: null,
+      fromTimestampMs: null,
+      toTimestampMs: null,
+    });
+    const ownerToken = issueMatchNarrativeCursor({
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      surface: "subject_owner",
+      filterFingerprint,
+      ownershipFingerprint: "sha256:ownership-1",
+      transcriptCaptureVersion: 1,
+      cognitiveCaptureVersion: 1,
+      mode: "snapshot",
+      readThrough: {
+        transcript: {
+          throughEntrySequence: 10,
+          throughLegacyTimestamp: null,
+          throughLegacyId: null,
+        },
+        cognition: {
+          throughCreatedAt: "2026-07-21T12:00:00.000Z",
+          throughId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+        },
+      },
+      keyset: { afterSortKey: 3, afterGroupId: "d:1|c:abc" },
+      filters: {
+        preset: "strategic",
+        detail: "compact",
+        playerId: null,
+        player: null,
+        phase: null,
+        round: null,
+        action: null,
+        fromTimestampMs: null,
+        toTimestampMs: null,
+      },
+      nowMs: NOW,
+    }, SECRET_A);
+
+    const ownerOk = decodeMatchNarrativeCursor(ownerToken, {
+      secretMaterial: SECRET_A,
+      expectedSurface: "subject_owner",
+      nowMs: NOW,
+    });
+    expect(ownerOk.status).toBe("ok");
+    if (ownerOk.status !== "ok") return;
+    expect(ownerOk.claims.purpose).toBe(MATCH_NARRATIVE_CURSOR_PURPOSE);
+    expect(ownerOk.claims.surface).toBe("subject_owner");
+
+    expect(decodeMatchNarrativeCursor(ownerToken, {
+      secretMaterial: SECRET_A,
+      expectedSurface: "producer",
+      nowMs: NOW,
+    })).toEqual({ status: "invalid" });
+
+    expect(decodeMatchTranscriptCursor(ownerToken, {
+      secretMaterial: SECRET_A,
+      nowMs: NOW,
+    })).toEqual({ status: "invalid" });
+
+    expect(bindMatchNarrativeCursor({
+      claims: ownerOk.claims,
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      surface: "subject_owner",
+      ownershipFingerprint: "sha256:ownership-1",
+      filterFingerprint,
+      transcriptCaptureVersion: 1,
+      cognitiveCaptureVersion: 1,
+    })).toBe(true);
+
+    expect(bindMatchNarrativeCursor({
+      claims: ownerOk.claims,
+      subjectUserId: "user-1",
+      gameId: "game-1",
+      surface: "producer",
+      ownershipFingerprint: MATCH_NARRATIVE_PRODUCER_OWNERSHIP_FINGERPRINT,
+      filterFingerprint,
+      transcriptCaptureVersion: 1,
+      cognitiveCaptureVersion: 1,
     })).toBe(false);
   });
 });
