@@ -222,7 +222,7 @@ Management failures return stable JSON-RPC error data with `code`, HTTP-like `st
 
 ### Player Setup
 
-Player-facing setup lives at `/get-mcp`. Send players there for the current environment's `/mcp` URL, Codex commands, Claude Code commands, sign-in guidance, and browser OAuth explanation for their Influence games, agents, rules, and supported pre-match queues.
+Player-facing setup lives at `/get-mcp`. Send players there for the current environment's `/mcp` URL, Codex commands, Claude Code commands, Grok Build CLI commands, Grok App connector steps, sign-in guidance, and browser OAuth explanation for their Influence games, agents, rules, and supported pre-match queues.
 
 Do not send players directly to `/mcp`; it is the Streamable HTTP MCP resource endpoint, not a human setup page.
 
@@ -246,6 +246,22 @@ Claude Code setup:
 ```bash
 claude mcp add --transport http the-house-influence https://<api-host>/mcp
 ```
+
+Grok Build CLI setup:
+
+```bash
+grok mcp add --transport http the-house-influence https://<api-host>/mcp
+```
+
+Complete browser authorization when Grok prompts. In a session, open `/mcps` and press `i` if auth is still needed.
+
+Grok App setup:
+
+1. Open https://grok.com/connectors.
+2. Click **New Connector**, then select **Custom**.
+3. Enter the MCP server URL `https://<api-host>/mcp`, then press **Add Connector**.
+
+Grok App prompts for OAuth after you press Add Connector. Grok's hosted OAuth callback is `https://grok.com/connectors-oauth-exchange-code/`.
 
 Use the client's MCP authentication flow when it reports OAuth is needed. Clients check protected resource metadata first, then authorization server metadata, can use dynamic client registration for public clients, and can override metadata discovery with `authServerMetadataUrl` if a deployment proxy blocks standard well-known paths.
 

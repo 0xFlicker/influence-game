@@ -14,7 +14,7 @@ const pageSource = readFileSync(
 const combinedSource = `${getMcpClientSource}\n${pageSource}`;
 
 describe("/get-mcp setup page", () => {
-  it("defines player-facing command snippets for Codex and Claude Code", () => {
+  it("defines player-facing command snippets for Codex, Claude Code, and Grok Build CLI", () => {
     const clients = buildMcpSetupClients("https://api.influence.example/mcp");
     const commands = clients.flatMap((client) => client.commands);
 
@@ -24,21 +24,32 @@ describe("/get-mcp setup page", () => {
     expect(commands).toContain(
       "claude mcp add --transport http the-house-influence https://api.influence.example/mcp",
     );
+    expect(commands).toContain(
+      "grok mcp add --transport http the-house-influence https://api.influence.example/mcp",
+    );
   });
 
-  it("does not show non-actionable MCP App provider planning notes", () => {
+  it("includes actionable Grok App connector steps", () => {
     const clients = buildMcpSetupClients("https://api.influence.example/mcp");
+    const grokApp = clients.find((client) => client.id === "grok-app");
 
     expect(clients.map((client) => client.id)).toEqual([
       "codex",
       "claude-code",
+      "grok-cli",
+      "grok-app",
     ]);
+    expect(grokApp?.steps).toEqual([
+      "Open https://grok.com/connectors.",
+      "Click New Connector, then select Custom.",
+      "Enter the MCP server URL (https://api.influence.example/mcp), then press Add Connector.",
+    ]);
+    expect(grokApp?.authHint).toContain("Add Connector");
+    expect(combinedSource).toContain("client.steps");
     expect(combinedSource).not.toContain("ChatGPT");
-    expect(combinedSource).not.toContain("Grok");
     expect(combinedSource).not.toContain("MCP App setup");
     expect(combinedSource).not.toContain("provider-specific blockers");
   });
-
 
   it("keeps MCP setup copy concise", () => {
     expect(combinedSource).toContain("Connect {HOUSE_VENUE.name} to your AI.");
