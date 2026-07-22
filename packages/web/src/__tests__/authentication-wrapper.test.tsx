@@ -29,6 +29,10 @@ const authHookSource = readFileSync(
   join(import.meta.dir, "../hooks/use-auth.ts"),
   "utf8",
 );
+const inviteModalSource = readFileSync(
+  join(import.meta.dir, "../components/invite-code-modal.tsx"),
+  "utf8",
+);
 
 describe("unified authentication wrapper", () => {
   it("matches the settled sign-in and create-account method matrix", () => {
@@ -244,21 +248,36 @@ describe("unified authentication wrapper", () => {
   });
 
   it("reuses an active Privy session before opening wallet authentication", () => {
+    const signIn = authHookSource.indexOf(
+      "const openPrivySignIn = useCallback",
+    );
     const currentProof = authHookSource.indexOf(
       "currentPrivyProof(getAccessToken)",
+      signIn,
     );
     const interactiveLogin = authHookSource.indexOf(
       "openPrivyLogin();",
       currentProof,
     );
+    expect(signIn).toBeGreaterThan(0);
     expect(currentProof).toBeGreaterThan(0);
     expect(interactiveLogin).toBeGreaterThan(currentProof);
+    expect(authHookSource.slice(currentProof, interactiveLogin)).toContain(
+      "completePrivyAttempt(providerToken)",
+    );
     expect(authHookSource).toContain(
       "pendingPrivyProofResolution.current !== resolve",
     );
     expect(authHookSource).toContain(
       "pendingPrivyProofResolution.current !== resolveProof",
     );
+  });
+
+  it("lets invite-gated Privy users dismiss the prompt or sign out", () => {
+    expect(inviteModalSource).toContain("dismissInvite");
+    expect(inviteModalSource).toContain("onClick={dismissInvite}");
+    expect(inviteModalSource).toContain("Sign out");
+    expect(inviteModalSource).toContain("void logout()");
   });
 
   it("sends reverse Privy linking with the just-issued Influence token", async () => {

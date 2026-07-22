@@ -191,6 +191,11 @@ Do this once, in this order:
       use the same durable Influence ID as `sub`;
     - malformed, oversized, and burst requests receive generic errors without
       revealing whether an account exists.
+    - with invite codes enabled, create a new Privy account, refresh after the
+      invite prompt appears, then select Sign in again. The existing Privy
+      session must resume without reopening the Privy login modal; Close must
+      cancel the invite attempt and Sign out must clear both the Privy and
+      Influence sessions.
 14. Switch both services to `existing-only`. Confirm existing password login
     and all Privy paths still work while password creation and linking are
     blocked. Return to `full` only after this rollback rehearsal passes.

@@ -40,6 +40,7 @@ const anonymousAuthState: InfluenceAuthState = {
   completeAuthenticationAttempt: async () => false,
   logout: async () => {},
   needsInvite: false,
+  dismissInvite: () => {},
   submitInvite: async () => {},
   inviteError: null,
   submittingInvite: false,
