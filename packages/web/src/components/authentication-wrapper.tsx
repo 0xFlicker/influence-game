@@ -47,6 +47,9 @@ export function AuthenticationWrapper({
   const [reversePrivyToken, setReversePrivyToken] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const invokingControlRef = useRef<HTMLElement | null>(null);
+  const isModalVisible = presentation === "modal"
+    && open
+    && (attempt !== null || Boolean(reversePrivyToken));
 
   const restoreInvokingFocus = useCallback(() => {
     const control = invokingControlRef.current;
@@ -144,7 +147,7 @@ export function AuthenticationWrapper({
   ]);
 
   useEffect(() => {
-    if (!open || presentation !== "modal") return;
+    if (!isModalVisible) return;
     const dialog = dialogRef.current;
     const previouslyHidden = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -182,7 +185,7 @@ export function AuthenticationWrapper({
       document.body.style.overflow = previouslyHidden;
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [close, open, presentation]);
+  }, [close, isModalVisible]);
 
   if (!open || (!attempt && !reversePrivyToken)) return null;
 

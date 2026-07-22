@@ -90,6 +90,16 @@ describe("unified authentication wrapper", () => {
     );
   });
 
+  it("only locks document scrolling while an authentication dialog is rendered", () => {
+    expect(wrapperSource).toContain(
+      'const isModalVisible = presentation === "modal"',
+    );
+    expect(wrapperSource).toContain(
+      "&& (attempt !== null || Boolean(reversePrivyToken));",
+    );
+    expect(wrapperSource).toContain("if (!isModalVisible) return;");
+  });
+
   it("provides stable Clerk fallback routes without duplicating auth logic", () => {
     expect(authenticationRouteSource).toContain(
       'intent: "sign_in" | "create_account"',
