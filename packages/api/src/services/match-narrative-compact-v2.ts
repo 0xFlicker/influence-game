@@ -148,9 +148,11 @@ export function encodeCompactV2Groups(
     }
 
     if (g.relatedActionRefs && g.relatedActionRefs.length > 0) {
+      // Compact citations: sequence + canonical event type only.
+      // Never emit payloads, targets, or source pointers.
       encoded.actions = g.relatedActionRefs.map((r) => ({
         seq: r.eventSequence,
-        type: r.action ?? "action",
+        type: r.eventType,
       }));
     }
 

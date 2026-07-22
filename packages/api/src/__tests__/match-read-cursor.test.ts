@@ -520,6 +520,8 @@ describe("match-read-cursor AES-GCM codec (V2)", () => {
     expect(claims.filters.schemaVersion).toBe(2);
     expect(claims.filters.phase).toBe("VOTE");
     expect(claims.filters.round).toBe(2);
+    // Default issue omits pin → null (legacy-compatible unlinked walk).
+    expect(claims.canonicalLastTrustedSequence).toBeNull();
     expect(claims.filterFingerprint).toBe(fingerprintMatchNarrativeFilters({
       preset: "strategic",
       detail: "compact",
@@ -534,6 +536,33 @@ describe("match-read-cursor AES-GCM codec (V2)", () => {
     }));
   });
 
+  test("narrative cursor seals and round-trips canonical event pin", () => {
+    const token = issueNarrativeDefault({
+      canonicalLastTrustedSequence: 37,
+    });
+    const decoded = decodeMatchNarrativeCursor(token, {
+      secretMaterial: SECRET_A,
+      expectedSurface: "subject_owner",
+      nowMs: NOW,
+    });
+    expect(decoded.status).toBe("ok");
+    if (decoded.status !== "ok") return;
+    expect(decoded.claims.canonicalLastTrustedSequence).toBe(37);
+
+    // Null pin remains null (legacy unlinked).
+    const unlinked = issueNarrativeDefault({
+      canonicalLastTrustedSequence: null,
+    });
+    const unlinkedDecoded = decodeMatchNarrativeCursor(unlinked, {
+      secretMaterial: SECRET_A,
+      expectedSurface: "subject_owner",
+      nowMs: NOW,
+    });
+    expect(unlinkedDecoded.status).toBe("ok");
+    if (unlinkedDecoded.status !== "ok") return;
+    expect(unlinkedDecoded.claims.canonicalLastTrustedSequence).toBeNull();
+  });
+
   test("group digest is deterministic, order-independent, and fixed-size", () => {
     const a = digestNarrativeGroupMembers(["c:b", "d:a"]);
     const b = digestNarrativeGroupMembers(["d:a", "c:b"]);
@@ -546,7 +575,9 @@ describe("match-read-cursor AES-GCM codec (V2)", () => {
   });
 
   test("size budgets: representative and max-filter cursors stay compact", () => {
-    const narrativeRep = issueNarrativeDefault();
+    const narrativeRep = issueNarrativeDefault({
+      canonicalLastTrustedSequence: 999_999,
+    });
     expect(narrativeRep.length).toBeLessThanOrEqual(800);
 
     const maxFilters: MatchNarrativeCursorFilters = {
@@ -575,6 +606,7 @@ describe("match-read-cursor AES-GCM codec (V2)", () => {
       ownershipFingerprint: "sha256:" + "ab".repeat(32),
       subjectUserId: "user_" + "x".repeat(40),
       gameId: "game_" + "y".repeat(40),
+      canonicalLastTrustedSequence: 1_234_567,
     });
     expect(narrativeMax.length).toBeLessThanOrEqual(1_200);
 
@@ -710,6 +742,7 @@ describe("match-read-cursor V1 compatibility decoder", () => {
       transcriptCaptureVersion: 1,
       cognitiveCaptureVersion: 1,
       mode: "snapshot",
+      canonicalLastTrustedSequence: null,
       readThrough: {
         transcript: {
           throughEntrySequence: 10,
