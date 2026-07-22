@@ -1331,6 +1331,7 @@ describe("ProductionGameMcpReadModel match transcript pagination (U4)", () => {
     expect(first.ok).toBe(true);
     if (!first.ok) return;
     expect(first.entries.map((e) => e.text)).toEqual(["First", "Second"]);
+    expect(first.pageSize).toBe(first.entries.length);
     expect(first.nextCursorKind).toBe("catchup");
     expect(first.readThrough.throughEntrySequence).toBe(2);
 
@@ -1363,6 +1364,7 @@ describe("ProductionGameMcpReadModel match transcript pagination (U4)", () => {
       "Third after pin",
       "Fourth after pin",
     ]);
+    expect(fresh.pageSize).toBe(fresh.entries.length);
 
     // Catch-up from original first walk returns only rows after prior watermark.
     const catchup = await readMatchTranscriptPage(db, {
@@ -1379,6 +1381,20 @@ describe("ProductionGameMcpReadModel match transcript pagination (U4)", () => {
       "Third after pin",
       "Fourth after pin",
     ]);
+    expect(catchup.pageSize).toBe(catchup.entries.length);
+
+    const emptyCatchup = await readMatchTranscriptPage(db, {
+      gameIdOrSlug: gameId,
+      cursor: catchup.nextCursor!,
+      limit: 10,
+    }, {
+      subjectUserId: userId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(emptyCatchup.ok).toBe(true);
+    if (!emptyCatchup.ok) return;
+    expect(emptyCatchup.entries).toEqual([]);
+    expect(emptyCatchup.pageSize).toBe(0);
   });
 
   test("cursor reuse with another game/subject/filter/ownership fails uniformly", async () => {
