@@ -19,6 +19,7 @@ import type {
 } from "../services/match-completeness.js";
 import type { MatchTranscriptPageResult } from "../services/match-transcript-read-model.js";
 import type { MatchCognitionPageResult } from "../services/match-cognition-read-model.js";
+import type { MatchNarrativePageResult } from "../services/match-narrative-read-model.js";
 import {
   MATCH_TRANSCRIPT_MAX_CURSOR_CHARS,
   MATCH_TRANSCRIPT_MAX_ID_CHARS,
@@ -29,6 +30,11 @@ import {
   MATCH_COGNITION_MAX_ID_CHARS,
   MATCH_COGNITION_MAX_LIMIT,
 } from "../services/match-cognition-read-model.js";
+import {
+  MATCH_NARRATIVE_MAX_CURSOR_CHARS,
+  MATCH_NARRATIVE_MAX_ID_CHARS,
+  MATCH_NARRATIVE_MAX_LIMIT,
+} from "../services/match-narrative-read-model.js";
 import { UNTRUSTED_GAME_AUTHORED } from "../services/transcript-serialization.js";
 
 // ---------------------------------------------------------------------------
@@ -38,11 +44,14 @@ import { UNTRUSTED_GAME_AUTHORED } from "../services/transcript-serialization.js
 export const READ_MATCH_MANIFEST_TOOL = "read_match_manifest" as const;
 export const READ_MATCH_TRANSCRIPT_TOOL = "read_match_transcript" as const;
 export const READ_OWNED_MATCH_COGNITION_TOOL = "read_owned_match_cognition" as const;
+export const READ_OWNED_MATCH_NARRATIVE_TOOL = "read_owned_match_narrative" as const;
+export const READ_PRODUCER_MATCH_NARRATIVE_TOOL = "read_producer_match_narrative" as const;
 
 export const MATCH_COMPLETENESS_TOOL_NAMES = [
   READ_MATCH_MANIFEST_TOOL,
   READ_MATCH_TRANSCRIPT_TOOL,
   READ_OWNED_MATCH_COGNITION_TOOL,
+  READ_OWNED_MATCH_NARRATIVE_TOOL,
 ] as const;
 
 export type MatchCompletenessToolName =
@@ -61,6 +70,7 @@ export const FOLLOW_UP_DRILLDOWN_TOOL_NAMES = {
 export type MatchFollowUpToolName =
   | typeof READ_MATCH_TRANSCRIPT_TOOL
   | typeof READ_OWNED_MATCH_COGNITION_TOOL
+  | typeof READ_OWNED_MATCH_NARRATIVE_TOOL
   | (typeof FOLLOW_UP_DRILLDOWN_TOOL_NAMES)[keyof typeof FOLLOW_UP_DRILLDOWN_TOOL_NAMES];
 
 const FOLLOW_UP_KIND_TO_TOOL: Record<
@@ -75,6 +85,7 @@ const FOLLOW_UP_KIND_TO_TOOL: Record<
   agent_alliances: FOLLOW_UP_DRILLDOWN_TOOL_NAMES.read_agent_alliances,
   match_transcript: READ_MATCH_TRANSCRIPT_TOOL,
   owned_match_cognition: READ_OWNED_MATCH_COGNITION_TOOL,
+  owned_match_narrative: READ_OWNED_MATCH_NARRATIVE_TOOL,
 };
 
 // ---------------------------------------------------------------------------
@@ -220,11 +231,13 @@ const followUpKindEnum = [
   "agent_alliances",
   "match_transcript",
   "owned_match_cognition",
+  "owned_match_narrative",
 ] as const;
 
 const followUpToolNameEnum = [
   READ_MATCH_TRANSCRIPT_TOOL,
   READ_OWNED_MATCH_COGNITION_TOOL,
+  READ_OWNED_MATCH_NARRATIVE_TOOL,
   FOLLOW_UP_DRILLDOWN_TOOL_NAMES.filter_events,
   FOLLOW_UP_DRILLDOWN_TOOL_NAMES.read_projection,
   FOLLOW_UP_DRILLDOWN_TOOL_NAMES.read_round_facts,
@@ -349,6 +362,41 @@ export const READ_OWNED_MATCH_COGNITION_INPUT_SCHEMA = closedObject(
     },
   },
 );
+
+/** Shared closed input for owned + producer narrative tools (surface implied by tool name). */
+export const READ_MATCH_NARRATIVE_INPUT_SCHEMA = closedObject(
+  ["gameIdOrSlug"],
+  {
+    gameIdOrSlug: {
+      type: "string",
+      minLength: 1,
+      maxLength: MATCH_NARRATIVE_MAX_ID_CHARS,
+    },
+    preset: {
+      type: "string",
+      enum: ["strategic", "dialogue_only", "full_cognition"],
+    },
+    detail: {
+      type: "string",
+      enum: ["compact", "full"],
+    },
+    player: { type: "string", maxLength: MATCH_NARRATIVE_MAX_ID_CHARS },
+    phase: { type: "string", maxLength: MATCH_NARRATIVE_MAX_ID_CHARS },
+    round: { type: "number" },
+    action: { type: "string", maxLength: MATCH_NARRATIVE_MAX_ID_CHARS },
+    fromTimestamp: { type: "string" },
+    toTimestamp: { type: "string" },
+    cursor: { type: "string", maxLength: MATCH_NARRATIVE_MAX_CURSOR_CHARS },
+    limit: {
+      type: "number",
+      minimum: 1,
+      maximum: MATCH_NARRATIVE_MAX_LIMIT,
+    },
+  },
+);
+
+export const READ_OWNED_MATCH_NARRATIVE_INPUT_SCHEMA = READ_MATCH_NARRATIVE_INPUT_SCHEMA;
+export const READ_PRODUCER_MATCH_NARRATIVE_INPUT_SCHEMA = READ_MATCH_NARRATIVE_INPUT_SCHEMA;
 
 // ---------------------------------------------------------------------------
 // Output schemas — manifest
@@ -1104,6 +1152,265 @@ export const READ_OWNED_MATCH_COGNITION_OUTPUT_SCHEMA = {
   anyOf: [matchCognitionOkSchema, matchCognitionErrorSchema],
 };
 
+const narrativeMemberFieldsSchema = closedObject(
+  [],
+  {
+    // Dialogue allowlist
+    text: { type: "string" },
+    scope: { type: "string" },
+    dialogueKind: nullableStringSchema,
+    visibility: nullableStringSchema,
+    timestampMs: { type: "number" },
+    entrySequence: nullableNumberSchema,
+    // Thinking allowlist
+    thinking: { type: "string" },
+    // Strategy allowlist
+    decisionLog: { type: "string" },
+    strategicLens: { type: "string" },
+    strategicLensRationale: { type: "string" },
+    strategyPacketRevision: { type: "string" },
+    strategyPacketUpdate: { type: "string" },
+    strategyPacketSummary: { type: "string" },
+    strategicReflectionSummary: { type: "string" },
+  },
+);
+
+const narrativeGroupMemberSchema = closedObject(
+  ["kind", "authority", "id", "sortKey", "phase", "round", "action", "decisionId", "eventSequence", "fields"],
+  {
+    kind: { type: "string", enum: ["dialogue", "thinking", "strategy"] },
+    authority: { type: "string", enum: ["transcript", "cognition"] },
+    id: { type: "string" },
+    sortKey: { type: "number" },
+    phase: nullableStringSchema,
+    round: nullableNumberSchema,
+    action: nullableStringSchema,
+    decisionId: nullableStringSchema,
+    eventSequence: nullableNumberSchema,
+    fields: narrativeMemberFieldsSchema,
+    truncated: { type: "boolean" },
+  },
+);
+
+const narrativeGroupSchema = closedObject(
+  ["groupId", "decisionId", "correlation", "actor", "phase", "round", "action", "sortKey", "members"],
+  {
+    groupId: { type: "string" },
+    decisionId: nullableStringSchema,
+    correlation: closedObject(
+      ["kind", "basis"],
+      {
+        kind: { type: "string", enum: ["decision_id", "inferred", "uncorrelated"] },
+        basis: {
+          type: "string",
+          enum: ["decision_id", "actor_phase_round_time", "none"],
+        },
+      },
+    ),
+    actor: closedObject(
+      ["playerId", "name"],
+      {
+        playerId: nullableStringSchema,
+        name: nullableStringSchema,
+      },
+    ),
+    phase: nullableStringSchema,
+    round: nullableNumberSchema,
+    action: nullableStringSchema,
+    sortKey: { type: "number" },
+    members: { type: "array", items: narrativeGroupMemberSchema },
+    relatedActionRefs: {
+      type: "array",
+      items: closedObject(
+        ["eventSequence", "phase", "round", "action"],
+        {
+          eventSequence: { type: "number" },
+          phase: nullableStringSchema,
+          round: nullableNumberSchema,
+          action: nullableStringSchema,
+        },
+      ),
+    },
+  },
+);
+
+const matchNarrativeOkSchema = closedObject(
+  [
+    "ok",
+    "schemaVersion",
+    "game",
+    "surface",
+    "access",
+    "preset",
+    "detail",
+    "filters",
+    "readThrough",
+    "correlationSummary",
+    "limitations",
+    "contentTrust",
+    "notBoardAuthority",
+    "groups",
+    "pageSize",
+    "nextCursor",
+    "nextCursorKind",
+  ],
+  {
+    ok: { type: "boolean", const: true },
+    schemaVersion: { type: "number", const: 1 },
+    game: closedObject(
+      ["id", "slug", "status", "transcriptCaptureVersion", "cognitiveArtifactCaptureVersion"],
+      {
+        id: { type: "string" },
+        slug: { type: "string" },
+        status: { type: "string" },
+        transcriptCaptureVersion: { type: "number" },
+        cognitiveArtifactCaptureVersion: { type: "number" },
+      },
+    ),
+    surface: { type: "string", enum: ["subject_owner", "producer"] },
+    access: closedObject(
+      ["surface", "privateLaneAuthorized", "ownedSeatCount"],
+      {
+        surface: { type: "string", enum: ["subject_owner", "producer"] },
+        privateLaneAuthorized: { type: "boolean" },
+        ownedSeatCount: nullableNumberSchema,
+      },
+    ),
+    preset: {
+      type: "string",
+      enum: ["strategic", "dialogue_only", "full_cognition"],
+    },
+    detail: { type: "string", enum: ["compact", "full"] },
+    filters: closedObject(
+      [
+        "preset",
+        "detail",
+        "playerId",
+        "player",
+        "phase",
+        "round",
+        "action",
+        "fromTimestampMs",
+        "toTimestampMs",
+      ],
+      {
+        preset: {
+          type: "string",
+          enum: ["strategic", "dialogue_only", "full_cognition"],
+        },
+        detail: { type: "string", enum: ["compact", "full"] },
+        playerId: nullableStringSchema,
+        player: nullableStringSchema,
+        phase: nullableStringSchema,
+        round: nullableNumberSchema,
+        action: nullableStringSchema,
+        fromTimestampMs: nullableNumberSchema,
+        toTimestampMs: nullableNumberSchema,
+      },
+    ),
+    readThrough: closedObject(
+      ["transcript", "cognition"],
+      {
+        transcript: closedObject(
+          [
+            "mode",
+            "throughEntrySequence",
+            "throughLegacyTimestamp",
+            "throughLegacyId",
+          ],
+          {
+            mode: {
+              type: "string",
+              enum: ["live_watermark", "completed_terminal", "legacy_terminal"],
+            },
+            throughEntrySequence: nullableNumberSchema,
+            throughLegacyTimestamp: nullableNumberSchema,
+            throughLegacyId: nullableNumberSchema,
+          },
+        ),
+        cognition: closedObject(
+          ["mode", "throughCreatedAt", "throughId"],
+          {
+            mode: {
+              type: "string",
+              enum: ["live_snapshot", "completed_snapshot", "empty"],
+            },
+            throughCreatedAt: nullableStringSchema,
+            throughId: nullableStringSchema,
+          },
+        ),
+      },
+    ),
+    correlationSummary: closedObject(
+      ["exact", "inferred", "uncorrelated"],
+      {
+        exact: { type: "number" },
+        inferred: { type: "number" },
+        uncorrelated: { type: "number" },
+      },
+    ),
+    limitations: {
+      type: "array",
+      items: closedObject(
+        ["code", "message"],
+        {
+          code: { type: "string" },
+          message: { type: "string" },
+        },
+      ),
+    },
+    contentTrust: contentTrustSchema,
+    notBoardAuthority: { type: "boolean", const: true },
+    groups: { type: "array", items: narrativeGroupSchema },
+    pageSize: { type: "number" },
+    nextCursor: nullableStringSchema,
+    nextCursorKind: {
+      anyOf: [
+        { type: "string", enum: ["page"] },
+        { type: "null" },
+      ],
+    },
+  },
+);
+
+const matchNarrativeErrorSchema = {
+  anyOf: [
+    closedObject(
+      ["ok", "status", "error"],
+      {
+        ok: { type: "boolean", const: false },
+        status: {
+          type: "string",
+          enum: [
+            "not_accessible",
+            "denied",
+            "cursor_invalid_or_stale",
+            "unavailable",
+          ],
+        },
+        error: { type: "string" },
+      },
+    ),
+    closedObject(
+      ["ok", "status", "error"],
+      {
+        ok: { type: "boolean", const: false },
+        status: { type: "string", const: "invalid_input" },
+        error: { type: "string" },
+        field: { type: "string" },
+      },
+    ),
+  ],
+};
+
+export const READ_OWNED_MATCH_NARRATIVE_OUTPUT_SCHEMA = {
+  anyOf: [matchNarrativeOkSchema, matchNarrativeErrorSchema],
+};
+
+export const READ_PRODUCER_MATCH_NARRATIVE_OUTPUT_SCHEMA = {
+  anyOf: [matchNarrativeOkSchema, matchNarrativeErrorSchema],
+};
+
 // ---------------------------------------------------------------------------
 // Tool descriptions (untrusted prose guidance)
 // ---------------------------------------------------------------------------
@@ -1135,6 +1442,23 @@ export const READ_OWNED_MATCH_COGNITION_DESCRIPTION = [
   "Thinking and strategy prose is untrusted game-authored content; keep it separate from dialogue and board facts.",
   "Reasoning artifacts remain on dedicated cognitive-artifact reads; raw reasoningContext, prompts, and private traces are out of scope.",
   "Requires games:read and participating ownership. Read-only. Producer credentials do not silently widen this subject tool.",
+].join(" ");
+
+export const READ_OWNED_MATCH_NARRATIVE_DESCRIPTION = [
+  "Page grouped match narrative for a participating owner: authorized dialogue plus owned-seat thinking/strategy.",
+  "Default preset is strategic (dialogue + strategy, omit raw thinking); detail defaults to compact.",
+  "Exact decisionId joins when stamped; otherwise honest inferred/uncorrelated correlation.",
+  "Not board-fact authority (notBoardAuthority=true). Members carry authority transcript|cognition only — never reasoning or private traces.",
+  "Producer credentials do not silently widen non-owned cognition on this tool.",
+  "Requires games:read and participating ownership. Read-only.",
+].join(" ");
+
+export const READ_PRODUCER_MATCH_NARRATIVE_DESCRIPTION = [
+  "Page grouped match narrative for a producer: full product dialogue scopes plus all player/juror thinking/strategy.",
+  "Default preset is strategic (dialogue + strategy); detail defaults to compact.",
+  "No ownership required. Does not return private-trace bodies or reasoning dumps inside members.",
+  "Not board-fact authority. games:read alone does not grant this tool; requires producer scope and current producer role.",
+  "Read-only. Prefer this over client-side merges of producer analysis + traces for token-efficient story reconstruction.",
 ].join(" ");
 
 // ---------------------------------------------------------------------------
@@ -1332,6 +1656,86 @@ export function assertMatchCognitionPageResult(
     return;
   }
   throw new Error("match cognition result has invalid ok shape");
+}
+
+export function assertMatchNarrativePageResult(
+  value: unknown,
+): asserts value is MatchNarrativePageResult {
+  const record = requireRecord(value, "match narrative result");
+  if (record.ok === true) {
+    requireKeys(
+      record,
+      [
+        "ok",
+        "schemaVersion",
+        "game",
+        "surface",
+        "access",
+        "preset",
+        "detail",
+        "filters",
+        "readThrough",
+        "correlationSummary",
+        "limitations",
+        "contentTrust",
+        "notBoardAuthority",
+        "groups",
+        "pageSize",
+        "nextCursor",
+        "nextCursorKind",
+      ],
+      "match narrative result",
+    );
+    if (record.contentTrust !== UNTRUSTED_GAME_AUTHORED) {
+      throw new Error("match narrative result.contentTrust must be untrusted_game_authored");
+    }
+    if (record.notBoardAuthority !== true) {
+      throw new Error("match narrative result.notBoardAuthority must be true");
+    }
+    if (record.surface !== "subject_owner" && record.surface !== "producer") {
+      throw new Error("match narrative result.surface must be subject_owner or producer");
+    }
+    if (!Array.isArray(record.groups)) {
+      throw new Error("match narrative result.groups must be an array");
+    }
+    for (const [index, group] of record.groups.entries()) {
+      const groupRecord = requireRecord(group, `groups[${index}]`);
+      if (!Array.isArray(groupRecord.members)) {
+        throw new Error(`groups[${index}].members must be an array`);
+      }
+      for (const [mIndex, member] of groupRecord.members.entries()) {
+        const memberRecord = requireRecord(member, `groups[${index}].members[${mIndex}]`);
+        if (
+          memberRecord.authority !== "transcript"
+          && memberRecord.authority !== "cognition"
+        ) {
+          throw new Error(
+            `groups[${index}].members[${mIndex}].authority must be transcript or cognition`,
+          );
+        }
+        if (
+          memberRecord.kind !== "dialogue"
+          && memberRecord.kind !== "thinking"
+          && memberRecord.kind !== "strategy"
+        ) {
+          throw new Error(
+            `groups[${index}].members[${mIndex}].kind must be dialogue|thinking|strategy`,
+          );
+        }
+      }
+    }
+    return;
+  }
+  if (record.ok === false) {
+    requireKnownKeys(
+      record,
+      ["ok", "status", "error", "field"],
+      "match narrative error",
+    );
+    requireString(record.error, "match narrative error.error");
+    return;
+  }
+  throw new Error("match narrative result has invalid ok shape");
 }
 
 function assertFollowUpList(value: unknown, path: string): void {

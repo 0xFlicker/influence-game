@@ -197,7 +197,13 @@ describe("match-completeness compose (table-driven)", () => {
       expectOverall: "complete",
       expectTranscriptCompleteness: "complete",
       expectFactCompleteness: "complete",
-      capabilityKinds: ["match_transcript", "canonical_events", "owned_match_cognition", "postgame_analysis"],
+      capabilityKinds: [
+        "owned_match_narrative",
+        "match_transcript",
+        "canonical_events",
+        "owned_match_cognition",
+        "postgame_analysis",
+      ],
     },
     {
       name: "live game → live_current through watermarks, never complete",
@@ -225,7 +231,11 @@ describe("match-completeness compose (table-driven)", () => {
       expectCognitionAuth: "denied",
       expectFactCompleteness: "complete",
       capabilityKinds: ["canonical_events"],
-      absentCapabilityKinds: ["match_transcript", "owned_match_cognition"],
+      absentCapabilityKinds: [
+        "match_transcript",
+        "owned_match_cognition",
+        "owned_match_narrative",
+      ],
     },
     {
       name: "Season 0 completed with transcript → watchable_with_diagnostics + legacy parity",
@@ -307,7 +317,7 @@ describe("match-completeness compose (table-driven)", () => {
       },
       expectOverall: "complete",
       expectCognitionAuth: "authorized",
-      absentCapabilityKinds: ["owned_match_cognition"],
+      absentCapabilityKinds: ["owned_match_cognition", "owned_match_narrative"],
     },
   ];
 
@@ -788,6 +798,9 @@ describe("readMatchManifest integration", () => {
     expect(result.manifest.lanes.transcript.completeness).toBe("current");
     expect(result.manifest.nextReads.some((c) => c.kind === "match_transcript")).toBe(true);
     expect(result.manifest.nextReads.some((c) => c.kind === "owned_match_cognition")).toBe(true);
+    expect(result.manifest.nextReads.some((c) => c.kind === "owned_match_narrative")).toBe(true);
+    // Owned narrative is first among private-lane nextReads when authorized.
+    expect(result.manifest.nextReads[0]?.kind).toBe("owned_match_narrative");
     for (const cap of result.manifest.nextReads) {
       expect(cap.starterArguments.gameIdOrSlug).toBeTruthy();
       expect(JSON.stringify(cap)).not.toMatch(/read_match_|toolName/);

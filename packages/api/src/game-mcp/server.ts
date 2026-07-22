@@ -78,7 +78,16 @@ import {
   READ_OWNED_MATCH_COGNITION_INPUT_SCHEMA,
   READ_OWNED_MATCH_COGNITION_OUTPUT_SCHEMA,
   READ_OWNED_MATCH_COGNITION_TOOL,
+  READ_OWNED_MATCH_NARRATIVE_DESCRIPTION,
+  READ_OWNED_MATCH_NARRATIVE_INPUT_SCHEMA,
+  READ_OWNED_MATCH_NARRATIVE_OUTPUT_SCHEMA,
+  READ_OWNED_MATCH_NARRATIVE_TOOL,
+  READ_PRODUCER_MATCH_NARRATIVE_DESCRIPTION,
+  READ_PRODUCER_MATCH_NARRATIVE_INPUT_SCHEMA,
+  READ_PRODUCER_MATCH_NARRATIVE_OUTPUT_SCHEMA,
+  READ_PRODUCER_MATCH_NARRATIVE_TOOL,
   assertMatchCognitionPageResult,
+  assertMatchNarrativePageResult,
   assertMatchTranscriptPageResult,
   assertMcpMatchManifestResult,
   toMcpMatchManifestResult,
@@ -86,6 +95,7 @@ import {
 import type { MatchManifestResult } from "../services/match-completeness.js";
 import type { MatchTranscriptPageResult } from "../services/match-transcript-read-model.js";
 import type { MatchCognitionPageResult } from "../services/match-cognition-read-model.js";
+import type { MatchNarrativePageResult } from "../services/match-narrative-read-model.js";
 
 export interface JsonRpcRequest {
   jsonrpc?: "2.0";
@@ -347,6 +357,20 @@ export class ProductionGameMcpJsonRpcServer {
         requireScopes(auth, ["games:read"]);
         return matchCognitionContent(
           await this.readModel.readOwnedMatchCognition(args, auth),
+        );
+      }
+      if (name === READ_OWNED_MATCH_NARRATIVE_TOOL) {
+        // games:read only — no producer silent widen of owned narrative.
+        requireScopes(auth, ["games:read"]);
+        return matchNarrativeContent(
+          await this.readModel.readOwnedMatchNarrative(args, auth),
+        );
+      }
+      if (name === READ_PRODUCER_MATCH_NARRATIVE_TOOL) {
+        // producer scope + role only — games:read alone must not grant this tool.
+        requireScopes(auth, ["producer"]);
+        return matchNarrativeContent(
+          await this.readModel.readProducerMatchNarrative(args, auth),
         );
       }
       if (name === "get_rules") {
@@ -855,6 +879,14 @@ function productionGameMcpTools(
       outputSchema: postgameOutputSchema("producerAnalysis"),
     }),
     tool({
+      name: READ_PRODUCER_MATCH_NARRATIVE_TOOL,
+      description: READ_PRODUCER_MATCH_NARRATIVE_DESCRIPTION,
+      inputSchema: READ_PRODUCER_MATCH_NARRATIVE_INPUT_SCHEMA,
+      scopes: ["producer"],
+      readOnlyHint: true,
+      outputSchema: READ_PRODUCER_MATCH_NARRATIVE_OUTPUT_SCHEMA,
+    }),
+    tool({
       name: "list_trace_manifests",
       description: "List private trace manifests for one game without returning raw trace content.",
       properties: {
@@ -937,6 +969,14 @@ function matchCompletenessTools(): GameMcpToolDescriptor[] {
       readOnlyHint: true,
       outputSchema: READ_OWNED_MATCH_COGNITION_OUTPUT_SCHEMA,
     }),
+    tool({
+      name: READ_OWNED_MATCH_NARRATIVE_TOOL,
+      description: READ_OWNED_MATCH_NARRATIVE_DESCRIPTION,
+      inputSchema: READ_OWNED_MATCH_NARRATIVE_INPUT_SCHEMA,
+      scopes: ["games:read"],
+      readOnlyHint: true,
+      outputSchema: READ_OWNED_MATCH_NARRATIVE_OUTPUT_SCHEMA,
+    }),
   ];
 }
 
@@ -991,6 +1031,17 @@ function matchCognitionContent(value: MatchCognitionPageResult): {
   content: Array<{ type: "text"; text: string }>;
 } {
   assertMatchCognitionPageResult(value);
+  return {
+    structuredContent: value,
+    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+  };
+}
+
+function matchNarrativeContent(value: MatchNarrativePageResult): {
+  structuredContent: unknown;
+  content: Array<{ type: "text"; text: string }>;
+} {
+  assertMatchNarrativePageResult(value);
   return {
     structuredContent: value,
     content: [{ type: "text", text: JSON.stringify(value, null, 2) }],

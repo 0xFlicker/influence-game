@@ -66,6 +66,11 @@ import {
   type ReadMatchCognitionInput,
 } from "../services/match-cognition-read-model.js";
 import {
+  readMatchNarrativePage,
+  type MatchNarrativePageResult,
+  type ReadMatchNarrativeInput,
+} from "../services/match-narrative-read-model.js";
+import {
   readMatchManifest,
   type MatchManifestResult,
   type ReadMatchManifestInput,
@@ -441,6 +446,48 @@ export class ProductionGameMcpReadModel {
     }
     return readMatchCognitionPage(this.db, input, {
       subjectUserId: access.userId,
+    });
+  }
+
+  /**
+   * Owned-seat match narrative (subject_owner surface). Surface is fixed by this
+   * adapter — never taken from client input.
+   */
+  async readOwnedMatchNarrative(
+    input: ReadMatchNarrativeInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchNarrativePageResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchNarrativePage(this.db, input, {
+      subjectUserId: access.userId,
+      surface: "subject_owner",
+    });
+  }
+
+  /**
+   * Producer match narrative (producer surface). Requires producer tool auth at
+   * the catalog layer; domain does not re-check producer role.
+   */
+  async readProducerMatchNarrative(
+    input: ReadMatchNarrativeInput | Record<string, unknown>,
+    access: ProductionGameMcpAccess,
+  ): Promise<MatchNarrativePageResult> {
+    if (!access.userId) {
+      return {
+        ok: false,
+        status: "not_accessible",
+        error: "Game is not accessible",
+      };
+    }
+    return readMatchNarrativePage(this.db, input, {
+      subjectUserId: access.userId,
+      surface: "producer",
     });
   }
 

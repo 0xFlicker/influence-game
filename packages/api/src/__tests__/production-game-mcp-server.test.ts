@@ -715,6 +715,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_producer_season_diagnostics",
       "inspect_durable_run",
       "read_producer_game_analysis",
+      "read_producer_match_narrative",
       "list_trace_manifests",
       "read_trace_content",
       "search_reasoning_traces",
@@ -724,6 +725,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(tools)).not.toContain("read_match_manifest");
     expect(JSON.stringify(tools)).not.toContain("read_match_transcript");
     expect(JSON.stringify(tools)).not.toContain("read_owned_match_cognition");
+    expect(JSON.stringify(tools)).not.toContain("read_owned_match_narrative");
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"producer\"]");
     expect(JSON.stringify(tools)).not.toContain("start_game");
     expect(JSON.stringify(tools)).not.toContain("retry_game_settlement");
@@ -838,6 +840,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_match_manifest",
       "read_match_transcript",
       "read_owned_match_cognition",
+      "read_owned_match_narrative",
       "get_rules",
       "search_rules",
       "list_archetypes",
@@ -857,6 +860,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(tools)).toContain("private huddle artifacts, which remain owner-only");
     expect(JSON.stringify(tools)).toContain("\"scopes\":[\"agents:read\",\"agents:write\"]");
     expect(JSON.stringify(tools)).not.toContain("read_trace_content");
+    expect(JSON.stringify(tools)).not.toContain("read_producer_match_narrative");
     expect(JSON.stringify(tools)).not.toContain("\"scopes\":[\"producer\"]");
     expect(JSON.stringify(tools)).not.toContain("\"vote\"");
     expect(JSON.stringify(tools)).not.toContain("mingle_message");
@@ -868,6 +872,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_match_manifest",
       "read_match_transcript",
       "read_owned_match_cognition",
+      "read_owned_match_narrative",
     ] as const;
     for (const name of matchTools) {
       const matchTool = tools.find((tool) => (tool as { name: string }).name === name) as {
@@ -2022,12 +2027,17 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         calls.push({ method: "readOwnedMatchCognition", access });
         return denied;
       },
+      readOwnedMatchNarrative: async (_args: unknown, access: unknown) => {
+        calls.push({ method: "readOwnedMatchNarrative", access });
+        return denied;
+      },
     }));
 
     for (const name of [
       "read_match_manifest",
       "read_match_transcript",
       "read_owned_match_cognition",
+      "read_owned_match_narrative",
     ] as const) {
       const producerDenied = await server.handle({
         jsonrpc: "2.0",
@@ -2047,6 +2057,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_match_manifest",
       "read_match_transcript",
       "read_owned_match_cognition",
+      "read_owned_match_narrative",
     ] as const) {
       const subject = await server.handle({
         jsonrpc: "2.0",
@@ -2066,6 +2077,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       { method: "readMatchManifest", access: GAMES_AUTH },
       { method: "readMatchTranscript", access: GAMES_AUTH },
       { method: "readOwnedMatchCognition", access: GAMES_AUTH },
+      { method: "readOwnedMatchNarrative", access: GAMES_AUTH },
     ]);
   });
 
@@ -2265,6 +2277,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
             optional: true as const,
             diagnostics: [],
             followUpCapabilities: [{
+              kind: "owned_match_narrative" as const,
+              purpose: "Page grouped owned narrative.",
+              starterArguments: { gameIdOrSlug: "g1" },
+            }, {
               kind: "owned_match_cognition" as const,
               purpose: "Page owned thinking and strategy.",
               starterArguments: { gameIdOrSlug: "g1" },
@@ -2306,6 +2322,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         },
         nextReads: [
           {
+            kind: "owned_match_narrative" as const,
+            purpose: "Page grouped owned narrative.",
+            starterArguments: { gameIdOrSlug: "g1" },
+          },
+          {
             kind: "match_transcript" as const,
             purpose: "Page authorized dialogue.",
             starterArguments: { gameIdOrSlug: "g1" },
@@ -2345,6 +2366,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     };
     expect(result.structuredContent.ok).toBe(true);
     expect(result.structuredContent.manifest.nextReads.map((cap) => cap.toolName)).toEqual([
+      "read_owned_match_narrative",
       "read_match_transcript",
       "filter_events",
       "read_owned_match_cognition",
@@ -2361,18 +2383,23 @@ describe("ProductionGameMcpJsonRpcServer", () => {
 
   test("rejects producer-only tools for games-scope auth", async () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel());
-    const response = await server.handle({
-      jsonrpc: "2.0",
-      id: "trace-tool",
-      method: "tools/call",
-      params: { name: "read_trace_content", arguments: { manifestId: "m1" } },
-    }, GAMES_AUTH);
+    for (const [name, args] of [
+      ["read_trace_content", { manifestId: "m1" }],
+      ["read_producer_match_narrative", { gameIdOrSlug: "game-1" }],
+    ] as const) {
+      const response = await server.handle({
+        jsonrpc: "2.0",
+        id: `producer-only-${name}`,
+        method: "tools/call",
+        params: { name, arguments: args },
+      }, GAMES_AUTH);
 
-    expect(response?.error).toEqual({
-      code: -32000,
-      message: "Unknown or unauthorized MCP tool",
-    });
-    expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
+      expect(response?.error).toEqual({
+        code: -32000,
+        message: "Unknown or unauthorized MCP tool",
+      });
+      expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
+    }
   });
 
   test("rejects active-match-shaped user tool calls", async () => {
@@ -2595,6 +2622,16 @@ function fakeReadModel(
       error: "Game is not accessible",
     }),
     readOwnedMatchCognition: async () => ({
+      ok: false,
+      status: "not_accessible",
+      error: "Game is not accessible",
+    }),
+    readOwnedMatchNarrative: async () => ({
+      ok: false,
+      status: "not_accessible",
+      error: "Game is not accessible",
+    }),
+    readProducerMatchNarrative: async () => ({
       ok: false,
       status: "not_accessible",
       error: "Game is not accessible",

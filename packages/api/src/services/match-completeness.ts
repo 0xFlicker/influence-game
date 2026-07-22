@@ -70,7 +70,8 @@ export type MatchFollowUpCapabilityKind =
   | "postgame_analysis"
   | "agent_alliances"
   | "match_transcript"
-  | "owned_match_cognition";
+  | "owned_match_cognition"
+  | "owned_match_narrative";
 
 export interface MatchFollowUpCapability {
   kind: MatchFollowUpCapabilityKind;
@@ -749,6 +750,13 @@ function buildCognitionLane(
 
   const followUpCapabilities: MatchFollowUpCapability[] = [];
   if (availability !== "unavailable") {
+    // Owned narrative is the recommended private-lane first read (R4).
+    followUpCapabilities.push({
+      kind: "owned_match_narrative",
+      purpose:
+        "Page grouped owned-seat dialogue + strategy (default strategic) as the compact private story.",
+      starterArguments: { gameIdOrSlug: gameRef },
+    });
     followUpCapabilities.push({
       kind: "owned_match_cognition",
       purpose:
@@ -885,11 +893,17 @@ function collectNextReads(params: {
   gameStatus: string;
 }): MatchFollowUpCapability[] {
   const next: MatchFollowUpCapability[] = [];
-  // Prefer transcript first when authorized (guided three-lane load).
+  // Owned narrative first among private-lane nextReads when authorized (R4).
+  next.push(
+    ...params.cognition.followUpCapabilities.filter((c) => c.kind === "owned_match_narrative"),
+  );
+  // Prefer transcript when authorized (guided three-lane load).
   next.push(...params.transcript.followUpCapabilities.filter((c) => c.kind === "match_transcript"));
   next.push(...params.facts.followUpCapabilities.filter((c) => c.kind === "canonical_events"));
   next.push(...params.facts.followUpCapabilities.filter((c) => c.kind === "round_facts"));
-  next.push(...params.cognition.followUpCapabilities);
+  next.push(
+    ...params.cognition.followUpCapabilities.filter((c) => c.kind !== "owned_match_narrative"),
+  );
   next.push(...params.transcript.followUpCapabilities.filter((c) => c.kind === "agent_alliances"));
   if (!params.live && params.gameStatus === "completed") {
     next.push(...params.facts.followUpCapabilities.filter((c) => c.kind === "postgame_analysis"));
