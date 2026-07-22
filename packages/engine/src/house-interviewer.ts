@@ -6,6 +6,7 @@
  * contextual, personality-driven questions generated via LLM.
  */
 
+import { randomUUID } from "crypto";
 import type OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import type { LlmToolChoiceMode } from "./llm-client";
@@ -683,10 +684,12 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     const content = typeof message?.content === "string" ? message.content : null;
     const requestedReasoningEffort = this.requestedReasoningEffort();
     const privateTraceMessages = LLMHouseInterviewer.privateTraceMessages(params.messages);
+    const decisionId = randomUUID();
     const trace: PrivateDecisionTrace = {
       version: 2,
       ...(params.context.gameId && { gameId: params.context.gameId }),
       ...(params.context.ownerEpoch && { ownerEpoch: params.context.ownerEpoch }),
+      decisionId,
       action: params.context.action,
       actor: params.context.actor,
       ...(params.context.phase && { phase: params.context.phase }),

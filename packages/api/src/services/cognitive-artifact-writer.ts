@@ -209,6 +209,7 @@ export async function writeCognitiveArtifactsForTrace(
           gameId: input.gameId,
           captureVersion: input.captureVersion,
           ...(eventSequence !== undefined && { eventSequence }),
+          ...(input.trace.decisionId && { decisionId: input.trace.decisionId }),
           artifactType: draft.artifactType,
           actorRole: input.trace.actor.role as CognitiveArtifactActorRole,
           ...actorMetadata,

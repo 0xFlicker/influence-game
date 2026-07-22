@@ -248,7 +248,7 @@ export interface FormalSpeechAgentTurnInput {
   thinking?: string;
   reasoningContext?: string;
   /** Optional thinking/reasoning for transcript row (viewer-only). */
-  transcriptThinking?: { thinking?: string; reasoningContext?: string };
+  transcriptThinking?: { thinking?: string; reasoningContext?: string; decisionId?: string };
 }
 
 export interface CommitAcceptedFormalSpeechResult {
@@ -313,6 +313,9 @@ export function commitAcceptedFormalSpeech(
     dialogueContext: {
       version: 1,
       formalSpeechCorrelationKey: speech.correlationKey,
+      ...(agentTurn.transcriptThinking?.decisionId
+        ? { decisionId: agentTurn.transcriptThinking.decisionId }
+        : {}),
     },
   });
 

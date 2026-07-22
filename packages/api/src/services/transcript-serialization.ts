@@ -169,6 +169,9 @@ function modernFieldsForCurrentCapture(
     ...(entry.dialogueContext?.formalSpeechCorrelationKey && {
       formalSpeechCorrelationKey: entry.dialogueContext.formalSpeechCorrelationKey,
     }),
+    ...(entry.dialogueContext?.decisionId && {
+      decisionId: entry.dialogueContext.decisionId,
+    }),
   };
 
   return {
@@ -225,6 +228,8 @@ export const TRANSCRIPT_DTO_FORBIDDEN_KEYS = [
   "provider_response",
   "decisionLog",
   "decision_log",
+  "decisionId",
+  "decision_id",
   "trace",
   "traceId",
   "traceKey",

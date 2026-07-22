@@ -151,6 +151,8 @@ export class TranscriptLogger {
       displayOrder?: number;
       thinking?: string;
       reasoningContext?: string;
+      /** Durable private-decision id for narrative correlation (forward path). */
+      decisionId?: string;
       /** Optional modern dialogue context (e.g. formal-speech correlation). */
       dialogueContext?: TranscriptDialogueContext;
     },
@@ -164,9 +166,13 @@ export class TranscriptLogger {
       ...(opts?.anonymous && { anonymous: true }),
       ...(opts?.displayOrder != null && { displayOrder: opts.displayOrder }),
     });
-    const dialogueContext: TranscriptDialogueContext = opts?.dialogueContext
-      ? { ...opts.dialogueContext, version: 1 }
-      : { version: 1 };
+    const dialogueContext: TranscriptDialogueContext = {
+      version: 1,
+      ...(opts?.dialogueContext ?? {}),
+      ...((opts?.decisionId ?? opts?.dialogueContext?.decisionId)
+        ? { decisionId: opts.decisionId ?? opts.dialogueContext?.decisionId }
+        : {}),
+    };
     const entry: TranscriptEntry = {
       round: this.gameState.round,
       phase,
@@ -195,6 +201,7 @@ export class TranscriptLogger {
     thinking?: string,
     reasoningContext?: string,
     phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
+    decisionId?: string,
   ): void {
     const fromName = this.gameState.getPlayerName(fromId);
     const toNames = toIds.map((id) => this.gameState.getPlayerName(id));
@@ -214,6 +221,7 @@ export class TranscriptLogger {
       dialogueContext: {
         version: 1,
         ...(roomId != null && { roomId }),
+        ...(decisionId && { decisionId }),
       },
       ...(roomId != null && { roomId }),
       ...(thinking && { thinking }),
@@ -236,6 +244,7 @@ export class TranscriptLogger {
       window?: string;
       /** Exact session-time audience including the speaker. */
       sessionAudiencePlayerIds: readonly string[];
+      decisionId?: string;
     },
   ): void {
     const fromName = this.gameState.getPlayerName(fromId);
@@ -250,6 +259,7 @@ export class TranscriptLogger {
       ...(huddleContext?.scheduleId && { scheduleId: huddleContext.scheduleId }),
       ...(huddleContext?.sessionId && { sessionId: huddleContext.sessionId }),
       ...(huddleContext?.window && { window: huddleContext.window }),
+      ...(huddleContext?.decisionId && { decisionId: huddleContext.decisionId }),
     };
     const entry: TranscriptEntry = {
       round: this.gameState.round,

@@ -332,6 +332,11 @@ export interface AgentResponse {
   strategicLens?: StrategicLens;
   /** Compact private rationale for the selected strategic lens. */
   strategicLensRationale?: string;
+  /**
+   * Durable private-decision id minted with the private decision trace when present.
+   * Used to correlate dialogue with owned cognition; not board-fact authority.
+   */
+  decisionId?: UUID;
 }
 
 export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "system" | "producer";
@@ -386,6 +391,12 @@ export interface PrivateDecisionTrace {
   version: 2;
   gameId?: UUID;
   ownerEpoch?: string;
+  /**
+   * Durable id for one private decision commit. Shared by thinking/strategy
+   * artifacts and resulting dialogue rows for exact narrative correlation.
+   * Forward-path only; never invented at read time for legacy rows.
+   */
+  decisionId?: UUID;
   action: string;
   actor: PrivateDecisionTraceActor;
   phase?: Phase;
@@ -847,6 +858,11 @@ export interface StrategicReflectionOptions {
 export interface IAgent {
   readonly id: UUID;
   readonly name: string;
+  /**
+   * Most recent private-decision id minted for this agent in the live run, when
+   * the implementation emits private decision traces. Optional for mock agents.
+   */
+  getLastPrivateDecisionId?(): UUID | undefined;
   /** Called once when the game starts */
   onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void;
   /** Called at the start of each phase with current game context */
@@ -1127,6 +1143,12 @@ export interface TranscriptDialogueContextV1 {
    * Enables parity without fuzzy text matching. Optional so legacy rows remain valid.
    */
   formalSpeechCorrelationKey?: string;
+  /**
+   * Durable private-decision id linking this speech to thinking/strategy from the
+   * same decision commit. Optional; forward-path only. Outside product-dialogue
+   * digest identity. Not exposed on owner match-transcript DTOs.
+   */
+  decisionId?: string;
 }
 
 export type TranscriptDialogueContext = TranscriptDialogueContextV1;

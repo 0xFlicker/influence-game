@@ -612,7 +612,16 @@ async function runMingleTurn(
 
         conversationHistory.push({ from: fromName, text: message });
         const transcriptThinking = transcriptThinkingFor(agent, resolvedAction.thinking, resolvedAction.reasoningContext);
-        logger.logMingleMessage(playerId, recipientIds, message, room.roomId, transcriptThinking.thinking, transcriptThinking.reasoningContext, phase);
+        logger.logMingleMessage(
+          playerId,
+          recipientIds,
+          message,
+          room.roomId,
+          transcriptThinking.thinking,
+          transcriptThinking.reasoningContext,
+          phase,
+          transcriptThinking.decisionId,
+        );
       }
 
       collectedTurns.push({

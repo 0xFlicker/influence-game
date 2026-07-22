@@ -526,6 +526,11 @@ export type TranscriptSafeContextV1 = {
    * digest identity (CanonicalDialogueContextV2 omits it).
    */
   formalSpeechCorrelationKey?: string;
+  /**
+   * Durable private-decision id for narrative correlation. Optional; forward-path
+   * only. Outside product-dialogue digests. Not exposed on match-transcript DTOs.
+   */
+  decisionId?: string;
 };
 
 export type TranscriptSafeContext = TranscriptSafeContextV1;
@@ -1645,6 +1650,11 @@ export const gameCognitiveArtifacts = pgTable("game_cognitive_artifacts", {
     .references(() => games.id),
   captureVersion: integer("capture_version").notNull().default(1),
   eventSequence: integer("event_sequence"),
+  /**
+   * Durable private-decision id shared with dialogue modern capture for narrative
+   * exact correlation. Nullable; never backfilled on historical rows.
+   */
+  decisionId: text("decision_id"),
   artifactType: text("artifact_type").notNull().$type<CognitiveArtifactType>(),
   actorRole: text("actor_role").notNull().$type<CognitiveArtifactActorRole>(),
   actorPlayerId: text("actor_player_id").references(() => gamePlayers.id),
@@ -1669,6 +1679,7 @@ export const gameCognitiveArtifacts = pgTable("game_cognitive_artifacts", {
   index("game_cognitive_artifacts_game_phase_round_idx").on(table.gameId, table.phase, table.round),
   index("game_cognitive_artifacts_game_action_idx").on(table.gameId, table.action),
   index("game_cognitive_artifacts_event_sequence_idx").on(table.gameId, table.eventSequence),
+  index("game_cognitive_artifacts_game_decision_id_idx").on(table.gameId, table.decisionId),
   foreignKey({
     name: "game_cognitive_artifacts_event_boundary_fk",
     columns: [table.gameId, table.eventSequence],
