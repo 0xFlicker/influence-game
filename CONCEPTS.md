@@ -18,6 +18,17 @@ Three independent authority lanes for loading a watchable match story over MCP (
 
 `read_match_manifest` reports each lane's availability, completeness, watermarks, and typed `nextReads` (registered tool names + starter arguments). Formal-speech parity is a cross-lane diagnostic only. Red lines: no private-trace backfill, no historical reconstruction, no hidden-row leakage through pagination or denials.
 
+## Match narrative
+
+A server-composed, bounded Production Game MCP projection that groups product dialogue with thinking/strategy into compact decision/action records. It is a **derived presentation**, not a fourth completeness authority: members keep explicit `transcript` or `cognition` authority; board claims still require canonical fact tools; private traces stay on producer trace tools.
+
+Two tools share one policy-parameterized core:
+
+- **`read_owned_match_narrative`** (`games:read`) — participating owner; dialogue via owner visibility; cognition only for owned seats (`subject_owner`). Producer role must not silent-widen this tool.
+- **`read_producer_match_narrative`** (`producer`) — full product dialogue scopes for the game plus all seats’ thinking/strategy under producer cognitive policy. Broader than owner, not a subset of it.
+
+Default `strategic` preset returns dialogue + strategy (omitting raw thinking). Correlation is exact when a durable `decisionId` is present; otherwise labeled inferred or uncorrelated for legacy rows (no unsafe backfill).
+
 ## Mingle I
 
 The pre-vote Mingle window in a normal pre-endgame round. It starts with private-room conversation and movement, then closes with the official named-alliance action window. Players may propose, accept, decline, counter, defer, or agree to trial alliances during that action window; official alliance records cannot be formed or mutated outside Mingle I in v1.
