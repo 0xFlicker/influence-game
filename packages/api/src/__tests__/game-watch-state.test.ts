@@ -76,6 +76,10 @@ describe("GameWatchState", () => {
           wins: 0,
           winRate: 0,
         },
+        owner: {
+          handle: "atlas-architect",
+          displayName: "Atlas Architect",
+        },
       },
     });
     expect(state?.players.filter((player) => player.status === "eliminated").map((player) => player.id)).toHaveLength(1);
@@ -577,6 +581,8 @@ async function insertFixturePlayers(
       await db.insert(schema.users).values({
         id: `user-${agentProfileId}`,
         walletAddress: `0x${createHash("sha1").update(agentProfileId).digest("hex").slice(0, 40)}`,
+        handle: "atlas-architect",
+        displayName: "Atlas Architect",
       });
       await db.insert(schema.agentProfiles).values({
         id: agentProfileId,

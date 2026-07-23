@@ -20,8 +20,8 @@ import {
   type ProjectionReplayDiagnostic,
 } from "./game-projection-read-model.js";
 import {
-  getPublicAgentPreviewsByProfileIds,
-  type PublicAgentPreview,
+  getPublicReplayAgentPreviewsByProfileIds,
+  type PublicReplayAgentPreview,
 } from "./public-agent-preview.js";
 
 type GameWatchDB = Pick<DrizzleDB, "select">;
@@ -86,7 +86,7 @@ export interface GameWatchPlayer {
   pressureStatus?: GameWatchPlayerPressureStatus;
   exposeScore?: number;
   avatarUrl?: string;
-  currentAgent: PublicAgentPreview | null;
+  currentAgent: PublicReplayAgentPreview | null;
 }
 
 export interface GameWatchFinalState {
@@ -152,7 +152,7 @@ interface PlayerIdentity {
   persona: string;
   personaKey?: string;
   avatarUrl?: string;
-  currentAgent: PublicAgentPreview | null;
+  currentAgent: PublicReplayAgentPreview | null;
 }
 
 interface TerminalResult {
@@ -329,7 +329,7 @@ async function loadPlayerIdentities(
     .from(schema.gamePlayers)
     .where(eq(schema.gamePlayers.gameId, gameId))
     .orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id));
-  const currentAgentByProfileId = await getPublicAgentPreviewsByProfileIds(
+  const currentAgentByProfileId = await getPublicReplayAgentPreviewsByProfileIds(
     db,
     rows.flatMap((row) => row.agentProfileId ? [row.agentProfileId] : []),
   );

@@ -5,7 +5,11 @@ import {
   getUserSelectableAgentArchetype,
   type AgentArchetypeKey,
 } from "./agent-archetypes.js";
-import { isImportedSyntheticPlayer } from "./public-player-identity.js";
+import {
+  isImportedSyntheticPlayer,
+  publicPlayerLinkIdentity,
+  type PublicPlayerIdentityRef,
+} from "./public-player-identity.js";
 
 const PUBLIC_RECENT_RESULT_LIMIT = 5;
 type PublicAgentPreviewDB = Pick<DrizzleDB, "select">;
@@ -33,6 +37,14 @@ export interface PublicAgentPreview {
   };
 }
 
+/**
+ * Public agent data used by watch/replay surfaces. Owner is optional so
+ * historical and anonymous agents remain renderable without a fake link.
+ */
+export interface PublicReplayAgentPreview extends PublicAgentPreview {
+  owner?: PublicPlayerIdentityRef | null;
+}
+
 export interface PublicPlayerCompetitionFacts {
   agents: PublicAgentPreview[];
   recentResults: PublicCompetitionResult[];
@@ -43,6 +55,12 @@ interface PublicAgentProfileRow {
   name: string;
   avatarUrl: string | null;
   personaKey: string | null;
+  ownerId?: string;
+  ownerPublicId?: string;
+  ownerHandle?: string | null;
+  ownerDisplayName?: string | null;
+  ownerWalletAddress?: string | null;
+  ownerEmail?: string | null;
 }
 
 interface PublicAgentCompetitionAggregate {
@@ -77,6 +95,44 @@ export async function getPublicAgentPreviewsByProfileIds(
   return new Map(publicProfiles.map((profile) => [
     profile.id,
     buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id)),
+  ]));
+}
+
+export async function getPublicReplayAgentPreviewsByProfileIds(
+  db: PublicAgentPreviewDB,
+  agentProfileIds: readonly string[],
+): Promise<Map<string, PublicReplayAgentPreview>> {
+  const uniqueProfileIds = [...new Set(agentProfileIds)];
+  if (uniqueProfileIds.length === 0) return new Map();
+
+  const rows = await db.select({
+    id: schema.agentProfiles.id,
+    name: schema.agentProfiles.name,
+    avatarUrl: schema.agentProfiles.avatarUrl,
+    personaKey: schema.agentProfiles.personaKey,
+    ownerId: schema.users.id,
+    ownerPublicId: schema.users.publicId,
+    ownerHandle: schema.users.handle,
+    ownerDisplayName: schema.users.displayName,
+    ownerWalletAddress: schema.users.walletAddress,
+    ownerEmail: schema.users.email,
+  }).from(schema.agentProfiles)
+    .innerJoin(schema.users, eq(schema.agentProfiles.userId, schema.users.id))
+    .where(inArray(schema.agentProfiles.id, uniqueProfileIds));
+  const publicProfiles = rows.filter(
+    (profile) => !isImportedSyntheticPlayer(profile.ownerWalletAddress),
+  );
+  const aggregateByAgent = await getPublicAgentCompetitionAggregates(
+    db,
+    publicProfiles.map((profile) => profile.id),
+  );
+
+  return new Map(publicProfiles.map((profile) => [
+    profile.id,
+    {
+      ...buildPublicAgentPreview(profile, aggregateByAgent.get(profile.id)),
+      owner: publicReplayAgentOwner(profile),
+    },
   ]));
 }
 
@@ -200,6 +256,20 @@ function buildPublicAgentPreview(
       winRate: gamesPlayed > 0 ? wins / gamesPlayed : 0,
     },
   };
+}
+
+function publicReplayAgentOwner(
+  profile: PublicAgentProfileRow,
+): PublicPlayerIdentityRef | null {
+  if (!profile.ownerId || !profile.ownerPublicId) return null;
+  return publicPlayerLinkIdentity({
+    id: profile.ownerId,
+    publicId: profile.ownerPublicId,
+    handle: profile.ownerHandle ?? null,
+    displayName: profile.ownerDisplayName ?? null,
+    walletAddress: profile.ownerWalletAddress ?? null,
+    email: profile.ownerEmail ?? null,
+  });
 }
 
 function publicRole(personaKey: string | null): PublicAgentPreview["role"] {

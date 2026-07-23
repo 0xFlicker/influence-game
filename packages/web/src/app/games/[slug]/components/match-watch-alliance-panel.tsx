@@ -113,7 +113,7 @@ function AllianceCard({
   return (
     <div
       id={`alliance-${card.id}`}
-      className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-2 rounded-md border border-white/10 bg-black/20 px-2.5 py-2"
+      className="space-y-2 rounded-md border border-white/10 bg-black/20 px-2.5 py-2"
     >
       <AllianceMemberAvatars card={card} players={players} />
       <details className="group min-w-0">
@@ -174,7 +174,7 @@ function AllianceMemberAvatars({
   players: readonly GamePlayer[];
 }) {
   return (
-    <div className="flex min-w-12 gap-1" aria-label={`${card.name} members`}>
+    <div className="flex min-w-0 gap-1 overflow-x-auto pb-0.5" aria-label={`${card.name} members`}>
       {card.members.map((member) => {
         const player = players.find((candidate) =>
           (member.id && candidate.id === member.id)
