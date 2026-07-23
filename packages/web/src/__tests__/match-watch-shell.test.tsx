@@ -4,11 +4,13 @@ import { join } from "node:path";
 import { renderToString } from "react-dom/server";
 import type { GameDetail, GameWatchState, TranscriptEntry } from "../lib/api";
 import {
+  AgentOwnerLink,
   buildDiaryArchiveEntries,
   buildReplayTranscriptSlice,
   isReplayAtFinalResults,
   MatchWatchShell,
 } from "../app/games/[slug]/components/match-watch-shell";
+import type { MatchWatchPlayerCard } from "../app/games/[slug]/components/match-watch-model";
 import { buildReplayScenes } from "../app/games/[slug]/components/spectacle-viewer";
 
 const matchWatchShellSource = readFileSync(
@@ -65,6 +67,46 @@ function entry(overrides: Partial<TranscriptEntry> = {}): TranscriptEntry {
 }
 
 describe("MatchWatchShell", () => {
+  it("links a replay agent to the safe public profile of its owner", () => {
+    const card: MatchWatchPlayerCard = {
+      player: {
+        id: "p1",
+        name: "Atlas",
+        persona: "observer",
+        status: "alive",
+        shielded: false,
+        currentAgent: {
+          name: "Atlas",
+          avatarUrl: null,
+          role: null,
+          competition: { gamesPlayed: 0, wins: 0, winRate: 0 },
+          owner: {
+            publicId: "b0c9262b-ef9a-4556-a4f3-6e8320385532",
+            handle: "arden-voss",
+            displayName: "Arden Voss",
+          },
+        },
+      },
+      statusLabel: "Alive",
+      statusTags: [],
+      isSelected: false,
+      isAlive: true,
+      detail: "Atlas is alive.",
+    };
+
+    const html = renderToString(<AgentOwnerLink card={card} />);
+
+    expect(html).toContain('href="/profile/arden-voss"');
+    expect(html).toContain("Owner: <!-- -->Arden Voss");
+    expect(html).toContain('aria-label="View Arden Voss&#x27;s public profile"');
+    expect(matchWatchShellSource).toContain('href="/get-mcp"');
+    expect(matchWatchShellSource).toContain("Cross-examine this game with your AI.");
+    expect(matchWatchShellSource).toContain("Analyze this game");
+    expect(matchWatchShellSource.indexOf("<McpBanner />")).toBeLessThan(
+      matchWatchShellSource.indexOf("<PhaseRail model={model} />"),
+    );
+  });
+
   it("keeps portrait previews separate from cast inspection and historical identity", () => {
     const currentGame = game();
     currentGame.players[0] = {
@@ -213,6 +255,8 @@ describe("MatchWatchShell", () => {
     expect(textHtml).not.toContain("Lyra gathers pressure with social warmth.");
     expect(html).not.toContain("Durable Projection");
     expect(html).toContain("Mingle is live.");
+    expect(textHtml).toContain("Cross-examine this game with your AI.");
+    expect(html).toContain('href="/get-mcp"');
     expect(html).toContain("Thinking");
     expect(html).toContain("Strategy");
     expect(html).toContain("Alliance");

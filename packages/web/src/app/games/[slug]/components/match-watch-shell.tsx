@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import { completedGameModeHref } from "@/lib/game-links";
+import { playerProfileHref } from "@/lib/player-profile-links";
 import {
   getGameAlliances,
   getPublicWatchIntelligence,
@@ -198,6 +199,7 @@ export function MatchWatchShell({
       <div className="pointer-events-none absolute inset-0 influence-phase-atmosphere" />
       <div className="pointer-events-none absolute inset-0 influence-phase-vignette" />
       <ShellHeader model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />
+      <McpBanner />
       <PhaseRail model={model} />
 
       <div className="relative grid min-h-0 flex-1 grid-cols-1 gap-3 px-3 pb-3 xl:grid-cols-[18rem_minmax(0,1fr)_22rem]">
@@ -211,11 +213,34 @@ export function MatchWatchShell({
           model={model}
           onPlaybackStateChange={handlePlaybackStateChange}
         />
-        <InspectorPanel model={model} intelligence={intelligenceModel} allianceModel={allianceModel} messages={inspectorMessages} />
+        <InspectorPanel
+          model={model}
+          intelligence={intelligenceModel}
+          allianceModel={allianceModel}
+          messages={inspectorMessages}
+        />
       </div>
 
       <ReplayDock model={model} gamePath={gamePath} showResultsCta={replayAtFinalResults} />
     </main>
+  );
+}
+
+function McpBanner() {
+  return (
+    <Link
+      href="/get-mcp"
+      className="relative mx-3 mb-3 flex shrink-0 items-center justify-between gap-4 overflow-hidden rounded-md border border-cyan-200/35 bg-cyan-300/[0.09] px-3 py-2.5 text-cyan-50 shadow-[0_0_28px_rgba(103,232,249,0.08)] transition-colors hover:border-cyan-100/65 hover:bg-cyan-300/[0.16] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-100"
+    >
+      <span className="pointer-events-none absolute inset-y-0 left-0 w-1 bg-cyan-200" />
+      <span className="min-w-0 pl-1.5">
+        <span className="block text-[9px] font-semibold uppercase tracking-[0.16em] text-cyan-100/65">Game challenge</span>
+        <span className="block truncate text-sm font-semibold tracking-tight text-cyan-50">Don&apos;t just watch. Cross-examine this game with your AI.</span>
+      </span>
+      <span className="shrink-0 whitespace-nowrap text-[9px] font-bold uppercase tracking-[0.14em] text-cyan-100">
+        Analyze this game <span aria-hidden="true">→</span>
+      </span>
+    </Link>
   );
 }
 
@@ -249,20 +274,23 @@ function MobileContextPanel({
             }`}
           >
             <GamePlayerAvatarPreview player={card.player} size="6" />
-            <button
-              type="button"
-              aria-label={`Inspect ${card.player.name}`}
-              aria-pressed={card.isSelected}
-              onClick={() => onSelectPlayer(card.player.id)}
-              className="flex min-h-11 min-w-0 flex-1 items-center rounded px-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
-            >
-              <span className="min-w-0">
-                <span className="block truncate text-[11px] font-medium text-white/85">
-                  {card.player.name}
+            <div className="min-w-0 flex-1">
+              <button
+                type="button"
+                aria-label={`Inspect ${card.player.name}`}
+                aria-pressed={card.isSelected}
+                onClick={() => onSelectPlayer(card.player.id)}
+                className="flex min-h-11 w-full min-w-0 items-center rounded px-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-[11px] font-medium text-white/85">
+                    {card.player.name}
+                  </span>
+                  <CastStatusTags card={card} compact />
                 </span>
-                <CastStatusTags card={card} compact />
-              </span>
-            </button>
+              </button>
+              <AgentOwnerLink card={card} compact />
+            </div>
           </div>
         ))}
       </div>
@@ -422,23 +450,26 @@ function CastRail({
             }`}
           >
             <GamePlayerAvatarPreview player={card.player} size="8" />
-            <button
-              type="button"
-              aria-label={`Inspect ${card.player.name}`}
-              aria-pressed={card.isSelected}
-              onClick={() => onSelectPlayer(card.player.id)}
-              className="grid min-h-11 min-w-0 grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-2 rounded px-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
-            >
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-white/90">
-                {card.player.name}
-              </span>
-              <CastStatusTags card={card} />
-            </span>
-            <span className={`justify-self-end rounded px-1.5 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(card)}`}>
-              {card.statusLabel}
-            </span>
-            </button>
+            <div className="min-w-0">
+              <button
+                type="button"
+                aria-label={`Inspect ${card.player.name}`}
+                aria-pressed={card.isSelected}
+                onClick={() => onSelectPlayer(card.player.id)}
+                className="grid min-h-11 w-full min-w-0 grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-2 rounded px-1 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-phase/70"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-sm font-medium text-white/90">
+                    {card.player.name}
+                  </span>
+                  <CastStatusTags card={card} />
+                </span>
+                <span className={`justify-self-end rounded px-1.5 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(card)}`}>
+                  {card.statusLabel}
+                </span>
+              </button>
+              <AgentOwnerLink card={card} />
+            </div>
           </div>
         ))}
       </div>
@@ -622,6 +653,7 @@ function InspectorHero({ card }: { card: MatchWatchPlayerCard }) {
         <div className="min-w-0 pt-1">
           <h2 className="truncate text-xl font-semibold text-white/95">{card.player.name}</h2>
           <CastStatusTags card={card} />
+          <AgentOwnerLink card={card} />
           <div className="mt-3 flex flex-wrap gap-2">
             <span className={`rounded px-2 py-1 text-[9px] uppercase tracking-[0.12em] ${statusClasses(card)}`}>
               {card.statusLabel}
@@ -630,6 +662,27 @@ function InspectorHero({ card }: { card: MatchWatchPlayerCard }) {
         </div>
       </div>
     </div>
+  );
+}
+
+export function AgentOwnerLink({
+  card,
+  compact = false,
+}: {
+  card: MatchWatchPlayerCard;
+  compact?: boolean;
+}) {
+  const owner = card.player.currentAgent?.owner;
+  if (!owner) return null;
+
+  return (
+    <Link
+      href={playerProfileHref(owner)}
+      aria-label={`View ${owner.displayName}'s public profile`}
+      className={`mt-1 inline-flex max-w-full truncate rounded px-1 text-[8px] uppercase tracking-[0.1em] text-cyan-100/48 underline decoration-cyan-200/20 underline-offset-2 transition-colors hover:text-cyan-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-cyan-200/70 ${compact ? "max-w-20" : ""}`}
+    >
+      Owner: {owner.displayName}
+    </Link>
   );
 }
 

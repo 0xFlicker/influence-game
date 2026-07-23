@@ -114,6 +114,8 @@ describe("MatchWatchAlliancePanel", () => {
     expect(html).toContain("Jace helped eliminate alliance member Marnie");
     expect(html).toContain("Marnie");
     expect(html).toContain("Jace, keep the heat on Echo.");
+    expect(html).toContain("space-y-2 rounded-md border border-white/10 bg-black/20");
+    expect(html.indexOf('aria-label="Mirror Knives members"')).toBeLessThan(html.indexOf("<details"));
     expect(html).not.toContain("thinking");
     expect(html).not.toContain("loyal");
     expect(html).not.toContain("fake");

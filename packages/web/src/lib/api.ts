@@ -197,6 +197,10 @@ export interface PublicAgentPreview {
   };
 }
 
+export interface PublicReplayAgentPreview extends PublicAgentPreview {
+  owner?: PublicPlayerIdentityRef | null;
+}
+
 export interface PublicPlayerProfile {
   identity: PublicPlayerIdentityRef;
   currentSeason: null | {
@@ -326,7 +330,7 @@ export interface GameWatchPlayer {
   pressureStatus?: GameWatchPlayerPressureStatus;
   exposeScore?: number;
   avatarUrl?: string;
-  currentAgent?: PublicAgentPreview | null;
+  currentAgent?: PublicReplayAgentPreview | null;
 }
 
 export interface GameWatchFinalState {
@@ -2118,7 +2122,7 @@ export interface GamePlayer {
   pressureStatus?: GameWatchPlayerPressureStatus;
   exposeScore?: number;
   avatarUrl?: string;
-  currentAgent?: PublicAgentPreview | null;
+  currentAgent?: PublicReplayAgentPreview | null;
 }
 
 export type TranscriptScope = "public" | "mingle" | "huddle" | "whisper" | "system" | "diary" | "thinking";
