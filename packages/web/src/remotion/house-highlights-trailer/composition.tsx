@@ -21,6 +21,8 @@ export interface HouseHighlightsTrailerCompositionProps extends Record<string, u
   manifest: HouseHighlightsTrailerManifest;
 }
 
+export const HOUSE_HIGHLIGHTS_TRAILER_ROSTER_COLUMNS = 4;
+
 export function HouseHighlightsTrailerComposition({
   manifest,
 }: HouseHighlightsTrailerCompositionProps) {
@@ -84,7 +86,7 @@ function CastRosterBeat({ cast }: { cast: HouseHighlightsTrailerAgent[] }) {
           return (
             <div key={agent.id} style={{ ...styles.rosterTile, opacity, transform: `translateY(${y}px)` }}>
               <Avatar agent={agent} size={96} />
-              <div style={styles.rosterName}>{agent.name}</div>
+              <AgentName style={styles.rosterName}>{agent.name}</AgentName>
             </div>
           );
         })}
@@ -134,13 +136,13 @@ function FinalVoteBeat({ manifest }: { manifest: HouseHighlightsTrailerManifest 
         {manifest.finalVote.groups.map((group) => (
           <div key={group.finalist.id} style={{ ...styles.voteColumn, transform: `translateY(${interpolate(reveal, [0, 1], [60, 0])}px)` }}>
             <Avatar agent={group.finalist} size={132} />
-            <div style={styles.finalistName}>{group.finalist.name}</div>
+            <AgentName style={styles.finalistName}>{group.finalist.name}</AgentName>
             <div style={styles.voteCount}>{group.votes}</div>
             <div style={styles.jurorGrid}>
               {group.jurors.map((juror) => (
                 <div key={juror.id} style={styles.jurorChip}>
                   <Avatar agent={juror} size={58} />
-                  <span style={styles.jurorName}>{juror.name}</span>
+                  <AgentName lines={1} style={styles.jurorName}>{juror.name}</AgentName>
                 </div>
               ))}
             </div>
@@ -165,7 +167,7 @@ function WinnerBeat({ manifest }: { manifest: HouseHighlightsTrailerManifest }) 
         <div style={{ transform: `scale(${scale})` }}>
           <Avatar agent={manifest.finalVote.winner} size={260} />
         </div>
-        <h1 style={styles.winnerName}>{manifest.finalVote.winner.name}</h1>
+        <AgentName as="h1" style={styles.winnerName}>{manifest.finalVote.winner.name}</AgentName>
         <div style={styles.winnerScore}>Final vote {manifest.finalVote.voteLabel}</div>
       </div>
     </Backdrop>
@@ -186,7 +188,7 @@ function PlayerResultBeat({ result }: { result: HouseHighlightsTrailerPlayerResu
         <Avatar agent={result.agent} size={220} />
         <div style={styles.resultBody}>
           <div style={styles.resultPlacement}>{result.placementLabel}</div>
-          <div style={styles.resultName}>{result.agent.name}</div>
+          <AgentName style={styles.resultName}>{result.agent.name}</AgentName>
           <div style={styles.resultTags}>
             {result.tags.map((tag) => (
               <span key={tag} style={styles.resultTag}>{tag}</span>
@@ -235,7 +237,7 @@ function AgentRail({ agents }: { agents: HouseHighlightsTrailerAgent[] }) {
       {agents.map((agent) => (
         <div key={agent.id} style={styles.agentPill}>
           <Avatar agent={agent} size={58} />
-          <span style={styles.agentPillName}>{agent.name}</span>
+          <AgentName style={styles.agentPillName}>{agent.name}</AgentName>
         </div>
       ))}
     </div>
@@ -248,6 +250,34 @@ function Avatar({ agent, size }: { agent: HouseHighlightsTrailerAgent; size: num
       <Img src={assetSrc(agent.avatarUrl)} style={{ ...styles.avatarImage, borderRadius: size / 2 }} />
     </div>
   );
+}
+
+function AgentName({
+  as: Component = "div",
+  children,
+  lines = 2,
+  style,
+}: {
+  as?: "div" | "h1";
+  children: ReactNode;
+  lines?: 1 | 2;
+  style: CSSProperties;
+}) {
+  return (
+    <Component style={{
+      ...trailerAgentNameStyle(lines),
+      ...style,
+    }}>
+      {children}
+    </Component>
+  );
+}
+
+export function trailerAgentNameStyle(lines: 1 | 2): CSSProperties {
+  return {
+    ...styles.agentName,
+    ...(lines === 1 ? styles.agentNameSingleLine : { WebkitLineClamp: lines }),
+  };
 }
 
 function assetSrc(src: string): string {
@@ -323,7 +353,7 @@ const styles: Record<string, CSSProperties> = {
     right: 92,
     top: 270,
     display: "grid",
-    gridTemplateColumns: "repeat(5, 1fr)",
+    gridTemplateColumns: `repeat(${HOUSE_HIGHLIGHTS_TRAILER_ROSTER_COLUMNS}, 1fr)`,
     gap: 24,
   },
   rosterTile: {
@@ -338,7 +368,7 @@ const styles: Record<string, CSSProperties> = {
     backgroundColor: "rgba(0,0,0,0.34)",
   },
   rosterName: {
-    minWidth: 0,
+    flex: 1,
     fontSize: 36,
     lineHeight: 1.05,
     fontWeight: 760,
@@ -406,8 +436,10 @@ const styles: Record<string, CSSProperties> = {
     border: "1px solid rgba(255,255,255,0.22)",
     borderRadius: 999,
     backgroundColor: "rgba(0,0,0,0.36)",
+    maxWidth: 430,
   },
   agentPillName: {
+    maxWidth: 330,
     fontSize: 34,
     fontWeight: 680,
   },
@@ -445,6 +477,7 @@ const styles: Record<string, CSSProperties> = {
   },
   finalistName: {
     marginTop: 18,
+    maxWidth: "100%",
     fontSize: 50,
     fontWeight: 760,
     textAlign: "center",
@@ -472,6 +505,7 @@ const styles: Record<string, CSSProperties> = {
     backgroundColor: "rgba(255,255,255,0.11)",
   },
   jurorName: {
+    maxWidth: 220,
     fontSize: 24,
     fontWeight: 650,
   },
@@ -506,6 +540,7 @@ const styles: Record<string, CSSProperties> = {
     lineHeight: 1,
     fontWeight: 840,
     textAlign: "center",
+    maxWidth: 1500,
   },
   winnerScore: {
     marginTop: 28,
@@ -544,6 +579,7 @@ const styles: Record<string, CSSProperties> = {
   },
   resultName: {
     marginTop: 14,
+    maxWidth: 940,
     fontSize: 108,
     lineHeight: 1,
     fontWeight: 830,
@@ -574,5 +610,17 @@ const styles: Record<string, CSSProperties> = {
     width: "100%",
     height: "100%",
     objectFit: "cover",
+  },
+  agentName: {
+    minWidth: 0,
+    overflow: "hidden",
+    overflowWrap: "anywhere",
+    textOverflow: "ellipsis",
+    display: "-webkit-box",
+    WebkitBoxOrient: "vertical",
+  },
+  agentNameSingleLine: {
+    display: "block",
+    whiteSpace: "nowrap",
   },
 };
