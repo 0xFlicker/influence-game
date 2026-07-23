@@ -189,6 +189,19 @@ describe("agent profile management service", () => {
     expect("statsReset" in read).toBe(false);
   });
 
+  test("rejects display names longer than the 32-character public limit", async () => {
+    await expect(createOwnedAgent(db, { userId: USER_A_ID }, {
+      displayName: "A".repeat(33),
+      archetype: "strategic",
+      personalityPrompt: "A valid personality for a deliberately long name.",
+    })).rejects.toMatchObject({
+      code: "invalid_agent_input",
+      statusCode: 400,
+      message: "displayName must be 32 characters or less.",
+      details: { field: "displayName", maxLength: 32 },
+    } satisfies Partial<AgentProfileManagementError>);
+  });
+
   test("rejects normalized duplicates and House-catalog names without side effects", async () => {
     await createOwnedAgent(db, { userId: USER_B_ID }, {
       displayName: "Ember Quill",

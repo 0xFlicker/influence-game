@@ -384,6 +384,20 @@ describe("Agent Profile API", () => {
       expect(generations[0]!.agentProfileId).toStartWith("draft-");
     });
 
+    test("rejects an overlong draft name before generating a portrait", async () => {
+      const res = await app.request(
+        "/api/agent-profiles/avatar/generate-draft",
+        jsonReq({
+          name: "A".repeat(33),
+          gender: "female",
+          personality: "A patient mediator.",
+        }, tokenA),
+      );
+
+      expect(res.status).toBe(400);
+      expect(await db.select().from(schema.avatarGenerationRequests)).toHaveLength(0);
+    });
+
     test("attaches a completed AI Help portrait as generated media", async () => {
       await db.insert(schema.avatarGenerationRequests).values({
         id: "completed-draft-request",

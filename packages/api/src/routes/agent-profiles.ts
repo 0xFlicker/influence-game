@@ -30,6 +30,7 @@ import {
   AgentProfileManagementError,
   adoptOwnedDraftAvatarAndCreateAgentProfile,
   createOwnedAgentProfile,
+  MAX_AGENT_DISPLAY_NAME_LENGTH,
   updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import {
@@ -50,8 +51,6 @@ const GENERATED_AGENT_SURNAMES = [
   "Dunmore", "Ellery", "Fairchild", "Grantham", "Hollis", "Iverson", "Kestrel", "Lockwood",
   "Mercer", "North", "Orsini", "Prescott", "Quill", "Rutherford", "Sinclair", "Tallis",
 ] as const;
-const MAX_GENERATED_AGENT_NAME_LENGTH = 80;
-
 /** @deprecated Prefer resolveOpenAIBudgetGenerationLlm — kept as a stable export for callers/tests. */
 export function resolveAgentProfileGenerationLlm(
   env: NodeJS.ProcessEnv = process.env,
@@ -68,7 +67,7 @@ ${isRefine ? "The user is refining an existing profile. Improve and flesh out th
 
 Respond with JSON only:
 {
-  "name": "A distinctive full first and last name for the character (creative, memorable)",
+  "name": "A distinctive full first and last name for the character (creative, memorable, ${MAX_AGENT_DISPLAY_NAME_LENGTH} characters or fewer)",
   "backstory": "A 2-4 sentence rich backstory — their background, what shaped them, what they care about. This should inform how they speak and relate to others. Refer to them by their first name or pronouns, never their full name.",
   "personality": "A 2-3 sentence personality description — their vibe, communication style, social tendencies. This drives how the AI agent behaves in conversations. Refer to them by their first name or pronouns, never their full name.",
   "strategyStyle": "A 1-2 sentence strategic approach — how they play the game, form alliances, handle conflict. Refer to them by their first name or pronouns, never their full name.",
@@ -91,7 +90,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
   app.post("/api/agent-profiles/avatar/generate-draft", requireAuth(db), async (c) => {
     const body = await parseJsonBody(c, "POST /api/agent-profiles/avatar/generate-draft");
     if (!body) return c.json({ error: "Invalid JSON body" }, 400);
-    if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > 80
+    if (typeof body.name !== "string" || !body.name.trim() || body.name.trim().length > MAX_AGENT_DISPLAY_NAME_LENGTH
       || typeof body.personality !== "string" || !body.personality.trim() || body.personality.trim().length > 8_000
       || (body.backstory !== undefined && (typeof body.backstory !== "string" || body.backstory.length > 2_000))
       || (body.strategyStyle !== undefined && (typeof body.strategyStyle !== "string" || body.strategyStyle.length > 2_000))
@@ -201,7 +200,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
               type: "object",
               additionalProperties: false,
               properties: {
-                name: { type: "string" },
+                name: { type: "string", maxLength: MAX_AGENT_DISPLAY_NAME_LENGTH },
                 backstory: { type: "string" },
                 personality: { type: "string" },
                 strategyStyle: { type: "string" },
@@ -647,7 +646,7 @@ export function allocateGeneratedAgentName(
   generatedName: string,
   occupiedNames: Set<string>,
 ): { name: string; changed: boolean } {
-  const requestedName = generatedName.trim().replace(/\s+/g, " ").slice(0, MAX_GENERATED_AGENT_NAME_LENGTH).trimEnd() || "Agent";
+  const requestedName = generatedName.trim().replace(/\s+/g, " ").slice(0, MAX_AGENT_DISPLAY_NAME_LENGTH).trimEnd() || "Agent";
   const normalizedOccupiedNames = new Set(
     [...occupiedNames].map(normalizeAgentProfileName),
   );
@@ -698,7 +697,7 @@ function hasLastName(name: string): boolean {
 }
 
 function generatedNameCandidate(firstNames: string, surname: string): string {
-  const maxFirstNameLength = MAX_GENERATED_AGENT_NAME_LENGTH - surname.length - 1;
+  const maxFirstNameLength = MAX_AGENT_DISPLAY_NAME_LENGTH - surname.length - 1;
   return `${firstNames.slice(0, maxFirstNameLength).trimEnd() || "Agent"} ${surname}`;
 }
 

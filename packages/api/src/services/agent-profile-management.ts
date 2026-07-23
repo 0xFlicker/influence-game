@@ -44,7 +44,7 @@ type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
 
 const DEFAULT_AGENT_LIMIT = 50;
 const MAX_AGENT_LIMIT = 100;
-const MAX_DISPLAY_NAME_LENGTH = 80;
+export const MAX_AGENT_DISPLAY_NAME_LENGTH = 32;
 const MAX_PERSONALITY_PROMPT_LENGTH = 8_000;
 const MAX_PUBLIC_BIOGRAPHY_LENGTH = 2_000;
 const MAX_STRATEGY_STYLE_LENGTH = 2_000;
@@ -361,7 +361,7 @@ function prepareAgentProfileCreate(
   context: AgentProfileManagementContext,
   input: CreateAgentProfileMutationInput,
 ): typeof schema.agentProfiles.$inferInsert {
-  const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+  const name = requiredStringField(input.name, "name", MAX_AGENT_DISPLAY_NAME_LENGTH);
   assertAgentNameNotReserved(name);
   const personality = requiredStringField(
     input.personality,
@@ -654,7 +654,7 @@ function prepareAgentProfileUpdates(
     updatedAt: new Date().toISOString(),
   };
   if (input.name !== undefined) {
-    const name = requiredStringField(input.name, "name", MAX_DISPLAY_NAME_LENGTH);
+    const name = requiredStringField(input.name, "name", MAX_AGENT_DISPLAY_NAME_LENGTH);
     assertAgentNameNotReserved(name);
     updates.name = name;
   }
@@ -803,7 +803,7 @@ export async function createOwnedAgent(
 ): Promise<AgentCommandRead> {
   rejectUnsupportedFields(input, CREATE_AGENT_FIELDS);
 
-  const displayName = requiredStringField(input.displayName, "displayName", MAX_DISPLAY_NAME_LENGTH);
+  const displayName = requiredStringField(input.displayName, "displayName", MAX_AGENT_DISPLAY_NAME_LENGTH);
   const personalityPrompt = requiredStringField(
     input.personalityPrompt,
     "personalityPrompt",
@@ -875,7 +875,7 @@ export async function updateOwnedAgent(
   const updates: UpdateAgentProfileMutationInput = {};
 
   if (input.displayName !== undefined) {
-    updates.name = requiredStringField(input.displayName, "displayName", MAX_DISPLAY_NAME_LENGTH);
+    updates.name = requiredStringField(input.displayName, "displayName", MAX_AGENT_DISPLAY_NAME_LENGTH);
   }
   if (input.personalityPrompt !== undefined) {
     updates.personality = requiredStringField(

@@ -71,9 +71,9 @@ describe("generated agent names", () => {
   });
 
   test("keeps a fallback full name within the saved profile limit", () => {
-    const name = "A".repeat(80);
+    const name = "A".repeat(32);
     expect(allocateGeneratedAgentName(name, new Set([name]))).toMatchObject({
-      name: `${"A".repeat(71)} Hartwell`,
+      name: `${"A".repeat(23)} Hartwell`,
       changed: true,
     });
   });
