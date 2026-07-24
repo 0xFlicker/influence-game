@@ -162,7 +162,7 @@ function formatEntry(e: TranscriptEntry): string {
 }
 ```
 
-Default non-chatty console mode prints an **operator action feed** (votes, format picks/ballots, room seating, alliances, House outcome lines) plus **`[House MC]`** between rounds — without thinking/reasoning. `--chatty` adds full transcript + reasoning. `--quiet` / `--no-operator-feed` collapses to phase progress only; `--no-house-summaries` suppresses the MC block. House MC `response.roundFacts` is still limited to empower/expose plus legacy-shaped Power/Council and elimination fields; offered/locked formats and accepted format actions should be read from the operator feed, transcript, and turn records until round-facts is widened:
+Default non-chatty console mode prints an **operator action feed** (votes, format picks/ballots, room seating, alliances, House outcome lines) plus **`[House MC]`** between rounds — without thinking/reasoning. `--chatty` adds full transcript + reasoning. `--quiet` / `--no-operator-feed` collapses to phase progress only; `--no-house-summaries` suppresses the MC block. House is omniscient: `house-mc-summary` `response.roundFacts.formatResolution` carries every sealed ballot, scoreboard, bounce chain, and elimination summary (player-facing surfaces remain sealed):
 
 ```bash
 bun run simulate -- --variant mingle --max-rounds 2

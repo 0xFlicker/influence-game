@@ -1650,19 +1650,87 @@ ${rooms || "(none)"}`;
   }
 
   private formatRoundFactsForPrompt(facts: HouseRoundFacts): string {
+    const formatLines =
+      facts.eliminationPath === "format" || facts.selectedFormatId
+        ? [
+            `Elimination path: format kernel`,
+            `Locked format: ${facts.selectedFormatName ?? facts.selectedFormatId ?? "unknown"}${facts.selectedFormatId ? ` (id: ${facts.selectedFormatId})` : ""}`,
+            `Offered formats: ${facts.offeredFormatNames?.join(" vs ") ?? facts.offeredFormatIds?.join(" vs ") ?? "unknown"}`,
+            `Format method: ${facts.formatMethod ?? "unknown"}`,
+            `Power action: none (classic Power→Council not used this round)`,
+            `Council candidates: none (format kernel round)`,
+            `Council vote counts: none`,
+            ...this.formatFormatResolutionForPrompt(facts.formatResolution),
+          ]
+        : [
+            `Elimination path: ${facts.eliminationPath}`,
+            `Expose vote counts: ${this.formatVoteCountsForPrompt(facts.exposeVoteCounts)}`,
+            `Power action: ${facts.powerAction ? `${facts.powerAction.action}${facts.powerAction.targetName ? ` -> ${facts.powerAction.targetName}` : ""}` : "unknown"}`,
+            `Shield granted: ${facts.shieldGrantedName ?? "none"}`,
+            `Council candidates: ${facts.councilCandidates?.join(" vs ") ?? "none"}`,
+            `Council vote counts: ${this.formatVoteCountsForPrompt(facts.councilVoteCounts)}${facts.councilMethod ? ` (${facts.councilMethod})` : ""}`,
+            `Council roles: ${facts.councilRoles.map((role) => `${role.playerName}=${this.formatCouncilRoleForPrompt(role)}`).join("; ") || "none"}`,
+            `Auto-eliminated: ${facts.autoEliminatedName ?? "none"}`,
+          ];
+
     return [
       `Round: ${facts.round}`,
       `Empowered: ${facts.empoweredName ?? "unknown"}${facts.empowerMethod ? ` (${facts.empowerMethod})` : ""}`,
       `Empower vote counts: ${this.formatVoteCountsForPrompt(facts.empowerVoteCounts)}`,
-      `Expose vote counts: ${this.formatVoteCountsForPrompt(facts.exposeVoteCounts)}`,
-      `Power action: ${facts.powerAction ? `${facts.powerAction.action}${facts.powerAction.targetName ? ` -> ${facts.powerAction.targetName}` : ""}` : "unknown"}`,
-      `Shield granted: ${facts.shieldGrantedName ?? "none"}`,
-      `Council candidates: ${facts.councilCandidates?.join(" vs ") ?? "none"}`,
-      `Council vote counts: ${this.formatVoteCountsForPrompt(facts.councilVoteCounts)}${facts.councilMethod ? ` (${facts.councilMethod})` : ""}`,
-      `Council roles: ${facts.councilRoles.map((role) => `${role.playerName}=${this.formatCouncilRoleForPrompt(role)}`).join("; ") || "none"}`,
-      `Auto-eliminated: ${facts.autoEliminatedName ?? "none"}`,
+      ...formatLines,
       `Eliminated: ${facts.eliminatedName ?? facts.autoEliminatedName ?? "none"}`,
     ].join("\n");
+  }
+
+  private formatFormatResolutionForPrompt(
+    resolution: HouseRoundFacts["formatResolution"],
+  ): string[] {
+    if (!resolution) {
+      return ["Format resolution: (missing — do not invent ballot tallies)"];
+    }
+    const lines: string[] = [
+      "House omniscient format resolution (sealed ballots are fully visible to The House):",
+      `Resolution: ${resolution.resolutionSummary}`,
+      `Resolution kind: ${resolution.resolutionKind}`,
+    ];
+    if (resolution.tiebreakByEmpoweredName) {
+      lines.push(`Empowered tiebreak by: ${resolution.tiebreakByEmpoweredName}`);
+    }
+    if (resolution.bouncePointers.length > 0) {
+      lines.push(
+        `Bounce pointers: ${resolution.bouncePointers
+          .map((p) => `${p.actorName}→${p.targetName} (${p.classification})`)
+          .join("; ")}`,
+      );
+    }
+    if (resolution.safeNames.length > 0 || resolution.vulnerableNames.length > 0) {
+      lines.push(
+        `Safe pool: ${resolution.safeNames.join(", ") || "none"} | Vulnerable pool: ${resolution.vulnerableNames.join(", ") || "none"}`,
+      );
+    }
+    if (resolution.zeroSafeNames.length > 0) {
+      lines.push(`Zero-vote safe: ${resolution.zeroSafeNames.join(", ")}`);
+    }
+    if (resolution.ballots.length > 0) {
+      lines.push(
+        `Every sealed ballot: ${resolution.ballots
+          .map((b) =>
+            b.polarity
+              ? `${b.voterName}→${b.polarity}:${b.targetName}`
+              : `${b.voterName}→${b.targetName}`,
+          )
+          .join("; ")}`,
+      );
+    }
+    if (resolution.scores.length > 0) {
+      lines.push(
+        `Scoreboard: ${resolution.scores
+          .map((s) => `${s.playerName}=${s.value}${s.bucket ? ` (${s.bucket})` : ""}`)
+          .join(", ")}`,
+      );
+    }
+    lines.push(`Format eliminated: ${resolution.eliminatedName}`);
+    return lines;
   }
 
   private formatVoteCountsForPrompt(counts: HouseVoteCount[]): string {
@@ -1694,11 +1762,16 @@ ${this.formatHouseEvidence(context.evidence)}
 Rules:
 - Treat the Authoritative round facts as the official scoreboard. The engine will prefix concise terminal summaries with these facts, so your prose should interpret why they matter rather than re-list every count.
 - Current Producer evidence overrides the House Strategy Bible Packet when they conflict. Retire or correct stale packet claims instead of repeating them.
+- When Elimination path is format kernel: use the locked format full name (Save-or-Eliminate, Vote Bomb, Safety Bounce). Do NOT invent classic Power, expose, Council candidates, or Council tallies for that round. If Power action / Council lines say none, believe them.
+- House is omniscient: Authoritative round facts include every sealed ballot and the scoreboard. Use those exact ballots/totals. Do not invent a different pile-on story that contradicts "Every sealed ballot" / Scoreboard lines.
+- Vote Bomb: each player casts one sealed vote; zero votes is safe; among players with at least one vote, fewest is eliminated. Do not call a Vote Bomb ballot "protection," and do not describe a zero-vote player as eliminated.
+- Save-or-Eliminate: SAVE raises net, ELIMINATE lowers net; lowest net leaves.
+- Safety Bounce: public pointers classify SAFE/VULNERABLE, then sealed vote among the vulnerable pool (most out).
 - Active shields are exactly the names in Producer evidence's "Active shields" line. If it says "none", do not describe any shield as currently active.
 - If a shield was granted in Authoritative round facts but is no longer active, describe it as historical or expired rather than current protection.
-- The latest elimination is the eliminated/auto-eliminated name in Authoritative round facts. Do not frame older exits as the fresh wound after a later Council resolved.
-- Still name the most important concrete facts when they drive the story: who got power, who was exposed, who was shielded, who faced Council, how the Council vote resolved, and who left.
-- If the power action is "pass", describe it as the empowered player passing on using power or declining to intervene. Never say they passed, gave, gifted, handed, or transferred power to another player.
+- The latest elimination is the eliminated/auto-eliminated name in Authoritative round facts. Do not frame older exits as the fresh wound after a later elimination.
+- Still name the most important concrete facts when they drive the story: who was empowered, which format locked, how elimination worked under that format, who left, and what social debt remains.
+- If the power action is "pass" on a classic round, describe it as the empowered player passing on using power or declining to intervene. Never say they passed, gave, gifted, handed, or transferred power to another player.
 - Write like a showrunner recapping fresh consequence: name what just changed, who gained leverage or debt, who is under heat, and what decision or relationship tension is next.
 - Avoid robotic bookkeeping such as "historical artifact" language or a bare player-count recap. Prior shields and empowerment should matter only as why someone survived, who owes whom, or why a current conflict exists.
 - Alliance names like "Nyx bloc" are allowed only as social history or current social influence, never as proof of current mechanical empowerment.
@@ -1706,6 +1779,7 @@ Rules:
 - Do not overstate weak evidence. If a read is speculative, phrase it as a House read or question.
 - Do not expose hidden reasoning as player knowledge.
 - Keep the voice dramatic, perceptive, and varied.
+- Prefer full format names in prose, not snake_case ids.
 
 Respond with JSON only:
 {

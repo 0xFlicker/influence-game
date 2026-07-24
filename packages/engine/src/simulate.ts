@@ -34,7 +34,7 @@
  *     --model <lm-studio-model-id> --llm-timeout-sec 300
  *
  * Inspect the new batch summary.md, game-1.txt, and game-1-turns.jsonl. Flex
- * summaries include tier-aware run spend plus Flex-normalized model comparisons.
+ * summaries include tier-aware run spend plus one all-model cost comparison.
  * Require
  * FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE, model-authored format actions
  * (`decisionSource: "llm"` with useful thinking), no fallback, and no default
@@ -144,7 +144,7 @@ import { DEFAULT_CONFIG, Phase, type GameConfig, type UUID } from "./types";
 import {
   TokenTracker,
   estimateCostAllModels,
-  estimateFlexCostAllOpenAIModels,
+  estimateCostAllModelsForFlexRun,
   estimateTierAwareOpenAICost,
   type TokenUsage,
   type CostEstimate,
@@ -786,7 +786,7 @@ export function computeAggregateStats(
       tierAwareCost: metadata.args.flex
         ? estimateTierAwareOpenAICost(batchServiceTierUsage, model)
         : null,
-      flexCostEstimates: metadata.args.flex ? estimateFlexCostAllOpenAIModels(batchTokens) : [],
+      flexCostEstimates: metadata.args.flex ? estimateCostAllModelsForFlexRun(batchTokens) : [],
     },
     instrumentation: aggregateInstrumentation(completedResults.map((result) => result.instrumentation)),
   };
@@ -1206,45 +1206,37 @@ export function renderMarkdownSummary(stats: AggregateStats, results: GameResult
     const pricedCalls = (byTier.flex?.callCount ?? 0) + (byTier.auto?.callCount ?? 0) + (byTier.default?.callCount ?? 0);
     const unpricedCalls = Math.max(0, tu.callCount - pricedCalls);
 
-    lines.push("## Flex Cost Accounting");
+    lines.push("## Flex Run Cost");
     lines.push("");
-    lines.push("| Effective tier | Calls | Input tokens | Output tokens | Estimated cost |");
-    lines.push("|----------------|-------|--------------|---------------|----------------|");
     if (byTier.flex) {
-      lines.push(
-        `| Flex | ${byTier.flex.callCount.toLocaleString()} | ${byTier.flex.promptTokens.toLocaleString()} | ${byTier.flex.completionTokens.toLocaleString()} | $${(tierAwareCost?.flexCost ?? 0).toFixed(4)} |`,
-      );
+      lines.push(`- Flex: ${byTier.flex.callCount.toLocaleString()} calls, $${(tierAwareCost?.flexCost ?? 0).toFixed(4)} estimated.`);
     }
     if (byTier.auto || byTier.default) {
       const fallbackCalls = (byTier.auto?.callCount ?? 0) + (byTier.default?.callCount ?? 0);
-      const fallbackInput = (byTier.auto?.promptTokens ?? 0) + (byTier.default?.promptTokens ?? 0);
-      const fallbackOutput = (byTier.auto?.completionTokens ?? 0) + (byTier.default?.completionTokens ?? 0);
-      lines.push(
-        `| Auto/default fallback | ${fallbackCalls.toLocaleString()} | ${fallbackInput.toLocaleString()} | ${fallbackOutput.toLocaleString()} | $${(tierAwareCost?.fallbackCost ?? 0).toFixed(4)} |`,
-      );
+      lines.push(`- Auto/default fallback: ${fallbackCalls.toLocaleString()} calls, $${(tierAwareCost?.fallbackCost ?? 0).toFixed(4)} estimated.`);
     }
     if (byTier.priority) {
-      lines.push(`| Priority (unexpected) | ${byTier.priority.callCount.toLocaleString()} | ${byTier.priority.promptTokens.toLocaleString()} | ${byTier.priority.completionTokens.toLocaleString()} | not priced |`);
+      lines.push(`- Priority (unexpected): ${byTier.priority.callCount.toLocaleString()} calls, not priced.`);
     }
     if (unpricedCalls > 0 && !byTier.priority) {
-      lines.push(`| Missing returned tier | ${unpricedCalls.toLocaleString()} | - | - | not priced |`);
+      lines.push(`- Missing returned tier: ${unpricedCalls.toLocaleString()} calls, not priced.`);
     }
     if (tierAwareCost) {
-      lines.push(`| **This run** | ${(tierAwareCost.flexCalls + tierAwareCost.fallbackCalls).toLocaleString()} | - | - | **$${tierAwareCost.totalCost.toFixed(4)}** |`);
+      lines.push(`- **This run:** ${(tierAwareCost.flexCalls + tierAwareCost.fallbackCalls).toLocaleString()} priced calls, **$${tierAwareCost.totalCost.toFixed(4)} estimated.**`);
     } else {
-      lines.push("| **This run** | - | - | - | unavailable for this model |");
+      lines.push("- **This run:** unavailable for this model.");
     }
     lines.push("");
-    lines.push("Flex rows use Flex rates. Auto/default fallback rows use standard rates; 429 resource-unavailable retries are not charged.");
+    lines.push("Flex responses use Flex rates. Auto/default fallback responses use standard rates; 429 resource-unavailable retries are not charged.");
     if (unpricedCalls > 0) {
       lines.push("The run total excludes calls whose returned tier does not have a configured simulator rate.");
     }
     lines.push("");
 
-    lines.push("## Flex-Normalized Cost Estimates");
+    lines.push("## Cost Estimates");
     lines.push("");
-    lines.push("| OpenAI model | Input Cost | Output Cost | Total Cost |");
-    lines.push("|--------------|------------|-------------|------------|");
+    lines.push("| Model | Input Cost | Output Cost | Total Cost |");
+    lines.push("|-------|------------|-------------|------------|");
     for (const est of stats.tokenUsage.flexCostEstimates) {
       const marker = est.model === stats.model ? " *" : "";
       lines.push(
@@ -1252,7 +1244,7 @@ export function renderMarkdownSummary(stats: AggregateStats, results: GameResult
       );
     }
     lines.push("");
-    lines.push("_* = model used for this simulation; normalized estimates price all run tokens as Flex._");
+    lines.push("_* = model used for this simulation. Flex-supported OpenAI models use Flex rates; unsupported OpenAI models and Grok use standard rates._");
     lines.push("");
   } else {
     // Cost estimates across standard model tiers

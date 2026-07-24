@@ -67,7 +67,9 @@ describe("format pressure", () => {
       empoweredId: "a",
       empoweredName: "Alpha",
       offeredFormats: ["vote_bomb", "safety_bounce"],
+      offeredFormatNames: ["Vote Bomb", "Safety Bounce"],
       selectedFormat: "safety_bounce",
+      selectedFormatName: "Safety Bounce",
       ruleSheetSummary: ruleSheetForFormat("safety_bounce"),
       bounceBoard,
     });

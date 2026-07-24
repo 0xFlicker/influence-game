@@ -15,6 +15,7 @@ import type { UUID, GameConfig, Phase } from "../types";
 import type { IAgent, StrategicDecisionMetadata } from "../game-runner.types";
 import type { FormatPressureProjection } from "../format-pressure";
 import type { LaunchFormatId } from "../formats";
+import type { HouseFormatResolutionFacts } from "../game-runner.types";
 
 export type PhaseActor = ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>;
 
@@ -23,6 +24,8 @@ export interface FormatKernelState {
   selectedFormat: LaunchFormatId | null;
   pressure: FormatPressureProjection | null;
   lastSelectedFormat: LaunchFormatId | null;
+  /** Last completed format resolve (House omniscient; survives into next-round MC summary). */
+  lastFormatResolution: HouseFormatResolutionFacts | null;
 }
 
 export interface PhaseRunnerContext {

@@ -8,7 +8,7 @@ export type {
   SaveOrEliminatePolarity,
   VoteBombBallot,
 } from "./types";
-export { LAUNCH_FORMAT_IDS } from "./types";
+export { displayNameForFormat, LAUNCH_FORMAT_DISPLAY_NAMES, LAUNCH_FORMAT_IDS } from "./types";
 
 export {
   buildFormatMenu,

@@ -463,7 +463,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompts[1]).toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[1]).not.toContain(ruleSheetForFormat("vote_bomb"));
     expect(prompts[2]).toContain("loading");
-    expect(prompts[2]).toContain("stray kill");
+    expect(prompts[2]).toContain("stray vote");
     expect(prompts[3]).toContain("Legal unclassified targets: Vera");
     expect(prompts[4]).toContain("Legal vulnerable targets: Mira, Vera");
     expect(prompts[5]).toContain("Legal tied targets: Mira, Vera");
@@ -660,8 +660,9 @@ describe("InfluenceAgent structured output mode", () => {
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.map((message) => message.content).join("\n");
     expect(prompt).toContain("There is no expose ballot");
-    expect(prompt).toContain("the empowered player chooses the round format");
+    expect(prompt).toContain("tonight's round format");
     expect(prompt).toContain("Cast empower only");
+    expect(prompt).toContain("Optimize for *who* holds the chooser seat");
     expect(prompt).not.toContain("**EXPOSE vote**");
     expect(prompt).not.toContain("expose creates Council danger");
     expect(prompt).not.toContain("At Power, the empowered player");
@@ -772,15 +773,15 @@ describe("InfluenceAgent structured output mode", () => {
       const messages = request.messages as Array<{ content: string }>;
       return messages.map((message) => message.content).join("\n");
     });
-    expect(prompts[0]).toContain(`Locked round format: save_or_eliminate`);
+    expect(prompts[0]).toContain("Locked round format: Save-or-Eliminate (tool id: save_or_eliminate)");
     expect(prompts[0]).toContain(ruleSheetForFormat("save_or_eliminate"));
     expect(prompts[0]).toContain("ballot is sealed");
     expect(prompts[0]).not.toContain(ruleSheetForFormat("vote_bomb"));
-    expect(prompts[1]).toContain(`Locked round format: vote_bomb`);
+    expect(prompts[1]).toContain("Locked round format: Vote Bomb (tool id: vote_bomb)");
     expect(prompts[1]).toContain(ruleSheetForFormat("vote_bomb"));
     expect(prompts[1]).toContain("ballot is sealed");
     expect(prompts[1]).not.toContain(ruleSheetForFormat("save_or_eliminate"));
-    expect(prompts[2]).toContain(`Locked round format: safety_bounce`);
+    expect(prompts[2]).toContain("Locked round format: Safety Bounce (tool id: safety_bounce)");
     expect(prompts[2]).toContain(ruleSheetForFormat("safety_bounce"));
     expect(prompts[2]).toContain("pointers are public");
     expect(prompts[2]).toContain("final elimination ballot is sealed");
@@ -856,12 +857,12 @@ describe("InfluenceAgent structured output mode", () => {
 
     const allianceMessages = requests[0]?.messages as Array<{ content: string }>;
     const alliancePrompt = allianceMessages.map((message) => message.content).join("\n");
-    expect(alliancePrompt).toContain("contingent format branches");
+    expect(alliancePrompt).toContain("format math waits for House's pair");
     expect(alliancePrompt).not.toContain("next Vote or Council");
 
     const huddleMessages = requests[1]?.messages as Array<{ content: string }>;
     const huddlePrompt = huddleMessages.map((message) => message.content).join("\n");
-    expect(huddlePrompt).toContain("coordinate under the locked vote_bomb format");
+    expect(huddlePrompt).toContain("coordinate under locked Vote Bomb");
     expect(huddlePrompt).toContain(ruleSheetForFormat("vote_bomb"));
     expect(huddlePrompt).not.toContain("before Council after Power / Reveal");
     expect(huddlePrompt).not.toContain("Current Council status:");
@@ -2075,9 +2076,10 @@ describe("InfluenceAgent structured output mode", () => {
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("No one has won this vote's empowerment yet");
-    expect(prompt).toContain("Empower selects the player who chooses the round format and breaks format elimination ties.");
+    expect(prompt).toContain("Empower selects who chooses the round format and who breaks format elimination ties.");
     expect(prompt).toContain("There is no expose ballot on the format-kernel path.");
     expect(prompt).toContain("empowerment does not grant immunity");
+    expect(prompt).toContain("Optimize for *who* should hold the chooser seat");
     expect(prompt).not.toContain("Only the winner of this vote's empower tally is protected");
     expect(prompt).not.toContain("exposing someone you predict will win the current empower tally can be wasted");
   });

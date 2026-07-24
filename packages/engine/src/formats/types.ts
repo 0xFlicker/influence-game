@@ -9,6 +9,20 @@ export const LAUNCH_FORMAT_IDS: readonly LaunchFormatId[] = [
   "safety_bounce",
 ] as const;
 
+/** Player/operator-facing names. Tools still use LaunchFormatId snake_case ids. */
+export const LAUNCH_FORMAT_DISPLAY_NAMES: Record<LaunchFormatId, string> = {
+  save_or_eliminate: "Save-or-Eliminate",
+  vote_bomb: "Vote Bomb",
+  safety_bounce: "Safety Bounce",
+};
+
+export function displayNameForFormat(formatId: string): string {
+  if (formatId === "save_or_eliminate" || formatId === "vote_bomb" || formatId === "safety_bounce") {
+    return LAUNCH_FORMAT_DISPLAY_NAMES[formatId];
+  }
+  return formatId;
+}
+
 export type SaveOrEliminatePolarity = "save" | "eliminate";
 
 export interface SaveOrEliminateBallot {

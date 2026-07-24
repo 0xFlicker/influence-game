@@ -93,7 +93,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "grok-4.3": { inputPer1M: 1.25, cachedInputPer1M: 0.20, outputPer1M: 2.50 },
 };
 
-/** Flex uses the current OpenAI Batch-rate card. Only selectable hosted OpenAI models belong here. */
+/** Flex uses the current OpenAI Batch-rate card. Only Flex-supported hosted OpenAI models belong here. */
 export const OPENAI_FLEX_MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5-nano": { inputPer1M: 0.025, cachedInputPer1M: 0.0025, outputPer1M: 0.20 },
   "gpt-5-mini": { inputPer1M: 0.125, cachedInputPer1M: 0.0125, outputPer1M: 1.00 },
@@ -153,10 +153,14 @@ export function estimateCostAllModels(usage: TokenUsage): CostEstimate[] {
   }));
 }
 
-/** Estimate a fully Flex-run simulation across all currently selectable hosted OpenAI models. */
-export function estimateFlexCostAllOpenAIModels(usage: TokenUsage): CostEstimate[] {
-  return Object.entries(OPENAI_FLEX_MODEL_PRICING).map(([model, pricing]) => ({
-    ...estimateCost(usage, pricing),
+/**
+ * Estimate a Flex simulation across the familiar catalog in one table. Models
+ * supported by Flex use its rate card; unsupported OpenAI models and Grok keep
+ * their standard rates so they remain comparable without inventing prices.
+ */
+export function estimateCostAllModelsForFlexRun(usage: TokenUsage): CostEstimate[] {
+  return Object.entries(MODEL_PRICING).map(([model, standardPricing]) => ({
+    ...estimateCost(usage, OPENAI_FLEX_MODEL_PRICING[model] ?? standardPricing),
     model,
   }));
 }

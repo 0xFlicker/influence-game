@@ -10,6 +10,7 @@ import {
   computeSaveOrEliminateNets,
   computeVoteBombTallies,
   createBounceBoard,
+  displayNameForFormat,
   isLegalBouncePointer,
   isLegalSafetyBounceVote,
   isLegalSaveOrEliminateBallot,
@@ -33,6 +34,7 @@ import type {
   EliminationVoteDisclosure,
   FormatDecisionFallbackReason,
   FormatDecisionProvenance,
+  HouseFormatResolutionFacts,
 } from "../game-runner.types";
 import { Phase, type UUID } from "../types";
 import { handleElimination } from "./elimination";
@@ -47,6 +49,7 @@ import { runMinglePhase } from "./mingle";
 type FormatRoundElimination = {
   eliminatedId: UUID;
   voteDisclosure: EliminationVoteDisclosure;
+  houseResolution: HouseFormatResolutionFacts;
 };
 
 function normalizedFormatProvenance(
@@ -93,7 +96,7 @@ export async function runFormatMenuPhase(
   contextBuilder.currentFormatPressure = state.pressure;
 
   logger.logSystem(
-    `FORMAT MENU: ${menu.offered[0]} vs ${menu.offered[1]}. ${gameState.getPlayerName(empoweredId)} will choose.`,
+    `FORMAT MENU: ${displayNameForFormat(menu.offered[0])} vs ${displayNameForFormat(menu.offered[1])}. ${gameState.getPlayerName(empoweredId)} will choose.`,
     Phase.FORMAT_MENU,
   );
   logger.logSystem(formatPressureSummary(state.pressure), Phase.FORMAT_MENU);
@@ -156,7 +159,7 @@ export async function runFormatPickPhase(
 
   const sheet = ruleSheetForFormat(chosen);
   logger.logSystem(
-    `FORMAT LOCKED: ${chosen}. Chosen by ${gameState.getPlayerName(empoweredId)}.`,
+    `FORMAT LOCKED: ${displayNameForFormat(chosen)}. Chosen by ${gameState.getPlayerName(empoweredId)}.`,
     Phase.FORMAT_PICK,
   );
   logger.logSystem(`RULES: ${sheet}`, Phase.FORMAT_PICK);
@@ -174,7 +177,7 @@ export async function runFormatPickPhase(
     thinking,
     reasoningContext,
     scope: "system",
-    text: `${gameState.getPlayerName(empoweredId)} chose format ${chosen}`,
+    text: `${gameState.getPlayerName(empoweredId)} chose format ${displayNameForFormat(chosen)}`,
   });
 
   actor.send({ type: "PHASE_COMPLETE" });
@@ -209,7 +212,10 @@ export async function runFormatResolvePhase(
     throw new Error("Format resolve requires selected format and empowered player");
   }
 
-  logger.logSystem(`=== FORMAT RESOLVE (${formatId}) ===`, Phase.FORMAT_RESOLVE);
+  logger.logSystem(
+    `=== FORMAT RESOLVE (${displayNameForFormat(formatId)} / ${formatId}) ===`,
+    Phase.FORMAT_RESOLVE,
+  );
 
   let elimination: FormatRoundElimination;
   if (formatId === "save_or_eliminate") {
@@ -220,6 +226,9 @@ export async function runFormatResolvePhase(
     elimination = await resolveSafetyBounceRound(ctx, empoweredId);
   }
   const { eliminatedId } = elimination;
+
+  // House is omniscient: retain full sealed ballots / tallies for MC + producer.
+  state.lastFormatResolution = elimination.houseResolution;
 
   await handleElimination(ctx, eliminatedId, Phase.FORMAT_RESOLVE, {
     mode: "format",
@@ -243,7 +252,7 @@ export async function runFormatResolvePhase(
   );
 
   logger.logSystem(
-    `Format ${formatId} eliminated ${gameState.getPlayerName(eliminatedId)}`,
+    `Format ${displayNameForFormat(formatId)} eliminated ${gameState.getPlayerName(eliminatedId)}`,
     Phase.FORMAT_RESOLVE,
   );
 
@@ -346,15 +355,14 @@ async function resolveSaveOrEliminateRound(
     .map((id) => `${gameState.getPlayerName(id)}=${nets.nets[id] ?? 0}`)
     .join(", ");
   logger.logSystem(`Save-or-eliminate nets: ${netSummary}`, Phase.FORMAT_RESOLVE);
-  logger.logSystem(
-    formatEliminationReason(gameState, resolution, "lowest net"),
-    Phase.FORMAT_RESOLVE,
-  );
+  const resolutionSummary = formatEliminationReason(gameState, resolution, "lowest net");
+  logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
     throw new Error("Save-or-eliminate failed to resolve elimination");
   }
   const eliminatedId = resolution.eliminatedId;
+  const offered = ctx.formatKernelState.offeredFormats;
   return {
     eliminatedId,
     voteDisclosure: {
@@ -365,6 +373,36 @@ async function resolveSaveOrEliminateRound(
       savesReceived: nets.savesReceived[eliminatedId] ?? 0,
       eliminationVotesReceived: nets.eliminateReceived[eliminatedId] ?? 0,
       netScore: nets.nets[eliminatedId] ?? 0,
+    },
+    houseResolution: {
+      round: gameState.round,
+      formatId: "save_or_eliminate",
+      formatName: displayNameForFormat("save_or_eliminate"),
+      offeredFormatIds: offered ? [...offered] : null,
+      offeredFormatNames: offered
+        ? [displayNameForFormat(offered[0]), displayNameForFormat(offered[1])]
+        : null,
+      ballots: ballots.map((b) => ({
+        voterName: gameState.getPlayerName(b.voterId),
+        targetName: gameState.getPlayerName(b.targetId),
+        polarity: b.polarity,
+      })),
+      scores: aliveIds.map((id) => ({
+        playerName: gameState.getPlayerName(id),
+        value: nets.nets[id] ?? 0,
+        bucket: "net",
+      })),
+      zeroSafeNames: [],
+      safeNames: [],
+      vulnerableNames: [],
+      bouncePointers: [],
+      resolutionKind: resolution.kind,
+      resolutionSummary,
+      eliminatedName: gameState.getPlayerName(eliminatedId),
+      tiebreakByEmpoweredName:
+        resolution.kind === "clear" && resolution.tiedSet.length > 1
+          ? gameState.getPlayerName(empoweredId)
+          : null,
     },
   };
 }
@@ -450,20 +488,48 @@ async function resolveVoteBombRound(
     `Vote Bomb tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${positiveTotals || "none"} (fewest positive is eliminated)`,
     Phase.FORMAT_RESOLVE,
   );
-  logger.logSystem(
-    formatEliminationReason(gameState, resolution, "fewest positive votes"),
-    Phase.FORMAT_RESOLVE,
-  );
+  const resolutionSummary = formatEliminationReason(gameState, resolution, "fewest positive votes");
+  logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
     throw new Error("Vote Bomb failed to resolve elimination");
   }
   const eliminatedId = resolution.eliminatedId;
+  const offered = ctx.formatKernelState.offeredFormats;
   return {
     eliminatedId,
     voteDisclosure: {
       visibility: "sealed",
       votesReceived: tallies.totals[eliminatedId] ?? 0,
+    },
+    houseResolution: {
+      round: gameState.round,
+      formatId: "vote_bomb",
+      formatName: displayNameForFormat("vote_bomb"),
+      offeredFormatIds: offered ? [...offered] : null,
+      offeredFormatNames: offered
+        ? [displayNameForFormat(offered[0]), displayNameForFormat(offered[1])]
+        : null,
+      ballots: ballots.map((b) => ({
+        voterName: gameState.getPlayerName(b.voterId),
+        targetName: gameState.getPlayerName(b.targetId),
+      })),
+      scores: aliveIds.map((id) => ({
+        playerName: gameState.getPlayerName(id),
+        value: tallies.totals[id] ?? 0,
+        bucket: (tallies.totals[id] ?? 0) === 0 ? "zero_safe" : "positive",
+      })),
+      zeroSafeNames: tallies.zeroSafeIds.map((id) => gameState.getPlayerName(id)),
+      safeNames: [],
+      vulnerableNames: [],
+      bouncePointers: [],
+      resolutionKind: resolution.kind,
+      resolutionSummary,
+      eliminatedName: gameState.getPlayerName(eliminatedId),
+      tiebreakByEmpoweredName:
+        resolution.kind === "clear" && resolution.tiedSet.length > 1
+          ? gameState.getPlayerName(empoweredId)
+          : null,
     },
   };
 }
@@ -484,6 +550,7 @@ async function resolveSafetyBounceRound(
     Phase.FORMAT_RESOLVE,
   );
 
+  const bouncePointers: HouseFormatResolutionFacts["bouncePointers"] = [];
   while (board.nextActorId !== null) {
     const actorId = board.nextActorId;
     const agent = agents.get(actorId);
@@ -518,6 +585,11 @@ async function resolveSafetyBounceRound(
     board = applyBouncePointer(board, { actorId, targetId });
     updateBounceBoardPressure(ctx, board);
     const classification = board.vulnerable.includes(targetId) ? "VULNERABLE" : "SAFE";
+    bouncePointers.push({
+      actorName: gameState.getPlayerName(actorId),
+      targetName: gameState.getPlayerName(targetId),
+      classification,
+    });
     logger.logSystem(
       `Bounce: ${gameState.getPlayerName(actorId)} → ${gameState.getPlayerName(targetId)} (${classification})`,
       Phase.FORMAT_RESOLVE,
@@ -545,12 +617,34 @@ async function resolveSafetyBounceRound(
     Phase.FORMAT_RESOLVE,
   );
 
+  const offered = ctx.formatKernelState.offeredFormats;
   if (board.vulnerable.length === 1) {
+    const soleId = board.vulnerable[0]!;
+    const resolutionSummary = `Elimination: ${gameState.getPlayerName(soleId)} alone vulnerable (sole_vulnerable) — no final ballot.`;
     return {
-      eliminatedId: board.vulnerable[0]!,
+      eliminatedId: soleId,
       voteDisclosure: {
         visibility: "none",
         reason: "sole_vulnerable",
+      },
+      houseResolution: {
+        round: gameState.round,
+        formatId: "safety_bounce",
+        formatName: displayNameForFormat("safety_bounce"),
+        offeredFormatIds: offered ? [...offered] : null,
+        offeredFormatNames: offered
+          ? [displayNameForFormat(offered[0]), displayNameForFormat(offered[1])]
+          : null,
+        ballots: [],
+        scores: [],
+        zeroSafeNames: [],
+        safeNames: board.safe.map((id) => gameState.getPlayerName(id)),
+        vulnerableNames: board.vulnerable.map((id) => gameState.getPlayerName(id)),
+        bouncePointers: [...bouncePointers],
+        resolutionKind: "auto",
+        resolutionSummary,
+        eliminatedName: gameState.getPlayerName(soleId),
+        tiebreakByEmpoweredName: null,
       },
     };
   }
@@ -627,10 +721,8 @@ async function resolveSafetyBounceRound(
       .join(", ")} (most votes among vulnerable is eliminated)`,
     Phase.FORMAT_RESOLVE,
   );
-  logger.logSystem(
-    formatEliminationReason(gameState, resolution, "most votes in vulnerable pool"),
-    Phase.FORMAT_RESOLVE,
-  );
+  const resolutionSummary = formatEliminationReason(gameState, resolution, "most votes in vulnerable pool");
+  logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
     throw new Error("Safety Bounce failed to resolve elimination");
@@ -641,6 +733,35 @@ async function resolveSafetyBounceRound(
     voteDisclosure: {
       visibility: "sealed",
       votesReceived: voteTotals[eliminatedId] ?? 0,
+    },
+    houseResolution: {
+      round: gameState.round,
+      formatId: "safety_bounce",
+      formatName: displayNameForFormat("safety_bounce"),
+      offeredFormatIds: offered ? [...offered] : null,
+      offeredFormatNames: offered
+        ? [displayNameForFormat(offered[0]), displayNameForFormat(offered[1])]
+        : null,
+      ballots: ballots.map((b) => ({
+        voterName: gameState.getPlayerName(b.voterId),
+        targetName: gameState.getPlayerName(b.targetId),
+      })),
+      scores: board.vulnerable.map((id) => ({
+        playerName: gameState.getPlayerName(id),
+        value: voteTotals[id] ?? 0,
+        bucket: "vulnerable_total",
+      })),
+      zeroSafeNames: [],
+      safeNames: board.safe.map((id) => gameState.getPlayerName(id)),
+      vulnerableNames: board.vulnerable.map((id) => gameState.getPlayerName(id)),
+      bouncePointers: [...bouncePointers],
+      resolutionKind: resolution.kind,
+      resolutionSummary,
+      eliminatedName: gameState.getPlayerName(eliminatedId),
+      tiebreakByEmpoweredName:
+        resolution.kind === "clear" && resolution.tiedSet.length > 1
+          ? gameState.getPlayerName(empoweredId)
+          : null,
     },
   };
 }

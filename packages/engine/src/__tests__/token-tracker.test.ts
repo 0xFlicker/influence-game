@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   estimateCostForKnownModel,
-  estimateFlexCostAllOpenAIModels,
+  estimateCostAllModelsForFlexRun,
   TokenTracker,
   type TokenUsage,
 } from "../token-tracker";
@@ -41,16 +41,14 @@ describe("token cost estimation", () => {
     expect(estimateCostForKnownModel(longContextUsage, "grok-4-3")?.totalCost).toBeCloseTo(0.6875, 10);
   });
 
-  it("uses Flex pricing for every selectable OpenAI model", () => {
-    const estimates = estimateFlexCostAllOpenAIModels(usage);
+  it("uses Flex pricing where available while retaining every familiar model row", () => {
+    const estimates = estimateCostAllModelsForFlexRun(usage);
 
-    expect(estimates.map((estimate) => estimate.model)).toEqual([
-      "gpt-5-nano",
-      "gpt-5-mini",
-      "gpt-5.4-nano",
-      "gpt-5.4-mini",
-    ]);
+    expect(estimates.map((estimate) => estimate.model)).toContain("gpt-4o-mini");
+    expect(estimates.map((estimate) => estimate.model)).toContain("gpt-5-mini");
+    expect(estimates.map((estimate) => estimate.model)).toContain("grok-4-3");
     expect(estimates.find((estimate) => estimate.model === "gpt-5-mini")?.totalCost).toBeCloseTo(0.000625, 10);
+    expect(estimates.find((estimate) => estimate.model === "grok-4-3")?.totalCost).toBeCloseTo(0.00275, 10);
   });
 
   it("keeps successful response usage separated by effective service tier", () => {

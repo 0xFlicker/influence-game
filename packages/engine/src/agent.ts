@@ -55,7 +55,7 @@ import type {
 } from "./game-runner.types";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
-import { isLaunchFormatId, pickFormatFromMenu, type LaunchFormatId } from "./formats";
+import { displayNameForFormat, isLaunchFormatId, pickFormatFromMenu, type LaunchFormatId } from "./formats";
 import { ruleSheetForFormat } from "./format-pressure";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
 import {
@@ -176,30 +176,30 @@ This phase has two parts before the standard Vote: first private-room Mingle con
     case Phase.VOTE:
       // EXPOSE REMOVED from vote phase behavior prompt (format-kernel).
       return `PHASE BEHAVIOR — STANDARD VOTE:
-Cast the empower ballot only. Empower decides who chooses the round format and breaks format elimination ties. There is no expose ballot. No format is locked yet, so any format-specific plan is contingent.`;
+Cast the empower ballot only. Empower chooses who picks tonight's round format from the House pair and who breaks format ties. There is no expose ballot. No format is locked yet. Prioritize who you trust as chooser — not abstract format theory.`;
 
     case Phase.FORMAT_MENU:
     case Phase.FORMAT_PICK:
       return `PHASE BEHAVIOR — FORMAT PICK:
-The House is offering two round formats. No format is locked until the empowered player chooses. Compare only the offered pair, keep other players' plans contingent, and do not invent a selected format. Empowerment grants format choice and possible tiebreak responsibility, not immunity.`;
+The House is offering two named round formats. No format is locked until the empowered player chooses. Compare only the offered pair by their full names and rule sheets. Do not invent a third format. Empowerment grants format choice and possible tiebreak responsibility, not immunity.`;
 
     case Phase.FORMAT_MINGLE:
       return `PHASE BEHAVIOR — FORMAT MINGLE:
-The round format is locked. Play under the locked format and rule summary in Current Format Pressure. Use the private room to coordinate legal actions, test commitments, or misdirect opponents. Do not substitute the retired Power-to-Council loop or invent rules from another format.`;
+The round format is locked. Play under the locked format and rule summary in Current Format Pressure. Use the private room to coordinate legal actions, name real ballot/pointer targets, test commitments, or misdirect opponents. Do not substitute the retired Power-to-Council loop or invent rules from another format.`;
 
     case Phase.MINGLE:
     case Phase.POST_VOTE_MINGLE:
       return `PHASE BEHAVIOR — MINGLE (STRATEGY PHASE):
 This is the right time for game talk inside your current room. Messages here are private to the occupants of the room you are in right now (not one-to-one DMs, not public to the whole game).
 In the room you can:
-- Discuss strategy, alliances, voting targets
+- Discuss strategy, alliances, and who you want empowered or targeted later
 - Share intelligence about other players
 - Negotiate deals, make promises, plant misinformation
 - Move between rooms between beats if it serves your plan
 - Build genuine personal bonds — the best alliances combine strategy AND personal connection
 Even in strategy talk, stay in character. Your backstory and personality shape HOW you strategize.
 Room privacy rule: only the players physically in the same room right now can hear you. The audience (viewers) can see the social dynamics but other players outside the room cannot.
-${isEarlyGame ? `\nEARLY GAME (Round ${round}): You don't have much game information yet. Focus on feeling out the people sharing your room — are they someone you could work with? Use indirect, coded language rather than bluntly proposing alliances. Say "I've got a feeling about so-and-so" rather than "let's vote them out." Test the waters without committing.` : ""}`;
+${isEarlyGame ? `\nEARLY GAME (Round ${round}): You don't have deep receipts yet, but you may still name people. Focus on who shares the room, who you might empower, who feels like a threat under a later sealed ballot, and what deals are real. Prefer clear social reads over abstract format speculation — the exact House format pair is not offered until after empower.` : ""}`;
 
     case Phase.RUMOR:
       if (isEarlyGame) {
@@ -2197,10 +2197,13 @@ If proposing, make the roster size intentional and name a concrete purpose tied 
       ? `\n## Huddle So Far\n${history.map((entry) => `${entry.from}: "${entry.text}"`).join("\n")}\n`
       : "";
     const selectedFormat = ctx.formatPressure?.selectedFormat;
+    const selectedFormatName =
+      ctx.formatPressure?.selectedFormatName
+      ?? (selectedFormat ? displayNameForFormat(selectedFormat) : null);
     const windowGoal = huddle.window === "pre_vote"
-      ? "coordinate the empower vote and contingent format branches before any format is locked"
-      : selectedFormat
-        ? `coordinate under the locked ${selectedFormat} format before its public or sealed actions resolve`
+      ? "coordinate people and the empower vote: who you trust, who is a threat, who should get empower, and what first-ballot heat you can name"
+      : selectedFormatName
+        ? `coordinate under locked ${selectedFormatName} before its public or sealed actions resolve — name real legal targets and commitments`
         : "coordinate around the next legal round action without inventing a locked format";
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -2218,7 +2221,8 @@ ${historyText}
 Rules:
 - This huddle is private to the listed alliance members.
 - You get exactly one speaking opportunity in this huddle session.
-- Before a format is locked, you may ask for an empower plan and contingent branches. After lock, ask for legal commitments under that format: sealed ballot placement, a public bounce pointer, a tiebreak position, an apology, reaffirmation, leak, denial, or betrayal explanation.
+- Before a format is locked: name people — empower preference, threats, and likely ballot heat. Do not invent format names or speak in coded format theology ("structured/stable option") when House has not offered a pair yet. Format choice is secondary until the menu exists.
+- After a format is locked: ask for legal commitments under that format (sealed ballot placement, public bounce pointer, tiebreak, apology, reaffirmation, leak, denial, or betrayal explanation). Prefer full format names in speech (e.g. Vote Bomb), not snake_case ids.
 - You may mention dissent or uncertainty.
 - You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation only happens in Mingle I.
 - Keep it to 1-3 sentences. Be specific enough that The House can summarize the ask, plan, promises, dissent, and confidence.
@@ -2526,9 +2530,9 @@ Use the spread_rumor tool.`;
 ## Your Task
 Cast your empower vote for this round.
 
-**EMPOWER vote**: Who should choose the round format from the House-offered pair and break any format elimination tie? Vote for an ally, a predictable chooser, or yourself when legal.
+**EMPOWER vote**: Who should choose tonight's round format from the two formats House will offer, and break any format elimination tie? Vote for an ally, a predictable chooser, or yourself when legal. Optimize for *who* holds the chooser seat — not for a format manifesto.
 
-**RULE**: There is no expose ballot. No one has won empowerment yet, and no round format is locked. After the tally, the empowered player chooses the round format from two House offers. Empowerment is not immunity: the empowered player remains eligible for format ballots, Safety Bounce pointers, and elimination.
+**RULE**: There is no expose ballot. No one has won empowerment yet, and no format is locked. After the tally, House offers two formats by name and the empowered player picks one. Empowerment is not immunity: the empowered player still participates and can be eliminated under the locked format.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
@@ -2954,18 +2958,21 @@ Use the council_vote tool to cast your vote.`;
   ): Promise<FormatDecisionResult<{ formatId: string }>> {
     const fallbackFormat = offeredFormats[0];
     const offeredRules = offeredFormats.map((formatId) => {
+      const label = displayNameForFormat(formatId);
       const rule = isLaunchFormatId(formatId)
         ? ruleSheetForFormat(formatId)
         : "House supplied this format id without a registered launch rule sheet.";
-      return `- ${formatId}: ${rule}`;
+      return `- ${label} (tool id: ${formatId}): ${rule}`;
     }).join("\n");
     const prompt = this.buildUserPrompt(ctx) + `
 ## Pick This Round's Format
-You are empowered. Choose exactly one of the two House-offered formats below:
+You are empowered. Choose exactly one of the two House-offered formats below.
+In speech and thinking, use the full public names (Save-or-Eliminate, Vote Bomb, Safety Bounce). The tool still requires the matching tool id.
+
 ${offeredRules}
 
 No format is locked yet. Treat every format-specific plan as contingent until this tool choice is accepted.
-Picking the format does not grant immunity. You remain fully eligible to vote, point during Safety Bounce, receive ballots, and be eliminated under the format you choose.
+Picking the format does not grant immunity. You remain fully eligible to cast sealed ballots, point during Safety Bounce, receive ballots, and be eliminated under the format you choose.
 Choose the format that best serves your current relationships, threat map, and ability to shape the round.
 
 Use the pick_round_format tool with exactly one offered format id.`;
@@ -3090,10 +3097,10 @@ Use the save_or_eliminate_ballot tool.`;
 ## Vote Bomb Ballot
 ${supplementalActiveFormatRule(ctx, "vote_bomb")}
 
-Your ballot is sealed until the House reveal. Vote for exactly one living non-self target.
+Your ballot is sealed until the House reveal. Cast one sealed vote for exactly one living non-self target.
 Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
 
-Vote Bomb rewards deliberate placement: loading several votes onto one player can leave a different player holding the lethal fewest-positive total, while a stray kill can accidentally give a player exactly one vote and eliminate them. Zero votes is safe. Coordinate when useful, but do not assume the room kept its promises.
+Vote Bomb rewards deliberate placement: loading several votes onto one player can leave a different player holding the lethal fewest-positive total, while a single stray vote can put someone on the fewest-positive ledge. Zero votes is safe. Coordinate when useful, but do not assume the room kept its promises.
 
 Use the vote_bomb_ballot tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
@@ -3931,19 +3938,24 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
   private buildFormatPressureSection(ctx: PhaseContext): string {
     const pressure = ctx.formatPressure;
     if (!pressure) return "";
+    const offeredNames = pressure.offeredFormatNames?.length === 2
+      ? pressure.offeredFormatNames
+      : pressure.offeredFormats.map((id) => displayNameForFormat(id));
     if (!pressure.selectedFormat) {
       return `## Current Format Pressure
 - Empowered chooser: ${pressure.empoweredName}
-- Offered formats: ${pressure.offeredFormats.join(" vs ")}
-- No format is locked yet. Treat plans for either offered format as contingent until the empowered player chooses.`;
+- Offered formats: ${offeredNames.join(" vs ")} (tool ids: ${pressure.offeredFormats.join(", ")})
+- No format is locked yet. Treat plans for either offered format as contingent until the empowered player chooses. Prefer full public names in speech.`;
     }
 
+    const lockedName =
+      pressure.selectedFormatName ?? displayNameForFormat(pressure.selectedFormat);
     return `## Current Format Pressure
-- Locked round format: ${pressure.selectedFormat}
+- Locked round format: ${lockedName} (tool id: ${pressure.selectedFormat})
 - Empowered chooser and format tiebreaker: ${pressure.empoweredName}
 - Active rule sheet: ${pressure.ruleSheetSummary ?? ruleSheetForFormat(pressure.selectedFormat)}
 - Visibility: ${this.formatVisibilityGuidance(pressure.selectedFormat)}
-Use only this locked format for the current round. Do not import rules from an unselected format or the retired default Power-to-Council loop.`;
+Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.`;
   }
 
   private buildGameRulesSection(ctx: PhaseContext): string {
@@ -3972,20 +3984,22 @@ Use only this locked format for the current round. Do not import rules from an u
       return `## Locked Format Mingle Rules
 - Current Format Pressure below is the only active format rule sheet.
 - Mingle rooms are private: only current room occupants hear current room messages.
-- Coordinate only legal actions under the locked rule sheet. Do not pressure the empowered player for a retired Power ceremony.`;
+- Coordinate legal actions and name real targets under the locked rule sheet. Do not pressure the empowered player for a retired Power ceremony.`;
     }
     if (ctx.phase === Phase.FORMAT_MENU || ctx.phase === Phase.FORMAT_PICK) {
       return `## Format Pick Rules
 - The empower tally selected the format chooser, not an immune player.
-- The House offers exactly two formats. No format is locked until the empowered player chooses.
-- Any plan for an offered format remains contingent until that choice is accepted.`;
+- The House offers exactly two named formats. No format is locked until the empowered player chooses.
+- Any plan for an offered format remains contingent until that choice is accepted.
+- Prefer full public names (Save-or-Eliminate, Vote Bomb, Safety Bounce) in speech; tools use snake_case ids.`;
     }
     if (ctx.phase === Phase.VOTE) {
       // EXPOSE REMOVED from Standard Vote Rules block (format-kernel).
       return `## Standard Vote Rules
-- Empower selects the player who chooses the round format and breaks format elimination ties.
+- Empower selects who chooses the round format and who breaks format elimination ties.
 - There is no expose ballot on the format-kernel path.
 - No one has won this vote's empowerment yet, no format is locked, and empowerment does not grant immunity.
+- Optimize for *who* should hold the chooser seat. Do not invent a format menu before House offers it.
 - Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.`;
     }
     // EXPOSE REMOVED from default Game Rules block (format-kernel).
@@ -3993,9 +4007,10 @@ Use only this locked format for the current round. Do not import rules from an u
 - Standard Vote is empower-only. Empower selects the round-format chooser and format tiebreaker.
 - There is no expose ballot; elimination is resolved only by the locked round format.
 - Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.
-- The House offers two round formats after empowerment; the empowered player chooses one.
+- After empowerment, House offers two named formats; the empowered player chooses one. Prefer full public names in speech.
 - Empowerment is not immunity. The empowered player still participates and can be eliminated under the locked format.
-- After the pick, Mingle rooms are private and the locked format's own rules resolve the elimination.`;
+- After the pick, Mingle rooms are private and the locked format's own rules resolve the elimination.
+- Pre-pick: prioritize people (trust, threats, empower plans). Format math only after the menu or lock is real.`;
   }
 
   private buildCurrentStakesSection(ctx: PhaseContext): string {
@@ -4032,18 +4047,18 @@ Use only this locked format for the current round. Do not import rules from an u
       : "";
     const formatLine = formatPressure
       ? formatPressure.selectedFormat
-        ? `- Locked format: ${formatPressure.selectedFormat}. Play only its legal actions and visibility rules.`
-        : `- No format is locked. ${formatPressure.empoweredName} will choose between ${formatPressure.offeredFormats.join(" and ")}; keep branches contingent.`
+        ? `- Locked format: ${formatPressure.selectedFormatName ?? displayNameForFormat(formatPressure.selectedFormat)}. Play only its legal actions and visibility rules.`
+        : `- No format is locked. ${formatPressure.empoweredName} will choose between ${(formatPressure.offeredFormatNames ?? formatPressure.offeredFormats.map((id) => displayNameForFormat(id))).join(" and ")}; keep branches contingent.`
       : "";
 
     const phaseObjective: Partial<Record<Phase, string>> = {
       [Phase.INTRODUCTION]: "Introduce a human persona. Do not play strategy out loud yet.",
       [Phase.LOBBY]: "Public table talk before voting. Build cover, test reads, create reasons people might empower someone.",
-      [Phase.MINGLE_I]: "Form or respond to official named-alliance proposals before the vote; format-specific commitments remain contingent.",
-      [Phase.PRE_VOTE_HUDDLE]: "Coordinate the empower vote and contingent format branches inside the active alliance huddle.",
+      [Phase.MINGLE_I]: "Form or respond to official named-alliance proposals before the vote. Prioritize people and trust; format math waits for House's pair.",
+      [Phase.PRE_VOTE_HUDDLE]: "Coordinate people and empower plans inside the alliance huddle — who to empower, who is a threat, what heat is real.",
       // EXPOSE REMOVED from VOTE phase objective (format-kernel).
       [Phase.VOTE]: "Cast the empower ballot. Empower chooses who picks the round format and breaks format elimination ties.",
-      [Phase.FORMAT_MENU]: "Read the two House-offered formats without inventing a locked choice.",
+      [Phase.FORMAT_MENU]: "Read the two House-offered formats by full public name without inventing a locked choice.",
       [Phase.FORMAT_PICK]: "Choose one offered format. The choice grants no immunity.",
       [Phase.FORMAT_MINGLE]: "Coordinate under the locked format using its real public-versus-sealed action rules.",
       [Phase.FORMAT_RESOLVE]: "Take the current legal action under the locked round format.",
@@ -4052,7 +4067,7 @@ Use only this locked format for the current round. Do not import rules from an u
       [Phase.POWER]: "The empowered player resolves the round's pressure by passing, protecting/shielding, or eliminating when available.",
       [Phase.REVEAL]: "The Power outcome is becoming public. React to what changed and who is newly vulnerable.",
       [Phase.PRE_COUNCIL_HUDDLE]: formatPressure?.selectedFormat
-        ? `Coordinate legal commitments under the locked ${formatPressure.selectedFormat} format inside the active alliance huddle.`
+        ? `Coordinate legal commitments under locked ${formatPressure.selectedFormatName ?? displayNameForFormat(formatPressure.selectedFormat)} inside the active alliance huddle.`
         : "Coordinate inside House-scheduled active alliance huddles before Council.",
       [Phase.COUNCIL]: "Council decides which candidate leaves. Survive, secure votes, justify your target, or manage jury risk.",
       [Phase.DIARY_ROOM]: "Private producer-facing reflection. Be candid about strategy, fear, deals, and what you will do next.",

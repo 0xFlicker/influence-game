@@ -40,8 +40,8 @@ Record the effective `service_tier` returned by each successful OpenAI response
 beside its usage counters. A Flex batch summary reports its tier-aware estimated
 spend: Flex rows use the Flex/Batch rate card; auto/default fallback rows use
 the standard rate card and remain visible rather than being normalized away.
-Resource-unavailable 429 attempts have no usage or cost. Separately, price the
-entire run's token usage at the Flex rate for every selectable Flex-supported
-OpenAI model so an operator can compare an all-Flex migration. This is a
-rate-card estimate, not an invoice; returned tiers without a configured rate
-must be left unpriced and called out in the summary.
+Resource-unavailable 429 attempts have no usage or cost. The single comparison
+table retains the familiar OpenAI and Grok rows: Flex-supported OpenAI models
+use Flex rates, while unsupported OpenAI models and Grok retain standard rates.
+This is a rate-card estimate, not an invoice; returned tiers without a
+configured rate must be left unpriced and called out in the summary.

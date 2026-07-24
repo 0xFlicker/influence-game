@@ -128,7 +128,7 @@ describe("Format kernel integration (MockAgent)", () => {
           entry.round === pick.round &&
           entry.phase === Phase.FORMAT_RESOLVE &&
           entry.scope === "system" &&
-          entry.text === `=== FORMAT RESOLVE (${formatId}) ===`,
+          entry.text.startsWith("=== FORMAT RESOLVE (") && entry.text.includes(formatId),
       );
       const eliminations = events.filter(
         (event) => event.type === "player_eliminated" && event.round === pick.round,
@@ -155,6 +155,55 @@ describe("Format kernel integration (MockAgent)", () => {
     }
 
     expect(result.eliminationOrder).toHaveLength(LAUNCH_FORMAT_IDS.length);
+  });
+
+  it("feeds House MC omniscient sealed format ballots via roundFacts.formatResolution", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map((name) => new MockAgent(createUUID(), name));
+    for (const agent of agents) {
+      agent.pickRoundFormat = async (_ctx, offered) => ({
+        formatId: offered.includes("vote_bomb") ? "vote_bomb" : offered[0],
+        thinking: "mock: pick vote bomb",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+    }
+    const events: GameStreamEvent[] = [];
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, maxRounds: 1 }, undefined, {
+      maxRoundsMode: "exact",
+    });
+    runner.setStreamListener((event) => events.push(event));
+    await runner.run();
+
+    const houseMc = events.find(
+      (event) => event.type === "agent_turn" && event.action === "house-mc-summary",
+    );
+    expect(houseMc).toBeDefined();
+    if (!houseMc || houseMc.type !== "agent_turn") throw new Error("expected house-mc-summary");
+    const roundFacts = houseMc.response.roundFacts as {
+      eliminationPath?: string;
+      formatResolution?: {
+        formatId: string;
+        ballots: Array<{ voterName: string; targetName: string }>;
+        bouncePointers?: Array<{ actorName: string; targetName: string }>;
+        scores: Array<{ playerName: string; value: number }>;
+        eliminatedName: string;
+      } | null;
+    };
+    expect(roundFacts.eliminationPath).toBe("format");
+    const resolution = roundFacts.formatResolution;
+    expect(resolution).toBeTruthy();
+    if (!resolution) throw new Error("expected formatResolution");
+    expect(["save_or_eliminate", "vote_bomb", "safety_bounce"]).toContain(resolution.formatId);
+    // House omniscient: sealed ballots (or bounce chain) fully present for MC.
+    const ballotCount = resolution.ballots.length;
+    const bounceCount = resolution.bouncePointers?.length ?? 0;
+    expect(ballotCount + bounceCount).toBeGreaterThan(0);
+    expect(resolution.eliminatedName.length).toBeGreaterThan(0);
+    if (ballotCount > 0) {
+      expect(ballotCount).toBe(5);
+      const voters = new Set(resolution.ballots.map((b) => b.voterName));
+      expect(voters.size).toBe(5);
+    }
   });
 
   it("completes a short game using format menu/pick/mingle/resolve without Power or Council", async () => {

@@ -2,7 +2,7 @@
 
 Generated: 2026-06-21
 
-Last audited against `main`: 2026-07-15
+Last audited against `main`: 2026-07-24
 
 Inputs:
 
@@ -41,6 +41,16 @@ Items are ordered by current priority.
 - Concrete seam: agent fallback paths, vote/revote target validation, cognitive artifact diagnostics, and producer-safe postgame analysis.
 - Validation path: run a model that emits invalid/empty vote targets; verify the canonical game still advances, while the admin/producer surface clearly shows fallback count, repaired fields, original invalid value, fallback reason, and affected agent/action/round.
 - Suggested slice: persist a bounded producer-only ledger containing action, actor, round, original invalid value, chosen repair, reason, and model. Summarize it through existing producer analysis instead of polluting player-facing canonical events or coupling it to cost accounting.
+
+### R13. Accepted-action trace-to-event correlation
+
+- Status: `ready`
+- Consolidates: match-narrative token-efficiency plan U5 and live local-game evidence from `jade-black-mist`.
+- Sources: `docs/plans/2026-07-21-002-feat-match-narrative-token-efficiency-plan.md:78-83`, `docs/plans/2026-07-21-002-feat-match-narrative-token-efficiency-plan.md:420-445`, `packages/api/src/services/game-lifecycle.ts`, `packages/api/src/services/private-trace-writer.ts`.
+- Signal: private decision-trace manifests are successfully captured and stored, but accepted actions do not stamp an exact canonical event sequence or shared `decisionId` onto their evidence. Producer MCP can read the board facts and private traces, but cannot prove which trace produced a given vote, power, or Council action; actor/phase/round matching is only an inference.
+- Concrete seam: agent private-decision receipt, canonical event source pointers, accepted-action append path, cognitive-artifact and private-trace `eventSequence` assignment, and producer narrative `relatedActionRefs`.
+- Validation path: run a vote, power action, and Council action with trace capture; verify each accepted canonical event carries the decision identity and its linked cognition/trace records carry the accepted event sequence. Verify speech, reflection, intent-only, failed, and repaired decisions remain intentionally unlinked unless they produce an accepted board action. Confirm no private decision identity appears in player-facing event or transcript DTOs.
+- Suggested slice: mint/retain the existing private `decisionId`, thread it into producer-safe canonical source pointers, and stamp the final accepted event sequence after append. Do not backfill historical traces, treat private cognition as board truth, or link rejected decisions just to fill a metric.
 
 ### R12. Player Strategy Thread checkpoint hydration
 

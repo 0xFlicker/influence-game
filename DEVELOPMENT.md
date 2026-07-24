@@ -405,8 +405,9 @@ resource-unavailable 429s with exponential backoff and switches the retry to
 `service_tier: "auto"` after the third 429 for that request; the next request
 probes Flex again. Use a longer LLM request timeout because Flex responses can
 take longer. Flex summaries include the tier-aware run estimate (Flex responses
-at Flex rates, visible auto/default fallbacks at standard rates) and a
-Flex-normalized comparison across the selectable hosted OpenAI models. A 429
+at Flex rates, visible auto/default fallbacks at standard rates) followed by
+one familiar all-model comparison table. Flex-supported OpenAI rows use Flex
+rates; unsupported OpenAI rows and Grok retain standard rates. A 429
 resource-unavailable retry is not charged.
 
 For local proof, load the chosen model in LM Studio and serve its OpenAI-compatible endpoint on `127.0.0.1:1234`.

@@ -540,6 +540,49 @@ export interface HouseVoteCount {
   voters: string[];
 }
 
+/** One sealed format ballot (House/producer omniscient; not player-public until reveal). */
+export interface HouseFormatBallotLine {
+  voterName: string;
+  targetName: string;
+  /** Present for Save-or-Eliminate. */
+  polarity?: "save" | "eliminate";
+}
+
+export interface HouseFormatScoreLine {
+  playerName: string;
+  value: number;
+  /** e.g. zero_safe | positive | net | vulnerable_total */
+  bucket?: string;
+}
+
+export interface HouseFormatBouncePointerLine {
+  actorName: string;
+  targetName: string;
+  classification: "SAFE" | "VULNERABLE";
+}
+
+/**
+ * Full format resolution snapshot for House MC / producer.
+ * House sees every sealed ballot; player-facing surfaces stay sealed.
+ */
+export interface HouseFormatResolutionFacts {
+  round: number;
+  formatId: string;
+  formatName: string;
+  offeredFormatIds: [string, string] | null;
+  offeredFormatNames: [string, string] | null;
+  ballots: HouseFormatBallotLine[];
+  scores: HouseFormatScoreLine[];
+  zeroSafeNames: string[];
+  safeNames: string[];
+  vulnerableNames: string[];
+  bouncePointers: HouseFormatBouncePointerLine[];
+  resolutionKind: string;
+  resolutionSummary: string;
+  eliminatedName: string;
+  tiebreakByEmpoweredName: string | null;
+}
+
 export interface HouseRoundFacts {
   round: number;
   empoweredName: string | null;
@@ -554,6 +597,20 @@ export interface HouseRoundFacts {
   councilMethod: string | null;
   eliminatedName: string | null;
   councilRoles: HouseCouncilRoleFact[];
+  /** Format-kernel fields (null on classic Power→Council rounds). */
+  selectedFormatId: string | null;
+  selectedFormatName: string | null;
+  offeredFormatIds: [string, string] | null;
+  offeredFormatNames: [string, string] | null;
+  /** How elimination resolved under the format (e.g. format id / method string). */
+  formatMethod: string | null;
+  /** Which elimination spine produced the exit this round. */
+  eliminationPath: "format" | "council" | "power_auto" | "unknown";
+  /**
+   * Omniscient format resolution: every sealed ballot, scoreboard, bounce chain.
+   * Null on classic rounds or before format resolve completes.
+   */
+  formatResolution: HouseFormatResolutionFacts | null;
 }
 
 export type HouseCouncilRole =

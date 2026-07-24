@@ -366,10 +366,12 @@ describe("simulation variant config", () => {
     expect(stats.tokenUsage.tierAwareCost?.fallbackCost).toBeCloseTo(0.00025, 10);
     expect(stats.tokenUsage.flexCostEstimates?.find((estimate) => estimate.model === "gpt-5-mini")?.totalCost).toBeCloseTo(0.00075, 10);
     const summary = renderMarkdownSummary(stats, []);
-    expect(summary).toContain("## Flex Cost Accounting");
-    expect(summary).toContain("| Flex | 1 | 1,000 | 500 | $0.0006 |");
-    expect(summary).toContain("| Auto/default fallback | 1 | 200 | 100 | $0.0003 |");
-    expect(summary).toContain("## Flex-Normalized Cost Estimates");
+    expect(summary).toContain("## Flex Run Cost");
+    expect(summary).toContain("- Flex: 1 calls, $0.0006 estimated.");
+    expect(summary).toContain("- Auto/default fallback: 1 calls, $0.0003 estimated.");
+    expect(summary).toContain("## Cost Estimates");
+    expect(summary).toContain("| gpt-5-mini * | $0.0001 | $0.0006 | $0.0007 |");
+    expect(summary).toContain("| grok-4-3 | $0.0016 | $0.0016 | $0.0033 |");
   });
 
   it("serializes agent turns as clean structured JSON records", () => {

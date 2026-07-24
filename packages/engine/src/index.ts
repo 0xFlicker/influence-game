@@ -335,7 +335,7 @@ export {
   estimateCost,
   estimateCostForKnownModel,
   estimateCostAllModels,
-  estimateFlexCostAllOpenAIModels,
+  estimateCostAllModelsForFlexRun,
   estimateTierAwareOpenAICost,
   parseOpenAIServiceTier,
   MODEL_PRICING,
