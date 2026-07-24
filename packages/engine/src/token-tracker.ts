@@ -65,6 +65,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5-nano": { inputPer1M: 0.05, cachedInputPer1M: 0.005, outputPer1M: 0.40 },
   "gpt-5-mini": { inputPer1M: 0.25, cachedInputPer1M: 0.025, outputPer1M: 2.00 },
   "gpt-5": { inputPer1M: 1.25, cachedInputPer1M: 0.125, outputPer1M: 10.00 },
+  "gpt-5.4-nano": { inputPer1M: 0.20, cachedInputPer1M: 0.02, outputPer1M: 1.25 },
   "gpt-5.4-mini": { inputPer1M: 0.75, cachedInputPer1M: 0.075, outputPer1M: 4.50 },
   // Grok 4.3 family. Katana uses hyphenated model IDs and includes router markup.
   "grok-4-3": {

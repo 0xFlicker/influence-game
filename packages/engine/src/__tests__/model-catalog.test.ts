@@ -31,6 +31,19 @@ describe("model catalog", () => {
     expect(entry?.capabilities.supportsOpenAIResponses).toBe(false);
   });
 
+  it("lists openai:gpt-5.4-nano as game-ready with GPT-5.4 capabilities", () => {
+    const entry = modelCatalogEntryById("openai:gpt-5.4-nano");
+    const gameReadyIds = gameReadyCatalogEntries().map((item) => item.id);
+
+    expect(entry?.providerProfileId).toBe("openai");
+    expect(entry?.modelId).toBe("gpt-5.4-nano");
+    expect(entry?.evaluationStatus).toBe("game-ready");
+    expect(entry?.capabilities.supportsReasoningEffort).toBe(true);
+    expect(entry?.capabilities.supportsToolReasoningEffort).toBe(false);
+    expect(entry?.capabilities.supportsOpenAIResponses).toBe(true);
+    expect(gameReadyIds).toContain("openai:gpt-5.4-nano");
+  });
+
   it("formats model selection labels from catalog display names", () => {
     expect(formatGameModelSelectionLabel({
       catalogId: "katana:grok-4-3",

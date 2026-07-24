@@ -159,6 +159,16 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     legacyTier: "standard",
   },
   {
+    id: "openai:gpt-5.4-nano",
+    providerProfileId: "openai",
+    modelId: "gpt-5.4-nano",
+    displayName: "OpenAI gpt-5.4-nano",
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
+    capabilities: OPENAI_GPT54_CAPABILITIES,
+  },
+  {
     id: "openai:gpt-5.4-mini",
     providerProfileId: "openai",
     modelId: "gpt-5.4-mini",

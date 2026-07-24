@@ -130,7 +130,11 @@ export async function generatePersona(
 ): Promise<GeneratedPersona> {
   try {
     const isGpt5 = model.startsWith("gpt-5");
-    const isReasoning = /^o\d/.test(model) || model === "gpt-5-nano" || model === "gpt-5-mini";
+    const isReasoning = /^o\d/.test(model)
+      || model === "gpt-5-nano"
+      || model === "gpt-5-mini"
+      || model === "gpt-5.4-nano"
+      || model === "gpt-5.4-mini";
     const budget = isReasoning ? 200 + 4000 : 200;
     const response = await openai.chat.completions.create({
       model,
