@@ -170,7 +170,7 @@ bun run simulate -- --variant mingle --chatty   # full traces
 bun run simulate -- --variant mingle --quiet    # phase progress only
 ```
 
-House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) are emitted as structured `house-mc-summary` agent-turn records and logged via the same `logSystem` path for richer traces. The system transcript receives clean House prose only; the current limited deterministic facts are stored under `response.roundFacts`. Format proof still comes from the dedicated transcript/turn records:
+House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) are emitted as structured `house-mc-summary` agent-turn records and logged via the same `logSystem` path for richer traces. The system transcript receives clean House prose only; the current limited deterministic facts are stored under `response.roundFacts`. The offered menu is a public canonical `format.menu_offered` event and is replayed as the MCP projection's `formatMenu`; decision rationale still comes from the dedicated transcript/turn records:
 
 ```ts
 const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);

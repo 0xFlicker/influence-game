@@ -238,6 +238,14 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(result.transcript.some((e) => e.phase === Phase.FORMAT_MINGLE)).toBe(true);
     expect(result.transcript.some((e) => e.phase === Phase.FORMAT_RESOLVE)).toBe(true);
 
+    const offeredMenus = runner.getCanonicalEvents().filter((event) => event.type === "format.menu_offered");
+    expect(offeredMenus.length).toBeGreaterThan(0);
+    expect(offeredMenus[0]).toMatchObject({
+      phase: Phase.FORMAT_MENU,
+      visibility: "public",
+      payload: { offeredFormatIds: expect.any(Array) },
+    });
+
     // Classic elimination engine should not appear on the default path
     const powerActions = result.transcript.filter(
       (e) => e.phase === Phase.POWER && typeof e.text === "string" && e.text.includes("power action"),

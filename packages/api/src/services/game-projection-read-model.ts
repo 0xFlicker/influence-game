@@ -52,6 +52,7 @@ export interface DurableProjectionSummary {
   lastSequence: number;
   round: number;
   phase: CanonicalGameProjection["phase"];
+  formatMenu: CanonicalGameProjection["formatMenu"];
   players: DurablePlayerStatusSummary;
   voteState: DurableVoteStateSummary;
   acceptedOutcomes: CanonicalGameProjection["acceptedOutcomes"];
@@ -117,6 +118,15 @@ export function summarizeCanonicalProjection(
     lastSequence: projection.lastSequence,
     round: projection.round,
     phase: projection.phase,
+    formatMenu: projection.formatMenu
+      ? {
+          empoweredId: projection.formatMenu.empoweredId,
+          offeredFormatIds: [
+            projection.formatMenu.offeredFormatIds[0],
+            projection.formatMenu.offeredFormatIds[1],
+          ],
+        }
+      : null,
     players: summarizePlayers(projection),
     voteState: {
       empowerVotes: { ...projection.currentVoteTally.empowerVotes },

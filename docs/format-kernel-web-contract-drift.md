@@ -24,7 +24,7 @@ Standard rounds no longer use **expose** as an agent-facing ballot or eliminatio
 - Completed results round cards that hard-require expose / power / council sections
 - Live watch pressure widgets keyed to expose / council candidates
 - Audio cues for council nominees / power actions on standard rounds
-- Any client copy of “expose someone” in rules UI (server rules page content is already updated in `docs/rules-page-content.md`)
+- ~~Any client copy of “expose someone” in rules UI~~ — web `/rules` and `docs/rules-page-content.md` updated to format-kernel copy (no expose ballot)
 
 ## Safe parsing guidance
 

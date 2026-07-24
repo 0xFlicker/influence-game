@@ -17,6 +17,7 @@ import type {
   RoundResult,
   UUID,
 } from "./types";
+import type { LaunchFormatId } from "./formats";
 
 export type CanonicalEventVisibility = "public" | "player" | "producer" | "system";
 
@@ -60,6 +61,7 @@ export type CanonicalGameEventType =
   | "vote.empower_revote_cast"
   | "vote.empower_vote_cleared"
   | "vote.empowered_set"
+  | "format.menu_offered"
   | "power.action_set"
   | "power.candidates_resolved"
   | "alliance.proposal_submitted"
@@ -111,6 +113,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "vote.empower_revote_cast",
   "vote.empower_vote_cleared",
   "vote.empowered_set",
+  "format.menu_offered",
   "power.action_set",
   "power.candidates_resolved",
   "alliance.proposal_submitted",
@@ -197,6 +200,10 @@ export type CanonicalGameEvent =
   | CanonicalEventEnvelope<"vote.empower_revote_cast", { voterId: UUID; target: UUID }>
   | CanonicalEventEnvelope<"vote.empower_vote_cleared", { voterId: UUID }>
   | CanonicalEventEnvelope<"vote.empowered_set", { empowered: UUID; method: "initial" | "revote" | "wheel" | "manual" }>
+  | CanonicalEventEnvelope<
+      "format.menu_offered",
+      { empoweredId: UUID; offeredFormatIds: [LaunchFormatId, LaunchFormatId] }
+    >
   | CanonicalEventEnvelope<"power.action_set", { action: PowerAction }>
   | CanonicalEventEnvelope<
       "power.candidates_resolved",

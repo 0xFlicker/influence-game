@@ -229,6 +229,8 @@ export class ContextBuilder {
         return `${prefix}: ${this.name(event.payload.voterId)}'s initial empower vote was cleared for re-vote.`;
       case "vote.empowered_set":
         return `${prefix}: Empowered player set to ${this.name(event.payload.empowered)} by ${event.payload.method}.`;
+      case "format.menu_offered":
+        return `${prefix}: ${this.name(event.payload.empoweredId)} was offered ${event.payload.offeredFormatIds.join(" vs ")}.`;
       case "power.action_set":
         return `${prefix}: Power action: ${event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`;
       case "power.candidates_resolved":

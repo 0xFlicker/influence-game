@@ -26,6 +26,7 @@ import {
   type ShieldReplacementResolution,
 } from "./exposure-bench";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
+import type { LaunchFormatId } from "./formats";
 import type {
   AllianceArchiveReason,
   AllianceAmendmentInput,
@@ -2060,6 +2061,23 @@ export class GameState {
       visibility: "system",
     });
     return { winnerId, method: "random_tiebreaker", voteCounts };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Format menu recording
+  // ---------------------------------------------------------------------------
+
+  recordFormatMenu(
+    empoweredId: UUID,
+    offeredFormatIds: [LaunchFormatId, LaunchFormatId],
+  ): void {
+    this.appendCanonicalEvent("format.menu_offered", {
+      empoweredId,
+      offeredFormatIds: [offeredFormatIds[0], offeredFormatIds[1]],
+    }, {
+      phase: Phase.FORMAT_MENU,
+      visibility: "public",
+    });
   }
 
   // ---------------------------------------------------------------------------

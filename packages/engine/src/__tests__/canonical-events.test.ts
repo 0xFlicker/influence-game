@@ -222,6 +222,35 @@ describe("round.result_recorded", () => {
   });
 });
 
+describe("format.menu_offered", () => {
+  it("records the empowered chooser and exactly the two offered formats as a public canonical fact", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+    gs.startRound();
+
+    gs.recordFormatMenu("alice", ["safety_bounce", "vote_bomb"]);
+
+    expect(gs.getCanonicalEvents().at(-1)).toMatchObject({
+      type: "format.menu_offered",
+      phase: Phase.FORMAT_MENU,
+      visibility: "public",
+      payload: {
+        empoweredId: "alice",
+        offeredFormatIds: ["safety_bounce", "vote_bomb"],
+      },
+    });
+    expect(gs.getDomainProjection().formatMenu).toEqual({
+      empoweredId: "alice",
+      offeredFormatIds: ["safety_bounce", "vote_bomb"],
+    });
+  });
+});
+
 describe("judgment.speech_recorded", () => {
   it("appends a public closing speech with phase CLOSING_ARGUMENTS", () => {
     const gs = new GameState(

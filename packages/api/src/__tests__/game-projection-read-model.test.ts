@@ -48,6 +48,37 @@ describe("persisted game projection read model", () => {
     });
   });
 
+  test("projects a public format menu so MCP can answer which formats were offered", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const baseEvents = createCanonicalEventFixture(gameId);
+    const formatMenuEvent: CanonicalGameEvent = {
+      sequence: baseEvents.length + 1,
+      gameId,
+      round: 1,
+      phase: "format_menu" as CanonicalGameEvent["phase"],
+      type: "format.menu_offered",
+      timestamp: "2026-07-24T00:00:00.000Z",
+      source: "phase",
+      visibility: "public",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        empoweredId: "atlas",
+        offeredFormatIds: ["safety_bounce", "vote_bomb"],
+      },
+    };
+
+    await appendGameEvents(db, { gameId, ownerEpoch, events: [...baseEvents, formatMenuEvent] });
+
+    const projectionRead = getPersistedGameProjection(await getPersistedGameEvents(db, gameId));
+
+    expect(projectionRead.summary?.formatMenu).toEqual({
+      empoweredId: "atlas",
+      offeredFormatIds: ["safety_bounce", "vote_bomb"],
+    });
+  });
+
   test("replays the trusted prefix of an invalid persisted log as incomplete", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId, { lastPersistedEventSequence: 3 });

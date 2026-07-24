@@ -94,6 +94,7 @@ export async function runFormatMenuPhase(
     selectedFormat: null,
   });
   contextBuilder.currentFormatPressure = state.pressure;
+  gameState.recordFormatMenu(empoweredId, menu.offered);
 
   logger.logSystem(
     `FORMAT MENU: ${displayNameForFormat(menu.offered[0])} vs ${displayNameForFormat(menu.offered[1])}. ${gameState.getPlayerName(empoweredId)} will choose.`,

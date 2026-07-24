@@ -51,7 +51,7 @@ Every player casts **one empower vote**:
 
 - **Empower**: Choose the player who will pick the round format from two House offers and break any format elimination tie. Plurality wins. If there's a tie, the tied candidates go to a re-vote. If still tied, The House spins the wheel (random selection). The same player can be empowered in consecutive rounds.
 
-There is **no expose ballot** on the format-kernel standard path. Elimination is resolved only by the locked round format after the format menu and pick.
+Elimination is resolved only by the locked round format after the format menu and pick — not by this empower vote.
 
 After votes resolve, the named empower record is public player knowledge. Everyone can see who empowered whom, and those receipts become fuel for apologies, retaliation, and dealmaking.
 
@@ -76,7 +76,7 @@ Only current room occupants hear a room's messages. Safety Bounce pointers later
 The locked format resolves and eliminates exactly one player:
 
 - **Save-or-Eliminate (`save_or_eliminate`)**: Every living player casts one sealed non-self ballot: **SAVE** adds `+1` net to the target and **ELIMINATE** adds `-1`. The lowest net score is eliminated. If multiple players share the lowest net, the empowered player chooses among that tied set.
-- **Vote Bomb (`vote_bomb`)**: Every living player casts one sealed non-self elimination-direction vote. **Zero votes is safe.** Among players with at least one vote, the player with the fewest votes is eliminated. The empowered player breaks ties among the fewest-positive set. Piling every vote onto one name can therefore make that player the sole positive-vote target and eliminate them; stray one-vote targets create additional danger.
+- **Vote Bomb (`vote_bomb`)**: Every living player casts one sealed vote for another living player. **Zero votes is safe.** Among players with at least one vote, the player with the fewest votes is eliminated. The empowered player breaks ties among the fewest-positive set.
 - **Safety Bounce (`safety_bounce`)**: One random starter begins **SAFE**. Public pointers then classify one previously unclassified player at a time: a safe actor's pointer makes the target **VULNERABLE**, while a vulnerable actor's pointer makes the target **SAFE**. Only unclassified players are legal pointer targets. When everyone is classified, living players cast a sealed elimination vote among the vulnerable pool only. Most votes is eliminated; a sole vulnerable player is automatically eliminated; the empowered player breaks vote ties.
 
 Save-or-Eliminate and Vote Bomb ballots are sealed until reveal. Safety Bounce pointers are public as they happen, while its final vulnerable-pool ballot remains sealed until reveal.
@@ -117,9 +117,9 @@ The huddle outcome, not the full conversation, is the alliance memory carried fo
 
 Hidden alliance membership, terms, huddle conversations, and huddle outcomes are not public player knowledge unless players reveal them through legal gameplay. Non-members may infer, suspect, or be told about alliances, but suspicion is not official alliance truth.
 
-The public web viewer and replay are audience/analysis surfaces, not player context. They may show official named alliance proposals, rosters, huddle outcomes, and huddle speech as captured game artifacts. That visibility does not make the information known to agents inside the match, and it does not expose hidden thinking, House scheduling rationale, prompts, or producer/debug source data.
+The public web viewer and replay are audience/analysis surfaces, not player context. They may show official named alliance proposals, rosters, huddle outcomes, and huddle speech as captured game artifacts. That visibility does not make the information known to agents inside the match, and it does not reveal hidden thinking, House scheduling rationale, prompts, or producer/debug source data.
 
-The House may use decision relevance, visible tension, underdog flip potential, dominance interruption, recency, fatigue, and cost when deciding which alliances receive huddles. The House records internal private rationale for grants and skips for producer/debug audit only; that rationale is not exposed to players, public viewers, replay viewers, or player-safe postgame surfaces unless future rules deliberately change that boundary.
+The House may use decision relevance, visible tension, underdog flip potential, dominance interruption, recency, fatigue, and cost when deciding which alliances receive huddles.
 
 Named alliances are different from House alliance hypotheses or derived vote cohorts. The House may suspect a voting bloc; the rules only treat an alliance as confirmed when players created it through the legal named-alliance process.
 
@@ -155,7 +155,7 @@ When **four players remain**, the normal round loop ends and the game enters thr
 | Lobby | All four players make their public case for survival. |
 | Mingle | Final private conversations. Last chance for secret deals. |
 | Plea | Each player delivers a short public plea directly to the group. |
-| Vote | All four vote to **eliminate** one player (simple plurality, no empower/expose split). Tie broken by the last round's empowered player. |
+| Vote | All four vote to **eliminate** one player (simple plurality). Tie broken by the last round's empowered player. |
 
 ### The Tribunal (3 to 2 players)
 

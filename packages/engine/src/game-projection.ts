@@ -1,4 +1,5 @@
 import type { CanonicalGameEvent } from "./canonical-events";
+import type { LaunchFormatId } from "./formats";
 import type {
   AllianceHuddleOutcome,
   AllianceHuddleScheduleRecord,
@@ -43,6 +44,10 @@ export interface CanonicalGameProjection {
   currentVoteTally: VoteTally;
   currentCouncilTally: CouncilVoteTally;
   empoweredId: UUID | null;
+  formatMenu: {
+    empoweredId: UUID;
+    offeredFormatIds: [LaunchFormatId, LaunchFormatId];
+  } | null;
   councilCandidates: [UUID, UUID] | null;
   candidateResolution: {
     exposeScores: Record<UUID, number>;
@@ -87,6 +92,7 @@ export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
     currentVoteTally: { empowerVotes: {}, exposeVotes: {} },
     currentCouncilTally: { votes: {} },
     empoweredId: null,
+    formatMenu: null,
     councilCandidates: null,
     candidateResolution: null,
     powerAction: null,
@@ -171,6 +177,7 @@ function applyRoundReset(projection: CanonicalGameProjection, round: number): vo
   projection.currentVoteTally = { empowerVotes: {}, exposeVotes: {} };
   projection.currentCouncilTally = { votes: {} };
   projection.empoweredId = null;
+  projection.formatMenu = null;
   projection.councilCandidates = null;
   projection.candidateResolution = null;
   projection.powerAction = null;
@@ -252,6 +259,13 @@ export function applyCanonicalEvent(
     }
     case "vote.empowered_set": {
       projection.empoweredId = event.payload.empowered;
+      break;
+    }
+    case "format.menu_offered": {
+      projection.formatMenu = {
+        empoweredId: event.payload.empoweredId,
+        offeredFormatIds: [event.payload.offeredFormatIds[0], event.payload.offeredFormatIds[1]],
+      };
       break;
     }
     case "power.action_set": {

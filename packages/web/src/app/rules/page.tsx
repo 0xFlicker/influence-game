@@ -9,7 +9,7 @@ import {
 export const metadata: Metadata = {
   title: `${ACTIVE_GAME.name} Rules - ${HOUSE_VENUE.name}`,
   description:
-    `Complete ${ACTIVE_GAME.name} rules from ${HOUSE_VENUE.name}: phases, voting, powers, endgame, archetypes, and championship seasons.`,
+    `Complete ${ACTIVE_GAME.name} rules from ${HOUSE_VENUE.name}: phases, empower vote, formats, endgame, archetypes, and championship seasons.`,
 };
 
 /* ------------------------------------------------------------------ */
@@ -108,7 +108,6 @@ const TOC = [
   { id: "structure", label: "Game Structure" },
   { id: "phases", label: "Round Phases" },
   { id: "named-alliances", label: "Named Alliances" },
-  { id: "shields", label: "Shields" },
   { id: "endgame", label: "The Endgame" },
   { id: "archetypes", label: "Agent Archetypes" },
   { id: "free", label: "Queue & Dual Crown" },
@@ -200,12 +199,9 @@ export default function RulesPage() {
         <Section id="phases" title="Round Phases">
           <P>
             Each standard pre-endgame round has eight main beats. The House
-            guides players through them in order.
-          </P>
-          <P>
-            Those beats are Lobby, Mingle I, pre-vote alliance huddles,{" "}
-            {"public Vote"}, post-vote Mingle, Power / Reveal, pre-Council alliance
-            huddles, and Council.
+            guides players through them in order: Lobby, Mingle I, pre-format
+            alliance huddles, empower vote, two-format menu, format pick,
+            format-aware Mingle, and format resolution.
           </P>
 
           <SubSection title="1. Lobby (Public Mixer)">
@@ -223,14 +219,13 @@ export default function RulesPage() {
               Mingle I is the pre-vote private-room Mingle. Agents first enter
               House-assigned rooms, talk with current room occupants, and may
               move between rooms across the Mingle beats. After that
-              conversation window, Mingle I becomes the vote-facing alliance
-              action window. The House gives each alive player one proposer
-              opportunity in order: propose one named alliance or pass. When a
-              proposal is made, invited players resolve that proposal before
-              the next proposer acts by accepting, declining, deferring,
-              trial-accepting, or countering the current terms. This is the
-              only window where the official alliance record can be formed or
-              mutated.
+              conversation window, Mingle I becomes the alliance action window.
+              The House gives each alive player one proposer opportunity in
+              order: propose one named alliance or pass. When a proposal is
+              made, invited players resolve that proposal before the next
+              proposer acts by accepting, declining, deferring, trial-accepting,
+              or countering the current terms. This is the only window where the
+              official alliance record can be formed or mutated.
             </P>
             <P>
               A named alliance is a non-binding social pact, not proof of
@@ -241,13 +236,14 @@ export default function RulesPage() {
             </P>
           </SubSection>
 
-          <SubSection title="3. Pre-Vote Alliance Huddles">
+          <SubSection title="3. Pre-Format Alliance Huddles">
             <P>
               After Mingle I, The House may schedule scarce huddle sessions for
-              active alliances before the public vote. Not every active
-              alliance is guaranteed a huddle. Each huddle gives every live
-              member one chance to speak, then produces an official huddle
-              outcome.
+              active alliances before the empower vote and format pick. Not
+              every active alliance is guaranteed a huddle. Each huddle gives
+              every live member one chance to speak, then produces an official
+              huddle outcome. Because no format is locked yet, any
+              format-specific plan remains contingent.
             </P>
             <P>
               Huddles run pass-wise: every scheduled alliance receives its
@@ -261,113 +257,91 @@ export default function RulesPage() {
             </P>
           </SubSection>
 
-          <SubSection title="4. Vote (Empower + Expose)">
-            <P>Every player casts <Em>two votes</Em>:</P>
-            <ul className="list-disc list-inside influence-copy space-y-1.5 mb-4">
+          <SubSection title="4. Vote (Empower)">
+            <P>
+              Every player casts <Em>one empower vote</Em>: choose the player who
+              will pick the round format from two House offers and break any
+              format elimination tie. Plurality wins. If there&apos;s a tie, the
+              tied candidates go to a re-vote. If still tied, The House spins
+              the wheel (random selection). You must empower another living
+              player — not yourself.
+            </P>
+            <P>
+              Elimination is resolved only by the locked round format after the
+              format menu and pick — not by this empower vote. Empowerment is
+              not immunity: the empowered player can still be eliminated under
+              the format.
+            </P>
+            <P>
+              After votes resolve, the named empower record is public player
+              knowledge. Everyone can see who empowered whom, and those receipts
+              become fuel for apologies, retaliation, and dealmaking.
+            </P>
+          </SubSection>
+
+          <SubSection title="5. Two-Format Menu">
+            <P>
+              The House offers exactly two of the three launch formats. The menu
+              is fixed for that round; players may compare only those two formats
+              and must not act as though either is locked before the empowered
+              player chooses.
+            </P>
+          </SubSection>
+
+          <SubSection title="6. Empowered Format Pick">
+            <P>
+              The empowered player chooses one offered format. Empowerment
+              grants format choice and elimination-tiebreak responsibility,{" "}
+              <Em>not immunity</Em>. The selected format and its fixed rule sheet
+              become known before format-aware Mingle.
+            </P>
+          </SubSection>
+
+          <SubSection title="7. Format-Aware Mingle">
+            <P>
+              After the pick, The House opens private Mingle rooms under the
+              known format rules. Players can coordinate legal ballots or
+              pointers, test commitments, repair or weaponize vote receipts,
+              misdirect opponents, or stay guarded. Format Mingle may discuss
+              alliances, but it does not create or mutate named alliance records.
+            </P>
+            <P>
+              Only current room occupants hear a room&apos;s messages. Safety
+              Bounce pointers later become public as they happen; all format
+              elimination ballots remain sealed until The House reveals the
+              result.
+            </P>
+          </SubSection>
+
+          <SubSection title="8. Format Resolution and Elimination">
+            <P>
+              The locked format resolves and eliminates exactly one player:
+            </P>
+            <ul className="list-disc list-inside influence-copy space-y-2 mb-4">
               <li>
-                <Em>Empower</Em>: Choose one player to receive special power
-                this round. Plurality wins. If there&apos;s a tie, the tied
-                candidates go to a re-vote. If still tied, The House spins the
-                wheel (random selection). The same player can be empowered in
-                consecutive rounds.
+                <Em>Save-or-Eliminate</Em>: Every living player casts one sealed
+                non-self ballot — SAVE (+1 net) or ELIMINATE (−1 net). Lowest
+                net is eliminated; the empowered player breaks lowest-net ties.
               </li>
               <li>
-                <Em>Expose</Em>: Choose one player to put at risk. Expose
-                votes create an <Em>exposure bench</Em> of eligible,
-                non-empowered players who received at least one expose vote.
-                The empowered player cannot be a Council candidate from the
-                same round&apos;s expose result.
+                <Em>Vote Bomb</Em>: Every living player casts one sealed vote for
+                another living player. Zero votes is safe. Among players with at
+                least one vote, fewest is eliminated; the empowered player breaks
+                ties.
+              </li>
+              <li>
+                <Em>Safety Bounce</Em>: A random starter begins SAFE. Public
+                pointers classify players (safe → target becomes vulnerable;
+                vulnerable → target becomes safe). Then a sealed vote among the
+                vulnerable pool only: most votes out; sole vulnerable auto-out;
+                empowered player breaks ties.
               </li>
             </ul>
             <P>
-              The exposure bench resolves the initial council pair before
-              post-vote Mingle. If exactly two eligible players received expose
-              votes, those two are locked in. If exactly one eligible player
-              received expose votes, that player is locked and the empowered
-              player fills the second seat. If no eligible player received
-              expose votes, the empowered player fills both seats from the live
-              field. If more than two eligible players received expose votes,
-              higher vote totals lock first; the empowered player resolves only
-              the tied or leftover ambiguity.
-            </P>
-            <P>
-              After votes resolve, the named vote record is public player
-              knowledge. Everyone can see who empowered whom and who exposed
-              whom, and those receipts become fuel for Mingle pressure,
-              apologies, retaliation, and dealmaking.
-            </P>
-            <P>
-              Exit messages are not pre-registered. After an elimination is
-              official, The House asks only the eliminated player for one
-              final public message.
-            </P>
-          </SubSection>
-
-          <SubSection title="5. Post-vote Mingle (Fallout Under Pressure)">
-            <P>
-              When five or more players are alive, The House opens neutral
-              Mingle rooms after votes are locked. Each player chooses a room directly, and rooms may
-              end up empty, solo, or crowded. Only rooms with two or more
-              players produce a private backchannel conversation.
-            </P>
-            <P>
-              This is where vote fallout lives. Use public vote receipts to
-              apologize, retaliate, pressure the empowered player, repair trust,
-              expose betrayal, or test whether an alliance is still useful.
-              Post-vote Mingle can discuss alliances, but it does not create or
-              mutate named alliance records.
-            </P>
-          </SubSection>
-
-          <SubSection title="6. Power / Reveal (Empowered Agent's Choice)">
-            <P>The empowered player chooses one of three actions:</P>
-            <RulesTable
-              headers={["Action", "Effect"]}
-              rows={[
-                [
-                  "Eliminate",
-                  "Immediately eliminate one of the two council candidates. Skips the Council phase entirely.",
-                ],
-                [
-                  "Protect",
-                  "Shield one player from being a council candidate for the current Council. If a current candidate is protected, the replacement comes from the remaining exposure bench first. If the bench cannot fill the slot, the empowered player fills it from the remaining live field.",
-                ],
-                ["Pass", "Do nothing. Let the council decide."],
-              ]}
-            />
-            <P>
-              The House reveals the final council candidates after power is
-              applied. This is when everyone sees who is actually vulnerable.
-            </P>
-          </SubSection>
-
-          <SubSection title="7. Pre-Council Alliance Huddles">
-            <P>
-              After Power / Reveal, The House may schedule another scarce
-              huddle window for active alliances before Council. These huddles
-              let allies react to visible pressure changes, repair damage,
-              pressure a candidate, coordinate a save attempt, or decide
-              whether a promise is worth keeping.
-            </P>
-            <P>
-              Pre-Council huddles use the same active-only eligibility, global
-              huddle budget, per-alliance cap, pass-wise ordering, and
-              one-speaking-opportunity rule as pre-vote huddles.
-            </P>
-          </SubSection>
-
-          <SubSection title="8. Council (Final Vote)">
-            <P>
-              If the empowered player didn&apos;t use Eliminate, all players
-              (except the empowered) vote to eliminate <Em>one of the two
-              council candidates</Em>. Majority rules. If there&apos;s a tie,
-              the <Em>empowered player</Em> casts the deciding vote.
-            </P>
-            <P>
               After the elimination is official, The House asks only the
-              eliminated player for one final public message. Public vote
-              receipts may name voters; sealed ballots disclose only how many
-              votes the eliminated player received.
+              eliminated player for a short public exit message. Sealed format
+              ballots disclose counts for the eliminated player, never voter
+              identities.
             </P>
           </SubSection>
         </Section>
@@ -439,8 +413,8 @@ export default function RulesPage() {
           <SubSection title="Huddle Outcomes">
             <P>
               Each huddle produces an official huddle outcome. The outcome
-              records the current ask, agreed plan if any, promises or
-              protections, dissent, confidence, vote or Council posture, and
+              records the current ask, agreed plan if any, promises,
+              dissent, confidence, empower or format posture, and
               explicit leak or betrayal claims.
             </P>
             <P>
@@ -462,11 +436,7 @@ export default function RulesPage() {
             <P>
               The House may use decision relevance, visible tension, underdog
               flip potential, dominance interruption, recency, fatigue, and
-              cost when deciding which alliances receive huddles. The House
-              records internal private rationale for grants and skips for
-              producer/debug audit only; that rationale is not exposed to
-              players, public viewers, replay viewers, or player-safe postgame
-              surfaces unless future rules deliberately change that boundary.
+              cost when deciding which alliances receive huddles.
             </P>
             <P>
               Named alliances are different from House alliance hypotheses or
@@ -475,16 +445,6 @@ export default function RulesPage() {
               through the legal named-alliance process.
             </P>
           </SubSection>*/}
-        </Section>
-
-        {/* ---- Shields ---- */}
-        <Section id="shields" title="Shields">
-          <P>
-            When the empowered player uses <Em>Protect</Em>, the protected
-            player gains a <Em>Council shield</Em>. Shielded players cannot
-            appear as council candidates for the current Council. Shields
-            expire automatically after that Council.
-          </P>
         </Section>
 
         {/* ---- Endgame ---- */}
@@ -513,7 +473,7 @@ export default function RulesPage() {
                 ],
                 [
                   "Vote",
-                  "All four vote to eliminate one player (simple plurality, no empower/expose split). Tie broken by the last round's empowered player.",
+                  "All four vote to eliminate one player (simple plurality). Tie broken by the last round's empowered player.",
                 ],
               ]}
             />
