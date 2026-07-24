@@ -1,8 +1,6 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
-import type { CandidateChoiceRequest, TargetDecision } from "../game-runner.types";
-import type { InitialExposureBenchResolution } from "../exposure-bench";
-import { buildPostVotePressureProjection, formatPostVotePressureSummary } from "../post-vote-pressure";
+import type { TargetDecision } from "../game-runner.types";
 import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import {
   getEndgameEliminationVoterNames,
@@ -41,20 +39,6 @@ function fallbackEliminationDecision(ctx: PhaseRunnerContext, voterId: UUID): Ta
   return {
     target: fallbackEliminationTarget(ctx, voterId),
     thinking: "House fallback after unresolved endgame vote.",
-  };
-}
-
-function shouldRequestCandidateChoice(resolution: InitialExposureBenchResolution): boolean {
-  return resolution.choice.requiredCount > 0 && resolution.choice.eligibleCandidateIds.length > resolution.choice.requiredCount;
-}
-
-function candidateChoiceRequest(resolution: InitialExposureBenchResolution): CandidateChoiceRequest {
-  return {
-    lockedCandidateIds: resolution.lockedCandidates,
-    eligibleCandidateIds: resolution.choice.eligibleCandidateIds,
-    requiredCount: resolution.choice.requiredCount,
-    mode: resolution.mode,
-    fallbackReason: resolution.fallbackReason,
   };
 }
 

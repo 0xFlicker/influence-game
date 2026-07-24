@@ -34,7 +34,6 @@ import { handleElimination } from "./elimination";
 import {
   assertCanAcceptCommit,
   strategicDecisionResponse,
-  transcriptThinkingFor,
   type PhaseActor,
   type PhaseRunnerContext,
 } from "./phase-runner-context";
@@ -207,7 +206,7 @@ export async function runFormatResolvePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, logger, contextBuilder } = ctx;
   const formatId = selectedFormat;
   const empoweredId = gameState.empoweredId;
   if (!formatId || !empoweredId) {
@@ -329,14 +328,6 @@ async function resolveSaveOrEliminateRound(
     resolution = broken;
   }
 
-  const nets = ballots.reduce(
-    (acc, b) => {
-      // log-friendly reveal
-      return acc;
-    },
-    null,
-  );
-  void nets;
   logger.logSystem(
     `Save-or-eliminate reveal: ${ballots
       .map(
