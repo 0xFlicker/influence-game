@@ -1244,13 +1244,8 @@ describe("Mingle Rooms (current open-room phase)", () => {
       }
     }
 
-    const agents = [
-      new TimeoutPleaAgent(createUUID(), "Alpha"),
-      new MockAgent(createUUID(), "Beta"),
-      new MockAgent(createUUID(), "Gamma"),
-      new MockAgent(createUUID(), "Delta"),
-      new MockAgent(createUUID(), "Echo"),
-    ];
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"]
+      .map((name) => new TimeoutPleaAgent(createUUID(), name));
     const runner = new GameRunner(agents, { ...TEST_CONFIG, agentActionTimeoutMs: 5 });
     const result = await Promise.race([
       runner.run(),
@@ -1258,7 +1253,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     ]);
 
     expect(result.winnerName).toBeDefined();
-    expect(result.transcript.some((entry) => entry.text.includes("Alpha plea timed out after 5ms"))).toBe(true);
+    expect(result.transcript.some((entry) => entry.text.includes("plea timed out after 5ms"))).toBe(true);
     expect(abortObserved).toBe(true);
   });
 });

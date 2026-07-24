@@ -37,7 +37,7 @@ function createAgents() {
     versionId: "glass-table-v1",
     name: "Glass Table",
     memberNames: ["Alice", "Bob"],
-    purpose: "Coordinate a simple vote plan, then compare fallout before Council.",
+    purpose: "Coordinate the empower vote, then branch under the locked format.",
     timebox: null,
     thinking: "mock: propose a two-person named alliance before Vote",
     decisionLog: "mock: test named-alliance formation in a complete round",
@@ -54,7 +54,7 @@ function createAgents() {
 }
 
 describe("named alliance complete-round integration", () => {
-  it("forms an alliance, huddles before Vote and Council, and preserves post-vote Mingle fallout", async () => {
+  it("preserves alliance artifacts through the complete format-kernel standard round", async () => {
     const runner = new GameRunner(
       createAgents(),
       TEST_CONFIG,
@@ -67,14 +67,30 @@ describe("named alliance complete-round integration", () => {
     const result = await runner.run();
 
     const transcriptPhases = new Set(result.transcript.map((entry) => entry.phase));
-    expect(transcriptPhases.has(Phase.MINGLE_I)).toBe(true);
-    expect(transcriptPhases.has(Phase.PRE_VOTE_HUDDLE)).toBe(true);
-    expect(transcriptPhases.has(Phase.VOTE)).toBe(true);
-    expect(transcriptPhases.has(Phase.POST_VOTE_MINGLE)).toBe(true);
-    expect(transcriptPhases.has(Phase.POWER)).toBe(true);
-    expect(transcriptPhases.has(Phase.REVEAL)).toBe(true);
-    expect(transcriptPhases.has(Phase.PRE_COUNCIL_HUDDLE)).toBe(true);
-    expect(transcriptPhases.has(Phase.COUNCIL)).toBe(true);
+    const standardRoundPhases = [
+      Phase.LOBBY,
+      Phase.MINGLE_I,
+      Phase.PRE_VOTE_HUDDLE,
+      Phase.VOTE,
+      Phase.FORMAT_MENU,
+      Phase.FORMAT_PICK,
+      Phase.FORMAT_MINGLE,
+      Phase.FORMAT_RESOLVE,
+    ];
+    for (const phase of standardRoundPhases) {
+      expect(transcriptPhases.has(phase)).toBe(true);
+    }
+    const firstPhaseIndexes = standardRoundPhases.map((phase) =>
+      result.transcript.findIndex((entry) => entry.phase === phase)
+    );
+    for (let index = 1; index < firstPhaseIndexes.length; index += 1) {
+      expect(firstPhaseIndexes[index]).toBeGreaterThan(firstPhaseIndexes[index - 1]!);
+    }
+    expect(transcriptPhases.has(Phase.POST_VOTE_MINGLE)).toBe(false);
+    expect(transcriptPhases.has(Phase.POWER)).toBe(false);
+    expect(transcriptPhases.has(Phase.REVEAL)).toBe(false);
+    expect(transcriptPhases.has(Phase.PRE_COUNCIL_HUDDLE)).toBe(false);
+    expect(transcriptPhases.has(Phase.COUNCIL)).toBe(false);
 
     const canonicalTypes = runner.getCanonicalEvents().map((event) => event.type);
     expect(
@@ -82,7 +98,9 @@ describe("named alliance complete-round integration", () => {
     ).toBe(true);
     expect(canonicalTypes).toContain("alliance.proposal_submitted");
     expect(canonicalTypes).toContain("alliance.activated");
-    expect(canonicalTypes.filter((type) => type === "alliance.huddle_outcome_recorded").length).toBeGreaterThanOrEqual(2);
+    expect(canonicalTypes).toContain("alliance.huddle_scheduled");
+    expect(canonicalTypes).toContain("alliance.huddle_completed");
+    expect(canonicalTypes).toContain("alliance.huddle_outcome_recorded");
 
     const mingleIRoomSpeechIndex = events.findIndex(
       (event) => event.type === "transcript_entry" && event.entry.phase === Phase.MINGLE_I && event.entry.scope === "mingle",
@@ -97,20 +115,21 @@ describe("named alliance complete-round integration", () => {
       (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
         event.type === "agent_turn" && event.action === "alliance-huddle-outcome" && event.round === 1,
     );
-    expect(huddleOutcomes.map((event) => event.phase)).toEqual([
-      Phase.PRE_VOTE_HUDDLE,
-      Phase.PRE_COUNCIL_HUDDLE,
-    ]);
+    expect(huddleOutcomes.length).toBeGreaterThanOrEqual(1);
+    expect(huddleOutcomes.every((event) => event.phase === Phase.PRE_VOTE_HUDDLE)).toBe(true);
 
     const huddleSpeech = result.transcript.filter((entry) => entry.scope === "huddle" && entry.round === 1);
-    expect(huddleSpeech.map((entry) => entry.phase)).toEqual([
-      Phase.PRE_VOTE_HUDDLE,
-      Phase.PRE_VOTE_HUDDLE,
-      Phase.PRE_COUNCIL_HUDDLE,
-      Phase.PRE_COUNCIL_HUDDLE,
-    ]);
+    expect(huddleSpeech.length).toBeGreaterThanOrEqual(2);
+    expect(huddleSpeech.every((entry) => entry.phase === Phase.PRE_VOTE_HUDDLE)).toBe(true);
 
     expect(result.transcript.some((entry) => entry.phase === Phase.VOTE && entry.text.includes("votes:"))).toBe(true);
-    expect(result.transcript.some((entry) => entry.phase === Phase.POST_VOTE_MINGLE && entry.scope === "mingle")).toBe(true);
+    expect(result.transcript.some((entry) => entry.phase === Phase.FORMAT_MINGLE && entry.scope === "mingle")).toBe(true);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "agent_turn"
+          && ["format-pick", "format-ballot", "bounce-pointer", "format-tiebreak"].includes(event.action),
+      ),
+    ).toBe(true);
   });
 });
