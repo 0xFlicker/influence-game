@@ -9,6 +9,7 @@ import {
   buildFormatMenu,
   createBounceBoard,
   isLegalBouncePointer,
+  isLegalSafetyBounceVote,
   isLegalSaveOrEliminateBallot,
   isLegalVoteBombBallot,
   pickFormatFromMenu,
@@ -39,14 +40,11 @@ import {
 } from "./phase-runner-context";
 import { runMinglePhase } from "./mingle";
 
-/** Module-level round scratch (runner is single-threaded per game). */
-let offeredFormats: [LaunchFormatId, LaunchFormatId] | null = null;
-let selectedFormat: LaunchFormatId | null = null;
-let formatPressure: FormatPressureProjection | null = null;
-let lastSelectedFormat: LaunchFormatId | null = null;
-
 function normalizedFormatProvenance(
-  result: Partial<FormatDecisionProvenance>,
+  result: {
+    decisionSource?: "llm" | "fallback";
+    fallbackReason?: FormatDecisionFallbackReason | null;
+  },
 ): FormatDecisionProvenance {
   if (result.decisionSource === "llm") {
     return { decisionSource: "llm", fallbackReason: null };
@@ -63,46 +61,33 @@ function fallbackFormatProvenance(
   return { decisionSource: "fallback", fallbackReason };
 }
 
-export function getLastSelectedFormat(): LaunchFormatId | null {
-  return lastSelectedFormat;
-}
-
-export function resetFormatKernelScratch(): void {
-  offeredFormats = null;
-  selectedFormat = null;
-  formatPressure = null;
-}
-
-export function getFormatPressureProjection(): FormatPressureProjection | null {
-  return formatPressure;
-}
-
 export async function runFormatMenuPhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
   const { gameState, logger, contextBuilder } = ctx;
+  const state = ctx.formatKernelState;
   const empoweredId = gameState.empoweredId;
   if (!empoweredId) {
     throw new Error("Format menu requires empowered player");
   }
 
-  const menu = buildFormatMenu({ lastFormatId: lastSelectedFormat });
-  offeredFormats = menu.offered;
-  selectedFormat = null;
-  formatPressure = buildFormatPressureProjection({
+  const menu = buildFormatMenu({ lastFormatId: state.lastSelectedFormat });
+  state.offeredFormats = menu.offered;
+  state.selectedFormat = null;
+  state.pressure = buildFormatPressureProjection({
     empoweredId,
     empoweredName: gameState.getPlayerName(empoweredId),
     offeredFormats: menu.offered,
     selectedFormat: null,
   });
-  contextBuilder.currentFormatPressure = formatPressure;
+  contextBuilder.currentFormatPressure = state.pressure;
 
   logger.logSystem(
     `FORMAT MENU: ${menu.offered[0]} vs ${menu.offered[1]}. ${gameState.getPlayerName(empoweredId)} will choose.`,
     Phase.FORMAT_MENU,
   );
-  logger.logSystem(formatPressureSummary(formatPressure), Phase.FORMAT_MENU);
+  logger.logSystem(formatPressureSummary(state.pressure), Phase.FORMAT_MENU);
 
   actor.send({ type: "PHASE_COMPLETE" });
   await new Promise((r) => setTimeout(r, 0));
@@ -113,7 +98,9 @@ export async function runFormatPickPhase(
   actor: PhaseActor,
 ): Promise<void> {
   const { gameState, agents, logger, contextBuilder } = ctx;
+  const state = ctx.formatKernelState;
   const empoweredId = gameState.empoweredId;
+  const offeredFormats = state.offeredFormats;
   if (!empoweredId || !offeredFormats) {
     throw new Error("Format pick requires empowered player and offered formats");
   }
@@ -148,15 +135,15 @@ export async function runFormatPickPhase(
   }
 
   await assertCanAcceptCommit(ctx);
-  selectedFormat = chosen;
-  lastSelectedFormat = chosen;
-  formatPressure = buildFormatPressureProjection({
+  state.selectedFormat = chosen;
+  state.lastSelectedFormat = chosen;
+  state.pressure = buildFormatPressureProjection({
     empoweredId,
     empoweredName: gameState.getPlayerName(empoweredId),
     offeredFormats,
     selectedFormat: chosen,
   });
-  contextBuilder.currentFormatPressure = formatPressure;
+  contextBuilder.currentFormatPressure = state.pressure;
 
   const sheet = ruleSheetForFormat(chosen);
   logger.logSystem(
@@ -173,8 +160,6 @@ export async function runFormatPickPhase(
       offeredFormats,
       selectedFormat: chosen,
       ...provenance,
-      thinking,
-      reasoningContext,
       ...strategicDecisionResponse({ decisionLog }),
     },
     thinking,
@@ -192,9 +177,10 @@ export async function runFormatMinglePhase(
   actor: PhaseActor,
 ): Promise<void> {
   const { logger, contextBuilder } = ctx;
-  if (formatPressure) {
-    logger.logSystem(formatPressureSummary(formatPressure), Phase.FORMAT_MINGLE);
-    contextBuilder.currentFormatPressure = formatPressure;
+  const pressure = ctx.formatKernelState.pressure;
+  if (pressure) {
+    logger.logSystem(formatPressureSummary(pressure), Phase.FORMAT_MINGLE);
+    contextBuilder.currentFormatPressure = pressure;
   }
   await runMinglePhase(ctx, actor, {
     phase: Phase.FORMAT_MINGLE,
@@ -207,7 +193,8 @@ export async function runFormatResolvePhase(
   actor: PhaseActor,
 ): Promise<void> {
   const { gameState, logger, contextBuilder } = ctx;
-  const formatId = selectedFormat;
+  const state = ctx.formatKernelState;
+  const formatId = state.selectedFormat;
   const empoweredId = gameState.empoweredId;
   if (!formatId || !empoweredId) {
     throw new Error("Format resolve requires selected format and empowered player");
@@ -247,9 +234,9 @@ export async function runFormatResolvePhase(
   );
 
   contextBuilder.currentFormatPressure = null;
-  formatPressure = null;
-  offeredFormats = null;
-  selectedFormat = null;
+  state.pressure = null;
+  state.offeredFormats = null;
+  state.selectedFormat = null;
 
   actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
   actor.send({
@@ -427,7 +414,7 @@ async function resolveSafetyBounceRound(
   const aliveIds = alive.map((p) => p.id);
   const starterId = aliveIds[Math.floor(Math.random() * aliveIds.length)]!;
   let board = createBounceBoard(aliveIds, starterId);
-  updateBounceBoardPressure(contextBuilder, board);
+  updateBounceBoardPressure(ctx, board);
 
   logger.logSystem(
     `Safety Bounce starter (SAFE): ${gameState.getPlayerName(starterId)}`,
@@ -466,7 +453,7 @@ async function resolveSafetyBounceRound(
     }
 
     board = applyBouncePointer(board, { actorId, targetId });
-    updateBounceBoardPressure(contextBuilder, board);
+    updateBounceBoardPressure(ctx, board);
     const classification = board.vulnerable.includes(targetId) ? "VULNERABLE" : "SAFE";
     logger.logSystem(
       `Bounce: ${gameState.getPlayerName(actorId)} → ${gameState.getPlayerName(targetId)} (${classification})`,
@@ -515,7 +502,7 @@ async function resolveSafetyBounceRound(
 
     if (agent?.getSafetyBounceVote) {
       const result = await agent.getSafetyBounceVote(phaseCtx, board.vulnerable);
-      if (board.vulnerable.includes(result.targetId)) {
+      if (isLegalSafetyBounceVote(result.targetId, board.vulnerable)) {
         targetId = result.targetId;
         provenance = normalizedFormatProvenance(result);
       } else {
@@ -568,18 +555,20 @@ async function resolveSafetyBounceRound(
 }
 
 function updateBounceBoardPressure(
-  contextBuilder: PhaseRunnerContext["contextBuilder"],
+  ctx: PhaseRunnerContext,
   board: FormatPressureProjection["bounceBoard"],
 ): void {
-  if (!formatPressure || !board) return;
-  formatPressure = buildFormatPressureProjection({
-    empoweredId: formatPressure.empoweredId,
-    empoweredName: formatPressure.empoweredName,
-    offeredFormats: formatPressure.offeredFormats,
-    selectedFormat: formatPressure.selectedFormat,
+  const pressure = ctx.formatKernelState.pressure;
+  if (!pressure || !board) return;
+  const nextPressure = buildFormatPressureProjection({
+    empoweredId: pressure.empoweredId,
+    empoweredName: pressure.empoweredName,
+    offeredFormats: pressure.offeredFormats,
+    selectedFormat: pressure.selectedFormat,
     bounceBoard: board,
   });
-  contextBuilder.currentFormatPressure = formatPressure;
+  ctx.formatKernelState.pressure = nextPressure;
+  ctx.contextBuilder.currentFormatPressure = nextPressure;
 }
 
 async function breakFormatTie(

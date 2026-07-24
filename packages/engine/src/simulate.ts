@@ -277,12 +277,11 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.variant = next;
       i++;
     } else if (arg === "--game-timeout-ms" && next) {
-      const parsed = parseInt(next, 10);
-      args.gameTimeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+      args.gameTimeoutMs = readPositiveInt(next, 0) || null;
       i++;
     } else if (arg === "--game-timeout-sec" && next) {
-      const parsed = parseInt(next, 10);
-      args.gameTimeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed * 1000 : null;
+      const parsedSeconds = readPositiveInt(next, 0);
+      args.gameTimeoutMs = parsedSeconds > 0 ? parsedSeconds * 1000 : null;
       i++;
     } else if (arg === "--no-game-timeout" || arg === "--game-timeout-off") {
       args.gameTimeoutMs = null;

@@ -2,7 +2,7 @@
  * Phase handler exports.
  */
 
-export type { PhaseRunnerContext, PhaseActor } from "./phase-runner-context";
+export type { FormatKernelState, PhaseRunnerContext, PhaseActor } from "./phase-runner-context";
 export { runIntroductionPhase } from "./introduction";
 export { runLobbyPhase, runReckoningLobby, runTribunalLobby, computeLobbyMessagesPerPlayer } from "./lobby";
 export { runMingleIAlliancePhase, runAllianceHuddleWindow } from "./alliances";
@@ -14,7 +14,6 @@ export {
   runFormatPickPhase,
   runFormatMinglePhase,
   runFormatResolvePhase,
-  resetFormatKernelScratch,
 } from "./format-kernel";
 export { runPowerPhase } from "./power";
 export { runRevealPhase, runCouncilPhase } from "./council";

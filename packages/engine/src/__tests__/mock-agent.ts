@@ -5,6 +5,7 @@
 
 import type { AgentResponse, AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, TargetDecision } from "../game-runner";
 import type { FormatDecisionProvenance } from "../game-runner.types";
+import type { LaunchFormatId } from "../formats";
 import type { UUID } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -237,7 +238,7 @@ export class MockAgent implements IAgent {
 
   async pickRoundFormat(
     _ctx: PhaseContext,
-    offeredFormats: [string, string],
+    offeredFormats: [LaunchFormatId, LaunchFormatId],
   ): Promise<FormatDecisionProvenance & { formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     return {
       formatId: offeredFormats[0],

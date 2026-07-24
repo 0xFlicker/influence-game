@@ -48,10 +48,13 @@ import type {
   PlayerContinuityCapsule,
   ProviderReasoningSummary,
 } from "./game-runner";
-import type { FormatDecisionProvenance } from "./game-runner.types";
+import type {
+  FormatDecisionFallbackReason,
+  FormatDecisionProvenance,
+} from "./game-runner.types";
 import { Phase } from "./types";
 import type { UUID, PowerAction } from "./types";
-import { isLaunchFormatId, type LaunchFormatId } from "./formats";
+import { isLaunchFormatId, pickFormatFromMenu, type LaunchFormatId } from "./formats";
 import { ruleSheetForFormat } from "./format-pressure";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
 import {
@@ -930,6 +933,15 @@ type FormatDecisionResult<T extends object> = T &
     reasoningContext?: string;
   };
 
+function formatDecisionProvenance(
+  accepted: boolean,
+  fallbackReason: FormatDecisionFallbackReason,
+): FormatDecisionProvenance {
+  return accepted
+    ? { decisionSource: "llm", fallbackReason: null }
+    : { decisionSource: "fallback", fallbackReason };
+}
+
 function formatPlayersForIds(
   ctx: PhaseContext,
   ids: readonly UUID[],
@@ -958,6 +970,21 @@ function lockedFormatRule(ctx: PhaseContext): string {
   if (ctx.formatPressure?.ruleSheetSummary) return ctx.formatPressure.ruleSheetSummary;
   const selectedFormat = ctx.formatPressure?.selectedFormat;
   return selectedFormat ? ruleSheetForFormat(selectedFormat) : "No locked format rule sheet is available.";
+}
+
+function supplementalActiveFormatRule(
+  ctx: PhaseContext,
+  formatId: LaunchFormatId,
+): string {
+  return ctx.formatPressure?.selectedFormat === formatId
+    ? ""
+    : `Active rule sheet: ${activeFormatRule(ctx, formatId)}\n`;
+}
+
+function supplementalLockedFormatRule(ctx: PhaseContext): string {
+  return ctx.formatPressure?.ruleSheetSummary
+    ? ""
+    : `Active rule sheet: ${lockedFormatRule(ctx)}\n`;
 }
 
 function normalizeStringArray(value: unknown): string[] {
@@ -2887,7 +2914,7 @@ Use the council_vote tool to cast your vote.`;
 
   async pickRoundFormat(
     ctx: PhaseContext,
-    offeredFormats: [string, string],
+    offeredFormats: [LaunchFormatId, LaunchFormatId],
   ): Promise<FormatDecisionResult<{ formatId: string }>> {
     const fallbackFormat = offeredFormats[0];
     const offeredRules = offeredFormats.map((formatId) => {
@@ -2927,16 +2954,15 @@ Use the pick_round_format tool with exactly one offered format id.`;
       );
       const metadata = this.strategicDecisionMetadata(result);
       this.recordStrategicDecision(ctx, "format-pick", "Format Pick", metadata);
-      const selected = typeof result.formatId === "string" && offeredFormats.includes(result.formatId)
-        ? result.formatId
+      const selected = typeof result.formatId === "string"
+        ? pickFormatFromMenu(offeredFormats, result.formatId)
         : null;
       return {
         formatId: selected ?? fallbackFormat,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        decisionSource: selected ? "llm" : "fallback",
-        fallbackReason: selected ? null : "invalid_format_choice",
+        ...formatDecisionProvenance(Boolean(selected), "invalid_format_choice"),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=pickRoundFormat error="${err instanceof Error ? err.message : err}" fallback="${fallbackFormat}"`);
@@ -2957,7 +2983,7 @@ Use the pick_round_format tool with exactly one offered format id.`;
     const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
     const prompt = this.buildUserPrompt(ctx) + `
 ## Save-or-Eliminate Ballot
-Active rule sheet: ${activeFormatRule(ctx, "save_or_eliminate")}
+${supplementalActiveFormatRule(ctx, "save_or_eliminate")}
 
 Your ballot is sealed until the House reveal. Choose SAVE (+1 net) or ELIMINATE (−1 net) against exactly one living non-self target.
 Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
@@ -3004,8 +3030,7 @@ Use the save_or_eliminate_ballot tool.`;
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        decisionSource: accepted ? "llm" : "fallback",
-        fallbackReason: accepted ? null : "invalid_save_or_eliminate_ballot",
+        ...formatDecisionProvenance(accepted, "invalid_save_or_eliminate_ballot"),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getSaveOrEliminateBallot error="${err instanceof Error ? err.message : err}" fallback="eliminate:${fallbackTarget.name}"`);
@@ -3027,7 +3052,7 @@ Use the save_or_eliminate_ballot tool.`;
     const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
     const prompt = this.buildUserPrompt(ctx) + `
 ## Vote Bomb Ballot
-Active rule sheet: ${activeFormatRule(ctx, "vote_bomb")}
+${supplementalActiveFormatRule(ctx, "vote_bomb")}
 
 Your ballot is sealed until the House reveal. Vote for exactly one living non-self target.
 Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
@@ -3070,8 +3095,7 @@ Use the vote_bomb_ballot tool.`;
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        decisionSource: target ? "llm" : "fallback",
-        fallbackReason: target ? null : "invalid_vote_bomb_target",
+        ...formatDecisionProvenance(Boolean(target), "invalid_vote_bomb_target"),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVoteBombBallot error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
@@ -3095,7 +3119,7 @@ Use the vote_bomb_ballot tool.`;
     const nextActorName = ctx.alivePlayers.find((player) => player.id === board.nextActorId)?.name ?? "none";
     const prompt = this.buildUserPrompt(ctx) + `
 ## Safety Bounce Pointer
-Active rule sheet: ${activeFormatRule(ctx, "safety_bounce")}
+${supplementalActiveFormatRule(ctx, "safety_bounce")}
 
 The bounce is public. Current board:
 - SAFE: ${safeNames.join(", ") || "none"}
@@ -3141,8 +3165,7 @@ Use the bounce_pointer tool.`;
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        decisionSource: target ? "llm" : "fallback",
-        fallbackReason: target ? null : "invalid_bounce_pointer",
+        ...formatDecisionProvenance(Boolean(target), "invalid_bounce_pointer"),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getBouncePointer error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
@@ -3163,7 +3186,7 @@ Use the bounce_pointer tool.`;
     const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
     const prompt = this.buildUserPrompt(ctx) + `
 ## Safety Bounce Vote
-Active rule sheet: ${activeFormatRule(ctx, "safety_bounce")}
+${supplementalActiveFormatRule(ctx, "safety_bounce")}
 
 The public bounce is complete. This elimination ballot is sealed, and only the vulnerable pool is eligible.
 Legal vulnerable targets: ${legalTargets.map((player) => player.name).join(", ")}
@@ -3204,8 +3227,7 @@ Use the safety_bounce_vote tool.`;
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        decisionSource: target ? "llm" : "fallback",
-        fallbackReason: target ? null : "invalid_safety_bounce_target",
+        ...formatDecisionProvenance(Boolean(target), "invalid_safety_bounce_target"),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getSafetyBounceVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
@@ -3226,7 +3248,7 @@ Use the safety_bounce_vote tool.`;
     const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
     const prompt = this.buildUserPrompt(ctx) + `
 ## Empowered Format Tiebreak
-Active rule sheet: ${lockedFormatRule(ctx)}
+${supplementalLockedFormatRule(ctx)}
 
 The active format ended in an elimination tie. As the empowered player, choose exactly one tied player to eliminate. Empowerment is not immunity; it gives you this tiebreak responsibility only.
 Legal tied targets: ${legalTargets.map((player) => player.name).join(", ")}
@@ -3267,8 +3289,7 @@ Use the format_tiebreak tool.`;
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        decisionSource: target ? "llm" : "fallback",
-        fallbackReason: target ? null : "invalid_format_tiebreak_target",
+        ...formatDecisionProvenance(Boolean(target), "invalid_format_tiebreak_target"),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=breakFormatEliminationTie error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);

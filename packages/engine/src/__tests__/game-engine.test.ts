@@ -2598,6 +2598,12 @@ describe("Tribunal accusation stable commit order", () => {
           diaryRoom: null as never,
           houseInterviewer: null as never,
           mingleInbox,
+          formatKernelState: {
+            offeredFormats: null,
+            selectedFormat: null,
+            pressure: null,
+            lastSelectedFormat: null,
+          },
           eliminationOrder: [],
         },
         fakeActor as never,

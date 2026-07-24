@@ -13,8 +13,17 @@ import type { IHouseInterviewer } from "../house-interviewer";
 import type { createPhaseMachine } from "../phase-machine";
 import type { UUID, GameConfig, Phase } from "../types";
 import type { IAgent, StrategicDecisionMetadata } from "../game-runner.types";
+import type { FormatPressureProjection } from "../format-pressure";
+import type { LaunchFormatId } from "../formats";
 
 export type PhaseActor = ReturnType<typeof createActor<ReturnType<typeof createPhaseMachine>>>;
+
+export interface FormatKernelState {
+  offeredFormats: [LaunchFormatId, LaunchFormatId] | null;
+  selectedFormat: LaunchFormatId | null;
+  pressure: FormatPressureProjection | null;
+  lastSelectedFormat: LaunchFormatId | null;
+}
 
 export interface PhaseRunnerContext {
   gameState: GameState;
@@ -25,6 +34,7 @@ export interface PhaseRunnerContext {
   diaryRoom: DiaryRoom;
   houseInterviewer: IHouseInterviewer;
   mingleInbox: Map<UUID, Array<{ from: string; text: string }>>;
+  formatKernelState: FormatKernelState;
   eliminationOrder: string[];
   eliminationOrderPlayerIds?: UUID[];
   beforeAcceptedCommit?: () => Promise<void> | void;

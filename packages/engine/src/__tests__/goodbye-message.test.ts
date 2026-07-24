@@ -94,6 +94,12 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
     diaryRoom: { lastEliminatedName: null } as PhaseRunnerContext["diaryRoom"],
     houseInterviewer: new TemplateHouseInterviewer(),
     mingleInbox,
+    formatKernelState: {
+      offeredFormats: null,
+      selectedFormat: null,
+      pressure: null,
+      lastSelectedFormat: null,
+    },
     eliminationOrder: [],
   };
 }

@@ -42,7 +42,7 @@ import {
 import { TranscriptLogger } from "./transcript-logger";
 import { ContextBuilder } from "./context-builder";
 import { DiaryRoom } from "./diary-room";
-import type { PhaseRunnerContext, PhaseActor } from "./phases";
+import type { FormatKernelState, PhaseRunnerContext, PhaseActor } from "./phases";
 import {
   runIntroductionPhase,
   runLobbyPhase, runReckoningLobby, runTribunalLobby,
@@ -71,6 +71,12 @@ export class GameRunner {
   private readonly contextBuilder: ContextBuilder;
   private readonly diaryRoom: DiaryRoom;
   private readonly houseInterviewer: IHouseInterviewer;
+  private readonly formatKernelState: FormatKernelState = {
+    offeredFormats: null,
+    selectedFormat: null,
+    pressure: null,
+    lastSelectedFormat: null,
+  };
   private readonly durableEventSink?: GameRunnerOptions["durableEventSink"];
   private readonly durableCheckpointSink?: GameRunnerOptions["durableCheckpointSink"];
   private readonly beforeAcceptedCommit?: GameRunnerOptions["beforeAcceptedCommit"];
@@ -347,6 +353,7 @@ export class GameRunner {
       diaryRoom: this.diaryRoom,
       houseInterviewer: this.houseInterviewer,
       mingleInbox: this.mingleInbox,
+      formatKernelState: this.formatKernelState,
       eliminationOrder: this.eliminationOrder,
       eliminationOrderPlayerIds: this.eliminationOrderPlayerIds,
       beforeAcceptedCommit: this.beforeAcceptedCommit,

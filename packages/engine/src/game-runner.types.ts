@@ -18,6 +18,7 @@ import type {
 } from "./types";
 import type { CanonicalGameEvent, CanonicalSourcePointer } from "./canonical-events";
 import type { FormatPressureProjection } from "./format-pressure";
+import type { LaunchFormatId } from "./formats";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
@@ -823,10 +824,9 @@ export type FormatDecisionFallbackReason =
   | "invalid_safety_bounce_target"
   | "invalid_format_tiebreak_target";
 
-export interface FormatDecisionProvenance {
-  decisionSource: "llm" | "fallback";
-  fallbackReason: FormatDecisionFallbackReason | null;
-}
+export type FormatDecisionProvenance =
+  | { decisionSource: "llm"; fallbackReason: null }
+  | { decisionSource: "fallback"; fallbackReason: FormatDecisionFallbackReason };
 
 export type AgentTurnVisibility = "public" | "private" | "anonymous" | "diary" | "system";
 
@@ -943,7 +943,7 @@ export interface IAgent {
   /** Empowered player picks one of two House-offered round formats. */
   pickRoundFormat?(
     context: PhaseContext,
-    offeredFormats: [string, string],
+    offeredFormats: [LaunchFormatId, LaunchFormatId],
   ): Promise<FormatDecisionProvenance & { formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
   getSaveOrEliminateBallot?(
     context: PhaseContext,
