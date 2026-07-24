@@ -12,7 +12,7 @@ import type { ChatCompletion } from "openai/resources/chat/completions";
 import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { MingleIntentSummary, UUID } from "./types";
-import type { TokenTracker } from "./token-tracker";
+import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import type { AllianceHuddleOutcome, AllianceHuddleWindow } from "./types";
 import {
   inferModelCapabilities,
@@ -571,6 +571,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       usage.completionTokens,
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
+      parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
     );
   }
 

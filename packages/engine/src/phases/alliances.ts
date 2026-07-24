@@ -2,6 +2,13 @@ import { Phase } from "../types";
 import type { AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
 import { createUUID } from "../game-state";
 import type { AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
+import {
+  formatAllianceActionOperatorText,
+  formatAllianceHuddleOutcomeOperatorText,
+  formatAllianceHuddleScheduleOperatorText,
+  formatAllianceHuddleTurnOperatorText,
+  type AllianceActionOperatorContext,
+} from "../operator-turn-text";
 import { agentTurnSourcePointer, assertCanAcceptCommit, strategicDecisionResponse, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 
 const MAX_HUDDLE_SESSIONS_PER_ALLIANCE = 2;
@@ -207,6 +214,53 @@ async function applyAllianceAction(
   };
 }
 
+function resolveAllianceActionOperatorContext(
+  ctx: PhaseRunnerContext,
+  action: AllianceAction,
+): AllianceActionOperatorContext {
+  const lineageId =
+    "lineageId" in action && typeof action.lineageId === "string" && action.lineageId.length > 0
+      ? action.lineageId
+      : null;
+
+  // After a successful propose, lineage may only exist under a generated id.
+  // Prefer action.lineageId; otherwise scan open lineages that match proposal name.
+  let lineage = lineageId ? ctx.gameState.getAllianceProposalLineage(lineageId) : undefined;
+  if (!lineage && action.action === "propose") {
+    const open = ctx.gameState.getAllianceProposalLineages()
+      .filter((candidate) => candidate.status === "open")
+      .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    lineage = open.find((candidate) => {
+      const version = candidate.versions.find((entry) => entry.versionId === candidate.currentVersionId);
+      return version?.terms.name === action.name;
+    }) ?? open[0];
+  }
+
+  if (!lineage) {
+    if (action.action === "propose" || action.action === "counter" || action.action === "amend") {
+      return {
+        allianceName: action.name,
+        memberNames: action.memberNames,
+        shortId: lineageId ? lineageId.slice(0, 8) : null,
+      };
+    }
+    return { shortId: lineageId ? lineageId.slice(0, 8) : null };
+  }
+
+  const version =
+    lineage.versions.find((entry) => entry.versionId === lineage.currentVersionId)
+    ?? lineage.versions[lineage.versions.length - 1];
+  const terms = version?.terms;
+  const alliance = ctx.gameState.getAlliance(lineage.allianceId);
+  const memberIds = terms?.memberIds ?? alliance?.memberIds ?? [];
+  const memberNames = memberIds.map((id) => ctx.gameState.getPlayerName(id));
+  return {
+    allianceName: terms?.name ?? alliance?.name ?? null,
+    memberNames,
+    shortId: lineage.id.slice(0, 8),
+  };
+}
+
 function emitAllianceActionTurn(
   ctx: PhaseRunnerContext,
   playerId: UUID,
@@ -216,10 +270,12 @@ function emitAllianceActionTurn(
   repairNotes: string[],
 ): void {
   const player = ctx.gameState.getPlayer(playerId);
+  const playerName = player?.name ?? playerId;
+  const operatorContext = resolveAllianceActionOperatorContext(ctx, action);
   ctx.logger.emitAgentTurn({
     phase: Phase.MINGLE_I,
     action: "alliance-action",
-    actor: { id: playerId, name: player?.name ?? playerId, role: "player" },
+    actor: { id: playerId, name: playerName, role: "player" },
     visibility: "private",
     response: {
       pass,
@@ -227,10 +283,15 @@ function emitAllianceActionTurn(
       normalizedAction: action,
       result,
       repairNotes,
+      // Operator-facing identity (also useful in turns JSONL / MCP).
+      allianceName: operatorContext.allianceName ?? null,
+      memberNames: operatorContext.memberNames ?? [],
+      shortId: operatorContext.shortId ?? null,
       ...actionDecision(action),
     },
     thinking: action.thinking,
     reasoningContext: action.reasoningContext,
+    text: formatAllianceActionOperatorText(playerName, action, result, operatorContext),
   });
 }
 
@@ -385,6 +446,9 @@ function emitHuddleScheduleTurn(
   phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE,
   schedule: AllianceHuddleScheduleRecord,
 ): void {
+  const alliance = ctx.gameState.getAlliance(schedule.allianceId);
+  const allianceName = alliance?.name ?? schedule.allianceId;
+  const memberNames = allianceMemberNames(ctx, schedule.memberIds);
   ctx.logger.emitAgentTurn({
     phase,
     action: "alliance-huddle-schedule",
@@ -400,6 +464,12 @@ function emitHuddleScheduleTurn(
       rationale: schedule.rationale,
     },
     scope: "huddle",
+    text: formatAllianceHuddleScheduleOperatorText({
+      decision: schedule.decision,
+      allianceName,
+      memberNames,
+      rationale: schedule.rationale,
+    }),
   });
 }
 
@@ -478,10 +548,11 @@ async function completeHuddleSession(
       );
       conversationHistory.push({ from: ctx.gameState.getPlayerName(speakerId), text: message });
     }
+    const speakerName = ctx.gameState.getPlayerName(speakerId);
     ctx.logger.emitAgentTurn({
       phase,
       action: "alliance-huddle-turn",
-      actor: { id: speakerId, name: ctx.gameState.getPlayerName(speakerId), role: "player" },
+      actor: { id: speakerId, name: speakerName, role: "player" },
       visibility: "private",
       response: {
         scheduleId: schedule.id,
@@ -495,6 +566,11 @@ async function completeHuddleSession(
       thinking: turn.thinking,
       reasoningContext: turn.reasoningContext,
       scope: "huddle",
+      text: formatAllianceHuddleTurnOperatorText({
+        playerName: speakerName,
+        allianceName: alliance.name,
+        message,
+      }),
     });
   }
 
@@ -555,6 +631,13 @@ async function completeHuddleSession(
     thinking: summary.thinking,
     reasoningContext: summary.reasoningContext,
     scope: "huddle",
+    text: formatAllianceHuddleOutcomeOperatorText({
+      allianceName: alliance.name,
+      ask: outcome.ask,
+      plan: outcome.plan,
+      posture: outcome.posture,
+      confidence: outcome.confidence,
+    }),
   });
 }
 

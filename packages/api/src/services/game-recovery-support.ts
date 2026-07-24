@@ -26,14 +26,27 @@ type AccumulatorRecoveryValidation =
   | { ok: true; currentAccusations: CurrentAccusationsAccumulatorV1 | null }
   | { ok: false; reason: string };
 
-const SUPPORTED_ACTOR_COORDINATES = new Set<string>(PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES);
+/** Coordinates the runner can actually resume after format-kernel cutover. */
+const RESUME_SUPPORTED_ACTOR_COORDINATES = new Set<string>(
+  PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES.filter((coordinate) =>
+    coordinate !== "format_menu" &&
+    coordinate !== "format_pick" &&
+    coordinate !== "format_mingle" &&
+    coordinate !== "format_resolve" &&
+    coordinate !== "post_vote_mingle" &&
+    coordinate !== "power" &&
+    coordinate !== "reveal" &&
+    coordinate !== "pre_council_huddle" &&
+    coordinate !== "council"
+  ),
+);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isSupportedActorCoordinate(value: string): value is GameRunnerResumeActorCoordinate {
-  return SUPPORTED_ACTOR_COORDINATES.has(value);
+  return RESUME_SUPPORTED_ACTOR_COORDINATES.has(value);
 }
 
 function isRuntimeSnapshotV1(value: unknown): value is RuntimeSnapshotV1 {
@@ -245,22 +258,29 @@ function validateActorCoordinatePrerequisites(
       requireJury(actorCoordinate, gameState);
   }
 
+  // Format-kernel mid-round coordinates are not durable-resume supported yet.
+  if (
+    actorCoordinate === "format_menu" ||
+    actorCoordinate === "format_pick" ||
+    actorCoordinate === "format_mingle" ||
+    actorCoordinate === "format_resolve"
+  ) {
+    return `unsupported_actor_coordinate:${actorCoordinate}`;
+  }
+
+  // Classic Power→Council spine is retired. Old checkpoints at these coordinates
+  // remain inspectable but fail closed for startup resume (runner also rejects).
+  if (
+    actorCoordinate === "post_vote_mingle" ||
+    actorCoordinate === "power" ||
+    actorCoordinate === "reveal" ||
+    actorCoordinate === "pre_council_huddle" ||
+    actorCoordinate === "council"
+  ) {
+    return `unsupported_actor_coordinate:${actorCoordinate}`;
+  }
+
   if (!hasResolvedEmpowered(canonicalEvents)) return `${actorCoordinate}_missing_empowered`;
-  if (actorCoordinate === "post_vote_mingle") return null;
-
-  if (!canonicalEvents.some((event) => event.type === "mingle.rooms_allocated")) {
-    return `${actorCoordinate}_missing_mingle_allocation`;
-  }
-  if (actorCoordinate === "power") return null;
-
-  const candidateResolution = latestEvent(canonicalEvents, "power.candidates_resolved");
-  if (!candidateResolution) return `${actorCoordinate}_missing_candidate_resolution`;
-  if (actorCoordinate === "reveal") {
-    return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
-  }
-  if (actorCoordinate === "pre_council_huddle" || actorCoordinate === "council") {
-    return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
-  }
   return null;
 }
 

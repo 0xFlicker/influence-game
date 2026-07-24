@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import {
   createLlmClientFromEnv,
+  createFlexProcessingFetch,
   describeLlmProvider,
   resolveOpenAIReasoningSummaryMode,
   resolveModelForTier,
@@ -112,6 +113,165 @@ describe("LLM client env config", () => {
     });
 
     expect(config).toBeNull();
+  });
+});
+
+describe("OpenAI Flex processing", () => {
+  it("retries three Flex 429s with exponential backoff before using auto tier", async () => {
+    const tiers: string[] = [];
+    const delays: number[] = [];
+    let attempts = 0;
+    const flexFetch = createFlexProcessingFetch(
+      async (request) => {
+        tiers.push((await (request as unknown as Request).json() as { service_tier: string }).service_tier);
+        attempts++;
+        return new Response(null, { status: attempts <= 3 ? 429 : 200 });
+      },
+      async (delay) => {
+        delays.push(delay);
+      },
+    );
+
+    const response = await flexFetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      body: JSON.stringify({ model: "gpt-5-mini", input: "test" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(tiers).toEqual(["flex", "flex", "flex", "auto"]);
+    expect(delays).toEqual([1_000, 2_000, 4_000]);
+  });
+
+  it("starts the next request on Flex after an auto-tier fallback", async () => {
+    const tiers: string[] = [];
+    const responses = [
+      new Response(null, { status: 429 }),
+      new Response(null, { status: 429 }),
+      new Response(null, { status: 429 }),
+      new Response(null, { status: 200 }),
+      new Response(null, { status: 200 }),
+    ];
+    const flexFetch = createFlexProcessingFetch(
+      async (request) => {
+        tiers.push((await (request as Request).json() as { service_tier: string }).service_tier);
+        return responses.shift()!;
+      },
+      async () => undefined,
+    );
+
+    await flexFetch("https://api.openai.com/v1/responses", { method: "POST", body: "{}" });
+    await flexFetch("https://api.openai.com/v1/responses", { method: "POST", body: "{}" });
+
+    expect(tiers).toEqual(["flex", "flex", "flex", "auto", "flex"]);
+  });
+
+  it("rebuilds requests without a stale content length", async () => {
+    let rewrittenRequest: Request | undefined;
+    const flexFetch = createFlexProcessingFetch(async (request) => {
+      rewrittenRequest = request as Request;
+      return new Response(null, { status: 200 });
+    });
+
+    await flexFetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { "content-length": "2" },
+      body: "{}",
+    });
+
+    expect(await rewrittenRequest?.text()).toBe('{"service_tier":"flex"}');
+    expect(rewrittenRequest?.headers.get("content-length")).not.toBe("2");
+  });
+
+  it("caps Retry-After delays and returns an auto-tier 429 without another retry", async () => {
+    const tiers: string[] = [];
+    const delays: number[] = [];
+    const flexFetch = createFlexProcessingFetch(
+      async (request) => {
+        tiers.push((await (request as Request).json() as { service_tier: string }).service_tier);
+        return new Response(null, { status: 429, headers: { "retry-after": "3600" } });
+      },
+      async (delay) => {
+        delays.push(delay);
+      },
+    );
+
+    const response = await flexFetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      body: JSON.stringify({ model: "gpt-5-mini", input: "test" }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(tiers).toEqual(["flex", "flex", "flex", "auto"]);
+    expect(delays).toEqual([30_000, 30_000, 30_000]);
+  });
+
+  it("stops a pending Flex backoff when the request aborts", async () => {
+    const controller = new AbortController();
+    const abortReason = new Error("simulation timed out");
+    let attempts = 0;
+    const flexFetch = createFlexProcessingFetch(
+      async () => {
+        attempts++;
+        return new Response(null, { status: 429 });
+      },
+      async (_delay, signal) => {
+        controller.abort(abortReason);
+        if (signal?.aborted) throw signal.reason;
+      },
+    );
+
+    await expect(
+      flexFetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        body: JSON.stringify({ model: "gpt-5-mini", input: "test" }),
+        signal: controller.signal,
+      }),
+    ).rejects.toBe(abortReason);
+    expect(attempts).toBe(1);
+  });
+
+  it("only enables Flex processing for hosted OpenAI", () => {
+    const hosted = createLlmClientFromEnv(
+      { OPENAI_API_KEY: "openai-key" },
+      { flexProcessing: true, providerProfileId: "openai" },
+    );
+    const local = createLlmClientFromEnv(
+      { INFLUENCE_LLM_BASE_URL: "http://127.0.0.1:1234/v1" },
+      { flexProcessing: true, providerProfileId: "lm-studio" },
+    );
+
+    expect(hosted?.flexProcessingEnabled).toBe(true);
+    expect(local?.flexProcessingEnabled).toBe(false);
+  });
+
+  it("wires Flex processing into hosted OpenAI client requests", async () => {
+    const originalFetch = globalThis.fetch;
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = Object.assign(
+      async (request: string | URL | Request) => {
+        requestBody = await (request as Request).json() as Record<string, unknown>;
+        return new Response(
+          JSON.stringify({ error: { message: "expected test failure", type: "invalid_request_error" } }),
+          { status: 400, headers: { "content-type": "application/json" } },
+        );
+      },
+      { preconnect: originalFetch.preconnect },
+    );
+
+    try {
+      const config = createLlmClientFromEnv(
+        { OPENAI_API_KEY: "openai-key" },
+        { flexProcessing: true, providerProfileId: "openai" },
+      );
+      try {
+        await config!.client.responses.create({ model: "gpt-5-mini", input: "test" });
+      } catch {
+        // The intercepted request intentionally returns an OpenAI API error.
+      }
+      expect(requestBody?.service_tier).toBe("flex");
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
   });
 });
 

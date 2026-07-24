@@ -415,16 +415,13 @@ describe("game startup recovery", () => {
     await abortAllGames();
   });
 
+  // Classic Power→Council coordinates (post_vote_mingle/power/reveal/pre_council/council)
+  // and format mid-round (format_*) are not startup-resume supported after format-kernel cutover.
   const supportedRecoveryCases = [
     { actorCoordinate: "lobby", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "mingle_i", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "pre_vote_huddle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "vote", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
-    { actorCoordinate: "post_vote_mingle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
-    { actorCoordinate: "power", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
-    { actorCoordinate: "reveal", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
-    { actorCoordinate: "pre_council_huddle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
-    { actorCoordinate: "council", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "reckoning_lobby", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_plea", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
@@ -663,7 +660,8 @@ describe("game startup recovery", () => {
   });
 
   test("startup recovery resumes from a boundary with reconstructable Mingle inbox messages", async () => {
-    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "power", {
+    // vote still sits after Mingle I; inbox rebuild must include MINGLE_I room speech.
+    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "vote", {
       config: recoveryConfigWithMingle,
       playerCount: 6,
       requireBlockedMingleInbox: true,
@@ -674,13 +672,14 @@ describe("game startup recovery", () => {
     if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
     expect(candidate.resumeFrom.mingleInboxReplay?.entries.length).toBeGreaterThan(0);
     expect(candidate.resumeFrom.mingleInboxReplay?.unresolvedRecipientNames).toEqual([]);
+    expect(candidate.resumeFrom.actorCoordinate).toBe("vote");
 
     const suspendedInspection = await getDurableRunInspection(db, gameId);
     expect(suspendedInspection.ok).toBeTrue();
     if (!suspendedInspection.ok) throw new Error("durable inspection failed");
     const supportedBoundary = findCheckpointBoundary(suspendedInspection, {
       lastEventSequence: interruptedAtSequence,
-      actorCoordinate: "power",
+      actorCoordinate: "vote",
     });
     expect(supportedBoundary?.resumeAvailable).toBeTrue();
 
@@ -696,45 +695,37 @@ describe("game startup recovery", () => {
     });
   }, 60000);
 
-  test("startup recovery resumes post_vote_mingle when only Mingle I left blocked inbox state", async () => {
-    // Moss-shaped: Mingle I wrote private room speech; inbox stays non-empty through
-    // vote into post_vote_mingle until that phase clears it. Rebuild must include MINGLE_I.
-    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "post_vote_mingle", {
-      config: recoveryConfigWithMingle,
-      playerCount: 6,
-      requireBlockedMingleInbox: true,
-    });
+  test("startup recovery fails closed for retired classic Power→Council coordinates", async () => {
+    // Coordinates remain listed on PHASE_BOUNDARY for type/hydration forensics, but resume is fail-closed.
+    for (const actorCoordinate of ["post_vote_mingle", "power", "reveal", "pre_council_huddle", "council"] as const) {
+      const gameId = await insertGame(db, {
+        id: `startup-recovery-retired-classic-${actorCoordinate}`,
+        status: "suspended",
+        config: recoveryConfig,
+      });
+      const ownerEpoch = await insertOwner(db, gameId);
+      const events = createCanonicalEventFixture(gameId);
+      await appendGameEvents(db, { gameId, ownerEpoch, events });
 
-    const candidate = await getSupportedRecovery(db, gameId);
-    expect(candidate.ok).toBeTrue();
-    if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
-    expect(candidate.resumeFrom.mingleInboxReplay?.entries.length).toBeGreaterThan(0);
-    expect(candidate.resumeFrom.mingleInboxReplay?.unresolvedRecipientNames).toEqual([]);
-    expect(candidate.resumeFrom.actorCoordinate).toBe("post_vote_mingle");
+      const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
+        ownerEpoch,
+        eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
+        actorCoordinate,
+      });
+      const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+      expect(checkpointResult.ok).toBeTrue();
 
-    const suspendedInspection = await getDurableRunInspection(db, gameId);
-    expect(suspendedInspection.ok).toBeTrue();
-    if (!suspendedInspection.ok) throw new Error("durable inspection failed");
-    const supportedBoundary = findCheckpointBoundary(suspendedInspection, {
-      lastEventSequence: interruptedAtSequence,
-      actorCoordinate: "post_vote_mingle",
-    });
-    expect(supportedBoundary?.resumeAvailable).toBeTrue();
-
-    const recovery = await recoverGamesOnStartup(db);
-    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
-
-    await assertRecoveredGameCompleted({
-      db,
-      gameId,
-      originalOwnerEpoch: ownerEpoch,
-      interruptedAtSequence,
-      expectedIntroductionCount: 6,
-    });
-  }, 60000);
+      const candidate = await getSupportedRecovery(db, gameId);
+      expect(candidate).toMatchObject({
+        ok: false,
+        gameId,
+        reason: `unsupported_actor_coordinate:${actorCoordinate}`,
+      });
+    }
+  });
 
   test("startup recovery skips a newer unsupported same-head checkpoint and uses the newest resume-capable boundary", async () => {
-    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "reveal", {
+    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "vote", {
       config: recoveryConfigWithEndgame,
       playerCount: 6,
       writeUnsupportedNewerCheckpoint: "mingle",
@@ -745,7 +736,7 @@ describe("game startup recovery", () => {
     if (!suspendedInspection.ok) throw new Error("durable inspection failed");
     const supportedBoundary = findCheckpointBoundary(suspendedInspection, {
       lastEventSequence: interruptedAtSequence,
-      actorCoordinate: "reveal",
+      actorCoordinate: "vote",
     });
     const unsupportedBoundary = findCheckpointBoundary(suspendedInspection, {
       lastEventSequence: interruptedAtSequence,
@@ -757,7 +748,7 @@ describe("game startup recovery", () => {
     const candidate = await getSupportedRecovery(db, gameId);
     expect(candidate.ok).toBeTrue();
     if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
-    expect(candidate.resumeFrom.actorCoordinate).toBe("reveal");
+    expect(candidate.resumeFrom.actorCoordinate).toBe("vote");
 
     const recovery = await recoverGamesOnStartup(db);
     expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });

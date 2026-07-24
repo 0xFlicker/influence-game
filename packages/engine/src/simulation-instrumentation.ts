@@ -35,11 +35,14 @@ export interface SimulatorArgsSnapshot {
   /** Whole-game timeout ms, or null when none was requested. */
   gameTimeoutMs: number | null;
   llmTimeoutMs: number;
+  /** Default operator action feed (choices/outcomes, no thinking). */
+  operatorFeed?: boolean;
   houseSummaries?: boolean;
   enableStrategicReflections?: boolean;
   richProducer?: boolean;
   enableDiary?: boolean;
   openAIReasoningSummary?: "auto" | "concise" | "detailed";
+  flex?: boolean;
 }
 
 export interface GitMetadata {

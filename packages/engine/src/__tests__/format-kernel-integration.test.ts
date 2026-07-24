@@ -106,15 +106,22 @@ describe("Format kernel integration (MockAgent)", () => {
           ),
         ).toBe(true);
       }
-      expect(
-        agentTurns.some(
-          (event) =>
-            event.round === pick.round &&
-            event.action === "format-ballot" &&
-            event.visibility === "private" &&
-            event.response.formatId === formatId,
-        ),
-      ).toBe(true);
+      const sealedBallots = agentTurns.filter(
+        (event) =>
+          event.round === pick.round &&
+          event.action === "format-ballot" &&
+          event.visibility === "private" &&
+          event.response.formatId === formatId,
+      );
+      expect(sealedBallots.length).toBeGreaterThan(0);
+      // Operator/sim traces must name the sealed choice (player-facing sealed ≠ operator redaction).
+      for (const ballot of sealedBallots) {
+        expect(typeof ballot.text).toBe("string");
+        expect(ballot.text).toContain("sealed ballot:");
+        expect(ballot.text).toContain("→");
+        expect(typeof ballot.response.targetName).toBe("string");
+        expect(String(ballot.response.targetName).length).toBeGreaterThan(0);
+      }
 
       const resolveMarkers = result.transcript.filter(
         (entry) =>

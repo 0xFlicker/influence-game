@@ -397,8 +397,17 @@ cd packages/engine
 doppler run --project social-strategy-agent --config dev -- \
   bun run simulate -- \
   --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
-  --model-catalog openai:gpt-5-mini
+  --model-catalog openai:gpt-5-mini --flex --llm-timeout-sec 900
 ```
+
+Use `--flex` only with hosted OpenAI catalog models. The simulator retries Flex
+resource-unavailable 429s with exponential backoff and switches the retry to
+`service_tier: "auto"` after the third 429 for that request; the next request
+probes Flex again. Use a longer LLM request timeout because Flex responses can
+take longer. Flex summaries include the tier-aware run estimate (Flex responses
+at Flex rates, visible auto/default fallbacks at standard rates) and a
+Flex-normalized comparison across the selectable hosted OpenAI models. A 429
+resource-unavailable retry is not charged.
 
 For local proof, load the chosen model in LM Studio and serve its OpenAI-compatible endpoint on `127.0.0.1:1234`.
 
@@ -435,7 +444,8 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 # House summaries only (live House MC summaries without chatty reasoning output):
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
-    --variant mingle --house-summaries --game-timeout-sec 7200 --llm-timeout-sec 300
+    --variant mingle --game-timeout-sec 7200 --llm-timeout-sec 300
+    # (operator action feed + House MC are on by default; add --chatty for thinking/reasoning)
 
 # Strategy-observability validation adds hidden strategic-reflection and Strategy Thread records:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \

@@ -11,6 +11,11 @@ import type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase } from "./types";
 import type { HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, IAgent, StrategicReflectionAction, StrategicReflectionOptions, StrategyPacketSummary } from "./game-runner.types";
+import {
+  formatHouseProducerBriefOperatorText,
+  formatStrategicReflectionOperatorText,
+  formatStrategyPacketOperatorText,
+} from "./operator-turn-text";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
 
 export class DiaryRoom {
@@ -90,6 +95,13 @@ export class DiaryRoom {
       thinking: reflection.thinking,
       reasoningContext: reflection.reasoningContext,
       scope: "thinking",
+      text: formatStrategicReflectionOperatorText({
+        playerName,
+        strategicLens: reflection.strategicLens,
+        allies: reflection.allies,
+        threats: reflection.threats,
+        plan: reflection.plan,
+      }),
     });
   }
 
@@ -114,6 +126,14 @@ export class DiaryRoom {
       thinking: reflection.thinking,
       reasoningContext: reflection.reasoningContext,
       scope: "thinking",
+      text: formatStrategyPacketOperatorText({
+        playerName,
+        objective: strategyPacket.objective,
+        targetPosture: strategyPacket.targetPosture,
+        coalitionPosture: strategyPacket.coalitionPosture,
+        nextSocialProbe: strategyPacket.nextSocialProbe,
+        strategicLens: strategyPacket.strategicLens,
+      }),
     });
   }
 
@@ -333,6 +353,12 @@ export class DiaryRoom {
         thinking: brief.thinking,
         reasoningContext: brief.reasoningContext,
         scope: "diary",
+        text: formatHouseProducerBriefOperatorText({
+          playerName: context.agentName,
+          storyRole: brief.storyRole,
+          pressurePoints: brief.pressurePoints,
+          questionAngles: brief.questionAngles,
+        }),
       });
       return brief;
     } catch (error) {

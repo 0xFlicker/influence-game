@@ -302,6 +302,7 @@ async function resolveSaveOrEliminateRound(
     }
 
     ballots.push({ voterId: player.id, polarity, targetId });
+    const targetName = gameState.getPlayerName(targetId);
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -311,6 +312,7 @@ async function resolveSaveOrEliminateRound(
         formatId: "save_or_eliminate",
         polarity,
         targetId,
+        targetName,
         sealed: true,
         ...provenance,
         ...strategicDecisionResponse({ decisionLog }),
@@ -318,7 +320,8 @@ async function resolveSaveOrEliminateRound(
       thinking,
       reasoningContext,
       scope: "system",
-      text: `${player.name} cast sealed save-or-eliminate ballot`,
+      // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
+      text: `${player.name} sealed ballot: ${polarity.toUpperCase()} → ${targetName}`,
     });
   }
 
@@ -402,6 +405,7 @@ async function resolveVoteBombRound(
     }
 
     ballots.push({ voterId: player.id, targetId });
+    const targetName = gameState.getPlayerName(targetId);
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -410,6 +414,7 @@ async function resolveVoteBombRound(
       response: {
         formatId: "vote_bomb",
         targetId,
+        targetName,
         sealed: true,
         ...provenance,
         ...strategicDecisionResponse({ decisionLog }),
@@ -417,7 +422,8 @@ async function resolveVoteBombRound(
       thinking,
       reasoningContext,
       scope: "system",
-      text: `${player.name} cast sealed vote-bomb ballot`,
+      // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
+      text: `${player.name} sealed ballot: eliminate → ${targetName}`,
     });
   }
 
@@ -551,6 +557,7 @@ async function resolveSafetyBounceRound(
 
   const voteTotals: Record<UUID, number> = {};
   for (const id of board.vulnerable) voteTotals[id] = 0;
+  const ballots: Array<{ voterId: UUID; targetId: UUID }> = [];
 
   for (const player of alive) {
     const agent = agents.get(player.id);
@@ -578,7 +585,9 @@ async function resolveSafetyBounceRound(
       targetId = board.vulnerable[board.vulnerable.length - 1]!;
     }
 
+    ballots.push({ voterId: player.id, targetId });
     voteTotals[targetId] = (voteTotals[targetId] ?? 0) + 1;
+    const targetName = gameState.getPlayerName(targetId);
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -587,6 +596,7 @@ async function resolveSafetyBounceRound(
       response: {
         formatId: "safety_bounce",
         targetId,
+        targetName,
         sealed: true,
         ...provenance,
         ...strategicDecisionResponse({ decisionLog }),
@@ -594,7 +604,8 @@ async function resolveSafetyBounceRound(
       thinking,
       reasoningContext,
       scope: "system",
-      text: `${player.name} cast sealed safety-bounce vote`,
+      // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
+      text: `${player.name} sealed ballot: eliminate → ${targetName}`,
     });
   }
 
@@ -604,6 +615,12 @@ async function resolveSafetyBounceRound(
     resolution = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
   }
 
+  logger.logSystem(
+    `Safety Bounce ballots: ${ballots
+      .map((b) => `${gameState.getPlayerName(b.voterId)}→${gameState.getPlayerName(b.targetId)}`)
+      .join("; ")}`,
+    Phase.FORMAT_RESOLVE,
+  );
   logger.logSystem(
     `Safety Bounce vote reveal: ${Object.entries(voteTotals)
       .map(([id, n]) => `${gameState.getPlayerName(id as UUID)}=${n}`)

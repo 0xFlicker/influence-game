@@ -3,9 +3,13 @@ import {
   buildSimulationConfig,
   computeAggregateStats,
   formatAgentTurnTrace,
+  formatOperatorActionLine,
+  formatRoomAllocationOperatorLine,
   isMingleVariant,
+  isOperatorHouseSystemLine,
   isPowerLobbyVariant,
   parseArgs,
+  renderMarkdownSummary,
   serializeAgentTurnEvent,
   serializeCanonicalGameEvent,
   type GameResult,
@@ -18,7 +22,7 @@ import { replayCanonicalEvents } from "../game-projection";
 import { instrumentGame } from "../simulation-instrumentation";
 import { transcriptThinkingFor } from "../phases/phase-runner-context";
 import { DEFAULT_CONFIG, Phase } from "../types";
-import type { TokenUsage } from "../token-tracker";
+import type { ServiceTierUsage, TokenUsage } from "../token-tracker";
 
 const ZERO_USAGE: TokenUsage = {
   promptTokens: 0,
@@ -29,6 +33,8 @@ const ZERO_USAGE: TokenUsage = {
   callCount: 0,
   emptyResponses: 0,
 };
+
+const ZERO_SERVICE_TIER_USAGE: ServiceTierUsage = {};
 
 function gameResult(overrides: Partial<GameResult>): GameResult {
   return {
@@ -49,6 +55,7 @@ function gameResult(overrides: Partial<GameResult>): GameResult {
     tokenUsage: {
       perAgent: {},
       total: ZERO_USAGE,
+      byServiceTier: ZERO_SERVICE_TIER_USAGE,
     },
     instrumentation: instrumentGame([], {}, {}),
     ...overrides,
@@ -90,11 +97,75 @@ describe("simulation variant config", () => {
     expect(config.enableStrategicReflections).toBe(true);
   });
 
-  it("can print live House summaries without chatty transcript output", () => {
-    const args = parseArgs(["--house-summaries"]);
+  it("defaults to operator feed + House summaries without chatty", () => {
+    const args = parseArgs([]);
 
-    expect(args.houseSummaries).toBe(true);
     expect(args.chatty).toBe(false);
+    expect(args.operatorFeed).toBe(true);
+    expect(args.houseSummaries).toBe(true);
+  });
+
+  it("can disable operator feed and house summaries", () => {
+    const args = parseArgs(["--quiet", "--no-house-summaries"]);
+
+    expect(args.operatorFeed).toBe(false);
+    expect(args.houseSummaries).toBe(false);
+    expect(args.chatty).toBe(false);
+  });
+
+  it("formats operator action lines without thinking spam", () => {
+    const voteLine = formatOperatorActionLine({
+      type: "agent_turn",
+      round: 1,
+      phase: Phase.VOTE,
+      timestamp: 1,
+      action: "vote",
+      actor: { id: "f", name: "Finn", role: "player" },
+      visibility: "private",
+      response: { empowerTarget: "lyra" },
+      text: "Finn votes: empower=Lyra",
+      thinking: "should not appear in operator feed",
+    });
+    expect(voteLine).toBe("  R1/VOTE: Finn votes: empower=Lyra");
+    expect(voteLine).not.toContain("should not appear");
+
+    const lobbyLine = formatOperatorActionLine({
+      type: "agent_turn",
+      round: 1,
+      phase: Phase.LOBBY,
+      timestamp: 1,
+      action: "lobby-message",
+      actor: { id: "r", name: "Rune", role: "player" },
+      visibility: "public",
+      response: { message: "I care about consistency." },
+      text: "I care about consistency.",
+    });
+    expect(lobbyLine).toBe("  R1/LOBBY Rune: I care about consistency.");
+
+    expect(isOperatorHouseSystemLine("FORMAT LOCKED: vote_bomb. Chosen by Sage.")).toBe(true);
+    expect(isOperatorHouseSystemLine("Someone said hello in the lobby")).toBe(false);
+
+    const seating = formatRoomAllocationOperatorLine({
+      round: 1,
+      phase: Phase.MINGLE_I,
+      timestamp: 1,
+      from: "House",
+      scope: "system",
+      text: "Turn 1: Room 1: Finn, Wren | Room 2: Lyra, Rune",
+      roomMetadata: {
+        rooms: [
+          { roomId: 1, round: 1, beat: 1, playerIds: ["a", "b"] },
+          { roomId: 2, round: 1, beat: 1, playerIds: ["c", "d"] },
+        ],
+        excluded: [],
+      },
+    });
+    expect(seating).toContain("rooms — Turn 1: Room 1: Finn, Wren");
+  });
+
+  it("parses --flex for hosted OpenAI simulation requests", () => {
+    expect(parseArgs(["--flex"]).flex).toBe(true);
+    expect(parseArgs([]).flex).toBe(false);
   });
 
   it("parses explicit model catalog and reasoning policy for router simulations", () => {
@@ -211,6 +282,17 @@ describe("simulation variant config", () => {
           rounds: 0,
           endgameType: "error",
           error: "interrupted",
+          tokenUsage: {
+            perAgent: {},
+            total: {
+              ...ZERO_USAGE,
+              promptTokens: 10,
+              completionTokens: 5,
+              totalTokens: 15,
+              callCount: 1,
+            },
+            byServiceTier: {},
+          },
         }),
       ],
       "gpt-5-nano",
@@ -225,6 +307,69 @@ describe("simulation variant config", () => {
     expect(stats.partial).toBe(true);
     expect(stats.totalGames).toBe(1);
     expect(stats.instrumentation.totalGames).toBe(1);
+    expect(stats.tokenUsage.total.totalTokens).toBe(15);
+  });
+
+  it("separates Flex spend from auto-tier fallbacks and projects Flex costs", () => {
+    const flexUsage: TokenUsage = {
+      ...ZERO_USAGE,
+      promptTokens: 1_000,
+      completionTokens: 500,
+      totalTokens: 1_500,
+      callCount: 1,
+    };
+    const autoUsage: TokenUsage = {
+      ...ZERO_USAGE,
+      promptTokens: 200,
+      completionTokens: 100,
+      totalTokens: 300,
+      callCount: 1,
+    };
+    const metadata = {
+      variant: "mingle",
+      timestamp: "2026-07-24T00:00:00.000Z",
+      command: "bun run simulate -- --flex",
+      cwd: "/repo",
+      git: { branch: "feature", commitSha: "abcdef", commitShortSha: "abcdef", isDirty: false },
+      args: {
+        games: 1,
+        players: 8,
+        personas: null,
+        model: "gpt-5-mini",
+        variant: "mingle",
+        gameTimeoutMs: 600000,
+        llmTimeoutMs: 900000,
+        enableStrategicReflections: false,
+        flex: true,
+      },
+    };
+
+    const stats = computeAggregateStats(
+      [gameResult({
+        tokenUsage: {
+          perAgent: {},
+          total: {
+            ...ZERO_USAGE,
+            promptTokens: 1_200,
+            completionTokens: 600,
+            totalTokens: 1_800,
+            callCount: 2,
+          },
+          byServiceTier: { flex: flexUsage, auto: autoUsage },
+        },
+      })],
+      "gpt-5-mini",
+      metadata,
+    );
+
+    expect(stats.tokenUsage.tierAwareCost?.totalCost).toBeCloseTo(0.000875, 10);
+    expect(stats.tokenUsage.tierAwareCost?.fallbackCost).toBeCloseTo(0.00025, 10);
+    expect(stats.tokenUsage.flexCostEstimates?.find((estimate) => estimate.model === "gpt-5-mini")?.totalCost).toBeCloseTo(0.00075, 10);
+    const summary = renderMarkdownSummary(stats, []);
+    expect(summary).toContain("## Flex Cost Accounting");
+    expect(summary).toContain("| Flex | 1 | 1,000 | 500 | $0.0006 |");
+    expect(summary).toContain("| Auto/default fallback | 1 | 200 | 100 | $0.0003 |");
+    expect(summary).toContain("## Flex-Normalized Cost Estimates");
   });
 
   it("serializes agent turns as clean structured JSON records", () => {

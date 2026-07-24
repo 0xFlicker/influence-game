@@ -70,8 +70,18 @@ cd packages/engine
 doppler run --project social-strategy-agent --config dev -- \
   bun run simulate -- \
   --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
-  --model-catalog openai:gpt-5-mini
+  --model-catalog openai:gpt-5-mini --flex --llm-timeout-sec 900
 ```
+
+`--flex` is available only for hosted OpenAI catalog models. It sends
+`service_tier: "flex"`; resource-unavailable 429s retry with exponential
+backoff three times, then retry once on the `auto` tier for that request. Later
+requests begin on Flex again. Flex can be slower, so use a longer per-request
+timeout for real-model evaluation runs. The generated `summary.md` separates
+successful Flex usage from auto/default fallback usage, then shows the estimated
+run spend and a Flex-normalized comparison for every selectable hosted OpenAI
+model. 429 resource-unavailable retries are excluded because OpenAI does not
+charge for them.
 
 Local LM Studio prerequisites: load the chosen model and start its OpenAI-compatible server on `127.0.0.1:1234`.
 

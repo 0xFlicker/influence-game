@@ -12,6 +12,11 @@ import type {
 } from "../types";
 import { Phase } from "../types";
 import type { MingleIntentAction, MingleTurnAction } from "../game-runner.types";
+import {
+  formatMingleIntentOperatorText,
+  formatMingleRoomAssignmentOperatorText,
+  formatMingleTurnOperatorText,
+} from "../operator-turn-text";
 import type { HouseMingleAssignmentResult } from "../house-interviewer";
 import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
 import { PlayerStatus } from "../types";
@@ -652,6 +657,18 @@ async function runMingleTurn(
     };
     nextRoomByPlayerId.set(turn.playerId, movement.toRoomId);
 
+    const moved = movement.toRoomId !== turn.roomId;
+    const operatorText = formatMingleTurnOperatorText({
+      playerName: turn.fromName,
+      roomId: turn.roomId,
+      message: turn.message,
+      messageSent: turn.messageSent,
+      toRoomId: movement.toRoomId,
+      moved,
+      gotoRoomId: movement.gotoRoomId,
+      gotoPlayerName: movement.gotoPlayerName,
+      gotoStatus: movement.gotoStatus,
+    });
     logger.emitAgentTurn({
       phase,
       action: "mingle-turn",
@@ -665,7 +682,7 @@ async function runMingleTurn(
         fromRoomId: turn.roomId,
         roomId: turn.roomId,
         toRoomId: movement.toRoomId,
-        moved: movement.toRoomId !== turn.roomId,
+        moved,
         gotoRoomId: movement.gotoRoomId,
         gotoPlayerName: movement.gotoPlayerName,
         gotoRoomIgnored: movement.gotoRoomIgnored,
@@ -675,7 +692,8 @@ async function runMingleTurn(
       thinking: turn.action.thinking,
       reasoningContext: turn.action.reasoningContext,
       scope: "mingle",
-      ...(turn.message && { text: turn.message }),
+      // Operator summary always includes room + movement; public message still on transcript when delivered.
+      text: operatorText,
       to: turn.recipientNames,
       roomId: turn.roomId,
     });
@@ -781,6 +799,9 @@ export async function runMinglePhase(
           },
           thinking: normalizedIntent.intent.thinking,
           reasoningContext: normalizedIntent.intent.reasoningContext,
+          text: intentSummary
+            ? formatMingleIntentOperatorText(player.name, intentSummary)
+            : `${player.name} intent recorded`,
         });
       }
     }),
@@ -801,6 +822,16 @@ export async function runMinglePhase(
   );
   const initialAllocation = allocateRooms(houseAssignment, alivePlayers, roomCount, gameState.round, 1, intentSummaries);
   await assertCanAcceptCommit(ctx);
+  const roommatesByPlayer = new Map<UUID, string[]>();
+  for (const room of initialAllocation.rooms) {
+    const names = room.playerIds.map((id) => gameState.getPlayerName(id));
+    for (const playerId of room.playerIds) {
+      roommatesByPlayer.set(
+        playerId,
+        names.filter((name) => name !== gameState.getPlayerName(playerId)),
+      );
+    }
+  }
   for (const assignment of initialAllocation.diagnostics.assignments) {
     logger.emitAgentTurn({
       phase,
@@ -812,11 +843,19 @@ export async function runMinglePhase(
         assignmentSource: assignment.source,
         repairNotes: assignment.repairNotes ?? [],
         roomCount,
+        roommates: roommatesByPlayer.get(assignment.player.id) ?? [],
         ...(assignment.intent && { intent: assignment.intent }),
         ...(houseAssignment.rationale && { houseRationale: houseAssignment.rationale }),
       },
       thinking: houseAssignment.thinking,
       reasoningContext: houseAssignment.reasoningContext,
+      text: formatMingleRoomAssignmentOperatorText({
+        playerName: assignment.player.name,
+        assignedRoomId: assignment.assignedRoomId,
+        assignmentSource: assignment.source,
+        roommateNames: roommatesByPlayer.get(assignment.player.id) ?? [],
+        repairNotes: assignment.repairNotes,
+      }),
     });
   }
   const roomByPlayerId = new Map<UUID, number>();

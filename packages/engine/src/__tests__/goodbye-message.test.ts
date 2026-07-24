@@ -529,36 +529,36 @@ describe("goodbye message handling", () => {
     expect(prc.logger.transcript.at(-1)?.text).toBe("Charlie signing off.");
   });
 
-  test("empowered council tiebreaker is requested only after normal votes tie", async () => {
+  test("format-kernel vote resolves empower only and never builds an expose ledger", async () => {
+    // Classic dual-ballot Council is retired; Vote is empower-only under the format kernel.
     const aliceId = createUUID();
     const bobId = createUUID();
     const charlieId = createUUID();
     const daveId = createUUID();
-    const eveId = createUUID();
 
     const agents = [
       new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
       new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
       new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, daveId),
       new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: daveId }, charlieId),
-      new GoodbyeProbeAgent(eveId, "Eve", { empowerTarget: bobId, exposeTarget: daveId }, daveId),
     ];
     const prc = makePhaseRunnerContext(agents);
     const actor = { send() {} };
 
     await runVotePhase(prc, actor as never);
-    await runPowerPhase(prc, actor as never);
-    await runCouncilPhase(prc, actor as never);
 
-    expect(agents[0]!.councilVoteContexts).toHaveLength(1);
-    expect(agents[1]!.councilVoteContexts).toHaveLength(1);
-    expect(agents[2]!.councilVoteContexts).toHaveLength(0);
-    expect(agents[3]!.councilVoteContexts).toHaveLength(0);
-    expect(agents[4]!.councilVoteContexts).toHaveLength(1);
-
-    const resolved = prc.gameState.getCanonicalEvents().find((event) => event.type === "council.elimination_resolved");
-    expect(resolved?.payload.method).toBe("empowered_tiebreaker");
-    expect(resolved?.payload.eliminated).toBe(charlieId);
+    expect(prc.gameState.empoweredId).toBe(bobId);
+    expect(prc.gameState.getCanonicalEvents().some((event) =>
+      event.type === "vote.empower_tally_resolved" || event.type === "vote.empowered_set"
+    )).toBe(true);
+    // Expose ballot is gone: no expose tallies, no council candidates from vote, no council resolution.
+    expect(Object.keys(prc.gameState.currentVoteTally.exposeVotes)).toHaveLength(0);
+    expect(Object.values(prc.gameState.getExposeScores()).every((score) => score === 0)).toBe(true);
+    expect(prc.gameState.councilCandidates).toBeNull();
+    expect(prc.gameState.getCanonicalEvents().some((event) => event.type === "council.elimination_resolved")).toBe(false);
+    for (const agent of agents) {
+      expect(agent.councilVoteContexts).toHaveLength(0);
+    }
   });
 
   test("tribunal juror tiebreaker is skipped when live vote resolves", async () => {
@@ -789,9 +789,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     const { openai } = makeOpenAIStub([
       {
         content: JSON.stringify({
-          thinking: "Empower an ally and expose the player driving consensus.",
+          thinking: "Empower an ally who will pick a favorable format.",
           empower: "Mira",
-          expose: "Vera",
         }),
       },
     ]);
@@ -801,9 +800,9 @@ describe("InfluenceAgent tool-call fallbacks", () => {
 
     expect(votes).toMatchObject({
       empowerTarget: "mira-id",
-      exposeTarget: "vera-id",
-      thinking: "Empower an ally and expose the player driving consensus.",
+      thinking: "Empower an ally who will pick a favorable format.",
     });
+    expect(votes).not.toHaveProperty("exposeTarget");
   });
 
   test("getPowerAction retries with more tokens when the forced tool call is incomplete", async () => {

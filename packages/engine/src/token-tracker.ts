@@ -49,6 +49,18 @@ export interface CostEstimate {
   totalCost: number;
 }
 
+export const OPENAI_SERVICE_TIERS = ["flex", "auto", "default", "priority"] as const;
+export type OpenAIServiceTier = typeof OPENAI_SERVICE_TIERS[number];
+export type ServiceTierUsage = Partial<Record<OpenAIServiceTier, TokenUsage>>;
+
+export interface TierAwareCostEstimate {
+  flexCost: number;
+  fallbackCost: number;
+  totalCost: number;
+  flexCalls: number;
+  fallbackCalls: number;
+}
+
 // ---------------------------------------------------------------------------
 // Pricing table (published provider pricing)
 // ---------------------------------------------------------------------------
@@ -79,6 +91,14 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   },
   // xAI native APIs use the dotted ID.
   "grok-4.3": { inputPer1M: 1.25, cachedInputPer1M: 0.20, outputPer1M: 2.50 },
+};
+
+/** Flex uses the current OpenAI Batch-rate card. Only selectable hosted OpenAI models belong here. */
+export const OPENAI_FLEX_MODEL_PRICING: Record<string, ModelPricing> = {
+  "gpt-5-nano": { inputPer1M: 0.025, cachedInputPer1M: 0.0025, outputPer1M: 0.20 },
+  "gpt-5-mini": { inputPer1M: 0.125, cachedInputPer1M: 0.0125, outputPer1M: 1.00 },
+  "gpt-5.4-nano": { inputPer1M: 0.10, cachedInputPer1M: 0.01, outputPer1M: 0.625 },
+  "gpt-5.4-mini": { inputPer1M: 0.375, cachedInputPer1M: 0.0375, outputPer1M: 2.25 },
 };
 
 // ---------------------------------------------------------------------------
@@ -133,6 +153,42 @@ export function estimateCostAllModels(usage: TokenUsage): CostEstimate[] {
   }));
 }
 
+/** Estimate a fully Flex-run simulation across all currently selectable hosted OpenAI models. */
+export function estimateFlexCostAllOpenAIModels(usage: TokenUsage): CostEstimate[] {
+  return Object.entries(OPENAI_FLEX_MODEL_PRICING).map(([model, pricing]) => ({
+    ...estimateCost(usage, pricing),
+    model,
+  }));
+}
+
+/**
+ * Cost the successful responses seen during a Flex simulation. Flex responses use
+ * Flex rates; `auto` and `default` responses use the standard rate card because
+ * they represent the fallback path under the simulator's project-default setup.
+ */
+export function estimateTierAwareOpenAICost(
+  usageByServiceTier: ServiceTierUsage,
+  model: string,
+): TierAwareCostEstimate | null {
+  const flexPricing = OPENAI_FLEX_MODEL_PRICING[model];
+  const standardPricing = MODEL_PRICING[model];
+  if (!flexPricing || !standardPricing) return null;
+
+  const flex = usageByServiceTier.flex ? estimateCost(usageByServiceTier.flex, flexPricing).totalCost : 0;
+  const fallbackUsage = [usageByServiceTier.auto, usageByServiceTier.default]
+    .filter((usage): usage is TokenUsage => usage !== undefined)
+    .reduce<TokenUsage>((total, usage) => addUsage(total, usage), { ...EMPTY_USAGE });
+  const fallbackCost = estimateCost(fallbackUsage, standardPricing).totalCost;
+
+  return {
+    flexCost: flex,
+    fallbackCost,
+    totalCost: flex + fallbackCost,
+    flexCalls: usageByServiceTier.flex?.callCount ?? 0,
+    fallbackCalls: fallbackUsage.callCount,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // TokenTracker - accumulates usage per source (agent name or "house")
 // ---------------------------------------------------------------------------
@@ -147,8 +203,26 @@ const EMPTY_USAGE: TokenUsage = {
   emptyResponses: 0,
 };
 
+function addUsage(target: TokenUsage, usage: TokenUsage): TokenUsage {
+  target.promptTokens += usage.promptTokens;
+  target.cachedTokens += usage.cachedTokens;
+  target.completionTokens += usage.completionTokens;
+  target.reasoningTokens += usage.reasoningTokens;
+  target.totalTokens += usage.totalTokens;
+  target.callCount += usage.callCount;
+  target.emptyResponses += usage.emptyResponses;
+  return target;
+}
+
+export function parseOpenAIServiceTier(value: unknown): OpenAIServiceTier | undefined {
+  return typeof value === "string" && (OPENAI_SERVICE_TIERS as readonly string[]).includes(value)
+    ? value as OpenAIServiceTier
+    : undefined;
+}
+
 export class TokenTracker {
   private readonly perSource: Map<string, TokenUsage> = new Map();
+  private readonly perServiceTier: Map<OpenAIServiceTier, TokenUsage> = new Map();
 
   /** Record a single LLM call's usage. */
   record(
@@ -157,6 +231,7 @@ export class TokenTracker {
     completionTokens: number,
     cachedTokens = 0,
     reasoningTokens = 0,
+    serviceTier?: OpenAIServiceTier,
   ): void {
     const existing = this.perSource.get(source) ?? { ...EMPTY_USAGE };
     existing.promptTokens += promptTokens;
@@ -166,6 +241,17 @@ export class TokenTracker {
     existing.totalTokens += promptTokens + completionTokens;
     existing.callCount += 1;
     this.perSource.set(source, existing);
+
+    if (serviceTier) {
+      const tierUsage = this.perServiceTier.get(serviceTier) ?? { ...EMPTY_USAGE };
+      tierUsage.promptTokens += promptTokens;
+      tierUsage.cachedTokens += cachedTokens;
+      tierUsage.completionTokens += completionTokens;
+      tierUsage.reasoningTokens += reasoningTokens;
+      tierUsage.totalTokens += promptTokens + completionTokens;
+      tierUsage.callCount += 1;
+      this.perServiceTier.set(serviceTier, tierUsage);
+    }
   }
 
   /** Record an empty/fallback response for a source. */
@@ -204,6 +290,13 @@ export class TokenTracker {
     return result;
   }
 
+  /** Get successful-response usage grouped by the tier returned by OpenAI. */
+  getUsageByServiceTier(): ServiceTierUsage {
+    return Object.fromEntries(
+      [...this.perServiceTier.entries()].map(([tier, usage]) => [tier, { ...usage }]),
+    ) as ServiceTierUsage;
+  }
+
   /** Merge another tracker's data into this one. */
   merge(other: TokenTracker): void {
     for (const [source, usage] of other.perSource) {
@@ -216,6 +309,10 @@ export class TokenTracker {
       existing.callCount += usage.callCount;
       existing.emptyResponses += usage.emptyResponses;
       this.perSource.set(source, existing);
+    }
+    for (const [tier, usage] of other.perServiceTier) {
+      const existing = this.perServiceTier.get(tier) ?? { ...EMPTY_USAGE };
+      this.perServiceTier.set(tier, addUsage(existing, usage));
     }
   }
 

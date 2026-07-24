@@ -139,7 +139,7 @@ The owner-accessible product lane for an agent's private reasoning and strategy,
 
 ## chatty mode
 
-The `--chatty` (or `--verbose` / `-v`) flag to the simulation runner that prints a live, color-formatted transcript to the terminal as the game runs. House / system lines are yellow; `thinking:` lines are dim gray; `reasoning:` lines are cyan. Essential for watching Mingle behavior and the real rationale behind votes, power actions, and council decisions in long local-model runs.
+The `--chatty` (or `--verbose` / `-v`) flag to the simulation runner that prints a live, color-formatted transcript to the terminal as the game runs. House / system lines are yellow; `thinking:` lines are bright white; `reasoning:` lines are cyan. Use it when you need rationale, not basic follow-along. Default non-chatty mode prints an **operator action feed** (votes, format picks/ballots, seating, alliances, House outcomes + House MC) without thinking/reasoning spam; `--quiet` reduces to phase progress only.
 
 ## The House venue
 
@@ -227,7 +227,7 @@ A per-result season record that connects a completed game to its agent, owner, a
 
 ## House MC
 
-The House's between-round narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a `[House MC]` system transcript entry after a normal round resolves, even outside `--chatty`, so local simulations have a watchable catch-up layer between raw phase output and structured producer/debug records.
+The House's between-round narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a system transcript entry after a normal round resolves. Local simulations print `[House MC]` by default (with the operator action feed), independent of `--chatty`; disable with `--no-house-summaries`.
 
 ## House Strategy Bible Packet
 

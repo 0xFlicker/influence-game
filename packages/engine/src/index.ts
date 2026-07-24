@@ -335,6 +335,10 @@ export {
   estimateCost,
   estimateCostForKnownModel,
   estimateCostAllModels,
+  estimateFlexCostAllOpenAIModels,
+  estimateTierAwareOpenAICost,
+  parseOpenAIServiceTier,
   MODEL_PRICING,
+  OPENAI_FLEX_MODEL_PRICING,
 } from "./token-tracker";
-export type { TokenUsage, ModelPricing, CostEstimate } from "./token-tracker";
+export type { TokenUsage, ModelPricing, CostEstimate, OpenAIServiceTier, ServiceTierUsage, TierAwareCostEstimate } from "./token-tracker";

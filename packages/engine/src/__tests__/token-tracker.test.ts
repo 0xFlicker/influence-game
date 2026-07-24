@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { estimateCostForKnownModel, type TokenUsage } from "../token-tracker";
+import {
+  estimateCostForKnownModel,
+  estimateFlexCostAllOpenAIModels,
+  TokenTracker,
+  type TokenUsage,
+} from "../token-tracker";
 
 const usage: TokenUsage = {
   promptTokens: 1000,
@@ -34,5 +39,29 @@ describe("token cost estimation", () => {
     };
 
     expect(estimateCostForKnownModel(longContextUsage, "grok-4-3")?.totalCost).toBeCloseTo(0.6875, 10);
+  });
+
+  it("uses Flex pricing for every selectable OpenAI model", () => {
+    const estimates = estimateFlexCostAllOpenAIModels(usage);
+
+    expect(estimates.map((estimate) => estimate.model)).toEqual([
+      "gpt-5-nano",
+      "gpt-5-mini",
+      "gpt-5.4-nano",
+      "gpt-5.4-mini",
+    ]);
+    expect(estimates.find((estimate) => estimate.model === "gpt-5-mini")?.totalCost).toBeCloseTo(0.000625, 10);
+  });
+
+  it("keeps successful response usage separated by effective service tier", () => {
+    const tracker = new TokenTracker();
+
+    tracker.record("Atlas/vote", 1_000, 500, 0, 0, "flex");
+    tracker.record("Atlas/vote", 200, 100, 0, 0, "auto");
+
+    expect(tracker.getUsageByServiceTier()).toMatchObject({
+      flex: { promptTokens: 1_000, completionTokens: 500, callCount: 1 },
+      auto: { promptTokens: 200, completionTokens: 100, callCount: 1 },
+    });
   });
 });

@@ -66,7 +66,7 @@ import {
   type ProviderProfileId,
 } from "./model-catalog";
 import type { MemoryStore } from "./memory-store";
-import type { TokenTracker } from "./token-tracker";
+import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 
 // ---------------------------------------------------------------------------
 // Personality archetypes
@@ -4561,6 +4561,7 @@ ${roomSection}
       usage.completionTokens,
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
+      parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
     );
   }
 
@@ -4572,6 +4573,7 @@ ${roomSection}
       response.usage.output_tokens,
       response.usage.input_tokens_details.cached_tokens ?? 0,
       response.usage.output_tokens_details.reasoning_tokens ?? 0,
+      parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
     );
   }
 
