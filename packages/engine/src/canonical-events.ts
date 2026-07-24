@@ -78,6 +78,7 @@ export type CanonicalGameEventType =
   | "council.elimination_resolved"
   | "player.last_message_recorded"
   | "player.eliminated"
+  | "player.elimination_message_recorded"
   | "endgame.stage_set"
   | "endgame.elimination_vote_cast"
   | "endgame.elimination_resolved"
@@ -128,6 +129,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "council.elimination_resolved",
   "player.last_message_recorded",
   "player.eliminated",
+  "player.elimination_message_recorded",
   "endgame.stage_set",
   "endgame.elimination_vote_cast",
   "endgame.elimination_resolved",
@@ -258,6 +260,7 @@ export type CanonicalGameEvent =
       }
     >
   | CanonicalEventEnvelope<"player.last_message_recorded", { playerId: UUID; message: string }>
+  | CanonicalEventEnvelope<"player.elimination_message_recorded", { playerId: UUID; message: string }>
   | CanonicalEventEnvelope<
       "player.eliminated",
       {

@@ -324,7 +324,8 @@ export function applyCanonicalEvent(
       });
       break;
     }
-    case "player.last_message_recorded": {
+    case "player.last_message_recorded":
+    case "player.elimination_message_recorded": {
       const player = projection.players[event.payload.playerId];
       if (player) projection.players[event.payload.playerId] = { ...player, lastMessage: event.payload.message };
       break;

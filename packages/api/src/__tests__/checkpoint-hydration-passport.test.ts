@@ -139,7 +139,7 @@ class PassportProofAgent implements IAgent {
     return { target: candidates[0], thinking: "passport proof council vote" };
   }
 
-  async getLastMessage(): Promise<AgentResponse> { return mockResponse("goodbye"); }
+  async getEliminationMessage(): Promise<AgentResponse> { return mockResponse("goodbye"); }
   async getDiaryEntry(): Promise<AgentResponse> { return mockResponse("diary entry"); }
   async getPlea(): Promise<AgentResponse> { return mockResponse("please keep me"); }
 

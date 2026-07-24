@@ -54,6 +54,26 @@ describe("canonical event replay", () => {
     expect(replayed.playerOrder).toEqual(["alice", "bob", "charlie", "dave"]);
   });
 
+  it("preserves and replays the deprecated last-message event contract", () => {
+    const gs = new GameState(
+      [{ id: "alice", name: "Alice" }],
+      { gameId: "game-fixed", now: fixedClock() },
+    );
+    gs.startRound();
+
+    gs.recordLastMessage("alice", "Good game.");
+
+    const event = gs.getCanonicalEvents().at(-1);
+    expect(event).toMatchObject({
+      type: "player.last_message_recorded",
+      phase: Phase.LOBBY,
+      visibility: "public",
+      payload: { playerId: "alice", message: "Good game." },
+    });
+    expect(gs.getPlayer("alice")?.lastMessage).toBe("Good game.");
+    expect(replayCanonicalEvents(gs.getCanonicalEvents()).players.alice?.lastMessage).toBe("Good game.");
+  });
+
   it("uses recorded accepted outcomes instead of re-running randomness or phase decisions", () => {
     const events = new GameState(
       [

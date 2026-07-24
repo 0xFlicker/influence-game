@@ -297,8 +297,9 @@ export default function RulesPage() {
               apologies, retaliation, and dealmaking.
             </P>
             <P>
-              Players may also pre-register a <Em>last message</Em> that will
-              be posted if they&apos;re eliminated.
+              Exit messages are not pre-registered. After an elimination is
+              official, The House asks only the eliminated player for one
+              final public message.
             </P>
           </SubSection>
 
@@ -363,8 +364,10 @@ export default function RulesPage() {
               the <Em>empowered player</Em> casts the deciding vote.
             </P>
             <P>
-              The eliminated player&apos;s pre-registered last message is
-              posted, and they leave the game.
+              After the elimination is official, The House asks only the
+              eliminated player for one final public message. Public vote
+              receipts may name voters; sealed ballots disclose only how many
+              votes the eliminated player received.
             </P>
           </SubSection>
         </Section>

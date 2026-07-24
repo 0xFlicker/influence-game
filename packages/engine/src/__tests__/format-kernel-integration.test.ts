@@ -126,8 +126,25 @@ describe("Format kernel integration (MockAgent)", () => {
       const eliminations = events.filter(
         (event) => event.type === "player_eliminated" && event.round === pick.round,
       );
+      const eliminationMessage = agentTurns.find(
+        (event) =>
+          event.round === pick.round &&
+          event.action === "elimination-message",
+      );
       expect(resolveMarkers).toHaveLength(1);
       expect(eliminations).toHaveLength(1);
+      expect(eliminationMessage).toBeDefined();
+      const disclosure = eliminationMessage?.response.voteDisclosure as
+        | { visibility?: string; voterNames?: string[] }
+        | undefined;
+      if (formatId === "safety_bounce") {
+        expect(
+          disclosure?.visibility === "sealed" || disclosure?.visibility === "none",
+        ).toBe(true);
+      } else {
+        expect(disclosure?.visibility).toBe("sealed");
+      }
+      expect(disclosure).not.toHaveProperty("voterNames");
     }
 
     expect(result.eliminationOrder).toHaveLength(LAUNCH_FORMAT_IDS.length);

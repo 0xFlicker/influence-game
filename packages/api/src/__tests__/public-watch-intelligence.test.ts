@@ -240,7 +240,7 @@ describe("getPublicWatchIntelligence", () => {
       gameId,
       actorPlayerId: "atlas",
       artifactType: "strategy",
-      action: "last-message",
+      action: "elimination-message",
       phase: "COUNCIL",
       eventSequence: sequenceFromEnd(1),
       payload: {

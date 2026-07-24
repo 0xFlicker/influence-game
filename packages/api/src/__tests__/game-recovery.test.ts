@@ -145,7 +145,7 @@ class RecoverySmokeAgent implements IAgent {
   async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID; thinking?: string }> {
     return { target: candidates[0], thinking: "startup recovery council vote" };
   }
-  async getLastMessage(): Promise<AgentResponse> { return mockResponse("goodbye"); }
+  async getEliminationMessage(): Promise<AgentResponse> { return mockResponse("goodbye"); }
   async getDiaryEntry(): Promise<AgentResponse> { return mockResponse("diary entry"); }
   async getPlea(): Promise<AgentResponse> { return mockResponse("please keep me"); }
   async getEndgameEliminationVote(ctx: PhaseContext): Promise<TargetDecision> {

@@ -8,7 +8,7 @@ import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
 import type { AllianceProposalLineage, AllianceProposalVersion, AllianceRecord, UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
-import type { JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PlayerAllianceContext, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PublicTranscriptContextEntry, RecentDecisionContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
+import type { EliminationContext, JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PlayerAllianceContext, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PublicTranscriptContextEntry, RecentDecisionContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
@@ -262,6 +262,7 @@ export class ContextBuilder {
       case "council.elimination_resolved":
         return `${prefix}: Council resolved: candidates ${this.formatPlayerList(event.payload.candidates)}; votes ${this.formatVoteMap(event.payload.tally.votes)}; eliminated ${this.name(event.payload.eliminated)} by ${event.payload.method}.`;
       case "player.last_message_recorded":
+      case "player.elimination_message_recorded":
         return `${prefix}: ${this.name(event.payload.playerId)} gave final words: "${event.payload.message}"`;
       case "player.eliminated":
         return `${prefix}: ${event.payload.playerName} was eliminated.`;
@@ -601,6 +602,34 @@ export class ContextBuilder {
       })(),
       isEliminated: isEliminated ?? false,
       eliminationContext: extra?.eliminationContext,
+    };
+  }
+
+  buildEliminationMessageContext(
+    agentId: UUID,
+    phase: Phase,
+    eliminationContext: EliminationContext,
+  ): PhaseContext {
+    const player = this.gameState.getPlayer(agentId);
+    if (!player) {
+      throw new Error(`Expected eliminated player ${agentId} to exist`);
+    }
+
+    return {
+      gameId: this.gameState.gameId,
+      round: this.gameState.round,
+      phase,
+      selfId: agentId,
+      selfName: player.name,
+      alivePlayers: this.gameState.getAlivePlayers().map((alivePlayer) => ({
+        id: alivePlayer.id,
+        name: alivePlayer.name,
+        shielded: alivePlayer.shielded,
+      })),
+      publicMessages: this.logger.publicMessages.slice(-8).map((entry) => ({ ...entry })),
+      mingleMessages: [],
+      isEliminated: true,
+      eliminationContext,
     };
   }
 }

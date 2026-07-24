@@ -89,6 +89,7 @@ Choose one recipe; do not run both unless comparing providers. Inspect the new `
 - Every round has a `format-pick` record with useful `thinking` and `decisionSource: "llm"`.
 - Save-or-Eliminate and Vote Bomb rounds have `format-ballot` records with useful `thinking` and `decisionSource: "llm"`.
 - Safety Bounce rounds have `bounce-pointer` and `format-ballot` records with useful `thinking` and `decisionSource: "llm"`.
+- Each elimination has exactly one `elimination-message` turn after `player.eliminated`; sealed formats expose received counts to that call without named voters.
 - Any exercised `format-tiebreak` has useful `thinking` and `decisionSource: "llm"`.
 - Any `decisionSource: "fallback"` fails the proof; inspect its `fallbackReason` and matching `agent_turn`.
 - Agent thinking applies the active rule, and at least two observed formats produce non-identical coalition scripts.

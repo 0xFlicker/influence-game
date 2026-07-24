@@ -111,10 +111,15 @@ export async function runCouncilPhase(
 
   await assertCanAcceptCommit(ctx);
   const eliminatedId = gameState.tallyCouncilVotes(empoweredId);
+  const councilVoters = getCouncilVoterNames(ctx, eliminatedId);
   await handleElimination(ctx, eliminatedId, Phase.COUNCIL, {
     mode: "council",
     exposedBy: getExposeVoterNames(ctx, eliminatedId),
-    councilVoters: getCouncilVoterNames(ctx, eliminatedId),
+    voteDisclosure: {
+      visibility: "public",
+      votesReceived: councilVoters.length,
+      voterNames: councilVoters,
+    },
   });
 
   actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });

@@ -1111,6 +1111,17 @@ export class GameState {
     }
   }
 
+  recordEliminationMessage(playerId: UUID, message: string, phase?: Phase): void {
+    const player = this._players.get(playerId);
+    if (!player) return;
+    this.appendCanonicalEvent("player.elimination_message_recorded", { playerId, message }, {
+      phase: phase ?? this.canonicalEvents.list().at(-1)?.phase ?? null,
+      visibility: "public",
+    });
+    this._players.set(playerId, { ...player, lastMessage: message });
+  }
+
+  /** @deprecated Compatibility helper for older callers and fixtures. */
   recordLastMessage(playerId: UUID, message: string): void {
     const player = this._players.get(playerId);
     if (!player) return;

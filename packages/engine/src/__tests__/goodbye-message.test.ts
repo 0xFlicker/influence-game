@@ -3,16 +3,23 @@ import OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import { ContextBuilder } from "../context-builder";
 import { GameState, createUUID } from "../game-state";
-import type { AgentResponse, PhaseContext, TargetDecision } from "../game-runner.types";
+import type {
+  AgentCallOptions,
+  AgentResponse,
+  IAgent,
+  PhaseContext,
+  TargetDecision,
+} from "../game-runner.types";
 import { TranscriptLogger } from "../transcript-logger";
-import { Phase } from "../types";
+import { Phase, PlayerStatus } from "../types";
 import { runCouncilPhase, runPowerPhase, runReckoningVote, runTribunalVote, runVotePhase } from "../phases";
 import type { PhaseRunnerContext } from "../phases";
+import { handleElimination } from "../phases/elimination";
 import { TemplateHouseInterviewer } from "../house-interviewer";
 import { MockAgent } from "./mock-agent";
 
 class GoodbyeProbeAgent extends MockAgent {
-  readonly lastMessageContexts: PhaseContext[] = [];
+  readonly eliminationMessageContexts: PhaseContext[] = [];
   readonly councilVoteContexts: PhaseContext[] = [];
   readonly endgameVoteContexts: PhaseContext[] = [];
   readonly fixedVotes: { empowerTarget: string; exposeTarget: string };
@@ -50,8 +57,11 @@ class GoodbyeProbeAgent extends MockAgent {
     };
   }
 
-  override async getLastMessage(ctx: PhaseContext): Promise<AgentResponse> {
-    this.lastMessageContexts.push(ctx);
+  override async getEliminationMessage(
+    ctx: PhaseContext,
+    _options?: AgentCallOptions,
+  ): Promise<AgentResponse> {
+    this.eliminationMessageContexts.push(ctx);
     return {
       thinking: `Final words for ${this.name}`,
       message: `${this.name} signing off.`,
@@ -105,7 +115,7 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
 }
 
 describe("goodbye message handling", () => {
-  test("getLastMessage prompt includes real elimination context", async () => {
+  test("getEliminationMessage uses a strict dedicated tool and public vote disclosure", async () => {
     const agent = new InfluenceAgent(
       "atlas-id",
       "Atlas",
@@ -119,14 +129,25 @@ describe("goodbye message handling", () => {
     ]);
 
     let capturedPrompt = "";
+    let capturedTool: {
+      function: {
+        name: string;
+        strict?: boolean;
+        parameters?: { additionalProperties?: unknown };
+      };
+    } | undefined;
     (agent as unknown as {
-      callLLMWithThinking: (prompt: string) => Promise<AgentResponse>;
-    }).callLLMWithThinking = async (prompt: string) => {
+      callTool: (
+        prompt: string,
+        tool: typeof capturedTool,
+      ) => Promise<AgentResponse>;
+    }).callTool = async (prompt, tool) => {
       capturedPrompt = prompt;
-      return { thinking: "", message: "Goodbye." };
+      capturedTool = tool;
+      return { thinking: "I know who voted for me.", message: "Goodbye." };
     };
 
-    await agent.getLastMessage({
+    await agent.getEliminationMessage({
       gameId: "game-1",
       round: 2,
       phase: Phase.COUNCIL,
@@ -143,18 +164,320 @@ describe("goodbye message handling", () => {
       eliminationContext: {
         mode: "council",
         exposedBy: ["Mira", "Vera"],
-        councilVoters: ["Mira"],
+        voteDisclosure: {
+          visibility: "public",
+          votesReceived: 1,
+          voterNames: ["Mira"],
+        },
       },
     });
 
-    expect(capturedPrompt).toContain("You have been ELIMINATED right now.");
+    expect(capturedTool?.function.name).toBe("elimination_message");
+    expect(capturedTool?.function.strict).toBe(true);
+    expect(capturedTool?.function.parameters?.additionalProperties).toBe(false);
+    expect(capturedPrompt).toContain("You have been ELIMINATED.");
     expect(capturedPrompt).toContain("You will not get another turn");
     expect(capturedPrompt).toContain("Do NOT discuss future strategy");
     expect(capturedPrompt).toContain("You were exposed by: Mira, Vera");
-    expect(capturedPrompt).toContain("The council votes against you came from: Mira");
+    expect(capturedPrompt).toContain("This vote was public.");
+    expect(capturedPrompt).toContain("You received 1 vote from: Mira");
   });
 
-  test("last words are collected only at actual elimination time with voter context", async () => {
+  test("getEliminationMessage reveals sealed Save-or-Eliminate math without voter identities", async () => {
+    const agent = new InfluenceAgent(
+      "rex-id",
+      "Rex",
+      "strategic",
+      {} as OpenAI,
+    );
+    agent.onGameStart("game-1", [
+      { id: "rex-id", name: "Rex" },
+      { id: "echo-id", name: "Echo" },
+      { id: "vera-id", name: "Vera" },
+    ]);
+
+    let capturedPrompt = "";
+    (agent as unknown as {
+      callTool: (prompt: string) => Promise<AgentResponse>;
+    }).callTool = async (prompt) => {
+      capturedPrompt = prompt;
+      return { thinking: "I only know the count.", message: "Goodbye." };
+    };
+
+    await agent.getEliminationMessage({
+      gameId: "game-1",
+      round: 1,
+      phase: Phase.FORMAT_RESOLVE,
+      selfId: "rex-id",
+      selfName: "Rex",
+      alivePlayers: [
+        { id: "echo-id", name: "Echo" },
+        { id: "vera-id", name: "Vera" },
+      ],
+      publicMessages: [],
+      mingleMessages: [],
+      isEliminated: true,
+      eliminationContext: {
+        mode: "format",
+        formatId: "save_or_eliminate",
+        voteDisclosure: {
+          visibility: "sealed",
+          votesReceived: 3,
+          savesReceived: 1,
+          eliminationVotesReceived: 2,
+          netScore: -1,
+        },
+      },
+    });
+
+    expect(capturedPrompt).toContain("This vote was sealed.");
+    expect(capturedPrompt).toContain("You received 3 votes.");
+    expect(capturedPrompt).toContain(
+      "Sealed count detail: 1 SAVE, 2 ELIMINATE, net -1.",
+    );
+    expect(capturedPrompt).toContain("You are not being told who cast those ballots.");
+    expect(capturedPrompt).not.toContain("Echo voted");
+    expect(capturedPrompt).not.toContain("Vera voted");
+  });
+
+  test("InfluenceAgent normalizes a rejected elimination-message tool call to House fallback", async () => {
+    const { openai, calls } = makeOpenAIStub([
+      { content: null, refusal: "I cannot provide that message." },
+    ]);
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      openai,
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+    ]);
+
+    const result = await agent.getEliminationMessage({
+      ...makeAgentContext(Phase.COUNCIL),
+      isEliminated: true,
+      eliminationContext: {
+        mode: "council",
+        voteDisclosure: {
+          visibility: "public",
+          votesReceived: 1,
+          voterNames: ["Mira"],
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      thinking: "House fallback after elimination-message tool failure.",
+      message: "I have no final words.",
+    });
+    expect(calls).toHaveLength(1);
+  });
+
+  test("handleElimination commits canonical elimination before noncanonical side effects", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: daveId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+    ];
+    const prc = makePhaseRunnerContext(agents);
+    const commitSnapshots: Array<{
+      playerStatus: PlayerStatus | undefined;
+      eliminatedLogPresent: boolean;
+      lastEliminatedName: string | null;
+      eliminationOrder: string[];
+    }> = [];
+    prc.beforeAcceptedCommit = () => {
+      commitSnapshots.push({
+        playerStatus: prc.gameState.getPlayer(charlieId)?.status,
+        eliminatedLogPresent: prc.logger.transcript.some(
+          (entry) => entry.text === "ELIMINATED: Charlie",
+        ),
+        lastEliminatedName: prc.diaryRoom.lastEliminatedName,
+        eliminationOrder: [...prc.eliminationOrder],
+      });
+    };
+
+    await handleElimination(prc, charlieId, Phase.COUNCIL, {
+      mode: "council",
+      voteDisclosure: {
+        visibility: "public",
+        votesReceived: 1,
+        voterNames: ["Bob"],
+      },
+    });
+
+    expect(commitSnapshots[0]).toEqual({
+      playerStatus: PlayerStatus.ALIVE,
+      eliminatedLogPresent: false,
+      lastEliminatedName: null,
+      eliminationOrder: [],
+    });
+    expect(commitSnapshots[1]?.playerStatus).toBe(PlayerStatus.ELIMINATED);
+    expect(prc.gameState.getPlayer(charlieId)?.status).toBe(PlayerStatus.ELIMINATED);
+  });
+
+  test("handleElimination prefers the new migration method and falls back to legacy", async () => {
+    const makeAgents = () => {
+      const aliceId = createUUID();
+      const bobId = createUUID();
+      const charlieId = createUUID();
+      const daveId = createUUID();
+      return {
+        charlieId,
+        agents: [
+          new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+          new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+          new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: daveId }, daveId),
+          new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+        ],
+      };
+    };
+    const eliminationContext = {
+      mode: "council" as const,
+      voteDisclosure: {
+        visibility: "public" as const,
+        votesReceived: 1,
+        voterNames: ["Bob"],
+      },
+    };
+
+    const preferred = makeAgents();
+    const preferredCalls: string[] = [];
+    preferred.agents[2]!.getEliminationMessage = async () => {
+      preferredCalls.push("new");
+      return { thinking: "", message: "   " };
+    };
+    (preferred.agents[2] as unknown as {
+      getLastMessage: IAgent["getLastMessage"];
+    }).getLastMessage = async () => {
+      preferredCalls.push("legacy");
+      return { thinking: "", message: "Legacy final words." };
+    };
+    const preferredContext = makePhaseRunnerContext(preferred.agents);
+    await handleElimination(
+      preferredContext,
+      preferred.charlieId,
+      Phase.COUNCIL,
+      eliminationContext,
+    );
+    expect(preferredCalls).toEqual(["new"]);
+    expect(preferredContext.logger.transcript.at(-1)?.text).toBe(
+      "I have no final words.",
+    );
+
+    const legacy = makeAgents();
+    const legacyCalls: string[] = [];
+    (legacy.agents[2] as unknown as {
+      getEliminationMessage?: IAgent["getEliminationMessage"];
+    }).getEliminationMessage = undefined;
+    (legacy.agents[2] as unknown as {
+      getLastMessage: IAgent["getLastMessage"];
+    }).getLastMessage = async () => {
+      legacyCalls.push("legacy");
+      return { thinking: "", message: "Legacy final words." };
+    };
+    const legacyContext = makePhaseRunnerContext(legacy.agents);
+    await handleElimination(
+      legacyContext,
+      legacy.charlieId,
+      Phase.COUNCIL,
+      eliminationContext,
+    );
+    expect(legacyCalls).toEqual(["legacy"]);
+    expect(legacyContext.logger.transcript.at(-1)?.text).toBe(
+      "Legacy final words.",
+    );
+  });
+
+  test("handleElimination aborts a timed-out message and records deterministic fallback", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: daveId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+    ];
+    let aborted = false;
+    agents[2]!.getEliminationMessage = async (_ctx, options) =>
+      await new Promise<AgentResponse>((_resolve, reject) => {
+        options?.signal?.addEventListener("abort", () => {
+          aborted = true;
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    const prc = makePhaseRunnerContext(agents);
+    prc.config.agentActionTimeoutMs = 5;
+
+    await handleElimination(prc, charlieId, Phase.COUNCIL, {
+      mode: "council",
+      voteDisclosure: {
+        visibility: "public",
+        votesReceived: 1,
+        voterNames: ["Bob"],
+      },
+    });
+
+    expect(aborted).toBe(true);
+    expect(prc.logger.transcript).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: "Charlie elimination message timed out after 5ms; using House fallback.",
+        }),
+        expect.objectContaining({ text: "I have no final words." }),
+      ]),
+    );
+    expect(prc.gameState.getPlayer(charlieId)?.lastMessage).toBe(
+      "I have no final words.",
+    );
+  });
+
+  test("handleElimination fails clearly when neither migration method exists", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: daveId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+    ];
+    (agents[2] as unknown as {
+      getEliminationMessage?: IAgent["getEliminationMessage"];
+      getLastMessage?: IAgent["getLastMessage"];
+    }).getEliminationMessage = undefined;
+    (agents[2] as unknown as {
+      getEliminationMessage?: IAgent["getEliminationMessage"];
+      getLastMessage?: IAgent["getLastMessage"];
+    }).getLastMessage = undefined;
+    const prc = makePhaseRunnerContext(agents);
+
+    await expect(
+      handleElimination(prc, charlieId, Phase.COUNCIL, {
+        mode: "council",
+        voteDisclosure: {
+          visibility: "public",
+          votesReceived: 1,
+          voterNames: ["Bob"],
+        },
+      }),
+    ).rejects.toThrow(
+      "Agent Charlie implements neither getEliminationMessage nor deprecated getLastMessage",
+    );
+  });
+
+  test("elimination messages are collected only after elimination commits", async () => {
     const aliceId = createUUID();
     const bobId = createUUID();
     const charlieId = createUUID();
@@ -171,37 +494,37 @@ describe("goodbye message handling", () => {
 
     await runVotePhase(prc, actor as never);
     for (const agent of agents) {
-      expect(agent.lastMessageContexts).toHaveLength(0);
+      expect(agent.eliminationMessageContexts).toHaveLength(0);
     }
 
     await runPowerPhase(prc, actor as never);
     await runCouncilPhase(prc, actor as never);
 
-    expect(agents[0]!.lastMessageContexts).toHaveLength(0);
-    expect(agents[1]!.lastMessageContexts).toHaveLength(0);
-    expect(agents[3]!.lastMessageContexts).toHaveLength(0);
-    expect(agents[2]!.lastMessageContexts).toHaveLength(1);
+    expect(agents[0]!.eliminationMessageContexts).toHaveLength(0);
+    expect(agents[1]!.eliminationMessageContexts).toHaveLength(0);
+    expect(agents[3]!.eliminationMessageContexts).toHaveLength(0);
+    expect(agents[2]!.eliminationMessageContexts).toHaveLength(1);
 
-    const goodbyeContext = agents[2]!.lastMessageContexts[0]!;
+    const goodbyeContext = agents[2]!.eliminationMessageContexts[0]!;
     expect(goodbyeContext.phase).toBe(Phase.COUNCIL);
     expect(goodbyeContext.isEliminated).toBe(true);
+    expect(goodbyeContext.alivePlayers.map((player) => player.name)).toEqual([
+      "Alice",
+      "Bob",
+      "Dave",
+    ]);
     expect(goodbyeContext.eliminationContext).toEqual({
       mode: "council",
-      exposedBy: ["Alice", "Bob", "Dave"],
-      councilVoters: ["Alice"],
+      exposedBy: [],
+      voteDisclosure: {
+        visibility: "public",
+        votesReceived: 1,
+        voterNames: ["Bob"],
+      },
     });
-    expect(agents[0]!.councilVoteContexts).toHaveLength(1);
-    expect(agents[1]!.councilVoteContexts).toHaveLength(0);
-    expect(agents[2]!.councilVoteContexts).toHaveLength(0);
-    expect(agents[3]!.councilVoteContexts).toHaveLength(0);
-    const bobContext = prc.contextBuilder.buildPhaseContext(bobId, Phase.LOBBY, {});
-    expect(bobContext.recentDecisions).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          label: "Council Tiebreak Not Needed",
-          detail: expect.stringContaining("You did not cast a tiebreaker"),
-        }),
-      ]),
+    const canonicalTypes = prc.gameState.getCanonicalEvents().map((event) => event.type);
+    expect(canonicalTypes.indexOf("player.eliminated")).toBeLessThan(
+      canonicalTypes.indexOf("player.elimination_message_recorded"),
     );
     expect(prc.logger.transcript.at(-1)?.text).toBe("Charlie signing off.");
   });
@@ -307,6 +630,11 @@ describe("goodbye message handling", () => {
     const resolved = prc.gameState.getCanonicalEvents().findLast((event) => event.type === "endgame.elimination_resolved");
     expect(resolved?.payload.method).toBe("jury_tiebreaker");
     expect(resolved?.payload.eliminated).toBe(aliceId);
+    expect(agents[0]!.eliminationMessageContexts[0]?.eliminationContext?.voteDisclosure).toEqual({
+      visibility: "public",
+      votesReceived: 2,
+      voterNames: ["Dax", "Eve"],
+    });
   });
 
   test("reckoning vote only requests last words from the eliminated player", async () => {
@@ -326,13 +654,17 @@ describe("goodbye message handling", () => {
 
     await runReckoningVote(prc, actor as never);
 
-    expect(agents[0]!.lastMessageContexts).toHaveLength(0);
-    expect(agents[1]!.lastMessageContexts).toHaveLength(0);
-    expect(agents[3]!.lastMessageContexts).toHaveLength(0);
-    expect(agents[2]!.lastMessageContexts).toHaveLength(1);
-    expect(agents[2]!.lastMessageContexts[0]!.eliminationContext).toEqual({
+    expect(agents[0]!.eliminationMessageContexts).toHaveLength(0);
+    expect(agents[1]!.eliminationMessageContexts).toHaveLength(0);
+    expect(agents[3]!.eliminationMessageContexts).toHaveLength(0);
+    expect(agents[2]!.eliminationMessageContexts).toHaveLength(1);
+    expect(agents[2]!.eliminationMessageContexts[0]!.eliminationContext).toEqual({
       mode: "endgame",
-      eliminationVoters: ["Alice", "Bob", "Dave"],
+      voteDisclosure: {
+        visibility: "public",
+        votesReceived: 3,
+        voterNames: ["Alice", "Bob", "Dave"],
+      },
     });
     expect(prc.logger.transcript.at(-1)?.text).toBe("Charlie signing off.");
   });

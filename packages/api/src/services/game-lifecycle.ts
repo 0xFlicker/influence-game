@@ -334,7 +334,7 @@ class ApiTestMockAgent implements IAgent {
   async getCouncilVote(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID }> {
     return { target: candidates[0] };
   }
-  async getLastMessage() { return mockResponse("goodbye"); }
+  async getEliminationMessage() { return mockResponse("goodbye"); }
   async getDiaryEntry() { return mockResponse("diary entry"); }
   async getPlea() { return mockResponse("please keep me"); }
   async getEndgameEliminationVote(ctx: PhaseContext): Promise<TargetDecision> {

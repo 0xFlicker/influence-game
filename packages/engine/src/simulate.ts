@@ -82,7 +82,10 @@
  * artifacts remain first-class and continue to surface thinking / reasoningContext
  * for human review without treating them as public speech.
  * Format-kernel turns record `format-pick`, `format-ballot`, `bounce-pointer`,
- * and `format-tiebreak` actions. Together they expose the six typed agent
+ * `format-tiebreak`, and one post-commit `elimination-message` action. The
+ * elimination message receives named voters only for public votes; sealed
+ * formats pass received counts without voter identities. Together the format
+ * records expose the six typed agent
  * decisions: pickRoundFormat, getSaveOrEliminateBallot, getVoteBombBallot,
  * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their
  * responses include `decisionSource` and nullable `fallbackReason`; reasoning
@@ -770,7 +773,7 @@ const TRANSCRIPT_BACKED_AGENT_TURN_ACTIONS = new Set([
   "empower-revote",
   "endgame-elimination-vote",
   "tribunal-jury-tiebreaker-vote",
-  "last-message",
+  "elimination-message",
   "council-vote",
   "plea",
   "accusation",

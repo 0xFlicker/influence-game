@@ -24,6 +24,7 @@ import type {
   AllianceHuddleTurnAction,
   CandidateChoiceRequest,
   CandidateSelectionDecision,
+  EliminationVoteDisclosure,
   IAgent,
   MingleIntentAction,
   MinglePreferredRoomSize,
@@ -855,6 +856,30 @@ const TOOL_ELIMINATION_VOTE: ChatCompletionTool = {
   },
 };
 
+const TOOL_ELIMINATION_MESSAGE: ChatCompletionTool = {
+  type: "function",
+  function: {
+    name: "elimination_message",
+    description: "Deliver the eliminated player's final public message after the elimination is official.",
+    parameters: {
+      type: "object",
+      properties: {
+        thinking: {
+          type: "string",
+          description: "Your private reaction to the confirmed elimination and disclosed result.",
+        },
+        message: {
+          type: "string",
+          description: "Your final public message in 1-2 sentences.",
+        },
+      },
+      required: ["thinking", "message"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+};
+
 const TOOL_MAKE_ACCUSATION: ChatCompletionTool = {
   type: "function",
   function: {
@@ -1016,6 +1041,29 @@ function normalizeNullableString(value: unknown): string | null {
 
 function normalizeRequiredString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function formatEliminationVoteDisclosure(disclosure: EliminationVoteDisclosure): string {
+  switch (disclosure.visibility) {
+    case "public":
+      return [
+        "This vote was public.",
+        `You received ${disclosure.votesReceived} ${disclosure.votesReceived === 1 ? "vote" : "votes"} from: ${disclosure.voterNames.join(", ") || "no one"}.`,
+      ].join("\n");
+    case "sealed":
+      return [
+        "This vote was sealed.",
+        `You received ${disclosure.votesReceived} ${disclosure.votesReceived === 1 ? "vote" : "votes"}.`,
+        disclosure.savesReceived !== undefined
+          ? `Sealed count detail: ${disclosure.savesReceived} SAVE, ${disclosure.eliminationVotesReceived ?? 0} ELIMINATE, net ${disclosure.netScore ?? 0}.`
+          : null,
+        "You are not being told who cast those ballots. Do not infer or claim voter identities.",
+      ].filter(Boolean).join("\n");
+    case "none":
+      return disclosure.reason === "sole_vulnerable"
+        ? "No elimination ballot was cast. The public Safety Bounce board left you as the sole vulnerable player."
+        : "No elimination vote was cast. You were eliminated directly.";
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -3304,36 +3352,83 @@ Use the format_tiebreak tool.`;
     }
   }
 
-  async getLastMessage(ctx: PhaseContext): Promise<AgentResponse> {
-    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+  async getEliminationMessage(
+    ctx: PhaseContext,
+    options?: AgentCallOptions,
+  ): Promise<AgentResponse> {
     const eliminationContext = ctx.eliminationContext;
-    const eliminationDetails = eliminationContext
-      ? [
-          eliminationContext.directExecutor
-            ? `- The direct kill shot came from: ${eliminationContext.directExecutor}`
-            : null,
-          eliminationContext.exposedBy && eliminationContext.exposedBy.length > 0
-            ? `- You were exposed by: ${eliminationContext.exposedBy.join(", ")}`
-            : null,
-          eliminationContext.councilVoters && eliminationContext.councilVoters.length > 0
-            ? `- The council votes against you came from: ${eliminationContext.councilVoters.join(", ")}`
-            : null,
-          eliminationContext.eliminationVoters && eliminationContext.eliminationVoters.length > 0
-            ? `- The direct elimination votes against you came from: ${eliminationContext.eliminationVoters.join(", ")}`
-            : null,
-        ].filter(Boolean).join("\n")
-      : "";
-    const prompt = this.buildUserPrompt(ctx) + `
-## Final Words
-You have been ELIMINATED right now. This is your FINAL public statement before you leave the game for good.
+    if (!ctx.isEliminated || !eliminationContext) {
+      throw new Error("Elimination message requires a committed elimination and disclosure context");
+    }
+
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round, {
+      includePhaseGuidelines: false,
+      includeStrategicPlayMenu: false,
+    });
+    const voteDetails = formatEliminationVoteDisclosure(eliminationContext.voteDisclosure);
+    const eliminationDetails = [
+      eliminationContext.directExecutor
+        ? `- The direct kill shot came from: ${eliminationContext.directExecutor}`
+        : null,
+      eliminationContext.exposedBy && eliminationContext.exposedBy.length > 0
+        ? `- You were exposed by: ${eliminationContext.exposedBy.join(", ")}`
+        : null,
+      eliminationContext.formatId
+        ? `- The round format was: ${eliminationContext.formatId}`
+        : null,
+    ].filter(Boolean).join("\n");
+    const recentPublicMessages = ctx.publicMessages
+      .slice(-8)
+      .map((entry) => `${entry.from}: ${entry.text}`)
+      .join("\n");
+    const prompt = `## Confirmed Elimination
+You have been ELIMINATED. The elimination is already official and your status is no longer alive.
+Round: ${ctx.round}
+Remaining players: ${ctx.alivePlayers.map((player) => player.name).join(", ") || "none"}
+
+## Vote Disclosure
+${voteDetails}
+${eliminationDetails ? `\n## Other Public Elimination Facts\n${eliminationDetails}\n` : ""}
+${recentPublicMessages ? `\n## Recent Public Player Messages\n${recentPublicMessages}\n` : ""}
+
+## Final Public Message
+This is your FINAL public statement before you leave the game for good.
 You will not get another turn, and you have no future rounds to play.
 You may snap back at the people who exposed or voted out you, reveal a secret, issue a warning, say goodbye, or leave gracefully.
 Do NOT discuss future strategy, future votes, or what you will do next in the game.
-${eliminationDetails ? `\n## How You Were Taken Out\n${eliminationDetails}\n` : ""}
+Use the elimination_message tool. Keep the public message to 1-2 sentences.`;
 
-Keep it to 1-2 sentences.`;
-
-    return this.callLLMWithThinking(prompt, 120, sys, this.traceOptions(ctx, { action: "last-message", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
+    try {
+      const result = await this.callTool<{
+        thinking?: string;
+        message?: string;
+        reasoningContext?: string;
+      }>(
+        prompt,
+        TOOL_ELIMINATION_MESSAGE,
+        120,
+        sys,
+        this.traceOptions(ctx, {
+          action: "elimination-message",
+          reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
+          reasoningEffort: "low",
+          signal: options?.signal,
+        }),
+      );
+      const message = normalizeRequiredString(result.message);
+      return {
+        thinking: result.thinking ?? "",
+        message: message || "I have no final words.",
+        reasoningContext: result.reasoningContext,
+      };
+    } catch (err) {
+      if (options?.signal?.aborted) throw err;
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEliminationMessage error="${err instanceof Error ? err.message : err}"`);
+      return {
+        thinking: "House fallback after elimination-message tool failure.",
+        message: "I have no final words.",
+      };
+    }
   }
 
   async getDiaryEntry(ctx: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<AgentResponse> {
@@ -3647,9 +3742,13 @@ Use the jury_vote tool to cast your vote.`;
   private buildSystemPrompt(
     phase: Phase,
     round: number,
-    options: { includePhaseGuidelines?: boolean } = {},
+    options: {
+      includePhaseGuidelines?: boolean;
+      includeStrategicPlayMenu?: boolean;
+    } = {},
   ): string {
     const includePhaseGuidelines = options.includePhaseGuidelines ?? true;
+    const includeStrategicPlayMenu = options.includeStrategicPlayMenu ?? true;
     const phaseGuidelines = includePhaseGuidelines ? getPhaseGuidelines(phase, round) : "";
     return `You are ${this.name}, a contestant on "Influence" — a social strategy game where real personalities clash.
 
@@ -3659,7 +3758,7 @@ ${PERSONALITY_PROMPTS[this.personality]}
 ${this.personalityPrompt ? `\n## Owner-Authored Personality\n${this.personalityPrompt}\n` : ""}
 ${this.strategyInstructions ? `\n## Owner-Authored Strategy Guidance\n${this.strategyInstructions}\n` : ""}
 
-${STRATEGIC_PLAY_MENU}
+${includeStrategicPlayMenu ? STRATEGIC_PLAY_MENU : ""}
 
 ${phaseGuidelines ? `## ${phaseGuidelines}\n` : ""}
 IMPORTANT: Treat alive players as the only live game actors for messages, votes, targets, rooms, shields, and normal-round strategy. Eliminated players may be referenced as history, evidence, jury context, reputation, or social fallout, but they are gone and cannot be interacted with as live players.

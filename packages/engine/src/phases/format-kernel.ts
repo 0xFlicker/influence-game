@@ -30,6 +30,7 @@ import {
   type FormatPressureProjection,
 } from "../format-pressure";
 import type {
+  EliminationVoteDisclosure,
   FormatDecisionFallbackReason,
   FormatDecisionProvenance,
 } from "../game-runner.types";
@@ -42,6 +43,11 @@ import {
   type PhaseRunnerContext,
 } from "./phase-runner-context";
 import { runMinglePhase } from "./mingle";
+
+type FormatRoundElimination = {
+  eliminatedId: UUID;
+  voteDisclosure: EliminationVoteDisclosure;
+};
 
 function normalizedFormatProvenance(
   result: {
@@ -205,18 +211,20 @@ export async function runFormatResolvePhase(
 
   logger.logSystem(`=== FORMAT RESOLVE (${formatId}) ===`, Phase.FORMAT_RESOLVE);
 
-  let eliminatedId: UUID;
+  let elimination: FormatRoundElimination;
   if (formatId === "save_or_eliminate") {
-    eliminatedId = await resolveSaveOrEliminateRound(ctx, empoweredId);
+    elimination = await resolveSaveOrEliminateRound(ctx, empoweredId);
   } else if (formatId === "vote_bomb") {
-    eliminatedId = await resolveVoteBombRound(ctx, empoweredId);
+    elimination = await resolveVoteBombRound(ctx, empoweredId);
   } else {
-    eliminatedId = await resolveSafetyBounceRound(ctx, empoweredId);
+    elimination = await resolveSafetyBounceRound(ctx, empoweredId);
   }
+  const { eliminatedId } = elimination;
 
   await handleElimination(ctx, eliminatedId, Phase.FORMAT_RESOLVE, {
     mode: "format",
     formatId,
+    voteDisclosure: elimination.voteDisclosure,
   });
 
   gameState.recordRoundResult(
@@ -256,7 +264,7 @@ export async function runFormatResolvePhase(
 async function resolveSaveOrEliminateRound(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
-): Promise<UUID> {
+): Promise<FormatRoundElimination> {
   const { gameState, agents, logger, contextBuilder } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
@@ -343,13 +351,25 @@ async function resolveSaveOrEliminateRound(
   if (!resolution.eliminatedId) {
     throw new Error("Save-or-eliminate failed to resolve elimination");
   }
-  return resolution.eliminatedId;
+  const eliminatedId = resolution.eliminatedId;
+  return {
+    eliminatedId,
+    voteDisclosure: {
+      visibility: "sealed",
+      votesReceived:
+        (nets.savesReceived[eliminatedId] ?? 0)
+        + (nets.eliminateReceived[eliminatedId] ?? 0),
+      savesReceived: nets.savesReceived[eliminatedId] ?? 0,
+      eliminationVotesReceived: nets.eliminateReceived[eliminatedId] ?? 0,
+      netScore: nets.nets[eliminatedId] ?? 0,
+    },
+  };
 }
 
 async function resolveVoteBombRound(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
-): Promise<UUID> {
+): Promise<FormatRoundElimination> {
   const { gameState, agents, logger, contextBuilder } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
@@ -432,13 +452,20 @@ async function resolveVoteBombRound(
   if (!resolution.eliminatedId) {
     throw new Error("Vote Bomb failed to resolve elimination");
   }
-  return resolution.eliminatedId;
+  const eliminatedId = resolution.eliminatedId;
+  return {
+    eliminatedId,
+    voteDisclosure: {
+      visibility: "sealed",
+      votesReceived: tallies.totals[eliminatedId] ?? 0,
+    },
+  };
 }
 
 async function resolveSafetyBounceRound(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
-): Promise<UUID> {
+): Promise<FormatRoundElimination> {
   const { gameState, agents, logger, contextBuilder } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
@@ -513,7 +540,13 @@ async function resolveSafetyBounceRound(
   );
 
   if (board.vulnerable.length === 1) {
-    return board.vulnerable[0]!;
+    return {
+      eliminatedId: board.vulnerable[0]!,
+      voteDisclosure: {
+        visibility: "none",
+        reason: "sole_vulnerable",
+      },
+    };
   }
 
   const voteTotals: Record<UUID, number> = {};
@@ -585,7 +618,14 @@ async function resolveSafetyBounceRound(
   if (!resolution.eliminatedId) {
     throw new Error("Safety Bounce failed to resolve elimination");
   }
-  return resolution.eliminatedId;
+  const eliminatedId = resolution.eliminatedId;
+  return {
+    eliminatedId,
+    voteDisclosure: {
+      visibility: "sealed",
+      votesReceived: voteTotals[eliminatedId] ?? 0,
+    },
+  };
 }
 
 /** Human-readable elimination outcome for chatty/transcript (includes sole vs tiebreak). */

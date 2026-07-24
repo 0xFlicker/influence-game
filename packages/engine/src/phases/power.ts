@@ -233,6 +233,10 @@ export async function runPowerPhase(
       mode: "power",
       directExecutor: gameState.getPlayerName(empoweredId),
       exposedBy: getExposeVoterNames(ctx, autoEliminated),
+      voteDisclosure: {
+        visibility: "none",
+        reason: "direct_elimination",
+      },
     });
 
     actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated });

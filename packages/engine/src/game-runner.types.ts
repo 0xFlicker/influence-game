@@ -978,8 +978,13 @@ export interface IAgent {
     tiedSet: UUID[],
   ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
 
-  /** Called when the agent is about to be eliminated */
-  getLastMessage(context: PhaseContext): Promise<AgentResponse>;
+  /** Called only after this agent has been eliminated. */
+  getEliminationMessage?(
+    context: PhaseContext,
+    options?: AgentCallOptions,
+  ): Promise<AgentResponse>;
+  /** @deprecated Implement getEliminationMessage instead. */
+  getLastMessage?(context: PhaseContext): Promise<AgentResponse>;
   /** Called for diary room interviews — the House asks a question, agent responds */
   getDiaryEntry(context: PhaseContext, question: string, sessionHistory?: Array<{ question: string; answer: string }>): Promise<AgentResponse>;
 
@@ -1121,15 +1126,8 @@ export interface PhaseContext {
   finalists?: [UUID, UUID];
   /** True when this agent has been eliminated (e.g. juror in diary room) */
   isEliminated?: boolean;
-  /** Context about how this agent was just eliminated for final words. */
-  eliminationContext?: {
-    mode: "power" | "council" | "endgame" | "format";
-    exposedBy?: string[];
-    councilVoters?: string[];
-    eliminationVoters?: string[];
-    directExecutor?: string;
-    formatId?: string;
-  };
+  /** Controlled facts disclosed only after this agent's elimination commits. */
+  eliminationContext?: EliminationContext;
   /** Current lobby sub-round index (0-based) */
   lobbySubRound?: number;
   /** Total lobby sub-rounds this phase */
@@ -1138,6 +1136,32 @@ export interface PhaseContext {
   mingleBeat?: number;
   /** Total Mingle beats this phase */
   mingleTotalBeats?: number;
+}
+
+export type EliminationVoteDisclosure =
+  | {
+      visibility: "public";
+      votesReceived: number;
+      voterNames: string[];
+    }
+  | {
+      visibility: "sealed";
+      votesReceived: number;
+      savesReceived?: number;
+      eliminationVotesReceived?: number;
+      netScore?: number;
+    }
+  | {
+      visibility: "none";
+      reason: "direct_elimination" | "sole_vulnerable";
+    };
+
+export interface EliminationContext {
+  mode: "power" | "council" | "endgame" | "format";
+  exposedBy?: string[];
+  directExecutor?: string;
+  formatId?: string;
+  voteDisclosure: EliminationVoteDisclosure;
 }
 
 export interface RevealedVoteLedgerEntry {

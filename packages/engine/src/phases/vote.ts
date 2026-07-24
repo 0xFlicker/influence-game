@@ -42,6 +42,32 @@ function fallbackEliminationDecision(ctx: PhaseRunnerContext, voterId: UUID): Ta
   };
 }
 
+function getTribunalDecidingVoterNames(
+  ctx: PhaseRunnerContext,
+  eliminatedId: UUID,
+): string[] {
+  const resolution = ctx.gameState.getCanonicalEvents().at(-1);
+  if (
+    resolution?.type !== "endgame.elimination_resolved"
+    || resolution.payload.eliminated !== eliminatedId
+  ) {
+    throw new Error("Expected Tribunal tally to record its elimination resolution");
+  }
+
+  if (resolution.payload.method !== "jury_tiebreaker") {
+    return getEndgameEliminationVoterNames(ctx, eliminatedId);
+  }
+
+  const juryVotes = resolution.payload.juryTiebreakerVotes;
+  if (!juryVotes) {
+    throw new Error("Expected Tribunal jury tiebreaker resolution to include jury votes");
+  }
+
+  return Object.entries(juryVotes)
+    .filter(([, target]) => target === eliminatedId)
+    .map(([jurorId]) => ctx.gameState.getPlayerName(jurorId as UUID));
+}
+
 export async function runVotePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
@@ -285,9 +311,14 @@ export async function runReckoningVote(
 
   await assertCanAcceptCommit(ctx);
   const eliminatedId = gameState.tallyEndgameEliminationVotes();
+  const eliminationVoters = getEndgameEliminationVoterNames(ctx, eliminatedId);
   await handleElimination(ctx, eliminatedId, Phase.VOTE, {
     mode: "endgame",
-    eliminationVoters: getEndgameEliminationVoterNames(ctx, eliminatedId),
+    voteDisclosure: {
+      visibility: "public",
+      votesReceived: eliminationVoters.length,
+      voterNames: eliminationVoters,
+    },
   });
 
   actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });
@@ -391,9 +422,14 @@ export async function runTribunalVote(
 
   await assertCanAcceptCommit(ctx);
   const eliminatedId = gameState.tallyTribunalVotes(juryTiebreakerVotes);
+  const eliminationVoters = getTribunalDecidingVoterNames(ctx, eliminatedId);
   await handleElimination(ctx, eliminatedId, Phase.VOTE, {
     mode: "endgame",
-    eliminationVoters: getEndgameEliminationVoterNames(ctx, eliminatedId),
+    voteDisclosure: {
+      visibility: "public",
+      votesReceived: eliminationVoters.length,
+      voterNames: eliminationVoters,
+    },
   });
 
   actor.send({ type: "PLAYER_ELIMINATED", playerId: eliminatedId });

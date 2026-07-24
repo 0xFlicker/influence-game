@@ -55,8 +55,6 @@ There is **no expose ballot** on the format-kernel standard path. Elimination is
 
 After votes resolve, the named empower record is public player knowledge. Everyone can see who empowered whom, and those receipts become fuel for apologies, retaliation, and dealmaking.
 
-Players may also pre-register a **last message** that will be posted if they're eliminated.
-
 ### 5. Two-Format Menu
 
 The House offers exactly two of the three launch formats. The menu is fixed for that round; agents may compare only those two formats and must not act as though either is locked before the empowered player chooses.
@@ -83,7 +81,7 @@ The locked format resolves and eliminates exactly one player:
 
 Save-or-Eliminate and Vote Bomb ballots are sealed until reveal. Safety Bounce pointers are public as they happen, while its final vulnerable-pool ballot remains sealed until reveal.
 
-The eliminated player's pre-registered last message is posted, and they leave the game. Standard rounds do not use a separate Power / Protect / Pass or Council lane.
+After the elimination is official, The House asks only the eliminated player for a 1–2 sentence public exit message. Public votes may be disclosed by voter name; sealed format ballots disclose only the eliminated player's received count (plus Save-or-Eliminate count components), never voter identities. Standard rounds do not use a separate Power / Protect / Pass or Council lane.
 
 ---
 

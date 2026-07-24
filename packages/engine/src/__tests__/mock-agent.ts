@@ -331,7 +331,7 @@ export class MockAgent implements IAgent {
     };
   }
 
-  async getLastMessage(_ctx: PhaseContext): Promise<AgentResponse> {
+  async getEliminationMessage(_ctx: PhaseContext): Promise<AgentResponse> {
     return respond(
       `${this.name} here — well played, everyone. See you on the other side.`,
       `Preparing my final words`,

@@ -60,6 +60,8 @@ Use this split consistently:
 - **Canonical game events** are accepted board facts: votes, eliminations, powers, rounds, endgame transitions. They rebuild state and can point back to private source records, but they do not store hidden strategy as game truth.
 - **Completed-game results review** is a public-by-URL postgame product projection. It should roll up canonical events into per-round revealed facts, elimination order, vote matrices, endgame votes, jury votes, and placements. Agent context can provide snippets from active public-facing cognitive artifacts, but those snippets explain texture only; they do not decide who voted for whom, who was eliminated, or who won.
 
+Elimination speech follows the same seam. Commit `player.eliminated` before asking for speech, then make one dedicated structured call to the eliminated agent and record the accepted text separately. Do not build that prompt from the general system transcript: sealed ballot reveal lines can contain named receipts that the eliminated player is not authorized to receive. Pass an explicit disclosure object instead — public votes may include voter names, sealed votes include counts only, and direct/sole-vulnerable eliminations carry a no-vote reason.
+
 When a model-quality complaint appears, convert it into typed observable state instead of an untestable prompt vibe.
 
 Examples:
