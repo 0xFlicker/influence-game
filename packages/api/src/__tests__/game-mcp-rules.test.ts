@@ -29,13 +29,38 @@ describe("game MCP rules catalog", () => {
     const namedAlliances = rules.rules.sections.find((section) => section.id === "named-alliances");
 
     expect(standardRound?.body).toContain("Mingle I");
-    expect(standardRound?.body).toContain("pre-vote alliance huddles");
-    expect(standardRound?.body).toContain("public Vote");
-    expect(standardRound?.body).toContain("post-vote Mingle");
+    expect(standardRound?.body).toContain("pre-format alliance huddles");
+    expect(standardRound?.body).toContain("empower vote");
+    expect(standardRound?.body).toContain("format-aware Mingle");
     expect(namedAlliances?.body).toContain("Consent attaches to the same name, roster, purpose, and timebox version");
     expect(namedAlliances?.body).toContain("MCP active-match tools are read-only");
     expect(serialized).not.toContain("whisper");
     expect(serialized).not.toContain("each standard round moves through lobby, vote, mingle, power, reveal, and council");
+  });
+
+  test("publishes the format-kernel standard-round contract without default Power or Council", () => {
+    const rules = getGameMcpRules();
+    const standardRound = rules.rules.sections.find((section) => section.id === "standard-round");
+    const formats = rules.rules.sections.find((section) => section.id === "formats");
+    const standardContract = `${rules.rules.summary}\n${standardRound?.body ?? ""}\n${formats?.body ?? ""}`;
+
+    expect(standardRound?.body).toContain("two-format menu");
+    expect(standardRound?.body).toContain("format-aware Mingle");
+    expect(standardRound?.body).toContain("one elimination");
+    expect(formats?.title).toBe("Formats");
+    expect(formats?.body).toContain("Save-or-Eliminate");
+    expect(formats?.body).toContain("Vote Bomb");
+    expect(formats?.body).toContain("Safety Bounce");
+    expect(formats?.body).toContain("Empowerment is not immunity");
+    expect(formats?.body).toContain("sealed");
+    expect(formats?.body).toContain("pointers are public");
+    expect(formats?.body).toContain("every living player casts a sealed elimination ballot targeting the vulnerable pool");
+    expect(standardContract).not.toContain("Power / Reveal");
+    expect(standardContract).not.toContain("pre-Council");
+    expect(standardContract).not.toContain("pass the final choice to Council");
+
+    const formatMatches = searchGameMcpRules({ query: "formats" });
+    expect(formatMatches.matches.map((match) => match.id)).toContain("formats");
   });
 
   test("describes season leaderboards without publishing scoring constants", () => {

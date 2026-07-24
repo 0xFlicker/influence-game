@@ -17,15 +17,33 @@
  *   bun run simulate -- --variant mingle --chatty --reasoning-summary auto
  *   bun run simulate -- --model-catalog katana:grok-4-3 --reasoning-policy high
  *
- * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
+ * OPERATOR-ONLY format-kernel proof. Implementing agents document these commands
+ * but must not run or wait on them. Start from the reported branch/HEAD with a
+ * clean worktree, choose one provider, and keep every batch capped at two rounds.
+ *
+ * Hosted OpenAI (Doppler dev may set a local base URL; the catalog forces hosted):
+ *   doppler run --project social-strategy-agent --config dev -- \
+ *     bun run simulate -- \
+ *     --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
+ *     --model-catalog openai:gpt-5-mini
+ *
+ * Local LM Studio (load the model and serve 127.0.0.1:1234 first):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
- *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
- *     --variant mingle --chatty --max-rounds 2 --llm-timeout-sec 300
+ *     bun run simulate:local -- \
+ *     --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
+ *     --model <lm-studio-model-id> --llm-timeout-sec 300
+ *
+ * Inspect the new batch summary.md, game-1.txt, and game-1-turns.jsonl. Require
+ * FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE, model-authored format actions
+ * (`decisionSource: "llm"` with useful thinking), no fallback, and no default
+ * Power/Council elimination. Repeat only the same bounded recipe until all three
+ * launch formats have appeared across retained batches. See
+ * docs/local-model-evaluation.md for the complete pass/fail and triage checklist.
  *   # Whole-game timeout is off by default; only set when you want a hard wall clock:
  *   #   --game-timeout-sec 7200
  *
  * The --chatty output (and written transcripts) now interleave House action lines
- * ("X votes: ...", "Y re-votes: ...", "Z power action: ...") with the agent's
+ * ("X votes: ...", "FORMAT LOCKED: ...", "Y format ballot: ...") with the agent's
  * hidden `thinking` (bright white) and model-side reasoning evidence (bright cyan)
  * when present, including raw local `reasoningContext` or labeled OpenAI summaries.
  *
@@ -63,24 +81,27 @@
  * durable API match-read surfaces; local `--chatty` formatting and simulation
  * artifacts remain first-class and continue to surface thinking / reasoningContext
  * for human review without treating them as public speech.
- * Specialized `empower-revote` and `candidate-selection` records are written
- * when vote mechanics create private empowered-player choices. Shield pull-up
- * choices are bundled into the private `power-action` record when Protect
- * creates an unresolved replacement. Empowered Council tiebreaker records are
- * written only when normal Council votes tie.
+ * Format-kernel turns record `format-pick`, `format-ballot`, `bounce-pointer`,
+ * and `format-tiebreak` actions. Together they expose the six typed agent
+ * decisions: pickRoundFormat, getSaveOrEliminateBallot, getVoteBombBallot,
+ * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their
+ * responses include `decisionSource` and nullable `fallbackReason`; reasoning
+ * is diagnostic evidence, never canonical game fact. Specialized
+ * `candidate-selection`, `power-action`, and Council records remain readable
+ * for legacy/classic runs but are not the expected standard-round lane.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there
  * when `--strategic-reflections` is enabled for validation runs. The hidden
  * cadence starts after Introductions, then continues at later-round vote and
- * Council-diary reflection boundaries. Later private decisions may include
+ * legacy/classic Council-diary reflection boundaries where exercised. Later private decisions may include
  * `strategicLens` and `decisionLog` fields for searchable producer/debug
  * validation.
  *
  * Prompt-continuity validation should check the current-board contract in
- * player prompts, phase-specific vote/Council/endgame rules, typed recent
- * decisions, questions-only Judgment prompts for jurors, and Council role-aware
- * diary prompts, including empowered players whose Council tiebreak was not
- * needed. These keep eliminated players useful as history, jury context, or
- * social evidence without turning them back into live targets.
+ * player prompts, phase-specific format/endgame rules, typed recent decisions,
+ * questions-only Judgment prompts for jurors, and legacy Council role-aware
+ * diary prompts when that classic lane is exercised. These keep eliminated
+ * players useful as history, jury context, or social evidence without turning
+ * them back into live targets.
  * API-backed saved agents also pass owner-authored personality, backstory,
  * strategy instructions, and temperature into InfluenceAgent. Those inputs,
  * together with resolved model/provider/reasoning/tool policy, define the

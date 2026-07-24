@@ -386,6 +386,34 @@ When a QA agent is added:
 
 Hosted-provider secrets are injected via Doppler. Local LM Studio experiments can run through the OpenAI-compatible provider settings in `docs/local-model-evaluation.md`. Never hardcode API keys.
 
+### OPERATOR-ONLY Format-Kernel Proof
+
+Real-model format proof is a post-handoff operator gate. **Implementing agents must not run or wait on these commands.** Start from the reported branch and HEAD with a clean worktree, choose one recipe, and keep every run capped at two rounds.
+
+Hosted OpenAI requires Doppler access to `social-strategy-agent/dev`. The dev config may contain an LM Studio base URL; `--model-catalog openai:gpt-5-mini` forces the hosted provider path.
+
+```bash
+cd packages/engine
+doppler run --project social-strategy-agent --config dev -- \
+  bun run simulate -- \
+  --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
+  --model-catalog openai:gpt-5-mini
+```
+
+For local proof, load the chosen model in LM Studio and serve its OpenAI-compatible endpoint on `127.0.0.1:1234`.
+
+```bash
+cd packages/engine
+INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
+  bun run simulate:local -- \
+  --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
+  --model <lm-studio-model-id> --llm-timeout-sec 300
+```
+
+Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`. Record provider/model, batch path, and pass/fail for: `FORMAT MENU` → `FORMAT LOCKED` → `FORMAT RESOLVE`; no standard-round Power/Council elimination; `format-pick` plus exercised `format-ballot`, `bounce-pointer`, and `format-tiebreak` records have useful thinking and `decisionSource: "llm"`; no exercised action has `decisionSource: "fallback"`; agents apply the locked rules; and at least two formats produce distinct coalition scripts. Repeat the same bounded recipe only until all three launch formats appear across retained batches. A fallback fails proof: inspect `fallbackReason` and the matching `agent_turn`. If hosted traffic reaches LM Studio, retain the explicit OpenAI catalog or clear base-URL variables for that process. Whole-game timeout is off by default.
+
+The fuller checklist and triage live in `docs/local-model-evaluation.md`.
+
 ```bash
 # Simulator validation uses repo scripts, which inject Doppler dev secrets explicitly:
 bun run simulate -- --games 1 --players 4 --model gpt-5-nano
@@ -399,7 +427,7 @@ bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --play
 bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 4
 # Defaults to a short player-scaled smoke cap (4 players -> 5 rounds); pass --max-rounds to override.
 
-# Chatty mode (live colored transcript with agent thinking + native reasoningContext / labeled provider summaries on Mingle turns, alliance actions, huddle turns, votes, power actions, council votes, and endgame decisions):
+# Chatty mode (live colored transcript with agent thinking + native reasoningContext / labeled provider summaries on Mingle turns, alliance actions, huddle turns, votes, format picks/ballots/pointers/tiebreaks, legacy classic actions, and endgame decisions):
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
@@ -415,15 +443,15 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
 
 # Rich producer validation adds House Strategy Bible packets, long-form summaries,
-# diary producer briefs, bounded Council diary sessions, and strategic reflections:
+# diary producer briefs, legacy/classic Council-bounded diary sessions, and strategic reflections:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review. Simulator event JSONL uses the same canonical event envelope that API-backed games persist in Postgres, but CLI simulations remain local artifacts and do not write API database rows. Hidden `mingle-intent` records are always in turns JSONL with live-player target repair metadata when needed; House room-assignment, Mingle turn, named-alliance `alliance-action`, House `alliance-huddle-schedule`, member `alliance-huddle-turn`, House `alliance-huddle-outcome`, vote, private `candidate-selection`, power records with bundled `shieldPullUp` details when Protect needs a replacement, normal Council votes, empowered Council tiebreakers only when normal Council votes tie, and House MC summary records are included there too; Mingle intent, strategic reflection, and Strategy Thread packet records can include `strategicLens` metadata. Hidden `strategic-reflection` and `strategy-packet` records are included when `--strategic-reflections` is enabled; the hidden cadence is an initial post-Introduction reflection, later-round pre-vote and post-vote reflections, plus post-Council diary-phase reflection when Council diary sessions run. Hosted OpenAI simulations default to `--reasoning-summary auto`; summaries appear as labeled OpenAI reasoning summaries in the reasoning lane and can be set to `concise`, `detailed`, or `off`. Later private decisions may include `decisionLog` receipts that explain strategic pivots for normal reflection carry-forward. Rich producer runs also include private `house-strategy-bible`, `house-long-form-summary`, and `house-producer-brief` records. When evaluating post-vote Mingle, room labels should remain stable across turns; use the `Current Board Contract`, phase-specific rules, `Current Stakes`, `Revealed Vote Ledger`, `Post-Vote Pressure`, and room-specific opportunity prompt text in `--chatty`/turn traces to judge whether at-risk and empowered players understand the immediate Power stakes and use named vote receipts as social evidence. When evaluating named alliances, check Mingle I consent/version behavior, overlapping alliance context, House huddle scheduling, huddle outcomes, and the rule that huddle transcript scope stays hidden from public/player-safe surfaces. The board contract should keep live players, eliminated players, jurors, empowerment, shields, Council status, and endgame status clear; Council diary questions should match the player's actual Council role, including empowered players whose tiebreak was not needed; Judgment question prompts should use questions-only history; and House MC summaries should emphasize consequence, leverage, debt, heat, and next tension instead of player-count bookkeeping.
+Simulation batches are written under `packages/engine/docs/simulations/`. Use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for canonical accepted domain events that replay into a projection, `game-N-progress.jsonl` for lightweight live progress, `game-N.json` for the full transcript/result bundle, and `game-N.txt` for human-readable transcript review. Simulator event JSONL uses the same canonical event envelope that API-backed games persist in Postgres, but CLI simulations remain local artifacts and do not write API database rows. Hidden `mingle-intent` records are always in turns JSONL with live-player target repair metadata when needed; House room-assignment, Mingle turn, named-alliance records, vote, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, and House MC summaries are included when exercised. Format decisions carry `decisionSource` and nullable `fallbackReason`; reasoning is diagnostic evidence, never canonical fact. Legacy/classic `candidate-selection`, `power-action`, and Council records remain readable when that historical lane is deliberately exercised, but are not expected standard-round actions. Hidden strategic and producer records remain gated by their existing flags.
 
-For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Tool results include MCP `resourceUri` values for full artifacts; use `resources/read` with those URIs for events, turns, progress, transcript, or game JSON instead of treating `sourcePath` as repo-root-relative. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `mingle-turn`, `alliance-action`, `alliance-huddle-schedule`, `alliance-huddle-turn`, `alliance-huddle-outcome`, `strategic-reflection`, `strategy-packet`, `strategicLens`, `decisionLog`, `gotoPlayerName`, `gotoStatus`, `empower-revote`, `candidate-selection`, `power-action`, or `shieldPullUp` when validating whether agents are using open strategic choices. Use `filter_events` for canonical `alliance.*` facts when validating official alliance state. Use `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or named House alliances when validating House producer carry-forward.
+For local MCP queries across past and current simulations, run `cd packages/engine && bun run mcp:game -- docs/simulations`. The MCP is read-only, scans the corpus on demand, and requires `sessionId + gameNumber` for game-specific projection/timeline queries. Tool results include MCP `resourceUri` values for full artifacts; use `resources/read` with those URIs for events, turns, progress, transcript, or game JSON instead of treating `sourcePath` as repo-root-relative. Use `search_logs` over `sources: ["turns"]` for `mingle-intent`, `mingle-room-assignment`, `mingle-turn`, alliance records, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, `decisionSource`, `fallbackReason`, strategic records, or movement receipts. Search `candidate-selection`, `power-action`, and `shieldPullUp` only for legacy/classic batches. Use canonical events rather than reasoning prose for accepted game facts.
 
 For OAuth-gated local simulation MCP validation, first give the signed-in wallet the `mcp` role and set the same high-entropy `INFLUENCE_MCP_INTROSPECTION_SECRET` for the API and local bridge. With the API on `http://127.0.0.1:3000` and web on `http://localhost:3001`, run `cd packages/engine && bun run mcp:game:login`, approve `scope=mcp` in the browser, then launch the bridge with `bun run mcp:game:oauth -- docs/simulations`. The helper saves the one-hour token to `~/.influence-game/mcp-token.json` with user-only file permissions; override with `INFLUENCE_MCP_TOKEN_FILE` for connected MCP clients. The bridge reads `INFLUENCE_MCP_TOKEN` first and then the saved token file. The token has no refresh token; rerun the helper and restart the MCP client/bridge after expiry. `scope=mcp` is global access to wired MCP surfaces. Do not describe it as per-user private-trace, per-agent, or per-game authorization.
 

@@ -59,20 +59,20 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
   {
     id: "standard-round",
     title: "Standard Round Phases",
-    tags: ["round", "lobby", "mingle", "mingle-i", "huddle", "vote", "power", "reveal", "council"],
-    body: "Each standard pre-endgame round moves through Lobby, Mingle I, pre-vote alliance huddles, public Vote, post-vote Mingle, Power / Reveal, pre-Council alliance huddles, and Council. Mingle I starts as the pre-vote private-room Mingle and then closes with the official named-alliance action window. Huddles are scarce House-scheduled active-alliance coordination scenes, Vote receipts are public, and post-vote Mingle remains the private-room fallout phase.",
+    tags: ["round", "lobby", "mingle", "mingle-i", "huddle", "vote", "empower", "format", "formats", "elimination"],
+    body: "Each standard pre-endgame round moves through Lobby; Mingle I and named-alliance formation; scarce pre-format alliance huddles; the empower vote; a two-format menu; the empowered player's format pick; format-aware Mingle under the locked rules; and format resolution with one elimination. The legacy expose ballot remains a public social receipt but does not determine elimination. The standard path has no separate Power / Protect / Pass or Council phase.",
   },
   {
     id: "named-alliances",
     title: "Named Alliances",
     tags: ["alliance", "alliances", "mingle-i", "huddle", "visibility", "mcp"],
-    body: "Named alliances are explicit, player-confirmed, non-binding social pacts. During Mingle I, The House gives each alive player one proposer opportunity in order. A proposer may propose one named alliance or pass; when a proposal is made, invited players resolve that proposal before the next proposer acts by accepting, declining, deferring, trial-accepting, or countering the current terms. Counters may continue for at most two counter rounds. Consent attaches to the same name, roster, purpose, and timebox version; players may belong to multiple active alliances. Outside Mingle I, players may discuss, reveal, deny, betray, or coordinate in scheduled huddles, but official alliance records do not mutate. Alliance membership, terms, huddle transcripts, and huddle outcomes are member-safe for the involved players, but are not public or non-member-safe facts unless players reveal them through gameplay; House scheduling rationale remains producer-only. MCP active-match tools are read-only and cannot propose alliances, speak in huddles, vote, use power, or advance phases.",
+    body: "Named alliances are explicit, player-confirmed, non-binding social pacts. During Mingle I, The House gives each alive player one proposer opportunity in order. A proposer may propose one named alliance or pass; when a proposal is made, invited players resolve that proposal before the next proposer acts by accepting, declining, deferring, trial-accepting, or countering the current terms. Counters may continue for at most two counter rounds. Consent attaches to the same name, roster, purpose, and timebox version; players may belong to multiple active alliances. Outside Mingle I, players may discuss, reveal, deny, betray, or coordinate in scheduled huddles, but official alliance records do not mutate. Alliance membership, terms, huddle transcripts, and huddle outcomes are member-safe for the involved players, but are not public or non-member-safe facts unless players reveal them through gameplay; House scheduling rationale remains producer-only. MCP active-match tools are read-only and cannot propose alliances, speak in huddles, vote, choose formats, submit format actions, or advance phases.",
   },
   {
-    id: "votes-and-power",
-    title: "Votes And Power",
-    tags: ["vote", "empower", "expose", "power", "protect", "eliminate"],
-    body: "Players cast empower and expose votes. Empower grants special power for the round. Expose creates pressure and candidate risk. The empowered player can eliminate a candidate directly, protect a player from candidate status, or pass the final choice to Council.",
+    id: "formats",
+    title: "Formats",
+    tags: ["format", "formats", "vote", "empower", "expose", "save-or-eliminate", "vote-bomb", "safety-bounce", "sealed", "tiebreak"],
+    body: "Empower selects the player who chooses one of two House-offered formats and breaks format elimination ties. Empowerment is not immunity: the empowered player participates normally and can be eliminated. Expose remains a public legacy social receipt and does not determine standard-round elimination. Save-or-Eliminate: every player casts one sealed non-self SAVE (+1 net) or ELIMINATE (-1 net) ballot; lowest net is eliminated and the empowered player breaks lowest-net ties. Vote Bomb: every player casts one sealed non-self elimination-direction vote; zero votes is safe, while the fewest votes among players with at least one vote is eliminated, with the empowered player breaking ties. Safety Bounce: a random starter begins SAFE and pointers are public; a safe player points to make an unclassified target VULNERABLE, a vulnerable player points to make an unclassified target SAFE, and the chain continues until all are classified. Then every living player casts a sealed elimination ballot targeting the vulnerable pool; the most-voted vulnerable player is eliminated, a sole vulnerable player is automatically eliminated, and the empowered player breaks vote ties. Save-or-Eliminate and Vote Bomb ballots are sealed until reveal; Safety Bounce pointers are public as made and its final elimination ballot is sealed until reveal.",
   },
   {
     id: "endgame",
@@ -110,7 +110,7 @@ export function getGameMcpRules(): GameMcpRulesRead {
   return {
     schemaVersion: 1,
     rules: {
-      summary: "Influence is an AI social-strategy game about alliance management, pressure, power, elimination, and jury persuasion.",
+      summary: "Influence is an AI social-strategy game about alliance management, empower-driven format choice, format-specific elimination, and jury persuasion.",
       sections: RULE_SECTIONS,
       archetypes: listGameMcpArchetypeSummaries({ includeStrategyHints: true }),
       ratingProvenance: {
