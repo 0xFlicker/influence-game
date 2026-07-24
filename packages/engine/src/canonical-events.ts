@@ -62,6 +62,10 @@ export type CanonicalGameEventType =
   | "vote.empower_vote_cleared"
   | "vote.empowered_set"
   | "format.menu_offered"
+  | "format.selected"
+  | "format.safety_bounce_started"
+  | "format.safety_bounce_pointer"
+  | "format.resolved"
   | "power.action_set"
   | "power.candidates_resolved"
   | "alliance.proposal_submitted"
@@ -114,6 +118,10 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "vote.empower_vote_cleared",
   "vote.empowered_set",
   "format.menu_offered",
+  "format.selected",
+  "format.safety_bounce_started",
+  "format.safety_bounce_pointer",
+  "format.resolved",
   "power.action_set",
   "power.candidates_resolved",
   "alliance.proposal_submitted",
@@ -160,6 +168,30 @@ export interface CanonicalEventEnvelope<
   payload: TPayload;
 }
 
+export interface FormatResolutionPayload {
+  formatId: LaunchFormatId;
+  empoweredId: UUID;
+  eliminatedId: UUID;
+  resolutionKind: "clear" | "auto";
+  tiedPlayerIds: UUID[];
+  tiebreakerId: UUID | null;
+  saveOrEliminate: {
+    nets: Record<UUID, number>;
+    savesReceived: Record<UUID, number>;
+    eliminateReceived: Record<UUID, number>;
+  } | null;
+  voteBomb: {
+    totals: Record<UUID, number>;
+    zeroSafePlayerIds: UUID[];
+  } | null;
+  safetyBounce: {
+    starterId: UUID;
+    safePlayerIds: UUID[];
+    vulnerablePlayerIds: UUID[];
+    voteTotals: Record<UUID, number>;
+  } | null;
+}
+
 export type CanonicalGameEvent =
   | CanonicalEventEnvelope<
       "game.roster_initialized",
@@ -204,6 +236,16 @@ export type CanonicalGameEvent =
       "format.menu_offered",
       { empoweredId: UUID; offeredFormatIds: [LaunchFormatId, LaunchFormatId] }
     >
+  | CanonicalEventEnvelope<
+      "format.selected",
+      { empoweredId: UUID; formatId: LaunchFormatId }
+    >
+  | CanonicalEventEnvelope<"format.safety_bounce_started", { starterId: UUID }>
+  | CanonicalEventEnvelope<
+      "format.safety_bounce_pointer",
+      { actorId: UUID; targetId: UUID; classification: "safe" | "vulnerable" }
+    >
+  | CanonicalEventEnvelope<"format.resolved", FormatResolutionPayload>
   | CanonicalEventEnvelope<"power.action_set", { action: PowerAction }>
   | CanonicalEventEnvelope<
       "power.candidates_resolved",

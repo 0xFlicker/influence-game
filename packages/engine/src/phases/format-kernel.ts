@@ -45,11 +45,13 @@ import {
   type PhaseRunnerContext,
 } from "./phase-runner-context";
 import { runMinglePhase } from "./mingle";
+import type { FormatResolutionPayload } from "../canonical-events";
 
 type FormatRoundElimination = {
   eliminatedId: UUID;
   voteDisclosure: EliminationVoteDisclosure;
   houseResolution: HouseFormatResolutionFacts;
+  canonicalResolution: FormatResolutionPayload;
 };
 
 function normalizedFormatProvenance(
@@ -94,6 +96,7 @@ export async function runFormatMenuPhase(
     selectedFormat: null,
   });
   contextBuilder.currentFormatPressure = state.pressure;
+  gameState.recordFormatSelected(empoweredId, chosen);
   gameState.recordFormatMenu(empoweredId, menu.offered);
 
   logger.logSystem(
@@ -230,6 +233,7 @@ export async function runFormatResolvePhase(
 
   // House is omniscient: retain full sealed ballots / tallies for MC + producer.
   state.lastFormatResolution = elimination.houseResolution;
+  gameState.recordFormatResolution(elimination.canonicalResolution);
 
   await handleElimination(ctx, eliminatedId, Phase.FORMAT_RESOLVE, {
     mode: "format",
@@ -405,6 +409,21 @@ async function resolveSaveOrEliminateRound(
           ? gameState.getPlayerName(empoweredId)
           : null,
     },
+    canonicalResolution: {
+      formatId: "save_or_eliminate",
+      empoweredId,
+      eliminatedId,
+      resolutionKind: resolution.kind,
+      tiedPlayerIds: [...resolution.tiedSet],
+      tiebreakerId: resolution.kind === "clear" && resolution.tiedSet.length > 1 ? empoweredId : null,
+      saveOrEliminate: {
+        nets: { ...nets.nets },
+        savesReceived: { ...nets.savesReceived },
+        eliminateReceived: { ...nets.eliminateReceived },
+      },
+      voteBomb: null,
+      safetyBounce: null,
+    },
   };
 }
 
@@ -532,6 +551,20 @@ async function resolveVoteBombRound(
           ? gameState.getPlayerName(empoweredId)
           : null,
     },
+    canonicalResolution: {
+      formatId: "vote_bomb",
+      empoweredId,
+      eliminatedId,
+      resolutionKind: resolution.kind,
+      tiedPlayerIds: [...resolution.tiedSet],
+      tiebreakerId: resolution.kind === "clear" && resolution.tiedSet.length > 1 ? empoweredId : null,
+      saveOrEliminate: null,
+      voteBomb: {
+        totals: { ...tallies.totals },
+        zeroSafePlayerIds: [...tallies.zeroSafeIds],
+      },
+      safetyBounce: null,
+    },
   };
 }
 
@@ -545,6 +578,7 @@ async function resolveSafetyBounceRound(
   const starterId = aliveIds[Math.floor(Math.random() * aliveIds.length)]!;
   let board = createBounceBoard(aliveIds, starterId);
   updateBounceBoardPressure(ctx, board);
+  gameState.recordSafetyBounceStarted(starterId);
 
   logger.logSystem(
     `Safety Bounce starter (SAFE): ${gameState.getPlayerName(starterId)}`,
@@ -591,6 +625,7 @@ async function resolveSafetyBounceRound(
       targetName: gameState.getPlayerName(targetId),
       classification,
     });
+    gameState.recordSafetyBouncePointer(actorId, targetId, classification.toLowerCase() as "safe" | "vulnerable");
     logger.logSystem(
       `Bounce: ${gameState.getPlayerName(actorId)} → ${gameState.getPlayerName(targetId)} (${classification})`,
       Phase.FORMAT_RESOLVE,
@@ -646,6 +681,22 @@ async function resolveSafetyBounceRound(
         resolutionSummary,
         eliminatedName: gameState.getPlayerName(soleId),
         tiebreakByEmpoweredName: null,
+      },
+      canonicalResolution: {
+        formatId: "safety_bounce",
+        empoweredId,
+        eliminatedId: soleId,
+        resolutionKind: "auto",
+        tiedPlayerIds: [],
+        tiebreakerId: null,
+        saveOrEliminate: null,
+        voteBomb: null,
+        safetyBounce: {
+          starterId,
+          safePlayerIds: [...board.safe],
+          vulnerablePlayerIds: [...board.vulnerable],
+          voteTotals: {},
+        },
       },
     };
   }
@@ -763,6 +814,22 @@ async function resolveSafetyBounceRound(
         resolution.kind === "clear" && resolution.tiedSet.length > 1
           ? gameState.getPlayerName(empoweredId)
           : null,
+    },
+    canonicalResolution: {
+      formatId: "safety_bounce",
+      empoweredId,
+      eliminatedId,
+      resolutionKind: resolution.kind,
+      tiedPlayerIds: [...resolution.tiedSet],
+      tiebreakerId: resolution.kind === "clear" && resolution.tiedSet.length > 1 ? empoweredId : null,
+      saveOrEliminate: null,
+      voteBomb: null,
+      safetyBounce: {
+        starterId,
+        safePlayerIds: [...board.safe],
+        vulnerablePlayerIds: [...board.vulnerable],
+        voteTotals: { ...voteTotals },
+      },
     },
   };
 }

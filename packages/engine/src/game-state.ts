@@ -15,6 +15,7 @@ import type {
   CanonicalGameEventType,
   CanonicalSourcePointer,
   EndgameSpeechKind,
+  FormatResolutionPayload,
   FormalSpeechProvenance,
   JudgmentSpeechKind,
   JudgmentSpeechProvenance,
@@ -2076,6 +2077,62 @@ export class GameState {
       offeredFormatIds: [offeredFormatIds[0], offeredFormatIds[1]],
     }, {
       phase: Phase.FORMAT_MENU,
+      visibility: "public",
+    });
+  }
+
+  recordFormatSelected(empoweredId: UUID, formatId: LaunchFormatId): void {
+    this.appendCanonicalEvent("format.selected", { empoweredId, formatId }, {
+      phase: Phase.FORMAT_PICK,
+      visibility: "public",
+    });
+  }
+
+  recordSafetyBounceStarted(starterId: UUID): void {
+    this.appendCanonicalEvent("format.safety_bounce_started", { starterId }, {
+      phase: Phase.FORMAT_RESOLVE,
+      visibility: "public",
+    });
+  }
+
+  recordSafetyBouncePointer(
+    actorId: UUID,
+    targetId: UUID,
+    classification: "safe" | "vulnerable",
+  ): void {
+    this.appendCanonicalEvent("format.safety_bounce_pointer", { actorId, targetId, classification }, {
+      phase: Phase.FORMAT_RESOLVE,
+      visibility: "public",
+    });
+  }
+
+  recordFormatResolution(resolution: FormatResolutionPayload): void {
+    this.appendCanonicalEvent("format.resolved", {
+      ...resolution,
+      tiedPlayerIds: [...resolution.tiedPlayerIds],
+      saveOrEliminate: resolution.saveOrEliminate
+        ? {
+            nets: { ...resolution.saveOrEliminate.nets },
+            savesReceived: { ...resolution.saveOrEliminate.savesReceived },
+            eliminateReceived: { ...resolution.saveOrEliminate.eliminateReceived },
+          }
+        : null,
+      voteBomb: resolution.voteBomb
+        ? {
+            totals: { ...resolution.voteBomb.totals },
+            zeroSafePlayerIds: [...resolution.voteBomb.zeroSafePlayerIds],
+          }
+        : null,
+      safetyBounce: resolution.safetyBounce
+        ? {
+            starterId: resolution.safetyBounce.starterId,
+            safePlayerIds: [...resolution.safetyBounce.safePlayerIds],
+            vulnerablePlayerIds: [...resolution.safetyBounce.vulnerablePlayerIds],
+            voteTotals: { ...resolution.safetyBounce.voteTotals },
+          }
+        : null,
+    }, {
+      phase: Phase.FORMAT_RESOLVE,
       visibility: "public",
     });
   }

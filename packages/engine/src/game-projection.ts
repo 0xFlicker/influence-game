@@ -47,6 +47,7 @@ export interface CanonicalGameProjection {
   formatMenu: {
     empoweredId: UUID;
     offeredFormatIds: [LaunchFormatId, LaunchFormatId];
+    selectedFormatId: LaunchFormatId | null;
   } | null;
   councilCandidates: [UUID, UUID] | null;
   candidateResolution: {
@@ -265,7 +266,19 @@ export function applyCanonicalEvent(
       projection.formatMenu = {
         empoweredId: event.payload.empoweredId,
         offeredFormatIds: [event.payload.offeredFormatIds[0], event.payload.offeredFormatIds[1]],
+        selectedFormatId: null,
       };
+      break;
+    }
+    case "format.selected": {
+      if (projection.formatMenu) {
+        projection.formatMenu = { ...projection.formatMenu, selectedFormatId: event.payload.formatId };
+      }
+      break;
+    }
+    case "format.safety_bounce_started":
+    case "format.safety_bounce_pointer":
+    case "format.resolved": {
       break;
     }
     case "power.action_set": {
