@@ -1653,14 +1653,10 @@ async function main() {
     }
   }
 
-  // Compute aggregates
+  // Compute aggregates (stats.json + results.json written under batchDir)
   const { stats, markdown } = writeBatchArtifacts(batchDir, metadata, modelRuntime.modelId, results, false);
 
-  // Output structured JSON
-  console.log("\n=== Aggregate Stats (JSON) ===\n");
-  console.log(JSON.stringify(stats, null, 2));
-
-  // Output markdown summary
+  // Text summary only — full stats JSON is on disk (stats.json), not dumped to the terminal
   console.log("\n" + markdown);
 
   console.log(`\nSimulation artifacts saved to: ${batchDir}`);
