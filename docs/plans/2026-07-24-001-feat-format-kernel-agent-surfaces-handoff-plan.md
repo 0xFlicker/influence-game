@@ -12,7 +12,7 @@ branch: feat/sequester-format-kernel
 
 ## Summary
 
-Complete the sequester **format kernel** so live LLM agents understand and play formats: inject format-pressure context, implement real `InfluenceAgent` tools/prompts for menu pick and format play, stop teaching classic Power→Council on the default path, then validate with OpenAI/local sims. Preserve a flexible per-format module contract so formats can be added or removed without rewriting every agent prompt.
+Complete the sequester **format kernel** so live LLM agents understand and play formats: inject format-pressure context, implement real `InfluenceAgent` tools/prompts for menu pick and format play, stop teaching classic Power→Council on the default path, then emit exact OpenAI/local simulation instructions for the operator. The implementing agent runs deterministic checks only and must not launch a real-model simulation. Preserve a flexible per-format module contract so formats can be added or removed without rewriting every agent prompt.
 
 ---
 
@@ -240,7 +240,10 @@ Reference: `docs/solutions/architecture-patterns/agent-strategy-observability-sp
 
 **Files:**
 - `packages/engine/src/agent.ts` (tools, prompts, validation, fallbacks)
+- `packages/engine/src/game-runner.types.ts` (decision provenance on format method results)
+- `packages/engine/src/phases/format-kernel.ts` (persist provenance in `agent_turn` responses)
 - `packages/engine/src/__tests__/agent-structured-output.test.ts` (extend schemas)
+- `packages/engine/src/__tests__/format-kernel-integration.test.ts` (accepted LLM vs fallback logging)
 - Optionally split tool defs if `agent.ts` is too large
 
 **Methods / tools:**
@@ -259,11 +262,12 @@ Reference: `docs/solutions/architecture-patterns/agent-strategy-observability-sp
 - Teach Vote Bomb “loading vs stray kill” without hard “must scheme” gates.
 - Explicit: format pick is not immunity; empowered still votes/bounces.
 - Validate names against alive lists; deterministic fallbacks like existing vote code.
+- Record `decisionSource: "llm" | "fallback"` on every format decision turn, plus a stable fallback reason when applicable, so deterministic tests and operator review can distinguish accepted model output from repaired or missing-tool paths.
 - Strategy packet / decisionLog / strategicLens where pattern already exists.
 
 **Patterns:** `getVotes` / `getPowerAction` / `getCouncilVote` in `agent.ts` (~lines 625–720 tools, 2293–2740 methods).
 
-**Verification:** Structured-output tests; short `simulate:local` or OpenAI sim with `--max-rounds 1` shows non-fallback picks in turns JSONL (`format-pick`, `format-ballot`, `bounce-pointer`).
+**Verification:** Structured-output tests prove the tool schemas, legal-value validation, deterministic fallbacks, turn-log action names, and decision provenance. The implementing agent stops after deterministic verification; U6 gives the operator the real-model commands and artifact checks needed to confirm `decisionSource: "llm"` on exercised actions.
 
 ---
 
@@ -315,11 +319,27 @@ Reference: `docs/solutions/architecture-patterns/agent-strategy-observability-sp
 
 ---
 
-### U6. Sim validation + operator recipes
+### U6. Operator-only LLM simulation handoff
 
-**Goal:** Prove LLM agents play formats with legible reasoning.
+**Goal:** Give the operator exact commands and pass/fail checks to prove LLM agents play formats with legible reasoning, without requiring the implementing agent to launch or wait for a real-model simulation.
 
-**Commands (current ergonomics):**
+**Execution boundary:**
+
+- The implementing agent **must not run** `simulate`, `simulate:local`, or any hosted/local real-model simulation.
+- The implementing agent still owns deterministic unit tests, structured-output tests, integration tests, typecheck, and applicable repo checks.
+- The final implementation handoff must label real-model behavior **operator-unverified** and include the repository, branch, HEAD, prerequisites, one hosted recipe, one local recipe, output location, success checks, and initial failure triage.
+- Operator simulation is a post-handoff confidence gate, not an implementing-agent completion gate.
+
+**Instructions the implementing agent must emit for the operator:**
+
+1. Start from the implementation branch and reported HEAD with a clean worktree.
+2. Choose either the hosted OpenAI recipe or the local LM Studio recipe below; do not run both unless comparing providers.
+3. For hosted OpenAI, authenticate Doppler for `social-strategy-agent/dev`. For local evaluation, start LM Studio with the chosen model loaded and its OpenAI-compatible server listening on `127.0.0.1:1234`.
+4. Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`.
+5. Record the chosen provider/model, batch path, and each success check as pass or fail.
+6. Repeat the same bounded recipe only until all three launch formats have appeared across the recorded batches; keep every run capped at two rounds.
+
+**Operator commands (current ergonomics):**
 
 OpenAI (Doppler has `INFLUENCE_LLM_BASE_URL` for LM Studio — **catalog forces hosted OpenAI**):
 
@@ -343,11 +363,21 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 
 **Success checks (origin success criteria):**
 - Transcript: FORMAT MENU / FORMAT LOCKED / FORMAT RESOLVE; no power-action / council elim on standard rounds  
-- Turns JSONL: real `format-pick` / `format-ballot` / `bounce-pointer` with thinking  
+- Every round: `format-pick` has thinking and `decisionSource: "llm"`; any `decisionSource: "fallback"` fails the proof
+- Save-or-eliminate and Vote Bomb rounds: `format-ballot` records have thinking and `decisionSource: "llm"`
+- Safety Bounce rounds: `bounce-pointer` and `format-ballot` records have thinking and `decisionSource: "llm"`
+- Any exercised `format-tiebreak` record has thinking and `decisionSource: "llm"`
 - Agents reference active format rules in thinking  
 - At least two formats show non-identical coalition scripts across rounds  
 
 **Note:** Whole-game timeout is **off by default**. Only add `--game-timeout-sec` if you want a wall clock.
+
+**Initial operator triage:**
+
+- If the hosted run reaches LM Studio, use `--model-catalog openai:gpt-5-mini` or clear the project base-URL variables for that process.
+- If the local run cannot connect, confirm LM Studio is serving its OpenAI-compatible endpoint on `127.0.0.1:1234`.
+- If a bounded run does not cover every launch format, repeat it and aggregate coverage across batch paths; do not remove the cap and drift into endgame.
+- If an action reports `decisionSource: "fallback"`, inspect the matching `agent_turn` and fallback reason before changing resolver math.
 
 ---
 
@@ -370,16 +400,17 @@ U1 format-pressure in PhaseContext
   → U2 InfluenceAgent tools/methods
   → U3 strip classic default-path teaching
   → U4 format-aware mingle prompts
-  → U6 sim validation (can interleave early with U2)
   → U5 rules/MCP/docs
+  → deterministic test/typecheck/repo gates
+  → U6 emit operator simulation instructions
   → (later) archetype format packs, events, watch
 ```
 
-Do **not** start U5 docs polish before U2 makes sims legible.
+Do **not** start U5 docs polish before U2 makes the agent decision path legible in deterministic tests.
 
 ---
 
-## Provider / env pitfalls (session hard-won)
+## Provider / env pitfalls for the operator (session hard-won)
 
 | Issue | Fact |
 |-------|------|
@@ -405,16 +436,19 @@ bun run typecheck
 
 # After U2
 bun test src/__tests__/agent-structured-output.test.ts
-# + one real LLM sim with --max-rounds 1..2 --chatty
 ```
 
 Repo-wide: `bun run test` / `bun run check` before merge readiness. Prefer Bun only.
+
+Do **not** add a real LLM simulation to the implementing agent's test run. Emit the U6 operator instructions and mark that proof as pending operator execution.
 
 ---
 
 ## Acceptance examples (agent-facing)
 
 Reuse origin AE1–AE7 for board math. Add for this handoff:
+
+AE-H1–AE-H5 describe final behavior. Deterministic schemas, prompts, context, and logging are implementing-agent checks; claims that require observing real-model thinking or multi-round strategy are operator checks under U6.
 
 - **AE-H1.** Empowered LLM receives two offered formats and tool-rejects a third; pick appears as `format-pick` turn with thinking naming both options.  
 - **AE-H2.** Under Vote Bomb, agent thinking or decisionLog shows awareness of zero-safe / fewest-positive (not “majority eliminate”).  
@@ -429,7 +463,7 @@ Reuse origin AE1–AE7 for board math. Add for this handoff:
 | Risk | Mitigation |
 |------|------------|
 | Prompt-only format rules without tools | U2 tools mandatory (observability spine) |
-| Agents still invent Council | U3 prompt cleanup + sim audit |
+| Agents still invent Council | U3 prompt cleanup + deterministic prompt tests; operator sim audit after handoff |
 | Format catalog pasted into every prompt | Role-scoped rule sheets only |
 | Double mingle token cost | Keep post-pick window short; don’t re-require multi-beat pre-format |
 | Doppler → local empty LM Studio | Document catalog path; optional unset base URL |
@@ -441,11 +475,12 @@ Reuse origin AE1–AE7 for board math. Add for this handoff:
 
 1. Read origin requirements + this handoff + prior plan.  
 2. Confirm branch `feat/sequester-format-kernel` and run format + game-engine tests.  
-3. Implement **U1 → U2 → U3 → U4**, validate with **U6** sim.  
+3. Implement **U1 → U2 → U3 → U4** and run deterministic verification only.
 4. Update **U5** rules/MCP/docs in the same branch when agent path works.  
-5. Do not claim “format kernel done” until LLM sim shows format-aware thinking, not only MockAgent green.  
-6. Prefer minimal diffs; no `as any`; Bun only.  
-7. Update CONCEPTS only if new resolved domain terms appear.
+5. Do **not** run a real-model simulation. Complete **U6** by emitting the exact operator instructions, expected artifact paths, success checks, and triage above.
+6. Report implementation checks separately from operator proof: deterministic gates may be green while real-model behavior remains explicitly operator-unverified.
+7. Prefer minimal diffs; no `as any`; Bun only.
+8. Update CONCEPTS only if new resolved domain terms appear.
 
 ---
 
@@ -473,4 +508,4 @@ packages/api/src/game-mcp/rules.ts           # ★ rewrite votes/power section
 - **Confidence:** High on inventory of done vs missing (agent.ts/context-builder/rules verified empty of format surfaces)
 - **Shortcuts:** Exact line numbers in agent.ts will drift; use symbol search
 - **Verification:** This document only; implementer must re-run tests on branch
-- **Operator:** Assign next agent to this plan path; prefer `/ce-work` on this file or continue on `feat/sequester-format-kernel`
+- **Operator:** Assign next agent to this plan path; prefer `/ce-work` on this file or continue on `feat/sequester-format-kernel`. The implementing agent must hand back, but not execute, the U6 simulation recipes.
