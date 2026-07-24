@@ -471,6 +471,89 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompts[5]).toContain("Legal tied targets: Mira, Vera");
   });
 
+  it("states the exact opposite-status consequence for each Safety Bounce pointer", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "bounce_pointer",
+          args: {
+            thinking: "Use the stated consequence.",
+            target: "Vera",
+            decisionLog: "Apply the explicit target classification.",
+          },
+        },
+        {
+          toolName: "bounce_pointer",
+          args: {
+            thinking: "Use the stated consequence.",
+            target: "Vera",
+            decisionLog: "Apply the explicit target classification.",
+          },
+        },
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getBouncePointer(
+      {
+        ...makeContext(Phase.FORMAT_RESOLVE),
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: "safety_bounce",
+          ruleSheetSummary: ruleSheetForFormat("safety_bounce"),
+        },
+      },
+      {
+        safe: ["atlas-id"],
+        vulnerable: ["mira-id"],
+        unclassified: ["vera-id"],
+        nextActorId: "atlas-id",
+      },
+    );
+    await agent.getBouncePointer(
+      {
+        ...makeContext(Phase.FORMAT_RESOLVE),
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: "safety_bounce",
+          ruleSheetSummary: ruleSheetForFormat("safety_bounce"),
+        },
+      },
+      {
+        safe: ["mira-id"],
+        vulnerable: ["atlas-id"],
+        unclassified: ["vera-id"],
+        nextActorId: "atlas-id",
+      },
+    );
+
+    const prompts = requests.map((request) => {
+      const messages = request.messages as Array<{ content: string }>;
+      return messages.at(-1)?.content ?? "";
+    });
+    expect(prompts[0]).toContain("You are currently SAFE.");
+    expect(prompts[0]).toContain("Whoever you point to becomes VULNERABLE");
+    expect(prompts[0]).toContain("eligible for the final elimination vote");
+    expect(prompts[1]).toContain("You are currently VULNERABLE.");
+    expect(prompts[1]).toContain("Whoever you point to becomes SAFE");
+    expect(prompts[1]).toContain("cannot be eliminated this round");
+    for (const prompt of prompts) {
+      expect(prompt).toContain("A SAFE player's pointer makes the target VULNERABLE");
+      expect(prompt).toContain("The pointer itself is not SAFE or VULNERABLE");
+      expect(prompt).not.toContain("Safe points make targets");
+      expect(prompt).not.toContain("classify them according to your current SAFE/VULNERABLE status");
+    }
+  });
+
   it("deterministically repairs invalid format tool output with stable provenance", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(

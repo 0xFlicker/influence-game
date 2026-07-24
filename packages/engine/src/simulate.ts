@@ -86,7 +86,10 @@
  * decisions: pickRoundFormat, getSaveOrEliminateBallot, getVoteBombBallot,
  * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their
  * responses include `decisionSource` and nullable `fallbackReason`; reasoning
- * is diagnostic evidence, never canonical game fact. Specialized
+ * is diagnostic evidence, never canonical game fact. Safety Bounce pointer
+ * prompts render the acting player's computed status and the exact consequence:
+ * SAFE makes the target VULNERABLE; VULNERABLE makes the target SAFE.
+ * Specialized
  * `candidate-selection`, `power-action`, and Council records remain readable
  * for legacy/classic runs but are not the expected standard-round lane.
  * Hidden `strategic-reflection` and `strategy-packet` records are written there

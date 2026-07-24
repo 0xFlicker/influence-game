@@ -7,7 +7,7 @@ const RULE_SHEETS: Record<LaunchFormatId, string> = {
   vote_bomb:
     "Each player casts one sealed non-self elimination-direction vote. Zero votes = safe. Among players with at least one vote, fewest votes is eliminated. The empowered player breaks fewest-positive ties.",
   safety_bounce:
-    "After mingle: one random starter is SAFE and points publicly. Safe points make targets VULNERABLE; vulnerable points make targets SAFE until all are classified. Then a sealed vote among the vulnerable pool only — most votes out. Sole vulnerable auto-elims. Empowered breaks ties.",
+    "After mingle: one random starter is SAFE and points publicly. A SAFE player's pointer makes the target VULNERABLE; a VULNERABLE player's pointer makes the target SAFE until all are classified. Then a sealed vote among the vulnerable pool only — most votes out. Sole vulnerable auto-elims. Empowered breaks ties.",
 };
 
 export interface FormatPressureProjection {

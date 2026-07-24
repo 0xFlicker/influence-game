@@ -3117,6 +3117,18 @@ Use the vote_bomb_ballot tool.`;
     const safeNames = formatPlayersForIds(ctx, board.safe).map((player) => player.name);
     const vulnerableNames = formatPlayersForIds(ctx, board.vulnerable).map((player) => player.name);
     const nextActorName = ctx.alivePlayers.find((player) => player.id === board.nextActorId)?.name ?? "none";
+    const actorStatus = board.safe.includes(ctx.selfId)
+      ? "SAFE"
+      : board.vulnerable.includes(ctx.selfId)
+        ? "VULNERABLE"
+        : null;
+    if (actorStatus === null) {
+      throw new Error(`Safety Bounce actor ${ctx.selfId} is not classified`);
+    }
+    const targetStatus = actorStatus === "SAFE" ? "VULNERABLE" : "SAFE";
+    const targetEligibility = targetStatus === "VULNERABLE"
+      ? "is eligible for the final elimination vote"
+      : "cannot be eliminated this round";
     const prompt = this.buildUserPrompt(ctx) + `
 ## Safety Bounce Pointer
 ${supplementalActiveFormatRule(ctx, "safety_bounce")}
@@ -3127,7 +3139,9 @@ The bounce is public. Current board:
 - Next actor: ${nextActorName}
 - Legal unclassified targets: ${legalTargets.map((player) => player.name).join(", ")}
 
-Point to exactly one unclassified player. Your public pointer will classify them according to your current SAFE/VULNERABLE status.
+You are currently ${actorStatus}. Whoever you point to becomes ${targetStatus} and ${targetEligibility}.
+The pointer itself is not SAFE or VULNERABLE; it assigns the opposite of your current status to the target.
+Point to exactly one unclassified player based on that exact consequence.
 
 Use the bounce_pointer tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
@@ -3142,8 +3156,8 @@ Use the bounce_pointer tool.`;
         prompt,
         buildFormatTargetTool({
           name: "bounce_pointer",
-          description: "Publicly point to one currently unclassified Safety Bounce target.",
-          targetDescription: "One name from the exact unclassified target list.",
+          description: `Publicly point to one currently unclassified Safety Bounce target. You are ${actorStatus}; this pointer makes the target ${targetStatus}.`,
+          targetDescription: `One name from the exact unclassified target list; that player will become ${targetStatus}.`,
           legalTargetNames: legalTargets.map((player) => player.name),
         }),
         120,
