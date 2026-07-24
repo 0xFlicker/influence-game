@@ -270,7 +270,7 @@ describe("GameRunner stream listener", () => {
     expect(events.some((event) => event.type === "agent_turn" && event.action === "strategy-packet")).toBe(false);
   });
 
-  it("emits House Strategy Bible and summary records when enabled", async () => {
+  it("emits House Strategy Bible and format-round summary records when enabled", async () => {
     const agents = makeAgents(5);
     const runner = new GameRunner(agents, {
       ...FAST_CONFIG,
@@ -313,7 +313,10 @@ describe("GameRunner stream listener", () => {
         empoweredName: expect.any(String),
         empowerVoteCounts: expect.any(Array),
         exposeVoteCounts: expect.any(Array),
-        powerAction: { action: "pass", targetName: null },
+        powerAction: null,
+        councilCandidates: null,
+        councilVoteCounts: [],
+        eliminatedName: expect.any(String),
       });
     }
     expect(runner.transcriptLog.some((entry) => entry.text.includes("[House MC]"))).toBe(false);
@@ -327,13 +330,13 @@ describe("GameRunner stream listener", () => {
     }
   });
 
-  it("emits private House producer briefs before configured diary questions", async () => {
+  it("emits private House producer briefs before FORMAT_RESOLVE diary questions", async () => {
     const agents = makeAgents(5);
     const runner = new GameRunner(agents, {
       ...FAST_CONFIG,
       enableHouseStrategyBible: true,
       enableHouseProducerBriefs: true,
-      diaryRoomAfterPhases: [Phase.COUNCIL],
+      diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE],
       maxDiaryFollowUps: 0,
       mingleSessionsPerRound: 1,
     });

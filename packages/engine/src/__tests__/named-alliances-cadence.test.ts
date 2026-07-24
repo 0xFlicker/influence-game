@@ -25,7 +25,7 @@ function createCadenceActor(playerIds = PLAYERS) {
 }
 
 describe("named alliance round cadence", () => {
-  it("runs Mingle I and pre-vote huddles before public Vote, then post-vote Mingle after Vote", async () => {
+  it("runs alliance formation and the scarce pre-format huddle before Vote and FORMAT_MENU", async () => {
     const { actor, started } = createCadenceActor();
 
     await advance(actor); // init -> introduction
@@ -35,9 +35,9 @@ describe("named alliance round cadence", () => {
     await advance(actor); // pre_vote_huddle -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: "alice" });
-    await advance(actor); // vote -> post_vote_mingle
+    await advance(actor); // vote -> format_menu
 
-    expect(actor.getSnapshot().value).toBe("post_vote_mingle");
+    expect(actor.getSnapshot().value).toBe("format_menu");
     expect(started).toEqual([
       Phase.INIT,
       Phase.INTRODUCTION,
@@ -45,14 +45,14 @@ describe("named alliance round cadence", () => {
       Phase.MINGLE_I,
       Phase.PRE_VOTE_HUDDLE,
       Phase.VOTE,
-      Phase.POST_VOTE_MINGLE,
+      Phase.FORMAT_MENU,
     ]);
 
     actor.stop();
   });
 
-  it("routes pass/protect power through Reveal and pre-Council huddles before Council", async () => {
-    const { actor } = createCadenceActor();
+  it("routes FORMAT_MENU through pick, format-aware Mingle, and resolution in order", async () => {
+    const { actor, started } = createCadenceActor();
 
     await advance(actor); // init -> introduction
     await advance(actor); // introduction -> lobby
@@ -60,24 +60,26 @@ describe("named alliance round cadence", () => {
     await advance(actor); // mingle_i -> pre_vote_huddle
     await advance(actor); // pre_vote_huddle -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: "alice" });
-    await advance(actor); // vote -> post_vote_mingle
-    await advance(actor); // post_vote_mingle -> power
-    actor.send({ type: "CANDIDATES_DETERMINED", candidates: ["bob", "charlie"], autoEliminated: null });
-    await advance(actor); // power -> reveal
-
-    expect(actor.getSnapshot().value).toBe("reveal");
-
-    await advance(actor); // reveal -> pre_council_huddle
-    expect(actor.getSnapshot().value).toBe("pre_council_huddle");
-
-    await advance(actor); // pre_council_huddle -> council
-    expect(actor.getSnapshot().value).toBe("council");
+    await advance(actor); // vote -> format_menu
+    expect(actor.getSnapshot().value).toBe("format_menu");
+    await advance(actor); // format_menu -> format_pick
+    expect(actor.getSnapshot().value).toBe("format_pick");
+    await advance(actor); // format_pick -> format_mingle
+    expect(actor.getSnapshot().value).toBe("format_mingle");
+    await advance(actor); // format_mingle -> format_resolve
+    expect(actor.getSnapshot().value).toBe("format_resolve");
+    expect(started.slice(-4)).toEqual([
+      Phase.FORMAT_MENU,
+      Phase.FORMAT_PICK,
+      Phase.FORMAT_MINGLE,
+      Phase.FORMAT_RESOLVE,
+    ]);
 
     actor.stop();
   });
 
-  it("skips pre-Council huddles and Council when Power eliminates", async () => {
-    const { actor } = createCadenceActor();
+  it("routes one format elimination to the next Lobby without starting the retired classic lane", async () => {
+    const { actor, started } = createCadenceActor();
 
     await advance(actor); // init -> introduction
     await advance(actor); // introduction -> lobby
@@ -85,14 +87,21 @@ describe("named alliance round cadence", () => {
     await advance(actor); // mingle_i -> pre_vote_huddle
     await advance(actor); // pre_vote_huddle -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: "alice" });
-    await advance(actor); // vote -> post_vote_mingle
-    await advance(actor); // post_vote_mingle -> power
-    actor.send({ type: "CANDIDATES_DETERMINED", candidates: null, autoEliminated: "bob" });
+    await advance(actor); // vote -> format_menu
+    await advance(actor); // format_menu -> format_pick
+    await advance(actor); // format_pick -> format_mingle
+    await advance(actor); // format_mingle -> format_resolve
     actor.send({ type: "PLAYER_ELIMINATED", playerId: "bob" });
     actor.send({ type: "UPDATE_ALIVE_PLAYERS", aliveIds: ["alice", "charlie", "dana", "echo", "finn"] });
-    await advance(actor); // power -> checkGameOver -> lobby
+    await advance(actor); // format_resolve -> checkGameOver -> lobby
 
     expect(actor.getSnapshot().value).toBe("lobby");
+    expect(started.at(-1)).toBe(Phase.LOBBY);
+    expect(started).not.toContain(Phase.POST_VOTE_MINGLE);
+    expect(started).not.toContain(Phase.POWER);
+    expect(started).not.toContain(Phase.REVEAL);
+    expect(started).not.toContain(Phase.PRE_COUNCIL_HUDDLE);
+    expect(started).not.toContain(Phase.COUNCIL);
 
     actor.stop();
   });
