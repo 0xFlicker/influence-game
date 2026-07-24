@@ -5,7 +5,7 @@ import type { GameConfig } from "../types";
 import { Phase } from "../types";
 import { createUUID } from "../game-state";
 import { MockAgent } from "./mock-agent";
-import type { LaunchFormatId } from "../formats";
+import { LAUNCH_FORMAT_IDS, type LaunchFormatId } from "../formats";
 import type { PhaseContext } from "../game-runner";
 
 const TEST_CONFIG: GameConfig = {
@@ -24,6 +24,115 @@ const TEST_CONFIG: GameConfig = {
 };
 
 describe("Format kernel integration (MockAgent)", () => {
+  it("honors an exact two-round cap before an 8-player game reaches endgame", async () => {
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, maxRounds: 2 },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+
+    const result = await runner.run();
+    const formatResolves = result.transcript.filter(
+      (entry) =>
+        entry.phase === Phase.FORMAT_RESOLVE &&
+        entry.scope === "system" &&
+        entry.text.startsWith("=== FORMAT RESOLVE"),
+    );
+
+    expect(result.rounds).toBe(2);
+    expect(formatResolves).toHaveLength(2);
+    expect(result.eliminationOrder).toHaveLength(2);
+    expect(result.winner).toBeUndefined();
+    expect(
+      result.transcript.some((entry) =>
+        [Phase.PLEA, Phase.ACCUSATION, Phase.OPENING_STATEMENTS].includes(entry.phase),
+      ),
+    ).toBe(false);
+  });
+
+  it("exercises every launch format through GameRunner with its action visibility and one elimination", async () => {
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    const selectedFormats: LaunchFormatId[] = [];
+    for (const agent of agents) {
+      agent.pickRoundFormat = async (_ctx, offered) => {
+        const formatId = offered.find((id) => !selectedFormats.includes(id)) ?? offered[0];
+        selectedFormats.push(formatId);
+        return {
+          formatId,
+          thinking: `cover ${formatId}`,
+          decisionSource: "llm",
+          fallbackReason: null,
+        };
+      };
+    }
+
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, maxRounds: 3 },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+    const result = await runner.run();
+
+    expect(new Set(selectedFormats)).toEqual(new Set(LAUNCH_FORMAT_IDS));
+    expect(selectedFormats).toHaveLength(LAUNCH_FORMAT_IDS.length);
+
+    const agentTurns = events.filter((event) => event.type === "agent_turn");
+    for (const formatId of LAUNCH_FORMAT_IDS) {
+      const pick = agentTurns.find(
+        (event) =>
+          event.action === "format-pick" &&
+          event.visibility === "public" &&
+          event.response.selectedFormat === formatId,
+      );
+      expect(pick).toBeDefined();
+      if (!pick) continue;
+
+      if (formatId === "safety_bounce") {
+        expect(
+          agentTurns.some(
+            (event) =>
+              event.round === pick.round &&
+              event.action === "bounce-pointer" &&
+              event.visibility === "public",
+          ),
+        ).toBe(true);
+      }
+      expect(
+        agentTurns.some(
+          (event) =>
+            event.round === pick.round &&
+            event.action === "format-ballot" &&
+            event.visibility === "private" &&
+            event.response.formatId === formatId,
+        ),
+      ).toBe(true);
+
+      const resolveMarkers = result.transcript.filter(
+        (entry) =>
+          entry.round === pick.round &&
+          entry.phase === Phase.FORMAT_RESOLVE &&
+          entry.scope === "system" &&
+          entry.text === `=== FORMAT RESOLVE (${formatId}) ===`,
+      );
+      const eliminations = events.filter(
+        (event) => event.type === "player_eliminated" && event.round === pick.round,
+      );
+      expect(resolveMarkers).toHaveLength(1);
+      expect(eliminations).toHaveLength(1);
+    }
+
+    expect(result.eliminationOrder).toHaveLength(LAUNCH_FORMAT_IDS.length);
+  });
+
   it("completes a short game using format menu/pick/mingle/resolve without Power or Council", async () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new MockAgent(createUUID(), name),

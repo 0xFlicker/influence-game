@@ -3,6 +3,8 @@ import { and, asc, eq } from "drizzle-orm";
 import {
   DEFAULT_CONFIG,
   GameRunner,
+  GameState,
+  Phase,
   TemplateHouseInterviewer,
   TokenTracker,
   type AgentResponse,
@@ -487,6 +489,76 @@ describe("game startup recovery", () => {
       }
     }, timeoutMs);
   }
+
+  test("startup recovery accepts a supported endgame boundary after format elimination without legacy candidates", async () => {
+    const gameId = await insertGame(db, {
+      id: "startup-recovery-format-to-reckoning",
+      status: "suspended",
+      config: recoveryConfigWithEndgame,
+    });
+    const ownerEpoch = await insertOwner(db, gameId);
+    let clockTick = 0;
+    const state = new GameState(
+      [
+        { id: "atlas", name: "Atlas" },
+        { id: "echo", name: "Echo" },
+        { id: "mira", name: "Mira" },
+        { id: "nyx", name: "Nyx" },
+        { id: "rune", name: "Rune" },
+      ],
+      { gameId, now: () => 1_720_000_000_000 + clockTick++ },
+    );
+
+    state.startRound();
+    state.setEmpowered("atlas");
+    state.recordRoomAllocations([
+      { roomId: 1, round: 1, beat: 1, playerIds: ["atlas", "echo", "mira", "nyx", "rune"] },
+    ], []);
+    state.eliminatePlayer("rune");
+    state.recordRoundResult(
+      {
+        round: 1,
+        empoweredId: "atlas",
+        exposeScores: {},
+        candidates: null,
+        powerAction: null,
+        powerTarget: null,
+        eliminated: "rune",
+        formatId: "vote_bomb",
+        formatMethod: "vote_bomb",
+      },
+      Phase.FORMAT_RESOLVE,
+    );
+
+    const events = state.getCanonicalEvents();
+    expect(events.some((event) => event.type === "power.candidates_resolved")).toBeFalse();
+    expect(events.some((event) =>
+      event.type === "round.result_recorded" && event.payload.result.formatId === "vote_bomb"
+    )).toBeTrue();
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+
+    const checkpoint = enrichCapsuleForV1Candidate(
+      {
+        ...createCheckpointCapsule(events),
+        transcriptReplay: { version: 2, entries: [] },
+      },
+      {
+        ownerEpoch,
+        eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
+        actorCoordinate: "reckoning_lobby",
+      },
+    );
+    const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+    expect(checkpointResult.ok).toBeTrue();
+
+    const candidate = await getSupportedRecovery(db, gameId);
+    expect(candidate.ok).toBeTrue();
+    if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
+    expect(candidate.resumeFrom.actorCoordinate).toBe("reckoning_lobby");
+    expect(candidate.resumeFrom.canonicalEvents.some((event) =>
+      event.type === "power.candidates_resolved"
+    )).toBeFalse();
+  });
 
   test("startup recovery leaves settlement-repair suspensions for explicit repair", async () => {
     const gameId = await insertGame(db, {

@@ -178,6 +178,50 @@ describe("GameState canonical append timing", () => {
   });
 });
 
+describe("round.result_recorded", () => {
+  it("defaults legacy results to Council and records format results in FORMAT_RESOLVE", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+    gs.startRound();
+
+    gs.recordRoundResult({
+      round: gs.round,
+      empoweredId: "alice",
+      exposeScores: {},
+      candidates: ["alice", "bob"],
+      powerAction: null,
+      powerTarget: null,
+      eliminated: "bob",
+    });
+    gs.recordRoundResult(
+      {
+        round: gs.round,
+        empoweredId: "alice",
+        exposeScores: {},
+        candidates: null,
+        powerAction: null,
+        powerTarget: null,
+        eliminated: "bob",
+        formatId: "vote_bomb",
+        formatMethod: "vote_bomb",
+      },
+      Phase.FORMAT_RESOLVE,
+    );
+
+    const results = gs
+      .getCanonicalEvents()
+      .filter((event) => event.type === "round.result_recorded");
+    expect(results[0]?.phase).toBe(Phase.COUNCIL);
+    expect(results[1]?.phase).toBe(Phase.FORMAT_RESOLVE);
+    expect(results[1]?.payload.result.formatId).toBe("vote_bomb");
+  });
+});
+
 describe("judgment.speech_recorded", () => {
   it("appends a public closing speech with phase CLOSING_ARGUMENTS", () => {
     const gs = new GameState(

@@ -49,6 +49,12 @@ export interface GameStateSnapshot {
 export interface GameRunnerOptions {
   /** Optional external run identity, used by API-backed games before the first canonical event. */
   gameId?: UUID;
+  /**
+   * Controls whether config.maxRounds is raised to the player-scaled completion
+   * floor. Production defaults to completion_scaled; bounded simulations may
+   * opt into an exact cap.
+   */
+  maxRoundsMode?: "completion_scaled" | "exact";
   /** Runtime resume input for supported completed phase-boundary checkpoints. */
   resumeFrom?: GameRunnerResumeOptions;
   /** Optional producer/debug sink for private model-call traces. */

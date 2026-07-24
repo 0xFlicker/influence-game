@@ -2039,9 +2039,9 @@ export class GameState {
   // Round result recording
   // ---------------------------------------------------------------------------
 
-  recordRoundResult(result: RoundResult): void {
+  recordRoundResult(result: RoundResult, phase: Phase = Phase.COUNCIL): void {
     this.appendCanonicalEvent("round.result_recorded", { result: { ...result } }, {
-      phase: Phase.COUNCIL,
+      phase,
       visibility: "system",
     });
     this._roundResults.push(result);

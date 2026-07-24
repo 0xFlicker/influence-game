@@ -216,17 +216,20 @@ export async function runFormatResolvePhase(
     formatId,
   });
 
-  gameState.recordRoundResult({
-    round: gameState.round,
-    empoweredId,
-    exposeScores: {},
-    candidates: null,
-    powerAction: null,
-    powerTarget: null,
-    eliminated: eliminatedId,
-    formatId,
-    formatMethod: formatId,
-  });
+  gameState.recordRoundResult(
+    {
+      round: gameState.round,
+      empoweredId,
+      exposeScores: {},
+      candidates: null,
+      powerAction: null,
+      powerTarget: null,
+      eliminated: eliminatedId,
+      formatId,
+      formatMethod: formatId,
+    },
+    Phase.FORMAT_RESOLVE,
+  );
 
   logger.logSystem(
     `Format ${formatId} eliminated ${gameState.getPlayerName(eliminatedId)}`,

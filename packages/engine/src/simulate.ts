@@ -1484,7 +1484,9 @@ async function main() {
       reasoningPolicy: modelRuntime.reasoningPolicy,
     });
     houseInterviewer.setTokenTracker(gameTracker);
-    const runner = new GameRunner(agents, simConfig, houseInterviewer);
+    const runner = new GameRunner(agents, simConfig, houseInterviewer, {
+      maxRoundsMode: "exact",
+    });
     const transcriptPath = join(batchDir, `game-${g}.txt`);
     const jsonPath = join(batchDir, `game-${g}.json`);
     const progressPath = join(batchDir, `game-${g}-progress.jsonl`);

@@ -207,22 +207,9 @@ function validateActorCoordinatePrerequisites(
   if (actorCoordinate === "mingle_i" || actorCoordinate === "pre_vote_huddle") return null;
   if (actorCoordinate === "vote") return null;
 
-  if (!hasResolvedEmpowered(canonicalEvents)) return `${actorCoordinate}_missing_empowered`;
-  if (actorCoordinate === "post_vote_mingle") return null;
-
-  if (!canonicalEvents.some((event) => event.type === "mingle.rooms_allocated")) {
-    return `${actorCoordinate}_missing_mingle_allocation`;
-  }
-  if (actorCoordinate === "power") return null;
-
-  const candidateResolution = latestEvent(canonicalEvents, "power.candidates_resolved");
-  if (!candidateResolution) return `${actorCoordinate}_missing_candidate_resolution`;
-  if (actorCoordinate === "reveal") {
-    return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
-  }
-  if (actorCoordinate === "pre_council_huddle" || actorCoordinate === "council") {
-    return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
-  }
+  // Endgame checkpoints are valid after either legacy Council elimination or a
+  // format-kernel elimination. Validate their endgame state directly before
+  // applying prerequisites that only exist on the retired Power/Council path.
   if (actorCoordinate === "reckoning_lobby") {
     if (!canonicalEvents.some((event) => event.type === "player.eliminated")) {
       return "reckoning_lobby_missing_elimination";
@@ -256,6 +243,23 @@ function validateActorCoordinatePrerequisites(
     return requireAliveCount(actorCoordinate, gameState, 2) ??
       requireEndgameStage(actorCoordinate, gameState, "judgment") ??
       requireJury(actorCoordinate, gameState);
+  }
+
+  if (!hasResolvedEmpowered(canonicalEvents)) return `${actorCoordinate}_missing_empowered`;
+  if (actorCoordinate === "post_vote_mingle") return null;
+
+  if (!canonicalEvents.some((event) => event.type === "mingle.rooms_allocated")) {
+    return `${actorCoordinate}_missing_mingle_allocation`;
+  }
+  if (actorCoordinate === "power") return null;
+
+  const candidateResolution = latestEvent(canonicalEvents, "power.candidates_resolved");
+  if (!candidateResolution) return `${actorCoordinate}_missing_candidate_resolution`;
+  if (actorCoordinate === "reveal") {
+    return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
+  }
+  if (actorCoordinate === "pre_council_huddle" || actorCoordinate === "council") {
+    return candidateResolution.payload.autoEliminated ? `${actorCoordinate}_auto_eliminate_unsupported` : null;
   }
   return null;
 }

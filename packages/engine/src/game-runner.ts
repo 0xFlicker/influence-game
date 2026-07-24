@@ -107,7 +107,10 @@ export class GameRunner {
     options: GameRunnerOptions = {},
   ) {
     const scaledMaxRounds = computeMaxRounds(agents.length);
-    this.config = { ...config, maxRounds: Math.max(config.maxRounds, scaledMaxRounds) };
+    const maxRounds = options.maxRoundsMode === "exact"
+      ? config.maxRounds
+      : Math.max(config.maxRounds, scaledMaxRounds);
+    this.config = { ...config, maxRounds };
     this.totalPlayerCount = agents.length;
     this.agents = new Map(agents.map((a) => [a.id, a]));
     const gameStateOptions = options.gameId ? { gameId: options.gameId } : {};
