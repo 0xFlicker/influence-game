@@ -25,6 +25,7 @@ interface MingleExclusionFlags {
 export interface SimulatorArgsSnapshot {
   games: number;
   players: number;
+  maxRounds?: number;
   personas: string[] | null;
   model: string;
   modelCatalogId?: string;

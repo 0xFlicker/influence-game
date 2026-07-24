@@ -73,6 +73,13 @@ describe("simulation variant config", () => {
     expect(config.agentActionTimeoutMs).toBe(90_000);
   });
 
+  it("honors --max-rounds for pre-endgame format-kernel sims", () => {
+    const args = parseArgs(["--players", "8", "--max-rounds", "2"]);
+    expect(args.maxRounds).toBe(2);
+    const config = buildSimulationConfig("mingle", { maxRounds: args.maxRounds });
+    expect(config.maxRounds).toBe(2);
+  });
+
   it("can opt simulation runs into strategic-reflection capture", () => {
     const args = parseArgs(["--strategic-reflections"]);
     const config = buildSimulationConfig("mingle", {

@@ -144,6 +144,8 @@ const DEFAULT_LLM_TIMEOUT_MS = 45 * 1000;
 export interface SimArgs {
   games: number;
   players: number;
+  /** Cap standard rounds so the sim can stop before endgame (alive count hits 4). */
+  maxRounds: number;
   personas: string[] | null;
   model: string;
   modelCatalogId?: string;
@@ -199,6 +201,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   const args: SimArgs = {
     games: 3,
     players: 6,
+    maxRounds: 10,
     personas: null,
     model: "gpt-5-nano",
     ...(process.env.INFLUENCE_SIM_MODEL_CATALOG_ID && { modelCatalogId: process.env.INFLUENCE_SIM_MODEL_CATALOG_ID }),
@@ -224,6 +227,9 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--players" && next) {
       args.players = parseInt(next, 10);
+      i++;
+    } else if ((arg === "--max-rounds" || arg === "--rounds") && next) {
+      args.maxRounds = parseInt(next, 10);
       i++;
     } else if (arg === "--personas" && next) {
       args.personas = next.split(",").map((s) => s.trim());
@@ -295,6 +301,9 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   if (isNaN(args.games) || args.games < 1) args.games = 3;
   if (isNaN(args.players) || args.players < 4) args.players = 4;
   if (args.players > DEFAULT_CONFIG.maxPlayers) args.players = DEFAULT_CONFIG.maxPlayers;
+  // At least 1 standard round; keep an upper bound so typos don't run forever.
+  if (isNaN(args.maxRounds) || args.maxRounds < 1) args.maxRounds = 1;
+  if (args.maxRounds > 50) args.maxRounds = 50;
   if (!gameTimeoutOverridden && args.players >= LARGE_GAME_TIMEOUT_PLAYER_THRESHOLD) {
     args.gameTimeoutMs = DEFAULT_LARGE_GAME_TIMEOUT_MS;
   }
@@ -343,6 +352,7 @@ function buildRunMetadata(
     args: {
       games: args.games,
       players: args.players,
+      maxRounds: args.maxRounds,
       personas: args.personas,
       model: modelRuntime?.modelId ?? args.model,
       ...(modelRuntime?.catalogId && { modelCatalogId: modelRuntime.catalogId }),
@@ -396,11 +406,13 @@ export function buildSimulationConfig(
     enableStrategicReflections?: boolean;
     richProducer?: boolean;
     enableDiary?: boolean;
+    maxRounds?: number;
   } = {},
 ): GameConfig {
   const mingle = isMingleVariant(variant);
   const richProducer = options.richProducer === true;
   const enableDiary = options.enableDiary === true || richProducer;
+  const maxRounds = options.maxRounds ?? 10;
 
   return {
     ...DEFAULT_CONFIG,
@@ -420,7 +432,7 @@ export function buildSimulationConfig(
       closingArguments: 0,
       juryVote: 0,
     },
-    maxRounds: 10,
+    maxRounds,
     // Keep release-validation sims bounded; these hidden calls are flavor/memory, not core rules.
     maxDiaryFollowUps: 0,
     diaryRoomAfterPhases: enableDiary ? [Phase.COUNCIL] : [],
@@ -1366,12 +1378,17 @@ async function main() {
   const metadata = buildRunMetadata(args, runTimestamp, openAIReasoningSummary, modelRuntime);
 
   console.log(`\n=== Influence Batch Simulation ===`);
-  console.log(`Games: ${args.games} | Players per game: ${args.players} | Model: ${modelRuntime.modelId} | Variant: ${args.variant}`);
+  console.log(`Games: ${args.games} | Players per game: ${args.players} | Max rounds: ${args.maxRounds} | Model: ${modelRuntime.modelId} | Variant: ${args.variant}`);
   if (modelRuntime.catalogId) console.log(`Model catalog: ${modelRuntime.catalogId}`);
   console.log(`Reasoning policy: ${modelRuntime.reasoningPolicy}`);
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`OpenAI reasoning summaries: ${openAIReasoningSummary ?? "off"}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
+  if (args.maxRounds < Math.max(1, args.players - 4)) {
+    console.log(
+      `Pre-endgame cap: maxRounds=${args.maxRounds} stops after standard format rounds (endgame starts at 4 alive; would need ${Math.max(0, args.players - 4)} elim(s) to reach it).`,
+    );
+  }
   if (args.chatty) console.log("Chatty mode enabled: live formatted transcript will be printed to console.");
   if (args.houseSummaries) console.log("House summaries enabled: concise House MC summaries will be printed live without chatty reasoning output.");
   if (args.enableStrategicReflections === true) console.log("Strategic reflection capture enabled: hidden reflection agent_turn records will be written to turns JSONL.");
@@ -1387,6 +1404,7 @@ async function main() {
     enableStrategicReflections: args.enableStrategicReflections ?? false,
     richProducer: args.richProducer ?? false,
     enableDiary: args.enableDiary ?? false,
+    maxRounds: args.maxRounds,
   });
 
   // Create output directory
