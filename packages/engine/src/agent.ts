@@ -169,6 +169,19 @@ This phase has two parts before the standard Vote: first private-room Mingle con
 - Do not assume secret loyalty just because an alliance exists; commitments can still be fake, fragile, or strategic.
 - Focus on who you want named in a deal, what the deal is for, and how long it should last.`;
 
+    case Phase.VOTE:
+      return `PHASE BEHAVIOR — STANDARD VOTE:
+Cast the required empower and expose ballots. Empower decides who chooses the round format and breaks format elimination ties. Expose remains a public legacy social receipt but does not determine elimination on the format-kernel path. No format is locked yet, so any format-specific plan is contingent.`;
+
+    case Phase.FORMAT_MENU:
+    case Phase.FORMAT_PICK:
+      return `PHASE BEHAVIOR — FORMAT PICK:
+The House is offering two round formats. No format is locked until the empowered player chooses. Compare only the offered pair, keep other players' plans contingent, and do not invent a selected format. Empowerment grants format choice and possible tiebreak responsibility, not immunity.`;
+
+    case Phase.FORMAT_MINGLE:
+      return `PHASE BEHAVIOR — FORMAT MINGLE:
+The round format is locked. Play under the locked format and rule summary in Current Format Pressure. Use the private room to coordinate legal actions, test commitments, or misdirect opponents. Do not substitute the retired Power-to-Council loop or invent rules from another format.`;
+
     case Phase.MINGLE:
     case Phase.POST_VOTE_MINGLE:
       return `PHASE BEHAVIOR — MINGLE (STRATEGY PHASE):
@@ -364,10 +377,10 @@ const STRATEGIC_LENS_REQUIRED = ["strategicLens", "strategicLensRationale"];
 
 const STRATEGIC_LENS_GUIDANCE = `## Strategic Lens
 Choose the main evidence frame for this decision:
-- vote_math: vote totals, expose/council math, incentives, or immunity consequences
+- vote_math: empower totals, active-format ballot math, incentives, or tie consequences
 - room_traffic: who seeks, avoids, follows, leaves, or repeats rooms
 - promise_debt: promises, favors, debts, and broken commitments
-- power_position: empower/protect/eliminate leverage and downstream pressure
+- power_position: empowerment, format choice, public safety state, tiebreak leverage, or downstream pressure
 - private_inconsistency: mismatch between private and public statements
 - coalition_geometry: blocs, bridges, swing positions, and isolation
 - information_control: who knows, withholds, leaks, or times information
@@ -391,9 +404,9 @@ Consider whether one of these plays fits the moment:
 - Vote trade: Exchange vote commitments.
 - Final deals: Ask for or offer a Final 2, Final 3, or Final 4. Treat these as promises that can create trust, leverage, or future betrayal risk.
 - Coalition building: Pull people into a shared plan using common threat, shared trust, or mutual benefit.
-- Vote counting: Reason aloud about how players inside and outside the room may vote. Track likely votes, swing votes, and exposed players.
-- Power leverage: If someone holds safety, immunity, tie-break power, or vote influence, appeal directly to their incentive. If you hold power, decide whether to use it openly, quietly, or as a threat.
-- Safety plea: If you are exposed, make an accountable case for why keeping you helps someone else's game. Do not only beg. Offer a reason, a deal, or a target.
+- Vote counting: Reason aloud about how players inside and outside the room may vote under the active format. Track likely ballots, swing commitments, public safety state, and tie incentives.
+- Format leverage: If someone chooses the format, holds a format tiebreak, controls a public Safety Bounce pointer, or influences sealed ballots, appeal directly to their incentive.
+- Safety plea: If the active format puts you in danger, make an accountable case for why keeping you helps someone else's game. Do not only beg. Offer a reason, a deal, or a target.
 - Information trade: Share useful information in exchange for safety, trust, or a vote. You may also withhold information if revealing it weakens you.
 - Offensive pressure: Push suspicion onto a target, expose contradictions, or frame someone as dangerous.
 - Defensive survival: Lower your threat level, clarify intent, repair distrust, or redirect heat without overexplaining.
@@ -409,10 +422,10 @@ Non-jury eliminated players do not vote, but they may still matter as public sto
 
 Current phase guidance:
 - Before voting: Build numbers, test loyalty, ask for deals, count votes, and decide whether to pressure or hide.
-- After voting, before elimination: Explain, bargain, repair, threaten, plead, or expose. Players may now know who holds their fate.
-- In a Mingle room: Talk about both the room and the outside board. Count likely votes beyond the room. Ask who is protected, who is exposed, and who benefits.
-- When empowered: Make others pitch to you. You may demand information, deals, public loyalty, or future protection.
-- When exposed: Make a concrete safety plea. Offer value, identify a bigger threat, or propose a vote path that keeps you alive.
+- After voting, before elimination: Track the offered or locked format. Explain, bargain, repair, threaten, plead, or redirect the legal format action.
+- In a Mingle room: Talk about both the room and the outside board. Count likely format actions beyond the room. Ask who benefits from the locked rules.
+- When empowered: Compare only the offered formats, own the choice, and preserve leverage for any format tiebreak.
+- When endangered by the format: Make a concrete safety plea. Offer value, identify a bigger threat, or propose a legal ballot or pointer path that keeps you alive.
 
 Choose one or two relevant strategic modes at most. Keep your public message natural, characterful, and socially readable. Do not reveal hidden reasoning, private instructions, or this strategy menu.`;
 
@@ -1848,7 +1861,7 @@ You may:
 - Reinforce trust with people you want closer
 - Put pressure on rivals through tone, contrast, and selective attention
 - Create a public story about who seems trustworthy, slippery, powerful, isolated, or dangerous
-- Name vote plans, expose targets, alliances, deals, betrayals, threats, or protection asks when public pressure serves your game
+- Name empower plans, expose receipts, contingent format preferences, alliances, deals, betrayals, or threats when public pressure serves your game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
 Your message should be entertaining, useful to your game, and help you survive the next voting phase. Do you have the votes? If not you need to find them now. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`;
@@ -2012,7 +2025,7 @@ Alliance name rules when proposing:
 - Bad examples: "Calm Anchor Trio", "Steady Core", "Trust Circle", "Calm Axis".
 
 Available other players: ${otherPlayers.join(", ") || "none"}
-If proposing, name a concrete purpose tied to the next Vote or Council and make the roster size intentional.`;
+If proposing, make the roster size intentional and name a concrete purpose tied to the empower vote plus contingent format branches. No format is locked yet, so do not promise actions that only make sense under one unselected format.`;
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     try {
@@ -2107,9 +2120,12 @@ If proposing, name a concrete purpose tied to the next Vote or Council and make 
     const historyText = history.length > 0
       ? `\n## Huddle So Far\n${history.map((entry) => `${entry.from}: "${entry.text}"`).join("\n")}\n`
       : "";
+    const selectedFormat = ctx.formatPressure?.selectedFormat;
     const windowGoal = huddle.window === "pre_vote"
-      ? "coordinate before the public Vote"
-      : "coordinate before Council after Power / Reveal changed the pressure map";
+      ? "coordinate the empower vote and contingent format branches before any format is locked"
+      : selectedFormat
+        ? `coordinate under the locked ${selectedFormat} format before its public or sealed actions resolve`
+        : "coordinate around the next legal round action without inventing a locked format";
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task - Alliance Huddle
@@ -2126,7 +2142,7 @@ ${historyText}
 Rules:
 - This huddle is private to the listed alliance members.
 - You get exactly one speaking opportunity in this huddle session.
-- You may ask for a vote plan, protection, pressure target, apology, reaffirmation, leak, denial, or betrayal explanation.
+- Before a format is locked, you may ask for an empower plan and contingent branches. After lock, ask for legal commitments under that format: sealed ballot placement, a public bounce pointer, a tiebreak position, an apology, reaffirmation, leak, denial, or betrayal explanation.
 - You may mention dissent or uncertainty.
 - You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation only happens in Mingle I.
 - Keep it to 1-3 sentences. Be specific enough that The House can summarize the ask, plan, promises, dissent, and confidence.
@@ -2193,9 +2209,9 @@ Craft your message carefully:
 - Share intelligence (real or fabricated)
 - Plant seeds of doubt about other players
 - Probe for information about their plans
-- Form specific plans you can execute together in later phases (lobby, rumor, votes)
+- Form specific plans you can execute together in later public phases, the empower vote, or locked-format actions
 
-Think ahead: what will this room DO after this conversation? Agree on a target, a signal, a vote, or a story to tell publicly. Plans that carry into the lobby and vote phases are more powerful than vague promises.
+Think ahead: what will this room DO after this conversation? Agree on a target, a signal, an empower ballot, a contingent format branch, or a story to tell publicly. Plans that carry into later phases are more powerful than vague promises.
 
 Keep it to 1-3 sentences. Make every word count.
 ${!isFirstMessage ? `\nIf you have nothing more to say, use pass: true to end your side of the conversation.\nThe room closes when BOTH of you pass consecutively.` : ""}
@@ -2293,7 +2309,7 @@ For GOTO PLAYER, use gotoPlayerName to request one living player by name. The Ho
 Guidance:
 - If you are alone, TALK has no audience; use NO_REPLY and consider moving.
 - If the room has people, make TALK specific to this room and your intent.
-- You may name a target or ally, ask for commitment, trade information, offer protection, plant doubt, coordinate a story, or test trust through a social question.
+- You may name a target or ally, ask for commitment, trade information, offer a legal format commitment, plant doubt, coordinate a story, or test trust through a social question.
 - You do not have to name a target. Guarded, social, playful, or no-reply turns are valid when they fit your intent and current room.
 - Move when a crowded room is noisy, a private room looks useful, or you want to avoid being predictable.
 - Staying put is valid when the current room conversation is valuable.
@@ -2433,10 +2449,10 @@ Use the spread_rumor tool.`;
 ## Your Task
 Cast your votes for this round.
 
-**EMPOWER vote**: Who should have the power to protect or eliminate? Vote for your ally or use this to reward loyalty.
-**EXPOSE vote**: Who should be put up for elimination? Vote for your biggest threat.
+**EMPOWER vote**: Who should choose the round format from the House-offered pair and break any format elimination tie? Vote for an ally, a predictable chooser, or yourself when legal.
+**EXPOSE vote**: Expose is a legacy public social receipt. It records whom you are willing to name, but it does not determine elimination, create a Council lane, or grant/remove immunity on the format-kernel path.
 
-**RULE**: No one has won this vote's empowerment yet. Last round's empowered player is not automatically immune to this vote. Only the winner of this vote's empower tally is protected from this vote's expose result. Choose your expose target accordingly — exposing someone you predict will win the current empower tally can be wasted, but that is a prediction about this vote, not a current fact.
+**RULE**: No one has won this vote's empowerment yet, and no round format is locked. After the tally, the empowered player chooses the round format from two House offers. Empowerment is not immunity: the empowered player remains eligible for format ballots, Safety Bounce pointers, and elimination.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
@@ -2885,6 +2901,7 @@ Use the council_vote tool to cast your vote.`;
 You are empowered. Choose exactly one of the two House-offered formats below:
 ${offeredRules}
 
+No format is locked yet. Treat every format-specific plan as contingent until this tool choice is accepted.
 Picking the format does not grant immunity. You remain fully eligible to vote, point during Safety Bounce, receive ballots, and be eliminated under the format you choose.
 Choose the format that best serves your current relationships, threat map, and ability to shape the round.
 
@@ -3646,7 +3663,7 @@ IMPORTANT: Treat alive players as the only live game actors for messages, votes,
         .filter((player) => player.shielded)
         .map((player) => player.name);
     const playerNameById = new Map(this.allPlayers.map((player) => [player.id, player.name]));
-    const currentEmpoweredName = !isEndgame && ctx.empoweredId
+    const currentEmpoweredName = !isEndgame && ctx.phase !== Phase.VOTE && ctx.empoweredId
       ? playerNameById.get(ctx.empoweredId) ?? "unknown"
       : null;
     const councilCandidates = ctx.councilCandidates
@@ -3661,6 +3678,16 @@ IMPORTANT: Treat alive players as the only live game actors for messages, votes,
         ? `live Council vote between ${councilCandidates}`
         : `no live Council; most recent/resolved candidates: ${councilCandidates}`
       : "no live Council";
+    const showClassicCouncilStatus = !ctx.formatPressure && (
+      ctx.phase === Phase.POWER
+      || ctx.phase === Phase.REVEAL
+      || ctx.phase === Phase.PRE_COUNCIL_HUDDLE
+      || ctx.phase === Phase.COUNCIL
+      || (ctx.phase === Phase.DIARY_ROOM && Boolean(councilCandidates))
+    );
+    const classicCouncilStatusLine = showClassicCouncilStatus
+      ? `- Current Council status: ${councilStatus}\n`
+      : "";
     const latestEliminated = ctx.latestEliminatedPlayerName ?? eliminatedNames.at(-1) ?? "none";
     const endgameStatus = ctx.endgameStage
       ? `${ctx.endgameStage}${ctx.finalists ? `; finalists ${ctx.finalists.map((id) => playerNameById.get(id) ?? id).join(" vs ")}` : ""}`
@@ -3673,8 +3700,7 @@ Canonical current-board facts override Strategy Thread, Strategic Assessment, Ho
 - Current phase: ${ctx.phase}
 - Current empowered player: ${isEndgame ? "none; endgame has no active empowerment" : currentEmpoweredName ?? "none yet this round"}
 - Active shields right now: ${activeShieldNames.length > 0 ? activeShieldNames.join(", ") : "none"}
-- Current Council status: ${councilStatus}
-- Latest resolved elimination: ${latestEliminated}
+${classicCouncilStatusLine}- Latest resolved elimination: ${latestEliminated}
 - Current endgame status: ${endgameStatus}
 - Active jurors: ${activeJuryNames.length > 0 ? activeJuryNames.join(", ") : "none"}
 - Non-jury eliminated players: ${nonJuryEliminated.length > 0 ? nonJuryEliminated.join(", ") : "none"}
@@ -3714,12 +3740,14 @@ ${lines}`;
 
   private buildPostVotePressureSection(ctx: PhaseContext): string {
     const pressure = ctx.postVotePressure;
-    const pressureIsVisible = ctx.phase === Phase.MINGLE
+    const pressureIsVisible = !ctx.formatPressure && (
+      ctx.phase === Phase.MINGLE
       || ctx.phase === Phase.POST_VOTE_MINGLE
       || ctx.phase === Phase.POWER
       || ctx.phase === Phase.REVEAL
       || ctx.phase === Phase.PRE_COUNCIL_HUDDLE
-      || ctx.phase === Phase.COUNCIL;
+      || ctx.phase === Phase.COUNCIL
+    );
     if (!pressure || !pressureIsVisible) return "";
 
     const selfPressure = pressure.players.find((player) => player.id === ctx.selfId);
@@ -3771,6 +3799,31 @@ ${shieldScenarios}
 Use these as live facts for strategy and conversation. You may plead, bargain, redirect pressure, flatter, threaten, or stay quiet if that fits your personality and position.`;
   }
 
+  private formatVisibilityGuidance(formatId: LaunchFormatId): string {
+    if (formatId === "safety_bounce") {
+      return "Safety Bounce pointers are public as they happen; the final elimination ballot is sealed until the House reveal.";
+    }
+    return "This format's ballot is sealed until the House reveal.";
+  }
+
+  private buildFormatPressureSection(ctx: PhaseContext): string {
+    const pressure = ctx.formatPressure;
+    if (!pressure) return "";
+    if (!pressure.selectedFormat) {
+      return `## Current Format Pressure
+- Empowered chooser: ${pressure.empoweredName}
+- Offered formats: ${pressure.offeredFormats.join(" vs ")}
+- No format is locked yet. Treat plans for either offered format as contingent until the empowered player chooses.`;
+    }
+
+    return `## Current Format Pressure
+- Locked round format: ${pressure.selectedFormat}
+- Empowered chooser and format tiebreaker: ${pressure.empoweredName}
+- Active rule sheet: ${pressure.ruleSheetSummary ?? ruleSheetForFormat(pressure.selectedFormat)}
+- Visibility: ${this.formatVisibilityGuidance(pressure.selectedFormat)}
+Use only this locked format for the current round. Do not import rules from an unselected format or the retired default Power-to-Council loop.`;
+  }
+
   private buildGameRulesSection(ctx: PhaseContext): string {
     if (ctx.phase === Phase.COUNCIL) {
       return `## Council Vote Rules
@@ -3793,29 +3846,44 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
 - Mingle rooms are private: only current room occupants hear current room messages.
 - Use the revealed vote and pressure state to bargain, explain, count votes, seek protection, redirect danger, or stay guarded with a reason.`;
     }
+    if (ctx.phase === Phase.FORMAT_MINGLE && ctx.formatPressure?.selectedFormat) {
+      return `## Locked Format Mingle Rules
+- Current Format Pressure below is the only active format rule sheet.
+- Mingle rooms are private: only current room occupants hear current room messages.
+- Coordinate only legal actions under the locked rule sheet. Do not pressure the empowered player for a retired Power ceremony.`;
+    }
+    if (ctx.phase === Phase.FORMAT_MENU || ctx.phase === Phase.FORMAT_PICK) {
+      return `## Format Pick Rules
+- The empower tally selected the format chooser, not an immune player.
+- The House offers exactly two formats. No format is locked until the empowered player chooses.
+- Any plan for an offered format remains contingent until that choice is accepted.`;
+    }
     if (ctx.phase === Phase.VOTE) {
       return `## Standard Vote Rules
-- Standard Vote has two named ballots: empower gives power; expose creates Council danger.
-- No one has won this vote's empowerment yet. Current empower immunity is a prediction, not a live fact.
+- Empower selects the player who chooses the round format and breaks format elimination ties.
+- Expose is a legacy public social receipt; it does not determine elimination on the format-kernel path.
+- No one has won this vote's empowerment yet, no format is locked, and empowerment does not grant immunity.
 - Votes are public after Vote resolves. Everyone can use the revealed vote record as social evidence.`;
     }
     return `## Game Rules
-- Standard Vote has two named ballots: empower gives power; expose creates Council danger.
+- Standard Vote records empower and expose. Empower selects the round-format chooser and format tiebreaker.
+- Expose is a legacy public social receipt; it does not determine elimination on the format-kernel path.
 - Votes are public after Vote resolves. Everyone can use the revealed vote record as social evidence.
-- The player with the most empower votes becomes empowered and cannot be exposed or placed on the Council block that round.
-- After Vote, Mingle rooms are private: only current room occupants hear current room messages.
-- At Power, the empowered player can pass, protect/shield a player to change who faces Council, or use an available elimination action.
-- If Power does not eliminate, Council votes between the final candidates; the empowered player breaks Council ties.`;
+- The House offers two round formats after empowerment; the empowered player chooses one.
+- Empowerment is not immunity. The empowered player still participates and can be eliminated under the locked format.
+- After the pick, Mingle rooms are private and the locked format's own rules resolve the elimination.`;
   }
 
   private buildCurrentStakesSection(ctx: PhaseContext): string {
-    const pressureIsLive = ctx.phase === Phase.MINGLE
-      || ctx.phase === Phase.POST_VOTE_MINGLE
+    const formatPressure = ctx.formatPressure;
+    const classicDecisionPhase = !formatPressure && (
+      ((ctx.phase === Phase.MINGLE || ctx.phase === Phase.POST_VOTE_MINGLE) && Boolean(ctx.postVotePressure))
       || ctx.phase === Phase.POWER
       || ctx.phase === Phase.REVEAL
       || ctx.phase === Phase.PRE_COUNCIL_HUDDLE
-      || ctx.phase === Phase.COUNCIL;
-    const pressure = pressureIsLive ? ctx.postVotePressure : undefined;
+      || ctx.phase === Phase.COUNCIL
+    );
+    const pressure = classicDecisionPhase ? ctx.postVotePressure : undefined;
     const selfPressure = pressure?.players.find((player) => player.id === ctx.selfId);
     const statusLine = selfPressure
       ? `- Your immediate risk status: ${selfPressure.status === "locked_at_risk"
@@ -3838,27 +3906,43 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
     const nextPowerLine = pressure
       ? `- Next major decision: Power. ${pressure.empowered.name} can pass, protect/shield a player to change who faces Council, or use an available elimination action.`
       : "";
+    const formatLine = formatPressure
+      ? formatPressure.selectedFormat
+        ? `- Locked format: ${formatPressure.selectedFormat}. Play only its legal actions and visibility rules.`
+        : `- No format is locked. ${formatPressure.empoweredName} will choose between ${formatPressure.offeredFormats.join(" and ")}; keep branches contingent.`
+      : "";
 
     const phaseObjective: Partial<Record<Phase, string>> = {
       [Phase.INTRODUCTION]: "Introduce a human persona. Do not play strategy out loud yet.",
       [Phase.LOBBY]: "Public table talk before voting. Build cover, test reads, create reasons people might empower or expose someone.",
-      [Phase.MINGLE_I]: "Form or respond to official named-alliance proposals before the vote.",
-      [Phase.PRE_VOTE_HUDDLE]: "Coordinate inside House-scheduled active alliance huddles before the public Vote.",
-      [Phase.VOTE]: "Cast one empower vote and one expose vote. Empower creates power; expose creates council danger.",
+      [Phase.MINGLE_I]: "Form or respond to official named-alliance proposals before the vote; format-specific commitments remain contingent.",
+      [Phase.PRE_VOTE_HUDDLE]: "Coordinate the empower vote and contingent format branches inside the active alliance huddle.",
+      [Phase.VOTE]: "Cast empower and expose. Empower chooses the format picker; expose remains a non-elimination social receipt.",
+      [Phase.FORMAT_MENU]: "Read the two House-offered formats without inventing a locked choice.",
+      [Phase.FORMAT_PICK]: "Choose one offered format. The choice grants no immunity.",
+      [Phase.FORMAT_MINGLE]: "Coordinate under the locked format using its real public-versus-sealed action rules.",
+      [Phase.FORMAT_RESOLVE]: "Take the current legal action under the locked round format.",
       [Phase.MINGLE]: "Private room dealmaking after the vote. Use the room to pitch, probe, trade information, redirect targets, or decide who deserves protection.",
       [Phase.POST_VOTE_MINGLE]: "Private room dealmaking after the public vote reveal. Use receipts and pressure to repair, betray, bargain, or redirect danger.",
       [Phase.POWER]: "The empowered player resolves the round's pressure by passing, protecting/shielding, or eliminating when available.",
       [Phase.REVEAL]: "The Power outcome is becoming public. React to what changed and who is newly vulnerable.",
-      [Phase.PRE_COUNCIL_HUDDLE]: "Coordinate inside House-scheduled active alliance huddles before Council.",
+      [Phase.PRE_COUNCIL_HUDDLE]: formatPressure?.selectedFormat
+        ? `Coordinate legal commitments under the locked ${formatPressure.selectedFormat} format inside the active alliance huddle.`
+        : "Coordinate inside House-scheduled active alliance huddles before Council.",
       [Phase.COUNCIL]: "Council decides which candidate leaves. Survive, secure votes, justify your target, or manage jury risk.",
       [Phase.DIARY_ROOM]: "Private producer-facing reflection. Be candid about strategy, fear, deals, and what you will do next.",
     };
+
+    const goodPlayGuidance = classicDecisionPhase
+      ? "Choose the move your personality would actually make, but stay aware of who has classic Power, who is exposed, who can be protected, and who may need a deal."
+      : "Choose the move your personality would actually make, but stay aware of who chooses the format, which actions are public or sealed, who is legally vulnerable, and what commitments may matter.";
 
     return `## Current Stakes
 - Phase objective: ${phaseObjective[ctx.phase] ?? "Advance your position while staying faithful to your personality and current evidence."}
 ${statusLine}
 ${nextPowerLine}
-- Good play is not forced aggression. Choose the move your personality would actually make, but stay aware of who has power, who is exposed, who can be protected, and who may need a deal.`;
+${formatLine}
+- Good play is not forced aggression. ${goodPlayGuidance}`;
   }
 
   private buildRevealedVoteLedgerSection(ctx: PhaseContext): string {
@@ -3954,6 +4038,18 @@ ${rounds}`;
   }
 
   private buildMingleSocialOpportunitySection(ctx: PhaseContext, otherRoomMates: string[]): string {
+    const formatPressure = ctx.formatPressure;
+    if (ctx.phase === Phase.FORMAT_MINGLE && formatPressure?.selectedFormat) {
+      const empoweredInRoom = otherRoomMates.includes(formatPressure.empoweredName);
+      const lines = [
+        "- Use the locked rule and visibility contract above to coordinate a legal ballot or pointer commitment, test whether the room will honor it, or misdirect opponents without inventing another format.",
+      ];
+      if (empoweredInRoom) {
+        lines.push(`- ${formatPressure.empoweredName}, the format chooser and elimination tiebreaker, is in this room. Their role is not immunity and there is no separate Power ceremony to lobby.`);
+      }
+      return `\n## Room-Specific Social Opportunity\n${lines.join("\n")}`;
+    }
+
     const pressure = ctx.postVotePressure;
     if (!pressure || (ctx.phase !== Phase.MINGLE && ctx.phase !== Phase.POST_VOTE_MINGLE)) return "";
 
@@ -4167,6 +4263,7 @@ ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
     const strategyPacketSection = this.buildStrategyPacketSection(ctx, strategyPacket);
     const strategicAssessmentSection = this.buildStrategicAssessmentSection(ctx);
     const gameRulesSection = this.buildGameRulesSection(ctx);
+    const formatPressureSection = this.buildFormatPressureSection(ctx);
     const currentBoardContractSection = this.buildCurrentBoardContractSection(ctx);
     const currentStakesSection = this.buildCurrentStakesSection(ctx);
     const postVotePressureSection = this.buildPostVotePressureSection(ctx);
@@ -4237,6 +4334,7 @@ ${currentBoardContractSection}
 
 ${gameRulesSection}
 
+${formatPressureSection ? `${formatPressureSection}\n` : ""}
 ${currentStakesSection}
 
 ${allianceContextSection ? `${allianceContextSection}\n` : ""}

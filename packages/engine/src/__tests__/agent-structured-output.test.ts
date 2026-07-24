@@ -563,6 +563,229 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
+  it("teaches the format-kernel standard vote without default Power or Council claims", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.map((message) => message.content).join("\n");
+    expect(prompt).toContain("Expose is a legacy public social receipt");
+    expect(prompt).toContain("does not determine elimination");
+    expect(prompt).toContain("the empowered player chooses the round format");
+    expect(prompt).not.toContain("expose creates Council danger");
+    expect(prompt).not.toContain("At Power, the empowered player");
+    expect(prompt).not.toContain("If Power does not eliminate");
+  });
+
+  it("keeps pre-pick format guidance contingent and does not invent a locked format", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "pick_round_format", {
+        thinking: "Vote Bomb best fits the current coalition.",
+        formatId: "vote_bomb",
+        decisionLog: "pick Vote Bomb",
+      }),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.pickRoundFormat(
+      {
+        ...makeContext(Phase.FORMAT_PICK),
+        empoweredId: "atlas-id",
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: null,
+          ruleSheetSummary: null,
+        },
+      },
+      ["vote_bomb", "safety_bounce"],
+    );
+
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.map((message) => message.content).join("\n");
+    expect(prompt).toContain("No format is locked yet");
+    expect(prompt).toContain("contingent");
+    expect(prompt).toContain("vote_bomb");
+    expect(prompt).toContain("safety_bounce");
+    expect(prompt).not.toContain("Locked round format:");
+    expect(prompt).not.toContain(ruleSheetForFormat("save_or_eliminate"));
+  });
+
+  it("renders only the locked format and correct visibility rules in FORMAT_MINGLE", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(
+        requests,
+        ["save_or_eliminate", "vote_bomb", "safety_bounce"].map(() => ({
+          toolName: "mingle_turn",
+          args: {
+            thinking: "Use this room to coordinate under the locked format.",
+            message: "Let’s make the format math work for us.",
+            noReply: false,
+            gotoRoomId: null,
+            gotoPlayerName: null,
+            decisionLog: "coordinate under the locked format",
+          },
+        })),
+      ),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const formats = ["save_or_eliminate", "vote_bomb", "safety_bounce"] as const;
+    for (const selectedFormat of formats) {
+      await agent.takeMingleTurn(
+        {
+          ...makeContext(Phase.FORMAT_MINGLE),
+          empoweredId: "mira-id",
+          councilCandidates: ["mira-id", "vera-id"],
+          postVotePressure: {
+            empowered: { id: "mira-id", name: "Mira" },
+            exposePressure: [{ id: "vera-id", name: "Vera", exposeScore: 2 }],
+            currentAtRisk: [{ id: "vera-id", name: "Vera", exposeScore: 2 }],
+            replacementRisk: [],
+            fallbackRisk: [],
+            shieldScenarios: [],
+            players: [
+              { id: "mira-id", name: "Mira", exposeScore: 0, status: "empowered", shielded: false },
+              { id: "vera-id", name: "Vera", exposeScore: 2, status: "current_at_risk", shielded: false },
+            ],
+          },
+          roomCount: 2,
+          currentRoomId: 1,
+          roomCounts: [{ roomId: 1, count: 2 }, { roomId: 2, count: 1 }],
+          roomMates: ["Atlas", "Mira"],
+          formatPressure: {
+            empoweredId: "mira-id",
+            empoweredName: "Mira",
+            offeredFormats: [selectedFormat, selectedFormat === "vote_bomb" ? "safety_bounce" : "vote_bomb"],
+            selectedFormat,
+            ruleSheetSummary: ruleSheetForFormat(selectedFormat),
+          },
+        },
+        ["Atlas", "Mira"],
+        [],
+      );
+    }
+
+    const prompts = requests.map((request) => {
+      const messages = request.messages as Array<{ content: string }>;
+      return messages.map((message) => message.content).join("\n");
+    });
+    expect(prompts[0]).toContain(`Locked round format: save_or_eliminate`);
+    expect(prompts[0]).toContain(ruleSheetForFormat("save_or_eliminate"));
+    expect(prompts[0]).toContain("ballot is sealed");
+    expect(prompts[0]).not.toContain(ruleSheetForFormat("vote_bomb"));
+    expect(prompts[1]).toContain(`Locked round format: vote_bomb`);
+    expect(prompts[1]).toContain(ruleSheetForFormat("vote_bomb"));
+    expect(prompts[1]).toContain("ballot is sealed");
+    expect(prompts[1]).not.toContain(ruleSheetForFormat("save_or_eliminate"));
+    expect(prompts[2]).toContain(`Locked round format: safety_bounce`);
+    expect(prompts[2]).toContain(ruleSheetForFormat("safety_bounce"));
+    expect(prompts[2]).toContain("pointers are public");
+    expect(prompts[2]).toContain("final elimination ballot is sealed");
+    for (const prompt of prompts) {
+      expect(prompt).not.toContain("At Power, the empowered player");
+      expect(prompt).not.toContain("Council decides");
+      expect(prompt).not.toContain("change the Power decision");
+      expect(prompt).not.toContain("Current Council status:");
+      expect(prompt).not.toContain("Next major decision: Power");
+      expect(prompt).not.toContain("## Post-Vote Pressure");
+    }
+  });
+
+  it("uses format-aware alliance commitments before and after format lock", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "take_alliance_action",
+          args: {
+            thinking: "Wait for a clearer commitment.",
+            action: "pass",
+            name: null,
+            memberNames: [],
+            purpose: null,
+            timebox: null,
+            lineageId: null,
+            versionId: null,
+            decisionLog: "pass",
+          },
+        },
+        {
+          toolName: "alliance_huddle_turn",
+          args: {
+            thinking: "Coordinate Vote Bomb placement.",
+            message: "Load Vera and keep Mira at zero.",
+            noReply: false,
+            decisionLog: "coordinate Vote Bomb placement",
+          },
+        },
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getAllianceAction(makeContext(Phase.MINGLE_I));
+    await agent.getAllianceHuddleTurn(
+      {
+        ...makeContext(Phase.PRE_COUNCIL_HUDDLE),
+        empoweredId: "mira-id",
+        formatPressure: {
+          empoweredId: "mira-id",
+          empoweredName: "Mira",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: "vote_bomb",
+          ruleSheetSummary: ruleSheetForFormat("vote_bomb"),
+        },
+      },
+      {
+        allianceId: "alliance-1",
+        allianceName: "Mirror Knives",
+        memberNames: ["Atlas", "Mira"],
+        purpose: "Coordinate format commitments.",
+        window: "pre_council",
+        scheduleId: "schedule-1",
+        pass: 1,
+      },
+      [],
+    );
+
+    const allianceMessages = requests[0]?.messages as Array<{ content: string }>;
+    const alliancePrompt = allianceMessages.map((message) => message.content).join("\n");
+    expect(alliancePrompt).toContain("contingent format branches");
+    expect(alliancePrompt).not.toContain("next Vote or Council");
+
+    const huddleMessages = requests[1]?.messages as Array<{ content: string }>;
+    const huddlePrompt = huddleMessages.map((message) => message.content).join("\n");
+    expect(huddlePrompt).toContain("coordinate under the locked vote_bomb format");
+    expect(huddlePrompt).toContain(ruleSheetForFormat("vote_bomb"));
+    expect(huddlePrompt).not.toContain("before Council after Power / Reveal");
+    expect(huddlePrompt).not.toContain("Current Council status:");
+    expect(huddlePrompt).not.toContain("Next major decision: Power");
+  });
+
   it("passes owner-authored runtime inputs into prompts and supported model requests", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
@@ -1677,7 +1900,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("## Current Board Contract");
     expect(prompt).toContain("- Current empowered player: none yet this round");
     expect(prompt).toContain("- Active shields right now: none");
-    expect(prompt).toContain("- Current Council status: no live Council");
+    expect(prompt).not.toContain("- Current Council status:");
     expect(prompt).toContain("- Latest resolved elimination: Rex");
     expect(prompt).toContain("Eliminated-player rule:");
     expect(prompt).toContain("They are not live targets, active allies, active shields, current room targets, or normal-round voters.");
@@ -1757,7 +1980,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(result.thinking).toBe("I want to vote, but the choice field is malformed.");
   });
 
-  it("clarifies that vote immunity comes from the current empower tally only", async () => {
+  it("clarifies that empowerment chooses the format and grants no immunity", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1776,12 +1999,12 @@ describe("InfluenceAgent structured output mode", () => {
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
-    expect(prompt).toContain("No one has won this vote's empowerment yet.");
-    expect(prompt).toContain("Last round's empowered player is not automatically immune to this vote.");
-    expect(prompt).toContain("Only the winner of this vote's empower tally is protected from this vote's expose result.");
-    expect(prompt).toContain("exposing someone you predict will win the current empower tally can be wasted");
-    expect(prompt).toContain("that is a prediction about this vote, not a current fact");
-    expect(prompt).not.toContain("The eventual empowered winner is immune even if other players piled expose votes on them.");
+    expect(prompt).toContain("No one has won this vote's empowerment yet");
+    expect(prompt).toContain("Empower selects the player who chooses the round format and breaks format elimination ties.");
+    expect(prompt).toContain("Expose is a legacy public social receipt; it does not determine elimination");
+    expect(prompt).toContain("empowerment does not grant immunity");
+    expect(prompt).not.toContain("Only the winner of this vote's empower tally is protected");
+    expect(prompt).not.toContain("exposing someone you predict will win the current empower tally can be wasted");
   });
 
   it("clarifies empower re-vote resolution in revealed vote ledger prompts", async () => {
