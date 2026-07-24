@@ -7,6 +7,8 @@ import {
   applyBouncePointer,
   applyFormatTiebreak,
   buildFormatMenu,
+  computeSaveOrEliminateNets,
+  computeVoteBombTallies,
   createBounceBoard,
   isLegalBouncePointer,
   isLegalSafetyBounceVote,
@@ -16,6 +18,7 @@ import {
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
   resolveVoteBomb,
+  type FormatEliminationResolution,
   type LaunchFormatId,
   type SaveOrEliminateBallot,
   type VoteBombBallot,
@@ -312,6 +315,7 @@ async function resolveSaveOrEliminateRound(
   }
 
   await assertCanAcceptCommit(ctx);
+  const nets = computeSaveOrEliminateNets(aliveIds, ballots);
   let resolution = resolveSaveOrEliminate(aliveIds, ballots);
   if (resolution.kind === "tie") {
     const broken = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
@@ -319,12 +323,20 @@ async function resolveSaveOrEliminateRound(
   }
 
   logger.logSystem(
-    `Save-or-eliminate reveal: ${ballots
+    `Save-or-eliminate ballots: ${ballots
       .map(
         (b) =>
           `${gameState.getPlayerName(b.voterId)}→${b.polarity}:${gameState.getPlayerName(b.targetId)}`,
       )
       .join("; ")}`,
+    Phase.FORMAT_RESOLVE,
+  );
+  const netSummary = aliveIds
+    .map((id) => `${gameState.getPlayerName(id)}=${nets.nets[id] ?? 0}`)
+    .join(", ");
+  logger.logSystem(`Save-or-eliminate nets: ${netSummary}`, Phase.FORMAT_RESOLVE);
+  logger.logSystem(
+    formatEliminationReason(gameState, resolution, "lowest net"),
     Phase.FORMAT_RESOLVE,
   );
 
@@ -390,15 +402,30 @@ async function resolveVoteBombRound(
   }
 
   await assertCanAcceptCommit(ctx);
+  const tallies = computeVoteBombTallies(aliveIds, ballots);
   let resolution = resolveVoteBomb(aliveIds, ballots);
   if (resolution.kind === "tie") {
     resolution = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
   }
 
   logger.logSystem(
-    `Vote Bomb reveal: ${ballots
+    `Vote Bomb ballots: ${ballots
       .map((b) => `${gameState.getPlayerName(b.voterId)}→${gameState.getPlayerName(b.targetId)}`)
       .join("; ")}`,
+    Phase.FORMAT_RESOLVE,
+  );
+  const zeroSafe =
+    tallies.zeroSafeIds.map((id) => gameState.getPlayerName(id)).join(", ") || "none";
+  const positiveTotals = tallies.positiveIds
+    .map((id) => `${gameState.getPlayerName(id)}=${tallies.totals[id] ?? 0}`)
+    .sort((a, b) => a.localeCompare(b))
+    .join(", ");
+  logger.logSystem(
+    `Vote Bomb tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${positiveTotals || "none"} (fewest positive is eliminated)`,
+    Phase.FORMAT_RESOLVE,
+  );
+  logger.logSystem(
+    formatEliminationReason(gameState, resolution, "fewest positive votes"),
     Phase.FORMAT_RESOLVE,
   );
 
@@ -547,7 +574,11 @@ async function resolveSafetyBounceRound(
   logger.logSystem(
     `Safety Bounce vote reveal: ${Object.entries(voteTotals)
       .map(([id, n]) => `${gameState.getPlayerName(id as UUID)}=${n}`)
-      .join(", ")}`,
+      .join(", ")} (most votes among vulnerable is eliminated)`,
+    Phase.FORMAT_RESOLVE,
+  );
+  logger.logSystem(
+    formatEliminationReason(gameState, resolution, "most votes in vulnerable pool"),
     Phase.FORMAT_RESOLVE,
   );
 
@@ -555,6 +586,26 @@ async function resolveSafetyBounceRound(
     throw new Error("Safety Bounce failed to resolve elimination");
   }
   return resolution.eliminatedId;
+}
+
+/** Human-readable elimination outcome for chatty/transcript (includes sole vs tiebreak). */
+function formatEliminationReason(
+  gameState: PhaseRunnerContext["gameState"],
+  resolution: FormatEliminationResolution,
+  criterion: string,
+): string {
+  if (!resolution.eliminatedId) {
+    return `Format elimination unresolved under ${criterion}.`;
+  }
+  const name = gameState.getPlayerName(resolution.eliminatedId);
+  if (resolution.kind === "auto") {
+    return `Elimination: ${name} alone had ${criterion} (${resolution.reason}) — no empowered tiebreak.`;
+  }
+  if (resolution.kind === "clear" && resolution.tiedSet.length > 1) {
+    const tied = resolution.tiedSet.map((id) => gameState.getPlayerName(id)).join(", ");
+    return `Elimination: ${name} chosen by empowered tiebreak among tied set [${tied}] on ${criterion}.`;
+  }
+  return `Elimination: ${name} under ${criterion}.`;
 }
 
 function updateBounceBoardPressure(
