@@ -174,9 +174,8 @@ This phase has two parts before the standard Vote: first private-room Mingle con
 - Focus on who you want named in a deal, what the deal is for, and how long it should last.`;
 
     case Phase.VOTE:
-      // EXPOSE REMOVED from vote phase behavior prompt (format-kernel).
       return `PHASE BEHAVIOR — STANDARD VOTE:
-Cast the empower ballot only. Empower chooses who picks tonight's round format from the House pair and who breaks format ties. There is no expose ballot. No format is locked yet. Prioritize who you trust as chooser — not abstract format theory.`;
+Cast one empower ballot. Empower chooses who picks tonight's round format from the House pair and who breaks format ties. You must empower another living player — never yourself. No format is locked yet. Prioritize who you trust as chooser — not abstract format theory.`;
 
     case Phase.FORMAT_MENU:
     case Phase.FORMAT_PICK:
@@ -640,25 +639,37 @@ const TOOL_MINGLE_TURN: ChatCompletionTool = {
   },
 };
 
-const TOOL_CAST_VOTES: ChatCompletionTool = {
-  type: "function",
-  function: {
-    // EXPOSE REMOVED from cast_votes (format-kernel): empower-only ballot. Do not reintroduce expose.
-    name: "cast_votes",
-    description: "Cast the empower vote for this round (chooses who picks the round format and breaks format ties)",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
-        empower: { type: "string", description: "Player name to empower" },
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+/** Empower ballot tool. Legal names are other living players only (no self-empower). */
+function buildCastVotesTool(legalEmpowerNames: readonly string[]): ChatCompletionTool {
+  return {
+    type: "function",
+    function: {
+      // EXPOSE REMOVED from cast_votes (format-kernel): empower-only ballot. Do not reintroduce expose.
+      name: "cast_votes",
+      description:
+        "Cast the empower vote for this round (chooses who picks the round format and breaks format ties). Must be exactly one other living player from the legal list — not yourself.",
+      parameters: {
+        type: "object",
+        properties: {
+          thinking: {
+            type: "string",
+            description: "Your internal reasoning for this vote (hidden from other players)",
+          },
+          empower: {
+            type: "string",
+            enum: [...legalEmpowerNames],
+            description:
+              "Exact living player name to empower. Must be someone else on the legal list — never yourself.",
+          },
+          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+        },
+        required: ["thinking", "empower", ...STRATEGIC_DECISION_REQUIRED],
+        additionalProperties: false,
       },
-      required: ["thinking", "empower", ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+      strict: true,
     },
-    strict: true,
-  },
-};
+  };
+}
 
 const TOOL_EMPOWER_REVOTE: ChatCompletionTool = {
   type: "function",
@@ -2516,49 +2527,66 @@ Use the spread_rumor tool.`;
   async getVotes(
     ctx: PhaseContext,
   ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    // Empower is always cast for another living player — never self.
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
+    const legalEmpowerNames = others.map((p) => p.name);
 
     const randomOther = () => {
       const picked = others[Math.floor(Math.random() * others.length)];
-      if (!picked) throw new Error("No other players available for random selection");
+      if (!picked) throw new Error("No other players available for empower vote");
       return picked;
     };
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-    // EXPOSE REMOVED: prompt + tool are empower-only (format-kernel).
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
 Cast your empower vote for this round.
 
-**EMPOWER vote**: Who should choose tonight's round format from the two formats House will offer, and break any format elimination tie? Vote for an ally, a predictable chooser, or yourself when legal. Optimize for *who* holds the chooser seat — not for a format manifesto.
+**EMPOWER vote**: Who should choose tonight's round format from the two formats House will offer, and break any format elimination tie?
+- Empower **someone else**: an ally, a predictable chooser, or a deal partner.
+- **Do not empower yourself.** Self-empower is illegal. Your name is not a legal target.
+- Optimize for *who* holds the chooser seat — not for a format manifesto.
+- Empowerment is not immunity: the empowered player can still be eliminated under the locked format.
 
-**RULE**: There is no expose ballot. No one has won empowerment yet, and no format is locked. After the tally, House offers two formats by name and the empowered player picks one. Empowerment is not immunity: the empowered player still participates and can be eliminated under the locked format.
+**RULE**: This is a single empower vote. No one has won empowerment yet, and no format is locked. After the tally, House offers two formats by name and the empowered player picks one.
 
-Available players: ${others.map((p) => p.name).join(", ")}
+**Legal empower names (exact spelling; other living players only — not you):** ${legalEmpowerNames.join(", ")}
 
-Use the cast_votes tool. Cast empower only. Use player names exactly as listed.`;
+Use the cast_votes tool. The empower field must be exactly one name from the legal list above.`;
 
     try {
       const result = await this.callTool<{ thinking?: string; empower: string; decisionLog?: unknown; reasoningContext?: string }>(
-        prompt, TOOL_CAST_VOTES, 100, sys,
+        prompt,
+        buildCastVotesTool(legalEmpowerNames),
+        100,
+        sys,
         this.traceOptions(ctx, { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
 
-      const empowerPlayer = findByName(others, result.empower);
+      // Reject self even if the model ignores the enum / legal list.
+      const isSelf =
+        typeof result.empower === "string" &&
+        normalizeName(result.empower) === normalizeName(this.name);
+      const empowerPlayer = isSelf ? undefined : findByName(others, result.empower);
 
       let empowerTarget: UUID;
+      let empowerName: string;
       if (empowerPlayer) {
         empowerTarget = empowerPlayer.id;
+        empowerName = empowerPlayer.name;
       } else {
         const fallback = randomOther();
-        console.warn(`[vote-fallback] agent="${this.name}" method=getVotes vote=empower returned="${result.empower}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
+        console.warn(
+          `[vote-fallback] agent="${this.name}" method=getVotes vote=empower returned="${result.empower}"${isSelf ? " (self-empower illegal)" : ""} available=[${legalEmpowerNames.join(", ")}] fallback="${fallback.name}"`,
+        );
         empowerTarget = fallback.id;
+        empowerName = fallback.name;
       }
 
       const voteEntry = {
         round: ctx.round,
         myVotes: {
-          empower: empowerPlayer?.name ?? "unknown",
+          empower: empowerName,
         },
       };
       const existingRoundIndex = this.memory.roundHistory.findIndex((entry) => entry.round === ctx.round);
@@ -2919,7 +2947,7 @@ Use the use_power tool to declare your final hidden action.`;
     const prompt = this.buildUserPrompt(ctx) + `
 ## Council Vote
 ${isEmpowered ? "The normal Council vote is tied. You are the EMPOWERED agent, so this prompt is only for the required TIEBREAKER." : "Vote to eliminate one of the two council candidates."}
-This is not a normal Vote. There is no empower/expose split here; the only choice is which current Council candidate should leave.
+This is not the standard empower vote. The only choice is which current Council candidate should leave.
 
 Candidates:
 1. ${c1Name}
@@ -3506,7 +3534,7 @@ Keep it to 2-3 sentences. Make it compelling.`;
 ## ${stageName} — Elimination Vote
 ${ENDGAME_PERSONALITY_HINTS[this.personality]}
 
-This is a direct elimination vote. No empower/expose split — just pick who to eliminate.
+This is a direct elimination vote: pick who should leave.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
@@ -3961,7 +3989,7 @@ Use only this locked format for the current round. Prefer the full public name i
   private buildGameRulesSection(ctx: PhaseContext): string {
     if (ctx.phase === Phase.COUNCIL) {
       return `## Council Vote Rules
-- This is not a normal Vote. There is no empower/expose split here.
+- This is not the standard empower vote.
 - The only elimination choices are the two current Council candidates.
 - Council candidates do not cast Council votes.
 - The empowered player's Council choice is tiebreaker-only when applicable; it is not a normal ballot.`;
@@ -3971,7 +3999,7 @@ Use only this locked format for the current round. Prefer the full public name i
 - The standard Vote has resolved; the empowered player now chooses pass, protect/shield, or an available elimination action.
 - The exposure bench has already resolved the initial Council pair when expose votes can do so.
 - Protecting/shielding a current candidate removes them from Council danger. Replacement comes from the remaining exposure bench first; all-player fallback applies only when the bench cannot fill the slot.
-- This is not a normal empower/expose vote.`;
+- This is not the standard empower vote.`;
     }
     if ((ctx.phase === Phase.MINGLE || ctx.phase === Phase.POST_VOTE_MINGLE) && ctx.postVotePressure) {
       // Classic post-vote pressure path only (not format-kernel default). EXPOSE language kept for legacy classic lane.
@@ -3994,18 +4022,16 @@ Use only this locked format for the current round. Prefer the full public name i
 - Prefer full public names (Save-or-Eliminate, Vote Bomb, Safety Bounce) in speech; tools use snake_case ids.`;
     }
     if (ctx.phase === Phase.VOTE) {
-      // EXPOSE REMOVED from Standard Vote Rules block (format-kernel).
       return `## Standard Vote Rules
-- Empower selects who chooses the round format and who breaks format elimination ties.
-- There is no expose ballot on the format-kernel path.
+- Cast one empower vote: who chooses the round format and who breaks format elimination ties.
+- Self-empower is illegal: empower another living player only.
 - No one has won this vote's empowerment yet, no format is locked, and empowerment does not grant immunity.
 - Optimize for *who* should hold the chooser seat. Do not invent a format menu before House offers it.
 - Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.`;
     }
-    // EXPOSE REMOVED from default Game Rules block (format-kernel).
     return `## Game Rules
-- Standard Vote is empower-only. Empower selects the round-format chooser and format tiebreaker.
-- There is no expose ballot; elimination is resolved only by the locked round format.
+- Standard Vote is one empower ballot. Empower selects the round-format chooser and format tiebreaker.
+- Elimination is resolved only by the locked round format after the format pick.
 - Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.
 - After empowerment, House offers two named formats; the empowered player chooses one. Prefer full public names in speech.
 - Empowerment is not immunity. The empowered player still participates and can be eliminated under the locked format.
@@ -4171,7 +4197,7 @@ ${rows}`;
       .join("\n");
 
     return `## Revealed Vote Ledger
-These named empower votes are public player knowledge after Vote resolves. Use them as receipts for trust, betrayal, pressure, apologies, and deals. There is no expose ballot on the format-kernel path. If there was an empower re-vote, the re-vote resolves only the initial empower tie and must not be added to the initial empower tally as extra ballots.
+These named empower votes are public player knowledge after Vote resolves. Use them as receipts for trust, betrayal, pressure, apologies, and deals. If there was an empower re-vote, the re-vote resolves only the initial empower tie and must not be added to the initial empower tally as extra ballots.
 ${rounds}`;
   }
 
@@ -4261,20 +4287,20 @@ ${recentMessages || "  (none yet)"}`;
       return `## Endgame Rules
 - The Reckoning begins with 4 players left.
 - Players make public pleas, then cast direct elimination votes.
-- There is no empower/expose split, no Power ceremony, and no shield decision in this stage.`;
+- Direct elimination votes only; no format menu and no Power ceremony in this stage.`;
     }
     if (stage === "tribunal") {
       return `## Endgame Rules
 - The Tribunal begins with 3 players left.
 - Players make public accusations, accused players defend themselves, then players cast direct elimination votes.
 - If the Tribunal vote needs a tiebreaker, eligible jurors may decide it.
-- There is no empower/expose split, no Power ceremony, and no shield decision in this stage.`;
+- Direct elimination votes only; no format menu and no Power ceremony in this stage.`;
     }
     return `## Endgame Rules
 - The Judgment begins with 2 finalists.
 - Finalists make opening statements, jurors ask questions, finalists answer, finalists make closing arguments, then jurors vote for the winner.
 - Jury votes decide the winner; cumulative empower votes may matter only as a tiebreaker.
-- There is no empower/expose split, no Power ceremony, and no shield decision in this stage.`;
+- Jury winner vote only; no format menu and no Power ceremony in this stage.`;
   }
 
   private buildGameEventRecordSection(ctx: PhaseContext): string {
@@ -5492,7 +5518,7 @@ Reflected phase: ${ctx.phase}.
 This is before a later-round vote, after prior eliminations and phase outcomes have changed the board.
 Use the strategic_reflection tool to record your analysis before voting.
 
-Prune eliminated players from active targets, allies, threats, and plans. Reset stale assumptions about who will be empowered or immune: no one has won the upcoming empower tally yet, and last round's empowered player is not automatically protected. Form a current empower/expose intent from the living field before you vote.
+Prune eliminated players from active targets, allies, threats, and plans. Reset stale assumptions about who will be empowered or immune: no one has won the upcoming empower tally yet, and last round's empowered player is not automatically protected. Form a current empower intent from the living field before you vote.
 
 Be specific — name living players, cite events, reference conversations.
 Treat vote ledgers, Power outcomes, room traffic, eliminations, and public/private messages as evidence. Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure override stale Strategy Thread or Strategic Assessment claims. Do not turn this into a message you intend to send.`

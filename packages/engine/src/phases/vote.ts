@@ -240,7 +240,7 @@ export async function runVotePhase(
   // Format kernel: empower-only vote. No expose collection, no exposure bench, no post-vote pressure.
   contextBuilder.currentPostVotePressure = null;
   logger.logSystem(
-    "Format kernel: empower resolved; format menu next (no expose ballot).",
+    "Format kernel: empower resolved; format menu next.",
     Phase.VOTE,
   );
 

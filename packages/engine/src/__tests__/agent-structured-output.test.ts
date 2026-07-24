@@ -659,14 +659,45 @@ describe("InfluenceAgent structured output mode", () => {
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.map((message) => message.content).join("\n");
-    expect(prompt).toContain("There is no expose ballot");
+    expect(prompt).toContain("single empower vote");
     expect(prompt).toContain("tonight's round format");
-    expect(prompt).toContain("Cast empower only");
     expect(prompt).toContain("Optimize for *who* holds the chooser seat");
+    expect(prompt).toContain("Do not empower yourself");
+    expect(prompt).toContain("Self-empower is illegal");
+    expect(prompt).toContain("Legal empower names (exact spelling; other living players only — not you):");
+    expect(prompt).not.toContain("expose ballot");
     expect(prompt).not.toContain("**EXPOSE vote**");
     expect(prompt).not.toContain("expose creates Council danger");
     expect(prompt).not.toContain("At Power, the empowered player");
     expect(prompt).not.toContain("If Power does not eliminate");
+
+    const tools = requests[0]?.tools as Array<{
+      function: { name: string; parameters?: { properties?: { empower?: { enum?: string[] } } } };
+    }>;
+    const castVotes = tools?.find((tool) => tool.function.name === "cast_votes");
+    const empowerEnum = castVotes?.function.parameters?.properties?.empower?.enum ?? [];
+    expect(empowerEnum).not.toContain("Atlas");
+    expect(empowerEnum).toContain("Mira");
+  });
+
+  it("rejects self-empower and falls back to another living player", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "cast_votes", {
+        thinking: "I want the format chooser seat myself.",
+        empower: "Atlas",
+        decisionLog: "Illegal self-empower attempt.",
+      }),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const votes = await agent.getVotes(makeContext(Phase.VOTE));
+    expect(votes.empowerTarget).not.toBe("atlas-id");
+    expect(["mira-id", "vera-id"]).toContain(votes.empowerTarget);
   });
 
   it("keeps pre-pick format guidance contingent and does not invent a locked format", async () => {
@@ -2023,9 +2054,9 @@ describe("InfluenceAgent structured output mode", () => {
 
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("## Council Vote Rules");
-    expect(prompt).toContain("This is not a normal Vote");
+    expect(prompt).toContain("This is not the standard empower vote");
     expect(prompt).toContain("The normal Council vote is tied");
-    expect(prompt).toContain("There is no empower/expose split");
+    expect(prompt).not.toContain("empower/expose");
     expect(prompt).toContain("The only elimination choices are the two current Council candidates");
     expect(prompt).toContain("## Your Recent Decisions");
     expect(prompt).toContain("Your Council vote this round: Jace.");
@@ -2076,10 +2107,12 @@ describe("InfluenceAgent structured output mode", () => {
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("No one has won this vote's empowerment yet");
-    expect(prompt).toContain("Empower selects who chooses the round format and who breaks format elimination ties.");
-    expect(prompt).toContain("There is no expose ballot on the format-kernel path.");
+    expect(prompt).toContain("Cast one empower vote");
+    expect(prompt).toContain("who chooses the round format");
+    expect(prompt).toContain("format elimination ties");
     expect(prompt).toContain("empowerment does not grant immunity");
     expect(prompt).toContain("Optimize for *who* should hold the chooser seat");
+    expect(prompt).not.toContain("expose ballot");
     expect(prompt).not.toContain("Only the winner of this vote's empower tally is protected");
     expect(prompt).not.toContain("exposing someone you predict will win the current empower tally can be wasted");
   });
@@ -2536,7 +2569,8 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("Prune eliminated players from active targets, allies, threats, and plans.");
     expect(prompt).toContain("Reset stale assumptions about who will be empowered or immune");
     expect(prompt).toContain("last round's empowered player is not automatically protected");
-    expect(prompt).toContain("Form a current empower/expose intent from the living field before you vote.");
+    expect(prompt).toContain("Form a current empower intent from the living field before you vote.");
+    expect(prompt).not.toContain("empower/expose intent");
     expect(prompt).not.toContain("the phase you are reflecting on after it resolved");
   });
 
