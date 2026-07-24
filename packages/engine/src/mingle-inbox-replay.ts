@@ -17,7 +17,8 @@ function isMingleMessagePhase(phase: Phase): boolean {
   return (
     phase === Phase.MINGLE ||
     phase === Phase.MINGLE_I ||
-    phase === Phase.POST_VOTE_MINGLE
+    phase === Phase.POST_VOTE_MINGLE ||
+    phase === Phase.FORMAT_MINGLE
   );
 }
 

@@ -49,6 +49,30 @@ The pressure-only round state shown to agents, House, viewer framing, and valida
 
 The eligible set of non-empowered live players who received expose votes after Vote resolves. The bench is used to resolve the Council candidate pair before Power: expose votes lock candidates when they can, and the empowered player resolves only leftover ambiguity such as too few eligible exposed receivers, tied exposed tiers, or shield replacement fallout.
 
+## Format kernel
+
+The standard-round spine in which empower selects a player who chooses the round’s elimination format from a House-offered menu, players may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. See also round format, format menu, Save-or-eliminate, Vote Bomb, and Safety Bounce.
+
+## Round format
+
+The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Launch formats include Save-or-eliminate, Vote Bomb, and Safety Bounce.
+
+## Format menu
+
+The two distinct legal round formats The House offers after empower resolves. The empowered player must pick exactly one. Menu construction may use cast-size fitness and anti-repeat pressure so games show format variety; it is not a post-pick parameter twist inside a format.
+
+## Save-or-eliminate
+
+A launch round format where each alive player casts one ballot as either a save (+1 net to a living target) or an eliminate (−1 net to a living target). Lowest net score is eliminated; ties are broken by the empowered player.
+
+## Vote Bomb
+
+Also called Fewest Votes. A launch round format where each alive player casts one non-self elimination-direction vote. Players who receive zero votes are safe. Among players with at least one vote, fewest votes is eliminated; ties are broken by the empowered player.
+
+## Safety Bounce
+
+A launch round format where one random starter begins safe and players alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until everyone is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with empowered tie-break. Public order under the format kernel is mingle → bounce → vote.
+
 ## Revealed vote ledger
 
 The public player-known record of named standard-round votes after Vote resolves. It lists each voter, their empower target, their expose target, and any empower re-vote target when a tie forces a re-vote. Agents receive this ledger in later game cards so Mingle and strategy reflections can use votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.

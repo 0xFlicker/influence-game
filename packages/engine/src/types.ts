@@ -22,6 +22,14 @@ export enum Phase {
   WHISPER = "WHISPER",
   RUMOR = "RUMOR",
   VOTE = "VOTE",
+  /** House offers two launch formats after empower. */
+  FORMAT_MENU = "FORMAT_MENU",
+  /** Empowered player picks one offered format. */
+  FORMAT_PICK = "FORMAT_PICK",
+  /** Format-aware private mingle after format lock. */
+  FORMAT_MINGLE = "FORMAT_MINGLE",
+  /** Format resolution (ballots / bounce / elimination). */
+  FORMAT_RESOLVE = "FORMAT_RESOLVE",
   POWER = "POWER",
   REVEAL = "REVEAL",
   COUNCIL = "COUNCIL",
@@ -122,11 +130,15 @@ export interface RoundResult {
   round: number;
   empoweredId: UUID;
   exposeScores: Record<UUID, number>;
-  candidates: [UUID, UUID]; // [expose-leader, second-most-exposed]
-  powerAction: PowerActionType;
-  powerTarget: UUID;
+  candidates: [UUID, UUID] | null; // classic council pair; null on format-kernel rounds
+  powerAction: PowerActionType | null; // classic power; null on format-kernel rounds
+  powerTarget: UUID | null;
   eliminated: UUID;
   shieldGranted?: UUID; // player who got shielded via protect
+  /** Launch format id when the round used the sequester format kernel. */
+  formatId?: string;
+  /** Human-readable format elimination method (e.g. vote_bomb, save_or_eliminate, safety_bounce). */
+  formatMethod?: string;
 }
 
 // ---------------------------------------------------------------------------

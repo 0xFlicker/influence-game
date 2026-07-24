@@ -66,6 +66,10 @@ export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
   "mingle_i",
   "pre_vote_huddle",
   "vote",
+  "format_menu",
+  "format_pick",
+  "format_mingle",
+  "format_resolve",
   "post_vote_mingle",
   "power",
   "reveal",
@@ -917,6 +921,40 @@ export interface IAgent {
     context: PhaseContext,
     candidates: [UUID, UUID],
   ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+
+  // --- Format kernel (sequester) ---
+  /** Empowered player picks one of two House-offered round formats. */
+  pickRoundFormat?(
+    context: PhaseContext,
+    offeredFormats: [string, string],
+  ): Promise<{ formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  getSaveOrEliminateBallot?(
+    context: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<{
+    polarity: "save" | "eliminate";
+    targetId: UUID;
+    thinking?: string;
+    reasoningContext?: string;
+    decisionLog?: string | null;
+  }>;
+  getVoteBombBallot?(
+    context: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  getBouncePointer?(
+    context: PhaseContext,
+    board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
+  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  getSafetyBounceVote?(
+    context: PhaseContext,
+    vulnerableIds: UUID[],
+  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  breakFormatEliminationTie?(
+    context: PhaseContext,
+    tiedSet: UUID[],
+  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+
   /** Called when the agent is about to be eliminated */
   getLastMessage(context: PhaseContext): Promise<AgentResponse>;
   /** Called for diary room interviews — the House asks a question, agent responds */
@@ -1060,11 +1098,12 @@ export interface PhaseContext {
   isEliminated?: boolean;
   /** Context about how this agent was just eliminated for final words. */
   eliminationContext?: {
-    mode: "power" | "council" | "endgame";
+    mode: "power" | "council" | "endgame" | "format";
     exposedBy?: string[];
     councilVoters?: string[];
     eliminationVoters?: string[];
     directExecutor?: string;
+    formatId?: string;
   };
   /** Current lobby sub-round index (0-based) */
   lobbySubRound?: number;

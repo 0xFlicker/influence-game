@@ -234,6 +234,90 @@ export class MockAgent implements IAgent {
     return { target: candidates[0], thinking: "mock: vote first candidate for council", reasoningContext: undefined, decisionLog: this.decisionLog("vote first candidate for council") };
   }
 
+  async pickRoundFormat(
+    _ctx: PhaseContext,
+    offeredFormats: [string, string],
+  ): Promise<{ formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    return {
+      formatId: offeredFormats[0],
+      thinking: `mock: pick first offered format ${offeredFormats[0]}`,
+      decisionLog: this.decisionLog("pick first offered format"),
+    };
+  }
+
+  async getSaveOrEliminateBallot(
+    ctx: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<{
+    polarity: "save" | "eliminate";
+    targetId: UUID;
+    thinking?: string;
+    reasoningContext?: string;
+    decisionLog?: string | null;
+  }> {
+    const others = aliveIds.filter((id) => id !== this.id);
+    const targetId = others[others.length - 1] ?? this.id;
+    // Even indices save first other; odd eliminate last other — creates mixed nets for tests.
+    const polarity = ctx.round % 2 === 0 && others[0] ? "save" : "eliminate";
+    const chosen = polarity === "save" ? (others[0] ?? targetId) : targetId;
+    return {
+      polarity,
+      targetId: chosen,
+      thinking: `mock: ${polarity} ${chosen}`,
+      decisionLog: this.decisionLog("save-or-eliminate ballot"),
+    };
+  }
+
+  async getVoteBombBallot(
+    ctx: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    const others = aliveIds.filter((id) => id !== this.id);
+    // Spread votes: each agent votes for a different offset target to avoid pure pile-on.
+    const idx = Math.max(0, ctx.alivePlayers.findIndex((p) => p.id === this.id)) % Math.max(1, others.length);
+    const targetId = others[idx] ?? others[0] ?? this.id;
+    return {
+      targetId,
+      thinking: `mock: vote bomb → ${targetId}`,
+      decisionLog: this.decisionLog("vote bomb ballot"),
+    };
+  }
+
+  async getBouncePointer(
+    _ctx: PhaseContext,
+    board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
+  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    const targetId = board.unclassified[0] ?? this.id;
+    return {
+      targetId,
+      thinking: `mock: bounce → ${targetId}`,
+      decisionLog: this.decisionLog("bounce pointer"),
+    };
+  }
+
+  async getSafetyBounceVote(
+    _ctx: PhaseContext,
+    vulnerableIds: UUID[],
+  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    const targetId = vulnerableIds[vulnerableIds.length - 1] ?? this.id;
+    return {
+      targetId,
+      thinking: `mock: bounce vote → ${targetId}`,
+      decisionLog: this.decisionLog("safety bounce vote"),
+    };
+  }
+
+  async breakFormatEliminationTie(
+    _ctx: PhaseContext,
+    tiedSet: UUID[],
+  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    return {
+      targetId: tiedSet[0] ?? this.id,
+      thinking: "mock: break format tie with first tied player",
+      decisionLog: this.decisionLog("format tiebreak"),
+    };
+  }
+
   async getLastMessage(_ctx: PhaseContext): Promise<AgentResponse> {
     return respond(
       `${this.name} here — well played, everyone. See you on the other side.`,

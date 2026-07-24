@@ -286,10 +286,53 @@ export function createPhaseMachine() {
           VOTES_TALLIED: {
             actions: ["setEmpowered"],
           },
-          PHASE_COMPLETE: "post_vote_mingle",
+          // Format kernel: empower → menu → pick → mingle → resolve (classic Power→Council retired).
+          PHASE_COMPLETE: "format_menu",
         },
       },
 
+      format_menu: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.FORMAT_MENU } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.FORMAT_MENU } }],
+        on: {
+          PHASE_COMPLETE: "format_pick",
+          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
+        },
+      },
+
+      format_pick: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.FORMAT_PICK } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.FORMAT_PICK } }],
+        on: {
+          PHASE_COMPLETE: "format_mingle",
+          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
+        },
+      },
+
+      format_mingle: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.FORMAT_MINGLE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.FORMAT_MINGLE } }],
+        on: {
+          PHASE_COMPLETE: "format_resolve",
+          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
+        },
+      },
+
+      format_resolve: {
+        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.FORMAT_RESOLVE } }],
+        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.FORMAT_RESOLVE } }],
+        on: {
+          PLAYER_ELIMINATED: {
+            actions: ["recordEliminated", "addToJury"],
+          },
+          UPDATE_ALIVE_PLAYERS: {
+            actions: ["updateAlivePlayers"],
+          },
+          PHASE_COMPLETE: "checkGameOver",
+        },
+      },
+
+      // Legacy classic path retained only for resume hydration of old event logs — not on default transitions.
       post_vote_mingle: {
         entry: [{ type: "emitPhaseStarted", params: { phase: Phase.POST_VOTE_MINGLE } }],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.POST_VOTE_MINGLE } }],
@@ -312,7 +355,6 @@ export function createPhaseMachine() {
             actions: ["updateAlivePlayers"],
           },
           PHASE_COMPLETE: [
-            // Auto-eliminate skips straight to checking game over
             {
               guard: "autoEliminateTriggered",
               target: "checkGameOver",

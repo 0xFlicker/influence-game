@@ -232,62 +232,14 @@ export async function runVotePhase(
     `Empowered: ${gameState.getPlayerName(empoweredId)}`,
     Phase.VOTE,
   );
-  const initialPreview = gameState.previewInitialCandidateResolution();
-  let initialResolution: InitialExposureBenchResolution | null = initialPreview;
-  if (initialPreview && shouldRequestCandidateChoice(initialPreview)) {
-    const empoweredAgent = agents.get(empoweredId);
-    const request = candidateChoiceRequest(initialPreview);
-    const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.VOTE, { empoweredId });
-    const decision = empoweredAgent?.getCandidateSelection
-      ? await empoweredAgent.getCandidateSelection(phaseCtx, request)
-      : {
-          selectedCandidateIds: request.eligibleCandidateIds.slice(0, request.requiredCount),
-          thinking: "House fallback: empowered candidate selection method unavailable.",
-        };
-    await assertCanAcceptCommit(ctx);
-    initialResolution = gameState.resolveInitialCandidates(decision.selectedCandidateIds);
-    const resolvedCandidates = initialResolution?.candidates ?? null;
-    logger.emitAgentTurn({
-      phase: Phase.VOTE,
-      action: "candidate-selection",
-      actor: { id: empoweredId, name: gameState.getPlayerName(empoweredId), role: "player" },
-      visibility: "private",
-      response: {
-        mode: initialResolution?.mode ?? request.mode,
-        lockedCandidates: request.lockedCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-        eligibleChoices: request.eligibleCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-        selectedCandidates: (initialResolution?.selectedCandidateIds ?? decision.selectedCandidateIds).map((id) => ({ id, name: gameState.getPlayerName(id) })),
-        resolvedCandidates: resolvedCandidates?.map((id) => ({ id, name: gameState.getPlayerName(id) })) ?? null,
-        fallbackApplied: initialResolution?.fallbackApplied ?? false,
-        fallbackReason: initialResolution?.fallbackReason ?? null,
-        ...strategicDecisionResponse(decision),
-      },
-      thinking: decision.thinking,
-      reasoningContext: decision.reasoningContext,
-      scope: "system",
-      text: `${gameState.getPlayerName(empoweredId)} privately resolved Council candidate ambiguity.`,
-    });
-  } else {
-    initialResolution = gameState.resolveInitialCandidates();
-  }
-  if (initialResolution?.candidates) {
-    logger.logSystem(
-      `Initial Council pair resolved before Mingle: ${initialResolution.candidates.map((id) => gameState.getPlayerName(id)).join(" and ")} (${initialResolution.mode})`,
-      Phase.VOTE,
-    );
-  }
-  contextBuilder.currentPostVotePressure = buildPostVotePressureProjection({
-    alivePlayers: gameState.getAlivePlayers(),
-    exposeScores: gameState.getExposeScores(),
-    empoweredId,
-    initialResolution,
-  });
-  if (contextBuilder.currentPostVotePressure) {
-    logger.logSystem(
-      formatPostVotePressureSummary(contextBuilder.currentPostVotePressure),
-      Phase.VOTE,
-    );
-  }
+
+  // Format kernel: expose ballots remain social receipts for now, but do not build
+  // Council exposure bench / post-vote pressure — elimination uses the round format.
+  contextBuilder.currentPostVotePressure = null;
+  logger.logSystem(
+    "Format kernel: expose ledger recorded; Council candidate resolution skipped. Format menu next.",
+    Phase.VOTE,
+  );
 
   // Update agent memory
   const voteTally = gameState.currentVoteTally;

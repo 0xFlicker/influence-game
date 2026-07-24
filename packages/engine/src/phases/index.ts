@@ -9,6 +9,13 @@ export { runMingleIAlliancePhase, runAllianceHuddleWindow } from "./alliances";
 export { runMinglePhase, computeRoomCount, allocateRooms } from "./mingle";
 export { runRumorPhase } from "./rumor";
 export { runVotePhase, runReckoningVote, runTribunalVote } from "./vote";
+export {
+  runFormatMenuPhase,
+  runFormatPickPhase,
+  runFormatMinglePhase,
+  runFormatResolvePhase,
+  resetFormatKernelScratch,
+} from "./format-kernel";
 export { runPowerPhase } from "./power";
 export { runRevealPhase, runCouncilPhase } from "./council";
 export {

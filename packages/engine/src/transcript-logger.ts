@@ -200,7 +200,7 @@ export class TranscriptLogger {
     roomId?: number,
     thinking?: string,
     reasoningContext?: string,
-    phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
+    phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE = Phase.MINGLE,
     decisionId?: string,
   ): void {
     const fromName = this.gameState.getPlayerName(fromId);
@@ -285,7 +285,7 @@ export class TranscriptLogger {
     rooms: RoomAllocation[],
     excludedNames: string[],
     diagnostics?: MingleSessionDiagnostics,
-    phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE = Phase.MINGLE,
+    phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE = Phase.MINGLE,
   ): TranscriptEntry {
     // Safe context excludes diagnostics (producer-only allocation detail).
     const entry: TranscriptEntry = {

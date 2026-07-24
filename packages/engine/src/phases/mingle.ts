@@ -562,7 +562,7 @@ async function runMingleTurn(
   roomCount: number,
   mingleIntents: ReadonlyMap<UUID, MingleIntentAction | null>,
   totalBeats: number,
-  phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE,
+  phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE,
 ): Promise<MingleTurnActionRecord[]> {
   const { agents, logger, contextBuilder, gameState } = ctx;
   const collectedTurns: CollectedMingleTurn[] = [];
@@ -705,7 +705,10 @@ async function runMingleTurn(
 export async function runMinglePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
-  options: { phase?: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE; completePhase?: boolean } = {},
+  options: {
+    phase?: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE;
+    completePhase?: boolean;
+  } = {},
 ): Promise<void> {
   const { gameState, agents, logger, contextBuilder, config } = ctx;
   const phase = options.phase ?? Phase.MINGLE;
@@ -715,6 +718,8 @@ export async function runMinglePhase(
   logger.logSystem(
     phase === Phase.POST_VOTE_MINGLE
       ? "=== POST-VOTE MINGLE PHASE ==="
+      : phase === Phase.FORMAT_MINGLE
+        ? "=== FORMAT MINGLE PHASE ==="
       : phase === Phase.MINGLE_I
         ? "=== MINGLE I: PRIVATE ROOMS ==="
         : "=== MINGLE PHASE ===",

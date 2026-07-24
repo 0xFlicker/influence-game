@@ -49,6 +49,7 @@ import {
   runMingleIAlliancePhase, runAllianceHuddleWindow,
   runMinglePhase,
   runVotePhase, runReckoningVote, runTribunalVote,
+  runFormatMenuPhase, runFormatPickPhase, runFormatMinglePhase, runFormatResolvePhase,
   runPowerPhase,
   runRevealPhase, runCouncilPhase,
   runReckoningPlea,
@@ -508,6 +509,14 @@ export class GameRunner {
       case "reckoning_vote":
       case "tribunal_vote":
         return Phase.VOTE;
+      case "format_menu":
+        return Phase.FORMAT_MENU;
+      case "format_pick":
+        return Phase.FORMAT_PICK;
+      case "format_mingle":
+        return Phase.FORMAT_MINGLE;
+      case "format_resolve":
+        return Phase.FORMAT_RESOLVE;
       case "post_vote_mingle":
         return Phase.POST_VOTE_MINGLE;
       case "power":
@@ -730,6 +739,18 @@ export class GameRunner {
         if (this.gameState.round > 1) {
           await this.diaryRoom.runStrategicReflections(Phase.VOTE);
         }
+      } else if (state === "format_menu") {
+        await runFormatMenuPhase(prc, actor);
+      } else if (state === "format_pick") {
+        await runFormatPickPhase(prc, actor);
+      } else if (state === "format_mingle") {
+        await runFormatMinglePhase(prc, actor);
+      } else if (state === "format_resolve") {
+        await runFormatResolvePhase(prc, actor);
+        await this.emitHouseRoundInterstitial(Phase.FORMAT_RESOLVE);
+        await this.runConfiguredDiaryRoom(Phase.FORMAT_RESOLVE);
+
+        // Legacy classic path (not on default transitions; resume/old logs only)
       } else if (state === "post_vote_mingle") {
         await runMinglePhase(prc, actor, { phase: Phase.POST_VOTE_MINGLE });
       } else if (state === "power") {
@@ -904,45 +925,41 @@ export class GameRunner {
     const empoweredId = this.resumeEmpoweredId();
     actor.send({ type: "VOTES_TALLIED", empoweredId });
     await this.completeResumePhase(actor);
-    if (target === "post_vote_mingle") {
-      this.assertResumeActorState(actor, target);
-      return;
+
+    // Format kernel path (default standard-round spine after empower).
+    if (
+      target === "format_menu" ||
+      target === "format_pick" ||
+      target === "format_mingle" ||
+      target === "format_resolve"
+    ) {
+      // New format mid-states are not durable-resume supported yet (fail-closed product posture).
+      throw new Error(
+        `Phase-boundary resume to "${target}" is not supported yet (format kernel mid-round).`,
+      );
     }
 
-    if (!this.hasCanonicalEvent("mingle.rooms_allocated")) {
-      throw new Error(`Phase-boundary resume to "${target}" missing mingle.rooms_allocated event`);
-    }
-    await this.completeResumePhase(actor);
-    if (target === "power") {
-      this.assertResumeActorState(actor, target);
-      return;
-    }
-
-    const { candidates, autoEliminated } = this.resumeCandidateResolution();
-    actor.send({ type: "CANDIDATES_DETERMINED", candidates, autoEliminated });
-    await this.completeResumePhase(actor);
-    if (target === "reveal") {
-      if (autoEliminated) {
-        throw new Error("Phase-boundary resume cannot hydrate reveal after auto-eliminate power action");
-      }
-      this.assertResumeActorState(actor, target);
-      return;
-    }
-
-    if (!autoEliminated) {
-      await this.completeResumePhase(actor);
-      if (target === "pre_council_huddle") {
-        this.assertResumeActorState(actor, target);
-        return;
-      }
-      await this.completeResumePhase(actor);
-      if (target === "council") {
-        this.assertResumeActorState(actor, target);
-        return;
+    // Endgame / post-elim resume after format kernel: walk format states without classic Power→Council.
+    const isEndgameTarget =
+      target.startsWith("reckoning_") ||
+      target.startsWith("tribunal_") ||
+      target.startsWith("judgment_");
+    if (isEndgameTarget || target === "post_vote_mingle" || target === "power" || target === "reveal" || target === "pre_council_huddle" || target === "council") {
+      // After empower, machine is on format_menu. Advance through format kernel states.
+      // Elimination must already be reflected in alive players from canonical events.
+      await this.completeResumePhase(actor); // format_menu → format_pick
+      await this.completeResumePhase(actor); // format_pick → format_mingle
+      await this.completeResumePhase(actor); // format_mingle → format_resolve
+      this.updateResumeAlivePlayers(actor);
+      await this.completeResumePhase(actor); // format_resolve → checkGameOver → endgame/lobby
+      if (isEndgameTarget) {
+        // fall through to endgame stage walk below
+      } else if (target === "post_vote_mingle" || target === "power" || target === "reveal" || target === "pre_council_huddle" || target === "council") {
+        throw new Error(
+          `Phase-boundary resume to classic coordinate "${target}" is not supported after format-kernel cutover.`,
+        );
       }
     }
-    this.updateResumeAlivePlayers(actor);
-    await this.completeResumePhase(actor);
 
     if (
       target === "reckoning_lobby" ||
