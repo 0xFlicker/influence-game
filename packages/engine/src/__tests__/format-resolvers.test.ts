@@ -18,6 +18,10 @@ import {
   type SaveOrEliminateBallot,
   type VoteBombBallot,
 } from "../formats";
+import {
+  buildFormatPressureProjection,
+  ruleSheetForFormat,
+} from "../format-pressure";
 
 const ids = (...names: string[]) => names.map((n) => n.toLowerCase());
 
@@ -40,6 +44,35 @@ describe("format menu", () => {
     expect(pickFormatFromMenu(offered, "vote_bomb")).toBe("vote_bomb");
     expect(pickFormatFromMenu(offered, "save_or_eliminate")).toBeNull();
     expect(pickFormatFromMenu(offered, "nope")).toBeNull();
+  });
+});
+
+describe("format pressure", () => {
+  it("projects the locked format and public bounce board without sealed ballot targets", () => {
+    const bounceBoard = {
+      safe: ["a"],
+      vulnerable: ["b"],
+      unclassified: ["c", "d"],
+      nextActorId: "b",
+    };
+    const pressure = buildFormatPressureProjection({
+      empoweredId: "a",
+      empoweredName: "Alpha",
+      offeredFormats: ["vote_bomb", "safety_bounce"],
+      selectedFormat: "safety_bounce",
+      bounceBoard,
+    });
+
+    expect(pressure).toEqual({
+      empoweredId: "a",
+      empoweredName: "Alpha",
+      offeredFormats: ["vote_bomb", "safety_bounce"],
+      selectedFormat: "safety_bounce",
+      ruleSheetSummary: ruleSheetForFormat("safety_bounce"),
+      bounceBoard,
+    });
+    expect("targetId" in pressure).toBe(false);
+    expect("ballots" in pressure).toBe(false);
   });
 });
 

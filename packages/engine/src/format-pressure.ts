@@ -33,13 +33,24 @@ export function buildFormatPressureProjection(input: {
   empoweredName: string;
   offeredFormats: [LaunchFormatId, LaunchFormatId];
   selectedFormat: LaunchFormatId | null;
+  bounceBoard?: FormatPressureProjection["bounceBoard"];
 }): FormatPressureProjection {
   return {
     empoweredId: input.empoweredId,
     empoweredName: input.empoweredName,
-    offeredFormats: input.offeredFormats,
+    offeredFormats: [...input.offeredFormats],
     selectedFormat: input.selectedFormat,
     ruleSheetSummary: input.selectedFormat ? ruleSheetForFormat(input.selectedFormat) : null,
+    ...(input.bounceBoard
+      ? {
+          bounceBoard: {
+            safe: [...input.bounceBoard.safe],
+            vulnerable: [...input.bounceBoard.vulnerable],
+            unclassified: [...input.bounceBoard.unclassified],
+            nextActorId: input.bounceBoard.nextActorId,
+          },
+        }
+      : {}),
   };
 }
 

@@ -11,6 +11,7 @@ import { Phase } from "./types";
 import type { JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PlayerAllianceContext, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PublicTranscriptContextEntry, RecentDecisionContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
+import type { FormatPressureProjection } from "./format-pressure";
 import type { CanonicalGameEvent } from "./canonical-events";
 
 export class ContextBuilder {
@@ -22,6 +23,8 @@ export class ContextBuilder {
   currentRoomCounts: MingleRoomCount[] = [];
   /** Vote-derived pressure available after the empowered player is resolved */
   currentPostVotePressure: PostVotePressureProjection | null = null;
+  /** Current format menu, locked rules, and public Safety Bounce board. */
+  currentFormatPressure: FormatPressureProjection | null = null;
   /** Public named vote record available to players after votes are resolved. */
   revealedVoteLedger: RevealedVoteLedgerEntry[] = [];
 
@@ -526,6 +529,7 @@ export class ContextBuilder {
       empoweredId?: UUID;
       councilCandidates?: [UUID, UUID];
       postVotePressure?: PostVotePressureProjection | null;
+      formatPressure?: FormatPressureProjection | null;
       eliminationContext?: PhaseContext["eliminationContext"];
     },
     isEliminated?: boolean,
@@ -565,6 +569,9 @@ export class ContextBuilder {
       postVotePressure: extra && "postVotePressure" in extra
         ? extra.postVotePressure ?? undefined
         : this.currentPostVotePressure ?? undefined,
+      formatPressure: extra && "formatPressure" in extra
+        ? extra.formatPressure ?? undefined
+        : this.currentFormatPressure ?? undefined,
       revealedVoteLedger: this.revealedVoteLedger.map((entry) => ({ ...entry })),
       gameEventRecord: this.buildGameEventRecord(agentId),
       publicTranscriptContext: this.buildPublicTranscriptContext(),

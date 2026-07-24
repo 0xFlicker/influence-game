@@ -17,6 +17,7 @@ import type {
   StrategicLens,
 } from "./types";
 import type { CanonicalGameEvent, CanonicalSourcePointer } from "./canonical-events";
+import type { FormatPressureProjection } from "./format-pressure";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
@@ -1061,6 +1062,8 @@ export interface PhaseContext {
   councilCandidates?: [UUID, UUID];
   /** Vote-derived pressure visible after empowerment is resolved. */
   postVotePressure?: PostVotePressureProjection;
+  /** Current format menu, locked rules, and public Safety Bounce board. */
+  formatPressure?: FormatPressureProjection;
   /** Public named vote record revealed to players after each standard Vote resolves. */
   revealedVoteLedger?: RevealedVoteLedgerEntry[];
   /** Player-visible canonical event record rendered with names for endgame context. */

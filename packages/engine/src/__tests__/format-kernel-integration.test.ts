@@ -5,6 +5,7 @@ import { Phase } from "../types";
 import { createUUID } from "../game-state";
 import { MockAgent } from "./mock-agent";
 import type { LaunchFormatId } from "../formats";
+import type { PhaseContext } from "../game-runner";
 
 const TEST_CONFIG: GameConfig = {
   timers: {
@@ -26,6 +27,14 @@ describe("Format kernel integration (MockAgent)", () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
       (name) => new MockAgent(createUUID(), name),
     );
+    const formatMingleContexts: PhaseContext[] = [];
+    for (const agent of agents) {
+      const getMingleIntent = agent.getMingleIntent.bind(agent);
+      agent.getMingleIntent = async (ctx) => {
+        if (ctx.phase === Phase.FORMAT_MINGLE) formatMingleContexts.push(ctx);
+        return getMingleIntent(ctx);
+      };
+    }
     // Force Vote Bomb for predictability on first pick
     const first = agents[0]!;
     first.pickRoundFormat = async (_ctx, offered) => ({
@@ -57,6 +66,13 @@ describe("Format kernel integration (MockAgent)", () => {
       (e) => e.scope === "system" && typeof e.text === "string" && e.text.includes("Format ") && e.text.includes("eliminated"),
     );
     expect(formatElines.length).toBeGreaterThan(0);
+
+    const formatMinglePressure = formatMingleContexts[0]?.formatPressure;
+    expect(formatMinglePressure?.offeredFormats).toHaveLength(2);
+    expect(formatMinglePressure?.selectedFormat).toBeTruthy();
+    expect(formatMinglePressure?.ruleSheetSummary).toBeTruthy();
+    expect(formatMinglePressure).not.toHaveProperty("targetId");
+    expect(formatMinglePressure).not.toHaveProperty("ballots");
   });
 
   it("rotates offered formats across rounds via anti-repeat", async () => {
