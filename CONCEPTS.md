@@ -75,7 +75,7 @@ A launch round format where one random starter begins safe and players alternate
 
 ## Revealed vote ledger
 
-The public player-known record of named standard-round votes after Vote resolves. It lists each voter, their empower target, their expose target, and any empower re-vote target when a tie forces a re-vote. Agents receive this ledger in later game cards so Mingle and strategy reflections can use votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.
+The public player-known record of named standard-round votes after Vote resolves. On the format-kernel path it lists each voter, their empower target, and any empower re-vote target when a tie forces a re-vote. Legacy dual-ballot games may still include expose targets. Agents receive this ledger in later game cards so Mingle and strategy reflections can use empower votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.
 
 ## Revealed game facts
 

@@ -38,9 +38,8 @@ describe("Mingle prompt and tool vocabulary guard (no current Whisper leakage)",
 
 function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
   return makeToolOpenAIStub(requests, "cast_votes", {
-    thinking: "I empower my ally Mira because she is loyal, and expose Vera as the threat.",
+    thinking: "I empower my ally Mira because she is loyal and a strong format chooser.",
     empower: "Mira",
-    expose: "Vera",
   });
 }
 
@@ -243,8 +242,7 @@ function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): Op
                   content: JSON.stringify({
                     thinking: "Retry with enough room to choose targets.",
                     empower: "Mira",
-                    expose: "Vera",
-                  }),
+                                      }),
                 },
               },
             ],
@@ -661,9 +659,10 @@ describe("InfluenceAgent structured output mode", () => {
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.map((message) => message.content).join("\n");
-    expect(prompt).toContain("Expose is a legacy public social receipt");
-    expect(prompt).toContain("does not determine elimination");
+    expect(prompt).toContain("There is no expose ballot");
     expect(prompt).toContain("the empowered player chooses the round format");
+    expect(prompt).toContain("Cast empower only");
+    expect(prompt).not.toContain("**EXPOSE vote**");
     expect(prompt).not.toContain("expose creates Council danger");
     expect(prompt).not.toContain("At Power, the empowered player");
     expect(prompt).not.toContain("If Power does not eliminate");
@@ -909,7 +908,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     const votes = await agent.getVotes(makeContext());
 
-    expect(votes).toEqual({ empowerTarget: "mira-id", exposeTarget: "vera-id", thinking: expect.any(String) });
+    expect(votes).toEqual({ empowerTarget: "mira-id", thinking: expect.any(String) });
     expect(requests[0]?.tool_choice).toEqual({
       type: "function",
       function: { name: "cast_votes" },
@@ -938,9 +937,8 @@ describe("InfluenceAgent structured output mode", () => {
         requests,
         "cast_votes",
         {
-          thinking: "I empower Mira and expose Vera.",
+          thinking: "I empower Mira as format chooser.",
           empower: "Mira",
-          expose: "Vera",
           decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
         },
         "Native hidden reasoning for vote.",
@@ -969,7 +967,7 @@ describe("InfluenceAgent structured output mode", () => {
       round: 1,
       model: { name: "gpt-5-nano" },
       toolName: "cast_votes",
-      emittedThinking: "I empower Mira and expose Vera.",
+      emittedThinking: "I empower Mira as format chooser.",
       reasoningContext: "Native hidden reasoning for vote.",
       decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
     });
@@ -983,10 +981,9 @@ describe("InfluenceAgent structured output mode", () => {
       name: "cast_votes",
     });
     expect(trace.toolArguments).toMatchObject({
-      thinking: "I empower Mira and expose Vera.",
+      thinking: "I empower Mira as format chooser.",
       empower: "Mira",
-      expose: "Vera",
-      decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
+            decisionLog: "Rewarded Mira and pressured Vera as a strategic vote receipt.",
       reasoningContext: "Native hidden reasoning for vote.",
     });
   });
@@ -1006,8 +1003,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           thinking: "I should push Vera now.",
           empower: "Mira",
-          expose: "Vera",
-        },
+                  },
         "Native Grok reasoning for vote.",
       ),
       grok.modelId,
@@ -1054,8 +1050,7 @@ describe("InfluenceAgent structured output mode", () => {
     const outputText = JSON.stringify({
       thinking: "Mira is safer to empower and Vera is the pressure target.",
       empower: "Mira",
-      expose: "Vera",
-      decisionLog: "Use vote pressure to test Vera while rewarding Mira.",
+            decisionLog: "Use vote pressure to test Vera while rewarding Mira.",
     });
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1078,8 +1073,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(votes).toEqual({
       empowerTarget: "mira-id",
-      exposeTarget: "vera-id",
-      thinking: "Mira is safer to empower and Vera is the pressure target.",
+            thinking: "Mira is safer to empower and Vera is the pressure target.",
       decisionLog: "Use vote pressure to test Vera while rewarding Mira.",
       reasoningContext: "OpenAI reasoning summary (auto): OpenAI summary: Atlas weighed vote pressure against coalition risk.",
     });
@@ -1231,7 +1225,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     const votes = await agent.getVotes(makeContext());
 
-    expect(votes).toEqual({ empowerTarget: "mira-id", exposeTarget: "vera-id", thinking: expect.any(String) });
+    expect(votes).toEqual({ empowerTarget: "mira-id", thinking: expect.any(String) });
     expect(requests[0]?.tool_choice).toBe("required");
     expect(requests[0]?.max_tokens).toBe(8192);
     expect("parallel_tool_calls" in requests[0]!).toBe(false);
@@ -1269,8 +1263,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(votes).toEqual({
       empowerTarget: "mira-id",
-      exposeTarget: "vera-id",
-      thinking: "Retry with enough room to choose targets.",
+            thinking: "Retry with enough room to choose targets.",
     });
     expect(requests).toHaveLength(2);
     expect(requests[0]?.response_format).toBeDefined();
@@ -1291,8 +1284,7 @@ describe("InfluenceAgent structured output mode", () => {
           args: {
             thinking: "Reward Mira and pressure Vera.",
             empower: "Mira",
-            expose: "Vera",
-            decisionLog: "Rewarded Mira and pressured Vera as the current coalition test.",
+                        decisionLog: "Rewarded Mira and pressured Vera as the current coalition test.",
           },
         },
         {
@@ -1346,7 +1338,7 @@ describe("InfluenceAgent structured output mode", () => {
     const revote = await agent.getEmpowerRevote(
       makeContext(Phase.VOTE),
       ["mira-id", "vera-id"],
-      { empowerTarget: "vera-id", exposeTarget: "mira-id" },
+      { empowerTarget: "vera-id" },
     );
 
     expect(revote).toEqual({
@@ -1359,7 +1351,6 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("## Empower Revote");
     expect(prompt).toContain("This is NOT a new normal vote.");
     expect(prompt).toContain("Original empower: Vera");
-    expect(prompt).toContain("Original expose: Mira");
     expect(prompt).toContain("Eligible tied empower candidates: Mira, Vera");
     expect(prompt).toContain("the wheel randomly chooses");
   });
@@ -1378,7 +1369,7 @@ describe("InfluenceAgent structured output mode", () => {
     const revote = await agent.getEmpowerRevote(
       makeContext(Phase.VOTE),
       ["mira-id", "vera-id"],
-      { empowerTarget: "vera-id", exposeTarget: "mira-id" },
+      { empowerTarget: "vera-id" },
     );
 
     expect(revote).toEqual({
@@ -1935,9 +1926,10 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("- Phase objective: Private room dealmaking after the vote.");
     expect(prompt).toContain("- Next major decision: Power. Mira can pass, protect/shield a player to change who faces Council, or use an available elimination action.");
     expect(prompt).toContain("## Revealed Vote Ledger");
-    expect(prompt).toContain("These named votes are public player knowledge after Vote resolves.");
-    expect(prompt).toContain("Atlas: empowered Mira, exposed Vera");
-    expect(prompt).toContain("Vera: empowered Mira, exposed Atlas");
+    expect(prompt).toContain("These named empower votes are public player knowledge after Vote resolves.");
+    expect(prompt).toContain("Atlas: empowered Mira");
+    expect(prompt).toContain("Vera: empowered Mira");
+    expect(prompt).not.toContain("exposed Vera");
     expect(prompt).toContain("## Post-Vote Pressure");
     expect(prompt).toContain("- Empowered player: Mira");
     expect(prompt).toContain("- Your status: you are currently at risk for council");
@@ -2084,7 +2076,7 @@ describe("InfluenceAgent structured output mode", () => {
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("No one has won this vote's empowerment yet");
     expect(prompt).toContain("Empower selects the player who chooses the round format and breaks format elimination ties.");
-    expect(prompt).toContain("Expose is a legacy public social receipt; it does not determine elimination");
+    expect(prompt).toContain("There is no expose ballot on the format-kernel path.");
     expect(prompt).toContain("empowerment does not grant immunity");
     expect(prompt).not.toContain("Only the winner of this vote's empower tally is protected");
     expect(prompt).not.toContain("exposing someone you predict will win the current empower tally can be wasted");
@@ -2164,7 +2156,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("Re-vote tally (this supersedes the initial tied empower votes; do not add initial and re-vote votes together):");
     expect(prompt).toContain("Vera: 2 (Atlas, Mira)");
     expect(prompt).toContain("Final empowered result: Vera.");
-    expect(prompt).toContain("Atlas: empowered Mira, exposed Vera; in the tie re-vote, chose Vera");
+    expect(prompt).toContain("Atlas: empowered Mira; in the tie re-vote, chose Vera");
   });
 
   it("does not carry pre-Power pressure stakes into diary reflections", async () => {
@@ -2326,8 +2318,7 @@ describe("InfluenceAgent structured output mode", () => {
           args: {
             thinking: "The packet still fits: reward Mira and pressure Vera.",
             empower: "Mira",
-            expose: "Vera",
-            decisionLog: "Rewarded Mira and pressured Vera because the Strategy Thread still fits.",
+                        decisionLog: "Rewarded Mira and pressured Vera because the Strategy Thread still fits.",
           },
           reasoningContent: "Hidden vote reasoning.",
         },
@@ -2367,8 +2358,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(vote).toMatchObject({
       empowerTarget: "mira-id",
-      exposeTarget: "vera-id",
-      decisionLog: "Rewarded Mira and pressured Vera because the Strategy Thread still fits.",
+            decisionLog: "Rewarded Mira and pressured Vera because the Strategy Thread still fits.",
       reasoningContext: "Hidden vote reasoning.",
     });
 
@@ -2584,8 +2574,7 @@ describe("InfluenceAgent structured output mode", () => {
           args: {
             thinking: "Mira is gone, so choose from the live field.",
             empower: "Vera",
-            expose: "Vera",
-            decisionLog: "Mira left the game, so I pivoted the packet toward Vera as the live field.",
+                        decisionLog: "Mira left the game, so I pivoted the packet toward Vera as the live field.",
           },
         },
       ]),

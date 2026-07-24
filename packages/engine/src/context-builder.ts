@@ -218,7 +218,9 @@ export class ContextBuilder {
       case "mingle.rooms_allocated":
         return `${prefix}: Mingle rooms allocated: ${event.payload.rooms.map((room) => `Room ${room.roomId}: ${this.formatPlayerList(room.playerIds)}`).join(" | ")}.`;
       case "vote.cast":
-        return `${prefix}: ${this.name(event.payload.voterId)} voted empower=${this.name(event.payload.empowerTarget)}, expose=${this.name(event.payload.exposeTarget)}.`;
+        return event.payload.exposeTarget
+          ? `${prefix}: ${this.name(event.payload.voterId)} voted empower=${this.name(event.payload.empowerTarget)}, expose=${this.name(event.payload.exposeTarget)}.`
+          : `${prefix}: ${this.name(event.payload.voterId)} voted empower=${this.name(event.payload.empowerTarget)}.`;
       case "vote.empower_tally_resolved":
         return `${prefix}: Empower tally resolved: ${this.name(event.payload.empowered)} by ${event.payload.method}; counts ${this.formatCounts(event.payload.counts)}${event.payload.tied ? `; tied ${this.formatPlayerList(event.payload.tied)}` : ""}.`;
       case "vote.empower_revote_cast":
@@ -389,7 +391,9 @@ export class ContextBuilder {
               round: event.round,
               phase: Phase.VOTE,
               label: "Standard Vote",
-              detail: `Your standard Vote in Round ${event.round}: empowered ${this.name(event.payload.empowerTarget)}, exposed ${this.name(event.payload.exposeTarget)}.`,
+              detail: event.payload.exposeTarget
+                ? `Your standard Vote in Round ${event.round}: empowered ${this.name(event.payload.empowerTarget)}, exposed ${this.name(event.payload.exposeTarget)}.`
+                : `Your standard Vote in Round ${event.round}: empowered ${this.name(event.payload.empowerTarget)}.`,
             });
           }
           break;
@@ -399,7 +403,7 @@ export class ContextBuilder {
               round: event.round,
               phase: Phase.VOTE,
               label: "Empower Revote",
-              detail: `Your empower revote in Round ${event.round}: ${this.name(event.payload.target)}. Your expose ballot did not change.`,
+              detail: `Your empower revote in Round ${event.round}: ${this.name(event.payload.target)}.`,
             });
           }
           break;

@@ -159,22 +159,21 @@ export class MockAgent implements IAgent {
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     if (others.length === 0) {
-      return { empowerTarget: this.id, exposeTarget: this.id, thinking: "No one else left", reasoningContext: undefined };
+      return { empowerTarget: this.id, thinking: "No one else left", reasoningContext: undefined };
     }
 
-    // Always empower the first other player, expose the last
+    // Always empower the first other player (empower-only; no expose).
     const empowerTarget = defined(others[0], "Expected at least one other player to empower").id;
-    const exposeTarget = defined(others[others.length - 1], "Expected at least one other player to expose").id;
-    return { empowerTarget, exposeTarget, thinking: `Empower ally, expose threat`, reasoningContext: undefined, decisionLog: this.decisionLog("empower ally and expose threat") };
+    return { empowerTarget, thinking: `Empower ally`, reasoningContext: undefined, decisionLog: this.decisionLog("empower ally") };
   }
 
   async getEmpowerRevote(
     ctx: PhaseContext,
     tiedCandidates: UUID[],
-    _originalVote: { empowerTarget: UUID; exposeTarget: UUID },
+    _originalVote: { empowerTarget: UUID },
   ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     const target = tiedCandidates[0] ?? ctx.alivePlayers.find((p) => p.id !== this.id)?.id ?? this.id;
     return {

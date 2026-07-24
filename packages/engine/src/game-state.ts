@@ -1080,19 +1080,35 @@ export class GameState {
   recordVote(
     voterId: UUID,
     empowerTarget: UUID,
-    exposeTarget: UUID,
+    /**
+     * Legacy expose target. Format-kernel standard rounds pass null/undefined —
+     * expose is no longer collected from agents or written into player context.
+     */
+    exposeTarget: UUID | null | undefined = null,
     sourcePointers: CanonicalSourcePointer[] = [],
   ): void {
     const voter = this._players.get(voterId);
     if (!voter || voter.status !== PlayerStatus.ALIVE) return;
 
-    this.appendCanonicalEvent("vote.cast", { voterId, empowerTarget, exposeTarget }, {
-      phase: Phase.VOTE,
-      visibility: "producer",
-      sourcePointers,
-    });
+    this.appendCanonicalEvent(
+      "vote.cast",
+      {
+        voterId,
+        empowerTarget,
+        ...(exposeTarget ? { exposeTarget } : { exposeTarget: null }),
+      },
+      {
+        phase: Phase.VOTE,
+        visibility: "producer",
+        sourcePointers,
+      },
+    );
     this._currentVoteTally.empowerVotes[voterId] = empowerTarget;
-    this._currentVoteTally.exposeVotes[voterId] = exposeTarget;
+    if (exposeTarget) {
+      this._currentVoteTally.exposeVotes[voterId] = exposeTarget;
+    } else {
+      delete this._currentVoteTally.exposeVotes[voterId];
+    }
   }
 
   recordLastMessage(playerId: UUID, message: string): void {

@@ -228,7 +228,11 @@ export function applyCanonicalEvent(
     }
     case "vote.cast": {
       projection.currentVoteTally.empowerVotes[event.payload.voterId] = event.payload.empowerTarget;
-      projection.currentVoteTally.exposeVotes[event.payload.voterId] = event.payload.exposeTarget;
+      if (event.payload.exposeTarget) {
+        projection.currentVoteTally.exposeVotes[event.payload.voterId] = event.payload.exposeTarget;
+      } else {
+        delete projection.currentVoteTally.exposeVotes[event.payload.voterId];
+      }
       break;
     }
     case "vote.empower_vote_cleared": {

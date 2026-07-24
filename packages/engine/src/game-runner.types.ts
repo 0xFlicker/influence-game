@@ -915,12 +915,12 @@ export interface IAgent {
   /** Called to collect votes */
   getVotes(
     context: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
-  /** Called only for an empower tie revote. Expose vote is already recorded and does not change. */
+  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  /** Called only for an empower tie revote. */
   getEmpowerRevote(
     context: PhaseContext,
     tiedCandidates: UUID[],
-    originalVote: { empowerTarget: UUID; exposeTarget: UUID },
+    originalVote: { empowerTarget: UUID },
   ): Promise<EmpowerRevoteAction>;
   /** Called privately after Vote when expose votes do not fully lock the initial Council pair. */
   getCandidateSelection?(
@@ -1146,8 +1146,9 @@ export interface RevealedVoteLedgerEntry {
   voterName: string;
   empowerTargetId: UUID;
   empowerTargetName: string;
-  exposeTargetId: UUID;
-  exposeTargetName: string;
+  /** Legacy optional fields; absent on format-kernel empower-only ballots. */
+  exposeTargetId?: UUID;
+  exposeTargetName?: string;
   revoteEmpowerTargetId?: UUID;
   revoteEmpowerTargetName?: string;
 }

@@ -515,7 +515,7 @@ export type AgentAction =
   | { type: "LOBBY_MESSAGE"; from: UUID; text: string }
   | { type: "WHISPER"; from: UUID; to: UUID[]; text: string }
   | { type: "RUMOR_MESSAGE"; from: UUID; text: string }
-  | { type: "VOTE"; from: UUID; empowerTarget: UUID; exposeTarget: UUID }
+  | { type: "VOTE"; from: UUID; empowerTarget: UUID; exposeTarget?: UUID | null }
   | { type: "POWER_ACTION"; from: UUID; action: PowerActionType; target: UUID }
   | { type: "COUNCIL_VOTE"; from: UUID; eliminateTarget: UUID }
   | { type: "LAST_MESSAGE"; from: UUID; text: string }

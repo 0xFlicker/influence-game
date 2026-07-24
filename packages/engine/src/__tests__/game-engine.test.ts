@@ -450,7 +450,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(ledger).toBeDefined();
     expect(ledger).toHaveLength(agents.length);
     expect(ledger?.every((entry) => entry.round === 1)).toBe(true);
-    expect(ledger?.every((entry) => entry.voterName && entry.empowerTargetName && entry.exposeTargetName)).toBe(true);
+    expect(ledger?.every((entry) => entry.voterName && entry.empowerTargetName)).toBe(true);
     expect(result.transcript.some((entry) =>
       entry.phase === Phase.VOTE &&
       entry.scope === "system" &&
@@ -465,13 +465,13 @@ describe("Mingle Rooms (current open-room phase)", () => {
       constructor(
         id: string,
         name: string,
-        private readonly vote: { empowerTarget: string; exposeTarget: string },
+        private readonly vote: { empowerTarget: string },
         private readonly revoteTarget: string | null,
       ) {
         super(id, name);
       }
 
-      override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string }> {
+      override async getVotes(): Promise<{ empowerTarget: string; thinking?: string }> {
         return { ...this.vote, thinking: `${this.name} scripted vote` };
       }
 
@@ -494,11 +494,11 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const deltaId = createUUID();
     const echoId = createUUID();
     const agents = [
-      new ScriptedVoteAgent(alphaId, "Alpha", { empowerTarget: betaId, exposeTarget: echoId }, null),
-      new ScriptedVoteAgent(betaId, "Beta", { empowerTarget: alphaId, exposeTarget: echoId }, null),
-      new ScriptedVoteAgent(gammaId, "Gamma", { empowerTarget: alphaId, exposeTarget: echoId }, alphaId),
-      new ScriptedVoteAgent(deltaId, "Delta", { empowerTarget: betaId, exposeTarget: echoId }, alphaId),
-      new ScriptedVoteAgent(echoId, "Echo", { empowerTarget: echoId, exposeTarget: deltaId }, betaId),
+      new ScriptedVoteAgent(alphaId, "Alpha", { empowerTarget: betaId }, null),
+      new ScriptedVoteAgent(betaId, "Beta", { empowerTarget: alphaId }, null),
+      new ScriptedVoteAgent(gammaId, "Gamma", { empowerTarget: alphaId }, alphaId),
+      new ScriptedVoteAgent(deltaId, "Delta", { empowerTarget: betaId }, alphaId),
+      new ScriptedVoteAgent(echoId, "Echo", { empowerTarget: echoId }, betaId),
     ];
     const runner = new GameRunner(
       agents,
@@ -539,7 +539,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
       constructor(
         id: string,
         name: string,
-        private readonly vote: { empowerTarget: string; exposeTarget: string },
+        private readonly vote: { empowerTarget: string },
         private readonly powerTarget: string | null = null,
         private readonly initialPick: string | null = null,
         private readonly pullUpPick: string | null = null,
@@ -547,7 +547,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
         super(id, name);
       }
 
-      override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string }> {
+      override async getVotes(): Promise<{ empowerTarget: string; thinking?: string }> {
         return { ...this.vote, thinking: `${this.name} scripted exposure-bench vote` };
       }
 
@@ -596,12 +596,12 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const echo = createUUID();
     const sol = createUUID();
     const agents = [
-      new ScriptedExposureBenchAgent(mira, "Mira", { empowerTarget: mira, exposeTarget: vera }, nyx, nyx, echo),
-      new ScriptedExposureBenchAgent(alpha, "Alpha", { empowerTarget: mira, exposeTarget: vera }),
-      new ScriptedExposureBenchAgent(vera, "Vera", { empowerTarget: mira, exposeTarget: alpha }),
-      new ScriptedExposureBenchAgent(nyx, "Nyx", { empowerTarget: mira, exposeTarget: nyx }),
-      new ScriptedExposureBenchAgent(echo, "Echo", { empowerTarget: mira, exposeTarget: echo }),
-      new ScriptedExposureBenchAgent(sol, "Sol", { empowerTarget: alpha, exposeTarget: mira }),
+      new ScriptedExposureBenchAgent(mira, "Mira", { empowerTarget: mira }, nyx, nyx, echo),
+      new ScriptedExposureBenchAgent(alpha, "Alpha", { empowerTarget: mira }),
+      new ScriptedExposureBenchAgent(vera, "Vera", { empowerTarget: mira }),
+      new ScriptedExposureBenchAgent(nyx, "Nyx", { empowerTarget: mira }),
+      new ScriptedExposureBenchAgent(echo, "Echo", { empowerTarget: mira }),
+      new ScriptedExposureBenchAgent(sol, "Sol", { empowerTarget: alpha }),
     ];
     const runner = new GameRunner(
       agents,
@@ -670,14 +670,14 @@ describe("Mingle Rooms (current open-room phase)", () => {
       constructor(
         id: string,
         name: string,
-        private readonly vote: { empowerTarget: string; exposeTarget: string },
+        private readonly vote: { empowerTarget: string },
         private readonly powerTarget: string | null = null,
         private readonly initialPick: string | null = null,
       ) {
         super(id, name);
       }
 
-      override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string }> {
+      override async getVotes(): Promise<{ empowerTarget: string; thinking?: string }> {
         return { ...this.vote, thinking: `${this.name} scripted locked-replacement vote` };
       }
 
@@ -723,12 +723,12 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const echo = createUUID();
     const sol = createUUID();
     const agents = [
-      new LockedShieldReplacementAgent(mira, "Mira", { empowerTarget: mira, exposeTarget: vera }, vera, nyx),
-      new LockedShieldReplacementAgent(alpha, "Alpha", { empowerTarget: mira, exposeTarget: vera }),
-      new LockedShieldReplacementAgent(vera, "Vera", { empowerTarget: mira, exposeTarget: echo }),
-      new LockedShieldReplacementAgent(nyx, "Nyx", { empowerTarget: mira, exposeTarget: vera }),
-      new LockedShieldReplacementAgent(echo, "Echo", { empowerTarget: mira, exposeTarget: vera }),
-      new LockedShieldReplacementAgent(sol, "Sol", { empowerTarget: alpha, exposeTarget: nyx }),
+      new LockedShieldReplacementAgent(mira, "Mira", { empowerTarget: mira }, vera, nyx),
+      new LockedShieldReplacementAgent(alpha, "Alpha", { empowerTarget: mira }),
+      new LockedShieldReplacementAgent(vera, "Vera", { empowerTarget: mira }),
+      new LockedShieldReplacementAgent(nyx, "Nyx", { empowerTarget: mira }),
+      new LockedShieldReplacementAgent(echo, "Echo", { empowerTarget: mira }),
+      new LockedShieldReplacementAgent(sol, "Sol", { empowerTarget: alpha }),
     ];
     const runner = new GameRunner(
       agents,
@@ -1650,7 +1650,7 @@ describe("GameEventBus - action collection", () => {
     // Submit actions with small delay
     setTimeout(() => {
       for (const id of agentIds) {
-        bus.submitAction({ type: "VOTE", from: id, empowerTarget: defined(agentIds[0]), exposeTarget: defined(agentIds[1]) });
+        bus.submitAction({ type: "VOTE", from: id, empowerTarget: defined(agentIds[0]) });
       }
     }, 10);
 
@@ -1665,7 +1665,7 @@ describe("GameEventBus - action collection", () => {
 
     // Only one agent submits
     setTimeout(() => {
-      bus.submitAction({ type: "VOTE", from: defined(agentIds[0]), empowerTarget: defined(agentIds[1]), exposeTarget: defined(agentIds[2]) });
+      bus.submitAction({ type: "VOTE", from: defined(agentIds[0]), empowerTarget: defined(agentIds[1]) });
     }, 10);
 
     const collected = await bus.collectActions("VOTE", agentIds, 100);

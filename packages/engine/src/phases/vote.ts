@@ -60,7 +60,8 @@ export async function runVotePhase(
 
       await assertCanAcceptCommit(ctx);
       const voteDecisionId = agent.getLastPrivateDecisionId?.();
-      gameState.recordVote(player.id, votes.empowerTarget, votes.exposeTarget, [
+      // Format kernel: empower-only ballot. exposeTarget intentionally omitted.
+      gameState.recordVote(player.id, votes.empowerTarget, null, [
         agentTurnSourcePointer(
           player.id,
           "vote",
@@ -72,10 +73,9 @@ export async function runVotePhase(
       ]);
 
       const empowerName = gameState.getPlayerName(votes.empowerTarget);
-      const exposeName = gameState.getPlayerName(votes.exposeTarget);
       const transcriptThinking = transcriptThinkingFor(agent, votes.thinking, votes.reasoningContext);
       logger.logSystem(
-        `${player.name} votes: empower=${empowerName}, expose=${exposeName}`,
+        `${player.name} votes: empower=${empowerName}`,
         Phase.VOTE,
         transcriptThinking.thinking,
         transcriptThinking.reasoningContext,
@@ -87,23 +87,21 @@ export async function runVotePhase(
         visibility: "private",
         response: {
           empowerTarget: { id: votes.empowerTarget, name: empowerName },
-          exposeTarget: { id: votes.exposeTarget, name: exposeName },
           ...strategicDecisionResponse(votes),
         },
         thinking: votes.thinking,
         reasoningContext: votes.reasoningContext,
         scope: "system",
-        text: `${player.name} votes: empower=${empowerName}, expose=${exposeName}`,
+        text: `${player.name} votes: empower=${empowerName}`,
       });
     }),
   );
 
-  const originalVotesByPlayerId = new Map<UUID, { empowerTarget: UUID; exposeTarget: UUID }>();
+  const originalVotesByPlayerId = new Map<UUID, { empowerTarget: UUID }>();
   for (const player of alivePlayers) {
     const empowerTarget = gameState.currentVoteTally.empowerVotes[player.id];
-    const exposeTarget = gameState.currentVoteTally.exposeVotes[player.id];
-    if (empowerTarget && exposeTarget) {
-      originalVotesByPlayerId.set(player.id, { empowerTarget, exposeTarget });
+    if (empowerTarget) {
+      originalVotesByPlayerId.set(player.id, { empowerTarget });
     }
   }
 
@@ -128,7 +126,6 @@ export async function runVotePhase(
           const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
           const originalVote = originalVotesByPlayerId.get(player.id) ?? {
             empowerTarget: gameState.currentVoteTally.empowerVotes[player.id] ?? tied[0]!,
-            exposeTarget: gameState.currentVoteTally.exposeVotes[player.id] ?? tied[0]!,
           };
           const revote = await agent.getEmpowerRevote(phaseCtx, tied, originalVote);
           const empowerTarget = tied.includes(revote.empowerTarget) ? revote.empowerTarget : tied[0]!;
@@ -150,7 +147,6 @@ export async function runVotePhase(
               eligibleTargets: tied.map((id) => ({ id, name: gameState.getPlayerName(id) })),
               originalVote: {
                 empowerTarget: { id: originalVote.empowerTarget, name: gameState.getPlayerName(originalVote.empowerTarget) },
-                exposeTarget: { id: originalVote.exposeTarget, name: gameState.getPlayerName(originalVote.exposeTarget) },
               },
               fallbackApplied: empowerTarget !== revote.empowerTarget,
               ...strategicDecisionResponse(revote),
@@ -200,8 +196,6 @@ export async function runVotePhase(
         voterName: player.name,
         empowerTargetId: originalVote.empowerTarget,
         empowerTargetName: gameState.getPlayerName(originalVote.empowerTarget),
-        exposeTargetId: originalVote.exposeTarget,
-        exposeTargetName: gameState.getPlayerName(originalVote.exposeTarget),
         ...(revoteEmpowerTarget
           ? {
               revoteEmpowerTargetId: revoteEmpowerTarget,
@@ -217,28 +211,20 @@ export async function runVotePhase(
     Phase.VOTE,
   );
 
-  // Format kernel: expose ballots remain social receipts for now, but do not build
-  // Council exposure bench / post-vote pressure — elimination uses the round format.
+  // Format kernel: empower-only vote. No expose collection, no exposure bench, no post-vote pressure.
   contextBuilder.currentPostVotePressure = null;
   logger.logSystem(
-    "Format kernel: expose ledger recorded; Council candidate resolution skipped. Format menu next.",
+    "Format kernel: empower resolved; format menu next (no expose ballot).",
     Phase.VOTE,
   );
 
-  // Update agent memory
+  // Update agent memory from empower targets only.
   const voteTally = gameState.currentVoteTally;
   for (const [voterId, empowerTargetId] of Object.entries(voteTally.empowerVotes)) {
     const agent = agents.get(voterId as UUID);
     if (agent) {
       const empowerName = gameState.getPlayerName(empowerTargetId);
       agent.updateAlly(empowerName);
-    }
-  }
-  for (const [voterId, exposeTargetId] of Object.entries(voteTally.exposeVotes)) {
-    const agent = agents.get(voterId as UUID);
-    if (agent) {
-      const exposeName = gameState.getPlayerName(exposeTargetId);
-      agent.updateThreat(exposeName);
     }
   }
 

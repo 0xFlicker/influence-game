@@ -173,7 +173,15 @@ export type CanonicalGameEvent =
         lastSessionExcluded: UUID[];
       }
     >
-  | CanonicalEventEnvelope<"vote.cast", { voterId: UUID; empowerTarget: UUID; exposeTarget: UUID }>
+  | CanonicalEventEnvelope<
+      "vote.cast",
+      {
+        voterId: UUID;
+        empowerTarget: UUID;
+        /** Legacy optional field; format-kernel standard rounds omit expose. */
+        exposeTarget?: UUID | null;
+      }
+    >
   | CanonicalEventEnvelope<
       "vote.empower_tally_resolved",
       {

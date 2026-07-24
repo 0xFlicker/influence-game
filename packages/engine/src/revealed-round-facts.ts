@@ -22,7 +22,8 @@ export interface RevealedPlayerRef {
 export interface RevealedVoteLedgerEntry {
   voter: RevealedPlayerRef;
   empowerTarget: RevealedPlayerRef;
-  exposeTarget: RevealedPlayerRef;
+  /** Legacy; null/absent on empower-only format-kernel ballots. */
+  exposeTarget: RevealedPlayerRef | null;
   revoteEmpowerTarget: RevealedPlayerRef | null;
 }
 
@@ -218,7 +219,9 @@ function buildStandardVoteFacts(
   const ledger = sortByPlayerOrder(voteEvents, projection, (event) => event.payload.voterId).map((event) => ({
     voter: playerRef(projection, event.payload.voterId),
     empowerTarget: playerRef(projection, event.payload.empowerTarget),
-    exposeTarget: playerRef(projection, event.payload.exposeTarget),
+    exposeTarget: event.payload.exposeTarget
+      ? playerRef(projection, event.payload.exposeTarget)
+      : null,
     revoteEmpowerTarget: refOrNull(projection, revotes.get(event.payload.voterId)),
   }));
 
@@ -528,6 +531,7 @@ function exposureScoresFromStandardVote(
   if (standardVote.status !== "available") return [];
   const counts: Record<UUID, number> = {};
   for (const entry of standardVote.ledger) {
+    if (!entry.exposeTarget) continue;
     counts[entry.exposeTarget.id] = (counts[entry.exposeTarget.id] ?? 0) + 1;
   }
   for (const playerId of projection.playerOrder) counts[playerId] ??= 0;

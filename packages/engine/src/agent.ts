@@ -173,8 +173,9 @@ This phase has two parts before the standard Vote: first private-room Mingle con
 - Focus on who you want named in a deal, what the deal is for, and how long it should last.`;
 
     case Phase.VOTE:
+      // EXPOSE REMOVED from vote phase behavior prompt (format-kernel).
       return `PHASE BEHAVIOR — STANDARD VOTE:
-Cast the required empower and expose ballots. Empower decides who chooses the round format and breaks format elimination ties. Expose remains a public legacy social receipt but does not determine elimination on the format-kernel path. No format is locked yet, so any format-specific plan is contingent.`;
+Cast the empower ballot only. Empower decides who chooses the round format and breaks format elimination ties. There is no expose ballot. No format is locked yet, so any format-specific plan is contingent.`;
 
     case Phase.FORMAT_MENU:
     case Phase.FORMAT_PICK:
@@ -641,17 +642,17 @@ const TOOL_MINGLE_TURN: ChatCompletionTool = {
 const TOOL_CAST_VOTES: ChatCompletionTool = {
   type: "function",
   function: {
+    // EXPOSE REMOVED from cast_votes (format-kernel): empower-only ballot. Do not reintroduce expose.
     name: "cast_votes",
-    description: "Cast empower and expose votes for this round",
+    description: "Cast the empower vote for this round (chooses who picks the round format and breaks format ties)",
     parameters: {
       type: "object",
       properties: {
-        thinking: { type: "string", description: "Your internal reasoning for these votes (hidden from other players)" },
+        thinking: { type: "string", description: "Your internal reasoning for this vote (hidden from other players)" },
         empower: { type: "string", description: "Player name to empower" },
-        expose: { type: "string", description: "Player name to expose" },
         ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      required: ["thinking", "empower", "expose", ...STRATEGIC_DECISION_REQUIRED],
+      required: ["thinking", "empower", ...STRATEGIC_DECISION_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -1193,7 +1194,7 @@ interface AgentMemory {
     round: number;
     eliminated?: string;
     empowered?: string;
-    myVotes: { empower: string; expose: string };
+    myVotes: { empower: string };
   }>;
   /** Previous empowered actions taken by this agent */
   powerActions: Array<{
@@ -1888,7 +1889,7 @@ You may:
 - Reinforce trust with people you want closer
 - Put pressure on rivals through tone, contrast, and selective attention
 - Create a public story about who seems trustworthy, slippery, powerful, isolated, or dangerous
-- Name empower plans, expose receipts, contingent format preferences, alliances, deals, betrayals, or threats when public pressure serves your game
+- Name empower plans, contingent format preferences, alliances, deals, betrayals, or threats when public pressure serves your game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
 Your message should be entertaining, useful to your game, and help you survive the next voting phase. Do you have the votes? If not you need to find them now. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`;
@@ -2462,7 +2463,7 @@ Use the spread_rumor tool.`;
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; exposeTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
     const randomOther = () => {
@@ -2472,27 +2473,26 @@ Use the spread_rumor tool.`;
     };
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    // EXPOSE REMOVED: prompt + tool are empower-only (format-kernel).
     const prompt = this.buildUserPrompt(ctx) + `
 ## Your Task
-Cast your votes for this round.
+Cast your empower vote for this round.
 
 **EMPOWER vote**: Who should choose the round format from the House-offered pair and break any format elimination tie? Vote for an ally, a predictable chooser, or yourself when legal.
-**EXPOSE vote**: Expose is a legacy public social receipt. It records whom you are willing to name, but it does not determine elimination, create a Council lane, or grant/remove immunity on the format-kernel path.
 
-**RULE**: No one has won this vote's empowerment yet, and no round format is locked. After the tally, the empowered player chooses the round format from two House offers. Empowerment is not immunity: the empowered player remains eligible for format ballots, Safety Bounce pointers, and elimination.
+**RULE**: There is no expose ballot. No one has won empowerment yet, and no round format is locked. After the tally, the empowered player chooses the round format from two House offers. Empowerment is not immunity: the empowered player remains eligible for format ballots, Safety Bounce pointers, and elimination.
 
 Available players: ${others.map((p) => p.name).join(", ")}
 
-Use the cast_votes tool. Both votes are required. Use player names exactly as listed.`;
+Use the cast_votes tool. Cast empower only. Use player names exactly as listed.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; empower: string; expose: string; decisionLog?: unknown; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; empower: string; decisionLog?: unknown; reasoningContext?: string }>(
         prompt, TOOL_CAST_VOTES, 100, sys,
         this.traceOptions(ctx, { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
 
       const empowerPlayer = findByName(others, result.empower);
-      const exposePlayer = findByName(others, result.expose);
 
       let empowerTarget: UUID;
       if (empowerPlayer) {
@@ -2502,20 +2502,11 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
         console.warn(`[vote-fallback] agent="${this.name}" method=getVotes vote=empower returned="${result.empower}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
         empowerTarget = fallback.id;
       }
-      let exposeTarget: UUID;
-      if (exposePlayer) {
-        exposeTarget = exposePlayer.id;
-      } else {
-        const fallback = randomOther();
-        console.warn(`[vote-fallback] agent="${this.name}" method=getVotes vote=expose returned="${result.expose}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
-        exposeTarget = fallback.id;
-      }
 
       const voteEntry = {
         round: ctx.round,
         myVotes: {
           empower: empowerPlayer?.name ?? "unknown",
-          expose: exposePlayer?.name ?? "unknown",
         },
       };
       const existingRoundIndex = this.memory.roundHistory.findIndex((entry) => entry.round === ctx.round);
@@ -2533,23 +2524,21 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
       this.recordStrategicDecision(ctx, "vote", "Standard Vote", metadata);
       return {
         empowerTarget,
-        exposeTarget,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
       };
     } catch (err) {
       const empFallback = randomOther();
-      const expFallback = randomOther();
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVotes error="${err instanceof Error ? err.message : err}" fallback=empower:"${empFallback.name}",expose:"${expFallback.name}"`);
-      return { empowerTarget: empFallback.id, exposeTarget: expFallback.id, thinking: undefined, reasoningContext: undefined };
+      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVotes error="${err instanceof Error ? err.message : err}" fallback=empower:"${empFallback.name}"`);
+      return { empowerTarget: empFallback.id, thinking: undefined, reasoningContext: undefined };
     }
   }
 
   async getEmpowerRevote(
     ctx: PhaseContext,
     tiedCandidates: UUID[],
-    originalVote: { empowerTarget: UUID; exposeTarget: UUID },
+    originalVote: { empowerTarget: UUID },
   ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     const tiedPlayers = tiedCandidates
       .map((id) => ctx.alivePlayers.find((player) => player.id === id))
@@ -2560,16 +2549,15 @@ Use the cast_votes tool. Both votes are required. Use player names exactly as li
     }
 
     const originalEmpowerName = ctx.alivePlayers.find((player) => player.id === originalVote.empowerTarget)?.name ?? originalVote.empowerTarget;
-    const originalExposeName = ctx.alivePlayers.find((player) => player.id === originalVote.exposeTarget)?.name ?? originalVote.exposeTarget;
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    // EXPOSE REMOVED: revote prompt no longer mentions a locked expose ballot.
     const prompt = this.buildUserPrompt(ctx) + `
 ## Empower Revote
-This is NOT a new normal vote. You already cast your Round ${ctx.round} vote:
+This is NOT a new normal vote. You already cast your Round ${ctx.round} empower vote:
 - Original empower: ${originalEmpowerName}
-- Original expose: ${originalExposeName}
 
-Only the empower result tied. Your expose vote is locked and will not change.
+Only the empower result tied.
 
 Eligible tied empower candidates: ${tiedPlayers.map((player) => player.name).join(", ")}
 
@@ -3759,7 +3747,7 @@ ${lines}`;
 
   private buildVoteHistorySection(currentRound: number): string {
     const formatEntry = (r: AgentMemory["roundHistory"][number]) =>
-      `  R${r.round}: empower=${r.myVotes.empower}, expose=${r.myVotes.expose}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`;
+      `  R${r.round}: empower=${r.myVotes.empower}${r.empowered ? `, empowered=${r.empowered}` : ""}${r.eliminated ? `, eliminated=${r.eliminated}` : ""}`;
     const pastRounds = this.memory.roundHistory.filter((entry) => entry.round < currentRound);
     const currentRoundVotes = this.memory.roundHistory.filter((entry) => entry.round === currentRound);
 
@@ -3875,9 +3863,9 @@ Use only this locked format for the current round. Do not import rules from an u
 - This is not a normal empower/expose vote.`;
     }
     if ((ctx.phase === Phase.MINGLE || ctx.phase === Phase.POST_VOTE_MINGLE) && ctx.postVotePressure) {
+      // Classic post-vote pressure path only (not format-kernel default). EXPOSE language kept for legacy classic lane.
       return `## Post-Vote Mingle Rules
-- The standard Vote is locked and revealed. Do not cast another empower/expose ballot in Mingle.
-- Expose votes create an exposure bench. Two eligible exposed receivers lock the pair; one or zero exposed receivers, or unresolved tied tiers, let the empowered player privately resolve only the ambiguity.
+- The standard Vote is locked and revealed. Do not cast another empower ballot in Mingle.
 - Mingle rooms are private: only current room occupants hear current room messages.
 - Use the revealed vote and pressure state to bargain, explain, count votes, seek protection, redirect danger, or stay guarded with a reason.`;
     }
@@ -3894,16 +3882,18 @@ Use only this locked format for the current round. Do not import rules from an u
 - Any plan for an offered format remains contingent until that choice is accepted.`;
     }
     if (ctx.phase === Phase.VOTE) {
+      // EXPOSE REMOVED from Standard Vote Rules block (format-kernel).
       return `## Standard Vote Rules
 - Empower selects the player who chooses the round format and breaks format elimination ties.
-- Expose is a legacy public social receipt; it does not determine elimination on the format-kernel path.
+- There is no expose ballot on the format-kernel path.
 - No one has won this vote's empowerment yet, no format is locked, and empowerment does not grant immunity.
-- Votes are public after Vote resolves. Everyone can use the revealed vote record as social evidence.`;
+- Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.`;
     }
+    // EXPOSE REMOVED from default Game Rules block (format-kernel).
     return `## Game Rules
-- Standard Vote records empower and expose. Empower selects the round-format chooser and format tiebreaker.
-- Expose is a legacy public social receipt; it does not determine elimination on the format-kernel path.
-- Votes are public after Vote resolves. Everyone can use the revealed vote record as social evidence.
+- Standard Vote is empower-only. Empower selects the round-format chooser and format tiebreaker.
+- There is no expose ballot; elimination is resolved only by the locked round format.
+- Empower votes are public after Vote resolves. Everyone can use the revealed empower record as social evidence.
 - The House offers two round formats after empowerment; the empowered player chooses one.
 - Empowerment is not immunity. The empowered player still participates and can be eliminated under the locked format.
 - After the pick, Mingle rooms are private and the locked format's own rules resolve the elimination.`;
@@ -3949,10 +3939,11 @@ Use only this locked format for the current round. Do not import rules from an u
 
     const phaseObjective: Partial<Record<Phase, string>> = {
       [Phase.INTRODUCTION]: "Introduce a human persona. Do not play strategy out loud yet.",
-      [Phase.LOBBY]: "Public table talk before voting. Build cover, test reads, create reasons people might empower or expose someone.",
+      [Phase.LOBBY]: "Public table talk before voting. Build cover, test reads, create reasons people might empower someone.",
       [Phase.MINGLE_I]: "Form or respond to official named-alliance proposals before the vote; format-specific commitments remain contingent.",
       [Phase.PRE_VOTE_HUDDLE]: "Coordinate the empower vote and contingent format branches inside the active alliance huddle.",
-      [Phase.VOTE]: "Cast empower and expose. Empower chooses the format picker; expose remains a non-elimination social receipt.",
+      // EXPOSE REMOVED from VOTE phase objective (format-kernel).
+      [Phase.VOTE]: "Cast the empower ballot. Empower chooses who picks the round format and breaks format elimination ties.",
       [Phase.FORMAT_MENU]: "Read the two House-offered formats without inventing a locked choice.",
       [Phase.FORMAT_PICK]: "Choose one offered format. The choice grants no immunity.",
       [Phase.FORMAT_MINGLE]: "Coordinate under the locked format using its real public-versus-sealed action rules.",
@@ -3988,7 +3979,7 @@ ${formatLine}
       `${target}: ${voters.length} (${voters.join(", ")})`;
     const countVotes = (
       entries: typeof ledger,
-      targetKey: "empowerTargetName" | "exposeTargetName" | "revoteEmpowerTargetName",
+      targetKey: "empowerTargetName" | "revoteEmpowerTargetName",
     ): Map<string, string[]> => {
       const counts = new Map<string, string[]>();
       for (const entry of entries) {
@@ -4013,11 +4004,11 @@ ${formatLine}
       byRound.set(entry.round, roundEntries);
     }
 
+    // EXPOSE REMOVED from revealed-vote ledger player context (format-kernel): empower (+ revote) only.
     const rounds = Array.from(byRound.entries())
       .sort(([a], [b]) => a - b)
       .map(([round, entries]) => {
         const initialEmpowerCounts = countVotes(entries, "empowerTargetName");
-        const exposeCounts = countVotes(entries, "exposeTargetName");
         const revoteCounts = countVotes(entries, "revoteEmpowerTargetName");
         const maxInitialEmpower = Math.max(...Array.from(initialEmpowerCounts.values()).map((voters) => voters.length), 0);
         const initialTie = maxInitialEmpower > 0
@@ -4053,22 +4044,20 @@ ${winnerText}`
             const revote = entry.revoteEmpowerTargetName
               ? `; in the tie re-vote, chose ${entry.revoteEmpowerTargetName}`
               : "";
-            return `  - ${entry.voterName}: empowered ${entry.empowerTargetName}, exposed ${entry.exposeTargetName}${revote}`;
+            return `  - ${entry.voterName}: empowered ${entry.empowerTargetName}${revote}`;
           })
           .join("\n");
         return `Round ${round}:
 Initial empower tally:
 ${formatCounts(initialEmpowerCounts)}
-Expose tally:
-${formatCounts(exposeCounts)}
 ${revoteSummary}
-Named ballots:
+Named empower ballots:
 ${rows}`;
       })
       .join("\n");
 
     return `## Revealed Vote Ledger
-These named votes are public player knowledge after Vote resolves. Use them as receipts for trust, betrayal, pressure, apologies, and deals. If there was an empower re-vote, the re-vote resolves only the initial empower tie and must not be added to the initial empower tally as extra ballots.
+These named empower votes are public player knowledge after Vote resolves. Use them as receipts for trust, betrayal, pressure, apologies, and deals. There is no expose ballot on the format-kernel path. If there was an empower re-vote, the re-vote resolves only the initial empower tie and must not be added to the initial empower tally as extra ballots.
 ${rounds}`;
   }
 

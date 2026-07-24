@@ -45,14 +45,15 @@ After Mingle I, The House may schedule scarce huddle sessions for active allianc
 
 Huddles run pass-wise: every scheduled alliance receives its first session before any scheduled alliance receives a second. The House may schedule up to `min(4, max(2, floor(alivePlayers / 4)))` huddle sessions in a pre-format window, and no alliance can receive more than two sessions in that window.
 
-### 4. Vote (Empower + Legacy Expose Receipt)
+### 4. Vote (Empower Only)
 
-Every player casts **two votes**:
+Every player casts **one empower vote**:
 
 - **Empower**: Choose the player who will pick the round format from two House offers and break any format elimination tie. Plurality wins. If there's a tie, the tied candidates go to a re-vote. If still tied, The House spins the wheel (random selection). The same player can be empowered in consecutive rounds.
-- **Expose**: Name one player as a public social receipt. The current dual-ballot interface still records expose for legacy continuity, but expose does **not** determine elimination, create a candidate lane, or grant/remove immunity on the format-kernel standard path.
 
-After votes resolve, the named vote record is public player knowledge. Everyone can see who empowered whom and who exposed whom, and those receipts become fuel for apologies, retaliation, and dealmaking.
+There is **no expose ballot** on the format-kernel standard path. Elimination is resolved only by the locked round format after the format menu and pick.
+
+After votes resolve, the named empower record is public player knowledge. Everyone can see who empowered whom, and those receipts become fuel for apologies, retaliation, and dealmaking.
 
 Players may also pre-register a **last message** that will be posted if they're eliminated.
 
