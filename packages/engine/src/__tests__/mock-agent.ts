@@ -4,6 +4,7 @@
  */
 
 import type { AgentResponse, AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, TargetDecision } from "../game-runner";
+import type { FormatDecisionProvenance } from "../game-runner.types";
 import type { UUID } from "../types";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
@@ -237,18 +238,20 @@ export class MockAgent implements IAgent {
   async pickRoundFormat(
     _ctx: PhaseContext,
     offeredFormats: [string, string],
-  ): Promise<{ formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     return {
       formatId: offeredFormats[0],
       thinking: `mock: pick first offered format ${offeredFormats[0]}`,
       decisionLog: this.decisionLog("pick first offered format"),
+      decisionSource: "llm",
+      fallbackReason: null,
     };
   }
 
   async getSaveOrEliminateBallot(
     ctx: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<{
+  ): Promise<FormatDecisionProvenance & {
     polarity: "save" | "eliminate";
     targetId: UUID;
     thinking?: string;
@@ -265,13 +268,15 @@ export class MockAgent implements IAgent {
       targetId: chosen,
       thinking: `mock: ${polarity} ${chosen}`,
       decisionLog: this.decisionLog("save-or-eliminate ballot"),
+      decisionSource: "llm",
+      fallbackReason: null,
     };
   }
 
   async getVoteBombBallot(
     ctx: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     const others = aliveIds.filter((id) => id !== this.id);
     // Spread votes: each agent votes for a different offset target to avoid pure pile-on.
     const idx = Math.max(0, ctx.alivePlayers.findIndex((p) => p.id === this.id)) % Math.max(1, others.length);
@@ -280,41 +285,49 @@ export class MockAgent implements IAgent {
       targetId,
       thinking: `mock: vote bomb → ${targetId}`,
       decisionLog: this.decisionLog("vote bomb ballot"),
+      decisionSource: "llm",
+      fallbackReason: null,
     };
   }
 
   async getBouncePointer(
     _ctx: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
-  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     const targetId = board.unclassified[0] ?? this.id;
     return {
       targetId,
       thinking: `mock: bounce → ${targetId}`,
       decisionLog: this.decisionLog("bounce pointer"),
+      decisionSource: "llm",
+      fallbackReason: null,
     };
   }
 
   async getSafetyBounceVote(
     _ctx: PhaseContext,
     vulnerableIds: UUID[],
-  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     const targetId = vulnerableIds[vulnerableIds.length - 1] ?? this.id;
     return {
       targetId,
       thinking: `mock: bounce vote → ${targetId}`,
       decisionLog: this.decisionLog("safety bounce vote"),
+      decisionSource: "llm",
+      fallbackReason: null,
     };
   }
 
   async breakFormatEliminationTie(
     _ctx: PhaseContext,
     tiedSet: UUID[],
-  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
     return {
       targetId: tiedSet[0] ?? this.id,
       thinking: "mock: break format tie with first tied player",
       decisionLog: this.decisionLog("format tiebreak"),
+      decisionSource: "llm",
+      fallbackReason: null,
     };
   }
 

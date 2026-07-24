@@ -25,6 +25,10 @@ import {
   ruleSheetForFormat,
   type FormatPressureProjection,
 } from "../format-pressure";
+import type {
+  FormatDecisionFallbackReason,
+  FormatDecisionProvenance,
+} from "../game-runner.types";
 import { Phase, type UUID } from "../types";
 import { handleElimination } from "./elimination";
 import {
@@ -41,6 +45,24 @@ let offeredFormats: [LaunchFormatId, LaunchFormatId] | null = null;
 let selectedFormat: LaunchFormatId | null = null;
 let formatPressure: FormatPressureProjection | null = null;
 let lastSelectedFormat: LaunchFormatId | null = null;
+
+function normalizedFormatProvenance(
+  result: Partial<FormatDecisionProvenance>,
+): FormatDecisionProvenance {
+  if (result.decisionSource === "llm") {
+    return { decisionSource: "llm", fallbackReason: null };
+  }
+  return {
+    decisionSource: "fallback",
+    fallbackReason: result.fallbackReason ?? "agent_internal_fallback",
+  };
+}
+
+function fallbackFormatProvenance(
+  fallbackReason: FormatDecisionFallbackReason,
+): FormatDecisionProvenance {
+  return { decisionSource: "fallback", fallbackReason };
+}
 
 export function getLastSelectedFormat(): LaunchFormatId | null {
   return lastSelectedFormat;
@@ -110,11 +132,17 @@ export async function runFormatPickPhase(
   let thinking = "House fallback: first offered format";
   let reasoningContext: string | undefined;
   let decisionLog: string | null | undefined;
+  let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
   if (empoweredAgent.pickRoundFormat) {
     const result = await empoweredAgent.pickRoundFormat(phaseCtx, offeredFormats);
     const picked = pickFormatFromMenu(offeredFormats, result.formatId);
-    if (picked) chosen = picked;
+    if (picked) {
+      chosen = picked;
+      provenance = normalizedFormatProvenance(result);
+    } else {
+      provenance = fallbackFormatProvenance("invalid_format_choice");
+    }
     thinking = result.thinking ?? thinking;
     reasoningContext = result.reasoningContext;
     decisionLog = result.decisionLog;
@@ -145,6 +173,7 @@ export async function runFormatPickPhase(
     response: {
       offeredFormats,
       selectedFormat: chosen,
+      ...provenance,
       thinking,
       reasoningContext,
       ...strategicDecisionResponse({ decisionLog }),
@@ -252,12 +281,16 @@ async function resolveSaveOrEliminateRound(
     let thinking = "fallback eliminate first other";
     let reasoningContext: string | undefined;
     let decisionLog: string | null | undefined;
+    let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
     if (agent.getSaveOrEliminateBallot) {
       const result = await agent.getSaveOrEliminateBallot(phaseCtx, aliveIds);
       if (isLegalSaveOrEliminateBallot(player.id, result.targetId, result.polarity, aliveIds)) {
         polarity = result.polarity;
         targetId = result.targetId;
+        provenance = normalizedFormatProvenance(result);
+      } else {
+        provenance = fallbackFormatProvenance("invalid_save_or_eliminate_ballot");
       }
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
@@ -279,6 +312,7 @@ async function resolveSaveOrEliminateRound(
         polarity,
         targetId,
         sealed: true,
+        ...provenance,
         ...strategicDecisionResponse({ decisionLog }),
       },
       thinking,
@@ -339,11 +373,15 @@ async function resolveVoteBombRound(
     let thinking = "fallback vote last other";
     let reasoningContext: string | undefined;
     let decisionLog: string | null | undefined;
+    let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
     if (agent.getVoteBombBallot) {
       const result = await agent.getVoteBombBallot(phaseCtx, aliveIds);
       if (isLegalVoteBombBallot(player.id, result.targetId, aliveIds)) {
         targetId = result.targetId;
+        provenance = normalizedFormatProvenance(result);
+      } else {
+        provenance = fallbackFormatProvenance("invalid_vote_bomb_target");
       }
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
@@ -360,6 +398,7 @@ async function resolveVoteBombRound(
         formatId: "vote_bomb",
         targetId,
         sealed: true,
+        ...provenance,
         ...strategicDecisionResponse({ decisionLog }),
       },
       thinking,
@@ -414,6 +453,7 @@ async function resolveSafetyBounceRound(
     let thinking = "fallback first unclassified";
     let reasoningContext: string | undefined;
     let decisionLog: string | null | undefined;
+    let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
     if (agent?.getBouncePointer) {
       const result = await agent.getBouncePointer(phaseCtx, {
@@ -425,6 +465,9 @@ async function resolveSafetyBounceRound(
       const pointer = { actorId, targetId: result.targetId };
       if (isLegalBouncePointer(board, pointer)) {
         targetId = result.targetId;
+        provenance = normalizedFormatProvenance(result);
+      } else {
+        provenance = fallbackFormatProvenance("invalid_bounce_pointer");
       }
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
@@ -446,6 +489,7 @@ async function resolveSafetyBounceRound(
       response: {
         targetId,
         classification,
+        ...provenance,
         ...strategicDecisionResponse({ decisionLog }),
       },
       thinking,
@@ -476,11 +520,15 @@ async function resolveSafetyBounceRound(
     let thinking = "fallback first vulnerable";
     let reasoningContext: string | undefined;
     let decisionLog: string | null | undefined;
+    let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
     if (agent?.getSafetyBounceVote) {
       const result = await agent.getSafetyBounceVote(phaseCtx, board.vulnerable);
       if (board.vulnerable.includes(result.targetId)) {
         targetId = result.targetId;
+        provenance = normalizedFormatProvenance(result);
+      } else {
+        provenance = fallbackFormatProvenance("invalid_safety_bounce_target");
       }
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
@@ -499,6 +547,7 @@ async function resolveSafetyBounceRound(
         formatId: "safety_bounce",
         targetId,
         sealed: true,
+        ...provenance,
         ...strategicDecisionResponse({ decisionLog }),
       },
       thinking,
@@ -557,11 +606,15 @@ async function breakFormatTie(
   let thinking = "fallback first tied";
   let reasoningContext: string | undefined;
   let decisionLog: string | null | undefined;
+  let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
   if (agent?.breakFormatEliminationTie) {
     const result = await agent.breakFormatEliminationTie(phaseCtx, [...tiedSet]);
     if (tiedSet.includes(result.targetId)) {
       choiceId = result.targetId;
+      provenance = normalizedFormatProvenance(result);
+    } else {
+      provenance = fallbackFormatProvenance("invalid_format_tiebreak_target");
     }
     thinking = result.thinking ?? thinking;
     reasoningContext = result.reasoningContext;
@@ -585,6 +638,7 @@ async function breakFormatTie(
     response: {
       tiedSet: [...tiedSet],
       eliminatedId: broken.eliminatedId,
+      ...provenance,
       ...strategicDecisionResponse({ decisionLog }),
     },
     thinking,

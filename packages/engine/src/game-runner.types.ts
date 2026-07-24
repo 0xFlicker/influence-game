@@ -812,6 +812,22 @@ export interface PowerActionDecision extends PowerAction {
   shieldPullUpCandidateIds?: UUID[];
 }
 
+export type FormatDecisionFallbackReason =
+  | "agent_method_unavailable"
+  | "agent_internal_fallback"
+  | "tool_call_failed"
+  | "invalid_format_choice"
+  | "invalid_save_or_eliminate_ballot"
+  | "invalid_vote_bomb_target"
+  | "invalid_bounce_pointer"
+  | "invalid_safety_bounce_target"
+  | "invalid_format_tiebreak_target";
+
+export interface FormatDecisionProvenance {
+  decisionSource: "llm" | "fallback";
+  fallbackReason: FormatDecisionFallbackReason | null;
+}
+
 export type AgentTurnVisibility = "public" | "private" | "anonymous" | "diary" | "system";
 
 export interface AgentTurnActor {
@@ -928,11 +944,11 @@ export interface IAgent {
   pickRoundFormat?(
     context: PhaseContext,
     offeredFormats: [string, string],
-  ): Promise<{ formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & { formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
   getSaveOrEliminateBallot?(
     context: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<{
+  ): Promise<FormatDecisionProvenance & {
     polarity: "save" | "eliminate";
     targetId: UUID;
     thinking?: string;
@@ -942,19 +958,19 @@ export interface IAgent {
   getVoteBombBallot?(
     context: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
   getBouncePointer?(
     context: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
-  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
   getSafetyBounceVote?(
     context: PhaseContext,
     vulnerableIds: UUID[],
-  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
   breakFormatEliminationTie?(
     context: PhaseContext,
     tiedSet: UUID[],
-  ): Promise<{ targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
 
   /** Called when the agent is about to be eliminated */
   getLastMessage(context: PhaseContext): Promise<AgentResponse>;

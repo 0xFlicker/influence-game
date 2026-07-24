@@ -5,6 +5,7 @@ import { TemplateHouseInterviewer } from "../house-interviewer";
 import type { PhaseContext, PrivateDecisionTrace } from "../game-runner";
 import { Phase } from "../types";
 import { modelCatalogEntryById } from "../model-catalog";
+import { ruleSheetForFormat } from "../format-pressure";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -268,6 +269,300 @@ function makeRejectingOpenAIStub(requests: Array<Record<string, unknown>>, error
 }
 
 describe("InfluenceAgent structured output mode", () => {
+  it("uses strict active-format tools and accepts legal decisions with LLM provenance", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "pick_round_format",
+          args: {
+            thinking: "Vote Bomb gives me the best leverage.",
+            formatId: "vote_bomb",
+            decisionLog: "Pick Vote Bomb to make vote placement matter.",
+          },
+        },
+        {
+          toolName: "save_or_eliminate_ballot",
+          args: {
+            thinking: "Bank social capital with Mira.",
+            polarity: "save",
+            target: "Mira",
+            decisionLog: "Save Mira to reinforce our working relationship.",
+          },
+        },
+        {
+          toolName: "vote_bomb_ballot",
+          args: {
+            thinking: "Load Vera while avoiding a stray kill on Mira.",
+            target: "Vera",
+            decisionLog: "Load Vera and keep Mira at zero.",
+          },
+        },
+        {
+          toolName: "bounce_pointer",
+          args: {
+            thinking: "Point to Vera because she is the only useful unclassified target.",
+            target: "Vera",
+            decisionLog: "Make Vera vulnerable through the public bounce.",
+          },
+        },
+        {
+          toolName: "safety_bounce_vote",
+          args: {
+            thinking: "Mira is the more dangerous vulnerable player.",
+            target: "Mira",
+            decisionLog: "Vote Mira out from the vulnerable pool.",
+          },
+        },
+        {
+          toolName: "format_tiebreak",
+          args: {
+            thinking: "Vera is the stronger long-term threat.",
+            target: "Vera",
+            decisionLog: "Break the tie against Vera.",
+          },
+        },
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const pick = await agent.pickRoundFormat(
+      {
+        ...makeContext(Phase.FORMAT_PICK),
+        empoweredId: "atlas-id",
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: null,
+          ruleSheetSummary: null,
+        },
+      },
+      ["vote_bomb", "safety_bounce"],
+    );
+    const saveOrEliminate = await agent.getSaveOrEliminateBallot(
+      {
+        ...makeContext(Phase.FORMAT_RESOLVE),
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["save_or_eliminate", "vote_bomb"],
+          selectedFormat: "save_or_eliminate",
+          ruleSheetSummary: ruleSheetForFormat("save_or_eliminate"),
+        },
+      },
+      ["atlas-id", "mira-id", "vera-id"],
+    );
+    const voteBomb = await agent.getVoteBombBallot(
+      {
+        ...makeContext(Phase.FORMAT_RESOLVE),
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: "vote_bomb",
+          ruleSheetSummary: ruleSheetForFormat("vote_bomb"),
+        },
+      },
+      ["atlas-id", "mira-id", "vera-id"],
+    );
+    const bouncePointer = await agent.getBouncePointer(
+      {
+        ...makeContext(Phase.FORMAT_RESOLVE),
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: "safety_bounce",
+          ruleSheetSummary: ruleSheetForFormat("safety_bounce"),
+          bounceBoard: {
+            safe: ["atlas-id"],
+            vulnerable: ["mira-id"],
+            unclassified: ["vera-id"],
+            nextActorId: "atlas-id",
+          },
+        },
+      },
+      {
+        safe: ["atlas-id"],
+        vulnerable: ["mira-id"],
+        unclassified: ["vera-id"],
+        nextActorId: "atlas-id",
+      },
+    );
+    const safetyVote = await agent.getSafetyBounceVote(
+      {
+        ...makeContext(Phase.FORMAT_RESOLVE),
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: "safety_bounce",
+          ruleSheetSummary: ruleSheetForFormat("safety_bounce"),
+        },
+      },
+      ["mira-id", "vera-id"],
+    );
+    const tiebreak = await agent.breakFormatEliminationTie(
+      {
+        ...makeContext(Phase.FORMAT_RESOLVE),
+        empoweredId: "atlas-id",
+        formatPressure: {
+          empoweredId: "atlas-id",
+          empoweredName: "Atlas",
+          offeredFormats: ["vote_bomb", "safety_bounce"],
+          selectedFormat: "safety_bounce",
+          ruleSheetSummary: ruleSheetForFormat("safety_bounce"),
+        },
+      },
+      ["mira-id", "vera-id"],
+    );
+
+    for (const result of [pick, saveOrEliminate, voteBomb, bouncePointer, safetyVote, tiebreak]) {
+      expect(result.decisionSource).toBe("llm");
+      expect(result.fallbackReason).toBeNull();
+      expect(result.decisionLog).toBeTruthy();
+    }
+    expect(pick.formatId).toBe("vote_bomb");
+    expect(saveOrEliminate).toMatchObject({ polarity: "save", targetId: "mira-id" });
+    expect(voteBomb.targetId).toBe("vera-id");
+    expect(bouncePointer.targetId).toBe("vera-id");
+    expect(safetyVote.targetId).toBe("mira-id");
+    expect(tiebreak.targetId).toBe("vera-id");
+
+    const expectedToolNames = [
+      "pick_round_format",
+      "save_or_eliminate_ballot",
+      "vote_bomb_ballot",
+      "bounce_pointer",
+      "safety_bounce_vote",
+      "format_tiebreak",
+    ];
+    expect(requests.map((request) => {
+      const choice = request.tool_choice as { function?: { name?: string } };
+      return choice.function?.name;
+    })).toEqual(expectedToolNames);
+    for (const request of requests) {
+      const tools = request.tools as Array<{
+        function: { strict?: boolean; parameters?: { additionalProperties?: unknown; required?: string[] } };
+      }>;
+      expect(tools[0]?.function.strict).toBe(true);
+      expect(tools[0]?.function.parameters?.additionalProperties).toBe(false);
+      expect(tools[0]?.function.parameters?.required).toContain("decisionLog");
+    }
+
+    const prompts = requests.map((request) => {
+      const messages = request.messages as Array<{ content: string }>;
+      return messages.at(-1)?.content ?? "";
+    });
+    expect(prompts[0]).toContain(ruleSheetForFormat("vote_bomb"));
+    expect(prompts[0]).toContain(ruleSheetForFormat("safety_bounce"));
+    expect(prompts[0]).not.toContain(ruleSheetForFormat("save_or_eliminate"));
+    expect(prompts[1]).toContain(ruleSheetForFormat("save_or_eliminate"));
+    expect(prompts[1]).not.toContain(ruleSheetForFormat("vote_bomb"));
+    expect(prompts[2]).toContain("loading");
+    expect(prompts[2]).toContain("stray kill");
+    expect(prompts[3]).toContain("Legal unclassified targets: Vera");
+    expect(prompts[4]).toContain("Legal vulnerable targets: Mira, Vera");
+    expect(prompts[5]).toContain("Legal tied targets: Mira, Vera");
+  });
+
+  it("deterministically repairs invalid format tool output with stable provenance", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "pick_round_format",
+          args: { thinking: "Invent a format.", formatId: "classic", decisionLog: null },
+        },
+        {
+          toolName: "save_or_eliminate_ballot",
+          args: { thinking: "Malformed ballot.", polarity: "banish", target: "Nobody", decisionLog: null },
+        },
+        {
+          toolName: "vote_bomb_ballot",
+          args: { thinking: "Malformed target.", target: "Nobody", decisionLog: null },
+        },
+        {
+          toolName: "bounce_pointer",
+          args: { thinking: "Point to a classified player.", target: "Mira", decisionLog: null },
+        },
+        {
+          toolName: "safety_bounce_vote",
+          args: { thinking: "Vote outside the pool.", target: "Atlas", decisionLog: null },
+        },
+        {
+          toolName: "format_tiebreak",
+          args: { thinking: "Pick outside the tie.", target: "Atlas", decisionLog: null },
+        },
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const formatContext: PhaseContext = {
+      ...makeContext(Phase.FORMAT_RESOLVE),
+      empoweredId: "atlas-id",
+      formatPressure: {
+        empoweredId: "atlas-id",
+        empoweredName: "Atlas",
+        offeredFormats: ["vote_bomb", "safety_bounce"],
+        selectedFormat: "safety_bounce",
+        ruleSheetSummary: ruleSheetForFormat("safety_bounce"),
+      },
+    };
+
+    const pick = await agent.pickRoundFormat(formatContext, ["vote_bomb", "safety_bounce"]);
+    const saveOrEliminate = await agent.getSaveOrEliminateBallot(formatContext, ["atlas-id", "mira-id", "vera-id"]);
+    const voteBomb = await agent.getVoteBombBallot(formatContext, ["atlas-id", "mira-id", "vera-id"]);
+    const bouncePointer = await agent.getBouncePointer(formatContext, {
+      safe: ["atlas-id"],
+      vulnerable: ["mira-id"],
+      unclassified: ["vera-id"],
+      nextActorId: "atlas-id",
+    });
+    const safetyVote = await agent.getSafetyBounceVote(formatContext, ["mira-id", "vera-id"]);
+    const tiebreak = await agent.breakFormatEliminationTie(formatContext, ["mira-id", "vera-id"]);
+
+    expect(pick).toMatchObject({
+      formatId: "vote_bomb",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_format_choice",
+    });
+    expect(saveOrEliminate).toMatchObject({
+      polarity: "eliminate",
+      targetId: "mira-id",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_save_or_eliminate_ballot",
+    });
+    expect(voteBomb).toMatchObject({
+      targetId: "mira-id",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_vote_bomb_target",
+    });
+    expect(bouncePointer).toMatchObject({
+      targetId: "vera-id",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_bounce_pointer",
+    });
+    expect(safetyVote).toMatchObject({
+      targetId: "mira-id",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_safety_bounce_target",
+    });
+    expect(tiebreak).toMatchObject({
+      targetId: "mira-id",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_format_tiebreak_target",
+    });
+  });
+
   it("passes owner-authored runtime inputs into prompts and supported model requests", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
