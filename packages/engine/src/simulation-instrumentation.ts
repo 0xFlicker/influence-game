@@ -32,7 +32,8 @@ export interface SimulatorArgsSnapshot {
   providerProfileId?: string;
   reasoningPolicy?: string;
   variant: string;
-  gameTimeoutMs: number;
+  /** Whole-game timeout ms, or null when none was requested. */
+  gameTimeoutMs: number | null;
   llmTimeoutMs: number;
   houseSummaries?: boolean;
   enableStrategicReflections?: boolean;

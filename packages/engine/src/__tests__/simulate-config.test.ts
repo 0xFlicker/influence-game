@@ -473,13 +473,12 @@ describe("simulation variant config", () => {
     expect(args.llmTimeoutMs).toBe(5000);
   });
 
-  it("uses a larger default timeout for 8-player simulation batches", () => {
+  it("defaults whole-game timeout to none unless the user opts in", () => {
     const previous = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
     delete process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
     try {
       const args = parseArgs(["--players", "8"]);
-
-      expect(args.gameTimeoutMs).toBe(900000);
+      expect(args.gameTimeoutMs).toBeNull();
     } finally {
       if (previous === undefined) {
         delete process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
@@ -493,5 +492,20 @@ describe("simulation variant config", () => {
     const args = parseArgs(["--players", "8", "--game-timeout-ms", "1200000"]);
 
     expect(args.gameTimeoutMs).toBe(1200000);
+  });
+
+  it("honors INFLUENCE_SIM_GAME_TIMEOUT_MS when set", () => {
+    const previous = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+    process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS = "900000";
+    try {
+      const args = parseArgs(["--players", "6"]);
+      expect(args.gameTimeoutMs).toBe(900000);
+    } finally {
+      if (previous === undefined) {
+        delete process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+      } else {
+        process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS = previous;
+      }
+    }
   });
 });

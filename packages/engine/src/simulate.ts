@@ -20,7 +20,9 @@
  * Chatty / live formatted transcript (great for watching local model Mingle behavior and per-decision reasoning):
  *   INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
  *   bun run simulate:local -- --games 1 --players 8 --model google/gemma-4-26b-a4b-qat \
- *     --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
+ *     --variant mingle --chatty --max-rounds 2 --llm-timeout-sec 300
+ *   # Whole-game timeout is off by default; only set when you want a hard wall clock:
+ *   #   --game-timeout-sec 7200
  *
  * The --chatty output (and written transcripts) now interleave House action lines
  * ("X votes: ...", "Y re-votes: ...", "Z power action: ...") with the agent's
@@ -136,9 +138,7 @@ import {
 // CLI argument parsing
 // ---------------------------------------------------------------------------
 
-const DEFAULT_GAME_TIMEOUT_MS = 10 * 60 * 1000;
-const DEFAULT_LARGE_GAME_TIMEOUT_MS = 15 * 60 * 1000;
-const LARGE_GAME_TIMEOUT_PLAYER_THRESHOLD = 8;
+/** Per-request LLM timeout only. Whole-game timeout is opt-in (null = none). */
 const DEFAULT_LLM_TIMEOUT_MS = 45 * 1000;
 
 export interface SimArgs {
@@ -151,7 +151,11 @@ export interface SimArgs {
   modelCatalogId?: string;
   reasoningPolicy?: ModelReasoningPolicy;
   variant: string;
-  gameTimeoutMs: number;
+  /**
+   * Whole-game wall-clock timeout in ms. Null means no game-level timeout —
+   * only set when the user passes --game-timeout-* or INFLUENCE_SIM_GAME_TIMEOUT_MS.
+   */
+  gameTimeoutMs: number | null;
   llmTimeoutMs: number;
   /** Chatty mode: print formatted transcript entries live to console as they happen. */
   chatty: boolean;
@@ -197,7 +201,6 @@ function parseReasoningSummaryArg(value: string | undefined): OpenAIReasoningSum
 
 export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
-  let gameTimeoutOverridden = Boolean(envGameTimeout);
   const args: SimArgs = {
     games: 3,
     players: 6,
@@ -209,7 +212,8 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       reasoningPolicy: normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY)!,
     }),
     variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
-    gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
+    // No whole-game timeout unless env or CLI sets one (local/LLM sims regularly exceed 10m).
+    gameTimeoutMs: envGameTimeout ? readPositiveInt(envGameTimeout, 0) || null : null,
     llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
     chatty: false,
     houseSummaries: process.env.INFLUENCE_SIM_HOUSE_SUMMARIES === "true",
@@ -252,13 +256,15 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.variant = next;
       i++;
     } else if (arg === "--game-timeout-ms" && next) {
-      args.gameTimeoutMs = parseInt(next, 10);
-      gameTimeoutOverridden = true;
+      const parsed = parseInt(next, 10);
+      args.gameTimeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
       i++;
     } else if (arg === "--game-timeout-sec" && next) {
-      args.gameTimeoutMs = parseInt(next, 10) * 1000;
-      gameTimeoutOverridden = true;
+      const parsed = parseInt(next, 10);
+      args.gameTimeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed * 1000 : null;
       i++;
+    } else if (arg === "--no-game-timeout" || arg === "--game-timeout-off") {
+      args.gameTimeoutMs = null;
     } else if (arg === "--llm-timeout-ms" && next) {
       args.llmTimeoutMs = parseInt(next, 10);
       i++;
@@ -304,10 +310,9 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   // At least 1 standard round; keep an upper bound so typos don't run forever.
   if (isNaN(args.maxRounds) || args.maxRounds < 1) args.maxRounds = 1;
   if (args.maxRounds > 50) args.maxRounds = 50;
-  if (!gameTimeoutOverridden && args.players >= LARGE_GAME_TIMEOUT_PLAYER_THRESHOLD) {
-    args.gameTimeoutMs = DEFAULT_LARGE_GAME_TIMEOUT_MS;
+  if (args.gameTimeoutMs !== null && (isNaN(args.gameTimeoutMs) || args.gameTimeoutMs < 1)) {
+    args.gameTimeoutMs = null;
   }
-  if (isNaN(args.gameTimeoutMs) || args.gameTimeoutMs < 1) args.gameTimeoutMs = DEFAULT_GAME_TIMEOUT_MS;
   if (isNaN(args.llmTimeoutMs) || args.llmTimeoutMs < 1) args.llmTimeoutMs = DEFAULT_LLM_TIMEOUT_MS;
 
   return args;
@@ -816,7 +821,9 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
   if (stats.failedGames > 0) lines.push(`**Failed games:** ${stats.failedGames}`);
   if (stats.partial) lines.push("**Partial batch:** yes");
   lines.push(`**Model:** ${stats.model}`);
-  lines.push(`**Timeouts:** game ${(stats.metadata.args.gameTimeoutMs / 1000).toFixed(0)}s, LLM request ${(stats.metadata.args.llmTimeoutMs / 1000).toFixed(0)}s`);
+  lines.push(
+    `**Timeouts:** game ${stats.metadata.args.gameTimeoutMs == null ? "none" : `${(stats.metadata.args.gameTimeoutMs / 1000).toFixed(0)}s`}, LLM request ${(stats.metadata.args.llmTimeoutMs / 1000).toFixed(0)}s`,
+  );
   lines.push(`**Avg game length:** ${stats.overall.avgGameLength.toFixed(1)} rounds`);
   lines.push(
     `**Avg duration:** ${(stats.overall.avgDurationMs / 1000).toFixed(0)}s per game`,
@@ -1094,9 +1101,12 @@ class SimulationTimeoutError extends Error {
 
 function runWithTimeout<T>(
   operation: Promise<T>,
-  timeoutMs: number,
+  timeoutMs: number | null,
   onTimeout: () => void,
 ): Promise<T> {
+  if (timeoutMs == null || timeoutMs < 1) {
+    return operation;
+  }
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeout = setTimeout(() => {
@@ -1383,7 +1393,9 @@ async function main() {
   console.log(`Reasoning policy: ${modelRuntime.reasoningPolicy}`);
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`OpenAI reasoning summaries: ${openAIReasoningSummary ?? "off"}`);
-  console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
+  console.log(
+    `Timeouts: game ${args.gameTimeoutMs == null ? "none (opt-in via --game-timeout-sec)" : `${(args.gameTimeoutMs / 1000).toFixed(0)}s`} | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`,
+  );
   if (args.maxRounds < Math.max(1, args.players - 4)) {
     console.log(
       `Pre-endgame cap: maxRounds=${args.maxRounds} stops after standard format rounds (endgame starts at 4 alive; would need ${Math.max(0, args.players - 4)} elim(s) to reach it).`,
