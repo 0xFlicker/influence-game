@@ -1,4 +1,6 @@
 import type { CanonicalGameEvent } from "./canonical-events";
+import type { LaunchFormatId } from "./formats";
+import { resolveGameKernel, type GameKernel } from "./game-kernel";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import { PlayerStatus, type Phase, type PowerActionType, type UUID } from "./types";
 
@@ -7,6 +9,20 @@ export type RevealedFactsStatus = "available" | "not_yet_resolved" | "not_yet_fl
 export type RevealedCanonicalFactsStatus = "available" | "not_yet_flushed" | "unavailable";
 
 export type RevealedFactsDiagnosticSeverity = "info" | "warning" | "error";
+
+/**
+ * Ballot ledger scope for format sealed ballots.
+ * - public: never include voter→ballot mappings
+ * - owner: include only ballots cast by ownedPlayerIds
+ * - producer: full sealed ballot ledger
+ */
+export type RevealedFormatBallotAccessMode = "public" | "owner" | "producer";
+
+export interface RevealedFormatBallotAccess {
+  mode: RevealedFormatBallotAccessMode;
+  /** Required when mode is "owner". */
+  ownedPlayerIds?: ReadonlySet<UUID> | readonly UUID[];
+}
 
 export interface RevealedRoundFactsDiagnostic {
   code: string;
@@ -22,8 +38,11 @@ export interface RevealedPlayerRef {
 export interface RevealedVoteLedgerEntry {
   voter: RevealedPlayerRef;
   empowerTarget: RevealedPlayerRef;
-  /** Legacy; null/absent on empower-only format-kernel ballots. */
-  exposeTarget: RevealedPlayerRef | null;
+  /**
+   * Legacy dual-ballot expose target.
+   * Omitted entirely on format-kernel empower-only ledgers (do not emit null noise).
+   */
+  exposeTarget?: RevealedPlayerRef | null;
   revoteEmpowerTarget: RevealedPlayerRef | null;
 }
 
@@ -87,6 +106,62 @@ export interface RevealedCouncilFacts {
   candidates: RevealedPlayerRef[];
 }
 
+export interface RevealedFormatBallotEntry {
+  voter: RevealedPlayerRef;
+  target: RevealedPlayerRef;
+  /** Present for Save-or-Eliminate; null for Vote Bomb / Safety Bounce final votes. */
+  polarity: "save" | "eliminate" | null;
+}
+
+export interface RevealedFormatBouncePointer {
+  actor: RevealedPlayerRef;
+  target: RevealedPlayerRef;
+  classification: "safe" | "vulnerable";
+}
+
+export interface RevealedSaveOrEliminateFacts {
+  nets: RevealedVoteCount[];
+  savesReceived: RevealedVoteCount[];
+  eliminateReceived: RevealedVoteCount[];
+}
+
+export interface RevealedVoteBombFacts {
+  totals: RevealedVoteCount[];
+  zeroSafe: RevealedPlayerRef[];
+}
+
+export interface RevealedSafetyBounceFacts {
+  starter: RevealedPlayerRef | null;
+  pointers: RevealedFormatBouncePointer[];
+  safe: RevealedPlayerRef[];
+  vulnerable: RevealedPlayerRef[];
+  voteTotals: RevealedVoteCount[];
+}
+
+/**
+ * Public format facts for format-kernel rounds.
+ * Sealed ballots are never public; owner/producer scopes attach a filtered ledger.
+ */
+export interface RevealedFormatFacts {
+  status: RevealedFactsStatus;
+  empowered: RevealedPlayerRef | null;
+  offeredFormatIds: [LaunchFormatId, LaunchFormatId] | null;
+  selectedFormatId: LaunchFormatId | null;
+  resolutionKind: "clear" | "auto" | null;
+  eliminated: RevealedPlayerRef | null;
+  tied: RevealedPlayerRef[];
+  tiebreaker: RevealedPlayerRef | null;
+  saveOrEliminate: RevealedSaveOrEliminateFacts | null;
+  voteBomb: RevealedVoteBombFacts | null;
+  safetyBounce: RevealedSafetyBounceFacts | null;
+  /**
+   * Sealed ballots: empty for public; owner-filtered for owner; full for producer.
+   * Never includes thinking, reasoningContext, decision logs, or model metadata.
+   */
+  sealedBallots: RevealedFormatBallotEntry[];
+  sealedBallotAccess: RevealedFormatBallotAccessMode;
+}
+
 export interface RevealedRoundFacts {
   round: number;
   phase: Phase | null;
@@ -95,8 +170,18 @@ export interface RevealedRoundFacts {
     eliminated: RevealedPlayerRef[];
   };
   standardVote: RevealedStandardVoteFacts;
-  power: RevealedPowerFacts;
-  council: RevealedCouncilFacts;
+  /** Format-kernel public + scoped sealed-ballot facts. */
+  format: RevealedFormatFacts;
+  /**
+   * Classic Power path only.
+   * Omitted on format-kernel rounds (absence means not in kernel, not unresolved).
+   */
+  power?: RevealedPowerFacts;
+  /**
+   * Classic Council path only.
+   * Omitted on format-kernel rounds (absence means not in kernel, not unresolved).
+   */
+  council?: RevealedCouncilFacts;
 }
 
 export interface RevealedRoundFactsAvailability {
@@ -120,6 +205,16 @@ export interface BuildRevealedRoundFactsOptions {
   round?: number;
   eventLogStatus?: string;
   projectionStatus?: string;
+  /**
+   * Resolved game kernel. When omitted, inferred via resolveGameKernel({ events }).
+   * Callers with a stored column should pass the resolved kernel from resolveGameKernel.
+   */
+  kernel?: GameKernel;
+  /**
+   * Controls sealed format ballot inclusion. Defaults to public (no ballots).
+   * Owner mode requires ownedPlayerIds; unknown modes fall back to public.
+   */
+  ballotAccess?: RevealedFormatBallotAccess;
 }
 
 type EventOf<TType extends CanonicalGameEvent["type"]> = Extract<CanonicalGameEvent, { type: TType }>;
@@ -129,11 +224,15 @@ const ARTIFACT_FACTS_NOT_USED_REASON = "Decision logs and cognitive artifacts ar
 export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions): RevealedRoundFactsRead {
   const eventLogStatus = options.eventLogStatus ?? (options.events.length === 0 ? "empty" : "complete");
   const projectionStatus = options.projectionStatus ?? (options.events.length === 0 ? "empty" : "complete");
+  const kernel =
+    options.kernel
+    ?? resolveGameKernel({ events: options.events }).kernel;
+  const includeClassicPowerCouncil = kernel === "classic";
 
   if (eventLogStatus === "empty" || options.events.length === 0) {
     const round = options.round ?? 0;
     return {
-      roundFacts: emptyRoundFacts(round, null, emptyPlayers(), "not_yet_flushed"),
+      roundFacts: emptyRoundFacts(round, null, emptyPlayers(), "not_yet_flushed", includeClassicPowerCouncil),
       availability: availability("not_yet_flushed", eventLogStatus, projectionStatus, [
         {
           code: "canonical_event_log_empty",
@@ -146,7 +245,7 @@ export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions)
 
   if (eventLogStatus === "invalid" || projectionStatus === "failed") {
     const round = options.round ?? latestRound(options.events);
-    return unavailableFactsRead(round, eventLogStatus, projectionStatus);
+    return unavailableFactsRead(round, eventLogStatus, projectionStatus, includeClassicPowerCouncil);
   }
 
   let latestProjection: CanonicalGameProjection;
@@ -154,14 +253,20 @@ export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions)
     latestProjection = replayCanonicalEvents(options.events);
   } catch {
     const round = options.round ?? latestRound(options.events);
-    return unavailableFactsRead(round, eventLogStatus, projectionStatus);
+    return unavailableFactsRead(round, eventLogStatus, projectionStatus, includeClassicPowerCouncil);
   }
 
   const round = options.round ?? latestProjection.round;
   const roundEvents = options.events.filter((event) => event.round === round);
   if (roundEvents.length === 0) {
     return {
-      roundFacts: emptyRoundFacts(round, latestProjection.phase, playerGroups(latestProjection), "not_yet_flushed"),
+      roundFacts: emptyRoundFacts(
+        round,
+        latestProjection.phase,
+        playerGroups(latestProjection),
+        "not_yet_flushed",
+        includeClassicPowerCouncil,
+      ),
       availability: availability("not_yet_flushed", eventLogStatus, projectionStatus, [
         {
           code: "round_canonical_events_not_found",
@@ -181,10 +286,15 @@ export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions)
 
   const phase = roundPhase(roundEvents, round === latestProjection.round ? latestProjection.phase : roundProjection.phase);
   const players = playerGroups(roundProjection);
-  const standardVote = buildStandardVoteFacts(roundEvents, roundProjection);
-  const power = buildPowerFacts(roundEvents, roundProjection, standardVote);
-  const council = buildCouncilFacts(roundEvents, roundProjection);
-  const diagnostics = sectionDiagnostics(standardVote, power, council);
+  const standardVote = buildStandardVoteFacts(roundEvents, roundProjection, includeClassicPowerCouncil);
+  const format = buildFormatFacts(roundEvents, roundProjection, options.ballotAccess);
+  const power = includeClassicPowerCouncil
+    ? buildPowerFacts(roundEvents, roundProjection, standardVote)
+    : undefined;
+  const council = includeClassicPowerCouncil
+    ? buildCouncilFacts(roundEvents, roundProjection)
+    : undefined;
+  const diagnostics = sectionDiagnostics(standardVote, format, power, council, includeClassicPowerCouncil);
 
   return {
     roundFacts: {
@@ -192,8 +302,9 @@ export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions)
       phase,
       players,
       standardVote,
-      power,
-      council,
+      format,
+      ...(power ? { power } : {}),
+      ...(council ? { council } : {}),
     },
     availability: availability("available", eventLogStatus, projectionStatus, diagnostics),
   };
@@ -202,6 +313,7 @@ export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions)
 function buildStandardVoteFacts(
   events: readonly CanonicalGameEvent[],
   projection: CanonicalGameProjection,
+  includeExposeTargets: boolean,
 ): RevealedStandardVoteFacts {
   const voteEvents = eventsOfType(events, "vote.cast");
   const revoteEvents = eventsOfType(events, "vote.empower_revote_cast");
@@ -219,9 +331,13 @@ function buildStandardVoteFacts(
   const ledger = sortByPlayerOrder(voteEvents, projection, (event) => event.payload.voterId).map((event) => ({
     voter: playerRef(projection, event.payload.voterId),
     empowerTarget: playerRef(projection, event.payload.empowerTarget),
-    exposeTarget: event.payload.exposeTarget
-      ? playerRef(projection, event.payload.exposeTarget)
-      : null,
+    ...(includeExposeTargets
+      ? {
+          exposeTarget: event.payload.exposeTarget
+            ? playerRef(projection, event.payload.exposeTarget)
+            : null,
+        }
+      : {}),
     revoteEmpowerTarget: refOrNull(projection, revotes.get(event.payload.voterId)),
   }));
 
@@ -308,10 +424,191 @@ function buildCouncilFacts(
   };
 }
 
+function buildFormatFacts(
+  events: readonly CanonicalGameEvent[],
+  projection: CanonicalGameProjection,
+  ballotAccess: RevealedFormatBallotAccess | undefined,
+): RevealedFormatFacts {
+  const menu = latestEvent(events, "format.menu_offered");
+  const selected = latestEvent(events, "format.selected");
+  const resolved = latestEvent(events, "format.resolved");
+  const bounceStarted = latestEvent(events, "format.safety_bounce_started");
+  const bouncePointers = eventsOfType(events, "format.safety_bounce_pointer");
+  const accessMode = normalizeBallotAccessMode(ballotAccess);
+
+  if (!menu && !selected && !resolved && !bounceStarted && bouncePointers.length === 0) {
+    return emptyFormat("not_yet_resolved", accessMode);
+  }
+
+  const offeredFormatIds = menu
+    ? ([menu.payload.offeredFormatIds[0], menu.payload.offeredFormatIds[1]] as [
+        LaunchFormatId,
+        LaunchFormatId,
+      ])
+    : null;
+  const empoweredId =
+    resolved?.payload.empoweredId
+    ?? selected?.payload.empoweredId
+    ?? menu?.payload.empoweredId
+    ?? null;
+  const selectedFormatId =
+    resolved?.payload.formatId
+    ?? selected?.payload.formatId
+    ?? null;
+
+  const safetyBounce = buildSafetyBounceFacts(events, projection, resolved, bounceStarted);
+  const saveOrEliminate = resolved?.payload.saveOrEliminate
+    ? {
+        nets: countsToVoteCounts(resolved.payload.saveOrEliminate.nets, projection),
+        savesReceived: countsToVoteCounts(resolved.payload.saveOrEliminate.savesReceived, projection),
+        eliminateReceived: countsToVoteCounts(
+          resolved.payload.saveOrEliminate.eliminateReceived,
+          projection,
+        ),
+      }
+    : null;
+  const voteBomb = resolved?.payload.voteBomb
+    ? {
+        totals: countsToVoteCounts(resolved.payload.voteBomb.totals, projection),
+        zeroSafe: resolved.payload.voteBomb.zeroSafePlayerIds.map((id) => playerRef(projection, id)),
+      }
+    : null;
+
+  const eliminatedId = resolved?.payload.eliminatedId ?? null;
+  const rawTiedIds = resolved?.payload.tiedPlayerIds ?? [];
+  const tiebreakerId = resolved?.payload.tiebreakerId ?? null;
+  // Sole-auto noise: eliminated alone in tiedSet is not a multi-way tie for readers.
+  // Multi-way pre-break history is kept when more than one id is present (incl. post-tiebreak).
+  const tiedIds =
+    eliminatedId !== null
+    && rawTiedIds.length === 1
+    && rawTiedIds[0] === eliminatedId
+    && !tiebreakerId
+      ? []
+      : rawTiedIds;
+
+  // Status: available once any public format fact exists (menu/pick/bounce/resolve).
+  // Partial in-progress rounds still return available with null resolution fields.
+  return {
+    status: "available",
+    empowered: refOrNull(projection, empoweredId),
+    offeredFormatIds,
+    selectedFormatId,
+    resolutionKind: resolved?.payload.resolutionKind ?? null,
+    eliminated: refOrNull(projection, eliminatedId),
+    tied: tiedIds.map((id) => playerRef(projection, id)),
+    tiebreaker: refOrNull(projection, tiebreakerId),
+    saveOrEliminate,
+    voteBomb,
+    safetyBounce,
+    sealedBallots: buildSealedFormatBallots(events, projection, ballotAccess),
+    sealedBallotAccess: accessMode,
+  };
+}
+
+function buildSafetyBounceFacts(
+  events: readonly CanonicalGameEvent[],
+  projection: CanonicalGameProjection,
+  resolved: EventOf<"format.resolved"> | null,
+  bounceStarted: EventOf<"format.safety_bounce_started"> | null,
+): RevealedSafetyBounceFacts | null {
+  const pointerEvents = eventsOfType(events, "format.safety_bounce_pointer");
+  const resolvedBounce = resolved?.payload.safetyBounce ?? null;
+  if (!bounceStarted && !resolvedBounce && pointerEvents.length === 0) {
+    return null;
+  }
+
+  const starterId = resolvedBounce?.starterId ?? bounceStarted?.payload.starterId ?? null;
+  const pointers = pointerEvents.map((event) => ({
+    actor: playerRef(projection, event.payload.actorId),
+    target: playerRef(projection, event.payload.targetId),
+    classification: event.payload.classification,
+  }));
+
+  if (resolvedBounce) {
+    return {
+      starter: refOrNull(projection, starterId),
+      pointers,
+      safe: resolvedBounce.safePlayerIds.map((id) => playerRef(projection, id)),
+      vulnerable: resolvedBounce.vulnerablePlayerIds.map((id) => playerRef(projection, id)),
+      voteTotals: countsToVoteCounts(resolvedBounce.voteTotals, projection),
+    };
+  }
+
+  // In-progress bounce: recompute pools from public pointer chain + starter.
+  const classified = new Map<UUID, "safe" | "vulnerable">();
+  if (starterId) classified.set(starterId, "safe");
+  for (const event of pointerEvents) {
+    classified.set(event.payload.targetId, event.payload.classification);
+  }
+  const safe: RevealedPlayerRef[] = [];
+  const vulnerable: RevealedPlayerRef[] = [];
+  for (const [id, classification] of classified) {
+    const ref = playerRef(projection, id);
+    if (classification === "safe") safe.push(ref);
+    else vulnerable.push(ref);
+  }
+
+  return {
+    starter: refOrNull(projection, starterId),
+    pointers,
+    safe,
+    vulnerable,
+    voteTotals: [],
+  };
+}
+
+function normalizeBallotAccessMode(
+  ballotAccess: RevealedFormatBallotAccess | undefined,
+): RevealedFormatBallotAccessMode {
+  if (!ballotAccess) return "public";
+  if (ballotAccess.mode === "producer") return "producer";
+  if (ballotAccess.mode === "owner") return "owner";
+  return "public";
+}
+
+function ownedPlayerIdSet(
+  ballotAccess: RevealedFormatBallotAccess | undefined,
+): Set<UUID> {
+  if (!ballotAccess || ballotAccess.mode !== "owner") return new Set();
+  const raw = ballotAccess.ownedPlayerIds;
+  if (!raw) return new Set();
+  return raw instanceof Set ? new Set(raw) : new Set(raw);
+}
+
+/**
+ * Sealed ballots are producer-visibility events. Public never sees them.
+ * Owner sees only owned voters; producer sees the full ledger.
+ * Cognitive fields never appear on these events or this projection.
+ */
+function buildSealedFormatBallots(
+  events: readonly CanonicalGameEvent[],
+  projection: CanonicalGameProjection,
+  ballotAccess: RevealedFormatBallotAccess | undefined,
+): RevealedFormatBallotEntry[] {
+  const mode = normalizeBallotAccessMode(ballotAccess);
+  if (mode === "public") return [];
+
+  const ballotEvents = eventsOfType(events, "format.ballot_cast");
+  const owned = mode === "owner" ? ownedPlayerIdSet(ballotAccess) : null;
+  const filtered = ballotEvents.filter((event) => {
+    if (mode === "producer") return true;
+    return owned?.has(event.payload.voterId) ?? false;
+  });
+
+  return sortByPlayerOrder(filtered, projection, (event) => event.payload.voterId).map((event) => ({
+    voter: playerRef(projection, event.payload.voterId),
+    target: playerRef(projection, event.payload.targetId),
+    polarity: event.payload.polarity,
+  }));
+}
+
 function sectionDiagnostics(
   standardVote: RevealedStandardVoteFacts,
-  power: RevealedPowerFacts,
-  council: RevealedCouncilFacts,
+  format: RevealedFormatFacts,
+  power: RevealedPowerFacts | undefined,
+  council: RevealedCouncilFacts | undefined,
+  includeClassicPowerCouncil: boolean,
 ): RevealedRoundFactsDiagnostic[] {
   const diagnostics: RevealedRoundFactsDiagnostic[] = [];
   if (standardVote.status !== "available") {
@@ -321,19 +618,35 @@ function sectionDiagnostics(
       message: "Standard vote facts are not revealed until the empower result is resolved.",
     });
   }
-  if (power.status !== "available") {
+  if (format.status !== "available") {
     diagnostics.push({
-      code: "power_not_yet_resolved",
+      code: "format_not_yet_resolved",
       severity: "info",
-      message: "Power facts are not revealed until the power outcome is persisted.",
+      message: "Format facts are not available until a format menu or selection is persisted.",
+    });
+  } else if (!format.eliminated) {
+    diagnostics.push({
+      code: "format_in_progress",
+      severity: "info",
+      message: "Format menu or selection is available; elimination resolution has not flushed yet.",
     });
   }
-  if (council.status !== "available") {
-    diagnostics.push({
-      code: "council_not_yet_resolved",
-      severity: "info",
-      message: "Council vote facts are not revealed until elimination is resolved.",
-    });
+  // Classic path only — format-kernel omits power/council keys entirely.
+  if (includeClassicPowerCouncil) {
+    if (power && power.status !== "available") {
+      diagnostics.push({
+        code: "power_not_yet_resolved",
+        severity: "info",
+        message: "Power facts are not revealed until the power outcome is persisted.",
+      });
+    }
+    if (council && council.status !== "available") {
+      diagnostics.push({
+        code: "council_not_yet_resolved",
+        severity: "info",
+        message: "Council vote facts are not revealed until elimination is resolved.",
+      });
+    }
   }
   return diagnostics;
 }
@@ -360,9 +673,10 @@ function unavailableFactsRead(
   round: number,
   eventLogStatus: string,
   projectionStatus: string,
+  includeClassicPowerCouncil: boolean,
 ): RevealedRoundFactsRead {
   return {
-    roundFacts: emptyRoundFacts(round, null, emptyPlayers(), "unavailable"),
+    roundFacts: emptyRoundFacts(round, null, emptyPlayers(), "unavailable", includeClassicPowerCouncil),
     availability: availability("unavailable", eventLogStatus, projectionStatus, [
       {
         code: "canonical_event_log_unavailable",
@@ -378,14 +692,41 @@ function emptyRoundFacts(
   phase: Phase | null,
   players: RevealedRoundFacts["players"],
   status: RevealedFactsStatus,
+  includeClassicPowerCouncil: boolean,
 ): RevealedRoundFacts {
   return {
     round,
     phase,
     players,
     standardVote: emptyStandardVote(status),
-    power: emptyPower(status),
-    council: emptyCouncil(status),
+    format: emptyFormat(status, "public"),
+    ...(includeClassicPowerCouncil
+      ? {
+          power: emptyPower(status),
+          council: emptyCouncil(status),
+        }
+      : {}),
+  };
+}
+
+function emptyFormat(
+  status: RevealedFactsStatus,
+  sealedBallotAccess: RevealedFormatBallotAccessMode,
+): RevealedFormatFacts {
+  return {
+    status,
+    empowered: null,
+    offeredFormatIds: null,
+    selectedFormatId: null,
+    resolutionKind: null,
+    eliminated: null,
+    tied: [],
+    tiebreaker: null,
+    saveOrEliminate: null,
+    voteBomb: null,
+    safetyBounce: null,
+    sealedBallots: [],
+    sealedBallotAccess,
   };
 }
 

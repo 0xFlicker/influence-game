@@ -577,8 +577,8 @@ describe("ProductionGameMcpReadModel", () => {
       artifactDerivedFacts: { status: "not_used" },
     });
     expect(createdFacts.canonicalGameFacts.roundFacts.standardVote.status).toBe("available");
-    expect(createdFacts.canonicalGameFacts.roundFacts.power.status).toBe("available");
-    expect(createdFacts.canonicalGameFacts.roundFacts.council.status).toBe("available");
+    expect(createdFacts.canonicalGameFacts.roundFacts.power?.status).toBe("available");
+    expect(createdFacts.canonicalGameFacts.roundFacts.council?.status).toBe("available");
     expect(createdFacts.canonicalGameFacts.roundFacts.standardVote.ledger[0]).toMatchObject({
       voter: { id: "atlas", name: "Atlas" },
       empowerTarget: { id: "mira", name: "Mira" },
@@ -591,7 +591,7 @@ describe("ProductionGameMcpReadModel", () => {
     expect(createdJson).not.toContain("privateReasoning");
 
     const joinedFacts = await readModel.readRoundFacts({ gameIdOrSlug: joinedGameId }, gamesAccess);
-    expect(joinedFacts.canonicalGameFacts.roundFacts.council.status).toBe("available");
+    expect(joinedFacts.canonicalGameFacts.roundFacts.council?.status).toBe("available");
 
     const producerFacts = await readModel.readRoundFacts({ gameIdOrSlug: unrelatedGameId }, PRODUCER_ACCESS);
     expect(producerFacts.canonicalGameFacts.roundFacts.standardVote.status).toBe("available");
@@ -602,6 +602,187 @@ describe("ProductionGameMcpReadModel", () => {
     await expect(readModel.readRoundFacts({ gameIdOrSlug: "missing-game" }, gamesAccess)).rejects.toThrow(
       /^Game is not accessible for MCP scope: games:read$/,
     );
+  });
+
+  test("scopes sealed format ballots by public/owner/producer for read_round_facts", async () => {
+    const ownerUserId = randomUUID();
+    const otherUserId = randomUUID();
+    await db.insert(schema.users).values([
+      { id: ownerUserId, walletAddress: "0xformatfacts0000000000000000000000000001" },
+      { id: otherUserId, walletAddress: "0xformatfacts0000000000000000000000000002" },
+    ]);
+
+    const gameId = await insertGame(db, {
+      slug: "format-ballot-scope",
+      status: "in_progress",
+    });
+    await db
+      .update(schema.games)
+      .set({ createdById: ownerUserId })
+      .where(eq(schema.games.id, gameId));
+    const ownerPlayerId = await insertGamePlayer(db, {
+      gameId,
+      userId: ownerUserId,
+      name: "OwnerSeat",
+    });
+    const peerPlayerId = await insertGamePlayer(db, {
+      gameId,
+      userId: otherUserId,
+      name: "PeerSeat",
+    });
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    const base = createCanonicalEventFixture(gameId);
+    // Align format actors with owned seat IDs so owner scope can filter ballots.
+    const formatEvents: CanonicalGameEvent[] = [
+      {
+        sequence: base.length + 1,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_MENU,
+        type: "format.menu_offered",
+        timestamp: "2026-07-24T12:00:00.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          empoweredId: ownerPlayerId,
+          offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+        },
+      },
+      {
+        sequence: base.length + 2,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        type: "format.selected",
+        timestamp: "2026-07-24T12:00:01.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          empoweredId: ownerPlayerId,
+          formatId: "save_or_eliminate",
+        },
+      },
+      {
+        sequence: base.length + 3,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.ballot_cast",
+        timestamp: "2026-07-24T12:00:02.000Z",
+        source: "phase",
+        visibility: "producer",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          formatId: "save_or_eliminate",
+          voterId: ownerPlayerId,
+          targetId: peerPlayerId,
+          polarity: "eliminate",
+        },
+      },
+      {
+        sequence: base.length + 4,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.ballot_cast",
+        timestamp: "2026-07-24T12:00:03.000Z",
+        source: "phase",
+        visibility: "producer",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          formatId: "save_or_eliminate",
+          voterId: peerPlayerId,
+          targetId: ownerPlayerId,
+          polarity: "save",
+        },
+      },
+      {
+        sequence: base.length + 5,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.resolved",
+        timestamp: "2026-07-24T12:00:04.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          formatId: "save_or_eliminate",
+          empoweredId: ownerPlayerId,
+          eliminatedId: peerPlayerId,
+          resolutionKind: "clear",
+          tiedPlayerIds: [],
+          tiebreakerId: null,
+          saveOrEliminate: {
+            nets: { [ownerPlayerId]: 1, [peerPlayerId]: -1 },
+            savesReceived: { [ownerPlayerId]: 1, [peerPlayerId]: 0 },
+            eliminateReceived: { [ownerPlayerId]: 0, [peerPlayerId]: 1 },
+          },
+          voteBomb: null,
+          safetyBounce: null,
+        },
+      },
+    ];
+
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch,
+      events: [...base, ...formatEvents],
+    });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const ownerAccess = { userId: ownerUserId, authProfile: "subject" as const };
+
+    const ownerFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, ownerAccess);
+    expect(ownerFacts.canonicalGameFacts.roundFacts.format.status).toBe("available");
+    expect(ownerFacts.canonicalGameFacts.roundFacts.format.selectedFormatId).toBe("save_or_eliminate");
+    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("owner");
+    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(1);
+    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots[0]).toMatchObject({
+      voter: { id: ownerPlayerId },
+      target: { id: peerPlayerId },
+      polarity: "eliminate",
+    });
+    // Must never leak peer sealed ballot to owner.
+    expect(
+      ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots.some((b) => b.voter.id === peerPlayerId),
+    ).toBe(false);
+
+    const producerFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, PRODUCER_ACCESS);
+    expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("producer");
+    expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(2);
+
+    // filter_events: public format facts visible to owner; sealed ballots not.
+    const ownerEvents = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "format.selected",
+    }, ownerAccess);
+    expect(ownerEvents.canonicalGameFacts.events.length).toBeGreaterThan(0);
+    await expect(readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "format.ballot_cast",
+      visibilityMode: "producer",
+    }, ownerAccess)).rejects.toThrow(/producer visibility requires MCP scope: producer/);
+
+    const producerBallots = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "format.ballot_cast",
+      visibilityMode: "producer",
+    }, PRODUCER_ACCESS);
+    expect(producerBallots.canonicalGameFacts.events.length).toBe(2);
+
+    const ownerJson = JSON.stringify(ownerFacts);
+    expect(ownerJson).not.toContain("thinking");
+    expect(ownerJson).not.toContain("reasoningContext");
+    expect(ownerJson).not.toContain("decisionLog");
   });
 
   test("blocks producer event visibility for games-scope reads", async () => {

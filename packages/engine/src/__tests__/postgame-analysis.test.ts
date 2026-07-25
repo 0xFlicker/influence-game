@@ -202,9 +202,10 @@ describe("buildPostgameAnalysisProjection", () => {
     });
     const firstElimination = completed.eliminationOrder[0]!;
     const firstRound = completed.rounds.find((round) => round.round === firstElimination.round)!;
-    const cuttingVoter = firstRound.canonicalFacts.roundFacts.council.ledger.find((entry) =>
+    const cuttingVoter = firstRound.canonicalFacts.roundFacts.council?.ledger.find((entry) =>
       entry.target.id === firstElimination.player.id
-    )!.voter;
+    )?.voter;
+    if (!cuttingVoter) throw new Error("expected council cutting voter in classic fixture");
     const events = addNamedAllianceOverlay(baseEvents, firstElimination.player, cuttingVoter);
 
     const projection = buildPostgameAnalysisProjection({

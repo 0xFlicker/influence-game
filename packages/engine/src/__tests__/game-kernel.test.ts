@@ -15,7 +15,7 @@ function event(type: CanonicalGameEvent["type"], round = 1): CanonicalGameEvent 
     visibility: "public",
     payloadVersion: 1,
     sourcePointers: [],
-  } as CanonicalGameEvent;
+  } as unknown as CanonicalGameEvent;
 }
 
 describe("resolveGameKernel", () => {

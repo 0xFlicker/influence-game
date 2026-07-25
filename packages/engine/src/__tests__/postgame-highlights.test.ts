@@ -518,7 +518,7 @@ function addNamedAllianceOverlay(
   const gameId = baseEvents[0]!.gameId;
   const overlayEvents = completed.eliminationOrder.slice(0, options.eliminationCount ?? 2).flatMap((elimination, index) => {
     const round = completed.rounds.find((entry) => entry.round === elimination.round)!;
-    const cuttingVoter = round.canonicalFacts.roundFacts.council.ledger.find((entry) =>
+    const cuttingVoter = round.canonicalFacts.roundFacts.council?.ledger.find((entry) =>
       entry.target.id === elimination.player.id
     )?.voter ?? round.endgameEliminations.find((entry) =>
       entry.eliminated.id === elimination.player.id

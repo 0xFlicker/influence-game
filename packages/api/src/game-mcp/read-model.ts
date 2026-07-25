@@ -516,7 +516,7 @@ export class ProductionGameMcpReadModel {
 
     if (!row) return null;
     const events = await getPersistedGameEvents(this.db, row.id);
-    return gameIdentity(row, events.events);
+    return gameIdentity(row, events.events.map((rowEvent) => rowEvent.envelope));
   }
 
   async listGames(access: ProductionGameMcpAccess, limit = DEFAULT_GAME_LIMIT): Promise<{
@@ -582,7 +582,7 @@ export class ProductionGameMcpReadModel {
         settlementStates.get(row.id),
       );
       games.push({
-        ...gameIdentity(row, events.events),
+        ...gameIdentity(row, events.events.map((rowEvent) => rowEvent.envelope)),
         eventLog: {
           status: events.status,
           rowCount: events.eventCount,

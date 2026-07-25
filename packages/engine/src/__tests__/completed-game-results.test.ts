@@ -93,8 +93,8 @@ describe("buildCompletedGameResults", () => {
     expect(read.availability.status).toBe("available");
     expect(read.rounds).toHaveLength(1);
     expect(read.rounds[0]?.canonicalFacts.roundFacts.standardVote.status).toBe("available");
-    expect(read.rounds[0]?.canonicalFacts.roundFacts.power.status).toBe("available");
-    expect(read.rounds[0]?.canonicalFacts.roundFacts.council.status).toBe("available");
+    expect(read.rounds[0]?.canonicalFacts.roundFacts.power?.status).toBe("available");
+    expect(read.rounds[0]?.canonicalFacts.roundFacts.council?.status).toBe("available");
     expect(read.eliminationOrder).toHaveLength(1);
     expect(read.eliminationOrder[0]?.source).toBe("council");
     expect(read.players.some((player) => player.status === "eliminated")).toBe(true);

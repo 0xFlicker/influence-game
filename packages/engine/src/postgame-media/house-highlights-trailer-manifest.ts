@@ -225,9 +225,9 @@ export interface HouseHighlightsTrailerSourceRound {
       standardVote: {
         empowered: HouseHighlightsTrailerPlayerRef | null;
         /** Legacy expose target; null on format-kernel empower-only ballots. */
-        ledger: readonly { exposeTarget: HouseHighlightsTrailerPlayerRef | null }[];
+        ledger: readonly { exposeTarget?: HouseHighlightsTrailerPlayerRef | null }[];
       };
-      council: { ledger: readonly { target: HouseHighlightsTrailerPlayerRef }[] };
+      council?: { ledger: readonly { target: HouseHighlightsTrailerPlayerRef }[] };
     };
   };
   endgameEliminations: readonly {
@@ -544,7 +544,7 @@ function voteStatsFor(results: HouseHighlightsTrailerResultsResponse["results"])
       // Format-kernel ballots omit expose; only legacy dual-ballot tallies contribute.
       if (entry.exposeTarget) increment(received, entry.exposeTarget.id);
     }
-    for (const entry of facts.council.ledger) increment(received, entry.target.id);
+    for (const entry of facts.council?.ledger ?? []) increment(received, entry.target.id);
     for (const elimination of round.endgameEliminations) {
       for (const entry of elimination.ledger) increment(received, entry.target.id);
       for (const entry of elimination.juryTiebreakerLedger) increment(received, entry.target.id);

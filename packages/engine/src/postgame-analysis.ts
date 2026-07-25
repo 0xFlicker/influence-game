@@ -488,17 +488,18 @@ function buildRoundSummary(
   const standard = facts.standardVote;
   const power = facts.power;
   const council = facts.council;
-  const councilCandidates = council.candidates.length > 0
+  const formatEliminated = facts.format.status === "available" ? facts.format.eliminated : null;
+  const councilCandidates = council && council.candidates.length > 0
     ? council.candidates
-    : power.finalCouncilCandidates;
-  const exposeLeaders = [...power.exposureScores]
+    : (power?.finalCouncilCandidates ?? []);
+  const exposeLeaders = [...(power?.exposureScores ?? [])]
     .sort(byVotesThenName)
     .slice(0, 3);
   const majorityCohort = buildRoundMajorityCohort(
     standard.ledger,
-    council.ledger,
+    council?.ledger ?? [],
     standard.empowered,
-    council.eliminated,
+    council?.eliminated ?? formatEliminated,
   );
   const riskPlayers = new Map<string, { player: RevealedPlayerRef; types: Set<PostgameRoundSummary["keyRiskMoments"][number]["type"]> }>();
   for (const player of councilCandidates) {
@@ -507,23 +508,25 @@ function buildRoundSummary(
   for (const entry of exposeLeaders.slice(0, 2)) {
     if (entry.votes > 0) addRisk(riskPlayers, entry.player, "exposure_leader");
   }
-  if (council.eliminated) addRisk(riskPlayers, council.eliminated, "eliminated");
+  const eliminated = council?.eliminated ?? power?.autoEliminated ?? formatEliminated;
+  if (eliminated) addRisk(riskPlayers, eliminated, "eliminated");
   for (const player of councilCandidates) {
-    if (council.eliminated && player.id !== council.eliminated.id) {
+    if (eliminated && player.id !== eliminated.id) {
       addRisk(riskPlayers, player, "survived_council");
     }
   }
 
-  const action = power.action?.action ?? null;
-  const target = action === "pass" ? null : power.action?.target ?? null;
+  const action = power?.action?.action ?? null;
+  const target = action === "pass" ? null : power?.action?.target ?? null;
   const evidence = eventRefs?.forRound(round.round, [
     "vote.empower_tally_resolved",
     "power.candidates_resolved",
     "council.elimination_resolved",
+    "format.resolved",
   ], [
     ...(standard.empowered ? [standard.empowered] : []),
     ...councilCandidates,
-    ...(council.eliminated ? [council.eliminated] : []),
+    ...(eliminated ? [eliminated] : []),
   ]);
 
   return {
@@ -534,9 +537,9 @@ function buildRoundSummary(
     empowerVoteCounts: standard.empowerTally,
     exposeLeaders,
     powerAction: { action, target },
-    shieldGranted: power.shieldGranted,
+    shieldGranted: power?.shieldGranted ?? null,
     councilCandidates,
-    eliminated: council.eliminated ?? power.autoEliminated,
+    eliminated,
     majorityCohort,
     keyRiskMoments: Array.from(riskPlayers.values()).flatMap(({ player, types }) =>
       Array.from(types).map((type) => ({
@@ -869,7 +872,7 @@ function buildPlayerSummary(input: {
       votesCastByRound.push({
         round: round.round,
         empowerTarget: standardVote.empowerTarget,
-        exposeTarget: standardVote.exposeTarget,
+        exposeTarget: standardVote.exposeTarget ?? null,
         revoteEmpowerTarget: standardVote.revoteEmpowerTarget,
       });
     }
@@ -879,11 +882,11 @@ function buildPlayerSummary(input: {
     });
     exposeVotesReceivedByRound.push({
       round: round.round,
-      votes: facts.power.exposureScores.find((entry) => entry.player.id === player.id)?.votes ?? 0,
+      votes: facts.power?.exposureScores.find((entry) => entry.player.id === player.id)?.votes ?? 0,
     });
-    const councilCast = facts.council.ledger.find((entry) => entry.voter.id === player.id);
+    const councilCast = facts.council?.ledger.find((entry) => entry.voter.id === player.id);
     if (councilCast) councilVotesCast.push({ round: round.round, target: councilCast.target });
-    const councilReceived = facts.council.ledger.filter((entry) => entry.target.id === player.id).length;
+    const councilReceived = facts.council?.ledger.filter((entry) => entry.target.id === player.id).length ?? 0;
     if (councilReceived > 0) councilVotesReceived.push({ round: round.round, votes: councilReceived });
     const roundSummary = roundSummaries.find((summary) => summary.round === round.round);
     if (roundSummary?.empowered?.id === player.id && roundSummary.powerAction.action) {
@@ -893,17 +896,17 @@ function buildPlayerSummary(input: {
         target: roundSummary.powerAction.target,
       });
     }
-    if (facts.power.shieldGranted?.id === player.id) {
+    if (facts.power?.shieldGranted?.id === player.id) {
       shieldsReceived.push({ round: round.round, from: facts.standardVote.empowered });
     }
-    const candidates = facts.council.candidates.length > 0
-      ? facts.council.candidates
-      : facts.power.finalCouncilCandidates;
+    const candidates = (facts.council?.candidates.length ?? 0) > 0
+      ? (facts.council?.candidates ?? [])
+      : (facts.power?.finalCouncilCandidates ?? []);
     if (candidates.some((candidate) => candidate.id === player.id)) {
       timesNominated.push({
         round: round.round,
         candidates,
-        eliminated: facts.council.eliminated?.id === player.id,
+        eliminated: facts.council?.eliminated?.id === player.id,
       });
       atRiskMoments.push({
         round: round.round,
@@ -911,7 +914,7 @@ function buildPlayerSummary(input: {
         note: `${player.name} was on the Council slate.`,
       });
     }
-    const exposureLeader = facts.power.exposureScores[0];
+    const exposureLeader = facts.power?.exposureScores[0];
     if (exposureLeader?.player.id === player.id && exposureLeader.votes > 0) {
       atRiskMoments.push({
         round: round.round,
@@ -1838,7 +1841,7 @@ function votersWhoCutPlayer(
 ): RevealedPlayerRef[] {
   const round = rounds.find((entry) => entry.round === eliminationRound);
   if (!round) return [];
-  const councilVoters = round.canonicalFacts.roundFacts.council.ledger
+  const councilVoters = (round.canonicalFacts.roundFacts.council?.ledger ?? [])
     .filter((entry) => entry.target.id === eliminatedId)
     .map((entry) => entry.voter);
   const endgameVoters = round.endgameEliminations
@@ -1970,8 +1973,9 @@ function findUnanimousOrNearUnanimousVotes(
         unanimous: empowerLeader.votes === empowerTotal,
       });
     }
-    const councilCounts = countPlayers(round.canonicalFacts.roundFacts.council.ledger.map((entry) => entry.target));
-    const councilTotal = round.canonicalFacts.roundFacts.council.ledger.length;
+    const councilLedger = round.canonicalFacts.roundFacts.council?.ledger ?? [];
+    const councilCounts = countPlayers(councilLedger.map((entry) => entry.target));
+    const councilTotal = councilLedger.length;
     const councilLeader = topCounts(councilCounts)[0];
     if (councilLeader && isNearUnanimous(councilLeader.votes, councilTotal)) {
       votes.push({
@@ -2167,10 +2171,11 @@ function didPlayerVoteToEliminate(
 ): boolean | null {
   let sawRelevantElimination = false;
   for (const round of rounds) {
-    const councilEliminated = round.canonicalFacts.roundFacts.council.eliminated;
+    const council = round.canonicalFacts.roundFacts.council;
+    const councilEliminated = council?.eliminated;
     if (councilEliminated?.id === eliminatedId) {
       sawRelevantElimination = true;
-      if (round.canonicalFacts.roundFacts.council.ledger.some((entry) =>
+      if (council?.ledger.some((entry) =>
         entry.voter.id === voterId && entry.target.id === eliminatedId
       )) {
         return true;
@@ -2332,7 +2337,7 @@ function momentumIndicatorPriority(segment: PostgameMomentumSegment): number {
 
 function exposeVoteTotal(completed: CompletedGameResultsRead, playerId: UUID): number {
   return completed.rounds.reduce((sum, round) =>
-    sum + (round.canonicalFacts.roundFacts.power.exposureScores.find((entry) =>
+    sum + (round.canonicalFacts.roundFacts.power?.exposureScores.find((entry) =>
       entry.player.id === playerId
     )?.votes ?? 0), 0);
 }
