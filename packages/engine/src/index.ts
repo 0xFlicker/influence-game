@@ -199,6 +199,8 @@ export type {
   RevealedCanonicalFactsStatus,
   RevealedCouncilFacts,
   RevealedCouncilVoteLedgerEntry,
+  RevealedEndgameFacts,
+  RevealedEndgameVoteEntry,
   RevealedExposureBenchEntry,
   RevealedExposureResolutionSummary,
   RevealedFactsDiagnosticSeverity,

@@ -162,6 +162,29 @@ export interface RevealedFormatFacts {
   sealedBallotAccess: RevealedFormatBallotAccessMode;
 }
 
+export interface RevealedEndgameVoteEntry {
+  voter: RevealedPlayerRef;
+  target: RevealedPlayerRef;
+}
+
+/**
+ * First-class endgame stage facts for Reckoning / Tribunal / Judgment.
+ * Present only when the round has endgame or jury activity.
+ */
+export interface RevealedEndgameFacts {
+  status: RevealedFactsStatus;
+  stage: string | null;
+  lastEmpoweredFromRegularRounds: RevealedPlayerRef | null;
+  eliminationVotes: RevealedEndgameVoteEntry[];
+  eliminated: RevealedPlayerRef | null;
+  eliminationMethod: string | null;
+  juryVotes: RevealedEndgameVoteEntry[];
+  juryWinner: RevealedPlayerRef | null;
+  juryMethod: string | null;
+  /** Next stage id when known from a later stage_set, else winner when Judgment resolved. */
+  progression: { kind: "stage"; stage: string } | { kind: "winner"; winner: RevealedPlayerRef } | null;
+}
+
 export interface RevealedRoundFacts {
   round: number;
   phase: Phase | null;
@@ -182,6 +205,8 @@ export interface RevealedRoundFacts {
    * Omitted on format-kernel rounds (absence means not in kernel, not unresolved).
    */
   council?: RevealedCouncilFacts;
+  /** Endgame stage facts when this round has Reckoning/Tribunal/Judgment activity. */
+  endgame?: RevealedEndgameFacts;
 }
 
 export interface RevealedRoundFactsAvailability {
@@ -294,6 +319,7 @@ export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions)
   const council = includeClassicPowerCouncil
     ? buildCouncilFacts(roundEvents, roundProjection)
     : undefined;
+  const endgame = buildEndgameFacts(roundEvents, options.events, roundProjection, round);
   const diagnostics = sectionDiagnostics(standardVote, format, power, council, includeClassicPowerCouncil);
 
   return {
@@ -305,6 +331,7 @@ export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions)
       format,
       ...(power ? { power } : {}),
       ...(council ? { council } : {}),
+      ...(endgame ? { endgame } : {}),
     },
     availability: availability("available", eventLogStatus, projectionStatus, diagnostics),
   };
@@ -666,6 +693,65 @@ function availability(
       reason: ARTIFACT_FACTS_NOT_USED_REASON,
     },
     diagnostics,
+  };
+}
+
+function buildEndgameFacts(
+  roundEvents: readonly CanonicalGameEvent[],
+  allEvents: readonly CanonicalGameEvent[],
+  projection: CanonicalGameProjection,
+  round: number,
+): RevealedEndgameFacts | undefined {
+  const stageSet = latestEvent(roundEvents, "endgame.stage_set");
+  const elimResolved = latestEvent(roundEvents, "endgame.elimination_resolved");
+  const elimVotes = eventsOfType(roundEvents, "endgame.elimination_vote_cast");
+  const juryVotes = eventsOfType(roundEvents, "jury.vote_cast");
+  const juryWinner = latestEvent(roundEvents, "jury.winner_determined");
+
+  if (!stageSet && !elimResolved && elimVotes.length === 0 && juryVotes.length === 0 && !juryWinner) {
+    return undefined;
+  }
+
+  const stage = stageSet?.payload.stage ?? elimResolved?.payload.stage ?? null;
+  const lastEmpoweredId = stageSet?.payload.lastEmpoweredFromRegularRounds
+    ?? projection.lastEmpoweredFromRegularRounds
+    ?? null;
+
+  let progression: RevealedEndgameFacts["progression"] = null;
+  if (juryWinner?.payload.winnerId) {
+    progression = {
+      kind: "winner",
+      winner: playerRef(projection, juryWinner.payload.winnerId),
+    };
+  } else {
+    const laterStage = allEvents.find(
+      (event) =>
+        event.type === "endgame.stage_set"
+        && event.round > round
+        && typeof event.payload.stage === "string",
+    );
+    if (laterStage && laterStage.type === "endgame.stage_set") {
+      progression = { kind: "stage", stage: laterStage.payload.stage };
+    }
+  }
+
+  return {
+    status: elimResolved || juryWinner ? "available" : "available",
+    stage: stage === null ? null : String(stage),
+    lastEmpoweredFromRegularRounds: refOrNull(projection, lastEmpoweredId),
+    eliminationVotes: sortByPlayerOrder(elimVotes, projection, (event) => event.payload.voterId).map((event) => ({
+      voter: playerRef(projection, event.payload.voterId),
+      target: playerRef(projection, event.payload.target),
+    })),
+    eliminated: refOrNull(projection, elimResolved?.payload.eliminated ?? null),
+    eliminationMethod: elimResolved?.payload.method ?? null,
+    juryVotes: sortByPlayerOrder(juryVotes, projection, (event) => event.payload.jurorId).map((event) => ({
+      voter: playerRef(projection, event.payload.jurorId),
+      target: playerRef(projection, event.payload.finalistId),
+    })),
+    juryWinner: refOrNull(projection, juryWinner?.payload.winnerId ?? null),
+    juryMethod: juryWinner?.payload.method ?? null,
+    progression,
   };
 }
 
