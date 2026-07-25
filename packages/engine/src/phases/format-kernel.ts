@@ -96,7 +96,6 @@ export async function runFormatMenuPhase(
     selectedFormat: null,
   });
   contextBuilder.currentFormatPressure = state.pressure;
-  gameState.recordFormatSelected(empoweredId, chosen);
   gameState.recordFormatMenu(empoweredId, menu.offered);
 
   logger.logSystem(
@@ -160,6 +159,7 @@ export async function runFormatPickPhase(
     selectedFormat: chosen,
   });
   contextBuilder.currentFormatPressure = state.pressure;
+  gameState.recordFormatSelected(empoweredId, chosen);
 
   const sheet = ruleSheetForFormat(chosen);
   logger.logSystem(
@@ -317,6 +317,12 @@ async function resolveSaveOrEliminateRound(
 
     ballots.push({ voterId: player.id, polarity, targetId });
     const targetName = gameState.getPlayerName(targetId);
+    gameState.recordFormatBallot({
+      formatId: "save_or_eliminate",
+      voterId: player.id,
+      targetId,
+      polarity,
+    });
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -464,6 +470,11 @@ async function resolveVoteBombRound(
 
     ballots.push({ voterId: player.id, targetId });
     const targetName = gameState.getPlayerName(targetId);
+    gameState.recordFormatBallot({
+      formatId: "vote_bomb",
+      voterId: player.id,
+      targetId,
+    });
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -734,6 +745,11 @@ async function resolveSafetyBounceRound(
     ballots.push({ voterId: player.id, targetId });
     voteTotals[targetId] = (voteTotals[targetId] ?? 0) + 1;
     const targetName = gameState.getPlayerName(targetId);
+    gameState.recordFormatBallot({
+      formatId: "safety_bounce",
+      voterId: player.id,
+      targetId,
+    });
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",

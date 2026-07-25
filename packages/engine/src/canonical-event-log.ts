@@ -31,7 +31,7 @@ function jsonSafe(value: unknown): unknown {
 
 export interface CanonicalEventDraft<
   TType extends CanonicalGameEventType = CanonicalGameEventType,
-  TPayload extends Record<string, unknown> = Record<string, unknown>,
+  TPayload extends object = Record<string, unknown>,
 > {
   gameId: UUID;
   round: number;
@@ -58,7 +58,7 @@ export class CanonicalEventLog {
 
   append<
     TType extends CanonicalGameEventType,
-    TPayload extends Record<string, unknown>,
+    TPayload extends object,
   >(draft: CanonicalEventDraft<TType, TPayload>): CanonicalGameEvent {
     const event: CanonicalEventEnvelope<TType, TPayload> = {
       sequence: this.nextSequence,

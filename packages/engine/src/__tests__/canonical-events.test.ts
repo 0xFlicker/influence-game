@@ -247,6 +247,68 @@ describe("format.menu_offered", () => {
     expect(gs.getDomainProjection().formatMenu).toEqual({
       empoweredId: "alice",
       offeredFormatIds: ["safety_bounce", "vote_bomb"],
+      selectedFormatId: null,
+    });
+  });
+
+  it("records format.selected and selectedFormatId on the projection", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+    gs.startRound();
+    gs.recordFormatMenu("alice", ["safety_bounce", "vote_bomb"]);
+    gs.recordFormatSelected("alice", "safety_bounce");
+
+    expect(gs.getCanonicalEvents().at(-1)).toMatchObject({
+      type: "format.selected",
+      phase: Phase.FORMAT_PICK,
+      visibility: "public",
+      payload: { empoweredId: "alice", formatId: "safety_bounce" },
+    });
+    expect(gs.getDomainProjection().formatMenu).toEqual({
+      empoweredId: "alice",
+      offeredFormatIds: ["safety_bounce", "vote_bomb"],
+      selectedFormatId: "safety_bounce",
+    });
+  });
+
+  it("keeps sealed format ballots producer-only while bounce pointers stay public", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+    gs.startRound();
+    gs.recordFormatMenu("alice", ["safety_bounce", "vote_bomb"]);
+    gs.recordFormatSelected("alice", "safety_bounce");
+    gs.recordSafetyBounceStarted("bob");
+    gs.recordSafetyBouncePointer("bob", "charlie", "vulnerable");
+    gs.recordFormatBallot({
+      formatId: "safety_bounce",
+      voterId: "alice",
+      targetId: "charlie",
+    });
+
+    const events = gs.getCanonicalEvents();
+    expect(events.find((e) => e.type === "format.safety_bounce_pointer")).toMatchObject({
+      visibility: "public",
+      payload: { actorId: "bob", targetId: "charlie", classification: "vulnerable" },
+    });
+    expect(events.find((e) => e.type === "format.ballot_cast")).toMatchObject({
+      visibility: "producer",
+      payload: {
+        formatId: "safety_bounce",
+        voterId: "alice",
+        targetId: "charlie",
+        polarity: null,
+      },
     });
   });
 });

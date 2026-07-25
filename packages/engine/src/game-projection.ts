@@ -276,9 +276,12 @@ export function applyCanonicalEvent(
       }
       break;
     }
+    case "format.ballot_cast":
     case "format.safety_bounce_started":
     case "format.safety_bounce_pointer":
     case "format.resolved": {
+      // Public bounce/resolution facts are read from the event log / round facts;
+      // projection keeps only the live format menu + selected format for MCP.
       break;
     }
     case "power.action_set": {

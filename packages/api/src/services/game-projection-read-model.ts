@@ -125,6 +125,7 @@ export function summarizeCanonicalProjection(
             projection.formatMenu.offeredFormatIds[0],
             projection.formatMenu.offeredFormatIds[1],
           ],
+          selectedFormatId: projection.formatMenu.selectedFormatId,
         }
       : null,
     players: summarizePlayers(projection),

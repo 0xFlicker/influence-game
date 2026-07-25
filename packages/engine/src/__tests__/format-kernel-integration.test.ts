@@ -7,6 +7,7 @@ import { createUUID } from "../game-state";
 import { MockAgent } from "./mock-agent";
 import { LAUNCH_FORMAT_IDS, type LaunchFormatId } from "../formats";
 import type { PhaseContext } from "../game-runner";
+import { replayCanonicalEvents } from "../game-projection";
 
 const TEST_CONFIG: GameConfig = {
   timers: {
@@ -238,13 +239,43 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(result.transcript.some((e) => e.phase === Phase.FORMAT_MINGLE)).toBe(true);
     expect(result.transcript.some((e) => e.phase === Phase.FORMAT_RESOLVE)).toBe(true);
 
-    const offeredMenus = runner.getCanonicalEvents().filter((event) => event.type === "format.menu_offered");
+    const canonical = runner.getCanonicalEvents();
+    const offeredMenus = canonical.filter((event) => event.type === "format.menu_offered");
     expect(offeredMenus.length).toBeGreaterThan(0);
     expect(offeredMenus[0]).toMatchObject({
       phase: Phase.FORMAT_MENU,
       visibility: "public",
       payload: { offeredFormatIds: expect.any(Array) },
     });
+    const selected = canonical.filter((event) => event.type === "format.selected");
+    expect(selected.length).toBeGreaterThan(0);
+    expect(selected[0]).toMatchObject({
+      phase: Phase.FORMAT_PICK,
+      visibility: "public",
+      payload: { formatId: expect.any(String) },
+    });
+    const resolved = canonical.filter((event) => event.type === "format.resolved");
+    expect(resolved.length).toBeGreaterThan(0);
+    expect(resolved[0]).toMatchObject({
+      phase: Phase.FORMAT_RESOLVE,
+      visibility: "public",
+      payload: {
+        formatId: expect.any(String),
+        eliminatedId: expect.any(String),
+      },
+    });
+    // Sealed ballots are producer-only; public selection is queryable without private traces.
+    const ballots = canonical.filter((event) => event.type === "format.ballot_cast");
+    expect(ballots.length).toBeGreaterThan(0);
+    expect(ballots.every((event) => event.visibility === "producer")).toBe(true);
+    expect(selected.every((event) => event.visibility === "public")).toBe(true);
+    // While a format is locked (after menu + select, before next round.started clears menu), projection carries selectedFormatId.
+    const firstSelected = selected[0]!;
+    if (firstSelected.type !== "format.selected") throw new Error("expected format.selected");
+    const throughFirstPick = canonical.filter((event) => event.sequence <= firstSelected.sequence);
+    const pickProjection = replayCanonicalEvents(throughFirstPick);
+    expect(pickProjection.formatMenu?.selectedFormatId).toBe(firstSelected.payload.formatId);
+    expect(pickProjection.formatMenu?.offeredFormatIds).toHaveLength(2);
 
     // Classic elimination engine should not appear on the default path
     const powerActions = result.transcript.filter(

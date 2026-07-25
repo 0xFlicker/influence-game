@@ -231,6 +231,17 @@ export class ContextBuilder {
         return `${prefix}: Empowered player set to ${this.name(event.payload.empowered)} by ${event.payload.method}.`;
       case "format.menu_offered":
         return `${prefix}: ${this.name(event.payload.empoweredId)} was offered ${event.payload.offeredFormatIds.join(" vs ")}.`;
+      case "format.selected":
+        return `${prefix}: ${this.name(event.payload.empoweredId)} locked format ${event.payload.formatId}.`;
+      case "format.ballot_cast":
+        // Producer-only envelope; agent context should not narrate sealed ballots.
+        return `${prefix}: Format ballot recorded (sealed).`;
+      case "format.safety_bounce_started":
+        return `${prefix}: Safety Bounce started by ${this.name(event.payload.starterId)} (SAFE).`;
+      case "format.safety_bounce_pointer":
+        return `${prefix}: ${this.name(event.payload.actorId)} pointed to ${this.name(event.payload.targetId)} (${event.payload.classification}).`;
+      case "format.resolved":
+        return `${prefix}: Format ${event.payload.formatId} resolved; eliminated ${this.name(event.payload.eliminatedId)} (${event.payload.resolutionKind}).`;
       case "power.action_set":
         return `${prefix}: Power action: ${event.payload.action.action}${event.payload.action.action === "pass" ? "" : ` -> ${this.name(event.payload.action.target)}`}.`;
       case "power.candidates_resolved":

@@ -63,6 +63,7 @@ export type CanonicalGameEventType =
   | "vote.empowered_set"
   | "format.menu_offered"
   | "format.selected"
+  | "format.ballot_cast"
   | "format.safety_bounce_started"
   | "format.safety_bounce_pointer"
   | "format.resolved"
@@ -119,6 +120,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "vote.empowered_set",
   "format.menu_offered",
   "format.selected",
+  "format.ballot_cast",
   "format.safety_bounce_started",
   "format.safety_bounce_pointer",
   "format.resolved",
@@ -153,7 +155,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
 
 export interface CanonicalEventEnvelope<
   TType extends CanonicalGameEventType = CanonicalGameEventType,
-  TPayload extends Record<string, unknown> = Record<string, unknown>,
+  TPayload extends object = Record<string, unknown>,
 > {
   sequence: number;
   gameId: UUID;
@@ -168,7 +170,11 @@ export interface CanonicalEventEnvelope<
   payload: TPayload;
 }
 
-export interface FormatResolutionPayload {
+/**
+ * Public format-resolution aggregates. Never include voter→ballot mappings;
+ * sealed ballots live on producer-only `format.ballot_cast` events.
+ */
+export type FormatResolutionPayload = {
   formatId: LaunchFormatId;
   empoweredId: UUID;
   eliminatedId: UUID;
@@ -190,7 +196,16 @@ export interface FormatResolutionPayload {
     vulnerablePlayerIds: UUID[];
     voteTotals: Record<UUID, number>;
   } | null;
-}
+};
+
+/** Producer-only sealed format ballot (owner reads filtered through round-facts scope). */
+export type FormatBallotPayload = {
+  formatId: LaunchFormatId;
+  voterId: UUID;
+  targetId: UUID;
+  /** Present for Save-or-Eliminate only. */
+  polarity: "save" | "eliminate" | null;
+};
 
 export type CanonicalGameEvent =
   | CanonicalEventEnvelope<
@@ -240,6 +255,7 @@ export type CanonicalGameEvent =
       "format.selected",
       { empoweredId: UUID; formatId: LaunchFormatId }
     >
+  | CanonicalEventEnvelope<"format.ballot_cast", FormatBallotPayload>
   | CanonicalEventEnvelope<"format.safety_bounce_started", { starterId: UUID }>
   | CanonicalEventEnvelope<
       "format.safety_bounce_pointer",
