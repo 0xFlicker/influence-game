@@ -84,10 +84,13 @@ export function currentCaptureVersionFields(): {
   cognitiveArtifactCaptureVersion: 1;
   transcriptCaptureVersion: typeof TRANSCRIPT_CAPTURE_VERSION;
   formalSpeechCaptureVersion: typeof FORMAL_SPEECH_CAPTURE_VERSION;
+  /** Default spine for new durable runs (format kernel). */
+  gameKernel: "format";
 } {
   return {
     cognitiveArtifactCaptureVersion: 1,
     transcriptCaptureVersion: TRANSCRIPT_CAPTURE_VERSION,
     formalSpeechCaptureVersion: FORMAL_SPEECH_CAPTURE_VERSION,
+    gameKernel: "format",
   };
 }

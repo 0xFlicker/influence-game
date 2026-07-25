@@ -186,6 +186,13 @@ export type {
   PostVotePressureProjection,
   PostVotePressureStatus,
 } from "./post-vote-pressure";
+export { resolveGameKernel } from "./game-kernel";
+export type {
+  GameKernel,
+  GameKernelSource,
+  ResolveGameKernelOptions,
+  ResolveGameKernelResult,
+} from "./game-kernel";
 export { buildRevealedRoundFacts } from "./revealed-round-facts";
 export type {
   BuildRevealedRoundFactsOptions,
@@ -196,6 +203,11 @@ export type {
   RevealedExposureResolutionSummary,
   RevealedFactsDiagnosticSeverity,
   RevealedFactsStatus,
+  RevealedFormatBallotAccess,
+  RevealedFormatBallotAccessMode,
+  RevealedFormatBallotEntry,
+  RevealedFormatBouncePointer,
+  RevealedFormatFacts,
   RevealedPlayerRef,
   RevealedPowerActionSummary,
   RevealedPowerFacts,
@@ -203,7 +215,10 @@ export type {
   RevealedRoundFactsAvailability,
   RevealedRoundFactsDiagnostic,
   RevealedRoundFactsRead,
+  RevealedSafetyBounceFacts,
+  RevealedSaveOrEliminateFacts,
   RevealedStandardVoteFacts,
+  RevealedVoteBombFacts,
   RevealedVoteCount,
   RevealedVoteLedgerEntry,
 } from "./revealed-round-facts";

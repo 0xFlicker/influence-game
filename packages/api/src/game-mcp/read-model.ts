@@ -3,12 +3,14 @@ import {
   buildRevealedRoundFacts,
   canonicalEventIsVisibleTo,
   Phase,
+  resolveGameKernel,
   type AllianceHuddleOutcome,
   type AllianceProposalLineage,
   type AllianceRecord,
   type CanonicalEventQueryMode,
   type CanonicalGameEvent,
   type CanonicalGameEventType,
+  type GameKernel,
   type PostgameAnalysisDetailLevel,
   type PostgameAnalysisProjection,
   type PostgamePlayerGameSummary,
@@ -103,6 +105,10 @@ export interface ProductionGameMcpGameIdentity {
   trackType: string;
   rated: boolean;
   seasonId?: string;
+  /** Match spine: classic | format. Resolved from column or event inference. */
+  gameKernel: GameKernel;
+  /** Whether gameKernel came from games.game_kernel or event inference. */
+  gameKernelSource: "stored" | "inferred";
   createdAt: string;
   startedAt?: string;
   endedAt?: string;
@@ -499,6 +505,7 @@ export class ProductionGameMcpReadModel {
         status: schema.games.status,
         trackType: schema.games.trackType,
         seasonId: schema.games.seasonId,
+        gameKernel: schema.games.gameKernel,
         createdAt: schema.games.createdAt,
         startedAt: schema.games.startedAt,
         endedAt: schema.games.endedAt,
@@ -507,7 +514,9 @@ export class ProductionGameMcpReadModel {
       .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
       .limit(1))[0];
 
-    return row ? gameIdentity(row) : null;
+    if (!row) return null;
+    const events = await getPersistedGameEvents(this.db, row.id);
+    return gameIdentity(row, events.events);
   }
 
   async listGames(access: ProductionGameMcpAccess, limit = DEFAULT_GAME_LIMIT): Promise<{
@@ -543,6 +552,7 @@ export class ProductionGameMcpReadModel {
       status: schema.games.status,
       trackType: schema.games.trackType,
       seasonId: schema.games.seasonId,
+      gameKernel: schema.games.gameKernel,
       createdAt: schema.games.createdAt,
       startedAt: schema.games.startedAt,
       endedAt: schema.games.endedAt,
@@ -572,7 +582,7 @@ export class ProductionGameMcpReadModel {
         settlementStates.get(row.id),
       );
       games.push({
-        ...gameIdentity(row),
+        ...gameIdentity(row, events.events),
         eventLog: {
           status: events.status,
           rowCount: events.eventCount,
@@ -645,9 +655,10 @@ export class ProductionGameMcpReadModel {
     canonicalGameFacts: RevealedRoundFactsRead;
   }> {
     const game = await this.requireGame(options.gameIdOrSlug, access);
-    const [events, settlementState] = await Promise.all([
+    const [events, settlementState, ballotAccess] = await Promise.all([
       getPersistedGameEvents(this.db, game.id),
       getGameCompletionSettlementState(this.db, game.id),
+      this.resolveFormatBallotAccess(game.id, access),
     ]);
     const terminalOutcomeSequence = firstTerminalOutcomeSequence(events.events);
     const terminalSafeEvents = events.events.filter((row) =>
@@ -668,6 +679,7 @@ export class ProductionGameMcpReadModel {
         round: options.round,
         eventLogStatus: events.status,
         projectionStatus: projection.status,
+        ballotAccess,
       }),
     };
   }
@@ -1133,6 +1145,33 @@ export class ProductionGameMcpReadModel {
       gameIdOrSlug,
     });
     return resolution.status === "resolved" ? resolution.context : null;
+  }
+
+  /**
+   * Format sealed-ballot scope for read_round_facts.
+   * Producer: full ledger. Subject owner: own ballots only. Public viewers: none.
+   * Cognitive/private fields never enter this surface (ballots are producer events only).
+   */
+  private async resolveFormatBallotAccess(
+    gameId: string,
+    access: ProductionGameMcpAccess,
+  ): Promise<{ mode: "public" | "owner" | "producer"; ownedPlayerIds?: ReadonlySet<string> }> {
+    if (!isGamesSubjectAccess(access)) {
+      return { mode: "producer" };
+    }
+    const resolution = await resolveMatchAccessContext(this.db, {
+      subjectUserId: access.userId,
+      gameIdOrSlug: gameId,
+    });
+    if (resolution.status !== "resolved") {
+      return { mode: "public" };
+    }
+    const ownedPlayerIds = resolution.context.ownedPlayerIds;
+    if (ownedPlayerIds.size === 0) {
+      // Spectator subject with game access but no owned seat: public format facts only.
+      return { mode: "public" };
+    }
+    return { mode: "owner", ownedPlayerIds };
   }
 
   private async accessibleGameIds(access: ProductionGameMcpAccess): Promise<string[] | null> {
@@ -1730,16 +1769,21 @@ function strategicGradeForPlayer(player: PostgamePlayerGameSummary): {
   };
 }
 
-function gameIdentity(row: {
-  id: string;
-  slug: string;
-  status: string;
-  trackType: string;
-  seasonId: string | null;
-  createdAt: string;
-  startedAt: string | null;
-  endedAt: string | null;
-}): ProductionGameMcpGameIdentity {
+function gameIdentity(
+  row: {
+    id: string;
+    slug: string;
+    status: string;
+    trackType: string;
+    seasonId: string | null;
+    gameKernel?: string | null;
+    createdAt: string;
+    startedAt: string | null;
+    endedAt: string | null;
+  },
+  events: readonly CanonicalGameEvent[] = [],
+): ProductionGameMcpGameIdentity {
+  const resolved = resolveGameKernel({ stored: row.gameKernel, events });
   return {
     id: row.id,
     slug: row.slug,
@@ -1747,6 +1791,8 @@ function gameIdentity(row: {
     trackType: row.trackType,
     rated: row.seasonId !== null,
     ...(row.seasonId && { seasonId: row.seasonId }),
+    gameKernel: resolved.kernel,
+    gameKernelSource: resolved.source,
     createdAt: row.createdAt,
     ...(row.startedAt && { startedAt: row.startedAt }),
     ...(row.endedAt && { endedAt: row.endedAt }),

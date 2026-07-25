@@ -281,6 +281,12 @@ export const games = pgTable("games", {
   transcriptCaptureVersion: integer("transcript_capture_version").notNull().default(0),
   /** Formal endgame speech capture contract. 0 = legacy/historical; 1 = current dual-write. */
   formalSpeechCaptureVersion: integer("formal_speech_capture_version").notNull().default(0),
+  /**
+   * Match spine / mode identity: classic | format.
+   * Null = unstamped history (resolve via format.* event evidence on read).
+   * Never default historical rows to classic — that would break inference.
+   */
+  gameKernel: text("game_kernel").$type<"classic" | "format">(),
   minPlayers: integer("min_players").notNull().default(4),
   maxPlayers: integer("max_players").notNull().default(12),
   createdById: text("created_by_id").references(() => users.id),
@@ -301,6 +307,10 @@ export const games = pgTable("games", {
   check(
     "games_free_draw_request_key_length_check",
     sql`${table.freeDrawRequestKey} IS NULL OR char_length(${table.freeDrawRequestKey}) BETWEEN 1 AND 200`,
+  ),
+  check(
+    "games_game_kernel_check",
+    sql`${table.gameKernel} IS NULL OR ${table.gameKernel} IN ('classic', 'format')`,
   ),
 ]);
 
