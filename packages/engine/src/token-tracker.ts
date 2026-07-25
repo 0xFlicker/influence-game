@@ -79,6 +79,8 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5": { inputPer1M: 1.25, cachedInputPer1M: 0.125, outputPer1M: 10.00 },
   "gpt-5.4-nano": { inputPer1M: 0.20, cachedInputPer1M: 0.02, outputPer1M: 1.25 },
   "gpt-5.4-mini": { inputPer1M: 0.75, cachedInputPer1M: 0.075, outputPer1M: 4.50 },
+  // gpt-5.6 family (90% cache discount; Luna is the cost-sensitive tier)
+  "gpt-5.6-luna": { inputPer1M: 1.00, cachedInputPer1M: 0.10, outputPer1M: 6.00 },
   // Grok 4.3 family. Katana uses hyphenated model IDs and includes router markup.
   "grok-4-3": {
     inputPer1M: 1.375,
@@ -99,6 +101,7 @@ export const OPENAI_FLEX_MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5-mini": { inputPer1M: 0.125, cachedInputPer1M: 0.0125, outputPer1M: 1.00 },
   "gpt-5.4-nano": { inputPer1M: 0.10, cachedInputPer1M: 0.01, outputPer1M: 0.625 },
   "gpt-5.4-mini": { inputPer1M: 0.375, cachedInputPer1M: 0.0375, outputPer1M: 2.25 },
+  "gpt-5.6-luna": { inputPer1M: 0.50, cachedInputPer1M: 0.05, outputPer1M: 3.00 },
 };
 
 // ---------------------------------------------------------------------------

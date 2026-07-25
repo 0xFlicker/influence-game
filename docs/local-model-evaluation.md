@@ -43,6 +43,7 @@ Initial game-ready catalog entries:
 | `openai:gpt-5-mini` | OpenAI | `gpt-5-mini` | Legacy standard fallback |
 | `openai:gpt-5.4-nano` | OpenAI | `gpt-5.4-nano` | Cheapest GPT-5.4-class game-ready model |
 | `openai:gpt-5.4-mini` | OpenAI | `gpt-5.4-mini` | Legacy premium fallback |
+| `openai:gpt-5.6-luna` | OpenAI | `gpt-5.6-luna` | GPT-5.6 cost-sensitive tier ($1 / $0.10 cached / $6 per 1M) |
 | `katana:grok-4-3` | Katana / IMGNAI | `grok-4-3` | Router-backed Grok testing lane |
 
 Known unsuitable catalog entries:

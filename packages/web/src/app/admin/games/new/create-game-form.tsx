@@ -43,6 +43,7 @@ type ModelCatalogId =
   | "openai:gpt-5-nano"
   | "openai:gpt-5-mini"
   | "openai:gpt-5.4-mini"
+  | "openai:gpt-5.6-luna"
   | "katana:grok-4-3";
 
 const GAME_MODELS: Array<{
@@ -69,7 +70,14 @@ const GAME_MODELS: Array<{
   {
     catalogId: "openai:gpt-5.4-mini",
     label: "OpenAI gpt-5.4-mini",
-    sublabel: "Most capable OpenAI option",
+    sublabel: "Most capable OpenAI 5.4 option",
+    tier: "premium",
+    hasCostEstimate: true,
+  },
+  {
+    catalogId: "openai:gpt-5.6-luna",
+    label: "OpenAI gpt-5.6-luna",
+    sublabel: "GPT-5.6 cost-sensitive tier",
     tier: "premium",
     hasCostEstimate: true,
   },

@@ -436,7 +436,11 @@ export default function RulesPage() {
             <P>
               The House may use decision relevance, visible tension, underdog
               flip potential, dominance interruption, recency, fatigue, and
-              cost when deciding which alliances receive huddles.
+              cost when deciding which alliances receive huddles. The House
+              records internal private rationale for grants and skips for
+              producer/debug audit only; that rationale is not shown to
+              players, public viewers, replay viewers, or player-safe postgame
+              surfaces unless future rules deliberately change that boundary.
             </P>
             <P>
               Named alliances are different from House alliance hypotheses or

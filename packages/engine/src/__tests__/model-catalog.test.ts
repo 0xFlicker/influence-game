@@ -44,6 +44,22 @@ describe("model catalog", () => {
     expect(gameReadyIds).toContain("openai:gpt-5.4-nano");
   });
 
+  it("lists openai:gpt-5.6-luna as game-ready with GPT-5.4-class capabilities", () => {
+    const entry = modelCatalogEntryById("openai:gpt-5.6-luna");
+    const gameReadyIds = gameReadyCatalogEntries().map((item) => item.id);
+
+    expect(entry?.providerProfileId).toBe("openai");
+    expect(entry?.modelId).toBe("gpt-5.6-luna");
+    expect(entry?.displayName).toBe("OpenAI gpt-5.6-luna");
+    expect(entry?.evaluationStatus).toBe("game-ready");
+    expect(entry?.capabilities.supportsReasoningEffort).toBe(true);
+    expect(entry?.capabilities.supportsToolReasoningEffort).toBe(false);
+    expect(entry?.capabilities.usesMaxCompletionTokens).toBe(true);
+    expect(entry?.capabilities.supportsOpenAIResponses).toBe(true);
+    expect(entry?.allowedReasoningEfforts).toEqual(["low", "medium", "high"]);
+    expect(gameReadyIds).toContain("openai:gpt-5.6-luna");
+  });
+
   it("formats model selection labels from catalog display names", () => {
     expect(formatGameModelSelectionLabel({
       catalogId: "katana:grok-4-3",

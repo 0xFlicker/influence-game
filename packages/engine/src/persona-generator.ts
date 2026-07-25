@@ -134,7 +134,8 @@ export async function generatePersona(
       || model === "gpt-5-nano"
       || model === "gpt-5-mini"
       || model === "gpt-5.4-nano"
-      || model === "gpt-5.4-mini";
+      || model === "gpt-5.4-mini"
+      || model === "gpt-5.6-luna";
     const budget = isReasoning ? 200 + 4000 : 200;
     const response = await openai.chat.completions.create({
       model,

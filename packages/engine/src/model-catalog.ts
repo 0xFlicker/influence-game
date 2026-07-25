@@ -180,6 +180,17 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     legacyTier: "premium",
   },
   {
+    id: "openai:gpt-5.6-luna",
+    providerProfileId: "openai",
+    modelId: "gpt-5.6-luna",
+    displayName: "OpenAI gpt-5.6-luna",
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
+    capabilities: OPENAI_GPT54_CAPABILITIES,
+    notes: "GPT-5.6 Luna — cost-sensitive high-volume tier ($1/$0.10/$6 per 1M tokens).",
+  },
+  {
     id: "katana:grok-4-3",
     providerProfileId: "katana",
     modelId: "grok-4-3",
