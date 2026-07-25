@@ -31,7 +31,21 @@ export type PostgameTurningPointType =
   | "threat_removed"
   | "jury_split"
   | "endgame_pivot"
-  | "near_miss";
+  | "near_miss"
+  /** Format kernel: empowered player survived a format where they were eligible. */
+  | "format_chooser_survived"
+  /** Format kernel: empowered player eliminated under their own format. */
+  | "format_chooser_eliminated"
+  /** Format kernel: empowered tiebreak decided the elimination. */
+  | "format_tiebreak"
+  /** Save-or-Eliminate: eliminated player still received 2+ saves. */
+  | "format_soe_elim_with_saves"
+  /** Vote Bomb: clear elimination with 2+ votes and no empowered tiebreak. */
+  | "format_vote_bomb_clear_stack"
+  /** Vote Bomb: all positive votes concentrated on one target. */
+  | "format_vote_bomb_unanimous_target"
+  /** Safety Bounce: non-final pointer made an alliance member vulnerable. */
+  | "format_bounce_alliance_vulnerable";
 
 export interface PostgameAnalysisDiagnostic {
   code: string;
@@ -1631,7 +1645,264 @@ function buildTurningPoints(input: {
     }
   }
 
-  return dedupeTurningPoints(points).slice(0, 12);
+  if (formatKernel) {
+    points.push(...buildFormatKernelTurningPoints(input));
+  }
+
+  return dedupeTurningPoints(points).slice(0, 16);
+}
+
+function buildFormatKernelTurningPoints(input: {
+  completed: CompletedGameResultsRead;
+  eventRefs: EventReferenceIndex | null;
+  allianceIndex: PostgameAllianceIndex;
+}): PostgameTurningPoint[] {
+  const points: PostgameTurningPoint[] = [];
+
+  for (const round of input.completed.rounds) {
+    const format = round.canonicalFacts.roundFacts.format;
+    if (format.status !== "available" || !format.eliminated) continue;
+
+    const formatId = format.selectedFormatId;
+    const formatLabel = formatIdLabel(formatId) ?? "the format";
+    const empowered = format.empowered ?? round.canonicalFacts.roundFacts.standardVote.empowered;
+    const eliminated = format.eliminated;
+    const roundNumber = round.round;
+
+    // Chooser survival / self-destruct (eligible under format kernel launch formats).
+    if (empowered) {
+      const chooserEliminated = empowered.id === eliminated.id;
+      const chooserEligible =
+        formatId === "safety_bounce"
+          ? (format.safetyBounce?.vulnerable.some((player) => player.id === empowered.id) ?? true)
+          : true;
+      if (chooserEliminated) {
+        points.push({
+          round: roundNumber,
+          type: "format_chooser_eliminated",
+          players: [empowered],
+          confidence: "high",
+          description: `${empowered.name} chose ${formatLabel} and was eliminated under it.`,
+          derivationMethod: "format_chooser_self_destruct",
+          criteria: {
+            formatId,
+            empoweredId: empowered.id,
+            eliminatedId: eliminated.id,
+          },
+          evidence: {
+            factRefs: [
+              `round:${roundNumber}:empowered:${empowered.id}`,
+              `round:${roundNumber}:format_eliminated:${eliminated.id}`,
+            ],
+            ...(input.eventRefs
+              ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.selected", "format.resolved"], [empowered, eliminated]) }
+              : {}),
+          },
+        });
+      } else if (chooserEligible) {
+        points.push({
+          round: roundNumber,
+          type: "format_chooser_survived",
+          players: [empowered, eliminated],
+          confidence: "high",
+          description: `${empowered.name} chose ${formatLabel} while fully eligible and walked; ${eliminated.name} went home.`,
+          derivationMethod: "format_chooser_survived_eligible",
+          criteria: {
+            formatId,
+            empoweredId: empowered.id,
+            eliminatedId: eliminated.id,
+          },
+          evidence: {
+            factRefs: [
+              `round:${roundNumber}:empowered:${empowered.id}`,
+              `round:${roundNumber}:format_eliminated:${eliminated.id}`,
+            ],
+            ...(input.eventRefs
+              ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.selected", "format.resolved"], [empowered, eliminated]) }
+              : {}),
+          },
+        });
+      }
+    }
+
+    // Empowered tiebreak decisive.
+    if (format.tiebreaker && eliminated) {
+      const tiedNames = format.tied.map((player) => player.name);
+      points.push({
+        round: roundNumber,
+        type: "format_tiebreak",
+        players: uniqueBy([format.tiebreaker, eliminated, ...format.tied], (player) => player.id),
+        confidence: "high",
+        description: tiedNames.length > 1
+          ? `${format.tiebreaker.name}'s ${formatLabel} tiebreak sent ${eliminated.name} home (tied: ${tiedNames.join(", ")}).`
+          : `${format.tiebreaker.name}'s ${formatLabel} tiebreak eliminated ${eliminated.name}.`,
+        derivationMethod: "format_empowered_tiebreak",
+        criteria: {
+          formatId,
+          tiebreakerId: format.tiebreaker.id,
+          eliminatedId: eliminated.id,
+          tiedPlayerIds: format.tied.map((player) => player.id),
+        },
+        evidence: {
+          factRefs: [
+            `round:${roundNumber}:format_tiebreak:${format.tiebreaker.id}`,
+            `round:${roundNumber}:format_eliminated:${eliminated.id}`,
+          ],
+          ...(input.eventRefs
+            ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.resolved"], [format.tiebreaker, eliminated, ...format.tied]) }
+            : {}),
+        },
+      });
+    }
+
+    // Save-or-Eliminate: eliminated with 2+ saves.
+    if (formatId === "save_or_eliminate" && format.saveOrEliminate) {
+      const saves = format.saveOrEliminate.savesReceived.find((row) => row.player.id === eliminated.id)?.votes ?? 0;
+      if (saves >= 2) {
+        points.push({
+          round: roundNumber,
+          type: "format_soe_elim_with_saves",
+          players: [eliminated],
+          confidence: "high",
+          description: `${eliminated.name} left under Save-or-Eliminate despite ${saves} saves.`,
+          derivationMethod: "format_soe_eliminated_with_saves",
+          criteria: {
+            formatId,
+            eliminatedId: eliminated.id,
+            savesReceived: saves,
+          },
+          evidence: {
+            factRefs: [
+              `round:${roundNumber}:format_eliminated:${eliminated.id}`,
+              `round:${roundNumber}:soe_saves:${eliminated.id}:${saves}`,
+            ],
+            ...(input.eventRefs
+              ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.resolved"], [eliminated]) }
+              : {}),
+          },
+        });
+      }
+    }
+
+    // Vote Bomb: clear 2+ vote elim without empowered tiebreak; unanimous target concentration.
+    if (formatId === "vote_bomb" && format.voteBomb) {
+      const elimVotes = format.voteBomb.totals.find((row) => row.player.id === eliminated.id)?.votes ?? 0;
+      const positiveRows = format.voteBomb.totals.filter((row) => row.votes > 0);
+      const totalPositive = positiveRows.reduce((sum, row) => sum + row.votes, 0);
+      const noTiebreak = format.tiebreaker === null;
+
+      if (noTiebreak && elimVotes >= 2) {
+        points.push({
+          round: roundNumber,
+          type: "format_vote_bomb_clear_stack",
+          players: [eliminated],
+          confidence: "medium",
+          description: `${eliminated.name} took a clear Vote Bomb hit (${elimVotes} votes) with no empowered tiebreak.`,
+          derivationMethod: "format_vote_bomb_clear_stack",
+          criteria: {
+            formatId,
+            eliminatedId: eliminated.id,
+            votes: elimVotes,
+            tiebreak: false,
+          },
+          evidence: {
+            factRefs: [
+              `round:${roundNumber}:format_eliminated:${eliminated.id}`,
+              `round:${roundNumber}:vote_bomb_votes:${eliminated.id}:${elimVotes}`,
+            ],
+            ...(input.eventRefs
+              ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.resolved"], [eliminated]) }
+              : {}),
+          },
+        });
+      }
+
+      // Low-signal but common: all positive ballots on one target (room laser).
+      if (
+        positiveRows.length === 1
+        && positiveRows[0]?.player.id === eliminated.id
+        && totalPositive >= 2
+      ) {
+        points.push({
+          round: roundNumber,
+          type: "format_vote_bomb_unanimous_target",
+          players: [eliminated],
+          confidence: "low",
+          description: `Vote Bomb locked onto ${eliminated.name} — every positive vote landed on one name.`,
+          derivationMethod: "format_vote_bomb_unanimous_target",
+          criteria: {
+            formatId,
+            eliminatedId: eliminated.id,
+            totalPositiveVotes: totalPositive,
+            positiveTargets: 1,
+          },
+          evidence: {
+            factRefs: [
+              `round:${roundNumber}:format_eliminated:${eliminated.id}`,
+              `round:${roundNumber}:vote_bomb_unanimous:${eliminated.id}`,
+            ],
+            ...(input.eventRefs
+              ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.resolved"], [eliminated]) }
+              : {}),
+          },
+        });
+      }
+    }
+
+    // Safety Bounce: non-final pointer makes an alliance member vulnerable.
+    if (formatId === "safety_bounce" && format.safetyBounce) {
+      const pointers = format.safetyBounce.pointers;
+      if (pointers.length >= 2) {
+        const lastIndex = pointers.length - 1;
+        for (let index = 0; index < lastIndex; index += 1) {
+          const pointer = pointers[index];
+          if (!pointer || pointer.classification !== "vulnerable") continue;
+          const actor = pointer.actor;
+          const target = pointer.target;
+          const sharedAlliances = input.allianceIndex.alliances.filter((alliance) =>
+            alliance.createdRound <= roundNumber
+            && alliance.memberIds.includes(actor.id)
+            && alliance.memberIds.includes(target.id)
+          );
+          if (sharedAlliances.length === 0) continue;
+          const allianceNames = sharedAlliances.map((alliance) => alliance.name);
+          points.push({
+            round: roundNumber,
+            type: "format_bounce_alliance_vulnerable",
+            players: [actor, target],
+            confidence: "high",
+            description: `${actor.name} bounced alliance-mate ${target.name} into vulnerable (${allianceNames.join(", ")}) before the chain closed.`,
+            derivationMethod: "format_bounce_alliance_vulnerable_pointer",
+            criteria: {
+              formatId,
+              actorId: actor.id,
+              targetId: target.id,
+              pointerIndex: index,
+              lastPointerIndex: lastIndex,
+              allianceIds: sharedAlliances.map((alliance) => alliance.id),
+            },
+            evidence: {
+              factRefs: [
+                `round:${roundNumber}:bounce_pointer:${actor.id}->${target.id}:vulnerable`,
+                ...sharedAlliances.map((alliance) => `alliance:${alliance.id}`),
+              ],
+              ...(input.eventRefs
+                ? {
+                    eventRefs: input.eventRefs.forRound(
+                      roundNumber,
+                      ["format.safety_bounce_pointer", "format.resolved"],
+                      [actor, target],
+                    ),
+                  }
+                : {}),
+            },
+          });
+        }
+      }
+    }
+  }
+
+  return points;
 }
 
 interface PostgameAllianceIndex {

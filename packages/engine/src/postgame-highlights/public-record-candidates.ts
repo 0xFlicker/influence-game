@@ -25,8 +25,15 @@ export function buildTurningPointCandidates(
     switch (point.type) {
       case "majority_consolidation":
       case "power_shift":
+      case "format_chooser_survived":
+      case "format_chooser_eliminated":
+      case "format_tiebreak":
         return powerControlCandidate(point);
       case "threat_removed":
+      case "format_soe_elim_with_saves":
+      case "format_vote_bomb_clear_stack":
+      case "format_vote_bomb_unanimous_target":
+      case "format_bounce_alliance_vulnerable":
         return threatRemovedCandidate(point);
       case "endgame_pivot":
         return endgamePivotCandidate(point);
