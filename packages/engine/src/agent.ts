@@ -25,6 +25,7 @@ import type {
   CandidateChoiceRequest,
   CandidateSelectionDecision,
   EliminationVoteDisclosure,
+  EmpowerRevoteAction,
   IAgent,
   MingleIntentAction,
   MinglePreferredRoomSize,
@@ -1209,9 +1210,19 @@ function readOptionalStrategicLens(value: unknown): StrategicLens | undefined {
 
 function normalizeStrategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
   const decisionLog = normalizeNullableString(record.decisionLog);
+  const decisionId = normalizeNullableString(record.decisionId);
   return {
     ...(decisionLog ? { decisionLog } : {}),
+    ...(decisionId ? { decisionId } : {}),
   };
+}
+
+function acceptedActionMetadata(
+  metadata: StrategicDecisionMetadata,
+  directModelChoice: boolean,
+): StrategicDecisionMetadata {
+  if (directModelChoice) return metadata;
+  return metadata.decisionLog ? { decisionLog: metadata.decisionLog } : {};
 }
 
 class ToolCallRetryError extends Error {
@@ -2636,7 +2647,11 @@ Use the spread_rumor tool.`;
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<StrategicDecisionMetadata & {
+    empowerTarget: UUID;
+    thinking?: string;
+    reasoningContext?: string;
+  }> {
     // Empower is always cast for another living player — never self.
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     const legalEmpowerNames = others.map((p) => p.name);
@@ -2716,7 +2731,7 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
         empowerTarget,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...metadata,
+        ...acceptedActionMetadata(metadata, Boolean(empowerPlayer)),
       };
     } catch (err) {
       const empFallback = randomOther();
@@ -2729,7 +2744,7 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
     ctx: PhaseContext,
     tiedCandidates: UUID[],
     originalVote: { empowerTarget: UUID },
-  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<EmpowerRevoteAction> {
     const tiedPlayers = tiedCandidates
       .map((id) => ctx.alivePlayers.find((player) => player.id === id))
       .filter((player): player is { id: UUID; name: string } => player !== undefined);
@@ -2772,7 +2787,7 @@ Use the cast_empower_revote tool. Return only an empower target from the eligibl
         empowerTarget: empowerPlayer?.id ?? fallbackTarget.id,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...metadata,
+        ...acceptedActionMetadata(metadata, Boolean(empowerPlayer)),
       };
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEmpowerRevote error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
@@ -2999,6 +3014,7 @@ Use the use_power tool to declare your final hidden action.`;
       const targetId = targetPlayer?.id ?? candidates[0];
       const replacementRequest = validAction === "protect" ? shieldReplacementByProtectedId.get(targetId) : undefined;
       let shieldPullUpCandidateIds: UUID[] = [];
+      let shieldSelectionRepaired = false;
       if (replacementRequest && replacementRequest.requiredCount > 0) {
         const eligiblePlayers = replacementRequest.eligibleCandidateIds
           .map((id) => ctx.alivePlayers.find((player) => player.id === id))
@@ -3021,6 +3037,7 @@ Use the use_power tool to declare your final hidden action.`;
           replacementRequest.requiredCount,
         );
         if (invalidSelection || missingSelection) {
+          shieldSelectionRepaired = true;
           console.warn(`[vote-fallback] agent="${this.name}" method=getPowerAction shieldPullUpCandidates invalidOrMissing required=${replacementRequest.requiredCount} selected=${selectedCandidateIds.length} fallback=[${shieldPullUpCandidateIds.join(",")}]`);
         }
       }
@@ -3031,12 +3048,16 @@ Use the use_power tool to declare your final hidden action.`;
       });
       const metadata = this.strategicDecisionMetadata(result);
       this.recordStrategicDecision(ctx, "power", "Power Action", metadata);
+      const directModelChoice =
+        Boolean(targetPlayer)
+        && validAction === result.action
+        && !shieldSelectionRepaired;
       return {
         action: validAction,
         target: targetPlayer?.id ?? candidates[0],
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...metadata,
+        ...acceptedActionMetadata(metadata, directModelChoice),
         ...(shieldPullUpCandidateIds.length > 0 ? { shieldPullUpCandidateIds } : {}),
       };
     } catch {
@@ -3047,7 +3068,7 @@ Use the use_power tool to declare your final hidden action.`;
   async getCouncilVote(
     ctx: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<TargetDecision> {
     const [c1, c2] = candidates;
     const c1Name = ctx.alivePlayers.find((p) => p.id === c1)?.name ?? c1;
     const c2Name = ctx.alivePlayers.find((p) => p.id === c2)?.name ?? c2;
@@ -3081,7 +3102,12 @@ Use the council_vote tool to cast your vote.`;
       const fallback = candidates[Math.floor(Math.random() * 2)]!;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
       console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${eliminationName || String(result.eliminate)}" available=[${c1Name}, ${c2Name}] fallback="${fallbackName}"`);
-      return { target: fallback, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
+      return {
+        target: fallback,
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        ...acceptedActionMetadata(metadata, false),
+      };
     } catch (err) {
       const fallback = candidates[Math.floor(Math.random() * 2)]!;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
@@ -3661,7 +3687,12 @@ Use the elimination_vote tool to cast your vote.`;
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
       console.warn(`[vote-fallback] agent="${this.name}" method=getEndgameEliminationVote returned="${result.eliminate}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
-      return { target: fallback.id, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
+      return {
+        target: fallback.id,
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        ...acceptedActionMetadata(metadata, false),
+      };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
         throw err;
@@ -3862,7 +3893,12 @@ Use the jury_vote tool to cast your vote.`;
       if (!target) {
         console.warn(`[vote-fallback] agent="${this.name}" method=getJuryVote returned="${result.winner}" available=[${finalists.map((f) => f.name).join(", ")}] fallback="${finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist}"`);
       }
-      return { target: target?.id ?? randomFinalist, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
+      return {
+        target: target?.id ?? randomFinalist,
+        thinking: result.thinking,
+        reasoningContext: result.reasoningContext,
+        ...acceptedActionMetadata(metadata, Boolean(target)),
+      };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
         throw err;
@@ -5018,7 +5054,7 @@ ${roomSection}
     systemPrompt: string | undefined,
     options: LlmCallOptions | undefined,
     sourceKey: string,
-  ): Promise<T> {
+  ): Promise<T & { decisionId?: UUID }> {
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({ role: "user", content: prompt });
@@ -5061,7 +5097,7 @@ ${roomSection}
       ? parsed as T & object
       : {} as T & object;
     const withReasoning = InfluenceAgent.withProviderReasoningSummaryDisplay(parsedRecord, providerReasoningSummary) as T;
-    await this.emitPrivateDecisionTrace({
+    const decisionId = await this.emitPrivateDecisionTrace({
       options,
       messages,
       response,
@@ -5070,7 +5106,10 @@ ${roomSection}
       toolArguments: parsed,
       providerReasoningSummary,
     });
-    return withReasoning;
+    return {
+      ...withReasoning,
+      ...(decisionId ? { decisionId } : {}),
+    };
   }
 
   private async callLocalLLMWithNativeThinking(
@@ -5172,7 +5211,7 @@ ${roomSection}
     systemPrompt: string | undefined,
     options: LlmCallOptions | undefined,
     sourceKey: string,
-  ): Promise<T> {
+  ): Promise<T & { decisionId?: UUID }> {
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({
@@ -5238,7 +5277,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     if (reasoningContext) {
       withReasoning.reasoningContext = reasoningContext;
     }
-    await this.emitPrivateDecisionTrace({
+    const decisionId = await this.emitPrivateDecisionTrace({
       options,
       messages,
       response,
@@ -5246,7 +5285,10 @@ ${JSON.stringify(tool.function.parameters)}`,
       toolName: tool.function.name,
       toolArguments: withReasoning,
     });
-    return withReasoning;
+    return {
+      ...withReasoning,
+      ...(decisionId ? { decisionId } : {}),
+    };
   }
 
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
@@ -5436,7 +5478,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     maxTokens = 200,
     systemPrompt?: string,
     options?: LlmCallOptions,
-  ): Promise<T> {
+  ): Promise<T & { decisionId?: UUID }> {
     const reasoning = this.usesReasoningBudget();
     const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
@@ -5524,7 +5566,7 @@ ${JSON.stringify(tool.function.parameters)}`,
             if (reasoningContext) {
               withReasoning.reasoningContext = reasoningContext;
             }
-            await this.emitPrivateDecisionTrace({
+            const decisionId = await this.emitPrivateDecisionTrace({
               options,
               messages,
               response,
@@ -5532,7 +5574,10 @@ ${JSON.stringify(tool.function.parameters)}`,
               toolName: requestTool.function.name,
               toolArguments: withReasoning,
             });
-            return withReasoning;
+            return {
+              ...withReasoning,
+              ...(decisionId ? { decisionId } : {}),
+            };
           }
 
           const jsonFallback = await this.callToolJsonFallback<T>(
@@ -5575,7 +5620,7 @@ ${JSON.stringify(tool.function.parameters)}`,
         if (reasoningContext) {
           args.reasoningContext = reasoningContext;
         }
-        await this.emitPrivateDecisionTrace({
+        const decisionId = await this.emitPrivateDecisionTrace({
           options,
           messages,
           response,
@@ -5583,7 +5628,10 @@ ${JSON.stringify(tool.function.parameters)}`,
           toolName: requestTool.function.name,
           toolArguments: args,
         });
-        return args;
+        return {
+          ...args,
+          ...(decisionId ? { decisionId } : {}),
+        };
       } catch (error) {
         if (error instanceof ToolCallFatalError) {
           throw error;

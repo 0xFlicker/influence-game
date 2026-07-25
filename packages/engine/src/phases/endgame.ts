@@ -573,7 +573,14 @@ export async function runJudgmentJuryVote(
     );
     await assertCanAcceptCommit(ctx);
     gameState.recordJuryVote(juror.playerId, vote.target, [
-      agentTurnSourcePointer(juror.playerId, "jury-vote", gameState.round, Phase.JURY_VOTE),
+      agentTurnSourcePointer(
+        juror.playerId,
+        "jury-vote",
+        gameState.round,
+        Phase.JURY_VOTE,
+        undefined,
+        vote.decisionId,
+      ),
     ]);
     const targetName = gameState.getPlayerName(vote.target);
     const voteTranscriptThinking = transcriptThinkingFor(jurorAgent, vote.thinking, vote.reasoningContext);

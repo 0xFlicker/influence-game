@@ -51,6 +51,19 @@ export interface CanonicalSourcePointer {
   decisionId?: UUID;
 }
 
+export type AcceptedActionCardinality = "one_to_one" | "many_to_one";
+
+export interface AcceptedActionRegistryEntry {
+  eventType: CanonicalGameEventType;
+  /** Action vocabulary written on the canonical source pointer. */
+  sourceActions: readonly string[];
+  /** Private trace action vocabulary accepted for the same direct action. */
+  traceActions: readonly string[];
+  /** Dot path used to validate the canonical actor when the payload has one. */
+  actorPayloadPath: string | null;
+  cardinality: AcceptedActionCardinality;
+}
+
 export type CanonicalGameEventType =
   | "game.roster_initialized"
   | "round.started"
@@ -95,6 +108,132 @@ export type CanonicalGameEventType =
   | "judgment.speech_recorded"
   | "endgame.speech_recorded"
   | "round.result_recorded";
+
+/**
+ * Exhaustive registry of trace-bearing actions that can directly author board facts.
+ * Anything absent here is intentionally not eligible for accepted-action correlation.
+ */
+export const ACCEPTED_ACTION_REGISTRY = {
+  "vote.cast": {
+    eventType: "vote.cast",
+    sourceActions: ["vote"],
+    traceActions: ["vote"],
+    actorPayloadPath: "voterId",
+    cardinality: "one_to_one",
+  },
+  "vote.empower_revote_cast": {
+    eventType: "vote.empower_revote_cast",
+    sourceActions: ["empower-revote"],
+    traceActions: ["empower-revote"],
+    actorPayloadPath: "voterId",
+    cardinality: "one_to_one",
+  },
+  "format.selected": {
+    eventType: "format.selected",
+    sourceActions: ["format-pick"],
+    traceActions: ["format-pick"],
+    actorPayloadPath: "empoweredId",
+    cardinality: "one_to_one",
+  },
+  "format.ballot_cast": {
+    eventType: "format.ballot_cast",
+    sourceActions: [
+      "format-save-or-eliminate-ballot",
+      "format-vote-bomb-ballot",
+      "format-safety-bounce-vote",
+    ],
+    traceActions: [
+      "format-save-or-eliminate-ballot",
+      "format-vote-bomb-ballot",
+      "format-safety-bounce-vote",
+    ],
+    actorPayloadPath: "voterId",
+    cardinality: "one_to_one",
+  },
+  "format.safety_bounce_pointer": {
+    eventType: "format.safety_bounce_pointer",
+    sourceActions: ["bounce-pointer"],
+    traceActions: ["bounce-pointer"],
+    actorPayloadPath: "actorId",
+    cardinality: "one_to_one",
+  },
+  "format.resolved": {
+    eventType: "format.resolved",
+    sourceActions: ["format-tiebreak"],
+    traceActions: ["format-tiebreak"],
+    actorPayloadPath: "tiebreakerId",
+    cardinality: "one_to_one",
+  },
+  "power.action_set": {
+    eventType: "power.action_set",
+    sourceActions: ["power", "power-action"],
+    traceActions: ["power"],
+    actorPayloadPath: null,
+    cardinality: "one_to_one",
+  },
+  "alliance.proposal_submitted": {
+    eventType: "alliance.proposal_submitted",
+    sourceActions: ["alliance-action"],
+    traceActions: ["alliance-action"],
+    actorPayloadPath: "lineage.versions[].proposerId",
+    cardinality: "one_to_one",
+  },
+  "alliance.response_recorded": {
+    eventType: "alliance.response_recorded",
+    sourceActions: ["alliance-action"],
+    traceActions: ["alliance-action"],
+    actorPayloadPath: "playerId",
+    cardinality: "one_to_one",
+  },
+  "alliance.counter_submitted": {
+    eventType: "alliance.counter_submitted",
+    sourceActions: ["alliance-action"],
+    traceActions: ["alliance-action"],
+    actorPayloadPath: "lineage.versions[].proposerId",
+    cardinality: "one_to_one",
+  },
+  "alliance.amendment_resolved": {
+    eventType: "alliance.amendment_resolved",
+    sourceActions: ["alliance-action"],
+    traceActions: ["alliance-action"],
+    actorPayloadPath: "lineage.versions[].proposerId",
+    cardinality: "one_to_one",
+  },
+  "council.vote_cast": {
+    eventType: "council.vote_cast",
+    sourceActions: ["council-vote"],
+    traceActions: ["council-vote"],
+    actorPayloadPath: "voterId",
+    cardinality: "one_to_one",
+  },
+  "endgame.elimination_vote_cast": {
+    eventType: "endgame.elimination_vote_cast",
+    sourceActions: ["elimination-vote"],
+    traceActions: ["elimination-vote"],
+    actorPayloadPath: "voterId",
+    cardinality: "one_to_one",
+  },
+  "endgame.elimination_resolved": {
+    eventType: "endgame.elimination_resolved",
+    sourceActions: ["tribunal-jury-tiebreaker-vote"],
+    traceActions: ["tribunal-jury-tiebreaker-vote"],
+    actorPayloadPath: null,
+    cardinality: "many_to_one",
+  },
+  "jury.vote_cast": {
+    eventType: "jury.vote_cast",
+    sourceActions: ["jury-vote"],
+    traceActions: ["jury-vote"],
+    actorPayloadPath: "jurorId",
+    cardinality: "one_to_one",
+  },
+} as const satisfies Partial<Record<CanonicalGameEventType, AcceptedActionRegistryEntry>>;
+
+export function acceptedActionRegistryEntry(
+  eventType: CanonicalGameEventType,
+): AcceptedActionRegistryEntry | undefined {
+  return ACCEPTED_ACTION_REGISTRY[eventType as keyof typeof ACCEPTED_ACTION_REGISTRY];
+}
 
 export type JudgmentSpeechKind =
   | "opening_statement"

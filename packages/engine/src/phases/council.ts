@@ -68,7 +68,14 @@ export async function runCouncilPhase(
     const vote = voteResult.target;
     await assertCanAcceptCommit(ctx);
     gameState.recordCouncilVote(player.id, vote, [
-      agentTurnSourcePointer(player.id, "council-vote", gameState.round, Phase.COUNCIL),
+      agentTurnSourcePointer(
+        player.id,
+        "council-vote",
+        gameState.round,
+        Phase.COUNCIL,
+        undefined,
+        voteResult.decisionId,
+      ),
     ]);
 
     const votedAgainstName = gameState.getPlayerName(vote);

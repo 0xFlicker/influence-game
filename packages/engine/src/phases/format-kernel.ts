@@ -38,19 +38,22 @@ import type {
 import { Phase, type UUID } from "../types";
 import { handleElimination } from "./elimination";
 import {
+  agentTurnSourcePointer,
   assertCanAcceptCommit,
   strategicDecisionResponse,
   type PhaseActor,
   type PhaseRunnerContext,
 } from "./phase-runner-context";
 import { runMinglePhase } from "./mingle";
-import type { FormatResolutionPayload } from "../canonical-events";
+import type { CanonicalSourcePointer, FormatResolutionPayload } from "../canonical-events";
 
 type FormatRoundElimination = {
   eliminatedId: UUID;
   voteDisclosure: EliminationVoteDisclosure;
   /** Durable board truth only — House MC rebuilds omniscient facts from events. */
   canonicalResolution: FormatResolutionPayload;
+  /** Present only when an empowered model decision directly broke an actual tie. */
+  resolutionSourcePointers: CanonicalSourcePointer[];
 };
 
 function normalizedFormatProvenance(
@@ -176,6 +179,7 @@ export async function runFormatPickPhase(
   let thinking = "House fallback: first offered format";
   let reasoningContext: string | undefined;
   let decisionLog: string | null | undefined;
+  let decisionId: UUID | undefined;
   let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
   if (empoweredAgent.pickRoundFormat) {
@@ -203,6 +207,7 @@ export async function runFormatPickPhase(
       if (picked) {
         chosen = picked;
         provenance = normalizedFormatProvenance(result);
+        if (provenance.decisionSource === "llm") decisionId = result.decisionId;
       } else {
         provenance = fallbackFormatProvenance("invalid_format_choice");
       }
@@ -224,7 +229,16 @@ export async function runFormatPickPhase(
       selectedFormat: chosen,
     }),
   );
-  gameState.recordFormatSelected(empoweredId, chosen);
+  gameState.recordFormatSelected(empoweredId, chosen, [
+    agentTurnSourcePointer(
+      empoweredId,
+      "format-pick",
+      gameState.round,
+      Phase.FORMAT_PICK,
+      undefined,
+      decisionId,
+    ),
+  ]);
 
   const sheet = ruleSheetForFormat(chosen);
   logger.logSystem(
@@ -299,7 +313,10 @@ export async function runFormatResolvePhase(
 
   // Durable board truth only. House MC / producer rebuild omniscient facts from events (R14).
   await assertCanAcceptCommit(ctx);
-  gameState.recordFormatResolution(elimination.canonicalResolution);
+  gameState.recordFormatResolution(
+    elimination.canonicalResolution,
+    elimination.resolutionSourcePointers,
+  );
 
   await handleElimination(ctx, eliminatedId, Phase.FORMAT_RESOLVE, {
     mode: "format",
@@ -361,6 +378,7 @@ async function resolveSaveOrEliminateRound(
     let thinking = "fallback eliminate first other";
     let reasoningContext: string | undefined;
     let decisionLog: string | null | undefined;
+    let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
     if (agent.getSaveOrEliminateBallot) {
@@ -386,6 +404,7 @@ async function resolveSaveOrEliminateRound(
         polarity = result.polarity;
         targetId = result.targetId;
         provenance = normalizedFormatProvenance(result);
+        if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
         decisionLog = result.decisionLog;
@@ -405,7 +424,16 @@ async function resolveSaveOrEliminateRound(
       voterId: player.id,
       targetId,
       polarity,
-    });
+    }, [
+      agentTurnSourcePointer(
+        player.id,
+        "format-save-or-eliminate-ballot",
+        gameState.round,
+        Phase.FORMAT_RESOLVE,
+        undefined,
+        decisionId,
+      ),
+    ]);
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -435,8 +463,10 @@ async function resolveSaveOrEliminateRound(
   await assertCanAcceptCommit(ctx);
   const nets = computeSaveOrEliminateNets(aliveIds, ballots);
   let resolution = resolveSaveOrEliminate(aliveIds, ballots);
+  let resolutionSourcePointers: CanonicalSourcePointer[] = [];
   if (resolution.kind === "tie") {
     const broken = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
+    resolutionSourcePointers = broken.sourcePointers;
     resolution = broken;
   }
 
@@ -486,6 +516,7 @@ async function resolveSaveOrEliminateRound(
       voteBomb: null,
       safetyBounce: null,
     },
+    resolutionSourcePointers,
   };
 }
 
@@ -508,6 +539,7 @@ async function resolveVoteBombRound(
     let thinking = "fallback vote last other";
     let reasoningContext: string | undefined;
     let decisionLog: string | null | undefined;
+    let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
     if (agent.getVoteBombBallot) {
@@ -531,6 +563,7 @@ async function resolveVoteBombRound(
       } else if (isLegalVoteBombBallot(player.id, result.targetId, aliveIds)) {
         targetId = result.targetId;
         provenance = normalizedFormatProvenance(result);
+        if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
         decisionLog = result.decisionLog;
@@ -549,7 +582,16 @@ async function resolveVoteBombRound(
       formatId: "vote_bomb",
       voterId: player.id,
       targetId,
-    });
+    }, [
+      agentTurnSourcePointer(
+        player.id,
+        "format-vote-bomb-ballot",
+        gameState.round,
+        Phase.FORMAT_RESOLVE,
+        undefined,
+        decisionId,
+      ),
+    ]);
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -578,8 +620,11 @@ async function resolveVoteBombRound(
   await assertCanAcceptCommit(ctx);
   const tallies = computeVoteBombTallies(aliveIds, ballots);
   let resolution = resolveVoteBomb(aliveIds, ballots);
+  let resolutionSourcePointers: CanonicalSourcePointer[] = [];
   if (resolution.kind === "tie") {
-    resolution = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
+    const broken = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
+    resolutionSourcePointers = broken.sourcePointers;
+    resolution = broken;
   }
 
   logger.logSystem(
@@ -625,6 +670,7 @@ async function resolveVoteBombRound(
       },
       safetyBounce: null,
     },
+    resolutionSourcePointers,
   };
 }
 
@@ -656,6 +702,7 @@ async function resolveSafetyBounceRound(
     let thinking = "fallback first unclassified";
     let reasoningContext: string | undefined;
     let decisionLog: string | null | undefined;
+    let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
     if (agent.getBouncePointer) {
@@ -687,6 +734,7 @@ async function resolveSafetyBounceRound(
         if (isLegalBouncePointer(board, pointer)) {
           targetId = result.targetId;
           provenance = normalizedFormatProvenance(result);
+          if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         } else {
           provenance = fallbackFormatProvenance("invalid_bounce_pointer");
         }
@@ -700,7 +748,21 @@ async function resolveSafetyBounceRound(
     updateBounceBoardPressure(ctx, board);
     const classification = board.vulnerable.includes(targetId) ? "VULNERABLE" : "SAFE";
     await assertCanAcceptCommit(ctx);
-    gameState.recordSafetyBouncePointer(actorId, targetId, classification.toLowerCase() as "safe" | "vulnerable");
+    gameState.recordSafetyBouncePointer(
+      actorId,
+      targetId,
+      classification.toLowerCase() as "safe" | "vulnerable",
+      [
+        agentTurnSourcePointer(
+          actorId,
+          "bounce-pointer",
+          gameState.round,
+          Phase.FORMAT_RESOLVE,
+          undefined,
+          decisionId,
+        ),
+      ],
+    );
     logger.logSystem(
       `Bounce: ${gameState.getPlayerName(actorId)} → ${gameState.getPlayerName(targetId)} (${classification})`,
       Phase.FORMAT_RESOLVE,
@@ -752,6 +814,7 @@ async function resolveSafetyBounceRound(
           voteTotals: {},
         },
       },
+      resolutionSourcePointers: [],
     };
   }
 
@@ -768,6 +831,7 @@ async function resolveSafetyBounceRound(
     let thinking = "fallback first vulnerable";
     let reasoningContext: string | undefined;
     let decisionLog: string | null | undefined;
+    let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
     if (agent.getSafetyBounceVote) {
@@ -791,6 +855,7 @@ async function resolveSafetyBounceRound(
       } else if (isLegalSafetyBounceVote(result.targetId, board.vulnerable)) {
         targetId = result.targetId;
         provenance = normalizedFormatProvenance(result);
+        if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
         decisionLog = result.decisionLog;
@@ -810,7 +875,16 @@ async function resolveSafetyBounceRound(
       formatId: "safety_bounce",
       voterId: player.id,
       targetId,
-    });
+    }, [
+      agentTurnSourcePointer(
+        player.id,
+        "format-safety-bounce-vote",
+        gameState.round,
+        Phase.FORMAT_RESOLVE,
+        undefined,
+        decisionId,
+      ),
+    ]);
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -838,8 +912,11 @@ async function resolveSafetyBounceRound(
 
   await assertCanAcceptCommit(ctx);
   let resolution = resolveSafetyBounceVote(board.vulnerable, voteTotals);
+  let resolutionSourcePointers: CanonicalSourcePointer[] = [];
   if (resolution.kind === "tie") {
-    resolution = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
+    const broken = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
+    resolutionSourcePointers = broken.sourcePointers;
+    resolution = broken;
   }
 
   logger.logSystem(
@@ -883,6 +960,7 @@ async function resolveSafetyBounceRound(
         voteTotals: { ...voteTotals },
       },
     },
+    resolutionSourcePointers,
   };
 }
 
@@ -928,7 +1006,12 @@ async function breakFormatTie(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
   tiedSet: readonly UUID[],
-): Promise<{ kind: "clear"; eliminatedId: UUID; tiedSet: UUID[] }> {
+): Promise<{
+  kind: "clear";
+  eliminatedId: UUID;
+  tiedSet: UUID[];
+  sourcePointers: CanonicalSourcePointer[];
+}> {
   const { gameState, logger, contextBuilder } = ctx;
   const agent = requireAgent(ctx, empoweredId, "format tiebreak");
   const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.FORMAT_RESOLVE, {
@@ -939,6 +1022,7 @@ async function breakFormatTie(
   let thinking = "fallback first tied";
   let reasoningContext: string | undefined;
   let decisionLog: string | null | undefined;
+  let decisionId: UUID | undefined;
   let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
   if (agent.breakFormatEliminationTie) {
@@ -962,6 +1046,7 @@ async function breakFormatTie(
     } else if (tiedSet.includes(result.targetId)) {
       choiceId = result.targetId;
       provenance = normalizedFormatProvenance(result);
+      if (provenance.decisionSource === "llm") decisionId = result.decisionId;
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
       decisionLog = result.decisionLog;
@@ -999,5 +1084,17 @@ async function breakFormatTie(
     text: `${gameState.getPlayerName(empoweredId)} broke format tie → ${gameState.getPlayerName(broken.eliminatedId)}`,
   });
 
-  return broken;
+  return {
+    ...broken,
+    sourcePointers: [
+      agentTurnSourcePointer(
+        empoweredId,
+        "format-tiebreak",
+        gameState.round,
+        Phase.FORMAT_RESOLVE,
+        undefined,
+        decisionId,
+      ),
+    ],
+  };
 }

@@ -59,12 +59,14 @@ describe("Mingle I alliance action runner", () => {
       purpose: "Vote together before Council.",
       timebox: "round one",
       thinking: "mock: propose to Bob",
+      decisionId: "decision-propose-ab",
     });
     agents.get("bob")!.allianceActions.push({
       action: "accept",
       lineageId: "lineage-ab",
       versionId: "version-ab",
       thinking: "mock: accept Alice's proposal",
+      decisionId: "decision-accept-ab",
     });
 
     await runMingleIAlliancePhase(ctx, actor);
@@ -76,6 +78,18 @@ describe("Mingle I alliance action runner", () => {
     });
     expect(phaseCompleteEvents).toContainEqual({ type: "PHASE_COMPLETE" });
     expect(gameState.getCanonicalEvents().map((event) => event.type)).toContain("alliance.activated");
+    const proposal = gameState.getCanonicalEvents().find(
+      (event) => event.type === "alliance.proposal_submitted",
+    );
+    const response = gameState.getCanonicalEvents().find(
+      (event) => event.type === "alliance.response_recorded",
+    );
+    const activation = gameState.getCanonicalEvents().find(
+      (event) => event.type === "alliance.activated",
+    );
+    expect(proposal?.sourcePointers[0]?.decisionId).toBe("decision-propose-ab");
+    expect(response?.sourcePointers[0]?.decisionId).toBe("decision-accept-ab");
+    expect(activation?.sourcePointers).toEqual([]);
   });
 
   it("resolves invited responses before the next proposer and rejects exact duplicate rosters", async () => {
@@ -322,6 +336,34 @@ describe("Mingle I alliance action runner", () => {
       gameState.getCanonicalEvents().some((event) => event.type === "alliance.proposal_submitted"),
     ).toBe(false);
     expect(repairNotes.flat().join(" ")).toContain("fewer than two live members");
+  });
+
+  it("records materially repaired membership without crediting the model receipt", async () => {
+    const { gameState, agents, actor, ctx } = createActionHarness();
+    agents.get("alice")!.allianceActions.push({
+      action: "propose",
+      allianceId: "alliance-repaired",
+      lineageId: "lineage-repaired",
+      versionId: "version-repaired",
+      name: "Repaired",
+      memberNames: ["Bob", "Ghost"],
+      purpose: "The unknown member must be dropped.",
+      timebox: null,
+      decisionId: "decision-materially-repaired",
+    });
+    agents.get("bob")!.allianceActions.push({
+      action: "accept",
+      lineageId: "lineage-repaired",
+      versionId: "version-repaired",
+    });
+
+    await runMingleIAlliancePhase(ctx, actor);
+
+    const proposal = gameState.getCanonicalEvents().find(
+      (event) => event.type === "alliance.proposal_submitted",
+    );
+    expect(proposal).toBeDefined();
+    expect(proposal?.sourcePointers[0]).not.toHaveProperty("decisionId");
   });
 
   it("falls back to private pass actions when agents have no queued alliance move", async () => {

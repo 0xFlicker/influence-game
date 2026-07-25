@@ -97,10 +97,17 @@ async function applyAllianceAction(
   pass: number,
 ): Promise<{ result: string; repairNotes: string[]; changed: boolean }> {
   const beforeCount = ctx.gameState.getCanonicalEvents().length;
-  const sourcePointers = [
-    agentTurnSourcePointer(playerId, "alliance-action", ctx.gameState.round, Phase.MINGLE_I, pass),
-  ];
   const repairNotes: string[] = [];
+  const sourcePointers = (decisionId: UUID | undefined) => [
+    agentTurnSourcePointer(
+      playerId,
+      "alliance-action",
+      ctx.gameState.round,
+      Phase.MINGLE_I,
+      pass,
+      decisionId,
+    ),
+  ];
 
   await assertCanAcceptCommit(ctx);
 
@@ -126,7 +133,10 @@ async function applyAllianceAction(
           memberIds: resolved.memberIds,
           purpose: action.purpose,
           timebox: action.timebox ?? null,
-        }, { phase: Phase.MINGLE_I, sourcePointers });
+        }, {
+          phase: Phase.MINGLE_I,
+          sourcePointers: sourcePointers(repairNotes.length === 0 ? action.decisionId : undefined),
+        });
         break;
       }
       case "accept":
@@ -150,7 +160,10 @@ async function applyAllianceAction(
           versionId,
           playerId,
           response,
-        }, { phase: Phase.MINGLE_I, sourcePointers });
+        }, {
+          phase: Phase.MINGLE_I,
+          sourcePointers: sourcePointers(action.decisionId),
+        });
         break;
       }
       case "counter": {
@@ -168,7 +181,10 @@ async function applyAllianceAction(
           memberIds: resolved.memberIds,
           purpose: action.purpose,
           timebox: action.timebox ?? null,
-        }, { phase: Phase.MINGLE_I, sourcePointers });
+        }, {
+          phase: Phase.MINGLE_I,
+          sourcePointers: sourcePointers(repairNotes.length === 0 ? action.decisionId : undefined),
+        });
         if (!version) repairNotes.push("Alliance counter rejected because the lineage is closed or the counter cap was reached.");
         break;
       }
@@ -192,7 +208,10 @@ async function applyAllianceAction(
           memberIds: resolved.memberIds,
           purpose: action.purpose,
           timebox: action.timebox ?? null,
-        }, { phase: Phase.MINGLE_I, sourcePointers });
+        }, {
+          phase: Phase.MINGLE_I,
+          sourcePointers: sourcePointers(repairNotes.length === 0 ? action.decisionId : undefined),
+        });
         break;
       }
       case "pass":

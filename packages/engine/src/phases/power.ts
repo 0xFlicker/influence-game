@@ -160,7 +160,14 @@ export async function runPowerPhase(
   const powerAction: PowerAction = { action: powerActionResult.action, target: powerActionResult.target };
   await assertCanAcceptCommit(ctx);
   gameState.setPowerAction(powerAction, [
-    agentTurnSourcePointer(empoweredId, "power-action", gameState.round, Phase.POWER),
+    agentTurnSourcePointer(
+      empoweredId,
+      "power",
+      gameState.round,
+      Phase.POWER,
+      undefined,
+      powerActionResult.decisionId,
+    ),
   ]);
   let replacementCandidateIds: UUID[] = [];
   let shieldPullUpResponse: Record<string, unknown> | null = null;

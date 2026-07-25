@@ -913,7 +913,9 @@ export class GameState {
     this.setAllianceLineage(lineage);
 
     if (lineage.status === "open" && this.allMembersAcceptedCurrentAllianceVersion(lineage)) {
-      return this.activateAllianceFromLineage(lineage, { phase, sourcePointers: options.sourcePointers });
+      // Activation is a downstream consequence of the accepted response, not a second
+      // direct action citation for the same private decision.
+      return this.activateAllianceFromLineage(lineage, { phase });
     }
 
     return null;
@@ -1901,7 +1903,10 @@ export class GameState {
    * Tie -> jury casts a collective tiebreaker.
    * If jury also tied -> last-empowered from regular rounds breaks it.
    */
-  tallyTribunalVotes(juryTiebreakerVotes?: Record<UUID, UUID>): UUID {
+  tallyTribunalVotes(
+    juryTiebreakerVotes?: Record<UUID, UUID>,
+    juryTiebreakerSourcePointers: CanonicalSourcePointer[] = [],
+  ): UUID {
     const alive = this.getAlivePlayerIds();
     const counts: Record<UUID, number> = {};
     for (const id of alive) counts[id] = 0;
@@ -1967,6 +1972,7 @@ export class GameState {
         }, {
           phase: Phase.VOTE,
           visibility: "producer",
+          sourcePointers: juryTiebreakerSourcePointers,
         });
         return firstJuryTied;
       }
@@ -2130,10 +2136,15 @@ export class GameState {
     });
   }
 
-  recordFormatSelected(empoweredId: UUID, formatId: LaunchFormatId): void {
+  recordFormatSelected(
+    empoweredId: UUID,
+    formatId: LaunchFormatId,
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
     this.appendCanonicalEvent("format.selected", { empoweredId, formatId }, {
       phase: Phase.FORMAT_PICK,
       visibility: "public",
+      sourcePointers,
     });
   }
 
@@ -2177,14 +2188,19 @@ export class GameState {
     actorId: UUID,
     targetId: UUID,
     classification: "safe" | "vulnerable",
+    sourcePointers: CanonicalSourcePointer[] = [],
   ): void {
     this.appendCanonicalEvent("format.safety_bounce_pointer", { actorId, targetId, classification }, {
       phase: Phase.FORMAT_RESOLVE,
       visibility: "public",
+      sourcePointers,
     });
   }
 
-  recordFormatResolution(resolution: FormatResolutionPayload): void {
+  recordFormatResolution(
+    resolution: FormatResolutionPayload,
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
     this.appendCanonicalEvent("format.resolved", {
       formatId: resolution.formatId,
       empoweredId: resolution.empoweredId,
@@ -2216,6 +2232,7 @@ export class GameState {
     }, {
       phase: Phase.FORMAT_RESOLVE,
       visibility: "public",
+      sourcePointers,
     });
   }
 

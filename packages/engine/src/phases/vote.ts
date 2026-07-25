@@ -85,7 +85,6 @@ export async function runVotePhase(
       const votes = await agent.getVotes(phaseCtx);
 
       await assertCanAcceptCommit(ctx);
-      const voteDecisionId = agent.getLastPrivateDecisionId?.();
       // Format kernel: empower-only ballot. exposeTarget intentionally omitted.
       gameState.recordVote(player.id, votes.empowerTarget, null, [
         agentTurnSourcePointer(
@@ -94,7 +93,7 @@ export async function runVotePhase(
           gameState.round,
           Phase.VOTE,
           undefined,
-          voteDecisionId,
+          votes.decisionId,
         ),
       ]);
 
@@ -154,10 +153,18 @@ export async function runVotePhase(
             empowerTarget: gameState.currentVoteTally.empowerVotes[player.id] ?? tied[0]!,
           };
           const revote = await agent.getEmpowerRevote(phaseCtx, tied, originalVote);
-          const empowerTarget = tied.includes(revote.empowerTarget) ? revote.empowerTarget : tied[0]!;
+          const acceptedDirectly = tied.includes(revote.empowerTarget);
+          const empowerTarget = acceptedDirectly ? revote.empowerTarget : tied[0]!;
           await assertCanAcceptCommit(ctx);
           gameState.recordEmpowerReVote(player.id, empowerTarget, [
-            agentTurnSourcePointer(player.id, "empower-revote", gameState.round, Phase.VOTE),
+            agentTurnSourcePointer(
+              player.id,
+              "empower-revote",
+              gameState.round,
+              Phase.VOTE,
+              undefined,
+              acceptedDirectly ? revote.decisionId : undefined,
+            ),
           ]);
           revoteTargetsByPlayerId.set(player.id, empowerTarget);
           const empowerName = gameState.getPlayerName(empowerTarget);
@@ -281,7 +288,14 @@ export async function runReckoningVote(
       );
       await assertCanAcceptCommit(ctx);
       gameState.recordEndgameEliminationVote(player.id, vote.target, [
-        agentTurnSourcePointer(player.id, "endgame-elimination-vote", gameState.round, Phase.VOTE),
+        agentTurnSourcePointer(
+          player.id,
+          "elimination-vote",
+          gameState.round,
+          Phase.VOTE,
+          undefined,
+          vote.decisionId,
+        ),
       ]);
       const targetName = gameState.getPlayerName(vote.target);
       const transcriptThinking = transcriptThinkingFor(agent, vote.thinking, vote.reasoningContext);
@@ -349,7 +363,14 @@ export async function runTribunalVote(
       );
       await assertCanAcceptCommit(ctx);
       gameState.recordEndgameEliminationVote(player.id, vote.target, [
-        agentTurnSourcePointer(player.id, "endgame-elimination-vote", gameState.round, Phase.VOTE),
+        agentTurnSourcePointer(
+          player.id,
+          "elimination-vote",
+          gameState.round,
+          Phase.VOTE,
+          undefined,
+          vote.decisionId,
+        ),
       ]);
       const targetName = gameState.getPlayerName(vote.target);
       const transcriptThinking = transcriptThinkingFor(agent, vote.thinking, vote.reasoningContext);
@@ -379,6 +400,7 @@ export async function runTribunalVote(
 
   // Tribunal: jury only weighs in when the live vote is actually tied.
   let juryTiebreakerVotes: Record<UUID, UUID> | undefined;
+  const juryTiebreakerSourcePointers: ReturnType<typeof agentTurnSourcePointer>[] = [];
   const tribunalTieCandidates = gameState.getTribunalEliminationTieCandidates();
   const tribunalJury = tribunalTieCandidates.length > 1 ? contextBuilder.getActiveJury() : [];
   if (tribunalJury.length > 0) {
@@ -399,6 +421,18 @@ export async function runTribunalVote(
           () => fallbackEliminationDecision(ctx, juror.playerId),
         );
         juryTiebreakerVotes[juror.playerId] = vote.target;
+        if (vote.decisionId && tribunalTieCandidates.includes(vote.target)) {
+          juryTiebreakerSourcePointers.push(
+            agentTurnSourcePointer(
+              juror.playerId,
+              "tribunal-jury-tiebreaker-vote",
+              gameState.round,
+              Phase.VOTE,
+              undefined,
+              vote.decisionId,
+            ),
+          );
+        }
         const targetName = gameState.getPlayerName(vote.target);
         await assertCanAcceptCommit(ctx);
         logger.emitAgentTurn({
@@ -421,7 +455,10 @@ export async function runTribunalVote(
   }
 
   await assertCanAcceptCommit(ctx);
-  const eliminatedId = gameState.tallyTribunalVotes(juryTiebreakerVotes);
+  const eliminatedId = gameState.tallyTribunalVotes(
+    juryTiebreakerVotes,
+    juryTiebreakerSourcePointers,
+  );
   const eliminationVoters = getTribunalDecidingVoterNames(ctx, eliminatedId);
   await handleElimination(ctx, eliminatedId, Phase.VOTE, {
     mode: "endgame",

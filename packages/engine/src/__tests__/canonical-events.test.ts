@@ -1,6 +1,8 @@
 import { describe, expect, it, mock } from "bun:test";
 import { CanonicalEventLog } from "../canonical-event-log";
 import {
+  ACCEPTED_ACTION_REGISTRY,
+  acceptedActionRegistryEntry,
   canonicalEventIsVisibleTo,
   validateCanonicalGameEvent,
   type CanonicalGameEvent,
@@ -82,6 +84,40 @@ describe("canonical event envelope", () => {
     expect(canonicalEventIsVisibleTo(event, "producer")).toBe(true);
     expect(canonicalEventIsVisibleTo(event, "player")).toBe(false);
     expect(canonicalEventIsVisibleTo(event, "public")).toBe(false);
+  });
+});
+
+describe("accepted action registry", () => {
+  it("enumerates every direct action family and excludes downstream mechanical facts", () => {
+    expect(Object.keys(ACCEPTED_ACTION_REGISTRY).sort()).toEqual([
+      "alliance.amendment_resolved",
+      "alliance.counter_submitted",
+      "alliance.proposal_submitted",
+      "alliance.response_recorded",
+      "council.vote_cast",
+      "endgame.elimination_resolved",
+      "endgame.elimination_vote_cast",
+      "format.ballot_cast",
+      "format.resolved",
+      "format.safety_bounce_pointer",
+      "format.selected",
+      "jury.vote_cast",
+      "power.action_set",
+      "vote.cast",
+      "vote.empower_revote_cast",
+    ]);
+    expect(acceptedActionRegistryEntry("power.action_set")).toMatchObject({
+      sourceActions: ["power", "power-action"],
+      traceActions: ["power"],
+      cardinality: "one_to_one",
+    });
+    expect(acceptedActionRegistryEntry("endgame.elimination_resolved")).toMatchObject({
+      traceActions: ["tribunal-jury-tiebreaker-vote"],
+      cardinality: "many_to_one",
+    });
+    expect(acceptedActionRegistryEntry("vote.empower_tally_resolved")).toBeUndefined();
+    expect(acceptedActionRegistryEntry("player.eliminated")).toBeUndefined();
+    expect(acceptedActionRegistryEntry("round.result_recorded")).toBeUndefined();
   });
 });
 
@@ -175,6 +211,105 @@ describe("GameState canonical append timing", () => {
 
     expect(tallyAtAppend).toEqual([{}]);
     expect(gs.currentVoteTally.empowerVotes.alice).toBe("bob");
+  });
+});
+
+describe("accepted action source pointers", () => {
+  it("preserves exact receipts for direct vote, power, Council, endgame, and jury writers", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      { gameId: "game-action-pointers", now: () => 1_700_000_000_000 },
+    );
+    gs.startRound();
+    const pointer = (actorId: string, action: string, decisionId: string) => ({
+      kind: "agent_turn" as const,
+      actorId,
+      action,
+      round: 1,
+      phase: Phase.VOTE,
+      decisionId,
+    });
+
+    gs.recordVote("alice", "bob", null, [pointer("alice", "vote", "decision-vote")]);
+    gs.recordEmpowerReVote("alice", "charlie", [
+      pointer("alice", "empower-revote", "decision-revote"),
+    ]);
+    gs.setPowerAction({ action: "protect", target: "bob" }, [
+      { ...pointer("alice", "power", "decision-power"), phase: Phase.POWER },
+    ]);
+    gs.recordCouncilVote("charlie", "dave", [
+      { ...pointer("charlie", "council-vote", "decision-council"), phase: Phase.COUNCIL },
+    ]);
+    gs.recordEndgameEliminationVote("alice", "bob", [
+      pointer("alice", "elimination-vote", "decision-endgame"),
+    ]);
+    gs.recordJuryVote("dave", "alice", [
+      { ...pointer("dave", "jury-vote", "decision-jury"), phase: Phase.JURY_VOTE },
+    ]);
+
+    const decisionsByType = Object.fromEntries(
+      gs.getCanonicalEvents()
+        .filter((event) => event.sourcePointers[0]?.decisionId)
+        .map((event) => [event.type, event.sourcePointers[0]?.decisionId]),
+    );
+    expect(decisionsByType).toMatchObject({
+      "vote.cast": "decision-vote",
+      "vote.empower_revote_cast": "decision-revote",
+      "power.action_set": "decision-power",
+      "council.vote_cast": "decision-council",
+      "endgame.elimination_vote_cast": "decision-endgame",
+      "jury.vote_cast": "decision-jury",
+    });
+  });
+
+  it("allows many Tribunal jury receipts on one resolution and none on downstream elimination facts", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      { gameId: "game-tribunal-pointers", now: () => 1_700_000_000_000 },
+    );
+    gs.startRound();
+    gs.recordEndgameEliminationVote("alice", "bob");
+    gs.recordEndgameEliminationVote("bob", "alice");
+    gs.recordEndgameEliminationVote("charlie", "bob");
+    gs.recordEndgameEliminationVote("dave", "alice");
+
+    const pointer = (jurorId: string, decisionId: string) => ({
+      kind: "agent_turn" as const,
+      actorId: jurorId,
+      action: "tribunal-jury-tiebreaker-vote",
+      round: 1,
+      phase: Phase.VOTE,
+      decisionId,
+    });
+    gs.tallyTribunalVotes(
+      { juror1: "alice", juror2: "alice" },
+      [pointer("juror1", "decision-juror-1"), pointer("juror2", "decision-juror-2")],
+    );
+
+    const resolution = gs.getCanonicalEvents().find(
+      (event) => event.type === "endgame.elimination_resolved",
+    );
+    expect(resolution?.sourcePointers.map((source) => source.decisionId)).toEqual([
+      "decision-juror-1",
+      "decision-juror-2",
+    ]);
+    expect(
+      gs.getCanonicalEvents().filter((event) =>
+        event.type === "player.eliminated" || event.type === "round.result_recorded"
+      ),
+    ).toSatisfy((events: CanonicalGameEvent[]) =>
+      events.every((event) => event.sourcePointers.every((source) => !source.decisionId))
+    );
   });
 });
 
@@ -310,6 +445,64 @@ describe("format.menu_offered", () => {
         polarity: null,
       },
     });
+  });
+
+  it("carries direct decision pointers through format selection, bounce, and tiebreak writers", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+      ],
+      { gameId: "game-fixed", now: () => 1_700_000_000_000 },
+    );
+    gs.startRound();
+    const sourcePointer = {
+      kind: "agent_turn" as const,
+      actorId: "alice",
+      action: "format-pick",
+      round: 1,
+      phase: Phase.FORMAT_PICK,
+      decisionId: "decision-format-pick",
+    };
+
+    gs.recordFormatMenu("alice", ["safety_bounce", "vote_bomb"]);
+    gs.recordFormatSelected("alice", "safety_bounce", [sourcePointer]);
+    gs.recordSafetyBouncePointer("alice", "bob", "vulnerable", [
+      { ...sourcePointer, action: "bounce-pointer", phase: Phase.FORMAT_RESOLVE },
+    ]);
+    gs.recordFormatResolution(
+      {
+        formatId: "safety_bounce",
+        empoweredId: "alice",
+        eliminatedId: "bob",
+        resolutionKind: "clear",
+        tiedPlayerIds: ["bob", "charlie"],
+        tiebreakerId: "alice",
+        saveOrEliminate: null,
+        voteBomb: null,
+        safetyBounce: {
+          starterId: "alice",
+          safePlayerIds: ["alice", "charlie"],
+          vulnerablePlayerIds: ["bob"],
+          voteTotals: { bob: 1, charlie: 1 },
+        },
+      },
+      [{ ...sourcePointer, action: "format-tiebreak", phase: Phase.FORMAT_RESOLVE }],
+    );
+
+    const events = gs.getCanonicalEvents();
+    expect(events.find((event) => event.type === "format.selected")?.sourcePointers).toEqual([
+      sourcePointer,
+    ]);
+    expect(
+      events.find((event) => event.type === "format.safety_bounce_pointer")?.sourcePointers,
+    ).toEqual([
+      { ...sourcePointer, action: "bounce-pointer", phase: Phase.FORMAT_RESOLVE },
+    ]);
+    expect(events.find((event) => event.type === "format.resolved")?.sourcePointers).toEqual([
+      { ...sourcePointer, action: "format-tiebreak", phase: Phase.FORMAT_RESOLVE },
+    ]);
   });
 });
 

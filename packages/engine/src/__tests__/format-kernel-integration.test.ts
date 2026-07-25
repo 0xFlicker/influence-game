@@ -30,6 +30,64 @@ const TEST_CONFIG: GameConfig = {
 };
 
 describe("Format kernel integration (MockAgent)", () => {
+  it("uses only current-call format receipts and never a mutable stale receipt", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map((name) => new MockAgent(createUUID(), name));
+    for (const agent of agents) {
+      agent.pickRoundFormat = async (_ctx, offered) => ({
+        formatId: offered[0],
+        thinking: "direct format pick",
+        decisionSource: "llm",
+        fallbackReason: null,
+        decisionId: `decision-format-${agent.id}`,
+      });
+    }
+
+    const directRunner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, maxRounds: 1 },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await directRunner.run();
+
+    const selected = directRunner.getCanonicalEvents().find(
+      (event) => event.type === "format.selected",
+    );
+    expect(selected).toBeDefined();
+    if (!selected || selected.type !== "format.selected") throw new Error("expected format.selected");
+    expect(selected.sourcePointers).toContainEqual(
+      expect.objectContaining({
+        actorId: selected.payload.empoweredId,
+        action: "format-pick",
+        decisionId: `decision-format-${selected.payload.empoweredId}`,
+      }),
+    );
+
+    const staleAgents = ["F", "G", "H", "I", "J"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    for (const agent of staleAgents) {
+      agent.pickRoundFormat = undefined as never;
+      Object.assign(agent, {
+        getLastPrivateDecisionId: () => `stale-decision-${agent.id}`,
+      });
+    }
+    const fallbackRunner = new GameRunner(
+      staleAgents,
+      { ...TEST_CONFIG, maxRounds: 1 },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await fallbackRunner.run();
+
+    const fallbackSelected = fallbackRunner.getCanonicalEvents().find(
+      (event) => event.type === "format.selected",
+    );
+    expect(fallbackSelected).toBeDefined();
+    expect(fallbackSelected?.sourcePointers).toHaveLength(1);
+    expect(fallbackSelected?.sourcePointers[0]).not.toHaveProperty("decisionId");
+  });
+
   it("honors an exact two-round cap before an 8-player game reaches endgame", async () => {
     const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo", "Foxtrot", "Golf", "Hotel"].map(
       (name) => new MockAgent(createUUID(), name),
@@ -457,6 +515,12 @@ describe("Format kernel integration (MockAgent)", () => {
       agent.getVoteBombBallot = async (ctx) => ({
         targetId: ctx.selfId,
         thinking: "illegal self-bomb claim",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+      agent.getSafetyBounceVote = async (ctx) => ({
+        targetId: ctx.selfId,
+        thinking: "illegal self-bounce vote claim",
         decisionSource: "llm",
         fallbackReason: null,
       });

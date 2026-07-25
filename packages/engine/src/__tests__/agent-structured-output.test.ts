@@ -655,7 +655,7 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    await agent.getVotes(makeContext(Phase.VOTE));
+    const votes = await agent.getVotes(makeContext(Phase.VOTE));
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.map((message) => message.content).join("\n");
@@ -986,10 +986,11 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    await agent.getVotes(makeContext(Phase.VOTE));
+    const votes = await agent.getVotes(makeContext(Phase.VOTE));
 
     expect(traces).toHaveLength(1);
     const trace = traces[0]!;
+    expect(votes.decisionId).toBe(trace.decisionId);
     expect(trace).toMatchObject({
       version: 2,
       gameId: "game-1",
@@ -1105,8 +1106,9 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(votes).toEqual({
       empowerTarget: "mira-id",
-            thinking: "Mira is safer to empower and Vera is the pressure target.",
+      thinking: "Mira is safer to empower and Vera is the pressure target.",
       decisionLog: "Use vote pressure to test Vera while rewarding Mira.",
+      decisionId: expect.any(String),
       reasoningContext: "OpenAI reasoning summary (auto): OpenAI summary: Atlas weighed vote pressure against coalition risk.",
     });
     expect(requests).toHaveLength(1);

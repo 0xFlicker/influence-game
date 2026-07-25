@@ -479,6 +479,11 @@ export type PrivateTraceSink = (trace: PrivateDecisionTrace) => Promise<void> | 
 export interface StrategicDecisionMetadata {
   /** Compact private receipt tied to the current action, not raw hidden reasoning. */
   decisionLog?: string | null;
+  /**
+   * Fresh private-decision receipt minted by this exact model call.
+   * Acceptance writers may use it only when the returned value is accepted directly.
+   */
+  decisionId?: UUID;
 }
 
 export interface StrategicDecisionReceipt {
@@ -745,11 +750,10 @@ export type AllianceActionKind =
   | "amend"
   | "pass";
 
-export interface AllianceActionBase {
+export interface AllianceActionBase extends StrategicDecisionMetadata {
   action: AllianceActionKind;
   thinking?: string;
   reasoningContext?: string;
-  decisionLog?: string | null;
 }
 
 export interface AllianceProposalAction extends AllianceActionBase {
@@ -860,18 +864,16 @@ export interface StrategicReflectionAction {
 
 export type StrategicReflectionSummary = Pick<StrategicReflectionAction, "certainties" | "suspicions" | "allies" | "threats" | "plan" | "strategicLens" | "strategicLensRationale">;
 
-export interface TargetDecision {
+export interface TargetDecision extends StrategicDecisionMetadata {
   target: UUID;
   thinking?: string;
   reasoningContext?: string;
-  decisionLog?: string | null;
 }
 
-export interface EmpowerRevoteAction {
+export interface EmpowerRevoteAction extends StrategicDecisionMetadata {
   empowerTarget: UUID;
   thinking?: string;
   reasoningContext?: string;
-  decisionLog?: string | null;
 }
 
 export interface CandidateChoiceRequest {
@@ -894,10 +896,9 @@ export interface PowerActionOptions {
   shieldReplacementRequests?: CandidateChoiceRequest[];
 }
 
-export interface PowerActionDecision extends PowerAction {
+export interface PowerActionDecision extends PowerAction, StrategicDecisionMetadata {
   thinking?: string;
   reasoningContext?: string;
-  decisionLog?: string | null;
   shieldPullUpCandidateIds?: UUID[];
 }
 
@@ -997,7 +998,7 @@ export interface IAgent {
   /** Called to collect votes */
   getVotes(
     context: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<StrategicDecisionMetadata & { empowerTarget: UUID; thinking?: string; reasoningContext?: string }>;
   /** Called only for an empower tie revote. */
   getEmpowerRevote(
     context: PhaseContext,
@@ -1025,40 +1026,39 @@ export interface IAgent {
   getCouncilVote(
     context: PhaseContext,
     candidates: [UUID, UUID],
-  ): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<TargetDecision>;
 
   // --- Format kernel (sequester) ---
   /** Empowered player picks one of two House-offered round formats. */
   pickRoundFormat?(
     context: PhaseContext,
     offeredFormats: [LaunchFormatId, LaunchFormatId],
-  ): Promise<FormatDecisionProvenance & { formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { formatId: string; thinking?: string; reasoningContext?: string }>;
   getSaveOrEliminateBallot?(
     context: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<FormatDecisionProvenance & {
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & {
     polarity: "save" | "eliminate";
     targetId: UUID;
     thinking?: string;
     reasoningContext?: string;
-    decisionLog?: string | null;
   }>;
   getVoteBombBallot?(
     context: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
   getBouncePointer?(
     context: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
   getSafetyBounceVote?(
     context: PhaseContext,
     vulnerableIds: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
   breakFormatEliminationTie?(
     context: PhaseContext,
     tiedSet: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }>;
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
 
   /** Called only after this agent has been eliminated. */
   getEliminationMessage?(
