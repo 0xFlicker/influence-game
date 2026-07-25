@@ -1379,9 +1379,11 @@ describe("ProductionGameMcpReadModel", () => {
     const gameId = await insertGame(db, { slug: "mcp-private-trace" });
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage();
+    const decisionId = randomUUID();
     const manifestId = await insertPrivateTraceManifest(db, storage, {
       gameId,
       ownerEpoch,
+      decisionId,
       body: JSON.stringify({
         reasoningContext: "the secret plan is to shield Mira",
         toolArguments: { expose: "Vera" },
@@ -1393,6 +1395,11 @@ describe("ProductionGameMcpReadModel", () => {
       new PrivateTraceReadModel(db, () => storage),
     );
 
+    await expect(readModel.listTraceManifests(gameId, {
+      userId: randomUUID(),
+      authProfile: "subject",
+    })).rejects.toThrow("Producer-only MCP evidence requires MCP scope: producer");
+
     const manifests = await readModel.listTraceManifests(gameId, PRODUCER_ACCESS);
     expect(asRecord(manifests.developerEvidence)).toMatchObject({
       gameId,
@@ -1400,6 +1407,7 @@ describe("ProductionGameMcpReadModel", () => {
       manifests: [{
         id: manifestId,
         gameId,
+        decisionId,
         actor: { id: "atlas", name: "Atlas", role: "player" },
         action: "vote",
         phase: "VOTE",
@@ -1523,6 +1531,7 @@ async function insertPrivateTraceManifest(
   params: {
     gameId: string;
     ownerEpoch: string;
+    decisionId?: string;
     body: string;
   },
 ): Promise<string> {
@@ -1536,6 +1545,7 @@ async function insertPrivateTraceManifest(
     id: manifestId,
     gameId: params.gameId,
     ownerEpoch: params.ownerEpoch,
+    decisionId: params.decisionId,
     evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
     retentionClass: "debug",
     accessScope: "producer_admin",

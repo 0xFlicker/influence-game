@@ -225,6 +225,7 @@ export async function writePrivateDecisionTrace(
     gameId: input.gameId,
     ownerEpoch: input.ownerEpoch,
     eventSequence: input.eventSequence,
+    decisionId: input.trace.decisionId,
     evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
     retentionClass: "debug",
     accessScope: "producer_admin",

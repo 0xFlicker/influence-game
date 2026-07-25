@@ -1252,6 +1252,7 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
   ownerEpoch: text("owner_epoch")
     .notNull(),
   eventSequence: integer("event_sequence"),
+  decisionId: text("decision_id"),
   evidenceType: text("evidence_type").notNull(),
   retentionClass: text("retention_class").notNull().default("debug"),
   accessScope: text("access_scope").notNull().default("producer_admin"),
@@ -1269,6 +1270,11 @@ export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
 }, (table) => [
   index("game_evidence_manifests_game_id_idx").on(table.gameId),
   index("game_evidence_manifests_event_sequence_idx").on(table.gameId, table.eventSequence),
+  index("game_evidence_manifests_game_owner_decision_id_idx").on(
+    table.gameId,
+    table.ownerEpoch,
+    table.decisionId,
+  ),
   foreignKey({
     name: "game_evidence_owner_epoch_fk",
     columns: [table.ownerEpoch],

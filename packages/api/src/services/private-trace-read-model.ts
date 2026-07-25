@@ -23,6 +23,7 @@ export interface PrivateTraceManifestIndexEntry {
   gameId: string;
   ownerEpoch: string;
   eventSequence?: number;
+  decisionId?: string;
   evidenceType: string;
   retentionClass: string;
   redactionStatus: string;
@@ -167,6 +168,7 @@ function manifestIndexEntry(row: typeof schema.gameEvidenceManifests.$inferSelec
     gameId: row.gameId,
     ownerEpoch: row.ownerEpoch,
     eventSequence: row.eventSequence ?? undefined,
+    decisionId: row.decisionId ?? undefined,
     evidenceType: row.evidenceType,
     retentionClass: row.retentionClass,
     redactionStatus: row.redactionStatus,

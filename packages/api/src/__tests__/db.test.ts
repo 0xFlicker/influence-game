@@ -5,7 +5,7 @@
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { randomUUID } from "crypto";
@@ -776,12 +776,14 @@ describe("Database Schema", () => {
         });
 
       const manifestId = randomUUID();
+      const decisionId = randomUUID();
       await db.insert(schema.gameEvidenceManifests)
         .values({
           id: manifestId,
           gameId,
           ownerEpoch,
           eventSequence: 1,
+          decisionId,
           evidenceType: "llm_prompt",
           retentionClass: "debug",
           accessScope: "producer_admin",
@@ -808,7 +810,11 @@ describe("Database Schema", () => {
       const manifests = await db
         .select()
         .from(schema.gameEvidenceManifests)
-        .where(eq(schema.gameEvidenceManifests.gameId, gameId));
+        .where(and(
+          eq(schema.gameEvidenceManifests.gameId, gameId),
+          eq(schema.gameEvidenceManifests.ownerEpoch, ownerEpoch),
+          eq(schema.gameEvidenceManifests.decisionId, decisionId),
+        ));
       const reads = await db
         .select()
         .from(schema.gameEvidenceManifestReads)
@@ -817,6 +823,7 @@ describe("Database Schema", () => {
       expect(checkpoints[0]!.lastEventSequence).toBe(1);
       expect(checkpoints[0]!.snapshot).toEqual({ phase: "INTRODUCTION", players: [] });
       expect(manifests[0]!.redactionStatus).toBe("active");
+      expect(manifests[0]!.decisionId).toBe(decisionId);
       expect(manifests[0]!.metadata).toEqual({ redacted: true, byteLength: 1234 });
       expect(reads).toHaveLength(1);
       expect(reads[0]!.outcome).toBe("allowed");

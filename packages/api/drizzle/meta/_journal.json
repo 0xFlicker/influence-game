@@ -337,6 +337,13 @@
       "when": 1784908800000,
       "tag": "0047_prompt_reuse_rollups",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1785022401067,
+      "tag": "0048_accepted_action_trace_correlation",
+      "breakpoints": true
     }
   ]
 }

@@ -196,13 +196,14 @@ describe("private trace writer", () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage();
+    const decisionId = "decision-forward-path";
 
     const result = await writePrivateDecisionTrace(
       db,
       {
         gameId,
         ownerEpoch,
-        trace: makeTrace({ gameId, ownerEpoch }),
+        trace: makeTrace({ gameId, ownerEpoch, decisionId }),
       },
       {
         storage,
@@ -229,6 +230,7 @@ describe("private trace writer", () => {
     expect(manifest).toMatchObject({
       gameId,
       ownerEpoch,
+      decisionId,
       evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
       retentionClass: "debug",
       accessScope: "producer_admin",
@@ -289,6 +291,7 @@ describe("private trace writer", () => {
     const index = await readModel.listManifests(gameId);
     expect(index.manifests[0]).toMatchObject({
       id: result.manifestId,
+      decisionId,
       model: {
         name: "grok-4-3",
         providerProfileId: "katana",
@@ -332,6 +335,12 @@ describe("private trace writer", () => {
     expect(result.ok).toBeTrue();
     if (!result.ok) throw new Error(result.error);
 
+    const manifest = (await db
+      .select()
+      .from(schema.gameEvidenceManifests)
+      .where(eq(schema.gameEvidenceManifests.id, result.manifestId)))[0];
+    expect(manifest?.decisionId).toBeNull();
+
     const readModel = new PrivateTraceReadModel(db, () => storage);
     const cappedRead = await readModel.readContent(result.manifestId, {
       gameId,
@@ -345,6 +354,7 @@ describe("private trace writer", () => {
     expect(cappedRead.response.totalByteLength).toBe(result.metadata.byteLength);
     expect(cappedRead.response.byteLength).toBe(result.metadata.byteLength);
     expect(cappedRead.response.content.length).toBeGreaterThan(0);
+    expect(cappedRead.response.manifest.decisionId).toBeUndefined();
   });
 
   test("searches within capped trace prefixes without treating larger objects as errors", async () => {

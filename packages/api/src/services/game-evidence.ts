@@ -13,6 +13,7 @@ export interface CreateEvidenceManifestInput {
   gameId: string;
   ownerEpoch: string;
   eventSequence?: number;
+  decisionId?: string;
   evidenceType: string;
   retentionClass?: string;
   accessScope?: "producer_admin";
@@ -132,6 +133,7 @@ export async function createEvidenceManifest(
           gameId: input.gameId,
           ownerEpoch: input.ownerEpoch,
           eventSequence: input.eventSequence,
+          decisionId: input.decisionId,
           evidenceType: input.evidenceType,
           retentionClass: input.retentionClass ?? "debug",
           accessScope: input.accessScope ?? "producer_admin",
