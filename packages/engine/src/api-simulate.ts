@@ -17,6 +17,8 @@ interface ApiSimArgs {
   provider: "openai" | "lm-studio" | "katana" | "custom-openai-compatible";
   model?: string;
   modelCatalogId?: string;
+  /** Hosted OpenAI request tier. Flex is the default; auto is the explicit opt-out. */
+  serviceTier: "flex" | "auto";
   reasoningPolicy?: ModelReasoningPolicy;
   timingPreset: "fast" | "standard" | "slow";
   maxRounds: number | "auto";
@@ -78,6 +80,7 @@ export function parseArgs(
     provider: parseProvider(env.INFLUENCE_API_SIM_PROVIDER) ?? "openai",
     model: env.INFLUENCE_API_SIM_MODEL,
     modelCatalogId: env.INFLUENCE_API_SIM_MODEL_CATALOG_ID,
+    serviceTier: normalizeServiceTier(env.INFLUENCE_OPENAI_SERVICE_TIER) ?? "flex",
     reasoningPolicy: normalizeReasoningPolicy(env.INFLUENCE_API_SIM_REASONING_POLICY) ?? undefined,
     timingPreset: parseTimingPreset(env.INFLUENCE_API_SIM_TIMING_PRESET) ?? "fast",
     maxRounds: envMaxRounds ?? 5,
@@ -110,6 +113,10 @@ export function parseArgs(
     } else if ((arg === "--model-catalog" || arg === "--model-catalog-id") && next) {
       args.modelCatalogId = next;
       i++;
+    } else if (arg === "--flex") {
+      args.serviceTier = "flex";
+    } else if (arg === "--standard" || arg === "--no-flex") {
+      args.serviceTier = "auto";
     } else if ((arg === "--reasoning-policy" || arg === "--thinking-depth") && next) {
       const policy = normalizeReasoningPolicy(next);
       if (policy) args.reasoningPolicy = policy;
@@ -227,6 +234,13 @@ export function buildGameCreateBody(args: ApiSimArgs, catalogId: string) {
     viewerMode: args.viewerMode,
     serviceTier: args.serviceTier,
   };
+}
+
+function normalizeServiceTier(value: string | undefined): "flex" | "auto" | undefined {
+  const normalized = value?.trim().toLowerCase();
+  if (normalized === "flex") return "flex";
+  if (normalized === "auto" || normalized === "standard" || normalized === "default") return "auto";
+  return undefined;
 }
 
 async function fillGame(apiBaseUrl: string, sessionToken: string, gameId: string): Promise<void> {

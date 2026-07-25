@@ -13,6 +13,7 @@ import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { MingleIntentSummary, UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
+import { PromptReuseCollector } from "./prompt-reuse";
 import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleWindow } from "./types";
 import {
   inferModelCapabilities,
@@ -538,6 +539,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly modelCapabilities: ModelRequestCapabilities;
   private readonly reasoningPolicy: ModelReasoningPolicy;
   private readonly privateTraceSink?: PrivateTraceSink;
+  private readonly promptReuseCollector = new PromptReuseCollector();
   private readonly privateTraceGameId?: UUID;
   private readonly privateTraceOwnerEpoch?: string;
   private readonly toolChoiceMode: LlmToolChoiceMode;
@@ -687,6 +689,11 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     const content = typeof message?.content === "string" ? message.content : null;
     const requestedReasoningEffort = this.requestedReasoningEffort();
     const privateTraceMessages = LLMHouseInterviewer.privateTraceMessages(params.messages);
+    const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
+      lane: params.context.actor.id ?? "house",
+      requestShape: "chat_completions",
+      usage: LLMHouseInterviewer.providerUsageMetadata(params.response),
+    });
     const decisionId = randomUUID();
     const trace: PrivateDecisionTrace = {
       version: 2,
@@ -725,6 +732,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       },
       ...(params.output !== undefined && { output: params.output }),
       ...(LLMHouseInterviewer.providerUsageMetadata(params.response) && { usage: LLMHouseInterviewer.providerUsageMetadata(params.response) }),
+      promptReuse,
       ...(emittedThinking && { emittedThinking }),
       ...(reasoningContext && { reasoningContext }),
       ...(params.context.boundary && { boundary: params.context.boundary }),

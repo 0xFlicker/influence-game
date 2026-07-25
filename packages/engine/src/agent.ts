@@ -67,6 +67,7 @@ import {
 } from "./model-catalog";
 import type { MemoryStore } from "./memory-store";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
+import { PromptReuseCollector } from "./prompt-reuse";
 
 // ---------------------------------------------------------------------------
 // Personality archetypes
@@ -1388,6 +1389,7 @@ export class InfluenceAgent implements IAgent {
   private readonly reasoningPolicy: ModelReasoningPolicy;
   private readonly toolChoiceMode: LlmToolChoiceMode;
   private readonly privateTraceSink?: PrivateTraceSink;
+  private readonly promptReuseCollector = new PromptReuseCollector();
   private readonly openAIReasoningSummary?: OpenAIReasoningSummaryMode;
   private readonly personalityPrompt?: string;
   private readonly strategyInstructions?: string;
@@ -1852,6 +1854,11 @@ export class InfluenceAgent implements IAgent {
     const strategicReflectionSummary = this.privateTraceStrategicReflectionSummary(traceContext.action, outputRecord);
     const requestedReasoningEffort = this.requestedReasoningEffort(params.options);
     const privateTraceMessages = InfluenceAgent.privateTraceMessages(params.messages);
+    const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
+      lane: traceContext.actor.id ?? traceContext.actor.role,
+      requestShape: InfluenceAgent.isOpenAIResponse(response) ? "responses" : "chat_completions",
+      usage: InfluenceAgent.providerUsageMetadata(response),
+    });
     const trace: PrivateDecisionTrace = {
       version: 2,
       ...(traceContext.gameId && { gameId: traceContext.gameId }),
@@ -1889,6 +1896,7 @@ export class InfluenceAgent implements IAgent {
       },
       ...(params.output !== undefined && { output: params.output }),
       ...(InfluenceAgent.providerUsageMetadata(response) && { usage: InfluenceAgent.providerUsageMetadata(response) }),
+      promptReuse,
       ...(emittedThinking && { emittedThinking }),
       ...(reasoningContext && { reasoningContext }),
       ...(params.providerReasoningSummary && { providerReasoningSummary: params.providerReasoningSummary }),

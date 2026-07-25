@@ -418,6 +418,18 @@ describe("Game REST API", () => {
         catalogId: "katana:grok-4-3",
         reasoningPolicy: "high",
       });
+      expect(config.serviceTier).toBeUndefined();
+    });
+
+    test("persists explicit auto opt-out only for hosted OpenAI", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({ playerCount: 6, serviceTier: "auto" }, adminToken),
+      );
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string };
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, body.id)))[0]!;
+      expect(JSON.parse(game.config).serviceTier).toBe("auto");
     });
 
     test("rejects invalid reasoning policy", async () => {

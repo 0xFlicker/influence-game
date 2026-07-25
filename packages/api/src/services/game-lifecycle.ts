@@ -60,6 +60,7 @@ import {
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
 import { writeCognitiveArtifactsForTrace } from "./cognitive-artifact-writer.js";
 import { recordProviderSpendForTrace } from "./provider-cost-accounting.js";
+import { recordPromptReuseForTrace } from "./prompt-reuse-accounting.js";
 import {
   findStartupRecoverableGameIds,
   getSupportedRecovery,
@@ -181,6 +182,12 @@ function createPrivateTraceSink(
       }
     } catch (error) {
       console.warn(`[game-lifecycle] Private trace sink failed for game ${gameId}:`, error);
+    }
+
+    try {
+      await recordPromptReuseForTrace(db, { gameId, ownerEpoch, trace: enrichedTrace, eventSequence: trace.boundary?.finalEventSequence });
+    } catch (error) {
+      console.warn(`[game-lifecycle] Prompt reuse capture failed for game ${gameId}:`, error);
     }
 
     try {

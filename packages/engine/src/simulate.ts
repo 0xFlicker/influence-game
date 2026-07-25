@@ -141,6 +141,7 @@ import { GameRunner, type AgentTurnEvent, type GameStreamEvent, type TranscriptE
 import type { CanonicalGameEvent } from "./canonical-events";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
+import { PromptReuseAggregate } from "./prompt-reuse";
 import { DEFAULT_CONFIG, Phase, type GameConfig, type UUID } from "./types";
 import {
   TokenTracker,
@@ -352,6 +353,8 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.flex = false;
     } else if (arg === "--flex") {
       args.flex = true;
+    } else if (arg === "--standard" || arg === "--no-flex") {
+      args.flex = false;
     }
   }
 
@@ -539,6 +542,7 @@ function selectCast(
   modelRuntime: SimulationModelRuntime,
   toolChoiceMode: LlmToolChoiceMode = "named",
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
+  privateTraceSink?: import("./game-runner").PrivateTraceSink,
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -569,6 +573,7 @@ function selectCast(
       ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
       modelCapabilities: modelRuntime.capabilities,
       reasoningPolicy: modelRuntime.reasoningPolicy,
+      privateTraceSink,
     });
   });
 }
@@ -1714,7 +1719,9 @@ async function main() {
 
     // Create fresh agents for each game
     const toolChoiceMode = modelRuntime.preferredToolChoiceMode ?? llmConfig.toolChoiceMode;
-    const agents = selectCast(args.players, args.personas, openai, modelRuntime, toolChoiceMode, openAIReasoningSummary);
+    const promptReuse = new PromptReuseAggregate();
+    const privateTraceSink: import("./game-runner").PrivateTraceSink = (trace) => promptReuse.add(trace.promptReuse);
+    const agents = selectCast(args.players, args.personas, openai, modelRuntime, toolChoiceMode, openAIReasoningSummary, privateTraceSink);
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
@@ -1732,6 +1739,7 @@ async function main() {
       ...(modelRuntime.catalogId && { catalogId: modelRuntime.catalogId }),
       modelCapabilities: modelRuntime.capabilities,
       reasoningPolicy: modelRuntime.reasoningPolicy,
+      privateTraceSink,
     });
     houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer, {
@@ -1742,6 +1750,7 @@ async function main() {
     const progressPath = join(batchDir, `game-${g}-progress.jsonl`);
     const turnsPath = join(batchDir, `game-${g}-turns.jsonl`);
     const eventsPath = join(batchDir, `game-${g}-events.jsonl`);
+    const promptReusePath = join(batchDir, `game-${g}-prompt-reuse.json`);
     writeFileSync(turnsPath, "");
     writeFileSync(eventsPath, "");
     writeProgress(progressPath, g, startTime, {
@@ -1770,6 +1779,7 @@ async function main() {
       jsonPath,
       turnsPath,
       eventsPath,
+      promptReusePath,
     });
     attachProgressLogger(
       runner,
@@ -1829,6 +1839,7 @@ async function main() {
         },
         instrumentation,
       };
+      writeFileSync(promptReusePath, JSON.stringify(promptReuse.snapshot(), null, 2));
       results.push(gameResult);
       writeProgress(progressPath, g, startTime, {
         event: "game_completed",
@@ -1887,6 +1898,7 @@ async function main() {
         },
         instrumentation,
       };
+      writeFileSync(promptReusePath, JSON.stringify(promptReuse.snapshot(), null, 2));
       results.push(gameResult);
       writeProgress(progressPath, g, startTime, {
         event: "game_failed",
