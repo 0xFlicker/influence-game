@@ -330,6 +330,13 @@
       "when": 1784822400000,
       "tag": "0046_game_kernel",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1784908800000,
+      "tag": "0047_prompt_reuse_rollups",
+      "breakpoints": true
     }
   ]
 }

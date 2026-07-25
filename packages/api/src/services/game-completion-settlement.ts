@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { Phase } from "@influence/engine";
-import type { CostEstimate, TokenUsage, TranscriptEntry } from "@influence/engine";
+import type { CostEstimate, ServiceTierUsage, TokenUsage, TranscriptEntry } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { GameCompletionSettlementState } from "../db/schema.js";
@@ -74,6 +74,8 @@ export interface GameCompletionTerminalResultV1 {
 export interface GameCompletionTokenUsageV1 {
   total: TokenUsage;
   perAction: Record<string, TokenUsage>;
+  /** Successful-response usage grouped by the tier OpenAI actually returned. */
+  byServiceTier?: ServiceTierUsage;
 }
 
 export interface GameCompletionEnvelopeV1 {
@@ -1030,6 +1032,7 @@ export async function settleCapturedGameCompletion(
           emptyResponses: envelope.tokenUsage.total.emptyResponses,
           estimatedCost: envelope.model.calculatedCost?.totalCost ?? null,
           perAction: envelope.tokenUsage.perAction,
+          ...(envelope.tokenUsage.byServiceTier && { byServiceTier: envelope.tokenUsage.byServiceTier }),
         }),
         finishedAt: envelope.finishedAt,
       });
@@ -1662,7 +1665,13 @@ function assertModernTranscriptFields(
 
 function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
   const record = assertRecord(value, "Invalid completion token usage");
-  assertExactKeys(record, ["total", "perAction"], "completion token usage");
+  assertExactKeys(
+    record,
+    record.byServiceTier === undefined
+      ? ["total", "perAction"]
+      : ["total", "perAction", "byServiceTier"],
+    "completion token usage",
+  );
   const total = assertTokenUsage(record.total);
   const perActionRecord = assertRecord(record.perAction, "Invalid completion per-action usage");
   const perAction = Object.fromEntries(
@@ -1685,7 +1694,14 @@ function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
     throw new Error("Completion per-action token usage does not sum to total usage");
   }
 
-  return { total, perAction };
+  const byServiceTier = record.byServiceTier === undefined
+    ? undefined
+    : Object.fromEntries(
+        Object.entries(assertRecord(record.byServiceTier, "Invalid service-tier usage"))
+          .map(([tier, usage]) => [tier, assertTokenUsage(usage)]),
+      ) as ServiceTierUsage;
+
+  return { total, perAction, ...(byServiceTier && { byServiceTier }) };
 }
 
 function assertTokenUsage(value: unknown): TokenUsage {

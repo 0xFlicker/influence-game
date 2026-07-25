@@ -272,7 +272,8 @@ function leadingHostileTargets(results: CompletedGameResultsRead): Set<string> {
     for (const entry of round.canonicalFacts.roundFacts.standardVote.ledger) {
       increment(counts, entry.exposeTarget.id);
     }
-    for (const entry of round.canonicalFacts.roundFacts.council.ledger) {
+    // Format-kernel rounds have no Council; absent Council facts mean no votes to count.
+    for (const entry of round.canonicalFacts.roundFacts.council?.ledger ?? []) {
       increment(counts, entry.target.id);
     }
     for (const elimination of round.endgameEliminations) {

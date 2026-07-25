@@ -1081,6 +1081,18 @@ describe("ProductionGameMcpReadModel", () => {
       confidence: "high",
       posture: "coordinating",
       leakOrBetrayalClaims: [],
+      commitments: [{
+        speakerId: alice,
+        speakerName: "Alice",
+        proposedTargetName: "Cara",
+        noTargetReason: null,
+        proposedAction: "Vote Cara if the active format permits it.",
+        memberCommitments: [{ memberName: "Bob", commitment: "Bob will compare the legal ballot." }],
+        contingency: "Re-evaluate if Cara earns immunity.",
+        confidence: "high",
+        dissent: ["Bob prefers Dax if Cara is unavailable."],
+        alternativePlan: "Vote Dax only if Cara is unavailable.",
+      }],
       createdAt: "2026-06-14T00:01:05.000Z",
     });
     state.recordAllianceHuddleCompleted({
@@ -1175,6 +1187,7 @@ describe("ProductionGameMcpReadModel", () => {
     });
     expect(JSON.stringify(result.allianceFacts?.huddles[0])).not.toContain("messages");
     expect(JSON.stringify(result.allianceFacts?.huddles[0])).not.toContain("thinking");
+    expect(JSON.stringify(result.allianceFacts)).not.toContain("Bob will compare the legal ballot.");
 
     const fullResult = await readModel.readAgentAlliances({ gameIdOrSlug: "agent-alliances", detailLevel: "full" }, {
       userId,
@@ -1190,6 +1203,25 @@ describe("ProductionGameMcpReadModel", () => {
       }],
       outcome: {
         plan: "Alice and Bob agree to test Cara as the first vote.",
+        commitments: [{
+          proposedTargetName: "Cara",
+          proposedAction: "Vote Cara if the active format permits it.",
+          dissent: ["Bob prefers Dax if Cara is unavailable."],
+        }],
+      },
+    });
+
+    const producerResult = await readModel.readAgentAlliances({
+      gameIdOrSlug: "agent-alliances",
+      player: "Alice",
+      detailLevel: "full",
+    }, PRODUCER_ACCESS);
+    expect(producerResult.allianceFacts?.huddles[0]).toMatchObject({
+      outcome: {
+        commitments: [expect.objectContaining({
+          proposedTargetName: "Cara",
+          memberCommitments: [{ memberName: "Bob", commitment: "Bob will compare the legal ballot." }],
+        })],
       },
     });
 

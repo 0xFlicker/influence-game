@@ -410,6 +410,15 @@ export function AdminCostPanel({
 
             <CostWarnings detail={detail} />
 
+            <div className="rounded-md border border-violet-900/40 bg-violet-950/10 p-3 text-sm text-white/60">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-violet-200">Structural prompt reuse</h3>
+              <p className="mt-1 text-xs text-white/40">Provider-neutral structure estimates only. This is not provider cached tokens, billing, savings, or dollars.</p>
+              {(detail.promptReuse?.ownerEpochs ?? []).map((epoch) => (
+                <p key={epoch.ownerEpoch} className="mt-2 text-xs">{epoch.requestCount} requests · {epoch.comparableCount} comparable · est. {epoch.reusableTokenEstimate.toLocaleString()} structurally reusable tokens · watermark {epoch.watermark} · {epoch.coverage}</p>
+              ))}
+              {!detail.promptReuse?.ownerEpochs.length && <p className="mt-2 text-xs text-white/35">No structural receipts captured yet.</p>}
+            </div>
+
             {detail.callCount === 0 ? (
               <div className="rounded-md border border-white/10 p-5 text-sm text-white/40">
                 No provider calls have been captured for this game yet.

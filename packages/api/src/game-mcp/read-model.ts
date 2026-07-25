@@ -5,6 +5,7 @@ import {
   Phase,
   resolveGameKernel,
   type AllianceHuddleOutcome,
+  type AllianceHuddleCommitmentFact,
   type AllianceProposalLineage,
   type AllianceRecord,
   type CanonicalEventQueryMode,
@@ -230,6 +231,8 @@ interface AgentAllianceOutcomeRead {
   confidence: string;
   posture: string;
   leakOrBetrayalClaims: string[];
+  /** Member-authored tactical facts; shown only in owner/member or producer full reads. */
+  commitments: AllianceHuddleCommitmentFact[];
 }
 
 interface AgentAllianceCompactOutcomeRead {
@@ -1651,6 +1654,11 @@ function outcomeRead(
     confidence: outcome.confidence,
     posture: outcome.posture,
     leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+    commitments: (outcome.commitments ?? []).map((commitment) => ({
+      ...commitment,
+      memberCommitments: commitment.memberCommitments.map((item) => ({ ...item })),
+      dissent: [...commitment.dissent],
+    })),
   };
 }
 

@@ -386,6 +386,7 @@ describe("Game REST API", () => {
         catalogId: "openai:gpt-5-nano",
         reasoningPolicy: "action-policy",
       });
+      expect(config.serviceTier).toBe("flex");
     });
 
     test("accepts game-ready Katana model selection", async () => {
@@ -436,6 +437,27 @@ describe("Game REST API", () => {
 
       expect(res.status).toBe(400);
       expect(await res.json()).toEqual({ error: "Invalid model selection" });
+    });
+
+    test("persists a valid standard-tier opt-out and rejects invalid service tiers", async () => {
+      const accepted = await app.request(
+        "/api/games",
+        json({ playerCount: 6, serviceTier: "auto" }, adminToken),
+      );
+      expect(accepted.status).toBe(201);
+      const acceptedBody = (await accepted.json()) as { id: string };
+      const game = (await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, acceptedBody.id)))[0]!;
+      expect(JSON.parse(game.config).serviceTier).toBe("auto");
+
+      const rejected = await app.request(
+        "/api/games",
+        json({ playerCount: 6, serviceTier: "priority" }, adminToken),
+      );
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toEqual({ error: "Invalid service tier" });
     });
 
     test("rejects disabled q-naifu-a3b catalog entry after failed Katana evaluation", async () => {

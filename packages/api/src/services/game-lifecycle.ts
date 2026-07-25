@@ -16,6 +16,7 @@ import {
   createLlmClientFromEnv,
   estimateCostForKnownModel,
   normalizeGameModelSelection,
+  normalizeOpenAIRequestServiceTier,
   resolveModelSelection,
 } from "@influence/engine";
 import type {
@@ -422,6 +423,7 @@ async function captureCompletedGame(
     tokenUsage: {
       total: usage,
       perAction: params.tokenTracker.getAllUsage(),
+      byServiceTier: params.tokenTracker.getUsageByServiceTier(),
     },
     resolvedModel: model,
     calculatedCost: cost,
@@ -549,6 +551,7 @@ export async function validateGameStartReadiness(
     maxRetries: 0,
     providerProfileId: resolvedModelSelection.providerProfile.id,
     timeout: providerPreflightTimeoutMs(env),
+    openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
   });
   if (!llmConfig) {
     return { error: "LLM provider not configured" };
@@ -621,6 +624,7 @@ export async function startGame(
     ? null
     : createLlmClientFromEnv(process.env, {
         providerProfileId: resolvedModelSelection.providerProfile.id,
+        openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
       });
   if (!llmConfig) {
     if (!useTestMockRunner) {

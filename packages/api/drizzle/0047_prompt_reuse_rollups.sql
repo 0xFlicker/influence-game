@@ -1,0 +1,7 @@
+CREATE TABLE "game_prompt_reuse_rollups" ("id" text PRIMARY KEY NOT NULL,"game_id" text NOT NULL REFERENCES "games"("id"),"owner_epoch" text NOT NULL REFERENCES "game_run_owners"("owner_epoch"),"request_count" integer NOT NULL DEFAULT 0,"comparable_count" integer NOT NULL DEFAULT 0,"reusable_characters" integer NOT NULL DEFAULT 0,"reusable_token_estimate" integer NOT NULL DEFAULT 0,"first_break_counts" jsonb NOT NULL DEFAULT '{}'::jsonb,"watermark" integer NOT NULL DEFAULT 0,"coverage" text NOT NULL DEFAULT 'partial',"created_at" text NOT NULL DEFAULT now()::text,"updated_at" text NOT NULL DEFAULT now()::text);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "game_prompt_reuse_rollups_game_epoch_unique" ON "game_prompt_reuse_rollups" ("game_id","owner_epoch");
+--> statement-breakpoint
+CREATE TABLE "game_prompt_reuse_applied_sources" ("id" text PRIMARY KEY NOT NULL,"game_id" text NOT NULL REFERENCES "games"("id"),"owner_epoch" text NOT NULL REFERENCES "game_run_owners"("owner_epoch"),"decision_id" text NOT NULL,"event_sequence" integer NOT NULL DEFAULT 0,"comparable" boolean NOT NULL DEFAULT false,"reusable_characters" integer NOT NULL DEFAULT 0,"reusable_token_estimate" integer NOT NULL DEFAULT 0,"first_break" text,"created_at" text NOT NULL DEFAULT now()::text);
+--> statement-breakpoint
+CREATE UNIQUE INDEX "game_prompt_reuse_sources_unique" ON "game_prompt_reuse_applied_sources" ("game_id","owner_epoch","decision_id");

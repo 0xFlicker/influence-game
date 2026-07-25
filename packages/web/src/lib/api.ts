@@ -580,6 +580,7 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
     pricedAt: string[];
   };
   reconciliation: Array<Record<string, unknown>>;
+  promptReuse?: { version: number; coverage: "none" | "partial"; ownerEpochs: Array<{ ownerEpoch: string; requestCount: number; comparableCount: number; reusableCharacters: number; reusableTokenEstimate: number; firstBreakCounts: Record<string, number>; watermark: number; coverage: string }> };
 }
 
 export async function listAdminGames(): Promise<AdminGameSummary[]> {

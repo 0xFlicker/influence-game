@@ -74,7 +74,9 @@ doppler run --project social-strategy-agent --config dev -- \
   --model-catalog openai:gpt-5-mini --flex --llm-timeout-sec 900
 ```
 
-`--flex` is available only for hosted OpenAI catalog models. It sends
+Hosted OpenAI game runs use Flex by default, including API-backed durable
+games. Use `--standard` (or `--no-flex`) to request the normal auto lane.
+Non-OpenAI providers do not receive a service-tier setting. Flex sends
 `service_tier: "flex"`; resource-unavailable 429s retry with exponential
 backoff three times, then retry once on the `auto` tier for that request. Later
 requests begin on Flex again. Flex can be slower, so use a longer per-request
@@ -84,6 +86,10 @@ run spend followed by one all-model comparison table. Flex-supported OpenAI
 models use Flex rates; unsupported OpenAI models and Grok retain standard
 rates. 429 resource-unavailable retries are excluded because OpenAI does not
 charge for them.
+
+API completion metadata persists the requested tier and successful-response
+usage grouped by the service tier OpenAI actually returned, including any
+per-request fallback to `auto`.
 
 Local LM Studio prerequisites: load the chosen model and start its OpenAI-compatible server on `127.0.0.1:1234`.
 
@@ -178,7 +184,7 @@ For format-aware Mingle quality, verify that agents react to `Current Board Cont
 
 For saved-agent evaluation, the effective runtime now includes the owner-authored personality prompt, backstory, strategy instructions, persona key, resolved model/provider/reasoning/tool policy, and temperature. When comparing an analytical revision across simulations, hold that entire effective snapshot constant. A profile display/avatar change is not a strategy revision; a model or reasoning-policy change is.
 
-For named-alliance quality, inspect whether Mingle I creates plausible official alliances without replacing the locked-format scheme window. Use turns JSONL to check sequential `alliance-action` proposer opportunities, invited response/counter resolution, consent/version behavior, `alliance-huddle-schedule` grant/skip rationale, pass-wise `alliance-huddle-turn` records, and compact `alliance-huddle-outcome` memory. Pre-pick outcomes must keep format branches contingent. Use events JSONL or the local game MCP projection tools for canonical alliance truth instead of parsing transcript prose. Huddle transcript entries use `scope: "huddle"` and are hidden live/player-safe evidence; public websocket, public transcript export, and public watch intelligence must not expose huddle speech or huddle-derived cognitive artifacts by default.
+For named-alliance quality, inspect whether Mingle I creates plausible official alliances without replacing the locked-format scheme window. Use turns JSONL to check sequential `alliance-action` proposer opportunities, invited response/counter resolution, consent/version behavior, `alliance-huddle-schedule` grant/skip rationale, and pass-wise `alliance-huddle-turn` target/action/member-commitment/contingency/confidence/dissent facts. Verify decision-relevant Mingle rooms with a trusted or official ally carry either a concrete coordination receipt or a specific no-proposal reason. Accepted receipts also emit private canonical `mingle.coordination_receipt_recorded` audit events: replay them from events JSONL or producer event reads, never from public transcripts. `alliance-huddle-outcome` memory must retain member facts; House prose may compact them but must not manufacture agreement. Pre-pick outcomes must keep format branches contingent. Huddle commitments are available in full authorized owner/member and producer alliance reads, while compact/public reads remain summary-only. Huddle transcript entries use `scope: "huddle"` and are hidden live/player-safe evidence; public websocket, public transcript export, and public watch intelligence must not expose huddle speech or huddle-derived cognitive artifacts by default.
 
 For API-backed games, the admin durable-run inspection adds a checkpoint hydration passport on each checkpoint summary. Use it as a readiness report only: it summarizes event/projection replay, boundary certificate, Runtime Snapshot v1 evidence, transcript/token cursors, private player/House continuity presence, owner epoch proof, and privacy validation. Runtime Snapshot v1 candidacy requires the token cursor, transcript watermark, actor witness, accumulator registry, and continuity evidence to bind to the same checkpoint boundary. It does not expose the private continuity capsule bodies, and `hydration_candidate` is not by itself resume support. Supported phase-boundary startup recovery exists only for checkpoints accepted by the implemented recovery selector; see `docs/statefulness-plan.md` for the current boundary list.
 

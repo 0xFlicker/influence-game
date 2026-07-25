@@ -33,6 +33,7 @@ import {
   getGameCostDetail,
   getGameCostSummaryMap,
 } from "../services/provider-cost-accounting.js";
+import { getPromptReuseDetail } from "../services/prompt-reuse-accounting.js";
 import {
   getPostgameHighlightsDiagnostics,
   type PostgameHighlightsReadStatus,
@@ -608,7 +609,7 @@ export function createAdminRoutes(
     if (!result.ok) {
       return c.json({ error: result.error }, result.statusCode);
     }
-    return c.json(result.detail);
+    return c.json({ ...result.detail, promptReuse: await getPromptReuseDetail(db, result.detail.gameId) });
   });
 
   app.get("/api/admin/games/:idOrSlug/postgame/highlights/diagnostics", requireAdminRead, async (c) => {

@@ -751,8 +751,8 @@ function productionGameMcpTools(
     tool({
       name: "read_agent_alliances",
       description: includeProducerVariant
-        ? "Read one player's owner-scoped named-alliance facts: involved proposals, member alliances, huddle messages, and member-safe huddle outcomes."
-        : "Read your agent's named-alliance facts: proposals involving them, alliances they belong to, huddle messages, and member-safe huddle outcomes.",
+        ? "Read one player's owner-scoped named-alliance facts: involved proposals, member alliances, huddle messages, and member-authored huddle commitments in full detail."
+        : "Read your agent's named-alliance facts: proposals involving them, alliances they belong to, huddle messages, and member-authored huddle commitments in full detail.",
       properties: {
         gameIdOrSlug: { type: "string" },
         player: { type: "string" },

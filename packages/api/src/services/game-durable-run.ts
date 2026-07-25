@@ -156,6 +156,8 @@ export interface DurableRunInspectionResponse {
     entries: DurableCheckpointSummary[];
   };
   evidence: DurableEvidenceSummary;
+  /** Producer-only safe structural aggregate; no request receipt or prompt content. */
+  promptReuse: { coverage: "none" | "partial"; ownerEpochs: Array<{ ownerEpoch: string; requestCount: number; comparableCount: number; reusableTokenEstimate: number; watermark: number; firstBreakCounts: Record<string, number> }> };
   /**
    * Separate from envelope eventLogStatus — missing speeches do not invalidate the log.
    * U6 match-manifest formal-speech parity is the broader cross-lane diagnostic;
@@ -537,6 +539,7 @@ export async function getDurableRunInspection(
         asc(schema.gameCheckpoints.createdAt),
       );
     const evidence = await getEvidenceSummary(tx, game.id);
+    const promptReuseRows = await tx.select().from(schema.gamePromptReuseRollups).where(eq(schema.gamePromptReuseRollups.gameId, game.id));
 
     const sealedNonfinal = completionSettlement.state === "pending"
       || completionSettlement.state === "repair_required";
@@ -652,6 +655,10 @@ export async function getDurableRunInspection(
           entries: checkpoints,
         },
         evidence: evidence.summary,
+        promptReuse: {
+          coverage: promptReuseRows.length ? "partial" : "none",
+          ownerEpochs: promptReuseRows.map((row) => ({ ownerEpoch: row.ownerEpoch, requestCount: row.requestCount, comparableCount: row.comparableCount, reusableTokenEstimate: row.reusableTokenEstimate, watermark: row.watermark, firstBreakCounts: row.firstBreakCounts })),
+        },
         finaleIntegrity,
         diagnostics,
       },

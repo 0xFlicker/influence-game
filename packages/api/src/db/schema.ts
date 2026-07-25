@@ -9,6 +9,7 @@
 import {
   type AnyPgColumn,
   bigint,
+  boolean,
   check,
   doublePrecision,
   foreignKey,
@@ -1496,6 +1497,24 @@ export const gameCostRollups = pgTable("game_cost_rollups", {
     AND ${table.estimatedCostMicrousd} >= 0
   `),
 ]);
+
+/** Safe structural prompt continuity aggregate; never stores a prompt or hash. */
+export const gamePromptReuseRollups = pgTable("game_prompt_reuse_rollups", {
+  id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id),
+  ownerEpoch: text("owner_epoch").notNull().references(() => gameRunOwners.ownerEpoch),
+  requestCount: integer("request_count").notNull().default(0), comparableCount: integer("comparable_count").notNull().default(0),
+  reusableCharacters: integer("reusable_characters").notNull().default(0), reusableTokenEstimate: integer("reusable_token_estimate").notNull().default(0),
+  firstBreakCounts: jsonb("first_break_counts").$type<Record<string, number>>().notNull().default(sql`'{}'::jsonb`),
+  watermark: integer("watermark").notNull().default(0), coverage: text("coverage").notNull().default("partial"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`), updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [uniqueIndex("game_prompt_reuse_rollups_game_epoch_unique").on(table.gameId, table.ownerEpoch)]);
+
+/** Idempotency marker only: no receipt/hashes/content, safe to retain with the rollup lane. */
+export const gamePromptReuseAppliedSources = pgTable("game_prompt_reuse_applied_sources", {
+  id: text("id").primaryKey(), gameId: text("game_id").notNull().references(() => games.id), ownerEpoch: text("owner_epoch").notNull().references(() => gameRunOwners.ownerEpoch),
+  decisionId: text("decision_id").notNull(), eventSequence: integer("event_sequence").notNull().default(0),
+  comparable: boolean("comparable").notNull().default(false), reusableCharacters: integer("reusable_characters").notNull().default(0), reusableTokenEstimate: integer("reusable_token_estimate").notNull().default(0), firstBreak: text("first_break"), createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [uniqueIndex("game_prompt_reuse_sources_unique").on(table.gameId, table.ownerEpoch, table.decisionId)]);
 
 export const gameCostReconciliations = pgTable("game_cost_reconciliations", {
   id: text("id").primaryKey(),
