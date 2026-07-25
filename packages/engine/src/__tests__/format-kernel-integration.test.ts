@@ -404,4 +404,52 @@ describe("Format kernel integration (MockAgent)", () => {
     );
     expect(playRepair?.type === "agent_turn" ? playRepair.response.fallbackReason : null).toBeTruthy();
   });
+
+  it("repairs self-target sealed ballots and records fallback provenance", async () => {
+    const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    // Force Save-or-Eliminate every round so self-ballot path is exercised.
+    for (const agent of agents) {
+      agent.pickRoundFormat = async (_ctx, offered) => ({
+        formatId: offered.includes("save_or_eliminate") ? "save_or_eliminate" : offered[0]!,
+        thinking: "force SoE for self-ballot test",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+      agent.getSaveOrEliminateBallot = async (ctx) => ({
+        polarity: "eliminate",
+        targetId: ctx.selfId,
+        thinking: "illegal self-elim claim",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+      agent.getVoteBombBallot = async (ctx) => ({
+        targetId: ctx.selfId,
+        thinking: "illegal self-bomb claim",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+    }
+
+    const runner = new GameRunner(agents, { ...TEST_CONFIG, maxRounds: 1 });
+    const events: GameStreamEvent[] = [];
+    runner.setStreamListener((event) => events.push(event));
+    await runner.run();
+
+    const ballots = events.filter(
+      (entry) => entry.type === "agent_turn" && entry.action === "format-ballot",
+    );
+    expect(ballots.length).toBeGreaterThan(0);
+    for (const entry of ballots) {
+      if (entry.type !== "agent_turn") continue;
+      expect(entry.response.targetId).not.toBe(entry.actor?.id);
+      expect(entry.response.decisionSource).toBe("fallback");
+      expect(
+        entry.response.fallbackReason === "invalid_save_or_eliminate_ballot"
+          || entry.response.fallbackReason === "invalid_vote_bomb_target"
+          || entry.response.fallbackReason === "invalid_safety_bounce_target",
+      ).toBe(true);
+    }
+  });
 });

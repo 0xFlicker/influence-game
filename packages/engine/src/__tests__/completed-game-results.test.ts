@@ -105,6 +105,49 @@ describe("buildCompletedGameResults", () => {
     expect(json).not.toContain("private-trace-source-pointer");
   });
 
+  it("maps format.resolved eliminations to source format with method stamp", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      { gameId: "completed-results-format", now: fixedClock() },
+    );
+    state.startRound();
+    state.setEmpowered("alice", "initial");
+    state.recordFormatMenu("alice", ["save_or_eliminate", "vote_bomb"]);
+    state.recordFormatSelected("alice", "save_or_eliminate");
+    state.recordFormatResolution({
+      formatId: "save_or_eliminate",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "clear",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: {
+        nets: { alice: 1, bob: -2, charlie: 0, dave: 1 },
+        savesReceived: { alice: 1, bob: 0, charlie: 0, dave: 1 },
+        eliminateReceived: { alice: 0, bob: 2, charlie: 0, dave: 0 },
+      },
+      voteBomb: null,
+      safetyBounce: null,
+    });
+    state.eliminatePlayer("bob");
+
+    const read = buildCompletedGameResults({ events: state.getCanonicalEvents() });
+    expect(read.eliminationOrder).toHaveLength(1);
+    expect(read.eliminationOrder[0]).toMatchObject({
+      player: { id: "bob", name: "Bob" },
+      source: "format",
+      method: "save_or_eliminate:clear",
+    });
+    expect(read.rounds[0]?.canonicalFacts.roundFacts.power).toBeUndefined();
+    expect(read.rounds[0]?.canonicalFacts.roundFacts.council).toBeUndefined();
+    expect(read.rounds[0]?.canonicalFacts.roundFacts.format.status).toBe("available");
+  });
+
   it("includes endgame elimination votes and final jury outcome", () => {
     const read = buildCompletedGameResults({
       events: createJuryGameEvents(),

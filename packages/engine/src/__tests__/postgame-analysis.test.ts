@@ -9,10 +9,61 @@ import {
   EDGE_SMOKE_DUSK_EXPECTED,
   EDGE_SMOKE_DUSK_PLAYERS,
   createEdgeSmokeDuskEvents,
+  GameState,
   Phase,
 } from "../index";
 
 describe("buildPostgameAnalysisProjection", () => {
+  it("uses format-kernel dual-shape copy for format eliminations", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+        { id: "eve", name: "Eve" },
+      ],
+      { gameId: "postgame-format-dual", now: () => 1_700_200_000_000 },
+    );
+    // Three empowerments for Alice so executive summary emits a control line.
+    for (let round = 1; round <= 3; round++) {
+      state.startRound();
+      state.setEmpowered("alice", "initial");
+      state.recordFormatMenu("alice", ["vote_bomb", "save_or_eliminate"]);
+      state.recordFormatSelected("alice", "vote_bomb");
+      state.recordFormatResolution({
+        formatId: "vote_bomb",
+        empoweredId: "alice",
+        eliminatedId: round === 1 ? "eve" : round === 2 ? "dave" : "charlie",
+        resolutionKind: "clear",
+        tiedPlayerIds: [],
+        tiebreakerId: null,
+        saveOrEliminate: null,
+        voteBomb: {
+          totals: { alice: 0, bob: 1, charlie: 1, dave: 1, eve: 1 },
+          zeroSafePlayerIds: ["alice"],
+        },
+        safetyBounce: null,
+      });
+      state.eliminatePlayer(round === 1 ? "eve" : round === 2 ? "dave" : "charlie");
+    }
+
+    const completed = buildCompletedGameResults({ events: state.getCanonicalEvents() });
+    const projection = buildPostgameAnalysisProjection({ completedResults: completed });
+
+    expect(completed.eliminationOrder.every((entry) => entry.source === "format")).toBe(true);
+    expect(projection.executiveSummary.some((line) =>
+      line.derivationMethod === "executive_summary_format_boots"
+      && line.text.includes("Format eliminations:")
+    )).toBe(true);
+    expect(projection.executiveSummary.some((line) =>
+      line.derivationMethod === "executive_summary_repeated_empowerment"
+      && line.text.includes("held empower")
+    )).toBe(true);
+    expect(projection.executiveSummary.some((line) => line.text.includes("controlled power"))).toBe(false);
+    expect(JSON.stringify(projection.roundSummaries)).not.toContain("controlled power");
+  });
+
   it("summarizes edge-smoke-dusk without raw event reconstruction", () => {
     const events = createEdgeSmokeDuskEvents();
     const completed = buildCompletedGameResults({

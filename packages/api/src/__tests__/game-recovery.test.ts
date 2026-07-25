@@ -724,6 +724,34 @@ describe("game startup recovery", () => {
     }
   });
 
+  test("startup recovery fails closed for unsupported format-kernel mid-round coordinates", async () => {
+    for (const actorCoordinate of ["format_menu", "format_pick", "format_mingle", "format_resolve"] as const) {
+      const gameId = await insertGame(db, {
+        id: `startup-recovery-format-mid-${actorCoordinate}`,
+        status: "suspended",
+        config: recoveryConfig,
+      });
+      const ownerEpoch = await insertOwner(db, gameId);
+      const events = createCanonicalEventFixture(gameId);
+      await appendGameEvents(db, { gameId, ownerEpoch, events });
+
+      const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
+        ownerEpoch,
+        eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
+        actorCoordinate,
+      });
+      const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+      expect(checkpointResult.ok).toBeTrue();
+
+      const candidate = await getSupportedRecovery(db, gameId);
+      expect(candidate).toMatchObject({
+        ok: false,
+        gameId,
+        reason: `unsupported_actor_coordinate:${actorCoordinate}`,
+      });
+    }
+  });
+
   test("startup recovery skips a newer unsupported same-head checkpoint and uses the newest resume-capable boundary", async () => {
     const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "vote", {
       config: recoveryConfigWithEndgame,

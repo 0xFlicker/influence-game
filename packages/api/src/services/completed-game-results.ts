@@ -1,7 +1,10 @@
 import { eq, or } from "drizzle-orm";
 import {
   buildCompletedGameResults,
+  resolveGameKernel,
   type CompletedGameResultsRead,
+  type GameKernel,
+  type GameKernelSource,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -25,6 +28,8 @@ export type CompletedGameResultsServiceResult =
         slug: string;
         status: GameStatus;
         completedAt?: string;
+        gameKernel: GameKernel;
+        gameKernelSource: GameKernelSource;
       };
       results: CompletedGameResultsRead;
     }
@@ -34,7 +39,7 @@ export type CompletedGameResultsServiceResult =
       error: string;
     };
 
-type GameRow = Pick<typeof schema.games.$inferSelect, "id" | "slug" | "status" | "endedAt">;
+type GameRow = Pick<typeof schema.games.$inferSelect, "id" | "slug" | "status" | "endedAt" | "gameKernel">;
 type PlayerRow = Pick<typeof schema.gamePlayers.$inferSelect, "id" | "persona">;
 type ResultRow = Pick<typeof schema.gameResults.$inferSelect, "winnerId" | "roundsPlayed">;
 
@@ -61,8 +66,9 @@ export async function getCompletedGameResults(
   ]);
   const projection = getPersistedGameProjection(persistedEvents);
   const playerNames = playerNameMap(players);
+  const events = persistedEvents.events.map((event) => event.envelope);
   const results = buildCompletedGameResults({
-    events: persistedEvents.events.map((event) => event.envelope),
+    events,
     eventLogStatus: persistedEvents.status,
     projectionStatus: projection.status,
     terminalResult: terminalResult
@@ -82,6 +88,8 @@ export async function getCompletedGameResults(
     };
   }
 
+  const kernel = resolveGameKernel({ stored: game.gameKernel, events });
+
   return {
     ok: true,
     schemaVersion: 1,
@@ -90,6 +98,8 @@ export async function getCompletedGameResults(
       slug: game.slug,
       status: game.status,
       ...(game.endedAt && { completedAt: game.endedAt }),
+      gameKernel: kernel.kernel,
+      gameKernelSource: kernel.source,
     },
     results,
   };
@@ -102,6 +112,7 @@ async function loadGame(db: CompletedResultsDB, idOrSlug: string): Promise<GameR
       slug: schema.games.slug,
       status: schema.games.status,
       endedAt: schema.games.endedAt,
+      gameKernel: schema.games.gameKernel,
     })
     .from(schema.games)
     .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))

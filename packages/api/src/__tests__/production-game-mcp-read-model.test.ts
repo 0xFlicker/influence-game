@@ -785,6 +785,140 @@ describe("ProductionGameMcpReadModel", () => {
     expect(ownerJson).not.toContain("decisionLog");
   });
 
+  test("exposes dual-kernel gameKernel and omits classic power/council on format games", async () => {
+    const ownerUserId = randomUUID();
+    await db.insert(schema.users).values({
+      id: ownerUserId,
+      walletAddress: "0xformatkernel000000000000000000000000001",
+    });
+
+    const formatGameId = await insertGame(db, {
+      slug: "format-kernel-dual-shape",
+      status: "in_progress",
+    });
+    await db
+      .update(schema.games)
+      .set({ createdById: ownerUserId, gameKernel: "format" })
+      .where(eq(schema.games.id, formatGameId));
+    const ownerPlayerId = await insertGamePlayer(db, {
+      gameId: formatGameId,
+      userId: ownerUserId,
+      name: "KernelOwner",
+    });
+    const peerPlayerId = await insertGamePlayer(db, {
+      gameId: formatGameId,
+      name: "KernelPeer",
+    });
+    const formatOwnerEpoch = await insertOwner(db, formatGameId);
+    const formatBase = createCanonicalEventFixture(formatGameId);
+    const formatEvents: CanonicalGameEvent[] = [
+      {
+        sequence: formatBase.length + 1,
+        gameId: formatGameId,
+        round: 1,
+        phase: Phase.FORMAT_MENU,
+        type: "format.menu_offered",
+        timestamp: "2026-07-24T13:00:00.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          empoweredId: ownerPlayerId,
+          offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+        },
+      },
+      {
+        sequence: formatBase.length + 2,
+        gameId: formatGameId,
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        type: "format.selected",
+        timestamp: "2026-07-24T13:00:01.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          empoweredId: ownerPlayerId,
+          formatId: "save_or_eliminate",
+        },
+      },
+      {
+        sequence: formatBase.length + 3,
+        gameId: formatGameId,
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.resolved",
+        timestamp: "2026-07-24T13:00:02.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: {
+          formatId: "save_or_eliminate",
+          empoweredId: ownerPlayerId,
+          eliminatedId: peerPlayerId,
+          resolutionKind: "clear",
+          tiedPlayerIds: [],
+          tiebreakerId: null,
+          saveOrEliminate: {
+            nets: { [ownerPlayerId]: 1, [peerPlayerId]: -1 },
+            savesReceived: { [ownerPlayerId]: 1, [peerPlayerId]: 0 },
+            eliminateReceived: { [ownerPlayerId]: 0, [peerPlayerId]: 1 },
+          },
+          voteBomb: null,
+          safetyBounce: null,
+        },
+      },
+    ];
+    await appendGameEvents(db, {
+      gameId: formatGameId,
+      ownerEpoch: formatOwnerEpoch,
+      events: [...formatBase, ...formatEvents],
+    });
+
+    const classicGameId = await insertGame(db, {
+      slug: "classic-kernel-dual-shape",
+      status: "in_progress",
+    });
+    await db
+      .update(schema.games)
+      .set({ createdById: ownerUserId, gameKernel: "classic" })
+      .where(eq(schema.games.id, classicGameId));
+    await insertGamePlayer(db, {
+      gameId: classicGameId,
+      userId: ownerUserId,
+      name: "ClassicOwner",
+    });
+    const classicOwnerEpoch = await insertOwner(db, classicGameId);
+    await appendGameEvents(db, {
+      gameId: classicGameId,
+      ownerEpoch: classicOwnerEpoch,
+      events: createResolvedRoundCanonicalEventFixture(classicGameId),
+    });
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const access = { userId: ownerUserId, authProfile: "subject" as const };
+
+    const listed = await readModel.listGames(access, 20);
+    const formatListRow = listed.canonicalGameFacts.games.find((g) => g.id === formatGameId);
+    const classicListRow = listed.canonicalGameFacts.games.find((g) => g.id === classicGameId);
+    expect(formatListRow?.gameKernel).toBe("format");
+    expect(formatListRow?.gameKernelSource).toBe("stored");
+    expect(classicListRow?.gameKernel).toBe("classic");
+    expect(classicListRow?.gameKernelSource).toBe("stored");
+
+    const formatFacts = await readModel.readRoundFacts({ gameIdOrSlug: formatGameId, round: 1 }, access);
+    expect(formatFacts.canonicalGameFacts.roundFacts.format.status).toBe("available");
+    expect(formatFacts.canonicalGameFacts.roundFacts).not.toHaveProperty("power");
+    expect(formatFacts.canonicalGameFacts.roundFacts).not.toHaveProperty("council");
+
+    const classicFacts = await readModel.readRoundFacts({ gameIdOrSlug: classicGameId, round: 1 }, access);
+    expect(classicFacts.canonicalGameFacts.roundFacts.power?.status).toBe("available");
+    expect(classicFacts.canonicalGameFacts.roundFacts.council?.status).toBe("available");
+  });
+
   test("blocks producer event visibility for games-scope reads", async () => {
     const userId = randomUUID();
     await db.insert(schema.users).values({
