@@ -100,17 +100,38 @@ describe("game completion settlement capture", () => {
               emptyResponses: 0,
             },
           },
+          requestedServiceTier: "flex",
           effectiveServiceTiers: {
             flex: 1,
             auto: 1,
+          },
+          effectiveServiceTierUsage: {
+            flex: {
+              promptTokens: 50,
+              cachedTokens: 10,
+              completionTokens: 15,
+              reasoningTokens: 5,
+              totalTokens: 65,
+              callCount: 1,
+              emptyResponses: 0,
+            },
+            auto: {
+              promptTokens: 50,
+              cachedTokens: 10,
+              completionTokens: 15,
+              reasoningTokens: 5,
+              totalTokens: 65,
+              callCount: 1,
+              emptyResponses: 0,
+            },
           },
         },
         resolvedModel: "gpt-5-mini",
         calculatedCost: {
           model: "gpt-5-mini",
-          inputCost: 0.00002,
-          outputCost: 0.00006,
-          totalCost: 0.00008,
+          inputCost: 0.000015375,
+          outputCost: 0.000045,
+          totalCost: 0.000060375,
         },
         completionConfig: {
           maxRounds: 5,
@@ -478,13 +499,17 @@ describe("game completion settlement capture", () => {
       completionTokens: 30,
       reasoningTokens: 10,
       totalTokens: 130,
+      callCount: 2,
       emptyResponses: 0,
-      estimatedCost: 0.00008,
+      estimatedCost: 0.000060375,
+      costEstimateKind: "published_rate_estimate",
       perAction: fixture.input.tokenUsage.perAction,
+      requestedServiceTier: "flex",
       effectiveServiceTiers: {
         flex: 1,
         auto: 1,
       },
+      effectiveServiceTierUsage: fixture.input.tokenUsage.effectiveServiceTierUsage,
     });
     expect(await db.select().from(schema.transcripts)
       .where(eq(schema.transcripts.gameId, fixture.gameId))).toHaveLength(1);

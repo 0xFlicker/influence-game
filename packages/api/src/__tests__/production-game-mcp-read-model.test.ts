@@ -98,6 +98,11 @@ describe("ProductionGameMcpReadModel", () => {
     const gameId = await insertGame(db, {
       slug: "mcp-read-model-game",
       status: "in_progress",
+      config: {
+        maxRounds: 5,
+        serviceTier: "flex",
+        modelSelection: { catalogId: "openai:gpt-5-nano" },
+      },
     });
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createCanonicalEventFixture(gameId);
@@ -228,6 +233,13 @@ describe("ProductionGameMcpReadModel", () => {
         state: "pending",
         retryEligible: false,
         resultHash: expect.stringMatching(/^sha256:/),
+      },
+      serviceTier: {
+        requested: "flex",
+        providerProfileId: "openai",
+        applicable: true,
+        source: "none",
+        fallbackObserved: false,
       },
       projection: {
         summary: {

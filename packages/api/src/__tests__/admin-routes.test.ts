@@ -100,6 +100,7 @@ function createCostTrace(): PrivateDecisionTrace {
     response: {
       raw: {
         id: "resp_admin_cost",
+        service_tier: "flex",
         usage: {
           prompt_tokens: 100,
           completion_tokens: 50,
@@ -1160,22 +1161,53 @@ describe("admin route RBAC", () => {
   });
 
   test("allows admin read users to inspect game costs", async () => {
-    const gameId = await insertGame(db, { slug: "admin-cost-game" });
+    const gameId = await insertGame(db, {
+      slug: "admin-cost-game",
+      config: {
+        serviceTier: "flex",
+        modelSelection: { catalogId: "openai:gpt-5-nano" },
+      },
+    });
     const ownerEpoch = await insertOwner(db, gameId);
     await recordProviderSpendForTrace(db, {
       gameId,
       ownerEpoch,
       trace: createCostTrace(),
     });
+    const malformedResultGameId = await insertGame(db, {
+      slug: "admin-malformed-token-usage",
+      config: {
+        serviceTier: "flex",
+        modelSelection: { catalogId: "openai:gpt-5-nano" },
+      },
+    });
+    await db.insert(schema.gameResults).values({
+      id: randomUUID(),
+      gameId: malformedResultGameId,
+      winnerId: null,
+      roundsPlayed: 1,
+      tokenUsage: "{malformed",
+      finishedAt: "2026-07-25T12:00:00.000Z",
+    });
 
     const listRes = await app.request("/api/admin/games", {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     expect(listRes.status).toBe(200);
-    const list = await listRes.json() as Array<{ id: string; cost?: { callCount: number; estimatedCostMicrousd: number } | null }>;
+    const list = await listRes.json() as Array<{
+      id: string;
+      cost?: { callCount: number; estimatedCostMicrousd: number } | null;
+      serviceTier?: { requested: string; applicable: boolean; source: string };
+    }>;
     const row = list.find((game) => game.id === gameId);
     expect(row?.cost?.callCount).toBe(1);
     expect(row?.cost?.estimatedCostMicrousd).toBeGreaterThan(0);
+    expect(row?.serviceTier).toMatchObject({ requested: "flex", applicable: true });
+    expect(list.find((game) => game.id === malformedResultGameId)?.serviceTier).toMatchObject({
+      requested: "flex",
+      applicable: true,
+      source: "none",
+    });
 
     const detailRes = await app.request("/api/admin/games/admin-cost-game/costs", {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -1183,6 +1215,11 @@ describe("admin route RBAC", () => {
     expect(detailRes.status).toBe(200);
     const detail = await detailRes.json() as Record<string, unknown>;
     expect(detail.callCount).toBe(1);
+    expect(detail.breakdowns).toMatchObject({
+      serviceTier: {
+        flex: { callCount: 1 },
+      },
+    });
     const serialized = JSON.stringify(detail);
     expect(serialized).not.toContain("private prompt");
     expect(serialized).not.toContain("traceManifestId");

@@ -32,6 +32,11 @@ import {
   getGameCompletionSettlementSummary,
   type GameCompletionSettlementSummary,
 } from "./game-completion-settlement.js";
+import {
+  normalizeGameModelSelection,
+  normalizeOpenAIServiceTier,
+  resolveModelSelection,
+} from "@influence/engine";
 
 type DurableRunReadDB = Pick<DrizzleDB, "select">;
 
@@ -141,6 +146,22 @@ export interface DurableRunFinaleIntegrity {
   findings: FinaleIntegrityFinding[];
 }
 
+export interface DurableServiceTierSummary {
+  requested: "flex" | "auto";
+  providerProfileId: string | null;
+  applicable: boolean;
+  source: "result" | "checkpoint" | "none";
+  effective: Record<string, {
+    callCount: number;
+    promptTokens: number;
+    cachedTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  }>;
+  fallbackObserved: boolean;
+  costEstimateKind?: string;
+}
+
 export interface DurableRunInspectionResponse {
   schemaVersion: 2;
   game: DurableRunGameIdentity;
@@ -156,6 +177,7 @@ export interface DurableRunInspectionResponse {
     entries: DurableCheckpointSummary[];
   };
   evidence: DurableEvidenceSummary;
+  serviceTier: DurableServiceTierSummary;
   /**
    * Separate from envelope eventLogStatus — missing speeches do not invalidate the log.
    * U6 match-manifest formal-speech parity is the broader cross-lane diagnostic;
@@ -394,6 +416,8 @@ interface DurableRunGameRow {
   createdAt: string;
   startedAt: string | null;
   endedAt: string | null;
+  config: string;
+  tokenUsage: string | null;
 }
 
 interface DurableRunOwnerRow {
@@ -421,10 +445,13 @@ async function resolveGameByIdOrSlug(
     createdAt: schema.games.createdAt,
     startedAt: schema.games.startedAt,
     endedAt: schema.games.endedAt,
+    config: schema.games.config,
+    tokenUsage: schema.gameResults.tokenUsage,
   };
   const byId = (await db
     .select(selection)
     .from(schema.games)
+    .leftJoin(schema.gameResults, eq(schema.gameResults.gameId, schema.games.id))
     .where(eq(schema.games.id, idOrSlug))
     .limit(1))[0];
   if (byId) return byId;
@@ -432,8 +459,83 @@ async function resolveGameByIdOrSlug(
   return (await db
     .select(selection)
     .from(schema.games)
+    .leftJoin(schema.gameResults, eq(schema.gameResults.gameId, schema.games.id))
     .where(eq(schema.games.slug, idOrSlug))
     .limit(1))[0] ?? null;
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function parseJsonRecord(value: string | null | undefined): Record<string, unknown> | null {
+  if (!value) return null;
+  try {
+    return recordValue(JSON.parse(value));
+  } catch {
+    return null;
+  }
+}
+
+function nonNegativeInteger(value: unknown): number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
+}
+
+function providerProfileId(config: Record<string, unknown>): string | null {
+  try {
+    return resolveModelSelection(
+      normalizeGameModelSelection(config.modelSelection),
+      typeof config.modelTier === "string" ? config.modelTier : undefined,
+    ).providerProfile.id;
+  } catch {
+    return null;
+  }
+}
+
+export function buildServiceTierAccountingSummary(
+  config: Record<string, unknown>,
+  tokenUsageValue?: unknown,
+  checkpointCursorValue?: unknown,
+): DurableServiceTierSummary {
+  const resultUsage = recordValue(tokenUsageValue);
+  const checkpointUsage = recordValue(checkpointCursorValue);
+  const sourceUsage = resultUsage ?? checkpointUsage;
+  const source = resultUsage ? "result" : checkpointUsage ? "checkpoint" : "none";
+  const usageByTier = recordValue(sourceUsage?.effectiveServiceTierUsage) ?? {};
+  const countsByTier = recordValue(sourceUsage?.effectiveServiceTiers) ?? {};
+  const effective: DurableServiceTierSummary["effective"] = {};
+  const tierNames = new Set([...Object.keys(usageByTier), ...Object.keys(countsByTier)]);
+  for (const tier of tierNames) {
+    const usage = recordValue(usageByTier[tier]) ?? {};
+    effective[tier] = {
+      callCount: nonNegativeInteger(usage.callCount) || nonNegativeInteger(countsByTier[tier]),
+      promptTokens: nonNegativeInteger(usage.promptTokens),
+      cachedTokens: nonNegativeInteger(usage.cachedTokens),
+      completionTokens: nonNegativeInteger(usage.completionTokens),
+      totalTokens: nonNegativeInteger(usage.totalTokens),
+    };
+  }
+
+  const requested = normalizeOpenAIServiceTier(resultUsage?.requestedServiceTier)
+    ?? normalizeOpenAIServiceTier(config.serviceTier)
+    // Missing metadata identifies a pre-Flex-default game, whose request lane was auto.
+    ?? "auto";
+  const profileId = providerProfileId(config);
+  return {
+    requested,
+    providerProfileId: profileId,
+    applicable: profileId === "openai",
+    source,
+    effective,
+    fallbackObserved: profileId === "openai"
+      && requested === "flex"
+      && Object.entries(effective).some(([tier, usage]) => tier !== "flex" && usage.callCount > 0),
+    ...(typeof resultUsage?.costEstimateKind === "string" && {
+      costEstimateKind: resultUsage.costEstimateKind,
+    }),
+  };
 }
 
 function ownerIsExpiredAtInspection(owner: DurableRunOwnerRow): boolean {
@@ -537,6 +639,13 @@ export async function getDurableRunInspection(
         asc(schema.gameCheckpoints.createdAt),
       );
     const evidence = await getEvidenceSummary(tx, game.id);
+    const config = parseJsonRecord(game.config) ?? {};
+    const latestCheckpointCursor = checkpointRows.at(-1)?.tokenCostCursor;
+    const serviceTier = buildServiceTierAccountingSummary(
+      config,
+      parseJsonRecord(game.tokenUsage),
+      latestCheckpointCursor,
+    );
 
     const sealedNonfinal = completionSettlement.state === "pending"
       || completionSettlement.state === "repair_required";
@@ -652,6 +761,7 @@ export async function getDurableRunInspection(
           entries: checkpoints,
         },
         evidence: evidence.summary,
+        serviceTier,
         finaleIntegrity,
         diagnostics,
       },

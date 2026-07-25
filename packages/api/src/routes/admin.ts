@@ -26,7 +26,10 @@ import {
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import { generateInviteCode } from "../lib/invite-codes.js";
 import { getRedactedKernelHealthByGameId } from "../services/game-kernel-health.js";
-import { getDurableRunInspection } from "../services/game-durable-run.js";
+import {
+  buildServiceTierAccountingSummary,
+  getDurableRunInspection,
+} from "../services/game-durable-run.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import {
   backfillGameCostAccounting,
@@ -71,6 +74,15 @@ import {
   userEmailAccessProjection,
   userEmailProjection,
 } from "../services/user-email-policy.js";
+
+function parsePersistedJson(value: string | null | undefined): unknown {
+  if (!value) return undefined;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return undefined;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -743,6 +755,10 @@ export function createAdminRoutes(
         modelTier: config.modelTier ?? "budget",
         modelSelection: config.modelSelection,
         modelLabel: modelLabelFromConfig(config),
+        serviceTier: buildServiceTierAccountingSummary(
+          config,
+          parsePersistedJson(result[0]?.tokenUsage),
+        ),
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
         trackType: game.trackType,

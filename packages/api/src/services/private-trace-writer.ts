@@ -1,5 +1,9 @@
 import { createHash, randomUUID } from "crypto";
-import type { PrivateDecisionTrace, PrivateDecisionTraceBoundary } from "@influence/engine";
+import {
+  readEffectiveOpenAIServiceTier,
+  type PrivateDecisionTrace,
+  type PrivateDecisionTraceBoundary,
+} from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { assertPrivateContentStoragePointer, createEvidenceManifest, markEvidenceDegraded } from "./game-evidence.js";
 import {
@@ -59,6 +63,7 @@ export interface PrivateTraceManifestMetadata {
     catalogId?: string;
   };
   modelName: string;
+  effectiveServiceTier?: string;
   requestedReasoningEffort?: string;
   reasoningPolicy?: string;
   promptMessageCount: number;
@@ -115,6 +120,10 @@ function traceStorageKey(gameId: string, trace: PrivateDecisionTrace, now: Date)
 }
 
 function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt: string): PrivateTraceManifestMetadata {
+  const effectiveServiceTier = readEffectiveOpenAIServiceTier(
+    trace.model.providerProfileId,
+    trace.response.raw,
+  );
   return {
     formatVersion: 2,
     contentType: PRIVATE_TRACE_CONTENT_TYPE,
@@ -136,6 +145,7 @@ function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt
       ...(trace.model.catalogId && { catalogId: trace.model.catalogId }),
     },
     modelName: trace.model.name,
+    ...(effectiveServiceTier && { effectiveServiceTier }),
     ...(trace.requestedReasoningEffort && { requestedReasoningEffort: trace.requestedReasoningEffort }),
     ...(trace.reasoningPolicy && { reasoningPolicy: trace.reasoningPolicy }),
     promptMessageCount: trace.prompt.messages.length,

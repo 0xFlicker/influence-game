@@ -811,6 +811,38 @@ describe("checkpoint hydration passport validator", () => {
     expect(stampStatus(mismatched, "tokenCursor")).toBe("failed");
   });
 
+  test("malformed effective-tier usage blocks checkpoint hydration", () => {
+    const base = createCheckpointCapsule(createCanonicalEventFixture("token-tier-validation"));
+    const ownerEpoch = "owner-token-tier-validation";
+    const eventHeadHash = "sha256:token-tier-validation";
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
+    const total = positive.tokenCostCursor!.totals;
+
+    const result = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: positive.runtimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: base.projectionSummary,
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: positive.houseContinuityCapsule,
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: {
+        ...positive.tokenCostCursor!,
+        effectiveServiceTierUsage: {
+          flex: { ...total, promptTokens: Number.NaN, totalTokens: Number.NaN },
+        },
+      },
+    }));
+
+    expect(stampStatus(result, "tokenCursor")).toBe("malformed");
+    expect(result.passport.verdict).not.toBe("hydration_candidate");
+  });
+
   test("runtime snapshot must be present, v1, and well-formed", () => {
     const base = createCheckpointCapsule(createCanonicalEventFixture("runtime-validation"));
     const ownerEpoch = "owner-runtime";

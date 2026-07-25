@@ -182,7 +182,7 @@ Agent management tools requiring both `agents:read` and `agents:write`:
 
 Producer-only tools requiring `producer`:
 
-- `inspect_durable_run`: durable-run inspection summary and evidence counts.
+- `inspect_durable_run`: durable-run inspection summary, evidence counts, and safe aggregate service-tier accounting (requested tier, effective response-tier usage, and Flex fallback status). It does not expose per-action usage or raw provider responses.
 - `read_producer_game_analysis`: producer-only postgame analysis with derived vote cohorts, deterministic strategic-grade signals, private cognitive-artifact indexes, private trace-manifest indexes, and tuning diagnostics. It does not replace explicit raw trace reads.
 - `read_producer_match_narrative`: token-efficient grouped narrative for producers (default `strategic` + `compact`, **`schemaVersion: 2`** slot groups). Full product dialogue scopes (public/system/mingle/whisper/huddle under capture-safe rules) plus all player/juror thinking/strategy. Same unpaired-omission and correlation metrics as the owner tool. Optional `actions: [{seq,type}]` cite trusted canonical events for groups that already include authorized cognition — public dialogue alone never unlocks a producer-visible event reference. Citations are not board outcomes. No ownership required. Does **not** embed private-trace bodies, reasoning dumps, payloads, or source pointers. `games:read` alone does not grant this tool.
 - `list_trace_manifests`: private trace metadata for one game.

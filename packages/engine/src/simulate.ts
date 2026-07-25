@@ -109,6 +109,7 @@ import { DEFAULT_CONFIG, Phase, type GameConfig, type UUID } from "./types";
 import {
   TokenTracker,
   estimateCostAllModels,
+  sumTokenUsage,
   type TokenUsage,
   type CostEstimate,
 } from "./token-tracker";
@@ -532,6 +533,9 @@ export interface GameResult {
   tokenUsage: {
     perAgent: Record<string, TokenUsage>;
     total: TokenUsage;
+    requestedServiceTier: OpenAIServiceTier;
+    effectiveServiceTiers: Record<string, number>;
+    effectiveServiceTierUsage: Record<string, TokenUsage>;
   };
   instrumentation: GameInstrumentation;
 }
@@ -564,6 +568,9 @@ export interface AggregateStats {
   };
   tokenUsage: {
     total: TokenUsage;
+    requestedServiceTier: OpenAIServiceTier;
+    effectiveServiceTiers: Record<string, number>;
+    effectiveServiceTierUsage: Record<string, TokenUsage>;
     costEstimates: CostEstimate[];
   };
   instrumentation: BatchInstrumentation;
@@ -621,6 +628,8 @@ export function computeAggregateStats(
     callCount: 0,
     emptyResponses: 0,
   };
+  const effectiveServiceTiers: Record<string, number> = {};
+  const effectiveServiceTierUsage: Record<string, TokenUsage> = {};
 
   for (const result of completedResults) {
     // Track rounds
@@ -639,6 +648,13 @@ export function computeAggregateStats(
     batchTokens.totalTokens += result.tokenUsage.total.totalTokens;
     batchTokens.callCount += result.tokenUsage.total.callCount;
     batchTokens.emptyResponses += result.tokenUsage.total.emptyResponses;
+    for (const [tier, count] of Object.entries(result.tokenUsage.effectiveServiceTiers)) {
+      effectiveServiceTiers[tier] = (effectiveServiceTiers[tier] ?? 0) + count;
+    }
+    for (const [tier, usage] of Object.entries(result.tokenUsage.effectiveServiceTierUsage)) {
+      const existing = effectiveServiceTierUsage[tier];
+      effectiveServiceTierUsage[tier] = sumTokenUsage(existing ? [existing, usage] : [usage]);
+    }
 
     // Track per-persona stats
     for (const [name, persona] of Object.entries(result.playerPersonas)) {
@@ -688,7 +704,10 @@ export function computeAggregateStats(
     },
     tokenUsage: {
       total: batchTokens,
-      costEstimates: estimateCostAllModels(batchTokens),
+      requestedServiceTier: metadata.args.openAIServiceTier ?? "flex",
+      effectiveServiceTiers,
+      effectiveServiceTierUsage,
+      costEstimates: estimateCostAllModels(batchTokens, { effectiveServiceTierUsage }),
     },
     instrumentation: aggregateInstrumentation(completedResults.map((result) => result.instrumentation)),
   };
@@ -1007,6 +1026,10 @@ function renderMarkdownSummary(stats: AggregateStats, results: GameResult[]): st
     lines.push(`| Visible output tokens | ${(tu.completionTokens - tu.reasoningTokens).toLocaleString()} |`);
   }
   lines.push(`| Total tokens | ${tu.totalTokens.toLocaleString()} |`);
+  lines.push(`| Requested OpenAI service tier | ${stats.tokenUsage.requestedServiceTier} |`);
+  for (const [tier, usage] of Object.entries(stats.tokenUsage.effectiveServiceTierUsage)) {
+    lines.push(`| Effective ${tier} responses | ${usage.callCount.toLocaleString()} calls / ${usage.totalTokens.toLocaleString()} tokens |`);
+  }
   if (tu.emptyResponses > 0) {
     lines.push(`| Empty/fallback responses | ${tu.emptyResponses} (${((tu.emptyResponses / tu.callCount) * 100).toFixed(1)}%) |`);
   }
@@ -1526,6 +1549,9 @@ async function main() {
         tokenUsage: {
           perAgent: perAgentUsage,
           total: gameTotalUsage,
+          requestedServiceTier: args.openAIServiceTier,
+          effectiveServiceTiers: gameTracker.getEffectiveServiceTierCounts(),
+          effectiveServiceTierUsage: gameTracker.getEffectiveServiceTierUsage(),
         },
         instrumentation,
       };
@@ -1583,6 +1609,9 @@ async function main() {
         tokenUsage: {
           perAgent: perAgentUsage,
           total: gameTracker.getTotalUsage(),
+          requestedServiceTier: args.openAIServiceTier,
+          effectiveServiceTiers: gameTracker.getEffectiveServiceTierCounts(),
+          effectiveServiceTierUsage: gameTracker.getEffectiveServiceTierUsage(),
         },
         instrumentation,
       };

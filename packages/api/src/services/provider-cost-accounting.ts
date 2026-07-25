@@ -2,6 +2,11 @@ import { createHash, randomUUID } from "crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   estimateCostForKnownModel,
+  isValidTokenUsage,
+  normalizeGameModelSelection,
+  readEffectiveOpenAIServiceTier,
+  resolveModelSelection,
+  sumTokenUsage,
   type PrivateDecisionTrace,
   type TokenUsage,
 } from "@influence/engine";
@@ -9,7 +14,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
 const PRICING_SOURCE_ID = "engine.MODEL_PRICING";
-const RATE_CARD_VERSION = "2026-07-04";
+const RATE_CARD_VERSION = "2026-07-25-flex";
 
 const UNSAFE_KEY_PATTERN = /prompt|messages|response|content|tool|arguments|thinking|reasoning|key|secret|token/i;
 
@@ -260,7 +265,12 @@ function extractProviderNative(routerBilling: Record<string, unknown> | undefine
   return amount !== undefined && unit ? { unit, amount: String(amount) } : {};
 }
 
-function estimateMicrousd(usage: NonNullable<PrivateDecisionTrace["usage"]>, model: string): number | undefined {
+function estimateMicrousd(
+  usage: NonNullable<PrivateDecisionTrace["usage"]>,
+  model: string,
+  providerProfileId?: string,
+  effectiveServiceTier?: string,
+): number | undefined {
   const promptTokens = usage.promptTokens ?? 0;
   const cachedTokens = usage.cachedTokens ?? 0;
   const completionTokens = usage.completionTokens ?? 0;
@@ -276,8 +286,19 @@ function estimateMicrousd(usage: NonNullable<PrivateDecisionTrace["usage"]>, mod
     callCount: 1,
     emptyResponses: 0,
   };
-  const estimate = estimateCostForKnownModel(totalUsage, model);
+  const estimate = estimateCostForKnownModel(totalUsage, model, {
+    providerProfileId,
+    effectiveServiceTier,
+  });
   return estimate ? Math.max(0, Math.round(estimate.totalCost * 1_000_000)) : undefined;
+}
+
+function effectiveServiceTierFromTrace(trace: PrivateDecisionTrace): string | undefined {
+  return readEffectiveOpenAIServiceTier(trace.model.providerProfileId, trace.response.raw);
+}
+
+function effectiveServiceTierFromMetadata(metadata: Record<string, unknown> | undefined): string | undefined {
+  return safeString(metadata?.effectiveServiceTier, 40);
 }
 
 function usesTotalOnlyPricingFallback(usage: NonNullable<PrivateDecisionTrace["usage"]>): boolean {
@@ -391,6 +412,12 @@ function summaryFromEntries(entries: SpendRow[]): AdminGameCostSummary & { break
     }
     addBreakdown(breakdowns, "provider", entry.provider, entry);
     addBreakdown(breakdowns, "model", entry.modelName, entry);
+    addBreakdown(
+      breakdowns,
+      "serviceTier",
+      effectiveServiceTierFromMetadata(asRecord(entry.safeMetadata)),
+      entry,
+    );
     addBreakdown(breakdowns, "actorRole", entry.actorRole, entry);
     addBreakdown(breakdowns, "actor", entry.actorName ?? entry.actorId, entry);
     addBreakdown(breakdowns, "action", entry.action, entry);
@@ -498,8 +525,14 @@ export async function recordProviderSpendForTrace(
   const eventSequence = positiveInteger(input.eventSequence ?? input.trace.boundary?.finalEventSequence);
   const routerBilling = asRecord(usage.routerBilling);
   const actualCostMicrousd = extractRouterActualMicrousd(routerBilling);
+  const effectiveServiceTier = effectiveServiceTierFromTrace(input.trace);
   const estimatedCostMicrousd = actualCostMicrousd === undefined
-    ? estimateMicrousd(usage, input.trace.model.name)
+    ? estimateMicrousd(
+        usage,
+        input.trace.model.name,
+        input.trace.model.providerProfileId,
+        effectiveServiceTier,
+      )
     : undefined;
   const providerNative = extractProviderNative(routerBilling);
   const costSource: SpendInsert["costSource"] =
@@ -561,6 +594,7 @@ export async function recordProviderSpendForTrace(
       safeMetadata: sanitizeForAccounting({
         finishReason: input.trace.response.finishReason,
         hasTraceManifest: Boolean(input.traceManifestId),
+        ...(effectiveServiceTier && { effectiveServiceTier }),
       }) as Record<string, unknown>,
       observedAt: input.trace.createdAt || now.toISOString(),
       updatedAt: now.toISOString(),
@@ -603,8 +637,9 @@ async function repriceExistingCallLevelRows(
     };
     const routerBilling = asRecord(row.routerBilling);
     const actualCostMicrousd = extractRouterActualMicrousd(routerBilling);
+    const effectiveServiceTier = effectiveServiceTierFromMetadata(asRecord(row.safeMetadata));
     const estimatedCostMicrousd = actualCostMicrousd === undefined && row.modelName
-      ? estimateMicrousd(usage, row.modelName)
+      ? estimateMicrousd(usage, row.modelName, row.providerProfileId ?? undefined, effectiveServiceTier)
       : undefined;
     if (actualCostMicrousd === undefined && (!estimatedCostMicrousd || estimatedCostMicrousd <= 0)) continue;
     const providerNative = extractProviderNative(routerBilling);
@@ -658,6 +693,57 @@ function parseTokenUsageSnapshot(value: string): Record<string, unknown> | null 
   }
 }
 
+function tokenUsageFromRecord(record: Record<string, unknown>): TokenUsage {
+  const promptTokens = integerish(record.promptTokens) ?? 0;
+  const completionTokens = integerish(record.completionTokens) ?? 0;
+  return {
+    promptTokens,
+    cachedTokens: integerish(record.cachedTokens) ?? 0,
+    completionTokens,
+    reasoningTokens: integerish(record.reasoningTokens) ?? 0,
+    totalTokens: integerish(record.totalTokens) ?? (promptTokens + completionTokens),
+    callCount: integerish(record.callCount) ?? 0,
+    emptyResponses: integerish(record.emptyResponses) ?? 0,
+  };
+}
+
+function tierAwareTerminalEstimate(
+  snapshot: Record<string, unknown>,
+  gameConfig: Record<string, unknown> | undefined,
+): { estimateMicrousd?: number; hasTierUsage: boolean; validTierUsage: boolean } {
+  const rawTierUsage = asRecord(snapshot.effectiveServiceTierUsage);
+  if (rawTierUsage && !Object.values(rawTierUsage).every(isValidTokenUsage)) {
+    return { hasTierUsage: true, validTierUsage: false };
+  }
+  let resolvedModel: ReturnType<typeof resolveModelSelection>;
+  try {
+    resolvedModel = resolveModelSelection(
+      normalizeGameModelSelection(gameConfig?.modelSelection),
+      typeof gameConfig?.modelTier === "string" ? gameConfig.modelTier : undefined,
+    );
+  } catch {
+    return { hasTierUsage: Boolean(rawTierUsage), validTierUsage: true };
+  }
+  if (!rawTierUsage) return { hasTierUsage: false, validTierUsage: true };
+  const effectiveServiceTierUsage = rawTierUsage as Record<string, TokenUsage>;
+  const totalUsage = tokenUsageFromRecord(snapshot);
+  const classifiedUsage = sumTokenUsage(Object.values(effectiveServiceTierUsage));
+  if (Object.keys(totalUsage).some(
+    (key) => classifiedUsage[key as keyof TokenUsage] > totalUsage[key as keyof TokenUsage],
+  )) {
+    return { hasTierUsage: true, validTierUsage: false };
+  }
+  const estimate = estimateCostForKnownModel(totalUsage, resolvedModel.modelId, {
+    providerProfileId: resolvedModel.providerProfile.id,
+    effectiveServiceTierUsage,
+  });
+  return {
+    hasTierUsage: true,
+    validTierUsage: true,
+    ...(estimate && { estimateMicrousd: Math.max(0, Math.round(estimate.totalCost * 1_000_000)) }),
+  };
+}
+
 export async function backfillGameCostAccounting(
   db: DrizzleDB,
   gameId: string,
@@ -669,7 +755,6 @@ export async function backfillGameCostAccounting(
     const diagnostics: string[] = [];
     let inserted = 0;
     let skipped = 0;
-
     const manifests = await tx
       .select()
       .from(schema.gameEvidenceManifests)
@@ -705,6 +790,8 @@ export async function backfillGameCostAccounting(
         continue;
       }
       const model = asRecord(metadata?.model);
+      const providerProfileId = safeString(model?.providerProfileId);
+      const effectiveServiceTier = effectiveServiceTierFromMetadata(metadata);
       const actor = asRecord(metadata?.actor);
       const usageEnvelope: NonNullable<PrivateDecisionTrace["usage"]> = {
         promptTokens: integerish(usage.promptTokens) ?? 0,
@@ -721,7 +808,7 @@ export async function backfillGameCostAccounting(
       const actualCostMicrousd = extractRouterActualMicrousd(routerBilling);
       const modelName = safeString(metadata?.modelName) ?? safeString(model?.name);
       const estimatedCostMicrousd = actualCostMicrousd === undefined && modelName
-        ? estimateMicrousd(usageEnvelope, modelName)
+        ? estimateMicrousd(usageEnvelope, modelName, providerProfileId, effectiveServiceTier)
         : undefined;
       const providerNative = extractProviderNative(routerBilling);
       const costSource: SpendInsert["costSource"] =
@@ -753,7 +840,7 @@ export async function backfillGameCostAccounting(
           phase: safeString(metadata?.phase),
           round: integerish(metadata?.round),
           provider: safeString(model?.provider),
-          providerProfileId: safeString(model?.providerProfileId),
+          providerProfileId,
           catalogId: safeString(model?.catalogId),
           modelName,
           requestedReasoningEffort: safeString(metadata?.requestedReasoningEffort),
@@ -772,6 +859,9 @@ export async function backfillGameCostAccounting(
           pricedAt: estimatedCostMicrousd !== undefined ? manifest.createdAt : undefined,
           routerBilling: sanitizeForAccounting(routerBilling) as Record<string, unknown> | undefined,
           diagnostics: sanitizeForAccounting({ items: diagnosticItems }) as Record<string, unknown>,
+          safeMetadata: sanitizeForAccounting({
+            ...(effectiveServiceTier && { effectiveServiceTier }),
+          }) as Record<string, unknown>,
           observedAt: safeString(metadata?.createdAt) ?? manifest.createdAt,
         })
         .onConflictDoNothing()
@@ -799,8 +889,13 @@ export async function backfillGameCostAccounting(
       .limit(1);
 
     const result = (await tx
-      .select()
+      .select({
+        tokenUsage: schema.gameResults.tokenUsage,
+        finishedAt: schema.gameResults.finishedAt,
+        gameConfig: schema.games.config,
+      })
       .from(schema.gameResults)
+      .innerJoin(schema.games, eq(schema.games.id, schema.gameResults.gameId))
       .where(eq(schema.gameResults.gameId, gameId)))[0];
     if (result && callLevelRows.length > 0) {
       const removedTerminalRows = await tx
@@ -826,10 +921,26 @@ export async function backfillGameCostAccounting(
         const cachedTokens = integerish(snapshot.cachedTokens) ?? 0;
         const completionTokens = integerish(snapshot.completionTokens) ?? Math.max(0, totalTokens - promptTokens);
         const reasoningTokens = integerish(snapshot.reasoningTokens) ?? 0;
+        const gameConfig = parseTokenUsageSnapshot(result.gameConfig) ?? undefined;
+        const tierPricing = tierAwareTerminalEstimate(snapshot, gameConfig);
         const estimatedCostValue = finiteNumber(snapshot.estimatedCost);
-        const estimatedCostMicrousd = estimatedCostValue === undefined
+        const estimatedCostMicrousd = tierPricing.estimateMicrousd ?? (estimatedCostValue === undefined
           ? undefined
-          : Math.max(0, Math.round(estimatedCostValue * 1_000_000));
+          : Math.max(0, Math.round(estimatedCostValue * 1_000_000)));
+        const requestedServiceTier = safeString(snapshot.requestedServiceTier, 40);
+        const effectiveServiceTiers = asRecord(snapshot.effectiveServiceTiers);
+        const effectiveTierLabels = effectiveServiceTiers
+          ? Object.keys(effectiveServiceTiers).filter((tier) => (integerish(effectiveServiceTiers[tier]) ?? 0) > 0)
+          : [];
+        const effectiveServiceTier = effectiveTierLabels.length === 1
+          ? effectiveTierLabels[0]
+          : effectiveTierLabels.length > 1
+            ? "mixed"
+            : undefined;
+        const isTierAwareEstimate = tierPricing.validTierUsage
+          && (tierPricing.estimateMicrousd !== undefined
+            || (!tierPricing.hasTierUsage
+              && snapshot.costEstimateKind === "published_rate_estimate"));
         const rows = await tx.insert(schema.gameProviderSpendEntries)
           .values({
             id: randomUUID(),
@@ -845,11 +956,21 @@ export async function backfillGameCostAccounting(
             reasoningTokens,
             totalTokens,
             estimatedCostMicrousd,
-            pricingSourceId: estimatedCostMicrousd !== undefined ? "legacy.game_results.tokenUsage" : undefined,
-            rateCardVersion: estimatedCostMicrousd !== undefined ? "legacy" : undefined,
+            pricingSourceId: estimatedCostMicrousd !== undefined
+              ? isTierAwareEstimate ? PRICING_SOURCE_ID : "legacy.game_results.tokenUsage"
+              : undefined,
+            rateCardVersion: estimatedCostMicrousd !== undefined
+              ? isTierAwareEstimate ? RATE_CARD_VERSION : "legacy"
+              : undefined,
             pricedAt: result.finishedAt,
             diagnostics: sanitizeForAccounting({
               items: estimatedCostMicrousd === undefined ? ["terminal_result_cost_unavailable"] : ["terminal_result_aggregate"],
+            }) as Record<string, unknown>,
+            safeMetadata: sanitizeForAccounting({
+              ...(requestedServiceTier && { requestedServiceTier }),
+              ...(effectiveServiceTier && { effectiveServiceTier }),
+              ...(effectiveServiceTiers && { effectiveServiceTiers }),
+              estimateKind: isTierAwareEstimate ? "published_rate_estimate" : "legacy_aggregate_estimate",
             }) as Record<string, unknown>,
             observedAt: result.finishedAt,
           })

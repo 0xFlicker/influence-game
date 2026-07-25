@@ -336,6 +336,15 @@ export {
   estimateCost,
   estimateCostForKnownModel,
   estimateCostAllModels,
+  isTokenCostCursor,
+  isValidTokenUsage,
+  sumTokenUsage,
+  readEffectiveOpenAIServiceTier,
   MODEL_PRICING,
 } from "./token-tracker";
-export type { TokenUsage, ModelPricing, CostEstimate } from "./token-tracker";
+export type {
+  TokenUsage,
+  ModelPricing,
+  CostEstimate,
+  ServiceTierCostContext,
+} from "./token-tracker";

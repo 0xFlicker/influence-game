@@ -46,9 +46,83 @@ describe("effective service-tier accounting", () => {
 
     const cursor = tracker.toCursor();
     expect(cursor.effectiveServiceTiers).toEqual({ flex: 1, auto: 2 });
+    expect(cursor.effectiveServiceTierUsage).toMatchObject({
+      flex: { promptTokens: 100, completionTokens: 20, callCount: 1 },
+      auto: { promptTokens: 150, completionTokens: 20, callCount: 2 },
+    });
 
     const restored = new TokenTracker();
     restored.loadCursor(cursor);
     expect(restored.getEffectiveServiceTierCounts()).toEqual({ flex: 1, auto: 2 });
+    expect(restored.getEffectiveServiceTierUsage()).toEqual(cursor.effectiveServiceTierUsage!);
+  });
+
+  it("hydrates legacy count-only tier cursors without duplicate tracker state", () => {
+    const restored = new TokenTracker();
+    restored.loadCursor({
+      version: 1,
+      totals: usage,
+      perSource: { vote: usage },
+      effectiveServiceTiers: { flex: 1 },
+    });
+
+    expect(restored.getEffectiveServiceTierCounts()).toEqual({ flex: 1 });
+    expect(restored.getEffectiveServiceTierUsage()).toMatchObject({
+      flex: { callCount: 1, totalTokens: 0 },
+    });
+  });
+
+  it("rejects malformed effective-tier usage during cursor recovery", () => {
+    const restored = new TokenTracker();
+    expect(() => restored.loadCursor({
+      version: 1,
+      totals: usage,
+      perSource: { vote: usage },
+      effectiveServiceTiers: { flex: 1 },
+      effectiveServiceTierUsage: {
+        flex: { ...usage, promptTokens: Number.NaN, totalTokens: Number.NaN },
+      },
+    })).toThrow("Invalid token cost cursor");
+  });
+
+  it("prices mixed OpenAI Flex and auto responses by their effective tiers", () => {
+    const tracker = new TokenTracker();
+    tracker.record("vote", 1_000_000, 1_000_000, 0, 0, "flex");
+    tracker.record("mingle", 1_000_000, 1_000_000, 0, 0, "auto");
+
+    expect(estimateCostForKnownModel(
+      tracker.getTotalUsage(),
+      "gpt-5-nano",
+      {
+        providerProfileId: "openai",
+        effectiveServiceTierUsage: tracker.getEffectiveServiceTierUsage(),
+      },
+    )?.totalCost).toBeCloseTo(0.675, 10);
+  });
+
+  it("uses standard pricing when effective-tier buckets exceed total usage", () => {
+    expect(estimateCostForKnownModel(
+      usage,
+      "gpt-5-nano",
+      {
+        providerProfileId: "openai",
+        effectiveServiceTierUsage: {
+          flex: { ...usage, promptTokens: usage.promptTokens + 1, totalTokens: usage.totalTokens + 1 },
+        },
+      },
+    )?.totalCost).toBeCloseTo(0.00025, 10);
+  });
+
+  it("keeps standard provider pricing when the provider does not support Flex", () => {
+    expect(estimateCostForKnownModel(
+      usage,
+      "grok-4-3",
+      {
+        providerProfileId: "katana",
+        effectiveServiceTierUsage: {
+          flex: usage,
+        },
+      },
+    )?.totalCost).toBeCloseTo(0.00275, 10);
   });
 });

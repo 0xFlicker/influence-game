@@ -405,7 +405,12 @@ async function captureCompletedGame(
   );
   const model = resolvedModelSelection.modelId;
   const usage = params.tokenTracker.getTotalUsage();
-  const cost = estimateCostForKnownModel(usage, model);
+  const requestedServiceTier = normalizeOpenAIServiceTier(params.gameConfig.serviceTier) ?? "flex";
+  const effectiveServiceTierUsage = params.tokenTracker.getEffectiveServiceTierUsage();
+  const cost = estimateCostForKnownModel(usage, model, {
+    providerProfileId: resolvedModelSelection.providerProfile.id,
+    effectiveServiceTierUsage,
+  });
   await captureGameCompletionSettlement(db, {
     gameId: params.gameId,
     ownerEpoch: params.ownerEpoch,
@@ -423,7 +428,9 @@ async function captureCompletedGame(
     tokenUsage: {
       total: usage,
       perAction: params.tokenTracker.getAllUsage(),
+      requestedServiceTier,
       effectiveServiceTiers: params.tokenTracker.getEffectiveServiceTierCounts(),
+      effectiveServiceTierUsage,
     },
     resolvedModel: model,
     calculatedCost: cost,

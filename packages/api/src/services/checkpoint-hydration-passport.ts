@@ -12,6 +12,7 @@
  */
 
 import {
+  isTokenCostCursor,
   PHASE_BOUNDARY_ACCUMULATOR_IDS,
   type CheckpointBoundaryIdentityV1,
 } from "@influence/engine";
@@ -90,16 +91,6 @@ const REQUIRED_V1_STAMPS: PassportStampId[] = [
   "privacy",
 ];
 
-const TOKEN_USAGE_KEYS = [
-  "promptTokens",
-  "cachedTokens",
-  "completionTokens",
-  "reasoningTokens",
-  "totalTokens",
-  "callCount",
-  "emptyResponses",
-] as const;
-
 const ACCUMULATOR_STATUSES = new Set([
   "empty",
   "drained",
@@ -135,18 +126,6 @@ const FORBIDDEN_PRIVACY_KEYS = new Set([
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function isTokenUsage(value: unknown): boolean {
-  return isRecord(value) && TOKEN_USAGE_KEYS.every((key) => typeof value[key] === "number");
-}
-
-function isTokenCursor(value: unknown): boolean {
-  return isRecord(value) &&
-    value.version === 1 &&
-    isTokenUsage(value.totals) &&
-    isRecord(value.perSource) &&
-    Object.values(value.perSource).every(isTokenUsage);
 }
 
 function isBoundaryReceipt(value: unknown, expectedSequence: number, expectedHash: string): boolean {
@@ -623,7 +602,7 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     addStamp("transcriptCursor", transcriptResult.status, transcriptResult.reason);
   }
 
-  if (isTokenCursor(input.tokenCostCursor)) {
+  if (isTokenCostCursor(input.tokenCostCursor)) {
     const tokenBoundary = parseBoundaryIdentity(
       isRecord(input.tokenCostCursor) ? (input.tokenCostCursor as Record<string, unknown>).boundary : null,
     );

@@ -49,6 +49,9 @@ function gameResult(overrides: Partial<GameResult>): GameResult {
     tokenUsage: {
       perAgent: {},
       total: ZERO_USAGE,
+      requestedServiceTier: "flex",
+      effectiveServiceTiers: {},
+      effectiveServiceTierUsage: {},
     },
     instrumentation: instrumentGame([], {}, {}),
     ...overrides,

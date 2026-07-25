@@ -856,6 +856,43 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("GET /api/games/:id", () => {
+    test("keeps service-tier accounting out of the public game response", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      await db.insert(schema.gameResults).values({
+        id: randomUUID(),
+        gameId: id,
+        winnerId: null,
+        roundsPlayed: 1,
+        tokenUsage: JSON.stringify({
+          promptTokens: 100,
+          completionTokens: 20,
+          totalTokens: 120,
+          estimatedCost: 0.00003,
+          requestedServiceTier: "flex",
+          effectiveServiceTiers: { flex: 1, auto: 1 },
+          effectiveServiceTierUsage: {
+            flex: { callCount: 1, totalTokens: 80 },
+            auto: { callCount: 1, totalTokens: 40 },
+          },
+          perAction: { "atlas:vote": { privateNote: "PRIVATE_USAGE_SENTINEL" } },
+        }),
+        finishedAt: "2026-07-25T12:00:00.000Z",
+      });
+
+      const res = await app.request(`/api/games/${id}`);
+      const body = await res.json() as Record<string, unknown>;
+
+      expect(res.status).toBe(200);
+      expect(body.tokenUsage).toEqual({
+        promptTokens: 100,
+        completionTokens: 20,
+        totalTokens: 120,
+        estimatedCost: 0.00003,
+      });
+      expect(JSON.stringify(body)).not.toContain("serviceTier");
+      expect(JSON.stringify(body)).not.toContain("PRIVATE_USAGE_SENTINEL");
+    });
+
     test("returns game details with players", async () => {
       const { id } = await createTestGame(app, adminToken, {
         modelSelection: {

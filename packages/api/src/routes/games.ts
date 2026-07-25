@@ -104,6 +104,31 @@ function publicErrorInfo(
   return typeof config.errorInfo === "string" ? config.errorInfo : undefined;
 }
 
+function publicTokenUsage(value: string | null | undefined): Record<string, number | null> | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const safe: Record<string, number | null> = {};
+    for (const key of [
+      "promptTokens",
+      "cachedTokens",
+      "completionTokens",
+      "reasoningTokens",
+      "totalTokens",
+      "callCount",
+      "emptyResponses",
+      "estimatedCost",
+    ]) {
+      const entry = parsed[key];
+      if (typeof entry === "number" && Number.isFinite(entry)) safe[key] = entry;
+      if (entry === null && key === "estimatedCost") safe[key] = null;
+    }
+    return safe;
+  } catch {
+    return undefined;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Factory — creates a Hono sub-app with injected DB
 // ---------------------------------------------------------------------------
@@ -393,7 +418,7 @@ export function createGameRoutes(
       rated: Boolean(game.seasonId),
       competitionReceipts: competition?.receipts ?? [],
       winner: watchState.winner?.name,
-      tokenUsage: result[0]?.tokenUsage ? JSON.parse(result[0].tokenUsage) : undefined,
+      tokenUsage: publicTokenUsage(result[0]?.tokenUsage),
       errorInfo: publicErrorInfo(game.status, config, completionSettlementState),
       kernelHealth: await getRedactedKernelHealth(db, game.id),
       watchState,

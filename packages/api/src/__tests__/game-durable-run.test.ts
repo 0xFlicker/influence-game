@@ -8,6 +8,7 @@ import { writeGameCheckpoint } from "../services/game-checkpoints.js";
 import { createEvidenceManifest } from "../services/game-evidence.js";
 import {
   buildFinaleIntegrity,
+  buildServiceTierAccountingSummary,
   getDurableRunInspection,
 } from "../services/game-durable-run.js";
 import { getPersistedGameProjectionBeforeTerminalOutcome } from "../services/game-projection-read-model.js";
@@ -90,6 +91,111 @@ describe("buildFinaleIntegrity", () => {
   });
 });
 
+describe("buildServiceTierAccountingSummary", () => {
+  test("surfaces mixed effective usage and Flex fallback without raw call detail", () => {
+    const summary = buildServiceTierAccountingSummary(
+      {
+        serviceTier: "flex",
+        modelSelection: { catalogId: "openai:gpt-5-nano" },
+      },
+      {
+        costEstimateKind: "published_rate_estimate",
+        effectiveServiceTiers: { flex: 2, auto: 1 },
+        effectiveServiceTierUsage: {
+          flex: {
+            promptTokens: 100,
+            cachedTokens: 10,
+            completionTokens: 20,
+            reasoningTokens: 5,
+            totalTokens: 120,
+            callCount: 2,
+            emptyResponses: 0,
+          },
+          auto: {
+            promptTokens: 50,
+            cachedTokens: 0,
+            completionTokens: 10,
+            reasoningTokens: 0,
+            totalTokens: 60,
+            callCount: 1,
+            emptyResponses: 0,
+          },
+        },
+      },
+    );
+
+    expect(summary).toEqual({
+      requested: "flex",
+      providerProfileId: "openai",
+      applicable: true,
+      source: "result",
+      effective: {
+        flex: {
+          callCount: 2,
+          promptTokens: 100,
+          cachedTokens: 10,
+          completionTokens: 20,
+          totalTokens: 120,
+        },
+        auto: {
+          callCount: 1,
+          promptTokens: 50,
+          cachedTokens: 0,
+          completionTokens: 10,
+          totalTokens: 60,
+        },
+      },
+      fallbackObserved: true,
+      costEstimateKind: "published_rate_estimate",
+    });
+  });
+
+  test("marks a non-OpenAI provider as inapplicable even if metadata claims Flex", () => {
+    expect(buildServiceTierAccountingSummary(
+      {
+        serviceTier: "flex",
+        modelSelection: { catalogId: "katana:grok-4-3" },
+      },
+      {
+        effectiveServiceTiers: { flex: 1 },
+      },
+    )).toMatchObject({
+      requested: "flex",
+      providerProfileId: "katana",
+      applicable: false,
+      fallbackObserved: false,
+    });
+  });
+
+  test("resolves legacy OpenAI configs and prefers the captured requested tier", () => {
+    expect(buildServiceTierAccountingSummary(
+      {
+        serviceTier: "flex",
+        modelTier: "budget",
+      },
+      {
+        requestedServiceTier: "auto",
+      },
+    )).toMatchObject({
+      requested: "auto",
+      providerProfileId: "openai",
+      applicable: true,
+      source: "result",
+      fallbackObserved: false,
+    });
+  });
+
+  test("reports the historical auto lane when legacy metadata has no requested tier", () => {
+    expect(buildServiceTierAccountingSummary({ modelTier: "budget" })).toMatchObject({
+      requested: "auto",
+      providerProfileId: "openai",
+      applicable: true,
+      source: "none",
+      fallbackObserved: false,
+    });
+  });
+});
+
 async function waitForCompletedDurableInspection(db: DrizzleDB, gameId: string) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const result = await getDurableRunInspection(db, gameId);
@@ -106,6 +212,76 @@ async function waitForCompletedDurableInspection(db: DrizzleDB, gameId: string) 
 }
 
 describe("durable run inspection read model", () => {
+  test("exposes requested and mixed effective tiers without exposing per-action usage", async () => {
+    const gameId = await insertGame(db, {
+      config: {
+        serviceTier: "flex",
+        modelSelection: { catalogId: "openai:gpt-5-nano" },
+      },
+    });
+    await db.insert(schema.gameResults).values({
+      id: randomUUID(),
+      gameId,
+      winnerId: null,
+      roundsPlayed: 1,
+      tokenUsage: JSON.stringify({
+        promptTokens: 150,
+        completionTokens: 30,
+        totalTokens: 180,
+        estimatedCost: 0.00005,
+        costEstimateKind: "published_rate_estimate",
+        requestedServiceTier: "flex",
+        effectiveServiceTiers: { flex: 2, auto: 1 },
+        effectiveServiceTierUsage: {
+          flex: {
+            promptTokens: 100,
+            cachedTokens: 0,
+            completionTokens: 20,
+            reasoningTokens: 0,
+            totalTokens: 120,
+            callCount: 2,
+            emptyResponses: 0,
+          },
+          auto: {
+            promptTokens: 50,
+            cachedTokens: 0,
+            completionTokens: 10,
+            reasoningTokens: 0,
+            totalTokens: 60,
+            callCount: 1,
+            emptyResponses: 0,
+          },
+        },
+        perAction: {
+          "atlas:vote": {
+            promptTokens: 150,
+            completionTokens: 30,
+            privateNote: "PRIVATE_USAGE_SENTINEL",
+          },
+        },
+      }),
+      finishedAt: "2026-07-25T12:00:00.000Z",
+    });
+
+    const result = await getDurableRunInspection(db, gameId);
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error);
+    expect(result.response.serviceTier).toMatchObject({
+      requested: "flex",
+      providerProfileId: "openai",
+      applicable: true,
+      source: "result",
+      fallbackObserved: true,
+      effective: {
+        flex: { callCount: 2, totalTokens: 120 },
+        auto: { callCount: 1, totalTokens: 60 },
+      },
+    });
+    expect(JSON.stringify(result.response)).not.toContain("PRIVATE_USAGE_SENTINEL");
+    expect(JSON.stringify(result.response)).not.toContain("perAction");
+  });
+
   test("replays the trusted pre-jury prefix while terminal settlement is non-final", () => {
     const gameId = "sealed-game";
     const initialEvents = createCanonicalEventFixture(gameId);

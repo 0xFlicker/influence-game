@@ -49,6 +49,15 @@ export interface CostEstimate {
   totalCost: number;
 }
 
+export interface ServiceTierCostContext {
+  /** Only hosted OpenAI supports Flex pricing. */
+  providerProfileId?: string;
+  /** Provider-returned usage buckets. Missing or non-Flex buckets use standard pricing. */
+  effectiveServiceTierUsage?: Record<string, TokenUsage>;
+  /** Convenience for pricing one provider response. */
+  effectiveServiceTier?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Pricing table (published provider pricing)
 // ---------------------------------------------------------------------------
@@ -117,19 +126,112 @@ function pricingForUsage(pricing: ModelPricing, totalTokens: number): ModelPrici
   return tier ?? pricing;
 }
 
-export function estimateCostForKnownModel(usage: TokenUsage, model: string): CostEstimate | null {
+const OPENAI_FLEX_RATE_MULTIPLIER = 0.5;
+
+function scaleCost(estimate: CostEstimate, multiplier: number): CostEstimate {
+  return {
+    ...estimate,
+    inputCost: estimate.inputCost * multiplier,
+    outputCost: estimate.outputCost * multiplier,
+    totalCost: estimate.totalCost * multiplier,
+  };
+}
+
+function estimateCostForServiceTier(
+  usage: TokenUsage,
+  pricing: ModelPricing,
+  serviceTier: string | undefined,
+  providerProfileId: string | undefined,
+): CostEstimate {
+  const estimate = estimateCost(usage, pricing);
+  // OpenAI documents Flex tokens at Batch API rates (50% of standard for
+  // the supported text models in this engine). Never discount compatible providers.
+  return providerProfileId === "openai" && serviceTier === "flex"
+    ? scaleCost(estimate, OPENAI_FLEX_RATE_MULTIPLIER)
+    : estimate;
+}
+
+function subtractUsage(total: TokenUsage, used: TokenUsage): TokenUsage {
+  return {
+    promptTokens: Math.max(0, total.promptTokens - used.promptTokens),
+    cachedTokens: Math.max(0, total.cachedTokens - used.cachedTokens),
+    completionTokens: Math.max(0, total.completionTokens - used.completionTokens),
+    reasoningTokens: Math.max(0, total.reasoningTokens - used.reasoningTokens),
+    totalTokens: Math.max(0, total.totalTokens - used.totalTokens),
+    callCount: Math.max(0, total.callCount - used.callCount),
+    emptyResponses: Math.max(0, total.emptyResponses - used.emptyResponses),
+  };
+}
+
+function addCost(left: CostEstimate, right: CostEstimate): CostEstimate {
+  return {
+    model: left.model,
+    inputCost: left.inputCost + right.inputCost,
+    outputCost: left.outputCost + right.outputCost,
+    totalCost: left.totalCost + right.totalCost,
+  };
+}
+
+export function estimateCostForKnownModel(
+  usage: TokenUsage,
+  model: string,
+  context: ServiceTierCostContext = {},
+): CostEstimate | null {
   const pricing = MODEL_PRICING[model];
-  return pricing ? { ...estimateCost(usage, pricing), model } : null;
+  if (!pricing) return null;
+
+  if (context.effectiveServiceTier) {
+    return {
+      ...estimateCostForServiceTier(
+        usage,
+        pricing,
+        context.effectiveServiceTier,
+        context.providerProfileId,
+      ),
+      model,
+    };
+  }
+
+  const tierUsage = context.effectiveServiceTierUsage;
+  if (context.providerProfileId !== "openai" || !tierUsage || Object.keys(tierUsage).length === 0) {
+    return { ...estimateCost(usage, pricing), model };
+  }
+  const classifiedUsage = sumTokenUsage(Object.values(tierUsage));
+  if (Object.keys(usage).some(
+    (key) => classifiedUsage[key as keyof TokenUsage] > usage[key as keyof TokenUsage],
+  )) {
+    return { ...estimateCost(usage, pricing), model };
+  }
+
+  let remainingUsage = { ...usage };
+  let total: CostEstimate = { model, inputCost: 0, outputCost: 0, totalCost: 0 };
+  for (const [serviceTier, bucket] of Object.entries(tierUsage)) {
+    total = addCost(total, {
+      ...estimateCostForServiceTier(bucket, pricing, serviceTier, context.providerProfileId),
+      model,
+    });
+    remainingUsage = subtractUsage(remainingUsage, bucket);
+  }
+
+  // Unclassified response usage is intentionally priced at the standard rate.
+  return addCost(total, { ...estimateCost(remainingUsage, pricing), model });
 }
 
 /**
  * Estimate costs for the given usage across ALL known model tiers.
  */
-export function estimateCostAllModels(usage: TokenUsage): CostEstimate[] {
-  return Object.entries(MODEL_PRICING).map(([model, pricing]) => ({
-    ...estimateCost(usage, pricing),
+export function estimateCostAllModels(
+  usage: TokenUsage,
+  context: Pick<ServiceTierCostContext, "effectiveServiceTierUsage"> = {},
+): CostEstimate[] {
+  return Object.keys(MODEL_PRICING).map((model) => estimateCostForKnownModel(
+    usage,
     model,
-  }));
+    {
+      providerProfileId: model.startsWith("grok-") ? "katana" : "openai",
+      effectiveServiceTierUsage: context.effectiveServiceTierUsage,
+    },
+  )!);
 }
 
 // ---------------------------------------------------------------------------
@@ -146,10 +248,59 @@ const EMPTY_USAGE: TokenUsage = {
   emptyResponses: 0,
 };
 
+export function sumTokenUsage(usages: Iterable<TokenUsage>): TokenUsage {
+  const total = { ...EMPTY_USAGE };
+  for (const usage of usages) {
+    total.promptTokens += usage.promptTokens;
+    total.cachedTokens += usage.cachedTokens;
+    total.completionTokens += usage.completionTokens;
+    total.reasoningTokens += usage.reasoningTokens;
+    total.totalTokens += usage.totalTokens;
+    total.callCount += usage.callCount;
+    total.emptyResponses += usage.emptyResponses;
+  }
+  return total;
+}
+
+export function isValidTokenUsage(value: unknown): value is TokenUsage {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const usage = value as Record<keyof TokenUsage, unknown>;
+  const countKeys: Array<keyof TokenUsage> = [
+    "promptTokens",
+    "cachedTokens",
+    "completionTokens",
+    "reasoningTokens",
+    "totalTokens",
+    "callCount",
+    "emptyResponses",
+  ];
+  if (!countKeys.every((key) =>
+    typeof usage[key] === "number"
+    && Number.isFinite(usage[key])
+    && Number.isInteger(usage[key])
+    && usage[key] >= 0
+  )) {
+    return false;
+  }
+  const typedUsage = usage as unknown as TokenUsage;
+  return typedUsage.cachedTokens <= typedUsage.promptTokens
+    && typedUsage.totalTokens === typedUsage.promptTokens + typedUsage.completionTokens;
+}
+
+export function readEffectiveOpenAIServiceTier(
+  providerProfileId: string | undefined,
+  response: unknown,
+): string | undefined {
+  if (providerProfileId !== "openai" || !response || typeof response !== "object" || Array.isArray(response)) {
+    return undefined;
+  }
+  const value = (response as Record<string, unknown>).service_tier;
+  return typeof value === "string" && value.trim() ? value : undefined;
+}
+
 export class TokenTracker {
   private readonly perSource: Map<string, TokenUsage> = new Map();
-  /** Server-reported service_tier values from successful OpenAI responses. */
-  private readonly effectiveServiceTiers: Map<string, number> = new Map();
+  private readonly effectiveServiceTierUsage: Map<string, TokenUsage> = new Map();
 
   /** Record a single LLM call's usage. */
   record(
@@ -169,10 +320,14 @@ export class TokenTracker {
     existing.callCount += 1;
     this.perSource.set(source, existing);
     if (effectiveServiceTier) {
-      this.effectiveServiceTiers.set(
-        effectiveServiceTier,
-        (this.effectiveServiceTiers.get(effectiveServiceTier) ?? 0) + 1,
-      );
+      const tierUsage = this.effectiveServiceTierUsage.get(effectiveServiceTier) ?? { ...EMPTY_USAGE };
+      tierUsage.promptTokens += promptTokens;
+      tierUsage.cachedTokens += cachedTokens;
+      tierUsage.completionTokens += completionTokens;
+      tierUsage.reasoningTokens += reasoningTokens;
+      tierUsage.totalTokens += promptTokens + completionTokens;
+      tierUsage.callCount += 1;
+      this.effectiveServiceTierUsage.set(effectiveServiceTier, tierUsage);
     }
   }
 
@@ -190,17 +345,7 @@ export class TokenTracker {
 
   /** Get aggregated usage across all sources. */
   getTotalUsage(): TokenUsage {
-    const total: TokenUsage = { ...EMPTY_USAGE };
-    for (const usage of this.perSource.values()) {
-      total.promptTokens += usage.promptTokens;
-      total.cachedTokens += usage.cachedTokens;
-      total.completionTokens += usage.completionTokens;
-      total.reasoningTokens += usage.reasoningTokens;
-      total.totalTokens += usage.totalTokens;
-      total.callCount += usage.callCount;
-      total.emptyResponses += usage.emptyResponses;
-    }
-    return total;
+    return sumTokenUsage(this.perSource.values());
   }
 
   /** Get all per-source usage as a plain object. */
@@ -214,35 +359,51 @@ export class TokenTracker {
 
   /** Counts the actual tiers reported by the provider, rather than the requested tier. */
   getEffectiveServiceTierCounts(): Record<string, number> {
-    return Object.fromEntries(this.effectiveServiceTiers);
+    return Object.fromEntries(
+      [...this.effectiveServiceTierUsage].map(([tier, usage]) => [tier, usage.callCount]),
+    );
+  }
+
+  /** Token usage grouped by the actual tier returned on each successful response. */
+  getEffectiveServiceTierUsage(): Record<string, TokenUsage> {
+    return Object.fromEntries(
+      [...this.effectiveServiceTierUsage].map(([tier, usage]) => [tier, { ...usage }]),
+    );
   }
 
   /** Merge another tracker's data into this one. */
   merge(other: TokenTracker): void {
     for (const [source, usage] of other.perSource) {
-      const existing = this.perSource.get(source) ?? { ...EMPTY_USAGE };
-      existing.promptTokens += usage.promptTokens;
-      existing.cachedTokens += usage.cachedTokens;
-      existing.completionTokens += usage.completionTokens;
-      existing.reasoningTokens += usage.reasoningTokens;
-      existing.totalTokens += usage.totalTokens;
-      existing.callCount += usage.callCount;
-      existing.emptyResponses += usage.emptyResponses;
-      this.perSource.set(source, existing);
+      this.perSource.set(source, sumTokenUsage([this.perSource.get(source) ?? EMPTY_USAGE, usage]));
     }
-    for (const [tier, count] of other.effectiveServiceTiers) {
-      this.effectiveServiceTiers.set(tier, (this.effectiveServiceTiers.get(tier) ?? 0) + count);
+    for (const [tier, usage] of other.effectiveServiceTierUsage) {
+      this.effectiveServiceTierUsage.set(
+        tier,
+        sumTokenUsage([this.effectiveServiceTierUsage.get(tier) ?? EMPTY_USAGE, usage]),
+      );
     }
   }
 
   loadCursor(cursor: TokenCostCursor): void {
+    if (!isTokenCostCursor(cursor)) {
+      throw new Error("Invalid token cost cursor");
+    }
     this.perSource.clear();
-    this.effectiveServiceTiers.clear();
+    this.effectiveServiceTierUsage.clear();
     for (const [source, usage] of Object.entries(cursor.perSource)) {
       this.perSource.set(source, { ...EMPTY_USAGE, ...usage });
     }
+    for (const [tier, usage] of Object.entries(cursor.effectiveServiceTierUsage ?? {})) {
+      this.effectiveServiceTierUsage.set(tier, { ...EMPTY_USAGE, ...usage });
+    }
     for (const [tier, count] of Object.entries(cursor.effectiveServiceTiers ?? {})) {
-      if (Number.isInteger(count) && count >= 0) this.effectiveServiceTiers.set(tier, count);
+      if (
+        !this.effectiveServiceTierUsage.has(tier)
+        && Number.isInteger(count)
+        && count >= 0
+      ) {
+        this.effectiveServiceTierUsage.set(tier, { ...EMPTY_USAGE, callCount: count });
+      }
     }
   }
 }
@@ -264,6 +425,7 @@ export interface TokenCostCursor {
   totals: TokenUsage;
   perSource: Record<string, TokenUsage>;
   effectiveServiceTiers?: Record<string, number>;
+  effectiveServiceTierUsage?: Record<string, TokenUsage>;
   boundary?: TokenCostCursorBoundary;
 }
 
@@ -272,11 +434,51 @@ export interface TokenTracker {
   loadCursor(cursor: TokenCostCursor): void;
 }
 
+export function isTokenCostCursor(value: unknown): value is TokenCostCursor {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const cursor = value as Record<string, unknown>;
+  if (cursor.version !== 1 || !isValidTokenUsage(cursor.totals)) return false;
+  if (!cursor.perSource || typeof cursor.perSource !== "object" || Array.isArray(cursor.perSource)) return false;
+  if (!Object.values(cursor.perSource).every(isValidTokenUsage)) return false;
+
+  const tierUsageValue = cursor.effectiveServiceTierUsage;
+  if (tierUsageValue !== undefined) {
+    if (!tierUsageValue || typeof tierUsageValue !== "object" || Array.isArray(tierUsageValue)) return false;
+    if (!Object.values(tierUsageValue).every(isValidTokenUsage)) return false;
+    const classified = sumTokenUsage(Object.values(tierUsageValue));
+    const totals = cursor.totals as TokenUsage;
+    if (Object.keys(totals).some(
+      (key) => classified[key as keyof TokenUsage] > totals[key as keyof TokenUsage],
+    )) {
+      return false;
+    }
+  }
+
+  const tierCountsValue = cursor.effectiveServiceTiers;
+  if (tierCountsValue !== undefined) {
+    if (!tierCountsValue || typeof tierCountsValue !== "object" || Array.isArray(tierCountsValue)) return false;
+    if (!Object.values(tierCountsValue).every(
+      (count) => typeof count === "number" && Number.isInteger(count) && count >= 0,
+    )) {
+      return false;
+    }
+    if (tierUsageValue && Object.entries(tierUsageValue).some(
+      ([tier, usage]) =>
+        (tierCountsValue as Record<string, number>)[tier] !== undefined
+        && (tierCountsValue as Record<string, number>)[tier] !== (usage as TokenUsage).callCount,
+    )) {
+      return false;
+    }
+  }
+  return true;
+}
+
 TokenTracker.prototype.toCursor = function (this: TokenTracker): TokenCostCursor {
   return {
     version: 1,
     totals: this.getTotalUsage(),
     perSource: this.getAllUsage(),
     effectiveServiceTiers: this.getEffectiveServiceTierCounts(),
+    effectiveServiceTierUsage: this.getEffectiveServiceTierUsage(),
   };
 };

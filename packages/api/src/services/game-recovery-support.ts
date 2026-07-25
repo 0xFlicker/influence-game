@@ -1,6 +1,7 @@
 import {
   buildMingleInboxReplayFromTranscript,
   GameState,
+  isTokenCostCursor,
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES,
   type CanonicalGameEvent,
   type CurrentAccusationsAccumulatorV1,
@@ -52,8 +53,7 @@ function readTranscriptReplay(value: unknown): TranscriptEntry[] | null {
 }
 
 function readTokenCostCursor(value: unknown): TokenCostCursor | null {
-  if (!isRecord(value) || value.version !== 1 || !isRecord(value.perSource)) return null;
-  return value as unknown as TokenCostCursor;
+  return isTokenCostCursor(value) ? value : null;
 }
 
 function hasBlockedMingleInbox(runtimeSnapshot: RuntimeSnapshotV1): boolean {

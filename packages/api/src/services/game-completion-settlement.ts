@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
-import { Phase } from "@influence/engine";
+import { Phase, sumTokenUsage } from "@influence/engine";
 import type { CostEstimate, TokenUsage, TranscriptEntry } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -74,8 +74,12 @@ export interface GameCompletionTerminalResultV1 {
 export interface GameCompletionTokenUsageV1 {
   total: TokenUsage;
   perAction: Record<string, TokenUsage>;
+  /** Requested hosted OpenAI tier. It is inert for non-OpenAI providers. */
+  requestedServiceTier?: "flex" | "auto";
   /** Actual tiers returned by OpenAI, including Flex-to-auto fallbacks. */
   effectiveServiceTiers?: Record<string, number>;
+  /** Token usage priced under each actual provider-returned tier. */
+  effectiveServiceTierUsage?: Record<string, TokenUsage>;
 }
 
 export interface GameCompletionEnvelopeV1 {
@@ -1029,10 +1033,14 @@ export async function settleCapturedGameCompletion(
           completionTokens: envelope.tokenUsage.total.completionTokens,
           reasoningTokens: envelope.tokenUsage.total.reasoningTokens,
           totalTokens: envelope.tokenUsage.total.totalTokens,
+          callCount: envelope.tokenUsage.total.callCount,
           emptyResponses: envelope.tokenUsage.total.emptyResponses,
           estimatedCost: envelope.model.calculatedCost?.totalCost ?? null,
+          costEstimateKind: envelope.model.calculatedCost ? "published_rate_estimate" : "unavailable",
           perAction: envelope.tokenUsage.perAction,
+          ...(envelope.tokenUsage.requestedServiceTier && { requestedServiceTier: envelope.tokenUsage.requestedServiceTier }),
           ...(envelope.tokenUsage.effectiveServiceTiers && { effectiveServiceTiers: envelope.tokenUsage.effectiveServiceTiers }),
+          ...(envelope.tokenUsage.effectiveServiceTierUsage && { effectiveServiceTierUsage: envelope.tokenUsage.effectiveServiceTierUsage }),
         }),
         finishedAt: envelope.finishedAt,
       });
@@ -1665,11 +1673,13 @@ function assertModernTranscriptFields(
 
 function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
   const record = assertRecord(value, "Invalid completion token usage");
+  const keys = ["total", "perAction"];
+  if (record.requestedServiceTier !== undefined) keys.push("requestedServiceTier");
+  if (record.effectiveServiceTiers !== undefined) keys.push("effectiveServiceTiers");
+  if (record.effectiveServiceTierUsage !== undefined) keys.push("effectiveServiceTierUsage");
   assertExactKeys(
     record,
-    record.effectiveServiceTiers === undefined
-      ? ["total", "perAction"]
-      : ["total", "perAction", "effectiveServiceTiers"],
+    keys,
     "completion token usage",
   );
   const total = assertTokenUsage(record.total);
@@ -1681,15 +1691,7 @@ function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
     ]),
   );
 
-  const summed = Object.values(perAction).reduce<TokenUsage>((accumulator, usage) => ({
-    promptTokens: accumulator.promptTokens + usage.promptTokens,
-    cachedTokens: accumulator.cachedTokens + usage.cachedTokens,
-    completionTokens: accumulator.completionTokens + usage.completionTokens,
-    reasoningTokens: accumulator.reasoningTokens + usage.reasoningTokens,
-    totalTokens: accumulator.totalTokens + usage.totalTokens,
-    callCount: accumulator.callCount + usage.callCount,
-    emptyResponses: accumulator.emptyResponses + usage.emptyResponses,
-  }), emptyTokenUsage());
+  const summed = sumTokenUsage(Object.values(perAction));
   if (Object.keys(total).some((key) => total[key as keyof TokenUsage] !== summed[key as keyof TokenUsage])) {
     throw new Error("Completion per-action token usage does not sum to total usage");
   }
@@ -1700,7 +1702,40 @@ function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
         assertText(tier, "Invalid effective service tier"),
         assertInteger(count, "Invalid effective service tier count", 0),
       ]));
-  return { total, perAction, ...(effectiveServiceTiers && { effectiveServiceTiers }) };
+  const requestedServiceTier = record.requestedServiceTier === undefined
+    ? undefined
+    : assertText(record.requestedServiceTier, "Invalid requested service tier");
+  if (requestedServiceTier !== undefined && requestedServiceTier !== "flex" && requestedServiceTier !== "auto") {
+    throw new Error("Invalid requested service tier");
+  }
+  const effectiveServiceTierUsage = record.effectiveServiceTierUsage === undefined
+    ? undefined
+    : Object.fromEntries(
+        Object.entries(assertRecord(record.effectiveServiceTierUsage, "Invalid effective service tier usage"))
+          .map(([tier, usage]) => [
+            assertText(tier, "Invalid effective service tier usage key"),
+            assertTokenUsage(usage),
+          ]),
+      );
+  if (effectiveServiceTierUsage) {
+    const tierTotal = sumTokenUsage(Object.values(effectiveServiceTierUsage));
+    if (Object.keys(total).some((key) => tierTotal[key as keyof TokenUsage] > total[key as keyof TokenUsage])) {
+      throw new Error("Effective service tier usage exceeds total usage");
+    }
+    if (effectiveServiceTiers && Object.entries(effectiveServiceTierUsage).some(
+      ([tier, usage]) => effectiveServiceTiers[tier] !== undefined
+        && effectiveServiceTiers[tier] !== usage.callCount,
+    )) {
+      throw new Error("Effective service tier counts do not match usage");
+    }
+  }
+  return {
+    total,
+    perAction,
+    ...(requestedServiceTier && { requestedServiceTier }),
+    ...(effectiveServiceTiers && { effectiveServiceTiers }),
+    ...(effectiveServiceTierUsage && { effectiveServiceTierUsage }),
+  };
 }
 
 function assertTokenUsage(value: unknown): TokenUsage {
@@ -1730,18 +1765,6 @@ function assertTokenUsage(value: unknown): TokenUsage {
     throw new Error("Total token count does not match prompt plus completion tokens");
   }
   return usage;
-}
-
-function emptyTokenUsage(): TokenUsage {
-  return {
-    promptTokens: 0,
-    cachedTokens: 0,
-    completionTokens: 0,
-    reasoningTokens: 0,
-    totalTokens: 0,
-    callCount: 0,
-    emptyResponses: 0,
-  };
 }
 
 function assertCostEstimate(value: unknown): CostEstimate | null {

@@ -81,7 +81,7 @@ describe("provider cost accounting", () => {
       providerNativeUnit: "katana_credit",
       providerNativeAmount: "1.25",
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-04",
+      rateCardVersion: "2026-07-25-flex",
     });
     expect(rows[0]!.estimatedCostMicrousd).toBeGreaterThan(0);
     expect(JSON.stringify(rows[0]!.routerBilling)).not.toContain("must redact");
@@ -92,7 +92,73 @@ describe("provider cost accounting", () => {
     expect(detail.detail.callCount).toBe(1);
     expect(detail.detail.ownerEpochBreakdowns).toHaveLength(1);
     expect(detail.detail.providerNativeTotals.katana_credit).toBe(1.25);
-    expect(detail.detail.pricing.rateCardVersions).toContain("2026-07-04");
+    expect(detail.detail.pricing.rateCardVersions).toContain("2026-07-25-flex");
+  });
+
+  test("prices OpenAI calls from the effective tier and leaves Katana estimates standard", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await recordProviderSpendForTrace(db, {
+      gameId,
+      ownerEpoch,
+      trace: createTrace({
+        response: {
+          raw: {
+            ...(createTrace().response.raw as Record<string, unknown>),
+            id: "resp_flex",
+            service_tier: "flex",
+          },
+          finishReason: "stop",
+        },
+      }),
+    });
+    await recordProviderSpendForTrace(db, {
+      gameId,
+      ownerEpoch,
+      trace: createTrace({
+        createdAt: "2026-07-03T12:00:01.000Z",
+        response: {
+          raw: {
+            ...(createTrace().response.raw as Record<string, unknown>),
+            id: "resp_auto",
+            service_tier: "auto",
+          },
+          finishReason: "stop",
+        },
+      }),
+    });
+    await recordProviderSpendForTrace(db, {
+      gameId,
+      ownerEpoch,
+      trace: createTrace({
+        createdAt: "2026-07-03T12:00:02.000Z",
+        model: {
+          provider: "katana",
+          providerProfileId: "katana",
+          catalogId: "katana:grok-4-3",
+          name: "grok-4-3",
+        },
+        response: {
+          raw: {
+            ...(createTrace().response.raw as Record<string, unknown>),
+            id: "resp_katana",
+            service_tier: "flex",
+          },
+          finishReason: "stop",
+        },
+      }),
+    });
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    const byResponseId = Object.fromEntries(rows.map((row) => [row.providerResponseId, row]));
+    expect(byResponseId.resp_flex?.estimatedCostMicrousd).toBe(423);
+    expect(byResponseId.resp_auto?.estimatedCostMicrousd).toBe(846);
+    expect(byResponseId.resp_katana?.estimatedCostMicrousd).toBe(6_760);
+    expect(byResponseId.resp_flex?.safeMetadata).toMatchObject({ effectiveServiceTier: "flex" });
+    expect(byResponseId.resp_auto?.safeMetadata).toMatchObject({ effectiveServiceTier: "auto" });
+    expect(byResponseId.resp_katana?.safeMetadata).not.toHaveProperty("effectiveServiceTier");
   });
 
   test("records Katana router USD billing as actual cost", async () => {
@@ -353,7 +419,7 @@ describe("provider cost accounting", () => {
       totalTokens: 100_000,
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-04",
+      rateCardVersion: "2026-07-25-flex",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("aggregate_usage_estimate");
 
@@ -396,7 +462,7 @@ describe("provider cost accounting", () => {
       modelName: "grok-4-3",
       totalTokens: 250_000,
       estimatedCostMicrousd: 687500,
-      rateCardVersion: "2026-07-04",
+      rateCardVersion: "2026-07-25-flex",
     });
   });
 
@@ -458,7 +524,7 @@ describe("provider cost accounting", () => {
     expect(rows[0]!.estimatedCostMicrousd).toBeGreaterThan(0);
     expect(rows[0]).toMatchObject({
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-04",
+      rateCardVersion: "2026-07-25-flex",
     });
     expect(rows[0]!.pricedAt).not.toBe("2026-07-03T13:00:00.000Z");
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
@@ -598,7 +664,7 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-04",
+      rateCardVersion: "2026-07-25-flex",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("aggregate_usage_estimate");
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
@@ -663,7 +729,7 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-04",
+      rateCardVersion: "2026-07-25-flex",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
     expect(JSON.stringify(rows[0]!.diagnostics)).not.toContain("cost_unavailable");
@@ -700,6 +766,121 @@ describe("provider cost accounting", () => {
     expect(detail.detail.backfill.terminalBackfilledEntries).toBe(1);
     expect(detail.detail.callCount).toBe(1);
     expect(detail.detail.estimatedCostMicrousd).toBe(420000);
+  });
+
+  test("reprices mixed-tier terminal backfills instead of trusting a stale aggregate estimate", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db, {
+      config: {
+        serviceTier: "flex",
+        modelSelection: { catalogId: "openai:gpt-5-nano" },
+      },
+    });
+    const tierUsage = {
+      flex: {
+        promptTokens: 1_000_000,
+        cachedTokens: 0,
+        completionTokens: 1_000_000,
+        reasoningTokens: 0,
+        totalTokens: 2_000_000,
+        callCount: 1,
+        emptyResponses: 0,
+      },
+      auto: {
+        promptTokens: 1_000_000,
+        cachedTokens: 0,
+        completionTokens: 1_000_000,
+        reasoningTokens: 0,
+        totalTokens: 2_000_000,
+        callCount: 1,
+        emptyResponses: 0,
+      },
+    };
+    await db.insert(schema.gameResults).values({
+      id: randomUUID(),
+      gameId,
+      winnerId: null,
+      roundsPlayed: 4,
+      tokenUsage: JSON.stringify({
+        promptTokens: 2_000_000,
+        cachedTokens: 0,
+        completionTokens: 2_000_000,
+        reasoningTokens: 0,
+        totalTokens: 4_000_000,
+        callCount: 2,
+        estimatedCost: 999,
+        requestedServiceTier: "flex",
+        effectiveServiceTiers: { flex: 1, auto: 1 },
+        effectiveServiceTierUsage: tierUsage,
+      }),
+      finishedAt: "2026-07-25T14:00:00.000Z",
+    });
+
+    await backfillGameCostAccounting(db, gameId);
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      estimatedCostMicrousd: 675_000,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-07-25-flex",
+      safeMetadata: {
+        requestedServiceTier: "flex",
+        effectiveServiceTier: "mixed",
+        estimateKind: "published_rate_estimate",
+      },
+    });
+  });
+
+  test("labels inconsistent terminal tier buckets as a legacy aggregate estimate", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db, {
+      config: {
+        serviceTier: "flex",
+        modelSelection: { catalogId: "openai:gpt-5-nano" },
+      },
+    });
+    const overlappingUsage = {
+      promptTokens: 100,
+      cachedTokens: 0,
+      completionTokens: 20,
+      reasoningTokens: 0,
+      totalTokens: 120,
+      callCount: 1,
+      emptyResponses: 0,
+    };
+    await db.insert(schema.gameResults).values({
+      id: randomUUID(),
+      gameId,
+      winnerId: null,
+      roundsPlayed: 4,
+      tokenUsage: JSON.stringify({
+        ...overlappingUsage,
+        estimatedCost: 0.42,
+        costEstimateKind: "published_rate_estimate",
+        requestedServiceTier: "flex",
+        effectiveServiceTiers: { flex: 1, auto: 1 },
+        effectiveServiceTierUsage: {
+          flex: overlappingUsage,
+          auto: overlappingUsage,
+        },
+      }),
+      finishedAt: "2026-07-25T14:00:00.000Z",
+    });
+
+    await backfillGameCostAccounting(db, gameId);
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      estimatedCostMicrousd: 420_000,
+      pricingSourceId: "legacy.game_results.tokenUsage",
+      rateCardVersion: "legacy",
+      safeMetadata: {
+        effectiveServiceTier: "mixed",
+        estimateKind: "legacy_aggregate_estimate",
+      },
+    });
   });
 
   test("removes terminal aggregate fallback once call-level rows become available", async () => {
