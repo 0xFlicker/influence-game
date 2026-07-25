@@ -4,6 +4,8 @@ Generated: 2026-06-21
 
 Last audited against `main`: 2026-07-24
 
+Last format-kernel review follow-ups added: 2026-07-25
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -237,7 +239,32 @@ Items are ordered by current priority.
 - Promotion trigger: users measurably abandon important actions because signing in returns them to a page without enough state to resume, or a new flow cannot preserve its request safely by remaining mounted.
 - Suggested slice if promoted: define a small allowlisted return/intention contract with expiry and tamper protection. Do not serialize arbitrary application state, OAuth secrets, provider tokens, or mutation payloads into URLs.
 
+### W17. Extract format decision surfaces from InfluenceAgent
+
+- Status: `future`
+- Consolidates: format-kernel code review finding #16 (manual class).
+- Decision (2026-07-25): **do with the next launch format** — not a standalone refactor while the launch trio is stable. Extract shared helpers as part of adding the fourth format so tool wiring lands once.
+- Sources: `packages/engine/src/agent.ts` (format pick / SoE / Vote Bomb / bounce / tiebreak tools and methods), `packages/engine/src/phases/format-kernel.ts`, ce-code-review on `feat/sequester-format-kernel`.
+- Signal: five format decision surfaces copy the same validate → tool-call → fallback → `decisionSource`/`fallbackReason` pattern into a very large `agent.ts`, raising merge conflict cost and making a fourth launch format multi-site edits.
+- Concrete seam: new module (e.g. `agent-format-decisions.ts` or `formats/agent-surface.ts`) for tool schemas + shared decision runner; thin `InfluenceAgent` delegates; MockAgent and structured-output tests unchanged for tool IDs.
+- Promotion trigger: **adding a new launch format** (or a product decision that forces large format-tool rewrites). Do not promote solely for file-size aesthetics.
+- Suggested slice if promoted: extract helpers in the same change set as the new format’s tool/legality path, without renaming existing tools or changing product prompts/MockAgent contracts unless the new format requires it. Keep runner legality predicates as injected params per format.
+
+### W18. Single-pass revealed round facts for postgame / completed results
+
+- Status: `future`
+- Consolidates: format-kernel code review finding #21 (manual class).
+- Decision (2026-07-25): **leave future** — no measured postgame/MCP pain yet; LLM wall-clock dominates operator proof. Promote only with a latency/profile signal.
+- Sources: `packages/engine/src/completed-game-results.ts` (`buildRounds`), `packages/engine/src/revealed-round-facts.ts` (`buildRevealedRoundFacts`), format-kernel multi-round postgame/MCP consumers.
+- Signal: completed-results / postgame rebuilds round facts with full event-log replay per round (and sometimes double replay inside the builder). Format-kernel games with more standard rounds amplify wall-clock and CPU for operator proof and MCP briefs.
+- Concrete seam: one-pass `buildAllRevealedRoundFacts` (or equivalent) reusing a single projection/kernel; thin single-round wrapper kept for live `read_round_facts`.
+- Promotion trigger: measurable postgame or MCP latency on multi-round format games, or profiling shows O(rounds × events) dominating completed-results.
+- Suggested slice if promoted: preserve dual-shape omit rules (`power`/`council` absent on format kernel) and sealed-ballot access scoping; add a multi-round format fixture as a cost/regression guard.
+
 ## Closed / Removed
+
+- R14 House format resolution from events only: implemented on the format-kernel branch (review findings #15/#17, option A). Pure `buildHouseFormatResolutionFacts` rebuilds omniscient House facts from durable events; `buildHouseRoundFacts` always uses it; `lastFormatResolution` dual-write bag removed. Live house-mc + `GameState.fromCanonicalEvents` resume parity covered in unit/integration tests.
+- W19 Domain projection cache during format resolve ballots: implemented on the format-kernel branch. `GameState.getDomainProjection()` memoizes by last canonical sequence and clears on append / event hydration; unit coverage in `canonical-event-replay.test.ts`. Sealed-ballot parallelization remains a separate product follow-up.
 
 - R1 API-backed local run harness: implemented by `b4dcee91`. `bun run simulate:api` now authenticates, creates, fills, and starts real API games, waits for durable advancement, and prints the game URL. Evidence includes launcher argument/config tests, API lifecycle integration and component coverage, and local-model documentation; there is not a standalone end-to-end launcher test.
 - R2 remaining phase-boundary resume coverage: implemented. `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES` and the DB-backed recovery matrix cover the supported normal, Reckoning, Tribunal, and Judgment coordinates, including newer unsupported same-head checkpoint fallback.

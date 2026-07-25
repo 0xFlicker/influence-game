@@ -41,3 +41,8 @@ export {
   isLegalSafetyBounceVote,
   resolveSafetyBounceVote,
 } from "./safety-bounce";
+
+export {
+  buildHouseFormatResolutionFacts,
+  type PlayerNameResolver,
+} from "./house-resolution-facts";

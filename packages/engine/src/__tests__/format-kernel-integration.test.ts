@@ -5,8 +5,13 @@ import type { GameConfig } from "../types";
 import { Phase } from "../types";
 import { createUUID } from "../game-state";
 import { MockAgent } from "./mock-agent";
-import { LAUNCH_FORMAT_IDS, type LaunchFormatId } from "../formats";
+import {
+  buildHouseFormatResolutionFacts,
+  LAUNCH_FORMAT_IDS,
+  type LaunchFormatId,
+} from "../formats";
 import type { PhaseContext } from "../game-runner";
+import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
 
 const TEST_CONFIG: GameConfig = {
@@ -205,6 +210,31 @@ describe("Format kernel integration (MockAgent)", () => {
       const voters = new Set(resolution.ballots.map((b) => b.voterName));
       expect(voters.size).toBe(5);
     }
+
+    // R14 option A: House facts rebuild from durable events with no in-memory bag.
+    const rebuilt = buildHouseFormatResolutionFacts(
+      runner.getCanonicalEvents(),
+      1,
+      (playerId) => {
+        const player = runner.getDomainProjection().players[playerId];
+        return player?.name ?? playerId;
+      },
+    );
+    expect(rebuilt).not.toBeNull();
+    if (!rebuilt) throw new Error("expected rebuilt formatResolution");
+    expect(rebuilt.formatId).toBe(resolution.formatId);
+    expect(rebuilt.eliminatedName).toBe(resolution.eliminatedName);
+    expect(rebuilt.ballots.length).toBe(resolution.ballots.length);
+    expect(rebuilt.scores.length).toBe(resolution.scores.length);
+
+    // Resume-shaped hydration: only the event log, no lastFormatResolution bag.
+    const resumed = GameState.fromCanonicalEvents(runner.getCanonicalEvents());
+    const afterResume = buildHouseFormatResolutionFacts(
+      resumed.getCanonicalEvents(),
+      1,
+      (playerId) => resumed.getPlayerName(playerId),
+    );
+    expect(afterResume).toEqual(rebuilt);
   });
 
   it("completes a short game using format menu/pick/mingle/resolve without Power or Council", async () => {

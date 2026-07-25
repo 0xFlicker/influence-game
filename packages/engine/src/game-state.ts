@@ -245,6 +245,16 @@ export class GameState {
   /** Saved from the last normal round for endgame tiebreakers */
   private _lastEmpoweredFromRegularRounds: UUID | null = null;
 
+  /**
+   * Domain projection memo keyed by last canonical sequence.
+   * Format resolve builds many PhaseContexts while the event head is stable between
+   * appends; replaying the full log per call is pure waste until the next event.
+   */
+  private domainProjectionCache: {
+    headSequence: number;
+    projection: CanonicalGameProjection;
+  } | null = null;
+
   constructor(players: { id: UUID; name: string }[], options: GameStateOptions = {}) {
     this.gameId = options.gameId ?? createUUID();
     this.now = options.now ?? Date.now;
@@ -340,6 +350,8 @@ export class GameState {
     state._endgameEliminationTally = { votes: { ...projection.endgameEliminationTally.votes } };
     state._juryVoteTally = { votes: { ...projection.juryVoteTally.votes } };
     state._lastEmpoweredFromRegularRounds = projection.lastEmpoweredFromRegularRounds;
+    // Hydrated log replaced constructor roster events — never keep a stale memo.
+    state.domainProjectionCache = null;
     return state;
   }
 
@@ -351,6 +363,8 @@ export class GameState {
     payload: TPayload,
     options: AppendCanonicalEventOptions = {},
   ): CanonicalGameEvent {
+    // Any append advances the head sequence; drop memo so the next reader rebuilds.
+    this.domainProjectionCache = null;
     return this.canonicalEvents.append({
       gameId: this.gameId,
       round: options.round ?? this._round,
@@ -2194,7 +2208,17 @@ export class GameState {
   }
 
   getDomainProjection(): CanonicalGameProjection {
-    return replayCanonicalEvents(this.getCanonicalEvents());
+    const events = this.getCanonicalEvents();
+    const headSequence = events.at(-1)?.sequence ?? 0;
+    if (
+      this.domainProjectionCache
+      && this.domainProjectionCache.headSequence === headSequence
+    ) {
+      return this.domainProjectionCache.projection;
+    }
+    const projection = replayCanonicalEvents(events);
+    this.domainProjectionCache = { headSequence, projection };
+    return projection;
   }
 
   // ---------------------------------------------------------------------------

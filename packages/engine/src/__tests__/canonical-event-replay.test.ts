@@ -14,6 +14,33 @@ function fixedClock(): () => number {
 }
 
 describe("canonical event replay", () => {
+  it("memoizes getDomainProjection until the event head advances", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      { gameId: "game-projection-cache", now: fixedClock() },
+    );
+    gs.startRound();
+
+    const first = gs.getDomainProjection();
+    const second = gs.getDomainProjection();
+    expect(second).toBe(first);
+    expect(second).toEqual(replayCanonicalEvents(gs.getCanonicalEvents()));
+
+    gs.recordVote("alice", "bob", "charlie");
+    const afterAppend = gs.getDomainProjection();
+    expect(afterAppend).not.toBe(first);
+    expect(afterAppend.currentVoteTally.empowerVotes.alice).toBe("bob");
+    expect(afterAppend).toEqual(replayCanonicalEvents(gs.getCanonicalEvents()));
+
+    const afterAppendAgain = gs.getDomainProjection();
+    expect(afterAppendAgain).toBe(afterAppend);
+  });
+
   it("rebuilds a deterministic domain projection from fixed game and player ids", () => {
     const gs = new GameState(
       [

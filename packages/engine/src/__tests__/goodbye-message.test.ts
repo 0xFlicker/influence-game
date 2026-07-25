@@ -109,7 +109,7 @@ function makePhaseRunnerContext(agents: GoodbyeProbeAgent[]): PhaseRunnerContext
       selectedFormat: null,
       pressure: null,
       lastSelectedFormat: null,
-      lastFormatResolution: null,
+
     },
     eliminationOrder: [],
   };

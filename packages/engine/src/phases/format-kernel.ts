@@ -34,7 +34,6 @@ import type {
   EliminationVoteDisclosure,
   FormatDecisionFallbackReason,
   FormatDecisionProvenance,
-  HouseFormatResolutionFacts,
 } from "../game-runner.types";
 import { Phase, type UUID } from "../types";
 import { handleElimination } from "./elimination";
@@ -50,7 +49,7 @@ import type { FormatResolutionPayload } from "../canonical-events";
 type FormatRoundElimination = {
   eliminatedId: UUID;
   voteDisclosure: EliminationVoteDisclosure;
-  houseResolution: HouseFormatResolutionFacts;
+  /** Durable board truth only — House MC rebuilds omniscient facts from events. */
   canonicalResolution: FormatResolutionPayload;
 };
 
@@ -298,8 +297,7 @@ export async function runFormatResolvePhase(
   }
   const { eliminatedId } = elimination;
 
-  // House is omniscient: retain full sealed ballots / tallies for MC + producer.
-  state.lastFormatResolution = elimination.houseResolution;
+  // Durable board truth only. House MC / producer rebuild omniscient facts from events (R14).
   await assertCanAcceptCommit(ctx);
   gameState.recordFormatResolution(elimination.canonicalResolution);
 
@@ -462,7 +460,6 @@ async function resolveSaveOrEliminateRound(
     throw new Error("Save-or-eliminate failed to resolve elimination");
   }
   const eliminatedId = resolution.eliminatedId;
-  const offered = ctx.formatKernelState.offeredFormats;
   return {
     eliminatedId,
     voteDisclosure: {
@@ -473,36 +470,6 @@ async function resolveSaveOrEliminateRound(
       savesReceived: nets.savesReceived[eliminatedId] ?? 0,
       eliminationVotesReceived: nets.eliminateReceived[eliminatedId] ?? 0,
       netScore: nets.nets[eliminatedId] ?? 0,
-    },
-    houseResolution: {
-      round: gameState.round,
-      formatId: "save_or_eliminate",
-      formatName: displayNameForFormat("save_or_eliminate"),
-      offeredFormatIds: offered ? [...offered] : null,
-      offeredFormatNames: offered
-        ? [displayNameForFormat(offered[0]), displayNameForFormat(offered[1])]
-        : null,
-      ballots: ballots.map((b) => ({
-        voterName: gameState.getPlayerName(b.voterId),
-        targetName: gameState.getPlayerName(b.targetId),
-        polarity: b.polarity,
-      })),
-      scores: aliveIds.map((id) => ({
-        playerName: gameState.getPlayerName(id),
-        value: nets.nets[id] ?? 0,
-        bucket: "net",
-      })),
-      zeroSafeNames: [],
-      safeNames: [],
-      vulnerableNames: [],
-      bouncePointers: [],
-      resolutionKind: resolution.kind,
-      resolutionSummary,
-      eliminatedName: gameState.getPlayerName(eliminatedId),
-      tiebreakByEmpoweredName:
-        resolution.kind === "clear" && resolution.tiedSet.length > 1
-          ? gameState.getPlayerName(empoweredId)
-          : null,
     },
     canonicalResolution: {
       formatId: "save_or_eliminate",
@@ -638,41 +605,11 @@ async function resolveVoteBombRound(
     throw new Error("Vote Bomb failed to resolve elimination");
   }
   const eliminatedId = resolution.eliminatedId;
-  const offered = ctx.formatKernelState.offeredFormats;
   return {
     eliminatedId,
     voteDisclosure: {
       visibility: "sealed",
       votesReceived: tallies.totals[eliminatedId] ?? 0,
-    },
-    houseResolution: {
-      round: gameState.round,
-      formatId: "vote_bomb",
-      formatName: displayNameForFormat("vote_bomb"),
-      offeredFormatIds: offered ? [...offered] : null,
-      offeredFormatNames: offered
-        ? [displayNameForFormat(offered[0]), displayNameForFormat(offered[1])]
-        : null,
-      ballots: ballots.map((b) => ({
-        voterName: gameState.getPlayerName(b.voterId),
-        targetName: gameState.getPlayerName(b.targetId),
-      })),
-      scores: aliveIds.map((id) => ({
-        playerName: gameState.getPlayerName(id),
-        value: tallies.totals[id] ?? 0,
-        bucket: (tallies.totals[id] ?? 0) === 0 ? "zero_safe" : "positive",
-      })),
-      zeroSafeNames: tallies.zeroSafeIds.map((id) => gameState.getPlayerName(id)),
-      safeNames: [],
-      vulnerableNames: [],
-      bouncePointers: [],
-      resolutionKind: resolution.kind,
-      resolutionSummary,
-      eliminatedName: gameState.getPlayerName(eliminatedId),
-      tiebreakByEmpoweredName:
-        resolution.kind === "clear" && resolution.tiedSet.length > 1
-          ? gameState.getPlayerName(empoweredId)
-          : null,
     },
     canonicalResolution: {
       formatId: "vote_bomb",
@@ -709,7 +646,6 @@ async function resolveSafetyBounceRound(
     Phase.FORMAT_RESOLVE,
   );
 
-  const bouncePointers: HouseFormatResolutionFacts["bouncePointers"] = [];
   while (board.nextActorId !== null) {
     const actorId = board.nextActorId;
     const agent = requireAgent(ctx, actorId, "safety-bounce pointer");
@@ -763,11 +699,6 @@ async function resolveSafetyBounceRound(
     board = applyBouncePointer(board, { actorId, targetId });
     updateBounceBoardPressure(ctx, board);
     const classification = board.vulnerable.includes(targetId) ? "VULNERABLE" : "SAFE";
-    bouncePointers.push({
-      actorName: gameState.getPlayerName(actorId),
-      targetName: gameState.getPlayerName(targetId),
-      classification,
-    });
     await assertCanAcceptCommit(ctx);
     gameState.recordSafetyBouncePointer(actorId, targetId, classification.toLowerCase() as "safe" | "vulnerable");
     logger.logSystem(
@@ -797,34 +728,13 @@ async function resolveSafetyBounceRound(
     Phase.FORMAT_RESOLVE,
   );
 
-  const offered = ctx.formatKernelState.offeredFormats;
   if (board.vulnerable.length === 1) {
     const soleId = board.vulnerable[0]!;
-    const resolutionSummary = `Elimination: ${gameState.getPlayerName(soleId)} alone vulnerable (sole_vulnerable) — no final ballot.`;
     return {
       eliminatedId: soleId,
       voteDisclosure: {
         visibility: "none",
         reason: "sole_vulnerable",
-      },
-      houseResolution: {
-        round: gameState.round,
-        formatId: "safety_bounce",
-        formatName: displayNameForFormat("safety_bounce"),
-        offeredFormatIds: offered ? [...offered] : null,
-        offeredFormatNames: offered
-          ? [displayNameForFormat(offered[0]), displayNameForFormat(offered[1])]
-          : null,
-        ballots: [],
-        scores: [],
-        zeroSafeNames: [],
-        safeNames: board.safe.map((id) => gameState.getPlayerName(id)),
-        vulnerableNames: board.vulnerable.map((id) => gameState.getPlayerName(id)),
-        bouncePointers: [...bouncePointers],
-        resolutionKind: "auto",
-        resolutionSummary,
-        eliminatedName: gameState.getPlayerName(soleId),
-        tiebreakByEmpoweredName: null,
       },
       canonicalResolution: {
         formatId: "safety_bounce",
@@ -956,35 +866,6 @@ async function resolveSafetyBounceRound(
     voteDisclosure: {
       visibility: "sealed",
       votesReceived: voteTotals[eliminatedId] ?? 0,
-    },
-    houseResolution: {
-      round: gameState.round,
-      formatId: "safety_bounce",
-      formatName: displayNameForFormat("safety_bounce"),
-      offeredFormatIds: offered ? [...offered] : null,
-      offeredFormatNames: offered
-        ? [displayNameForFormat(offered[0]), displayNameForFormat(offered[1])]
-        : null,
-      ballots: ballots.map((b) => ({
-        voterName: gameState.getPlayerName(b.voterId),
-        targetName: gameState.getPlayerName(b.targetId),
-      })),
-      scores: board.vulnerable.map((id) => ({
-        playerName: gameState.getPlayerName(id),
-        value: voteTotals[id] ?? 0,
-        bucket: "vulnerable_total",
-      })),
-      zeroSafeNames: [],
-      safeNames: board.safe.map((id) => gameState.getPlayerName(id)),
-      vulnerableNames: board.vulnerable.map((id) => gameState.getPlayerName(id)),
-      bouncePointers: [...bouncePointers],
-      resolutionKind: resolution.kind,
-      resolutionSummary,
-      eliminatedName: gameState.getPlayerName(eliminatedId),
-      tiebreakByEmpoweredName:
-        resolution.kind === "clear" && resolution.tiedSet.length > 1
-          ? gameState.getPlayerName(empoweredId)
-          : null,
     },
     canonicalResolution: {
       formatId: "safety_bounce",

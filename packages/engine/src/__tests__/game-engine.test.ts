@@ -2603,7 +2603,7 @@ describe("Tribunal accusation stable commit order", () => {
             selectedFormat: null,
             pressure: null,
             lastSelectedFormat: null,
-            lastFormatResolution: null,
+
           },
           eliminationOrder: [],
         },

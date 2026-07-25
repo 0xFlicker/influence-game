@@ -22,7 +22,12 @@ import type { IHouseInterviewer } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 import { hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
-import { displayNameForFormat, isLaunchFormatId, type LaunchFormatId } from "./formats";
+import {
+  buildHouseFormatResolutionFacts,
+  displayNameForFormat,
+  isLaunchFormatId,
+  type LaunchFormatId,
+} from "./formats";
 
 // Re-export types from the extracted module for backward compatibility
 export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
@@ -77,7 +82,6 @@ export class GameRunner {
     selectedFormat: null,
     pressure: null,
     lastSelectedFormat: null,
-    lastFormatResolution: null,
   };
   private readonly durableEventSink?: GameRunnerOptions["durableEventSink"];
   private readonly durableCheckpointSink?: GameRunnerOptions["durableCheckpointSink"];
@@ -1276,10 +1280,12 @@ export class GameRunner {
       ?? councilResolved?.payload.empoweredId
       ?? this.gameState.empoweredId;
 
-    const formatResolution =
-      this.formatKernelState.lastFormatResolution?.round === round
-        ? this.formatKernelState.lastFormatResolution
-        : null;
+    // Always derive omniscient format facts from durable events (R14 option A).
+    const formatResolution = buildHouseFormatResolutionFacts(
+      this.gameState.getCanonicalEvents(),
+      round,
+      (playerId) => this.gameState.getPlayerName(playerId),
+    );
     const selectedFormatId =
       formatResolution?.formatId
       ?? roundResult?.payload.result.formatId
@@ -1287,7 +1293,7 @@ export class GameRunner {
       ?? this.formatKernelState.lastSelectedFormat
       ?? null;
     const offeredFormatIds =
-      formatResolution?.offeredFormatIds
+      (formatResolution?.offeredFormatIds as [LaunchFormatId, LaunchFormatId] | null)
       ?? this.formatKernelState.offeredFormats;
     const formatMethod =
       formatResolution?.resolutionKind
