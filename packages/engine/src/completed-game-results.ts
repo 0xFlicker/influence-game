@@ -38,7 +38,7 @@ export interface CompletedGameResultsPlayer extends RevealedPlayerRef {
 export interface CompletedGameResultsElimination {
   player: RevealedPlayerRef;
   round: number;
-  source: "council" | "endgame" | "jury" | "player_eliminated";
+  source: "council" | "format" | "endgame" | "jury" | "player_eliminated";
   method: string | null;
   juryMember: boolean;
 }
@@ -261,10 +261,18 @@ function buildEliminationOrder(
   projection: CanonicalGameProjection,
   winnerEvent: EventOf<"jury.winner_determined"> | null,
 ): CompletedGameResultsElimination[] {
-  const resolvedByPlayer = new Map<UUID, { source: "council" | "endgame" | "jury"; method: string | null }>();
+  const resolvedByPlayer = new Map<
+    UUID,
+    { source: "council" | "format" | "endgame" | "jury"; method: string | null }
+  >();
   for (const event of events) {
     if (event.type === "council.elimination_resolved") {
       resolvedByPlayer.set(event.payload.eliminated, { source: "council", method: event.payload.method });
+    }
+    if (event.type === "format.resolved" && event.payload.eliminatedId) {
+      const kind = event.payload.resolutionKind ?? "resolved";
+      const method = `${event.payload.formatId}:${kind}`;
+      resolvedByPlayer.set(event.payload.eliminatedId, { source: "format", method });
     }
     if (event.type === "endgame.elimination_resolved") {
       resolvedByPlayer.set(event.payload.eliminated, { source: "endgame", method: event.payload.method });

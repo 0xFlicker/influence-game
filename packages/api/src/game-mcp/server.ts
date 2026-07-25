@@ -613,8 +613,8 @@ function productionGameMcpTools(
     tool({
       name: "list_games",
       description: includeProducerVariant
-        ? "List recent deployed games with event-log and projection status."
-        : "List your Influence games with event-log and projection status. Call for game inspection, not for active-match actions.",
+        ? "List recent deployed games with event-log and projection status, including gameKernel (classic|format)."
+        : "List your Influence games with event-log, projection status, and gameKernel (classic|format). Call for game inspection, not for active-match actions.",
       properties: {
         limit: { type: "number" },
       },
@@ -677,7 +677,7 @@ function productionGameMcpTools(
     }),
     tool({
       name: "read_game_brief",
-      description: "Read a compact postgame brief for one completed game: executive summary, winner, finalists, final vote, boot order, round summaries, derived vote cohorts, highlighted eliminations, momentum, turning points, and diagnostics.",
+      description: "Read a compact postgame brief for one completed game: gameKernel, executive summary, winner, finalists, final vote, boot order, format-aware round summaries when kernel is format, derived vote cohorts, highlighted eliminations, momentum, turning points, and diagnostics.",
       properties: {
         gameIdOrSlug: { type: "string" },
         detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
@@ -738,8 +738,8 @@ function productionGameMcpTools(
     tool({
       name: "read_round_facts",
       description: includeProducerVariant
-        ? "Read sanitized revealed vote, power, Council, and player-status facts for one deployed game round without private trace content or raw canonical envelopes."
-        : "Read sanitized revealed vote, power, Council, and player-status facts for one accessible game round.",
+        ? "Read sanitized revealed board facts for one deployed game round. Shape is kernel-aware: format-kernel rounds include empower + format (+ omit classic Power/Council); classic rounds include Power/Council. Format sealed ballots are producer-scoped; public aggregates never include voter→ballot mappings."
+        : "Read sanitized revealed board facts for one accessible game round. Shape is kernel-aware: format-kernel omits classic Power/Council; classic keeps them. Public format facts include menu/selection/resolution aggregates; owned sealed ballots only for the caller's seats.",
       properties: {
         gameIdOrSlug: { type: "string" },
         round: { type: "number" },

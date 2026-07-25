@@ -43,6 +43,9 @@ export interface PostgameGameMetadata {
   endedAt?: string;
   playerCount: number;
   roundCount: number;
+  /** Match spine when known (classic | format). */
+  gameKernel?: "classic" | "format";
+  gameKernelSource?: "stored" | "inferred";
 }
 
 export type PostgameGameAnalysisResult =

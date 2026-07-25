@@ -583,7 +583,7 @@ function roundHeadline(
   }
   if (round.empowered && previousRound?.empowered?.id === round.empowered.id) {
     return {
-      text: `${round.empowered.name} controls power again.`,
+      text: `${round.empowered.name} holds empower again.`,
       confidence: "high",
       derivationMethod: "consecutive_empowerment",
     };

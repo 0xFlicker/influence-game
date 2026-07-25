@@ -676,6 +676,7 @@ export class ProductionGameMcpReadModel {
       game,
       canonicalGameFacts: buildRevealedRoundFacts({
         events: terminalSafeEvents.map((event) => event.envelope),
+        kernel: game.gameKernel,
         round: options.round,
         eventLogStatus: events.status,
         projectionStatus: projection.status,
@@ -884,7 +885,11 @@ export class ProductionGameMcpReadModel {
     return {
       schemaVersion: 1,
       ok: true,
-      game: result.game,
+      game: {
+        ...result.game,
+        gameKernel: game.gameKernel,
+        gameKernelSource: game.gameKernelSource,
+      },
       postgame: buildCompactPostgameBrief(result.analysis, options.detailLevel ?? "standard"),
     };
   }

@@ -49,9 +49,13 @@ The pressure-only round state shown to agents, House, viewer framing, and valida
 
 The eligible set of non-empowered live players who received expose votes after Vote resolves. The bench is used to resolve the Council candidate pair before Power: expose votes lock candidates when they can, and the empowered player resolves only leftover ambiguity such as too few eligible exposed receivers, tied exposed tiers, or shield replacement fallout.
 
+## Game kernel
+
+The durable match-spine identity for a deployed game (for example `classic` for Power → Council, `format` for the format kernel). Kernel names the mode of the match, not the active round format card. Producer list, projection, round facts, and postgame brief surfaces present it so readers do not infer mode from missing classic fields. Additional modes (werewolf, mafia, etc.) get new kernel values later. See also format kernel, round format.
+
 ## Format kernel
 
-The standard-round spine in which empower selects a player who chooses the round’s elimination format from a House-offered menu, players may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. See also round format, format menu, Save-or-eliminate, Vote Bomb, and Safety Bounce.
+The standard-round spine in which empower selects a player who chooses the round’s elimination format from a House-offered menu, players may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format menu, Save-or-eliminate, Vote Bomb, and Safety Bounce.
 
 ## Round format
 
@@ -83,7 +87,7 @@ The public player-known record of named standard-round votes after Vote resolves
 
 ## Revealed game facts
 
-A sanitized player-visible read model of authoritative gameplay facts derived from canonical game events and projections, such as resolved vote ledgers, empowered players, power outcomes, Council candidates, Council votes, and eliminations. Production Games MCP exposes these through `read_round_facts`. Revealed game facts are not raw canonical event envelopes, source pointers, decision logs, cognitive artifacts, private traces, or producer reasoning.
+A sanitized player-visible read model of authoritative gameplay facts derived from canonical game events and projections. The present sections depend on game kernel: format-kernel rounds emphasize empower and format menu/selection/resolution aggregates (and endgame stage facts when applicable); classic rounds include power outcomes, Council candidates, Council votes, and related fields. Production Games MCP exposes these through `read_round_facts`. Format sealed ballots are scoped: public gets aggregates only, owners get their own sealed ballot, producers get the full ledger. Revealed game facts are not raw canonical event envelopes, source pointers, decision logs, cognitive artifacts, private traces, or producer reasoning.
 
 ## Mingle intent
 
