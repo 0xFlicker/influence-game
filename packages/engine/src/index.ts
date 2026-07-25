@@ -15,6 +15,8 @@ export type { GameStateOptions } from "./game-state";
 export { CanonicalEventLog } from "./canonical-event-log";
 export type { CanonicalEventListener } from "./canonical-event-log";
 export {
+  ACCEPTED_ACTION_REGISTRY,
+  acceptedActionRegistryEntry,
   assertCanonicalGameEvent,
   canonicalEventIsVisibleTo,
   validateCanonicalGameEvent,

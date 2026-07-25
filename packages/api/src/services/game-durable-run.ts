@@ -32,6 +32,10 @@ import {
   getGameCompletionSettlementSummary,
   type GameCompletionSettlementSummary,
 } from "./game-completion-settlement.js";
+import {
+  summarizeAcceptedActionCorrelations,
+  type AcceptedActionCorrelationSummary,
+} from "./accepted-action-correlation.js";
 
 type DurableRunReadDB = Pick<DrizzleDB, "select">;
 
@@ -42,8 +46,11 @@ export type DurableRunDiagnostic =
       code:
         | "evidence_summary_unavailable"
         | "malformed_private_content_storage_provider"
-        | "owner_epoch_expired";
-      severity: "error";
+        | "owner_epoch_expired"
+        | "accepted_action_correlation_summary_unavailable"
+        | "accepted_action_private_capture_missing"
+        | "accepted_action_correlation_conflict";
+      severity: "error" | "warning";
       message: string;
       sequence?: number;
     };
@@ -118,6 +125,7 @@ export interface DurableEvidenceSummary {
     minSequence?: number;
     maxSequence?: number;
   };
+  acceptedActionCorrelation: AcceptedActionCorrelationSummary;
 }
 
 export type FinaleIntegrityCode =
@@ -272,7 +280,51 @@ function emptyEvidenceSummary(): DurableEvidenceSummary {
     eventSequenceCoverage: {
       linkedCount: 0,
     },
+    acceptedActionCorrelation: {
+      eligibleDecisionCount: 0,
+      linkedDecisionCount: 0,
+      unresolvedDecisionCount: 0,
+      missingCaptureDecisionCount: 0,
+      conflictDecisionCount: 0,
+    },
   };
+}
+
+async function getAcceptedActionCorrelationSummary(
+  db: DurableRunReadDB,
+  persistedEvents: Awaited<ReturnType<typeof getPersistedGameEvents>>,
+): Promise<{
+  summary: AcceptedActionCorrelationSummary;
+  diagnostics: DurableRunDiagnostic[];
+}> {
+  try {
+    const summary = await summarizeAcceptedActionCorrelations(db, persistedEvents.events);
+    const diagnostics: DurableRunDiagnostic[] = [];
+    if (summary.missingCaptureDecisionCount > 0) {
+      diagnostics.push({
+        code: "accepted_action_private_capture_missing",
+        severity: "warning",
+        message: `${summary.missingCaptureDecisionCount} accepted decisions are missing private capture rows`,
+      });
+    }
+    if (summary.conflictDecisionCount > 0) {
+      diagnostics.push({
+        code: "accepted_action_correlation_conflict",
+        severity: "error",
+        message: `${summary.conflictDecisionCount} accepted decisions have conflicting event links`,
+      });
+    }
+    return { summary, diagnostics };
+  } catch (error) {
+    return {
+      summary: emptyEvidenceSummary().acceptedActionCorrelation,
+      diagnostics: [{
+        code: "accepted_action_correlation_summary_unavailable",
+        severity: "error",
+        message: error instanceof Error ? error.message : String(error),
+      }],
+    };
+  }
 }
 
 async function getEvidenceSummary(
@@ -539,6 +591,11 @@ export async function getDurableRunInspection(
         asc(schema.gameCheckpoints.createdAt),
       );
     const evidence = await getEvidenceSummary(tx, game.id);
+    const acceptedActionCorrelation = await getAcceptedActionCorrelationSummary(
+      tx,
+      persistedEvents,
+    );
+    evidence.summary.acceptedActionCorrelation = acceptedActionCorrelation.summary;
     const promptReuseRows = await tx.select().from(schema.gamePromptReuseRollups).where(eq(schema.gamePromptReuseRollups.gameId, game.id));
 
     const sealedNonfinal = completionSettlement.state === "pending"
@@ -608,6 +665,7 @@ export async function getDurableRunInspection(
       ...ownerSummary.diagnostics,
       ...checkpointDiagnostics,
       ...evidence.diagnostics,
+      ...acceptedActionCorrelation.diagnostics,
     ];
     const finaleIntegrity = buildFinaleIntegrity(
       persistedEvents.events.map((event) => ({

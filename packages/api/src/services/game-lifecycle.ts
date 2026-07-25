@@ -78,6 +78,7 @@ import {
   settleCapturedGameCompletion,
 } from "./game-completion-settlement.js";
 import { serializeTranscriptEntry } from "./transcript-serialization.js";
+import { tryReconcileAcceptedActionCorrelations } from "./accepted-action-correlation.js";
 
 export { serializeTranscriptEntry } from "./transcript-serialization.js";
 
@@ -243,6 +244,21 @@ export async function appendDurableEventsAndPublishWatchState(
   },
 ): Promise<void> {
   await appendGameEvents(db, params);
+  const correlation = await tryReconcileAcceptedActionCorrelations(db, {
+    gameId: params.gameId,
+    ownerEpoch: params.ownerEpoch,
+  });
+  if (!correlation.ok) {
+    console.warn(
+      `[game-lifecycle] Accepted-action correlation degraded for game ${params.gameId}: ${correlation.error}`,
+    );
+  } else if (correlation.result.diagnostics.length > 0) {
+    console.warn(
+      `[game-lifecycle] Accepted-action correlation incomplete for game ${params.gameId}: `
+      + `${correlation.result.missingCaptureDecisionCount} missing capture, `
+      + `${correlation.result.conflictDecisionCount} conflict`,
+    );
+  }
   if (params.events.some((event) => event.type === "jury.winner_determined")) {
     return;
   }

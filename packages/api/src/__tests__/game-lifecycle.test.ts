@@ -61,6 +61,111 @@ describe("postgame media completion isolation", () => {
 });
 
 describe("game run failure classification", () => {
+  test("reconciles accepted decisions across private sidecars after canonical append", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const decisionId = randomUUID();
+
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: randomUUID(),
+      gameId,
+      ownerEpoch,
+      decisionId,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: { action: "vote" },
+    });
+    await db.insert(schema.gameCognitiveArtifacts).values({
+      id: randomUUID(),
+      gameId,
+      decisionId,
+      captureVersion: 1,
+      artifactType: "thinking",
+      actorRole: "player",
+      action: "vote",
+      phase: Phase.VOTE,
+      round: 1,
+      payloadByteLength: 2,
+      payload: {},
+    });
+    await db.insert(schema.gamePromptReuseAppliedSources).values({
+      id: randomUUID(),
+      gameId,
+      ownerEpoch,
+      decisionId,
+      eventSequence: 0,
+      comparable: true,
+      reusableCharacters: 120,
+      reusableTokenEstimate: 30,
+      firstBreak: "user_message",
+    });
+    await db.insert(schema.gamePromptReuseRollups).values({
+      id: randomUUID(),
+      gameId,
+      ownerEpoch,
+      requestCount: 1,
+      comparableCount: 1,
+      reusableCharacters: 120,
+      reusableTokenEstimate: 30,
+      firstBreakCounts: { user_message: 1 },
+      watermark: 0,
+      coverage: "partial",
+    });
+
+    await appendDurableEventsAndPublishWatchState(db, {
+      gameId,
+      ownerEpoch,
+      events: [{
+        sequence: 1,
+        gameId,
+        round: 1,
+        phase: Phase.VOTE,
+        type: "vote.cast",
+        timestamp: "2026-07-25T00:00:00.000Z",
+        source: "engine",
+        visibility: "producer",
+        payloadVersion: 1,
+        sourcePointers: [{
+          kind: "agent_turn",
+          actorId: "atlas",
+          action: "vote",
+          round: 1,
+          phase: Phase.VOTE,
+          decisionId,
+        }],
+        payload: {
+          voterId: "atlas",
+          empowerTarget: "mira",
+          exposeTarget: "echo",
+        },
+      }],
+    });
+
+    const manifest = (await db.select().from(schema.gameEvidenceManifests)
+      .where(eq(schema.gameEvidenceManifests.decisionId, decisionId)))[0]!;
+    const cognition = (await db.select().from(schema.gameCognitiveArtifacts)
+      .where(eq(schema.gameCognitiveArtifacts.decisionId, decisionId)))[0]!;
+    const promptSource = (await db.select().from(schema.gamePromptReuseAppliedSources)
+      .where(eq(schema.gamePromptReuseAppliedSources.decisionId, decisionId)))[0]!;
+    const rollup = (await db.select().from(schema.gamePromptReuseRollups)
+      .where(eq(schema.gamePromptReuseRollups.ownerEpoch, ownerEpoch)))[0]!;
+
+    expect(manifest.eventSequence).toBe(1);
+    expect(cognition.eventSequence).toBe(1);
+    expect(promptSource.eventSequence).toBe(1);
+    expect(rollup).toMatchObject({
+      requestCount: 1,
+      comparableCount: 1,
+      reusableCharacters: 120,
+      reusableTokenEstimate: 30,
+      firstBreakCounts: { user_message: 1 },
+      watermark: 1,
+      coverage: "partial",
+    });
+  });
+
   test("preserves settlement repair evidence instead of marking it generically recoverable", () => {
     const failure = classifyGameRunFailure(new CompetitionSettlementRepairRequiredError(
       "Pregame rating snapshot is missing.",
