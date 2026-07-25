@@ -8,6 +8,7 @@ import {
 export type ModelTier = "budget" | "standard" | "premium";
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
+export type OpenAIRequestServiceTier = "flex" | "auto";
 
 export interface LlmClientConfig {
   client: OpenAI;
@@ -20,6 +21,8 @@ export interface LlmClientConfig {
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
   /** True when this client adds Flex tiering and retry/fallback handling to OpenAI requests. */
   flexProcessingEnabled: boolean;
+  /** Requested game capacity lane. Present only for hosted OpenAI. */
+  openAIServiceTier?: OpenAIRequestServiceTier;
 }
 
 export interface CreateLlmClientOptions {
@@ -28,6 +31,8 @@ export interface CreateLlmClientOptions {
   providerProfileId?: ProviderProfileId;
   /** Use OpenAI Flex processing for supported request routes. Hosted OpenAI only. */
   flexProcessing?: boolean;
+  /** Explicit hosted OpenAI capacity lane. Defaults to Flex. */
+  openAIServiceTier?: OpenAIRequestServiceTier;
 }
 
 const FLEX_429_RETRY_LIMIT = 3;
@@ -225,6 +230,14 @@ export function resolveOpenAIReasoningSummaryMode(
   return baseURL ? undefined : "auto";
 }
 
+export function normalizeOpenAIRequestServiceTier(value: unknown): OpenAIRequestServiceTier | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "flex") return "flex";
+  if (normalized === "auto" || normalized === "standard" || normalized === "default") return "auto";
+  return null;
+}
+
 export function resolveModelForTier(
   tier: string | null | undefined,
 ): string {
@@ -274,7 +287,11 @@ export function createLlmClientFromEnv(
   if (!apiKey) return null;
   const openAIReasoningSummary = resolveOpenAIReasoningSummaryMode(env, baseURL);
   const profile = PROVIDER_PROFILES[providerProfileId];
-  const flexProcessingEnabled = providerProfileId === "openai" && options.flexProcessing === true;
+  const openAIServiceTier = providerProfileId === "openai"
+    ? options.openAIServiceTier
+      ?? (options.flexProcessing === false ? "auto" : "flex")
+    : undefined;
+  const flexProcessingEnabled = openAIServiceTier === "flex";
 
   return {
     client: new OpenAI({
@@ -291,6 +308,7 @@ export function createLlmClientFromEnv(
     providerProfileId,
     toolChoiceMode: resolveToolChoiceMode(env, baseURL, providerProfileId),
     flexProcessingEnabled,
+    ...(openAIServiceTier && { openAIServiceTier }),
     ...(providerProfileId === "openai" && openAIReasoningSummary && { openAIReasoningSummary }),
   };
 }

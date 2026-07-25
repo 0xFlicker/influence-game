@@ -163,9 +163,12 @@ describe("simulation variant config", () => {
     expect(seating).toContain("rooms — Turn 1: Room 1: Finn, Wren");
   });
 
-  it("parses --flex for hosted OpenAI simulation requests", () => {
+  it("defaults hosted OpenAI simulations to Flex with a standard opt-out", () => {
     expect(parseArgs(["--flex"]).flex).toBe(true);
-    expect(parseArgs([]).flex).toBe(false);
+    expect(parseArgs([]).flex).toBe(true);
+    expect(parseArgs(["--standard"]).flex).toBe(false);
+    expect(parseArgs(["--no-flex"]).flex).toBe(false);
+    expect(parseArgs(["--standard", "--flex"]).flex).toBe(true);
   });
 
   it("parses explicit model catalog and reasoning policy for router simulations", () => {

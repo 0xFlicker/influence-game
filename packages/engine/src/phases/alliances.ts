@@ -1,7 +1,7 @@
 import { Phase } from "../types";
 import type { AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
 import { createUUID } from "../game-state";
-import type { AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
+import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
 import {
   formatAllianceActionOperatorText,
   formatAllianceHuddleOutcomeOperatorText,
@@ -512,6 +512,7 @@ async function completeHuddleSession(
 ): Promise<void> {
   const speakerIds = schedule.memberIds.filter((memberId) => ctx.gameState.getPlayer(memberId)?.status === "alive");
   const conversationHistory: Array<{ from: string; text: string }> = [];
+  const commitments: AllianceHuddleCommitmentFact[] = [];
   // Canonical session identity is created before any message so modern huddle
   // rows carry alliance/schedule/session IDs plus exact session-time audience.
   const sessionId = createUUID();
@@ -536,6 +537,13 @@ async function completeHuddleSession(
     await assertCanAcceptCommit(ctx);
     const turn = await collectAllianceHuddleTurn(ctx, speakerId, huddle, conversationHistory);
     const message = turn.noReply ? null : (turn.message?.trim() || null);
+    if (turn.commitment) {
+      commitments.push({
+        speakerId,
+        speakerName: ctx.gameState.getPlayerName(speakerId),
+        ...turn.commitment,
+      });
+    }
     if (message) {
       ctx.logger.logHuddleMessage(
         speakerId,
@@ -600,6 +608,7 @@ async function completeHuddleSession(
       timebox: alliance.timebox,
     },
     transcript: conversationHistory,
+    commitments,
   });
   const outcome: AllianceHuddleOutcome = {
     id: createUUID(),
@@ -614,6 +623,7 @@ async function completeHuddleSession(
     confidence: summary.confidence,
     posture: summary.posture,
     leakOrBetrayalClaims: summary.leakOrBetrayalClaims,
+    commitments,
     createdAt: completedAt,
   };
   ctx.gameState.recordAllianceHuddleOutcome(outcome);

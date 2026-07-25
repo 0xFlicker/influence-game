@@ -274,7 +274,7 @@ export async function runFormatResolvePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, logger, contextBuilder } = ctx;
+  const { gameState, logger } = ctx;
   const state = ctx.formatKernelState;
   const formatId = state.selectedFormat;
   const empoweredId = gameState.empoweredId;

@@ -3,6 +3,7 @@ import {
   createLlmClientFromEnv,
   createFlexProcessingFetch,
   describeLlmProvider,
+  normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
   resolveModelForTier,
   resolveToolChoiceMode,
@@ -22,6 +23,8 @@ describe("LLM client env config", () => {
     expect(config?.providerLabel).toBe("OpenAI");
     expect(config?.providerProfileId).toBe("openai");
     expect(config?.openAIReasoningSummary).toBe("auto");
+    expect(config?.openAIServiceTier).toBe("flex");
+    expect(config?.flexProcessingEnabled).toBe(true);
   });
 
   it("uses a local dummy API key for LM Studio-compatible endpoints", () => {
@@ -113,6 +116,12 @@ describe("LLM client env config", () => {
     });
 
     expect(config).toBeNull();
+  });
+
+  it("normalizes standard aliases and rejects invalid request tiers", () => {
+    expect(normalizeOpenAIRequestServiceTier("standard")).toBe("auto");
+    expect(normalizeOpenAIRequestServiceTier("default")).toBe("auto");
+    expect(normalizeOpenAIRequestServiceTier("bogus")).toBeNull();
   });
 });
 

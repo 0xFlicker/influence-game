@@ -309,11 +309,12 @@ export type { GeneratedPersona } from "./persona-generator";
 export {
   createLlmClientFromEnv,
   describeLlmProvider,
+  normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
   resolveModelForTier,
   resolveToolChoiceMode,
 } from "./llm-client";
-export type { LlmClientConfig, LlmToolChoiceMode, ModelTier, OpenAIReasoningSummaryMode } from "./llm-client";
+export type { LlmClientConfig, LlmToolChoiceMode, ModelTier, OpenAIReasoningSummaryMode, OpenAIRequestServiceTier } from "./llm-client";
 export {
   MODEL_CATALOG,
   MODEL_REASONING_EFFORTS,

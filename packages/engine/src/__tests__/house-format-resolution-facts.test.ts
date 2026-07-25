@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { buildHouseFormatResolutionFacts } from "../formats/house-resolution-facts";
 import { GameState } from "../game-state";
-import { Phase } from "../types";
 
 function fixedClock(): () => number {
   let ticks = 0;

@@ -217,6 +217,9 @@ export class ContextBuilder {
         return `${prefix}: Shields expired: ${this.formatPlayerList(event.payload.expiredPlayerIds)}.`;
       case "mingle.rooms_allocated":
         return `${prefix}: Mingle rooms allocated: ${event.payload.rooms.map((room) => `Room ${room.roomId}: ${this.formatPlayerList(room.playerIds)}`).join(" | ")}.`;
+      case "mingle.coordination_receipt_recorded":
+        // Private audit evidence is intentionally absent from player prompt context.
+        return "";
       case "vote.cast":
         return event.payload.exposeTarget
           ? `${prefix}: ${this.name(event.payload.voterId)} voted empower=${this.name(event.payload.empowerTarget)}, expose=${this.name(event.payload.exposeTarget)}.`

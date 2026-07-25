@@ -175,6 +175,7 @@ function makeHuddleOutcomeContext(): HouseAllianceHuddleOutcomeContext {
       { from: "Atlas", text: "Mira, hold the empower vote on me and I will keep expose pressure on Vera." },
       { from: "Mira", text: "I can do that if you do not undercut me after Council." },
     ],
+    commitments: [],
   };
 }
 

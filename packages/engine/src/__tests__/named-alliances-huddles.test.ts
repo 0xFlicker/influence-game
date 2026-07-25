@@ -139,6 +139,14 @@ describe("named alliance huddle windows", () => {
       posture: "coordinating",
       confidence: "medium",
     });
+    expect(gameState.getAllianceHuddleOutcomes()[0]?.commitments).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        speakerName: "Alice",
+        proposedAction: "Coordinate the empower vote.",
+        memberCommitments: [{ memberName: "Alice", commitment: "Compare the vote before committing." }],
+        contingency: "Reassess if new vote information arrives.",
+      }),
+    ]));
     expect(gameState.getAlliance("alliance-ab")?.huddleOutcomeIds).toHaveLength(1);
     expect(phaseCompleteEvents).toContainEqual({ type: "PHASE_COMPLETE" });
   });

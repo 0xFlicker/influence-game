@@ -13,7 +13,7 @@ import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { MingleIntentSummary, UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
-import type { AllianceHuddleOutcome, AllianceHuddleWindow } from "./types";
+import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleWindow } from "./types";
 import {
   inferModelCapabilities,
   type ModelReasoningEffort,
@@ -148,6 +148,8 @@ export interface HouseAllianceHuddleOutcomeContext {
     timebox?: string | null;
   };
   transcript: Array<{ from: string; text: string }>;
+  /** Authoritative member proposals. House may summarize but may not invent beyond them. */
+  commitments: AllianceHuddleCommitmentFact[];
 }
 
 export interface HouseAllianceHuddleOutcomeResult {
@@ -1106,8 +1108,12 @@ Timebox: ${context.alliance.timebox ?? "open-ended"}
 Huddle transcript:
 ${transcript}
 
+Authoritative structured member proposals:
+${JSON.stringify(context.commitments)}
+
 Your job:
 - Record the ask, plan, promises/protections, dissent, confidence, posture, and explicit leak or betrayal claims.
+- Treat the structured member proposals as authoritative for targets, commitments, contingencies, and dissent. You may compress them into prose but must not manufacture a target, agreement, promise, or consensus absent from those facts.
 - Do not invent loyalty or force agreement if members were guarded or silent.
 - Do not mutate the alliance terms; this outcome is tactical memory, not a new contract.
 - Keep the outcome compact and useful for future member-safe prompts.
@@ -1909,15 +1915,20 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
 
   async summarizeAllianceHuddle(context: HouseAllianceHuddleOutcomeContext): Promise<HouseAllianceHuddleOutcomeResult> {
     const speakerNames = context.transcript.map((entry) => entry.from);
+    const proposals = context.commitments.map((commitment) =>
+      `${commitment.speakerName}: ${commitment.proposedAction}${commitment.proposedTargetName ? ` -> ${commitment.proposedTargetName}` : ""}`,
+    );
     return {
       ask: context.window === "pre_vote" ? "Align before the public Vote." : "Align before Council.",
-      plan: context.transcript.length > 0
-        ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate around the alliance purpose.`
-        : `No explicit member messages were recorded for ${context.alliance.name}.`,
-      promises: [],
-      dissent: [],
-      confidence: context.transcript.length > 0 ? "medium" : "low",
-      posture: context.transcript.length > 0 ? "coordinating" : "guarded",
+      plan: proposals.length > 0
+        ? `${context.alliance.name} proposals: ${proposals.join("; ")}.`
+        : context.transcript.length > 0
+          ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate around the alliance purpose.`
+          : `No explicit member messages were recorded for ${context.alliance.name}.`,
+      promises: context.commitments.flatMap((commitment) => commitment.memberCommitments.map(({ memberName, commitment: promise }) => `${memberName}: ${promise}`)),
+      dissent: context.commitments.flatMap((commitment) => commitment.dissent),
+      confidence: context.commitments.some((commitment) => commitment.confidence === "high") ? "high" : context.commitments.length > 0 ? "medium" : "low",
+      posture: context.commitments.some((commitment) => commitment.dissent.length > 0) ? "fracturing" : context.commitments.length > 0 ? "coordinating" : "guarded",
       leakOrBetrayalClaims: [],
       thinking: "Template House summarized the huddle deterministically.",
     };

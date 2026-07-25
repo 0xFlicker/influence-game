@@ -15,6 +15,7 @@ import type {
   PlayerStatus,
   PowerAction,
   RoomAllocation,
+  MingleCoordinationReceiptRecord,
   RoundResult,
   UUID,
   VoteTally,
@@ -61,6 +62,7 @@ export interface CanonicalGameProjection {
   } | null;
   powerAction: PowerAction | null;
   roomAllocations: Record<number, ProjectedRoomAllocation>;
+  mingleCoordinationReceipts: Record<UUID, MingleCoordinationReceiptRecord>;
   allianceOrder: UUID[];
   alliances: Record<UUID, AllianceRecord>;
   allianceProposalLineageOrder: UUID[];
@@ -98,6 +100,7 @@ export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
     candidateResolution: null,
     powerAction: null,
     roomAllocations: {},
+    mingleCoordinationReceipts: {},
     allianceOrder: [],
     alliances: {},
     allianceProposalLineageOrder: [],
@@ -149,6 +152,10 @@ function cloneAllianceProposalLineage(lineage: AllianceProposalLineage): Allianc
 
 function cloneAllianceHuddleSchedule(schedule: AllianceHuddleScheduleRecord): AllianceHuddleScheduleRecord {
   return structuredClone(schedule) as AllianceHuddleScheduleRecord;
+}
+
+function cloneMingleCoordinationReceipt(receipt: MingleCoordinationReceiptRecord): MingleCoordinationReceiptRecord {
+  return { ...receipt, audiencePlayerIds: [...receipt.audiencePlayerIds] };
 }
 
 function cloneAllianceHuddleSession(session: AllianceHuddleSessionRecord): AllianceHuddleSessionRecord {
@@ -232,6 +239,10 @@ export function applyCanonicalEvent(
         excluded: [...event.payload.excluded],
         lastSessionExcluded: [...event.payload.lastSessionExcluded],
       };
+      break;
+    }
+    case "mingle.coordination_receipt_recorded": {
+      projection.mingleCoordinationReceipts[event.payload.receipt.id] = cloneMingleCoordinationReceipt(event.payload.receipt);
       break;
     }
     case "vote.cast": {

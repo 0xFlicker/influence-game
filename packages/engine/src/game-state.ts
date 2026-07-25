@@ -54,6 +54,7 @@ import type {
   EndgameEliminationTally,
   JuryVoteTally,
   RoomAllocation,
+  MingleCoordinationReceiptRecord,
 } from "./types";
 import { Phase, PlayerStatus } from "./types";
 
@@ -195,6 +196,10 @@ function cloneAllianceHuddleOutcome(outcome: AllianceHuddleOutcome): AllianceHud
   return structuredClone(outcome) as AllianceHuddleOutcome;
 }
 
+function cloneMingleCoordinationReceipt(receipt: MingleCoordinationReceiptRecord): MingleCoordinationReceiptRecord {
+  return { ...receipt, audiencePlayerIds: [...receipt.audiencePlayerIds] };
+}
+
 function responsesForLineageVersion(
   lineage: AllianceProposalLineage,
   versionId: UUID,
@@ -235,6 +240,7 @@ export class GameState {
   private _allianceHuddleSchedules: AllianceHuddleScheduleRecord[] = [];
   private _allianceHuddleSessions = new Map<UUID, AllianceHuddleSessionRecord>();
   private _allianceHuddleOutcomes = new Map<UUID, AllianceHuddleOutcome>();
+  private _mingleCoordinationReceipts = new Map<UUID, MingleCoordinationReceiptRecord>();
 
   // --- Endgame state ---
   private _jury: JuryMember[] = [];
@@ -340,6 +346,12 @@ export class GameState {
       Object.entries(projection.allianceHuddleOutcomes).map(([id, outcome]) => [
         id,
         cloneAllianceHuddleOutcome(outcome),
+      ]),
+    );
+    state._mingleCoordinationReceipts = new Map(
+      Object.entries(projection.mingleCoordinationReceipts).map(([id, receipt]) => [
+        id,
+        cloneMingleCoordinationReceipt(receipt),
       ]),
     );
     state._jury = projection.jury.map((juror) => ({ ...juror }));
@@ -1087,6 +1099,18 @@ export class GameState {
 
   getAllianceHuddleOutcomes(): AllianceHuddleOutcome[] {
     return Array.from(this._allianceHuddleOutcomes.values()).map(cloneAllianceHuddleOutcome);
+  }
+
+  recordMingleCoordinationReceipt(receipt: MingleCoordinationReceiptRecord): void {
+    this.appendCanonicalEvent("mingle.coordination_receipt_recorded", { receipt: cloneMingleCoordinationReceipt(receipt) }, {
+      phase: receipt.phase,
+      visibility: "producer",
+    });
+    this._mingleCoordinationReceipts.set(receipt.id, cloneMingleCoordinationReceipt(receipt));
+  }
+
+  getMingleCoordinationReceipts(): MingleCoordinationReceiptRecord[] {
+    return Array.from(this._mingleCoordinationReceipts.values()).map(cloneMingleCoordinationReceipt);
   }
 
   // ---------------------------------------------------------------------------

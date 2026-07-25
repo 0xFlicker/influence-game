@@ -74,9 +74,10 @@
  * Named-alliance records are inspectable through both turns and canonical
  * events: `alliance-action` turns capture Mingle I proposal/accept/decline/
  * counter behavior, `alliance-huddle-schedule` turns capture private House
- * grant/skip rationale, `alliance-huddle-turn` records capture member speech,
- * and `alliance-huddle-outcome` records capture the compact memory artifact
- * that carries forward. Huddle transcript entries use `scope: "huddle"` and
+ * grant/skip rationale, `alliance-huddle-turn` records capture member speech
+ * plus structured target/action/commitment/contingency/dissent facts, and
+ * `alliance-huddle-outcome` records carry those facts forward alongside a
+ * compact House summary. Huddle transcript entries use `scope: "huddle"` and
  * are producer/debug evidence, not public/player-safe live transcript.
  * Modern product-dialogue capture also carries additive normalized actor
  * identity, audience, dialogue kind, and formal-speech correlation context for
@@ -268,7 +269,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     richProducer: process.env.INFLUENCE_SIM_RICH_PRODUCER === "true",
     enableDiary: process.env.INFLUENCE_SIM_DIARY === "true",
     openAIReasoningSummary: undefined,
-    flex: false,
+    flex: true,
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -347,6 +348,8 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--no-reasoning-summary") {
       args.openAIReasoningSummary = null;
+    } else if (arg === "--standard" || arg === "--no-flex") {
+      args.flex = false;
     } else if (arg === "--flex") {
       args.flex = true;
     }

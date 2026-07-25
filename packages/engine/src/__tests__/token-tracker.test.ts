@@ -62,4 +62,16 @@ describe("token cost estimation", () => {
       auto: { promptTokens: 200, completionTokens: 100, callCount: 1 },
     });
   });
+
+  it("preserves effective service-tier usage through durable cursors", () => {
+    const tracker = new TokenTracker();
+    tracker.record("Atlas/vote", 1_000, 500, 0, 0, "flex");
+
+    const hydrated = new TokenTracker();
+    hydrated.loadCursor(tracker.toCursor());
+
+    expect(hydrated.getUsageByServiceTier()).toMatchObject({
+      flex: { promptTokens: 1_000, completionTokens: 500, callCount: 1 },
+    });
+  });
 });

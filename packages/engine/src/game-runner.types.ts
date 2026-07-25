@@ -5,6 +5,7 @@
  */
 
 import type {
+  AllianceHuddleCommitmentFact,
   UUID,
   PowerAction,
   JuryMember,
@@ -399,6 +400,21 @@ export interface PrivateDecisionTraceContext {
   boundary?: PrivateDecisionTraceBoundary;
 }
 
+/** Producer-only structural receipt. It deliberately has no prompt content. */
+export interface PromptReuseReceipt {
+  version: 1;
+  lane: string;
+  requestShape: string;
+  blocks: Array<{ id: string; class: "instructions" | "context" | "conversation" | "tool" | "unknown"; volatility: "stable" | "rolling" | "volatile"; canonicalHash: string; rollingHash: string; characters: number; tokenEstimate: number }>;
+  characterEstimate: number;
+  tokenEstimate: number;
+  comparable: boolean;
+  reusableCharacters: number;
+  reusableTokenEstimate: number;
+  firstBreak?: string;
+  usage?: { promptTokens?: number; cachedTokens?: number };
+}
+
 export interface PrivateDecisionTrace {
   version: 2;
   gameId?: UUID;
@@ -442,6 +458,7 @@ export interface PrivateDecisionTrace {
     routerBilling?: Record<string, unknown>;
     diagnostics?: string[];
   };
+  promptReuse?: PromptReuseReceipt;
   emittedThinking?: string;
   reasoningContext?: string;
   providerReasoningSummary?: ProviderReasoningSummary;
@@ -789,6 +806,7 @@ export interface AllianceHuddleTurnAction {
   message: string | null;
   noReply?: boolean;
   decisionLog?: string | null;
+  commitment?: Omit<AllianceHuddleCommitmentFact, "speakerId" | "speakerName">;
 }
 
 export interface MingleTurnAction {
@@ -806,6 +824,13 @@ export interface MingleTurnAction {
   reasoningContext?: string;
   /** Private producer/debug strategic decision metadata for this action. */
   decisionLog?: string | null;
+  /** Private receipt for a concrete proposal made in a decision-relevant allied room. */
+  coordinationReceipt?: {
+    proposedTarget: string | null;
+    proposedAction: string | null;
+    commitment: string | null;
+    noProposalReason: string | null;
+  };
 }
 
 export interface MingleIntentAction extends MingleIntentSummaryBase {

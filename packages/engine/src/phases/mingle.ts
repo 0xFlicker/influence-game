@@ -11,6 +11,7 @@ import type {
   MingleSessionDiagnostics,
 } from "../types";
 import { Phase } from "../types";
+import { createUUID } from "../game-state";
 import type { MingleIntentAction, MingleTurnAction } from "../game-runner.types";
 import {
   formatMingleIntentOperatorText,
@@ -605,6 +606,23 @@ async function runMingleTurn(
 
       await assertCanAcceptCommit(ctx);
 
+      const receipt = resolvedAction.coordinationReceipt;
+      if (receipt && (receipt.proposedTarget || receipt.proposedAction || receipt.commitment || receipt.noProposalReason)) {
+        gameState.recordMingleCoordinationReceipt({
+          id: createUUID(),
+          round: gameState.round,
+          phase,
+          actorId: playerId,
+          audiencePlayerIds: [...room.playerIds],
+          roomId: room.roomId,
+          proposedTargetName: receipt.proposedTarget,
+          proposedAction: receipt.proposedAction,
+          commitment: receipt.commitment,
+          noProposalReason: receipt.noProposalReason,
+          createdAt: new Date().toISOString(),
+        });
+      }
+
       const message = resolvedAction.noReply ? null : resolvedAction.message?.trim();
       const messageSent = Boolean(message && recipientIds.length > 0);
       const turnAction = message ? "talk" : "no_reply";
@@ -687,6 +705,7 @@ async function runMingleTurn(
         gotoPlayerName: movement.gotoPlayerName,
         gotoRoomIgnored: movement.gotoRoomIgnored,
         gotoStatus: movement.gotoStatus,
+        coordinationReceipt: turn.action.coordinationReceipt,
         ...strategicDecisionResponse(turn.action),
       },
       thinking: turn.action.thinking,

@@ -325,8 +325,12 @@ export class TokenTracker {
 
   loadCursor(cursor: TokenCostCursor): void {
     this.perSource.clear();
+    this.perServiceTier.clear();
     for (const [source, usage] of Object.entries(cursor.perSource)) {
       this.perSource.set(source, { ...EMPTY_USAGE, ...usage });
+    }
+    for (const [tier, usage] of Object.entries(cursor.byServiceTier ?? {}) as Array<[OpenAIServiceTier, TokenUsage]>) {
+      this.perServiceTier.set(tier, { ...EMPTY_USAGE, ...usage });
     }
   }
 }
@@ -347,6 +351,7 @@ export interface TokenCostCursor {
   version: 1;
   totals: TokenUsage;
   perSource: Record<string, TokenUsage>;
+  byServiceTier?: ServiceTierUsage;
   boundary?: TokenCostCursorBoundary;
 }
 
@@ -360,5 +365,6 @@ TokenTracker.prototype.toCursor = function (this: TokenTracker): TokenCostCursor
     version: 1,
     totals: this.getTotalUsage(),
     perSource: this.getAllUsage(),
+    byServiceTier: this.getUsageByServiceTier(),
   };
 };

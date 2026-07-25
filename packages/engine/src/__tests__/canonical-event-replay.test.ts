@@ -14,6 +14,40 @@ function fixedClock(): () => number {
 }
 
 describe("canonical event replay", () => {
+  it("replays private Mingle coordination receipts without changing game mechanics", () => {
+    const gs = new GameState([
+      { id: "alice", name: "Alice" },
+      { id: "bob", name: "Bob" },
+      { id: "cara", name: "Cara" },
+    ], { gameId: "game-private-mingle-receipt", now: fixedClock() });
+    gs.startRound();
+    const beforeVotes = gs.getDomainProjection().currentVoteTally;
+    gs.recordMingleCoordinationReceipt({
+      id: "receipt-1",
+      round: 1,
+      phase: Phase.MINGLE,
+      actorId: "alice",
+      audiencePlayerIds: ["alice", "bob"],
+      roomId: 1,
+      proposedTargetName: "Cara",
+      proposedAction: "Empower Bob, then pressure Cara under the locked format.",
+      commitment: "Alice will compare the final legal action with Bob.",
+      noProposalReason: null,
+      createdAt: "2026-07-25T00:00:00.000Z",
+    });
+
+    const event = gs.getCanonicalEvents().at(-1)!;
+    expect(event).toMatchObject({ type: "mingle.coordination_receipt_recorded", visibility: "producer" });
+    const replayed = replayCanonicalEvents(gs.getCanonicalEvents());
+    expect(replayed.mingleCoordinationReceipts["receipt-1"]?.audiencePlayerIds).toEqual(["alice", "bob"]);
+    const resumed = GameState.fromCanonicalEvents(gs.getCanonicalEvents());
+    expect(resumed.getMingleCoordinationReceipts()).toEqual([expect.objectContaining({
+      id: "receipt-1",
+      proposedTargetName: "Cara",
+    })]);
+    expect(replayed.currentVoteTally).toEqual(beforeVotes);
+  });
+
   it("memoizes getDomainProjection until the event head advances", () => {
     const gs = new GameState(
       [

@@ -269,6 +269,21 @@ export interface MingleTurnActionRecord {
   gotoStatus: MingleRoomChoiceStatus;
 }
 
+/** Private audit fact for a decision-relevant Mingle-room proposal; never mutates game mechanics. */
+export interface MingleCoordinationReceiptRecord {
+  id: UUID;
+  round: number;
+  phase: Phase;
+  actorId: UUID;
+  audiencePlayerIds: UUID[];
+  roomId: number;
+  proposedTargetName: string | null;
+  proposedAction: string | null;
+  commitment: string | null;
+  noProposalReason: string | null;
+  createdAt: string;
+}
+
 export interface MingleAllocatedRoomDiagnostics {
   roomId: number;
   beat: number;
@@ -377,6 +392,20 @@ export interface AllianceHuddleSessionRecord {
   completedAt: string;
 }
 
+/** A member's explicit tactical proposal from a private alliance huddle. */
+export interface AllianceHuddleCommitmentFact {
+  speakerId: UUID;
+  speakerName: string;
+  proposedTargetName: string | null;
+  noTargetReason: string | null;
+  proposedAction: string;
+  memberCommitments: Array<{ memberName: string; commitment: string }>;
+  contingency: string;
+  confidence: "low" | "medium" | "high";
+  dissent: string[];
+  alternativePlan: string | null;
+}
+
 export interface AllianceHuddleOutcome {
   id: UUID;
   sessionId: UUID;
@@ -390,6 +419,8 @@ export interface AllianceHuddleOutcome {
   confidence: "low" | "medium" | "high";
   posture: string;
   leakOrBetrayalClaims: string[];
+  /** Primary tactical facts supplied by members; House prose is only a summary. */
+  commitments?: AllianceHuddleCommitmentFact[];
   createdAt: string;
 }
 

@@ -952,7 +952,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(messages[0]?.content).toContain("you can and should use precise technical game terms");
     expect(messages[0]?.content).toContain("## Strategic Play Menu");
     expect(messages[0]?.content).toContain("Vote block");
-    expect(messages[0]?.content).toContain("Strategic restraint");
+    expect(messages[0]?.content).toContain("Naming and coordinating targets within alliances is essential to winning.");
     expect(messages[0]?.content).toContain("Do not force strategy every turn");
     expect(messages[0]?.content).toContain("You are not being evaluated for honesty; you are being evaluated for playing to win while remaining believable.");
     expect(messages[0]?.content).not.toContain("NEVER use these phrases or concepts");
@@ -1226,9 +1226,9 @@ describe("InfluenceAgent structured output mode", () => {
     const firstPrompt = (requests[0]?.messages as Array<{ content: string }>).at(-1)!.content;
     const finalPrompt = (requests[1]?.messages as Array<{ content: string }>).at(-1)!.content;
 
-    expect(firstPrompt).toContain("Talk about the game when it helps");
+    expect(firstPrompt).toContain("Talk about the game");
     expect(firstPrompt).toContain("Bluff, misdirect, exaggerate, or lie");
-    expect(firstPrompt).toContain("Write 1-5 sentences; prefer 2-3");
+    expect(firstPrompt).toContain("Write 1-5 sentences; prefer conciseness");
     expect(firstPrompt).toContain("This is lobby message 1 of 2; 1 lobby message remains after this.");
     expect(firstPrompt).not.toContain("Openly naming vote plans, expose targets, or alliance structures");
     expect(firstPrompt).not.toContain("Revealing private deals or whisper-room information as fact");
@@ -1699,6 +1699,14 @@ describe("InfluenceAgent structured output mode", () => {
           thinking: "Mira needs a clean ask before the public vote locks.",
           message: "Mira, hold the empower vote on me and I will keep the expose pressure on Vera.",
           noReply: false,
+          proposedTarget: "Vera",
+          noTargetReason: null,
+          proposedAction: "Empower Atlas, then pressure Vera in the first ballot.",
+          memberCommitments: [{ memberName: "Atlas", commitment: "Keep pressure on Vera." }],
+          contingency: "If Mira will not empower Atlas, compare an alternate empower candidate.",
+          confidence: "medium",
+          dissent: ["Mira has not committed yet."],
+          alternativePlan: "Keep the alliance private and gather one more read.",
           decisionLog: "ask Mira for a concrete vote alignment inside Glass Table",
         },
         "Hidden local reasoning for the alliance huddle.",
@@ -1730,6 +1738,16 @@ describe("InfluenceAgent structured output mode", () => {
       reasoningContext: "Hidden local reasoning for the alliance huddle.",
       message: "Mira, hold the empower vote on me and I will keep the expose pressure on Vera.",
       noReply: false,
+      commitment: {
+        proposedTargetName: "Vera",
+        noTargetReason: null,
+        proposedAction: "Empower Atlas, then pressure Vera in the first ballot.",
+        memberCommitments: [{ memberName: "Atlas", commitment: "Keep pressure on Vera." }],
+        contingency: "If Mira will not empower Atlas, compare an alternate empower candidate.",
+        confidence: "medium",
+        dissent: ["Mira has not committed yet."],
+        alternativePlan: "Keep the alliance private and gather one more read.",
+      },
       decisionLog: "ask Mira for a concrete vote alignment inside Glass Table",
     });
     expect(requests[0]?.tools).toEqual(
@@ -1796,6 +1814,12 @@ describe("InfluenceAgent structured output mode", () => {
       gotoRoomId: null,
       gotoPlayerName: null,
       reasoningContext: "Hidden local reasoning for the Mingle turn.",
+      coordinationReceipt: {
+        proposedTarget: null,
+        proposedAction: null,
+        commitment: null,
+        noProposalReason: null,
+      },
     });
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
@@ -1825,6 +1849,72 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("gotoPlayerName wins");
     expect(removedMingleDebugKeys.every((key) => !prompt.includes(key))).toBe(true);
     expect(prompt).toContain("TALK has no audience");
+  });
+
+  it("requires and preserves a concrete receipt in an allied Mingle decision room", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "mingle_turn", {
+        thinking: "Mira is an official ally, but I still want the group to test Vera rather than blindly agree.",
+        message: "Mira, I propose we empower you and both put Vera under pressure once the format is known. If you disagree, name your alternative now.",
+        noReply: false,
+        gotoRoomId: null,
+        gotoPlayerName: null,
+        proposedTarget: "Vera",
+        proposedAction: "Empower Mira, then pressure Vera under the locked format.",
+        commitment: "Atlas will support the Vera pressure lane unless the format makes it illegal.",
+        noProposalReason: null,
+        decisionLog: "offer Mira an independent Vera pressure proposal with a format contingency",
+      }),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const turn = await agent.takeMingleTurn({
+      ...makeContext(Phase.MINGLE),
+      allianceContext: {
+        activeAlliances: [{ id: "glass", name: "Glass Table", memberIds: ["atlas-id", "mira-id"], memberNames: ["Atlas", "Mira"], purpose: "Compare real vote plans.", timebox: null, status: "active", huddleOutcomes: [] }],
+        openProposals: [],
+        proposalHistory: [],
+      },
+    }, ["Atlas", "Mira"], []);
+
+    expect(turn.coordinationReceipt).toEqual({
+      proposedTarget: "Vera",
+      proposedAction: "Empower Mira, then pressure Vera under the locked format.",
+      commitment: "Atlas will support the Vera pressure lane unless the format makes it illegal.",
+      noProposalReason: null,
+    });
+    const prompt = ((requests[0]?.messages as Array<{ content: string }>).at(-1)?.content) ?? "";
+    expect(prompt).toContain("## Allied Decision Room");
+    expect(prompt).toContain("not a consensus mandate");
+  });
+
+  it("rejects invalid huddle targets while retaining a valid no-target reason", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id", "Atlas", "strategic",
+      makeToolOpenAIStub(requests, "alliance_huddle_turn", {
+        thinking: "I cannot legally target myself.", message: "Let's wait for the format.", noReply: false,
+        proposedTarget: "Atlas", noTargetReason: null, proposedAction: "Wait for the locked format.",
+        memberCommitments: [{ memberName: "Atlas", commitment: "Reassess after the format pick." }],
+        contingency: "If Vera is legal under the locked format, revisit Vera.", confidence: "low", dissent: ["Mira prefers more evidence."], alternativePlan: "Gather one more room read.", decisionLog: "reject self target",
+      }),
+      "google/gemma-4-26b-a4b-qat", undefined, undefined, { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const turn = await agent.getAllianceHuddleTurn(makeContext(Phase.PRE_VOTE_HUDDLE), {
+      allianceId: "glass", allianceName: "Glass Table", memberNames: ["Atlas", "Mira"], purpose: "Coordinate", timebox: null, window: "pre_vote", scheduleId: "schedule", pass: 1,
+    });
+    expect(turn.commitment?.proposedTargetName).toBeNull();
+    expect(turn.commitment?.noTargetReason).toContain("Rejected invalid target: Atlas");
+    expect(turn.commitment?.dissent).toEqual(["Mira prefers more evidence."]);
   });
 
   it("warns final Mingle turns not to expect another reply", async () => {

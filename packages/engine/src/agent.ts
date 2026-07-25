@@ -54,7 +54,7 @@ import type {
   FormatDecisionProvenance,
 } from "./game-runner.types";
 import { Phase } from "./types";
-import type { UUID, PowerAction } from "./types";
+import type { AllianceHuddleCommitmentFact, UUID, PowerAction } from "./types";
 import { displayNameForFormat, isLaunchFormatId, pickFormatFromMenu, type LaunchFormatId } from "./formats";
 import { ruleSheetForFormat } from "./format-pressure";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
@@ -359,8 +359,6 @@ const STRATEGIC_LENSES: readonly StrategicLens[] = [
   "loyalty_stress",
   "retaliation_risk",
   "social_cover",
-  "timing_pattern",
-  "presentation_read",
   "relationship_repair",
   "broad_read",
 ];
@@ -391,9 +389,7 @@ Choose the main evidence frame for this decision:
 - jury_threat: endgame credibility, jury danger, and finalist threat level
 - loyalty_stress: loyalty under pressure or trust being tested
 - retaliation_risk: who may strike back if pressured
-- social_cover: who is being shielded, hidden, or given cover
-- timing_pattern: sudden pivots, delays, and sequence/timing tells
-- presentation_read: style, polish, or authenticity read; use sparingly when no stronger evidence exists
+- social_cover: using others as shields or staying hidden
 - relationship_repair: calming, rebuilding, or preserving a useful tie
 - broad_read: intentionally broad scan because evidence is thin
 
@@ -403,20 +399,19 @@ const STRATEGIC_PLAY_MENU = `## Strategic Play Menu
 You are playing a social strategy vote-elimination game. You may use strategy, but it should fit your personality, relationships, current evidence, and the phase of the game. Do not force strategy every turn. Sometimes the strongest move is restraint.
 
 Consider whether one of these plays fits the moment:
+- Name a target: Identify a living player as a provisional target for the current vote, empower, or format action. Do not name yourself or an eliminated player. Naming and coordinating targets within alliances is essential to winning.
 - Vote block: Name or reinforce a group that may vote together.
-- Protection deal: Offer safety for safety.
-- Vote trade: Exchange vote commitments.
+- Protection deal: Offer to not target someone in exchange for a vote, information, or other value. Treat this as a promise that can create trust, leverage, or future betrayal risk.
+- Vote counting: Coordinate concrete vote or format-action commitments.
 - Final deals: Ask for or offer a Final 2, Final 3, or Final 4. Treat these as promises that can create trust, leverage, or future betrayal risk.
 - Coalition building: Pull people into a shared plan using common threat, shared trust, or mutual benefit.
-- Vote counting: Reason aloud about how players inside and outside the room may vote under the active format. Track likely ballots, swing commitments, public safety state, and tie incentives.
-- Format leverage: If someone chooses the format, holds a format tiebreak, controls a public Safety Bounce pointer, or influences sealed ballots, appeal directly to their incentive.
-- Safety plea: If the active format puts you in danger, make an accountable case for why keeping you helps someone else's game. Do not only beg. Offer a reason, a deal, or a target.
-- Information trade: Share useful information in exchange for safety, trust, or a vote. You may also withhold information if revealing it weakens you.
-- Offensive pressure: Push suspicion onto a target, expose contradictions, or frame someone as dangerous.
-- Defensive survival: Lower your threat level, clarify intent, repair distrust, or redirect heat without overexplaining.
+- Vote counting: Reason aloud about how players inside and outside the room may vote based off the available information or inference.
+- Safety plea: If vulnerable, make an accountable case for why keeping you helps someone else's game. Do not only beg. Offer a deal or another target.
+- Information trade: Share useful information to gain trust, leverage, or a vote. You may also withhold information if revealing it weakens you.
+- Offensive pressure: Push suspicion onto a target.
+- Defensive survival: Lower your threat level, clarify intent, repair distrust, or redirect heat.
 - Relationship repair: If you damaged trust, acknowledge it and offer a concrete next step.
 - Deception or misdirection: You may bluff, hide your real vote, exaggerate certainty, or let others believe a false plan, but consider the jury and future blowback.
-- Strategic restraint: Stay guarded, refuse to name a target, avoid overcommitting, or keep options open when the room is unstable.
 
 You are not being evaluated for honesty; you are being evaluated for playing to win while remaining believable.
 
@@ -548,9 +543,26 @@ const TOOL_ALLIANCE_HUDDLE_TURN: ChatCompletionTool = {
           type: "boolean",
           description: "Set true only when intentionally saying nothing in this huddle opportunity.",
         },
+        proposedTarget: { type: ["string", "null"], description: "One living target for the current action, or null only with a concrete noTargetReason." },
+        noTargetReason: { type: ["string", "null"], description: "Concrete reason a target cannot yet be proposed; null when proposedTarget is named." },
+        proposedAction: { type: "string", description: "Phase-appropriate proposed action: empower vote, Council vote, or locked-format ballot/pointer commitment." },
+        memberCommitments: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { memberName: { type: "string" }, commitment: { type: "string" } },
+            required: ["memberName", "commitment"],
+            additionalProperties: false,
+          },
+          description: "Concrete commitments proposed for one or more named alliance members; do not pretend another member accepted unless they said so.",
+        },
+        contingency: { type: "string", description: "What to do if the target, vote count, format action, or ally response changes." },
+        confidence: { type: "string", enum: ["low", "medium", "high"], description: "Your confidence in this proposal, not a claim of group consensus." },
+        dissent: { type: "array", items: { type: "string" }, description: "Explicit objections, alternative targets, or empty when none have been voiced." },
+        alternativePlan: { type: ["string", "null"], description: "A distinct fallback or opposing plan, or null when none exists." },
         ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      required: ["thinking", "message", "noReply", ...STRATEGIC_DECISION_REQUIRED],
+      required: ["thinking", "message", "noReply", "proposedTarget", "noTargetReason", "proposedAction", "memberCommitments", "contingency", "confidence", "dissent", "alternativePlan", ...STRATEGIC_DECISION_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -630,9 +642,13 @@ const TOOL_MINGLE_TURN: ChatCompletionTool = {
           type: ["string", "null"],
           description: "Optional living player name to follow to their resolved room next turn, or null to stay or use gotoRoomId",
         },
+        proposedTarget: { type: ["string", "null"], description: "Living target named in a concrete room proposal, or null." },
+        proposedAction: { type: ["string", "null"], description: "Vote, empower, or legal format-action proposal made in the room, or null." },
+        commitment: { type: ["string", "null"], description: "Your concrete commitment or ask to the room, or null." },
+        noProposalReason: { type: ["string", "null"], description: "Required when a decision-relevant room with an official ally has no concrete proposal." },
         ...STRATEGIC_DECISION_TOOL_PROPERTIES,
       },
-      required: ["thinking", "message", "noReply", "gotoRoomId", "gotoPlayerName", ...STRATEGIC_DECISION_REQUIRED],
+      required: ["thinking", "message", "noReply", "gotoRoomId", "gotoPlayerName", "proposedTarget", "proposedAction", "commitment", "noProposalReason", ...STRATEGIC_DECISION_REQUIRED],
       additionalProperties: false,
     },
     strict: true,
@@ -1052,6 +1068,59 @@ function normalizeNullableString(value: unknown): string | null {
 
 function normalizeRequiredString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeLivingTarget(value: unknown, ctx: PhaseContext): string | null {
+  const candidate = normalizeNullableString(value);
+  if (!candidate) return null;
+  return ctx.alivePlayers.find((player) => player.id !== ctx.selfId && normalizeName(player.name) === normalizeName(candidate))?.name ?? null;
+}
+
+function normalizeHuddleCommitment(
+  value: Record<string, unknown>,
+  ctx: PhaseContext,
+): Omit<AllianceHuddleCommitmentFact, "speakerId" | "speakerName"> {
+  const proposedTarget = normalizeLivingTarget(value.proposedTarget, ctx);
+  const requestedTarget = normalizeNullableString(value.proposedTarget);
+  const noTargetReason = proposedTarget
+    ? null
+    : normalizeNullableString(value.noTargetReason)
+      ?? (requestedTarget ? `Rejected invalid target: ${requestedTarget}.` : "No target proposed; evidence or legal action is still unclear.");
+  const allowedMembers = new Set((ctx.allianceContext?.activeAlliances ?? [])
+    .flatMap((alliance) => alliance.memberNames)
+    .concat(ctx.selfName)
+    .map(normalizeName));
+  const memberCommitments = Array.isArray(value.memberCommitments)
+    ? value.memberCommitments.flatMap((entry) => {
+      if (!entry || typeof entry !== "object") return [];
+      const record = entry as Record<string, unknown>;
+      const memberName = normalizeNullableString(record.memberName);
+      const commitment = normalizeNullableString(record.commitment);
+      return memberName && commitment && allowedMembers.has(normalizeName(memberName)) ? [{ memberName, commitment }] : [];
+    })
+    : [];
+  return {
+    proposedTargetName: proposedTarget,
+    noTargetReason,
+    proposedAction: normalizeRequiredString(value.proposedAction),
+    memberCommitments,
+    contingency: normalizeRequiredString(value.contingency),
+    confidence: value.confidence === "low" || value.confidence === "high" ? value.confidence : "medium",
+    dissent: normalizeStringArray(value.dissent),
+    alternativePlan: normalizeNullableString(value.alternativePlan),
+  };
+}
+
+function officialAlliesInRoom(ctx: PhaseContext, roomMates: readonly string[]): string[] {
+  const activeAlliances = ctx.allianceContext?.activeAlliances ?? [];
+  return roomMates.filter((roomMate) => activeAlliances.some((alliance) =>
+    alliance.memberNames.some((member) => normalizeName(member) === normalizeName(ctx.selfName)) &&
+    alliance.memberNames.some((member) => normalizeName(member) === normalizeName(roomMate)),
+  ));
+}
+
+function hasPendingMingleDecision(ctx: PhaseContext): boolean {
+  return ctx.phase === Phase.MINGLE || ctx.phase === Phase.POST_VOTE_MINGLE || ctx.phase === Phase.FORMAT_MINGLE;
 }
 
 function formatEliminationVoteDisclosure(disclosure: EliminationVoteDisclosure): string {
@@ -1927,23 +1996,21 @@ Keep it to 2-3 sentences. Be human, relatable, and memorable. You want to be som
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const lobbyGuidance = ctx.round <= 2
   ? `## Lobby Guidance
-This is a public social phase. Be warm, curious, and human, but remember you are still playing to survive.
+This is a public social phase. All players are watching. You are allowed to shape the room, but best do it with plausible deniability.
 
-You may:
+You can:
 - Build trust through personality, stories, humor, and direct engagement
-- Notice who feels genuine, evasive, charming, nervous, quiet, or overly polished
 - Ask questions that help you read people
 - Signal who you feel good about
-- Talk about the game when it helps: vote receipts, trust, suspicion, pressure, promises, targets, alliances, doubts, and deals are all fair public material
+- Talk about the game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Your message should feel public and watchable, not like a rules spreadsheet. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`
+Your message should feel public and watchable, not like a rules spreadsheet. Write 1-5 sentences; prefer conciseness unless the moment genuinely needs more.`
   : `## Lobby Guidance
-This is public. Everyone is watching. You are allowed to shape the room, but best do it with plausible deniability.
+This is public. Everyone is watching. The game is heating up.
 
 You may:
 - Praise, tease, challenge, question, or cast doubt on specific players
-- Float concerns without making a formal accusation
 - Just asking questions...
 - Reinforce trust with people you want closer
 - Put pressure on rivals through tone, contrast, and selective attention
@@ -1951,7 +2018,7 @@ You may:
 - Name empower plans, contingent format preferences, alliances, deals, betrayals, or threats when public pressure serves your game
 - Bluff, misdirect, exaggerate, or lie when it fits your strategy and personality
 
-Your message should be entertaining, useful to your game, and help you survive the next voting phase. Do you have the votes? If not you need to find them now. Write 1-5 sentences; prefer 2-3 unless the moment genuinely needs more.`;
+Your message should be entertaining and useful to your game. Write 1-5 sentences; prefer conciseness unless the moment genuinely needs more.`;
     const prompt = this.buildUserPrompt(ctx) + `
 ${lobbyGuidance}
 ${lobbyProgress}
@@ -2026,11 +2093,11 @@ Available rooms: ${Array.from({ length: roomCount }, (_, index) => `Room ${index
 ${currentCounts}
 
 Your intent should describe who you want to seek, who you want to avoid, what room size fits your plan, what you are trying to learn or set up, and what opening ask you might use if the assigned room context allows.
-You may name a provisional target if that fits your read. You may also stay provisional, but explain why you are not naming a target yet.
+Most other players will expect you to name a target. You may also stay provisional, but explain why you are not naming a target yet.
 Standing target check:
-- A standing target is one living player you are currently pressure-testing as your default threat/read, not a forced vote.
+- A standing target is one living player you want to eventually eliminate from the game.
 - If you name provisionalTarget, use exactly one name from Available other players. Never name yourself or anyone listed as eliminated.
-- If your prior Strategy Thread points at an eliminated player or stale target, treat that as evidence to revise: either pick a living replacement to test, or set provisionalTarget to null and explain what living evidence is still missing.
+- If your prior Strategy Thread points at an eliminated player or stale target: either pick a living replacement, or set provisionalTarget to null and explain why.
 - It is valid to leave provisionalTarget null when your plan is relationship-building, alliance repair, or broad read gathering. The reason should be concrete.
 
 ${STRATEGIC_LENS_GUIDANCE}
@@ -2234,7 +2301,7 @@ Rules:
 - You get exactly one speaking opportunity in this huddle session.
 - Before a format is locked: name people — empower preference, threats, and likely ballot heat. Do not invent format names or speak in coded format theology ("structured/stable option") when House has not offered a pair yet. Format choice is secondary until the menu exists.
 - After a format is locked: ask for legal commitments under that format (sealed ballot placement, public bounce pointer, tiebreak, apology, reaffirmation, leak, denial, or betrayal explanation). Prefer full format names in speech (e.g. Vote Bomb), not snake_case ids.
-- You may mention dissent or uncertainty.
+- Your structured commitment is the authoritative tactical record. Propose rather than presume: record dissent, alternatives, and contingencies instead of inventing consensus or another member's promise.
 - You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation only happens in Mingle I.
 - Keep it to 1-3 sentences. Be specific enough that The House can summarize the ask, plan, promises, dissent, and confidence.
 
@@ -2245,6 +2312,14 @@ Use the alliance_huddle_turn tool.`;
         thinking?: string;
         message?: string | null;
         noReply?: boolean;
+        proposedTarget?: unknown;
+        noTargetReason?: unknown;
+        proposedAction?: unknown;
+        memberCommitments?: unknown;
+        contingency?: unknown;
+        confidence?: unknown;
+        dissent?: unknown;
+        alternativePlan?: unknown;
         decisionLog?: unknown;
         reasoningContext?: string;
       }>(
@@ -2257,11 +2332,13 @@ Use the alliance_huddle_turn tool.`;
       const metadata = this.strategicDecisionMetadata(result);
       this.recordStrategicDecision(ctx, "alliance-huddle-turn", "Alliance Huddle Turn", metadata);
       const message = result.noReply ? null : (result.message?.trim() || null);
+      const commitment = normalizeHuddleCommitment(result, ctx);
       return {
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         message,
         noReply: result.noReply || !message,
+        commitment,
         ...metadata,
       };
     } catch (err) {
@@ -2271,6 +2348,7 @@ Use the alliance_huddle_turn tool.`;
         reasoningContext: err instanceof Error ? err.message : String(err),
         message: null,
         noReply: true,
+        commitment: normalizeHuddleCommitment({}, ctx),
         decisionLog: "fallback: alliance huddle turn failed",
       };
     }
@@ -2333,6 +2411,10 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
 
   async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
     const otherRoomMates = roomMates.filter((name) => name !== this.name);
+    const officialAllies = officialAlliesInRoom(ctx, otherRoomMates);
+    const trustedRoomMates = otherRoomMates.filter((name) => this.memory.allies.has(name));
+    const coordinationPartners = [...new Set([...officialAllies, ...trustedRoomMates])];
+    const requiresCoordinationReceipt = coordinationPartners.length > 0 && hasPendingMingleDecision(ctx);
     const history = conversationHistory ?? [];
     const historyText = history.length > 0
       ? `\n## Conversation This Turn\n${history.map((m) => `${m.from}: "${m.text}"`).join("\n")}\n`
@@ -2388,6 +2470,10 @@ ${intentText}
 ${socialOpportunity}
 ${mingleProgress}
 Nobody outside your current room can hear this turn. You only know exact identities in your current room; other rooms are visible as counts only.
+${requiresCoordinationReceipt ? `
+## Allied Decision Room
+You are with trusted or official alliance member(s) ${coordinationPartners.join(", ")} while a decision is pending. This is not a consensus mandate: make an independent concrete proposal or commitment in TALK, OR record a specific noProposalReason in the structured receipt. A proposal must name a living target only when one is legal and warranted; preserve dissent and alternatives rather than pretending agreement.
+` : ""}
 
 Choose exactly one of:
 - TALK: send a private message to the other occupants in your current room.
@@ -2416,6 +2502,10 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         noReply?: boolean;
         gotoRoomId?: number | null;
         gotoPlayerName?: string | null;
+        proposedTarget?: unknown;
+        proposedAction?: unknown;
+        commitment?: unknown;
+        noProposalReason?: unknown;
         decisionLog?: unknown;
         reasoningContext?: string;
       }>(
@@ -2426,12 +2516,24 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
       const gotoRoomId = Number.isInteger(result.gotoRoomId) ? result.gotoRoomId : null;
       const metadata = this.strategicDecisionMetadata(result);
       this.recordStrategicDecision(ctx, "mingle-turn", "Mingle Turn", metadata);
+      const requestedTarget = normalizeNullableString(result.proposedTarget);
+      const proposedTarget = normalizeLivingTarget(result.proposedTarget, ctx);
+      const coordinationReceipt = {
+        proposedTarget,
+        proposedAction: normalizeNullableString(result.proposedAction),
+        commitment: normalizeNullableString(result.commitment),
+        noProposalReason: proposedTarget
+          ? null
+          : normalizeNullableString(result.noProposalReason)
+            ?? (requestedTarget ? `Rejected invalid target: ${requestedTarget}.` : requiresCoordinationReceipt ? "No concrete proposal recorded for this allied decision room." : null),
+      };
       return {
         thinking: result.thinking ?? "",
         message: msg,
         noReply: result.noReply ?? !msg,
         gotoRoomId,
         gotoPlayerName: normalizeNullableString(result.gotoPlayerName),
+        coordinationReceipt,
         reasoningContext: result.reasoningContext,
         ...metadata,
       };

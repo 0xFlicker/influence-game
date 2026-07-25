@@ -56,6 +56,7 @@ export type CanonicalGameEventType =
   | "round.started"
   | "shields.expired"
   | "mingle.rooms_allocated"
+  | "mingle.coordination_receipt_recorded"
   | "vote.cast"
   | "vote.empower_tally_resolved"
   | "vote.empower_revote_cast"
@@ -113,6 +114,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "round.started",
   "shields.expired",
   "mingle.rooms_allocated",
+  "mingle.coordination_receipt_recorded",
   "vote.cast",
   "vote.empower_tally_resolved",
   "vote.empower_revote_cast",
@@ -301,6 +303,7 @@ export type CanonicalGameEvent =
       }
     >
   | CanonicalEventEnvelope<"alliance.proposal_expired", { lineage: AllianceProposalLineage }>
+  | CanonicalEventEnvelope<"mingle.coordination_receipt_recorded", { receipt: import("./types").MingleCoordinationReceiptRecord }>
   | CanonicalEventEnvelope<"alliance.closed", { alliance: AllianceRecord }>
   | CanonicalEventEnvelope<"alliance.archived", { alliance: AllianceRecord }>
   | CanonicalEventEnvelope<"alliance.huddle_scheduled", { schedule: AllianceHuddleScheduleRecord }>
