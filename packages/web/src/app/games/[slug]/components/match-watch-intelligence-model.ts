@@ -358,8 +358,12 @@ function buildReceiptsModel(
     lines: [
       { label: "Canonical Facts", value: titleCaseStatus(availability.canonicalFactsStatus) },
       { label: "Standard Vote", value: titleCaseStatus(facts.standardVote.status) },
-      { label: "Power", value: titleCaseStatus(facts.power.status) },
-      { label: "Council", value: titleCaseStatus(facts.council.status) },
+      ...(facts.power
+        ? [{ label: "Power", value: titleCaseStatus(facts.power.status) }]
+        : []),
+      ...(facts.council
+        ? [{ label: "Council", value: titleCaseStatus(facts.council.status) }]
+        : []),
     ],
     ...(receipts.reason && { reason: receipts.reason }),
   };

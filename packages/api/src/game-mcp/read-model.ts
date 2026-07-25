@@ -515,6 +515,13 @@ export class ProductionGameMcpReadModel {
       .limit(1))[0];
 
     if (!row) return null;
+    // Stored kernel short-circuits inference; skip full event load on the hot path.
+    const storedKernel = row.gameKernel === "classic" || row.gameKernel === "format"
+      ? row.gameKernel
+      : null;
+    if (storedKernel) {
+      return gameIdentity(row, []);
+    }
     const events = await getPersistedGameEvents(this.db, row.id);
     return gameIdentity(row, events.events.map((rowEvent) => rowEvent.envelope));
   }

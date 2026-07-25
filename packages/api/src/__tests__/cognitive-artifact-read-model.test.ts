@@ -245,6 +245,107 @@ describe("CognitiveArtifactReadModel", () => {
     expect(producerHuddleThinking.ok).toBe(true);
   });
 
+  test("keeps sealed format-ballot cognitive artifacts owner-only for participant_web", async () => {
+    const gameId = randomUUID();
+    const ownerUserId = randomUUID();
+    const participantUserId = randomUUID();
+    const ownerPlayerId = randomUUID();
+    const participantPlayerId = randomUUID();
+    const formatBallotThinkingId = randomUUID();
+    const formatBallotStrategyId = randomUUID();
+    const formatPickThinkingId = randomUUID();
+    const publicThinkingId = randomUUID();
+
+    await insertUsers(ownerUserId, participantUserId);
+    await insertGame(gameId, { captureVersion: 1 });
+    await insertPlayer(gameId, ownerPlayerId, ownerUserId);
+    await insertPlayer(gameId, participantPlayerId, participantUserId);
+    await insertArtifact({
+      id: formatBallotThinkingId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      action: "format-save-or-eliminate-ballot",
+      phase: "FORMAT_RESOLVE",
+      payload: { thinking: "sealed save-or-eliminate intent" },
+    });
+    await insertArtifact({
+      id: formatBallotStrategyId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "strategy",
+      action: "format-vote-bomb-ballot",
+      phase: "FORMAT_RESOLVE",
+      payload: { decisionLog: "sealed vote-bomb intent" },
+    });
+    await insertArtifact({
+      id: formatPickThinkingId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      action: "format-pick",
+      phase: "FORMAT_PICK",
+      payload: { thinking: "public format pick rationale is fine" },
+    });
+    await insertArtifact({
+      id: publicThinkingId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      payload: { thinking: "ordinary participant-visible thought" },
+    });
+
+    const participantAccess = {
+      userId: participantUserId,
+      authProfile: "subject" as const,
+      surfaceCapability: "participant_web" as const,
+    };
+    const participantList = await readModel.listArtifacts({ gameIdOrSlug: gameId }, participantAccess);
+    expect(participantList.ok).toBe(true);
+    if (!participantList.ok) throw new Error(participantList.error);
+    expect(participantList.artifacts.map((artifact) => artifact.id).sort()).toEqual(
+      [formatPickThinkingId, publicThinkingId].sort(),
+    );
+
+    const deniedBallotThinking = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: formatBallotThinkingId,
+      artifactType: "thinking",
+      actorPlayerId: ownerPlayerId,
+    }, participantAccess);
+    expect(deniedBallotThinking).toMatchObject({ ok: false, status: "denied" });
+
+    const deniedBallotStrategy = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: formatBallotStrategyId,
+      artifactType: "strategy",
+      actorPlayerId: ownerPlayerId,
+    }, participantAccess);
+    expect(deniedBallotStrategy).toMatchObject({ ok: false, status: "denied" });
+
+    const ownerBallotThinking = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: formatBallotThinkingId,
+      artifactType: "thinking",
+      actorPlayerId: ownerPlayerId,
+    }, {
+      userId: ownerUserId,
+      authProfile: "subject" as const,
+      surfaceCapability: "participant_web" as const,
+    });
+    expect(ownerBallotThinking.ok).toBe(true);
+
+    const producerBallotThinking = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: formatBallotThinkingId,
+    }, PRODUCER_ACCESS);
+    expect(producerBallotThinking.ok).toBe(true);
+  });
+
   test("subject_owner hides non-owned thinking/strategy and survives non-owned scan pressure", async () => {
     const gameId = randomUUID();
     const ownerUserId = randomUUID();

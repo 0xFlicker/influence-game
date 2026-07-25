@@ -138,12 +138,15 @@ export function canReadCognitiveArtifact(
     return ownsCognitiveArtifactActor(accessor, context);
   }
 
-  // participant_web (and unset legacy): reasoning + alliance huddle owner-only;
-  // ordinary thinking/strategy remain participant-visible.
+  // participant_web (and unset legacy): reasoning, alliance huddle, and sealed
+  // format ballots are owner-only; ordinary thinking/strategy remain participant-visible.
   if (context.artifactType === "reasoning") {
     return ownsCognitiveArtifactActor(accessor, context);
   }
   if (isAllianceHuddleArtifactContext(context)) {
+    return ownsCognitiveArtifactActor(accessor, context);
+  }
+  if (isSealedFormatBallotArtifactContext(context)) {
     return ownsCognitiveArtifactActor(accessor, context);
   }
   return context.artifactType === "thinking" || context.artifactType === "strategy";
@@ -155,6 +158,16 @@ function isAllianceHuddleArtifactContext(context: CognitiveArtifactPolicyContext
     context.phase === "MINGLE_I" ||
     context.phase === "PRE_VOTE_HUDDLE" ||
     context.phase === "PRE_COUNCIL_HUDDLE";
+}
+
+/** Sealed format ballots must not leak peer intent before House reveal. */
+function isSealedFormatBallotArtifactContext(context: CognitiveArtifactPolicyContext): boolean {
+  const action = context.action;
+  if (!action) return false;
+  return action === "format-ballot" ||
+    action === "format-save-or-eliminate-ballot" ||
+    action === "format-vote-bomb-ballot" ||
+    action === "format-safety-bounce-vote";
 }
 
 export function canListCognitiveArtifactsForGame(

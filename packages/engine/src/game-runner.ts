@@ -22,7 +22,7 @@ import type { IHouseInterviewer } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 import { hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
-import { displayNameForFormat } from "./formats";
+import { displayNameForFormat, isLaunchFormatId, type LaunchFormatId } from "./formats";
 
 // Re-export types from the extracted module for backward compatibility
 export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
@@ -126,6 +126,7 @@ export class GameRunner {
         this.eliminationOrderPlayerIds.push(event.payload.playerId);
         this.eliminationOrder.push(event.payload.playerName);
       }
+      this.hydrateFormatKernelStateFromEvents(options.resumeFrom.canonicalEvents);
     }
     this.machine = createPhaseMachine();
     this.houseInterviewer = houseInterviewer ?? new TemplateHouseInterviewer();
@@ -424,6 +425,21 @@ export class GameRunner {
         text: item.accusation,
       });
     }
+  }
+
+  /**
+   * Seed menu anti-repeat from durable format.selected evidence so supported
+   * phase-boundary resume cannot re-offer the prior format (KTD6).
+   */
+  private hydrateFormatKernelStateFromEvents(events: readonly CanonicalGameEvent[]): void {
+    let lastSelected: LaunchFormatId | null = null;
+    for (const event of events) {
+      if (event.type !== "format.selected") continue;
+      if (isLaunchFormatId(event.payload.formatId)) {
+        lastSelected = event.payload.formatId;
+      }
+    }
+    this.formatKernelState.lastSelectedFormat = lastSelected;
   }
 
   private buildCurrentAccusationsPayload(

@@ -797,7 +797,8 @@ export interface PublicWatchIntelligenceRoundFacts {
     method: string | null;
     tied: unknown[];
   };
-  power: {
+  /** Present on classic-kernel rounds; omitted on format-kernel dual-shape receipts. */
+  power?: {
     status: RevealedFactsStatus;
     exposureScores: unknown[];
     exposureBench: Record<string, unknown>;
@@ -808,7 +809,8 @@ export interface PublicWatchIntelligenceRoundFacts {
     finalCouncilCandidates: Array<{ id: string; name: string }>;
     method: string | null;
   };
-  council: {
+  /** Present on classic-kernel rounds; omitted on format-kernel dual-shape receipts. */
+  council?: {
     status: RevealedFactsStatus;
     ledger: unknown[];
     eliminated: { id: string; name: string } | null;
@@ -920,10 +922,12 @@ export interface CompletedGameResultsRoundFacts {
     empowerTally: Array<{ player: CompletedGameResultsPlayerRef; votes: number }>;
     tied: CompletedGameResultsPlayerRef[];
   };
-  power: PublicWatchIntelligenceRoundFacts["power"] & {
+  /** Present on classic-kernel rounds; omitted on format-kernel dual-shape results. */
+  power?: NonNullable<PublicWatchIntelligenceRoundFacts["power"]> & {
     exposureScores: Array<{ player: CompletedGameResultsPlayerRef; votes: number }>;
   };
-  council: PublicWatchIntelligenceRoundFacts["council"] & {
+  /** Present on classic-kernel rounds; omitted on format-kernel dual-shape results. */
+  council?: NonNullable<PublicWatchIntelligenceRoundFacts["council"]> & {
     ledger: CompletedGameResultsSimpleVoteEntry[];
   };
 }
@@ -954,7 +958,7 @@ export interface CompletedGameResultsPlayer extends CompletedGameResultsPlayerRe
 export interface CompletedGameResultsElimination {
   player: CompletedGameResultsPlayerRef;
   round: number;
-  source: "council" | "endgame" | "jury" | "player_eliminated";
+  source: "council" | "endgame" | "jury" | "player_eliminated" | "format";
   method: string | null;
   juryMember: boolean;
 }

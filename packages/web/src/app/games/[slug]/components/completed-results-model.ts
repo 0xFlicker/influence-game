@@ -124,7 +124,7 @@ function buildVoteColumns(results: CompletedGameResultsRead): CompletedResultsVo
       columns.push({ id: `r${round.round}:empower`, label: `Round ${round.round} empower`, shortLabel: `R${round.round} E+`, round: round.round, kind: "empower" });
       columns.push({ id: `r${round.round}:expose`, label: `Round ${round.round} expose`, shortLabel: `R${round.round} X`, round: round.round, kind: "expose" });
     }
-    if (facts.council.ledger.length > 0) {
+    if ((facts.council?.ledger.length ?? 0) > 0) {
       columns.push({ id: `r${round.round}:council`, label: `Round ${round.round} council`, shortLabel: `R${round.round} C`, round: round.round, kind: "council" });
     }
     round.endgameEliminations.forEach((entry, index) => {
@@ -163,7 +163,7 @@ function buildCellLookup(results: CompletedGameResultsRead): Map<string, Omit<Co
       setCell(cells, `r${round.round}:empower`, entry.voter, entry.empowerTarget);
       setCell(cells, `r${round.round}:expose`, entry.voter, entry.exposeTarget);
     }
-    for (const entry of facts.council.ledger) {
+    for (const entry of facts.council?.ledger ?? []) {
       setCell(cells, `r${round.round}:council`, entry.voter, entry.target);
     }
     round.endgameEliminations.forEach((elimination, index) => {
