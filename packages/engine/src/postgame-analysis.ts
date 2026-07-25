@@ -590,8 +590,9 @@ function roundHeadline(
   }
   // Prefer format boot headline when format eliminated this round.
   // (eliminated branch above already covers name; method is on completed elim source.)
+  // Classic Council slate near-miss only (format-kernel rounds do not build council candidates).
   const survivor = round.keyRiskMoments.find((moment) => moment.type === "survived_council");
-  if (survivor) {
+  if (survivor && round.councilCandidates.length > 0) {
     return {
       text: `${survivor.player.name} survives the Council vote.`,
       confidence: "medium",
@@ -910,6 +911,7 @@ function buildPlayerSummary(input: {
         candidates,
         eliminated: facts.council?.eliminated?.id === player.id,
       });
+      // Council slate risk is classic-kernel only (format-kernel omits council).
       atRiskMoments.push({
         round: round.round,
         type: "council_candidate",
@@ -918,6 +920,7 @@ function buildPlayerSummary(input: {
     }
     const exposureLeader = facts.power?.exposureScores[0];
     if (exposureLeader?.player.id === player.id && exposureLeader.votes > 0) {
+      // Expose pressure is classic dual-ballot only.
       atRiskMoments.push({
         round: round.round,
         type: "exposure_leader",
@@ -1464,6 +1467,21 @@ function buildExecutiveSummary(input: {
   return dedupeDerivedText(lines).slice(0, 5);
 }
 
+function formatIdLabel(formatId: string | null | undefined): string | null {
+  if (!formatId) return null;
+  return formatId.split("_").join(" ");
+}
+
+function formatIdForRound(
+  completed: CompletedGameResultsRead,
+  round: number,
+): string | null {
+  return completed.rounds
+    .find((entry) => entry.round === round)
+    ?.canonicalFacts.roundFacts.format.selectedFormatId
+    ?? null;
+}
+
 function buildTurningPoints(input: {
   completed: CompletedGameResultsRead;
   roundSummaries: readonly PostgameRoundSummary[];
@@ -1472,6 +1490,8 @@ function buildTurningPoints(input: {
   eventRefs: EventReferenceIndex | null;
 }): PostgameTurningPoint[] {
   const points: PostgameTurningPoint[] = [];
+  const formatKernel = completedGameUsesFormatKernel(input.completed);
+  const empowerVerb = formatKernel ? "held empower" : "controlled power";
   const empoweredCounts = new Map<string, { player: RevealedPlayerRef; rounds: number[] }>();
   for (const round of input.roundSummaries) {
     if (!round.empowered) continue;
@@ -1484,7 +1504,9 @@ function buildTurningPoints(input: {
         type: "majority_consolidation",
         players: [round.empowered],
         confidence: "high",
-        description: `${round.empowered.name} controlled power in the early game.`,
+        description: formatKernel
+          ? `${round.empowered.name} held empower twice early, controlling the format menu.`
+          : `${round.empowered.name} controlled power in the early game.`,
         derivationMethod: "early_repeated_empowerment",
         criteria: {
           empoweredRounds: current.rounds,
@@ -1508,8 +1530,8 @@ function buildTurningPoints(input: {
       players: [dominant.player],
       confidence: "medium",
       description: longestStreak >= 3
-        ? `${dominant.player.name} controlled power for ${longestStreak} consecutive rounds.`
-        : `${dominant.player.name} controlled power in ${dominant.rounds.length} rounds.`,
+        ? `${dominant.player.name} ${empowerVerb} for ${longestStreak} consecutive rounds.`
+        : `${dominant.player.name} ${empowerVerb} in ${dominant.rounds.length} rounds.`,
       derivationMethod: "repeated_empowerment_count",
       criteria: {
         empoweredRounds: dominant.rounds,
@@ -1523,23 +1545,41 @@ function buildTurningPoints(input: {
   }
 
   for (const elimination of inputSummaryMajorEliminations(input)) {
+    const formatLabel = elimination.source === "format"
+      ? formatIdLabel(formatIdForRound(input.completed, elimination.round))
+      : null;
+    const eliminationDescription =
+      elimination.source === "endgame"
+        ? `${elimination.player.name} was eliminated during the endgame.`
+        : elimination.source === "format"
+          ? (formatLabel
+            ? `${elimination.player.name} was eliminated under ${formatLabel}.`
+            : `${elimination.player.name} was eliminated by format resolution.`)
+          : `${elimination.player.name} was eliminated by ${elimination.source} vote.`;
     points.push({
       round: elimination.round,
       type: elimination.source === "endgame" ? "endgame_pivot" : "threat_removed",
       players: [elimination.player],
       confidence: elimination.source === "endgame" ? "high" : "medium",
-      description: elimination.source === "endgame"
-        ? `${elimination.player.name} was eliminated during the endgame.`
-        : `${elimination.player.name} was eliminated by ${elimination.source} vote.`,
+      description: eliminationDescription,
       derivationMethod: "highlighted_elimination",
       criteria: {
         source: elimination.source,
         round: elimination.round,
+        ...(formatLabel ? { formatId: formatLabel } : {}),
       },
       evidence: {
         factRefs: [`round:${elimination.round}:eliminated:${elimination.player.id}`],
         ...(input.eventRefs
-          ? { eventRefs: input.eventRefs.forRound(elimination.round, ["council.elimination_resolved", "endgame.elimination_resolved"], [elimination.player]) }
+          ? {
+              eventRefs: input.eventRefs.forRound(
+                elimination.round,
+                elimination.source === "format"
+                  ? ["format.resolved", "player.eliminated"]
+                  : ["council.elimination_resolved", "endgame.elimination_resolved"],
+                [elimination.player],
+              ),
+            }
           : {}),
       },
     });
@@ -1566,25 +1606,28 @@ function buildTurningPoints(input: {
     });
   }
 
-  for (const round of input.roundSummaries) {
-    for (const moment of round.keyRiskMoments) {
-      if (moment.type !== "survived_council") continue;
-      points.push({
-        round: round.round,
-        type: "near_miss",
-        players: [moment.player],
-        confidence: "medium",
-        description: `${moment.player.name} survived the Council vote.`,
-        derivationMethod: "survived_council_slate",
-        criteria: {
+  // Council near-misses only apply on classic Council slates (format-kernel omits Council).
+  if (!formatKernel) {
+    for (const round of input.roundSummaries) {
+      for (const moment of round.keyRiskMoments) {
+        if (moment.type !== "survived_council") continue;
+        points.push({
           round: round.round,
-          candidateCount: round.councilCandidates.length,
-        },
-        evidence: {
-          factRefs: [`round:${round.round}:survived_council:${moment.player.id}`],
-          ...(input.eventRefs ? { eventRefs: input.eventRefs.forRound(round.round, ["power.candidates_resolved", "council.elimination_resolved"], [moment.player]) } : {}),
-        },
-      });
+          type: "near_miss",
+          players: [moment.player],
+          confidence: "medium",
+          description: `${moment.player.name} survived the Council vote.`,
+          derivationMethod: "survived_council_slate",
+          criteria: {
+            round: round.round,
+            candidateCount: round.councilCandidates.length,
+          },
+          evidence: {
+            factRefs: [`round:${round.round}:survived_council:${moment.player.id}`],
+            ...(input.eventRefs ? { eventRefs: input.eventRefs.forRound(round.round, ["power.candidates_resolved", "council.elimination_resolved"], [moment.player]) } : {}),
+          },
+        });
+      }
     }
   }
 
@@ -2178,6 +2221,7 @@ function addRisk(
 }
 
 function riskNote(type: PostgameRoundSummary["keyRiskMoments"][number]["type"], player: RevealedPlayerRef): string {
+  // These notes only fire when classic power/council/expose facts produced the risk moment.
   switch (type) {
     case "candidate":
       return `${player.name} was nominated for Council.`;
