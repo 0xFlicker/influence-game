@@ -571,7 +571,13 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       usage.completionTokens,
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
+      LLMHouseInterviewer.responseServiceTier(response),
     );
+  }
+
+  private static responseServiceTier(response: unknown): string | undefined {
+    const value = (response as { service_tier?: unknown }).service_tier;
+    return typeof value === "string" && value.trim() ? value : undefined;
   }
 
   private privateTraceContext(action: string, round: number, phase: Phase): PrivateDecisionTraceContext {

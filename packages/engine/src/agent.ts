@@ -3818,6 +3818,7 @@ ${roomSection}
       usage.completionTokens,
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
+      InfluenceAgent.responseServiceTier(response),
     );
   }
 
@@ -3829,7 +3830,13 @@ ${roomSection}
       response.usage.output_tokens,
       response.usage.input_tokens_details.cached_tokens ?? 0,
       response.usage.output_tokens_details.reasoning_tokens ?? 0,
+      InfluenceAgent.responseServiceTier(response),
     );
+  }
+
+  private static responseServiceTier(response: unknown): string | undefined {
+    const value = (response as { service_tier?: unknown }).service_tier;
+    return typeof value === "string" && value.trim() ? value : undefined;
   }
 
   private resolvedReasoningSummaryMode(options?: LlmCallOptions): OpenAIReasoningSummaryMode | undefined {

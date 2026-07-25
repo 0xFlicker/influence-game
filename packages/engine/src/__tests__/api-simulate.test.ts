@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { defaultApiSimulationMaxRounds, parseArgs } from "../api-simulate";
+import { buildGameCreateBody, defaultApiSimulationMaxRounds, parseArgs } from "../api-simulate";
 import { computeMaxRounds } from "../types";
 
 describe("API-backed simulation config", () => {
@@ -20,6 +20,23 @@ describe("API-backed simulation config", () => {
     expect(parseArgs(["--players", "4"], { INFLUENCE_API_SIM_MAX_ROUNDS: "7" }).maxRounds).toBe(7);
     expect(parseArgs(["--players", "4", "--max-rounds", "auto"], {}).maxRounds).toBe("auto");
     expect(parseArgs(["--players", "4", "--max-rounds", "6"], {}).maxRounds).toBe(6);
+  });
+
+  it("defaults API-backed games to Flex and forwards a standard opt-out through creation", () => {
+    const flex = parseArgs([], {});
+    const standard = parseArgs(["--no-flex"], {});
+
+    expect(flex.serviceTier).toBe("flex");
+    expect(standard.serviceTier).toBe("auto");
+    expect(parseArgs([], { INFLUENCE_OPENAI_SERVICE_TIER: "standard" }).serviceTier).toBe("auto");
+    expect(buildGameCreateBody(standard, "openai:gpt-5-nano").serviceTier).toBe("auto");
+  });
+
+  it("keeps the service-tier request inert for non-OpenAI API simulation providers", () => {
+    const args = parseArgs(["--provider", "katana", "--model", "grok-4-3"], {});
+
+    expect(args.serviceTier).toBe("flex");
+    expect(buildGameCreateBody(args, "katana:grok-4-3").serviceTier).toBe("flex");
   });
 });
 

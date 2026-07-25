@@ -8,6 +8,9 @@ import {
 export type ModelTier = "budget" | "standard" | "premium";
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
+/** OpenAI capacity lane requested for a game run. */
+export type OpenAIServiceTier = "flex" | "auto";
+type OpenAIServiceTierFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export interface LlmClientConfig {
   client: OpenAI;
@@ -18,12 +21,15 @@ export interface LlmClientConfig {
   providerProfileId: ProviderProfileId;
   toolChoiceMode: LlmToolChoiceMode;
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
+  /** Present only for hosted OpenAI. OpenAI-compatible providers must not receive this setting. */
+  openAIServiceTier?: OpenAIServiceTier;
 }
 
 export interface CreateLlmClientOptions {
   timeout?: number;
   maxRetries?: number;
   providerProfileId?: ProviderProfileId;
+  openAIServiceTier?: OpenAIServiceTier;
 }
 
 function firstEnv(
@@ -108,6 +114,54 @@ export function resolveOpenAIReasoningSummaryMode(
   return baseURL ? undefined : "auto";
 }
 
+export function normalizeOpenAIServiceTier(value: unknown): OpenAIServiceTier | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "flex") return "flex";
+  if (normalized === "auto" || normalized === "standard" || normalized === "default") return "auto";
+  return null;
+}
+
+/** Flex is the game-engine default; standard/auto is an explicit opt-out. */
+export function resolveOpenAIServiceTier(
+  env: NodeJS.ProcessEnv = process.env,
+  configured?: unknown,
+): OpenAIServiceTier {
+  return normalizeOpenAIServiceTier(configured)
+    ?? normalizeOpenAIServiceTier(env.INFLUENCE_OPENAI_SERVICE_TIER)
+    ?? "flex";
+}
+
+/**
+ * Inject service_tier at the OpenAI client boundary so every engine call
+ * (agents, House, chat completions, and Responses) uses the selected lane.
+ */
+export function createOpenAIServiceTierFetch(
+  serviceTier: OpenAIServiceTier,
+  baseFetch: OpenAIServiceTierFetch = fetch,
+): OpenAIServiceTierFetch {
+  return async (input, init) => {
+    if (!init?.body || (init.method ?? "GET").toUpperCase() !== "POST") {
+      return baseFetch(input, init);
+    }
+
+    const body = typeof init.body === "string" ? init.body : null;
+    if (!body) return baseFetch(input, init);
+    try {
+      const parsed = JSON.parse(body) as unknown;
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        return baseFetch(input, init);
+      }
+      return baseFetch(input, {
+        ...init,
+        body: JSON.stringify({ ...parsed as Record<string, unknown>, service_tier: serviceTier }),
+      });
+    } catch {
+      return baseFetch(input, init);
+    }
+  };
+}
+
 export function resolveModelForTier(
   tier: string | null | undefined,
 ): string {
@@ -156,6 +210,9 @@ export function createLlmClientFromEnv(
   const apiKey = apiKeyConfig?.value ?? (baseURL && providerProfileId === "lm-studio" ? "lm-studio" : undefined);
   if (!apiKey) return null;
   const openAIReasoningSummary = resolveOpenAIReasoningSummaryMode(env, baseURL);
+  const openAIServiceTier = providerProfileId === "openai"
+    ? resolveOpenAIServiceTier(env, options.openAIServiceTier)
+    : undefined;
   const profile = PROVIDER_PROFILES[providerProfileId];
 
   return {
@@ -164,6 +221,7 @@ export function createLlmClientFromEnv(
       ...(baseURL && { baseURL }),
       ...(options.timeout !== undefined && { timeout: options.timeout }),
       ...(options.maxRetries !== undefined && { maxRetries: options.maxRetries }),
+      ...(openAIServiceTier && { fetch: createOpenAIServiceTierFetch(openAIServiceTier) as typeof fetch }),
     }),
     apiKeySource: apiKeyConfig?.key ?? "local-default",
     baseURL,
@@ -172,6 +230,7 @@ export function createLlmClientFromEnv(
     providerProfileId,
     toolChoiceMode: resolveToolChoiceMode(env, baseURL, providerProfileId),
     ...(providerProfileId === "openai" && openAIReasoningSummary && { openAIReasoningSummary }),
+    ...(openAIServiceTier && { openAIServiceTier }),
   };
 }
 

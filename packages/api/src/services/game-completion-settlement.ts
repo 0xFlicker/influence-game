@@ -74,6 +74,8 @@ export interface GameCompletionTerminalResultV1 {
 export interface GameCompletionTokenUsageV1 {
   total: TokenUsage;
   perAction: Record<string, TokenUsage>;
+  /** Actual tiers returned by OpenAI, including Flex-to-auto fallbacks. */
+  effectiveServiceTiers?: Record<string, number>;
 }
 
 export interface GameCompletionEnvelopeV1 {
@@ -1030,6 +1032,7 @@ export async function settleCapturedGameCompletion(
           emptyResponses: envelope.tokenUsage.total.emptyResponses,
           estimatedCost: envelope.model.calculatedCost?.totalCost ?? null,
           perAction: envelope.tokenUsage.perAction,
+          ...(envelope.tokenUsage.effectiveServiceTiers && { effectiveServiceTiers: envelope.tokenUsage.effectiveServiceTiers }),
         }),
         finishedAt: envelope.finishedAt,
       });
@@ -1662,7 +1665,13 @@ function assertModernTranscriptFields(
 
 function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
   const record = assertRecord(value, "Invalid completion token usage");
-  assertExactKeys(record, ["total", "perAction"], "completion token usage");
+  assertExactKeys(
+    record,
+    record.effectiveServiceTiers === undefined
+      ? ["total", "perAction"]
+      : ["total", "perAction", "effectiveServiceTiers"],
+    "completion token usage",
+  );
   const total = assertTokenUsage(record.total);
   const perActionRecord = assertRecord(record.perAction, "Invalid completion per-action usage");
   const perAction = Object.fromEntries(
@@ -1685,7 +1694,13 @@ function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
     throw new Error("Completion per-action token usage does not sum to total usage");
   }
 
-  return { total, perAction };
+  const effectiveServiceTiers = record.effectiveServiceTiers === undefined
+    ? undefined
+    : Object.fromEntries(Object.entries(assertRecord(record.effectiveServiceTiers, "Invalid effective service tiers")).map(([tier, count]) => [
+        assertText(tier, "Invalid effective service tier"),
+        assertInteger(count, "Invalid effective service tier count", 0),
+      ]));
+  return { total, perAction, ...(effectiveServiceTiers && { effectiveServiceTiers }) };
 }
 
 function assertTokenUsage(value: unknown): TokenUsage {

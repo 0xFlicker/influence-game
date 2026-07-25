@@ -120,8 +120,8 @@ import {
   type GitMetadata,
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
-import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
-import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
+import { createLlmClientFromEnv, describeLlmProvider, resolveOpenAIServiceTier } from "./llm-client";
+import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode, OpenAIServiceTier } from "./llm-client";
 import {
   inferModelCapabilities,
   normalizeReasoningPolicy,
@@ -163,6 +163,8 @@ export interface SimArgs {
   enableDiary?: boolean;
   /** Hosted OpenAI Responses API reasoning summary mode. Null disables it. */
   openAIReasoningSummary?: OpenAIReasoningSummaryMode | null;
+  /** Hosted OpenAI capacity lane. Flex is the default; auto is an opt-out. */
+  openAIServiceTier: OpenAIServiceTier;
 }
 
 interface SimulationModelRuntime {
@@ -193,27 +195,31 @@ function parseReasoningSummaryArg(value: string | undefined): OpenAIReasoningSum
   return undefined;
 }
 
-export function parseArgs(argv = process.argv.slice(2)): SimArgs {
-  const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+export function parseArgs(
+  argv = process.argv.slice(2),
+  env: NodeJS.ProcessEnv = process.env,
+): SimArgs {
+  const envGameTimeout = env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
   let gameTimeoutOverridden = Boolean(envGameTimeout);
   const args: SimArgs = {
     games: 3,
     players: 6,
     personas: null,
     model: "gpt-5-nano",
-    ...(process.env.INFLUENCE_SIM_MODEL_CATALOG_ID && { modelCatalogId: process.env.INFLUENCE_SIM_MODEL_CATALOG_ID }),
-    ...(normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY) && {
-      reasoningPolicy: normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY)!,
+    ...(env.INFLUENCE_SIM_MODEL_CATALOG_ID && { modelCatalogId: env.INFLUENCE_SIM_MODEL_CATALOG_ID }),
+    ...(normalizeReasoningPolicy(env.INFLUENCE_SIM_REASONING_POLICY) && {
+      reasoningPolicy: normalizeReasoningPolicy(env.INFLUENCE_SIM_REASONING_POLICY)!,
     }),
-    variant: process.env.INFLUENCE_SIM_VARIANT ?? "baseline",
+    variant: env.INFLUENCE_SIM_VARIANT ?? "baseline",
     gameTimeoutMs: readPositiveInt(envGameTimeout, DEFAULT_GAME_TIMEOUT_MS),
-    llmTimeoutMs: readPositiveInt(process.env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
+    llmTimeoutMs: readPositiveInt(env.INFLUENCE_SIM_LLM_TIMEOUT_MS, DEFAULT_LLM_TIMEOUT_MS),
     chatty: false,
-    houseSummaries: process.env.INFLUENCE_SIM_HOUSE_SUMMARIES === "true",
-    enableStrategicReflections: process.env.INFLUENCE_SIM_STRATEGIC_REFLECTIONS === "true",
-    richProducer: process.env.INFLUENCE_SIM_RICH_PRODUCER === "true",
-    enableDiary: process.env.INFLUENCE_SIM_DIARY === "true",
+    houseSummaries: env.INFLUENCE_SIM_HOUSE_SUMMARIES === "true",
+    enableStrategicReflections: env.INFLUENCE_SIM_STRATEGIC_REFLECTIONS === "true",
+    richProducer: env.INFLUENCE_SIM_RICH_PRODUCER === "true",
+    enableDiary: env.INFLUENCE_SIM_DIARY === "true",
     openAIReasoningSummary: undefined,
+    openAIServiceTier: resolveOpenAIServiceTier(env),
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -284,6 +290,10 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--no-reasoning-summary") {
       args.openAIReasoningSummary = null;
+    } else if (arg === "--standard" || arg === "--no-flex") {
+      args.openAIServiceTier = "auto";
+    } else if (arg === "--flex") {
+      args.openAIServiceTier = "flex";
     }
   }
 
@@ -358,6 +368,7 @@ function buildRunMetadata(
       richProducer: args.richProducer ?? false,
       enableDiary: args.enableDiary ?? false,
       openAIReasoningSummary,
+      openAIServiceTier: args.openAIServiceTier,
     },
   };
 }
@@ -1349,6 +1360,7 @@ async function main() {
     timeout: args.llmTimeoutMs,
     maxRetries: 0,
     ...(catalogModelRuntime && { providerProfileId: catalogModelRuntime.providerProfileId }),
+    openAIServiceTier: args.openAIServiceTier,
   });
   if (!llmConfig) {
     console.error(
@@ -1371,6 +1383,7 @@ async function main() {
   console.log(`Reasoning policy: ${modelRuntime.reasoningPolicy}`);
   console.log(`Provider: ${describeLlmProvider(llmConfig)} | API key: ${llmConfig.apiKeySource} | Tool choice: ${llmConfig.toolChoiceMode}`);
   console.log(`OpenAI reasoning summaries: ${openAIReasoningSummary ?? "off"}`);
+  console.log(`OpenAI service tier: ${llmConfig.openAIServiceTier ?? "not applicable"}`);
   console.log(`Timeouts: game ${(args.gameTimeoutMs / 1000).toFixed(0)}s | LLM request ${(args.llmTimeoutMs / 1000).toFixed(0)}s`);
   if (args.chatty) console.log("Chatty mode enabled: live formatted transcript will be printed to console.");
   if (args.houseSummaries) console.log("House summaries enabled: concise House MC summaries will be printed live without chatty reasoning output.");

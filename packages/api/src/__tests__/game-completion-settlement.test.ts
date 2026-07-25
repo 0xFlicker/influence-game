@@ -100,6 +100,10 @@ describe("game completion settlement capture", () => {
               emptyResponses: 0,
             },
           },
+          effectiveServiceTiers: {
+            flex: 1,
+            auto: 1,
+          },
         },
         resolvedModel: "gpt-5-mini",
         calculatedCost: {
@@ -477,6 +481,10 @@ describe("game completion settlement capture", () => {
       emptyResponses: 0,
       estimatedCost: 0.00008,
       perAction: fixture.input.tokenUsage.perAction,
+      effectiveServiceTiers: {
+        flex: 1,
+        auto: 1,
+      },
     });
     expect(await db.select().from(schema.transcripts)
       .where(eq(schema.transcripts.gameId, fixture.gameId))).toHaveLength(1);

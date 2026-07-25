@@ -148,6 +148,8 @@ const EMPTY_USAGE: TokenUsage = {
 
 export class TokenTracker {
   private readonly perSource: Map<string, TokenUsage> = new Map();
+  /** Server-reported service_tier values from successful OpenAI responses. */
+  private readonly effectiveServiceTiers: Map<string, number> = new Map();
 
   /** Record a single LLM call's usage. */
   record(
@@ -156,6 +158,7 @@ export class TokenTracker {
     completionTokens: number,
     cachedTokens = 0,
     reasoningTokens = 0,
+    effectiveServiceTier?: string,
   ): void {
     const existing = this.perSource.get(source) ?? { ...EMPTY_USAGE };
     existing.promptTokens += promptTokens;
@@ -165,6 +168,12 @@ export class TokenTracker {
     existing.totalTokens += promptTokens + completionTokens;
     existing.callCount += 1;
     this.perSource.set(source, existing);
+    if (effectiveServiceTier) {
+      this.effectiveServiceTiers.set(
+        effectiveServiceTier,
+        (this.effectiveServiceTiers.get(effectiveServiceTier) ?? 0) + 1,
+      );
+    }
   }
 
   /** Record an empty/fallback response for a source. */
@@ -203,6 +212,11 @@ export class TokenTracker {
     return result;
   }
 
+  /** Counts the actual tiers reported by the provider, rather than the requested tier. */
+  getEffectiveServiceTierCounts(): Record<string, number> {
+    return Object.fromEntries(this.effectiveServiceTiers);
+  }
+
   /** Merge another tracker's data into this one. */
   merge(other: TokenTracker): void {
     for (const [source, usage] of other.perSource) {
@@ -216,12 +230,19 @@ export class TokenTracker {
       existing.emptyResponses += usage.emptyResponses;
       this.perSource.set(source, existing);
     }
+    for (const [tier, count] of other.effectiveServiceTiers) {
+      this.effectiveServiceTiers.set(tier, (this.effectiveServiceTiers.get(tier) ?? 0) + count);
+    }
   }
 
   loadCursor(cursor: TokenCostCursor): void {
     this.perSource.clear();
+    this.effectiveServiceTiers.clear();
     for (const [source, usage] of Object.entries(cursor.perSource)) {
       this.perSource.set(source, { ...EMPTY_USAGE, ...usage });
+    }
+    for (const [tier, count] of Object.entries(cursor.effectiveServiceTiers ?? {})) {
+      if (Number.isInteger(count) && count >= 0) this.effectiveServiceTiers.set(tier, count);
     }
   }
 }
@@ -242,6 +263,7 @@ export interface TokenCostCursor {
   version: 1;
   totals: TokenUsage;
   perSource: Record<string, TokenUsage>;
+  effectiveServiceTiers?: Record<string, number>;
   boundary?: TokenCostCursorBoundary;
 }
 
@@ -255,5 +277,6 @@ TokenTracker.prototype.toCursor = function (this: TokenTracker): TokenCostCursor
     version: 1,
     totals: this.getTotalUsage(),
     perSource: this.getAllUsage(),
+    effectiveServiceTiers: this.getEffectiveServiceTierCounts(),
   };
 };

@@ -81,6 +81,7 @@ import {
 import {
   generatePersona,
   normalizeGameModelSelection,
+  normalizeOpenAIServiceTier,
   pickAgentNames,
   pickArchetypes,
   resolveModelSelection,
@@ -137,6 +138,7 @@ export function createGameRoutes(
       visibility,
       slotType,
       viewerMode,
+      serviceTier,
     } = body;
 
     const minPlayers = 4;
@@ -186,6 +188,12 @@ export function createGameRoutes(
       : "speedrun"; // Default for admin-created games
 
     const resolvedModelTier = modelTier ?? "budget";
+    const normalizedServiceTier = serviceTier == null
+      ? "flex"
+      : normalizeOpenAIServiceTier(serviceTier);
+    if (!normalizedServiceTier) {
+      return c.json({ error: "Invalid service tier" }, 400);
+    }
     const rawModelSelection = modelSelection ?? (
       typeof modelCatalogId === "string"
         ? {
@@ -218,6 +226,7 @@ export function createGameRoutes(
         catalogId: resolvedModelSelection.catalogId,
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
       },
+      serviceTier: normalizedServiceTier,
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
       visibility: visibility ?? "public",

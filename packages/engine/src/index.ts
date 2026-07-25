@@ -294,7 +294,8 @@ export {
   resolveModelForTier,
   resolveToolChoiceMode,
 } from "./llm-client";
-export type { LlmClientConfig, LlmToolChoiceMode, ModelTier, OpenAIReasoningSummaryMode } from "./llm-client";
+export type { LlmClientConfig, LlmToolChoiceMode, ModelTier, OpenAIReasoningSummaryMode, OpenAIServiceTier } from "./llm-client";
+export { normalizeOpenAIServiceTier, resolveOpenAIServiceTier } from "./llm-client";
 export {
   MODEL_CATALOG,
   MODEL_REASONING_EFFORTS,

@@ -102,6 +102,14 @@ describe("simulation variant config", () => {
     expect(args.reasoningPolicy).toBe("high");
   });
 
+  it("defaults hosted OpenAI simulation requests to Flex with a standard opt-out", () => {
+    expect(parseArgs([], {})).toMatchObject({ openAIServiceTier: "flex" });
+    expect(parseArgs([], { INFLUENCE_OPENAI_SERVICE_TIER: "auto" })).toMatchObject({ openAIServiceTier: "auto" });
+    expect(parseArgs(["--standard"], {})).toMatchObject({ openAIServiceTier: "auto" });
+    expect(parseArgs(["--no-flex"], {})).toMatchObject({ openAIServiceTier: "auto" });
+    expect(parseArgs(["--standard", "--flex"], {})).toMatchObject({ openAIServiceTier: "flex" });
+  });
+
   it("supports the short summaries alias and explicit disable flag", () => {
     expect(parseArgs(["--summaries"]).houseSummaries).toBe(true);
     expect(parseArgs(["--summaries", "--no-house-summaries"]).houseSummaries).toBe(false);

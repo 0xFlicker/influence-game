@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { estimateCostForKnownModel, type TokenUsage } from "../token-tracker";
+import { estimateCostForKnownModel, TokenTracker, type TokenUsage } from "../token-tracker";
 
 const usage: TokenUsage = {
   promptTokens: 1000,
@@ -34,5 +34,21 @@ describe("token cost estimation", () => {
     };
 
     expect(estimateCostForKnownModel(longContextUsage, "grok-4-3")?.totalCost).toBeCloseTo(0.6875, 10);
+  });
+});
+
+describe("effective service-tier accounting", () => {
+  it("preserves the provider-returned tiers in durable cursors", () => {
+    const tracker = new TokenTracker();
+    tracker.record("vote", 100, 20, 0, 0, "flex");
+    tracker.record("mingle", 80, 10, 0, 0, "auto");
+    tracker.record("mingle", 70, 10, 0, 0, "auto");
+
+    const cursor = tracker.toCursor();
+    expect(cursor.effectiveServiceTiers).toEqual({ flex: 1, auto: 2 });
+
+    const restored = new TokenTracker();
+    restored.loadCursor(cursor);
+    expect(restored.getEffectiveServiceTierCounts()).toEqual({ flex: 1, auto: 2 });
   });
 });

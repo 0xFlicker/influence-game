@@ -38,6 +38,7 @@ export interface SimulatorArgsSnapshot {
   richProducer?: boolean;
   enableDiary?: boolean;
   openAIReasoningSummary?: "auto" | "concise" | "detailed";
+  openAIServiceTier?: "flex" | "auto";
 }
 
 export interface GitMetadata {

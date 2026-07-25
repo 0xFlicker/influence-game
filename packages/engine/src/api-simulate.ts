@@ -8,6 +8,7 @@
 
 import { loadStoredMcpAccessToken } from "./game-mcp/oauth-token-store";
 import { normalizeReasoningPolicy, type ModelReasoningPolicy } from "./model-catalog";
+import { resolveOpenAIServiceTier, type OpenAIServiceTier } from "./llm-client";
 
 interface ApiSimArgs {
   apiBaseUrl: string;
@@ -24,6 +25,8 @@ interface ApiSimArgs {
   waitForAdvance: boolean;
   advanceTimeoutMs: number;
   pollIntervalMs: number;
+  /** Hosted OpenAI capacity lane. Non-OpenAI providers ignore it. */
+  serviceTier: OpenAIServiceTier;
 }
 
 interface AuthExchangeResponse {
@@ -84,6 +87,7 @@ export function parseArgs(
     waitForAdvance: env.INFLUENCE_API_SIM_WAIT_FOR_ADVANCE !== "false",
     advanceTimeoutMs: readPositiveInt(env.INFLUENCE_API_SIM_ADVANCE_TIMEOUT_MS, 120_000),
     pollIntervalMs: readPositiveInt(env.INFLUENCE_API_SIM_POLL_INTERVAL_MS, 3_000),
+    serviceTier: resolveOpenAIServiceTier(env),
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -132,6 +136,10 @@ export function parseArgs(
     } else if (arg === "--poll-interval-ms" && next) {
       args.pollIntervalMs = parseInt(next, 10);
       i++;
+    } else if (arg === "--standard" || arg === "--no-flex") {
+      args.serviceTier = "auto";
+    } else if (arg === "--flex") {
+      args.serviceTier = "flex";
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -198,7 +206,15 @@ async function createGame(
   sessionToken: string,
   catalogId: string,
 ): Promise<GameCreateResponse> {
-  const body = {
+  return apiFetch<GameCreateResponse>(args.apiBaseUrl, "/api/games", {
+    method: "POST",
+    headers: authHeaders(sessionToken),
+    body: JSON.stringify(buildGameCreateBody(args, catalogId)),
+  });
+}
+
+export function buildGameCreateBody(args: ApiSimArgs, catalogId: string) {
+  return {
     playerCount: args.players,
     modelSelection: {
       catalogId,
@@ -210,12 +226,8 @@ async function createGame(
     slotType: "all_ai",
     fillStrategy: "balanced",
     viewerMode: args.viewerMode,
+    serviceTier: args.serviceTier,
   };
-  return apiFetch<GameCreateResponse>(args.apiBaseUrl, "/api/games", {
-    method: "POST",
-    headers: authHeaders(sessionToken),
-    body: JSON.stringify(body),
-  });
 }
 
 async function fillGame(apiBaseUrl: string, sessionToken: string, gameId: string): Promise<void> {
@@ -331,6 +343,7 @@ function printHelp(): void {
   console.log(`Usage:
   bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id>
   bun run simulate:api -- --provider katana --model deepseek-v4-flash
+  bun run simulate:api -- --standard  # opt out of hosted OpenAI Flex
 
 Defaults:
   --max-rounds scales with player count for short API smoke games (4 players -> 5)

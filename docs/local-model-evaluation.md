@@ -22,6 +22,7 @@ The engine and API read LLM provider settings through a shared OpenAI-compatible
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | `10000` | Timeout for the API start preflight metadata request. |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | `required` for local base URLs, otherwise `named` | Structured decision-call mode. Use `required` for LM Studio servers that reject named OpenAI tool forcing. Other accepted values: `named`, `auto`, `json_schema`. |
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off`. Local OpenAI-compatible base URLs ignore this because they do not implement the hosted summary contract. |
+| `INFLUENCE_OPENAI_SERVICE_TIER` | `flex` | Hosted OpenAI capacity lane: `flex` (default) or `auto`. Ignored for LM Studio, Katana, and other OpenAI-compatible providers. |
 
 Project-specific variables win over aliases. If a base URL is configured without an API key, the client uses `lm-studio` as a local default key.
 
@@ -167,6 +168,8 @@ bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --play
 ```
 
 `simulate:api` uses `INFLUENCE_API_SESSION_TOKEN` when set. Otherwise it reads `INFLUENCE_MCP_TOKEN` or the saved `~/.influence-game/mcp-token.json` token and exchanges that producer MCP OAuth token for a normal app session through the loopback-only `/api/auth/local-cli-session` route. MCP tokens still do not authenticate normal app routes directly; the exchange is explicit local tooling and the minted session uses current RBAC permissions.
+
+Hosted OpenAI game runs request the Flex service tier by default, including `simulate:api` durable games. Use `--standard` (or `--no-flex`) to request OpenAI's normal `auto` lane instead. The selected request tier is persisted in the game configuration; completion metadata also records the actual `effectiveServiceTiers` returned by OpenAI so a Flex fallback is not silently reported as Flex. Non-OpenAI providers do not receive a service-tier request.
 
 API simulator max rounds default to a short player-scaled smoke cap (`4 players -> 5`) unless `--max-rounds` is passed. Passing `--max-rounds auto` delegates to the normal API-created-game default.
 

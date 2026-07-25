@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
   createLlmClientFromEnv,
+  createOpenAIServiceTierFetch,
   describeLlmProvider,
+  resolveOpenAIServiceTier,
   resolveOpenAIReasoningSummaryMode,
   resolveModelForTier,
   resolveToolChoiceMode,
@@ -21,6 +23,16 @@ describe("LLM client env config", () => {
     expect(config?.providerLabel).toBe("OpenAI");
     expect(config?.providerProfileId).toBe("openai");
     expect(config?.openAIReasoningSummary).toBe("auto");
+    expect(config?.openAIServiceTier).toBe("flex");
+  });
+
+  it("does not configure a service tier for non-OpenAI providers", () => {
+    const config = createLlmClientFromEnv(
+      { API_KAT_IMGNAI_KEY: "kat-key", API_KAT_IMGNAI_SECRET: "kat-secret" },
+      { providerProfileId: "katana", openAIServiceTier: "flex" },
+    );
+
+    expect(config?.openAIServiceTier).toBeUndefined();
   });
 
   it("uses a local dummy API key for LM Studio-compatible endpoints", () => {
@@ -112,6 +124,32 @@ describe("LLM client env config", () => {
     });
 
     expect(config).toBeNull();
+  });
+});
+
+describe("OpenAI service-tier config", () => {
+  it("defaults to Flex and accepts standard aliases as auto", () => {
+    expect(resolveOpenAIServiceTier({})).toBe("flex");
+    expect(resolveOpenAIServiceTier({}, "standard")).toBe("auto");
+    expect(resolveOpenAIServiceTier({}, "auto")).toBe("auto");
+  });
+
+  it("adds the selected tier to JSON OpenAI POST bodies only", async () => {
+    const calls: RequestInit[] = [];
+    const response = new Response("{}", { status: 200, headers: { "content-type": "application/json" } });
+    const wrapped = createOpenAIServiceTierFetch("flex", async (_input, init) => {
+      calls.push(init ?? {});
+      return response;
+    });
+
+    await wrapped("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      body: JSON.stringify({ model: "gpt-5-nano" }),
+    });
+    await wrapped("https://api.openai.com/v1/models", { method: "GET" });
+
+    expect(JSON.parse(calls[0]?.body as string)).toEqual({ model: "gpt-5-nano", service_tier: "flex" });
+    expect(calls[1]?.body).toBeUndefined();
   });
 });
 

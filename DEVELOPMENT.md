@@ -397,6 +397,9 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 # Durable API-backed local model validation creates/fills/starts a real API game:
 bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 4
 bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 4
+
+# Hosted OpenAI uses Flex by default; request the normal auto lane explicitly
+bun run simulate:api -- --standard --players 4
 # Defaults to a short player-scaled smoke cap (4 players -> 5 rounds); pass --max-rounds to override.
 
 # Chatty mode (live colored transcript with agent thinking + native reasoningContext / labeled provider summaries on Mingle turns, alliance actions, huddle turns, votes, power actions, council votes, and endgame decisions):
