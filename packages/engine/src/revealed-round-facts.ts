@@ -715,6 +715,7 @@ function buildEndgameFacts(
   const stage = stageSet?.payload.stage ?? elimResolved?.payload.stage ?? null;
   const lastEmpoweredId = stageSet?.payload.lastEmpoweredFromRegularRounds
     ?? projection.lastEmpoweredFromRegularRounds
+    ?? lastRegularEmpoweredFromEvents(allEvents, round)
     ?? null;
 
   let progression: RevealedEndgameFacts["progression"] = null;
@@ -753,6 +754,30 @@ function buildEndgameFacts(
     juryMethod: juryWinner?.payload.method ?? null,
     progression,
   };
+}
+
+/** Backfill last regular empower for historical stage_set payloads that stored null. */
+function lastRegularEmpoweredFromEvents(
+  events: readonly CanonicalGameEvent[],
+  beforeRound: number,
+): UUID | null {
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (!event || event.round >= beforeRound) continue;
+    if (event.type === "vote.empowered_set") {
+      return event.payload.empowered;
+    }
+    if (event.type === "format.resolved" && event.payload.empoweredId) {
+      return event.payload.empoweredId;
+    }
+    if (event.type === "format.selected" && event.payload.empoweredId) {
+      return event.payload.empoweredId;
+    }
+    if (event.type === "vote.empower_tally_resolved" && event.payload.tied === null) {
+      return event.payload.empowered;
+    }
+  }
+  return null;
 }
 
 function unavailableFactsRead(

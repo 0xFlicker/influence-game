@@ -588,6 +588,8 @@ function roundHeadline(
       derivationMethod: "consecutive_empowerment",
     };
   }
+  // Prefer format boot headline when format eliminated this round.
+  // (eliminated branch above already covers name; method is on completed elim source.)
   const survivor = round.keyRiskMoments.find((moment) => moment.type === "survived_council");
   if (survivor) {
     return {
@@ -1363,6 +1365,14 @@ function buildGameMomentum(input: {
     .slice(0, 8);
 }
 
+function completedGameUsesFormatKernel(completed: CompletedGameResultsRead): boolean {
+  if (completed.eliminationOrder.some((entry) => entry.source === "format")) return true;
+  return completed.rounds.some((round) => {
+    const format = round.canonicalFacts.roundFacts.format;
+    return format.status === "available" && Boolean(format.selectedFormatId || format.eliminated);
+  });
+}
+
 function buildExecutiveSummary(input: {
   completed: CompletedGameResultsRead;
   roundSummaries: readonly PostgameRoundSummary[];
@@ -1371,6 +1381,7 @@ function buildExecutiveSummary(input: {
   gameMomentum: readonly PostgameMomentumSegment[];
 }): PostgameDerivedText[] {
   const lines: PostgameDerivedText[] = [];
+  const formatKernel = completedGameUsesFormatKernel(input.completed);
   const controlSegment = input.gameMomentum.find((segment) => segment.indicators.includes("empowerment"));
   if (controlSegment?.leader.kind === "player") {
     const empoweredRounds = controlSegment.criteria.empoweredRounds;
@@ -1379,25 +1390,48 @@ function buildExecutiveSummary(input: {
       ? controlSegment.criteria.longestConsecutiveStreak
       : null;
     if (total !== null) {
+      // Format kernel: empower chooses the round format — not classic "power" (shield/eliminate/pass).
+      const verb = formatKernel ? "held empower" : "controlled power";
       lines.push({
         text: streak !== null && streak >= 3
-          ? `${controlSegment.leader.player.name} controlled power for ${streak} consecutive rounds.`
-          : `${controlSegment.leader.player.name} controlled power in ${total} rounds.`,
+          ? `${controlSegment.leader.player.name} ${verb} for ${streak} consecutive rounds.`
+          : `${controlSegment.leader.player.name} ${verb} in ${total} rounds.`,
         confidence: controlSegment.confidence,
         derivationMethod: "executive_summary_repeated_empowerment",
       });
     }
   }
 
-  const lowExposureWinner = input.finalVote.winner
-    ? exposeVoteTotal(input.completed, input.finalVote.winner.id)
-    : null;
-  if (input.finalVote.winner && lowExposureWinner !== null && lowExposureWinner <= 1) {
-    lines.push({
-      text: `${input.finalVote.winner.name} received ${lowExposureWinner === 1 ? "one expose vote" : "no expose votes"} all game.`,
-      confidence: "high",
-      derivationMethod: "executive_summary_expose_vote_total",
-    });
+  if (formatKernel) {
+    const formatBoots = input.completed.eliminationOrder
+      .filter((entry) => entry.source === "format")
+      .map((entry) => {
+        const formatId = input.completed.rounds
+          .find((round) => round.round === entry.round)
+          ?.canonicalFacts.roundFacts.format.selectedFormatId;
+        return formatId
+          ? `${entry.player.name} (${formatId.split("_").join(" ")})`
+          : entry.player.name;
+      });
+    if (formatBoots.length > 0) {
+      lines.push({
+        text: `Format eliminations: ${formatBoots.join(", ")}.`,
+        confidence: "high",
+        derivationMethod: "executive_summary_format_boots",
+      });
+    }
+  } else {
+    // Classic dual-ballot only — format-kernel never casts expose.
+    const lowExposureWinner = input.finalVote.winner
+      ? exposeVoteTotal(input.completed, input.finalVote.winner.id)
+      : null;
+    if (input.finalVote.winner && lowExposureWinner !== null && lowExposureWinner <= 1) {
+      lines.push({
+        text: `${input.finalVote.winner.name} received ${lowExposureWinner === 1 ? "one expose vote" : "no expose votes"} all game.`,
+        confidence: "high",
+        derivationMethod: "executive_summary_expose_vote_total",
+      });
+    }
   }
 
   const highlightedEndgame = input.highlightedEliminations.find((entry) =>

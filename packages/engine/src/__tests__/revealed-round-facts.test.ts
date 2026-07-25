@@ -411,6 +411,81 @@ describe("buildRevealedRoundFacts", () => {
     expect(resolved.roundFacts.format.sealedBallots).toEqual([]);
   });
 
+  it("freezes last regular empower across startRound into endgame.stage_set and endgame facts", () => {
+    const state = createGameState();
+    state.startRound();
+    state.setEmpowered("alice", "initial");
+    state.recordFormatMenu("alice", ["save_or_eliminate", "vote_bomb"]);
+    state.recordFormatSelected("alice", "save_or_eliminate");
+    state.recordFormatResolution({
+      formatId: "save_or_eliminate",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "clear",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: {
+        nets: { alice: 0, bob: -1, charlie: 0, dave: 0 },
+        savesReceived: { alice: 0, bob: 0, charlie: 0, dave: 0 },
+        eliminateReceived: { alice: 0, bob: 1, charlie: 0, dave: 0 },
+      },
+      voteBomb: null,
+      safetyBounce: null,
+    });
+    // Reckoning lobby clears per-round empower then opens endgame — sticky last empower must survive.
+    state.startRound();
+    state.setEndgameStage("reckoning");
+
+    const stageSet = state.getCanonicalEvents().find((event) => event.type === "endgame.stage_set");
+    expect(stageSet?.type).toBe("endgame.stage_set");
+    if (stageSet?.type === "endgame.stage_set") {
+      expect(stageSet.payload.lastEmpoweredFromRegularRounds).toBe("alice");
+    }
+
+    const endgameRound = state.round;
+    const facts = buildRevealedRoundFacts({
+      events: state.getCanonicalEvents(),
+      round: endgameRound,
+      kernel: "format",
+    });
+    expect(facts.roundFacts.endgame?.stage).toBe("reckoning");
+    expect(facts.roundFacts.endgame?.lastEmpoweredFromRegularRounds).toEqual({
+      id: "alice",
+      name: "Alice",
+    });
+  });
+
+  it("backfills lastEmpowered from prior empower/format events when stage_set stored null", () => {
+    const state = createGameState();
+    state.startRound();
+    state.setEmpowered("bob", "initial");
+    state.recordFormatMenu("bob", ["vote_bomb", "safety_bounce"]);
+    state.recordFormatSelected("bob", "vote_bomb");
+    // Force the historical bug: stage_set written after startRound cleared empower → null payload.
+    state.startRound();
+    state.setEndgameStage("reckoning");
+    const events = state.getCanonicalEvents().map((event) => {
+      if (event.type !== "endgame.stage_set") return event;
+      return {
+        ...event,
+        payload: {
+          ...event.payload,
+          lastEmpoweredFromRegularRounds: null,
+        },
+      };
+    });
+    // Reader must recover bob from prior empower/format events even when payload is null.
+    const facts = buildRevealedRoundFacts({
+      events,
+      round: state.round,
+      kernel: "format",
+    });
+    expect(facts.roundFacts.endgame?.lastEmpoweredFromRegularRounds).toEqual({
+      id: "bob",
+      name: "Bob",
+    });
+  });
+
   it("never leaks thinking or decision receipts into format facts under any ballot scope", () => {
     const state = createGameState();
     state.startRound();

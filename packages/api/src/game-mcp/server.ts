@@ -738,8 +738,8 @@ function productionGameMcpTools(
     tool({
       name: "read_round_facts",
       description: includeProducerVariant
-        ? "Read sanitized revealed board facts for one deployed game round. Shape is kernel-aware: format-kernel rounds include empower + format (+ omit classic Power/Council); classic rounds include Power/Council. Format sealed ballots are producer-scoped; public aggregates never include voter→ballot mappings."
-        : "Read sanitized revealed board facts for one accessible game round. Shape is kernel-aware: format-kernel omits classic Power/Council; classic keeps them. Public format facts include menu/selection/resolution aggregates; owned sealed ballots only for the caller's seats.",
+        ? "Read sanitized revealed board facts for one deployed game round. Default path is format kernel: empower vote + format menu/pick/resolution (Save-or-Eliminate, Vote Bomb, Safety Bounce) and endgame stage facts when present. Classic Power/Council sections appear only on classic-kernel games. Format sealed ballots are producer-scoped; public aggregates never include voter→ballot mappings."
+        : "Read sanitized revealed board facts for one accessible game round. Default path is format kernel: empower + format menu/pick/resolution aggregates and endgame stage facts when present. Classic Power/Council only on classic-kernel games. Owned sealed format ballots only for the caller's seats.",
       properties: {
         gameIdOrSlug: { type: "string" },
         round: { type: "number" },

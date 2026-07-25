@@ -345,7 +345,7 @@ export class GameState {
 
   private appendCanonicalEvent<
     TType extends CanonicalGameEventType,
-    TPayload extends Record<string, unknown>,
+    TPayload extends object,
   >(
     type: TType,
     payload: TPayload,
@@ -1325,7 +1325,7 @@ export class GameState {
         phase: Phase.VOTE,
         visibility: "producer",
       });
-      this._empoweredId = empowered;
+      this.assignEmpoweredId(empowered);
       return { empowered, tied: null };
     }
 
@@ -1342,7 +1342,7 @@ export class GameState {
         phase: Phase.VOTE,
         visibility: "producer",
       });
-      this._empoweredId = empowered;
+      this.assignEmpoweredId(empowered);
       return { empowered, tied: null };
     }
 
@@ -1392,7 +1392,18 @@ export class GameState {
       phase: Phase.VOTE,
       visibility: "producer",
     });
+    this.assignEmpoweredId(id);
+  }
+
+  /**
+   * Sticky last regular-round empower. Survives startRound() clearing of
+   * `_empoweredId` so endgame.stage_set can record continuity.
+   */
+  private assignEmpoweredId(id: UUID): void {
     this._empoweredId = id;
+    if (this._endgameStage === null) {
+      this._lastEmpoweredFromRegularRounds = id;
+    }
   }
 
   /**
@@ -1720,9 +1731,10 @@ export class GameState {
   }
 
   setEndgameStage(stage: EndgameStage): void {
-    const lastEmpoweredFromRegularRounds = this._lastEmpoweredFromRegularRounds === null
-      ? this._empoweredId
-      : this._lastEmpoweredFromRegularRounds;
+    // Prefer sticky regular-round empower. Fallback to current empower only if
+    // sticky was never set (should not happen after startRound clears empower).
+    const lastEmpoweredFromRegularRounds =
+      this._lastEmpoweredFromRegularRounds ?? this._empoweredId;
     this.appendCanonicalEvent("endgame.stage_set", {
       stage,
       lastEmpoweredFromRegularRounds,
@@ -1731,9 +1743,8 @@ export class GameState {
       visibility: "system",
     });
     this._endgameStage = stage;
-    // Save last empowered on first endgame entry
-    if (this._lastEmpoweredFromRegularRounds === null) {
-      this._lastEmpoweredFromRegularRounds = this._empoweredId;
+    if (this._lastEmpoweredFromRegularRounds === null && lastEmpoweredFromRegularRounds) {
+      this._lastEmpoweredFromRegularRounds = lastEmpoweredFromRegularRounds;
     }
   }
 
@@ -2088,6 +2099,35 @@ export class GameState {
     });
   }
 
+  /**
+   * Producer-only sealed ballot. Public/viewer surfaces must never read the full
+   * ledger; owners may see only their own ballot through scoped round facts.
+   */
+  recordFormatBallot(
+    ballot: {
+      formatId: LaunchFormatId;
+      voterId: UUID;
+      targetId: UUID;
+      polarity?: "save" | "eliminate" | null;
+    },
+    sourcePointers: CanonicalSourcePointer[] = [],
+  ): void {
+    this.appendCanonicalEvent(
+      "format.ballot_cast",
+      {
+        formatId: ballot.formatId,
+        voterId: ballot.voterId,
+        targetId: ballot.targetId,
+        polarity: ballot.polarity ?? null,
+      },
+      {
+        phase: Phase.FORMAT_RESOLVE,
+        visibility: "producer",
+        sourcePointers,
+      },
+    );
+  }
+
   recordSafetyBounceStarted(starterId: UUID): void {
     this.appendCanonicalEvent("format.safety_bounce_started", { starterId }, {
       phase: Phase.FORMAT_RESOLVE,
@@ -2108,8 +2148,12 @@ export class GameState {
 
   recordFormatResolution(resolution: FormatResolutionPayload): void {
     this.appendCanonicalEvent("format.resolved", {
-      ...resolution,
+      formatId: resolution.formatId,
+      empoweredId: resolution.empoweredId,
+      eliminatedId: resolution.eliminatedId,
+      resolutionKind: resolution.resolutionKind,
       tiedPlayerIds: [...resolution.tiedPlayerIds],
+      tiebreakerId: resolution.tiebreakerId,
       saveOrEliminate: resolution.saveOrEliminate
         ? {
             nets: { ...resolution.saveOrEliminate.nets },

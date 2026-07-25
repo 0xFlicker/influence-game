@@ -170,7 +170,32 @@ bun run simulate -- --variant mingle --chatty   # full traces
 bun run simulate -- --variant mingle --quiet    # phase progress only
 ```
 
-House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) are emitted as structured `house-mc-summary` agent-turn records and logged via the same `logSystem` path for richer traces. The system transcript receives clean House prose only; the current limited deterministic facts are stored under `response.roundFacts`. The offered menu is a public canonical `format.menu_offered` event and is replayed as the MCP projection's `formatMenu`; decision rationale still comes from the dedicated transcript/turn records:
+House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) are emitted as structured `house-mc-summary` agent-turn records and logged via the same `logSystem` path for richer traces. The system transcript receives clean House prose only; the current limited deterministic facts are stored under `response.roundFacts`. Format **board facts** are now durable canonical events and MCP round-facts (not private-trace-only):
+
+| Fact | Canonical event | Visibility | MCP surface |
+|---|---|---|---|
+| Offered menu | `format.menu_offered` | public | `filter_events`, `read_projection.summary.formatMenu`, `read_round_facts.format` |
+| Selected/locked format | `format.selected` | public | same; projection `formatMenu.selectedFormatId` |
+| Safety Bounce starter/pointers | `format.safety_bounce_started`, `format.safety_bounce_pointer` | public | `filter_events`, `read_round_facts.format.safetyBounce` |
+| Resolution aggregates | `format.resolved` | public | `filter_events`, `read_round_facts.format` (nets/totals/pools; no voter maps) |
+| Sealed ballots | `format.ballot_cast` | **producer** | producer `filter_events`; owner/producer scoped `read_round_facts.format.sealedBallots` |
+
+Private decision rationale (`thinking`, `reasoningContext`, `decisionLog`, model metadata) still comes only from dedicated transcript/turn/private-trace records and must never appear in public or owner round facts. R13 trace↔event correlation remains a separate queue item — do not treat format-facts work as closing that gap.
+
+```ts
+// Public format proof without private traces:
+filter_events({ gameIdOrSlug, eventType: "format.selected" })
+read_projection({ gameIdOrSlug }) // formatMenu.offeredFormatIds + selectedFormatId
+read_round_facts({ gameIdOrSlug, round }) // format.* aggregates; sealedBallots empty for pure public
+
+// Owner sealed ballot (own seat only):
+read_round_facts({ gameIdOrSlug, round }) // under games:read + participating seat
+
+// Producer full sealed ledger:
+filter_events({ gameIdOrSlug, eventType: "format.ballot_cast", visibilityMode: "producer" })
+```
+
+House MC still uses omniscient `response.roundFacts` / `formatResolution` for narration; decision rationale still comes from the dedicated transcript/turn records:
 
 ```ts
 const summary = await this.houseInterviewer.generateHouseSummary(summaryContext);
@@ -212,7 +237,7 @@ Private trace content is not public transcript, not canonical board truth, and n
 
 New API-created games set `games.cognitive_artifact_capture_version = 1` and fan out first-class cognitive artifact rows beside private trace writing. Old/imported/pre-capture games remain version `0` and return `not_captured_for_game` after authorization. The product path never reads producer private trace storage to reconstruct missing split artifacts.
 
-- User-facing Production Game MCP pairs cognitive artifacts with `read_round_facts`, a sanitized canonical-event-derived facts tool for resolved vote, format, player-status, and legacy classic Power/Council context. Use that tool when an artifact refers to votes, formats, or candidates; do not treat `decisionLog`, `thinking`, or `reasoningContext` as authoritative gameplay facts. If canonical events have not flushed yet, `read_round_facts` reports `not_yet_flushed`/`not_yet_resolved` availability instead of falling back to artifacts.
+- User-facing Production Game MCP pairs cognitive artifacts with `read_round_facts`, a sanitized canonical-event-derived facts tool. The default path is **format kernel** (empower + format resolution + endgame when present); classic Power/Council sections appear only on classic-kernel games. Use that tool when an artifact refers to votes, formats, or candidates; do not treat `decisionLog`, `thinking`, or `reasoningContext` as authoritative gameplay facts. If canonical events have not flushed yet, `read_round_facts` reports `not_yet_flushed`/`not_yet_resolved` availability instead of falling back to artifacts.
 - Public web watching uses `GET /api/games/:idOrSlug/watch-intelligence` for the selected-agent cognitive inspector. The endpoint is public-by-URL, requires an `actorPlayerId` before returning cognitive cards, returns active `thinking` artifacts, whitelisted `strategy` fields, visible transcript `thinking`, and `buildRevealedRoundFacts(...)` receipts, and excludes `reasoning` artifacts, alliance-huddle transcript/thinking/strategy artifacts, plus raw payload/debug fields. Public web/replay alliance inspection uses `GET /api/games/:idOrSlug/alliances` as a separate game-level projection over official alliance proposals, records, huddle outcomes, and huddle speech. That route is public-by-URL for the viewer experience, omits hidden thinking and producer/debug internals, and does not change what agents know during the match.
 - Completed-game review uses `GET /api/games/:idOrSlug/results` as the public-by-URL canonical result read. The result rollup is canonical-event-first: it replays persisted events, builds per-round revealed facts, and exposes elimination order, vote ledgers, endgame votes, jury votes, placements, source status, and degradation diagnostics. The compact postgame views (`GET /api/games/:id/postgame/brief`, `/postgame/jury`, `/postgame/players/:player/summary`, `/postgame/turning-points`, plus the Production Game MCP postgame tools) are denormalized DTOs over the same canonical facts. V2 postgame payloads begin with a maximum-five-item deterministic `executiveSummary`; expose short round `headline` values; rename ambiguous `majorEliminations` to rule-based `highlightedEliminations` while temporarily carrying the old alias; enrich `derivedVoteCohorts` with size, first/last observed round, shared votes, cohesion score, confidence, and a not-alliance note; split jury support into `winnerSupporters` and `runnerUpSupporters`; add deterministic `juryNarrative`, sparse `gameMomentum`, and conservative player `overallGameShape`. Derived confidence describes the derivation only. These payloads can summarize round arcs, jury breakdowns, majority alignment, derived vote cohorts, momentum, and turning points, but they must not reconstruct missing facts from transcripts, `thinking`, `reasoningContext`, private traces, or prose summaries. Cognitive artifacts are optional context only; the endpoint may surface limited active `thinking` and whitelisted `strategy` snippets, but raw payloads, `reasoningContext`, provider wrappers, private trace manifests, storage keys, source pointers, and arbitrary debug fields stay out of player-safe responses and cannot define what happened.
 - `reasoning` artifacts come only from `PrivateDecisionTrace.reasoningContext` and/or `PrivateDecisionTrace.providerReasoningSummary.text` and are owner-only for user-facing access. User-facing payloads store provider summaries as text only; provider wrappers such as `parts` and `outputItemIds` remain private-trace evidence.
