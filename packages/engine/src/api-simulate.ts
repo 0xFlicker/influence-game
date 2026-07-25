@@ -17,8 +17,6 @@ interface ApiSimArgs {
   provider: "openai" | "lm-studio" | "katana" | "custom-openai-compatible";
   model?: string;
   modelCatalogId?: string;
-  /** Hosted OpenAI request tier. Flex is the default; auto is the explicit opt-out. */
-  serviceTier: "flex" | "auto";
   reasoningPolicy?: ModelReasoningPolicy;
   timingPreset: "fast" | "standard" | "slow";
   maxRounds: number | "auto";
@@ -89,7 +87,6 @@ export function parseArgs(
     waitForAdvance: env.INFLUENCE_API_SIM_WAIT_FOR_ADVANCE !== "false",
     advanceTimeoutMs: readPositiveInt(env.INFLUENCE_API_SIM_ADVANCE_TIMEOUT_MS, 120_000),
     pollIntervalMs: readPositiveInt(env.INFLUENCE_API_SIM_POLL_INTERVAL_MS, 3_000),
-    serviceTier: "flex",
   };
 
   for (let i = 0; i < argv.length; i++) {

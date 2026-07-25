@@ -312,8 +312,6 @@ export {
   describeLlmProvider,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
-  normalizeOpenAIServiceTier,
-  resolveOpenAIServiceTier,
   resolveModelForTier,
   resolveToolChoiceMode,
 } from "./llm-client";
