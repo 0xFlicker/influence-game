@@ -23,7 +23,7 @@ function createFormatState(): GameState {
 }
 
 describe("format-kernel turning points", () => {
-  it("flags chooser survival, SoE elim-with-saves, and empower tiebreak", () => {
+  it("flags SoE elim-with-saves and empower tiebreak, but not full-field chooser survival", () => {
     const state = createFormatState();
     state.startRound();
     state.setEmpowered("alice", "initial");
@@ -52,10 +52,8 @@ describe("format-kernel turning points", () => {
     const completed = buildCompletedGameResults({ events });
     const projection = buildPostgameAnalysisProjection({ completedResults: completed, events });
 
-    expect(projection.turningPoints.some((point) => point.type === "format_chooser_survived")).toBe(true);
-    expect(
-      projection.turningPoints.find((point) => point.type === "format_chooser_survived")?.description,
-    ).toContain("while fully eligible");
+    // SoE is full-field eligibility — not a special chooser-survival beat.
+    expect(projection.turningPoints.some((point) => point.type === "format_chooser_survived")).toBe(false);
     expect(projection.turningPoints.some((point) => point.type === "format_soe_elim_with_saves")).toBe(true);
     expect(
       projection.turningPoints.find((point) => point.type === "format_soe_elim_with_saves")?.description,
@@ -64,6 +62,48 @@ describe("format-kernel turning points", () => {
     expect(
       projection.turningPoints.find((point) => point.type === "format_tiebreak")?.description,
     ).toMatch(/tiebreak/i);
+  });
+
+  it("flags chooser survival only when Bounce vulnerable pool is small and includes the chooser", () => {
+    const state = createFormatState();
+    state.startRound();
+    state.setEmpowered("charlie", "initial");
+    state.recordFormatMenu("charlie", ["safety_bounce", "save_or_eliminate"]);
+    state.recordFormatSelected("charlie", "safety_bounce");
+    state.recordSafetyBounceStarted("alice");
+    state.recordSafetyBouncePointer("alice", "charlie", "vulnerable");
+    state.recordSafetyBouncePointer("charlie", "bob", "vulnerable");
+    state.recordSafetyBouncePointer("bob", "dave", "safe");
+    state.recordFormatResolution({
+      formatId: "safety_bounce",
+      empoweredId: "charlie",
+      eliminatedId: "bob",
+      resolutionKind: "clear",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: null,
+      voteBomb: null,
+      safetyBounce: {
+        starterId: "alice",
+        safePlayerIds: ["alice", "dave"],
+        vulnerablePlayerIds: ["charlie", "bob"],
+        voteTotals: { charlie: 0, bob: 2 },
+      },
+    });
+
+    const events = state.getCanonicalEvents();
+    const completed = buildCompletedGameResults({ events });
+    const projection = buildPostgameAnalysisProjection({ completedResults: completed, events });
+
+    const survival = projection.turningPoints.find((point) => point.type === "format_chooser_survived");
+    expect(survival).toBeDefined();
+    expect(survival?.description).toContain("vulnerable pool");
+    expect(survival?.description).toContain("walked");
+    expect(survival?.criteria).toMatchObject({
+      empoweredId: "charlie",
+      eliminatedId: "bob",
+      vulnerablePoolSize: 2,
+    });
   });
 
   it("flags chooser self-destruct under Vote Bomb clear stack", () => {

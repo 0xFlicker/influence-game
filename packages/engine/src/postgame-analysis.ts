@@ -32,7 +32,10 @@ export type PostgameTurningPointType =
   | "jury_split"
   | "endgame_pivot"
   | "near_miss"
-  /** Format kernel: empowered player survived a format where they were eligible. */
+  /**
+   * Format kernel: empowered player sat in a small vulnerable pool (e.g. Safety Bounce)
+   * and survived while someone else was eliminated.
+   */
   | "format_chooser_survived"
   /** Format kernel: empowered player eliminated under their own format. */
   | "format_chooser_eliminated"
@@ -1669,56 +1672,75 @@ function buildFormatKernelTurningPoints(input: {
     const eliminated = format.eliminated;
     const roundNumber = round.round;
 
-    // Chooser survival / self-destruct (eligible under format kernel launch formats).
-    if (empowered) {
-      const chooserEliminated = empowered.id === eliminated.id;
-      const chooserEligible =
-        formatId === "safety_bounce"
-          ? (format.safetyBounce?.vulnerable.some((player) => player.id === empowered.id) ?? true)
-          : true;
-      if (chooserEliminated) {
-        points.push({
-          round: roundNumber,
-          type: "format_chooser_eliminated",
-          players: [empowered],
-          confidence: "high",
-          description: `${empowered.name} chose ${formatLabel} and was eliminated under it.`,
-          derivationMethod: "format_chooser_self_destruct",
-          criteria: {
-            formatId,
-            empoweredId: empowered.id,
-            eliminatedId: eliminated.id,
-          },
-          evidence: {
-            factRefs: [
-              `round:${roundNumber}:empowered:${empowered.id}`,
-              `round:${roundNumber}:format_eliminated:${eliminated.id}`,
-            ],
-            ...(input.eventRefs
-              ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.selected", "format.resolved"], [empowered, eliminated]) }
-              : {}),
-          },
-        });
-      } else if (chooserEligible) {
+    // Chooser self-destruct: picked the format and still went home.
+    if (empowered && empowered.id === eliminated.id) {
+      points.push({
+        round: roundNumber,
+        type: "format_chooser_eliminated",
+        players: [empowered],
+        confidence: "high",
+        description: `${empowered.name} chose ${formatLabel} and was eliminated under it.`,
+        derivationMethod: "format_chooser_self_destruct",
+        criteria: {
+          formatId,
+          empoweredId: empowered.id,
+          eliminatedId: eliminated.id,
+        },
+        evidence: {
+          factRefs: [
+            `round:${roundNumber}:empowered:${empowered.id}`,
+            `round:${roundNumber}:format_eliminated:${eliminated.id}`,
+          ],
+          ...(input.eventRefs
+            ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.selected", "format.resolved"], [empowered, eliminated]) }
+            : {}),
+        },
+      });
+    }
+
+    // Chooser survival is only special when a *small vulnerable pool* exists (Safety Bounce)
+    // and the chooser was inside that pool but did not go home. Full-field formats (SoE / Vote Bomb)
+    // where everyone is always eligible are ordinary rounds — not this beat.
+    if (
+      empowered
+      && empowered.id !== eliminated.id
+      && formatId === "safety_bounce"
+      && format.safetyBounce
+    ) {
+      const vulnerablePool = format.safetyBounce.vulnerable;
+      const poolSize = vulnerablePool.length;
+      const chooserInPool = vulnerablePool.some((player) => player.id === empowered.id);
+      // "Small" pool: at least a real contested set, not the whole table.
+      const smallPool = poolSize >= 2 && poolSize <= Math.max(2, Math.floor(round.canonicalFacts.roundFacts.players.alive.length / 2));
+      if (chooserInPool && smallPool) {
         points.push({
           round: roundNumber,
           type: "format_chooser_survived",
-          players: [empowered, eliminated],
+          players: [empowered, eliminated, ...vulnerablePool],
           confidence: "high",
-          description: `${empowered.name} chose ${formatLabel} while fully eligible and walked; ${eliminated.name} went home.`,
-          derivationMethod: "format_chooser_survived_eligible",
+          description: `${empowered.name} sat in a ${poolSize}-player vulnerable pool on Safety Bounce and walked; ${eliminated.name} took the hit.`,
+          derivationMethod: "format_chooser_survived_vulnerable_pool",
           criteria: {
             formatId,
             empoweredId: empowered.id,
             eliminatedId: eliminated.id,
+            vulnerablePoolSize: poolSize,
+            vulnerablePlayerIds: vulnerablePool.map((player) => player.id),
           },
           evidence: {
             factRefs: [
               `round:${roundNumber}:empowered:${empowered.id}`,
+              `round:${roundNumber}:vulnerable_pool:${poolSize}`,
               `round:${roundNumber}:format_eliminated:${eliminated.id}`,
             ],
             ...(input.eventRefs
-              ? { eventRefs: input.eventRefs.forRound(roundNumber, ["format.selected", "format.resolved"], [empowered, eliminated]) }
+              ? {
+                  eventRefs: input.eventRefs.forRound(
+                    roundNumber,
+                    ["format.selected", "format.resolved", "format.safety_bounce_pointer"],
+                    [empowered, eliminated, ...vulnerablePool],
+                  ),
+                }
               : {}),
           },
         });
