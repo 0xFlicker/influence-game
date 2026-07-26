@@ -35,8 +35,18 @@ import {
 } from "./formats";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseContinuityRequirement, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicReflectionAction, StrategicReflectionSummary, StrategyPacketSummary, StrategyPacketUpdateAction, StrategicDecisionMetadata, StrategicDecisionReceipt, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1 } from "./game-runner.types";
+export { PLAYER_CONTINUITY_CAPSULE_VERSION } from "./game-runner.types";
+export {
+  admitHouseContinuityForRecovery,
+  isHouseContinuityCapsuleShape,
+  isHouseContinuityRequirement,
+  parsePlayerContinuityCapsule,
+  sealHouseContinuityRequirement,
+  validatePlayerContinuitySetForRecovery,
+} from "./player-continuity";
 import type { AccumulatorEntryV1, BoundaryCertificate, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
+import { sealHouseContinuityRequirement } from "./player-continuity";
 import type { TokenTracker } from "./token-tracker";
 import {
   accumulatorProof,
@@ -301,6 +311,17 @@ export class GameRunner {
 
     for (const agent of this.agents.values()) {
       agent.onGameStart(gameId, allPlayers);
+    }
+
+    if (this.resumeFrom?.playerContinuityCapsules?.length) {
+      const livingPlayerNames = this.gameState.getAlivePlayers().map((player) => player.name);
+      for (const capsule of this.resumeFrom.playerContinuityCapsules) {
+        const agent = this.agents.get(capsule.playerId);
+        if (!agent?.restoreContinuityCapsule) {
+          throw new Error(`Missing agent for continuity capsule ${capsule.playerName}/${capsule.playerId}`);
+        }
+        agent.restoreContinuityCapsule(capsule, { livingPlayerNames });
+      }
     }
 
     const actor = createActor(this.machine, {
@@ -622,12 +643,15 @@ export class GameRunner {
     const alivePlayerCount = allPlayers.filter((player) => player.status === PlayerStatus.ALIVE).length;
     const eliminatedPlayerCount = allPlayers.length - alivePlayerCount;
 
+    const aliveAgents = this.gameState.getAlivePlayers()
+      .map((player) => this.agents.get(player.id))
+      .filter((agent): agent is IAgent => agent != null);
     const playerContinuityCapsules: PlayerContinuityCapsule[] = [];
-    for (const [id, ag] of this.agents) {
+    for (const ag of aliveAgents) {
       const partial = ag.getContinuityCapsule?.() ?? null;
       if (partial) {
         playerContinuityCapsules.push({
-          playerId: id,
+          playerId: ag.id,
           playerName: ag.name,
           ...partial,
         });
@@ -636,6 +660,10 @@ export class GameRunner {
     const houseContinuityCapsule: HouseContinuityCapsule | null = this.houseStrategyBible
       ? { ...this.houseStrategyBible }
       : null;
+    const houseContinuityRequirement = sealHouseContinuityRequirement({
+      bibleEnabled: this.houseStrategyBibleEnabled(),
+      hasValidHousePacket: houseContinuityCapsule != null,
+    });
 
     let tokenCursor = this.tokenTracker?.toCursor() ?? null;
     const transcriptEntryCount = this.logger.transcript.length;
@@ -726,6 +754,7 @@ export class GameRunner {
       boundaryCertificate,
       playerContinuityCapsules,
       houseContinuityCapsule,
+      houseContinuityRequirement,
       transcriptReplay: hasRuntimeSnapshot ? this.buildTranscriptReplay() : null,
       // Transient write input for API product-dialogue watermark; not player-facing.
       productDialogueProjection: this.buildProductDialogueProjection(),

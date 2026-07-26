@@ -2,7 +2,8 @@ import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import { TemplateHouseInterviewer } from "../house-interviewer";
-import type { PhaseContext, PrivateDecisionTrace } from "../game-runner";
+import type { PhaseContext, PlayerContinuityCapsule, PrivateDecisionTrace } from "../game-runner";
+import { parsePlayerContinuityCapsule } from "../player-continuity";
 import { Phase } from "../types";
 import { modelCatalogEntryById } from "../model-catalog";
 import { ruleSheetForFormat } from "../format-pressure";
@@ -3147,5 +3148,299 @@ describe("InfluenceAgent structured output mode", () => {
       message: "Finn, your stories are always so vivid.",
       reasoningContext: "Deep hidden CoT: Finn is dodging; Vera might be an ally here.",
     });
+  });
+});
+
+describe("player continuity capsule capture and hydration (R12)", () => {
+  function makeAgent(requests: Array<Record<string, unknown>> = []) {
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+      { id: "gone-id", name: "Gone" },
+    ]);
+    return agent;
+  }
+
+  it("captures power-action memory and recent decision receipts omitted by the prior capsule", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "cast_votes",
+          args: {
+            thinking: "Empower Mira",
+            empower: "Mira",
+            decisionLog: "Empower Mira for format control",
+          },
+        },
+        {
+          toolName: "use_power",
+          args: {
+            thinking: "Protect Mira",
+            action: "protect",
+            target: "Mira",
+            decisionLog: "Protect Mira after public receipt",
+          },
+        },
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    agent.updateAlly("Mira");
+    agent.updateThreat("Vera");
+    agent.addNote("Mira", "trustworthy format chooser");
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+    await agent.getPowerAction(makeContext(Phase.POWER), ["mira-id", "vera-id"]);
+
+    const capsule = agent.getContinuityCapsule();
+    expect(capsule).not.toBeNull();
+    expect(capsule!.version).toBe(1);
+    expect(capsule!.powerActionMemory).toEqual([
+      expect.objectContaining({ action: "protect", target: "Mira", round: 1 }),
+    ]);
+    expect(capsule!.recentStrategicDecisions.map((r) => r.decisionLog)).toEqual(
+      expect.arrayContaining([
+        "Empower Mira for format control",
+        "Protect Mira after public receipt",
+      ]),
+    );
+    expect(capsule!.roundHistory.some((entry) => entry.myVotes.empower === "Mira")).toBeTrue();
+    expect(capsule!.relationships.allies).toContain("Mira");
+    expect(capsule!.notes.some((note) => note.subject === "Mira")).toBeTrue();
+    expect(JSON.stringify(capsule)).not.toMatch(/"thinking"/);
+    expect(JSON.stringify(capsule)).not.toMatch(/"reasoningContext"/);
+  });
+
+  it("hydrates a fresh agent with equivalent private prompt context and advances strategy revision lineage", async () => {
+    const source = makeAgent();
+    source.updateAlly("Mira");
+    source.addNote("Vera", "watch the mid-game vote math");
+    // Seed strategy packet + reflection via direct restore first on a bootstrap capsule.
+    const bootstrap: PlayerContinuityCapsule = {
+      version: 1,
+      playerId: "atlas-id",
+      playerName: "Atlas",
+      strategyPacket: {
+        revisionId: "r2-mingle-3",
+        previousRevisionId: "r2-lobby-2",
+        updatedAtRound: 2,
+        updatedAtPhase: Phase.MINGLE,
+        objective: "Keep Mira close and pressure Vera",
+        targetPosture: "pressure Vera",
+        coalitionPosture: "pair with Mira",
+        nextSocialProbe: "ask Mira about Vera",
+        strategicLens: "vote_math",
+        strategicLensRationale: "numbers matter",
+        uncertainty: "unknown jury lean",
+        reviseTrigger: "if Mira flips",
+        changedSincePrevious: "named Vera",
+      },
+      reflectionSummary: {
+        certainties: ["Mira is reliable"],
+        suspicions: ["Vera is floating"],
+        allies: ["Mira"],
+        threats: ["Vera"],
+        plan: "Hold the Mira pair",
+        strategicLens: "coalition_geometry",
+        strategicLensRationale: "pair integrity",
+      },
+      notes: [{ subject: "Mira", note: "solid ally" }],
+      commitments: [],
+      relationships: { allies: ["Mira"], threats: ["Vera"] },
+      powerActionMemory: [{ round: 1, action: "protect", target: "Mira" }],
+      roundHistory: [{ round: 1, myVotes: { empower: "Mira" }, empowered: "Mira" }],
+      recentStrategicDecisions: [{
+        round: 1,
+        phase: Phase.VOTE,
+        action: "vote",
+        label: "Standard Vote",
+        decisionLog: "Empowered Mira to keep format control",
+      }],
+      strategyPacketRevisionCounter: 3,
+    };
+    source.restoreContinuityCapsule(bootstrap, {
+      livingPlayerNames: ["Atlas", "Mira", "Vera"],
+    });
+
+    const sealed = source.getContinuityCapsule();
+    expect(sealed).not.toBeNull();
+
+    const fresh = makeAgent();
+    fresh.restoreContinuityCapsule(
+      {
+        playerId: "atlas-id",
+        playerName: "Atlas",
+        ...sealed!,
+      },
+      { livingPlayerNames: ["Atlas", "Mira", "Vera"] },
+    );
+
+    const restored = fresh.getContinuityCapsule();
+    expect(restored?.strategyPacket?.revisionId).toBe("r2-mingle-3");
+    expect(restored?.strategyPacketRevisionCounter).toBe(3);
+    expect(restored?.reflectionSummary?.plan).toBe("Hold the Mira pair");
+    expect(restored?.powerActionMemory).toEqual([{ round: 1, action: "protect", target: "Mira" }]);
+    expect(restored?.recentStrategicDecisions[0]?.decisionLog).toContain("Empowered Mira");
+    expect(restored?.relationships.allies).toContain("Mira");
+    expect(restored?.notes).toEqual(expect.arrayContaining([
+      expect.objectContaining({ subject: "Mira" }),
+    ]));
+
+    // Next Strategy Thread revision must advance the counter rather than collide.
+    const requests: Array<Record<string, unknown>> = [];
+    const revising = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "strategic_reflection", {
+        thinking: "revise",
+        certainties: ["Mira holds"],
+        suspicions: [],
+        allies: ["Mira: still solid"],
+        threats: ["Vera: still floating"],
+        plan: "Stay the course",
+        strategicLens: "vote_math",
+        strategicLensRationale: "still numbers",
+        strategyPacket: {
+          objective: "Keep Mira close",
+          targetPosture: "pressure Vera lightly",
+          coalitionPosture: "pair with Mira",
+          nextSocialProbe: "test Vera in lobby",
+          strategicLens: "vote_math",
+          strategicLensRationale: "numbers",
+          uncertainty: "low",
+          reviseTrigger: "Mira flips",
+          changedSincePrevious: "softened pressure",
+        },
+      }),
+      "gpt-5-nano",
+    );
+    revising.onGameStart("game-1", [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+    ]);
+    revising.restoreContinuityCapsule(
+      { playerId: "atlas-id", playerName: "Atlas", ...sealed! },
+      { livingPlayerNames: ["Atlas", "Mira", "Vera"] },
+    );
+    await revising.getStrategicReflection(makeContext(Phase.DIARY_ROOM));
+    const after = revising.getStrategyPacket();
+    expect(after?.previousRevisionId).toBe("r2-mingle-3");
+    expect(after?.revisionId).toBe("r1-diary_room-4");
+  });
+
+  it("scrubs eliminated players from actionable state while keeping historical context", () => {
+    const agent = makeAgent();
+    const capsule: PlayerContinuityCapsule = {
+      version: 1,
+      playerId: "atlas-id",
+      playerName: "Atlas",
+      strategyPacket: {
+        revisionId: "r2-mingle-1",
+        previousRevisionId: null,
+        updatedAtRound: 2,
+        updatedAtPhase: Phase.MINGLE,
+        objective: "Work with Gone against Mira",
+        targetPosture: "target Gone",
+        coalitionPosture: "ally Gone",
+        nextSocialProbe: "ask Gone about Mira",
+        strategicLens: "broad_read",
+        strategicLensRationale: "read the room with Gone",
+        uncertainty: "Gone may flip",
+        reviseTrigger: "if Gone is gone",
+        changedSincePrevious: "initial",
+      },
+      reflectionSummary: {
+        certainties: ["Gone was useful"],
+        suspicions: [],
+        allies: ["Gone"],
+        threats: ["Mira"],
+        plan: "Remember Gone as history",
+        strategicLens: "broad_read",
+        strategicLensRationale: "history",
+      },
+      notes: [
+        { subject: "Gone", note: "was a strong ally" },
+        { subject: "Mira", note: "still dangerous" },
+      ],
+      commitments: [],
+      relationships: { allies: ["Gone", "Mira"], threats: ["Gone"] },
+      powerActionMemory: [{ round: 1, action: "protect", target: "Gone" }],
+      roundHistory: [{ round: 1, myVotes: { empower: "Gone" }, eliminated: "Gone" }],
+      recentStrategicDecisions: [{
+        round: 1,
+        phase: Phase.POWER,
+        action: "power",
+        label: "Power Action",
+        decisionLog: "Protected Gone last round",
+      }],
+      strategyPacketRevisionCounter: 1,
+    };
+
+    agent.restoreContinuityCapsule(capsule, {
+      livingPlayerNames: ["Atlas", "Mira", "Vera"],
+    });
+    const restored = agent.getContinuityCapsule();
+    expect(restored?.relationships.allies).not.toContain("Gone");
+    expect(restored?.relationships.threats).not.toContain("Gone");
+    expect(restored?.notes.some((note) => note.subject === "Gone")).toBeFalse();
+    expect(restored?.notes.some((note) => note.subject === "Mira")).toBeTrue();
+    // Historical context preserved
+    expect(restored?.roundHistory[0]?.eliminated).toBe("Gone");
+    expect(restored?.powerActionMemory[0]?.target).toBe("Gone");
+    expect(restored?.recentStrategicDecisions[0]?.decisionLog).toContain("Gone");
+    // Strategy targeting scrubbed
+    expect(restored?.strategyPacket?.targetPosture).toContain("eliminated; not an active target");
+    // Reflection historical allies retained
+    expect(restored?.reflectionSummary?.allies).toContain("Gone");
+  });
+
+  it("rejects unsupported versions and forbidden private fields without hydrating", () => {
+    const agent = makeAgent();
+    expect(() =>
+      agent.restoreContinuityCapsule({
+        version: 99,
+        playerId: "atlas-id",
+        playerName: "Atlas",
+        strategyPacket: null,
+        reflectionSummary: null,
+        notes: [],
+        commitments: [],
+        relationships: { allies: [], threats: [] },
+        powerActionMemory: [],
+        roundHistory: [],
+        recentStrategicDecisions: [],
+        strategyPacketRevisionCounter: 0,
+      } as unknown as PlayerContinuityCapsule),
+    ).toThrow(/Unsupported player continuity capsule version/);
+
+    expect(parsePlayerContinuityCapsule({
+      version: 1,
+      playerId: "atlas-id",
+      playerName: "Atlas",
+      strategyPacket: null,
+      reflectionSummary: null,
+      notes: [],
+      commitments: [],
+      relationships: { allies: [], threats: [] },
+      powerActionMemory: [],
+      roundHistory: [],
+      recentStrategicDecisions: [],
+      strategyPacketRevisionCounter: 0,
+      thinking: "secret",
+    })).toBeNull();
   });
 });

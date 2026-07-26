@@ -63,13 +63,16 @@ class PassportProofAgent implements IAgent {
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null {
     if (!this.started) return null;
     return {
+      version: 1,
       strategyPacket: null,
       reflectionSummary: null,
       notes: [],
       commitments: [],
       relationships: { allies: [], threats: [] },
-      powerActionMemory: null,
+      powerActionMemory: [],
       roundHistory: [],
+      recentStrategicDecisions: [],
+      strategyPacketRevisionCounter: 0,
     };
   }
 
@@ -997,6 +1000,109 @@ describe("checkpoint hydration passport validator", () => {
     expect(candidate?.passport.stamps.find((stamp) => stamp.id === "actorWitness")?.status).toBe("passed");
     expect(candidate?.resumeAvailable).toBeFalse();
     expect(JSON.stringify(inspection.response)).not.toContain("strategyPacket");
+  });
+
+  test("House continuity stamp treats disabled bible as intentional non-blocking absence", () => {
+    const base = createCheckpointCapsule(createCanonicalEventFixture("house-disabled"));
+    const ownerEpoch = "owner-house-disabled";
+    const eventHeadHash = "sha256:house-disabled";
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
+
+    const res = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: positive.runtimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: base.projectionSummary,
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: null,
+        houseContinuityRequirement: "disabled",
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: positive.tokenCostCursor,
+    }));
+
+    const houseStamp = res.passport.stamps.find((stamp) => stamp.id === "houseContinuity");
+    expect(houseStamp?.status).toBe("passed");
+    expect(houseStamp?.reason).toMatch(/disabled/i);
+    expect(res.passport.verdict).toBe("hydration_candidate");
+  });
+
+  test("House continuity stamp treats awaiting first valid update as intentional non-blocking absence", () => {
+    const base = createCheckpointCapsule(createCanonicalEventFixture("house-awaiting"));
+    const ownerEpoch = "owner-house-awaiting";
+    const eventHeadHash = "sha256:house-awaiting";
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
+
+    const res = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: positive.runtimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: base.projectionSummary,
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: null,
+        houseContinuityRequirement: "awaiting_first_valid_update",
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: positive.tokenCostCursor,
+    }));
+
+    const houseStamp = res.passport.stamps.find((stamp) => stamp.id === "houseContinuity");
+    expect(houseStamp?.status).toBe("passed");
+    expect(houseStamp?.reason).toMatch(/awaiting first valid update/i);
+    expect(res.passport.verdict).toBe("hydration_candidate");
+  });
+
+  test("required House continuity blocks on missing or malformed packets", () => {
+    const base = createCheckpointCapsule(createCanonicalEventFixture("house-required"));
+    const ownerEpoch = "owner-house-required";
+    const eventHeadHash = "sha256:house-required";
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
+
+    const missing = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: positive.runtimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: base.projectionSummary,
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: null,
+        houseContinuityRequirement: "required",
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: positive.tokenCostCursor,
+    }));
+    expect(stampStatus(missing, "houseContinuity")).toBe("missing");
+    expect(missing.passport.verdict).not.toBe("hydration_candidate");
+
+    const malformed = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: positive.runtimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: base.projectionSummary,
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: { revisionId: "" },
+        houseContinuityRequirement: "disabled",
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: positive.tokenCostCursor,
+    }));
+    expect(stampStatus(malformed, "houseContinuity")).toBe("malformed");
+    expect(malformed.passport.verdict).not.toBe("hydration_candidate");
   });
 
   test("privacy stamp blocks raw reasoning fields in continuity capsules", () => {

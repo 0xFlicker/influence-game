@@ -107,6 +107,9 @@ export interface GameRunnerResumeOptions {
   transcriptReplay: readonly TranscriptEntry[];
   tokenCostCursor?: TokenCostCursor | null;
   houseContinuityCapsule?: HouseContinuityCapsule | null;
+  houseContinuityRequirement?: HouseContinuityRequirement;
+  /** Validated active-player private continuity capsules for supported resume hydration. */
+  playerContinuityCapsules?: readonly PlayerContinuityCapsule[];
   mingleInboxReplay?: MingleInboxReplay | null;
   currentAccusations?: CurrentAccusationsAccumulatorV1 | null;
 }
@@ -255,11 +258,36 @@ export interface RuntimeSnapshotV1 {
 }
 
 /**
- * Structured private continuity capsules (U5).
- * These are producer-only state for future hydration of agent/House behavior.
+ * Structured private continuity capsules.
+ * These are producer-only state for supported-boundary hydration of agent/House behavior.
  * They must not leak raw thinking or reasoningContext.
  */
+export const PLAYER_CONTINUITY_CAPSULE_VERSION = 1 as const;
+
+/**
+ * Checkpoint-time House Strategy Bible continuity contract.
+ * Sealed when the checkpoint is written; recovery and passport must not re-read live config.
+ */
+export type HouseContinuityRequirement =
+  | "disabled"
+  | "awaiting_first_valid_update"
+  | "required";
+
+export interface PlayerPowerActionMemoryEntry {
+  round: number;
+  action: "eliminate" | "protect" | "pass";
+  target: string;
+}
+
+export interface PlayerRoundHistoryEntry {
+  round: number;
+  eliminated?: string;
+  empowered?: string;
+  myVotes: { empower: string };
+}
+
 export interface PlayerContinuityCapsule {
+  version: typeof PLAYER_CONTINUITY_CAPSULE_VERSION;
   playerId: UUID;
   playerName: string;
   strategyPacket: StrategyPacketSummary | null;
@@ -267,8 +295,12 @@ export interface PlayerContinuityCapsule {
   notes: Array<{ subject: string; note: string }>;
   commitments: string[];
   relationships: { allies: string[]; threats: string[] };
-  powerActionMemory: unknown;
-  roundHistory: unknown[];
+  powerActionMemory: PlayerPowerActionMemoryEntry[];
+  roundHistory: PlayerRoundHistoryEntry[];
+  /** Bounded private strategic receipts carried across supported restarts. */
+  recentStrategicDecisions: StrategicDecisionReceipt[];
+  /** Ensures the next Strategy Thread revision advances after hydration. */
+  strategyPacketRevisionCounter: number;
 }
 
 export interface HouseContinuityCapsule {
@@ -303,6 +335,12 @@ export interface GameCheckpointCapsule {
   boundaryCertificate?: BoundaryCertificate | null;
   playerContinuityCapsules?: PlayerContinuityCapsule[];
   houseContinuityCapsule?: HouseContinuityCapsule | null;
+  /**
+   * Checkpoint-time House continuity contract. Absent on legacy capsules;
+   * recovery fails closed for player continuity without versioned capsules,
+   * and passport treats missing House requirement as the historical strict path.
+   */
+  houseContinuityRequirement?: HouseContinuityRequirement;
   transcriptReplay?: {
     /** 1 = legacy safe-entry shape; 2 = normalized dialogue identity fields. */
     version: 1 | 2;
@@ -1097,11 +1135,20 @@ export interface IAgent {
   getStrategyPacket?(): StrategyPacketSummary | null;
 
   /**
-   * (U5) Return structured private continuity capsule for this agent.
+   * Return structured private continuity capsule for this agent.
    * Called by runner at durable phase boundaries for checkpoint manifests.
    * Must not include raw prompts, responses, or reasoningContext.
    */
   getContinuityCapsule?(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null;
+
+  /**
+   * Restore validated private continuity after roster initialization on supported resume.
+   * Must scrub eliminated players from actionable state while preserving historical context.
+   */
+  restoreContinuityCapsule?(
+    capsule: PlayerContinuityCapsule,
+    options?: { livingPlayerNames?: readonly string[] },
+  ): void;
 
   // --- Memory updates (called by GameRunner after phase events) ---
   /** Record a player as an ally */

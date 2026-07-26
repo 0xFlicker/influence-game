@@ -108,7 +108,10 @@
  * cadence starts after Introductions, then continues at later-round vote and
  * legacy/classic Council-diary reflection boundaries where exercised. Later private decisions may include
  * `strategicLens` and `decisionLog` fields for searchable producer/debug
- * validation.
+ * validation. In API-backed games, versioned player continuity capsules also
+ * carry Strategy Thread state across supported phase-boundary startup recovery;
+ * local CLI simulations remain uninterrupted-run artifacts unless an API path
+ * is used.
  *
  * Prompt-continuity validation should check the current-board contract in
  * player prompts, phase-specific format/endgame rules, typed recent decisions,

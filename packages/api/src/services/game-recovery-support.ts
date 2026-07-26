@@ -1,10 +1,12 @@
 import {
+  admitHouseContinuityForRecovery,
   buildMingleInboxReplayFromTranscript,
   GameState,
   isFormatResumeCoordinate,
   mingleInboxSessionForResumeTarget,
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES,
   validateFormatResumePrerequisites,
+  validatePlayerContinuitySetForRecovery,
   type CanonicalGameEvent,
   type CurrentAccusationsAccumulatorV1,
   type GameRunnerOptions,
@@ -346,6 +348,26 @@ export function evaluateSupportedRecovery(params: {
   const tokenCostCursor = readTokenCostCursor(params.checkpoint.tokenCostCursor);
   if (!tokenCostCursor) return { ok: false, reason: "missing_token_cost_cursor" };
 
+  const alivePlayers = gameState.getAlivePlayers().map((player) => ({
+    id: player.id,
+    name: player.name,
+  }));
+  const playerContinuityResult = validatePlayerContinuitySetForRecovery({
+    capsules: isRecord(snapshot) ? snapshot.playerContinuityCapsules : undefined,
+    expectedPlayers: alivePlayers,
+  });
+  if (!playerContinuityResult.ok) {
+    return { ok: false, reason: playerContinuityResult.reason };
+  }
+
+  const houseContinuityResult = admitHouseContinuityForRecovery({
+    requirement: isRecord(snapshot) ? snapshot.houseContinuityRequirement : undefined,
+    capsule: isRecord(snapshot) ? snapshot.houseContinuityCapsule : null,
+  });
+  if (!houseContinuityResult.ok) {
+    return { ok: false, reason: houseContinuityResult.reason };
+  }
+
   const shouldReplayMingleInbox =
     hasBlockedMingleInbox(runtimeSnapshot) &&
     mingleSession !== "none" &&
@@ -362,9 +384,9 @@ export function evaluateSupportedRecovery(params: {
       tokenCostCursor,
       mingleInboxReplay: shouldReplayMingleInbox ? mingleInboxReplay : null,
       currentAccusations: accumulatorResult.currentAccusations,
-      houseContinuityCapsule: isRecord(snapshot) && isRecord(snapshot.houseContinuityCapsule)
-        ? snapshot.houseContinuityCapsule as unknown as SupportedRecoveryResumeInput["houseContinuityCapsule"]
-        : null,
+      houseContinuityCapsule: houseContinuityResult.capsule,
+      houseContinuityRequirement: houseContinuityResult.requirement,
+      playerContinuityCapsules: playerContinuityResult.capsules,
     },
   };
 }

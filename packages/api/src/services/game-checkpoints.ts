@@ -310,13 +310,17 @@ export async function writeGameCheckpoint(
       const snapshotPayload = runtimeSnapshot ||
         boundaryCertificate ||
         params.checkpoint.playerContinuityCapsules ||
-        params.checkpoint.houseContinuityCapsule
+        params.checkpoint.houseContinuityCapsule ||
+        params.checkpoint.houseContinuityRequirement
         ? {
             ...legacySnapshot,
             boundaryCertificate,
             runtimeSnapshot,
             playerContinuityCapsules: params.checkpoint.playerContinuityCapsules ?? [],
             houseContinuityCapsule: params.checkpoint.houseContinuityCapsule ?? null,
+            ...(params.checkpoint.houseContinuityRequirement && {
+              houseContinuityRequirement: params.checkpoint.houseContinuityRequirement,
+            }),
             transcriptReplay: params.checkpoint.transcriptReplay ?? null,
             expectedActivePlayerIds: params.checkpoint.state.alivePlayerCount > 0
               ? Object.values(params.checkpoint.projection.players)

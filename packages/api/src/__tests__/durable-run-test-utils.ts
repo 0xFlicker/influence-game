@@ -255,16 +255,24 @@ export function buildSealedRuntimeSnapshot(params: {
 }
 
 export function buildPositivePlayerContinuityCapsules(_capsule: GameCheckpointCapsule) {
-  return ["atlas", "echo", "mira", "nyx"].map((playerId) => ({
-    playerId,
-    playerName: playerId,
+  return [
+    { playerId: "atlas", playerName: "Atlas" },
+    { playerId: "echo", playerName: "Echo" },
+    { playerId: "mira", playerName: "Mira" },
+    { playerId: "nyx", playerName: "Nyx" },
+  ].map((player) => ({
+    version: 1 as const,
+    playerId: player.playerId,
+    playerName: player.playerName,
     strategyPacket: null,
     reflectionSummary: null,
     notes: [],
     commitments: [],
     relationships: { allies: [], threats: [] },
-    powerActionMemory: null,
+    powerActionMemory: [],
     roundHistory: [],
+    recentStrategicDecisions: [],
+    strategyPacketRevisionCounter: 0,
   }));
 }
 
@@ -311,6 +319,7 @@ export function enrichCapsuleForV1Candidate(
 
   return {
     ...capsule,
+    houseContinuityRequirement: "required" as const,
     boundaryCertificate: {
       gameId: capsule.gameId,
       ownerEpoch: params.ownerEpoch,

@@ -123,7 +123,7 @@ A structured producer/debug artifact for an agent's hidden strategic assessment 
 
 ## Strategy Thread / Carry-Forward Packet
 
-A compact private strategy state an agent carries across rounds inside a live game run. It summarizes the agent's current objective, target posture, coalition posture, next intended social probe, important uncertainty, abandon-or-revise trigger, and revision metadata so later prompts can show continuity without forcing target naming or overt game talk. It is live-agent producer/debug state, not player-visible dialogue, canonical board state, or crash-safe `MemoryStore` data.
+A compact private strategy state an agent carries across rounds. It summarizes the agent's current objective, target posture, coalition posture, next intended social probe, important uncertainty, abandon-or-revise trigger, and revision metadata so later prompts can show continuity without forcing target naming or overt game talk. It is private producer/debug state, not player-visible dialogue, canonical board state, or `MemoryStore` truth. On supported phase-boundary startup recovery it is restored from a versioned player continuity capsule sealed into the checkpoint, together with reflection, notes, relationships, round history, power-action memory, and recent decision receipts.
 
 ## Decision log
 
@@ -243,7 +243,7 @@ The House's between-round narrative voice. `GameRunner` emits a `house-mc-summar
 
 ## House Strategy Bible Packet
 
-A private producer/debug strategy state The House carries across a live game run. It summarizes named alliance hypotheses, active tensions, broken or pending promises, vote blocs, Mingle discoveries, player trajectory reads, dramatic story arcs, dropped threads, and uncertainties so House MC summaries, House Long-Form Summaries, and diary-room producer briefs share continuous producer memory. It is House-owned analysis, not player-visible dialogue, agent prompt context, canonical board state, or crash-safe persistent memory.
+A private producer/debug strategy state The House carries across a game run when enabled. It summarizes named alliance hypotheses, active tensions, broken or pending promises, vote blocs, Mingle discoveries, player trajectory reads, dramatic story arcs, dropped threads, and uncertainties so House MC summaries, House Long-Form Summaries, and diary-room producer briefs share continuous producer memory. It is House-owned analysis, not player-visible dialogue, agent prompt context, or canonical board state. Checkpoints seal a House-continuity requirement (`disabled`, `awaiting_first_valid_update`, or `required`) and, when required, a private House capsule for supported resume; intentional absence is non-blocking only when that sealed contract allows it.
 
 ## House Producer Brief
 
@@ -453,11 +453,11 @@ A v1 checkpoint payload that proves hydration readiness at a completed phase bou
 
 ## Hydration passport
 
-A validator-derived readiness record for a checkpoint capsule. It reports stamp-level status for event/projection truth, boundary safety, Runtime Snapshot evidence, transcript and token cursors, agent continuity, House continuity, privacy boundaries, and the overall verdict such as forensic-only, blocked, or `hydration_candidate`. A hydration passport is not a resume action.
+A validator-derived readiness record for a checkpoint capsule. It reports stamp-level status for event/projection truth, boundary safety, Runtime Snapshot evidence, transcript and token cursors, agent continuity, House continuity, privacy boundaries, and the overall verdict such as forensic-only, blocked, or `hydration_candidate`. House continuity is conditional on the sealed checkpoint-time requirement: intentional absence may pass when the Bible is disabled or still awaiting its first valid update, while missing or malformed required House continuity blocks readiness. Passport output is structural status only — never capsule content, prompts, or reasoning. A hydration passport is not a resume action.
 
 ## Phase-boundary startup resume
 
-The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest resume-capable phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload, append post-restart canonical events, and complete under the same game ID. Suspensions marked `competition_settlement_repair_required` are excluded because replay cannot repair missing or contradictory immutable settlement evidence. Current support covers the original pre-round lobby boundary, normal-round coordinates through reveal, Reckoning, Tribunal with a validated Accusation Capsule for defense, and Judgment through jury vote; it is not a promise of mid-phase recovery, in-flight LLM recovery, arbitrary old-game repair, or automatic serverless orchestration.
+The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest resume-capable phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload (including validated private player continuity capsules and optional House continuity under the sealed requirement), append post-restart canonical events, and complete under the same game ID. Suspensions marked `competition_settlement_repair_required` are excluded because replay cannot repair missing or contradictory immutable settlement evidence. Current support covers the original pre-round lobby boundary; normal-round `mingle_i`, `pre_vote_huddle`, and `vote`; format-kernel phase-entry coordinates; Reckoning; Tribunal with a validated Accusation Capsule for defense; and Judgment through jury vote. It is not a promise of mid-phase recovery, in-flight LLM recovery, arbitrary old-game repair, or automatic serverless orchestration.
 
 ## Boundary certificate
 

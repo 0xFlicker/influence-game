@@ -12,7 +12,10 @@
  */
 
 import {
+  isHouseContinuityRequirement,
+  parsePlayerContinuityCapsule,
   PHASE_BOUNDARY_ACCUMULATOR_IDS,
+  PLAYER_CONTINUITY_CAPSULE_VERSION,
   type CheckpointBoundaryIdentityV1,
 } from "@influence/engine";
 import type { DurableRunDiagnostic } from "./game-durable-run.js";
@@ -443,7 +446,13 @@ function isTranscriptCursorFromWatermark(
 }
 
 function isPlayerContinuityCapsule(value: unknown): boolean {
-  if (!isRecord(value)) return false;
+  // Versioned capsules use the shared fail-closed parser.
+  if (isRecord(value) && value.version === PLAYER_CONTINUITY_CAPSULE_VERSION) {
+    return parsePlayerContinuityCapsule(value) != null;
+  }
+  // Legacy unversioned capsules remain inspectable for passport diagnostics but
+  // are not recovery-admissible (recovery requires versioned capsules).
+  if (!isRecord(value) || value.version != null) return false;
   const relationships = value.relationships;
   return typeof value.playerId === "string" &&
     value.playerId.length > 0 &&
@@ -477,6 +486,54 @@ function isHouseContinuityCapsule(value: unknown): boolean {
     Array.isArray(value.droppedThreads) &&
     Array.isArray(value.openQuestions) &&
     typeof value.changedSincePrevious === "string";
+}
+
+function classifyHouseContinuityStamp(params: {
+  requirement: unknown;
+  capsule: unknown;
+}): { status: PassportStampStatus; reason?: string } {
+  const requirement = isHouseContinuityRequirement(params.requirement)
+    ? params.requirement
+    : null;
+  const hasCapsule = params.capsule != null;
+  const valid = hasCapsule && isHouseContinuityCapsule(params.capsule);
+
+  if (hasCapsule && !valid) {
+    return { status: "malformed", reason: "House continuity capsule is malformed" };
+  }
+
+  if (requirement === "disabled") {
+    if (!hasCapsule) {
+      return {
+        status: "passed",
+        reason: "House Strategy Bible disabled; continuity intentionally absent",
+      };
+    }
+    return { status: "passed" };
+  }
+
+  if (requirement === "awaiting_first_valid_update") {
+    if (!hasCapsule) {
+      return {
+        status: "passed",
+        reason: "House Strategy Bible awaiting first valid update; continuity intentionally absent",
+      };
+    }
+    return { status: "passed" };
+  }
+
+  if (requirement === "required") {
+    if (!hasCapsule) {
+      return { status: "missing", reason: "required House continuity capsule is absent" };
+    }
+    return { status: "passed" };
+  }
+
+  // Legacy checkpoints without a sealed requirement marker keep historical strictness:
+  // a valid capsule passes; absence blocks readiness.
+  if (valid) return { status: "passed" };
+  if (hasCapsule) return { status: "malformed", reason: "House continuity capsule is malformed" };
+  return { status: "missing", reason: "no structured House continuity capsule present" };
 }
 
 function expectedActivePlayerIds(snapshot: Record<string, unknown> | null): {
@@ -664,13 +721,11 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     addStamp("playerContinuity", "missing", "no structured player continuity capsules present");
   }
 
-  if (isHouseContinuityCapsule(hcc)) {
-    addStamp("houseContinuity", "passed");
-  } else if (hcc) {
-    addStamp("houseContinuity", "malformed", "House continuity capsule is malformed");
-  } else {
-    addStamp("houseContinuity", "missing", "no structured House continuity capsule present");
-  }
+  const houseStamp = classifyHouseContinuityStamp({
+    requirement: snap?.houseContinuityRequirement,
+    capsule: hcc,
+  });
+  addStamp("houseContinuity", houseStamp.status, houseStamp.reason);
 
   const ownerEpochStatus = hasBoundaryEvidence ? "passed" : "missing";
   addStamp(

@@ -21,4 +21,23 @@ describe("game lifecycle engine config", () => {
     expect(config.timers.mingle).toBe(20_000);
     expect("whisper" in config.timers).toBeFalse();
   });
+
+  test("forwards sealed House Strategy Bible configuration from the game record", () => {
+    const config = buildEngineConfigFromGameRecord(
+      {
+        maxRounds: 8,
+        enableHouseStrategyBible: true,
+        enableHouseRoundSummaries: false,
+        enableHouseLongFormSummaries: true,
+        enableHouseProducerBriefs: false,
+      },
+      4,
+      8,
+    );
+
+    expect(config.enableHouseStrategyBible).toBe(true);
+    expect(config.enableHouseRoundSummaries).toBe(false);
+    expect(config.enableHouseLongFormSummaries).toBe(true);
+    expect(config.enableHouseProducerBriefs).toBe(false);
+  });
 });

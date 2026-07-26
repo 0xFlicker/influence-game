@@ -1032,7 +1032,7 @@ describe("admin route RBAC", () => {
         changedSincePrevious: "initial packet",
       },
       notes: [{ subject: "continuity", note: `${privatePlayerNote} ${playerCapsule.playerName}` }],
-      roundHistory: [{ round: capsule.round, note: "private round read" }],
+      roundHistory: [{ round: capsule.round, myVotes: { empower: "Mira" } }],
     }));
     capsule.houseContinuityCapsule = {
       ...capsule.houseContinuityCapsule!,

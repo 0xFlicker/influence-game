@@ -16,6 +16,7 @@ import {
   type LaunchFormatId,
   type MingleIntentAction,
   type PhaseContext,
+  type PlayerContinuityCapsule,
   type PowerAction,
   type StrategicDecisionMetadata,
   type StrategicReflectionAction,
@@ -103,6 +104,21 @@ class RecoverySmokeAgent implements IAgent {
 
   onGameStart(): void {}
   async onPhaseStart(): Promise<void> {}
+  getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> {
+    return {
+      version: 1,
+      strategyPacket: null,
+      reflectionSummary: null,
+      notes: [],
+      commitments: [],
+      relationships: { allies: [], threats: [] },
+      powerActionMemory: [],
+      roundHistory: [],
+      recentStrategicDecisions: [],
+      strategyPacketRevisionCounter: 0,
+    };
+  }
+  restoreContinuityCapsule(_capsule: PlayerContinuityCapsule): void {}
   async getIntroduction(): Promise<AgentResponse> { return mockResponse(`Hi, I'm ${this.name}`); }
   async getLobbyMessage(ctx: PhaseContext): Promise<AgentResponse> { return mockResponse(`${this.name} round ${ctx.round}`); }
   async getWhispers(ctx: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>> {
@@ -1163,6 +1179,148 @@ describe("game startup recovery", () => {
       .from(schema.gameEvents)
       .where(eq(schema.gameEvents.gameId, gameId));
     expect(eventRows).toHaveLength(events.length);
+  });
+
+  test("startup recovery fails closed for missing, duplicate, mismatched, or unsupported player continuity", async () => {
+    async function seedAndEvaluate(
+      suffix: string,
+      mutate: (checkpoint: ReturnType<typeof enrichCapsuleForV1Candidate>) => void,
+    ) {
+      const gameId = await insertGame(db, {
+        id: `startup-recovery-player-continuity-${suffix}`,
+        status: "suspended",
+        config: recoveryConfig,
+      });
+      const ownerEpoch = await insertOwner(db, gameId);
+      const events = createCanonicalEventFixture(gameId);
+      await appendGameEvents(db, { gameId, ownerEpoch, events });
+
+      const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
+        ownerEpoch,
+        eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
+        actorCoordinate: "vote",
+      });
+      checkpoint.transcriptReplay = { version: 1, entries: [] };
+      checkpoint.houseContinuityRequirement = "disabled";
+      checkpoint.houseContinuityCapsule = null;
+      mutate(checkpoint);
+      const write = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+      expect(write.ok).toBeTrue();
+      return getSupportedRecovery(db, gameId);
+    }
+
+    expect(await seedAndEvaluate("missing", (checkpoint) => {
+      checkpoint.playerContinuityCapsules = [];
+    })).toMatchObject({ ok: false, reason: "player_continuity_missing" });
+
+    expect(await seedAndEvaluate("unsupported-version", (checkpoint) => {
+      checkpoint.playerContinuityCapsules = (checkpoint.playerContinuityCapsules ?? []).map((capsule) => ({
+        ...capsule,
+        version: 99 as unknown as 1,
+      }));
+    })).toMatchObject({ ok: false, reason: "player_continuity_unsupported_version" });
+
+    expect(await seedAndEvaluate("identity-mismatch", (checkpoint) => {
+      const capsules = [...(checkpoint.playerContinuityCapsules ?? [])];
+      capsules[0] = { ...capsules[0]!, playerName: "NotAtlas" };
+      checkpoint.playerContinuityCapsules = capsules;
+    })).toMatchObject({ ok: false, reason: "player_continuity_identity_mismatch" });
+
+    expect(await seedAndEvaluate("extra", (checkpoint) => {
+      checkpoint.playerContinuityCapsules = [
+        ...(checkpoint.playerContinuityCapsules ?? []),
+        {
+          version: 1,
+          playerId: "extra",
+          playerName: "Extra",
+          strategyPacket: null,
+          reflectionSummary: null,
+          notes: [],
+          commitments: [],
+          relationships: { allies: [], threats: [] },
+          powerActionMemory: [],
+          roundHistory: [],
+          recentStrategicDecisions: [],
+          strategyPacketRevisionCounter: 0,
+        },
+      ];
+    })).toMatchObject({ ok: false, reason: "player_continuity_coverage_mismatch" });
+
+    const valid = await seedAndEvaluate("valid", () => {});
+    expect(valid.ok).toBeTrue();
+    if (!valid.ok) throw new Error(valid.reason);
+    expect(valid.resumeFrom.playerContinuityCapsules?.length).toBe(4);
+    expect(valid.resumeFrom.houseContinuityRequirement).toBe("disabled");
+  });
+
+  test("startup recovery uses sealed House requirement and ignores incomplete agent_memories rows", async () => {
+    async function seedSuspendedVoteCheckpoint(params: {
+      gameId: string;
+      houseContinuityRequirement: "disabled" | "awaiting_first_valid_update" | "required";
+      houseContinuityCapsule: ReturnType<typeof enrichCapsuleForV1Candidate>["houseContinuityCapsule"];
+      seedStaleMemory?: boolean;
+    }) {
+      const gameId = await insertGame(db, {
+        id: params.gameId,
+        status: "suspended",
+        config: {
+          ...recoveryConfig,
+          enableHouseStrategyBible: true,
+        },
+      });
+      const ownerEpoch = await insertOwner(db, gameId);
+      const events = createCanonicalEventFixture(gameId);
+      await appendGameEvents(db, { gameId, ownerEpoch, events });
+
+      if (params.seedStaleMemory) {
+        // Stale operational memory must not influence recovery admission.
+        await db.insert(schema.agentMemories).values({
+          id: `stale-memory-${params.gameId}`,
+          gameId,
+          agentId: "atlas",
+          round: 1,
+          memoryType: "note",
+          subject: "Echo",
+          content: "stale memory that recovery must ignore",
+        });
+      }
+
+      const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
+        ownerEpoch,
+        eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
+        actorCoordinate: "vote",
+      });
+      checkpoint.transcriptReplay = { version: 1, entries: [] };
+      checkpoint.houseContinuityRequirement = params.houseContinuityRequirement;
+      checkpoint.houseContinuityCapsule = params.houseContinuityCapsule;
+
+      const written = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+      expect(written.ok).toBeTrue();
+      return gameId;
+    }
+
+    // Bible-enabled game before first valid House packet: intentional absence is allowed.
+    const awaitingId = await seedSuspendedVoteCheckpoint({
+      gameId: "startup-recovery-house-awaiting",
+      houseContinuityRequirement: "awaiting_first_valid_update",
+      houseContinuityCapsule: null,
+      seedStaleMemory: true,
+    });
+    const admitted = await getSupportedRecovery(db, awaitingId);
+    expect(admitted.ok).toBeTrue();
+    if (!admitted.ok) throw new Error(admitted.reason);
+    expect(admitted.resumeFrom.houseContinuityRequirement).toBe("awaiting_first_valid_update");
+    expect(admitted.resumeFrom.houseContinuityCapsule).toBeNull();
+    expect(admitted.resumeFrom.playerContinuityCapsules?.length).toBe(4);
+
+    // Required without a capsule must fail closed.
+    const requiredMissingId = await seedSuspendedVoteCheckpoint({
+      gameId: "startup-recovery-house-required-missing",
+      houseContinuityRequirement: "required",
+      houseContinuityCapsule: null,
+    });
+    const blocked = await getSupportedRecovery(db, requiredMissingId);
+    expect(blocked).toMatchObject({ ok: false, reason: "house_continuity_required_missing" });
   });
 
   test("startup recovery fails closed for blocked accumulator checkpoints", async () => {

@@ -29,6 +29,7 @@ import type {
   GameConfig,
   GameRunnerOptions,
   PhaseContext,
+  PlayerContinuityCapsule,
   ProviderProfileId,
   PrivateDecisionTrace,
   PrivateTraceSink,
@@ -327,6 +328,23 @@ class ApiTestMockAgent implements IAgent {
 
   onGameStart() {}
   async onPhaseStart() {}
+  getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> {
+    return {
+      version: 1,
+      strategyPacket: null,
+      reflectionSummary: null,
+      notes: [],
+      commitments: [],
+      relationships: { allies: [], threats: [] },
+      powerActionMemory: [],
+      roundHistory: [],
+      recentStrategicDecisions: [],
+      strategyPacketRevisionCounter: 0,
+    };
+  }
+  restoreContinuityCapsule(_capsule: PlayerContinuityCapsule): void {
+    // Test mock has no private strategy state to hydrate.
+  }
   async getIntroduction() { return mockResponse(`Hi, I'm ${this.name}`); }
   async getLobbyMessage(ctx: PhaseContext) { return mockResponse(`${this.name} round ${ctx.round}`); }
   async getWhispers(ctx: PhaseContext) {
@@ -509,6 +527,20 @@ export function buildEngineConfigFromGameRecord(
       mingle: roomPhaseTimer,
     },
     diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE, Phase.COUNCIL],
+    // Preserve House Strategy Bible / summary contracts sealed into the game record so
+    // checkpoint-time House continuity requirements match the runtime that produced them.
+    ...(typeof gameConfig.enableHouseRoundSummaries === "boolean" && {
+      enableHouseRoundSummaries: gameConfig.enableHouseRoundSummaries,
+    }),
+    ...(typeof gameConfig.enableHouseStrategyBible === "boolean" && {
+      enableHouseStrategyBible: gameConfig.enableHouseStrategyBible,
+    }),
+    ...(typeof gameConfig.enableHouseLongFormSummaries === "boolean" && {
+      enableHouseLongFormSummaries: gameConfig.enableHouseLongFormSummaries,
+    }),
+    ...(typeof gameConfig.enableHouseProducerBriefs === "boolean" && {
+      enableHouseProducerBriefs: gameConfig.enableHouseProducerBriefs,
+    }),
   };
 }
 

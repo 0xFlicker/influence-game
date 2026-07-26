@@ -1507,17 +1507,120 @@ export class InfluenceAgent implements IAgent {
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null {
     const m = this.memory;
     return {
-      strategyPacket: m.strategyPacket ?? null,
-      reflectionSummary: m.lastReflection ?? null,
+      version: 1,
+      strategyPacket: m.strategyPacket ? { ...m.strategyPacket } : null,
+      reflectionSummary: m.lastReflection
+        ? {
+            certainties: [...(m.lastReflection.certainties ?? [])],
+            suspicions: [...(m.lastReflection.suspicions ?? [])],
+            allies: [...(m.lastReflection.allies ?? [])],
+            threats: [...(m.lastReflection.threats ?? [])],
+            plan: m.lastReflection.plan,
+            strategicLens: m.lastReflection.strategicLens ?? "broad_read",
+            strategicLensRationale: m.lastReflection.strategicLensRationale ?? "",
+          }
+        : null,
       notes: Array.from(m.notes.entries()).map(([subject, note]) => ({ subject, note })),
       commitments: [],
       relationships: {
         allies: Array.from(m.allies),
         threats: Array.from(m.threats),
       },
-      powerActionMemory: null,
-      roundHistory: [...(m.roundHistory ?? [])],
+      powerActionMemory: m.powerActions.map((entry) => ({
+        round: entry.round,
+        action: entry.action,
+        target: entry.target,
+      })),
+      roundHistory: m.roundHistory.map((entry) => ({
+        round: entry.round,
+        ...(entry.eliminated !== undefined && { eliminated: entry.eliminated }),
+        ...(entry.empowered !== undefined && { empowered: entry.empowered }),
+        myVotes: { empower: entry.myVotes.empower },
+      })),
+      recentStrategicDecisions: m.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
+      strategyPacketRevisionCounter: this.strategyPacketRevisionCounter,
     };
+  }
+
+  /**
+   * Restore a validated versioned continuity capsule after onGameStart roster setup.
+   * Scrubs eliminated players from actionable relationships, notes, and strategy targeting
+   * while preserving historical round/power/decision context.
+   */
+  restoreContinuityCapsule(
+    capsule: PlayerContinuityCapsule,
+    options: { livingPlayerNames?: readonly string[] } = {},
+  ): void {
+    if (capsule.version !== 1) {
+      throw new Error(`Unsupported player continuity capsule version: ${String(capsule.version)}`);
+    }
+    if (capsule.playerId !== this.id || capsule.playerName !== this.name) {
+      throw new Error(
+        `Player continuity identity mismatch for agent ${this.name}: capsule ${capsule.playerName}/${capsule.playerId}`,
+      );
+    }
+
+    this.memory = {
+      allies: new Set(capsule.relationships.allies),
+      threats: new Set(capsule.relationships.threats),
+      notes: new Map(capsule.notes.map((entry) => [entry.subject, entry.note])),
+      roundHistory: capsule.roundHistory.map((entry) => ({
+        round: entry.round,
+        ...(entry.eliminated !== undefined && { eliminated: entry.eliminated }),
+        ...(entry.empowered !== undefined && { empowered: entry.empowered }),
+        myVotes: { empower: entry.myVotes.empower },
+      })),
+      powerActions: capsule.powerActionMemory.map((entry) => ({
+        round: entry.round,
+        action: entry.action,
+        target: entry.target,
+      })),
+      lastReflection: capsule.reflectionSummary
+        ? {
+            certainties: [...(capsule.reflectionSummary.certainties ?? [])],
+            suspicions: [...(capsule.reflectionSummary.suspicions ?? [])],
+            allies: [...(capsule.reflectionSummary.allies ?? [])],
+            threats: [...(capsule.reflectionSummary.threats ?? [])],
+            plan: capsule.reflectionSummary.plan,
+            strategicLens: capsule.reflectionSummary.strategicLens,
+            strategicLensRationale: capsule.reflectionSummary.strategicLensRationale,
+          }
+        : null,
+      strategyPacket: capsule.strategyPacket ? { ...capsule.strategyPacket } : null,
+      recentStrategicDecisions: capsule.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
+    };
+    this.strategyPacketRevisionCounter = capsule.strategyPacketRevisionCounter;
+
+    const living = options.livingPlayerNames
+      ?? this.allPlayers.map((player) => player.name);
+    const livingSet = new Set(living);
+    const eliminatedNames = [
+      ...this.memory.allies,
+      ...this.memory.threats,
+      ...this.memory.notes.keys(),
+    ].filter((name) => !livingSet.has(name));
+    for (const name of new Set(eliminatedNames)) {
+      this.removeFromMemory(name);
+    }
+    // Always scrub Strategy Thread text for anyone not living (covers names only in packet fields).
+    if (this.memory.strategyPacket) {
+      const rosterEliminated = this.allPlayers
+        .map((player) => player.name)
+        .filter((name) => !livingSet.has(name));
+      if (rosterEliminated.length > 0) {
+        this.memory.strategyPacket = {
+          ...this.memory.strategyPacket,
+          objective: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.objective, rosterEliminated),
+          targetPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.targetPosture, rosterEliminated),
+          coalitionPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.coalitionPosture, rosterEliminated),
+          nextSocialProbe: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.nextSocialProbe, rosterEliminated),
+          strategicLensRationale: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.strategicLensRationale, rosterEliminated),
+          uncertainty: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.uncertainty, rosterEliminated),
+          reviseTrigger: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.reviseTrigger, rosterEliminated),
+          changedSincePrevious: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.changedSincePrevious, rosterEliminated),
+        };
+      }
+    }
   }
 
   private nextStrategyPacketRevisionId(ctx: PhaseContext): string {

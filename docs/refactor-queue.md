@@ -42,27 +42,22 @@ Items are ordered by current priority.
 - Status: `closed`
 - Priority: **high** (resolved 2026-07-26)
 - Sources: `packages/api/src/services/game-recovery-support.ts`, `packages/engine/src/format-recovery.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/mingle-inbox-replay.ts`, `packages/api/src/__tests__/game-recovery.test.ts`, plan `docs/plans/2026-07-26-001-fix-format-phase-boundary-recovery-plan.md`.
-- Resolution: the four format phase-entry coordinates are startup-recoverable when current-round canonical prerequisites pass. Hydration rebuilds menu/selection/pressure from events only; actor walk uses non-effectful transitions; Mingle inbox replay is session-scoped; DB-backed matrix and corrupt-prefix cases prove same-game continuation and fail-closed behavior. Mid-action format recovery and R12/R16 remain out of scope.
+- Resolution: the four format phase-entry coordinates are startup-recoverable when current-round canonical prerequisites pass. Hydration rebuilds menu/selection/pressure from events only; actor walk uses non-effectful transitions; Mingle inbox replay is session-scoped; DB-backed matrix and corrupt-prefix cases prove same-game continuation and fail-closed behavior. Mid-action format recovery remains out of scope. Player/House private continuity is tracked separately as R12/R16.
 
 ### R12. Player Strategy Thread checkpoint hydration
 
-- Status: `ready`
-- Priority: **high**
-- Consolidates: plans C4, brainstorms B5, and continuity audit on 2026-07-26.
-- Sources: `docs/plans/2026-06-12-002-feat-strategy-thread-packet-plan.md:315-320`, `docs/plans/2026-06-13-001-feat-house-strategy-bible-packet-plan.md:419-425`, `packages/engine/src/agent.ts`, `packages/engine/src/game-runner.ts`, `packages/api/src/services/game-lifecycle.ts`, and `packages/api/src/db/memory-store.ts`.
-- Signal: checkpoints persist validated player continuity capsules, but recovery constructs fresh `InfluenceAgent` instances, does not pass capsules through `resumeFrom`, and never hydrates them. `PgMemoryStore.recall()` is currently write-only. After a process restart, agents retain canonical board facts, transcript history, and Mingle delivery context but lose private strategy packets, reflections, notes, relationships, round history, power-action memory, and recent decision receipts.
-- Concrete seam: player continuity capsules, `GameRunner` resume input, explicit `InfluenceAgent` hydration, recovered prompt construction, and operational `PgMemoryStore` recall policy.
-- Validation path: kill/restart at a supported coordinate after a strategy revision, reflection, note, relationship change, and recorded action; verify the resumed prompt carries equivalent structured memory, eliminated-player scrubbing still applies, and no private content crosses public transcript, watch, or MCP surfaces.
-- Suggested slice: add one explicit, versioned agent hydration contract for persisted private continuity. Do not infer strategy from transcript prose or make the packet canonical game truth.
+- Status: `closed`
+- Priority: **high** (resolved 2026-07-26)
+- Consolidates: plans C4, brainstorms B5, continuity audit on 2026-07-26, and plan `docs/plans/2026-07-26-002-fix-checkpoint-continuity-recovery-plan.md`.
+- Sources: `packages/engine/src/agent.ts`, `packages/engine/src/player-continuity.ts`, `packages/engine/src/game-runner.ts`, `packages/api/src/services/game-recovery-support.ts`, `packages/api/src/services/game-lifecycle.ts`, and `packages/api/src/db/memory-store.ts`.
+- Resolution: supported phase-boundary recovery now seals versioned active-player continuity capsules (Strategy Thread, reflection, notes, relationships, round history, power-action memory, recent decision receipts, and revision counter), admits them fail-closed through the recovery selector, and hydrates fresh agents after `onGameStart()` with eliminated-player scrubbing. `PgMemoryStore` remains non-authoritative operational storage and is never merged into recovery. Legacy unversioned capsules remain inspectable but fail closed for resume. Mid-phase recovery and public/MCP continuity reads remain out of scope.
 
 ### R16. Conditional House continuity passport
 
-- Status: `ready`
-- Sources: `packages/engine/src/types.ts`, `packages/engine/src/game-runner.ts`, `packages/api/src/services/checkpoint-hydration-passport.ts`, and `packages/api/src/services/game-recovery-support.ts`.
-- Signal: House Strategy Bible is opt-in and only exists after a completed-round update. The runner correctly persists `null` before then, and recovery accepts `null`, but the hydration passport requires a House capsule on every phase boundary and reports otherwise valid checkpoints as blocked.
-- Concrete seam: passport required-stamp policy, checkpoint capsule semantics, runtime configuration, and operator durable-run diagnostics.
-- Validation path: inspect checkpoints with the Bible disabled, before the first Bible update, and after a valid update. Verify operator diagnostics distinguish intentionally absent optional House continuity from malformed or unexpectedly missing required continuity, while preserving strict validation when the configured recovery contract requires the capsule.
-- Suggested slice: make House-continuity validation conditional on the runtime contract that produced the checkpoint. Keep the capsule private and never substitute transcript-derived House state.
+- Status: `closed`
+- Priority: **high** (resolved 2026-07-26)
+- Sources: `packages/engine/src/game-runner.ts`, `packages/engine/src/player-continuity.ts`, `packages/api/src/services/checkpoint-hydration-passport.ts`, and `packages/api/src/services/game-recovery-support.ts`.
+- Resolution: each checkpoint seals a checkpoint-time `houseContinuityRequirement` of `disabled`, `awaiting_first_valid_update`, or `required`. Passport and recovery admission use that sealed contract rather than current mutable configuration. Intentional absence is non-blocking for disabled/awaiting states; missing or malformed required House continuity blocks readiness and recovery. Diagnostics remain status-only and never expose capsule content.
 
 ### R5. Producer-visible decision fallback and repair ledger
 
