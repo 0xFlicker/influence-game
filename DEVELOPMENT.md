@@ -320,12 +320,21 @@ When a set of changes is ready for testing:
    git tag -a v0.X.Y -m "v0.X.Y: <summary of changes>"
    ```
 6. Push with tags: `git push origin main --tags`
-7. Post release notes in the relevant PR, GitHub issue, or release handoff:
+7. Post release notes:
+   - Always record notes in the relevant PR, GitHub issue, or release handoff:
    ```markdown
    ## Released v0.X.Y
    - Change 1
    - Change 2
    ```
+   - **If the ship is player-visible or builder-visible** (rules feel, watch UX, seasons, MCP/agent contracts, or other public product surfaces), also add a public **Updates** post under `packages/web/content/updates/`:
+     - One markdown file per post: `YYYY-MM-DD-short-slug.md`
+     - Frontmatter: `title`, `date` (ISO `YYYY-MM-DD`), `summary`, `tags` (string array)
+     - Recommended tags (soft set): `watch`, `play`, `rules`, `mcp`, `seasons`, `product`
+     - Free markdown body; public-safe only (no producer-only diagnostics)
+     - Optional `draft: true` keeps a post out of the public list until ready
+     - Notes go live with the **web** deploy that includes the content (not API-only deploys)
+   - Pure internal refactors may omit a public Updates post
 
 ### Picking Up a Release (Lead Game Designer)
 
@@ -661,7 +670,7 @@ Before creating a version tag:
 5. Annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>"`
 6. Push: `git push origin main --tags`
 7. Deploy to staging: push triggers automated deploy via CI/CD pipeline
-8. Record release notes in the relevant PR, issue, or release handoff
+8. Record release notes in the relevant PR, issue, or release handoff; if the ship is player- or builder-visible, also add a public Updates post under `packages/web/content/updates/` (see Release Process step 7)
 
 ## Release Cadence
 

@@ -31,6 +31,7 @@ export const SITE_FOOTER_SECTIONS: ReadonlyArray<{
     links: [
       { label: "Rules", href: "/rules" },
       { label: "About", href: "/about" },
+      { label: "Updates", href: "/updates" },
     ],
   },
   {

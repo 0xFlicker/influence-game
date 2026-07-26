@@ -34,6 +34,7 @@ describe("site footer", () => {
     expect(shouldShowSiteFooter("/rules")).toBe(true);
     expect(shouldShowSiteFooter("/about")).toBe(true);
     expect(shouldShowSiteFooter("/privacy")).toBe(true);
+    expect(shouldShowSiteFooter("/updates")).toBe(true);
     expect(shouldShowSiteFooter("/dashboard")).toBe(true);
   });
 
@@ -55,6 +56,7 @@ describe("site footer", () => {
       { label: "Influence Queue", href: "/games/free" },
       { label: "Rules", href: "/rules" },
       { label: "About", href: "/about" },
+      { label: "Updates", href: "/updates" },
       { label: "Discord", href: HOUSE_DISCORD_URL, external: true },
       {
         label: "GitHub",
