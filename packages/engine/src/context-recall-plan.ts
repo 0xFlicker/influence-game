@@ -153,6 +153,243 @@ export function measureStructuredChars(value: unknown): number {
 }
 
 // ---------------------------------------------------------------------------
+// Structural receipt serialization + promotion gate (U5 / KTD5 / R13-R17)
+// ---------------------------------------------------------------------------
+
+/**
+ * Keys and content classes forbidden on producer-safe Recall Plan receipts and
+ * aggregates (R16). Used by serialization tests — never store these fields.
+ */
+export const RECALL_RECEIPT_FORBIDDEN_CONTENT_MARKERS = [
+  "dialogueText",
+  "speakerLabel",
+  "thinking",
+  "reasoningContext",
+  "emittedThinking",
+  "rejectedCount",
+  "rejectedCounts",
+  "foreignLane",
+  "foreignLaneCount",
+  "entryId",
+  "entryIds",
+  "canonicalHash",
+  "rollingHash",
+  "promptPayload",
+  "messages",
+] as const;
+
+/**
+ * Clone a plan receipt to a content-free structural object.
+ * Drops any accidental non-structural fields by reconstruction only.
+ */
+export function toStructuralRecallPlanReceipt(receipt: RecallPlanReceipt): RecallPlanReceipt {
+  return {
+    promptClass: receipt.promptClass,
+    protectedTokenEstimate: receipt.protectedTokenEstimate,
+    hotTokenEstimate: receipt.hotTokenEstimate,
+    historyTokenEstimate: receipt.historyTokenEstimate,
+    selectedLaneCounts: {
+      protected: receipt.selectedLaneCounts.protected,
+      hot: receipt.selectedLaneCounts.hot,
+      history: receipt.selectedLaneCounts.history,
+    },
+    selectedByRankSlot: receipt.selectedByRankSlot.map((slot) => ({
+      rankSlot: slot.rankSlot,
+      lane: "history" as const,
+      sourceClass: slot.sourceClass,
+    })),
+    eventBoundary: {
+      maxAuthorizedEntrySequence: receipt.eventBoundary.maxAuthorizedEntrySequence,
+      authorizedCandidateCount: receipt.eventBoundary.authorizedCandidateCount,
+      protectedRecordCount: receipt.eventBoundary.protectedRecordCount,
+    },
+    protectedOverflow: receipt.protectedOverflow,
+  };
+}
+
+/** Stable JSON for structural-only receipt comparison (no dialogue/names/hashes). */
+export function serializeRecallPlanReceipt(receipt: RecallPlanReceipt): string {
+  return JSON.stringify(toStructuralRecallPlanReceipt(receipt));
+}
+
+/**
+ * True when serialized receipt/aggregate JSON has no forbidden content markers
+ * and no obvious dialogue/prompt payload fields.
+ */
+export function isStructuralRecallEvaluationJson(serialized: string): boolean {
+  for (const marker of RECALL_RECEIPT_FORBIDDEN_CONTENT_MARKERS) {
+    if (serialized.includes(`"${marker}"`)) return false;
+  }
+  // Reject raw prompt / thinking payload shapes that must never ride the safe artifact.
+  if (serialized.includes('"role":"system"') || serialized.includes('"role":"user"')) {
+    return false;
+  }
+  return true;
+}
+
+/** Minimum input-context reduction required for late-game promotion (R13). */
+export const RECALL_PROMOTION_TOKEN_REDUCTION_TARGET = 0.5;
+
+export interface RecallProtectedCoverageExpectation {
+  /** Board Contract is always required on every compiled plan. */
+  requireBoardContract: boolean;
+  /** Strategy Thread revision when continuity supplied one. */
+  strategyRevisionId: string | null;
+  /** Official huddle outcome ids that must remain in the protected lane. */
+  huddleOutcomeIds: readonly string[];
+  /** Recent strategic decision receipts expected in protected current receipts. */
+  recentStrategicDecisionCount: number;
+}
+
+export interface RecallPromotionCaseInput {
+  caseId: string;
+  legacyTokenEstimate: number;
+  /** Character length of the candidate rendered user-context prompt. */
+  candidateCharacterCount: number;
+  /** Model calls for the matched decision under legacy policy (no retrieval loop → 1). */
+  modelCallCountLegacy: number;
+  /** Model calls under candidate policy (must not introduce extra retrieval calls). */
+  modelCallCountCandidate: number;
+  plan: RecallPlan;
+  expectedProtected: RecallProtectedCoverageExpectation;
+  /**
+   * Count of history selections that were not in the actor-authorized candidate set.
+   * Must be zero for promotion (R15).
+   */
+  unauthorizedSelectionCount: number;
+}
+
+export interface RecallPromotionCaseResult {
+  caseId: string;
+  legacyTokenEstimate: number;
+  candidateTokenEstimate: number;
+  candidateCharacterCount: number;
+  reductionRatio: number;
+  tokenTargetMet: boolean;
+  modelCallCountEqual: boolean;
+  protectedCoverageOk: boolean;
+  privacyOk: boolean;
+  /**
+   * Promotion requires token target + equal call count + protected coverage + privacy.
+   * Token success alone never promotes when privacy or protected coverage fails (R17/F3).
+   */
+  promoted: boolean;
+  failureReasons: string[];
+}
+
+/**
+ * Evaluate one matched late-game corpus case against the R13–R17 promotion gate.
+ * Uses the shared `estimateTokensFromChars` estimator only — provider tokens are
+ * informational and must not be passed here as the gate.
+ */
+export function evaluateRecallPromotionCase(
+  input: RecallPromotionCaseInput,
+): RecallPromotionCaseResult {
+  const candidateTokenEstimate = estimateTokensFromChars(input.candidateCharacterCount);
+  const legacyTokenEstimate = input.legacyTokenEstimate;
+  const reductionRatio =
+    legacyTokenEstimate <= 0
+      ? 0
+      : Math.max(0, 1 - candidateTokenEstimate / legacyTokenEstimate);
+  const tokenTargetMet = reductionRatio >= RECALL_PROMOTION_TOKEN_REDUCTION_TARGET;
+  const modelCallCountEqual =
+    input.modelCallCountLegacy === input.modelCallCountCandidate
+    && input.modelCallCountCandidate >= 1;
+
+  const failureReasons: string[] = [];
+  if (!tokenTargetMet) {
+    failureReasons.push(
+      `token_reduction_below_target: ${(reductionRatio * 100).toFixed(1)}% < ${RECALL_PROMOTION_TOKEN_REDUCTION_TARGET * 100}%`,
+    );
+  }
+  if (!modelCallCountEqual) {
+    failureReasons.push(
+      `model_call_count_mismatch: legacy=${input.modelCallCountLegacy} candidate=${input.modelCallCountCandidate}`,
+    );
+  }
+
+  const protectedCoverageOk = checkProtectedCoverage(input.plan, input.expectedProtected);
+  if (!protectedCoverageOk) {
+    failureReasons.push("protected_coverage_failed");
+  }
+
+  const privacyOk = input.unauthorizedSelectionCount === 0;
+  if (!privacyOk) {
+    failureReasons.push(
+      `unauthorized_selection_count=${input.unauthorizedSelectionCount}`,
+    );
+  }
+
+  // R17 / F3: privacy or protected coverage failure fails promotion even when token target passes.
+  const promoted =
+    tokenTargetMet && modelCallCountEqual && protectedCoverageOk && privacyOk;
+
+  return {
+    caseId: input.caseId,
+    legacyTokenEstimate,
+    candidateTokenEstimate,
+    candidateCharacterCount: input.candidateCharacterCount,
+    reductionRatio,
+    tokenTargetMet,
+    modelCallCountEqual,
+    protectedCoverageOk,
+    privacyOk,
+    promoted,
+    failureReasons,
+  };
+}
+
+function checkProtectedCoverage(
+  plan: RecallPlan,
+  expected: RecallProtectedCoverageExpectation,
+): boolean {
+  if (expected.requireBoardContract) {
+    if (!plan.protected.boardContract || !plan.protected.boardContract.selfId) {
+      return false;
+    }
+  }
+  if (expected.strategyRevisionId != null) {
+    if (plan.protected.strategyThread?.revisionId !== expected.strategyRevisionId) {
+      return false;
+    }
+  }
+  const presentHuddleIds = new Set(plan.protected.huddleOutcomes.map((o) => o.id));
+  for (const id of expected.huddleOutcomeIds) {
+    if (!presentHuddleIds.has(id)) return false;
+  }
+  if (
+    plan.protected.currentReceipts.recentStrategicDecisions.length
+    < expected.recentStrategicDecisionCount
+  ) {
+    return false;
+  }
+  // Receipt protected record count must be positive when board is required.
+  if (expected.requireBoardContract && plan.receipt.eventBoundary.protectedRecordCount < 1) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Build protected-coverage expectation from a continuity snapshot + plan inputs.
+ * Used by frozen corpus promotion tests.
+ */
+export function expectedProtectedCoverageFromInputs(params: {
+  continuity: RecallContinuitySnapshot;
+  phaseContext: PhaseContext;
+}): RecallProtectedCoverageExpectation {
+  const huddleOutcomeIds = (params.phaseContext.allianceContext?.activeAlliances ?? []).flatMap(
+    (alliance) => alliance.huddleOutcomes.map((outcome) => outcome.id),
+  );
+  return {
+    requireBoardContract: true,
+    strategyRevisionId: params.continuity.strategyPacket?.revisionId ?? null,
+    huddleOutcomeIds,
+    recentStrategicDecisionCount: params.continuity.recentStrategicDecisions.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Stopwords + tokenization
 // ---------------------------------------------------------------------------
 

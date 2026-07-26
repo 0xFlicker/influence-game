@@ -67,6 +67,15 @@
  *   event output. A candidate passport requires sealed checkpoint-boundary
  *   evidence across the manifest, actor witness, accumulators, transcript
  *   watermark, token cursor, and continuity capsules; it is not runtime resume.
+ * - `game-{N}-prompt-reuse.json`: structural prompt-prefix reuse rollup (hashes/counts only).
+ * - `game-{N}-recall-plan.json`: **safe structural Recall Plan receipt aggregate** for
+ *   selective-context-recall evaluation (R16/R17). Contains prompt-class counts,
+ *   budget token estimates, selected lane/source-class counts, and an actor-authorized
+ *   event-boundary rollup only. It never stores recalled dialogue, names, entry IDs,
+ *   rejected counts, prompt payloads, thinking, or reasoning context.
+ *   Full simulation JSON / private traces remain separate producer artifacts and are
+ *   **not** the R13 promotion input — use this file (or the frozen late-game corpus
+ *   tests in `context-recall-evaluation.test.ts`) for the deterministic promotion gate.
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.
@@ -149,7 +158,7 @@ import { GameRunner, type AgentTurnEvent, type GameStreamEvent, type TranscriptE
 import type { CanonicalGameEvent } from "./canonical-events";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
-import { PromptReuseAggregate } from "./prompt-reuse";
+import { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";
 import { DEFAULT_CONFIG, Phase, type GameConfig, type UUID } from "./types";
 import {
   TokenTracker,
@@ -1728,7 +1737,12 @@ async function main() {
     // Create fresh agents for each game
     const toolChoiceMode = modelRuntime.preferredToolChoiceMode ?? llmConfig.toolChoiceMode;
     const promptReuse = new PromptReuseAggregate();
-    const privateTraceSink: import("./game-runner").PrivateTraceSink = (trace) => promptReuse.add(trace.promptReuse);
+    const recallPlanReceipts = new RecallPlanReceiptAggregate();
+    const privateTraceSink: import("./game-runner").PrivateTraceSink = (trace) => {
+      promptReuse.add(trace.promptReuse);
+      // Safe structural aggregate only — never the full private-trace payload (R16/R17).
+      recallPlanReceipts.add(trace.recallPlanReceipt);
+    };
     const agents = selectCast(args.players, args.personas, openai, modelRuntime, toolChoiceMode, openAIReasoningSummary, privateTraceSink);
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
@@ -1759,6 +1773,8 @@ async function main() {
     const turnsPath = join(batchDir, `game-${g}-turns.jsonl`);
     const eventsPath = join(batchDir, `game-${g}-events.jsonl`);
     const promptReusePath = join(batchDir, `game-${g}-prompt-reuse.json`);
+    // Dedicated safe evaluation artifact (R16/R17) — not full private-trace JSON.
+    const recallPlanPath = join(batchDir, `game-${g}-recall-plan.json`);
     writeFileSync(turnsPath, "");
     writeFileSync(eventsPath, "");
     writeProgress(progressPath, g, startTime, {
@@ -1788,6 +1804,7 @@ async function main() {
       turnsPath,
       eventsPath,
       promptReusePath,
+      recallPlanPath,
     });
     attachProgressLogger(
       runner,
@@ -1848,6 +1865,7 @@ async function main() {
         instrumentation,
       };
       writeFileSync(promptReusePath, JSON.stringify(promptReuse.snapshot(), null, 2));
+      writeFileSync(recallPlanPath, JSON.stringify(recallPlanReceipts.snapshot(), null, 2));
       results.push(gameResult);
       writeProgress(progressPath, g, startTime, {
         event: "game_completed",
@@ -1862,6 +1880,8 @@ async function main() {
 
       // Save transcript
       writeFileSync(transcriptPath, formatTranscript(result.transcript));
+      // Full game JSON remains a producer artifact (transcript + result). It is not
+      // the safe Recall Plan promotion input — that is game-{N}-recall-plan.json only.
       writeFileSync(
         jsonPath,
         JSON.stringify(
@@ -1907,6 +1927,7 @@ async function main() {
         instrumentation,
       };
       writeFileSync(promptReusePath, JSON.stringify(promptReuse.snapshot(), null, 2));
+      writeFileSync(recallPlanPath, JSON.stringify(recallPlanReceipts.snapshot(), null, 2));
       results.push(gameResult);
       writeProgress(progressPath, g, startTime, {
         event: "game_failed",

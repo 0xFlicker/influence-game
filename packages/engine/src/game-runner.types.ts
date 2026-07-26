@@ -435,6 +435,11 @@ export interface PrivateDecisionTraceContext {
   phase?: Phase;
   round?: number;
   boundary?: PrivateDecisionTraceBoundary;
+  /**
+   * Structural-only Recall Plan receipt for this call (KTD5 / R16).
+   * Attached at the private-trace seam; never carries dialogue or names.
+   */
+  recallPlanReceipt?: RecallPlanReceipt;
 }
 
 /** Producer-only structural receipt. It deliberately has no prompt content. */
@@ -496,6 +501,12 @@ export interface PrivateDecisionTrace {
     diagnostics?: string[];
   };
   promptReuse?: PromptReuseReceipt;
+  /**
+   * Producer-only structural Recall Plan receipt (KTD5 / R16).
+   * Safe for aggregate evaluation; never includes dialogue, names, entry IDs,
+   * rejected counts, prompt payloads, thinking, or reasoning context.
+   */
+  recallPlanReceipt?: RecallPlanReceipt;
   emittedThinking?: string;
   reasoningContext?: string;
   providerReasoningSummary?: ProviderReasoningSummary;

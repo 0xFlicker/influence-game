@@ -76,6 +76,7 @@ import {
   renderHistoricalEvidenceSection,
   renderHotActiveRoomSection,
   renderProtectedHuddleOutcomesSection,
+  toStructuralRecallPlanReceipt,
 } from "./context-recall-plan";
 
 // ---------------------------------------------------------------------------
@@ -1737,6 +1738,8 @@ export class InfluenceAgent implements IAgent {
   }
 
   private privateTraceContext(ctx: PhaseContext, action: string): PrivateDecisionTraceContext {
+    // Structural receipt only — never dialogue/names. Attached beside prompt-reuse at the sink.
+    const recallPlanReceipt = toStructuralRecallPlanReceipt(this.resolveRecallPlan(ctx).receipt);
     return {
       gameId: ctx.gameId || this.gameId || undefined,
       action,
@@ -1747,6 +1750,7 @@ export class InfluenceAgent implements IAgent {
       },
       phase: ctx.phase,
       round: ctx.round,
+      recallPlanReceipt,
     };
   }
 
@@ -2051,6 +2055,9 @@ export class InfluenceAgent implements IAgent {
       ...(params.output !== undefined && { output: params.output }),
       ...(InfluenceAgent.providerUsageMetadata(response) && { usage: InfluenceAgent.providerUsageMetadata(response) }),
       promptReuse,
+      ...(traceContext.recallPlanReceipt && {
+        recallPlanReceipt: toStructuralRecallPlanReceipt(traceContext.recallPlanReceipt),
+      }),
       ...(emittedThinking && { emittedThinking }),
       ...(reasoningContext && { reasoningContext }),
       ...(params.providerReasoningSummary && { providerReasoningSummary: params.providerReasoningSummary }),

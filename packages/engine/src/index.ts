@@ -24,13 +24,18 @@ export {
 // Selective context recall (pure compiler)
 export {
   RECALL_BUDGET_ENVELOPES,
+  RECALL_PROMOTION_TOKEN_REDUCTION_TARGET,
+  RECALL_RECEIPT_FORBIDDEN_CONTENT_MARKERS,
   buildRecallEvidenceBoundaryKey,
   collectAuthorizedCandidates,
   compileRecallPlan,
   compileRecallSeedTerms,
   emptyRecallContinuitySnapshot,
   estimateTokensFromChars,
+  evaluateRecallPromotionCase,
+  expectedProtectedCoverageFromInputs,
   isActorAuthorizedDialogueCandidate,
+  isStructuralRecallEvaluationJson,
   measureStructuredChars,
   projectAuthorizedCandidate,
   projectBoardContractFacts,
@@ -40,12 +45,17 @@ export {
   renderProtectedHuddleOutcomesSection,
   scoreAndRankCandidates,
   serializeRecallPlan,
+  serializeRecallPlanReceipt,
+  toStructuralRecallPlanReceipt,
   tokenizeRecallText,
 } from "./context-recall-plan";
 export type {
   CompileRecallPlanParams,
   ProjectedRecallCandidate,
   RecallBudgetEnvelope,
+  RecallPromotionCaseInput,
+  RecallPromotionCaseResult,
+  RecallProtectedCoverageExpectation,
   ScoredRecallCandidate,
 } from "./context-recall-plan";
 
@@ -334,7 +344,8 @@ export {
   sealHouseContinuityRequirement,
   validatePlayerContinuitySetForRecovery,
 } from "./game-runner";
-export { PromptReuseAggregate } from "./prompt-reuse";
+export { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";
+export type { RecallPlanReceiptAggregateSnapshot } from "./prompt-reuse";
 export type { LaunchFormatId } from "./formats";
 export { LAUNCH_FORMAT_IDS, isLaunchFormatId, displayNameForFormat } from "./formats";
 export {
