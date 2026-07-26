@@ -1521,7 +1521,6 @@ export class InfluenceAgent implements IAgent {
           }
         : null,
       notes: Array.from(m.notes.entries()).map(([subject, note]) => ({ subject, note })),
-      commitments: [],
       relationships: {
         allies: Array.from(m.allies),
         threats: Array.from(m.threats),

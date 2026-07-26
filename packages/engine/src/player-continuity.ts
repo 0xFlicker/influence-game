@@ -140,7 +140,6 @@ export function parsePlayerContinuityCapsule(value: unknown): PlayerContinuityCa
   )) {
     return null;
   }
-  if (!isStringArray(value.commitments)) return null;
   if (!isRecord(value.relationships)) return null;
   if (!isStringArray(value.relationships.allies) || !isStringArray(value.relationships.threats)) {
     return null;
@@ -176,7 +175,6 @@ export function parsePlayerContinuityCapsule(value: unknown): PlayerContinuityCa
       const entry = note as { subject: string; note: string };
       return { subject: entry.subject, note: entry.note };
     }),
-    commitments: [...value.commitments],
     relationships: {
       allies: [...value.relationships.allies],
       threats: [...value.relationships.threats],

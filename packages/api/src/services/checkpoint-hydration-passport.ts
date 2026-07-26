@@ -459,7 +459,6 @@ function isPlayerContinuityCapsule(value: unknown): boolean {
     typeof value.playerName === "string" &&
     value.playerName.length > 0 &&
     Array.isArray(value.notes) &&
-    Array.isArray(value.commitments) &&
     isRecord(relationships) &&
     Array.isArray(relationships.allies) &&
     Array.isArray(relationships.threats) &&

@@ -67,7 +67,6 @@ class PassportProofAgent implements IAgent {
       strategyPacket: null,
       reflectionSummary: null,
       notes: [],
-      commitments: [],
       relationships: { allies: [], threats: [] },
       powerActionMemory: [],
       roundHistory: [],

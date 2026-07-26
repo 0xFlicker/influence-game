@@ -267,7 +267,6 @@ export function buildPositivePlayerContinuityCapsules(_capsule: GameCheckpointCa
     strategyPacket: null,
     reflectionSummary: null,
     notes: [],
-    commitments: [],
     relationships: { allies: [], threats: [] },
     powerActionMemory: [],
     roundHistory: [],

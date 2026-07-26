@@ -293,7 +293,6 @@ export interface PlayerContinuityCapsule {
   strategyPacket: StrategyPacketSummary | null;
   reflectionSummary: StrategicReflectionSummary | null;
   notes: Array<{ subject: string; note: string }>;
-  commitments: string[];
   relationships: { allies: string[]; threats: string[] };
   powerActionMemory: PlayerPowerActionMemoryEntry[];
   roundHistory: PlayerRoundHistoryEntry[];
