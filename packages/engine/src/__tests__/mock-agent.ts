@@ -3,10 +3,11 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, StrategicReflectionAction, StrategyPacketSummary, TargetDecision } from "../game-runner";
+import type { AgentResponse, AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, RecallContinuitySnapshot, StrategicReflectionAction, StrategyPacketSummary, TargetDecision } from "../game-runner";
 import type { FormatDecisionProvenance } from "../game-runner.types";
 import type { LaunchFormatId } from "../formats";
 import type { UUID } from "../types";
+import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
 function defined<T>(value: T | undefined, msg = "Expected value to be defined"): T {
@@ -44,6 +45,13 @@ export class MockAgent implements IAgent {
 
   getStrategyPacket(): StrategyPacketSummary | null {
     return this.strategyPacket;
+  }
+
+  getRecallContinuitySnapshot(): RecallContinuitySnapshot {
+    return {
+      ...emptyRecallContinuitySnapshot(),
+      strategyPacket: this.strategyPacket ? { ...this.strategyPacket } : null,
+    };
   }
 
   private decisionLog(action = "use current strategy packet"): string | undefined {

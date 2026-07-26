@@ -1,7 +1,15 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { TargetDecision } from "../game-runner.types";
-import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import {
+  assertCanAcceptCommit,
+  agentTurnSourcePointer,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  transcriptThinkingFor,
+  type PhaseActor,
+  type PhaseRunnerContext,
+} from "./phase-runner-context";
 import {
   getEndgameEliminationVoterNames,
   handleElimination,
@@ -81,7 +89,7 @@ export async function runVotePhase(
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
       const votes = await agent.getVotes(phaseCtx);
 
       await assertCanAcceptCommit(ctx);
@@ -148,7 +156,7 @@ export async function runVotePhase(
       await Promise.all(
         reVoters.map(async (player) => {
           const agent = agents.get(player.id)!;
-          const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
+          const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
           const originalVote = originalVotesByPlayerId.get(player.id) ?? {
             empowerTarget: gameState.currentVoteTally.empowerVotes[player.id] ?? tied[0]!,
           };
@@ -270,7 +278,7 @@ export async function runReckoningVote(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
 
   logger.emitPhaseChange(Phase.VOTE);
   logger.logSystem("=== RECKONING: ELIMINATION VOTE ===", Phase.VOTE);
@@ -279,7 +287,7 @@ export async function runReckoningVote(
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
       const vote = await withEndgameVoteTimeout(
         ctx,
         `${player.name} reckoning vote`,
@@ -354,7 +362,7 @@ export async function runTribunalVote(
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.VOTE);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
       const vote = await withEndgameVoteTimeout(
         ctx,
         `${player.name} tribunal vote`,
@@ -408,7 +416,15 @@ export async function runTribunalVote(
     for (const juror of tribunalJury) {
       const jurorAgent = agents.get(juror.playerId);
       if (jurorAgent) {
-        const phaseCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.VOTE, undefined, true);
+        const phaseCtx = prepareAgentPhaseContext(
+          ctx,
+          jurorAgent,
+          juror.playerId,
+          Phase.VOTE,
+          "strategic_decision",
+          undefined,
+          true,
+        );
         const vote = await withEndgameVoteTimeout(
           ctx,
           `${juror.playerName} tribunal jury tiebreaker vote`,

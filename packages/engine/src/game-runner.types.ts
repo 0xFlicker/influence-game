@@ -1132,6 +1132,11 @@ export interface IAgent {
   getStrategicReflection(context: PhaseContext, options?: StrategicReflectionOptions): Promise<StrategicReflectionAction | null | void>;
   /** Return the live private strategy packet for this game run, if one exists. */
   getStrategyPacket?(): StrategyPacketSummary | null;
+  /**
+   * Narrow continuity snapshot for Recall Plan compilation (U3).
+   * Phase runners obtain this immediately before ContextBuilder; they never read agent memory fields directly.
+   */
+  getRecallContinuitySnapshot?(): RecallContinuitySnapshot;
 
   /**
    * Return structured private continuity capsule for this agent.
@@ -1264,6 +1269,16 @@ export interface PhaseContext {
   mingleBeat?: number;
   /** Total Mingle beats this phase */
   mingleTotalBeats?: number;
+  /**
+   * Selective recall class for this agent call (U3).
+   * Unspecified legacy contexts behave as ordinary_speech when plans are compiled.
+   */
+  recallPromptClass?: RecallPromptClass;
+  /**
+   * Compiled Recall Plan attached at the phase boundary for U4 prompt rendering.
+   * Present when the call path used buildPhaseContextForAgentCall / prepareAgentPhaseContext.
+   */
+  recallPlan?: RecallPlan;
 }
 
 export type EliminationVoteDisclosure =

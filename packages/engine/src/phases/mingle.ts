@@ -19,7 +19,14 @@ import {
   formatMingleTurnOperatorText,
 } from "../operator-turn-text";
 import type { HouseMingleAssignmentResult } from "../house-interviewer";
-import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import {
+  assertCanAcceptCommit,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  transcriptThinkingFor,
+  type PhaseActor,
+  type PhaseRunnerContext,
+} from "./phase-runner-context";
 import { PlayerStatus } from "../types";
 
 /**
@@ -570,7 +577,7 @@ async function runMingleTurn(
   totalBeats: number,
   phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE,
 ): Promise<MingleTurnActionRecord[]> {
-  const { agents, logger, contextBuilder, gameState } = ctx;
+  const { agents, logger, gameState } = ctx;
   const collectedTurns: CollectedMingleTurn[] = [];
 
   for (const room of localRooms) {
@@ -584,13 +591,22 @@ async function runMingleTurn(
       const fromName = gameState.getPlayerName(playerId);
       const recipientIds = room.playerIds.filter((id) => id !== playerId);
       const recipientNames = recipientIds.map((id) => gameState.getPlayerName(id));
-      const phaseCtx = contextBuilder.buildPhaseContext(playerId, phase, undefined, undefined, {
-        roomCount,
-        roomCounts,
-        currentRoomId: room.roomId,
-        roomMates,
-        mingleIntent: summarizeMingleIntent(mingleIntents.get(playerId) ?? null),
-      });
+      const phaseCtx = prepareAgentPhaseContext(
+        ctx,
+        agent,
+        playerId,
+        phase,
+        "ordinary_speech",
+        undefined,
+        undefined,
+        {
+          roomCount,
+          roomCounts,
+          currentRoomId: room.roomId,
+          roomMates,
+          mingleIntent: summarizeMingleIntent(mingleIntents.get(playerId) ?? null),
+        },
+      );
       phaseCtx.mingleBeat = room.beat;
       phaseCtx.mingleTotalBeats = totalBeats;
 
@@ -796,10 +812,19 @@ export async function runMinglePhase(
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, phase, undefined, undefined, {
-        roomCount,
-        roomCounts: initialRoomCounts,
-      });
+      const phaseCtx = prepareAgentPhaseContext(
+        ctx,
+        agent,
+        player.id,
+        phase,
+        "strategic_decision",
+        undefined,
+        undefined,
+        {
+          roomCount,
+          roomCounts: initialRoomCounts,
+        },
+      );
       const intent = agent.getMingleIntent ? await agent.getMingleIntent(phaseCtx) : null;
       const normalizedIntent = normalizeMingleIntentForAlive(intent, player, alivePlayers);
       mingleIntents.set(player.id, normalizedIntent.intent);

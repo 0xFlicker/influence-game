@@ -7,12 +7,22 @@ import type { createActor } from "xstate";
 import type { GameState } from "../game-state";
 import type { CanonicalSourcePointer } from "../canonical-events";
 import type { TranscriptLogger } from "../transcript-logger";
-import type { ContextBuilder } from "../context-builder";
+import type {
+  ContextBuilder,
+  PhaseContextBuildExtra,
+  PhaseContextRoomInfo,
+} from "../context-builder";
+import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
 import type { DiaryRoom } from "../diary-room";
 import type { IHouseInterviewer } from "../house-interviewer";
 import type { createPhaseMachine } from "../phase-machine";
 import type { UUID, GameConfig, Phase } from "../types";
-import type { IAgent, StrategicDecisionMetadata } from "../game-runner.types";
+import type {
+  IAgent,
+  PhaseContext,
+  RecallPromptClass,
+  StrategicDecisionMetadata,
+} from "../game-runner.types";
 import type { FormatPressureProjection } from "../format-pressure";
 import type { LaunchFormatId } from "../formats";
 
@@ -83,4 +93,31 @@ export function strategicDecisionResponse(
   return {
     ...(metadata.decisionLog ? { decisionLog: metadata.decisionLog } : {}),
   };
+}
+
+/**
+ * Build PhaseContext with classified Recall Plan for one agent call (U3 / KTD1+KTD4).
+ * Obtains a fresh continuity snapshot from the agent boundary — phase code never reads agent memory.
+ * Defaults to ordinary_speech when promptClass is omitted.
+ */
+export function prepareAgentPhaseContext(
+  ctx: PhaseRunnerContext,
+  agent: IAgent,
+  agentId: UUID,
+  phase: Phase,
+  promptClass: RecallPromptClass = "ordinary_speech",
+  extra?: PhaseContextBuildExtra,
+  isEliminated?: boolean,
+  roomInfo?: PhaseContextRoomInfo,
+): PhaseContext {
+  const continuity = agent.getRecallContinuitySnapshot?.() ?? emptyRecallContinuitySnapshot();
+  return ctx.contextBuilder.buildPhaseContextForAgentCall({
+    agentId,
+    phase,
+    promptClass,
+    continuity,
+    extra,
+    isEliminated,
+    roomInfo,
+  });
 }

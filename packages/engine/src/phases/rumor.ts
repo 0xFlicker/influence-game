@@ -1,11 +1,18 @@
 import { Phase } from "../types";
-import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import {
+  assertCanAcceptCommit,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  transcriptThinkingFor,
+  type PhaseActor,
+  type PhaseRunnerContext,
+} from "./phase-runner-context";
 
 export async function runRumorPhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
 
   logger.emitPhaseChange(Phase.RUMOR);
   logger.logSystem("=== RUMOR PHASE ===", Phase.RUMOR);
@@ -14,7 +21,7 @@ export async function runRumorPhase(
   const rumors = await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.RUMOR);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.RUMOR, "ordinary_speech");
       const { message, thinking, reasoningContext, decisionLog, strategicLens, strategicLensRationale } = await agent.getRumorMessage(phaseCtx);
       return { playerId: player.id, message, thinking, reasoningContext, decisionLog, strategicLens, strategicLensRationale };
     }),

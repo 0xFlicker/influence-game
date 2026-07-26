@@ -2,7 +2,15 @@ import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
 import type { CandidateChoiceRequest, PowerLobbyExposure } from "../game-runner.types";
 import type { ShieldReplacementResolution } from "../exposure-bench";
-import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import {
+  assertCanAcceptCommit,
+  agentTurnSourcePointer,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  transcriptThinkingFor,
+  type PhaseActor,
+  type PhaseRunnerContext,
+} from "./phase-runner-context";
 import { getExposeVoterNames, handleElimination } from "./elimination";
 
 function buildExposePressure(
@@ -67,7 +75,7 @@ async function runPowerLobbyMessages(
   provisionalCandidates: [UUID, UUID],
   exposePressure: PowerLobbyExposure[],
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
   const candidateNames = provisionalCandidates.map((id) => gameState.getPlayerName(id));
   const pressureSummary = exposePressure
     .slice(0, 3)
@@ -84,10 +92,17 @@ async function runPowerLobbyMessages(
       const agent = agents.get(player.id);
       if (!agent?.getPowerLobbyMessage) return;
 
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.POWER, {
-        empoweredId,
-        councilCandidates: provisionalCandidates,
-      });
+      const phaseCtx = prepareAgentPhaseContext(
+        ctx,
+        agent,
+        player.id,
+        Phase.POWER,
+        "ordinary_speech",
+        {
+          empoweredId,
+          councilCandidates: provisionalCandidates,
+        },
+      );
       const { message, thinking, reasoningContext, decisionLog } = await agent.getPowerLobbyMessage(
         phaseCtx,
         provisionalCandidates,
@@ -150,7 +165,14 @@ export async function runPowerPhase(
   }
 
   const empoweredAgent = agents.get(empoweredId)!;
-  const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.POWER, { empoweredId, councilCandidates: prelim });
+  const phaseCtx = prepareAgentPhaseContext(
+    ctx,
+    empoweredAgent,
+    empoweredId,
+    Phase.POWER,
+    "strategic_decision",
+    { empoweredId, councilCandidates: prelim },
+  );
   const shieldReplacementRequests = prelim
     .map((candidateId) => gameState.previewShieldReplacement(candidateId))
     .filter((resolution): resolution is ShieldReplacementResolution => Boolean(resolution))

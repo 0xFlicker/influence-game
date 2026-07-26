@@ -10,7 +10,16 @@ import type { ContextBuilder } from "./context-builder";
 import type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase } from "./types";
-import type { HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, IAgent, StrategicReflectionAction, StrategicReflectionOptions, StrategyPacketSummary } from "./game-runner.types";
+import type {
+  HouseProducerBrief,
+  HouseRoundFacts,
+  HouseStrategyBiblePacket,
+  IAgent,
+  StrategicReflectionAction,
+  StrategicReflectionOptions,
+  StrategyPacketSummary,
+} from "./game-runner.types";
+import { emptyRecallContinuitySnapshot } from "./context-recall-plan";
 import {
   formatHouseProducerBriefOperatorText,
   formatStrategicReflectionOperatorText,
@@ -54,8 +63,14 @@ export class DiaryRoom {
         if (!agent) return;
 
         try {
-            const ctx = this.contextBuilder.buildPhaseContext(player.id, phase);
-            const reflection = await agent.getStrategicReflection(ctx, options);
+            const continuity = agent.getRecallContinuitySnapshot?.() ?? emptyRecallContinuitySnapshot();
+            const phaseCtx = this.contextBuilder.buildPhaseContextForAgentCall({
+              agentId: player.id,
+              phase,
+              promptClass: "strategic_reflection",
+              continuity,
+            });
+            const reflection = await agent.getStrategicReflection(phaseCtx, options);
             if (reflection) {
               this.emitStrategicReflectionTurn(player.id, player.name, phase, reflection, options);
               if (reflection.strategyPacket) {
@@ -205,7 +220,14 @@ export class DiaryRoom {
     const firstQuestion = await this.houseInterviewer.generateQuestion(diaryContext);
     this.logger.logDiary(houseLabel, firstQuestion);
 
-    const ctx = this.contextBuilder.buildPhaseContext(playerId, Phase.DIARY_ROOM, undefined, isJuror || undefined);
+    const continuity = agent.getRecallContinuitySnapshot?.() ?? emptyRecallContinuitySnapshot();
+    const ctx = this.contextBuilder.buildPhaseContextForAgentCall({
+      agentId: playerId,
+      phase: Phase.DIARY_ROOM,
+      promptClass: "ordinary_speech",
+      continuity,
+      isEliminated: isJuror || undefined,
+    });
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
     const firstTranscriptThinking = transcriptThinkingFor(agent, firstResponse.thinking, firstResponse.reasoningContext);
     this.logger.logDiary(label, firstResponse.message, firstTranscriptThinking.thinking, firstTranscriptThinking.reasoningContext);

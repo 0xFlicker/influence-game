@@ -8,7 +8,11 @@ import {
   actorAuthorizedForHuddleOutcome,
   toCompactAllianceHuddleOutcome,
 } from "./alliance-huddle-outcome";
-import { compileRecallPlan } from "./context-recall-plan";
+import {
+  buildRecallEvidenceBoundaryKey,
+  compileRecallPlan,
+  emptyRecallContinuitySnapshot,
+} from "./context-recall-plan";
 import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
 import type { AllianceHuddleOutcome, AllianceProposalLineage, AllianceProposalVersion, AllianceRecord, UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
@@ -33,6 +37,23 @@ import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
 import type { CanonicalGameEvent } from "./canonical-events";
 
+export type PhaseContextBuildExtra = {
+  empoweredId?: UUID;
+  councilCandidates?: [UUID, UUID];
+  postVotePressure?: PostVotePressureProjection | null;
+  formatPressure?: FormatPressureProjection | null;
+  eliminationContext?: PhaseContext["eliminationContext"];
+};
+
+export type PhaseContextRoomInfo = {
+  roomCount?: number;
+  roomCounts?: MingleRoomCount[];
+  currentRoomId?: number;
+  roomMates?: string[];
+  mingleIntent?: MingleIntentSummary | null;
+  includeRoomAllocations?: boolean;
+};
+
 export class ContextBuilder {
   /** Room allocations for the current round */
   currentRoomAllocations: RoomAllocation[] = [];
@@ -46,6 +67,12 @@ export class ContextBuilder {
   currentFormatPressure: FormatPressureProjection | null = null;
   /** Public named vote record available to players after votes are resolved. */
   revealedVoteLedger: RevealedVoteLedgerEntry[] = [];
+  /**
+   * Process-local selected-reference cache (KTD4).
+   * Keyed by actor + prompt class + deterministic evidence boundary.
+   * Cache loss on restart is benign: plan recompiles from hydrated inputs.
+   */
+  private readonly recallPlanCache = new Map<string, { boundaryKey: string; plan: RecallPlan }>();
 
   constructor(
     private readonly gameState: GameState,
@@ -53,6 +80,11 @@ export class ContextBuilder {
     private readonly mingleInbox: Map<UUID, Array<{ from: string; text: string }>>,
     private readonly totalPlayerCount: number,
   ) {}
+
+  /** Drop process-local recall selection cache (tests / simulated restart). */
+  clearRecallPlanCache(): void {
+    this.recallPlanCache.clear();
+  }
 
   /**
    * Get the active jury — the last N eliminated players based on game size.
@@ -708,31 +740,57 @@ export class ContextBuilder {
   }
 
   /**
+   * Build PhaseContext and attach a compiled Recall Plan for one agent call (U3).
+   * Defaults to ordinary_speech (no historical archive). Does not replace live prompt rendering (U4).
+   */
+  buildPhaseContextForAgentCall(params: {
+    agentId: UUID;
+    phase: Phase;
+    promptClass?: RecallPromptClass;
+    continuity?: RecallContinuitySnapshot;
+    extra?: PhaseContextBuildExtra;
+    isEliminated?: boolean;
+    roomInfo?: PhaseContextRoomInfo;
+    /** When provided, skip buildPhaseContext and attach plan onto this base. */
+    phaseContext?: PhaseContext;
+  }): PhaseContext {
+    const promptClass = params.promptClass ?? "ordinary_speech";
+    const continuity = params.continuity ?? emptyRecallContinuitySnapshot();
+    const base =
+      params.phaseContext ??
+      this.buildPhaseContext(
+        params.agentId,
+        params.phase,
+        params.extra,
+        params.isEliminated,
+        params.roomInfo,
+      );
+    const plan = this.compileRecallPlan({
+      agentId: params.agentId,
+      promptClass,
+      continuity,
+      phase: params.phase,
+      phaseContext: base,
+    });
+    return {
+      ...base,
+      recallPromptClass: promptClass,
+      recallPlan: plan,
+    };
+  }
+
+  /**
    * Compile a deterministic authorization-safe Recall Plan for one agent call.
-   * Pure given the assembled inputs; does not replace live prompt rendering (U4)
-   * or rewire phase call sites (U3). Default path leaves buildPhaseContext unchanged.
+   * Uses process-local selected-reference cache keyed by actor + class + evidence boundary.
    */
   compileRecallPlan(params: {
     agentId: UUID;
     promptClass: RecallPromptClass;
     continuity: RecallContinuitySnapshot;
     phase: Phase;
-    extra?: {
-      empoweredId?: UUID;
-      councilCandidates?: [UUID, UUID];
-      postVotePressure?: PostVotePressureProjection | null;
-      formatPressure?: FormatPressureProjection | null;
-      eliminationContext?: PhaseContext["eliminationContext"];
-    };
+    extra?: PhaseContextBuildExtra;
     isEliminated?: boolean;
-    roomInfo?: {
-      roomCount?: number;
-      roomCounts?: MingleRoomCount[];
-      currentRoomId?: number;
-      roomMates?: string[];
-      mingleIntent?: MingleIntentSummary | null;
-      includeRoomAllocations?: boolean;
-    };
+    roomInfo?: PhaseContextRoomInfo;
     /** Optional pre-built phase context; when omitted, built from current state. */
     phaseContext?: PhaseContext;
   }): RecallPlan {
@@ -743,12 +801,32 @@ export class ContextBuilder {
       params.isEliminated,
       params.roomInfo,
     );
-    return compileRecallPlan({
+    const transcript = this.logger.transcript;
+    const boundaryKey = buildRecallEvidenceBoundaryKey({
       actorId: params.agentId,
       promptClass: params.promptClass,
       continuity: params.continuity,
       phaseContext,
-      transcript: this.logger.transcript,
+      transcript,
     });
+    const cacheSlot = `${params.agentId}::${params.promptClass}`;
+    const cached = this.recallPlanCache.get(cacheSlot);
+    if (cached && cached.boundaryKey === boundaryKey) {
+      // Structured clone so callers cannot mutate the process-local cache entry.
+      return structuredClone(cached.plan);
+    }
+
+    const plan = compileRecallPlan({
+      actorId: params.agentId,
+      promptClass: params.promptClass,
+      continuity: params.continuity,
+      phaseContext,
+      transcript,
+    });
+    this.recallPlanCache.set(cacheSlot, {
+      boundaryKey,
+      plan: structuredClone(plan),
+    });
+    return plan;
   }
 }

@@ -1,11 +1,18 @@
 import { Phase } from "../types";
-import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseRunnerContext, type PhaseActor } from "./phase-runner-context";
+import {
+  assertCanAcceptCommit,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  transcriptThinkingFor,
+  type PhaseRunnerContext,
+  type PhaseActor,
+} from "./phase-runner-context";
 
 export async function runIntroductionPhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
   logger.emitPhaseChange(Phase.INTRODUCTION);
   logger.logSystem("=== INTRODUCTION PHASE ===", Phase.INTRODUCTION);
   const alivePlayers = gameState.getAlivePlayers();
@@ -14,7 +21,7 @@ export async function runIntroductionPhase(
   await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.INTRODUCTION);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.INTRODUCTION, "ordinary_speech");
       const { message, thinking, reasoningContext, decisionLog } = await agent.getIntroduction(phaseCtx);
       await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);

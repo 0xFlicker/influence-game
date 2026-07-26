@@ -6,6 +6,7 @@ import type {
 } from "../game-runner.types";
 import type { UUID } from "../types";
 import { Phase } from "../types";
+import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
 import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseRunnerContext } from "./phase-runner-context";
 
 function getVoterNames(
@@ -155,11 +156,20 @@ export async function handleElimination(
     round: gameState.round,
   });
 
-  const eliminationMessageContext = contextBuilder.buildEliminationMessageContext(
+  const eliminationBase = contextBuilder.buildEliminationMessageContext(
     eliminatedId,
     phase,
     eliminationContext,
   );
+  const continuity =
+    eliminatedAgent.getRecallContinuitySnapshot?.() ?? emptyRecallContinuitySnapshot();
+  const eliminationMessageContext = contextBuilder.buildPhaseContextForAgentCall({
+    agentId: eliminatedId,
+    phase,
+    promptClass: "ordinary_speech",
+    continuity,
+    phaseContext: eliminationBase,
+  });
   const messageResponse = await withEliminationMessageTimeout(
     ctx,
     phase,

@@ -6,7 +6,15 @@ import {
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { AgentResponse, TargetDecision } from "../game-runner.types";
-import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import {
+  assertCanAcceptCommit,
+  agentTurnSourcePointer,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  transcriptThinkingFor,
+  type PhaseActor,
+  type PhaseRunnerContext,
+} from "./phase-runner-context";
 
 type TimedEndgameResult<T> = {
   value: T;
@@ -63,7 +71,7 @@ export async function runReckoningPlea(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
 
   logger.emitPhaseChange(Phase.PLEA);
   logger.logSystem("=== RECKONING: PLEA PHASE ===", Phase.PLEA);
@@ -74,7 +82,7 @@ export async function runReckoningPlea(
   const generated = await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.PLEA);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.PLEA, "ordinary_speech");
       const timed = await withEndgameActionTimeout(
         ctx,
         Phase.PLEA,
@@ -126,7 +134,7 @@ export async function runTribunalAccusation(
   actor: PhaseActor,
   accusations: Map<UUID, { accuserId: UUID; accuserName: string; text: string }>,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
 
   logger.emitPhaseChange(Phase.ACCUSATION);
   logger.logSystem("=== TRIBUNAL: ACCUSATION PHASE ===", Phase.ACCUSATION);
@@ -138,7 +146,7 @@ export async function runTribunalAccusation(
   const generated = await Promise.all(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.ACCUSATION);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.ACCUSATION, "ordinary_speech");
       const fallbackTarget = alivePlayers.find((candidate) => candidate.id !== player.id) ?? player;
       const houseAccusation = `I accuse ${fallbackTarget.name}.`;
       const timed = await withEndgameActionTimeout<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>(
@@ -208,7 +216,7 @@ export async function runTribunalDefense(
   actor: PhaseActor,
   accusations: Map<UUID, { accuserId: UUID; accuserName: string; text: string }>,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
 
   logger.emitPhaseChange(Phase.DEFENSE);
   logger.logSystem("=== TRIBUNAL: DEFENSE PHASE ===", Phase.DEFENSE);
@@ -221,7 +229,7 @@ export async function runTribunalDefense(
     accused.map(async (player) => {
       const accusation = accusations.get(player.id)!;
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.DEFENSE);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.DEFENSE, "ordinary_speech");
       const timed = await withEndgameActionTimeout(
         ctx,
         Phase.DEFENSE,
@@ -303,7 +311,7 @@ export async function runJudgmentOpening(
   const generated = await Promise.all(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.OPENING_STATEMENTS);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.OPENING_STATEMENTS, "ordinary_speech");
       const timed = await withEndgameActionTimeout(
         ctx,
         Phase.OPENING_STATEMENTS,
@@ -368,7 +376,7 @@ export async function runJudgmentJuryQuestions(
     const jurorAgent = agents.get(juror.playerId);
     if (!jurorAgent) continue;
 
-    const jurorCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.JURY_QUESTIONS);
+    const jurorCtx = prepareAgentPhaseContext(ctx, jurorAgent, juror.playerId, Phase.JURY_QUESTIONS, "ordinary_speech");
     const houseQuestion = "Why should the jury trust your game?";
     const questionTimed = await withEndgameActionTimeout<{ targetFinalistId: UUID; question: string; thinking?: string; reasoningContext?: string }>(
       ctx,
@@ -424,7 +432,7 @@ export async function runJudgmentJuryQuestions(
     const finalistAgent = agents.get(targetFinalistId);
     if (finalistAgent) {
       const houseAnswer = "I played the best game I could.";
-      const finalistCtx = contextBuilder.buildPhaseContext(targetFinalistId, Phase.JURY_QUESTIONS);
+      const finalistCtx = prepareAgentPhaseContext(ctx, finalistAgent, targetFinalistId, Phase.JURY_QUESTIONS, "ordinary_speech");
       const answerTimed = await withEndgameActionTimeout(
         ctx,
         Phase.JURY_QUESTIONS,
@@ -483,7 +491,7 @@ export async function runJudgmentClosing(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
 
   logger.emitPhaseChange(Phase.CLOSING_ARGUMENTS);
   logger.logSystem("=== JUDGMENT: CLOSING ARGUMENTS ===", Phase.CLOSING_ARGUMENTS);
@@ -493,7 +501,7 @@ export async function runJudgmentClosing(
   const generated = await Promise.all(
     finalists.map(async (player) => {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.CLOSING_ARGUMENTS);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.CLOSING_ARGUMENTS, "ordinary_speech");
       const timed = await withEndgameActionTimeout(
         ctx,
         Phase.CLOSING_ARGUMENTS,
@@ -560,7 +568,7 @@ export async function runJudgmentJuryVote(
     const jurorAgent = agents.get(juror.playerId);
     if (!jurorAgent) continue;
 
-    const phaseCtx = contextBuilder.buildPhaseContext(juror.playerId, Phase.JURY_VOTE);
+    const phaseCtx = prepareAgentPhaseContext(ctx, jurorAgent, juror.playerId, Phase.JURY_VOTE, "strategic_decision");
     const { value: vote } = await withEndgameActionTimeout<TargetDecision>(
       ctx,
       Phase.JURY_VOTE,

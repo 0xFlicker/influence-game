@@ -24,9 +24,11 @@ export {
 // Selective context recall (pure compiler)
 export {
   RECALL_BUDGET_ENVELOPES,
+  buildRecallEvidenceBoundaryKey,
   collectAuthorizedCandidates,
   compileRecallPlan,
   compileRecallSeedTerms,
+  emptyRecallContinuitySnapshot,
   estimateTokensFromChars,
   isActorAuthorizedDialogueCandidate,
   measureStructuredChars,

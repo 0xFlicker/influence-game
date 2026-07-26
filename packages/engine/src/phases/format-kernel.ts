@@ -40,6 +40,7 @@ import { handleElimination } from "./elimination";
 import {
   agentTurnSourcePointer,
   assertCanAcceptCommit,
+  prepareAgentPhaseContext,
   strategicDecisionResponse,
   type PhaseActor,
   type PhaseRunnerContext,
@@ -161,7 +162,7 @@ export async function runFormatPickPhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, logger, contextBuilder } = ctx;
+  const { gameState, logger } = ctx;
   const state = ctx.formatKernelState;
   const empoweredId = gameState.empoweredId;
   const offeredFormats = state.offeredFormats;
@@ -171,9 +172,14 @@ export async function runFormatPickPhase(
 
   const empoweredAgent = requireAgent(ctx, empoweredId, "format pick");
 
-  const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.FORMAT_PICK, {
+  const phaseCtx = prepareAgentPhaseContext(
+    ctx,
+    empoweredAgent,
     empoweredId,
-  });
+    Phase.FORMAT_PICK,
+    "strategic_decision",
+    { empoweredId },
+  );
 
   let chosen: LaunchFormatId = offeredFormats[0]!;
   let thinking = "House fallback: first offered format";
@@ -362,16 +368,21 @@ async function resolveSaveOrEliminateRound(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
 ): Promise<FormatRoundElimination> {
-  const { gameState, logger, contextBuilder } = ctx;
+  const { gameState, logger } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
   const ballots: SaveOrEliminateBallot[] = [];
 
   for (const player of alive) {
     const agent = requireAgent(ctx, player.id, "save-or-eliminate ballot");
-    const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.FORMAT_RESOLVE, {
-      empoweredId,
-    });
+    const phaseCtx = prepareAgentPhaseContext(
+      ctx,
+      agent,
+      player.id,
+      Phase.FORMAT_RESOLVE,
+      "strategic_decision",
+      { empoweredId },
+    );
     const others = aliveIds.filter((id) => id !== player.id);
     let polarity: "save" | "eliminate" = "eliminate";
     let targetId = others[others.length - 1] ?? others[0] ?? player.id;
@@ -524,16 +535,21 @@ async function resolveVoteBombRound(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
 ): Promise<FormatRoundElimination> {
-  const { gameState, logger, contextBuilder } = ctx;
+  const { gameState, logger } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
   const ballots: VoteBombBallot[] = [];
 
   for (const player of alive) {
     const agent = requireAgent(ctx, player.id, "vote-bomb ballot");
-    const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.FORMAT_RESOLVE, {
-      empoweredId,
-    });
+    const phaseCtx = prepareAgentPhaseContext(
+      ctx,
+      agent,
+      player.id,
+      Phase.FORMAT_RESOLVE,
+      "strategic_decision",
+      { empoweredId },
+    );
     const others = aliveIds.filter((id) => id !== player.id);
     let targetId = others[others.length - 1] ?? others[0] ?? player.id;
     let thinking = "fallback vote last other";
@@ -678,7 +694,7 @@ async function resolveSafetyBounceRound(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
 ): Promise<FormatRoundElimination> {
-  const { gameState, logger, contextBuilder } = ctx;
+  const { gameState, logger } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
   const starterId = aliveIds[Math.floor(Math.random() * aliveIds.length)]!;
@@ -695,9 +711,14 @@ async function resolveSafetyBounceRound(
   while (board.nextActorId !== null) {
     const actorId = board.nextActorId;
     const agent = requireAgent(ctx, actorId, "safety-bounce pointer");
-    const phaseCtx = contextBuilder.buildPhaseContext(actorId, Phase.FORMAT_RESOLVE, {
-      empoweredId,
-    });
+    const phaseCtx = prepareAgentPhaseContext(
+      ctx,
+      agent,
+      actorId,
+      Phase.FORMAT_RESOLVE,
+      "strategic_decision",
+      { empoweredId },
+    );
     let targetId = board.unclassified[0]!;
     let thinking = "fallback first unclassified";
     let reasoningContext: string | undefined;
@@ -824,9 +845,14 @@ async function resolveSafetyBounceRound(
 
   for (const player of alive) {
     const agent = requireAgent(ctx, player.id, "safety-bounce vote");
-    const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.FORMAT_RESOLVE, {
-      empoweredId,
-    });
+    const phaseCtx = prepareAgentPhaseContext(
+      ctx,
+      agent,
+      player.id,
+      Phase.FORMAT_RESOLVE,
+      "strategic_decision",
+      { empoweredId },
+    );
     let targetId = board.vulnerable[board.vulnerable.length - 1] ?? board.vulnerable[0]!;
     let thinking = "fallback first vulnerable";
     let reasoningContext: string | undefined;
@@ -1012,11 +1038,16 @@ async function breakFormatTie(
   tiedSet: UUID[];
   sourcePointers: CanonicalSourcePointer[];
 }> {
-  const { gameState, logger, contextBuilder } = ctx;
+  const { gameState, logger } = ctx;
   const agent = requireAgent(ctx, empoweredId, "format tiebreak");
-  const phaseCtx = contextBuilder.buildPhaseContext(empoweredId, Phase.FORMAT_RESOLVE, {
+  const phaseCtx = prepareAgentPhaseContext(
+    ctx,
+    agent,
     empoweredId,
-  });
+    Phase.FORMAT_RESOLVE,
+    "strategic_decision",
+    { empoweredId },
+  );
 
   let choiceId = tiedSet[0]!;
   let thinking = "fallback first tied";

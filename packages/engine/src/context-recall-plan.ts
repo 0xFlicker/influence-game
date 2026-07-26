@@ -56,6 +56,92 @@ export const RECALL_BUDGET_ENVELOPES: Readonly<Record<RecallPromptClass, RecallB
   },
 };
 
+/** Empty continuity when an agent does not implement the snapshot accessor (e.g. mocks). */
+export function emptyRecallContinuitySnapshot(): RecallContinuitySnapshot {
+  return {
+    strategyPacket: null,
+    reflectionSummary: null,
+    recentStrategicDecisions: [],
+    strategicEvidenceVersion: 0,
+    strategyPacketRevisionCounter: 0,
+  };
+}
+
+/**
+ * Deterministic evidence-boundary key for process-local selected-reference cache (KTD4).
+ * Derived only from actor-visible projection, public + actor-owned Mingle dialogue,
+ * authorized huddle outcomes, and continuity snapshot revision — never foreign private material.
+ */
+export function buildRecallEvidenceBoundaryKey(params: {
+  actorId: UUID;
+  promptClass: RecallPromptClass;
+  continuity: RecallContinuitySnapshot;
+  phaseContext: PhaseContext;
+  transcript: readonly TranscriptEntry[];
+}): string {
+  const { actorId, promptClass, continuity, phaseContext, transcript } = params;
+  const authorized = collectAuthorizedCandidates(transcript, actorId);
+  let maxAuthorizedEntrySequence: number | null = null;
+  for (const candidate of authorized) {
+    if (maxAuthorizedEntrySequence === null || candidate.entrySequence > maxAuthorizedEntrySequence) {
+      maxAuthorizedEntrySequence = candidate.entrySequence;
+    }
+  }
+
+  const huddleOutcomeIds = (phaseContext.allianceContext?.activeAlliances ?? []).flatMap((alliance) =>
+    alliance.huddleOutcomes.map((outcome) => outcome.id),
+  );
+
+  const payload = {
+    actorId,
+    promptClass,
+    strategicEvidenceVersion: continuity.strategicEvidenceVersion,
+    strategyPacketRevisionCounter: continuity.strategyPacketRevisionCounter ?? 0,
+    strategyRevisionId: continuity.strategyPacket?.revisionId ?? null,
+    reflectionPlan: continuity.reflectionSummary?.plan ?? null,
+    reflectionLens: continuity.reflectionSummary?.strategicLens ?? null,
+    recentStrategicDecisions: continuity.recentStrategicDecisions.map((receipt) => ({
+      round: receipt.round,
+      phase: receipt.phase,
+      action: receipt.action,
+      label: receipt.label,
+      decisionLog: receipt.decisionLog,
+    })),
+    board: {
+      round: phaseContext.round,
+      phase: phaseContext.phase,
+      alive: phaseContext.alivePlayers.map((player) => player.id).slice().sort(),
+      empoweredId: phaseContext.empoweredId ?? null,
+      councilCandidates: phaseContext.councilCandidates ?? null,
+      endgameStage: phaseContext.endgameStage ?? null,
+      finalists: phaseContext.finalists ?? null,
+      isEliminated: phaseContext.isEliminated ?? false,
+      latestEliminatedPlayerName: phaseContext.latestEliminatedPlayerName ?? null,
+    },
+    huddleOutcomeIds: huddleOutcomeIds.slice().sort(),
+    recentDecisionLabels: (phaseContext.recentDecisions ?? []).map((entry) => ({
+      round: entry.round,
+      phase: entry.phase,
+      label: entry.label,
+    })),
+    revealedVoteRounds: (phaseContext.revealedVoteLedger ?? []).map((entry) => ({
+      round: entry.round,
+      voterId: entry.voterId,
+      empowerTargetId: entry.empowerTargetId,
+    })),
+    hotMingle: (phaseContext.mingleMessages ?? []).map((message) => ({
+      from: message.from,
+      text: message.text,
+    })),
+    authorizedBoundary: {
+      maxAuthorizedEntrySequence,
+      authorizedCandidateCount: authorized.length,
+    },
+  };
+
+  return JSON.stringify(payload);
+}
+
 /** Deterministic character→token estimator (KTD5). */
 export function estimateTokensFromChars(chars: number): number {
   if (chars <= 0) return 0;

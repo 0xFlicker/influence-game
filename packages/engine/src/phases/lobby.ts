@@ -1,5 +1,12 @@
 import { Phase } from "../types";
-import { assertCanAcceptCommit, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import {
+  assertCanAcceptCommit,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  transcriptThinkingFor,
+  type PhaseActor,
+  type PhaseRunnerContext,
+} from "./phase-runner-context";
 
 /**
  * Compute messages per player for lobby phase.
@@ -17,7 +24,7 @@ async function runLobbyMessages(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder, config } = ctx;
+  const { gameState, agents, logger, config } = ctx;
   const alivePlayers = gameState.getAlivePlayers();
   const messagesPerPlayer = computeLobbyMessagesPerPlayer(alivePlayers.length, config.lobbyMessagesPerPlayer);
 
@@ -26,7 +33,7 @@ async function runLobbyMessages(
   for (let sub = 0; sub < messagesPerPlayer; sub++) {
     for (const player of alivePlayers) {
       const agent = agents.get(player.id)!;
-      const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.LOBBY);
+      const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.LOBBY, "ordinary_speech");
       phaseCtx.lobbySubRound = sub;
       phaseCtx.lobbyTotalSubRounds = messagesPerPlayer;
       const { message, thinking, reasoningContext, decisionLog } = await agent.getLobbyMessage(phaseCtx);

@@ -9,7 +9,14 @@ import {
   formatAllianceHuddleTurnOperatorText,
   type AllianceActionOperatorContext,
 } from "../operator-turn-text";
-import { agentTurnSourcePointer, assertCanAcceptCommit, strategicDecisionResponse, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import {
+  agentTurnSourcePointer,
+  assertCanAcceptCommit,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  type PhaseActor,
+  type PhaseRunnerContext,
+} from "./phase-runner-context";
 
 const MAX_HUDDLE_SESSIONS_PER_ALLIANCE = 2;
 
@@ -77,7 +84,7 @@ async function collectAllianceAction(
     };
   }
 
-  const phaseCtx = ctx.contextBuilder.buildPhaseContext(playerId, Phase.MINGLE_I);
+  const phaseCtx = prepareAgentPhaseContext(ctx, agent, playerId, Phase.MINGLE_I, "strategic_decision");
   try {
     return await agent.getAllianceAction(phaseCtx);
   } catch (error) {
@@ -509,7 +516,7 @@ async function collectAllianceHuddleTurn(
   }
 
   const phase = huddle.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE;
-  const phaseCtx = ctx.contextBuilder.buildPhaseContext(speakerId, phase);
+  const phaseCtx = prepareAgentPhaseContext(ctx, agent, speakerId, phase, "ordinary_speech");
   try {
     return await agent.getAllianceHuddleTurn(phaseCtx, huddle, conversationHistory);
   } catch (error) {

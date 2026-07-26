@@ -1,5 +1,13 @@
 import { Phase } from "../types";
-import { assertCanAcceptCommit, agentTurnSourcePointer, strategicDecisionResponse, transcriptThinkingFor, type PhaseActor, type PhaseRunnerContext } from "./phase-runner-context";
+import {
+  assertCanAcceptCommit,
+  agentTurnSourcePointer,
+  prepareAgentPhaseContext,
+  strategicDecisionResponse,
+  transcriptThinkingFor,
+  type PhaseActor,
+  type PhaseRunnerContext,
+} from "./phase-runner-context";
 import { getCouncilVoterNames, getExposeVoterNames, handleElimination } from "./elimination";
 
 function normalCouncilVoteCounts(
@@ -45,7 +53,7 @@ export async function runCouncilPhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder } = ctx;
+  const { gameState, agents, logger } = ctx;
   const candidates = gameState.councilCandidates;
   const empoweredId = gameState.empoweredId;
 
@@ -60,10 +68,17 @@ export async function runCouncilPhase(
 
   const castCouncilVote = async (player: (typeof alivePlayers)[number]) => {
     const agent = agents.get(player.id)!;
-    const phaseCtx = contextBuilder.buildPhaseContext(player.id, Phase.COUNCIL, {
-      empoweredId,
-      councilCandidates: candidates,
-    });
+    const phaseCtx = prepareAgentPhaseContext(
+      ctx,
+      agent,
+      player.id,
+      Phase.COUNCIL,
+      "strategic_decision",
+      {
+        empoweredId,
+        councilCandidates: candidates,
+      },
+    );
     const voteResult = await agent.getCouncilVote(phaseCtx, candidates);
     const vote = voteResult.target;
     await assertCanAcceptCommit(ctx);

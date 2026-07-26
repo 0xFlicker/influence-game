@@ -39,6 +39,7 @@ import type {
   PrivateDecisionTraceMessage,
   PrivateDecisionTraceToolCall,
   PrivateTraceSink,
+  RecallContinuitySnapshot,
   StrategicDecisionMetadata,
   StrategicDecisionReceipt,
   StrategicReflectionAction,
@@ -1422,6 +1423,11 @@ export class InfluenceAgent implements IAgent {
     recentStrategicDecisions: [],
   };
   private strategyPacketRevisionCounter = 0;
+  /**
+   * Actor-local strategic evidence version for Recall Plan cache keys (U3).
+   * Advanced only when a normal decision receipt is retained; does not mutate Strategy Thread.
+   */
+  private strategicEvidenceVersion = 0;
 
   constructor(
     id: UUID,
@@ -1502,6 +1508,31 @@ export class InfluenceAgent implements IAgent {
 
   getStrategyPacket(): StrategyPacketSummary | null {
     return this.memory.strategyPacket;
+  }
+
+  /**
+   * Narrow actor continuity for ContextBuilder Recall Plan compilation.
+   * Phase runners call this immediately before context build; they never read memory fields.
+   */
+  getRecallContinuitySnapshot(): RecallContinuitySnapshot {
+    const m = this.memory;
+    return {
+      strategyPacket: m.strategyPacket ? { ...m.strategyPacket } : null,
+      reflectionSummary: m.lastReflection
+        ? {
+            certainties: [...(m.lastReflection.certainties ?? [])],
+            suspicions: [...(m.lastReflection.suspicions ?? [])],
+            allies: [...(m.lastReflection.allies ?? [])],
+            threats: [...(m.lastReflection.threats ?? [])],
+            plan: m.lastReflection.plan,
+            strategicLens: m.lastReflection.strategicLens ?? "broad_read",
+            strategicLensRationale: m.lastReflection.strategicLensRationale ?? "",
+          }
+        : null,
+      recentStrategicDecisions: m.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
+      strategicEvidenceVersion: this.strategicEvidenceVersion,
+      strategyPacketRevisionCounter: this.strategyPacketRevisionCounter,
+    };
   }
 
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null {
@@ -1668,6 +1699,8 @@ export class InfluenceAgent implements IAgent {
       decisionLog,
     });
     this.memory.recentStrategicDecisions = this.memory.recentStrategicDecisions.slice(-12);
+    // Cache break for next eligible strategic Recall Plan only — no model call, no Strategy Thread mutation (R12 / AE3).
+    this.strategicEvidenceVersion += 1;
   }
 
   private actionLabel(action: string): string {
@@ -1693,6 +1726,7 @@ export class InfluenceAgent implements IAgent {
       decisionLog,
     });
     this.memory.recentStrategicDecisions = this.memory.recentStrategicDecisions.slice(-12);
+    this.strategicEvidenceVersion += 1;
   }
 
   private privateTraceContext(ctx: PhaseContext, action: string): PrivateDecisionTraceContext {
