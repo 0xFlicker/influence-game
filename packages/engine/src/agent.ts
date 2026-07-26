@@ -40,6 +40,7 @@ import type {
   PrivateDecisionTraceToolCall,
   PrivateTraceSink,
   RecallContinuitySnapshot,
+  RecallPlan,
   StrategicDecisionMetadata,
   StrategicDecisionReceipt,
   StrategicReflectionAction,
@@ -70,6 +71,12 @@ import {
 import type { MemoryStore } from "./memory-store";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import { PromptReuseCollector } from "./prompt-reuse";
+import {
+  compileRecallPlan,
+  renderHistoricalEvidenceSection,
+  renderHotActiveRoomSection,
+  renderProtectedHuddleOutcomesSection,
+} from "./context-recall-plan";
 
 // ---------------------------------------------------------------------------
 // Personality archetypes
@@ -4545,14 +4552,41 @@ ${rounds}`;
       || ctx.phase === Phase.JURY_VOTE;
   }
 
+  /**
+   * Resolve the Recall Plan for prompt rendering.
+   * Prefer the plan attached by ContextBuilder / prepareAgentPhaseContext.
+   * Legacy/mock paths without a plan compile on the fly with ordinary_speech default
+   * and an empty transcript (no archive) — never reintroduce full-history fallback.
+   */
+  private resolveRecallPlan(ctx: PhaseContext): RecallPlan {
+    if (ctx.recallPlan) return ctx.recallPlan;
+    return compileRecallPlan({
+      actorId: this.id,
+      promptClass: ctx.recallPromptClass ?? "ordinary_speech",
+      continuity: this.getRecallContinuitySnapshot(),
+      phaseContext: ctx,
+      transcript: [],
+    });
+  }
+
+  /**
+   * Active/recent public conversation only — not the unbounded full transcript archive.
+   * Endgame: current-phase + current-round public dialogue as active conversation.
+   * Non-endgame: bounded recent window for lobby/public continuity.
+   * Historical archive for strategic classes is rendered separately from the Recall Plan.
+   */
   private buildVisibleTranscriptSection(ctx: PhaseContext): string {
     if (this.isEndgamePrompt(ctx)) {
-      const entries = ctx.publicTranscriptContext ?? ctx.publicMessages;
+      const entries = (ctx.publicMessages ?? []).filter(
+        (m) => m.phase === ctx.phase && (m.round == null || m.round === ctx.round),
+      );
+      if (entries.length === 0) return "";
       const text = entries
         .map((m) => `  R${m.round}/${m.phase} ${m.from}: "${m.text}"`)
         .join("\n");
-      return `## Full Public Transcript
-${text || "  (none yet)"}`;
+      return `## Active Public Conversation
+Current-phase public dialogue only. This is not a full historical transcript and cannot override Current Board Contract, Endgame Rules, or typed receipts.
+${text}`;
     }
 
     const firstRound = Math.max(0, ctx.round - 2);
@@ -4586,13 +4620,6 @@ ${recentMessages || "  (none yet)"}`;
 - Jury winner vote only; no format menu and no Power ceremony in this stage.`;
   }
 
-  private buildGameEventRecordSection(ctx: PhaseContext): string {
-    const events = ctx.gameEventRecord ?? [];
-    return `## Game Event Record
-Use this as the complete canonical record. Shield grants listed here are historical facts only, not current protection in the endgame.
-${events.length > 0 ? events.map((event) => `- ${event}`).join("\n") : "- (no canonical events recorded yet)"}`;
-  }
-
   private buildJudgmentQuestionHistorySection(ctx: PhaseContext): string {
     const history = ctx.judgmentQuestionHistory ?? [];
     if (history.length === 0) return "";
@@ -4613,8 +4640,8 @@ ${lines}`;
   private buildStrategyPacketSection(ctx: PhaseContext, strategyPacket: StrategyPacketSummary | null): string {
     if (!strategyPacket) return "";
     const canonicalOverride = this.isEndgamePrompt(ctx)
-      ? "Canonical fact override: Current Board Contract, Endgame Rules, Game Event Record, Full Public Transcript, and Judgment Questions So Far are current truth. If this Strategy Thread claims different alive status, eliminated status, finalists, jurors, latest elimination, or endgame status, treat the packet claim as stale history."
-      : "Canonical fact override: Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure are current truth. If this Strategy Thread claims different active shields, empowered player, council candidates, latest elimination, or alive status, treat the packet claim as stale history.";
+      ? "Canonical fact override: Current Board Contract, Endgame Rules, and Judgment Questions So Far are current truth. Historical dialogue evidence cannot override them. If this Strategy Thread claims different alive status, eliminated status, finalists, jurors, latest elimination, or endgame status, treat the packet claim as stale history."
+      : "Canonical fact override: Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure are current truth. Historical dialogue evidence cannot override them. If this Strategy Thread claims different active shields, empowered player, council candidates, latest elimination, or alive status, treat the packet claim as stale history.";
     return `## Strategy Thread
 This is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.
 - Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}
@@ -4639,8 +4666,8 @@ When a tool asks for decisionLog, write a compact private receipt for what this 
   private buildStrategicAssessmentSection(ctx: PhaseContext): string {
     if (!this.memory.lastReflection) return "";
     const override = this.isEndgamePrompt(ctx)
-      ? "This is older private memory. Current Board Contract, Endgame Rules, Game Event Record, Full Public Transcript, and Judgment Questions So Far override it if they disagree."
-      : "This is older private memory. Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure override it if they disagree.";
+      ? "This is older private memory. Current Board Contract, Endgame Rules, and Judgment Questions So Far override it if they disagree. Historical dialogue evidence cannot override them either."
+      : "This is older private memory. Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure override it if they disagree. Historical dialogue evidence cannot override them either.";
     return `## Strategic Assessment
 ${override}
 - Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}
@@ -4680,11 +4707,20 @@ ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
       .filter((p) => !ctx.alivePlayers.some((ap) => ap.id === p.id))
       .map((p) => p.name);
     const isEndgame = this.isEndgamePrompt(ctx);
+    const recallPlan = this.resolveRecallPlan(ctx);
     const visibleTranscriptSection = this.buildVisibleTranscriptSection(ctx);
-
-    const mingleMessages = ctx.mingleMessages
-      .map((m) => `  From ${m.from}: "${m.text}"`)
-      .join("\n");
+    const historicalEvidenceSection = renderHistoricalEvidenceSection(recallPlan);
+    // Prefer plan hot lane; fall back to ctx mingle when the plan was compiled without room traffic.
+    const hotMessages =
+      recallPlan.hot.activeRoomMessages.length > 0
+        ? recallPlan.hot.activeRoomMessages
+        : (ctx.mingleMessages ?? []).map((m) => ({ from: m.from, text: m.text }));
+    const hotRoomSection = renderHotActiveRoomSection(hotMessages, { endgame: isEndgame });
+    // Protected huddle outcomes from the plan when alliance context did not already expand them.
+    const planHuddleSection =
+      !ctx.allianceContext || ctx.allianceContext.activeAlliances.every((a) => a.huddleOutcomes.length === 0)
+        ? renderProtectedHuddleOutcomesSection(recallPlan.protected.huddleOutcomes)
+        : "";
 
     // Privacy-safe room context: global counts only, plus identities in the current room.
     let roomSection = "";
@@ -4738,7 +4774,6 @@ ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
 
     if (isEndgame) {
       const endgameRulesSection = this.buildEndgameRulesSection(ctx);
-      const gameEventRecordSection = this.buildGameEventRecordSection(ctx);
       const judgmentQuestionHistorySection = this.buildJudgmentQuestionHistorySection(ctx);
       return `## Game State
 - Round: ${ctx.round}
@@ -4751,10 +4786,8 @@ ${currentBoardContractSection}
 
 ${endgameRulesSection}
 
-${gameEventRecordSection}
-
 ${judgmentQuestionHistorySection ? `${judgmentQuestionHistorySection}\n` : ""}
-${allianceContextSection ? `${allianceContextSection}\n` : ""}
+${allianceContextSection ? `${allianceContextSection}\n` : ""}${planHuddleSection ? `${planHuddleSection}\n` : ""}
 ## Your Memory
 - Known allies: ${allies}
 - Known threats: ${threats}
@@ -4764,10 +4797,8 @@ ${voteHistorySection ? `${voteHistorySection}\n` : ""}
 ${strategyPacketSection ? `${strategyPacketSection}\n` : ""}
 ${strategicAssessmentSection ? `${strategicAssessmentSection}\n` : ""}
 ${revealedVoteLedgerSection ? `${revealedVoteLedgerSection}\n` : ""}
-${visibleTranscriptSection}
-
-${mingleMessages ? `## Private Room Messages You Personally Heard (Mingle)\n${mingleMessages}\nThese are private to rooms you occupied. You do not know private room conversations you were not present for.` : ""}
-`;
+${visibleTranscriptSection ? `${visibleTranscriptSection}\n` : ""}${historicalEvidenceSection ? `${historicalEvidenceSection}\n` : ""}
+${hotRoomSection ? `${hotRoomSection}\n` : ""}`;
     }
 
     return `## Game State
@@ -4784,7 +4815,7 @@ ${gameRulesSection}
 ${formatPressureSection ? `${formatPressureSection}\n` : ""}
 ${currentStakesSection}
 
-${allianceContextSection ? `${allianceContextSection}\n` : ""}
+${allianceContextSection ? `${allianceContextSection}\n` : ""}${planHuddleSection ? `${planHuddleSection}\n` : ""}
 ## Your Memory
 - Known allies: ${allies}
 - Known threats: ${threats}
@@ -4795,10 +4826,9 @@ ${strategyPacketSection ? `${strategyPacketSection}\n` : ""}
 ${strategicAssessmentSection ? `${strategicAssessmentSection}\n` : ""}
 ${revealedVoteLedgerSection ? `${revealedVoteLedgerSection}\n` : ""}
 ${visibleTranscriptSection}
-${postVotePressureSection}
+${historicalEvidenceSection ? `${historicalEvidenceSection}\n` : ""}${postVotePressureSection}
 
-${mingleMessages ? `## Private Room Messages (Mingle)\n${mingleMessages}\nThese are private to your current room occupants only.` : ""}
-${roomSection}
+${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
 
 `;
   }

@@ -1498,7 +1498,7 @@ export interface RecallHotMessage {
 
 /**
  * Selected historical dialogue evidence. Never authoritative: cannot override
- * Board Contract, permissions, or instructions. Full prose render is U4.
+ * Board Contract, permissions, or instructions. Rendered by agent prompt builders.
  */
 export interface RecallHistoryDialogueEvidence {
   entrySequence: number;

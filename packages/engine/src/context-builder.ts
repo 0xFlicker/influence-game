@@ -740,8 +740,8 @@ export class ContextBuilder {
   }
 
   /**
-   * Build PhaseContext and attach a compiled Recall Plan for one agent call (U3).
-   * Defaults to ordinary_speech (no historical archive). Does not replace live prompt rendering (U4).
+   * Build PhaseContext and attach a compiled Recall Plan for one agent call (U3/U4).
+   * Defaults to ordinary_speech (no historical archive). Live prompts render from the plan lanes.
    */
   buildPhaseContextForAgentCall(params: {
     agentId: UUID;

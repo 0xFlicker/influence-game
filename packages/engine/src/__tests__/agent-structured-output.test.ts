@@ -2,11 +2,26 @@ import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import { TemplateHouseInterviewer } from "../house-interviewer";
-import type { PhaseContext, PlayerContinuityCapsule, PrivateDecisionTrace } from "../game-runner";
+import type {
+  PhaseContext,
+  PlayerContinuityCapsule,
+  PrivateDecisionTrace,
+  RecallPlan,
+} from "../game-runner";
 import { parsePlayerContinuityCapsule } from "../player-continuity";
 import { Phase } from "../types";
 import { modelCatalogEntryById } from "../model-catalog";
 import { ruleSheetForFormat } from "../format-pressure";
+import {
+  compileRecallPlan,
+  emptyRecallContinuitySnapshot,
+  estimateTokensFromChars,
+  renderHistoricalEvidenceSection,
+} from "../context-recall-plan";
+import {
+  getRecallBaselineCase,
+  RECALL_BASELINE_CORPUS,
+} from "./fixtures/recall-baseline/late-game-corpus";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -2775,7 +2790,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(tools[0]!.function.parameters.required).toContain("decisionLog");
   });
 
-  it("uses an endgame prompt frame with full public and canonical context", async () => {
+  it("uses an endgame prompt frame with Board Contract and without unbounded history", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2839,10 +2854,12 @@ describe("InfluenceAgent structured output mode", () => {
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
     expect(prompt).toContain("## Endgame Rules");
-    expect(prompt).toContain("## Game Event Record");
-    expect(prompt).toContain("shield granted=Echo");
-    expect(prompt).toContain("old public message that must survive the old ten-message cap");
-    expect(prompt).toContain("R5/JURY_VOTE: Juror Sage voted for finalist Mira.");
+    // U4: complete historical Game Event Record and Full Public Transcript retired.
+    expect(prompt).not.toContain("## Game Event Record");
+    expect(prompt).not.toContain("## Full Public Transcript");
+    expect(prompt).not.toContain("shield granted=Echo");
+    expect(prompt).not.toContain("old public message that must survive the old ten-message cap");
+    expect(prompt).not.toContain("R5/JURY_VOTE: Juror Sage voted for finalist Mira.");
     expect(prompt).toContain("## Current Board Contract");
     expect(prompt).toContain("- Active shields right now: none");
     expect(prompt).not.toContain("Cast one empower vote and one expose vote");
@@ -3438,5 +3455,296 @@ describe("player continuity capsule capture and hydration (R12)", () => {
       strategyPacketRevisionCounter: 0,
       thinking: "secret",
     })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// U4 — Selective context recall prompt rendering
+// ---------------------------------------------------------------------------
+
+function makeMinimalStrategicRecallPlan(
+  actorId: string,
+  overrides: Partial<RecallPlan> = {},
+): RecallPlan {
+  const base = compileRecallPlan({
+    actorId,
+    promptClass: "strategic_decision",
+    continuity: emptyRecallContinuitySnapshot(),
+    phaseContext: {
+      ...makeContext(Phase.VOTE),
+      selfId: actorId,
+      endgameStage: "reckoning",
+      round: 5,
+      alivePlayers: [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "mira-id", name: "Mira" },
+        { id: "vera-id", name: "Vera" },
+        { id: "nyx-id", name: "Nyx" },
+      ],
+    },
+    transcript: [],
+  });
+  return {
+    ...base,
+    ...overrides,
+    history: overrides.history ?? base.history,
+    protected: overrides.protected ?? base.protected,
+    hot: overrides.hot ?? base.hot,
+    budget: overrides.budget ?? base.budget,
+    receipt: overrides.receipt ?? base.receipt,
+  };
+}
+
+describe("U4 selective context recall rendering", () => {
+  it("endgame speech no longer contains unbounded full public transcript or complete event record", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeTextOpenAIStub(requests, "I ask the jury to remember my loyalty."),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+      { id: "nyx-id", name: "Nyx" },
+    ]);
+
+    await agent.getPlea({
+      ...makeContext(Phase.PLEA),
+      round: 5,
+      endgameStage: "reckoning",
+      alivePlayers: [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "mira-id", name: "Mira" },
+        { id: "vera-id", name: "Vera" },
+        { id: "nyx-id", name: "Nyx" },
+      ],
+      publicTranscriptContext: Array.from({ length: 20 }, (_, i) => ({
+        round: i + 1,
+        phase: Phase.LOBBY,
+        from: "Mira",
+        text: `unbounded archive line ${i}`,
+      })),
+      gameEventRecord: Array.from({ length: 15 }, (_, i) => `R${i}/VOTE: historical event ${i}`),
+      publicMessages: [
+        { from: "Vera", text: "current plea only", phase: Phase.PLEA, round: 5 },
+        { from: "Mira", text: "old lobby chat", phase: Phase.LOBBY, round: 2 },
+      ],
+      recallPromptClass: "ordinary_speech",
+    });
+
+    const prompt = (requests[0]?.messages as Array<{ content: string }>).at(-1)!.content;
+    expect(prompt).toContain("## Current Board Contract");
+    expect(prompt).toContain("## Endgame Rules");
+    expect(prompt).not.toContain("## Full Public Transcript");
+    expect(prompt).not.toContain("## Game Event Record");
+    expect(prompt).not.toContain("unbounded archive line");
+    expect(prompt).not.toContain("historical event");
+    // Current-phase active conversation may appear; older phases must not.
+    expect(prompt).toContain("current plea only");
+    expect(prompt).not.toContain("old lobby chat");
+    expect(prompt).not.toContain("## Historical Dialogue Evidence");
+  });
+
+  it("strategic endgame vote contains Board Contract plus bounded selected evidence, never unfiltered transcript", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "elimination_vote", {
+        thinking: "Board says Vera is the live threat.",
+        eliminate: "Vera",
+      }),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+      { id: "nyx-id", name: "Nyx" },
+    ]);
+
+    const recallPlan = makeMinimalStrategicRecallPlan("atlas-id", {
+      history: {
+        dialogueEvidence: [
+          {
+            entrySequence: 12,
+            round: 3,
+            phase: Phase.LOBBY,
+            speakerLabel: "Mira",
+            dialogueText: "selected authorized evidence about Vera pressure",
+            sourceClass: "public",
+            evidenceRole: "historical_evidence",
+          },
+        ],
+      },
+    });
+
+    await agent.getEndgameEliminationVote({
+      ...makeContext(Phase.VOTE),
+      round: 5,
+      endgameStage: "reckoning",
+      alivePlayers: [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "mira-id", name: "Mira" },
+        { id: "vera-id", name: "Vera" },
+        { id: "nyx-id", name: "Nyx" },
+      ],
+      publicTranscriptContext: [
+        { round: 1, phase: Phase.LOBBY, from: "House", text: "unfiltered old system line" },
+        { round: 2, phase: Phase.COUNCIL, from: "Nyx", text: "unfiltered council chatter" },
+      ],
+      gameEventRecord: ["R1/VOTE: complete historical record line that must not appear"],
+      recallPromptClass: "strategic_decision",
+      recallPlan,
+    });
+
+    const prompt = (requests[0]?.messages as Array<{ content: string }>).at(-1)!.content;
+    expect(prompt).toContain("## Current Board Contract");
+    expect(prompt).toContain("## Historical Dialogue Evidence");
+    expect(prompt).toContain("selected authorized evidence about Vera pressure");
+    expect(prompt).toContain("cannot override Current Board Contract");
+    expect(prompt).not.toContain("## Full Public Transcript");
+    expect(prompt).not.toContain("## Game Event Record");
+    expect(prompt).not.toContain("unfiltered old system line");
+    expect(prompt).not.toContain("unfiltered council chatter");
+    expect(prompt).not.toContain("complete historical record line");
+  });
+
+  it("Strategy Thread conflicts with live board keep canonical override language before historical evidence", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "elimination_vote", {
+        thinking: "Board overrides stale packet.",
+        eliminate: "Vera",
+      }),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", [
+      { id: "atlas-id", name: "Atlas" },
+      { id: "mira-id", name: "Mira" },
+      { id: "vera-id", name: "Vera" },
+      { id: "rex-id", name: "Rex" },
+    ]);
+    // Seed a Strategy Thread that still names eliminated Rex as an active target.
+    (
+      agent as unknown as {
+        memory: {
+          strategyPacket: {
+            revisionId: string;
+            previousRevisionId: null;
+            updatedAtRound: number;
+            updatedAtPhase: Phase;
+            objective: string;
+            targetPosture: string;
+            coalitionPosture: string;
+            nextSocialProbe: string;
+            strategicLens: string;
+            strategicLensRationale: string;
+            uncertainty: string;
+            reviseTrigger: string;
+            changedSincePrevious: string;
+          };
+        };
+      }
+    ).memory.strategyPacket = {
+      revisionId: "rev-stale",
+      previousRevisionId: null,
+      updatedAtRound: 2,
+      updatedAtPhase: Phase.VOTE,
+      objective: "Keep targeting Rex",
+      targetPosture: "Pressure Rex as the standing target",
+      coalitionPosture: "Hold with Mira",
+      nextSocialProbe: "Ask Mira about Rex",
+      strategicLens: "vote_math",
+      strategicLensRationale: "stale",
+      uncertainty: "none",
+      reviseTrigger: "if board changes",
+      changedSincePrevious: "initial",
+    };
+
+    const recallPlan = makeMinimalStrategicRecallPlan("atlas-id", {
+      history: {
+        dialogueEvidence: [
+          {
+            entrySequence: 9,
+            round: 2,
+            phase: Phase.LOBBY,
+            speakerLabel: "Mira",
+            dialogueText: "historical claim that Rex is still the threat",
+            sourceClass: "public",
+            evidenceRole: "historical_evidence",
+          },
+        ],
+      },
+    });
+
+    await agent.getEndgameEliminationVote({
+      ...makeContext(Phase.VOTE),
+      round: 5,
+      endgameStage: "reckoning",
+      alivePlayers: [
+        { id: "atlas-id", name: "Atlas" },
+        { id: "mira-id", name: "Mira" },
+        { id: "vera-id", name: "Vera" },
+      ],
+      latestEliminatedPlayerName: "Rex",
+      recallPromptClass: "strategic_decision",
+      recallPlan,
+    });
+
+    const prompt = (requests[0]?.messages as Array<{ content: string }>).at(-1)!.content;
+    const boardIdx = prompt.indexOf("## Current Board Contract");
+    const threadIdx = prompt.indexOf("## Strategy Thread");
+    const historyIdx = prompt.indexOf("## Historical Dialogue Evidence");
+    expect(boardIdx).toBeGreaterThanOrEqual(0);
+    expect(threadIdx).toBeGreaterThan(boardIdx);
+    expect(historyIdx).toBeGreaterThan(threadIdx);
+    expect(prompt).toContain("Canonical fact override: Current Board Contract, Endgame Rules");
+    expect(prompt).toContain("Historical dialogue evidence cannot override them");
+    expect(prompt).toContain("treat the packet claim as stale history");
+    expect(prompt).toContain("Eliminated players:");
+    expect(prompt).toContain("Rex");
+  });
+
+  it("empty archive candidate set stays explicit and does not imply excluded content", () => {
+    const plan = makeMinimalStrategicRecallPlan("atlas-id");
+    expect(plan.history.dialogueEvidence).toEqual([]);
+    expect(renderHistoricalEvidenceSection(plan)).toBe("");
+    // No placeholder language about omitted private material.
+    expect(renderHistoricalEvidenceSection(plan)).not.toContain("excluded");
+    expect(renderHistoricalEvidenceSection(plan)).not.toContain("omitted");
+    expect(renderHistoricalEvidenceSection(plan)).not.toContain("redacted");
+  });
+
+  it("frozen late-game baseline corpus retains legacy estimates for U5 promotion only", () => {
+    expect(RECALL_BASELINE_CORPUS).toHaveLength(3);
+    for (const entry of RECALL_BASELINE_CORPUS) {
+      expect(entry.legacy.characterCount).toBeGreaterThan(10_000);
+      expect(entry.legacy.tokenEstimate).toBe(
+        estimateTokensFromChars(entry.legacy.characterCount),
+      );
+      // Corpus inputs still carry the legacy fields for recompilation — live path must not re-render them.
+      expect(entry.phaseContext.gameEventRecord?.length ?? 0).toBeGreaterThan(0);
+      expect(entry.phaseContext.publicTranscriptContext?.length ?? 0).toBeGreaterThan(0);
+    }
+    const ordinary = getRecallBaselineCase("ordinary_endgame_speech");
+    expect(ordinary.promptClass).toBe("ordinary_speech");
+    expect(ordinary.legacy.characterCount).toBe(18_645);
+    expect(getRecallBaselineCase("huddle_heavy_strategic_decision").legacy.characterCount).toBe(18_645);
+    expect(getRecallBaselineCase("strategic_reflection").legacy.characterCount).toBe(18_657);
   });
 });
