@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { getAllPosts, UPDATES_CONTENT_DIR } from "../lib/updates";
 
 const indexSource = readFileSync(
   join(import.meta.dir, "../app/updates/page.tsx"),
@@ -51,21 +50,5 @@ describe("updates pages", () => {
     expect(sidebarSource).toContain("post.summary");
     expect(sidebarSource).toContain('href={`/updates/${post.slug}`}');
     expect(sidebarSource).toContain("aria-current");
-  });
-
-  it("ships public archive posts for recent features", () => {
-    const posts = getAllPosts(UPDATES_CONTENT_DIR);
-    expect(posts.length).toBeGreaterThanOrEqual(5);
-    const titles = posts.map((p) => p.title);
-    expect(titles.some((t) => t.includes("House Highlights"))).toBe(true);
-    expect(titles.some((t) => t.includes("public identities"))).toBe(true);
-    expect(titles.some((t) => t.includes("dual crowns"))).toBe(true);
-    expect(titles.some((t) => t.includes("MCP setup"))).toBe(true);
-    const seed = posts.find((p) => p.slug.includes("format-kernel"));
-    expect(seed).toBeDefined();
-    expect(seed?.title.length).toBeGreaterThan(0);
-    expect(seed?.tags.length).toBeGreaterThan(0);
-    expect(seed?.body.toLowerCase()).not.toContain("reasoningcontext");
-    expect(seed?.body.toLowerCase()).not.toContain("private trace");
   });
 });

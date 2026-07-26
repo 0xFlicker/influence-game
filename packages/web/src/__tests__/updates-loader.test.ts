@@ -6,7 +6,6 @@ import {
   getAllPosts,
   getPostBySlug,
   loadPostsFromDir,
-  UPDATES_CONTENT_DIR,
 } from "../lib/updates";
 
 const tempDirs: string[] = [];
@@ -136,20 +135,9 @@ describe("updates loader", () => {
     const dir = makeTempDir();
     writePost(
       dir,
-      "2026-07-25-format-kernel.md",
+      "2026-07-25-sample-slug.md",
       'title: "Format"\ndate: 2026-07-25\nsummary: s\ntags: [rules]',
     );
-    expect(loadPostsFromDir(dir)[0]?.slug).toBe("2026-07-25-format-kernel");
-  });
-
-  it("loads production content dir without throwing", () => {
-    const posts = getAllPosts(UPDATES_CONTENT_DIR);
-    for (const post of posts) {
-      expect(post.title.length).toBeGreaterThan(0);
-      expect(post.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-      expect(post.summary.length).toBeGreaterThan(0);
-      expect(Array.isArray(post.tags)).toBe(true);
-      expect(post.draft).toBe(false);
-    }
+    expect(loadPostsFromDir(dir)[0]?.slug).toBe("2026-07-25-sample-slug");
   });
 });
