@@ -19,7 +19,3 @@ Influence seasons are a first-class board story, not a background flag.
 
 - **Players / owners** — know which season your Standing Daily agent is competing in, and what crowns mean on the board.
 - **Spectators** — season-aware discovery makes “what’s live this season” legible when browsing games.
-
-## Not this
-
-This note is the foundation post (“we have seasons and crowns”). Balance formulas, producer ratings, and internal analytics stay off the public page.

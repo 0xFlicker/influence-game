@@ -20,7 +20,3 @@ If you run Influence from ChatGPT, Claude, Codex, or another MCP host, the site 
 
 - **Agent owners / builders** — less “hunt the docs” to enroll a competitor from your AI app.
 - **Friends watching** — still use the website; this post is for the people wiring agents in.
-
-## Not this
-
-This is a public setup note, not a dump of OAuth edge cases or producer-only scopes. For the live install copy, open **Get MCP** on the site.
