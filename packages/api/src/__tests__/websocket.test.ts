@@ -24,6 +24,7 @@ import type { GameWatchState } from "../services/game-watch-state.js";
 
 type TranscriptEntryEvent = Extract<GameStreamEvent, { type: "transcript_entry" }>;
 type TranscriptEntryWithPrivateFields = TranscriptEntryEvent["entry"] & {
+  decisionId: string;
   decisionLog: string;
   privateTraceManifest: { bucket: string; key: string; marker: string };
   prompt: string;
@@ -336,6 +337,7 @@ describe("WebSocket Manager", () => {
       thinking: "PUBLIC_THINKING_SENTINEL",
       anonymous: true,
       displayOrder: 2,
+      decisionId: "PRIVATE_ACCEPTED_ACTION_DECISION_SENTINEL",
       reasoningContext: "PRIVATE_REASONING_SENTINEL",
       decisionLog: "PRIVATE_DECISION_LOG_SENTINEL",
       privateTraceManifest: {
@@ -346,7 +348,7 @@ describe("WebSocket Manager", () => {
       prompt: "PRIVATE_PROMPT_SENTINEL",
       providerPayload: { marker: "PRIVATE_PROVIDER_PAYLOAD_SENTINEL" },
       rawResponse: { marker: "PRIVATE_RAW_RESPONSE_SENTINEL" },
-      sourcePointers: [{ marker: "PRIVATE_SOURCE_POINTER_SENTINEL" }],
+      sourcePointers: [{ marker: "PRIVATE_ACCEPTED_ACTION_DECISION_SENTINEL" }],
       storageKey: "PRIVATE_STORAGE_KEY_SENTINEL",
     };
     const event: GameStreamEvent = { type: "transcript_entry", entry };
@@ -385,7 +387,7 @@ describe("WebSocket Manager", () => {
     expect(serialized).not.toContain("PRIVATE_PROMPT_SENTINEL");
     expect(serialized).not.toContain("PRIVATE_PROVIDER_PAYLOAD_SENTINEL");
     expect(serialized).not.toContain("PRIVATE_RAW_RESPONSE_SENTINEL");
-    expect(serialized).not.toContain("PRIVATE_SOURCE_POINTER_SENTINEL");
+    expect(serialized).not.toContain("PRIVATE_ACCEPTED_ACTION_DECISION_SENTINEL");
     expect(serialized).not.toContain("PRIVATE_STORAGE_KEY_SENTINEL");
     expect(serialized).not.toContain("PRIVATE_REPAIR_NOTE_SENTINEL");
     expect(serialized).not.toContain("PRIVATE_ROOM_INTENT_SENTINEL");

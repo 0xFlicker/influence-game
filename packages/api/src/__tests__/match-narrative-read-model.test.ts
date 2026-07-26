@@ -21,6 +21,7 @@ import {
 import { setupTestDB } from "./test-utils.js";
 
 const CURSOR_SECRET = "test-jwt-secret-match-narrative-u3u4-aaaa";
+const PRIVATE_DECISION_SENTINEL = "PRIVATE_ACCEPTED_ACTION_DECISION_SENTINEL";
 
 describe("match-narrative-read-model dual surface", () => {
   let db: DrizzleDB;
@@ -521,7 +522,7 @@ describe("match-narrative-read-model dual surface", () => {
 
   test("trusted accepted-action identity agrees across owner narrative, producer narrative, and manifests", async () => {
     const fixture = await seedNarrativeGame(db);
-    const decisionId = randomUUID();
+    const decisionId = PRIVATE_DECISION_SENTINEL;
     const missingManifestDecisionId = randomUUID();
     const intentionallyUnlinkedDecisionId = randomUUID();
     const ownerEpoch = await insertOwner(db, fixture.gameId);
@@ -603,6 +604,25 @@ describe("match-narrative-read-model dual surface", () => {
     expect(JSON.stringify(ownerPage.readThrough)).not.toContain("lastTrustedSequence");
     expect(JSON.stringify(ownerPage)).not.toContain("empowerTarget");
     expect(JSON.stringify(ownerPage)).not.toContain("sourcePointers");
+
+    const peerOwnerPage = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 2,
+        includeUnpaired: true,
+      },
+      {
+        subjectUserId: fixture.peerOwnerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(peerOwnerPage.ok).toBe(true);
+    if (!peerOwnerPage.ok) return;
+    expect(JSON.stringify(peerOwnerPage)).not.toContain(PRIVATE_DECISION_SENTINEL);
+    expect(peerOwnerPage.groups.some((group) => "actions" in group)).toBe(false);
 
     const producerPage = await readMatchNarrativePage(
       db,
@@ -1176,16 +1196,22 @@ describe("match-narrative-read-model dual surface", () => {
 async function seedNarrativeGame(db: DrizzleDB): Promise<{
   gameId: string;
   ownerUserId: string;
+  peerOwnerUserId: string;
   producerUserId: string;
   playerA: string;
   playerB: string;
 }> {
   const ownerUserId = randomUUID();
+  const peerOwnerUserId = randomUUID();
   const producerUserId = randomUUID();
   await db.insert(schema.users).values([
     {
       id: ownerUserId,
       walletAddress: `0x${ownerUserId.replace(/-/g, "").slice(0, 40)}`,
+    },
+    {
+      id: peerOwnerUserId,
+      walletAddress: `0x${peerOwnerUserId.replace(/-/g, "").slice(0, 40)}`,
     },
     {
       id: producerUserId,
@@ -1211,8 +1237,19 @@ async function seedNarrativeGame(db: DrizzleDB): Promise<{
     userId: ownerUserId,
     name: "Alice",
   });
-  const playerB = await insertGamePlayer(db, { gameId, name: "Bob" });
-  return { gameId, ownerUserId, producerUserId, playerA, playerB };
+  const playerB = await insertGamePlayer(db, {
+    gameId,
+    userId: peerOwnerUserId,
+    name: "Bob",
+  });
+  return {
+    gameId,
+    ownerUserId,
+    peerOwnerUserId,
+    producerUserId,
+    playerA,
+    playerB,
+  };
 }
 
 async function insertGamePlayer(

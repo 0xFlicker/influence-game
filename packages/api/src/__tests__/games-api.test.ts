@@ -59,6 +59,7 @@ afterAll(async () => {
 
 const ADMIN_USER_ID = "admin-user-id";
 const REGULAR_USER_ID = "regular-user-id";
+const PRIVATE_DECISION_SENTINEL = "PRIVATE_ACCEPTED_ACTION_DECISION_SENTINEL";
 
 async function setupApp() {
   const db = await setupTestDB();
@@ -259,6 +260,27 @@ function advanceToRoundTwo(events: readonly CanonicalGameEvent[]): readonly Cano
       payload: { round: 2 },
     },
   ];
+}
+
+function withPrivateDecisionSentinel(
+  events: readonly CanonicalGameEvent[],
+): readonly CanonicalGameEvent[] {
+  let attached = false;
+  return events.map((event) => {
+    if (attached || event.type !== "vote.cast") return event;
+    attached = true;
+    return {
+      ...event,
+      sourcePointers: [{
+        kind: "agent_turn",
+        actorId: PRIVATE_DECISION_SENTINEL,
+        action: "vote",
+        phase: event.phase ?? Phase.VOTE,
+        round: event.round,
+        decisionId: PRIVATE_DECISION_SENTINEL,
+      }],
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -680,7 +702,9 @@ describe("Game REST API", () => {
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
       const ownerEpoch = await insertOwner(db, id);
-      const events = advanceToRoundTwo(createResolvedRoundCanonicalEventFixture(id));
+      const events = advanceToRoundTwo(withPrivateDecisionSentinel(
+        createResolvedRoundCanonicalEventFixture(id),
+      ));
       await appendGameEvents(db, { gameId: id, ownerEpoch, events });
       await refreshGameWatchStateSummary(db, id, "test");
 
@@ -944,6 +968,8 @@ describe("Game REST API", () => {
       ]) {
         expect(serialized).not.toContain(forbidden);
       }
+      expect(serialized).not.toContain(PRIVATE_DECISION_SENTINEL);
+      expect(serialized).not.toContain("sourcePointers");
     });
 
     test("returns schema v2 replay frames with the same public current-agent projection", async () => {
@@ -1062,7 +1088,9 @@ describe("Game REST API", () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
       await insertFixturePlayers(db, id);
       const ownerEpoch = await insertOwner(db, id);
-      const events = createResolvedRoundCanonicalEventFixture(id);
+      const events = withPrivateDecisionSentinel(
+        createResolvedRoundCanonicalEventFixture(id),
+      );
       await appendGameEvents(db, { gameId: id, ownerEpoch, events });
       await insertResult(db, id, { winnerId: "mira", roundsPlayed: 1 });
       await markGameCompleted(db, id);
@@ -1093,6 +1121,8 @@ describe("Game REST API", () => {
       expect(body.results.rounds[0]?.canonicalFacts.roundFacts.standardVote.ledger).toHaveLength(4);
       expect(body.results.rounds[0]?.canonicalFacts.roundFacts.council.ledger.length).toBeGreaterThan(0);
       expect(body.results.eliminationOrder[0]?.source).toBe("council");
+      expect(JSON.stringify(body)).not.toContain(PRIVATE_DECISION_SENTINEL);
+      expect(JSON.stringify(body)).not.toContain("sourcePointers");
     });
 
     test("returns degraded terminal fallback for older completed games", async () => {

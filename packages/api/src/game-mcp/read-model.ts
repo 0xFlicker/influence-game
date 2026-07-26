@@ -123,9 +123,19 @@ export interface ProductionGameEventResult {
   phase: string | null;
   visibility: string;
   createdAt: string;
-  event: CanonicalGameEvent;
+  event: ProductionGameEventEnvelope;
   matchSources?: string[];
 }
+
+/**
+ * Canonical board facts serialized through MCP event reads.
+ *
+ * Producer-authorized reads retain source pointers for diagnosis. Subject
+ * reads omit the field entirely so private decision identity cannot leak.
+ */
+export type ProductionGameEventEnvelope = Omit<CanonicalGameEvent, "sourcePointers"> & {
+  sourcePointers?: CanonicalGameEvent["sourcePointers"];
+};
 
 export interface ProductionGameMcpEventFilter {
   gameIdOrSlug: string;
@@ -783,6 +793,7 @@ export class ProductionGameMcpReadModel {
     const visibilityMode = options.visibilityMode ?? (
       isGamesSubjectAccess(access) ? "player" : "producer"
     );
+    const includePrivateCorrelation = access.authProfile === "producer";
     const eventType = normalizeEventType(options.eventType);
     const limit = clamp(options.limit ?? DEFAULT_EVENT_LIMIT, 1, MAX_EVENT_LIMIT);
     const actor = options.actor?.trim();
@@ -810,10 +821,12 @@ export class ProductionGameMcpReadModel {
         terminalOutcomeSequence,
       )) continue;
       if (!canonicalEventIsVisibleTo(event, visibilityMode)) continue;
-      const matchSources = actor ? eventMatchSources(event, actor) : [];
+      const matchSources = actor
+        ? eventMatchSources(event, actor, includePrivateCorrelation)
+        : [];
       if (actor && matchSources.length === 0) continue;
 
-      events.push(eventResult(row, matchSources));
+      events.push(eventResult(row, matchSources, includePrivateCorrelation));
       if (events.length >= limit) break;
     }
 
@@ -1822,6 +1835,7 @@ function gameIdentity(
 function eventResult(
   row: TrustedPersistedGameEvent,
   matchSources: string[] = [],
+  includePrivateCorrelation = true,
 ): ProductionGameEventResult {
   return {
     gameId: row.gameId,
@@ -1831,22 +1845,35 @@ function eventResult(
     phase: row.envelope.phase,
     visibility: row.visibility,
     createdAt: row.createdAt,
-    event: row.envelope,
+    event: includePrivateCorrelation
+      ? row.envelope
+      : sanitizedCanonicalEventEnvelope(row.envelope),
     ...(matchSources.length > 0 && { matchSources }),
   };
 }
 
-function eventMatchSources(event: CanonicalGameEvent, needle: string): string[] {
+function sanitizedCanonicalEventEnvelope(
+  event: CanonicalGameEvent,
+): ProductionGameEventEnvelope {
+  const { sourcePointers: _privateSourcePointers, ...sanitized } = event;
+  return sanitized;
+}
+
+function eventMatchSources(
+  event: CanonicalGameEvent,
+  needle: string,
+  includePrivateCorrelation: boolean,
+): string[] {
   const lowerNeedle = needle.toLowerCase();
   const sources = new Set<string>();
-  if (event.sourcePointers.some((pointer) =>
+  if (includePrivateCorrelation && event.sourcePointers.some((pointer) =>
     String(pointer.actorId ?? "").toLowerCase() === lowerNeedle
   )) {
     sources.add("sourcePointers.actorId");
   }
   const payloadText = JSON.stringify(event.payload).toLowerCase();
   if (payloadText.includes(lowerNeedle)) sources.add("canonicalPayload");
-  if (event.sourcePointers.some((pointer) =>
+  if (includePrivateCorrelation && event.sourcePointers.some((pointer) =>
     JSON.stringify(pointer).toLowerCase().includes(lowerNeedle)
   )) {
     sources.add("sourcePointers");

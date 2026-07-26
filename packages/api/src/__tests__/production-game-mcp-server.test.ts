@@ -8,6 +8,7 @@ import {
   INFLUENCE_MCP_APP_RESOURCE_URI,
   createInfluenceMcpAppResourceContent,
 } from "../game-mcp/app-resource.js";
+import { assertMatchNarrativePageResult } from "../game-mcp/contracts.js";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -57,6 +58,8 @@ const AGENT_WRITE_AUTH: GameMcpAuthContext = {
   scope: "agents:read agents:write",
   scopes: ["agents:read", "agents:write"],
 };
+
+const PRIVATE_DECISION_SENTINEL = "PRIVATE_ACCEPTED_ACTION_DECISION_SENTINEL";
 
 const FULL_ELIGIBILITY: GameMcpEligibilitySnapshot = {
   clientScopes: ["agents:read", "agents:write", "games:read", "producer"],
@@ -2399,6 +2402,43 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         message: "Unknown or unauthorized MCP tool",
       });
       expect(JSON.stringify(response)).not.toContain("mcp/www_authenticate");
+    }
+  });
+
+  test("rejects source-pointer payloads from both narrative contract versions", () => {
+    const shared = {
+      ok: true,
+      game: {},
+      surface: "subject_owner",
+      access: {},
+      preset: "strategic",
+      detail: "compact",
+      filters: {},
+      readThrough: {},
+      correlationSummary: {},
+      limitations: [],
+      contentTrust: "untrusted_game_authored",
+      notBoardAuthority: true,
+      pageSize: 1,
+      nextCursor: null,
+      nextCursorKind: null,
+    };
+
+    for (const [schemaVersion, group] of [
+      [1, {
+        members: [],
+        sourcePointers: [{ decisionId: PRIVATE_DECISION_SENTINEL }],
+      }],
+      [2, {
+        corr: "exact",
+        sourcePointers: [{ decisionId: PRIVATE_DECISION_SENTINEL }],
+      }],
+    ] as const) {
+      expect(() => assertMatchNarrativePageResult({
+        ...shared,
+        schemaVersion,
+        groups: [group],
+      })).toThrow(/must not include sourcePointers/);
     }
   });
 

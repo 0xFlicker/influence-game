@@ -1780,6 +1780,25 @@ function assertNarrativeActionCitations(value: unknown, path: string): void {
   }
 }
 
+const NARRATIVE_BOARD_PAYLOAD_KEYS = [
+  "payload",
+  "sourcePointers",
+  "empowerTarget",
+  "exposeTarget",
+  "voterId",
+] as const;
+
+function assertNarrativeGroupOmitsBoardPayload(
+  group: Record<string, unknown>,
+  path: string,
+): void {
+  for (const banned of NARRATIVE_BOARD_PAYLOAD_KEYS) {
+    if (banned in group) {
+      throw new Error(`${path} must not include ${banned}`);
+    }
+  }
+}
+
 export function assertMatchNarrativePageResult(
   value: unknown,
 ): asserts value is MatchNarrativePageResult {
@@ -1833,22 +1852,13 @@ export function assertMatchNarrativePageResult(
         }
         assertNarrativeActionCitations(groupRecord.actions, `groups[${index}].actions`);
         // Hard red lines: never serialize board payloads through narrative.
-        for (const banned of [
-          "payload",
-          "sourcePointers",
-          "empowerTarget",
-          "exposeTarget",
-          "voterId",
-        ] as const) {
-          if (banned in groupRecord) {
-            throw new Error(`groups[${index}] must not include ${banned}`);
-          }
-        }
+        assertNarrativeGroupOmitsBoardPayload(groupRecord, `groups[${index}]`);
       }
       return;
     }
     for (const [index, group] of record.groups.entries()) {
       const groupRecord = requireRecord(group, `groups[${index}]`);
+      assertNarrativeGroupOmitsBoardPayload(groupRecord, `groups[${index}]`);
       if (!Array.isArray(groupRecord.members)) {
         throw new Error(`groups[${index}].members must be an array`);
       }

@@ -43,6 +43,8 @@ const PRODUCER_ACCESS = {
   authProfile: "producer" as const,
 };
 
+const PRIVATE_DECISION_SENTINEL = "PRIVATE_ACCEPTED_ACTION_DECISION_SENTINEL";
+
 const CURSOR_SECRET = "test-jwt-secret-match-transcript-pagination";
 
 class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
@@ -661,7 +663,14 @@ describe("ProductionGameMcpReadModel", () => {
         source: "phase",
         visibility: "public",
         payloadVersion: 1,
-        sourcePointers: [],
+        sourcePointers: [{
+          kind: "agent_turn",
+          decisionId: PRIVATE_DECISION_SENTINEL,
+          actorId: PRIVATE_DECISION_SENTINEL,
+          action: "format",
+          phase: Phase.FORMAT_PICK,
+          round: 1,
+        }],
         payload: {
           empoweredId: ownerPlayerId,
           formatId: "save_or_eliminate",
@@ -713,7 +722,14 @@ describe("ProductionGameMcpReadModel", () => {
         source: "phase",
         visibility: "public",
         payloadVersion: 1,
-        sourcePointers: [],
+        sourcePointers: [{
+          kind: "agent_turn",
+          decisionId: PRIVATE_DECISION_SENTINEL,
+          actorId: PRIVATE_DECISION_SENTINEL,
+          action: "format-tiebreak",
+          phase: Phase.FORMAT_RESOLVE,
+          round: 1,
+        }],
         payload: {
           formatId: "save_or_eliminate",
           empoweredId: ownerPlayerId,
@@ -728,6 +744,30 @@ describe("ProductionGameMcpReadModel", () => {
           },
           voteBomb: null,
           safetyBounce: null,
+        },
+      },
+      {
+        sequence: base.length + 6,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.safety_bounce_pointer",
+        timestamp: "2026-07-24T12:00:05.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [{
+          kind: "agent_turn",
+          decisionId: PRIVATE_DECISION_SENTINEL,
+          actorId: PRIVATE_DECISION_SENTINEL,
+          action: "bounce-pointer",
+          phase: Phase.FORMAT_RESOLVE,
+          round: 1,
+        }],
+        payload: {
+          actorId: ownerPlayerId,
+          targetId: peerPlayerId,
+          classification: "vulnerable",
         },
       },
     ];
@@ -756,16 +796,51 @@ describe("ProductionGameMcpReadModel", () => {
       ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots.some((b) => b.voter.id === peerPlayerId),
     ).toBe(false);
 
+    const peerFacts = await readModel.readRoundFacts(
+      { gameIdOrSlug: gameId, round: 1 },
+      { userId: otherUserId, authProfile: "subject" },
+    );
+    expect(peerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(1);
+    expect(peerFacts.canonicalGameFacts.roundFacts.format.sealedBallots[0]?.voter.id).toBe(
+      peerPlayerId,
+    );
+    expect(
+      peerFacts.canonicalGameFacts.roundFacts.format.sealedBallots.some(
+        (ballot) => ballot.voter.id === ownerPlayerId,
+      ),
+    ).toBe(false);
+    expect(JSON.stringify(peerFacts)).not.toContain(PRIVATE_DECISION_SENTINEL);
+
     const producerFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, PRODUCER_ACCESS);
     expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("producer");
     expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(2);
 
-    // filter_events: public format facts visible to owner; sealed ballots not.
-    const ownerEvents = await readModel.filterEvents({
+    // filter_events: public format facts stay visible in both non-producer
+    // visibility modes, but the decision-bearing source pointers do not.
+    for (const eventType of [
+      "format.selected",
+      "format.safety_bounce_pointer",
+      "format.resolved",
+    ] as const) {
+      for (const visibilityMode of ["public", "player"] as const) {
+        const publicFacts = await readModel.filterEvents({
+          gameIdOrSlug: gameId,
+          eventType,
+          visibilityMode,
+        }, ownerAccess);
+        expect(publicFacts.canonicalGameFacts.events).toHaveLength(1);
+        expect(JSON.stringify(publicFacts)).not.toContain(PRIVATE_DECISION_SENTINEL);
+        expect(JSON.stringify(publicFacts)).not.toContain("sourcePointers");
+      }
+    }
+
+    const pointerOnlyActorMatch = await readModel.filterEvents({
       gameIdOrSlug: gameId,
-      eventType: "format.selected",
+      actor: PRIVATE_DECISION_SENTINEL,
     }, ownerAccess);
-    expect(ownerEvents.canonicalGameFacts.events.length).toBeGreaterThan(0);
+    expect(pointerOnlyActorMatch.canonicalGameFacts.events).toEqual([]);
+    expect(JSON.stringify(pointerOnlyActorMatch)).not.toContain("matchSources");
+
     await expect(readModel.filterEvents({
       gameIdOrSlug: gameId,
       eventType: "format.ballot_cast",
@@ -778,6 +853,16 @@ describe("ProductionGameMcpReadModel", () => {
       visibilityMode: "producer",
     }, PRODUCER_ACCESS);
     expect(producerBallots.canonicalGameFacts.events.length).toBe(2);
+
+    const producerPointerMatch = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      actor: PRIVATE_DECISION_SENTINEL,
+    }, PRODUCER_ACCESS);
+    expect(producerPointerMatch.canonicalGameFacts.events.length).toBeGreaterThan(0);
+    expect(JSON.stringify(producerPointerMatch)).toContain(PRIVATE_DECISION_SENTINEL);
+    expect(producerPointerMatch.canonicalGameFacts.events[0]?.matchSources).toContain(
+      "sourcePointers.actorId",
+    );
 
     const ownerJson = JSON.stringify(ownerFacts);
     expect(ownerJson).not.toContain("thinking");
@@ -2084,6 +2169,10 @@ describe("ProductionGameMcpReadModel match transcript pagination (U4)", () => {
       ...modernPublicRow(gameId, 1, "Said aloud", 1, ownerPlayerId),
       thinking: "NEVER LEAK THIS THINKING",
       roomMetadata: JSON.stringify({ diagnostic: "secret room allocation" }),
+      safeContext: {
+        version: 1,
+        decisionId: PRIVATE_DECISION_SENTINEL,
+      },
     }]);
 
     const page = await readMatchTranscriptPage(db, { gameIdOrSlug: gameId, limit: 10 }, {
@@ -2100,6 +2189,8 @@ describe("ProductionGameMcpReadModel match transcript pagination (U4)", () => {
     expect(JSON.stringify(page)).not.toContain("NEVER LEAK");
     expect(JSON.stringify(page)).not.toContain("thinking");
     expect(JSON.stringify(page)).not.toContain("roomMetadata");
+    expect(JSON.stringify(page)).not.toContain(PRIVATE_DECISION_SENTINEL);
+    expect(JSON.stringify(page)).not.toContain("decisionId");
     expect(page.entries[0]?.contentTrust).toBe("untrusted_game_authored");
     expect(page.entries[0]?.authority).toBe("transcript");
   });
