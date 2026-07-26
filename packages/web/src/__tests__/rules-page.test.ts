@@ -21,6 +21,11 @@ describe("rules page shield copy", () => {
     expect(source).not.toContain('"Whisper"');
   });
 
+  it("points readers at the public Updates archive", () => {
+    expect(source).toContain('href="/updates"');
+    expect(source).toContain("Updates");
+  });
+
   it("describes the named-alliance standard round contract", () => {
     expect(source).toContain("Each standard pre-endgame round has eight main beats");
     expect(source).toContain("Mingle I (Pre-Vote Mingle + Alliance Formation)");

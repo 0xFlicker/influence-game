@@ -6,6 +6,10 @@ const source = readFileSync(
   join(import.meta.dir, "../components/home/homepage-hero.tsx"),
   "utf8",
 );
+const homePageSource = readFileSync(
+  join(import.meta.dir, "../app/page.tsx"),
+  "utf8",
+);
 
 describe("homepage MCP CTA", () => {
   it("links curious visitors to the setup page without replacing primary actions", () => {
@@ -20,5 +24,13 @@ describe("homepage MCP CTA", () => {
   it("does not point homepage visitors at protocol or producer endpoints", () => {
     expect(source).not.toContain('href="/mcp"');
     expect(source).not.toContain("/mcp/producer");
+  });
+
+  it("surfaces the latest Updates post from the content collection", () => {
+    expect(homePageSource).toContain("getAllPosts");
+    expect(homePageSource).toContain("latestUpdate");
+    expect(source).toContain("latestUpdate");
+    expect(source).toContain("Latest update");
+    expect(source).toContain("latestUpdate.href");
   });
 });

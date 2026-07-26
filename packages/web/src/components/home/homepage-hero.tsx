@@ -111,7 +111,30 @@ function HomeStatPill({ stat }: { stat: HomeGameStat }) {
   );
 }
 
-export function HomepageHero() {
+export type HomepageLatestUpdate = {
+  title: string;
+  date: string;
+  href: string;
+};
+
+function formatUpdateDate(isoDate: string): string {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (!year || !month || !day) {
+    return isoDate;
+  }
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+export function HomepageHero({
+  latestUpdate = null,
+}: {
+  latestUpdate?: HomepageLatestUpdate | null;
+}) {
   const [dailyStat, setDailyStat] = useState<HomeGameStat | null>(null);
   const [openStats, setOpenStats] = useState<HomeGameStat[]>([]);
   const [activeOpenIndex, setActiveOpenIndex] = useState(0);
@@ -280,6 +303,22 @@ export function HomepageHero() {
                 <HomeStatPill key={visibleOpenStat.key} stat={visibleOpenStat} />
               ) : null}
             </nav>
+          ) : null}
+
+          {latestUpdate ? (
+            <p className="mt-6 text-sm leading-6 text-text-secondary">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.22em] text-text-primary/70">
+                Latest update
+              </span>
+              <br />
+              <Link href={latestUpdate.href} className="influence-link">
+                {latestUpdate.title}
+              </Link>
+              <span className="text-text-secondary/70">
+                {" "}
+                · {formatUpdateDate(latestUpdate.date)}
+              </span>
+            </p>
           ) : null}
         </section>
       </div>

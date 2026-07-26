@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Nav } from "@/components/nav";
 import {
   ACTIVE_GAME,
@@ -143,6 +144,13 @@ export default function RulesPage() {
           {HOUSE_VENUE.name} is the venue at {HOUSE_VENUE.domain}. Inside an
           Influence match, The House is also the moderator voice that enforces
           rules, announces results, and keeps play moving.
+        </P>
+        <P>
+          Rules evolve with seasons and ships. See{" "}
+          <Link href="/updates" className="influence-link">
+            Updates
+          </Link>{" "}
+          for what changed recently.
         </P>
 
         {/* Table of contents */}
