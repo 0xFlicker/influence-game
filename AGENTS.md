@@ -33,10 +33,12 @@
 - Fast baseline: `bun run test`.
 - Broader local baseline: `bun run check`.
 - Local Postgres runs in Docker on `127.0.0.1:54320`; sandboxed Codex commands usually need elevated sandbox access for DB-backed tests or local API DB reads. If a sandboxed command reports `ECONNREFUSED`, rerun with elevated access before saying the database is not running.
+- Every shared-Postgres test must call `setupTestDB()` before database mutation. The helper holds a process-lifetime PostgreSQL advisory lock, so independent Bun processes wait instead of truncating the shared test database underneath one another. Do not use `test.concurrent` or `describe.concurrent` for tests that share this database; the process lock does not serialize tests inside one process.
 - For code-backed work that will merge, run the repo's required checks and report real results.
 - When changing agent decision surfaces, transcript logging, or simulation output formatting, also update `docs/reasoning-transcript-observability.md`, the relevant usage examples in `docs/local-model-evaluation.md` / `DEVELOPMENT.md` / `README.md`, and the JSDoc in `packages/engine/src/simulate.ts`. Keep the "no `as any`" and direct-House-call disciplines visible in docs and code.
 
 ## DB
 - Local Postgres on `127.0.0.1:54320`; sandboxed DB failures may need elevated access before declaring the DB down.
+- Shared test-database isolation is enforced across Bun processes by `setupTestDB()`'s session advisory lock. New DB-backed tests must use that helper and remain sequential within their process.
 - Prefer Compound Engineering skills for plan/implement/review/PR flows when available.
 - Update `docs/solutions/`, `CONCEPTS.md`, and ops docs when behavior changes.

@@ -511,6 +511,10 @@ A producer/admin accounting comparison between ledger totals and a normalized pr
 
 A local-development producer MCP that inspects API-backed durable runs through private trace manifests and private trace content. It is not a product/admin MCP surface until MCP auth login, web/admin affordances, and releasable packaging are intentionally designed.
 
+## Shared test database lease
+
+A process-lifetime PostgreSQL session advisory lock acquired by `setupTestDB()` before migrations or truncation. It makes independent Bun processes wait for exclusive use of the shared test database and releases automatically when the owning database session disconnects, including process crashes. It does not serialize `test.concurrent` calls inside one process, so shared-DB tests remain sequential within their Bun process.
+
 ## callTool reasoning augmentation
 
 The single choke-point in `InfluenceAgent.callTool<T>` that guarantees every structured decision return and every JSON-fallback path carries model-side reasoning evidence when available (via `as T & { reasoningContext?: string }` intersections only — never `as any`). For local models this is native `reasoningContext`; for hosted OpenAI Responses calls it can be a labeled provider summary display. Tool schemas for observable decisions (cast_votes, use_power, council_vote, etc.) include a `thinking` field; the engine threads both values out to the phase loggers and `TranscriptEntry`.

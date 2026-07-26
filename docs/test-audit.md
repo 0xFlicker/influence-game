@@ -73,8 +73,11 @@ Medium speed, deterministic, zero LLM cost. **Run before merging API changes.**
 
 All DB tests use `setupTestDB()` which:
 1. Connects to `TEST_DATABASE_URL` (default: `postgresql://influence:influence@127.0.0.1:54320/influence_test`). Local Postgres runs in Docker; sandboxed agents usually need elevated sandbox access for DB-backed tests against `127.0.0.1:54320`.
-2. Runs Drizzle migrations once per process
-3. Truncates all Influence tables via CASCADE before each test
+2. Acquires a process-lifetime PostgreSQL session advisory lock before migrations or truncation. Independent Bun processes wait for the current database test process to exit instead of racing on shared state.
+3. Runs Drizzle migrations once per process
+4. Truncates all Influence tables via CASCADE before each test
+
+The advisory lock serializes separate Bun processes, including test workers. It does not serialize `test.concurrent` or `describe.concurrent` inside one process; shared-DB tests must not use those APIs.
 
 ### packages/api/src/__tests__/db.test.ts
 - **Tests:** 12
