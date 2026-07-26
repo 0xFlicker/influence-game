@@ -25,7 +25,7 @@ import {
 } from "./game-event-read-model.js";
 import {
   attachTrustedRelatedActionRefs,
-  buildTrustedVoteCastIndex,
+  buildTrustedAcceptedActionIndex,
   type TrustedCanonicalActionIndex,
 } from "./match-narrative-canonical-actions.js";
 import {
@@ -672,7 +672,7 @@ function assembleNarrativePage(params: {
   transcriptCaptureVersion: number;
   cognitiveCaptureVersion: number;
   ownedPlayerIds: ReadonlySet<string> | null;
-  /** Trusted vote.cast index; null pin means legacy unlinked walk (no attach). */
+  /** Trusted accepted-action index; null pin means legacy unlinked walk (no attach). */
   trustedActionIndex: TrustedCanonicalActionIndex | null;
   /** Pin re-sealed into nextCursor (null preserves legacy unlinked walks). */
   canonicalLastTrustedSequence: number | null;
@@ -930,7 +930,7 @@ function emptyOwnerSuccess(params: {
 // ---------------------------------------------------------------------------
 
 /**
- * Load the validated trusted event prefix and build a vote.cast decisionId index.
+ * Load the validated trusted event prefix and build an accepted-action decisionId index.
  *
  * - Fresh reads (no cursor): seal lastTrustedSequence and enable linkage.
  * - Linked continuations (cursor pin set): freeze at the pin; stale if the
@@ -964,12 +964,12 @@ async function loadTrustedCanonicalActions(
         error: "Cursor is invalid or stale",
       };
     }
-    const index = buildTrustedVoteCastIndex(read.events, options.cursorPin);
+    const index = buildTrustedAcceptedActionIndex(read.events, options.cursorPin);
     return { ok: true, index, pin: options.cursorPin };
   }
 
   // Fresh read: pin current trusted head and index the full trusted prefix.
-  const index = buildTrustedVoteCastIndex(read.events, null);
+  const index = buildTrustedAcceptedActionIndex(read.events, null);
   return { ok: true, index, pin: lastTrusted };
 }
 

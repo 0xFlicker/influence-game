@@ -6,11 +6,15 @@
  * game_events rows without the validated prefix reader. Never serializes
  * payloads, targets, or source pointers into narrative responses.
  *
- * This slice indexes vote.cast only. Other accepted-action types can reuse
- * the same mapping once their writers stamp decisionId.
+ * Eligibility and action vocabulary come from the engine's accepted-action
+ * registry so narrative linkage cannot drift from durable reconciliation.
  */
 
-import type { CanonicalGameEvent, CanonicalSourcePointer } from "@influence/engine";
+import {
+  ACCEPTED_ACTION_REGISTRY,
+  type CanonicalGameEvent,
+  type CanonicalSourcePointer,
+} from "@influence/engine";
 import type {
   NarrativeGroup,
   NarrativeRelatedActionRef,
@@ -35,17 +39,15 @@ export interface TrustedCanonicalActionIndex {
   lastTrustedSequence: number;
 }
 
-const VOTE_CAST = "vote.cast" as const;
-
 /**
  * Build a minimal decisionId index from a validated trusted event prefix.
- * Only indexes vote.cast envelopes with an exact decisionId on a source
- * pointer and actor/action/phase/round agreement between pointer and envelope.
+ * Only indexes registry-eligible events whose source pointer agrees with the
+ * canonical envelope's actor, action, phase, and round.
  *
  * @param events Trusted contiguous prefix only (never untrusted tail).
  * @param pinWhenSet When set, ignore events with sequence > pin (continuation).
  */
-export function buildTrustedVoteCastIndex(
+export function buildTrustedAcceptedActionIndex(
   events: readonly { sequence: number; eventType: string; envelope: CanonicalGameEvent }[],
   pinWhenSet: number | null = null,
 ): TrustedCanonicalActionIndex {
@@ -55,18 +57,34 @@ export function buildTrustedVoteCastIndex(
   for (const row of events) {
     if (row.sequence > lastTrustedSequence) lastTrustedSequence = row.sequence;
     if (pinWhenSet != null && row.sequence > pinWhenSet) continue;
-    if (row.eventType !== VOTE_CAST && row.envelope.type !== VOTE_CAST) continue;
+    if (row.eventType !== row.envelope.type) continue;
 
-    const entry = extractVoteCastEntry(row.envelope);
-    if (!entry) continue;
+    for (const entry of extractAcceptedActionEntries(row.envelope)) {
+      const list = byDecisionId.get(entry.decisionId) ?? [];
+      if (!list.some((candidate) => (
+        candidate.eventSequence === entry.eventSequence
+        && candidate.eventType === entry.eventType
+      ))) {
+        list.push(entry);
+        byDecisionId.set(entry.decisionId, list);
+      }
+    }
+  }
 
-    const list = byDecisionId.get(entry.decisionId) ?? [];
-    list.push(entry);
-    byDecisionId.set(entry.decisionId, list);
+  // A decision may have one primary direct event. If the same receipt appears
+  // on multiple direct sequences, the canonical relationship is ambiguous and
+  // must not become a narrative citation.
+  for (const [decisionId, entries] of byDecisionId) {
+    if (new Set(entries.map((entry) => entry.eventSequence)).size > 1) {
+      byDecisionId.delete(decisionId);
+    }
   }
 
   return { byDecisionId, lastTrustedSequence };
 }
+
+/** @deprecated Use buildTrustedAcceptedActionIndex. */
+export const buildTrustedVoteCastIndex = buildTrustedAcceptedActionIndex;
 
 /**
  * Attach trusted relatedActionRefs to groups that already contain authorized
@@ -145,89 +163,122 @@ export function resolveTrustedRefsForGroup(
   return refs;
 }
 
-function extractVoteCastEntry(
+function extractAcceptedActionEntries(
   envelope: CanonicalGameEvent,
-): TrustedCanonicalActionIndexEntry | null {
-  if (envelope.type !== VOTE_CAST) return null;
-
-  const payload = envelope.payload;
-  if (!payload || typeof payload !== "object") return null;
-  const voterId = (payload as { voterId?: unknown }).voterId;
-  if (typeof voterId !== "string" || voterId.length === 0) return null;
-
+): TrustedCanonicalActionIndexEntry[] {
+  const registry = ACCEPTED_ACTION_REGISTRY[
+    envelope.type as keyof typeof ACCEPTED_ACTION_REGISTRY
+  ];
+  if (!registry) return [];
   const pointers = envelope.sourcePointers;
-  if (!Array.isArray(pointers) || pointers.length === 0) return null;
+  if (!Array.isArray(pointers) || pointers.length === 0) return [];
 
+  const entries: TrustedCanonicalActionIndexEntry[] = [];
   for (const pointer of pointers) {
-    const extracted = entryFromPointer(envelope, voterId, pointer);
-    if (extracted) return extracted;
+    const extracted = entryFromPointer(
+      envelope,
+      registry,
+      pointer,
+    );
+    if (extracted) entries.push(extracted);
   }
-  return null;
+
+  const uniqueDecisionIds = new Set(entries.map((entry) => entry.decisionId));
+  if (registry.cardinality === "one_to_one" && uniqueDecisionIds.size > 1) {
+    return [];
+  }
+  return entries;
 }
 
 function entryFromPointer(
   envelope: CanonicalGameEvent,
-  voterId: string,
+  registry: (typeof ACCEPTED_ACTION_REGISTRY)[keyof typeof ACCEPTED_ACTION_REGISTRY],
   pointer: CanonicalSourcePointer | Record<string, unknown>,
 ): TrustedCanonicalActionIndexEntry | null {
   if (!pointer || typeof pointer !== "object") return null;
+  if (!("kind" in pointer) || pointer.kind !== "agent_turn") return null;
   const decisionId = "decisionId" in pointer ? pointer.decisionId : undefined;
   if (typeof decisionId !== "string" || decisionId.length === 0) return null;
 
   const pointerActor = "actorId" in pointer ? pointer.actorId : undefined;
-  const actorPlayerId =
-    typeof pointerActor === "string" && pointerActor.length > 0 ? pointerActor : voterId;
-  // Require pointer actor (when present) to agree with envelope voter.
-  if (typeof pointerActor === "string" && pointerActor.length > 0 && pointerActor !== voterId) {
+  if (typeof pointerActor !== "string" || pointerActor.length === 0) {
     return null;
   }
+  if (
+    registry.actorPayloadPath !== null
+    && !readPayloadPath(envelope.payload, registry.actorPayloadPath).includes(pointerActor)
+  ) return null;
 
   const pointerAction = "action" in pointer ? pointer.action : undefined;
   if (typeof pointerAction !== "string" || pointerAction.length === 0) return null;
-  // This slice only links vote.cast ↔ agent action "vote".
-  if (pointerAction !== "vote") return null;
+  const action = normalizeTraceAction(registry, pointerAction);
+  if (!action) return null;
 
   const pointerPhase = "phase" in pointer ? pointer.phase : undefined;
   const envelopePhase = envelope.phase;
-  const phase =
-    typeof pointerPhase === "string" && pointerPhase.length > 0
-      ? pointerPhase
-      : typeof envelopePhase === "string"
-        ? envelopePhase
-        : null;
   if (
-    typeof pointerPhase === "string"
-    && typeof envelopePhase === "string"
-    && pointerPhase !== envelopePhase
+    typeof pointerPhase !== "string"
+    || pointerPhase.length === 0
+    || typeof envelopePhase !== "string"
+    || pointerPhase !== envelopePhase
   ) {
     return null;
   }
 
   const pointerRound = "round" in pointer ? pointer.round : undefined;
   const envelopeRound = envelope.round;
-  const round =
-    typeof pointerRound === "number" && Number.isInteger(pointerRound)
-      ? pointerRound
-      : typeof envelopeRound === "number" && Number.isInteger(envelopeRound)
-        ? envelopeRound
-        : null;
   if (
-    typeof pointerRound === "number"
-    && typeof envelopeRound === "number"
-    && pointerRound !== envelopeRound
+    typeof pointerRound !== "number"
+    || !Number.isInteger(pointerRound)
+    || typeof envelopeRound !== "number"
+    || !Number.isInteger(envelopeRound)
+    || pointerRound !== envelopeRound
   ) {
     return null;
   }
 
   return {
     eventSequence: envelope.sequence,
-    eventType: VOTE_CAST,
+    eventType: envelope.type,
     decisionId,
-    actorPlayerId,
-    action: pointerAction,
-    phase,
-    round,
+    actorPlayerId: pointerActor,
+    action,
+    phase: pointerPhase,
+    round: pointerRound,
   };
+}
+
+function normalizeTraceAction(
+  registry: (typeof ACCEPTED_ACTION_REGISTRY)[keyof typeof ACCEPTED_ACTION_REGISTRY],
+  sourceAction: string,
+): string | null {
+  const sourceActions = registry.sourceActions as readonly string[];
+  const traceActions = registry.traceActions as readonly string[];
+  const sourceIndex = sourceActions.indexOf(sourceAction);
+  if (sourceIndex < 0) return null;
+  if (traceActions.includes(sourceAction)) return sourceAction;
+  if (traceActions.length === 1) return traceActions[0] ?? null;
+  return traceActions[sourceIndex] ?? null;
+}
+
+function readPayloadPath(payload: unknown, path: string): unknown[] {
+  let values: unknown[] = [payload];
+  for (const segment of path.split(".")) {
+    const arraySegment = segment.endsWith("[]");
+    const key = arraySegment ? segment.slice(0, -2) : segment;
+    const next: unknown[] = [];
+    for (const value of values) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const child = (value as Record<string, unknown>)[key];
+      if (arraySegment) {
+        if (Array.isArray(child)) next.push(...child);
+      } else {
+        next.push(child);
+      }
+    }
+    values = next;
+  }
+  return values;
 }
 
 function actorAgrees(memberActor: string | null | undefined, candidateActor: string): boolean {

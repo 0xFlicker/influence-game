@@ -276,7 +276,7 @@ export interface MatchNarrativeCursorFilters {
  * ownershipFingerprint while producer walks use a fixed sentinel.
  *
  * `canonicalLastTrustedSequence` pins the trusted canonical event prefix used
- * for decisionId→vote.cast linkage on this walk:
+ * for decisionId→accepted-action linkage on this walk:
  * - number ≥ 0: fresh/linked walk; continuations ignore later events and go
  *   stale if the trusted prefix shrinks below the pin
  * - null: legacy cursor without a pin (unlinked walk; reissue preserves null)
@@ -1165,7 +1165,7 @@ function encodeClaimsTuple(
   }
   const c = claims as MatchNarrativeCursorClaims;
   // Length 12 = legacy unlinked walk (no pin). Length 13 seals the pin so
-  // continuations freeze the trusted event prefix used for vote.cast linkage.
+  // continuations freeze the trusted event prefix used for accepted-action linkage.
   const base: MsgpackValue[] = [
     c.issuedAtMs,
     c.expiresAtMs,

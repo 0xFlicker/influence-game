@@ -2,8 +2,10 @@ import { and, desc, eq, or } from "drizzle-orm";
 import { createHash } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { acceptedActionDecisionRefs } from "./accepted-action-correlation.js";
 import { readEvidenceManifest, type EvidenceAccessor } from "./evidence-access.js";
 import { getDurableRunInspection, type DurableRunInspectionResponse } from "./game-durable-run.js";
+import { getTrustedCanonicalEventPrefix } from "./game-event-read-model.js";
 import {
   createPrivateTraceStorageAdapter,
   PRIVATE_TRACE_STORAGE_PROVIDER,
@@ -44,6 +46,22 @@ export interface PrivateTraceManifestIndexEntry {
   strategicDecision?: unknown;
   strategyPacket?: unknown;
   boundary?: unknown;
+}
+
+export interface PrivateTraceLinkageSummary {
+  trustedCanonicalPrefixStatus: "empty" | "complete" | "invalid";
+  eligibleAcceptedDecisionCount: number;
+  linkedAcceptedDecisionCount: number;
+  degradedAcceptedDecisionCount: number;
+  intentionallyUnlinkedTraceCount: number;
+  unclassifiedTraceCount: number;
+}
+
+export interface PrivateTraceManifestIndex {
+  gameId: string;
+  totalCount: number;
+  linkageSummary: PrivateTraceLinkageSummary;
+  manifests: PrivateTraceManifestIndexEntry[];
 }
 
 export interface PrivateTraceContentRead {
@@ -252,23 +270,50 @@ export class PrivateTraceReadModel {
     return result.ok ? result.response : null;
   }
 
-  async listManifests(gameIdOrSlug: string, limit = 50): Promise<{ gameId: string; totalCount: number; manifests: PrivateTraceManifestIndexEntry[] }> {
+  async listManifests(
+    gameIdOrSlug: string,
+    limit = 50,
+  ): Promise<PrivateTraceManifestIndex> {
     const gameId = await this.resolveGameId(gameIdOrSlug);
-    if (!gameId) return { gameId: gameIdOrSlug, totalCount: 0, manifests: [] };
+    if (!gameId) {
+      return {
+        gameId: gameIdOrSlug,
+        totalCount: 0,
+        linkageSummary: emptyLinkageSummary(),
+        manifests: [],
+      };
+    }
 
-    const rows = await this.db
-      .select()
-      .from(schema.gameEvidenceManifests)
-      .where(and(
-        eq(schema.gameEvidenceManifests.gameId, gameId),
-        eq(schema.gameEvidenceManifests.evidenceType, PRIVATE_TRACE_EVIDENCE_TYPE),
-      ))
-      .orderBy(desc(schema.gameEvidenceManifests.createdAt))
-      .limit(Math.max(1, Math.min(limit, MAX_TRACE_MANIFEST_LIMIT)));
+    const conditions = and(
+      eq(schema.gameEvidenceManifests.gameId, gameId),
+      eq(schema.gameEvidenceManifests.evidenceType, PRIVATE_TRACE_EVIDENCE_TYPE),
+    );
+    const [rows, identityRows, trustedPrefix] = await Promise.all([
+      this.db
+        .select()
+        .from(schema.gameEvidenceManifests)
+        .where(conditions)
+        .orderBy(desc(schema.gameEvidenceManifests.createdAt))
+        .limit(Math.max(1, Math.min(limit, MAX_TRACE_MANIFEST_LIMIT))),
+      this.db
+        .select({
+          ownerEpoch: schema.gameEvidenceManifests.ownerEpoch,
+          decisionId: schema.gameEvidenceManifests.decisionId,
+          eventSequence: schema.gameEvidenceManifests.eventSequence,
+        })
+        .from(schema.gameEvidenceManifests)
+        .where(conditions),
+      getTrustedCanonicalEventPrefix(this.db, gameId),
+    ]);
 
     return {
       gameId,
-      totalCount: rows.length,
+      totalCount: identityRows.length,
+      linkageSummary: summarizePrivateTraceLinkage(
+        identityRows,
+        acceptedActionDecisionRefs(trustedPrefix.events),
+        trustedPrefix.status,
+      ),
       manifests: rows.map(manifestIndexEntry),
     };
   }
@@ -422,6 +467,78 @@ export class PrivateTraceReadModel {
     this.storage ??= this.storageFactory();
     return this.storage;
   }
+}
+
+function emptyLinkageSummary(): PrivateTraceLinkageSummary {
+  return {
+    trustedCanonicalPrefixStatus: "empty",
+    eligibleAcceptedDecisionCount: 0,
+    linkedAcceptedDecisionCount: 0,
+    degradedAcceptedDecisionCount: 0,
+    intentionallyUnlinkedTraceCount: 0,
+    unclassifiedTraceCount: 0,
+  };
+}
+
+function summarizePrivateTraceLinkage(
+  manifests: ReadonlyArray<{
+    ownerEpoch: string;
+    decisionId: string | null;
+    eventSequence: number | null;
+  }>,
+  acceptedRefs: ReturnType<typeof acceptedActionDecisionRefs>,
+  trustedCanonicalPrefixStatus: "empty" | "complete" | "invalid",
+): PrivateTraceLinkageSummary {
+  const keyFor = (ownerEpoch: string, decisionId: string) => (
+    `${ownerEpoch}\u0000${decisionId}`
+  );
+  const refsByKey = new Map(
+    acceptedRefs.map((ref) => [keyFor(ref.ownerEpoch, ref.decisionId), ref]),
+  );
+  const manifestsByKey = new Map<string, Array<(typeof manifests)[number]>>();
+  let intentionallyUnlinkedTraceCount = 0;
+  let unclassifiedTraceCount = 0;
+
+  for (const manifest of manifests) {
+    if (!manifest.decisionId) {
+      intentionallyUnlinkedTraceCount += 1;
+      continue;
+    }
+    const key = keyFor(manifest.ownerEpoch, manifest.decisionId);
+    if (!refsByKey.has(key)) {
+      if (trustedCanonicalPrefixStatus === "invalid") {
+        unclassifiedTraceCount += 1;
+      } else {
+        intentionallyUnlinkedTraceCount += 1;
+      }
+      continue;
+    }
+    const rows = manifestsByKey.get(key) ?? [];
+    rows.push(manifest);
+    manifestsByKey.set(key, rows);
+  }
+
+  let linkedAcceptedDecisionCount = 0;
+  let degradedAcceptedDecisionCount = 0;
+  for (const [key, ref] of refsByKey) {
+    const exactManifestExists = (manifestsByKey.get(key) ?? []).some(
+      (manifest) => manifest.eventSequence === ref.eventSequence,
+    );
+    if (!ref.canonicalConflict && exactManifestExists) {
+      linkedAcceptedDecisionCount += 1;
+    } else {
+      degradedAcceptedDecisionCount += 1;
+    }
+  }
+
+  return {
+    trustedCanonicalPrefixStatus,
+    eligibleAcceptedDecisionCount: refsByKey.size,
+    linkedAcceptedDecisionCount,
+    degradedAcceptedDecisionCount,
+    intentionallyUnlinkedTraceCount,
+    unclassifiedTraceCount,
+  };
 }
 
 function searchResult(

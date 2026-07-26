@@ -4,11 +4,14 @@ import { Phase, type CanonicalGameEvent } from "@influence/engine";
 import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { hashCanonicalEvent } from "../services/game-events.js";
 import {
   decodeMatchNarrativeCursor,
   issueMatchNarrativeCursor,
 } from "../services/match-read-cursor.js";
 import { readMatchNarrativePage } from "../services/match-narrative-read-model.js";
+import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import { PRIVATE_TRACE_EVIDENCE_TYPE } from "../services/private-trace-writer.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import {
   insertCanonicalEventRows,
@@ -516,9 +519,11 @@ describe("match-narrative-read-model dual surface", () => {
     expect(page.correlationSummary.exactCrossLane).toBeGreaterThanOrEqual(1);
   });
 
-  test("trusted vote.cast decisionId linkage on owner and producer compact narratives", async () => {
+  test("trusted accepted-action identity agrees across owner narrative, producer narrative, and manifests", async () => {
     const fixture = await seedNarrativeGame(db);
     const decisionId = randomUUID();
+    const missingManifestDecisionId = randomUUID();
+    const intentionallyUnlinkedDecisionId = randomUUID();
     const ownerEpoch = await insertOwner(db, fixture.gameId);
 
     await insertCognition(db, {
@@ -542,6 +547,36 @@ describe("match-narrative-read-model dual surface", () => {
         decisionId,
         round: 2,
       }),
+      makeVoteCastEvent({
+        gameId: fixture.gameId,
+        sequence: 2,
+        voterId: fixture.playerB,
+        decisionId: missingManifestDecisionId,
+        round: 2,
+      }),
+    ]);
+    await db.insert(schema.gameEvidenceManifests).values([
+      {
+        id: randomUUID(),
+        gameId: fixture.gameId,
+        ownerEpoch,
+        decisionId,
+        eventSequence: 1,
+        evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
+        retentionClass: "debug",
+        accessScope: "producer_admin",
+        metadata: { action: "vote" },
+      },
+      {
+        id: randomUUID(),
+        gameId: fixture.gameId,
+        ownerEpoch,
+        decisionId: intentionallyUnlinkedDecisionId,
+        evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
+        retentionClass: "debug",
+        accessScope: "producer_admin",
+        metadata: { action: "reflection" },
+      },
     ]);
 
     const ownerPage = await readMatchNarrativePage(
@@ -589,6 +624,168 @@ describe("match-narrative-read-model dual surface", () => {
     expect(producerGroup).toBeTruthy();
     if (!producerGroup || !("actions" in producerGroup)) throw new Error("expected actions");
     expect(producerGroup.actions).toEqual([{ seq: 1, type: "vote.cast" }]);
+
+    const manifestIndex = await new PrivateTraceReadModel(db).listManifests(
+      fixture.gameId,
+    );
+    expect(manifestIndex.linkageSummary).toEqual({
+      trustedCanonicalPrefixStatus: "complete",
+      eligibleAcceptedDecisionCount: 2,
+      linkedAcceptedDecisionCount: 1,
+      degradedAcceptedDecisionCount: 1,
+      intentionallyUnlinkedTraceCount: 1,
+      unclassifiedTraceCount: 0,
+    });
+    expect(manifestIndex.manifests.find(
+      (manifest) => manifest.decisionId === decisionId,
+    )).toMatchObject({
+      decisionId,
+      eventSequence: 1,
+    });
+  });
+
+  test("links a non-vote accepted action through the full narrative read path", async () => {
+    const fixture = await seedNarrativeGame(db);
+    const decisionId = randomUUID();
+    const ownerEpoch = await insertOwner(db, fixture.gameId);
+
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "strategy",
+      decisionId,
+      action: "power",
+      phase: "POWER",
+      round: 2,
+      payload: { decisionLog: "protect Mira" },
+      createdAt: "2026-07-21T10:00:10.000Z",
+    });
+    await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
+      makePowerActionEvent({
+        gameId: fixture.gameId,
+        sequence: 1,
+        actorId: fixture.playerA,
+        decisionId,
+        round: 2,
+      }),
+    ]);
+
+    for (const [surface, subjectUserId] of [
+      ["subject_owner", fixture.ownerUserId],
+      ["producer", fixture.producerUserId],
+    ] as const) {
+      const page = await readMatchNarrativePage(
+        db,
+        {
+          gameIdOrSlug: fixture.gameId,
+          preset: "strategic",
+          schemaVersion: 2,
+          includeUnpaired: true,
+        },
+        {
+          subjectUserId,
+          surface,
+          cursorSecret: CURSOR_SECRET,
+        },
+      );
+      expect(page.ok).toBe(true);
+      if (!page.ok) continue;
+      const group = page.groups.find((candidate) => candidate.decisionId === decisionId);
+      expect(group && "actions" in group ? group.actions : undefined).toEqual([
+        { seq: 1, type: "power.action_set" },
+      ]);
+      expect(JSON.stringify(page)).not.toContain("sourcePointers");
+      expect(JSON.stringify(page)).not.toContain("\"target\"");
+    }
+  });
+
+  test("does not cite an accepted action from an invalid canonical tail", async () => {
+    const fixture = await seedNarrativeGame(db);
+    const decisionId = randomUUID();
+    const ownerEpoch = await insertOwner(db, fixture.gameId);
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      artifactType: "strategy",
+      decisionId,
+      action: "power",
+      phase: "POWER",
+      round: 2,
+      payload: { decisionLog: "protect Mira" },
+      createdAt: "2026-07-21T10:00:10.000Z",
+    });
+    await insertCanonicalEventRows(
+      db,
+      fixture.gameId,
+      ownerEpoch,
+      [
+        makeVoteCastEvent({
+          gameId: fixture.gameId,
+          sequence: 1,
+          voterId: fixture.playerB,
+          decisionId: randomUUID(),
+          round: 2,
+        }),
+        makePowerActionEvent({
+          gameId: fixture.gameId,
+          sequence: 2,
+          actorId: fixture.playerA,
+          decisionId,
+          round: 2,
+        }),
+      ],
+      {
+        eventHash: (event) => event.sequence === 2
+          ? "sha256:not-the-real-event-hash"
+          : hashCanonicalEvent(event),
+      },
+    );
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      ownerEpoch,
+      decisionId,
+      eventSequence: 2,
+      evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: { action: "power" },
+    });
+
+    const page = await readMatchNarrativePage(
+      db,
+      {
+        gameIdOrSlug: fixture.gameId,
+        preset: "strategic",
+        schemaVersion: 2,
+        includeUnpaired: true,
+      },
+      {
+        subjectUserId: fixture.ownerUserId,
+        surface: "subject_owner",
+        cursorSecret: CURSOR_SECRET,
+      },
+    );
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+    const group = page.groups.find((candidate) => candidate.decisionId === decisionId);
+    expect(group && "actions" in group ? group.actions : undefined).toBeUndefined();
+
+    const manifestIndex = await new PrivateTraceReadModel(db).listManifests(
+      fixture.gameId,
+    );
+    expect(manifestIndex.linkageSummary).toEqual({
+      trustedCanonicalPrefixStatus: "invalid",
+      eligibleAcceptedDecisionCount: 1,
+      linkedAcceptedDecisionCount: 0,
+      degradedAcceptedDecisionCount: 1,
+      intentionallyUnlinkedTraceCount: 0,
+      unclassifiedTraceCount: 1,
+    });
   });
 
   test("non-owned cognition does not emit vote.cast citation on owner surface", async () => {
@@ -1132,6 +1329,40 @@ function makeVoteCastEvent(params: {
       voterId: params.voterId,
       empowerTarget: params.empowerTarget ?? randomUUID(),
       exposeTarget: params.exposeTarget ?? randomUUID(),
+    },
+  };
+}
+
+function makePowerActionEvent(params: {
+  gameId: string;
+  sequence: number;
+  actorId: string;
+  decisionId: string;
+  round: number;
+}): CanonicalGameEvent {
+  return {
+    sequence: params.sequence,
+    gameId: params.gameId,
+    round: params.round,
+    phase: Phase.POWER,
+    type: "power.action_set",
+    timestamp: "2026-07-21T12:00:00.000Z",
+    source: "engine",
+    visibility: "producer",
+    payloadVersion: 1,
+    sourcePointers: [{
+      kind: "agent_turn",
+      actorId: params.actorId,
+      action: "power-action",
+      round: params.round,
+      phase: Phase.POWER,
+      decisionId: params.decisionId,
+    }],
+    payload: {
+      action: {
+        action: "protect",
+        target: randomUUID(),
+      },
     },
   };
 }

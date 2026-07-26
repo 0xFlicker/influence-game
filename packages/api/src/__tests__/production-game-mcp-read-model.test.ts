@@ -1404,6 +1404,14 @@ describe("ProductionGameMcpReadModel", () => {
     expect(asRecord(manifests.developerEvidence)).toMatchObject({
       gameId,
       totalCount: 1,
+      linkageSummary: {
+        trustedCanonicalPrefixStatus: "empty",
+        eligibleAcceptedDecisionCount: 0,
+        linkedAcceptedDecisionCount: 0,
+        degradedAcceptedDecisionCount: 0,
+        intentionallyUnlinkedTraceCount: 1,
+        unclassifiedTraceCount: 0,
+      },
       manifests: [{
         id: manifestId,
         gameId,
