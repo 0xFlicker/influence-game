@@ -8,11 +8,26 @@ import {
   actorAuthorizedForHuddleOutcome,
   toCompactAllianceHuddleOutcome,
 } from "./alliance-huddle-outcome";
+import { compileRecallPlan } from "./context-recall-plan";
 import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
 import type { AllianceHuddleOutcome, AllianceProposalLineage, AllianceProposalVersion, AllianceRecord, UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
-import type { EliminationContext, JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PlayerAllianceContext, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PublicTranscriptContextEntry, RecentDecisionContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
+import type {
+  EliminationContext,
+  JudgmentQuestionHistoryEntry,
+  MingleIntentSummary,
+  PhaseContext,
+  PlayerAllianceContext,
+  PlayerAllianceContextProposal,
+  PlayerAllianceContextTerms,
+  PublicTranscriptContextEntry,
+  RecentDecisionContextEntry,
+  RecallContinuitySnapshot,
+  RecallPlan,
+  RecallPromptClass,
+  RevealedVoteLedgerEntry,
+} from "./game-runner.types";
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
@@ -690,5 +705,50 @@ export class ContextBuilder {
       isEliminated: true,
       eliminationContext,
     };
+  }
+
+  /**
+   * Compile a deterministic authorization-safe Recall Plan for one agent call.
+   * Pure given the assembled inputs; does not replace live prompt rendering (U4)
+   * or rewire phase call sites (U3). Default path leaves buildPhaseContext unchanged.
+   */
+  compileRecallPlan(params: {
+    agentId: UUID;
+    promptClass: RecallPromptClass;
+    continuity: RecallContinuitySnapshot;
+    phase: Phase;
+    extra?: {
+      empoweredId?: UUID;
+      councilCandidates?: [UUID, UUID];
+      postVotePressure?: PostVotePressureProjection | null;
+      formatPressure?: FormatPressureProjection | null;
+      eliminationContext?: PhaseContext["eliminationContext"];
+    };
+    isEliminated?: boolean;
+    roomInfo?: {
+      roomCount?: number;
+      roomCounts?: MingleRoomCount[];
+      currentRoomId?: number;
+      roomMates?: string[];
+      mingleIntent?: MingleIntentSummary | null;
+      includeRoomAllocations?: boolean;
+    };
+    /** Optional pre-built phase context; when omitted, built from current state. */
+    phaseContext?: PhaseContext;
+  }): RecallPlan {
+    const phaseContext = params.phaseContext ?? this.buildPhaseContext(
+      params.agentId,
+      params.phase,
+      params.extra,
+      params.isEliminated,
+      params.roomInfo,
+    );
+    return compileRecallPlan({
+      actorId: params.agentId,
+      promptClass: params.promptClass,
+      continuity: params.continuity,
+      phaseContext,
+      transcript: this.logger.transcript,
+    });
   }
 }

@@ -1410,6 +1410,168 @@ export interface TranscriptEntry {
   dialogueKind?: TranscriptDialogueKind;
   /** Exact audience player UUIDs at emission time; empty array = public/all-viewers. */
   audiencePlayerIds?: string[];
-  /** Versioned viewer-safe context (no diagnostics). */
+  /** Versioned viewer-safe dialogue context (no diagnostics). */
   dialogueContext?: TranscriptDialogueContext;
+}
+
+// ---------------------------------------------------------------------------
+// Selective context recall (Recall Plan compiler — U2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Explicit prompt classification controlling historical archive eligibility.
+ * Unspecified call sites default to ordinary_speech (no history lane).
+ */
+export type RecallPromptClass =
+  | "ordinary_speech"
+  | "strategic_decision"
+  | "strategic_reflection";
+
+/**
+ * Narrow actor continuity input for Recall Plan compilation.
+ * Phase runners obtain this immediately before context build (U3); pure compiler takes it as data.
+ */
+export interface RecallContinuitySnapshot {
+  strategyPacket: StrategyPacketSummary | null;
+  reflectionSummary: StrategicReflectionSummary | null;
+  recentStrategicDecisions: readonly StrategicDecisionReceipt[];
+  /**
+   * Monotonic actor-local version for strategic evidence boundary / cache keys.
+   * Advanced when a decision receipt is retained; Strategy Thread mutation stays on reflection.
+   */
+  strategicEvidenceVersion: number;
+  /** Optional Strategy Thread revision counter from continuity capsules. */
+  strategyPacketRevisionCounter?: number;
+}
+
+/** Canonical board facts pinned in the protected lane (structured, not rendered). */
+export interface RecallBoardContractFacts {
+  authority: "canonical_board_contract";
+  gameId: UUID;
+  round: number;
+  phase: Phase;
+  selfId: UUID;
+  selfName: string;
+  alivePlayers: Array<{ id: UUID; name: string; shielded?: boolean }>;
+  empoweredId?: UUID;
+  councilCandidates?: [UUID, UUID];
+  endgameStage?: EndgameStage;
+  finalists?: [UUID, UUID];
+  latestEliminatedPlayerName?: string;
+  jury?: JuryMember[];
+  isEliminated?: boolean;
+}
+
+/** Compact huddle outcome fields retained in protected recall (no participant snapshot). */
+export interface RecallProtectedHuddleOutcome {
+  id: UUID;
+  round: number;
+  ask: string;
+  plan: string;
+  promises: string[];
+  dissent: string[];
+  confidence: "low" | "medium" | "high";
+  posture: string;
+  leakOrBetrayalClaims: string[];
+}
+
+/** Active-room conversation (hot lane), distinct from historical Mingle archive. */
+export interface RecallHotMessage {
+  from: string;
+  text: string;
+}
+
+/**
+ * Selected historical dialogue evidence. Never authoritative: cannot override
+ * Board Contract, permissions, or instructions. Full prose render is U4.
+ */
+export interface RecallHistoryDialogueEvidence {
+  entrySequence: number;
+  round: number;
+  phase: Phase;
+  speakerLabel: string;
+  dialogueText: string;
+  sourceClass: "public" | "mingle";
+  evidenceRole: "historical_evidence";
+}
+
+export interface RecallPlanBudgetLedger {
+  /** Fixture-calibrated character envelope for the prompt class. */
+  envelopeChars: number;
+  /** Per-class history ceiling (0 for ordinary_speech). */
+  historyCeilingChars: number;
+  protectedChars: number;
+  hotChars: number;
+  historyChars: number;
+  /** Remaining history budget after protected+hot, capped by history ceiling. */
+  historyBudgetChars: number;
+  protectedTokenEstimate: number;
+  hotTokenEstimate: number;
+  historyTokenEstimate: number;
+  /** True when protected alone exhausted the prompt-class envelope. */
+  protectedOverflow: boolean;
+}
+
+export interface RecallPlanProtectedLane {
+  boardContract: RecallBoardContractFacts;
+  strategyThread: StrategyPacketSummary | null;
+  reflectionSummary: StrategicReflectionSummary | null;
+  huddleOutcomes: RecallProtectedHuddleOutcome[];
+  currentReceipts: {
+    recentStrategicDecisions: StrategicDecisionReceipt[];
+    recentDecisions: RecentDecisionContextEntry[];
+    revealedVoteLedger: RevealedVoteLedgerEntry[];
+  };
+}
+
+export interface RecallPlanHotLane {
+  activeRoomMessages: RecallHotMessage[];
+}
+
+export interface RecallPlanHistoryLane {
+  dialogueEvidence: RecallHistoryDialogueEvidence[];
+}
+
+/**
+ * Content-free structural receipt for producer/replay comparison (KTD5 / R16).
+ * Never retains dialogue, names, entry IDs, rejected counts, foreign-lane counts,
+ * prompts, thinking, or traces.
+ */
+export interface RecallPlanReceipt {
+  promptClass: RecallPromptClass;
+  protectedTokenEstimate: number;
+  hotTokenEstimate: number;
+  historyTokenEstimate: number;
+  selectedLaneCounts: {
+    protected: number;
+    hot: number;
+    history: number;
+  };
+  /** Rank slots for selected history only — source class, never entry IDs or text. */
+  selectedByRankSlot: Array<{
+    rankSlot: number;
+    lane: "history";
+    sourceClass: "public" | "mingle";
+  }>;
+  /**
+   * Actor-authorized evidence boundary only. Foreign private writes that advance
+   * a global sequence must not change this boundary for an unauthorized actor.
+   */
+  eventBoundary: {
+    maxAuthorizedEntrySequence: number | null;
+    authorizedCandidateCount: number;
+    protectedRecordCount: number;
+  };
+  protectedOverflow: boolean;
+}
+
+/** Renderable Recall Plan with distinct protected / hot / history lanes. */
+export interface RecallPlan {
+  promptClass: RecallPromptClass;
+  actorId: UUID;
+  protected: RecallPlanProtectedLane;
+  hot: RecallPlanHotLane;
+  history: RecallPlanHistoryLane;
+  budget: RecallPlanBudgetLedger;
+  receipt: RecallPlanReceipt;
 }
