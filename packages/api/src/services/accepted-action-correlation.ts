@@ -11,7 +11,6 @@ import { getPersistedGameEvents } from "./game-event-read-model.js";
 import { rebuildPromptReuseRollupInTransaction } from "./prompt-reuse-accounting.js";
 import { PRIVATE_TRACE_EVIDENCE_TYPE } from "./private-trace-writer.js";
 
-type CorrelationTx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type CorrelationReadDB = Pick<DrizzleDB, "select">;
 
 export interface AcceptedActionDecisionRef {

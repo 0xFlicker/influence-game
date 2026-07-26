@@ -655,7 +655,7 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const votes = await agent.getVotes(makeContext(Phase.VOTE));
+    await agent.getVotes(makeContext(Phase.VOTE));
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.map((message) => message.content).join("\n");
