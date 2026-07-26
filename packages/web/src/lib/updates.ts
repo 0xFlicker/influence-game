@@ -1,5 +1,6 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { basename, join } from "node:path";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { basename, dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import matter from "gray-matter";
 
 export type UpdatePost = {
@@ -14,8 +15,28 @@ export type UpdatePost = {
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** Production content directory (package-relative, not process.cwd()). */
-export const UPDATES_CONTENT_DIR = join(import.meta.dir, "../../content/updates");
+/**
+ * Resolve content dir for Bun tests, Next/Turbopack dev, and monorepo roots.
+ * Prefer module-relative path (import.meta.url); fall back to cwd variants.
+ * Do not use Bun-only `import.meta.dir` — it is undefined under Next.js.
+ */
+function resolveUpdatesContentDir(): string {
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const candidates = [
+    join(moduleDir, "../../content/updates"),
+    join(process.cwd(), "content/updates"),
+    join(process.cwd(), "packages/web/content/updates"),
+  ];
+  for (const dir of candidates) {
+    if (existsSync(dir)) {
+      return dir;
+    }
+  }
+  return candidates[0] ?? join(moduleDir, "../../content/updates");
+}
+
+/** Production content directory (package-relative when possible). */
+export const UPDATES_CONTENT_DIR = resolveUpdatesContentDir();
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
