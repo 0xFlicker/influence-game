@@ -11,7 +11,7 @@ import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
-import { GameRunner, Phase } from "@influence/engine";
+import { GameRunner, GameState, Phase, projectViewerDecisionEvent } from "@influence/engine";
 import type { AgentResponse, IAgent, MingleIntentAction, PhaseContext, StrategicReflectionAction, TargetDecision } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
@@ -240,6 +240,26 @@ describe("game run failure classification", () => {
     expect(game?.status).toBe("in_progress");
   });
 });
+
+function safetyBouncePointerFixture(gameId: string) {
+  const state = new GameState(
+    [
+      { id: "atlas", name: "Atlas" },
+      { id: "echo", name: "Echo" },
+      { id: "mira", name: "Mira" },
+      { id: "nyx", name: "Nyx" },
+    ],
+    { gameId, now: () => 1_720_000_000_000 },
+  );
+  state.startRound();
+  state.recordFormatMenu("atlas", ["safety_bounce", "vote_bomb"]);
+  state.recordFormatSelected("atlas", "safety_bounce");
+  state.recordSafetyBounceStarted("atlas");
+  state.recordSafetyBouncePointer("atlas", "echo", "vulnerable");
+  state.recordSafetyBouncePointer("echo", "mira", "safe");
+  state.recordSafetyBouncePointer("mira", "nyx", "vulnerable");
+  return state.getCanonicalEvents();
+}
 
 // ---------------------------------------------------------------------------
 // Provider preflight
@@ -508,7 +528,7 @@ describe("Game lifecycle integration", () => {
     return ws;
   }
 
-  test("appendDurableEventsAndPublishWatchState publishes persisted watch state after append", async () => {
+  test("appendDurableEventsAndPublishWatchState publishes viewer decisions after durability, then watch state", async () => {
     const db = await setupTestDB();
     const gameId = await insertGame(db, {
       slug: "lifecycle-watch-state",
@@ -536,10 +556,21 @@ describe("Game lifecycle integration", () => {
       handleClose(observer);
     }
 
-    expect(published).toHaveLength(1);
-    expect(published[0]!.topic).toBe(`game:${gameId}`);
-    const parsed = JSON.parse(published[0]!.data);
-    expect(parsed).toMatchObject({
+    const outbound = published.map((message) => ({
+      topic: message.topic,
+      body: JSON.parse(message.data),
+    }));
+    const viewerEvents = outbound.filter((message) => message.body.type === "viewer_decision_event");
+    const expectedViewerEvents = events.flatMap((event) => {
+      const viewerEvent = projectViewerDecisionEvent(event);
+      return viewerEvent ? [viewerEvent] : [];
+    });
+
+    expect(viewerEvents.map((message) => message.topic)).toEqual(
+      expectedViewerEvents.map(() => `game:${gameId}`),
+    );
+    expect(viewerEvents.map((message) => message.body.event)).toEqual(expectedViewerEvents);
+    expect(outbound.at(-1)?.body).toMatchObject({
       type: "watch_state",
       state: {
         gameId,
@@ -551,6 +582,53 @@ describe("Game lifecycle integration", () => {
         },
       },
     });
+  });
+
+  test("publishes a multi-pointer Safety Bounce batch in canonical order and does not repeat an idempotent retry", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = safetyBouncePointerFixture(gameId);
+    const published: Array<{ topic: string; data: string }> = [];
+    setServer({ publish(topic: string, data: string) { published.push({ topic, data }); } });
+
+    await appendDurableEventsAndPublishWatchState(db, { gameId, ownerEpoch, events });
+    const firstViewerSequences = published
+      .map((message) => JSON.parse(message.data))
+      .filter((message) => message.type === "viewer_decision_event")
+      .map((message) => message.event.sequence);
+    const pointerSequences = events
+      .filter((event) => event.type === "format.safety_bounce_pointer")
+      .map((event) => event.sequence);
+
+    expect(firstViewerSequences).toEqual([...firstViewerSequences].sort((left, right) => left - right));
+    expect(firstViewerSequences).toEqual(expect.arrayContaining(pointerSequences));
+
+    await appendDurableEventsAndPublishWatchState(db, { gameId, ownerEpoch, events });
+    const retriedViewerSequences = published
+      .map((message) => JSON.parse(message.data))
+      .filter((message) => message.type === "viewer_decision_event")
+      .map((message) => message.event.sequence);
+    expect(retriedViewerSequences).toEqual(firstViewerSequences);
+  });
+
+  test("does not publish a viewer decision when durable append fails", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const event = createCanonicalEventFixture(gameId)[0]!;
+    const published: Array<{ topic: string; data: string }> = [];
+    setServer({ publish(topic: string, data: string) { published.push({ topic, data }); } });
+
+    await expect(appendDurableEventsAndPublishWatchState(db, {
+      gameId,
+      ownerEpoch,
+      events: [{ ...event, sequence: 2 }],
+    })).rejects.toThrow("Non-contiguous canonical event sequence");
+
+    expect(published.filter((message) => (
+      JSON.parse(message.data).type === "viewer_decision_event"
+    ))).toHaveLength(0);
   });
 
   test("serializeTranscriptEntry preserves room metadata", () => {

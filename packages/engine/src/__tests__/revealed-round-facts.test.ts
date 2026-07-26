@@ -231,7 +231,7 @@ describe("buildRevealedRoundFacts", () => {
     expect(json).not.toContain("rawProviderResponse");
   });
 
-  it("exposes public Save-or-Eliminate aggregates without voter→ballot mappings", () => {
+  it("exposes the complete Save-or-Eliminate ledger to every viewer audience", () => {
     const state = createGameState();
     state.startRound();
     state.recordFormatMenu("alice", ["save_or_eliminate", "vote_bomb"]);
@@ -287,7 +287,28 @@ describe("buildRevealedRoundFacts", () => {
     expect(format.tied.map((p) => p.id)).toEqual(["bob", "charlie"]);
     expect(format.tiebreaker).toEqual({ id: "alice", name: "Alice" });
     expect(format.saveOrEliminate?.nets.find((row) => row.player.id === "bob")?.votes).toBe(-2);
-    expect(format.sealedBallots).toEqual([]);
+    expect(format.sealedBallots).toEqual([
+      {
+        voter: { id: "alice", name: "Alice" },
+        target: { id: "bob", name: "Bob" },
+        polarity: "eliminate",
+      },
+      {
+        voter: { id: "bob", name: "Bob" },
+        target: { id: "charlie", name: "Charlie" },
+        polarity: "save",
+      },
+      {
+        voter: { id: "charlie", name: "Charlie" },
+        target: { id: "bob", name: "Bob" },
+        polarity: "eliminate",
+      },
+      {
+        voter: { id: "dave", name: "Dave" },
+        target: { id: "bob", name: "Bob" },
+        polarity: "eliminate",
+      },
+    ]);
     expect(format.sealedBallotAccess).toBe("public");
     // Format-kernel omits classic Power/Council keys entirely.
     expect(publicRead.roundFacts.power).toBeUndefined();
@@ -304,28 +325,19 @@ describe("buildRevealedRoundFacts", () => {
       round: 1,
       ballotAccess: { mode: "owner", ownedPlayerIds: ["alice"] },
     });
-    expect(ownerRead.roundFacts.format.sealedBallotAccess).toBe("owner");
-    expect(ownerRead.roundFacts.format.sealedBallots).toEqual([
-      {
-        voter: { id: "alice", name: "Alice" },
-        target: { id: "bob", name: "Bob" },
-        polarity: "eliminate",
-      },
-    ]);
+    expect(ownerRead.roundFacts.format.sealedBallotAccess).toBe("public");
+    expect(ownerRead.roundFacts.format.sealedBallots).toEqual(format.sealedBallots);
 
     const producerRead = buildRevealedRoundFacts({
       events: state.getCanonicalEvents(),
       round: 1,
       ballotAccess: { mode: "producer" },
     });
-    expect(producerRead.roundFacts.format.sealedBallotAccess).toBe("producer");
-    expect(producerRead.roundFacts.format.sealedBallots).toHaveLength(4);
-    expect(
-      producerRead.roundFacts.format.sealedBallots.map((b) => b.voter.id).sort(),
-    ).toEqual(["alice", "bob", "charlie", "dave"]);
+    expect(producerRead.roundFacts.format.sealedBallotAccess).toBe("public");
+    expect(producerRead.roundFacts.format.sealedBallots).toEqual(format.sealedBallots);
   });
 
-  it("exposes public Vote Bomb aggregates and zero-safe set without sealed mappings", () => {
+  it("exposes Vote Bomb aggregates and null-polarity ledger before resolution", () => {
     const state = createGameState();
     state.startRound();
     state.recordFormatMenu("bob", ["vote_bomb", "safety_bounce"]);
@@ -337,6 +349,31 @@ describe("buildRevealedRoundFacts", () => {
         targetId: voter === "dave" ? "alice" : "charlie",
       });
     }
+    const beforeResolution = buildRevealedRoundFacts({ events: state.getCanonicalEvents(), round: 1 });
+    expect(beforeResolution.roundFacts.format.eliminated).toBeNull();
+    expect(beforeResolution.roundFacts.format.sealedBallots).toEqual([
+      {
+        voter: { id: "alice", name: "Alice" },
+        target: { id: "charlie", name: "Charlie" },
+        polarity: null,
+      },
+      {
+        voter: { id: "bob", name: "Bob" },
+        target: { id: "charlie", name: "Charlie" },
+        polarity: null,
+      },
+      {
+        voter: { id: "charlie", name: "Charlie" },
+        target: { id: "charlie", name: "Charlie" },
+        polarity: null,
+      },
+      {
+        voter: { id: "dave", name: "Dave" },
+        target: { id: "alice", name: "Alice" },
+        polarity: null,
+      },
+    ]);
+
     state.recordFormatResolution({
       formatId: "vote_bomb",
       empoweredId: "bob",
@@ -356,7 +393,7 @@ describe("buildRevealedRoundFacts", () => {
     expect(read.roundFacts.format.selectedFormatId).toBe("vote_bomb");
     expect(read.roundFacts.format.voteBomb?.zeroSafe.map((p) => p.id).sort()).toEqual(["bob", "dave"]);
     expect(read.roundFacts.format.voteBomb?.totals.find((row) => row.player.id === "charlie")?.votes).toBe(3);
-    expect(read.roundFacts.format.sealedBallots).toEqual([]);
+    expect(read.roundFacts.format.sealedBallots).toEqual(beforeResolution.roundFacts.format.sealedBallots);
   });
 
   it("exposes Safety Bounce public chain, sole-vulnerable auto-elim, and live in-progress facts", () => {

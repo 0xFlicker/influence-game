@@ -237,7 +237,7 @@ export class ContextBuilder {
       case "format.selected":
         return `${prefix}: ${this.name(event.payload.empoweredId)} locked format ${event.payload.formatId}.`;
       case "format.ballot_cast":
-        // Producer-only envelope; agent context should not narrate sealed ballots.
+        // The viewer ledger is public, but in-game agents never receive mappings.
         return `${prefix}: Format ballot recorded (sealed).`;
       case "format.safety_bounce_started":
         return `${prefix}: Safety Bounce started by ${this.name(event.payload.starterId)} (SAFE).`;

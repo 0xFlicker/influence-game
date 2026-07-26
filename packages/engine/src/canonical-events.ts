@@ -361,6 +361,12 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "round.result_recorded",
 ]);
 
+/**
+ * Canonical events are accepted domain facts. `sourcePointers` deliberately
+ * remain raw-envelope provenance; viewer/replay consumers must use the narrow
+ * allowlisted projector in `viewer-decision-events.ts`, never transcript prose
+ * or a copied canonical payload.
+ */
 export interface CanonicalEventEnvelope<
   TType extends CanonicalGameEventType = CanonicalGameEventType,
   TPayload extends object = Record<string, unknown>,
@@ -380,7 +386,8 @@ export interface CanonicalEventEnvelope<
 
 /**
  * Public format-resolution aggregates. Never include voter→ballot mappings;
- * sealed ballots live on producer-only `format.ballot_cast` events.
+ * `format.ballot_cast` carries the per-voter facts and viewer read paths expose
+ * only its sanitized projection, never the raw producer envelope.
  */
 export type FormatResolutionPayload = {
   formatId: LaunchFormatId;

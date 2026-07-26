@@ -122,7 +122,9 @@ function buildVoteColumns(results: CompletedGameResultsRead): CompletedResultsVo
     const facts = round.canonicalFacts.roundFacts;
     if (facts.standardVote.ledger.length > 0) {
       columns.push({ id: `r${round.round}:empower`, label: `Round ${round.round} empower`, shortLabel: `R${round.round} E+`, round: round.round, kind: "empower" });
-      columns.push({ id: `r${round.round}:expose`, label: `Round ${round.round} expose`, shortLabel: `R${round.round} X`, round: round.round, kind: "expose" });
+      if (facts.standardVote.ledger.some((entry) => entry.exposeTarget)) {
+        columns.push({ id: `r${round.round}:expose`, label: `Round ${round.round} expose`, shortLabel: `R${round.round} X`, round: round.round, kind: "expose" });
+      }
     }
     if ((facts.council?.ledger.length ?? 0) > 0) {
       columns.push({ id: `r${round.round}:council`, label: `Round ${round.round} council`, shortLabel: `R${round.round} C`, round: round.round, kind: "council" });
@@ -161,7 +163,9 @@ function buildCellLookup(results: CompletedGameResultsRead): Map<string, Omit<Co
     const facts = round.canonicalFacts.roundFacts;
     for (const entry of facts.standardVote.ledger) {
       setCell(cells, `r${round.round}:empower`, entry.voter, entry.empowerTarget);
-      setCell(cells, `r${round.round}:expose`, entry.voter, entry.exposeTarget);
+      if (entry.exposeTarget) {
+        setCell(cells, `r${round.round}:expose`, entry.voter, entry.exposeTarget);
+      }
     }
     for (const entry of facts.council?.ledger ?? []) {
       setCell(cells, `r${round.round}:council`, entry.voter, entry.target);
@@ -270,7 +274,9 @@ function leadingHostileTargets(results: CompletedGameResultsRead): Set<string> {
   const counts = new Map<string, number>();
   for (const round of results.rounds) {
     for (const entry of round.canonicalFacts.roundFacts.standardVote.ledger) {
-      increment(counts, entry.exposeTarget.id);
+      if (entry.exposeTarget) {
+        increment(counts, entry.exposeTarget.id);
+      }
     }
     // Format-kernel rounds have no Council; absent Council facts mean no votes to count.
     for (const entry of round.canonicalFacts.roundFacts.council?.ledger ?? []) {

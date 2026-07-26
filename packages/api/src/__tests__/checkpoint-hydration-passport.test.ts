@@ -963,7 +963,9 @@ describe("checkpoint hydration passport validator", () => {
       {
         gameId,
         tokenTracker,
-        durableEventSink: (events) => appendGameEvents(db, { gameId, ownerEpoch, events }),
+        durableEventSink: async (events) => {
+          await appendGameEvents(db, { gameId, ownerEpoch, events });
+        },
         durableCheckpointSink: async (checkpoint) => {
           const result = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
           expect(result.ok).toBeTrue();

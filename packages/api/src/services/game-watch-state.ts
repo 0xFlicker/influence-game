@@ -2,7 +2,9 @@ import {
   applyCanonicalEvent,
   buildPostVotePressureProjection,
   createEmptyProjection,
+  projectViewerDecisionEvent,
   type PostVotePressureStatus,
+  type ViewerDecisionEvent,
 } from "@influence/engine";
 import { asc, eq, or } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
@@ -127,7 +129,7 @@ export interface GameWatchState {
 }
 
 export interface GameWatchReplayFrame {
-  schemaVersion: 2;
+  schemaVersion: 2 | 3;
   gameId: string;
   slug: string;
   sequence: number;
@@ -137,6 +139,16 @@ export interface GameWatchReplayFrame {
   phase: string;
   players: GameWatchPlayer[];
   counts: GameWatchState["counts"];
+  /**
+   * Additive v3 decision data. The frame remains a v3 player snapshot even
+   * when its canonical event is not a viewer decision.
+   */
+  viewerDecisionEvent?: ViewerDecisionEvent;
+}
+
+export interface GameWatchReplayFrameOptions {
+  /** Return only frames after this trusted canonical sequence. */
+  afterSequence?: number;
 }
 
 interface GameRow {
@@ -266,7 +278,12 @@ export async function buildGameWatchState(
 export async function getGameWatchReplayFrames(
   db: GameWatchDB,
   idOrSlug: string,
+  options: GameWatchReplayFrameOptions = {},
 ): Promise<GameWatchReplayFrame[] | null> {
+  const afterSequence = options.afterSequence ?? 0;
+  if (!Number.isInteger(afterSequence) || afterSequence < 0) {
+    throw new Error("afterSequence must be a non-negative integer");
+  }
   const game = (await db
     .select({
       id: schema.games.id,
@@ -291,6 +308,8 @@ export async function getGameWatchReplayFrames(
 
   for (const event of persistedEvents.events) {
     projection = applyCanonicalEvent(projection, event.envelope);
+    if (event.sequence <= afterSequence) continue;
+
     const summary = summarizeCanonicalProjection(projection);
     const pressureByPlayerId = buildPressureByPlayerId(summary);
     const framePlayers = buildProjectedPlayers(
@@ -298,8 +317,9 @@ export async function getGameWatchReplayFrames(
       summary.players.players,
       pressureByPlayerId,
     );
+    const viewerDecisionEvent = projectViewerDecisionEvent(event.envelope);
     frames.push({
-      schemaVersion: 2,
+      schemaVersion: 3,
       gameId: game.id,
       slug: game.slug,
       sequence: event.sequence,
@@ -309,6 +329,7 @@ export async function getGameWatchReplayFrames(
       phase: summary.phase ?? "INIT",
       players: framePlayers,
       counts: countPlayers(framePlayers),
+      ...(viewerDecisionEvent && { viewerDecisionEvent }),
     });
   }
 

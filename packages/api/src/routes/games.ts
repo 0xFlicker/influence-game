@@ -12,7 +12,7 @@
  *   PATCH  /api/games/:id/unhide — admin restore hidden game
  *   GET    /api/games/:id/alliances — public named-alliance facts
  *   GET    /api/games/:id/transcript — full transcript export
- *   GET    /api/games/:id/replay-watch-frames — structured replay watch states
+ *   GET    /api/games/:id/replay-watch-frames — trusted structured replay/catch-up frames
  */
 
 import { Hono, type Context } from "hono";
@@ -1184,32 +1184,22 @@ export function createGameRoutes(
   });
 
   // -------------------------------------------------------------------------
-  // GET /api/games/:id/replay-watch-frames — structured replay watch states
+  // GET /api/games/:id/replay-watch-frames — trusted replay or live catch-up frames
   // -------------------------------------------------------------------------
 
   app.get("/api/games/:id/replay-watch-frames", async (c) => {
     const idOrSlug = c.req.param("id");
-
-    const game = (await db
-      .select({
-        id: schema.games.id,
-        slug: schema.games.slug,
-        status: schema.games.status,
-      })
-      .from(schema.games)
-      .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
-      .limit(1))[0];
-
-    if (!game) {
-      return c.json({ error: "Game not found" }, 404);
+    const afterSequenceParam = c.req.query("afterSequence");
+    const afterSequence = afterSequenceParam === undefined
+      ? 0
+      : Number(afterSequenceParam);
+    if (!Number.isInteger(afterSequence) || afterSequence < 0) {
+      return c.json({ error: "afterSequence must be a non-negative integer" }, 400);
     }
 
-    if (game.status !== "completed" && game.status !== "cancelled") {
-      return c.json({ error: "Replay watch frames are only available after replay is public" }, 403);
-    }
-
-    const frames = await getGameWatchReplayFrames(db, idOrSlug);
-    return c.json(frames ?? []);
+    const frames = await getGameWatchReplayFrames(db, idOrSlug, { afterSequence });
+    if (!frames) return c.json({ error: "Game not found" }, 404);
+    return c.json(frames);
   });
 
   return app;

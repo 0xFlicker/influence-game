@@ -8,6 +8,8 @@ Private `thinking` + model-side reasoning evidence are captured so that bounded 
 
 This observability layer exists because "master wants to see reasoning for voting as well" and equivalent signals for format decisions. Public player messages stay clean. Player-private cognitive lanes may store the agent's own reasoning and strategy reflections for the relevant player/participants. Producer-private trace lanes additionally store provider profile, model/catalog IDs, requested reasoning effort, reasoning policy, full prompt request, raw provider response, observed provider reasoning metadata, usage counts, and router billing fields when available. Provider wrappers, prompts, responses, storage keys, source pointers, and private trace manifests stay in producer/debug surfaces. Thinking, reasoning context, decision logs, and model provenance explain an attempted decision; they are never canonical board facts. Accepted events and replayable projections remain authoritative for what happened.
 
+Canonical events and their projections are the only authority for accepted decisions, tallies, phase transitions, results, and replay choreography. Transcript prose remains displayable dialogue and observability; it must never be parsed back into a board fact or used to repair an event gap. For format ballots, **sealed means hidden from the in-game agents' context**. Once a ballot is durably appended, every authorized viewer and MCP game reader receives the complete sanitized voter → target → polarity ledger. That viewer fact excludes cognition, decision IDs, source pointers, traces, prompts, and raw envelopes; it does not feed the ledger back into an in-game agent.
+
 For `--flex` simulations, the batch summary also aggregates the effective OpenAI service tier returned by every successful provider response. That producer/debug metadata supports tier-aware run-cost estimates, visibly separates auto/default fallback from Flex, and produces a Flex-normalized comparison across the selectable hosted OpenAI models. Resource-unavailable 429 attempts do not create usage entries.
 
 ## Architecture / Data Flow
@@ -47,8 +49,8 @@ Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed o
 Phase runners receive the rich result, record only the narrow game-state value when required, then forward the reasoning fields:
 
 - `phases/vote.ts`: `logger.logSystem(..., votes.thinking, votes.reasoningContext)`
-- `phases/format-kernel.ts`: emits `format-pick` for `pickRoundFormat`, `format-ballot` for both Save-or-Eliminate and Vote Bomb ballots plus the final Safety Bounce vote, `bounce-pointer` for each public Safety Bounce pointer, and `format-tiebreak` when the empowered player resolves an elimination tie. Each normalized response includes `decisionSource` and nullable `fallbackReason`. **Sealed is player-facing only:** operator/sim `format-ballot` turn `text` and House rollup lines include the actual ballot (e.g. `Atlas sealed ballot: ELIMINATE → Echo`) so `--chatty` and turns JSONL remain legible; player elimination-message disclosure still uses counts only without voter names. Safety Bounce pointer prompts state the acting player's computed status and its exact opposite-status consequence: a SAFE actor makes the target VULNERABLE, while a VULNERABLE actor makes the target SAFE. Treat any `thinking` or `reasoningContext` that contradicts the recorded `response.classification` as a reasoning-quality failure; the accepted response and canonical board remain authoritative.
-- `phases/elimination.ts`: commits `player.eliminated` before calling the eliminated agent's dedicated `elimination_message` tool, then emits one public `elimination-message` turn and `player.elimination_message_recorded` event. Public-vote disclosure may include voter names. Sealed format disclosure contains counts only and must not inherit named ballot lines from the general system transcript.
+- `phases/format-kernel.ts`: emits `format-pick` for `pickRoundFormat`, `format-ballot` for both Save-or-Eliminate and Vote Bomb ballots plus the final Safety Bounce vote, `bounce-pointer` for each public Safety Bounce pointer, and `format-tiebreak` when the empowered player resolves an elimination tie. Each normalized response includes `decisionSource` and nullable `fallbackReason`. **Sealed is an in-game-agent-context boundary:** operator/sim `format-ballot` turn `text` and House rollup lines include the actual ballot (e.g. `Atlas sealed ballot: ELIMINATE → Echo`) so `--chatty` and turns JSONL remain legible; the viewer/MCP ledger is separately projected from the durable canonical event. Safety Bounce pointer prompts state the acting player's computed status and its exact opposite-status consequence: a SAFE actor makes the target VULNERABLE, while a VULNERABLE actor makes the target SAFE. Treat any `thinking` or `reasoningContext` that contradicts the recorded `response.classification` as a reasoning-quality failure; the accepted response and canonical board remain authoritative.
+- `phases/elimination.ts`: commits `player.eliminated` before calling the eliminated agent's dedicated `elimination_message` tool, then emits one public `elimination-message` turn and `player.elimination_message_recorded` event. Public-vote disclosure may include voter names. Format elimination-message prose may summarize counts, but it is not the ballot ledger and must not be parsed into one.
 - Legacy/classic `phases/vote.ts` candidate selection, `phases/power.ts` power actions, and `phases/council.ts` votes remain observable for historical or explicit classic runs.
 - `phases/mingle.ts`: emits hidden `mingle-intent` agent turns before House room assignment, records private `mingle-room-assignment` turns with `assignmentSource` (`house`, `repaired`, `fallback`, or later-beat `movement`), repair notes, and summary-only intent metadata including `strategicLens`, then records private Mingle turn responses with `gotoRoomId`, `gotoPlayerName`, `gotoStatus`, and `decisionLog` rather than viewer-facing room text. **Operator `text` on these turns is required for follow-along:** intent lines include lens/size/seek/avoid/target/ask/purpose; room assignment includes room + roommates + source; mingle turns include room, talk/no_reply, and next movement. Sealed/private means player-facing, not operator-redacted. Mingle room numbers remain stable within a Mingle phase; `beat`/turn carries the temporal distinction.
 - `phases/alliances.ts`: emits private `alliance-action` turns for Mingle I sequential proposer opportunities plus invited proposal responses/counters, private `alliance-huddle-schedule` turns for House grant/skip rationale, and private `alliance-huddle-turn` turns with authoritative member target/action/commitment/contingency/confidence/dissent facts. `alliance-huddle-outcome` carries those facts forward with a compact House summary; House prose must not invent a target or consensus. Decision-relevant Mingle rooms with a trusted or official ally also record a private coordination receipt, persisted as producer-only canonical `mingle.coordination_receipt_recorded` evidence for replay/audit only; it never mutates a vote or format. Huddle transcript entries use `scope: "huddle"` and must stay hidden from public/player-safe transcript surfaces by default.
@@ -93,7 +95,7 @@ logSystem(text: string, phase: Phase, thinking?: string, reasoningContext?: stri
 }
 ```
 
-`TranscriptEntry` (game-runner.types.ts) remains the canonical replay/human-viewing shape:
+`TranscriptEntry` (game-runner.types.ts) remains the human-viewing dialogue shape; it is not canonical board state or replay authority:
 
 ```ts
 export interface TranscriptEntry {
@@ -144,6 +146,16 @@ raw envelopes, source pointers, and producer/debug evidence. Production Game MCP
 owner transcript pages may include member-private huddles authorized through owned
 seats; that is a separate owner policy surface from public watch.
 
+Viewer decision transport is separate from transcript transport. After durable append,
+the websocket emits the additive `viewer_decision_event` envelope; persisted replay
+frames use schema v3 and carry the same allowlisted `viewerDecisionEvent` for the
+same trusted canonical prefix. The contract includes classic empower/expose, Power,
+and Council decisions plus format menu, selection, sanitized format ballots, Safety
+Bounce starter/pointers, and resolution. Clients own animation timing; they never
+derive a decision from transcript text. Late joiners or reconnecting clients fetch
+the trusted replay/event prefix with `afterSequence` before consuming newer websocket
+events.
+
 For `--chatty` live viewing (`simulate.ts`):
 
 ```ts
@@ -162,7 +174,7 @@ function formatEntry(e: TranscriptEntry): string {
 }
 ```
 
-Default non-chatty console mode prints an **operator action feed** (votes, format picks/ballots, room seating, alliances, House outcome lines) plus **`[House MC]`** between rounds — without thinking/reasoning. `--chatty` adds full transcript + reasoning. `--quiet` / `--no-operator-feed` collapses to phase progress only; `--no-house-summaries` suppresses the MC block. House is omniscient: `house-mc-summary` `response.roundFacts.formatResolution` carries every sealed ballot, scoreboard, bounce chain, and elimination summary (player-facing surfaces remain sealed):
+Default non-chatty console mode prints an **operator action feed** (votes, format picks/ballots, room seating, alliances, House outcome lines) plus **`[House MC]`** between rounds — without thinking/reasoning. `--chatty` adds full transcript + reasoning. `--quiet` / `--no-operator-feed` collapses to phase progress only; `--no-house-summaries` suppresses the MC block. House is omniscient: `house-mc-summary` `response.roundFacts.formatResolution` carries every sealed ballot, scoreboard, bounce chain, and elimination summary. In-game agent context remains sealed; the authorized viewer/MCP ledger is a separate canonical-event projection:
 
 ```bash
 bun run simulate -- --variant mingle --max-rounds 2
@@ -177,8 +189,8 @@ House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) a
 | Offered menu | `format.menu_offered` | public | `filter_events`, `read_projection.summary.formatMenu`, `read_round_facts.format` |
 | Selected/locked format | `format.selected` | public | same; projection `formatMenu.selectedFormatId` |
 | Safety Bounce starter/pointers | `format.safety_bounce_started`, `format.safety_bounce_pointer` | public | `filter_events`, `read_round_facts.format.safetyBounce` |
-| Resolution aggregates | `format.resolved` | public | `filter_events`, `read_round_facts.format` (nets/totals/pools; no voter maps) |
-| Sealed ballots | `format.ballot_cast` | **producer** | producer `filter_events`; owner/producer scoped `read_round_facts.format.sealedBallots` |
+| Resolution aggregates | `format.resolved` | public | `filter_events`, `read_round_facts.format` (nets/totals/pools) |
+| Sealed ballots | `format.ballot_cast` | public sanitized projection | `filter_events` (`eventShape: "viewer_decision"`), `read_round_facts.format.sealedBallots` for every authorized game reader |
 
 Private decision rationale (`thinking`, `reasoningContext`, `decisionLog`, model metadata) still comes only from dedicated transcript/turn/private-trace records and must never appear in public or owner round facts. Direct accepted actions may now carry a producer-private decision source pointer, but player-safe event envelopes remove it before serialization.
 
@@ -186,12 +198,9 @@ Private decision rationale (`thinking`, `reasoningContext`, `decisionLog`, model
 // Public format proof without private traces:
 filter_events({ gameIdOrSlug, eventType: "format.selected" })
 read_projection({ gameIdOrSlug }) // formatMenu.offeredFormatIds + selectedFormatId
-read_round_facts({ gameIdOrSlug, round }) // format.* aggregates; sealedBallots empty for pure public
+read_round_facts({ gameIdOrSlug, round }) // format.* aggregates + complete sanitized sealedBallots ledger
 
-// Owner sealed ballot (own seat only):
-read_round_facts({ gameIdOrSlug, round }) // under games:read + participating seat
-
-// Producer full sealed ledger:
+// Producer raw envelope/provenance (separate from the shared sanitized ledger):
 filter_events({ gameIdOrSlug, eventType: "format.ballot_cast", visibilityMode: "producer" })
 ```
 

@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
-import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
+import {
+  GameState,
+  Phase,
+  projectViewerDecisionEvent,
+  type CanonicalGameEvent,
+} from "@influence/engine";
 import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -290,7 +295,7 @@ describe("GameWatchState", () => {
     expect(players.find((player) => player.id === "nyx")?.pressureStatus).toBe("fallback_risk");
   });
 
-  test("builds replay pressure frames from durable events", async () => {
+  test("builds v3 replay pressure frames from durable events", async () => {
     const gameId = await insertGame(db, {
       slug: "watch-replay-pressure-frames",
       status: "completed",
@@ -305,7 +310,7 @@ describe("GameWatchState", () => {
     const mingleFrame = frames?.findLast((frame) => frame.phase === "MINGLE");
 
     expect(mingleFrame).toMatchObject({
-      schemaVersion: 2,
+      schemaVersion: 3,
       eventType: "mingle.rooms_allocated",
       players: expect.arrayContaining([
         expect.objectContaining({
@@ -324,6 +329,76 @@ describe("GameWatchState", () => {
         }),
       ]),
     });
+  });
+
+  test("replays the same viewer decisions as a live canonical batch and supports trusted catch-up", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-viewer-decision-catch-up",
+      status: "in_progress",
+      config: gameConfig(),
+    });
+    await insertFixturePlayers(db, gameId);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const events = createSafetyBounceViewerFixture(gameId);
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+
+    const fullFrames = await getGameWatchReplayFrames(db, gameId);
+    const fullViewerEvents = fullFrames
+      ?.flatMap((frame) => frame.viewerDecisionEvent ? [frame.viewerDecisionEvent] : []) ?? [];
+    const expectedViewerEvents = events
+      .flatMap((event) => {
+        const viewerEvent = projectViewerDecisionEvent(event);
+        return viewerEvent ? [viewerEvent] : [];
+      });
+
+    expect(fullViewerEvents).toEqual(expectedViewerEvents);
+    expect(fullViewerEvents.map(({ type, payload }) => ({ type, payload }))).toEqual([
+      {
+        type: "format.menu_offered",
+        payload: { empoweredId: "atlas", offeredFormatIds: ["safety_bounce", "vote_bomb"] },
+      },
+      {
+        type: "format.selected",
+        payload: { empoweredId: "atlas", formatId: "safety_bounce" },
+      },
+      { type: "format.safety_bounce_started", payload: { starterId: "atlas" } },
+      {
+        type: "format.safety_bounce_pointer",
+        payload: { actorId: "atlas", targetId: "echo", classification: "vulnerable" },
+      },
+      {
+        type: "format.safety_bounce_pointer",
+        payload: { actorId: "echo", targetId: "mira", classification: "safe" },
+      },
+      {
+        type: "format.safety_bounce_pointer",
+        payload: { actorId: "mira", targetId: "nyx", classification: "vulnerable" },
+      },
+      {
+        type: "format.ballot_cast",
+        payload: {
+          formatId: "safety_bounce",
+          voterId: "atlas",
+          targetId: "echo",
+          polarity: null,
+        },
+      },
+    ]);
+    expect(fullViewerEvents.map((event) => event.sequence)).toEqual([
+      ...fullViewerEvents.map((event) => event.sequence),
+    ].sort((left, right) => left - right));
+
+    const cursor = fullFrames?.find((frame) => frame.viewerDecisionEvent?.type === "format.safety_bounce_started")?.sequence;
+    if (cursor === undefined) throw new Error("Expected Safety Bounce start frame");
+    const catchUpFrames = await getGameWatchReplayFrames(db, gameId, { afterSequence: cursor });
+    expect(catchUpFrames?.every((frame) => frame.sequence > cursor)).toBe(true);
+    expect(catchUpFrames?.map((frame) => frame.sequence)).toEqual(
+      fullFrames?.filter((frame) => frame.sequence > cursor).map((frame) => frame.sequence),
+    );
+
+    const serialized = JSON.stringify(fullFrames);
+    expect(serialized).not.toContain("PRIVATE_SOURCE_POINTER_SENTINEL");
+    expect(serialized).not.toContain("sourcePointers");
   });
 
   test("distinguishes shield fallback replacements from vote-derived exposed candidates", async () => {
@@ -699,6 +774,39 @@ function createShieldFallbackPressureFixture(gameId: string): readonly Canonical
   state.tallyEmpowerVotes();
   state.setPowerAction({ action: "protect", target: "atlas" });
   state.determineCandidates(["nyx"]);
+
+  return state.getCanonicalEvents();
+}
+
+function createSafetyBounceViewerFixture(gameId: string): readonly CanonicalGameEvent[] {
+  const state = new GameState(
+    [
+      { id: "atlas", name: "Atlas" },
+      { id: "echo", name: "Echo" },
+      { id: "mira", name: "Mira" },
+      { id: "nyx", name: "Nyx" },
+    ],
+    { gameId, now: () => 1_720_000_000_000 },
+  );
+  const privatePointer = [{
+    kind: "simulation_jsonl" as const,
+    gameNumber: 1,
+    file: "PRIVATE_SOURCE_POINTER_SENTINEL",
+    line: 1,
+  }];
+
+  state.startRound();
+  state.recordFormatMenu("atlas", ["safety_bounce", "vote_bomb"]);
+  state.recordFormatSelected("atlas", "safety_bounce", privatePointer);
+  state.recordSafetyBounceStarted("atlas");
+  state.recordSafetyBouncePointer("atlas", "echo", "vulnerable", privatePointer);
+  state.recordSafetyBouncePointer("echo", "mira", "safe", privatePointer);
+  state.recordSafetyBouncePointer("mira", "nyx", "vulnerable", privatePointer);
+  state.recordFormatBallot({
+    formatId: "safety_bounce",
+    voterId: "atlas",
+    targetId: "echo",
+  }, privatePointer);
 
   return state.getCanonicalEvents();
 }

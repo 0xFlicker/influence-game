@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, like, sql } from "drizzle-orm";
 import {
   acceptedActionSourcePointerMatches,
+  type CanonicalGameEvent,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -76,7 +77,10 @@ interface CorrelationRowStatus {
 }
 
 export function acceptedActionDecisionRefs(
-  persistedEvents: readonly TrustedPersistedGameEvent[],
+  persistedEvents: readonly Pick<
+    TrustedPersistedGameEvent,
+    "gameId" | "ownerEpoch" | "sequence" | "envelope"
+  >[],
   ownerEpoch?: string,
 ): AcceptedActionDecisionRef[] {
   const refs = new Map<string, AcceptedActionDecisionRef>();
@@ -345,10 +349,27 @@ export async function reconcileAcceptedActionCorrelations(
   params: {
     gameId: string;
     ownerEpoch: string;
+    /**
+     * A just-persisted trusted subset. Lifecycle flushes use this to avoid
+     * re-reading every historical decision; repair boundaries omit it.
+     */
+    events?: readonly CanonicalGameEvent[];
   },
 ): Promise<AcceptedActionCorrelationResult> {
-  const persisted = await getPersistedGameEvents(db, params.gameId);
-  const refs = acceptedActionDecisionRefs(persisted.events, params.ownerEpoch);
+  const refs = params.events
+    ? acceptedActionDecisionRefs(
+        params.events.map((envelope) => ({
+          gameId: params.gameId,
+          ownerEpoch: params.ownerEpoch,
+          sequence: envelope.sequence,
+          envelope,
+        })),
+        params.ownerEpoch,
+      )
+    : acceptedActionDecisionRefs(
+        (await getPersistedGameEvents(db, params.gameId)).events,
+        params.ownerEpoch,
+      );
 
   return db.transaction(async (tx) => {
     await tx.execute(sql`
@@ -484,6 +505,7 @@ export async function tryReconcileAcceptedActionCorrelations(
   params: {
     gameId: string;
     ownerEpoch: string;
+    events?: readonly CanonicalGameEvent[];
   },
 ): Promise<NonfatalAcceptedActionCorrelationResult> {
   try {

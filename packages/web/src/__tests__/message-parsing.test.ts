@@ -208,6 +208,20 @@ describe("isParseableStructuredMsg", () => {
     expect(isParseableStructuredMsg("Hello everyone, let's talk strategy.")).toBe(false);
     expect(isParseableStructuredMsg("I think we should ally")).toBe(false);
   });
+
+  it("does not route format-kernel transcript prose into the classic parser island", () => {
+    const formatLines = [
+      "Alice votes: empower=Bob",
+      "Format selected: safety_bounce",
+      "Safety Bounce: Alice points to Bob (safe)",
+      "Cara casts a save ballot for Dax",
+    ];
+
+    for (const line of formatLines) {
+      expect(isParseableStructuredMsg(line)).toBe(false);
+    }
+    expect(parseVoteMsg(formatLines[0]!)).toBeNull();
+  });
 });
 
 describe("wsEntryToTranscriptEntry", () => {

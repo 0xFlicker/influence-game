@@ -352,7 +352,8 @@ describe("Format kernel integration (MockAgent)", () => {
         eliminatedId: expect.any(String),
       },
     });
-    // Sealed ballots are producer-only; public selection is queryable without private traces.
+    // Ballot envelopes retain producer provenance, while viewer reads receive their
+    // sanitized ledger projection without private traces.
     const ballots = canonical.filter((event) => event.type === "format.ballot_cast");
     expect(ballots.length).toBeGreaterThan(0);
     expect(ballots.every((event) => event.visibility === "producer")).toBe(true);

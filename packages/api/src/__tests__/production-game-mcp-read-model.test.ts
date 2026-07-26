@@ -5,6 +5,7 @@ import {
   GameState,
   Phase,
   type CanonicalGameEvent,
+  type LaunchFormatId,
   EDGE_SMOKE_DUSK_EXPECTED,
   EDGE_SMOKE_DUSK_GAME_ID,
   EDGE_SMOKE_DUSK_PLAYERS,
@@ -23,6 +24,7 @@ import {
 import { PRIVATE_TRACE_EVIDENCE_TYPE } from "../services/private-trace-writer.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import { captureGameCompletionSettlement } from "../services/game-completion-settlement.js";
+import { getGameWatchReplayFrames } from "../services/game-watch-state.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { findForbiddenTranscriptDtoKeys } from "../services/transcript-serialization.js";
 import { readMatchTranscriptPage } from "../services/match-transcript-read-model.js";
@@ -282,6 +284,64 @@ describe("ProductionGameMcpReadModel", () => {
     await insertEdgeSmokeDuskFixture(db);
 
     const readModel = new ProductionGameMcpReadModel(db);
+    const classicRound = await readModel.readRoundFacts({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_EXPECTED.slug,
+      round: 1,
+    }, PRODUCER_ACCESS);
+    expect(classicRound.game).toMatchObject({
+      gameKernel: "classic",
+      gameKernelSource: "inferred",
+    });
+    expect(classicRound.canonicalGameFacts.roundFacts.standardVote).toMatchObject({
+      status: "available",
+      ledger: expect.arrayContaining([
+        expect.objectContaining({
+          voter: EDGE_SMOKE_DUSK_PLAYERS.lilith,
+          empowerTarget: EDGE_SMOKE_DUSK_PLAYERS.shadowtech,
+          exposeTarget: EDGE_SMOKE_DUSK_PLAYERS.ash,
+        }),
+      ]),
+    });
+    expect(classicRound.canonicalGameFacts.roundFacts.power?.status).toBe("available");
+    expect(classicRound.canonicalGameFacts.roundFacts.council?.status).toBe("available");
+    expect(classicRound.canonicalGameFacts.roundFacts.council?.eliminated).toEqual(
+      EDGE_SMOKE_DUSK_PLAYERS.ash,
+    );
+
+    const classicProjection = await readModel.readProjection(
+      EDGE_SMOKE_DUSK_EXPECTED.slug,
+      PRODUCER_ACCESS,
+    );
+    expect(classicProjection.canonicalGameFacts.projection).toMatchObject({
+      status: "complete",
+      summary: {
+        gameId: EDGE_SMOKE_DUSK_GAME_ID,
+        winner: EDGE_SMOKE_DUSK_PLAYERS.lilith,
+      },
+    });
+
+    for (const eventType of [
+      "vote.cast",
+      "power.action_set",
+      "council.vote_cast",
+    ] as const) {
+      const events = await readModel.filterEvents({
+        gameIdOrSlug: EDGE_SMOKE_DUSK_EXPECTED.slug,
+        eventType,
+        visibilityMode: "public",
+      }, PRODUCER_ACCESS);
+      expect(events.canonicalGameFacts.events.length).toBeGreaterThan(0);
+      expect(events.canonicalGameFacts.events[0]?.eventShape).toBe("viewer_decision");
+      expect(events.canonicalGameFacts.events[0]?.event).toMatchObject({ type: eventType });
+    }
+
+    const replayFrames = await getGameWatchReplayFrames(db, EDGE_SMOKE_DUSK_EXPECTED.slug);
+    expect(replayFrames).not.toBeNull();
+    expect(replayFrames?.every((frame) => frame.schemaVersion === 3)).toBe(true);
+    expect(replayFrames?.some((frame) => frame.viewerDecisionEvent?.type === "vote.cast")).toBe(true);
+    expect(replayFrames?.some((frame) => frame.viewerDecisionEvent?.type === "power.action_set")).toBe(true);
+    expect(replayFrames?.some((frame) => frame.viewerDecisionEvent?.type === "council.vote_cast")).toBe(true);
+
     const brief = await readModel.readGameBrief({
       gameIdOrSlug: EDGE_SMOKE_DUSK_EXPECTED.slug,
     }, PRODUCER_ACCESS);
@@ -396,6 +456,120 @@ describe("ProductionGameMcpReadModel", () => {
       grade.grade === "A"
     )).toBe(true);
     expect(producer.developerEvidence).toHaveProperty("cognitiveArtifacts");
+  });
+
+  test("persists every launch format through sanitized MCP facts and viewer events", async () => {
+    const fixtures = [
+      {
+        name: "Save-or-Eliminate",
+        formatId: "save_or_eliminate" as const,
+        ballotCount: 4,
+        pointerCount: 0,
+        resolutionKind: "clear" as const,
+      },
+      {
+        name: "Vote Bomb",
+        formatId: "vote_bomb" as const,
+        ballotCount: 4,
+        pointerCount: 0,
+        resolutionKind: "clear" as const,
+      },
+      {
+        name: "Safety Bounce",
+        formatId: "safety_bounce" as const,
+        ballotCount: 4,
+        pointerCount: 3,
+        resolutionKind: "clear" as const,
+      },
+      {
+        name: "Safety Bounce sole vulnerable",
+        formatId: "safety_bounce_sole_vulnerable" as const,
+        ballotCount: 0,
+        pointerCount: 2,
+        resolutionKind: "auto" as const,
+      },
+    ];
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    for (const fixture of fixtures) {
+      const gameId = await insertGame(db, {
+        slug: `persisted-format-${fixture.formatId}-${randomUUID()}`,
+        status: "completed",
+      });
+      await insertFormatFixturePlayers(db, gameId);
+      const ownerEpoch = await insertOwner(db, gameId);
+      await appendGameEvents(db, {
+        gameId,
+        ownerEpoch,
+        events: createPersistedFormatFixtureEvents(gameId, fixture.formatId),
+      });
+
+      const roundFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, PRODUCER_ACCESS);
+      const format = roundFacts.canonicalGameFacts.roundFacts.format;
+      expect(roundFacts.game).toMatchObject({ gameKernel: "format" });
+      expect(format).toMatchObject({
+        status: "available",
+        selectedFormatId: fixture.formatId === "safety_bounce_sole_vulnerable"
+          ? "safety_bounce"
+          : fixture.formatId,
+        resolutionKind: fixture.resolutionKind,
+        sealedBallotAccess: "public",
+      });
+      expect(format.sealedBallots).toHaveLength(fixture.ballotCount);
+      expect(format.safetyBounce?.pointers ?? []).toHaveLength(fixture.pointerCount);
+      if (fixture.formatId === "safety_bounce_sole_vulnerable") {
+        expect(format.sealedBallots).toEqual([]);
+        expect(format.safetyBounce?.vulnerable).toHaveLength(1);
+      }
+
+      for (const eventType of [
+        "format.menu_offered",
+        "format.selected",
+        "format.resolved",
+        ...(fixture.pointerCount > 0
+          ? ["format.safety_bounce_started", "format.safety_bounce_pointer"] as const
+          : []),
+      ]) {
+        const filtered = await readModel.filterEvents({
+          gameIdOrSlug: gameId,
+          eventType,
+          visibilityMode: "public",
+        }, PRODUCER_ACCESS);
+        expect(filtered.canonicalGameFacts.events.length).toBeGreaterThan(0);
+        expect(filtered.canonicalGameFacts.events.every((entry) => entry.eventType === eventType)).toBe(true);
+        const serialized = JSON.stringify(filtered);
+        expect(serialized).not.toContain(PRIVATE_DECISION_SENTINEL);
+        expect(serialized).not.toContain("sourcePointers");
+        expect(serialized).not.toContain("reasoningContext");
+        expect(serialized).not.toContain("decisionLog");
+      }
+
+      // All helper-created ballots retain their historical producer envelope.
+      // The public event view must still expose only the sanitized ledger.
+      const ballots = await readModel.filterEvents({
+        gameIdOrSlug: gameId,
+        eventType: "format.ballot_cast",
+        visibilityMode: "public",
+      }, PRODUCER_ACCESS);
+      expect(ballots.canonicalGameFacts.events).toHaveLength(fixture.ballotCount);
+      expect(ballots.canonicalGameFacts.events.every((entry) => entry.eventShape === "viewer_decision")).toBe(true);
+      expect(ballots.canonicalGameFacts.events.every((entry) => entry.event?.type === "format.ballot_cast")).toBe(true);
+      const ballotPayloads = ballots.canonicalGameFacts.events.map((entry) => entry.event?.payload);
+      expect(ballotPayloads).toEqual(
+        format.sealedBallots.map((ballot) => ({
+          formatId: format.selectedFormatId,
+          voterId: ballot.voter.id,
+          targetId: ballot.target.id,
+          polarity: ballot.polarity,
+        })),
+      );
+      const serialized = JSON.stringify({ roundFacts, ballots });
+      expect(serialized).not.toContain(PRIVATE_DECISION_SENTINEL);
+      expect(serialized).not.toContain("sourcePointers");
+      expect(serialized).not.toContain("thinking");
+      expect(serialized).not.toContain("reasoningContext");
+      expect(serialized).not.toContain("decisionLog");
+    }
   });
 
   test("returns persisted invalid-log diagnostics through event filters and timelines", async () => {
@@ -606,12 +780,14 @@ describe("ProductionGameMcpReadModel", () => {
     );
   });
 
-  test("scopes sealed format ballots by public/owner/producer for read_round_facts", async () => {
+  test("shares sanitized format ballot ledgers across MCP audiences while preserving producer provenance", async () => {
     const ownerUserId = randomUUID();
     const otherUserId = randomUUID();
+    const spectatorUserId = randomUUID();
     await db.insert(schema.users).values([
       { id: ownerUserId, walletAddress: "0xformatfacts0000000000000000000000000001" },
       { id: otherUserId, walletAddress: "0xformatfacts0000000000000000000000000002" },
+      { id: spectatorUserId, walletAddress: "0xformatfacts0000000000000000000000000003" },
     ]);
 
     const gameId = await insertGame(db, {
@@ -620,7 +796,8 @@ describe("ProductionGameMcpReadModel", () => {
     });
     await db
       .update(schema.games)
-      .set({ createdById: ownerUserId })
+      // Creator-only access is the current authorized non-seat observer lane.
+      .set({ createdById: spectatorUserId })
       .where(eq(schema.games.id, gameId));
     const ownerPlayerId = await insertGamePlayer(db, {
       gameId,
@@ -635,7 +812,8 @@ describe("ProductionGameMcpReadModel", () => {
     const ownerEpoch = await insertOwner(db, gameId);
 
     const base = createCanonicalEventFixture(gameId);
-    // Align format actors with owned seat IDs so owner scope can filter ballots.
+    // These producer-marked rows model historical persisted envelopes. Every
+    // reader now receives their sanitized choices without exposing provenance.
     const formatEvents: CanonicalGameEvent[] = [
       {
         sequence: base.length + 1,
@@ -686,7 +864,14 @@ describe("ProductionGameMcpReadModel", () => {
         source: "phase",
         visibility: "producer",
         payloadVersion: 1,
-        sourcePointers: [],
+        sourcePointers: [{
+          kind: "agent_turn",
+          decisionId: PRIVATE_DECISION_SENTINEL,
+          actorId: ownerPlayerId,
+          action: "format-save-or-eliminate-ballot",
+          phase: Phase.FORMAT_RESOLVE,
+          round: 1,
+        }],
         payload: {
           formatId: "save_or_eliminate",
           voterId: ownerPlayerId,
@@ -784,36 +969,47 @@ describe("ProductionGameMcpReadModel", () => {
     const ownerFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, ownerAccess);
     expect(ownerFacts.canonicalGameFacts.roundFacts.format.status).toBe("available");
     expect(ownerFacts.canonicalGameFacts.roundFacts.format.selectedFormatId).toBe("save_or_eliminate");
-    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("owner");
-    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(1);
-    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots[0]).toMatchObject({
-      voter: { id: ownerPlayerId },
-      target: { id: peerPlayerId },
-      polarity: "eliminate",
-    });
-    // Must never leak peer sealed ballot to owner.
-    expect(
-      ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots.some((b) => b.voter.id === peerPlayerId),
-    ).toBe(false);
+    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("public");
+    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(2);
+    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          voter: expect.objectContaining({ id: ownerPlayerId }),
+          target: expect.objectContaining({ id: peerPlayerId }),
+          polarity: "eliminate",
+        }),
+        expect.objectContaining({
+          voter: expect.objectContaining({ id: peerPlayerId }),
+          target: expect.objectContaining({ id: ownerPlayerId }),
+          polarity: "save",
+        }),
+      ]),
+    );
 
     const peerFacts = await readModel.readRoundFacts(
       { gameIdOrSlug: gameId, round: 1 },
       { userId: otherUserId, authProfile: "subject" },
     );
-    expect(peerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(1);
-    expect(peerFacts.canonicalGameFacts.roundFacts.format.sealedBallots[0]?.voter.id).toBe(
-      peerPlayerId,
+    expect(peerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("public");
+    expect(peerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual(
+      ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots,
     );
-    expect(
-      peerFacts.canonicalGameFacts.roundFacts.format.sealedBallots.some(
-        (ballot) => ballot.voter.id === ownerPlayerId,
-      ),
-    ).toBe(false);
     expect(JSON.stringify(peerFacts)).not.toContain(PRIVATE_DECISION_SENTINEL);
 
+    const spectatorFacts = await readModel.readRoundFacts(
+      { gameIdOrSlug: gameId, round: 1 },
+      { userId: spectatorUserId, authProfile: "subject" },
+    );
+    expect(spectatorFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("public");
+    expect(spectatorFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual(
+      ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots,
+    );
+
     const producerFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, PRODUCER_ACCESS);
-    expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("producer");
-    expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(2);
+    expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("public");
+    expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual(
+      ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots,
+    );
 
     // filter_events: public format facts stay visible in both non-producer
     // visibility modes, but the decision-bearing source pointers do not.
@@ -834,6 +1030,37 @@ describe("ProductionGameMcpReadModel", () => {
       }
     }
 
+    const publicBallots = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "format.ballot_cast",
+      visibilityMode: "public",
+    }, ownerAccess);
+    expect(publicBallots.canonicalGameFacts.events).toHaveLength(2);
+    expect(publicBallots.canonicalGameFacts.events.map((entry) => entry.event)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "format.ballot_cast",
+          payload: expect.objectContaining({
+            formatId: "save_or_eliminate",
+            voterId: ownerPlayerId,
+            targetId: peerPlayerId,
+            polarity: "eliminate",
+          }),
+        }),
+      ]),
+    );
+    expect(JSON.stringify(publicBallots)).not.toContain("sourcePointers");
+    expect(JSON.stringify(publicBallots)).not.toContain(PRIVATE_DECISION_SENTINEL);
+
+    const producerViewerBallots = await readModel.filterEvents({
+      gameIdOrSlug: gameId,
+      eventType: "format.ballot_cast",
+      visibilityMode: "public",
+    }, PRODUCER_ACCESS);
+    expect(producerViewerBallots.canonicalGameFacts.events).toEqual(
+      publicBallots.canonicalGameFacts.events,
+    );
+
     const pointerOnlyActorMatch = await readModel.filterEvents({
       gameIdOrSlug: gameId,
       actor: PRIVATE_DECISION_SENTINEL,
@@ -853,6 +1080,9 @@ describe("ProductionGameMcpReadModel", () => {
       visibilityMode: "producer",
     }, PRODUCER_ACCESS);
     expect(producerBallots.canonicalGameFacts.events.length).toBe(2);
+    expect(producerBallots.canonicalGameFacts.events.every((entry) => entry.eventShape === "canonical")).toBe(true);
+    expect(JSON.stringify(producerBallots)).toContain("sourcePointers");
+    expect(JSON.stringify(producerBallots)).toContain(PRIVATE_DECISION_SENTINEL);
 
     const producerPointerMatch = await readModel.filterEvents({
       gameIdOrSlug: gameId,
@@ -1616,6 +1846,210 @@ async function insertEdgeSmokeDuskFixture(db: DrizzleDB): Promise<void> {
     ownerEpoch,
     events: createEdgeSmokeDuskEvents(gameId),
   });
+}
+
+type PersistedFormatFixtureId =
+  | "save_or_eliminate"
+  | "vote_bomb"
+  | "safety_bounce"
+  | "safety_bounce_sole_vulnerable";
+
+async function insertFormatFixturePlayers(db: DrizzleDB, gameId: string): Promise<void> {
+  await db.insert(schema.gamePlayers).values(persistedFormatFixturePlayers(gameId).map((player) => ({
+    ...player,
+    gameId,
+    persona: JSON.stringify({ name: player.name, personality: "persisted format fixture" }),
+    agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+  })));
+}
+
+function createPersistedFormatFixtureEvents(
+  gameId: string,
+  fixtureId: PersistedFormatFixtureId,
+): readonly CanonicalGameEvent[] {
+  const fixturePlayers = persistedFormatFixturePlayers(gameId);
+  const players = fixtureId === "safety_bounce_sole_vulnerable"
+    ? fixturePlayers.slice(0, 3)
+    : fixturePlayers;
+  const state = new GameState([...players], { gameId, now: fixedClock() });
+  const [atlas, bob, cara, dax] = fixturePlayers;
+  if (!atlas || !bob || !cara || !dax) throw new Error("Expected persisted format fixture players");
+
+  state.startRound();
+  for (const player of players) {
+    state.recordVote(player.id, atlas.id, bob.id);
+  }
+  const { empowered } = state.tallyEmpowerVotes();
+
+  const selectedFormat = fixtureId === "safety_bounce_sole_vulnerable"
+    ? "safety_bounce"
+    : fixtureId;
+  const offeredFormatIds: [LaunchFormatId, LaunchFormatId] = selectedFormat === "save_or_eliminate"
+    ? ["save_or_eliminate", "vote_bomb"]
+    : selectedFormat === "vote_bomb"
+      ? ["vote_bomb", "safety_bounce"]
+      : ["safety_bounce", "save_or_eliminate"];
+  state.recordFormatMenu(empowered, offeredFormatIds);
+  state.recordFormatSelected(empowered, selectedFormat, [
+    persistedFormatSourcePointer(empowered, "format-pick"),
+  ]);
+
+  if (selectedFormat === "save_or_eliminate") {
+    state.recordFormatBallot({
+      formatId: selectedFormat,
+      voterId: atlas.id,
+      targetId: bob.id,
+      polarity: "eliminate",
+    }, [persistedFormatSourcePointer(atlas.id, "format-save-or-eliminate-ballot")]);
+    state.recordFormatBallot({
+      formatId: selectedFormat,
+      voterId: bob.id,
+      targetId: cara.id,
+      polarity: "save",
+    }, [persistedFormatSourcePointer(bob.id, "format-save-or-eliminate-ballot")]);
+    state.recordFormatBallot({
+      formatId: selectedFormat,
+      voterId: cara.id,
+      targetId: bob.id,
+      polarity: "eliminate",
+    }, [persistedFormatSourcePointer(cara.id, "format-save-or-eliminate-ballot")]);
+    state.recordFormatBallot({
+      formatId: selectedFormat,
+      voterId: dax.id,
+      targetId: bob.id,
+      polarity: "eliminate",
+    }, [persistedFormatSourcePointer(dax.id, "format-save-or-eliminate-ballot")]);
+    state.recordFormatResolution({
+      formatId: selectedFormat,
+      empoweredId: empowered,
+      eliminatedId: bob.id,
+      resolutionKind: "clear",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: {
+        nets: { [atlas.id]: 0, [bob.id]: -3, [cara.id]: 1, [dax.id]: 0 },
+        savesReceived: { [atlas.id]: 0, [bob.id]: 0, [cara.id]: 1, [dax.id]: 0 },
+        eliminateReceived: { [atlas.id]: 0, [bob.id]: 3, [cara.id]: 0, [dax.id]: 0 },
+      },
+      voteBomb: null,
+      safetyBounce: null,
+    });
+    return state.getCanonicalEvents();
+  }
+
+  if (selectedFormat === "vote_bomb") {
+    state.recordFormatBallot({ formatId: selectedFormat, voterId: atlas.id, targetId: bob.id }, [
+      persistedFormatSourcePointer(atlas.id, "format-vote-bomb-ballot"),
+    ]);
+    state.recordFormatBallot({ formatId: selectedFormat, voterId: bob.id, targetId: cara.id }, [
+      persistedFormatSourcePointer(bob.id, "format-vote-bomb-ballot"),
+    ]);
+    state.recordFormatBallot({ formatId: selectedFormat, voterId: cara.id, targetId: bob.id }, [
+      persistedFormatSourcePointer(cara.id, "format-vote-bomb-ballot"),
+    ]);
+    state.recordFormatBallot({ formatId: selectedFormat, voterId: dax.id, targetId: bob.id }, [
+      persistedFormatSourcePointer(dax.id, "format-vote-bomb-ballot"),
+    ]);
+    state.recordFormatResolution({
+      formatId: selectedFormat,
+      empoweredId: empowered,
+      eliminatedId: cara.id,
+      resolutionKind: "clear",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: null,
+      voteBomb: {
+        totals: { [atlas.id]: 0, [bob.id]: 3, [cara.id]: 1, [dax.id]: 0 },
+        zeroSafePlayerIds: [atlas.id, dax.id],
+      },
+      safetyBounce: null,
+    });
+    return state.getCanonicalEvents();
+  }
+
+  state.recordSafetyBounceStarted(atlas.id);
+  state.recordSafetyBouncePointer(atlas.id, bob.id, "vulnerable", [
+    persistedFormatSourcePointer(atlas.id, "bounce-pointer"),
+  ]);
+  state.recordSafetyBouncePointer(bob.id, cara.id, "safe", [
+    persistedFormatSourcePointer(bob.id, "bounce-pointer"),
+  ]);
+
+  if (fixtureId === "safety_bounce_sole_vulnerable") {
+    state.recordFormatResolution({
+      formatId: selectedFormat,
+      empoweredId: empowered,
+      eliminatedId: bob.id,
+      resolutionKind: "auto",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: null,
+      voteBomb: null,
+      safetyBounce: {
+        starterId: atlas.id,
+        safePlayerIds: [atlas.id, cara.id],
+        vulnerablePlayerIds: [bob.id],
+        voteTotals: {},
+      },
+    });
+    return state.getCanonicalEvents();
+  }
+
+  state.recordSafetyBouncePointer(cara.id, dax.id, "vulnerable", [
+    persistedFormatSourcePointer(cara.id, "bounce-pointer"),
+  ]);
+  state.recordFormatBallot({ formatId: selectedFormat, voterId: atlas.id, targetId: dax.id }, [
+    persistedFormatSourcePointer(atlas.id, "format-safety-bounce-vote"),
+  ]);
+  state.recordFormatBallot({ formatId: selectedFormat, voterId: bob.id, targetId: dax.id }, [
+    persistedFormatSourcePointer(bob.id, "format-safety-bounce-vote"),
+  ]);
+  state.recordFormatBallot({ formatId: selectedFormat, voterId: cara.id, targetId: dax.id }, [
+    persistedFormatSourcePointer(cara.id, "format-safety-bounce-vote"),
+  ]);
+  state.recordFormatBallot({ formatId: selectedFormat, voterId: dax.id, targetId: bob.id }, [
+    persistedFormatSourcePointer(dax.id, "format-safety-bounce-vote"),
+  ]);
+  state.recordFormatResolution({
+    formatId: selectedFormat,
+    empoweredId: empowered,
+    eliminatedId: dax.id,
+    resolutionKind: "clear",
+    tiedPlayerIds: [],
+    tiebreakerId: null,
+    saveOrEliminate: null,
+    voteBomb: null,
+    safetyBounce: {
+      starterId: atlas.id,
+      safePlayerIds: [atlas.id, cara.id],
+      vulnerablePlayerIds: [bob.id, dax.id],
+      voteTotals: { [bob.id]: 1, [dax.id]: 3 },
+    },
+  });
+  return state.getCanonicalEvents();
+}
+
+function persistedFormatFixturePlayers(gameId: string) {
+  return [
+    { id: `${gameId}-format-atlas`, name: "Format Atlas" },
+    { id: `${gameId}-format-bob`, name: "Format Bob" },
+    { id: `${gameId}-format-cara`, name: "Format Cara" },
+    { id: `${gameId}-format-dax`, name: "Format Dax" },
+  ] as const;
+}
+
+function persistedFormatSourcePointer(
+  actorId: string,
+  action: "format-pick" | "format-save-or-eliminate-ballot" | "format-vote-bomb-ballot" | "format-safety-bounce-vote" | "bounce-pointer",
+) {
+  return {
+    kind: "agent_turn" as const,
+    decisionId: PRIVATE_DECISION_SENTINEL,
+    actorId,
+    action,
+    phase: Phase.FORMAT_RESOLVE,
+    round: 1,
+  };
 }
 
 async function insertPrivateTraceManifest(

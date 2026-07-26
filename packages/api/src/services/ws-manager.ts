@@ -6,7 +6,13 @@
  */
 
 import type { ServerWebSocket } from "bun";
-import type { GameStreamEvent, TranscriptEntry } from "@influence/engine";
+import {
+  projectViewerDecisionEvent,
+  type CanonicalGameEvent,
+  type GameStreamEvent,
+  type TranscriptEntry,
+  type ViewerDecisionEvent,
+} from "@influence/engine";
 import type { GameWatchState } from "./game-watch-state.js";
 
 // ---------------------------------------------------------------------------
@@ -46,6 +52,7 @@ export interface PublicWsTranscriptEntry {
 /** Event shape sent to WebSocket clients (matches WsGameEvent in web/lib/api.ts) */
 export type WsOutboundEvent =
   | { type: "watch_state"; state: GameWatchState }
+  | { type: "viewer_decision_event"; gameId: string; event: ViewerDecisionEvent }
   | { type: "phase_change"; phase: string; round: number; alivePlayers: string[] }
   | { type: "message"; entry: PublicWsTranscriptEntry }
   | { type: "player_eliminated"; playerId: string; playerName: string; round: number }
@@ -53,7 +60,10 @@ export type WsOutboundEvent =
   | { type: "game_status"; gameId: string; status: "suspended" | "cancelled"; terminal: true; reasonCode: string; message?: string }
   | { type: "error"; message: string };
 
-type WsRawOutboundEvent = Exclude<WsOutboundEvent, { type: "message" }>;
+type WsRawOutboundEvent = Exclude<
+  WsOutboundEvent,
+  { type: "message" } | { type: "viewer_decision_event" }
+>;
 
 // ---------------------------------------------------------------------------
 // Module state
@@ -191,6 +201,22 @@ export function broadcastRaw(gameId: string, event: WsRawOutboundEvent): void {
 /** Broadcast viewer-safe watch state to all observers of a game. */
 export function broadcastWatchState(gameId: string, state: GameWatchState): void {
   broadcastRaw(gameId, { type: "watch_state", state });
+}
+
+/**
+ * Broadcast one durable canonical decision through the shared viewer projector.
+ * The client key is `gameId + event.sequence`; raw event envelopes never cross
+ * this boundary.
+ */
+export function broadcastViewerDecisionEvent(gameId: string, event: CanonicalGameEvent): void {
+  if (!_server) return;
+  const viewerDecision = projectViewerDecisionEvent(event);
+  if (!viewerDecision) return;
+  _server.publish(gameTopic(gameId), JSON.stringify({
+    type: "viewer_decision_event",
+    gameId,
+    event: viewerDecision,
+  } satisfies WsOutboundEvent));
 }
 
 /** Send viewer-safe watch state to a single client (for catch-up on connect). */

@@ -55,6 +55,9 @@ describe("game MCP rules catalog", () => {
     expect(formats?.body).toContain("sealed");
     expect(formats?.body).toContain("pointers are public");
     expect(formats?.body).toContain("every living player casts a sealed elimination ballot targeting the vulnerable pool");
+    expect(formats?.body).toContain("sealed only from in-game agent context");
+    expect(formats?.body).toContain("immediately after durable record");
+    expect(formats?.body).not.toContain("sealed until reveal");
     expect(standardContract).not.toContain("Power / Reveal");
     expect(standardContract).not.toContain("pre-Council");
     expect(standardContract).not.toContain("pass the final choice to Council");

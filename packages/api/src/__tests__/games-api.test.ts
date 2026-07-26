@@ -972,7 +972,7 @@ describe("Game REST API", () => {
       expect(serialized).not.toContain("sourcePointers");
     });
 
-    test("returns schema v2 replay frames with the same public current-agent projection", async () => {
+    test("returns schema v3 replay frames with the same public current-agent projection", async () => {
       const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
       await insertFixturePlayers(db, id);
       const ownerEpoch = await insertOwner(db, id);
@@ -991,10 +991,35 @@ describe("Game REST API", () => {
       }>;
 
       expect(frames.length).toBeGreaterThan(0);
-      expect(frames.every((frame) => frame.schemaVersion === 2)).toBe(true);
+      expect(frames.every((frame) => frame.schemaVersion === 3)).toBe(true);
       expect(frames.every((frame) => (
         frame.players.every((player) => player.currentAgent === null)
       ))).toBe(true);
+    });
+
+    test("serves trusted in-progress replay catch-up frames after a canonical sequence", async () => {
+      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      await insertFixturePlayers(db, id);
+      await markGameInProgress(db, id);
+      const ownerEpoch = await insertOwner(db, id);
+      const events = createResolvedRoundCanonicalEventFixture(id);
+      await appendGameEvents(db, { gameId: id, ownerEpoch, events });
+
+      const allResponse = await app.request(`/api/games/${id}/replay-watch-frames`);
+      expect(allResponse.status).toBe(200);
+      const allFrames = (await allResponse.json()) as Array<{ sequence: number; schemaVersion: number }>;
+      const cursor = allFrames[2]!.sequence;
+
+      const catchUpResponse = await app.request(
+        `/api/games/${id}/replay-watch-frames?afterSequence=${cursor}`,
+      );
+      expect(catchUpResponse.status).toBe(200);
+      const catchUpFrames = (await catchUpResponse.json()) as Array<{ sequence: number; schemaVersion: number }>;
+      expect(catchUpFrames).toEqual(allFrames.filter((frame) => frame.sequence > cursor));
+      expect(catchUpFrames.every((frame) => frame.schemaVersion === 3)).toBe(true);
+
+      const invalidCursor = await app.request(`/api/games/${id}/replay-watch-frames?afterSequence=-1`);
+      expect(invalidCursor.status).toBe(400);
     });
 
     test("labels older completed games as best-available terminal watch state", async () => {

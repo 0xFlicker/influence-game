@@ -1,5 +1,13 @@
 import { describe, expect, it } from "bun:test";
-import type { GameDetail, GameWatchReplayFrame, GameWatchState, PhaseKey, TranscriptEntry } from "../lib/api";
+import type {
+  GameDetail,
+  GameWatchReplayFrame,
+  GameWatchState,
+  PhaseKey,
+  TranscriptEntry,
+  WsGameEvent,
+} from "../lib/api";
+import { createEdgeSmokeDuskEvents, Phase, projectViewerDecisionEvent } from "@influence/engine";
 import {
   applyStructuredPostVotePressureSummaries,
   applyWatchStateToGameDetail,
@@ -192,6 +200,76 @@ function replayFrame(
 }
 
 describe("match watch model", () => {
+  it("accepts a projected edge-smoke-dusk classic decision in a v3 replay frame", () => {
+    const edgePowerEvent = createEdgeSmokeDuskEvents("edge-smoke-dusk-web-proof").find(
+      (event) => event.type === "power.action_set",
+    );
+    if (!edgePowerEvent) throw new Error("Expected edge-smoke-dusk Power event");
+    const viewerDecisionEvent = projectViewerDecisionEvent(edgePowerEvent);
+    if (!viewerDecisionEvent || viewerDecisionEvent.type !== "power.action_set") {
+      throw new Error("Expected viewer-safe classic Power event");
+    }
+    const visibleMessage = transcriptEntry({
+      round: viewerDecisionEvent.round,
+      phase: "POWER",
+      timestamp: Date.parse(viewerDecisionEvent.timestamp),
+    });
+    const frame = replayFrame(baseGame().players, {
+      schemaVersion: 3,
+      gameId: "edge-smoke-dusk-web-proof",
+      slug: "edge-smoke-dusk",
+      sequence: viewerDecisionEvent.sequence,
+      timestamp: Date.parse(viewerDecisionEvent.timestamp),
+      round: viewerDecisionEvent.round,
+      phase: "POWER",
+      viewerDecisionEvent,
+    });
+
+    const model = buildMatchWatchModel({
+      game: baseGame(),
+      messages: [visibleMessage],
+      live: false,
+      playbackState: {
+        round: viewerDecisionEvent.round,
+        phase: "POWER",
+        players: baseGame().players,
+        visibleMessages: [visibleMessage],
+      },
+      replayFrames: [frame],
+    });
+
+    expect(frame.viewerDecisionEvent).toEqual(viewerDecisionEvent);
+    expect(model.phase).toBe("POWER");
+    expect(JSON.stringify(frame)).not.toContain("sourcePointers");
+  });
+
+  it("accepts v3 replay frames and live format decision events", () => {
+    const liveEvent: Extract<WsGameEvent, { type: "viewer_decision_event" }> = {
+      type: "viewer_decision_event",
+      gameId: "game-1",
+      event: {
+        sequence: 13,
+        timestamp: "2026-07-26T00:00:00.000Z",
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.safety_bounce_pointer",
+        payload: {
+          actorId: "p1",
+          targetId: "p2",
+          classification: "safe",
+        },
+      },
+    };
+    const frame = replayFrame(watchState().players, {
+      schemaVersion: 3,
+      phase: "FORMAT_RESOLVE",
+      viewerDecisionEvent: liveEvent.event,
+    });
+
+    expect(frame.viewerDecisionEvent).toEqual(liveEvent.event);
+    expect(frame.phase).toBe("FORMAT_RESOLVE");
+  });
+
   it("applies watch state as the authoritative shell state", () => {
     const next = applyWatchStateToGameDetail(baseGame(), watchState());
 

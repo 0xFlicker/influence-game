@@ -3,6 +3,7 @@ import type { LaunchFormatId } from "./formats";
 import { resolveGameKernel, type GameKernel } from "./game-kernel";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import { PlayerStatus, type Phase, type PowerActionType, type UUID } from "./types";
+import { reconstructSafetyBouncePrefix } from "./viewer-decision-events";
 
 export type RevealedFactsStatus = "available" | "not_yet_resolved" | "not_yet_flushed" | "unavailable";
 
@@ -11,16 +12,15 @@ export type RevealedCanonicalFactsStatus = "available" | "not_yet_flushed" | "un
 export type RevealedFactsDiagnosticSeverity = "info" | "warning" | "error";
 
 /**
- * Ballot ledger scope for format sealed ballots.
- * - public: never include voter→ballot mappings
- * - owner: include only ballots cast by ownedPlayerIds
- * - producer: full sealed ballot ledger
+ * Historical compatibility input for callers that used audience-specific
+ * format ballot reads. All modes now produce the same viewer-safe ledger;
+ * provenance remains on the raw producer event envelope instead.
  */
 export type RevealedFormatBallotAccessMode = "public" | "owner" | "producer";
 
 export interface RevealedFormatBallotAccess {
   mode: RevealedFormatBallotAccessMode;
-  /** Required when mode is "owner". */
+  /** @deprecated No longer used; all authorized viewers receive the same ledger. */
   ownedPlayerIds?: ReadonlySet<UUID> | readonly UUID[];
 }
 
@@ -138,10 +138,7 @@ export interface RevealedSafetyBounceFacts {
   voteTotals: RevealedVoteCount[];
 }
 
-/**
- * Public format facts for format-kernel rounds.
- * Sealed ballots are never public; owner/producer scopes attach a filtered ledger.
- */
+/** Public format facts for format-kernel rounds. */
 export interface RevealedFormatFacts {
   status: RevealedFactsStatus;
   empowered: RevealedPlayerRef | null;
@@ -155,10 +152,11 @@ export interface RevealedFormatFacts {
   voteBomb: RevealedVoteBombFacts | null;
   safetyBounce: RevealedSafetyBounceFacts | null;
   /**
-   * Sealed ballots: empty for public; owner-filtered for owner; full for producer.
-   * Never includes thinking, reasoningContext, decision logs, or model metadata.
+   * Viewer-safe accepted voter-to-target ledger, available immediately after
+   * durable append. Never includes provenance, cognition, or raw envelopes.
    */
   sealedBallots: RevealedFormatBallotEntry[];
+  /** Compatibility marker: the ledger is public to every authorized viewer. */
   sealedBallotAccess: RevealedFormatBallotAccessMode;
 }
 
@@ -235,10 +233,7 @@ export interface BuildRevealedRoundFactsOptions {
    * Callers with a stored column should pass the resolved kernel from resolveGameKernel.
    */
   kernel?: GameKernel;
-  /**
-   * Controls sealed format ballot inclusion. Defaults to public (no ballots).
-   * Owner mode requires ownedPlayerIds; unknown modes fall back to public.
-   */
+  /** @deprecated Audience input is retained for callers but no longer changes ballot facts. */
   ballotAccess?: RevealedFormatBallotAccess;
 }
 
@@ -312,7 +307,7 @@ export function buildRevealedRoundFacts(options: BuildRevealedRoundFactsOptions)
   const phase = roundPhase(roundEvents, round === latestProjection.round ? latestProjection.phase : roundProjection.phase);
   const players = playerGroups(roundProjection);
   const standardVote = buildStandardVoteFacts(roundEvents, roundProjection, includeClassicPowerCouncil);
-  const format = buildFormatFacts(roundEvents, roundProjection, options.ballotAccess);
+  const format = buildFormatFacts(roundEvents, roundProjection);
   const power = includeClassicPowerCouncil
     ? buildPowerFacts(roundEvents, roundProjection, standardVote)
     : undefined;
@@ -454,16 +449,15 @@ function buildCouncilFacts(
 function buildFormatFacts(
   events: readonly CanonicalGameEvent[],
   projection: CanonicalGameProjection,
-  ballotAccess: RevealedFormatBallotAccess | undefined,
 ): RevealedFormatFacts {
   const menu = latestEvent(events, "format.menu_offered");
   const selected = latestEvent(events, "format.selected");
   const resolved = latestEvent(events, "format.resolved");
   const bounceStarted = latestEvent(events, "format.safety_bounce_started");
-  const bouncePointers = eventsOfType(events, "format.safety_bounce_pointer");
-  const accessMode = normalizeBallotAccessMode(ballotAccess);
+  const hasBouncePointers = eventsOfType(events, "format.safety_bounce_pointer").length > 0;
+  const accessMode: RevealedFormatBallotAccessMode = "public";
 
-  if (!menu && !selected && !resolved && !bounceStarted && bouncePointers.length === 0) {
+  if (!menu && !selected && !resolved && !bounceStarted && !hasBouncePointers) {
     return emptyFormat("not_yet_resolved", accessMode);
   }
 
@@ -483,7 +477,13 @@ function buildFormatFacts(
     ?? selected?.payload.formatId
     ?? null;
 
-  const safetyBounce = buildSafetyBounceFacts(events, projection, resolved, bounceStarted);
+  const safetyBounce = buildSafetyBounceFacts(
+    events,
+    projection,
+    resolved,
+    bounceStarted,
+    hasBouncePointers,
+  );
   const saveOrEliminate = resolved?.payload.saveOrEliminate
     ? {
         nets: countsToVoteCounts(resolved.payload.saveOrEliminate.nets, projection),
@@ -528,7 +528,7 @@ function buildFormatFacts(
     saveOrEliminate,
     voteBomb,
     safetyBounce,
-    sealedBallots: buildSealedFormatBallots(events, projection, ballotAccess),
+    sealedBallots: buildSealedFormatBallots(events, projection),
     sealedBallotAccess: accessMode,
   };
 }
@@ -538,92 +538,42 @@ function buildSafetyBounceFacts(
   projection: CanonicalGameProjection,
   resolved: EventOf<"format.resolved"> | null,
   bounceStarted: EventOf<"format.safety_bounce_started"> | null,
+  hasBouncePointers: boolean,
 ): RevealedSafetyBounceFacts | null {
-  const pointerEvents = eventsOfType(events, "format.safety_bounce_pointer");
   const resolvedBounce = resolved?.payload.safetyBounce ?? null;
-  if (!bounceStarted && !resolvedBounce && pointerEvents.length === 0) {
+  if (!bounceStarted && !resolvedBounce && !hasBouncePointers) {
     return null;
   }
 
-  const starterId = resolvedBounce?.starterId ?? bounceStarted?.payload.starterId ?? null;
-  const pointers = pointerEvents.map((event) => ({
-    actor: playerRef(projection, event.payload.actorId),
-    target: playerRef(projection, event.payload.targetId),
-    classification: event.payload.classification,
-  }));
-
-  if (resolvedBounce) {
-    return {
-      starter: refOrNull(projection, starterId),
-      pointers,
-      safe: resolvedBounce.safePlayerIds.map((id) => playerRef(projection, id)),
-      vulnerable: resolvedBounce.vulnerablePlayerIds.map((id) => playerRef(projection, id)),
-      voteTotals: countsToVoteCounts(resolvedBounce.voteTotals, projection),
-    };
-  }
-
-  // In-progress bounce: recompute pools from public pointer chain + starter.
-  const classified = new Map<UUID, "safe" | "vulnerable">();
-  if (starterId) classified.set(starterId, "safe");
-  for (const event of pointerEvents) {
-    classified.set(event.payload.targetId, event.payload.classification);
-  }
-  const safe: RevealedPlayerRef[] = [];
-  const vulnerable: RevealedPlayerRef[] = [];
-  for (const [id, classification] of classified) {
-    const ref = playerRef(projection, id);
-    if (classification === "safe") safe.push(ref);
-    else vulnerable.push(ref);
-  }
+  const prefix = reconstructSafetyBouncePrefix({
+    roster: projection.playerOrder.map((id) => ({ id })),
+    events,
+  });
 
   return {
-    starter: refOrNull(projection, starterId),
-    pointers,
-    safe,
-    vulnerable,
-    voteTotals: [],
+    starter: refOrNull(projection, prefix.starterId),
+    pointers: prefix.acceptedPointers.map((pointer) => ({
+      actor: playerRef(projection, pointer.actorId),
+      target: playerRef(projection, pointer.targetId),
+      classification: pointer.classification,
+    })),
+    safe: prefix.safePlayerIds.map((id) => playerRef(projection, id)),
+    vulnerable: prefix.vulnerablePlayerIds.map((id) => playerRef(projection, id)),
+    voteTotals: resolvedBounce ? countsToVoteCounts(resolvedBounce.voteTotals, projection) : [],
   };
 }
 
-function normalizeBallotAccessMode(
-  ballotAccess: RevealedFormatBallotAccess | undefined,
-): RevealedFormatBallotAccessMode {
-  if (!ballotAccess) return "public";
-  if (ballotAccess.mode === "producer") return "producer";
-  if (ballotAccess.mode === "owner") return "owner";
-  return "public";
-}
-
-function ownedPlayerIdSet(
-  ballotAccess: RevealedFormatBallotAccess | undefined,
-): Set<UUID> {
-  if (!ballotAccess || ballotAccess.mode !== "owner") return new Set();
-  const raw = ballotAccess.ownedPlayerIds;
-  if (!raw) return new Set();
-  return raw instanceof Set ? new Set(raw) : new Set(raw);
-}
-
 /**
- * Sealed ballots are producer-visibility events. Public never sees them.
- * Owner sees only owned voters; producer sees the full ledger.
- * Cognitive fields never appear on these events or this projection.
+ * Format ballot envelopes may be producer-visible for historical provenance,
+ * but this aggregate is a viewer fact. It is intentionally built only from
+ * canonical ballot payloads, never transcript prose or private artifacts.
  */
 function buildSealedFormatBallots(
   events: readonly CanonicalGameEvent[],
   projection: CanonicalGameProjection,
-  ballotAccess: RevealedFormatBallotAccess | undefined,
 ): RevealedFormatBallotEntry[] {
-  const mode = normalizeBallotAccessMode(ballotAccess);
-  if (mode === "public") return [];
-
   const ballotEvents = eventsOfType(events, "format.ballot_cast");
-  const owned = mode === "owner" ? ownedPlayerIdSet(ballotAccess) : null;
-  const filtered = ballotEvents.filter((event) => {
-    if (mode === "producer") return true;
-    return owned?.has(event.payload.voterId) ?? false;
-  });
-
-  return sortByPlayerOrder(filtered, projection, (event) => event.payload.voterId).map((event) => ({
+  return sortByPlayerOrder(ballotEvents, projection, (event) => event.payload.voterId).map((event) => ({
     voter: playerRef(projection, event.payload.voterId),
     target: playerRef(projection, event.payload.targetId),
     polarity: event.payload.polarity,
