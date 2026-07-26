@@ -39,13 +39,10 @@ Items are ordered by current priority.
 
 ### R15. Format-kernel phase-boundary startup recovery
 
-- Status: `ready`
-- Priority: **high**
-- Sources: `packages/api/src/services/game-recovery-support.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/game-runner.types.ts`, `packages/api/src/__tests__/game-recovery.test.ts`, and live durable-run inspection of `odd-smoke-wolf` on 2026-07-26.
-- Signal: the phase machine and checkpoint writer create real boundaries for `format_menu`, `format_pick`, `format_mingle`, and `format_resolve`, but the recovery selector explicitly excludes all four coordinates. A process restart at any of those points suspends an otherwise valid format game instead of resuming it. `odd-smoke-wolf` crossed each unsupported boundary during Round 2.
-- Concrete seam: format-kernel event hydration, phase-actor hydration, recovery eligibility, boundary accumulator validation, startup owner handoff, and the DB-backed same-game recovery matrix.
-- Validation path: interrupt one API-backed format game at each format coordinate, restart through the real startup-recovery path, verify the same game continues with contiguous canonical sequences and one new owner epoch, and prove menu/selection/ballot/Safety Bounce state remains event-derived. Include negative fixtures for corrupt or incomplete format state that remain suspended.
-- Suggested slice: remove the deliberate format-coordinate exclusion only together with complete event-backed actor hydration and same-game restart proof for every coordinate. Do not downgrade this to a checkpoint-label change, synthesize format state from transcript prose, or resume a partially accepted ballot/selection.
+- Status: `closed`
+- Priority: **high** (resolved 2026-07-26)
+- Sources: `packages/api/src/services/game-recovery-support.ts`, `packages/engine/src/format-recovery.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/mingle-inbox-replay.ts`, `packages/api/src/__tests__/game-recovery.test.ts`, plan `docs/plans/2026-07-26-001-fix-format-phase-boundary-recovery-plan.md`.
+- Resolution: the four format phase-entry coordinates are startup-recoverable when current-round canonical prerequisites pass. Hydration rebuilds menu/selection/pressure from events only; actor walk uses non-effectful transitions; Mingle inbox replay is session-scoped; DB-backed matrix and corrupt-prefix cases prove same-game continuation and fail-closed behavior. Mid-action format recovery and R12/R16 remain out of scope.
 
 ### R12. Player Strategy Thread checkpoint hydration
 

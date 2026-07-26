@@ -8,12 +8,16 @@ import {
   TemplateHouseInterviewer,
   TokenTracker,
   type AgentResponse,
+  type CanonicalGameEvent,
+  type FormatDecisionProvenance,
   type GameConfig,
   type IAgent,
   type GameRunnerResumeActorCoordinate,
+  type LaunchFormatId,
   type MingleIntentAction,
   type PhaseContext,
   type PowerAction,
+  type StrategicDecisionMetadata,
   type StrategicReflectionAction,
   type TargetDecision,
   type UUID,
@@ -85,10 +89,16 @@ function mockResponse(message: string): AgentResponse {
 class RecoverySmokeAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
+  /**
+   * Round-aware format picker for deterministic Safety Bounce paths.
+   * Round 1: prefer non-safety_bounce; Round 2+: prefer safety_bounce when offered.
+   */
+  private readonly preferSafetyBounceFromRound: number | null;
 
-  constructor(id: UUID, name: string) {
+  constructor(id: UUID, name: string, options: { preferSafetyBounceFromRound?: number } = {}) {
     this.id = id;
     this.name = name;
+    this.preferSafetyBounceFromRound = options.preferSafetyBounceFromRound ?? null;
   }
 
   onGameStart(): void {}
@@ -139,6 +149,25 @@ class RecoverySmokeAgent implements IAgent {
       thinking: "startup recovery empower revote",
     };
   }
+  async pickRoundFormat(
+    ctx: PhaseContext,
+    offeredFormats: [LaunchFormatId, LaunchFormatId],
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { formatId: string; thinking?: string }> {
+    let formatId = offeredFormats[0]!;
+    if (this.preferSafetyBounceFromRound != null) {
+      if (ctx.round < this.preferSafetyBounceFromRound) {
+        formatId = offeredFormats.find((id) => id !== "safety_bounce") ?? offeredFormats[0]!;
+      } else {
+        formatId = offeredFormats.find((id) => id === "safety_bounce") ?? offeredFormats[0]!;
+      }
+    }
+    return {
+      formatId,
+      decisionSource: "llm",
+      fallbackReason: null,
+      thinking: `startup recovery pick ${formatId}`,
+    };
+  }
   async getPowerAction(_ctx: PhaseContext, candidates: [UUID, UUID]): Promise<PowerAction> {
     return { action: "protect", target: candidates[0] };
   }
@@ -187,7 +216,12 @@ class RecoverySmokeAgent implements IAgent {
   removeFromMemory(_playerName: string): void {}
 }
 
-async function insertRecoveryPlayers(db: DrizzleDB, gameId: string, count = 4): Promise<RecoverySmokeAgent[]> {
+async function insertRecoveryPlayers(
+  db: DrizzleDB,
+  gameId: string,
+  count = 4,
+  options: { preferSafetyBounceFromRound?: number } = {},
+): Promise<RecoverySmokeAgent[]> {
   const players = [
     { id: "atlas", name: "Atlas" },
     { id: "echo", name: "Echo" },
@@ -204,7 +238,7 @@ async function insertRecoveryPlayers(db: DrizzleDB, gameId: string, count = 4): 
     agentConfig: JSON.stringify({ model: "mock", temperature: 0 }),
   })));
 
-  return players.map((player) => new RecoverySmokeAgent(player.id, player.name));
+  return players.map((player) => new RecoverySmokeAgent(player.id, player.name, options));
 }
 
 async function waitForCompletedGame(db: DrizzleDB, gameId: string) {
@@ -227,6 +261,8 @@ async function interruptGameAtBoundary(
     playerCount?: number;
     requireBlockedMingleInbox?: boolean;
     writeUnsupportedNewerCheckpoint?: string;
+    preferSafetyBounceFromRound?: number;
+    gameIdSuffix?: string;
   } = {},
 ): Promise<{
   gameId: string;
@@ -235,12 +271,14 @@ async function interruptGameAtBoundary(
 }> {
   const config = options.config ?? recoveryConfig;
   const gameId = await insertGame(db, {
-    id: `startup-recovery-${actorCoordinate}-${options.playerCount ?? 4}`,
+    id: `startup-recovery-${actorCoordinate}-${options.playerCount ?? 4}${options.gameIdSuffix ?? ""}`,
     status: "in_progress",
     config,
   });
   const ownerEpoch = await insertOwner(db, gameId);
-  const agents = await insertRecoveryPlayers(db, gameId, options.playerCount);
+  const agents = await insertRecoveryPlayers(db, gameId, options.playerCount, {
+    preferSafetyBounceFromRound: options.preferSafetyBounceFromRound,
+  });
   const tokenTracker = new TokenTracker();
   tokenTracker.record("startup-recovery-fixture", 12, 4);
 
@@ -417,13 +455,17 @@ describe("game startup recovery", () => {
     await abortAllGames();
   });
 
-  // Classic Power→Council coordinates (post_vote_mingle/power/reveal/pre_council/council)
-  // and format mid-round (format_*) are not startup-resume supported after format-kernel cutover.
+  // Classic Power→Council coordinates remain retired. Format phase-entry coordinates
+  // (format_menu/pick/mingle/resolve) are startup-resume supported with event prerequisites.
   const supportedRecoveryCases = [
     { actorCoordinate: "lobby", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "mingle_i", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "pre_vote_huddle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "vote", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
+    { actorCoordinate: "format_menu", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "format_pick", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "format_mingle", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "format_resolve", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_lobby", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_plea", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
@@ -463,6 +505,21 @@ describe("game startup recovery", () => {
       if (actorCoordinate === "tribunal_defense") {
         expect(candidate.resumeFrom.currentAccusations?.items.length).toBeGreaterThan(0);
       }
+      if (actorCoordinate === "format_mingle") {
+        expect(candidate.resumeFrom.mingleInboxReplay).toBeNull();
+      }
+      if (actorCoordinate === "format_resolve") {
+        const formatMingleDelivery = candidate.resumeFrom.mingleInboxReplay?.entries ?? [];
+        // When Format Mingle produced room speech, only that session is retained.
+        if (formatMingleDelivery.length > 0) {
+          expect(candidate.resumeFrom.mingleInboxReplay?.sourceRound).toBeGreaterThan(0);
+        }
+      }
+      if (actorCoordinate === "format_pick") {
+        const pressure = candidate.resumeFrom.canonicalEvents
+          .filter((event) => event.type === "format.menu_offered");
+        expect(pressure).toHaveLength(1);
+      }
 
       const recovery = await recoverGamesOnStartup(db);
       expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
@@ -474,6 +531,26 @@ describe("game startup recovery", () => {
         interruptedAtSequence,
         expectedIntroductionCount,
       });
+
+      if (
+        actorCoordinate === "format_menu" ||
+        actorCoordinate === "format_pick" ||
+        actorCoordinate === "format_mingle" ||
+        actorCoordinate === "format_resolve"
+      ) {
+        const eventRows = await db
+          .select()
+          .from(schema.gameEvents)
+          .where(eq(schema.gameEvents.gameId, gameId))
+          .orderBy(asc(schema.gameEvents.sequence));
+        const menuCount = eventRows.filter((row) => row.eventType === "format.menu_offered").length;
+        const selectedCount = eventRows.filter((row) => row.eventType === "format.selected").length;
+        // maxRounds=2 in recoveryConfigWithMingle → one menu/selection per completed round.
+        expect(menuCount).toBeGreaterThanOrEqual(1);
+        expect(selectedCount).toBeGreaterThanOrEqual(1);
+        // No pre-boundary duplication: each completed round has at most one menu/selection pair.
+        expect(menuCount).toBe(selectedCount);
+      }
 
       if (actorCoordinate === "tribunal_defense") {
         const transcripts = await db
@@ -726,22 +803,132 @@ describe("game startup recovery", () => {
     }
   });
 
-  test("startup recovery fails closed for unsupported format-kernel mid-round coordinates", async () => {
-    for (const actorCoordinate of ["format_menu", "format_pick", "format_mingle", "format_resolve"] as const) {
+  test("startup recovery fails closed for corrupt or incomplete format phase-entry prefixes", async () => {
+    const corruptCases: Array<{
+      id: string;
+      actorCoordinate: GameRunnerResumeActorCoordinate;
+      reason: string;
+      buildEvents: (gameId: string) => readonly CanonicalGameEvent[];
+    }> = [
+      {
+        id: "format-pick-missing-menu",
+        actorCoordinate: "format_pick",
+        reason: "format_pick_missing_menu_offered",
+        buildEvents: (gameId) => {
+          const state = new GameState(
+            [
+              { id: "atlas", name: "Atlas" },
+              { id: "echo", name: "Echo" },
+              { id: "mira", name: "Mira" },
+              { id: "nyx", name: "Nyx" },
+            ],
+            { gameId, now: () => 1_720_000_000_000 },
+          );
+          state.startRound();
+          state.setEmpowered("atlas");
+          return state.getCanonicalEvents();
+        },
+      },
+      {
+        id: "format-mingle-unoffered-selection",
+        actorCoordinate: "format_mingle",
+        reason: "format_mingle_selection_not_in_menu",
+        buildEvents: (gameId) => {
+          let tick = 0;
+          const state = new GameState(
+            [
+              { id: "atlas", name: "Atlas" },
+              { id: "echo", name: "Echo" },
+              { id: "mira", name: "Mira" },
+              { id: "nyx", name: "Nyx" },
+            ],
+            { gameId, now: () => 1_720_000_000_000 + tick++ },
+          );
+          state.startRound();
+          state.setEmpowered("atlas");
+          state.recordFormatMenu("atlas", ["vote_bomb", "save_or_eliminate"]);
+          state.recordFormatSelected("atlas", "safety_bounce");
+          return state.getCanonicalEvents();
+        },
+      },
+      {
+        id: "format-resolve-missing-mingle-allocation",
+        actorCoordinate: "format_resolve",
+        reason: "format_resolve_missing_format_mingle_allocation",
+        buildEvents: (gameId) => {
+          let tick = 0;
+          const state = new GameState(
+            [
+              { id: "atlas", name: "Atlas" },
+              { id: "echo", name: "Echo" },
+              { id: "mira", name: "Mira" },
+              { id: "nyx", name: "Nyx" },
+            ],
+            { gameId, now: () => 1_720_000_000_000 + tick++ },
+          );
+          state.startRound();
+          state.setEmpowered("atlas");
+          state.recordFormatMenu("atlas", ["vote_bomb", "safety_bounce"]);
+          state.recordFormatSelected("atlas", "safety_bounce");
+          return state.getCanonicalEvents();
+        },
+      },
+      {
+        id: "format-resolve-early-ballot",
+        actorCoordinate: "format_resolve",
+        reason: "format_resolve_unexpected_resolution_facts",
+        buildEvents: (gameId) => {
+          let tick = 0;
+          const state = new GameState(
+            [
+              { id: "atlas", name: "Atlas" },
+              { id: "echo", name: "Echo" },
+              { id: "mira", name: "Mira" },
+              { id: "nyx", name: "Nyx" },
+            ],
+            { gameId, now: () => 1_720_000_000_000 + tick++ },
+          );
+          state.startRound();
+          state.setEmpowered("atlas");
+          state.recordFormatMenu("atlas", ["vote_bomb", "safety_bounce"]);
+          state.recordFormatSelected("atlas", "safety_bounce");
+          state.recordRoomAllocations(
+            [{ roomId: 1, round: 1, beat: 1, playerIds: ["atlas", "echo", "mira", "nyx"] }],
+            [],
+            [],
+            Phase.FORMAT_MINGLE,
+          );
+          state.recordFormatBallot({
+            formatId: "safety_bounce",
+            voterId: "echo",
+            targetId: "mira",
+          });
+          return state.getCanonicalEvents();
+        },
+      },
+    ];
+
+    for (const corruptCase of corruptCases) {
       const gameId = await insertGame(db, {
-        id: `startup-recovery-format-mid-${actorCoordinate}`,
+        id: `startup-recovery-corrupt-${corruptCase.id}`,
         status: "suspended",
         config: recoveryConfig,
       });
       const ownerEpoch = await insertOwner(db, gameId);
-      const events = createCanonicalEventFixture(gameId);
+      const events = corruptCase.buildEvents(gameId);
       await appendGameEvents(db, { gameId, ownerEpoch, events });
 
-      const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
-        ownerEpoch,
-        eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
-        actorCoordinate,
-      });
+      const checkpoint = enrichCapsuleForV1Candidate(
+        {
+          ...createCheckpointCapsule(events),
+          transcriptReplay: { version: 2, entries: [] },
+        },
+        {
+          ownerEpoch,
+          eventHeadHash: hashCanonicalEvent(events[events.length - 1]!),
+          actorCoordinate: corruptCase.actorCoordinate,
+        },
+      );
       const checkpointResult = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
       expect(checkpointResult.ok).toBeTrue();
 
@@ -749,10 +936,152 @@ describe("game startup recovery", () => {
       expect(candidate).toMatchObject({
         ok: false,
         gameId,
-        reason: `unsupported_actor_coordinate:${actorCoordinate}`,
+        reason: corruptCase.reason,
       });
+
+      const recovery = await recoverGamesOnStartup(db);
+      expect(recovery.recovered).toBe(0);
+      expect(recovery.skipped.some((entry) => entry.gameId === gameId && entry.reason === corruptCase.reason)).toBeTrue();
+
+      const eventRows = await db
+        .select()
+        .from(schema.gameEvents)
+        .where(eq(schema.gameEvents.gameId, gameId));
+      expect(eventRows).toHaveLength(events.length);
     }
   });
+
+  test("startup recovery resumes Safety Bounce format_resolve without pre-checkpoint bounce facts", async () => {
+    // Round 1: force a non-Safety-Bounce selection so anti-repeat guarantees Safety Bounce
+    // is offered in Round 2. Interrupt at the Round 2 format_resolve phase-entry boundary.
+    const bounceGameId = await insertGame(db, {
+      id: "startup-recovery-format_resolve-safety-bounce",
+      status: "in_progress",
+      config: recoveryConfigWithMingle,
+    });
+    const bounceOwnerEpoch = await insertOwner(db, bounceGameId);
+    const agents = await insertRecoveryPlayers(db, bounceGameId, 6, {
+      preferSafetyBounceFromRound: 2,
+    });
+    const tokenTracker = new TokenTracker();
+    tokenTracker.record("startup-recovery-fixture", 12, 4);
+
+    let interruptedAt = 0;
+    let runner: GameRunner | null = null;
+    runner = new GameRunner(agents, recoveryConfigWithMingle, new TemplateHouseInterviewer(), {
+      gameId: bounceGameId,
+      tokenTracker,
+      durableEventSink: async (events) => {
+        await appendGameEvents(db, { gameId: bounceGameId, ownerEpoch: bounceOwnerEpoch, events });
+      },
+      durableCheckpointSink: async (checkpoint) => {
+        const result = await writeGameCheckpoint(db, {
+          gameId: bounceGameId,
+          ownerEpoch: bounceOwnerEpoch,
+          checkpoint,
+        });
+        expect(result.ok).toBeTrue();
+        if (
+          interruptedAt === 0 &&
+          checkpoint.checkpointKind === "phase_boundary" &&
+          checkpoint.runtimeSnapshot?.actorWitness.actorCoordinate === "format_resolve" &&
+          checkpoint.lastEventSequence > 0
+        ) {
+          const events = await db
+            .select()
+            .from(schema.gameEvents)
+            .where(eq(schema.gameEvents.gameId, bounceGameId))
+            .orderBy(asc(schema.gameEvents.sequence));
+          const selectedEvents = events.filter((row) => row.eventType === "format.selected");
+          const hasSafetyBounceSelection = selectedEvents.some((row) => {
+            const envelope = row.envelope as { payload?: { formatId?: string } };
+            return envelope.payload?.formatId === "safety_bounce";
+          });
+          // Wait until round 2 has locked Safety Bounce.
+          if (selectedEvents.length >= 2 && hasSafetyBounceSelection) {
+            interruptedAt = checkpoint.lastEventSequence;
+            runner?.abort();
+          }
+        }
+      },
+    });
+
+    await expect(runner.run()).rejects.toThrow("Game run aborted");
+    expect(interruptedAt).toBeGreaterThan(0);
+
+    await markGameSuspended(db, bounceGameId, "test_process_interruption", {
+      actorCoordinate: "format_resolve",
+      interruptedAtSequence: interruptedAt,
+    });
+
+    const preEvents = await db
+      .select()
+      .from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, bounceGameId));
+
+    const selectedBefore = preEvents.filter((row) => row.eventType === "format.selected");
+    const safetyBounceSelection = selectedBefore.find((row) => {
+      const envelope = row.envelope as { payload?: { formatId?: string }; round?: number };
+      return envelope.payload?.formatId === "safety_bounce";
+    });
+    expect(safetyBounceSelection).toBeTruthy();
+    const safetyBounceRound = (safetyBounceSelection!.envelope as { round: number }).round;
+
+    // Round 1 may have completed a non-bounce resolve; the Safety Bounce round must not
+    // have any ballot/pointer/start facts before the format_resolve entry checkpoint.
+    const preBounceRoundFacts = preEvents.filter((row) => {
+      const envelope = row.envelope as { round?: number };
+      return envelope.round === safetyBounceRound && (
+        row.eventType === "format.ballot_cast" ||
+        row.eventType === "format.safety_bounce_pointer" ||
+        row.eventType === "format.safety_bounce_started" ||
+        row.eventType === "format.resolved"
+      );
+    });
+    expect(preBounceRoundFacts).toHaveLength(0);
+
+    const candidate = await getSupportedRecovery(db, bounceGameId);
+    expect(candidate.ok).toBeTrue();
+    if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
+    expect(candidate.resumeFrom.actorCoordinate).toBe("format_resolve");
+
+    const recovery = await recoverGamesOnStartup(db);
+    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
+
+    await assertRecoveredGameCompleted({
+      db,
+      gameId: bounceGameId,
+      originalOwnerEpoch: bounceOwnerEpoch,
+      interruptedAtSequence: interruptedAt,
+      expectedIntroductionCount: 6,
+    });
+
+    const postEvents = await db
+      .select()
+      .from(schema.gameEvents)
+      .where(eq(schema.gameEvents.gameId, bounceGameId))
+      .orderBy(asc(schema.gameEvents.sequence));
+    const bounceStarts = postEvents.filter((row) => {
+      if (row.eventType !== "format.safety_bounce_started") return false;
+      const envelope = row.envelope as { round?: number };
+      return envelope.round === safetyBounceRound;
+    });
+    expect(bounceStarts.length).toBe(1);
+    // Bounce start for the interrupted Safety Bounce round is only after recovery.
+    expect(bounceStarts[0]!.sequence).toBeGreaterThan(interruptedAt);
+
+    const menuCount = postEvents.filter((row) => row.eventType === "format.menu_offered").length;
+    const selectedCount = postEvents.filter((row) => row.eventType === "format.selected").length;
+    expect(menuCount).toBe(selectedCount);
+    expect(menuCount).toBeGreaterThanOrEqual(2);
+    // Safety Bounce selection for the interrupted round must remain unique (no re-pick).
+    const safetySelections = postEvents.filter((row) => {
+      if (row.eventType !== "format.selected") return false;
+      const envelope = row.envelope as { payload?: { formatId?: string }; round?: number };
+      return envelope.payload?.formatId === "safety_bounce" && envelope.round === safetyBounceRound;
+    });
+    expect(safetySelections).toHaveLength(1);
+  }, 90000);
 
   test("startup recovery skips a newer unsupported same-head checkpoint and uses the newest resume-capable boundary", async () => {
     const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "vote", {

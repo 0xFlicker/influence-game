@@ -6,6 +6,13 @@ type PlayerRef = {
   name: string;
 };
 
+/** Which mingle session's structured delivery records to rebuild. */
+export type MingleInboxReplaySession =
+  | "latest"
+  | "mingle_i"
+  | "format_mingle"
+  | "none";
+
 function nameKey(name: string): string {
   return name.trim().toLowerCase();
 }
@@ -22,12 +29,51 @@ function isMingleMessagePhase(phase: Phase): boolean {
   );
 }
 
-function latestMingleMessageRound(transcriptReplay: readonly TranscriptEntry[]): number | null {
+function sessionAllowsPhase(session: MingleInboxReplaySession, phase: Phase): boolean {
+  switch (session) {
+    case "none":
+      return false;
+    case "mingle_i":
+      return phase === Phase.MINGLE_I || phase === Phase.MINGLE;
+    case "format_mingle":
+      return phase === Phase.FORMAT_MINGLE;
+    case "latest":
+      return isMingleMessagePhase(phase);
+  }
+}
+
+/**
+ * Map a phase-boundary resume coordinate to the delivery session live execution
+ * would retain at that entry. Format Mingle clears the inbox on entry, so its
+ * boundary discards prior Mingle I delivery; format resolve keeps only FORMAT_MINGLE.
+ */
+export function mingleInboxSessionForResumeTarget(actorCoordinate: string): MingleInboxReplaySession {
+  if (
+    actorCoordinate === "format_menu" ||
+    actorCoordinate === "format_pick" ||
+    actorCoordinate === "vote" ||
+    actorCoordinate === "pre_vote_huddle"
+  ) {
+    return "mingle_i";
+  }
+  if (actorCoordinate === "format_mingle") {
+    return "none";
+  }
+  if (actorCoordinate === "format_resolve") {
+    return "format_mingle";
+  }
+  return "latest";
+}
+
+function latestMingleMessageRound(
+  transcriptReplay: readonly TranscriptEntry[],
+  session: MingleInboxReplaySession,
+): number | null {
   for (let index = transcriptReplay.length - 1; index >= 0; index -= 1) {
     const entry = transcriptReplay[index];
     if (
       entry &&
-      isMingleMessagePhase(entry.phase) &&
+      sessionAllowsPhase(session, entry.phase) &&
       entry.scope === "mingle" &&
       typeof entry.text === "string" &&
       Array.isArray(entry.to)
@@ -41,8 +87,18 @@ function latestMingleMessageRound(transcriptReplay: readonly TranscriptEntry[]):
 export function buildMingleInboxReplayFromTranscript(params: {
   transcriptReplay: readonly TranscriptEntry[];
   players: readonly PlayerRef[];
+  /**
+   * Which mingle session to rebuild. Defaults to "latest" for backward-compatible
+   * callers. Pass an explicit session for target-aware format recovery.
+   */
+  session?: MingleInboxReplaySession;
 }): MingleInboxReplay {
-  const sourceRound = latestMingleMessageRound(params.transcriptReplay);
+  const session = params.session ?? "latest";
+  if (session === "none") {
+    return { version: 1, sourceRound: null, entries: [], unresolvedRecipientNames: [] };
+  }
+
+  const sourceRound = latestMingleMessageRound(params.transcriptReplay, session);
   if (sourceRound == null) {
     return { version: 1, sourceRound: null, entries: [], unresolvedRecipientNames: [] };
   }
@@ -54,7 +110,7 @@ export function buildMingleInboxReplayFromTranscript(params: {
   for (const entry of params.transcriptReplay) {
     if (
       entry.round !== sourceRound ||
-      !isMingleMessagePhase(entry.phase) ||
+      !sessionAllowsPhase(session, entry.phase) ||
       entry.scope !== "mingle" ||
       typeof entry.text !== "string" ||
       !Array.isArray(entry.to)

@@ -23,9 +23,14 @@ import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
 import { hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
 import {
+  buildFormatKernelStateForResume,
+  isFormatResumeCoordinate,
+  resolveEmpoweredIdForRound,
+  validateFormatResumePrerequisites,
+} from "./format-recovery";
+import {
   buildHouseFormatResolutionFacts,
   displayNameForFormat,
-  isLaunchFormatId,
   type LaunchFormatId,
 } from "./formats";
 
@@ -130,7 +135,10 @@ export class GameRunner {
         this.eliminationOrderPlayerIds.push(event.payload.playerId);
         this.eliminationOrder.push(event.payload.playerName);
       }
-      this.hydrateFormatKernelStateFromEvents(options.resumeFrom.canonicalEvents);
+      this.hydrateFormatKernelStateFromEvents(
+        options.resumeFrom.canonicalEvents,
+        options.resumeFrom.actorCoordinate,
+      );
     }
     this.machine = createPhaseMachine();
     this.houseInterviewer = houseInterviewer ?? new TemplateHouseInterviewer();
@@ -173,6 +181,11 @@ export class GameRunner {
       this.mingleInbox,
       this.totalPlayerCount,
     );
+    // Format pressure must attach after ContextBuilder exists so resumed pick/mingle/resolve
+    // contexts see the same event-derived card as a live game.
+    if (this.formatKernelState.pressure) {
+      this.contextBuilder.currentFormatPressure = this.formatKernelState.pressure;
+    }
     this.diaryRoom = new DiaryRoom(
       this.gameState,
       this.logger,
@@ -432,18 +445,29 @@ export class GameRunner {
   }
 
   /**
-   * Seed menu anti-repeat from durable format.selected evidence so supported
-   * phase-boundary resume cannot re-offer the prior format (KTD6).
+   * Reconstruct format-kernel runtime state for resume.
+   * Anti-repeat history always comes from durable format.selected evidence.
+   * Active menu/selection/pressure are restored only for format phase-entry targets.
    */
-  private hydrateFormatKernelStateFromEvents(events: readonly CanonicalGameEvent[]): void {
-    let lastSelected: LaunchFormatId | null = null;
-    for (const event of events) {
-      if (event.type !== "format.selected") continue;
-      if (isLaunchFormatId(event.payload.formatId)) {
-        lastSelected = event.payload.formatId;
+  private hydrateFormatKernelStateFromEvents(
+    events: readonly CanonicalGameEvent[],
+    actorCoordinate: string,
+  ): void {
+    if (isFormatResumeCoordinate(actorCoordinate)) {
+      const reason = validateFormatResumePrerequisites(actorCoordinate, events);
+      if (reason) {
+        throw new Error(`Phase-boundary resume rejected format prefix: ${reason}`);
       }
     }
-    this.formatKernelState.lastSelectedFormat = lastSelected;
+    const hydrated = buildFormatKernelStateForResume({
+      actorCoordinate,
+      canonicalEvents: events,
+      getPlayerName: (id) => this.gameState.getPlayerName(id),
+    });
+    this.formatKernelState.offeredFormats = hydrated.offeredFormats;
+    this.formatKernelState.selectedFormat = hydrated.selectedFormat;
+    this.formatKernelState.pressure = hydrated.pressure;
+    this.formatKernelState.lastSelectedFormat = hydrated.lastSelectedFormat;
   }
 
   private buildCurrentAccusationsPayload(
@@ -880,6 +904,15 @@ export class GameRunner {
     }
   }
 
+  private assertResumeActorRound(actor: PhaseActor, expectedRound: number): void {
+    const actualRound = Number(actor.getSnapshot().context.round);
+    if (actualRound !== expectedRound) {
+      throw new Error(
+        `Phase-boundary resume expected actor round ${expectedRound} but hydrated ${actualRound}`,
+      );
+    }
+  }
+
   private latestCanonicalEvent<TType extends CanonicalGameEvent["type"]>(
     type: TType,
   ): Extract<CanonicalGameEvent, { type: TType }> | null {
@@ -897,7 +930,12 @@ export class GameRunner {
     return Boolean(this.resumeFrom?.canonicalEvents.some((event) => event.type === type));
   }
 
-  private resumeEmpoweredId(): UUID {
+  private resumeEmpoweredId(round: number = this.gameState.round): UUID {
+    const events = this.resumeFrom?.canonicalEvents ?? [];
+    const empoweredId = resolveEmpoweredIdForRound(events, round);
+    if (empoweredId) return empoweredId;
+
+    // Fallback for pre-format coordinates that only require any resolved empower.
     const setEvent = this.latestCanonicalEvent("vote.empowered_set");
     if (setEvent) return setEvent.payload.empowered;
 
@@ -905,6 +943,32 @@ export class GameRunner {
     if (tallyEvent?.payload.tied === null) return tallyEvent.payload.empowered;
 
     throw new Error("Phase-boundary resume missing resolved empowered player");
+  }
+
+  /**
+   * Non-effectfully walk one completed standard round from format_menu through the
+   * next lobby entry so actor.context.round catches up to durable gameState.round.
+   */
+  private async advanceResumeThroughCompletedFormatRound(actor: PhaseActor): Promise<void> {
+    await this.completeResumePhase(actor); // format_menu → format_pick
+    await this.completeResumePhase(actor); // format_pick → format_mingle
+    await this.completeResumePhase(actor); // format_mingle → format_resolve
+    await this.completeResumePhase(actor); // format_resolve → checkGameOver → lobby/endgame
+  }
+
+  /**
+   * From lobby of the current actor round, walk to format_menu of that same round.
+   */
+  private async advanceResumeFromLobbyToFormatMenu(
+    actor: PhaseActor,
+    round: number,
+  ): Promise<void> {
+    await this.completeResumePhase(actor); // lobby → mingle_i
+    await this.completeResumePhase(actor); // mingle_i → pre_vote_huddle
+    await this.completeResumePhase(actor); // pre_vote_huddle → vote
+    const empoweredId = this.resumeEmpoweredId(round);
+    actor.send({ type: "VOTES_TALLIED", empoweredId });
+    await this.completeResumePhase(actor); // vote → format_menu
   }
 
   private resumeCandidateResolution(): {
@@ -954,31 +1018,77 @@ export class GameRunner {
       return;
     }
 
-    const empoweredId = this.resumeEmpoweredId();
-    actor.send({ type: "VOTES_TALLIED", empoweredId });
-    await this.completeResumePhase(actor);
-
-    // Format kernel path (default standard-round spine after empower).
-    if (
+    // Format phase-entry targets need actor.context.round to match durable gameState.round
+    // so maxRounds game-over cannot under-count after multi-round resume. Endgame targets
+    // keep the pre-existing single format walk + alive-count entry (they do not depend on
+    // mid-format maxRounds equality the same way).
+    const isFormatTarget =
       target === "format_menu" ||
       target === "format_pick" ||
       target === "format_mingle" ||
-      target === "format_resolve"
-    ) {
-      // New format mid-states are not durable-resume supported yet (fail-closed product posture).
-      throw new Error(
-        `Phase-boundary resume to "${target}" is not supported yet (format kernel mid-round).`,
-      );
+      target === "format_resolve";
+
+    if (isFormatTarget) {
+      {
+        const roundOneEmpoweredId = this.resumeEmpoweredId(1);
+        actor.send({ type: "VOTES_TALLIED", empoweredId: roundOneEmpoweredId });
+        await this.completeResumePhase(actor); // vote → format_menu (round 1)
+      }
+
+      const targetRound = this.gameState.round;
+      let actorRound = Number(actor.getSnapshot().context.round);
+      while (actorRound < targetRound) {
+        await this.advanceResumeThroughCompletedFormatRound(actor);
+        const after = String(actor.getSnapshot().value);
+        if (after !== "lobby") {
+          throw new Error(
+            `Phase-boundary resume catch-up expected lobby while advancing to round ${targetRound}, hydrated "${after}"`,
+          );
+        }
+        actorRound = Number(actor.getSnapshot().context.round);
+        await this.advanceResumeFromLobbyToFormatMenu(actor, actorRound);
+        actorRound = Number(actor.getSnapshot().context.round);
+      }
+
+      // Non-effectful mid-round walk to the format phase-entry target.
+      if (target === "format_menu") {
+        this.assertResumeActorState(actor, target);
+        this.assertResumeActorRound(actor, targetRound);
+        return;
+      }
+      if (target === "format_pick") {
+        await this.completeResumePhase(actor); // format_menu → format_pick
+        this.assertResumeActorState(actor, target);
+        this.assertResumeActorRound(actor, targetRound);
+        return;
+      }
+      if (target === "format_mingle") {
+        await this.completeResumePhase(actor); // format_menu → format_pick
+        await this.completeResumePhase(actor); // format_pick → format_mingle
+        this.assertResumeActorState(actor, target);
+        this.assertResumeActorRound(actor, targetRound);
+        return;
+      }
+      // format_resolve
+      await this.completeResumePhase(actor); // format_menu → format_pick
+      await this.completeResumePhase(actor); // format_pick → format_mingle
+      await this.completeResumePhase(actor); // format_mingle → format_resolve
+      this.assertResumeActorState(actor, target);
+      this.assertResumeActorRound(actor, targetRound);
+      return;
     }
 
-    // Endgame / post-elim resume after format kernel: walk format states without classic Power→Council.
+    // Endgame / post-elim resume after format kernel: single non-effectful format walk,
+    // then alive-count checkGameOver (pre-existing endgame hydration contract).
+    const empoweredId = this.resumeEmpoweredId();
+    actor.send({ type: "VOTES_TALLIED", empoweredId });
+    await this.completeResumePhase(actor); // vote → format_menu
+
     const isEndgameTarget =
       target.startsWith("reckoning_") ||
       target.startsWith("tribunal_") ||
       target.startsWith("judgment_");
     if (isEndgameTarget || target === "post_vote_mingle" || target === "power" || target === "reveal" || target === "pre_council_huddle" || target === "council") {
-      // After empower, machine is on format_menu. Advance through format kernel states.
-      // Elimination must already be reflected in alive players from canonical events.
       await this.completeResumePhase(actor); // format_menu → format_pick
       await this.completeResumePhase(actor); // format_pick → format_mingle
       await this.completeResumePhase(actor); // format_mingle → format_resolve

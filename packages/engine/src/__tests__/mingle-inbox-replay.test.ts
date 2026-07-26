@@ -195,4 +195,51 @@ describe("buildMingleInboxReplayFromTranscript", () => {
       ["echo", [{ from: "Atlas", text: "hi" }]],
     ]);
   });
+
+  test("session filter keeps only Format Mingle delivery for format_resolve", () => {
+    const replay = buildMingleInboxReplayFromTranscript({
+      transcriptReplay: [
+        mingleEntry({
+          phase: Phase.MINGLE_I,
+          round: 1,
+          from: "Atlas",
+          to: ["Echo"],
+          text: "mingle-i note",
+        }),
+        mingleEntry({
+          phase: Phase.FORMAT_MINGLE,
+          round: 1,
+          from: "Mira",
+          to: ["Atlas"],
+          text: "format-mingle note",
+        }),
+      ],
+      players: [...PLAYERS],
+      session: "format_mingle",
+    });
+
+    expect(replay.sourceRound).toBe(1);
+    expect(replay.entries).toEqual([
+      { recipientId: "atlas", messages: [{ from: "Mira", text: "format-mingle note" }] },
+    ]);
+  });
+
+  test("session none discards all mingle delivery (format_mingle entry)", () => {
+    const replay = buildMingleInboxReplayFromTranscript({
+      transcriptReplay: [
+        mingleEntry({
+          phase: Phase.MINGLE_I,
+          round: 1,
+          from: "Atlas",
+          to: ["Echo"],
+          text: "leftover",
+        }),
+      ],
+      players: [...PLAYERS],
+      session: "none",
+    });
+
+    expect(replay.sourceRound).toBeNull();
+    expect(replay.entries).toEqual([]);
+  });
 });

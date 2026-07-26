@@ -1,7 +1,10 @@
 import {
   buildMingleInboxReplayFromTranscript,
   GameState,
+  isFormatResumeCoordinate,
+  mingleInboxSessionForResumeTarget,
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES,
+  validateFormatResumePrerequisites,
   type CanonicalGameEvent,
   type CurrentAccusationsAccumulatorV1,
   type GameRunnerOptions,
@@ -26,13 +29,13 @@ type AccumulatorRecoveryValidation =
   | { ok: true; currentAccusations: CurrentAccusationsAccumulatorV1 | null }
   | { ok: false; reason: string };
 
-/** Coordinates the runner can actually resume after format-kernel cutover. */
+/**
+ * Coordinates the runner can actually resume after format-kernel cutover.
+ * Format phase-entry coordinates are supported when canonical prerequisites pass.
+ * Classic Power→Council mid-round coordinates remain retired.
+ */
 const RESUME_SUPPORTED_ACTOR_COORDINATES = new Set<string>(
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES.filter((coordinate) =>
-    coordinate !== "format_menu" &&
-    coordinate !== "format_pick" &&
-    coordinate !== "format_mingle" &&
-    coordinate !== "format_resolve" &&
     coordinate !== "post_vote_mingle" &&
     coordinate !== "power" &&
     coordinate !== "reveal" &&
@@ -134,6 +137,7 @@ function validateAccumulatorRegistryForRecovery(params: {
 
   let currentAccusations: CurrentAccusationsAccumulatorV1 | null = null;
   const actorCoordinate = runtimeSnapshot.actorWitness.actorCoordinate;
+  const mingleSession = mingleInboxSessionForResumeTarget(actorCoordinate);
   for (const entry of registry.entries) {
     if (entry.status === "empty" || entry.status === "drained") continue;
     if (entry.id === "mingleInbox" && entry.status === "blocked") continue;
@@ -149,11 +153,17 @@ function validateAccumulatorRegistryForRecovery(params: {
   }
 
   if (hasBlockedMingleInbox(runtimeSnapshot)) {
-    if (mingleInboxReplay.unresolvedRecipientNames.length > 0) {
-      return { ok: false, reason: "mingle_inbox_unresolved_recipients" };
-    }
-    if (mingleInboxReplay.entries.length === 0) {
-      return { ok: false, reason: "mingle_inbox_rebuild_empty" };
+    // format_mingle clears the inbox on entry; a blocked pre-handler registry is
+    // safe to discard rather than requiring an irrelevant Mingle I rebuild.
+    if (mingleSession === "none") {
+      // intentionally empty
+    } else {
+      if (mingleInboxReplay.unresolvedRecipientNames.length > 0) {
+        return { ok: false, reason: "mingle_inbox_unresolved_recipients" };
+      }
+      if (mingleInboxReplay.entries.length === 0) {
+        return { ok: false, reason: "mingle_inbox_rebuild_empty" };
+      }
     }
   }
 
@@ -258,14 +268,9 @@ function validateActorCoordinatePrerequisites(
       requireJury(actorCoordinate, gameState);
   }
 
-  // Format-kernel mid-round coordinates are not durable-resume supported yet.
-  if (
-    actorCoordinate === "format_menu" ||
-    actorCoordinate === "format_pick" ||
-    actorCoordinate === "format_mingle" ||
-    actorCoordinate === "format_resolve"
-  ) {
-    return `unsupported_actor_coordinate:${actorCoordinate}`;
+  // Format phase-entry coordinates: empowered + current-round menu/selection coherence.
+  if (isFormatResumeCoordinate(actorCoordinate)) {
+    return validateFormatResumePrerequisites(actorCoordinate, canonicalEvents);
   }
 
   // Classic Power→Council spine is retired. Old checkpoints at these coordinates
@@ -322,9 +327,11 @@ export function evaluateSupportedRecovery(params: {
 
   const canonicalEvents = params.persistedEvents.events.map((event) => event.envelope);
   const gameState = GameState.fromCanonicalEvents(canonicalEvents);
+  const mingleSession = mingleInboxSessionForResumeTarget(actorCoordinate);
   const mingleInboxReplay = buildMingleInboxReplayFromTranscript({
     transcriptReplay,
     players: gameState.getAllPlayers().map((player) => ({ id: player.id, name: player.name })),
+    session: mingleSession,
   });
   const accumulatorResult = validateAccumulatorRegistryForRecovery({
     runtimeSnapshot,
@@ -339,6 +346,11 @@ export function evaluateSupportedRecovery(params: {
   const tokenCostCursor = readTokenCostCursor(params.checkpoint.tokenCostCursor);
   if (!tokenCostCursor) return { ok: false, reason: "missing_token_cost_cursor" };
 
+  const shouldReplayMingleInbox =
+    hasBlockedMingleInbox(runtimeSnapshot) &&
+    mingleSession !== "none" &&
+    mingleInboxReplay.entries.length > 0;
+
   return {
     ok: true,
     resumeFrom: {
@@ -348,7 +360,7 @@ export function evaluateSupportedRecovery(params: {
       lastEventSequence: params.checkpoint.lastEventSequence,
       transcriptReplay,
       tokenCostCursor,
-      mingleInboxReplay: hasBlockedMingleInbox(runtimeSnapshot) ? mingleInboxReplay : null,
+      mingleInboxReplay: shouldReplayMingleInbox ? mingleInboxReplay : null,
       currentAccusations: accumulatorResult.currentAccusations,
       houseContinuityCapsule: isRecord(snapshot) && isRecord(snapshot.houseContinuityCapsule)
         ? snapshot.houseContinuityCapsule as unknown as SupportedRecoveryResumeInput["houseContinuityCapsule"]

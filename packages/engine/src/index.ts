@@ -290,7 +290,20 @@ export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, CheckpointBoundaryI
 export { PromptReuseAggregate } from "./prompt-reuse";
 export type { LaunchFormatId } from "./formats";
 export { LAUNCH_FORMAT_IDS, isLaunchFormatId, displayNameForFormat } from "./formats";
-export { buildMingleInboxReplayFromTranscript, hydrateMingleInboxFromReplay } from "./mingle-inbox-replay";
+export {
+  buildMingleInboxReplayFromTranscript,
+  hydrateMingleInboxFromReplay,
+  mingleInboxSessionForResumeTarget,
+} from "./mingle-inbox-replay";
+export type { MingleInboxReplaySession } from "./mingle-inbox-replay";
+export {
+  buildFormatKernelStateForResume,
+  currentRoundFromEvents,
+  isFormatResumeCoordinate,
+  resolveEmpoweredIdForRound,
+  validateFormatResumePrerequisites,
+} from "./format-recovery";
+export type { FormatResumeCoordinate } from "./format-recovery";
 export {
   accumulatorProof,
   buildActorWitness,
