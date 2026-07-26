@@ -11,6 +11,16 @@ export * from "./types";
 export { GameState, createUUID } from "./game-state";
 export type { GameStateOptions } from "./game-state";
 
+// Official huddle outcome compact projection / authorization
+export {
+  actorAuthorizedForHuddleOutcome,
+  authorizedCompactHuddleOutcomesForActor,
+  hasRecallParticipantSnapshot,
+  normalizeAllianceHuddleOutcome,
+  toCompactAllianceHuddleOutcome,
+  withParticipantSnapshotFromSession,
+} from "./alliance-huddle-outcome";
+
 // Canonical accepted domain events and projections
 export { CanonicalEventLog } from "./canonical-event-log";
 export type { CanonicalEventListener } from "./canonical-event-log";

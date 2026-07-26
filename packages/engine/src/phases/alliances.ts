@@ -643,6 +643,8 @@ async function completeHuddleSession(
     posture: summary.posture,
     leakOrBetrayalClaims: summary.leakOrBetrayalClaims,
     commitments,
+    // Immutable session participant snapshot — not current alliance membership.
+    participantPlayerIds: [...speakerIds],
     createdAt: completedAt,
   };
   ctx.gameState.recordAllianceHuddleOutcome(outcome);

@@ -1,3 +1,4 @@
+import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
 import type { CanonicalGameEvent } from "./canonical-events";
 import type { LaunchFormatId } from "./formats";
 import type {
@@ -347,7 +348,13 @@ export function applyCanonicalEvent(
       break;
     }
     case "alliance.huddle_outcome_recorded": {
-      projection.allianceHuddleOutcomes[event.payload.outcome.id] = cloneAllianceHuddleOutcome(event.payload.outcome);
+      const session = projection.allianceHuddleSessions[event.payload.outcome.sessionId];
+      projection.allianceHuddleOutcomes[event.payload.outcome.id] = cloneAllianceHuddleOutcome(
+        withParticipantSnapshotFromSession(
+          event.payload.outcome,
+          event.payload.outcome.participantPlayerIds ?? session?.speakerIds,
+        ),
+      );
       if (event.payload.alliance) {
         upsertAllianceProjection(projection, event.payload.alliance);
       }

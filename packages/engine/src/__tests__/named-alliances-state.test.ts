@@ -541,4 +541,167 @@ describe("named alliance state", () => {
       ).toThrow("Alliance mutations are only legal during Mingle I");
     }
   });
+
+  it("copies session participant snapshot and bounds overlong huddle outcomes at record time", () => {
+    const gs = createStartedGame();
+    gs.recordAllianceProposal({
+      allianceId: "alliance-bound",
+      lineageId: "lineage-bound",
+      versionId: "version-bound",
+      proposerId: "alice",
+      name: "Bound Deal",
+      memberIds: ["alice", "bob"],
+      purpose: "Test compact limits.",
+      timebox: null,
+    });
+    gs.recordAllianceResponse({
+      lineageId: "lineage-bound",
+      versionId: "version-bound",
+      playerId: "bob",
+      response: "accepted",
+    });
+    gs.recordAllianceHuddleCompleted({
+      id: "session-bound",
+      scheduleId: "schedule-bound",
+      allianceId: "alliance-bound",
+      window: "pre_vote",
+      round: gs.round,
+      pass: 1,
+      speakerIds: ["alice", "bob"],
+      completedAt: "2026-07-03T00:00:00.000Z",
+    });
+
+    const longPlan = "P".repeat(800);
+    const longPromises = Array.from({ length: 12 }, (_, i) => `promise-${i}-${"x".repeat(200)}`);
+    gs.recordAllianceHuddleOutcome({
+      id: "outcome-bound",
+      sessionId: "session-bound",
+      allianceId: "alliance-bound",
+      window: "pre_vote",
+      round: gs.round,
+      ask: "A".repeat(400),
+      plan: longPlan,
+      promises: longPromises,
+      dissent: [],
+      confidence: "high",
+      posture: "coordinating-with-extra-detail-that-should-be-clipped-for-compact-memory",
+      leakOrBetrayalClaims: [],
+      // Omitted participantPlayerIds — must backfill from session speakers.
+      createdAt: "2026-07-03T00:00:01.000Z",
+    });
+
+    const outcome = gs.getAllianceHuddleOutcomes()[0];
+    expect(outcome?.participantPlayerIds).toEqual(["alice", "bob"]);
+    expect(outcome?.ask.length).toBeLessThanOrEqual(200);
+    expect(outcome?.plan.length).toBeLessThanOrEqual(400);
+    expect(outcome?.posture.length).toBeLessThanOrEqual(80);
+    expect(outcome?.promises).toHaveLength(6);
+    expect(outcome?.promises.every((item) => item.length <= 160)).toBe(true);
+  });
+
+  it("hydrates participant snapshots from matching completed sessions during canonical replay", () => {
+    const gs = createStartedGame();
+    gs.recordAllianceProposal({
+      allianceId: "alliance-hydrate",
+      lineageId: "lineage-hydrate",
+      versionId: "version-hydrate",
+      proposerId: "alice",
+      name: "Hydrate Deal",
+      memberIds: ["alice", "bob"],
+      purpose: "Replay participant snapshot.",
+      timebox: null,
+    });
+    gs.recordAllianceResponse({
+      lineageId: "lineage-hydrate",
+      versionId: "version-hydrate",
+      playerId: "bob",
+      response: "accepted",
+    });
+    gs.recordAllianceHuddleCompleted({
+      id: "session-hydrate",
+      scheduleId: "schedule-hydrate",
+      allianceId: "alliance-hydrate",
+      window: "pre_vote",
+      round: gs.round,
+      pass: 1,
+      speakerIds: ["alice", "bob"],
+      completedAt: "2026-07-03T00:00:00.000Z",
+    });
+    gs.recordAllianceHuddleOutcome({
+      id: "outcome-hydrate",
+      sessionId: "session-hydrate",
+      allianceId: "alliance-hydrate",
+      window: "pre_vote",
+      round: gs.round,
+      ask: "Hold.",
+      plan: "Coordinate.",
+      promises: [],
+      dissent: [],
+      confidence: "medium",
+      posture: "guarded",
+      leakOrBetrayalClaims: [],
+      participantPlayerIds: ["alice", "bob"],
+      createdAt: "2026-07-03T00:00:01.000Z",
+    });
+
+    const replayed = GameState.fromCanonicalEvents(gs.getCanonicalEvents(), {
+      now: () => 1_700_000_000_000,
+    });
+    expect(replayed.getAllianceHuddleOutcomes()[0]?.participantPlayerIds).toEqual(["alice", "bob"]);
+
+    // Legacy event body without snapshot still recovers from the matching session.
+    const events = gs.getCanonicalEvents().map((event) => {
+      if (event.type !== "alliance.huddle_outcome_recorded") return event;
+      const { participantPlayerIds: _drop, ...outcomeWithoutSnapshot } = event.payload.outcome;
+      return {
+        ...event,
+        payload: {
+          ...event.payload,
+          outcome: outcomeWithoutSnapshot,
+        },
+      };
+    });
+    const legacyReplayed = GameState.fromCanonicalEvents(events, {
+      now: () => 1_700_000_000_000,
+    });
+    expect(legacyReplayed.getAllianceHuddleOutcomes()[0]?.participantPlayerIds).toEqual(["alice", "bob"]);
+  });
+
+  it("does not invent participant snapshots without a matching completed session", () => {
+    const gs = createStartedGame();
+    gs.recordAllianceProposal({
+      allianceId: "alliance-orphan",
+      lineageId: "lineage-orphan",
+      versionId: "version-orphan",
+      proposerId: "alice",
+      name: "Orphan Deal",
+      memberIds: ["alice", "bob"],
+      purpose: "No session.",
+      timebox: null,
+    });
+    gs.recordAllianceResponse({
+      lineageId: "lineage-orphan",
+      versionId: "version-orphan",
+      playerId: "bob",
+      response: "accepted",
+    });
+    gs.recordAllianceHuddleOutcome({
+      id: "outcome-orphan",
+      sessionId: "session-missing",
+      allianceId: "alliance-orphan",
+      window: "pre_vote",
+      round: gs.round,
+      ask: "Orphan.",
+      plan: "No speakers.",
+      promises: [],
+      dissent: [],
+      confidence: "low",
+      posture: "guarded",
+      leakOrBetrayalClaims: [],
+      createdAt: "2026-07-03T00:00:01.000Z",
+    });
+
+    const outcome = gs.getAllianceHuddleOutcomes()[0];
+    expect(outcome?.participantPlayerIds).toBeUndefined();
+  });
 });

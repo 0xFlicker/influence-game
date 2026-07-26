@@ -406,6 +406,23 @@ export interface AllianceHuddleCommitmentFact {
   alternativePlan: string | null;
 }
 
+/**
+ * Compact official huddle outcome limits applied at creation (and hydration
+ * normalization). Protected recall never trims these further for budget.
+ */
+export const ALLIANCE_HUDDLE_OUTCOME_LIMITS = {
+  askChars: 200,
+  planChars: 400,
+  postureChars: 80,
+  listItems: 6,
+  listItemChars: 160,
+  commitmentItems: 8,
+  commitmentActionChars: 200,
+  commitmentFieldChars: 160,
+  memberCommitmentItems: 6,
+  dissentItems: 4,
+} as const;
+
 export interface AllianceHuddleOutcome {
   id: UUID;
   sessionId: UUID;
@@ -420,6 +437,32 @@ export interface AllianceHuddleOutcome {
   posture: string;
   leakOrBetrayalClaims: string[];
   /** Primary tactical facts supplied by members; House prose is only a summary. */
+  commitments?: AllianceHuddleCommitmentFact[];
+  /**
+   * Immutable server-private snapshot of session speakers at outcome creation.
+   * Authorization for protected recall uses this set only — never current alliance
+   * membership. Omitted on legacy outcomes that cannot be backfilled from a
+   * matching completed-session record; such outcomes are unavailable for recall.
+   * Must not appear in public/player/owner/MCP/postgame or producer-safe evaluation DTOs.
+   */
+  participantPlayerIds?: UUID[];
+  createdAt: string;
+}
+
+/** Member-safe compact projection of an official huddle outcome (no participant IDs). */
+export interface CompactAllianceHuddleOutcome {
+  id: UUID;
+  sessionId: UUID;
+  allianceId: UUID;
+  window: AllianceHuddleWindow;
+  round: number;
+  ask: string;
+  plan: string;
+  promises: string[];
+  dissent: string[];
+  confidence: "low" | "medium" | "high";
+  posture: string;
+  leakOrBetrayalClaims: string[];
   commitments?: AllianceHuddleCommitmentFact[];
   createdAt: string;
 }

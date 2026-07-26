@@ -26,6 +26,7 @@ import {
   type InitialExposureBenchResolution,
   type ShieldReplacementResolution,
 } from "./exposure-bench";
+import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import type { LaunchFormatId } from "./formats";
 import type {
@@ -1077,20 +1078,25 @@ export class GameState {
   recordAllianceHuddleOutcome(outcome: AllianceHuddleOutcome): AllianceRecord {
     const alliance = this._alliances.get(outcome.allianceId);
     if (!alliance) throw new Error(`Cannot record huddle outcome for unknown alliance ${outcome.allianceId}`);
+    const session = this._allianceHuddleSessions.get(outcome.sessionId);
+    const prepared = withParticipantSnapshotFromSession(
+      outcome,
+      outcome.participantPlayerIds ?? session?.speakerIds,
+    );
     const updatedAlliance: AllianceRecord = {
       ...cloneAllianceRecord(alliance),
       updatedRound: this._round,
-      updatedAt: outcome.createdAt,
-      huddleOutcomeIds: Array.from(new Set([...alliance.huddleOutcomeIds, outcome.id])),
+      updatedAt: prepared.createdAt,
+      huddleOutcomeIds: Array.from(new Set([...alliance.huddleOutcomeIds, prepared.id])),
     };
     this.appendCanonicalEvent("alliance.huddle_outcome_recorded", {
-      outcome: cloneAllianceHuddleOutcome(outcome),
+      outcome: cloneAllianceHuddleOutcome(prepared),
       alliance: updatedAlliance,
     }, {
-      phase: outcome.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE,
+      phase: prepared.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE,
       visibility: "producer",
     });
-    this._allianceHuddleOutcomes.set(outcome.id, cloneAllianceHuddleOutcome(outcome));
+    this._allianceHuddleOutcomes.set(prepared.id, cloneAllianceHuddleOutcome(prepared));
     this.setAlliance(updatedAlliance);
     return cloneAllianceRecord(updatedAlliance);
   }

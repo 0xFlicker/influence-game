@@ -86,6 +86,16 @@ describe("named alliance member-safe context", () => {
       rationale: "Producer rationale: Charlie is vulnerable.",
       createdAt: "2026-07-03T00:00:00.000Z",
     });
+    gameState.recordAllianceHuddleCompleted({
+      id: "session-ab",
+      scheduleId: "schedule-ab",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gameState.round,
+      pass: 1,
+      speakerIds: ["alice", "bob"],
+      completedAt: "2026-07-03T00:00:00.500Z",
+    });
     gameState.recordAllianceHuddleOutcome({
       id: "outcome-ab",
       sessionId: "session-ab",
@@ -99,6 +109,7 @@ describe("named alliance member-safe context", () => {
       confidence: "high",
       posture: "coordinating",
       leakOrBetrayalClaims: [],
+      participantPlayerIds: ["alice", "bob"],
       createdAt: "2026-07-03T00:00:01.000Z",
     });
 
@@ -111,6 +122,195 @@ describe("named alliance member-safe context", () => {
     expect(charlieRecord).not.toContain("Blindside Charlie");
     expect(charlieRecord).not.toContain("Producer rationale");
     expect(charlieRecord).not.toContain("huddle");
+  });
+
+  it("retains authorized compact huddle outcomes after the alliance closes", () => {
+    const { gameState, builder } = createContextHarness();
+    gameState.recordAllianceProposal({
+      allianceId: "alliance-ab",
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      proposerId: "alice",
+      name: "Alice Bob",
+      memberIds: ["alice", "bob"],
+      purpose: "Coordinate the vote.",
+      timebox: null,
+    });
+    gameState.recordAllianceResponse({
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      playerId: "bob",
+      response: "accepted",
+    });
+    gameState.recordAllianceHuddleCompleted({
+      id: "session-ab",
+      scheduleId: "schedule-ab",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gameState.round,
+      pass: 1,
+      speakerIds: ["alice", "bob"],
+      completedAt: "2026-07-03T00:00:00.000Z",
+    });
+    gameState.recordAllianceHuddleOutcome({
+      id: "outcome-ab",
+      sessionId: "session-ab",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gameState.round,
+      ask: "Hold the line.",
+      plan: "Vote Charlie at the next public vote.",
+      promises: ["Alice covers Bob."],
+      dissent: [],
+      confidence: "high",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      participantPlayerIds: ["alice", "bob"],
+      createdAt: "2026-07-03T00:00:01.000Z",
+    });
+    gameState.closeAlliance("alliance-ab", "mutual_dissolve");
+
+    const aliceContext = builder.buildPhaseContext("alice", Phase.VOTE);
+    expect(aliceContext.allianceContext?.activeAlliances).toEqual([
+      expect.objectContaining({
+        id: "alliance-ab",
+        status: "closed",
+        huddleOutcomes: [
+          expect.objectContaining({
+            id: "outcome-ab",
+            plan: "Vote Charlie at the next public vote.",
+          }),
+        ],
+      }),
+    ]);
+    // Participant snapshot stays server-private — never on the member-safe projection.
+    const serialized = JSON.stringify(aliceContext.allianceContext);
+    expect(serialized).not.toContain("participantPlayerIds");
+    for (const alliance of aliceContext.allianceContext?.activeAlliances ?? []) {
+      for (const outcome of alliance.huddleOutcomes) {
+        expect(outcome).not.toHaveProperty("participantPlayerIds");
+      }
+    }
+  });
+
+  it("excludes later joiners from prior huddle outcomes and existence signals", () => {
+    const { gameState, builder } = createContextHarness();
+    gameState.recordAllianceProposal({
+      allianceId: "alliance-ab",
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      proposerId: "alice",
+      name: "Alice Bob",
+      memberIds: ["alice", "bob"],
+      purpose: "Coordinate the vote.",
+      timebox: null,
+    });
+    gameState.recordAllianceResponse({
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      playerId: "bob",
+      response: "accepted",
+    });
+    gameState.recordAllianceHuddleCompleted({
+      id: "session-early",
+      scheduleId: "schedule-early",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gameState.round,
+      pass: 1,
+      speakerIds: ["alice", "bob"],
+      completedAt: "2026-07-03T00:00:00.000Z",
+    });
+    gameState.recordAllianceHuddleOutcome({
+      id: "outcome-early",
+      sessionId: "session-early",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gameState.round,
+      ask: "Secret ask.",
+      plan: "Secret plan to blindside Charlie.",
+      promises: ["Keep Charlie out of the room."],
+      dissent: [],
+      confidence: "high",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      participantPlayerIds: ["alice", "bob"],
+      createdAt: "2026-07-03T00:00:01.000Z",
+    });
+    // Charlie joins later via amendment — must not receive prior outcome.
+    gameState.recordAllianceAmendment({
+      allianceId: "alliance-ab",
+      lineageId: "lineage-amend",
+      versionId: "version-amend",
+      proposerId: "alice",
+      name: "Alice Bob Charlie",
+      memberIds: ["alice", "bob", "charlie"],
+      purpose: "Expand the table.",
+      timebox: null,
+    });
+    gameState.recordAllianceResponse({
+      lineageId: "lineage-amend",
+      versionId: "version-amend",
+      playerId: "bob",
+      response: "accepted",
+    });
+    gameState.recordAllianceResponse({
+      lineageId: "lineage-amend",
+      versionId: "version-amend",
+      playerId: "charlie",
+      response: "accepted",
+    });
+
+    const charlieContext = builder.buildPhaseContext("charlie", Phase.VOTE);
+    const aliceContext = builder.buildPhaseContext("alice", Phase.VOTE);
+    const charlieAlliance = charlieContext.allianceContext?.activeAlliances.find((a) => a.id === "alliance-ab");
+    const aliceAlliance = aliceContext.allianceContext?.activeAlliances.find((a) => a.id === "alliance-ab");
+
+    expect(aliceAlliance?.huddleOutcomes.map((o) => o.id)).toEqual(["outcome-early"]);
+    expect(charlieAlliance?.huddleOutcomes ?? []).toEqual([]);
+    const charlieSerialized = JSON.stringify(charlieContext.allianceContext);
+    expect(charlieSerialized).not.toContain("Secret plan");
+    expect(charlieSerialized).not.toContain("outcome-early");
+  });
+
+  it("omits outcomes that still lack a participant snapshot after failed hydration", () => {
+    const { gameState, builder } = createContextHarness();
+    gameState.recordAllianceProposal({
+      allianceId: "alliance-ab",
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      proposerId: "alice",
+      name: "Alice Bob",
+      memberIds: ["alice", "bob"],
+      purpose: "Coordinate.",
+      timebox: null,
+    });
+    gameState.recordAllianceResponse({
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      playerId: "bob",
+      response: "accepted",
+    });
+    // No matching completed session and no participantPlayerIds → unavailable for recall.
+    gameState.recordAllianceHuddleOutcome({
+      id: "outcome-orphan",
+      sessionId: "session-missing",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gameState.round,
+      ask: "Orphan ask.",
+      plan: "Orphan plan.",
+      promises: [],
+      dissent: [],
+      confidence: "low",
+      posture: "guarded",
+      leakOrBetrayalClaims: [],
+      createdAt: "2026-07-03T00:00:01.000Z",
+    });
+
+    const aliceContext = builder.buildPhaseContext("alice", Phase.VOTE);
+    const alliance = aliceContext.allianceContext?.activeAlliances.find((a) => a.id === "alliance-ab");
+    expect(alliance?.huddleOutcomes ?? []).toEqual([]);
   });
 
   it("shows open and failed proposal history only to participants", () => {

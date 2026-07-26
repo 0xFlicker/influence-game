@@ -4,9 +4,13 @@
  * Builds PhaseContext objects passed to agents during game phases.
  */
 
+import {
+  actorAuthorizedForHuddleOutcome,
+  toCompactAllianceHuddleOutcome,
+} from "./alliance-huddle-outcome";
 import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
-import type { AllianceProposalLineage, AllianceProposalVersion, AllianceRecord, UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
+import type { AllianceHuddleOutcome, AllianceProposalLineage, AllianceProposalVersion, AllianceRecord, UUID, RoomAllocation, JuryMember, MingleRoomCount } from "./types";
 import { Phase } from "./types";
 import type { EliminationContext, JudgmentQuestionHistoryEntry, MingleIntentSummary, PhaseContext, PlayerAllianceContext, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PublicTranscriptContextEntry, RecentDecisionContextEntry, RevealedVoteLedgerEntry } from "./game-runner.types";
 import { computeJurySize } from "./types";
@@ -111,29 +115,68 @@ export class ContextBuilder {
     });
   }
 
+  private compactHuddleOutcomesForActor(
+    outcomeIds: readonly UUID[],
+    outcomesById: Record<UUID, AllianceHuddleOutcome>,
+    agentId: UUID,
+  ): PlayerAllianceContext["activeAlliances"][number]["huddleOutcomes"] {
+    return outcomeIds
+      .map((id) => outcomesById[id])
+      .filter((outcome): outcome is NonNullable<typeof outcome> => Boolean(outcome))
+      // Authorization: immutable session participant snapshot only.
+      .filter((outcome) => actorAuthorizedForHuddleOutcome(outcome, agentId))
+      .map((outcome) => {
+        const compact = toCompactAllianceHuddleOutcome(outcome);
+        return {
+          id: compact.id,
+          round: compact.round,
+          ask: compact.ask,
+          plan: compact.plan,
+          promises: [...compact.promises],
+          dissent: [...compact.dissent],
+          confidence: compact.confidence,
+          posture: compact.posture,
+          leakOrBetrayalClaims: [...compact.leakOrBetrayalClaims],
+        };
+      });
+  }
+
   private buildAllianceContext(agentId: UUID): PlayerAllianceContext {
     const huddleOutcomes = this.gameState.getDomainProjection().allianceHuddleOutcomes;
-    const activeAlliances = this.gameState.getAllianceRecords()
+    // Current members always see their alliance shell; outcomes are snapshot-gated.
+    const memberAlliances = this.gameState.getAllianceRecords()
       .filter((alliance) => alliance.memberIds.includes(agentId))
       .map((alliance) => ({
         id: alliance.id,
         status: alliance.status,
         ...this.allianceTermsForContext(alliance),
-        huddleOutcomes: alliance.huddleOutcomeIds
-          .map((id) => huddleOutcomes[id])
-          .filter((outcome): outcome is NonNullable<typeof outcome> => Boolean(outcome))
-          .map((outcome) => ({
-            id: outcome.id,
-            round: outcome.round,
-            ask: outcome.ask,
-            plan: outcome.plan,
-            promises: [...outcome.promises],
-            dissent: [...outcome.dissent],
-            confidence: outcome.confidence,
-            posture: outcome.posture,
-            leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
-          })),
+        huddleOutcomes: this.compactHuddleOutcomesForActor(
+          alliance.huddleOutcomeIds,
+          huddleOutcomes,
+          agentId,
+        ),
       }));
+
+    // Former participants (closed/archived/amended-off) still retain authorized
+    // compact outcomes without depending on current membership.
+    const memberAllianceIds = new Set(memberAlliances.map((alliance) => alliance.id));
+    const retainedOutcomeAlliances = this.gameState.getAllianceRecords()
+      .filter((alliance) => !memberAllianceIds.has(alliance.id))
+      .map((alliance) => {
+        const authorized = this.compactHuddleOutcomesForActor(
+          alliance.huddleOutcomeIds,
+          huddleOutcomes,
+          agentId,
+        );
+        if (authorized.length === 0) return null;
+        return {
+          id: alliance.id,
+          status: alliance.status,
+          ...this.allianceTermsForContext(alliance),
+          huddleOutcomes: authorized,
+        };
+      })
+      .filter((alliance): alliance is NonNullable<typeof alliance> => alliance !== null);
 
     const proposals: PlayerAllianceContextProposal[] = [];
     for (const lineage of this.gameState.getAllianceProposalLineages()) {
@@ -151,7 +194,7 @@ export class ContextBuilder {
     }
 
     return {
-      activeAlliances,
+      activeAlliances: [...memberAlliances, ...retainedOutcomeAlliances],
       openProposals: proposals.filter((proposal) => proposal.status === "open"),
       proposalHistory: proposals.filter((proposal) => proposal.status !== "open"),
     };
