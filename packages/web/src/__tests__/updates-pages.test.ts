@@ -32,9 +32,15 @@ describe("updates pages", () => {
     expect(postSource).toContain("getPostBySlug");
   });
 
-  it("ships with at least one public seed post", () => {
+  it("ships with seed plus recent feature archive posts", () => {
     const posts = getAllPosts(UPDATES_CONTENT_DIR);
-    expect(posts.length).toBeGreaterThanOrEqual(1);
+    expect(posts.length).toBeGreaterThanOrEqual(6);
+    const titles = posts.map((p) => p.title);
+    expect(titles.some((t) => t.includes("House Highlights"))).toBe(true);
+    expect(titles.some((t) => t.includes("public identities"))).toBe(true);
+    expect(titles.some((t) => t.startsWith("Match narratives"))).toBe(true);
+    expect(titles.some((t) => t.includes("dual crowns"))).toBe(true);
+    expect(titles.some((t) => t.includes("MCP setup"))).toBe(true);
     const seed = posts.find((p) => p.slug.includes("format-kernel"));
     expect(seed).toBeDefined();
     expect(seed?.title.length).toBeGreaterThan(0);
