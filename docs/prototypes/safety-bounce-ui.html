@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Safety Bounce — Match Playback Mockup</title>
+  <style>
+    :root {
+      --void: #050508;
+      --surface-raised: #14141c;
+      --text: #e8e8f0;
+      --text-secondary: #8888a0;
+      --text-muted: #4a4a5c;
+      --border: rgba(255, 255, 255, 0.08);
+      --glass: rgba(255, 255, 255, 0.05);
+      --glass-strong: rgba(255, 255, 255, 0.09);
+      --glass-border: rgba(255, 255, 255, 0.12);
+      --accent: #818cf8;
+      --safe: #34d399;
+      --safe-dim: rgba(52, 211, 153, 0.14);
+      --safe-edge: rgba(52, 211, 153, 0.45);
+      --vulnerable: #f87171;
+      --vulnerable-dim: rgba(248, 113, 113, 0.14);
+      --vulnerable-edge: rgba(248, 113, 113, 0.45);
+      --unpicked: #c4b5fd;
+      --shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
+      --font: "Segoe UI", ui-sans-serif, system-ui, -apple-system, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--void);
+      color: var(--text);
+      font-family: var(--font);
+    }
+
+    body {
+      background:
+        radial-gradient(ellipse 80% 50% at 50% 0%, rgba(99, 102, 241, 0.16), transparent 55%),
+        radial-gradient(ellipse 40% 40% at 15% 70%, rgba(52, 211, 153, 0.08), transparent 50%),
+        radial-gradient(ellipse 40% 40% at 85% 70%, rgba(248, 113, 113, 0.08), transparent 50%),
+        var(--void);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chrome {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 28px 8px;
+      gap: 16px;
+    }
+
+    .phase-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: var(--glass);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(16px);
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-secondary);
+    }
+
+    .phase-pill strong {
+      color: var(--text);
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .phase-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px rgba(129, 140, 248, 0.8);
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: 22px;
+      font-weight: 650;
+      letter-spacing: -0.02em;
+    }
+
+    .title-block p {
+      margin: 4px 0 0;
+      color: var(--text-secondary);
+      font-size: 13px;
+    }
+
+    .meta {
+      text-align: right;
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .meta span {
+      display: block;
+      color: var(--text-muted);
+    }
+
+    .stage {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 180px minmax(0, 1fr) 180px;
+      grid-template-rows: 1fr auto;
+      gap: 20px;
+      padding: 12px 28px 28px;
+      min-height: 0;
+    }
+
+    .bench {
+      border-radius: 20px;
+      background: linear-gradient(180deg, var(--glass-strong), var(--glass));
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(18px);
+      box-shadow: var(--shadow);
+      padding: 16px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 440px;
+    }
+
+    .bench.safe {
+      border-color: var(--safe-edge);
+      background:
+        linear-gradient(180deg, var(--safe-dim), transparent 40%),
+        linear-gradient(180deg, var(--glass-strong), var(--glass));
+    }
+
+    .bench.vulnerable {
+      border-color: var(--vulnerable-edge);
+      background:
+        linear-gradient(180deg, var(--vulnerable-dim), transparent 40%),
+        linear-gradient(180deg, var(--glass-strong), var(--glass));
+    }
+
+    .bench-label {
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      font-weight: 700;
+      text-align: center;
+    }
+
+    .bench.safe .bench-label { color: var(--safe); }
+    .bench.vulnerable .bench-label { color: var(--vulnerable); }
+
+    .bench-hint {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.35;
+      margin-top: -4px;
+    }
+
+    .bench-stack {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      flex: 1;
+      padding-top: 8px;
+    }
+
+    .player {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+    }
+
+    .player-name {
+      font-size: 11px;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .avatar {
+      width: 52px;
+      height: 52px;
+      border-radius: 50%;
+      object-fit: cover;
+      border: 2px solid var(--border);
+      background: var(--surface-raised);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    .bench.safe .avatar {
+      border-color: var(--safe-edge);
+      box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.12), 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    .bench.vulnerable .avatar {
+      border-color: var(--vulnerable-edge);
+      box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.12), 0 8px 20px rgba(0, 0, 0, 0.35);
+    }
+
+    .arena {
+      position: relative;
+      border-radius: 28px;
+      background:
+        radial-gradient(ellipse 70% 55% at 50% 38%, rgba(129, 140, 248, 0.10), transparent 70%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(20px);
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      min-height: 520px;
+      overflow: hidden;
+    }
+
+    .arena-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 22px 4px;
+      flex-shrink: 0;
+    }
+
+    .arena-header h2 {
+      margin: 0;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--unpicked);
+    }
+
+    .arena-header .count {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /*
+      Playback stack (top → bottom):
+      unpicked liquid carousel
+      pointer ray (up into focus)
+      current SAFE actor
+    */
+    .playback {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 16px 24px;
+      gap: 0;
+      min-height: 0;
+    }
+
+    .carousel {
+      position: relative;
+      width: 100%;
+      max-width: 560px;
+      height: 200px;
+      flex-shrink: 0;
+    }
+
+    .carousel-track {
+      position: relative;
+      width: 100%;
+      height: 100%;
+    }
+
+    .carousel-item {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 92px;
+      margin-left: -46px;
+      margin-top: -58px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .carousel-item .glass {
+      position: relative;
+      width: 92px;
+      height: 92px;
+      border-radius: 28px;
+      display: grid;
+      place-items: center;
+      background:
+        linear-gradient(145deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.03) 45%, rgba(129, 140, 248, 0.08));
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.28),
+        0 16px 40px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(18px) saturate(1.4);
+    }
+
+    .carousel-item .glass::after {
+      content: "";
+      position: absolute;
+      inset: 1px;
+      border-radius: 27px;
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 42%);
+      pointer-events: none;
+    }
+
+    .carousel-item .avatar {
+      width: 68px;
+      height: 68px;
+      border: none;
+      position: relative;
+      z-index: 1;
+    }
+
+    .carousel-item .player-name {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .carousel-item.is-focus {
+      z-index: 5;
+      margin-left: -64px;
+      margin-top: -78px;
+      width: 128px;
+    }
+
+    .carousel-item.is-focus .glass {
+      width: 128px;
+      height: 128px;
+      border-radius: 36px;
+      border-color: rgba(196, 181, 253, 0.55);
+      box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.4),
+        0 0 0 1px rgba(196, 181, 253, 0.25),
+        0 0 50px rgba(129, 140, 248, 0.35),
+        0 24px 50px rgba(0, 0, 0, 0.45);
+    }
+
+    .carousel-item.is-focus .avatar {
+      width: 96px;
+      height: 96px;
+    }
+
+    .carousel-item.is-focus .player-name {
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+    }
+
+    .carousel-item.is-near .glass {
+      width: 104px;
+      height: 104px;
+      border-radius: 32px;
+      opacity: 0.9;
+    }
+
+    .carousel-item.is-near {
+      margin-left: -52px;
+      margin-top: -64px;
+      width: 104px;
+    }
+
+    .carousel-item.is-near .avatar {
+      width: 78px;
+      height: 78px;
+    }
+
+    .carousel-item.is-far {
+      opacity: 0.42;
+      filter: blur(0.35px) saturate(0.8);
+    }
+
+    /* Vertical pointer ray — always under the focused center face */
+    .pointer-ray {
+      width: 48px;
+      height: 72px;
+      flex-shrink: 0;
+      display: block;
+      margin: 2px 0 4px;
+      overflow: visible;
+      filter: drop-shadow(0 0 10px rgba(129, 140, 248, 0.55));
+    }
+
+    .picker-card {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 14px 22px 16px;
+      border-radius: 22px;
+      background: linear-gradient(160deg, rgba(129, 140, 248, 0.18), rgba(255, 255, 255, 0.04));
+      border: 1px solid rgba(129, 140, 248, 0.45);
+      box-shadow: 0 0 40px rgba(99, 102, 241, 0.22);
+      min-width: 148px;
+      flex-shrink: 0;
+    }
+
+    .picker-card .role {
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .picker-card .avatar {
+      width: 72px;
+      height: 72px;
+      border-color: rgba(129, 140, 248, 0.65);
+      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.18), 0 12px 28px rgba(0, 0, 0, 0.4);
+    }
+
+    .picker-card .player-name {
+      font-size: 14px;
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .picker-card .status {
+      font-size: 11px;
+      color: var(--safe);
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .picker-card .status::before {
+      content: "";
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--safe);
+      box-shadow: 0 0 8px var(--safe);
+    }
+
+    .legend {
+      grid-column: 1 / -1;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px 24px;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid var(--border);
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+    }
+
+    .swatch.safe { background: var(--safe); box-shadow: 0 0 8px var(--safe); }
+    .swatch.vuln { background: var(--vulnerable); box-shadow: 0 0 8px var(--vulnerable); }
+    .swatch.pick { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+    .swatch.pool { background: var(--unpicked); box-shadow: 0 0 8px var(--unpicked); }
+
+    .proto-note {
+      text-align: center;
+      font-size: 11px;
+      color: var(--text-muted);
+      padding: 0 28px 20px;
+    }
+
+    @media (max-width: 980px) {
+      .chrome {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 14px 16px 6px;
+      }
+      .meta { text-align: left; }
+      .stage {
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+        padding: 8px 14px 20px;
+      }
+      .arena {
+        grid-column: 1 / -1;
+        min-height: 0;
+        order: 1;
+      }
+      .bench {
+        min-height: 0;
+        order: 2;
+      }
+      .bench.vulnerable { order: 3; }
+      .legend { order: 4; grid-column: 1 / -1; }
+      .bench-stack {
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+      }
+      .carousel { height: 170px; }
+    }
+
+    @media (max-width: 560px) {
+      .stage { grid-template-columns: 1fr; }
+      .bench.safe { order: 2; }
+      .bench.vulnerable { order: 3; }
+    }
+  </style>
+</head>
+<body>
+  <header class="chrome">
+    <div class="phase-pill">
+      <span class="phase-dot"></span>
+      <span>Format Resolve · <strong>Safety Bounce</strong></span>
+    </div>
+    <div class="title-block">
+      <h1>Pointer classification</h1>
+      <p>Watch frame — Atlas (SAFE) publicly points at Nyx in the unpicked pool.</p>
+    </div>
+    <div class="meta">
+      Round 2 · 6 alive
+      <span>Actor: Atlas · SAFE</span>
+    </div>
+  </header>
+
+  <main class="stage">
+    <aside class="bench safe" aria-label="Safe">
+      <div class="bench-label">Safe</div>
+      <div class="bench-hint">Classified</div>
+      <div class="bench-stack">
+        <div class="player">
+          <img class="avatar" src="../../packages/web/public/avatars/personas/strategic.png" alt="Atlas" />
+          <div class="player-name">Atlas</div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="arena" aria-label="Safety Bounce board">
+      <div class="arena-header">
+        <h2>Unpicked</h2>
+        <div class="count">4 remaining</div>
+      </div>
+
+      <div class="playback">
+        <!-- Liquid-glass unpicked pool; Nyx is the current pointer target -->
+        <div class="carousel" aria-label="Unpicked agents">
+          <div class="carousel-track">
+            <!-- Mira · far left -->
+            <div class="carousel-item is-far" style="transform: translate3d(-212px, 14px, -40px) scale(0.72); z-index: 1;">
+              <div class="glass">
+                <img class="avatar" src="../../packages/web/public/avatars/personas/social.png" alt="Mira" />
+              </div>
+              <div class="player-name">Mira</div>
+            </div>
+            <!-- Rune · near left -->
+            <div class="carousel-item is-near" style="transform: translate3d(-118px, 6px, 20px) scale(0.92); z-index: 3;">
+              <div class="glass">
+                <img class="avatar" src="../../packages/web/public/avatars/personas/loyalist.png" alt="Rune" />
+              </div>
+              <div class="player-name">Rune</div>
+            </div>
+            <!-- Nyx · focus (under pointer) -->
+            <div class="carousel-item is-focus" style="transform: translate3d(0, -8px, 80px) scale(1.12); z-index: 5;">
+              <div class="glass">
+                <img class="avatar" src="../../packages/web/public/avatars/personas/deceptive.png" alt="Nyx" />
+              </div>
+              <div class="player-name">Nyx</div>
+            </div>
+            <!-- Sol · near right -->
+            <div class="carousel-item is-near" style="transform: translate3d(118px, 6px, 20px) scale(0.92); z-index: 3;">
+              <div class="glass">
+                <img class="avatar" src="../../packages/web/public/avatars/personas/wildcard.png" alt="Sol" />
+              </div>
+              <div class="player-name">Sol</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Fixed vertical ray from actor up into the focused unpicked face -->
+        <svg class="pointer-ray" viewBox="0 0 48 72" aria-hidden="true">
+          <defs>
+            <linearGradient id="ray" x1="24" y1="68" x2="24" y2="6" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="rgba(129,140,248,0.15)" />
+              <stop offset="40%" stop-color="rgba(129,140,248,0.85)" />
+              <stop offset="100%" stop-color="rgba(196,181,253,1)" />
+            </linearGradient>
+          </defs>
+          <line
+            x1="24" y1="64"
+            x2="24" y2="14"
+            stroke="url(#ray)"
+            stroke-width="3.5"
+            stroke-linecap="round"
+          />
+          <polygon points="24,4 16,16 32,16" fill="rgba(196,181,253,0.98)" />
+          <circle cx="24" cy="66" r="4.5" fill="rgba(129,140,248,0.95)" />
+        </svg>
+
+        <div class="picker-card">
+          <div class="role">Pointing</div>
+          <img class="avatar" src="../../packages/web/public/avatars/personas/strategic.png" alt="Atlas" />
+          <div class="player-name">Atlas</div>
+          <div class="status">SAFE · public pointer</div>
+        </div>
+      </div>
+    </section>
+
+    <aside class="bench vulnerable" aria-label="Vulnerable">
+      <div class="bench-label">Vulnerable</div>
+      <div class="bench-hint">Elimination pool</div>
+      <div class="bench-stack">
+        <div class="player">
+          <img class="avatar" src="../../packages/web/public/avatars/personas/observer.png" alt="Echo" />
+          <div class="player-name">Echo</div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="legend">
+      <div class="legend-item"><span class="swatch pick"></span> Current pointer (SAFE actor)</div>
+      <div class="legend-item"><span class="swatch pool"></span> Unpicked pool (focus enlarged)</div>
+      <div class="legend-item"><span class="swatch safe"></span> Safe</div>
+      <div class="legend-item"><span class="swatch vuln"></span> Vulnerable</div>
+    </div>
+  </main>
+
+  <p class="proto-note">
+    Match playback mockup · illustrates agent game state · not a human control surface
+  </p>
+</body>
+</html>
