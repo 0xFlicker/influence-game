@@ -1,0 +1,38 @@
+%%{init: {"theme":"base","themeVariables":{"background":"transparent","primaryColor":"#111827","primaryTextColor":"#f8fafc","primaryBorderColor":"#8b5cf6","lineColor":"#94a3b8","secondaryColor":"#082f49","tertiaryColor":"#052e16","fontFamily":"Inter, ui-sans-serif, system-ui"},"flowchart":{"htmlLabels":false,"curve":"basis"}}}%%
+flowchart TB
+  accTitle: One agent decision loop
+  accDescr: Frozen agent identity, visible game facts, personally heard dialogue, private memory, and current stakes form a bounded context. The model returns a typed proposal. Deterministic phase validation accepts, repairs, rejects, or falls back. Accepted choices become canonical facts while every call can produce separate evidence for later reflection.
+
+  subgraph decisionCall["BOUNDED DECISION CALL"]
+    direction LR
+    Inputs["Identity, facts, heard dialogue, memory, and stakes"]
+    Inputs --> Context["Phase-scoped context"]
+    Context --> Model["LLM call"]
+    Model --> Proposal["Typed proposal"]
+  end
+  Proposal --> Validate{"Deterministic phase validation"}
+
+  Validate -->|accepted unchanged| Event["Canonical event"]
+  Validate -->|repair, rejection, or fallback| Provenance["Labeled provenance; no false exact link"]
+
+  Model --> Evidence["Thinking, cognition, and private trace evidence"]
+  Event -. exact decision receipt when eligible .-> Evidence
+  Event --> Outcome["Revealed outcome"]
+  Outcome --> Reflect["Strategic reflection"]
+  Evidence --> Reflect
+  Reflect -. updates next context .-> Inputs
+
+  class Inputs inputNode
+  class Context,Model,Proposal runtimeNode
+  class Validate gateNode
+  class Event,Outcome truthNode
+  class Provenance,Evidence evidenceNode
+  class Reflect cognitionNode
+
+  classDef inputNode fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:1.5px
+  classDef runtimeNode fill:#3b0764,stroke:#c084fc,color:#faf5ff,stroke-width:1.5px
+  classDef gateNode fill:#4c1d95,stroke:#e9d5ff,color:#faf5ff,stroke-width:2px
+  classDef truthNode fill:#052e16,stroke:#4ade80,color:#f0fdf4,stroke-width:1.5px
+  classDef evidenceNode fill:#431407,stroke:#fb923c,color:#fff7ed,stroke-width:1.5px
+  classDef cognitionNode fill:#3f2b08,stroke:#facc15,color:#fefce8,stroke-width:1.5px
+  style decisionCall fill:transparent,stroke:#334155,stroke-width:1px

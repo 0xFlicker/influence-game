@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Agent Selective Recall</title>
+  <style>
+    :root{--void:#090d12;--surface:#121a24;--raised:#182330;--ink:#eef3f8;--soft:#c1ccd7;--muted:#91a0b0;--line:#324153;--gold:#efbd64;--gold-bg:#3a2c14;--cyan:#83d7e7;--cyan-bg:#11333c;--green:#88d8ad;--green-bg:#163a2a;--violet:#c7b3f7;--violet-bg:#2b2443;--red:#ffada5;--red-bg:#3a2022;--shadow:0 20px 54px rgba(0,0,0,.30)}
+    *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 90% 0,rgba(63,113,132,.18),transparent 34rem),var(--void);color:var(--ink);font:15px/1.62 Inter,ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.page{max-width:960px;margin:auto;padding:3.8rem 1.25rem 3rem}.eyebrow{font-size:.7rem;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--gold)}h1{max-width:13ch;margin:.42rem 0 1rem;font-family:"Inter Tight",Inter,ui-sans-serif,sans-serif;font-size:clamp(2.5rem,7vw,5.15rem);line-height:.93;letter-spacing:-.06em}h2{margin:0 0 1rem;font-size:1.65rem;letter-spacing:-.03em}h3{margin:.15rem 0;font-size:1.22rem;line-height:1.25;letter-spacing:-.018em}p{max-width:76ch;color:var(--soft)}a{color:var(--cyan)}strong{color:inherit}.deck{max-width:73ch;font-size:1.12rem;color:#d6e0e9}.pills{display:flex;flex-wrap:wrap;gap:.55rem;margin-top:1.3rem}.pill{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:.34rem .7rem;color:#cbd6e0;font-size:.78rem}.pill b{color:var(--ink)}.recommendation{margin:1.35rem 0 2.1rem;padding:1rem 1.15rem;border:1px solid #765b2d;border-radius:15px;background:var(--gold-bg);color:#f4dfb9}.recommendation p{margin:.25rem 0 0;color:#f4dfb9}nav{margin:1.3rem 0 3.25rem;padding:1rem 1.1rem;border:1px solid var(--line);border-radius:15px;background:var(--surface)}nav ul,.jump{display:flex;flex-wrap:wrap;gap:.5rem 1rem;margin:.35rem 0 0;padding:0;list-style:none}nav a,.jump a{display:block;text-decoration:none;padding:.42rem .62rem;border-radius:9px;background:#0d141d;border:1px solid #273749}section{margin-top:3.3rem}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:.8rem}.panel,.axis{border:1px solid var(--line);border-radius:15px;background:var(--surface);padding:1rem}.panel h3{font-size:.98rem;color:var(--gold)}.panel p,.panel li{margin:.4rem 0;color:var(--soft)}.axis .n{display:block;color:var(--gold);font-size:.7rem;font-weight:800;letter-spacing:.1em}.idea{margin-top:1rem;padding:1.2rem;border:1px solid var(--line);border-radius:18px;background:var(--surface);box-shadow:var(--shadow)}.idea-head{display:flex;gap:.8rem;align-items:flex-start}.rank{display:grid;place-items:center;flex:0 0 auto;width:2.15rem;height:2.15rem;border-radius:50%;background:var(--gold-bg);color:var(--gold);font-weight:900}.idea>p{margin:.9rem 0 .3rem}.idea dl{display:grid;grid-template-columns:8.4rem minmax(0,1fr);gap:.5rem 1rem;margin:1rem 0 0}.idea dt{font-size:.68rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}.idea dd{margin:0;color:#d0dae3}.high{color:var(--green)!important}.medium{color:#f1cb7f!important}.diagram{margin:1rem 0 .7rem;padding:.7rem;border:1px solid var(--line);border-radius:14px;background:#0b1118;overflow:auto}.diagram svg{display:block;width:100%;min-width:660px;height:auto}.diagram .box{fill:#172432;stroke:#50657c;stroke-width:1.4}.diagram .gold{fill:#382b15;stroke:#efbd64}.diagram .cyan{fill:#11333c;stroke:#83d7e7}.diagram .green{fill:#163a2a;stroke:#88d8ad}.diagram .violet{fill:#2b2443;stroke:#c7b3f7}.diagram .line{stroke:#8394a6;stroke-width:1.8;fill:none}.diagram text{fill:#eef3f8;font:13px Inter,ui-sans-serif,sans-serif}.diagram .small{fill:#bdcad5;font-size:11px}.caption{margin:.3rem 0 0;color:var(--muted);font-size:.78rem}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:14px}table{width:100%;border-collapse:collapse;background:var(--surface)}th,td{padding:.65rem .75rem;vertical-align:top;text-align:left;border-bottom:1px solid var(--line);color:var(--soft)}th{color:var(--gold);font-size:.7rem;font-weight:800;letter-spacing:.08em;text-transform:uppercase}tr:last-child td{border-bottom:0}.sources{padding:1rem;background:var(--raised);border:1px solid var(--line);border-radius:14px}.sources ul{columns:2;column-gap:2rem;margin:.5rem 0 0;padding-left:1.2rem}.sources li{break-inside:avoid;margin:.38rem 0}.composition-signal{margin-top:3.2rem;padding-top:1rem;border-top:1px solid var(--line);color:var(--muted);font-size:.78rem}@media(max-width:700px){.page{padding-top:2rem}.grid{grid-template-columns:1fr}.sources ul{columns:1}.idea dl{grid-template-columns:1fr}h1{font-size:3rem}}
+  </style>
+</head>
+<body>
+<main class="page">
+  <header>
+    <div class="eyebrow">Influence · Product ideation</div>
+    <h1>Agent selective recall</h1>
+    <p class="deck">Six grounded directions for letting The House’s agents remember strategically important history without turning transcript prose, a vector store, or a model tool call into a second source of game truth.</p>
+    <div class="pills">
+      <span class="pill"><b>Date</b> <time datetime="2026-07-26">2026-07-26</time></span>
+      <span class="pill"><b>Topic</b> agent-selective-recall</span>
+      <span class="pill"><b>Focus</b> authorization-safe, bounded agent recall</span>
+      <span class="pill"><b>Mode</b> repo-grounded</span>
+    </div>
+    <div class="pills">
+      <span class="pill"><b>43</b> raw directions</span>
+      <span class="pill"><b>6</b> ranked ideas</span>
+      <span class="pill"><b>5</b> topic axes</span>
+    </div>
+    <div class="recommendation"><strong>Recommended coherent slice:</strong><p>Start with ideas 1, 2, 3, and 6 as one shadow-mode program. They establish the authority boundary, retrieval boundary, budget contract, and proof gate. Ideas 4 and 5 are valuable follow-ons once the core has earned trust; otherwise “memory” becomes an exceptionally articulate way to preserve the wrong thing.</p></div>
+  </header>
+
+  <nav aria-label="Document sections">
+    <div class="eyebrow">Navigate</div>
+    <ul><li><a href="#grounding-context">Grounding Context</a></li><li><a href="#topic-axes">Topic Axes</a></li><li><a href="#ranked-ideas">Ranked Ideas</a></li><li><a href="#rejection-summary">Rejection Summary</a></li></ul>
+  </nav>
+
+  <section id="grounding-context">
+    <div class="eyebrow">What is true today</div><h2>Grounding Context</h2>
+    <div class="grid">
+      <article class="panel"><h3>Authority is already split correctly</h3><p>The Current Board Contract outranks Strategy Thread, assessments, and transcript prose. ContextBuilder already holds separate inputs for canonical events, revealed ledgers, actor-specific inboxes, recent decisions, and alliance context.</p></article>
+      <article class="panel"><h3>The actual growth paths are narrow</h3><p>Ordinary prompts include current plus two prior public rounds, while endgame injects the complete public/system transcript. Mingle retains each delivered line for the phase and feeds full local turn history.</p></article>
+      <article class="panel"><h3>Privacy has a useful existing seam</h3><p>Player-facing context filters private audiences, seals ballots, and excludes producer-only pointers and raw traces. Retrieval should reuse that policy, not query logs and attempt redaction afterward.</p></article>
+      <article class="panel"><h3>Continuity is structured, not raw memory</h3><p>Strategy packets, accepted decision receipts, and checkpoint capsules deliberately exclude raw prompts, model responses, and reasoning. Their safe source locators are a better recall foundation than retrospective summaries.</p></article>
+      <article class="panel"><h3>Proof infrastructure exists</h3><p>Deterministic tests, bounded operator simulations, accepted-action correlation, and structural prompt-reuse telemetry can test a policy without retaining its private prompt payload.</p></article>
+      <article class="panel"><h3>External prior art agrees on the order</h3><p>Selective episodic memory can rank relevance, recency, and importance, but authorization must happen before ranking and retrieved text must be treated as untrusted evidence, not instructions or state.</p></article>
+    </div>
+    <div class="sources">
+      <div class="eyebrow">Evidence index</div>
+      <ul>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/context-builder.ts">ContextBuilder</a> — existing typed, actor-filtered context seam.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/packages/engine/src/agent.ts">Agent prompt construction</a> — Board Contract and endgame transcript behavior.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/CONCEPTS.md">Influence concepts</a> — transcript, cognition, decision, and event authority lanes.</li>
+        <li><a href="https://github.com/0xFlicker/influence-game/blob/main/docs/solutions/architecture-patterns/agent-strategy-observability-spine.md">Agent strategy observability spine</a> — four-lane authority pattern.</li>
+        <li><a href="https://arxiv.org/abs/2304.03442">Generative Agents</a> — relevance, recency, and importance for episodic recall.</li>
+        <li><a href="https://learn.microsoft.com/en-us/azure/search/search-query-access-control-rbac-enforcement">Authorization before retrieval</a> — server-side document access enforcement.</li>
+        <li><a href="https://genai.owasp.org/llmrisk/llm01-prompt-injection/">OWASP prompt injection guidance</a> — retrieved content is indirect untrusted input.</li>
+        <li><a href="https://arxiv.org/pdf/2408.08067">RAGChecker</a> — precision, noise sensitivity, faithfulness, and hallucination evaluation.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="topic-axes">
+    <div class="eyebrow">Surface coverage</div><h2>Topic Axes</h2>
+    <div class="grid">
+      <div class="axis"><span class="n">Axis 1</span>Pinned game truth and typed exact recall</div>
+      <div class="axis"><span class="n">Axis 2</span>Actor-scoped conversation recall and privacy controls</div>
+      <div class="axis"><span class="n">Axis 3</span>Context budgets, history growth, and selective ranking</div>
+      <div class="axis"><span class="n">Axis 4</span>Strategic continuity and recall provenance</div>
+      <div class="axis"><span class="n">Axis 5</span>Shadow evaluation and rollout proof</div>
+    </div>
+  </section>
+
+  <section id="ranked-ideas">
+    <div class="eyebrow">Ranked survivors</div><h2>Ranked Ideas</h2>
+    <ul class="jump"><li><a href="#idea-1">1. Recall Constitution</a></li><li><a href="#idea-2">2. Seal-Safe Recall Broker</a></li><li><a href="#idea-3">3. Context Budget Auction</a></li><li><a href="#idea-4">4. Deliberate Social Memory</a></li><li><a href="#idea-5">5. Decision Spine</a></li><li><a href="#idea-6">6. Context Policy Trial</a></li></ul>
+
+    <article class="idea" id="idea-1">
+      <div class="idea-head"><span class="rank">1</span><div><div class="eyebrow">Pinned game truth and typed exact recall</div><h3>1. Recall Constitution</h3></div></div>
+      <p><strong>Description:</strong> Turn ContextBuilder into a deterministic policy compiler that emits a per-turn <code>RecallPlan</code>: the non-negotiable Board Contract, action-specific exact facts such as revealed ledgers and accepted receipts, then a strictly capped lane of conversational evidence. The planner—not a model, framework, or semantic index—decides which lane may answer each need. Semantic recall is an optional last rung for old authorized prose only.</p>
+      <div class="diagram"><svg viewBox="0 0 790 190" role="img" aria-label="Recall plan layers canonical board facts, typed receipts, then bounded conversational evidence"><defs><marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8394a6"/></marker></defs><rect class="gold" x="28" y="58" width="190" height="75" rx="12"/><text x="123" y="84" text-anchor="middle">Board Contract</text><text class="small" x="123" y="105" text-anchor="middle">canonical live truth</text><path class="line" d="M220 96H300" marker-end="url(#a1)"/><rect class="cyan" x="310" y="58" width="190" height="75" rx="12"/><text x="405" y="84" text-anchor="middle">Exact receipts</text><text class="small" x="405" y="105" text-anchor="middle">ledger · commitments · own actions</text><path class="line" d="M502 96H582" marker-end="url(#a1)"/><rect class="violet" x="592" y="58" width="170" height="75" rx="12"/><text x="677" y="84" text-anchor="middle">Evidence cards</text><text class="small" x="677" y="105" text-anchor="middle">bounded authorized prose</text><text class="small" x="395" y="166" text-anchor="middle">Only the first two layers answer “what is true now.”</text></svg><p class="caption">Illustrative authority order: conversational recall can inform a decision without reconstructing the game board.</p></div>
+      <dl><dt>Axis</dt><dd>Pinned game truth and typed exact recall</dd><dt>Basis</dt><dd><code>direct:</code> the existing Current Board Contract already overrides transcript and private strategy; ContextBuilder already separates canonical facts, ledgers, inboxes, and personal decisions. <code>reasoned:</code> consolidating that existing seam gives every current and future format one policy contract.</dd><dt>Rationale</dt><dd>This is the core move. It reduces prompt bloat without letting a retrieval result revive an eliminated player, re-open a sealed ballot, or repair an event gap with dialogue.</dd><dt>Downsides</dt><dd>High design discipline: each phase/action must declare its exact fact needs, and the first version should not promise semantic recall everywhere.</dd><dt>Confidence</dt><dd class="high">93%</dd><dt>Complexity</dt><dd>High</dd></dl>
+    </article>
+
+    <article class="idea" id="idea-2">
+      <div class="idea-head"><span class="rank">2</span><div><div class="eyebrow">Actor-scoped conversation recall and privacy controls</div><h3>2. Seal-Safe Recall Broker</h3></div></div>
+      <p><strong>Description:</strong> Put a server-owned recall broker between the plan and any transcript index. It binds <code>gameId</code>, actor, phase, and an allowed recall category before ranking; only public/system dialogue and that actor’s authorized deliveries can enter its candidate set. Audience partitions are created at write time, malformed/denied records fail closed, and inaccessible matches produce the same neutral non-result as no match.</p>
+      <div class="diagram"><svg viewBox="0 0 790 190" role="img" aria-label="Server-bound actor scope selects public and own-delivered partitions before ranked evidence cards"><defs><marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8394a6"/></marker></defs><rect class="box" x="20" y="55" width="130" height="76" rx="12"/><text x="85" y="83" text-anchor="middle">Actor + game</text><text class="small" x="85" y="104" text-anchor="middle">server bound</text><path class="line" d="M151 93H236" marker-end="url(#a2)"/><rect class="green" x="246" y="55" width="170" height="76" rx="12"/><text x="331" y="83" text-anchor="middle">Allowed partitions</text><text class="small" x="331" y="104" text-anchor="middle">public + own delivery</text><path class="line" d="M417 93H502" marker-end="url(#a2)"/><rect class="cyan" x="512" y="55" width="130" height="76" rx="12"/><text x="577" y="83" text-anchor="middle">Rank + cap</text><text class="small" x="577" y="104" text-anchor="middle">no hidden lanes</text><path class="line" d="M643 93H688" marker-end="url(#a2)"/><rect class="violet" x="696" y="55" width="76" height="76" rx="12"/><text x="734" y="84" text-anchor="middle">Cards</text><text class="small" x="734" y="104" text-anchor="middle">evidence</text><text class="small" x="395" y="166" text-anchor="middle">Authorization happens before the query and before similarity ranking.</text></svg><p class="caption">Illustrative privacy boundary: the model never gets a whole-game search surface to negotiate with.</p></div>
+      <dl><dt>Axis</dt><dd>Actor-scoped conversation recall and privacy controls</dd><dt>Basis</dt><dd><code>direct:</code> current private-lane reads are actor/ownership checked, malformed audiences fail closed, sealed identities remain absent, and source pointers/raw traces stay producer-only. <code>external:</code> authorization-before-retrieval and indirect prompt-injection guidance match this boundary.</dd><dt>Rationale</dt><dd>Every future ranker—literal, full text, or semantic—must use one sealed gate. That is far safer than trusting each new retrieval call site to remember visibility rules.</dd><dt>Downsides</dt><dd>Requires durable audience metadata and deliberate tests for existence side channels, not merely “no text leaked” assertions.</dd><dt>Confidence</dt><dd class="high">95%</dd><dt>Complexity</dt><dd>Medium</dd></dl>
+    </article>
+
+    <article class="idea" id="idea-3">
+      <div class="idea-head"><span class="rank">3</span><div><div class="eyebrow">Context budgets, history growth, and selective ranking</div><h3>3. Context Budget Auction</h3></div></div>
+      <p><strong>Description:</strong> Replace “two public rounds, then everything in endgame” with per-phase evidence-slot contracts. Board truth, action-critical exact receipts, and active-room conversation reserve their space; only the remaining slots are ranked by deterministic signals such as decision relevance, recency, unresolved claim linkage, and novelty. A structural selection receipt records lane, reason, count bucket, and token cost without storing retrieved payloads.</p>
+      <dl><dt>Axis</dt><dd>Context budgets, history growth, and selective ranking</dd><dt>Basis</dt><dd><code>direct:</code> endgame currently renders full public/system history while other prompt surfaces and recent decisions are already bounded; prompt-reuse telemetry already classifies stable and volatile blocks without payload capture.</dd><dt>Rationale</dt><dd>The goal is not blind truncation. It prevents a long public argument from evicting a revealed vote or current Mingle exchange, while making cost and cache stability inspectable.</dd><dt>Downsides</dt><dd>Ranking weights are product policy and will be wrong initially; they need replay fixtures before they earn automatic trust.</dd><dt>Confidence</dt><dd class="high">92%</dd><dt>Complexity</dt><dd>Medium</dd></dl>
+    </article>
+
+    <article class="idea" id="idea-4">
+      <div class="idea-head"><span class="rank">4</span><div><div class="eyebrow">Strategic continuity and recall provenance</div><h3>4. Deliberate Social Memory</h3></div></div>
+      <p><strong>Description:</strong> Keep current-room Mingle exchange hot only for its active session. When an agent wants a social promise, accusation, or condition to survive automatically, it creates a compact audience-scoped social claim with original message coordinates, counterpart, condition, and expiry; otherwise the dialogue becomes cold evidence that must be deliberately recalled. The claim remains contestable social evidence, never canonical game state.</p>
+      <dl><dt>Axis</dt><dd>Strategic continuity and recall provenance</dd><dt>Basis</dt><dd><code>direct:</code> Mingle delivery and recovery already have actor/phase boundaries, while structured alliance commitments are stored separately from transcript prose. <code>reasoned:</code> durable social play becomes more legible when agents intentionally carry a claim rather than hoping an old sentence ranks first.</dd><dt>Rationale</dt><dd>It retains the watchable part of social memory—“you promised X, subject to Y”—while reducing long-lived raw private context and keeping promises disputeable.</dd><dt>Downsides</dt><dd>It is a product mechanic as much as a context feature; careless design could make social play feel bureaucratic or imply a promise is mechanically binding.</dd><dt>Confidence</dt><dd class="medium">84%</dd><dt>Complexity</dt><dd>High</dd></dl>
+    </article>
+
+    <article class="idea" id="idea-5">
+      <div class="idea-head"><span class="rank">5</span><div><div class="eyebrow">Strategic continuity and recall provenance</div><h3>5. Player Decision Spine + Restart-Proof Index</h3></div></div>
+      <p><strong>Description:</strong> Promote an actor’s exact accepted-action chain—decision receipt, accepted canonical event, and later consequence—into the primary private self-recall surface. Checkpoints retain only safe source locators, typed summaries, and audience scope; on recovery, each item is revalidated from durable authorized sources or omitted. Raw prompt, response, reasoning, and producer source-pointer material never crosses into the player prompt.</p>
+      <dl><dt>Axis</dt><dd>Strategic continuity and recall provenance</dd><dt>Basis</dt><dd><code>direct:</code> accepted-action correlation already requires fresh <code>decisionId</code> and exact canonical linkage, while continuity capsules reject raw prompt/response/thinking fields and validate recovery state.</dd><dt>Rationale</dt><dd>Agents can remember “I voted X and it resolved as Y” without inventing a causal story from a stale strategy packet or unsafe trace.</dd><dt>Downsides</dt><dd>Only accepted actions link exactly; rejected, repaired, or fallback choices must remain explicitly unlinked rather than being retrofitted for prettier continuity.</dd><dt>Confidence</dt><dd class="high">88%</dd><dt>Complexity</dt><dd>Medium</dd></dl>
+    </article>
+
+    <article class="idea" id="idea-6">
+      <div class="idea-head"><span class="rank">6</span><div><div class="eyebrow">Shadow evaluation and rollout proof</div><h3>6. Context Policy Trial</h3></div></div>
+      <p><strong>Description:</strong> Make the first delivery a deterministic paired replay harness, not live semantic retrieval. It produces today’s context and candidate RecallPlans for the same recorded game state, then evaluates required-fact coverage, prohibited-lane absence, evidence provenance, social-continuity fixtures, token/cache/latency deltas, and model fallback or accepted-action regressions. Only a policy that clears hard safety gates progresses to the existing bounded operator run.</p>
+      <div class="diagram"><svg viewBox="0 0 790 190" role="img" aria-label="Baseline and candidate contexts are compared in deterministic replay before bounded operator proof"><defs><marker id="a6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8394a6"/></marker></defs><rect class="box" x="24" y="55" width="140" height="76" rx="12"/><text x="94" y="83" text-anchor="middle">Recorded state</text><text class="small" x="94" y="104" text-anchor="middle">same canonical head</text><path class="line" d="M165 93H244" marker-end="url(#a6)"/><rect class="cyan" x="254" y="28" width="150" height="57" rx="12"/><text x="329" y="62" text-anchor="middle">Baseline context</text><rect class="violet" x="254" y="104" width="150" height="57" rx="12"/><text x="329" y="138" text-anchor="middle">Candidate RecallPlan</text><path class="line" d="M405 56H487V93H520" marker-end="url(#a6)"/><path class="line" d="M405 132H487V93H520" marker-end="url(#a6)"/><rect class="gold" x="530" y="55" width="135" height="76" rx="12"/><text x="597" y="83" text-anchor="middle">Hard gates</text><text class="small" x="597" y="104" text-anchor="middle">facts · privacy · cost</text><path class="line" d="M666 93H704" marker-end="url(#a6)"/><rect class="green" x="714" y="55" width="52" height="76" rx="12"/><text x="740" y="85" text-anchor="middle">Run</text><text class="small" x="740" y="105" text-anchor="middle">only pass</text></svg><p class="caption">Illustrative rollout gate: a token win never compensates for a truth or privacy miss.</p></div>
+      <dl><dt>Axis</dt><dd>Shadow evaluation and rollout proof</dd><dt>Basis</dt><dd><code>direct:</code> the repo already distinguishes deterministic evidence from bounded real-model proof, accepted actions from fallbacks, and structural prompt telemetry from payload retention. <code>external:</code> retrieval evaluation needs precision, noise sensitivity, and faithfulness—not a single relevance score.</dd><dt>Rationale</dt><dd>It gives the team a way to reject “cheap but amnesiac” policies before they touch a paid run or silently degrade a watchable game.</dd><dt>Downsides</dt><dd>Requires a curated corpus of difficult social continuity and privacy cases; good fixtures take judgment and cannot be delegated to a generic benchmark.</dd><dt>Confidence</dt><dd class="high">96%</dd><dt>Complexity</dt><dd>Medium</dd></dl>
+    </article>
+  </section>
+
+  <section id="rejection-summary">
+    <div class="eyebrow">Cuts and deferrals</div><h2>Rejection Summary</h2>
+    <div class="table-wrap"><table><thead><tr><th>#</th><th>Idea</th><th>Reason Rejected</th></tr></thead><tbody>
+      <tr><td>1</td><td>Projection-First Context Compiler</td><td>Folded into Recall Constitution; same compiler seam with less complete authority ordering.</td></tr>
+      <tr><td>2</td><td>Authorization-Carrying Recall Cards</td><td>Folded into Seal-Safe Broker; standalone cards need narrower, non-producer provenance semantics.</td></tr>
+      <tr><td>3</td><td>Context Pressure Governor</td><td>Folded into Context Budget Auction.</td></tr>
+      <tr><td>4</td><td>Strategy Thread Challenge Notes</td><td>Mostly restates existing strategy realignment; no independently measurable enforcement seam.</td></tr>
+      <tr><td>5</td><td>Retrieval Shadow Court</td><td>Folded into Context Policy Trial.</td></tr>
+      <tr><td>6</td><td>Commitment Ledger, Not Conversation Search</td><td>Folded into Deliberate Social Memory; existing structured commitments remain the first exact lane.</td></tr>
+      <tr><td>7</td><td>Mingle Memory With Expiry Boundaries</td><td>Folded into Deliberate Social Memory.</td></tr>
+      <tr><td>8</td><td>Endgame Case Files</td><td>Deferred: no proof that curating the intentionally full public record preserves jury fairness or continuity.</td></tr>
+      <tr><td>9</td><td>ContextBuilder as a Recall Compiler</td><td>Folded into Recall Constitution.</td></tr>
+      <tr><td>10</td><td>Make Durable Deals Explicit, Not Memorable</td><td>Folded into Deliberate Social Memory.</td></tr>
+      <tr><td>11</td><td>Private Recall Is a Sealed Inbox, Not an Index</td><td>Folded into Seal-Safe Recall Broker.</td></tr>
+      <tr><td>12</td><td>Retire the Endgame Transcript Dump</td><td>Deferred with Endgame Case Files pending a fairness and continuity proof.</td></tr>
+      <tr><td>13</td><td>Allocate a Context Budget Like a Scarce Game Resource</td><td>Folded into Context Budget Auction.</td></tr>
+      <tr><td>14</td><td>Give Every Recollection an Evidence Passport</td><td>Weak as stated: cited source pointers are producer-only; retain only broker-safe structural provenance.</td></tr>
+      <tr><td>15</td><td>Selective Recall Must Win a Shadow Trial</td><td>Folded into Context Policy Trial.</td></tr>
+      <tr><td>16</td><td>Context Constitution / RecallPlan</td><td>Promoted and renamed Recall Constitution.</td></tr>
+      <tr><td>17</td><td>Promise Ledger</td><td>Folded into Deliberate Social Memory.</td></tr>
+      <tr><td>18</td><td>Seal-Safe Recall Broker</td><td>Promoted.</td></tr>
+      <tr><td>19</td><td>Context Budget Auction</td><td>Promoted.</td></tr>
+      <tr><td>20</td><td>Strategic Cross-Examination</td><td>Folded into Deliberate Social Memory’s contestable claims; broad universal cards remain unproven.</td></tr>
+      <tr><td>21</td><td>Restart-Proof Recall Index</td><td>Folded into Player Decision Spine + Restart-Proof Index.</td></tr>
+      <tr><td>22</td><td>Context Flight Recorder</td><td>Folded into Context Policy Trial.</td></tr>
+      <tr><td>23</td><td>Flight-Strip Board</td><td>Folded into Recall Constitution; useful analogy, not a distinct move.</td></tr>
+      <tr><td>24</td><td>Need-to-Know Cable Archive</td><td>Folded into Seal-Safe Recall Broker; useful analogy, not a distinct move.</td></tr>
+      <tr><td>25</td><td>Working-Set Governor</td><td>Folded into Context Budget Auction.</td></tr>
+      <tr><td>26</td><td>Cross-Examinable Memory Cards</td><td>Weak standalone player surface; exact provenance must not leak producer-only pointers.</td></tr>
+      <tr><td>27</td><td>Mingle Session Vault</td><td>Folded into Deliberate Social Memory.</td></tr>
+      <tr><td>28</td><td>Recall by Catalog Card, Not Shelf Browse</td><td>Folded into Broker and Budget Auction as an implementation shape, not a separate product direction.</td></tr>
+      <tr><td>29</td><td>Simulator Flight Recorder Gate</td><td>Folded into Context Policy Trial.</td></tr>
+      <tr><td>30</td><td>Deterministic Case-File Compiler</td><td>Folded into Recall Constitution.</td></tr>
+      <tr><td>31</td><td>Recall Warrant</td><td>Rejected: model-initiated warrants add a prompt-injection/timing surface without improving a server-planned RecallPlan.</td></tr>
+      <tr><td>32</td><td>Counterclaim Pairs</td><td>Deferred: promising evidence-quality rule, but needs a measured endgame/public-history proof before making it universal.</td></tr>
+      <tr><td>33</td><td>Endgame Jury Casebooks</td><td>Deferred with Endgame Case Files pending fairness proof.</td></tr>
+      <tr><td>34</td><td>Player Decision Spine</td><td>Promoted and combined with Restart-Proof Index.</td></tr>
+      <tr><td>35</td><td>Authorized Unknown</td><td>Folded into Seal-Safe Recall Broker’s neutral non-result contract.</td></tr>
+      <tr><td>36</td><td>Recall Receipts as Evaluation Primitive</td><td>Folded into Context Policy Trial’s structural receipt; do not retain payloads.</td></tr>
+      <tr><td>37</td><td>Exact-First Recall Ladder</td><td>Folded into Recall Constitution.</td></tr>
+      <tr><td>38</td><td>Phase-Bounded Mingle Memory</td><td>Folded into Deliberate Social Memory.</td></tr>
+      <tr><td>39</td><td>Audience-Partitioned Recall Index</td><td>Folded into Seal-Safe Recall Broker.</td></tr>
+      <tr><td>40</td><td>Token Budgets as Evidence-Slot Contracts</td><td>Folded into Context Budget Auction.</td></tr>
+      <tr><td>41</td><td>Commit-or-Let-It-Be-Hearsay</td><td>Folded into Deliberate Social Memory.</td></tr>
+      <tr><td>42</td><td>Context-Policy Tournaments</td><td>Folded into Context Policy Trial.</td></tr>
+      <tr><td>43</td><td>Cache the Retrieval Plan, Not the Conversation</td><td>Deferred as premature performance work; invalidation depends on more than event/phase boundaries.</td></tr>
+    </tbody></table></div>
+  </section>
+
+  <footer class="composition-signal">Composed 2026-07-26T18:35Z by <code>ce-ideate</code> from the user’s orchestration-and-retrieval question plus current Influence codebase evidence.</footer>
+</main>
+</body>
+</html>

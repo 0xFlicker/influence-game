@@ -1,0 +1,43 @@
+%%{init: {"theme":"base","themeVariables":{"background":"transparent","primaryColor":"#111827","primaryTextColor":"#f8fafc","primaryBorderColor":"#8b5cf6","lineColor":"#94a3b8","secondaryColor":"#082f49","tertiaryColor":"#052e16","fontFamily":"Inter, ui-sans-serif, system-ui"},"flowchart":{"htmlLabels":false,"curve":"basis"}}}%%
+flowchart TB
+  accTitle: Change contract for an agentic capability
+  accDescr: A product decision defines allowed knowledge. Context and a typed proposal lead to deterministic validation. Outputs are classified into the correct record, persisted, projected under policy, delivered through interfaces, and verified. Observed behavior then informs the next bounded change.
+
+  subgraph design["DESIGN THE DECISION"]
+    direction LR
+    Decide["1. Define decision and allowed knowledge"] --> Context["2. Build bounded context"]
+    Context --> Type["3. Return a typed proposal"]
+  end
+
+  subgraph accept["ACCEPT AND RECORD"]
+    direction LR
+    Validate["4. Validate deterministically"] --> Classify["5. Classify the record"]
+    Classify --> Persist["6. Persist before dependent publish"]
+  end
+
+  subgraph deliver["PROJECT AND VERIFY"]
+    direction LR
+    Project["7. Extend projections and policies"] --> Deliver["8. Deliver through REST, WebSocket, MCP, and web"]
+    Deliver --> Verify["9. Test contracts; review simulations"]
+  end
+
+  Type --> Validate
+  Persist --> Project
+  Verify -. observed quality and failures .-> Decide
+
+  class Decide,Context,Type designNode
+  class Validate,Classify gateNode
+  class Persist,Project deliveryNode
+  class Deliver,Verify outputNode
+
+  classDef designNode fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:1.5px
+  classDef gateNode fill:#3b0764,stroke:#c084fc,color:#faf5ff,stroke-width:1.5px
+  classDef truthNode fill:#052e16,stroke:#4ade80,color:#f0fdf4,stroke-width:1.5px
+  classDef viewNode fill:#083344,stroke:#22d3ee,color:#ecfeff,stroke-width:1.5px
+  classDef cognitionNode fill:#3f2b08,stroke:#facc15,color:#fefce8,stroke-width:1.5px
+  classDef evidenceNode fill:#431407,stroke:#fb923c,color:#fff7ed,stroke-width:1.5px
+  classDef deliveryNode fill:#0f172a,stroke:#94a3b8,color:#f8fafc,stroke-width:1.5px
+  classDef outputNode fill:#111827,stroke:#e2e8f0,color:#f8fafc,stroke-width:1.5px
+  style design fill:transparent,stroke:#334155,stroke-width:1px
+  style accept fill:transparent,stroke:#334155,stroke-width:1px
+  style deliver fill:transparent,stroke:#334155,stroke-width:1px

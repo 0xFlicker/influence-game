@@ -1,0 +1,33 @@
+%%{init: {"theme":"base","themeVariables":{"background":"transparent","primaryColor":"#111827","primaryTextColor":"#f8fafc","primaryBorderColor":"#8b5cf6","lineColor":"#94a3b8","secondaryColor":"#082f49","tertiaryColor":"#052e16","fontFamily":"Inter, ui-sans-serif, system-ui"},"flowchart":{"htmlLabels":false,"curve":"basis"}}}%%
+flowchart TB
+  accTitle: How an agent evaluates influence
+  accDescr: The agent combines position, accepted receipts, information access, relationship state, future narrative value, and identity. A strategic lens organizes that evidence into a contextual estimate of who can move whom and what may happen next. The estimate supports several valid postures and is revised after outcomes.
+
+  Position["Position plus accepted receipts"] --> Lens["Selected strategic lens"]
+  Relations["Information access plus relationship state"] --> Lens
+  Future["Future value plus competitor identity"] --> Lens
+
+  Lens --> Estimate["Contextual influence estimate"]
+  Estimate --> Questions["Who can move whom? Who owes whom? Which story can stick? What changes next?"]
+
+  Questions --> Pressure["Pressure or deal"]
+  Questions --> Gather["Gather or repair"]
+  Questions --> Restrain["Wait, pass, or stay ambiguous"]
+
+  Pressure --> Outcome["Accepted outcome and new evidence"]
+  Gather --> Outcome
+  Restrain --> Outcome
+  Outcome --> Thread["Reflection updates Strategy Thread"]
+  Thread --> Lens
+
+  class Position,Relations,Future inputNode
+  class Lens,Estimate,Questions cognitionNode
+  class Pressure,Gather,Restrain actionNode
+  class Outcome truthNode
+  class Thread memoryNode
+
+  classDef inputNode fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:1.5px
+  classDef cognitionNode fill:#3b0764,stroke:#c084fc,color:#faf5ff,stroke-width:1.5px
+  classDef actionNode fill:#083344,stroke:#22d3ee,color:#ecfeff,stroke-width:1.5px
+  classDef truthNode fill:#052e16,stroke:#4ade80,color:#f0fdf4,stroke-width:1.5px
+  classDef memoryNode fill:#3f2b08,stroke:#facc15,color:#fefce8,stroke-width:1.5px

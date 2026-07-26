@@ -3,8 +3,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { UpdatesShell } from "@/components/updates/updates-shell";
 import { formatUpdateDate } from "@/components/updates/format-update-date";
+import { UpdateMarkdownAnchor } from "@/components/updates/update-markdown-anchor";
+import { UpdatesShell } from "@/components/updates/updates-shell";
 import { getAllPosts, getAllPostSlugs, getPostBySlug } from "@/lib/updates";
 
 export const dynamic = "force-static";
@@ -71,8 +72,15 @@ export default async function UpdatePostPage({ params }: Props) {
         ) : null}
       </header>
 
-      <article className="influence-copy updates-markdown space-y-4 text-base leading-relaxed [&_h2]:text-xl [&_h2]:font-semibold [&_h2]:mt-8 [&_h2]:mb-3 [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-6 [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_a]:underline [&_code]:text-sm [&_code]:px-1 [&_code]:rounded [&_code]:bg-white/10 [&_pre]:p-4 [&_pre]:rounded [&_pre]:overflow-x-auto [&_pre]:bg-white/5">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{post.body}</ReactMarkdown>
+      <article className="influence-copy updates-markdown space-y-4 text-base leading-relaxed [&_h2]:text-2xl [&_h2]:font-semibold [&_h2]:mt-12 [&_h2]:mb-4 [&_h2]:tracking-tight [&_h3]:text-lg [&_h3]:font-semibold [&_h3]:mt-6 [&_h3]:mb-2 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 [&_a]:underline [&_blockquote]:my-5 [&_blockquote]:rounded-r-md [&_blockquote]:border-l-2 [&_blockquote]:border-cyan-200/40 [&_blockquote]:bg-cyan-300/[0.05] [&_blockquote]:px-4 [&_blockquote]:py-3 [&_blockquote_p]:m-0 [&_img]:h-auto [&_img]:w-full [&_img]:rounded-lg [&_img]:border [&_img]:border-white/10 [&_img]:bg-black/30 [&_img]:shadow-panel [&_em]:text-white/65 [&_code]:text-sm [&_code]:px-1 [&_code]:rounded [&_code]:bg-white/10 [&_pre]:p-4 [&_pre]:rounded [&_pre]:overflow-x-auto [&_pre]:bg-white/5">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            a: UpdateMarkdownAnchor,
+          }}
+        >
+          {post.body}
+        </ReactMarkdown>
       </article>
     </UpdatesShell>
   );

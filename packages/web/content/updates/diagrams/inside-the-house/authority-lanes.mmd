@@ -1,0 +1,36 @@
+%%{init: {"theme":"base","themeVariables":{"background":"transparent","primaryColor":"#111827","primaryTextColor":"#f8fafc","primaryBorderColor":"#8b5cf6","lineColor":"#94a3b8","secondaryColor":"#082f49","tertiaryColor":"#052e16","fontFamily":"Inter, ui-sans-serif, system-ui"},"flowchart":{"htmlLabels":false,"curve":"basis"}}}%%
+flowchart LR
+  accTitle: Public, owner, and producer authority lanes
+  accDescr: Canonical projections can serve all three audience lanes. Transcript reads are filtered for each audience. Selected thinking and strategy can enter a viewer-safe public projection, while underlying cognitive artifacts require subject, participant, or producer policy. Private traces reach producer diagnostics only.
+
+  Canonical["Canonical projections"] --> Public["Public and viewer lane"]
+  Canonical --> Owner["Subject owner and participant lane"]
+  Canonical --> Producer["Producer and admin lane"]
+
+  Transcript["Authorized transcript"] --> Public
+  Transcript --> Owner
+  Transcript --> Producer
+
+  Cognition["Cognitive artifacts"] -->|viewer-safe projection| Public
+  Cognition -->|artifact and subject policy| Owner
+  Cognition -->|producer policy| Producer
+
+  Trace["Private trace evidence"] -->|producer scope plus current role| Producer
+
+  Public --> PublicUse["Watch state, dialogue, selected cognition, profiles, results"]
+  Owner --> OwnerUse["Owned cognition and participant-authorized context"]
+  Producer --> ProducerUse["Diagnostics, wider analysis, bounded raw evidence"]
+
+  class Canonical truthNode
+  class Transcript viewNode
+  class Cognition cognitionNode
+  class Trace evidenceNode
+  class Public,Owner,Producer laneNode
+  class PublicUse,OwnerUse,ProducerUse outputNode
+
+  classDef truthNode fill:#052e16,stroke:#4ade80,color:#f0fdf4,stroke-width:1.5px
+  classDef viewNode fill:#083344,stroke:#22d3ee,color:#ecfeff,stroke-width:1.5px
+  classDef cognitionNode fill:#3f2b08,stroke:#facc15,color:#fefce8,stroke-width:1.5px
+  classDef evidenceNode fill:#431407,stroke:#fb923c,color:#fff7ed,stroke-width:1.5px
+  classDef laneNode fill:#3b0764,stroke:#c084fc,color:#faf5ff,stroke-width:1.5px
+  classDef outputNode fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:1.5px

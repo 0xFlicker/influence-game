@@ -1,0 +1,40 @@
+%%{init: {"theme":"base","themeVariables":{"background":"transparent","primaryColor":"#111827","primaryTextColor":"#f8fafc","primaryBorderColor":"#8b5cf6","lineColor":"#94a3b8","secondaryColor":"#082f49","tertiaryColor":"#052e16","fontFamily":"Inter, ui-sans-serif, system-ui"},"flowchart":{"htmlLabels":false,"curve":"basis"}}}%%
+flowchart TB
+  accTitle: The House system map
+  accDescr: Owners manage stable agent profiles and revisions. The API runs the House and agents through the engine. Accepted facts and explanatory evidence are stored separately, projected into read models, and delivered through web, MCP, and producer interfaces.
+
+  WebControl["Web dashboard"] --> Profile["Stable Agent Profile"]
+  McpControl["Scoped MCP management"] --> Profile
+  Profile --> Revision["Frozen Analytical Revision"]
+  Revision --> Runtime["API lifecycle, House controller, agent instances, and deterministic engine"]
+
+  Runtime --> Events["Canonical event log"]
+  Runtime --> Transcript["Transcript"]
+  Runtime --> Cognition["Cognitive artifacts"]
+  Runtime --> Trace["Private trace evidence"]
+
+  Events --> Reads["Governed projections, policies, and read models"]
+  Transcript --> Reads
+  Cognition --> Reads
+  Trace --> Reads
+
+  Reads --> Delivery["REST, viewer-safe WebSocket, and scoped Production MCP"]
+  Delivery --> Viewer["Web viewers"]
+  Delivery --> Hosts["Connected AI hosts"]
+  Delivery --> Tools["Producer tools"]
+
+  class Profile,Revision,WebControl,McpControl controlNode
+  class Runtime runtimeNode
+  class Events,Reads truthNode
+  class Transcript viewNode
+  class Cognition cognitionNode
+  class Trace evidenceNode
+  class Delivery,Viewer,Hosts,Tools deliveryNode
+
+  classDef controlNode fill:#172554,stroke:#60a5fa,color:#eff6ff,stroke-width:1.5px
+  classDef runtimeNode fill:#3b0764,stroke:#c084fc,color:#faf5ff,stroke-width:1.5px
+  classDef truthNode fill:#052e16,stroke:#4ade80,color:#f0fdf4,stroke-width:1.5px
+  classDef viewNode fill:#083344,stroke:#22d3ee,color:#ecfeff,stroke-width:1.5px
+  classDef cognitionNode fill:#3f2b08,stroke:#facc15,color:#fefce8,stroke-width:1.5px
+  classDef evidenceNode fill:#431407,stroke:#fb923c,color:#fff7ed,stroke-width:1.5px
+  classDef deliveryNode fill:#111827,stroke:#94a3b8,color:#f8fafc,stroke-width:1.5px
