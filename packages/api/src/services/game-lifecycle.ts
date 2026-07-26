@@ -42,7 +42,13 @@ import type {
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { PgMemoryStore } from "../db/memory-store.js";
-import { broadcastGameEvent, broadcastRaw, broadcastWatchState, getObserverCount } from "./ws-manager.js";
+import {
+  broadcastGameEvent,
+  broadcastRaw,
+  broadcastViewerDecisionEvent,
+  broadcastWatchState,
+  getObserverCount,
+} from "./ws-manager.js";
 import { ViewerEventPacer } from "./viewer-event-pacer.js";
 import { appendGameEvents, hashCanonicalEvent } from "./game-events.js";
 import { getGameWatchState, type GameWatchState } from "./game-watch-state.js";
@@ -243,10 +249,14 @@ export async function appendDurableEventsAndPublishWatchState(
     events: readonly CanonicalGameEvent[];
   },
 ): Promise<void> {
-  await appendGameEvents(db, params);
+  const insertedEvents = await appendGameEvents(db, params);
+  for (const event of insertedEvents) {
+    broadcastViewerDecisionEvent(params.gameId, event);
+  }
   await reconcileAcceptedActionsForLifecycle(db, {
     gameId: params.gameId,
     ownerEpoch: params.ownerEpoch,
+    ...(insertedEvents.length > 0 && { events: insertedEvents }),
   });
   if (params.events.some((event) => event.type === "jury.winner_determined")) {
     return;
@@ -260,6 +270,7 @@ export async function reconcileAcceptedActionsForLifecycle(
   params: {
     gameId: string;
     ownerEpoch: string;
+    events?: readonly CanonicalGameEvent[];
   },
 ): Promise<void> {
   const correlation = await tryReconcileAcceptedActionCorrelations(db, params);

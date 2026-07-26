@@ -37,6 +37,19 @@ export type {
   JudgmentSpeechKind,
   JudgmentSpeechProvenance,
 } from "./canonical-events";
+export { projectViewerDecisionEvent, reconstructSafetyBouncePrefix } from "./viewer-decision-events";
+export type {
+  ReconstructSafetyBouncePrefixOptions,
+  SafetyBounceCompletion,
+  SafetyBouncePrefix,
+  SafetyBouncePrefixDiagnostic,
+  SafetyBouncePrefixDiagnosticCode,
+  SafetyBounceRosterPlayer,
+  ViewerDecisionEvent,
+  ViewerDecisionEventBase,
+  ViewerDecisionEventType,
+  ViewerFormatResolutionPayload,
+} from "./viewer-decision-events";
 export {
   buildFormalSpeechCorrelationKey,
   commitAcceptedFormalSpeech,

@@ -1,40 +1,38 @@
 # Format-kernel web contract drift
 
-**Date:** 2026-07-24  
-**Branch:** `feat/sequester-format-kernel`  
-**Status:** Web UI intentionally **not** updated. This note is for whoever next touches watch / completed-results / transcript parsers.
+**Date:** 2026-07-26
+**Branch:** `feat/sequester-format-kernel`
+**Status:** Low-level web contracts are updated; the full format presentation remains intentionally deferred.
 
 ## Summary
 
-Standard rounds no longer use **expose** as an agent-facing ballot or elimination input. Agents cast **empower only**. Elimination is owned by the **format kernel** (Save-or-eliminate / Vote Bomb / Safety Bounce), not Power → Council.
+Format-kernel rounds use an **empower-only** standard vote. Elimination is owned by Save-or-Eliminate, Vote Bomb, or Safety Bounce rather than Power → Council. The web transport now accepts the engine-owned dual-kernel facts, replay v3 viewer decision events, and live viewer decision-event messages without manufacturing an expose target.
 
-## What web currently may still assume
+## Contract completed in this pass
 
-| Assumption | Reality now |
+| Surface | Current contract |
 |------------|-------------|
-| Vote lines look like `empower=X, expose=Y` | New games log `votes: empower=X` only |
-| Revealed vote ledger always has expose targets | `exposeTargetId` / `exposeTargetName` optional / absent |
-| Round has power action + council pair | Format rounds: `powerAction`/`candidates` null; `formatId` / `formatMethod` may be set on `RoundResult` |
-| Phases include POWER / COUNCIL every round | Default path: `FORMAT_MENU` → `FORMAT_PICK` → `FORMAT_MINGLE` → `FORMAT_RESOLVE` |
-| Post-vote pressure / exposure scores drive UI | Not built on default path; expose scores from ledger may be empty |
+| Canonical facts | Web imports the engine-owned revealed-round and completed-results shapes. Format rounds include `format`, omit `power`/`council`, and may omit every `exposeTarget`. |
+| Completed-results matrix | An empower column is emitted for accepted standard votes; an expose column appears only if at least one ledger row actually has an expose target. |
+| Live/replay transport | Web accepts `viewer_decision_event` websocket messages and replay-frame schema v3 carrying the same viewer-safe event union. |
+| Phases | The transport recognizes `FORMAT_MENU` → `FORMAT_PICK` → `FORMAT_MINGLE` → `FORMAT_RESOLVE`. |
+| Legacy prose | `message-parsing.ts` remains the exact frozen classic presentation exception; format facts must never enter it. |
 
-## Surfaces to update later (not done here)
+## Presentation deferred
 
-- Transcript / system-message parsers (`packages/web/.../message-parsing.ts` and similar)
-- Completed results round cards that hard-require expose / power / council sections
-- Live watch pressure widgets keyed to expose / council candidates
-- Audio cues for council nominees / power actions on standard rounds
-- ~~Any client copy of “expose someone” in rules UI~~ — web `/rules` and `docs/rules-page-content.md` updated to format-kernel copy (no expose ballot)
+- Safety Bounce bench, center picker, safe/vulnerable pools, and arrow choreography.
+- Save-or-Eliminate and Vote Bomb result presentation.
+- A completed-results visual redesign that displays the format-specific ledger and resolution.
+- Format-specific audio, pacing, reveal, and animation design.
 
-## Safe parsing guidance
+## Authority boundary
 
-1. Treat **empower** as the only required standard-vote field for new runs.  
-2. If `expose` is missing, do not invent one.  
-3. Prefer phase enum / `formatId` over assuming Power/Council always fire.  
-4. Historical replays may still contain dual-ballot `vote.cast` with `exposeTarget`; support both shapes.
+1. Canonical events and canonical-event-derived projections own decisions, tallies, phases, replay state, and completed results.
+2. Transcript prose may be rendered as dialogue, but cannot supply format state or repair missing facts.
+3. Historical classic replays retain their dual-ballot expose presentation through the frozen parser island.
+4. New format work must consume `ViewerDecisionEvent`, `RevealedRoundFacts`, and completed results directly.
 
 ## MCP judgment (already applied)
 
-- Management rules packet (`packages/api/src/game-mcp/rules.ts`) updated to empower-only + formats.  
-- Active-match MCP still must not expose in-match vote tools (unchanged policy).  
-- `read_round_facts` consumers should tolerate null expose on ledger rows; deep postgame redesign deferred.
+- `read_round_facts` and public watch expose the same sanitized format ballot facts; the sealed mapping remains hidden only in in-game agent context.
+- Active-match MCP still does not expose in-match vote tools.

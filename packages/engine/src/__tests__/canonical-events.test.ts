@@ -7,6 +7,10 @@ import {
   validateCanonicalGameEvent,
   type CanonicalGameEvent,
 } from "../canonical-events";
+import {
+  projectViewerDecisionEvent,
+  reconstructSafetyBouncePrefix,
+} from "../viewer-decision-events";
 import { GameState } from "../game-state";
 import { Phase, PlayerStatus } from "../types";
 
@@ -84,6 +88,204 @@ describe("canonical event envelope", () => {
     expect(canonicalEventIsVisibleTo(event, "producer")).toBe(true);
     expect(canonicalEventIsVisibleTo(event, "player")).toBe(false);
     expect(canonicalEventIsVisibleTo(event, "public")).toBe(false);
+  });
+});
+
+describe("viewer decision events", () => {
+  it("projects only an allowlisted decision payload and strips private raw-envelope fields", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "game-viewer-event", now: () => 1_700_000_000_000 },
+    );
+    state.startRound();
+    state.recordVote("alice", "bob", "alice", [
+      {
+        kind: "agent_turn",
+        actorId: "alice",
+        action: "vote",
+        decisionId: "private-decision-id",
+        round: 1,
+        phase: Phase.VOTE,
+        file: "private-trace.jsonl",
+      },
+    ]);
+
+    const vote = state.getCanonicalEvents().find((event) => event.type === "vote.cast");
+    expect(vote).toBeDefined();
+    if (!vote || vote.type !== "vote.cast") throw new Error("Expected canonical vote event");
+
+    const viewerEvent = projectViewerDecisionEvent(vote);
+
+    expect(viewerEvent).toEqual({
+      sequence: vote.sequence,
+      timestamp: vote.timestamp,
+      round: vote.round,
+      phase: vote.phase,
+      type: "vote.cast",
+      payload: {
+        voterId: "alice",
+        empowerTarget: "bob",
+        exposeTarget: "alice",
+      },
+    });
+    const json = JSON.stringify(viewerEvent);
+    expect(json).not.toContain("sourcePointers");
+    expect(json).not.toContain("private-decision-id");
+    expect(json).not.toContain("private-trace.jsonl");
+    expect(projectViewerDecisionEvent(sampleEvent())).toBeNull();
+  });
+});
+
+describe("Safety Bounce canonical prefixes", () => {
+  function bounceState(): GameState {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      { gameId: "game-safety-bounce-prefix", now: () => 1_700_000_000_000 },
+    );
+    state.startRound();
+    state.recordFormatMenu("alice", ["safety_bounce", "vote_bomb"]);
+    state.recordFormatSelected("alice", "safety_bounce");
+    state.recordSafetyBounceStarted("alice");
+    state.recordSafetyBouncePointer("alice", "bob", "vulnerable");
+    state.recordSafetyBouncePointer("bob", "charlie", "safe");
+    state.recordSafetyBouncePointer("charlie", "dave", "vulnerable");
+    return state;
+  }
+
+  const roster = ["alice", "bob", "charlie", "dave"].map((id) => ({ id }));
+
+  it("reconstructs every accepted prefix from sequence order without transcript repair", () => {
+    const state = bounceState();
+    const events = state.getCanonicalEvents();
+    const startIndex = events.findIndex((event) => event.type === "format.safety_bounce_started");
+    const pointerIndexes = events
+      .map((event, index) => ({ event, index }))
+      .filter(({ event }) => event.type === "format.safety_bounce_pointer")
+      .map(({ index }) => index);
+
+    const prefixes = [startIndex, ...pointerIndexes].map((index) =>
+      reconstructSafetyBouncePrefix({ roster, events: events.slice(0, index + 1) }),
+    );
+
+    expect(prefixes.map((prefix) => ({
+      currentActorId: prefix.currentActorId,
+      benchPlayerIds: prefix.benchPlayerIds,
+      safePlayerIds: prefix.safePlayerIds,
+      vulnerablePlayerIds: prefix.vulnerablePlayerIds,
+      diagnostics: prefix.diagnostics,
+    }))).toEqual([
+      {
+        currentActorId: "alice",
+        benchPlayerIds: ["bob", "charlie", "dave"],
+        safePlayerIds: ["alice"],
+        vulnerablePlayerIds: [],
+        diagnostics: [],
+      },
+      {
+        currentActorId: "bob",
+        benchPlayerIds: ["charlie", "dave"],
+        safePlayerIds: ["alice"],
+        vulnerablePlayerIds: ["bob"],
+        diagnostics: [],
+      },
+      {
+        currentActorId: "charlie",
+        benchPlayerIds: ["dave"],
+        safePlayerIds: ["alice", "charlie"],
+        vulnerablePlayerIds: ["bob"],
+        diagnostics: [],
+      },
+      {
+        currentActorId: "dave",
+        benchPlayerIds: [],
+        safePlayerIds: ["alice", "charlie"],
+        vulnerablePlayerIds: ["bob", "dave"],
+        diagnostics: [],
+      },
+    ]);
+  });
+
+  it("reports invalid continuity, duplicate targets, missing roster players, and sequence gaps without repairing", () => {
+    const events = bounceState().getCanonicalEvents();
+    const pointerIndex = events.findIndex((event) => event.type === "format.safety_bounce_pointer");
+    if (pointerIndex === -1) throw new Error("Expected Safety Bounce pointer");
+
+    const invalidActor = events.map((event, index) => (
+      index === pointerIndex && event.type === "format.safety_bounce_pointer"
+        ? { ...event, payload: { ...event.payload, actorId: "charlie" } }
+        : event
+    ));
+    const duplicateTarget = events.map((event, index) => (
+      index === pointerIndex + 1 && event.type === "format.safety_bounce_pointer"
+        ? { ...event, payload: { ...event.payload, targetId: "bob" } }
+        : event
+    ));
+    const missingPlayer = events.map((event, index) => (
+      index === pointerIndex && event.type === "format.safety_bounce_pointer"
+        ? { ...event, payload: { ...event.payload, targetId: "nobody" } }
+        : event
+    ));
+    const sequenceGap = events.map((event, index) => (
+      index === pointerIndex
+        ? { ...event, sequence: event.sequence + 1 }
+        : event
+    ));
+
+    expect(reconstructSafetyBouncePrefix({ roster, events: invalidActor }).diagnostics.map((d) => d.code))
+      .toContain("safety_bounce_invalid_actor");
+    expect(reconstructSafetyBouncePrefix({ roster, events: duplicateTarget }).diagnostics.map((d) => d.code))
+      .toContain("safety_bounce_duplicate_target");
+    expect(reconstructSafetyBouncePrefix({ roster, events: missingPlayer }).diagnostics.map((d) => d.code))
+      .toContain("safety_bounce_missing_roster_player");
+    expect(reconstructSafetyBouncePrefix({ roster, events: sequenceGap }).diagnostics.map((d) => d.code))
+      .toContain("safety_bounce_event_gap");
+  });
+
+  it("distinguishes sole-vulnerable auto-elimination from a final ballot", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      { gameId: "game-safety-bounce-auto", now: () => 1_700_000_000_000 },
+    );
+    state.startRound();
+    state.recordSafetyBounceStarted("alice");
+    state.recordSafetyBouncePointer("alice", "bob", "vulnerable");
+    state.recordSafetyBouncePointer("bob", "charlie", "safe");
+    state.recordSafetyBouncePointer("charlie", "dave", "safe");
+    state.recordFormatResolution({
+      formatId: "safety_bounce",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "auto",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: null,
+      voteBomb: null,
+      safetyBounce: {
+        starterId: "alice",
+        safePlayerIds: ["alice", "charlie", "dave"],
+        vulnerablePlayerIds: ["bob"],
+        voteTotals: {},
+      },
+    });
+
+    const prefix = reconstructSafetyBouncePrefix({ roster, events: state.getCanonicalEvents() });
+
+    expect(prefix.completion).toBe("sole_vulnerable_auto_elimination");
+    expect(prefix.finalBallotCount).toBe(0);
+    expect(prefix.diagnostics).toEqual([]);
   });
 });
 

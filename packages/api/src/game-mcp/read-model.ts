@@ -3,6 +3,7 @@ import {
   buildRevealedRoundFacts,
   canonicalEventIsVisibleTo,
   Phase,
+  projectViewerDecisionEvent,
   resolveGameKernel,
   type AllianceHuddleOutcome,
   type AllianceHuddleCommitmentFact,
@@ -16,6 +17,7 @@ import {
   type PostgameAnalysisProjection,
   type PostgamePlayerGameSummary,
   type RevealedRoundFactsRead,
+  type ViewerDecisionEvent,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -123,7 +125,13 @@ export interface ProductionGameEventResult {
   phase: string | null;
   visibility: string;
   createdAt: string;
-  event: ProductionGameEventEnvelope;
+  /** Distinguishes a safe viewer decision from a canonical event envelope. */
+  eventShape: "canonical" | "viewer_decision";
+  /**
+   * Public/player decision events use the allowlisted viewer DTO. Producer
+   * mode retains the raw canonical envelope for provenance diagnostics.
+   */
+  event: ProductionGameEventEnvelope | ViewerDecisionEvent;
   matchSources?: string[];
 }
 
@@ -675,10 +683,9 @@ export class ProductionGameMcpReadModel {
     canonicalGameFacts: RevealedRoundFactsRead;
   }> {
     const game = await this.requireGame(options.gameIdOrSlug, access);
-    const [events, settlementState, ballotAccess] = await Promise.all([
+    const [events, settlementState] = await Promise.all([
       getPersistedGameEvents(this.db, game.id),
       getGameCompletionSettlementState(this.db, game.id),
-      this.resolveFormatBallotAccess(game.id, access),
     ]);
     const terminalOutcomeSequence = firstTerminalOutcomeSequence(events.events);
     const terminalSafeEvents = events.events.filter((row) =>
@@ -700,7 +707,6 @@ export class ProductionGameMcpReadModel {
         round: options.round,
         eventLogStatus: events.status,
         projectionStatus: projection.status,
-        ballotAccess,
       }),
     };
   }
@@ -793,7 +799,10 @@ export class ProductionGameMcpReadModel {
     const visibilityMode = options.visibilityMode ?? (
       isGamesSubjectAccess(access) ? "player" : "producer"
     );
-    const includePrivateCorrelation = access.authProfile === "producer";
+    // Producers can explicitly ask for the viewer shape. Only producer mode
+    // may retain raw source pointers or pointer-based actor correlation.
+    const includePrivateCorrelation =
+      access.authProfile === "producer" && visibilityMode === "producer";
     const eventType = normalizeEventType(options.eventType);
     const limit = clamp(options.limit ?? DEFAULT_EVENT_LIMIT, 1, MAX_EVENT_LIMIT);
     const actor = options.actor?.trim();
@@ -820,13 +829,16 @@ export class ProductionGameMcpReadModel {
         settlementState,
         terminalOutcomeSequence,
       )) continue;
-      if (!canonicalEventIsVisibleTo(event, visibilityMode)) continue;
+      const viewerDecision = visibilityMode === "producer"
+        ? null
+        : projectViewerDecisionEvent(event);
+      if (!canonicalEventIsVisibleTo(event, visibilityMode) && !viewerDecision) continue;
       const matchSources = actor
         ? eventMatchSources(event, actor, includePrivateCorrelation)
         : [];
       if (actor && matchSources.length === 0) continue;
 
-      events.push(eventResult(row, matchSources, includePrivateCorrelation));
+      events.push(eventResult(row, matchSources, includePrivateCorrelation, viewerDecision));
       if (events.length >= limit) break;
     }
 
@@ -1173,33 +1185,6 @@ export class ProductionGameMcpReadModel {
       gameIdOrSlug,
     });
     return resolution.status === "resolved" ? resolution.context : null;
-  }
-
-  /**
-   * Format sealed-ballot scope for read_round_facts.
-   * Producer: full ledger. Subject owner: own ballots only. Public viewers: none.
-   * Cognitive/private fields never enter this surface (ballots are producer events only).
-   */
-  private async resolveFormatBallotAccess(
-    gameId: string,
-    access: ProductionGameMcpAccess,
-  ): Promise<{ mode: "public" | "owner" | "producer"; ownedPlayerIds?: ReadonlySet<string> }> {
-    if (!isGamesSubjectAccess(access)) {
-      return { mode: "producer" };
-    }
-    const resolution = await resolveMatchAccessContext(this.db, {
-      subjectUserId: access.userId,
-      gameIdOrSlug: gameId,
-    });
-    if (resolution.status !== "resolved") {
-      return { mode: "public" };
-    }
-    const ownedPlayerIds = resolution.context.ownedPlayerIds;
-    if (ownedPlayerIds.size === 0) {
-      // Spectator subject with game access but no owned seat: public format facts only.
-      return { mode: "public" };
-    }
-    return { mode: "owner", ownedPlayerIds };
   }
 
   private async accessibleGameIds(access: ProductionGameMcpAccess): Promise<string[] | null> {
@@ -1836,6 +1821,7 @@ function eventResult(
   row: TrustedPersistedGameEvent,
   matchSources: string[],
   includePrivateCorrelation: boolean,
+  viewerDecision: ViewerDecisionEvent | null,
 ): ProductionGameEventResult {
   return {
     gameId: row.gameId,
@@ -1843,11 +1829,12 @@ function eventResult(
     eventType: row.eventType,
     round: row.envelope.round,
     phase: row.envelope.phase,
-    visibility: row.visibility,
+    visibility: viewerDecision ? "public" : row.visibility,
     createdAt: row.createdAt,
-    event: includePrivateCorrelation
+    eventShape: viewerDecision ? "viewer_decision" : "canonical",
+    event: viewerDecision ?? (includePrivateCorrelation
       ? row.envelope
-      : sanitizedCanonicalEventEnvelope(row.envelope),
+      : sanitizedCanonicalEventEnvelope(row.envelope)),
     ...(matchSources.length > 0 && { matchSources }),
   };
 }

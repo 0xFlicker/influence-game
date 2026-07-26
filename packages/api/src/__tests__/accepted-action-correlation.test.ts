@@ -232,6 +232,36 @@ describe("accepted action correlation", () => {
     expect(inspection.response.diagnostics).toEqual([]);
   });
 
+  test("reconciles a durable flush from its newly inserted event subset", async () => {
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const firstDecisionId = randomUUID();
+    const secondDecisionId = randomUUID();
+    const firstEvent = voteEvent(gameId, firstDecisionId, 1);
+    const secondEvent = voteEvent(gameId, secondDecisionId, 2);
+    await appendGameEvents(db, { gameId, ownerEpoch, events: [firstEvent, secondEvent] });
+    await seedSidecars(db, { gameId, ownerEpoch, decisionId: firstDecisionId });
+    await seedSidecars(db, { gameId, ownerEpoch, decisionId: secondDecisionId });
+
+    const result = await reconcileAcceptedActionCorrelations(db, {
+      gameId,
+      ownerEpoch,
+      events: [secondEvent],
+    });
+
+    expect(result).toMatchObject({
+      eligibleDecisionCount: 1,
+      linkedDecisionCount: 1,
+      updatedManifestCount: 1,
+      updatedCognitiveArtifactCount: 1,
+      updatedPromptReuseSourceCount: 1,
+    });
+    const manifests = await db.select().from(schema.gameEvidenceManifests)
+      .where(eq(schema.gameEvidenceManifests.gameId, gameId));
+    expect(manifests.find((row) => row.decisionId === firstDecisionId)?.eventSequence).toBeNull();
+    expect(manifests.find((row) => row.decisionId === secondDecisionId)?.eventSequence).toBe(2);
+  });
+
   test("refuses conflicting pre-existing links without changing canonical gameplay", async () => {
     const gameId = await insertGame(db, { status: "in_progress" });
     const ownerEpoch = await insertOwner(db, gameId);

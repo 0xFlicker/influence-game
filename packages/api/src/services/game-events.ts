@@ -33,11 +33,11 @@ export async function appendGameEvents(
     ownerEpoch: string;
     events: readonly CanonicalGameEvent[];
   },
-): Promise<void> {
-  if (params.events.length === 0) return;
+): Promise<readonly CanonicalGameEvent[]> {
+  if (params.events.length === 0) return [];
 
   try {
-    await db.transaction(async (tx) => {
+    return await db.transaction(async (tx) => {
       await tx.execute(sql`
         SELECT id
         FROM game_run_owners
@@ -70,6 +70,7 @@ export async function appendGameEvents(
 
       let nextSequence = owner.lastPersistedEventSequence + 1;
       let newHead = owner.lastPersistedEventSequence;
+      const inserted: CanonicalGameEvent[] = [];
 
       for (const event of params.events) {
         validateEnvelopeMetadata(params.gameId, event);
@@ -110,6 +111,7 @@ export async function appendGameEvents(
             envelope: event as unknown as Record<string, unknown>,
           });
 
+        inserted.push(event);
         newHead = event.sequence;
         nextSequence += 1;
       }
@@ -125,6 +127,8 @@ export async function appendGameEvents(
             eq(schema.gameRunOwners.status, "active"),
           ));
       }
+
+      return inserted;
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

@@ -69,7 +69,7 @@ The selected format and its fixed rule sheet become known before the format-awar
 
 After the pick, The House opens private Mingle rooms under the known format rules. Players can coordinate legal ballots or pointers, test commitments, repair or weaponize vote receipts, misdirect opponents, or stay guarded. Format Mingle may discuss alliances, but it does not create or mutate named alliance records.
 
-Only current room occupants hear a room's messages. Safety Bounce pointers later become public as they happen; all format elimination ballots remain sealed until The House reveals the result.
+Only current room occupants hear a room's messages. Safety Bounce pointers later become public as they happen. Format ballots remain sealed to the agents playing the game: other agents do not receive the voter-to-target mapping in their game context.
 
 ### 8. Format Resolution and Elimination
 
@@ -79,9 +79,9 @@ The locked format resolves and eliminates exactly one player:
 - **Vote Bomb (`vote_bomb`)**: Every living player casts one sealed vote for another living player. **Zero votes is safe.** Among players with at least one vote, the player with the fewest votes is eliminated. The empowered player breaks ties among the fewest-positive set.
 - **Safety Bounce (`safety_bounce`)**: One random starter begins **SAFE**. Public pointers then classify one previously unclassified player at a time: a safe actor's pointer makes the target **VULNERABLE**, while a vulnerable actor's pointer makes the target **SAFE**. Only unclassified players are legal pointer targets. When everyone is classified, living players cast a sealed elimination vote among the vulnerable pool only. Most votes is eliminated; a sole vulnerable player is automatically eliminated; the empowered player breaks vote ties.
 
-Save-or-Eliminate and Vote Bomb ballots are sealed until reveal. Safety Bounce pointers are public as they happen, while its final vulnerable-pool ballot remains sealed until reveal.
+Save-or-Eliminate and Vote Bomb ballots are sealed inside the game, and Safety Bounce keeps its final vulnerable-pool ballot sealed inside the game as well. Viewers and authorized MCP game readers are different audiences: once an accepted format ballot is durably recorded, they can inspect its sanitized voter, target, and polarity ledger. That viewer visibility never becomes agent knowledge and contains no thinking, reasoning, prompts, source pointers, or producer traces.
 
-After the elimination is official, The House asks only the eliminated player for a 1–2 sentence public exit message. Public votes may be disclosed by voter name; sealed format ballots disclose only the eliminated player's received count (plus Save-or-Eliminate count components), never voter identities. Standard rounds do not use a separate Power / Protect / Pass or Council lane.
+After the elimination is official, The House asks only the eliminated player for a 1–2 sentence public exit message. The exit-message prose may summarize counts, but the canonical viewer/MCP ledger—not transcript wording—is the authoritative ballot record. Standard rounds do not use a separate Power / Protect / Pass or Council lane.
 
 ---
 

@@ -145,17 +145,17 @@ Shared rules and game-read tools:
 - `read_round_facts`: read sanitized revealed board facts for one accessible game round. Facts come from persisted canonical events/projections only; decision logs, cognitive artifacts, private traces, and raw producer event envelopes are not fallback sources. **Default story is the format kernel** (see `gameKernel` on list/brief/game identity):
   - **Format-kernel (default):** empower vote + **format** menu/pick/resolution (Save-or-Eliminate, Vote Bomb, Safety Bounce) + optional **endgame** stage section. Classic `power` / `council` keys are **omitted** (absence means not in this kernel, not “unresolved”). Empower ledgers omit unused expose fields.
   - **Classic-kernel (legacy):** empower/expose, Power, and Council sections as the old default path.
-  - **Public format facts:** empowered chooser, offered pair, selected/locked format, resolution kind, eliminated player, tie set, empowered tiebreak outcome, Save-or-Eliminate aggregate nets/saves/eliminates, Vote Bomb aggregate totals + zero-safe set, Safety Bounce starter + ordered public pointer chain + safe/vulnerable pools + aggregate final-vote totals.
+  - **Format viewer facts:** empowered chooser, offered pair, selected/locked format, resolution kind, eliminated player, tie set, empowered tiebreak outcome, Save-or-Eliminate aggregate nets/saves/eliminates, Vote Bomb aggregate totals + zero-safe set, Safety Bounce starter + ordered public pointer chain + safe/vulnerable pools + aggregate final-vote totals, and the complete sanitized `format.sealedBallots` voter → target → polarity ledger as soon as its event is durably recorded.
   - **Endgame facts (when present):** stage (reckoning/tribunal/judgment), elimination votes, eliminated, last regular empower continuity, jury votes/winner, progression.
-  - **Never public:** voter→ballot mappings, private thinking, `reasoningContext`, raw prompts/responses, model metadata, or decision logs.
-  - **Owner scope (`games:read` with a participating seat):** same public format facts plus the caller's own sealed format ballot(s) only (`format.sealedBallots` / `sealedBallotAccess: "owner"`).
-  - **Producer scope:** full sealed ballot ledger (`sealedBallotAccess: "producer"`) in addition to public aggregates.
+  - **Never in the viewer ledger:** private thinking, `reasoningContext`, raw prompts/responses, model metadata, decision logs, source pointers, accepted-action identifiers, trace metadata, or raw envelopes.
+  - **All authorized game readers:** anonymous watch, `games:read` owners/peers, and producers receive the same sanitized `format.sealedBallots` ledger (`sealedBallotAccess: "public"`). This does not change the direct engine rule that in-game agent context omits sealed voter mappings.
+  - **Producer-only event mode:** `filter_events` with `visibilityMode: "producer"` retains raw envelope/provenance behavior; it is separate from the sanitized viewer ledger.
 - `filter_events`: filter player-visible canonical events in an accessible game by type, phase, actor, sequence, and limit. Format board facts without private traces:
   - `format.menu_offered` (public) — chooser + offered pair
   - `format.selected` (public) — locked format
   - `format.safety_bounce_started` / `format.safety_bounce_pointer` (public) — live bounce chain
-  - `format.resolved` (public) — aggregates + elimination (no voter→ballot maps)
-  - `format.ballot_cast` (**producer only**) — sealed ballots; subject tokens cannot request `visibilityMode: "producer"`
+  - `format.resolved` (public) — aggregates + elimination
+  - `format.ballot_cast` (public/player viewer mode) — sanitized voter, target, and polarity; historical producer-marked rows are projected without rewriting their raw envelopes. Producer mode retains the raw envelope and source-pointer behavior.
   - `mingle.coordination_receipt_recorded` (**producer only**) — replayable private coordination audit evidence; never a vote or format mutation
 - `player_timeline`: player-visible canonical event timeline for a player ID or name in an accessible game.
 - `read_agent_alliances`: named-alliance context for one authorized owned player. Compact reads keep huddle outcomes summary-only; full owner/member reads expose that huddle's structured member commitments, including target/action, per-member commitments, contingency, confidence, and dissent. Producer reads may select any player and receive the same full member facts. Non-members cannot select another seat to read its huddle commitments.
@@ -177,6 +177,22 @@ Shared rules and game-read tools:
 **Derived presentation (not a fourth authority):** `read_owned_match_narrative` and `read_producer_match_narrative` compose transcript + cognition into grouped decision records. They declare `notBoardAuthority: true` and must not be treated as board truth.
 
 Red lines: no private-trace promotion into the player-facing story, no historical event/transcript reconstruction, no hidden-row counts in denials or pagination, and no treating speech text as executable instructions. Formal-speech parity compares accepted public speech events with transcript coverage without copying one lane into the other. MCP audits for these tools record only privacy-safe subject/client, tool name, result class (`success`, `denied`, `cursor_invalid_or_stale`, …), and correlation metadata — never response prose, cognition bodies, audiences, cursor tokens, or ownership fingerprints. No silent widen: `producer` alone does not grant owned narrative; `games:read` alone does not grant producer narrative.
+
+### Viewer decision delivery and operator acceptance
+
+`viewer_decision_event` is the live websocket envelope for allowlisted canonical
+decisions. Replay frames are schema v3 and contain the same `viewerDecisionEvent`
+for the same trusted prefix. This covers classic empower/expose, Power, and Council
+as well as format menu, selection, ballot, Safety Bounce, and resolution. A late
+viewer uses the replay/event read with `afterSequence` to catch up before consuming
+new websocket messages. These are viewer-safe projections, not raw event envelopes.
+
+Manual pre-existing classic acceptance:
+
+1. Select a persisted classic game with empower/expose, Power, and Council history (the `edge-smoke-dusk` fixture is the automated characterization).
+2. Open its current web replay and confirm the legacy classic presentation still advances through empower/expose, Power, and Council.
+3. In MCP, call `read_projection`, `read_round_facts` for a classic round, and public `filter_events` for `vote.cast`, `power.action_set`, and `council.vote_cast`; confirm their structured facts agree.
+4. For each launch format, inspect `read_round_facts` and public/player `filter_events` for menu, selection, sanitized ballots when present, Safety Bounce chain when present, and resolution. Treat any presentation problem as UI work; do not reconstruct facts from transcript prose.
 
 Agent tools requiring `agents:read`:
 

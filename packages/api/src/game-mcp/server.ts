@@ -738,8 +738,8 @@ function productionGameMcpTools(
     tool({
       name: "read_round_facts",
       description: includeProducerVariant
-        ? "Read sanitized revealed board facts for one deployed game round. Default path is format kernel: empower vote + format menu/pick/resolution (Save-or-Eliminate, Vote Bomb, Safety Bounce) and endgame stage facts when present. Classic Power/Council sections appear only on classic-kernel games. Format sealed ballots are producer-scoped; public aggregates never include voter→ballot mappings."
-        : "Read sanitized revealed board facts for one accessible game round. Default path is format kernel: empower + format menu/pick/resolution aggregates and endgame stage facts when present. Classic Power/Council only on classic-kernel games. Owned sealed format ballots only for the caller's seats.",
+        ? "Read sanitized revealed board facts for one deployed game round. Default path is format kernel: empower vote + format menu/pick/resolution (Save-or-Eliminate, Vote Bomb, Safety Bounce) and endgame stage facts when present. Classic Power/Council sections appear only on classic-kernel games. Every authorized viewer receives the complete sanitized format voter-to-target ledger immediately after durable record; producer provenance remains a separate raw-event read."
+        : "Read sanitized revealed board facts for one accessible game round. Default path is format kernel: empower + format menu/pick/resolution and its complete sanitized ballot ledger, with endgame stage facts when present. Classic Power/Council only on classic-kernel games. The ledger is shared by every authorized game reader and contains no reasoning or provenance.",
       properties: {
         gameIdOrSlug: { type: "string" },
         round: { type: "number" },
@@ -767,8 +767,8 @@ function productionGameMcpTools(
     tool({
       name: "filter_events",
       description: includeProducerVariant
-        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit."
-        : "Filter player-visible canonical events by game, type, phase, actor, sequence range, or limit.",
+        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Each row marks eventShape as viewer_decision for the sanitized public/player DTO or canonical for an envelope. Historical format ballots are viewer decisions; producer mode retains raw provenance envelopes."
+        : "Filter viewer-safe canonical decisions by game, type, phase, actor, sequence range, or limit. Rows mark the sanitized decision shape with eventShape: viewer_decision. Historical format ballots are available as sanitized voter-to-target facts.",
       properties: {
         gameIdOrSlug: { type: "string" },
         eventType: { type: "string" },

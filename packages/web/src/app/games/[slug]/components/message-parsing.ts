@@ -1,5 +1,14 @@
 import type { PhaseKey, TranscriptEntry, WsTranscriptEntry, TranscriptScope } from "@/lib/api";
 
+/**
+ * Grandfathered classic presentation compatibility only.
+ *
+ * These parsers may style historical classic transcript entries, but must
+ * never determine authoritative game facts, phase state, tallies, decisions,
+ * or replay choreography. Do not add format-kernel patterns here and do not
+ * route format events through this module; those consumers use canonical
+ * events and projections instead.
+ */
 export function parseVoteMsg(text: string) {
   const m = text.match(/^(.+?) votes: empower=(.+?), expose=(.+?)$/);
   return m ? { voter: m[1]!, empower: m[2]!, expose: m[3]! } : null;
@@ -72,7 +81,7 @@ export function parseWheelDecides(text: string) {
   return m ? { name: m[1]! } : null;
 }
 
-/** Returns true if the text matches any structured vote/power/reveal parser. */
+/** Returns true only for the frozen classic presentation parser island above. */
 export function isParseableStructuredMsg(text: string): boolean {
   return !!(
     parseVoteMsg(text) ||

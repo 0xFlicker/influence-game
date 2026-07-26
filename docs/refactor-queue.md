@@ -6,6 +6,8 @@ Last audited against `main`: 2026-07-24
 
 Last format-kernel review follow-ups added: 2026-07-25
 
+Last continuity audit added: 2026-07-26
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -35,6 +37,36 @@ Status legend:
 
 Items are ordered by current priority.
 
+### R15. Format-kernel phase-boundary startup recovery
+
+- Status: `ready`
+- Priority: **high**
+- Sources: `packages/api/src/services/game-recovery-support.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/game-runner.types.ts`, `packages/api/src/__tests__/game-recovery.test.ts`, and live durable-run inspection of `odd-smoke-wolf` on 2026-07-26.
+- Signal: the phase machine and checkpoint writer create real boundaries for `format_menu`, `format_pick`, `format_mingle`, and `format_resolve`, but the recovery selector explicitly excludes all four coordinates. A process restart at any of those points suspends an otherwise valid format game instead of resuming it. `odd-smoke-wolf` crossed each unsupported boundary during Round 2.
+- Concrete seam: format-kernel event hydration, phase-actor hydration, recovery eligibility, boundary accumulator validation, startup owner handoff, and the DB-backed same-game recovery matrix.
+- Validation path: interrupt one API-backed format game at each format coordinate, restart through the real startup-recovery path, verify the same game continues with contiguous canonical sequences and one new owner epoch, and prove menu/selection/ballot/Safety Bounce state remains event-derived. Include negative fixtures for corrupt or incomplete format state that remain suspended.
+- Suggested slice: remove the deliberate format-coordinate exclusion only together with complete event-backed actor hydration and same-game restart proof for every coordinate. Do not downgrade this to a checkpoint-label change, synthesize format state from transcript prose, or resume a partially accepted ballot/selection.
+
+### R12. Player Strategy Thread checkpoint hydration
+
+- Status: `ready`
+- Priority: **high**
+- Consolidates: plans C4, brainstorms B5, and continuity audit on 2026-07-26.
+- Sources: `docs/plans/2026-06-12-002-feat-strategy-thread-packet-plan.md:315-320`, `docs/plans/2026-06-13-001-feat-house-strategy-bible-packet-plan.md:419-425`, `packages/engine/src/agent.ts`, `packages/engine/src/game-runner.ts`, `packages/api/src/services/game-lifecycle.ts`, and `packages/api/src/db/memory-store.ts`.
+- Signal: checkpoints persist validated player continuity capsules, but recovery constructs fresh `InfluenceAgent` instances, does not pass capsules through `resumeFrom`, and never hydrates them. `PgMemoryStore.recall()` is currently write-only. After a process restart, agents retain canonical board facts, transcript history, and Mingle delivery context but lose private strategy packets, reflections, notes, relationships, round history, power-action memory, and recent decision receipts.
+- Concrete seam: player continuity capsules, `GameRunner` resume input, explicit `InfluenceAgent` hydration, recovered prompt construction, and operational `PgMemoryStore` recall policy.
+- Validation path: kill/restart at a supported coordinate after a strategy revision, reflection, note, relationship change, and recorded action; verify the resumed prompt carries equivalent structured memory, eliminated-player scrubbing still applies, and no private content crosses public transcript, watch, or MCP surfaces.
+- Suggested slice: add one explicit, versioned agent hydration contract for persisted private continuity. Do not infer strategy from transcript prose or make the packet canonical game truth.
+
+### R16. Conditional House continuity passport
+
+- Status: `ready`
+- Sources: `packages/engine/src/types.ts`, `packages/engine/src/game-runner.ts`, `packages/api/src/services/checkpoint-hydration-passport.ts`, and `packages/api/src/services/game-recovery-support.ts`.
+- Signal: House Strategy Bible is opt-in and only exists after a completed-round update. The runner correctly persists `null` before then, and recovery accepts `null`, but the hydration passport requires a House capsule on every phase boundary and reports otherwise valid checkpoints as blocked.
+- Concrete seam: passport required-stamp policy, checkpoint capsule semantics, runtime configuration, and operator durable-run diagnostics.
+- Validation path: inspect checkpoints with the Bible disabled, before the first Bible update, and after a valid update. Verify operator diagnostics distinguish intentionally absent optional House continuity from malformed or unexpectedly missing required continuity, while preserving strict validation when the configured recovery contract requires the capsule.
+- Suggested slice: make House-continuity validation conditional on the runtime contract that produced the checkpoint. Keep the capsule private and never substitute transcript-derived House state.
+
 ### R5. Producer-visible decision fallback and repair ledger
 
 - Status: `ready`
@@ -54,16 +86,6 @@ Items are ordered by current priority.
 - Automated proof: exhaustive registry coverage plus DB-backed exact-sequence, retry/degradation, prompt-reuse watermark, producer navigation, owner citation, sealed-ballot, actor-filter, API, results, transcript, and WebSocket privacy tests.
 - Remaining validation path: run one local API-backed game with private trace capture through representative vote, format, Power, and Council actions. In producer reads, reconcile `inspect_durable_run`, `list_trace_manifests`, `read_producer_match_narrative`, and exact-sequence `filter_events` before opening one bounded `read_trace_content`; confirm expected unlinked calls keep prompt-reuse coverage `partial` while linked actions advance the watermark.
 - Deferred: historical inference/backfill and a dedicated cache/linkage dashboard remain separate product decisions, not R13 exit work.
-
-### R12. Player Strategy Thread checkpoint hydration
-
-- Status: `ready`
-- Consolidates: plans C4, brainstorms B5.
-- Sources: `docs/plans/2026-06-12-002-feat-strategy-thread-packet-plan.md:315-320`, `docs/plans/2026-06-13-001-feat-house-strategy-bible-packet-plan.md:419-425`, `docs/brainstorms/2026-06-12-strategy-thread-carry-forward-packet-requirements.md:16-30`, `docs/brainstorms/2026-06-12-strategy-thread-carry-forward-packet-requirements.md:75-77`, `docs/brainstorms/2026-06-13-house-strategy-bible-packet-requirements.md:18-31`, `docs/brainstorms/2026-06-13-house-strategy-bible-packet-requirements.md:207-209`
-- Signal: checkpoints now persist player and House continuity capsules, and supported resume paths hydrate the House packet. Player capsules are validated and persisted but are not passed into resumed agents, so their Strategy Thread state resets after recovery.
-- Concrete seam: player continuity capsules, `GameRunner` resume input, agent strategy-packet hydration, and recovered prompt construction.
-- Validation path: kill/restart at a supported coordinate after a strategy revision; verify the resumed agent prompt carries the same structured packet, eliminated-player scrubbing still applies, and no private packet content crosses public transcript or watch surfaces.
-- Suggested slice: add an explicit agent hydration contract for the persisted player capsule. Do not infer strategy from transcript prose or make the packet canonical game truth.
 
 ### R4. Private trace purge execution
 
@@ -268,7 +290,7 @@ Items are ordered by current priority.
 - W19 Domain projection cache during format resolve ballots: implemented on the format-kernel branch. `GameState.getDomainProjection()` memoizes by last canonical sequence and clears on append / event hydration; unit coverage in `canonical-event-replay.test.ts`. Sealed-ballot parallelization remains a separate product follow-up.
 
 - R1 API-backed local run harness: implemented by `b4dcee91`. `bun run simulate:api` now authenticates, creates, fills, and starts real API games, waits for durable advancement, and prints the game URL. Evidence includes launcher argument/config tests, API lifecycle integration and component coverage, and local-model documentation; there is not a standalone end-to-end launcher test.
-- R2 remaining phase-boundary resume coverage: implemented. `PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES` and the DB-backed recovery matrix cover the supported normal, Reckoning, Tribunal, and Judgment coordinates, including newer unsupported same-head checkpoint fallback.
+- R2 remaining classic/endgame phase-boundary resume coverage: implemented for the supported normal, Reckoning, Tribunal, and Judgment coordinates, including newer unsupported same-head checkpoint fallback. Format-kernel boundaries are deliberately excluded and tracked separately as R15.
 - R3 Games MCP revealed-facts expansion: superseded by the existing `read_round_facts` plus dedicated `read_game_brief`, `read_jury_breakdown`, `read_player_game_summary`, and `read_game_turning_points` surfaces with subject/producer isolation tests.
 - R6 server-side web data loading boundary: implemented by `packages/web/src/lib/server-api.ts` and the server-loaded Highlights/metadata routes, with auth-free public fetch, timeout, initial-render, and social metadata tests.
 - R7 retryable terminal game settlement: implemented. The final canonical event and a strict private terminal envelope are sealed before settlement; one atomic, idempotent transaction writes results, competition awards, ratings, profile/account counters, transcript, postgame initialization, and owner closure. Transient failures remain visibly pending and can be retried only through an authenticated, permission-gated, reasoned, audited admin action after the exact originating owner is expired. Deterministic evidence conflicts become `repair_required`; startup and MCP never replay gameplay or automatically redrive settlement. DB-backed tests cover failure capture, exact-once concurrency, rollback/repair, authorization, audit outcomes, safe producer reads, and zero-event restart classification.

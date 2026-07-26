@@ -21,6 +21,12 @@
 - Statefulness is the major operational risk. If the server resets in the middle of a game run, the active game can be corrupted. Do not describe active game execution as crash-safe until checkpoint/resume work lands.
 - Staging is real QA infrastructure. `influence-staging` updates from `main`; `influence-production` requires manual approval.
 
+## Event authority
+
+- Influence is an event-driven game. Canonical events and projections are the only authority for accepted game state, decisions, tallies, eligibility, phase transitions, results, and replay choreography.
+- Transcript prose may be rendered, searched, filtered, styled, quoted, and used as dialogue or observability. It must never be parsed or reverse-engineered into authoritative game facts, decisions, tallies, phase changes, or replay state.
+- The only grandfathered exception is the existing classic presentation parser at `packages/web/src/app/games/[slug]/components/message-parsing.ts` and its current consumers/tests. It is frozen compatibility debt: do not add parser patterns, do not extend it for format-kernel behavior, and do not route format games through it.
+
 ## Local Models
 
 - Local LM Studio experiments are a first-class development lane. Use the OpenAI-compatible provider env vars documented in `docs/local-model-evaluation.md`.

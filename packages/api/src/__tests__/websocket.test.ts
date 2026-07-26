@@ -13,13 +13,14 @@ import {
   handleClose,
   broadcastGameEvent,
   broadcastRaw,
+  broadcastViewerDecisionEvent,
   broadcastWatchState,
   sendWatchState,
   getObserverCount,
   type WsConnectionData,
 } from "../services/ws-manager.js";
 import { Phase } from "@influence/engine";
-import type { GameStreamEvent } from "@influence/engine";
+import type { CanonicalGameEvent, GameStreamEvent } from "@influence/engine";
 import type { GameWatchState } from "../services/game-watch-state.js";
 
 type TranscriptEntryEvent = Extract<GameStreamEvent, { type: "transcript_entry" }>;
@@ -569,6 +570,60 @@ describe("WebSocket Manager", () => {
         projection: { availability: "available" },
       },
     });
+  });
+
+  test("broadcastViewerDecisionEvent projects canonical decisions without producer provenance", () => {
+    const { server, published } = createMockServer();
+    setServer(server);
+    const event: CanonicalGameEvent = {
+      sequence: 9,
+      gameId: "game-viewer-decision",
+      round: 2,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "format.ballot_cast",
+      timestamp: "2026-07-26T00:00:00.000Z",
+      source: "engine",
+      visibility: "producer",
+      payloadVersion: 1,
+      sourcePointers: [{
+        kind: "agent_turn",
+        actorId: "atlas",
+        action: "vote",
+        round: 2,
+        phase: Phase.FORMAT_RESOLVE,
+        decisionId: "PRIVATE_DECISION_SENTINEL",
+      }],
+      payload: {
+        formatId: "save_or_eliminate",
+        voterId: "atlas",
+        targetId: "mira",
+        polarity: "save",
+      },
+    };
+
+    broadcastViewerDecisionEvent(event.gameId, event);
+
+    expect(published).toHaveLength(1);
+    const parsed = JSON.parse(published[0]!.data);
+    expect(parsed).toEqual({
+      type: "viewer_decision_event",
+      gameId: "game-viewer-decision",
+      event: {
+        sequence: 9,
+        timestamp: "2026-07-26T00:00:00.000Z",
+        round: 2,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.ballot_cast",
+        payload: {
+          formatId: "save_or_eliminate",
+          voterId: "atlas",
+          targetId: "mira",
+          polarity: "save",
+        },
+      },
+    });
+    expect(JSON.stringify(parsed)).not.toContain("sourcePointers");
+    expect(JSON.stringify(parsed)).not.toContain("PRIVATE_DECISION_SENTINEL");
   });
 
   test("broadcastGameEvent does nothing without server", () => {

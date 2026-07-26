@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { PrivateDecisionTrace } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -111,7 +111,42 @@ export async function recordPromptReuseForTrace(
       .returning({ id: schema.gamePromptReuseAppliedSources.id });
     if (inserted.length === 0) return;
 
-    await rebuildPromptReuseRollupInTransaction(tx, input.gameId, input.ownerEpoch);
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(
+        hashtext('prompt_reuse_rollup'),
+        hashtext(${input.ownerEpoch})
+      )
+    `);
+    const existing = (await tx.select()
+      .from(schema.gamePromptReuseRollups)
+      .where(and(
+        eq(schema.gamePromptReuseRollups.gameId, input.gameId),
+        eq(schema.gamePromptReuseRollups.ownerEpoch, input.ownerEpoch),
+      ))
+      .limit(1))[0];
+    // A missing rollup may predate this receipt, so one rebuild establishes the
+    // durable base. Later receipts update that base in constant time.
+    if (!existing) {
+      await rebuildPromptReuseRollupInTransaction(tx, input.gameId, input.ownerEpoch);
+      return;
+    }
+
+    const firstBreakCounts = { ...existing.firstBreakCounts };
+    if (receipt.firstBreak) {
+      firstBreakCounts[receipt.firstBreak] = (firstBreakCounts[receipt.firstBreak] ?? 0) + 1;
+    }
+    await tx.update(schema.gamePromptReuseRollups)
+      .set({
+        requestCount: existing.requestCount + 1,
+        comparableCount: existing.comparableCount + (receipt.comparable ? 1 : 0),
+        reusableCharacters: existing.reusableCharacters + receipt.reusableCharacters,
+        reusableTokenEstimate: existing.reusableTokenEstimate + receipt.reusableTokenEstimate,
+        firstBreakCounts,
+        watermark: Math.max(existing.watermark, input.eventSequence ?? 0),
+        coverage: "partial",
+        updatedAt: new Date().toISOString(),
+      })
+      .where(eq(schema.gamePromptReuseRollups.id, existing.id));
   });
 }
 

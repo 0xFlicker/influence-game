@@ -2149,8 +2149,8 @@ export class GameState {
   }
 
   /**
-   * Producer-only sealed ballot. Public/viewer surfaces must never read the full
-   * ledger; owners may see only their own ballot through scoped round facts.
+   * Raw producer envelope for an accepted format ballot. Viewer surfaces project
+   * its sanitized voter-to-target fact; source pointers remain producer-only.
    */
   recordFormatBallot(
     ballot: {

@@ -273,6 +273,56 @@ describe("ContextBuilder", () => {
       "A public House result.",
     ]);
   });
+
+  it("keeps format ballot voter mappings sealed in direct agent context", () => {
+    const alice = gs.getAlivePlayers().find((player) => player.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((player) => player.name === "Bob")!;
+    gs.recordFormatMenu(alice.id, ["save_or_eliminate", "vote_bomb"]);
+    gs.recordFormatSelected(alice.id, "save_or_eliminate");
+    gs.recordFormatBallot({
+      formatId: "save_or_eliminate",
+      voterId: alice.id,
+      targetId: bob.id,
+      polarity: "eliminate",
+    });
+
+    const context = builder.buildPhaseContext(bob.id, Phase.FORMAT_RESOLVE);
+    const ballotRecord = context.gameEventRecord?.find((record) =>
+      record.includes("Format ballot recorded"),
+    );
+
+    expect(ballotRecord).toContain("Format ballot recorded (sealed)");
+    expect(ballotRecord).not.toContain("Alice");
+    expect(ballotRecord).not.toContain("Bob");
+    expect(ballotRecord).not.toContain("eliminate");
+  });
+
+  it("does not turn private format-ballot operator turns into player transcript context", () => {
+    const alice = gs.getAlivePlayers().find((player) => player.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((player) => player.name === "Bob")!;
+    const streamed: GameStreamEvent[] = [];
+    logger.setStreamListener((event) => streamed.push(event));
+
+    logger.emitAgentTurn({
+      phase: Phase.FORMAT_RESOLVE,
+      action: "format-ballot",
+      actor: { id: alice.id, name: alice.name, role: "player" },
+      visibility: "private",
+      response: {
+        formatId: "save_or_eliminate",
+        targetId: bob.id,
+        targetName: bob.name,
+        sealed: true,
+      },
+      scope: "system",
+      text: "operator-only sealed format ballot",
+    });
+
+    expect(streamed).toHaveLength(1);
+    expect(streamed[0]!.type).toBe("agent_turn");
+    expect(logger.transcript).toHaveLength(0);
+    expect(builder.buildPhaseContext(bob.id, Phase.FORMAT_RESOLVE).publicTranscriptContext).toEqual([]);
+  });
 });
 
 // ---------------------------------------------------------------------------

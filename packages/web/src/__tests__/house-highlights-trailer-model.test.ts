@@ -39,6 +39,7 @@ function resultsFixture(): CompletedGameResultsResponse {
       roundsPlayed: 2,
       finalists: [player("alice", "Alice"), player("bob", "Bob")],
       playerCount: 4,
+      rankedPlayerIds: ["alice", "bob", "cara", "dax"],
     },
     players: [
       { ...player("alice", "Alice"), placement: 1, status: "winner" },

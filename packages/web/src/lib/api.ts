@@ -4,6 +4,25 @@
  */
 
 import { gamePathSegment } from "./game-links";
+import type {
+  CompletedGameResultsAvailabilityStatus as EngineCompletedGameResultsAvailabilityStatus,
+  CompletedGameResultsElimination as EngineCompletedGameResultsElimination,
+  CompletedGameResultsEndgameElimination as EngineCompletedGameResultsEndgameElimination,
+  CompletedGameResultsJury as EngineCompletedGameResultsJury,
+  CompletedGameResultsPlayer as EngineCompletedGameResultsPlayer,
+  CompletedGameResultsRead as EngineCompletedGameResultsRead,
+  CompletedGameResultsSource as EngineCompletedGameResultsSource,
+  Phase as EnginePhase,
+  RevealedCanonicalFactsStatus as EngineRevealedCanonicalFactsStatus,
+  RevealedFactsStatus as EngineRevealedFactsStatus,
+  RevealedPlayerRef as EngineRevealedPlayerRef,
+  RevealedRoundFacts as EngineRevealedRoundFacts,
+  RevealedRoundFactsAvailability as EngineRevealedRoundFactsAvailability,
+  ViewerDecisionEvent as EngineViewerDecisionEvent,
+} from "@influence/engine";
+
+/** Viewer-safe canonical decisions shared by live websocket and replay v3 transport. */
+export type ViewerDecisionEvent = EngineViewerDecisionEvent;
 
 let API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3000";
@@ -371,7 +390,8 @@ export interface GameWatchState {
 }
 
 export interface GameWatchReplayFrame {
-  schemaVersion: 1 | 2;
+  /** v1/v2 frames remain readable; v3 adds a viewer-safe canonical decision. */
+  schemaVersion: 1 | 2 | 3;
   gameId: string;
   slug: string;
   sequence: number;
@@ -381,6 +401,7 @@ export interface GameWatchReplayFrame {
   phase: PhaseKey;
   players: GameWatchPlayer[];
   counts: GameWatchState["counts"];
+  viewerDecisionEvent?: ViewerDecisionEvent;
 }
 
 export type GameWatchStateSummary = Omit<GameWatchState, "players">;
@@ -759,8 +780,8 @@ export type PublicWatchIntelligenceSectionStatus = "available" | "select_player"
 export type PublicWatchIntelligenceCardKind = "thinking" | "strategy";
 export type PublicWatchIntelligenceCardSource = "cognitive_artifact" | "transcript";
 export type PublicWatchIntelligenceCardContext = "current_phase" | "current_round" | "recent";
-export type RevealedFactsStatus = "available" | "not_yet_resolved" | "not_yet_flushed" | "unavailable";
-export type RevealedCanonicalFactsStatus = "available" | "not_yet_flushed" | "unavailable";
+export type RevealedFactsStatus = EngineRevealedFactsStatus;
+export type RevealedCanonicalFactsStatus = EngineRevealedCanonicalFactsStatus;
 
 export interface PublicWatchIntelligenceCard {
   id: string;
@@ -783,61 +804,14 @@ export interface PublicWatchIntelligenceSection {
   reason?: string;
 }
 
-export interface PublicWatchIntelligenceRoundFacts {
-  round: number;
-  phase: string | null;
-  players: {
-    alive: Array<{ id: string; name: string }>;
-    eliminated: Array<{ id: string; name: string }>;
-  };
-  standardVote: {
-    status: RevealedFactsStatus;
-    ledger: unknown[];
-    empowerTally: unknown[];
-    empowered: { id: string; name: string } | null;
-    method: string | null;
-    tied: unknown[];
-  };
-  /** Present on classic-kernel rounds; omitted on format-kernel dual-shape receipts. */
-  power?: {
-    status: RevealedFactsStatus;
-    exposureScores: unknown[];
-    exposureBench: Record<string, unknown>;
-    shieldReplacement: Record<string, unknown> | null;
-    action: Record<string, unknown> | null;
-    shieldGranted: { id: string; name: string } | null;
-    autoEliminated: { id: string; name: string } | null;
-    finalCouncilCandidates: Array<{ id: string; name: string }>;
-    method: string | null;
-  };
-  /** Present on classic-kernel rounds; omitted on format-kernel dual-shape receipts. */
-  council?: {
-    status: RevealedFactsStatus;
-    ledger: unknown[];
-    eliminated: { id: string; name: string } | null;
-    method: string | null;
-    candidates: Array<{ id: string; name: string }>;
-  };
-}
+/** Canonical-event-derived round facts; the engine owns this dual-kernel shape. */
+export type PublicWatchIntelligenceRoundFacts = EngineRevealedRoundFacts;
 
 export interface PublicWatchIntelligenceReceipts {
   status: "available" | "unavailable";
   canonicalGameFacts: {
     roundFacts: PublicWatchIntelligenceRoundFacts;
-    availability: {
-      canonicalFactsStatus: RevealedCanonicalFactsStatus;
-      eventLogStatus: string;
-      projectionStatus: string;
-      artifactDerivedFacts: {
-        status: "not_used";
-        reason: string;
-      };
-      diagnostics: Array<{
-        code: string;
-        severity: "info" | "warning" | "error";
-        message: string;
-      }>;
-    };
+    availability: EngineRevealedRoundFactsAvailability;
   };
   reason?: string;
 }
@@ -888,119 +862,15 @@ export async function getPublicWatchIntelligence(
   return apiFetch(`/api/games/${gameIdOrSlug}/watch-intelligence${query ? `?${query}` : ""}`);
 }
 
-export type CompletedGameResultsSource =
-  | "durable_canonical_events"
-  | "best_available_terminal_result"
-  | "unavailable";
-export type CompletedGameResultsAvailabilityStatus = "available" | "degraded" | "unavailable";
-
-export interface CompletedGameResultsPlayerRef {
-  id: string;
-  name: string;
-}
-
-export interface CompletedGameResultsVoteLedgerEntry {
-  voter: CompletedGameResultsPlayerRef;
-  empowerTarget: CompletedGameResultsPlayerRef;
-  exposeTarget: CompletedGameResultsPlayerRef;
-  revoteEmpowerTarget: CompletedGameResultsPlayerRef | null;
-}
-
-export interface CompletedGameResultsSimpleVoteEntry {
-  voter: CompletedGameResultsPlayerRef;
-  target: CompletedGameResultsPlayerRef;
-}
-
-export interface CompletedGameResultsRoundFacts {
-  round: number;
-  phase: string | null;
-  players: {
-    alive: CompletedGameResultsPlayerRef[];
-    eliminated: CompletedGameResultsPlayerRef[];
-  };
-  standardVote: PublicWatchIntelligenceRoundFacts["standardVote"] & {
-    ledger: CompletedGameResultsVoteLedgerEntry[];
-    empowerTally: Array<{ player: CompletedGameResultsPlayerRef; votes: number }>;
-    tied: CompletedGameResultsPlayerRef[];
-  };
-  /** Present on classic-kernel rounds; omitted on format-kernel dual-shape results. */
-  power?: NonNullable<PublicWatchIntelligenceRoundFacts["power"]> & {
-    exposureScores: Array<{ player: CompletedGameResultsPlayerRef; votes: number }>;
-  };
-  /** Present on classic-kernel rounds; omitted on format-kernel dual-shape results. */
-  council?: NonNullable<PublicWatchIntelligenceRoundFacts["council"]> & {
-    ledger: CompletedGameResultsSimpleVoteEntry[];
-  };
-}
-
-export interface CompletedGameResultsEndgameElimination {
-  round: number;
-  stage: "reckoning" | "tribunal" | "judgment" | null;
-  ledger: CompletedGameResultsSimpleVoteEntry[];
-  juryTiebreakerLedger: CompletedGameResultsSimpleVoteEntry[];
-  eliminated: CompletedGameResultsPlayerRef;
-  method: string;
-}
-
-export interface CompletedGameResultsRound {
-  round: number;
-  canonicalFacts: {
-    roundFacts: CompletedGameResultsRoundFacts;
-    availability: PublicWatchIntelligenceReceipts["canonicalGameFacts"]["availability"];
-  };
-  endgameEliminations: CompletedGameResultsEndgameElimination[];
-}
-
-export interface CompletedGameResultsPlayer extends CompletedGameResultsPlayerRef {
-  placement: number | null;
-  status: "winner" | "finalist" | "eliminated" | "unknown";
-}
-
-export interface CompletedGameResultsElimination {
-  player: CompletedGameResultsPlayerRef;
-  round: number;
-  source: "council" | "endgame" | "jury" | "player_eliminated" | "format";
-  method: string | null;
-  juryMember: boolean;
-}
-
-export interface CompletedGameResultsJury {
-  status: "available" | "unavailable";
-  finalists: CompletedGameResultsPlayerRef[];
-  ledger: Array<{ juror: CompletedGameResultsPlayerRef; finalist: CompletedGameResultsPlayerRef }>;
-  voteCounts: Array<{ finalist: CompletedGameResultsPlayerRef; votes: number }>;
-  winner: CompletedGameResultsPlayerRef | null;
-  method: string | null;
-}
-
-export interface CompletedGameResultsVotePattern {
-  player: CompletedGameResultsPlayerRef;
-  signature: string;
-  groupKey: string;
-}
-
-export interface CompletedGameResultsRead {
-  schemaVersion: 1;
-  source: CompletedGameResultsSource;
-  availability: {
-    status: CompletedGameResultsAvailabilityStatus;
-    eventLogStatus: string;
-    projectionStatus: string;
-    diagnostics: Array<{ code: string; severity: "info" | "warning" | "error"; message: string }>;
-  };
-  summary: {
-    winner: CompletedGameResultsPlayerRef | null;
-    winnerMethod: string | null;
-    roundsPlayed: number;
-    finalists: CompletedGameResultsPlayerRef[];
-    playerCount: number;
-  };
-  players: CompletedGameResultsPlayer[];
-  eliminationOrder: CompletedGameResultsElimination[];
-  rounds: CompletedGameResultsRound[];
-  jury: CompletedGameResultsJury;
-  votePatterns: CompletedGameResultsVotePattern[];
-}
+/** The results endpoint returns the engine's canonical-event-derived read model verbatim. */
+export type CompletedGameResultsSource = EngineCompletedGameResultsSource;
+export type CompletedGameResultsAvailabilityStatus = EngineCompletedGameResultsAvailabilityStatus;
+export type CompletedGameResultsPlayerRef = EngineRevealedPlayerRef;
+export type CompletedGameResultsPlayer = EngineCompletedGameResultsPlayer;
+export type CompletedGameResultsElimination = EngineCompletedGameResultsElimination;
+export type CompletedGameResultsEndgameElimination = EngineCompletedGameResultsEndgameElimination;
+export type CompletedGameResultsJury = EngineCompletedGameResultsJury;
+export type CompletedGameResultsRead = EngineCompletedGameResultsRead;
 
 export interface CompletedGameResultsResponse {
   ok: true;
@@ -2090,30 +1960,8 @@ export async function generatePersonality(
 // Game detail types (for the game viewer)
 // ---------------------------------------------------------------------------
 
-export type PhaseKey =
-  | "INIT"
-  | "INTRODUCTION"
-  | "LOBBY"
-  | "MINGLE_I"
-  | "PRE_VOTE_HUDDLE"
-  | "MINGLE" | "WHISPER"
-  | "POST_VOTE_MINGLE"
-  | "RUMOR"
-  | "VOTE"
-  | "POWER"
-  | "REVEAL"
-  | "PRE_COUNCIL_HUDDLE"
-  | "COUNCIL"
-  | "DIARY_ROOM"
-  | "PLEA"
-  | "ACCUSATION"
-  | "DEFENSE"
-  | "OPENING_STATEMENTS"
-  | "JURY_QUESTIONS"
-  | "CLOSING_ARGUMENTS"
-  | "JURY_VOTE"
-  | "SUSPENDED"
-  | "END";
+/** Engine phase names plus the web-only suspended transport state. */
+export type PhaseKey = `${EnginePhase}` | "SUSPENDED";
 
 export type PlayerState = "alive" | "eliminated" | "unknown";
 
@@ -2240,6 +2088,12 @@ export type WsGameEvent =
       state: GameWatchState;
     }
   | {
+      type: "viewer_decision_event";
+      /** Combined with event.sequence, this is the idempotent client key. */
+      gameId: string;
+      event: ViewerDecisionEvent;
+    }
+  | {
       type: "phase_change";
       phase: PhaseKey;
       round: number;
@@ -2295,8 +2149,12 @@ export async function getGameTranscript(
 
 export async function getGameReplayWatchFrames(
   id: string,
+  options: { afterSequence?: number } = {},
 ): Promise<GameWatchReplayFrame[]> {
-  return apiFetch(`/api/games/${id}/replay-watch-frames`);
+  const query = options.afterSequence === undefined
+    ? ""
+    : `?afterSequence=${encodeURIComponent(options.afterSequence)}`;
+  return apiFetch(`/api/games/${id}/replay-watch-frames${query}`);
 }
 
 // ---------------------------------------------------------------------------

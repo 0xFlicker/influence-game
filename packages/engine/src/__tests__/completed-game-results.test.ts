@@ -119,6 +119,12 @@ describe("buildCompletedGameResults", () => {
     state.setEmpowered("alice", "initial");
     state.recordFormatMenu("alice", ["save_or_eliminate", "vote_bomb"]);
     state.recordFormatSelected("alice", "save_or_eliminate");
+    state.recordFormatBallot({
+      formatId: "save_or_eliminate",
+      voterId: "alice",
+      targetId: "bob",
+      polarity: "eliminate",
+    }, [sourcePointer("format-save-or-eliminate-ballot", "alice")]);
     state.recordFormatResolution({
       formatId: "save_or_eliminate",
       empoweredId: "alice",
@@ -146,6 +152,14 @@ describe("buildCompletedGameResults", () => {
     expect(read.rounds[0]?.canonicalFacts.roundFacts.power).toBeUndefined();
     expect(read.rounds[0]?.canonicalFacts.roundFacts.council).toBeUndefined();
     expect(read.rounds[0]?.canonicalFacts.roundFacts.format.status).toBe("available");
+    expect(read.rounds[0]?.canonicalFacts.roundFacts.format.sealedBallots).toEqual([
+      {
+        voter: { id: "alice", name: "Alice" },
+        target: { id: "bob", name: "Bob" },
+        polarity: "eliminate",
+      },
+    ]);
+    expect(JSON.stringify(read)).not.toContain("sourcePointers");
   });
 
   it("includes endgame elimination votes and final jury outcome", () => {

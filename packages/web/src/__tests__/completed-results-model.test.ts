@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Phase } from "@influence/engine";
 import type { CompletedGameResultsRead } from "../lib/api";
 import { buildCompletedResultsReviewModel } from "../app/games/[slug]/components/completed-results-model";
 
@@ -22,6 +23,7 @@ function resultsFixture(): CompletedGameResultsRead {
       roundsPlayed: 2,
       finalists: [player("alice", "Alice"), player("bob", "Bob")],
       playerCount: 4,
+      rankedPlayerIds: ["alice", "bob", "cara", "dax"],
     },
     players: [
       { ...player("alice", "Alice"), placement: 1, status: "winner" },
@@ -40,7 +42,7 @@ function resultsFixture(): CompletedGameResultsRead {
         canonicalFacts: {
           roundFacts: {
             round: 1,
-            phase: "COUNCIL",
+            phase: Phase.COUNCIL,
             players: { alive: [player("alice", "Alice"), player("bob", "Bob"), player("cara", "Cara")], eliminated: [player("dax", "Dax")] },
             standardVote: {
               status: "available",
@@ -53,10 +55,34 @@ function resultsFixture(): CompletedGameResultsRead {
               method: "plurality",
               tied: [],
             },
+            format: {
+              status: "not_yet_resolved",
+              empowered: null,
+              offeredFormatIds: null,
+              selectedFormatId: null,
+              resolutionKind: null,
+              eliminated: null,
+              tied: [],
+              tiebreaker: null,
+              saveOrEliminate: null,
+              voteBomb: null,
+              safetyBounce: null,
+              sealedBallots: [],
+              sealedBallotAccess: "public",
+            },
             power: {
               status: "available",
               exposureScores: [{ player: player("cara", "Cara"), votes: 2 }],
-              exposureBench: { status: "available" },
+              exposureBench: {
+                status: "available",
+                mode: null,
+                exposureBench: [],
+                lockedCandidates: [],
+                eligibleCandidates: [],
+                selectedCandidates: [],
+                fallbackApplied: null,
+                fallbackReason: null,
+              },
               shieldReplacement: null,
               action: null,
               shieldGranted: null,
@@ -90,10 +116,44 @@ function resultsFixture(): CompletedGameResultsRead {
         canonicalFacts: {
           roundFacts: {
             round: 2,
-            phase: "JURY_VOTE",
+            phase: Phase.JURY_VOTE,
             players: { alive: [player("alice", "Alice"), player("bob", "Bob")], eliminated: [player("cara", "Cara"), player("dax", "Dax")] },
             standardVote: { status: "not_yet_resolved", ledger: [], empowerTally: [], empowered: null, method: null, tied: [] },
-            power: { status: "not_yet_resolved", exposureScores: [], exposureBench: { status: "not_yet_resolved" }, shieldReplacement: null, action: null, shieldGranted: null, autoEliminated: null, finalCouncilCandidates: [], method: null },
+            format: {
+              status: "not_yet_resolved",
+              empowered: null,
+              offeredFormatIds: null,
+              selectedFormatId: null,
+              resolutionKind: null,
+              eliminated: null,
+              tied: [],
+              tiebreaker: null,
+              saveOrEliminate: null,
+              voteBomb: null,
+              safetyBounce: null,
+              sealedBallots: [],
+              sealedBallotAccess: "public",
+            },
+            power: {
+              status: "not_yet_resolved",
+              exposureScores: [],
+              exposureBench: {
+                status: "not_yet_resolved",
+                mode: null,
+                exposureBench: [],
+                lockedCandidates: [],
+                eligibleCandidates: [],
+                selectedCandidates: [],
+                fallbackApplied: null,
+                fallbackReason: null,
+              },
+              shieldReplacement: null,
+              action: null,
+              shieldGranted: null,
+              autoEliminated: null,
+              finalCouncilCandidates: [],
+              method: null,
+            },
             council: { status: "not_yet_resolved", ledger: [], eliminated: null, method: null, candidates: [] },
           },
           availability: {
@@ -135,6 +195,54 @@ function resultsFixture(): CompletedGameResultsRead {
 }
 
 describe("completed results model", () => {
+  it("accepts an empower-only format round without fabricating an expose column", () => {
+    const fixture = resultsFixture();
+    const formatRound = fixture.rounds[0]!;
+    const { power: _power, council: _council, ...formatRoundFacts } = formatRound.canonicalFacts.roundFacts;
+    const formatResults: CompletedGameResultsRead = {
+      ...fixture,
+      rounds: [
+        {
+          ...formatRound,
+          canonicalFacts: {
+            ...formatRound.canonicalFacts,
+            roundFacts: {
+              ...formatRoundFacts,
+              standardVote: {
+                ...formatRound.canonicalFacts.roundFacts.standardVote,
+                ledger: formatRound.canonicalFacts.roundFacts.standardVote.ledger.map((entry) => ({
+                  voter: entry.voter,
+                  empowerTarget: entry.empowerTarget,
+                  revoteEmpowerTarget: entry.revoteEmpowerTarget,
+                })),
+              },
+              format: {
+                status: "available",
+                empowered: player("bob", "Bob"),
+                offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+                selectedFormatId: "save_or_eliminate",
+                resolutionKind: null,
+                eliminated: null,
+                tied: [],
+                tiebreaker: null,
+                saveOrEliminate: null,
+                voteBomb: null,
+                safetyBounce: null,
+                sealedBallots: [],
+                sealedBallotAccess: "public",
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    const model = buildCompletedResultsReviewModel(formatResults);
+
+    expect(model.voteMatrix.columns.map((column) => column.kind)).toEqual(["empower", "jury"]);
+    expect(model.voteMatrix.rows.find((row) => row.player.id === "alice")?.cells[0]?.targetName).toBe("Bob");
+  });
+
   it("builds overview, timeline, vote matrix, and agent cards", () => {
     const model = buildCompletedResultsReviewModel(resultsFixture());
 

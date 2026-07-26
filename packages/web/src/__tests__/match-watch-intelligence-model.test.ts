@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { Phase } from "@influence/engine";
 import type {
   GameDetail,
   PublicWatchIntelligenceCard,
@@ -256,7 +257,7 @@ function publicIntelligence({
         canonicalGameFacts: {
           roundFacts: {
             round: 1,
-            phase: "VOTE",
+            phase: Phase.VOTE,
             players: {
               alive: [],
               eliminated: [],
@@ -269,10 +270,34 @@ function publicIntelligence({
               method: null,
               tied: [],
             },
+            format: {
+              status: "not_yet_resolved",
+              empowered: null,
+              offeredFormatIds: null,
+              selectedFormatId: null,
+              resolutionKind: null,
+              eliminated: null,
+              tied: [],
+              tiebreaker: null,
+              saveOrEliminate: null,
+              voteBomb: null,
+              safetyBounce: null,
+              sealedBallots: [],
+              sealedBallotAccess: "public",
+            },
             power: {
               status: "not_yet_resolved",
               exposureScores: [],
-              exposureBench: {},
+              exposureBench: {
+                status: "not_yet_resolved",
+                mode: null,
+                exposureBench: [],
+                lockedCandidates: [],
+                eligibleCandidates: [],
+                selectedCandidates: [],
+                fallbackApplied: null,
+                fallbackReason: null,
+              },
               shieldReplacement: null,
               action: null,
               shieldGranted: null,

@@ -6,10 +6,12 @@ import { appendGameEvents } from "../services/game-events.js";
 import { getPublicWatchIntelligence } from "../services/public-watch-intelligence.js";
 import { setupTestDB } from "./test-utils.js";
 import {
+  createCanonicalEventFixture,
   createResolvedRoundCanonicalEventFixture,
   insertGame,
   insertOwner,
 } from "./durable-run-test-utils.js";
+import { Phase, type CanonicalGameEvent } from "@influence/engine";
 
 describe("getPublicWatchIntelligence", () => {
   let db: DrizzleDB;
@@ -126,6 +128,80 @@ describe("getPublicWatchIntelligence", () => {
     expect(serialized).not.toContain("TRACE_POINTER_SENTINEL");
     expect(serialized).not.toContain("REASONING_ARTIFACT_SENTINEL");
     expect(serialized).not.toContain("payload");
+  });
+
+  test("makes durably recorded format ballots public watch receipts before resolution", async () => {
+    const gameId = await seedGameWithPlayers(db, "watch-intelligence-format-ballots");
+    const ownerEpoch = await insertOwner(db, gameId);
+    const base = createCanonicalEventFixture(gameId);
+    const formatEvents: CanonicalGameEvent[] = [
+      {
+        sequence: base.length + 1,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_MENU,
+        type: "format.menu_offered",
+        timestamp: "2026-07-26T12:00:00.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: { empoweredId: "atlas", offeredFormatIds: ["vote_bomb", "safety_bounce"] },
+      },
+      {
+        sequence: base.length + 2,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        type: "format.selected",
+        timestamp: "2026-07-26T12:00:01.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 1,
+        sourcePointers: [],
+        payload: { empoweredId: "atlas", formatId: "vote_bomb" },
+      },
+      {
+        sequence: base.length + 3,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.ballot_cast",
+        timestamp: "2026-07-26T12:00:02.000Z",
+        source: "phase",
+        visibility: "producer",
+        payloadVersion: 1,
+        sourcePointers: [{
+          kind: "agent_turn",
+          actorId: "atlas",
+          action: "format-vote-bomb-ballot",
+          decisionId: "WATCH_PRIVATE_DECISION_SENTINEL",
+          phase: Phase.FORMAT_RESOLVE,
+          round: 1,
+        }],
+        payload: { formatId: "vote_bomb", voterId: "atlas", targetId: "echo", polarity: null },
+      },
+    ];
+    await appendGameEvents(db, { gameId, ownerEpoch, events: [...base, ...formatEvents] });
+
+    const result = await getPublicWatchIntelligence(db, {
+      gameIdOrSlug: "watch-intelligence-format-ballots",
+      round: 1,
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) throw new Error("Expected public watch result");
+    expect(result.intelligence.receipts.canonicalGameFacts.roundFacts.format.eliminated).toBeNull();
+    expect(result.intelligence.receipts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual([
+      {
+        voter: { id: "atlas", name: "Atlas" },
+        target: { id: "echo", name: "Echo" },
+        polarity: null,
+      },
+    ]);
+    const serialized = JSON.stringify(result);
+    expect(serialized).not.toContain("sourcePointers");
+    expect(serialized).not.toContain("WATCH_PRIVATE_DECISION_SENTINEL");
   });
 
   test("omits hidden alliance action and huddle cards from public intelligence", async () => {
