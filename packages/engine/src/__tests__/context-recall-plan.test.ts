@@ -12,7 +12,6 @@ import type { UUID } from "../types";
 import type {
   PhaseContext,
   RecallContinuitySnapshot,
-  RecallPlan,
   StrategyPacketSummary,
   TranscriptEntry,
 } from "../game-runner.types";

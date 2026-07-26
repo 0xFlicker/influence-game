@@ -232,7 +232,6 @@ describe("U3 continuity snapshot and prepareAgentPhaseContext", () => {
   let logger: TranscriptLogger;
   let builder: ContextBuilder;
   let aliceId: UUID;
-  let bobId: UUID;
 
   beforeEach(() => {
     gs = new GameState([
@@ -243,7 +242,6 @@ describe("U3 continuity snapshot and prepareAgentPhaseContext", () => {
     gs.startRound();
     const alive = gs.getAlivePlayers();
     aliceId = alive.find((p) => p.name === "Alice")!.id;
-    bobId = alive.find((p) => p.name === "Bob")!.id;
     logger = new TranscriptLogger(gs);
     builder = new ContextBuilder(gs, logger, new Map(), 3);
   });

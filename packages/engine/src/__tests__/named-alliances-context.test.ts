@@ -170,7 +170,7 @@ describe("named alliance member-safe context", () => {
       participantPlayerIds: ["alice", "bob"],
       createdAt: "2026-07-03T00:00:01.000Z",
     });
-    gameState.closeAlliance("alliance-ab", "mutual_dissolve");
+    gameState.closeAlliance("alliance-ab", "manual");
 
     const aliceContext = builder.buildPhaseContext("alice", Phase.VOTE);
     expect(aliceContext.allianceContext?.activeAlliances).toEqual([

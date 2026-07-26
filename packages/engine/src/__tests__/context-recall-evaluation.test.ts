@@ -24,7 +24,6 @@ import {
 import type {
   PrivateDecisionTrace,
   RecallPlan,
-  RecallPlanReceipt,
   TranscriptEntry,
 } from "../game-runner.types";
 import { RecallPlanReceiptAggregate } from "../prompt-reuse";
