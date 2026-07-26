@@ -170,7 +170,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --variant mingle --house-summaries --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Use `--diary` when you specifically need the retained legacy/classic Council-bounded diary lane. Use `--rich-producer` when the run is validating House strategy carry-forward and diary-room production quality. It enables strategic reflections, legacy/classic Council-bounded diary sessions where exercised, private `house-strategy-bible` packet updates, `house-long-form-summary` records, and per-player `house-producer-brief` records. The ordinary `house-mc-summary` record and clean House system transcript entry are emitted by default in simulation config so you can follow the game between rounds even without `--chatty`.
+Use `--diary` when you need bounded diary sessions after the format kernel resolves; legacy/classic runs also retain the post-Council boundary. Use `--rich-producer` when the run is validating House strategy carry-forward and diary-room production quality. It enables strategic reflections, format-resolution diaries, legacy/classic Council diaries where exercised, private `house-strategy-bible` packet updates, `house-long-form-summary` records, and per-player `house-producer-brief` records. The ordinary `house-mc-summary` record and clean House system transcript entry are emitted by default in simulation config so you can follow the game between rounds even without `--chatty`.
 
 ```bash
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \

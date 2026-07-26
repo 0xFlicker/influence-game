@@ -303,6 +303,67 @@ describe("checkpoint hydration passport validator", () => {
     expect(res.passport.verdict).not.toBe("hydration_candidate");
   });
 
+  test("actor witness follows the checkpoint boundary when projection facts describe the prior phase", () => {
+    const events = createCanonicalEventFixture("actor-boundary-phase");
+    const base = createCheckpointCapsule(events);
+    const ownerEpoch = "owner-actor-boundary-phase";
+    const eventHeadHash = hashCanonicalEvent(events.at(-1)!);
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
+
+    const res = deriveHydrationPassport(deriveInput(base, {
+      ownerEpoch,
+      eventHeadHash,
+      snapshot: {
+        runtimeSnapshot: positive.runtimeSnapshot,
+        boundaryCertificate: positive.boundaryCertificate,
+        projectionSummary: {
+          ...base.projectionSummary,
+          phase: base.phase === Phase.INIT ? Phase.LOBBY : Phase.INIT,
+        },
+        state: base.state,
+        playerContinuityCapsules: positive.playerContinuityCapsules,
+        houseContinuityCapsule: positive.houseContinuityCapsule,
+        expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+      },
+      transcriptCursor: positive.transcriptCursor,
+      tokenCostCursor: positive.tokenCostCursor,
+    }));
+
+    expect(stampStatus(res, "actorWitness")).toBe("passed");
+    expect(res.passport.verdict).toBe("hydration_candidate");
+  });
+
+  test("actor witness requires durable checkpoint boundary coordinates", () => {
+    const events = createCanonicalEventFixture("actor-missing-row-boundary");
+    const base = createCheckpointCapsule(events);
+    const ownerEpoch = "owner-actor-missing-row-boundary";
+    const eventHeadHash = hashCanonicalEvent(events.at(-1)!);
+    const positive = enrichCapsuleForV1Candidate(base, { ownerEpoch, eventHeadHash });
+
+    const res = deriveHydrationPassport({
+      ...deriveInput(base, {
+        ownerEpoch,
+        eventHeadHash,
+        snapshot: {
+          runtimeSnapshot: positive.runtimeSnapshot,
+          boundaryCertificate: positive.boundaryCertificate,
+          projectionSummary: base.projectionSummary,
+          state: base.state,
+          playerContinuityCapsules: positive.playerContinuityCapsules,
+          houseContinuityCapsule: positive.houseContinuityCapsule,
+          expectedActivePlayerIds: ["atlas", "echo", "mira", "nyx"],
+        },
+        transcriptCursor: positive.transcriptCursor,
+        tokenCostCursor: positive.tokenCostCursor,
+      }),
+      checkpointPhase: null,
+      checkpointRound: null,
+    });
+
+    expect(stampStatus(res, "actorWitness")).toBe("failed");
+    expect(res.passport.verdict).not.toBe("hydration_candidate");
+  });
+
   test("actor witness alive players must match expected active players", () => {
     const base = createCheckpointCapsule(createCanonicalEventFixture("actor-player-mismatch"));
     const ownerEpoch = "owner-actor-player";
@@ -931,6 +992,7 @@ describe("checkpoint hydration passport validator", () => {
       entry.passport.verdict === "hydration_candidate"
     );
     expect(candidate).toBeDefined();
+    expect(candidate?.passport.stamps.find((stamp) => stamp.id === "actorWitness")?.status).toBe("passed");
     expect(candidate?.resumeAvailable).toBeFalse();
     expect(JSON.stringify(inspection.response)).not.toContain("strategyPacket");
   });

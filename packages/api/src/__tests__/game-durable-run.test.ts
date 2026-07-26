@@ -313,7 +313,7 @@ describe("durable run inspection read model", () => {
         .select()
         .from(schema.transcripts)
         .where(eq(schema.transcripts.gameId, gameId));
-      expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.text === "--- Diary Room (after COUNCIL) ---")).toBeTrue();
+      expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.text === "--- Diary Room (after FORMAT_RESOLVE) ---")).toBeTrue();
       expect(transcriptRows.some((row) => row.phase === "DIARY_ROOM" && row.scope === "diary" && row.text === "diary entry")).toBeTrue();
     } finally {
       handleClose(observer);

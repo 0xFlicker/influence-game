@@ -200,7 +200,7 @@ describe("simulation variant config", () => {
     expect(args.enableDiary).toBe(true);
     expect(args.enableStrategicReflections).toBe(true);
     expect(config.enableStrategicReflections).toBe(true);
-    expect(config.diaryRoomAfterPhases).toEqual([Phase.COUNCIL]);
+    expect(config.diaryRoomAfterPhases).toEqual([Phase.FORMAT_RESOLVE, Phase.COUNCIL]);
     expect(config.enableHouseRoundSummaries).toBe(true);
     expect(config.enableHouseStrategyBible).toBe(true);
     expect(config.enableHouseLongFormSummaries).toBe(true);
@@ -216,7 +216,7 @@ describe("simulation variant config", () => {
 
     expect(args.enableDiary).toBe(true);
     expect(args.richProducer).toBe(false);
-    expect(config.diaryRoomAfterPhases).toEqual([Phase.COUNCIL]);
+    expect(config.diaryRoomAfterPhases).toEqual([Phase.FORMAT_RESOLVE, Phase.COUNCIL]);
     expect(config.enableHouseRoundSummaries).toBe(true);
     expect(config.enableHouseStrategyBible).toBe(false);
     expect(config.enableHouseLongFormSummaries).toBe(false);

@@ -387,9 +387,9 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --max-rounds 2 --llm-timeout-sec 300
 ```
 
-For validation runs that need to prove strategic-reflection capture or Strategy Thread carry-forward is working, add `--strategic-reflections`. For House carry-forward validation, use `--rich-producer`; this also enables strategic reflections, legacy Council-bounded diary sessions where applicable, private House Strategy Bible packets, long-form House summaries, and per-player producer briefs.
+For validation runs that need to prove strategic-reflection capture or Strategy Thread carry-forward is working, add `--strategic-reflections`. For House carry-forward validation, use `--rich-producer`; this also enables strategic reflections, format-resolution diary sessions, legacy Council diaries where applicable, private House Strategy Bible packets, long-form House summaries, and per-player producer briefs.
 
-Legacy/classic API-backed runs use bounded diary sessions after a resolved Council. Simulator `--diary` / `--rich-producer` retains that Council-bounded cadence where the classic lane is exercised. Strategic reflection is hidden and separate from visible diary: when enabled, agents run an initial reflection after Introductions and later scheduled checkpoints.
+Format-kernel API and simulator runs use bounded diary sessions after `FORMAT_RESOLVE`. Simulator `--diary` / `--rich-producer` also retains the post-Council boundary for legacy/classic lanes. Strategic reflection is hidden and separate from visible diary: when enabled, agents run an initial reflection after Introductions and later scheduled checkpoints.
 
 The "Progress: R1 VOTE | alive=..." lines + the following House action lines are the primary place humans see per-agent rationale in real time. After the run, use `game-N-turns.jsonl` for structured agent-decision analysis and `game-N-events.jsonl` for replay/projection queries instead of parsing colored terminal output.
 

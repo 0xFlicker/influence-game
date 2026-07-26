@@ -3,7 +3,7 @@ import { Phase } from "@influence/engine";
 import { buildEngineConfigFromGameRecord } from "../services/game-lifecycle.js";
 
 describe("game lifecycle engine config", () => {
-  test("enables only post-Council diary rooms for live API games", () => {
+  test("enables format-kernel diaries while retaining the legacy Council boundary", () => {
     const config = buildEngineConfigFromGameRecord(
       {
         maxRounds: 11,
@@ -17,7 +17,7 @@ describe("game lifecycle engine config", () => {
       10,
     );
 
-    expect(config.diaryRoomAfterPhases).toEqual([Phase.COUNCIL]);
+    expect(config.diaryRoomAfterPhases).toEqual([Phase.FORMAT_RESOLVE, Phase.COUNCIL]);
     expect(config.timers.mingle).toBe(20_000);
     expect("whisper" in config.timers).toBeFalse();
   });

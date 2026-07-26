@@ -193,15 +193,15 @@ function boundaryMatchesRow(
     boundary.eventHeadHash === input.eventHeadHash &&
     boundary.projectionHash === input.projectionHash &&
     boundary.checkpointKind === input.checkpointKind &&
-    (input.checkpointPhase == null || boundary.phase === input.checkpointPhase) &&
-    (input.checkpointRound == null || boundary.round === input.checkpointRound);
+    input.checkpointPhase != null &&
+    boundary.phase === input.checkpointPhase &&
+    input.checkpointRound != null &&
+    boundary.round === input.checkpointRound;
 }
 
 function validateActorWitness(
   witness: unknown,
   input: DerivePassportInput,
-  projectionRound: number | null,
-  projectionPhase: string | null,
   expectedPlayerIds: readonly string[] | null,
 ): { status: PassportStampStatus; reason?: string } {
   if (witness == null) {
@@ -225,11 +225,11 @@ function validateActorWitness(
       !contextSummary.alivePlayerIds.every((id) => typeof id === "string")) {
     return { status: "malformed", reason: "actor witness context summary is malformed" };
   }
-  if (projectionRound != null && contextSummary.round !== projectionRound) {
-    return { status: "failed", reason: "actor witness round does not match projection facts" };
+  if (contextSummary.round !== boundary.round) {
+    return { status: "failed", reason: "actor witness round does not match checkpoint boundary" };
   }
-  if (projectionPhase != null && contextSummary.phase !== projectionPhase) {
-    return { status: "failed", reason: "actor witness phase does not match projection facts" };
+  if (contextSummary.phase !== boundary.phase) {
+    return { status: "failed", reason: "actor witness phase does not match checkpoint boundary" };
   }
   if (expectedPlayerIds && !sameStringSet(contextSummary.alivePlayerIds, expectedPlayerIds)) {
     return { status: "failed", reason: "actor witness alive players do not match expected active player evidence" };
@@ -562,9 +562,6 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
   addStamp("runtimeSnapshot", runtimeSnapshotResult.status, runtimeSnapshotResult.reason);
   const runtimeSnapshot = runtimeSnapshotResult.value;
   const bc = (snap?.boundaryCertificate as Record<string, unknown> | undefined) ?? undefined;
-  const projectionSummary = isRecord(snap?.projectionSummary) ? snap!.projectionSummary as Record<string, unknown> : null;
-  const projectionRound = typeof projectionSummary?.round === "number" ? projectionSummary.round : input.checkpointRound;
-  const projectionPhase = typeof projectionSummary?.phase === "string" ? projectionSummary.phase : input.checkpointPhase;
   const expectedPlayers = expectedActivePlayerIds(snap);
 
   const hasBoundaryEvidence =
@@ -595,8 +592,6 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
   const actorResult = validateActorWitness(
     runtimeSnapshot?.actorWitness,
     input,
-    projectionRound,
-    projectionPhase,
     expectedPlayers.status === "passed" ? expectedPlayers.ids : null,
   );
   addStamp("actorWitness", actorResult.status, actorResult.reason);

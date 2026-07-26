@@ -226,7 +226,9 @@ export function createGameRoutes(
         catalogId: resolvedModelSelection.catalogId,
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
       },
-      serviceTier: normalizedServiceTier,
+      ...(resolvedModelSelection.model.providerProfileId === "openai" && {
+        serviceTier: normalizedServiceTier,
+      }),
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
       visibility: visibility ?? "public",

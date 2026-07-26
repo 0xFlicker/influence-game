@@ -456,7 +456,8 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
 
 # Rich producer validation adds House Strategy Bible packets, long-form summaries,
-# diary producer briefs, legacy/classic Council-bounded diary sessions, and strategic reflections:
+# diary producer briefs, format-resolution diaries, legacy Council compatibility,
+# and strategic reflections:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300

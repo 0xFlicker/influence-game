@@ -123,10 +123,10 @@
  * snapshot constant rather than relying on a mutable display profile.
  *
  * `--rich-producer` enables private House Strategy Bible Packet updates,
- * packet-backed long-form House summaries, bounded Council diary sessions, and
- * producer-brief records for validating House strategic carry-forward through
- * the local game MCP.
- * Use `--diary` when you only want bounded Council diary sessions without the
+ * packet-backed long-form House summaries, bounded format-resolution diary
+ * sessions, legacy Council diary compatibility, and producer-brief records for
+ * validating House strategic carry-forward through the local game MCP.
+ * Use `--diary` when you only want those bounded diary sessions without the
  * private rich-producer packet stack.
  * Default console mode (no `--chatty`) prints an **operator action feed**: phase
  * markers, room seating, votes/format choices/ballots, alliance actions, House
@@ -506,7 +506,7 @@ export function buildSimulationConfig(
     maxRounds,
     // Keep release-validation sims bounded; these hidden calls are flavor/memory, not core rules.
     maxDiaryFollowUps: 0,
-    diaryRoomAfterPhases: enableDiary ? [Phase.COUNCIL] : [],
+    diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],
     enableStrategicReflections: richProducer ? true : options.enableStrategicReflections ?? false,
     lobbyMessagesPerPlayer: 1,
     powerLobbyAfterVote: isPowerLobbyVariant(variant),

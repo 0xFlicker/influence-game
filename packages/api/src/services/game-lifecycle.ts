@@ -497,7 +497,7 @@ export function buildEngineConfigFromGameRecord(
       ...currentTimers,
       mingle: roomPhaseTimer,
     },
-    diaryRoomAfterPhases: [Phase.COUNCIL],
+    diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE, Phase.COUNCIL],
   };
 }
 
