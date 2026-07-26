@@ -60,6 +60,15 @@ Use this split consistently:
 - **Canonical game events** are accepted board facts: votes, eliminations, powers, rounds, endgame transitions. They rebuild state and can point back to private source records, but they do not store hidden strategy as game truth.
 - **Completed-game results review** is a public-by-URL postgame product projection. It should roll up canonical events into per-round revealed facts, elimination order, vote matrices, endgame votes, jury votes, and placements. Agent context can provide snippets from active public-facing cognitive artifacts, but those snippets explain texture only; they do not decide who voted for whom, who was eliminated, or who won.
 
+Accepted-action correlation bridges private evidence to canonical facts without collapsing that split:
+
+- The exact agent call returns a fresh decision receipt. Never recover accepted-action identity from mutable "last private decision" state.
+- The accepting phase stamps the receipt on the direct canonical event only when the model choice is accepted unchanged. Passes, fallbacks, rejected choices, and materially repaired choices stay unlinked.
+- After durable event append, API reconciliation transactionally updates the relational evidence manifest, cognitive artifact, and prompt-reuse source. It does not rewrite raw trace assets or make evidence canonical.
+- Correlation failure is nonfatal and retryable. Ordinary event flushes retry it, and the lifecycle performs one final pre-settlement reconciliation.
+- The contract is forward-only: do not infer historical links where no exact decision-bearing manifest exists.
+- Authority remains explicit: owners get bounded health and citations, producers may inspect exact private links, and public or peer views never expose private pointers.
+
 Elimination speech follows the same seam. Commit `player.eliminated` before asking for speech, then make one dedicated structured call to the eliminated agent and record the accepted text separately. Do not build that prompt from the general system transcript: sealed ballot reveal lines can contain named receipts that the eliminated player is not authorized to receive. Pass an explicit disclosure object instead — public votes may include voter names, sealed votes include counts only, and direct/sole-vulnerable eliminations carry a no-vote reason.
 
 When a model-quality complaint appears, convert it into typed observable state instead of an untestable prompt vibe.

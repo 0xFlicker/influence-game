@@ -3050,6 +3050,7 @@ Use the use_power tool to declare your final hidden action.`;
       this.recordStrategicDecision(ctx, "power", "Power Action", metadata);
       const directModelChoice =
         Boolean(targetPlayer)
+        && validAction !== "pass"
         && validAction === result.action
         && !shieldSelectionRepaired;
       return {

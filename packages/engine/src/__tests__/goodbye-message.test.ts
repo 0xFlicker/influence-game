@@ -8,11 +8,20 @@ import type {
   AgentResponse,
   IAgent,
   PhaseContext,
+  PowerActionDecision,
+  PowerActionOptions,
   TargetDecision,
 } from "../game-runner.types";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase, PlayerStatus } from "../types";
-import { runCouncilPhase, runPowerPhase, runReckoningVote, runTribunalVote, runVotePhase } from "../phases";
+import {
+  runCouncilPhase,
+  runJudgmentJuryVote,
+  runPowerPhase,
+  runReckoningVote,
+  runTribunalVote,
+  runVotePhase,
+} from "../phases";
 import type { PhaseRunnerContext } from "../phases";
 import { handleElimination } from "../phases/elimination";
 import { TemplateHouseInterviewer } from "../house-interviewer";
@@ -39,13 +48,45 @@ class GoodbyeProbeAgent extends MockAgent {
     this.fixedEndgameVote = fixedEndgameVote;
   }
 
-  override async getVotes(): Promise<{ empowerTarget: string; exposeTarget: string; thinking?: string; reasoningContext?: string }> {
-    return { ...this.fixedVotes, thinking: "fixed goodbye probe vote", reasoningContext: undefined };
+  override async getVotes(): Promise<{
+    empowerTarget: string;
+    exposeTarget: string;
+    thinking?: string;
+    reasoningContext?: string;
+    decisionId?: string;
+  }> {
+    return {
+      ...this.fixedVotes,
+      thinking: "fixed goodbye probe vote",
+      reasoningContext: undefined,
+      decisionId: `vote-${this.id}`,
+    };
   }
 
-  override async getCouncilVote(ctx: PhaseContext): Promise<{ target: string; thinking?: string; reasoningContext?: string }> {
+  override async getPowerAction(
+    ctx: PhaseContext,
+    candidates: [string, string],
+    options: PowerActionOptions = {},
+  ): Promise<PowerActionDecision> {
+    return {
+      ...await super.getPowerAction(ctx, candidates, options),
+      decisionId: `power-${this.id}`,
+    };
+  }
+
+  override async getCouncilVote(ctx: PhaseContext): Promise<{
+    target: string;
+    thinking?: string;
+    reasoningContext?: string;
+    decisionId?: string;
+  }> {
     this.councilVoteContexts.push(ctx);
-    return { target: this.fixedCouncilVote, thinking: "fixed goodbye probe council", reasoningContext: undefined };
+    return {
+      target: this.fixedCouncilVote,
+      thinking: "fixed goodbye probe council",
+      reasoningContext: undefined,
+      decisionId: `council-${this.id}`,
+    };
   }
 
   override async getEndgameEliminationVote(ctx: PhaseContext): Promise<TargetDecision> {
@@ -54,6 +95,19 @@ class GoodbyeProbeAgent extends MockAgent {
       target: this.fixedEndgameVote ?? this.fixedCouncilVote,
       thinking: "fixed goodbye probe endgame vote",
       reasoningContext: undefined,
+      decisionId: `endgame-${this.id}`,
+    };
+  }
+
+  override async getJuryVote(
+    _ctx: PhaseContext,
+    finalistIds: [string, string],
+  ): Promise<TargetDecision> {
+    return {
+      target: this.juryVoteTarget ?? finalistIds[0]!,
+      thinking: "fixed goodbye probe jury vote",
+      reasoningContext: undefined,
+      decisionId: `jury-${this.id}`,
     };
   }
 
@@ -65,6 +119,22 @@ class GoodbyeProbeAgent extends MockAgent {
     return {
       thinking: `Final words for ${this.name}`,
       message: `${this.name} signing off.`,
+    };
+  }
+}
+
+class EliminatePowerProbeAgent extends GoodbyeProbeAgent {
+  override async getPowerAction(
+    _ctx: PhaseContext,
+    candidates: [string, string],
+    _options: PowerActionOptions = {},
+  ): Promise<PowerActionDecision> {
+    return {
+      action: "eliminate",
+      target: candidates[0],
+      thinking: "fixed goodbye probe elimination power",
+      reasoningContext: undefined,
+      decisionId: `power-${this.id}`,
     };
   }
 }
@@ -527,6 +597,30 @@ describe("goodbye message handling", () => {
     expect(canonicalTypes.indexOf("player.eliminated")).toBeLessThan(
       canonicalTypes.indexOf("player.elimination_message_recorded"),
     );
+    const voteEvents = prc.gameState.getCanonicalEvents()
+      .filter((event) => event.type === "vote.cast");
+    expect(voteEvents).toHaveLength(agents.length);
+    for (const event of voteEvents) {
+      expect(event.sourcePointers).toContainEqual(expect.objectContaining({
+        actorId: event.payload.voterId,
+        decisionId: `vote-${event.payload.voterId}`,
+      }));
+    }
+    const powerEvent = prc.gameState.getCanonicalEvents()
+      .find((event) => event.type === "power.action_set");
+    expect(powerEvent?.payload.action.action).toBe("pass");
+    expect(powerEvent?.sourcePointers).toEqual([
+      expect.not.objectContaining({ decisionId: expect.any(String) }),
+    ]);
+    const councilEvents = prc.gameState.getCanonicalEvents()
+      .filter((event) => event.type === "council.vote_cast");
+    expect(councilEvents).not.toHaveLength(0);
+    for (const event of councilEvents) {
+      expect(event.sourcePointers).toContainEqual(expect.objectContaining({
+        actorId: event.payload.voterId,
+        decisionId: `council-${event.payload.voterId}`,
+      }));
+    }
     expect(prc.logger.transcript.at(-1)?.text).toBe("Charlie signing off.");
   });
 
@@ -562,6 +656,31 @@ describe("goodbye message handling", () => {
     }
   });
 
+  test("non-pass Power action carries the empowered player's current-call receipt", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new EliminatePowerProbeAgent(bobId, "Bob", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: bobId, exposeTarget: daveId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+    ];
+    const prc = makePhaseRunnerContext(agents);
+
+    await runVotePhase(prc, { send() {} } as never);
+    await runPowerPhase(prc, { send() {} } as never);
+
+    const powerEvent = prc.gameState.getCanonicalEvents()
+      .findLast((event) => event.type === "power.action_set");
+    expect(powerEvent?.payload.action.action).toBe("eliminate");
+    expect(powerEvent?.sourcePointers).toContainEqual(expect.objectContaining({
+      actorId: bobId,
+      decisionId: `power-${bobId}`,
+    }));
+  });
+
   test("tribunal juror tiebreaker is skipped when live vote resolves", async () => {
     const aliceId = createUUID();
     const bobId = createUUID();
@@ -592,6 +711,15 @@ describe("goodbye message handling", () => {
     const resolved = prc.gameState.getCanonicalEvents().findLast((event) => event.type === "endgame.elimination_resolved");
     expect(resolved?.payload.method).toBe("plurality");
     expect(resolved?.payload.eliminated).toBe(bobId);
+    const directVotes = prc.gameState.getCanonicalEvents()
+      .filter((event) => event.type === "endgame.elimination_vote_cast");
+    for (const event of directVotes) {
+      expect(event.sourcePointers).toContainEqual(expect.objectContaining({
+        actorId: event.payload.voterId,
+        decisionId: `endgame-${event.payload.voterId}`,
+      }));
+    }
+    expect(resolved?.sourcePointers).toEqual([]);
   });
 
   test("tribunal juror tiebreaker uses eliminated juror context only on live tie", async () => {
@@ -631,6 +759,10 @@ describe("goodbye message handling", () => {
     const resolved = prc.gameState.getCanonicalEvents().findLast((event) => event.type === "endgame.elimination_resolved");
     expect(resolved?.payload.method).toBe("jury_tiebreaker");
     expect(resolved?.payload.eliminated).toBe(aliceId);
+    expect(resolved?.sourcePointers.map((pointer) => pointer.decisionId).sort()).toEqual([
+      `endgame-${daxId}`,
+      `endgame-${eveId}`,
+    ].sort());
     expect(agents[0]!.eliminationMessageContexts[0]?.eliminationContext?.voteDisclosure).toEqual({
       visibility: "public",
       votesReceived: 2,
@@ -667,7 +799,46 @@ describe("goodbye message handling", () => {
         voterNames: ["Alice", "Bob", "Dave"],
       },
     });
+    const directVotes = prc.gameState.getCanonicalEvents()
+      .filter((event) => event.type === "endgame.elimination_vote_cast");
+    for (const event of directVotes) {
+      expect(event.sourcePointers).toContainEqual(expect.objectContaining({
+        actorId: event.payload.voterId,
+        decisionId: `endgame-${event.payload.voterId}`,
+      }));
+    }
     expect(prc.logger.transcript.at(-1)?.text).toBe("Charlie signing off.");
+  });
+
+  test("jury vote phase carries each juror's current-call receipt", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: bobId }, bobId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: bobId }, bobId),
+    ];
+    agents[2]!.juryVoteTarget = aliceId;
+    agents[3]!.juryVoteTarget = aliceId;
+    const prc = makePhaseRunnerContext(agents);
+    prc.gameState.eliminatePlayer(charlieId);
+    prc.gameState.eliminatePlayer(daveId);
+    prc.gameState.setEndgameStage("judgment");
+
+    await runJudgmentJuryVote(prc, { send() {} } as never);
+
+    const juryVotes = prc.gameState.getCanonicalEvents()
+      .filter((event) => event.type === "jury.vote_cast");
+    expect(juryVotes).toHaveLength(2);
+    for (const event of juryVotes) {
+      expect(event.sourcePointers).toContainEqual(expect.objectContaining({
+        actorId: event.payload.jurorId,
+        decisionId: `jury-${event.payload.jurorId}`,
+      }));
+    }
   });
 });
 

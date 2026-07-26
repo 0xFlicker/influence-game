@@ -244,10 +244,25 @@ export async function appendDurableEventsAndPublishWatchState(
   },
 ): Promise<void> {
   await appendGameEvents(db, params);
-  const correlation = await tryReconcileAcceptedActionCorrelations(db, {
+  await reconcileAcceptedActionsForLifecycle(db, {
     gameId: params.gameId,
     ownerEpoch: params.ownerEpoch,
   });
+  if (params.events.some((event) => event.type === "jury.winner_determined")) {
+    return;
+  }
+  const refresh = await tryRefreshGameWatchStateSummary(db, params.gameId, "durable_append");
+  await publishCurrentWatchState(db, params.gameId, "durable append", refresh?.watchState);
+}
+
+export async function reconcileAcceptedActionsForLifecycle(
+  db: DrizzleDB,
+  params: {
+    gameId: string;
+    ownerEpoch: string;
+  },
+): Promise<void> {
+  const correlation = await tryReconcileAcceptedActionCorrelations(db, params);
   if (!correlation.ok) {
     console.warn(
       `[game-lifecycle] Accepted-action correlation degraded for game ${params.gameId}: ${correlation.error}`,
@@ -259,11 +274,6 @@ export async function appendDurableEventsAndPublishWatchState(
       + `${correlation.result.conflictDecisionCount} conflict`,
     );
   }
-  if (params.events.some((event) => event.type === "jury.winner_determined")) {
-    return;
-  }
-  const refresh = await tryRefreshGameWatchStateSummary(db, params.gameId, "durable_append");
-  await publishCurrentWatchState(db, params.gameId, "durable append", refresh?.watchState);
 }
 
 async function publishCurrentWatchState(
@@ -934,6 +944,7 @@ async function runGameAsync(
     if (!ownerEpoch) {
       throw new Error(`Durable completion owner is required for game ${gameId}`);
     }
+    await reconcileAcceptedActionsForLifecycle(db, { gameId, ownerEpoch });
     const finalEvent = runner.getCanonicalEvents().at(-1);
     if (!finalEvent) {
       throw new Error(`Durable completion event boundary is missing for game ${gameId}`);

@@ -474,7 +474,7 @@ async function clearRecoveredCorrelationDegradation(
     .where(and(
       eq(schema.gameRunOwners.gameId, gameId),
       eq(schema.gameRunOwners.ownerEpoch, ownerEpoch),
-      eq(schema.gameRunOwners.status, "active"),
+      inArray(schema.gameRunOwners.status, ["active", "closed"]),
       like(schema.gameRunOwners.failureReason, "accepted_action_correlation_failed:%"),
     ));
 }

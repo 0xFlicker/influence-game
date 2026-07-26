@@ -9,7 +9,10 @@ import {
 } from "../services/accepted-action-correlation.js";
 import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { appendGameEvents } from "../services/game-events.js";
-import { appendDurableEventsAndPublishWatchState } from "../services/game-lifecycle.js";
+import {
+  appendDurableEventsAndPublishWatchState,
+  reconcileAcceptedActionsForLifecycle,
+} from "../services/game-lifecycle.js";
 import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -411,6 +414,35 @@ describe("accepted action correlation", () => {
       .where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch)))[0]!;
     expect(manifest.eventSequence).toBe(1);
     expect(recoveredOwner).toMatchObject({
+      kernelHealth: "healthy",
+      failureReason: null,
+    });
+  });
+
+  test("final lifecycle reconciliation repairs a closed owner after delayed capture", async () => {
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const decisionId = randomUUID();
+
+    await appendDurableEventsAndPublishWatchState(db, {
+      gameId,
+      ownerEpoch,
+      events: [voteEvent(gameId, decisionId)],
+    });
+    await db.update(schema.gameRunOwners)
+      .set({ status: "closed" })
+      .where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch));
+    await seedSidecars(db, { gameId, ownerEpoch, decisionId });
+
+    await reconcileAcceptedActionsForLifecycle(db, { gameId, ownerEpoch });
+
+    const manifest = (await db.select().from(schema.gameEvidenceManifests)
+      .where(eq(schema.gameEvidenceManifests.decisionId, decisionId)))[0]!;
+    const recoveredOwner = (await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch)))[0]!;
+    expect(manifest.eventSequence).toBe(1);
+    expect(recoveredOwner).toMatchObject({
+      status: "closed",
       kernelHealth: "healthy",
       failureReason: null,
     });

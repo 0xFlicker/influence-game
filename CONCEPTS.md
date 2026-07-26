@@ -29,6 +29,14 @@ Two tools share one policy-parameterized core:
 
 Default `strategic` preset returns dialogue + strategy (omitting raw thinking). Correlation is exact when a durable `decisionId` is present; otherwise labeled inferred or uncorrelated for legacy rows (no unsafe backfill).
 
+## Accepted-action correlation
+
+A producer-private evidentiary link from a fresh, per-call decision receipt to the direct canonical event that accepted that decision. The phase runner may stamp the receipt's `decisionId` into the event source pointer only when the model choice was accepted without fallback, rejection, material repair, or a pass. It must not recover a receipt from mutable "last decision" agent state.
+
+After canonical events are durably appended, API reconciliation transactionally stamps the matching event sequence onto the evidence manifest, cognitive artifact, and prompt-reuse accounting source. These sidecars remain evidence rather than canonical game truth. The owner lane receives only bounded correlation health/citations, the producer lane may receive exact private identifiers, and public or peer lanes never receive these pointers.
+
+Correlation is forward-only. Legacy rows without an exact decision-bearing manifest remain unlinked rather than being inferred from timing or actor/action similarity. A missing sidecar degrades diagnostics without blocking gameplay; later flushes and the final pre-settlement lifecycle pass retry the link.
+
 ## Mingle I
 
 The pre-vote Mingle window in a normal pre-endgame round. It starts with private-room conversation and movement, then closes with the official named-alliance action window. Players may propose, accept, decline, counter, defer, or agree to trial alliances during that action window; official alliance records cannot be formed or mutated outside Mingle I in v1.

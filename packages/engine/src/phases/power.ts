@@ -166,7 +166,7 @@ export async function runPowerPhase(
       gameState.round,
       Phase.POWER,
       undefined,
-      powerActionResult.decisionId,
+      powerAction.action === "pass" ? undefined : powerActionResult.decisionId,
     ),
   ]);
   let replacementCandidateIds: UUID[] = [];
