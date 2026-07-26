@@ -33,4 +33,11 @@ describe("homepage MCP CTA", () => {
     expect(source).toContain("Latest update");
     expect(source).toContain("latestUpdate.href");
   });
+
+  it("is a server component with client islands for live/interactive bits", () => {
+    expect(source).not.toMatch(/^["']use client["']/m);
+    expect(source).toContain("HomeGameStats");
+    expect(source).toContain("HomeLobbyPhase");
+    expect(source).toContain("MessageSequence");
+  });
 });
