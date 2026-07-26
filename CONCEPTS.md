@@ -125,6 +125,20 @@ A structured producer/debug artifact for an agent's hidden strategic assessment 
 
 A compact private strategy state an agent carries across rounds. It summarizes the agent's current objective, target posture, coalition posture, next intended social probe, important uncertainty, abandon-or-revise trigger, and revision metadata so later prompts can show continuity without forcing target naming or overt game talk. It is private producer/debug state, not player-visible dialogue, canonical board state, or `MemoryStore` truth. On supported phase-boundary startup recovery it is restored from a versioned player continuity capsule sealed into the checkpoint, together with reflection, notes, relationships, round history, power-action memory, and recent decision receipts.
 
+## Recall Plan
+
+A server-authored, deterministic context-selection contract for one agent call. ContextBuilder compiles it from the actor, an explicit **prompt class** (`ordinary_speech` | `strategic_decision` | `strategic_reflection`), current projection, and a narrow `RecallContinuitySnapshot` (Strategy Thread, reflection summary, recent strategic receipts, strategic evidence version). It is not model-controlled search, never makes dialogue authoritative, and must not reveal the existence of ineligible private material. Unspecified callers default to `ordinary_speech`.
+
+**Lanes (render order):**
+
+- **Protected** — Current Board Contract (canonical facts override all memory), Strategy Thread, authorized compact official huddle outcomes (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent strategic decisions, recent decisions, revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
+- **Hot** — Active-room Mingle conversation for the current turn only. Distinct from historical archive recall.
+- **History** — Bounded public + actor-owned Mingle archive evidence, only for `strategic_decision` and `strategic_reflection`. Eligibility uses immutable `speakerPlayerId` / `audiencePlayerIds` before ranking; missing/ambiguous legacy identity fails closed (no display-name fallback). Selected prose is historical evidence only.
+
+**Privacy and legacy:** Thinking, `reasoningContext`, raw huddle dialogue, diary, whisper, system, sealed, and producer rows are ineligible before candidate counts or diagnostics. Foreign private Mingle must not change another actor's plan, receipt, or event boundary. Older huddle outcomes recover a participant snapshot only from the matching completed-session `speakerIds`; otherwise the outcome is unavailable for recall.
+
+**Evaluation artifact:** Simulation batches write `game-N-recall-plan.json` — a producer-only structural aggregate (`coverage: "structural_recall_receipts"`) of prompt-class counts, lane/source-class counts, budget token estimates (`ceil(chars/4)`), and actor-authorized event boundaries. It never stores dialogue, names, entry IDs, rejected counts, prompts, thinking, or reasoning. Full `game-N.json` / private traces remain producer artifacts and are **not** the R13 promotion input; the deterministic gate lives in `context-recall-evaluation.test.ts` against a frozen late-game corpus.
+
 ## Decision log
 
 A compact private receipt attached to a strategic agent action. It records what the action meant strategically so later prompts and strategic reflection can understand when and why the agent changed course. Decision logs are producer/debug context for the same agent and maintainers; they are not player-visible dialogue, canonical board state, raw thinking, or native reasoning context.

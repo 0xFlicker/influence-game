@@ -281,6 +281,53 @@ New API-created games set `games.cognitive_artifact_capture_version = 1` and fan
 - Producer/admin access may read all split artifacts directly, including degraded diagnostics. Raw prompts, raw responses, full request envelopes, model/provider IDs, requested reasoning effort, token usage, router billing, tool arguments, storage keys, source-pointer internals, and arbitrary `output` blobs are excluded from cognitive payload construction.
 - Oversized cognitive payloads are stored as `capture_degraded` diagnostics with an empty user payload. Revisit object-storage manifests only if p95 artifact payload size exceeds 64 KiB, more than 1 percent of artifacts hit the 256 KiB cap, or typical captured games exceed 5-10 MiB of cognitive artifact payload.
 
+## Selective Context Recall (Recall Plan)
+
+Agent prompts no longer carry unbounded full public transcripts or complete historical game-event records. Before each call, ContextBuilder compiles a pure **Recall Plan** (`packages/engine/src/context-recall-plan.ts`) from:
+
+- explicit **prompt class**: `ordinary_speech` (default), `strategic_decision`, or `strategic_reflection`
+- actor id + current `PhaseContext` (board, alliance compact outcomes, active-room messages, required receipts)
+- narrow **`RecallContinuitySnapshot`** (Strategy Thread, reflection summary, recent strategic receipts, `strategicEvidenceVersion`)
+- full transcript used only as an eligibility source for historical candidates
+
+### Lanes
+
+| Lane | Contents | Budget |
+|---|---|---|
+| **Protected** | Board Contract, Strategy Thread, authorized compact huddle outcomes, current receipts | Reserved first; never displaced by history |
+| **Hot** | Active-room Mingle messages for this turn | After protected |
+| **History** | Ranked public + actor-owned Mingle archive | Only strategic classes; remaining budget after protected+hot, capped by class history ceiling |
+
+Historical eligibility is fail-closed on modern identity: Mingle rows need `speakerPlayerId` and `audiencePlayerIds`; speaker or audience must match the actor. Display-name-only legacy rows do not become private recall during replay. Official huddle outcomes enter the protected lane only when `participantPlayerIds` (copied at outcome creation, or recovered from matching completed-session `speakerIds` on hydrate) authorize the actor. Participant snapshots never leave server-private surfaces (member-safe projections omit them).
+
+Retrieved dialogue is **evidence, never authority**: it cannot override Board Contract, permissions, tools, or instructions. The plan must not imply that excluded private material exists.
+
+### Safe evaluation artifact vs private traces
+
+Each simulation game writes:
+
+- `game-N-recall-plan.json` — **safe structural aggregate only** (`RecallPlanReceiptAggregate` / `coverage: "structural_recall_receipts"`). Fields: request counts by prompt class, protected/hot/history token estimates, selected lane counts, history source-class counts (`public` | `mingle`), actor-authorized event-boundary rollup, protected-overflow count. No dialogue, names, entry IDs, rejected/foreign-lane counts, prompts, thinking, or `reasoningContext`.
+- `game-N.json` / private decision traces / `game-N-turns.jsonl` — full producer artifacts. Useful for human/debug review; **not** the promotion input for the ≥50% late-game context reduction gate.
+
+**Release gate (no paid LLM required):** run the frozen late-game corpus tests:
+
+```bash
+bun test packages/engine/src/__tests__/context-recall-evaluation.test.ts
+bun test packages/engine/src/__tests__/context-recall-plan.test.ts
+```
+
+Those tests compare legacy vs candidate token estimates with `estimateTokensFromChars` (`ceil(chars/4)`), assert equal model-call count, full protected coverage, and zero unauthorized history selections. Live `game-N-recall-plan.json` from a chatty run is a structural receipt for inspection, not a substitute for that deterministic gate.
+
+Prompt-class call sites: ordinary Lobby/Mingle/huddle/endgame speech → `ordinary_speech`; votes, powers, councils, format choices, and other non-speech strategy decisions → `strategic_decision`; DiaryRoom Strategy Reflection → `strategic_reflection`. Decision logs advance the next eligible strategic evidence version only; they never call the model or mutate the Strategy Thread outside reflection.
+
+### Replay / hydration contract
+
+- Modern transcript rows that keep `entrySequence`, `speakerPlayerId`, and `audiencePlayerIds` through serialize→hydrate must recompile the same normalized plan and budget ledger for the same actor/prompt class/continuity.
+- Legacy Mingle rows that only have display names must not upgrade into private historical recall.
+- Older huddle outcomes without `participantPlayerIds` recover a snapshot only from the matching completed-session speakers; otherwise they are unavailable for protected recall (no current-membership fallback).
+
+See `CONCEPTS.md` (Recall Plan), `docs/local-model-evaluation.md` (evaluation path), and `packages/engine/src/simulate.ts` JSDoc for artifact names.
+
 ## Core Style & Safety Rules
 
 1. No `as any` anywhere in agent return paths, House calls, or reasoning threading. Use intersections or proper widening of return types. "`as any` scares master."
@@ -381,10 +428,12 @@ try {
 In simulation batches under `packages/engine/docs/simulations/`, each game writes:
 
 - `game-N.txt`: human-readable formatted transcript; includes ANSI colors for `--chatty`.
-- `game-N.json`: full transcript JSON plus result metadata.
+- `game-N.json`: full transcript JSON plus result metadata (producer artifact; may include private dialogue identity and is **not** a player-safe Recall Plan evaluation input).
 - `game-N-progress.jsonl`: lightweight progress events for monitoring a running game.
 - `game-N-turns.jsonl`: one clean structured JSON record per agent turn, including the normalized response the game used plus `thinking` and `reasoningContext` / labeled provider summaries when available.
 - `game-N-events.jsonl`: one clean canonical domain event record per accepted game-state fact. Replay this through `replayCanonicalEvents(...)` to rebuild the game projection; do not parse transcript prose as board state. API-backed games persist the same canonical envelope in Postgres for live runs, while CLI simulations remain local JSONL artifacts unless a future import path explicitly loads them.
+- `game-N-prompt-reuse.json`: structural prompt-prefix reuse rollup (hashes/counts only).
+- `game-N-recall-plan.json`: **safe structural Recall Plan receipt aggregate** for selective-context-recall evaluation. Prompt-class counts, budget token estimates, lane/source-class counts, and actor-authorized event boundaries only — never recalled dialogue or raw prompts. Use this (or the frozen corpus tests) for the promotion gate; do not use full private-trace JSON.
 
 `game-N-turns.jsonl` always includes hidden `mingle-intent` records and House `mingle-room-assignment` records. Mingle intent player-target fields are normalized to living, non-self players before House assignment; stale names may remain only as historical prose context or `repairNotes`, not as active `seekPlayers`, `avoidPlayers`, or `provisionalTarget`. It includes private `alliance-action`, `alliance-huddle-schedule`, `alliance-huddle-turn`, and `alliance-huddle-outcome` records for named-alliance validation. Format-kernel runs include `format-pick`, `format-ballot`, `bounce-pointer`, exercised `format-tiebreak`, and one post-commit `elimination-message` record per eliminated player. Format decision records carry the game-used response plus `thinking`, optional `reasoningContext`, `decisionSource`, and nullable `fallbackReason`; elimination messages carry the controlled public-or-sealed disclosure used for that one call. A fallback is a deterministic continuity result and diagnostic signal, not successful proof of model-authored play. Legacy/classic candidate-selection, Power, and Council records remain readable when that lane is deliberately run. The file also includes `house-mc-summary` by default, optional strategic records under `--strategic-reflections`, and optional producer records under `--rich-producer`. These records are producer/debug artifacts only; they are not player-visible speech or canonical facts.
 
@@ -430,6 +479,9 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - Do phase-specific rules keep format choices and legal actions separate from legacy Power/Council and Endgame choices, and do typed recent decisions show only the player's current legal path?
 - Do hidden Mingle intent records and House assignment inputs avoid eliminated/self live targets while preserving any stale-target cleanup in `repairNotes`?
 - Do named-alliance records preserve versioned consent, Mingle I-only mutation, universal-alliance closure, hidden huddle transcript scope, and huddle outcomes as the forward memory rather than raw huddle replay?
+- Do agent prompts use Recall Plan sections (Board Contract, Strategy Thread, compact huddle outcomes, hot room, optional strategic history) rather than unbounded full public transcript / complete game-event record?
+- Is historical Mingle eligibility fail-closed on `speakerPlayerId`/`audiencePlayerIds`, and are structural receipts free of dialogue/names/entry IDs?
+- Is `game-N-recall-plan.json` treated as the safe evaluation aggregate, separate from full `game-N.json` / private traces?
 - When the legacy/classic lane is exercised, do Council diary prompts use the interviewee's actual role without inventing a vote?
 - Do Judgment juror question prompts receive questions-only history while finalist answer, closing, and jury-vote prompts can still use full Q&A history?
 - Do House MC summaries lead with consequence, leverage, debt, heat, and next tension without claiming the currently limited `response.roundFacts` carries format proof?
@@ -452,5 +504,6 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - `packages/engine/src/game-mcp/` — local read-only MCP/query server over simulation event logs.
 - `packages/engine/src/agent.ts` — `callTool` and the decision methods.
 - `packages/engine/src/transcript-logger.ts` and `game-runner.types.ts` — the transcript and agent-turn data models.
-- `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `reasoningContext`, `chatty` mode, `House MC`, House Strategy Bible packets, producer briefs, long-form summaries, and the `callTool` reasoning augmentation.
+- `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `Recall Plan`, `reasoningContext`, `chatty` mode, `House MC`, House Strategy Bible packets, producer briefs, long-form summaries, and the `callTool` reasoning augmentation.
+- `packages/engine/src/context-recall-plan.ts`, `prompt-reuse.ts` (`RecallPlanReceiptAggregate`) — pure compiler, structural receipts, and safe simulation aggregate.
 - `feat/inf-228-mingle-hardening` branch context: this observability work was driven by the need to debug and enjoy the new Mingle room system + the full decision loop down to 4 players.

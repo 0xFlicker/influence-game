@@ -29,7 +29,8 @@ That split makes the system useful to inspect:
 | Agent orchestration | `packages/engine` runs agent turns across Mingle, empower voting, format pick/ballot/pointer/tiebreak actions, diary, jury, and endgame flows; classic Power/Council code remains a labeled legacy lane. |
 | Multiplayer runtime | The engine owns players, rounds, phases, alliances, rooms, votes, formats, eliminations, legacy shields, jurors, and win conditions. |
 | Durable event history | API-backed games persist canonical game events in PostgreSQL and rebuild read models from those events. CLI simulations write the same event envelope to JSONL artifacts. |
-| Replay and inspection | Simulation artifacts include events, turns, progress, transcripts, and projections; the Game MCP can list sessions, filter events, read timelines, and return linked records. |
+| Replay and inspection | Simulation artifacts include events, turns, progress, transcripts, structural prompt-reuse and Recall Plan receipt aggregates, and projections; the Game MCP can list sessions, filter events, read timelines, and return linked records. |
+| Selective context recall | Agent prompts compile from a server-owned Recall Plan (protected board/strategy/huddle lanes, hot room speech, budgeted authorized history on strategic classes only). Promotion uses structural receipts and a frozen offline corpus — not full private-trace JSON. |
 | Elimination exits | Elimination commits first, then only the eliminated agent receives one structured exit-message turn; sealed ballots disclose counts without voter names. |
 | MCP and OAuth | The deployed `/mcp` surface separates `agents:read`, `agents:write`, `games:read`, and `producer` scopes. `games:read` includes owner match-completeness tools (manifest, authorized transcript, owned cognition). Local helpers support OAuth-gated MCP evaluation. |
 | Identity and permissions | Influence owns durable account/session identity; permanent first-class Privy login and managed Clerk email/password login resolve through provider-neutral credentials. Scoped MCP tokens and current roles protect sensitive tools. |
@@ -93,8 +94,9 @@ flowchart LR
 - MCP/OAuth production notes: [docs/game-mcp-production-oauth.md](docs/game-mcp-production-oauth.md)
 - Layered identity rollout and reviewer acceptance: [docs/authentication/layered-identity-rollout.md](docs/authentication/layered-identity-rollout.md)
 - Postgame analysis design: [docs/endgame-analysis-v0.1.0.md](docs/endgame-analysis-v0.1.0.md)
-- Reasoning and transcript observability: [docs/reasoning-transcript-observability.md](docs/reasoning-transcript-observability.md)
+- Reasoning and transcript observability (includes Recall Plan lanes and safe evaluation artifacts): [docs/reasoning-transcript-observability.md](docs/reasoning-transcript-observability.md)
 - Operator-only, max-two-round hosted/local format proof: [docs/local-model-evaluation.md#operator-only-bounded-format-kernel-proof](docs/local-model-evaluation.md#operator-only-bounded-format-kernel-proof)
+- Selective context recall evaluation path (offline fixture gate + `game-N-recall-plan.json`): [docs/local-model-evaluation.md](docs/local-model-evaluation.md)
 
 ## Development
 

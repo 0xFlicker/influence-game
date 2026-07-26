@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { ContextBuilder } from "../context-builder";
+import { compileRecallPlan } from "../context-recall-plan";
 import { GameState } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
+import type { UUID } from "../types";
 
 const PLAYERS = [
   { id: "alice", name: "Alice" },
@@ -311,6 +313,114 @@ describe("named alliance member-safe context", () => {
     const aliceContext = builder.buildPhaseContext("alice", Phase.VOTE);
     const alliance = aliceContext.allianceContext?.activeAlliances.find((a) => a.id === "alliance-ab");
     expect(alliance?.huddleOutcomes ?? []).toEqual([]);
+
+    // Protected Recall Plan lane must also omit the orphan (no membership fallback).
+    const plan = compileRecallPlan({
+      actorId: "alice" as UUID,
+      promptClass: "strategic_decision",
+      continuity: {
+        strategyPacket: null,
+        reflectionSummary: null,
+        recentStrategicDecisions: [],
+        strategicEvidenceVersion: 0,
+      },
+      phaseContext: aliceContext,
+      transcript: [],
+    });
+    expect(plan.protected.huddleOutcomes).toEqual([]);
+  });
+
+  it("canonical hydrate recovers snapshot from completed session and keeps non-members out of protected recall", () => {
+    const { gameState } = createContextHarness();
+    gameState.recordAllianceProposal({
+      allianceId: "alliance-ab",
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      proposerId: "alice",
+      name: "Alice Bob",
+      memberIds: ["alice", "bob"],
+      purpose: "Coordinate.",
+      timebox: null,
+    });
+    gameState.recordAllianceResponse({
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      playerId: "bob",
+      response: "accepted",
+    });
+    gameState.recordAllianceHuddleCompleted({
+      id: "session-hydrate-ctx",
+      scheduleId: "schedule-hydrate-ctx",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gameState.round,
+      pass: 1,
+      speakerIds: ["alice", "bob"],
+      completedAt: "2026-07-03T00:00:00.000Z",
+    });
+    gameState.recordAllianceHuddleOutcome({
+      id: "outcome-hydrate-ctx",
+      sessionId: "session-hydrate-ctx",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gameState.round,
+      ask: "Hold.",
+      plan: "Coordinate Charlie pressure.",
+      promises: [],
+      dissent: [],
+      confidence: "medium",
+      posture: "guarded",
+      leakOrBetrayalClaims: [],
+      // Snapshot omitted — must recover from session speakers on hydrate.
+      createdAt: "2026-07-03T00:00:01.000Z",
+    });
+
+    const events = gameState.getCanonicalEvents().map((event) => {
+      if (event.type !== "alliance.huddle_outcome_recorded") return event;
+      const { participantPlayerIds: _drop, ...withoutSnapshot } = event.payload.outcome;
+      return { ...event, payload: { ...event.payload, outcome: withoutSnapshot } };
+    });
+    const resumed = GameState.fromCanonicalEvents(JSON.parse(JSON.stringify(events)), {
+      now: () => 1_700_000_000_000,
+    });
+    const logger = new TranscriptLogger(resumed);
+    const builder = new ContextBuilder(resumed, logger, new Map(), PLAYERS.length);
+
+    const aliceCtx = builder.buildPhaseContext("alice", Phase.VOTE);
+    const charlieCtx = builder.buildPhaseContext("charlie", Phase.VOTE);
+    expect(
+      aliceCtx.allianceContext?.activeAlliances
+        .find((a) => a.id === "alliance-ab")
+        ?.huddleOutcomes.map((o) => o.id),
+    ).toEqual(["outcome-hydrate-ctx"]);
+    expect(
+      charlieCtx.allianceContext?.activeAlliances
+        .find((a) => a.id === "alliance-ab")
+        ?.huddleOutcomes ?? [],
+    ).toEqual([]);
+
+    const emptyContinuity = {
+      strategyPacket: null,
+      reflectionSummary: null,
+      recentStrategicDecisions: [],
+      strategicEvidenceVersion: 0,
+    };
+    const alicePlan = compileRecallPlan({
+      actorId: "alice" as UUID,
+      promptClass: "strategic_decision",
+      continuity: emptyContinuity,
+      phaseContext: aliceCtx,
+      transcript: [],
+    });
+    const charliePlan = compileRecallPlan({
+      actorId: "charlie" as UUID,
+      promptClass: "strategic_decision",
+      continuity: emptyContinuity,
+      phaseContext: charlieCtx,
+      transcript: [],
+    });
+    expect(alicePlan.protected.huddleOutcomes.map((o) => o.id)).toEqual(["outcome-hydrate-ctx"]);
+    expect(charliePlan.protected.huddleOutcomes).toEqual([]);
   });
 
   it("shows open and failed proposal history only to participants", () => {

@@ -2,6 +2,9 @@ import { describe, expect, it } from "bun:test";
 import { GameRunner } from "../game-runner";
 import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
+import { ContextBuilder } from "../context-builder";
+import { compileRecallPlan } from "../context-recall-plan";
+import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG, Phase } from "../types";
 import type { UUID } from "../types";
 import type { CanonicalGameEvent } from "../canonical-events";
@@ -489,5 +492,90 @@ describe("GameRunner canonical events", () => {
       event.sourcePointers.some((pointer) => pointer.kind === "agent_turn" && pointer.action === "vote"),
     )).toBe(true);
     expect(flushedSequences).toEqual(runner.getCanonicalEvents().map((event) => event.sequence));
+  });
+
+  it("hydrates huddle participant snapshots for protected Recall Plan without leaking to non-members", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "cara", name: "Cara" },
+      ],
+      { gameId: "game-recall-huddle-replay", now: fixedClock() },
+    );
+    gs.startRound();
+    gs.recordAllianceProposal({
+      allianceId: "alliance-ab",
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      proposerId: "alice",
+      name: "Alice Bob",
+      memberIds: ["alice", "bob"],
+      purpose: "Coordinate.",
+      timebox: null,
+    });
+    gs.recordAllianceResponse({
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      playerId: "bob",
+      response: "accepted",
+    });
+    gs.recordAllianceHuddleCompleted({
+      id: "session-ab",
+      scheduleId: "schedule-ab",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gs.round,
+      pass: 1,
+      speakerIds: ["alice", "bob"],
+      completedAt: "2026-07-26T00:00:00.000Z",
+    });
+    gs.recordAllianceHuddleOutcome({
+      id: "outcome-ab",
+      sessionId: "session-ab",
+      allianceId: "alliance-ab",
+      window: "pre_vote",
+      round: gs.round,
+      ask: "Hold.",
+      plan: "Pressure Cara.",
+      promises: [],
+      dissent: [],
+      confidence: "high",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      participantPlayerIds: ["alice", "bob"],
+      createdAt: "2026-07-26T00:00:01.000Z",
+    });
+
+    const resumed = GameState.fromCanonicalEvents(
+      JSON.parse(JSON.stringify(gs.getCanonicalEvents())),
+      { now: fixedClock() },
+    );
+    expect(resumed.getAllianceHuddleOutcomes()[0]?.participantPlayerIds).toEqual(["alice", "bob"]);
+
+    const logger = new TranscriptLogger(resumed);
+    const builder = new ContextBuilder(resumed, logger, new Map(), 3);
+    const emptyContinuity = {
+      strategyPacket: null,
+      reflectionSummary: null,
+      recentStrategicDecisions: [],
+      strategicEvidenceVersion: 0,
+    };
+    const alicePlan = compileRecallPlan({
+      actorId: "alice" as UUID,
+      promptClass: "strategic_decision",
+      continuity: emptyContinuity,
+      phaseContext: builder.buildPhaseContext("alice", Phase.VOTE),
+      transcript: [],
+    });
+    const caraPlan = compileRecallPlan({
+      actorId: "cara" as UUID,
+      promptClass: "strategic_decision",
+      continuity: emptyContinuity,
+      phaseContext: builder.buildPhaseContext("cara", Phase.VOTE),
+      transcript: [],
+    });
+    expect(alicePlan.protected.huddleOutcomes.map((o) => o.id)).toEqual(["outcome-ab"]);
+    expect(caraPlan.protected.huddleOutcomes).toEqual([]);
   });
 });

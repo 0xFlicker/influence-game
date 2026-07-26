@@ -3,6 +3,7 @@ import {
   buildMingleInboxReplayFromTranscript,
   hydrateMingleInboxFromReplay,
 } from "../mingle-inbox-replay";
+import { isActorAuthorizedDialogueCandidate } from "../context-recall-plan";
 import type { TranscriptEntry } from "../game-runner.types";
 import { Phase, type UUID } from "../types";
 
@@ -241,5 +242,32 @@ describe("buildMingleInboxReplayFromTranscript", () => {
 
     expect(replay.sourceRound).toBeNull();
     expect(replay.entries).toEqual([]);
+  });
+
+  test("display-name inbox rebuild does not upgrade rows into historical private recall", () => {
+    // Inbox hydration may resolve recipients by display name for current-room delivery.
+    // Historical Recall Plan eligibility is a separate fail-closed ID contract.
+    const legacyDisplayOnly = mingleEntry({
+      phase: Phase.MINGLE_I,
+      round: 1,
+      from: "Atlas",
+      to: ["Echo"],
+      text: "name-only private note",
+    });
+    expect(legacyDisplayOnly.speakerPlayerId).toBeUndefined();
+    expect(legacyDisplayOnly.audiencePlayerIds).toBeUndefined();
+
+    const replay = buildMingleInboxReplayFromTranscript({
+      transcriptReplay: [legacyDisplayOnly],
+      players: [...PLAYERS],
+    });
+    expect(replay.entries).toEqual([
+      { recipientId: "echo", messages: [{ from: "Atlas", text: "name-only private note" }] },
+    ]);
+
+    // Same row must not authorize private historical recall for any seat.
+    expect(isActorAuthorizedDialogueCandidate(legacyDisplayOnly, "atlas" as UUID)).toBe(false);
+    expect(isActorAuthorizedDialogueCandidate(legacyDisplayOnly, "echo" as UUID)).toBe(false);
+    expect(isActorAuthorizedDialogueCandidate(legacyDisplayOnly, "mira" as UUID)).toBe(false);
   });
 });
