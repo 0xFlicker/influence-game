@@ -56,6 +56,11 @@
  *   suitable for replaying into a game projection or serving through the local game MCP.
  *   This is the same canonical envelope persisted by API-backed games; CLI
  *   simulations remain local JSONL runs and do not write API database rows.
+ *   A direct accepted action may carry the fresh decision receipt returned by
+ *   that exact call; accepted writers do not use `getLastPrivateDecisionId()`.
+ *   API-backed runs reconcile trace/cognition/prompt-reuse rows only after the
+ *   durable append assigns the final sequence. CLI JSONL does not perform that
+ *   API-side reconciliation or historical backfill.
  *   API-backed durable checkpoints may expose a status-only hydration passport
  *   through admin inspection, but private player/House continuity capsules and
  *   model reasoning remain outside public transcript, websocket, and canonical

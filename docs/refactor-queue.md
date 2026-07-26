@@ -27,6 +27,7 @@ Five-question gate:
 Status legend:
 
 - `ready`: good candidate for near-term planning.
+- `implementation_complete/runtime_proof_pending`: implementation and automated proof landed; one explicit live validation gate remains before `closed`.
 - `future`: coherent, but should not be in the active queue unless the pain becomes visible.
 - `closed`: already implemented, superseded, or not a coherent current ask.
 
@@ -46,13 +47,13 @@ Items are ordered by current priority.
 
 ### R13. Accepted-action trace-to-event correlation
 
-- Status: `ready`
+- Status: `implementation_complete/runtime_proof_pending`
 - Consolidates: match-narrative token-efficiency plan U5 and live local-game evidence from `jade-black-mist`.
-- Sources: `docs/plans/2026-07-21-002-feat-match-narrative-token-efficiency-plan.md:78-83`, `docs/plans/2026-07-21-002-feat-match-narrative-token-efficiency-plan.md:420-445`, `packages/api/src/services/game-lifecycle.ts`, `packages/api/src/services/private-trace-writer.ts`.
-- Signal: private decision-trace manifests are successfully captured and stored, but accepted actions do not stamp an exact canonical event sequence or shared `decisionId` onto their evidence. Producer MCP can read the board facts and private traces, but cannot prove which trace produced a given vote, power, or Council action; actor/phase/round matching is only an inference.
-- Concrete seam: agent private-decision receipt, canonical event source pointers, accepted-action append path, cognitive-artifact and private-trace `eventSequence` assignment, and producer narrative `relatedActionRefs`.
-- Validation path: run a vote, power action, and Council action with trace capture; verify each accepted canonical event carries the decision identity and its linked cognition/trace records carry the accepted event sequence. Verify speech, reflection, intent-only, failed, and repaired decisions remain intentionally unlinked unless they produce an accepted board action. Confirm no private decision identity appears in player-facing event or transcript DTOs.
-- Suggested slice: mint/retain the existing private `decisionId`, thread it into producer-safe canonical source pointers, and stamp the final accepted event sequence after append. Do not backfill historical traces, treat private cognition as board truth, or link rejected decisions just to fill a metric.
+- Sources: `docs/plans/2026-07-25-001-fix-accepted-action-trace-correlation-plan.md`, the accepted-action registry, API reconciliation/read models, and DB-backed privacy/correlation tests.
+- Implemented: fresh per-call receipts cover the direct accepted-action inventory without consulting `getLastPrivateDecisionId()`; post-append reconciliation stamps manifest, cognition, and prompt-reuse rows; producer manifests/narrative expose exact navigation; non-producer event/transcript/watch/results lanes remove private pointers. Reconciliation is forward-only, idempotent, retryable, conflict-aware, and non-fatal. Historical backfill remains deliberately absent.
+- Automated proof: exhaustive registry coverage plus DB-backed exact-sequence, retry/degradation, prompt-reuse watermark, producer navigation, owner citation, sealed-ballot, actor-filter, API, results, transcript, and WebSocket privacy tests.
+- Remaining validation path: run one local API-backed game with private trace capture through representative vote, format, Power, and Council actions. In producer reads, reconcile `inspect_durable_run`, `list_trace_manifests`, `read_producer_match_narrative`, and exact-sequence `filter_events` before opening one bounded `read_trace_content`; confirm expected unlinked calls keep prompt-reuse coverage `partial` while linked actions advance the watermark.
+- Deferred: historical inference/backfill and a dedicated cache/linkage dashboard remain separate product decisions, not R13 exit work.
 
 ### R12. Player Strategy Thread checkpoint hydration
 

@@ -180,7 +180,7 @@ House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) a
 | Resolution aggregates | `format.resolved` | public | `filter_events`, `read_round_facts.format` (nets/totals/pools; no voter maps) |
 | Sealed ballots | `format.ballot_cast` | **producer** | producer `filter_events`; owner/producer scoped `read_round_facts.format.sealedBallots` |
 
-Private decision rationale (`thinking`, `reasoningContext`, `decisionLog`, model metadata) still comes only from dedicated transcript/turn/private-trace records and must never appear in public or owner round facts. R13 trace↔event correlation remains a separate queue item — do not treat format-facts work as closing that gap.
+Private decision rationale (`thinking`, `reasoningContext`, `decisionLog`, model metadata) still comes only from dedicated transcript/turn/private-trace records and must never appear in public or owner round facts. Direct accepted actions may now carry a producer-private decision source pointer, but player-safe event envelopes remove it before serialization.
 
 ```ts
 // Public format proof without private traces:
@@ -231,6 +231,31 @@ Simulation runs persist per-turn reasoning in local JSONL artifacts. API-backed 
 - The local Trace MCP (`cd packages/api && bun run mcp:trace`) is the local producer inspection path for API durable runs. Use `list_manifests` for metadata, `read_content` for explicit raw content reads, and `search_reasoning_traces` for bounded run-scoped search.
 - The deployed HTTP MCP surface is one `/mcp` resource with scope-filtered tools. User-facing grants use `agents:read`, `agents:write`, and `games:read` for rules, owned agents, supported pre-match enrollment, accessible game/season inspection, receipt-derived standings, owner exports, and authorized cognitive artifact reads; they do not expose private trace metadata, raw trace content, hidden competition ratings, opponent evidence, or revision magnitude. The `producer` scope plus the current `producer` role exposes explicit private trace tools and `read_producer_season_diagnostics` for developer/global inspection.
 - Agent revision snapshots now fingerprint the same owner-authored personality, backstory, strategy instructions, resolved model/provider/catalog, reasoning policy, tool-choice mode, and temperature passed into `InfluenceAgent`. Avatar-only and other presentation edits remain outside that analytical boundary. When validating prompt observability, compare the stored effective revision with the actual system-prompt sections and call configuration rather than treating the mutable profile row as historical truth.
+
+### Accepted-action correlation
+
+A fresh receipt from the exact model call may link a trace to the direct canonical event that accepted its value. Eligible actions are official alliance mutations, initial and empower-revote ballots, format selection and sealed ballots, Safety Bounce pointers, empowered format tiebreaks, Power actions, Council votes, endgame elimination votes and Tribunal jury tiebreaks, and jury winner votes. Intentional aggregate events may carry several decision pointers; derived tallies, eliminations, and round summaries are not extra citations.
+
+Speech, reflection, intent-only calls, passes, rejections, timeouts, unavailable methods, House-selected fallbacks, materially repaired choices, and legacy rows remain intentionally unlinked. Accepted-action writers use the receipt returned by the current call; this correlation path does not use mutable `getLastPrivateDecisionId()` state. A normalization may retain the receipt only when the phase acceptance check proves that the model's substantive choice did not change.
+
+The API reconciles relational sidecars only after the canonical append assigns the final sequence. Reconciliation is forward-only, current-owner scoped, idempotent, conflict-aware, retryable on later flush/finalization, and non-fatal to an already valid action. Raw trace objects and hashes remain immutable, and historical rows are not inferred or backfilled.
+
+Authority stays split:
+
+- Canonical events and projections establish what happened.
+- Owner narrative may attach only `{seq,type}` citations to already-authorized owned cognition; public dialogue alone cannot unlock a citation.
+- Producer narrative and trace manifests may expose exact decision/sequence linkage. Manifest `linkageSummary` separates fully linked accepted decisions, degraded accepted decisions, intentionally unlinked traces, and rows that cannot be classified behind an invalid canonical tail.
+- Public, player, transcript, watch, results, and ordinary `games:read` event responses never expose decision IDs or source pointers, and player actor filters never match through private pointers.
+
+Prompt-reuse correlation changes attribution, not the aggregate calculation. A rollup watermark is the highest accepted canonical sequence represented by linked prompt-reuse sources. `coverage: "partial"` remains correct when a run also contains expected unlinked calls; a nonzero watermark does not mean every trace should map to an action.
+
+For producer diagnosis, inspect indexes before content:
+
+1. Call `inspect_durable_run` and confirm the trusted event prefix plus prompt-reuse `coverage`, per-owner watermark, request/comparable counts, reusable-token estimate, and first-break counts.
+2. Call `list_trace_manifests`; inspect `linkageSummary`, then choose a linked manifest by `decisionId` and `eventSequence`.
+3. Use `read_producer_match_narrative` to confirm the same cognition group carries the minimal `{seq,type}` action citation.
+4. Use producer `filter_events` at that exact sequence/type to verify the canonical envelope and decision source pointer.
+5. Only then call `read_trace_content` for that explicit manifest, with a bounded `maxBytes`. Raw content explains the choice; it never repairs missing board history.
 
 Private trace content is not public transcript, not canonical board truth, and not checkpoint resume authority. It is the API durable-run sibling of `game-N-turns.jsonl`: useful for debugging one weird run, not a product/admin content portal.
 
