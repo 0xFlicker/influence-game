@@ -1834,8 +1834,8 @@ function gameIdentity(
 
 function eventResult(
   row: TrustedPersistedGameEvent,
-  matchSources: string[] = [],
-  includePrivateCorrelation = true,
+  matchSources: string[],
+  includePrivateCorrelation: boolean,
 ): ProductionGameEventResult {
   return {
     gameId: row.gameId,

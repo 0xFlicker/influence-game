@@ -19,18 +19,27 @@ function summarizePromptReuseSources(
   rows: ReadonlyArray<typeof schema.gamePromptReuseAppliedSources.$inferSelect>,
 ): PromptReuseRollupValues {
   const firstBreakCounts: Record<string, number> = {};
+  let comparableCount = 0;
+  let reusableCharacters = 0;
+  let reusableTokenEstimate = 0;
+  let watermark = 0;
   for (const row of rows) {
-    if (!row.firstBreak) continue;
-    firstBreakCounts[row.firstBreak] = (firstBreakCounts[row.firstBreak] ?? 0) + 1;
+    if (row.comparable) comparableCount += 1;
+    reusableCharacters += row.reusableCharacters;
+    reusableTokenEstimate += row.reusableTokenEstimate;
+    watermark = Math.max(watermark, row.eventSequence);
+    if (row.firstBreak) {
+      firstBreakCounts[row.firstBreak] = (firstBreakCounts[row.firstBreak] ?? 0) + 1;
+    }
   }
 
   return {
     requestCount: rows.length,
-    comparableCount: rows.filter((row) => row.comparable).length,
-    reusableCharacters: rows.reduce((total, row) => total + row.reusableCharacters, 0),
-    reusableTokenEstimate: rows.reduce((total, row) => total + row.reusableTokenEstimate, 0),
+    comparableCount,
+    reusableCharacters,
+    reusableTokenEstimate,
     firstBreakCounts,
-    watermark: Math.max(0, ...rows.map((row) => row.eventSequence)),
+    watermark,
   };
 }
 

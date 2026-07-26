@@ -7,7 +7,6 @@ import {
 import {
   attachTrustedRelatedActionRefs,
   buildTrustedAcceptedActionIndex,
-  buildTrustedVoteCastIndex,
   resolveTrustedRefsForGroup,
 } from "../services/match-narrative-canonical-actions.js";
 import type { NarrativeGroup } from "../services/match-narrative-grouping.js";
@@ -187,7 +186,7 @@ function dialogueOnlyGroup(decisionId: string, actorPlayerId: string): Narrative
 describe("match-narrative-canonical-actions", () => {
   test("indexes trusted vote.cast by decisionId with agreement fields", () => {
     const decisionId = "dec-1";
-    const index = buildTrustedVoteCastIndex([
+    const index = buildTrustedAcceptedActionIndex([
       voteCastEvent({
         sequence: 37,
         voterId: "alice",
@@ -343,7 +342,7 @@ describe("match-narrative-canonical-actions", () => {
 
   test("exact match attaches citation; mismatches and dialogue-only do not", () => {
     const decisionId = "dec-1";
-    const index = buildTrustedVoteCastIndex([
+    const index = buildTrustedAcceptedActionIndex([
       voteCastEvent({
         sequence: 37,
         voterId: "alice",
@@ -407,12 +406,12 @@ describe("match-narrative-canonical-actions", () => {
   });
 
   test("absent decisionId, actor mismatch on pointer, and pin ignore later events", () => {
-    const indexNoId = buildTrustedVoteCastIndex([
+    const indexNoId = buildTrustedAcceptedActionIndex([
       voteCastEvent({ sequence: 10, voterId: "alice" }),
     ]);
     expect(indexNoId.byDecisionId.size).toBe(0);
 
-    const indexMismatch = buildTrustedVoteCastIndex([
+    const indexMismatch = buildTrustedAcceptedActionIndex([
       voteCastEvent({
         sequence: 11,
         voterId: "alice",
@@ -444,7 +443,7 @@ describe("match-narrative-canonical-actions", () => {
     ]);
     expect(malformed.byDecisionId.size).toBe(0);
 
-    const pinned = buildTrustedVoteCastIndex(
+    const pinned = buildTrustedAcceptedActionIndex(
       [
         voteCastEvent({
           sequence: 5,
@@ -466,7 +465,7 @@ describe("match-narrative-canonical-actions", () => {
 
   test("ambiguous multi-sequence decisions do not cite and missing indexes strip stale refs", () => {
     const decisionId = "dec-1";
-    const index = buildTrustedVoteCastIndex([
+    const index = buildTrustedAcceptedActionIndex([
       voteCastEvent({ sequence: 40, voterId: "alice", decisionId }),
       voteCastEvent({ sequence: 37, voterId: "alice", decisionId }),
     ]);
@@ -498,7 +497,7 @@ describe("match-narrative-canonical-actions", () => {
   });
 
   test("never indexes non-vote action strings on vote.cast", () => {
-    const index = buildTrustedVoteCastIndex([
+    const index = buildTrustedAcceptedActionIndex([
       voteCastEvent({
         sequence: 1,
         voterId: "alice",

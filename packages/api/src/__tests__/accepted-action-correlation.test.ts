@@ -51,8 +51,10 @@ async function seedSidecars(
     ownerEpoch: string;
     decisionId: string;
     eventSequence?: number;
+    action?: string;
   },
 ): Promise<void> {
+  const action = params.action ?? "vote";
   await db.insert(schema.gameEvidenceManifests).values({
     id: randomUUID(),
     gameId: params.gameId,
@@ -62,7 +64,7 @@ async function seedSidecars(
     evidenceType: "private_decision_trace",
     retentionClass: "debug",
     accessScope: "producer_admin",
-    metadata: { action: "vote" },
+    metadata: { action },
   });
   await db.insert(schema.gameCognitiveArtifacts).values({
     id: randomUUID(),
@@ -72,7 +74,7 @@ async function seedSidecars(
     captureVersion: 1,
     artifactType: "thinking",
     actorRole: "player",
-    action: "vote",
+    action,
     phase: Phase.VOTE,
     round: 1,
     payloadByteLength: 2,
@@ -299,6 +301,73 @@ describe("accepted action correlation", () => {
     });
   });
 
+  test("refuses sidecars whose trace action does not match the accepted action", async () => {
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const decisionId = randomUUID();
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch,
+      events: [voteEvent(gameId, decisionId)],
+    });
+    await seedSidecars(db, {
+      gameId,
+      ownerEpoch,
+      decisionId,
+      action: "reflection",
+    });
+
+    const result = await reconcileAcceptedActionCorrelations(db, { gameId, ownerEpoch });
+
+    expect(result).toMatchObject({
+      eligibleDecisionCount: 1,
+      linkedDecisionCount: 0,
+      conflictDecisionCount: 1,
+      updatedManifestCount: 0,
+      updatedCognitiveArtifactCount: 0,
+      updatedPromptReuseSourceCount: 0,
+      diagnostics: [{
+        code: "accepted_action_trace_action_mismatch",
+        decisionId,
+        eventSequence: 1,
+        expectedAction: "vote",
+        mismatchedSources: ["manifest", "cognition"],
+      }],
+    });
+  });
+
+  test("does not infer pre-migration links without a decision-bearing manifest", async () => {
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const decisionId = randomUUID();
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch,
+      events: [voteEvent(gameId, decisionId)],
+    });
+    await seedSidecars(db, { gameId, ownerEpoch, decisionId });
+    await db.delete(schema.gameEvidenceManifests)
+      .where(eq(schema.gameEvidenceManifests.decisionId, decisionId));
+
+    const result = await reconcileAcceptedActionCorrelations(db, { gameId, ownerEpoch });
+
+    expect(result).toMatchObject({
+      eligibleDecisionCount: 1,
+      linkedDecisionCount: 0,
+      missingCaptureDecisionCount: 1,
+      updatedManifestCount: 0,
+      updatedCognitiveArtifactCount: 0,
+      updatedPromptReuseSourceCount: 0,
+    });
+    const cognition = (await db.select().from(schema.gameCognitiveArtifacts)
+      .where(eq(schema.gameCognitiveArtifacts.decisionId, decisionId)))[0]!;
+    const promptSource = (await db.select()
+      .from(schema.gamePromptReuseAppliedSources)
+      .where(eq(schema.gamePromptReuseAppliedSources.decisionId, decisionId)))[0]!;
+    expect(cognition.eventSequence).toBeNull();
+    expect(promptSource.eventSequence).toBe(0);
+  });
+
   test("repairs missing current-owner capture on a later empty flush", async () => {
     const gameId = await insertGame(db, { status: "in_progress" });
     const ownerEpoch = await insertOwner(db, gameId);
@@ -347,14 +416,47 @@ describe("accepted action correlation", () => {
     });
   });
 
+  test("preserves unrelated owner degradation through correlation failure and recovery", async () => {
+    const gameId = await insertGame(db, { status: "in_progress" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const decisionId = randomUUID();
+    await db.update(schema.gameRunOwners)
+      .set({
+        kernelHealth: "degraded",
+        failureReason: "checkpoint_write_failed: sentinel",
+      })
+      .where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch));
+
+    await appendDurableEventsAndPublishWatchState(db, {
+      gameId,
+      ownerEpoch,
+      events: [voteEvent(gameId, decisionId)],
+    });
+    await seedSidecars(db, { gameId, ownerEpoch, decisionId });
+    await appendDurableEventsAndPublishWatchState(db, {
+      gameId,
+      ownerEpoch,
+      events: [],
+    });
+
+    const owner = (await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, ownerEpoch)))[0]!;
+    expect(owner).toMatchObject({
+      kernelHealth: "degraded",
+      failureReason: "checkpoint_write_failed: sentinel",
+    });
+  });
+
   test("reconciles the final accepted jury vote before the winner early return", async () => {
     const gameId = await insertGame(db, { status: "in_progress" });
     const ownerEpoch = await insertOwner(db, gameId);
     const decisionId = randomUUID();
-    await seedSidecars(db, { gameId, ownerEpoch, decisionId });
-    await db.update(schema.gameEvidenceManifests)
-      .set({ metadata: { action: "jury-vote" } })
-      .where(eq(schema.gameEvidenceManifests.decisionId, decisionId));
+    await seedSidecars(db, {
+      gameId,
+      ownerEpoch,
+      decisionId,
+      action: "jury-vote",
+    });
     await db.update(schema.gameCognitiveArtifacts)
       .set({ action: "jury-vote", phase: Phase.JURY_VOTE, round: 4 })
       .where(eq(schema.gameCognitiveArtifacts.decisionId, decisionId));
@@ -414,7 +516,12 @@ describe("accepted action correlation", () => {
     const ownerEpoch = await insertOwner(db, gameId);
     const decisionIds = [randomUUID(), randomUUID()];
     for (const decisionId of decisionIds) {
-      await seedSidecars(db, { gameId, ownerEpoch, decisionId });
+      await seedSidecars(db, {
+        gameId,
+        ownerEpoch,
+        decisionId,
+        action: "tribunal-jury-tiebreaker-vote",
+      });
     }
 
     await appendGameEvents(db, {

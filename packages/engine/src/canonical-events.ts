@@ -54,7 +54,6 @@ export interface CanonicalSourcePointer {
 export type AcceptedActionCardinality = "one_to_one" | "many_to_one";
 
 export interface AcceptedActionRegistryEntry {
-  eventType: CanonicalGameEventType;
   /** Action vocabulary written on the canonical source pointer. */
   sourceActions: readonly string[];
   /** Private trace action vocabulary accepted for the same direct action. */
@@ -115,28 +114,24 @@ export type CanonicalGameEventType =
  */
 export const ACCEPTED_ACTION_REGISTRY = {
   "vote.cast": {
-    eventType: "vote.cast",
     sourceActions: ["vote"],
     traceActions: ["vote"],
     actorPayloadPath: "voterId",
     cardinality: "one_to_one",
   },
   "vote.empower_revote_cast": {
-    eventType: "vote.empower_revote_cast",
     sourceActions: ["empower-revote"],
     traceActions: ["empower-revote"],
     actorPayloadPath: "voterId",
     cardinality: "one_to_one",
   },
   "format.selected": {
-    eventType: "format.selected",
     sourceActions: ["format-pick"],
     traceActions: ["format-pick"],
     actorPayloadPath: "empoweredId",
     cardinality: "one_to_one",
   },
   "format.ballot_cast": {
-    eventType: "format.ballot_cast",
     sourceActions: [
       "format-save-or-eliminate-ballot",
       "format-vote-bomb-ballot",
@@ -151,77 +146,66 @@ export const ACCEPTED_ACTION_REGISTRY = {
     cardinality: "one_to_one",
   },
   "format.safety_bounce_pointer": {
-    eventType: "format.safety_bounce_pointer",
     sourceActions: ["bounce-pointer"],
     traceActions: ["bounce-pointer"],
     actorPayloadPath: "actorId",
     cardinality: "one_to_one",
   },
   "format.resolved": {
-    eventType: "format.resolved",
     sourceActions: ["format-tiebreak"],
     traceActions: ["format-tiebreak"],
     actorPayloadPath: "tiebreakerId",
     cardinality: "one_to_one",
   },
   "power.action_set": {
-    eventType: "power.action_set",
     sourceActions: ["power", "power-action"],
     traceActions: ["power"],
     actorPayloadPath: null,
     cardinality: "one_to_one",
   },
   "alliance.proposal_submitted": {
-    eventType: "alliance.proposal_submitted",
     sourceActions: ["alliance-action"],
     traceActions: ["alliance-action"],
     actorPayloadPath: "lineage.versions[].proposerId",
     cardinality: "one_to_one",
   },
   "alliance.response_recorded": {
-    eventType: "alliance.response_recorded",
     sourceActions: ["alliance-action"],
     traceActions: ["alliance-action"],
     actorPayloadPath: "playerId",
     cardinality: "one_to_one",
   },
   "alliance.counter_submitted": {
-    eventType: "alliance.counter_submitted",
     sourceActions: ["alliance-action"],
     traceActions: ["alliance-action"],
     actorPayloadPath: "lineage.versions[].proposerId",
     cardinality: "one_to_one",
   },
   "alliance.amendment_resolved": {
-    eventType: "alliance.amendment_resolved",
     sourceActions: ["alliance-action"],
     traceActions: ["alliance-action"],
     actorPayloadPath: "lineage.versions[].proposerId",
     cardinality: "one_to_one",
   },
   "council.vote_cast": {
-    eventType: "council.vote_cast",
     sourceActions: ["council-vote"],
     traceActions: ["council-vote"],
     actorPayloadPath: "voterId",
     cardinality: "one_to_one",
   },
   "endgame.elimination_vote_cast": {
-    eventType: "endgame.elimination_vote_cast",
     sourceActions: ["elimination-vote"],
     traceActions: ["elimination-vote"],
     actorPayloadPath: "voterId",
     cardinality: "one_to_one",
   },
   "endgame.elimination_resolved": {
-    eventType: "endgame.elimination_resolved",
     sourceActions: ["tribunal-jury-tiebreaker-vote"],
     traceActions: ["tribunal-jury-tiebreaker-vote"],
     actorPayloadPath: null,
     cardinality: "many_to_one",
   },
   "jury.vote_cast": {
-    eventType: "jury.vote_cast",
     sourceActions: ["jury-vote"],
     traceActions: ["jury-vote"],
     actorPayloadPath: "jurorId",
@@ -233,6 +217,89 @@ export function acceptedActionRegistryEntry(
   eventType: CanonicalGameEventType,
 ): AcceptedActionRegistryEntry | undefined {
   return ACCEPTED_ACTION_REGISTRY[eventType as keyof typeof ACCEPTED_ACTION_REGISTRY];
+}
+
+export interface AcceptedActionSourcePointerMatch {
+  pointer: CanonicalSourcePointer & {
+    actorId: UUID;
+    action: string;
+    decisionId: UUID;
+  };
+  registry: AcceptedActionRegistryEntry;
+  traceAction: string;
+}
+
+export function acceptedActionSourcePointerMatches(
+  event: CanonicalGameEvent,
+): AcceptedActionSourcePointerMatch[] {
+  const registry = acceptedActionRegistryEntry(event.type);
+  if (!registry) return [];
+
+  return event.sourcePointers.flatMap((pointer) => {
+    if (
+      pointer.kind !== "agent_turn"
+      || typeof pointer.actorId !== "string"
+      || pointer.actorId.length === 0
+      || typeof pointer.action !== "string"
+      || pointer.action.length === 0
+      || typeof pointer.decisionId !== "string"
+      || pointer.decisionId.length === 0
+    ) {
+      return [];
+    }
+    if (
+      registry.actorPayloadPath !== null
+      && !readAcceptedActionPayloadPath(
+        event.payload,
+        registry.actorPayloadPath,
+      ).includes(pointer.actorId)
+    ) {
+      return [];
+    }
+
+    const traceAction = normalizeAcceptedActionTraceAction(
+      registry,
+      pointer.action,
+    );
+    return traceAction
+      ? [{
+          pointer: pointer as AcceptedActionSourcePointerMatch["pointer"],
+          registry,
+          traceAction,
+        }]
+      : [];
+  });
+}
+
+function normalizeAcceptedActionTraceAction(
+  registry: AcceptedActionRegistryEntry,
+  sourceAction: string,
+): string | undefined {
+  const sourceIndex = registry.sourceActions.indexOf(sourceAction);
+  if (sourceIndex < 0) return undefined;
+  if (registry.traceActions.includes(sourceAction)) return sourceAction;
+  if (registry.traceActions.length === 1) return registry.traceActions[0];
+  return registry.traceActions[sourceIndex];
+}
+
+function readAcceptedActionPayloadPath(payload: unknown, path: string): unknown[] {
+  let values: unknown[] = [payload];
+  for (const segment of path.split(".")) {
+    const arraySegment = segment.endsWith("[]");
+    const key = arraySegment ? segment.slice(0, -2) : segment;
+    const next: unknown[] = [];
+    for (const value of values) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+      const child = (value as Record<string, unknown>)[key];
+      if (arraySegment) {
+        if (Array.isArray(child)) next.push(...child);
+      } else {
+        next.push(child);
+      }
+    }
+    values = next;
+  }
+  return values;
 }
 
 export type JudgmentSpeechKind =

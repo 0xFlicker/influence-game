@@ -11,9 +11,8 @@
  */
 
 import {
-  ACCEPTED_ACTION_REGISTRY,
+  acceptedActionSourcePointerMatches,
   type CanonicalGameEvent,
-  type CanonicalSourcePointer,
 } from "@influence/engine";
 import type {
   NarrativeGroup,
@@ -82,9 +81,6 @@ export function buildTrustedAcceptedActionIndex(
 
   return { byDecisionId, lastTrustedSequence };
 }
-
-/** @deprecated Use buildTrustedAcceptedActionIndex. */
-export const buildTrustedVoteCastIndex = buildTrustedAcceptedActionIndex;
 
 /**
  * Attach trusted relatedActionRefs to groups that already contain authorized
@@ -166,119 +162,41 @@ export function resolveTrustedRefsForGroup(
 function extractAcceptedActionEntries(
   envelope: CanonicalGameEvent,
 ): TrustedCanonicalActionIndexEntry[] {
-  const registry = ACCEPTED_ACTION_REGISTRY[
-    envelope.type as keyof typeof ACCEPTED_ACTION_REGISTRY
-  ];
-  if (!registry) return [];
-  const pointers = envelope.sourcePointers;
-  if (!Array.isArray(pointers) || pointers.length === 0) return [];
-
   const entries: TrustedCanonicalActionIndexEntry[] = [];
-  for (const pointer of pointers) {
-    const extracted = entryFromPointer(
-      envelope,
-      registry,
-      pointer,
-    );
-    if (extracted) entries.push(extracted);
+  const matches = acceptedActionSourcePointerMatches(envelope);
+  for (const { pointer, traceAction } of matches) {
+    if (
+      typeof pointer.phase !== "string"
+      || pointer.phase.length === 0
+      || typeof envelope.phase !== "string"
+      || pointer.phase !== envelope.phase
+      || typeof pointer.round !== "number"
+      || !Number.isInteger(pointer.round)
+      || typeof envelope.round !== "number"
+      || !Number.isInteger(envelope.round)
+      || pointer.round !== envelope.round
+    ) {
+      continue;
+    }
+    entries.push({
+      eventSequence: envelope.sequence,
+      eventType: envelope.type,
+      decisionId: pointer.decisionId,
+      actorPlayerId: pointer.actorId,
+      action: traceAction,
+      phase: pointer.phase,
+      round: pointer.round,
+    });
   }
 
   const uniqueDecisionIds = new Set(entries.map((entry) => entry.decisionId));
-  if (registry.cardinality === "one_to_one" && uniqueDecisionIds.size > 1) {
+  if (
+    matches[0]?.registry.cardinality === "one_to_one"
+    && uniqueDecisionIds.size > 1
+  ) {
     return [];
   }
   return entries;
-}
-
-function entryFromPointer(
-  envelope: CanonicalGameEvent,
-  registry: (typeof ACCEPTED_ACTION_REGISTRY)[keyof typeof ACCEPTED_ACTION_REGISTRY],
-  pointer: CanonicalSourcePointer | Record<string, unknown>,
-): TrustedCanonicalActionIndexEntry | null {
-  if (!pointer || typeof pointer !== "object") return null;
-  if (!("kind" in pointer) || pointer.kind !== "agent_turn") return null;
-  const decisionId = "decisionId" in pointer ? pointer.decisionId : undefined;
-  if (typeof decisionId !== "string" || decisionId.length === 0) return null;
-
-  const pointerActor = "actorId" in pointer ? pointer.actorId : undefined;
-  if (typeof pointerActor !== "string" || pointerActor.length === 0) {
-    return null;
-  }
-  if (
-    registry.actorPayloadPath !== null
-    && !readPayloadPath(envelope.payload, registry.actorPayloadPath).includes(pointerActor)
-  ) return null;
-
-  const pointerAction = "action" in pointer ? pointer.action : undefined;
-  if (typeof pointerAction !== "string" || pointerAction.length === 0) return null;
-  const action = normalizeTraceAction(registry, pointerAction);
-  if (!action) return null;
-
-  const pointerPhase = "phase" in pointer ? pointer.phase : undefined;
-  const envelopePhase = envelope.phase;
-  if (
-    typeof pointerPhase !== "string"
-    || pointerPhase.length === 0
-    || typeof envelopePhase !== "string"
-    || pointerPhase !== envelopePhase
-  ) {
-    return null;
-  }
-
-  const pointerRound = "round" in pointer ? pointer.round : undefined;
-  const envelopeRound = envelope.round;
-  if (
-    typeof pointerRound !== "number"
-    || !Number.isInteger(pointerRound)
-    || typeof envelopeRound !== "number"
-    || !Number.isInteger(envelopeRound)
-    || pointerRound !== envelopeRound
-  ) {
-    return null;
-  }
-
-  return {
-    eventSequence: envelope.sequence,
-    eventType: envelope.type,
-    decisionId,
-    actorPlayerId: pointerActor,
-    action,
-    phase: pointerPhase,
-    round: pointerRound,
-  };
-}
-
-function normalizeTraceAction(
-  registry: (typeof ACCEPTED_ACTION_REGISTRY)[keyof typeof ACCEPTED_ACTION_REGISTRY],
-  sourceAction: string,
-): string | null {
-  const sourceActions = registry.sourceActions as readonly string[];
-  const traceActions = registry.traceActions as readonly string[];
-  const sourceIndex = sourceActions.indexOf(sourceAction);
-  if (sourceIndex < 0) return null;
-  if (traceActions.includes(sourceAction)) return sourceAction;
-  if (traceActions.length === 1) return traceActions[0] ?? null;
-  return traceActions[sourceIndex] ?? null;
-}
-
-function readPayloadPath(payload: unknown, path: string): unknown[] {
-  let values: unknown[] = [payload];
-  for (const segment of path.split(".")) {
-    const arraySegment = segment.endsWith("[]");
-    const key = arraySegment ? segment.slice(0, -2) : segment;
-    const next: unknown[] = [];
-    for (const value of values) {
-      if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-      const child = (value as Record<string, unknown>)[key];
-      if (arraySegment) {
-        if (Array.isArray(child)) next.push(...child);
-      } else {
-        next.push(child);
-      }
-    }
-    values = next;
-  }
-  return values;
 }
 
 function actorAgrees(memberActor: string | null | undefined, candidateActor: string): boolean {

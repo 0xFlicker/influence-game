@@ -17,6 +17,7 @@ export type { CanonicalEventListener } from "./canonical-event-log";
 export {
   ACCEPTED_ACTION_REGISTRY,
   acceptedActionRegistryEntry,
+  acceptedActionSourcePointerMatches,
   assertCanonicalGameEvent,
   canonicalEventIsVisibleTo,
   validateCanonicalGameEvent,
@@ -30,6 +31,7 @@ export type {
   CanonicalGameEventType,
   CanonicalSourcePointer,
   CanonicalSourcePointerKind,
+  AcceptedActionSourcePointerMatch,
   EndgameSpeechKind,
   FormalSpeechProvenance,
   JudgmentSpeechKind,
