@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createElement } from "react";
@@ -11,6 +11,10 @@ import {
 } from "../components/agent-avatar-preview";
 import { setApiBase } from "../lib/api";
 import { PERSONAS } from "../lib/personas";
+
+afterEach(() => {
+  setApiBase("");
+});
 
 describe("AgentAvatar", () => {
   it("uses personaKey for generated persona display text", () => {

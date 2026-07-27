@@ -11,6 +11,7 @@ const managedAuthEnvKeys = [
   "NEXT_PUBLIC_API_URL",
   "WS_URL",
   "NEXT_PUBLIC_WS_URL",
+  "MCP_OAUTH_RESOURCE_URI",
 ] as const;
 
 const originalEnv = Object.fromEntries(
@@ -47,6 +48,15 @@ describe("managed authentication public runtime config", () => {
 
     expect(config.API_URL).toBe("");
     expect(config.WS_URL).toBe("");
+    expect(config.MCP_OAUTH_RESOURCE_URI).toBe("");
+  });
+
+  it("exposes the canonical MCP OAuth resource URI", () => {
+    process.env.MCP_OAUTH_RESOURCE_URI = "https://thehouse.game/mcp";
+
+    expect(getPublicRuntimeConfig().MCP_OAUTH_RESOURCE_URI).toBe(
+      "https://thehouse.game/mcp",
+    );
   });
 
   it("exposes only the publishable key and mode when managed auth is enabled", () => {

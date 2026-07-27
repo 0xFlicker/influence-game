@@ -19,7 +19,7 @@ const originalFetch = globalThis.fetch;
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  setApiBase("http://127.0.0.1:3000");
+  setApiBase("");
 });
 
 describe("AdminPostgameMedia", () => {

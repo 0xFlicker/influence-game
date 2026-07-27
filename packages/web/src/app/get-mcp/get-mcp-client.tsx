@@ -109,7 +109,10 @@ export function GetMcpClient() {
   const runtimeConfig = useRuntimeConfig();
   const browserOrigin =
     typeof window === "undefined" ? undefined : window.location.origin;
-  const mcpUrl = getMcpResourceUrl(runtimeConfig.API_URL, browserOrigin);
+  const mcpUrl = getMcpResourceUrl(
+    runtimeConfig.MCP_OAUTH_RESOURCE_URI,
+    browserOrigin,
+  );
 
   return (
     <GetMcpSetupContent

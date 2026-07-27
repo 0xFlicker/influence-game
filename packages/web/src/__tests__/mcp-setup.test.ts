@@ -5,14 +5,25 @@ import {
 } from "../lib/mcp-setup";
 
 describe("getMcpResourceUrl", () => {
-  it("derives /mcp from the runtime API origin", () => {
-    expect(getMcpResourceUrl("https://api.influence.example/")).toBe(
-      "https://api.influence.example/mcp",
+  it("uses the configured OAuth resource URI without rebuilding it", () => {
+    expect(getMcpResourceUrl("https://api.influence.example/mcp?tenant=game")).toBe(
+      "https://api.influence.example/mcp?tenant=game",
     );
   });
 
-  it("falls back to the local API default when runtime config is absent", () => {
-    expect(getMcpResourceUrl("")).toBe("http://127.0.0.1:3000/mcp");
+  it("falls back to the public browser origin when runtime config is absent", () => {
+    expect(getMcpResourceUrl("", "https://thehouse.game")).toBe(
+      "https://thehouse.game/mcp",
+    );
+  });
+
+  it("uses localhost for local browser origins when runtime config is absent", () => {
+    expect(getMcpResourceUrl("", "http://localhost:3001")).toBe(
+      "http://localhost:3000/mcp",
+    );
+    expect(getMcpResourceUrl("", "http://127.0.0.1:3001")).toBe(
+      "http://localhost:3000/mcp",
+    );
   });
 });
 

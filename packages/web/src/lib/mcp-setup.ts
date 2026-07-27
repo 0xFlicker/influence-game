@@ -1,5 +1,5 @@
 export const DEFAULT_MCP_SERVER_NAME = "the-house-influence";
-export const DEFAULT_LOCAL_API_URL = "http://127.0.0.1:3000";
+export const DEFAULT_LOCAL_MCP_RESOURCE_URI = "http://localhost:3000/mcp";
 export const GROK_CONNECTORS_URL = "https://grok.com/connectors";
 
 export type McpSetupClientId =
@@ -23,24 +23,41 @@ function trimmed(value: string | null | undefined): string {
 
 function originFrom(url: string): string | null {
   try {
-    return new URL(url).origin;
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.origin;
   } catch {
     return null;
   }
 }
 
+function isHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isLoopbackOrigin(origin: string): boolean {
+  const hostname = new URL(origin).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
+}
+
 export function getMcpResourceUrl(
-  apiUrl?: string | null,
+  resourceUri?: string | null,
   browserOrigin?: string | null,
 ): string {
-  const configuredOrigin = originFrom(trimmed(apiUrl));
-  if (configuredOrigin) return `${configuredOrigin}/mcp`;
-
-  const localOrigin = originFrom(DEFAULT_LOCAL_API_URL);
-  if (localOrigin) return `${localOrigin}/mcp`;
+  const configuredResourceUri = trimmed(resourceUri);
+  if (isHttpUrl(configuredResourceUri)) return configuredResourceUri;
 
   const fallbackOrigin = originFrom(trimmed(browserOrigin));
-  return `${fallbackOrigin ?? ""}/mcp`;
+  if (fallbackOrigin && !isLoopbackOrigin(fallbackOrigin)) {
+    return `${fallbackOrigin}/mcp`;
+  }
+
+  return DEFAULT_LOCAL_MCP_RESOURCE_URI;
 }
 
 export function buildMcpSetupClients(

@@ -22,6 +22,7 @@ export interface RuntimeConfig {
   MANAGED_AUTH_MODE: ManagedAuthMode;
   API_URL: string;
   WS_URL: string;
+  MCP_OAUTH_RESOURCE_URI: string;
   ADMIN_ADDRESS: string;
   EPHEMERAL: boolean;
   EPHEMERAL_PR: string;
@@ -43,6 +44,7 @@ const defaults: RuntimeConfig = {
   MANAGED_AUTH_MODE: "disabled",
   API_URL: process.env.NEXT_PUBLIC_API_URL ?? "",
   WS_URL: process.env.NEXT_PUBLIC_WS_URL ?? "",
+  MCP_OAUTH_RESOURCE_URI: process.env.MCP_OAUTH_RESOURCE_URI ?? "",
   ADMIN_ADDRESS: process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? "",
   EPHEMERAL: false,
   EPHEMERAL_PR: "",

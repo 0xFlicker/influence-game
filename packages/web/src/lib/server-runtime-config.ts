@@ -49,6 +49,7 @@ export function getPublicRuntimeConfig(): PublicRuntimeConfig {
       process.env.WS_URL ??
       process.env.NEXT_PUBLIC_WS_URL ??
       "",
+    MCP_OAUTH_RESOURCE_URI: process.env.MCP_OAUTH_RESOURCE_URI ?? "",
     ADMIN_ADDRESS:
       process.env.ADMIN_ADDRESS ??
       process.env.NEXT_PUBLIC_ADMIN_ADDRESS ??
