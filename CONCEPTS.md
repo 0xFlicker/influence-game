@@ -2,9 +2,17 @@
 
 Shared domain vocabulary for this project — entities, named processes, and status concepts with project-specific meaning. Seeded with core domain vocabulary, then accretes as ce-compound and ce-compound-refresh process learnings; direct edits are fine. Glossary only, not a spec or catch-all.
 
+## Operator
+
+A human account holder or viewer interacting with Influence outside the game fiction, including anonymous web viewers, authenticated viewers, agent owners, and producers. Operator must not be used as a synonym for an AI competitor. When an audience description includes both humans and automated readers, name the exact lanes rather than calling all of them players.
+
+## Agent
+
+An AI competitor participating in an Influence game. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.
+
 ## TranscriptEntry
 
-The chronological dialogue and observability record for a game. It may be displayed, searched, styled, and analyzed, but it is not canonical game truth: accepted state, decisions, tallies, phase transitions, results, and replay choreography derive from canonical events and projections, never transcript prose. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from players) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public player text never contains hidden reasoning. Modern product capture may also carry normalized actor identity, audience player IDs, dialogue kind, and formal-speech correlation context used by owner match-read DTOs; diary/thinking rows stay outside dialogue identity.
+The chronological dialogue and observability record for a game. It may be displayed, searched, styled, and analyzed, but it is not canonical game truth: accepted state, decisions, tallies, phase transitions, results, and replay choreography derive from canonical events and projections, never transcript prose. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from other agents) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public agent text never contains hidden reasoning. Modern product capture may also carry normalized actor identity, audience player IDs, dialogue kind, and formal-speech correlation context used by owner match-read DTOs; diary/thinking rows stay outside dialogue identity.
 
 Public websocket `message` events expose a selected `PublicWsTranscriptEntry` subset for live watchers rather than copying the full internal entry. Viewer-safe `thinking`, public room metadata (`rooms` and `excluded` only), anonymous rumor metadata (`anonymous` and `displayOrder`), sender, scope, text, phase, round, recipients, and timestamps may cross that boundary; `reasoningContext`, room allocation diagnostics, private trace pointers, raw prompts/responses, storage keys, source pointers, and decision logs may not. Entries with `scope: "huddle"` are hidden alliance-room evidence and are not published to generic public websocket watchers or public transcript export by default. The public web/replay alliance projection is a separate audience surface that may show huddle speech while omitting thinking and producer/debug internals.
 
@@ -63,7 +71,7 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects a player who chooses the round’s elimination format from a House-offered menu, players may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format menu, Save-or-eliminate, Vote Bomb, and Safety Bounce.
+The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format menu, Save-or-eliminate, Vote Bomb, and Safety Bounce.
 
 ## Round format
 
@@ -71,31 +79,31 @@ The active elimination (and optional social) ruleset for one standard round afte
 
 ## Format menu
 
-The two distinct legal round formats The House offers after empower resolves. The empowered player must pick exactly one. Menu construction may use cast-size fitness and anti-repeat pressure so games show format variety; it is not a post-pick parameter twist inside a format.
+The two distinct legal round formats The House offers after empower resolves. The empowered agent must pick exactly one. Menu construction may use cast-size fitness and anti-repeat pressure so games show format variety; it is not a post-pick parameter twist inside a format.
 
 ## Save-or-eliminate
 
-A launch round format where each alive player casts one ballot as either a save (+1 net to a living target) or an eliminate (−1 net to a living target). Lowest net score is eliminated; ties are broken by the empowered player.
+A launch round format where each alive agent casts one ballot as either a save (+1 net to another living agent) or an eliminate (−1 net to another living agent). Lowest net score is eliminated; ties are broken by the empowered agent.
 
 ## Vote Bomb
 
-Also called Fewest Votes. A launch round format where each alive player casts one non-self elimination-direction vote. Players who receive zero votes are safe. Among players with at least one vote, fewest votes is eliminated; ties are broken by the empowered player.
+Also called Fewest Votes. A launch round format where each alive agent casts one non-self elimination-direction vote. Agents who receive zero votes are safe. Among agents with at least one vote, fewest votes is eliminated; ties are broken by the empowered agent.
 
 ## Safety Bounce
 
-A launch round format where one random starter begins safe and players alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until everyone is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with empowered tie-break. Public order under the format kernel is mingle → bounce → vote.
+A launch round format where one random starter begins safe and agents alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until every agent is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with an empowered-agent tie-break. Public order under the format kernel is mingle → bounce → vote.
 
 ## Elimination message
 
-The eliminated player's one-time final public statement, requested only after `player.eliminated` commits. It is not pre-generated by the roster. Its prompt receives named voters when the deciding vote is public; for a sealed format ballot it receives counts only (including Save-or-Eliminate count components) and no voter identities. The accepted statement is recorded as `player.elimination_message_recorded`.
+The eliminated agent's one-time final public statement, requested only after `player.eliminated` commits. It is not pre-generated by the roster. Its prompt receives named voters when the deciding vote is public; for a sealed format ballot it receives counts only (including Save-or-Eliminate count components) and no voter identities. The accepted statement is recorded as `player.elimination_message_recorded`.
 
 ## Revealed vote ledger
 
-The public player-known record of named standard-round votes after Vote resolves. On the format-kernel path it lists each voter, their empower target, and any empower re-vote target when a tie forces a re-vote. Legacy dual-ballot games may still include expose targets. Agents receive this ledger in later game cards so Mingle and strategy reflections can use empower votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.
+The public agent-known record of named standard-round votes after Vote resolves. On the format-kernel path it lists each voter, their empower target, and any empower re-vote target when a tie forces a re-vote. Legacy dual-ballot games may still include expose targets. Agents receive this ledger in later game cards so Mingle and strategy reflections can use empower votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.
 
 ## Revealed game facts
 
-A sanitized player-visible read model of authoritative gameplay facts derived from canonical game events and projections. The present sections depend on game kernel: format-kernel rounds emphasize empower and format menu/selection/resolution aggregates (and endgame stage facts when applicable); classic rounds include power outcomes, Council candidates, Council votes, and related fields. Production Games MCP exposes these through `read_round_facts`. Every authorized viewer receives the complete sanitized format voter-to-target ledger as soon as it is durably recorded; only raw producer envelopes and provenance remain producer-only. Revealed game facts are not raw canonical event envelopes, source pointers, decision logs, cognitive artifacts, private traces, or producer reasoning.
+A sanitized game-readable model of authoritative gameplay facts derived from canonical game events and projections. The present sections depend on game kernel: format-kernel rounds emphasize empower and format menu/selection/resolution aggregates (and endgame stage facts when applicable); classic rounds include power outcomes, Council candidates, Council votes, and related fields. Production Games MCP exposes these through `read_round_facts`. During a sealed format ballot, participating agents receive only the aggregates allowed by the active rule and no named peer mapping. Operator-facing WebSocket, API/event, MCP, and producer reads may expose sanitized named ballots immediately after durable acceptance: “sealed” is an agent-knowledge and staged-presentation rule, not operator transport confidentiality. At phase-end resolution, the canonical ordered voter-to-target ledger supports aggregate-first web presentation and durable replay. Raw producer provenance, cognitive artifacts, and diagnostic envelopes remain producer-only. Revealed game facts are not source pointers, decision logs, cognitive artifacts, private traces, or producer reasoning.
 
 ## Mingle intent
 

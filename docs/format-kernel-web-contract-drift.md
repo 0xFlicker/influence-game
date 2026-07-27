@@ -36,3 +36,11 @@ Format-kernel rounds use an **empower-only** standard vote. Elimination is owned
 
 - `read_round_facts` and public watch expose the same sanitized format ballot facts; the sealed mapping remains hidden only in in-game agent context.
 - Active-match MCP still does not expose in-match vote tools.
+
+## Pending sealed-ballot presentation contract
+
+`docs/plans/2026-07-26-004-feat-format-aware-game-viewer-plan.md` preserves immediate sanitized ballot visibility for operator-facing transports.
+WebSocket clients, public event/API readers, MCP consumers, and producers may receive sanitized named format ballots after durable append; this is not confidential operator data.
+“Sealed” applies only to participating-agent knowledge and to what the web UI has drawn: agent context receives its own receipt plus rule-permitted aggregates, without peer mappings.
+At phase-end resolution, the engine persists the canonical ordered ledger for replay and presentation.
+The web presentation stages aggregate totals before drawing that named-ballot roll call even though operator clients may already hold the ballot events.
