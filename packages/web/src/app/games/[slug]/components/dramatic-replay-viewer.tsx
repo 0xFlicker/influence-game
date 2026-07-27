@@ -71,7 +71,10 @@ import { FormatPresentation } from "./format-presentation";
 import { ActiveFormatLabel } from "./active-format-label";
 
 function isRoomReplayPhase(phase: string): boolean {
-  return phase === "MINGLE_I" || phase === "MINGLE" || phase === "POST_VOTE_MINGLE";
+  return phase === "MINGLE_I"
+    || phase === "MINGLE"
+    || phase === "POST_VOTE_MINGLE"
+    || phase === "FORMAT_MINGLE";
 }
 
 const FORMAT_AUTHORITY_TRANSCRIPT_PHASES: ReadonlySet<PhaseKey> = new Set([
@@ -558,7 +561,15 @@ function DramaticReplayTheater({
   // not through mingle/diary-specific paths that expect room data.
   const isThinkingOnlyScene = !!scene && scene.messages.length > 0 && scene.messages.every((m) => m.scope === "thinking");
   const isChatFeedScene = !!scene && (CHAT_FEED_PHASES.has(scene.phase) || isThinkingOnlyScene);
-  const isWhisperScene = !!scene && isRoomReplayPhase(scene.phase) && !scene.isOverview && !isThinkingOnlyScene;
+  const hasRoomSceneData = !!scene && (
+    !!scene.whisperRoom
+    || scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0)
+  );
+  const isWhisperScene = !!scene
+    && isRoomReplayPhase(scene.phase)
+    && !scene.isOverview
+    && !isThinkingOnlyScene
+    && hasRoomSceneData;
   const isOpenWhisperScene = !!scene && isRoomReplayPhase(scene.phase) && scene.messages.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0);
   const isDiaryScene = !!scene && scene.phase === "DIARY_ROOM" && !isThinkingOnlyScene;
   const isOverviewScene = !!scene && !!scene.isOverview;
@@ -598,9 +609,10 @@ function DramaticReplayTheater({
   // For overview scenes: build full mingle stage data for rich allocation display
   const overviewStageData = useMemo(() => {
     if (!scene || !isOverviewScene) return null;
-    // Gather all room-phase entries from this round to parse allocation.
+    // Gather only this phase's entries so multiple room phases in one round
+    // cannot overwrite each other's allocation.
     const mingleEntries = messages.filter(
-      (m) => isRoomReplayPhase(m.phase) && m.round === scene.round,
+      (m) => m.phase === scene.phase && m.round === scene.round,
     );
     return buildWhisperStageData(mingleEntries, players);
   }, [scene, isOverviewScene, messages, players]);
@@ -699,7 +711,7 @@ function DramaticReplayTheater({
     const rooms: WhisperRoomStage[] = [];
     for (let i = 0; i < sceneIndex; i++) {
       const s = scenes[i]!;
-      if (isRoomReplayPhase(s.phase) && s.round === scene.round && s.whisperRoom) {
+      if (s.phase === scene.phase && s.round === scene.round && s.whisperRoom) {
         rooms.push({
           roomId: s.whisperRoom.roomId,
           playerIds: s.whisperRoom.playerNames,
@@ -1213,7 +1225,11 @@ function DramaticReplayTheater({
             <WhisperAllocationOverview
               stage={overviewStageData}
               players={replayPlayers}
-              mode={scene.phase === "MINGLE" ? "mingle" : "legacy-whisper"}
+              mode={
+                scene.phase === "MINGLE" || scene.phase === "FORMAT_MINGLE"
+                  ? "mingle"
+                  : "legacy-whisper"
+              }
             />
           )}
 

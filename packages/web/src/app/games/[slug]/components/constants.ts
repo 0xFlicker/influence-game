@@ -192,6 +192,7 @@ export const PHASE_TO_ROOM: Partial<Record<PhaseKey, RoomType>> = {
   PRE_VOTE_HUDDLE: "private_rooms",
   MINGLE: "private_rooms",
   POST_VOTE_MINGLE: "private_rooms",
+  FORMAT_MINGLE: "private_rooms",
   VOTE: "tribunal",
   POWER: "tribunal",
   REVEAL: "tribunal",

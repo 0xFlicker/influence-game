@@ -81,19 +81,26 @@ export function buildReplayScenes(transcript: TranscriptEntry[]): ReplayScene[] 
     const { round, phase } = msgs[0]!;
     const roomType = phaseToRoomType(phase);
 
-    if (phase === "MINGLE" || phase === "POST_VOTE_MINGLE") {
-      if (msgs.some((m) => (m.roomMetadata?.rooms.length ?? 0) > 0)) {
-        scenes.push({
-          id,
-          round,
-          phase,
-          roomType,
-          messages: msgs,
-          houseIntro: HOUSE_INTROS[phase] ?? null,
-        });
-        continue;
-      }
+    const hasRoomMetadata = msgs.some(
+      (m) => (m.roomMetadata?.rooms.length ?? 0) > 0,
+    );
+    const isRoomPhase = phase === "MINGLE"
+      || phase === "POST_VOTE_MINGLE"
+      || phase === "FORMAT_MINGLE";
 
+    if (isRoomPhase && hasRoomMetadata) {
+      scenes.push({
+        id,
+        round,
+        phase,
+        roomType,
+        messages: msgs,
+        houseIntro: HOUSE_INTROS[phase] ?? null,
+      });
+      continue;
+    }
+
+    if (phase === "MINGLE" || phase === "POST_VOTE_MINGLE") {
       // Sequential: overview scene → one scene per room
       const rooms = parseWhisperRooms(msgs);
       const systemMsgs = msgs.filter((m) => m.scope === "system");

@@ -206,7 +206,7 @@ describe("MatchWatchShell", () => {
             scope: "system",
             toPlayerIds: null,
             roomId: undefined,
-            text: "Turn 1: Room 1: Atlas, Lyra",
+            text: "Canonical room allocation is ready.",
             roomMetadata: {
               rooms: [
                 { roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] },
@@ -229,6 +229,149 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Mingle Feed");
     expect(html).toContain("Room");
     expect(html).not.toContain("Click or press");
+  });
+
+  it("renders Format Mingle room metadata as a room map instead of a single transcript card", () => {
+    const html = renderToString(
+      <MatchWatchShell
+        game={{
+          ...game(),
+          gameKernel: "format",
+          gameKernelSource: "stored",
+          currentPhase: "FORMAT_MINGLE",
+        }}
+        messages={[
+          entry({
+            id: 1,
+            phase: "FORMAT_MINGLE",
+            fromPlayerId: null,
+            fromPlayerName: null,
+            scope: "system",
+            toPlayerIds: null,
+            roomId: undefined,
+            text: "Turn 1: Room 1: Atlas, Lyra",
+            roomMetadata: {
+              rooms: [
+                { roomId: 1, round: 1, beat: 1, playerIds: ["p1", "p2"] },
+              ],
+              excluded: [],
+            },
+          }),
+          entry({
+            id: 2,
+            phase: "FORMAT_MINGLE",
+            text: "Lyra, can I count on you once Vote Bomb ballots matter?",
+          }),
+        ]}
+        live={false}
+        connStatus="replay"
+      />,
+    );
+
+    expect(html).toContain("MINGLE MAP");
+    expect(html).toContain("Mingle Feed");
+    expect(html).toContain("Select Mingle room R1");
+    expect(html).toContain("Atlas");
+    expect(html).toContain("Lyra");
+    expect(html).not.toContain("Click or press");
+  });
+
+  it("keeps same-round room allocations isolated by phase", () => {
+    const html = renderToString(
+      <MatchWatchShell
+        game={game()}
+        messages={[
+          entry({
+            id: 1,
+            phase: "MINGLE",
+            fromPlayerId: null,
+            fromPlayerName: null,
+            scope: "system",
+            toPlayerIds: null,
+            roomId: undefined,
+            text: "Turn 1: Room 1: Atlas, Lyra",
+          }),
+          entry({
+            id: 2,
+            phase: "MINGLE",
+            roomId: 1,
+            text: "Lyra, can I count on you before the format?",
+          }),
+          entry({
+            id: 3,
+            phase: "FORMAT_MINGLE",
+            fromPlayerId: null,
+            fromPlayerName: null,
+            scope: "system",
+            toPlayerIds: null,
+            roomId: undefined,
+            text: "Canonical format allocation is ready.",
+            roomMetadata: {
+              rooms: [
+                { roomId: 2, round: 1, beat: 1, playerIds: ["p3", "p4"] },
+              ],
+              excluded: [],
+            },
+          }),
+        ]}
+        live={false}
+        connStatus="replay"
+      />,
+    );
+
+    const readableHtml = html.replaceAll("<!-- -->", "");
+    expect(readableHtml).toContain("Room 1 · GROUP");
+    expect(readableHtml).not.toContain("Room 2 · GROUP");
+  });
+
+  it("does not parse Format Mingle transcript prose into authoritative rooms", () => {
+    const messages = [
+      entry({
+        id: 1,
+        phase: "FORMAT_MINGLE",
+        fromPlayerId: null,
+        fromPlayerName: null,
+        scope: "system",
+        toPlayerIds: null,
+        roomId: undefined,
+        text: "Turn 1: Room 1: Atlas, Lyra",
+      }),
+      entry({
+        id: 2,
+        phase: "FORMAT_MINGLE",
+        roomId: 1,
+        text: "Lyra, can I count on you once Vote Bomb ballots matter?",
+      }),
+    ];
+    const scenes = buildReplayScenes(messages);
+
+    expect(scenes).toHaveLength(1);
+    expect(scenes[0]).toMatchObject({
+      phase: "FORMAT_MINGLE",
+      roomType: "private_rooms",
+      messages: [
+        { text: "Turn 1: Room 1: Atlas, Lyra" },
+        { text: "Lyra, can I count on you once Vote Bomb ballots matter?" },
+      ],
+    });
+    expect(scenes[0]?.isOverview).toBeUndefined();
+    expect(scenes[0]?.whisperRoom).toBeUndefined();
+
+    const html = renderToString(
+      <MatchWatchShell
+        game={{
+          ...game(),
+          gameKernel: "format",
+          gameKernelSource: "stored",
+          currentPhase: "FORMAT_MINGLE",
+        }}
+        messages={messages}
+        live={false}
+        connStatus="replay"
+      />,
+    );
+    expect(html).toContain("Turn 1: Room 1: Atlas, Lyra");
+    expect(html).not.toContain("MINGLE MAP");
   });
 
   it("renders live shell state from durable watch state without replay copy", () => {

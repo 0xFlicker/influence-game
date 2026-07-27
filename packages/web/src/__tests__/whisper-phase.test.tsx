@@ -42,7 +42,7 @@ function entry(overrides: Partial<TranscriptEntry>): TranscriptEntry {
 }
 
 describe("buildWhisperStageData", () => {
-  it("keeps room portrait previews separate from room selection", () => {
+  it("uses static stacked portraits inside Mingle room cards", () => {
     const currentPlayers: GamePlayer[] = [
       {
         ...players[0]!,
@@ -80,11 +80,15 @@ describe("buildWhisperStageData", () => {
       />,
     );
 
-    expect(html).toContain('aria-label="View Atlas portrait and stats"');
     expect(html).toContain('aria-label="Select Mingle room R1"');
     expect(html).toContain("/avatars/atlas-current.png");
     expect(html).not.toContain("Atlas After Rename");
-    expect(html).not.toContain("-space-x");
+    expect(html).toContain("-space-x-2");
+    const firstRoomCard = html.slice(
+      html.indexOf('aria-label="Select Mingle room R1"'),
+      html.indexOf('aria-label="Select Mingle room R2"'),
+    );
+    expect(firstRoomCard).not.toContain('aria-label="View ');
     expect(html).not.toMatch(/<button(?:(?!<\/button>)[\s\S])*<button/);
   });
 

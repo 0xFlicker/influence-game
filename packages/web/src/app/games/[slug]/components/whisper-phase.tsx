@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import type { TranscriptEntry, GamePlayer } from "@/lib/api";
-import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
+import {
+  GamePlayerAvatarPreview,
+  getGamePlayerAvatarPreviewModel,
+} from "@/components/game-player-avatar-preview";
+import { AgentAvatar } from "@/components/agent-avatar";
 import { Typewriter } from "@/components/typewriter";
 import type { WhisperRoomStage, WhisperStageData } from "./types";
 
@@ -238,11 +242,15 @@ function RoomAvatarRow({
 
   return (
     <div className="min-w-0">
-      <div className="flex max-w-full items-center overflow-hidden">
-        <div className="flex min-w-0 items-center gap-1">
+      <div className="flex max-w-full items-center overflow-visible">
+        <div className="flex min-w-0 items-center -space-x-2">
           {visibleNames.map((name, index) => (
-            <span key={`${room.roomId}-${name}-${index}`} className="shrink-0 rounded-full ring-2 ring-black/70">
-              <AgentInitial player={resolved[index]} name={name} size={size} />
+            <span
+              key={`${room.roomId}-${name}-${index}`}
+              className="relative shrink-0 rounded-full ring-2 ring-black/70"
+              style={{ zIndex: visibleNames.length - index }}
+            >
+              <RoomCardAvatar player={resolved[index]} name={name} size={size} />
             </span>
           ))}
         </div>
@@ -258,6 +266,36 @@ function RoomAvatarRow({
         </p>
       )}
     </div>
+  );
+}
+
+function RoomCardAvatar({
+  player,
+  name,
+  size,
+}: {
+  player?: GamePlayer;
+  name: string;
+  size: "6" | "8" | "10";
+}) {
+  if (!player) {
+    const sizeClass = size === "10" ? "h-10 w-10" : size === "6" ? "h-6 w-6" : "h-8 w-8";
+    return (
+      <span className={`${sizeClass} flex items-center justify-center rounded-full border border-white/15 bg-white/5 text-[10px] font-semibold text-white/50`}>
+        {name.slice(0, 1).toUpperCase()}
+      </span>
+    );
+  }
+
+  const avatar = getGamePlayerAvatarPreviewModel(player);
+  return (
+    <AgentAvatar
+      avatarUrl={avatar.avatarUrl}
+      persona={avatar.persona}
+      personaKey={avatar.personaKey}
+      name={avatar.name}
+      size={size}
+    />
   );
 }
 
