@@ -18,6 +18,7 @@ import {
   getMatchWatchRouteDecision,
   mergeGameWatchReplayFrames,
   shouldApplyWatchStateUpdate,
+  withPresentationHydrationDeadline,
   watchStatusToPlayerState,
 } from "../app/games/[slug]/components/match-watch-model";
 
@@ -520,12 +521,12 @@ describe("match watch model", () => {
     });
   });
 
-  it("merges trusted frames monotonically while allowing sparse viewer decisions", () => {
+  it("backfills lower trusted frames and replaces same-sequence synthetic frames", () => {
     const existing = replayFrame(baseGame().players, {
       sequence: 10,
       schemaVersion: 3,
     });
-    const duplicate = { ...existing };
+    const authoritative = { ...existing, eventType: "format.selected" };
     const lower = replayFrame(baseGame().players, {
       sequence: 9,
       schemaVersion: 3,
@@ -548,14 +549,34 @@ describe("match watch model", () => {
 
     const merged = mergeGameWatchReplayFrames(
       [existing],
-      [sparseDecision, lower, duplicate],
+      [sparseDecision, lower, authoritative],
       "game-1",
     );
 
-    expect(merged.map((frame) => frame.sequence)).toEqual([10, 14]);
-    expect(mergeGameWatchReplayFrames(merged, [duplicate, lower], "game-1")).toBe(
+    expect(merged.map((frame) => frame.sequence)).toEqual([9, 10, 14]);
+    expect(merged.find((frame) => frame.sequence === 10)).toBe(authoritative);
+    expect(mergeGameWatchReplayFrames(merged, [lower, authoritative], "game-1")).toBe(
       merged,
     );
+  });
+
+  it("bounds each presentation hydration attempt with an aborting deadline", async () => {
+    const generation = new AbortController();
+    let attemptWasAborted = false;
+
+    await expect(withPresentationHydrationDeadline(
+      generation.signal,
+      (signal) => {
+        return new Promise<never>((_resolve, reject) => {
+          signal.addEventListener("abort", () => {
+            attemptWasAborted = signal.aborted;
+            reject(signal.reason);
+          }, { once: true });
+        });
+      },
+      1,
+    )).rejects.toMatchObject({ name: "TimeoutError" });
+    expect(attemptWasAborted).toBe(true);
   });
 
   it("retries presentation hydration at most twice before becoming reloadable", () => {

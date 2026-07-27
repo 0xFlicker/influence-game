@@ -101,7 +101,10 @@
  * Format-kernel turns record `format-pick`, `format-ballot`, `bounce-pointer`,
  * `format-tiebreak`, and one post-commit `elimination-message` action. The
  * elimination message receives named voters only for public votes; sealed
- * formats pass received counts without voter identities. Together the format
+ * formats pass received counts without voter identities. This participating-agent
+ * context is intentionally narrower than operator transport: sanitized accepted
+ * ballot mappings are readable there immediately after durable record, while
+ * viewer named Roll Call presentation remains resolution-gated. Together the format
  * records expose the six typed agent
  * decisions: pickRoundFormat, getSaveOrEliminateBallot, getVoteBombBallot,
  * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their

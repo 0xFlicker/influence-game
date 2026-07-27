@@ -56,6 +56,7 @@ import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJuryOpeningStatementsExtraHoldMs, getJuryQuestionsExtraHoldMs } from "./dramatic-timing";
 import {
   MATCH_WATCH_FORMAT_PHASES,
+  REPLAY_FRAME_PHASE_ORDER,
   type MatchWatchPlaybackState,
   type PresentationHydrationState,
 } from "./match-watch-model";
@@ -193,6 +194,63 @@ function latestFrameSequenceAtOrBefore(
   return null;
 }
 
+export function comparePresentationCues(
+  left: PresentationCue,
+  right: PresentationCue,
+): number {
+  if (left.round !== right.round) return left.round - right.round;
+  if (
+    left.canonicalSequence !== null
+    && right.canonicalSequence !== null
+    && left.canonicalSequence !== right.canonicalSequence
+  ) {
+    return left.canonicalSequence - right.canonicalSequence;
+  }
+  const phaseIndex = (phase: PhaseKey): number => {
+    const formatIndex = MATCH_WATCH_FORMAT_PHASES.indexOf(phase);
+    if (formatIndex >= 0) return formatIndex;
+    const replayIndex = REPLAY_FRAME_PHASE_ORDER.indexOf(phase);
+    return replayIndex >= 0
+      ? MATCH_WATCH_FORMAT_PHASES.length + replayIndex
+      : Number.MAX_SAFE_INTEGER;
+  };
+  const phaseDifference =
+    phaseIndex(left.phase) - phaseIndex(right.phase);
+  if (phaseDifference !== 0) return phaseDifference;
+  if (left.source !== right.source) return left.source === "classic" ? -1 : 1;
+  if (left.source === "format" && right.source === "format") {
+    return left.canonicalSequence - right.canonicalSequence;
+  }
+  if (left.source === "classic" && right.source === "classic") {
+    return left.sceneIndex - right.sceneIndex || left.messageIndex - right.messageIndex;
+  }
+  return 0;
+}
+
+export function buildReplayPlayersForCue(input: {
+  players: readonly GamePlayer[];
+  isFormatGame: boolean;
+  canonicalFrame: GameWatchReplayFrame | null;
+  classicEliminatedIds: ReadonlySet<string>;
+  live: boolean;
+}): GamePlayer[] {
+  const canonicalById = new Map(
+    input.canonicalFrame?.players.map((player) => [player.id, player]) ?? [],
+  );
+  return input.players.map((player) => {
+    const canonical = canonicalById.get(player.id);
+    return {
+      ...player,
+      status: input.isFormatGame
+        ? canonical?.status ?? player.status
+        : input.classicEliminatedIds.has(player.id) ? "eliminated" : "alive",
+      shielded: input.isFormatGame
+        ? canonical?.shielded ?? player.shielded
+        : input.live ? player.shielded : false,
+    };
+  });
+}
+
 function mergeFormatAndSocialCues(
   formatCues: readonly FormatPresentationCue[],
   classicCues: readonly ClassicPresentationCue[],
@@ -202,21 +260,7 @@ function mergeFormatAndSocialCues(
     const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
     return message ? isFormatSocialTranscriptMessage(message) : false;
   });
-  return [...socialCues, ...formatCues].sort((left, right) => {
-    if (left.round !== right.round) return left.round - right.round;
-    const phaseDifference =
-      MATCH_WATCH_FORMAT_PHASES.indexOf(left.phase)
-      - MATCH_WATCH_FORMAT_PHASES.indexOf(right.phase);
-    if (phaseDifference !== 0) return phaseDifference;
-    if (left.source !== right.source) return left.source === "classic" ? -1 : 1;
-    if (left.source === "format" && right.source === "format") {
-      return left.canonicalSequence - right.canonicalSequence;
-    }
-    if (left.source === "classic" && right.source === "classic") {
-      return left.sceneIndex - right.sceneIndex || left.messageIndex - right.messageIndex;
-    }
-    return 0;
-  });
+  return [...socialCues, ...formatCues].sort(comparePresentationCues);
 }
 
 function formatCueScene(cue: FormatPresentationCue): ReplayScene {
@@ -360,6 +404,7 @@ function DramaticReplayTheater({
   const [activeEndgameScreen, setActiveEndgameScreen] = useState<EndgameScreenState | null>(null);
   const [activePhaseTransition, setActivePhaseTransition] = useState<TransitionState | null>(null);
   const resumeAfterTransitionRef = useRef(false);
+  const resumeAfterReconnectRef = useRef(false);
   const seenEndgameStages = useRef<Set<string>>(new Set());
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -416,6 +461,15 @@ function DramaticReplayTheater({
 
   useEffect(() => {
     if (presentationCues.length === 0) return;
+    if (
+      live
+      && (
+        presentationHydrationStatus === "reconnecting"
+        || reconnectHydrationPendingRef.current
+      )
+    ) {
+      return;
+    }
     if (live && directorSnapshot.cueKeys.length === 0) {
       director.reconnect(presentationCues);
       director.play();
@@ -431,11 +485,20 @@ function DramaticReplayTheater({
     } else {
       director.load(presentationCues);
     }
-  }, [director, directorSnapshot.cueKeys.length, live, presentationCues]);
+  }, [
+    director,
+    directorSnapshot.cueKeys.length,
+    live,
+    presentationCues,
+    presentationHydrationStatus,
+  ]);
 
   useEffect(() => {
     if (!live) return;
     if (presentationHydrationStatus === "reconnecting") {
+      if (directorSnapshot.isPlaying) {
+        resumeAfterReconnectRef.current = true;
+      }
       reconnectHydrationPendingRef.current = true;
       return;
     }
@@ -447,8 +510,10 @@ function DramaticReplayTheater({
       return;
     }
 
-    const shouldResume = directorSnapshot.isPlaying;
+    const shouldResume =
+      directorSnapshot.isPlaying || resumeAfterReconnectRef.current;
     reconnectHydrationPendingRef.current = false;
+    resumeAfterReconnectRef.current = false;
     director.reconnect(presentationCues);
     if (shouldResume) director.play();
   }, [
@@ -546,8 +611,29 @@ function DramaticReplayTheater({
     return allVisibleMessages.filter(m => m.round === scene.round && m.phase === "RUMOR" && m.scope === "public");
   }, [allVisibleMessages, scene]);
 
-  // Track eliminated players from visible messages
+  const canonicalReplayFrame = useMemo(() => {
+    if (!isFormatGame || replayFrames.length === 0) return null;
+    const canonicalSequence = activeCue?.canonicalSequence;
+    if (canonicalSequence === null || canonicalSequence === undefined) {
+      return replayFrames[0] ?? null;
+    }
+    for (let index = replayFrames.length - 1; index >= 0; index -= 1) {
+      const frame = replayFrames[index]!;
+      if (frame.sequence <= canonicalSequence) return frame;
+    }
+    return replayFrames[0] ?? null;
+  }, [activeCue?.canonicalSequence, isFormatGame, replayFrames]);
+
+  // Classic replay retains its frozen transcript parser. Format replay status
+  // comes only from the canonical replay-frame snapshot at the active cue.
   const eliminatedIds = useMemo(() => {
+    if (isFormatGame) {
+      return new Set(
+        canonicalReplayFrame?.players
+          .filter((player) => player.status === "eliminated")
+          .map((player) => player.id) ?? [],
+      );
+    }
     const ids = new Set<string>();
     for (const msg of allVisibleMessages) {
       if (msg.scope === "system" && (msg.text.includes("ELIMINATED:") || msg.text.includes("AUTO-ELIMINATE:"))) {
@@ -556,17 +642,22 @@ function DramaticReplayTheater({
       }
     }
     return ids;
-  }, [allVisibleMessages, players]);
-  const aliveCount = players.length - eliminatedIds.size;
+  }, [allVisibleMessages, canonicalReplayFrame, isFormatGame, players]);
+  const aliveCount = isFormatGame && canonicalReplayFrame
+    ? canonicalReplayFrame.counts.alivePlayers
+    : players.length - eliminatedIds.size;
 
   // Build players with correct alive/eliminated status for current replay position
-  const replayPlayers = useMemo(() =>
-    players.map((p) => ({
-      ...p,
-      status: eliminatedIds.has(p.id) ? "eliminated" as const : "alive" as const,
-      shielded: live ? p.shielded : false,
-    })),
-  [players, eliminatedIds, live]);
+  const replayPlayers = useMemo(
+    () => buildReplayPlayersForCue({
+      players,
+      isFormatGame,
+      canonicalFrame: canonicalReplayFrame,
+      classicEliminatedIds: eliminatedIds,
+      live,
+    }),
+    [canonicalReplayFrame, eliminatedIds, isFormatGame, players, live],
+  );
 
   useEffect(() => {
     if (!scene || !onPlaybackStateChange) return;
@@ -653,8 +744,10 @@ function DramaticReplayTheater({
 
   useEffect(() => {
     if (isRoomChange && scene) {
-      resumeAfterTransitionRef.current = director.getSnapshot().isPlaying;
-      if (resumeAfterTransitionRef.current) director.pause();
+      if (director.getSnapshot().isPlaying) {
+        resumeAfterTransitionRef.current = true;
+        director.pause();
+      }
       const flavors = PHASE_FLAVORS[scene.phase] ?? [];
       const flavorText = flavors.length > 0
         ? flavors[Math.floor(Math.random() * flavors.length)]!
@@ -703,6 +796,13 @@ function DramaticReplayTheater({
     director.manualAdvance();
   }, [director]);
 
+  const pausePresentation = useCallback(() => {
+    // An explicit audience pause wins over automatic transition/reconnect resume.
+    resumeAfterTransitionRef.current = false;
+    resumeAfterReconnectRef.current = false;
+    director.pause();
+  }, [director]);
+
   const goToNextScene = useCallback(() => {
     const nextIndex = findCueForAdjacentScene(
       presentationCues,
@@ -714,10 +814,10 @@ function DramaticReplayTheater({
 
   const goToEnd = useCallback(() => {
     if (presentationCues.length > 0) {
-      director.pause();
+      pausePresentation();
       director.seek(presentationCues.length - 1);
     }
-  }, [director, presentationCues.length]);
+  }, [director, pausePresentation, presentationCues.length]);
 
   const goToBeginning = useCallback(() => {
     director.seek(0);
@@ -773,10 +873,11 @@ function DramaticReplayTheater({
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (activePhaseTransition || activeEndgameScreen) return;
       switch (e.key) {
         case " ":
           e.preventDefault();
-          if (isPlaying) director.pause();
+          if (isPlaying) pausePresentation();
           else director.play();
           break;
         case "ArrowRight":
@@ -806,12 +907,30 @@ function DramaticReplayTheater({
     return () => window.removeEventListener("keydown", handleKey);
   }, [
     advanceMessage,
+    activeEndgameScreen,
+    activePhaseTransition,
     director,
     directorSnapshot.cursor,
     goToNextScene,
     isPlaying,
+    pausePresentation,
     presentationCues,
   ]);
+
+  const formatCompilationNotice =
+    isFormatGame && formatCompilation.status === "incomplete" ? (
+      <div
+        data-format-presentation="incomplete"
+        role="status"
+        className="rounded-lg border border-amber-200/15 bg-amber-200/[0.04] px-3 py-2 text-xs text-amber-100/75"
+      >
+        <span className="font-semibold text-amber-100">
+          Presentation incomplete.
+        </span>{" "}
+        {formatCompilation.diagnostic?.message
+          ?? "The last trustworthy format state remains visible."}
+      </div>
+    ) : null;
 
   if (!scene || presentationCues.length === 0) {
     return (
@@ -821,6 +940,7 @@ function DramaticReplayTheater({
         data-reduced-motion={reducedMotion ? "reduce" : "no-preference"}
         className={`${embedded ? "relative h-full min-h-[24rem]" : "fixed inset-0"} bg-black flex flex-col items-center justify-center gap-4`}
       >
+        {formatCompilationNotice}
         {live ? (
           <>
             <div className="flex items-center gap-1.5">
@@ -1005,6 +1125,9 @@ function DramaticReplayTheater({
         } justify-center px-4 md:px-8 py-4 md:py-8`}
       >
         <div className={`w-full min-h-0 ${usesFullHeightContent ? "h-full" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+          {formatCompilationNotice ? (
+            <div className="mb-3">{formatCompilationNotice}</div>
+          ) : null}
           {activeFormatIdForSocialScene ? (
             <div className="mb-3 flex justify-center">
               <ActiveFormatLabel formatId={activeFormatIdForSocialScene} />
@@ -1190,7 +1313,7 @@ function DramaticReplayTheater({
               aria-label={isPlaying ? "Pause replay" : "Play replay"}
               onClick={(e) => {
                 e.stopPropagation();
-                if (isPlaying) director.pause();
+                if (isPlaying) pausePresentation();
                 else director.play();
               }}
               className="text-xs text-white/50 hover:text-white transition-colors px-3 py-2 rounded-lg border border-white/10 active:border-white/30"
@@ -1279,7 +1402,7 @@ function DramaticReplayTheater({
             type="button"
             onClick={(e) => {
               e.stopPropagation();
-              if (isPlaying) director.pause();
+              if (isPlaying) pausePresentation();
               else director.play();
             }}
             className="text-sm text-white/50 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20"
@@ -1290,6 +1413,7 @@ function DramaticReplayTheater({
           <div className="flex items-center gap-3">
             <button
               type="button"
+              aria-label="Go to replay start"
               onClick={(e) => { e.stopPropagation(); goToBeginning(); }}
               disabled={directorSnapshot.cursor === 0}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
@@ -1298,6 +1422,7 @@ function DramaticReplayTheater({
             </button>
             <button
               type="button"
+              aria-label="Previous scene"
               onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
               disabled={directorSnapshot.cursor === 0}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"

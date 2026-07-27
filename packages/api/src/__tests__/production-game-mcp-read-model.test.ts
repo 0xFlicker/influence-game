@@ -288,9 +288,11 @@ describe("ProductionGameMcpReadModel", () => {
       gameIdOrSlug: EDGE_SMOKE_DUSK_EXPECTED.slug,
       round: 1,
     }, PRODUCER_ACCESS);
+    expect(classicRound.schemaVersion).toBe(2);
     expect(classicRound.game).toMatchObject({
       gameKernel: "classic",
       gameKernelSource: "inferred",
+      gameKernelDiagnostics: [],
     });
     expect(classicRound.canonicalGameFacts.roundFacts.standardVote).toMatchObject({
       status: "available",
@@ -1257,6 +1259,73 @@ describe("ProductionGameMcpReadModel", () => {
         (event) => event.eventShape === "viewer_decision",
       )).toBe(true);
     }
+  });
+
+  test("exposes stored-kernel contradiction diagnostics on MCP game identities", async () => {
+    const gameId = await insertGame(db, {
+      slug: "stored-kernel-contradiction",
+      status: "in_progress",
+    });
+    await db
+      .update(schema.games)
+      .set({ gameKernel: "classic" })
+      .where(eq(schema.games.id, gameId));
+    const ownerEpoch = await insertOwner(db, gameId, {
+      lastPersistedEventSequence: 1,
+    });
+    const formatEvidence: CanonicalGameEvent = {
+      sequence: 1,
+      gameId,
+      round: 1,
+      phase: Phase.FORMAT_MENU,
+      type: "format.menu_offered",
+      timestamp: "2026-07-27T00:00:00.000Z",
+      source: "phase",
+      visibility: "public",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: {
+        empoweredId: "empowered",
+        offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+      },
+    };
+    await insertCanonicalEventRows(db, gameId, ownerEpoch, [formatEvidence]);
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const resolved = await readModel.resolveGame(gameId);
+    expect(resolved).not.toBeNull();
+    expect(resolved).toMatchObject({
+      gameKernel: "classic",
+      gameKernelSource: "stored",
+      gameKernelDiagnostics: [{
+        code: "stored_kernel_event_contradiction",
+        storedKernel: "classic",
+        evidenceKernel: "format",
+        eventType: "format.menu_offered",
+        sequence: 1,
+      }],
+    });
+
+    const listed = await readModel.listGames(PRODUCER_ACCESS, 100);
+    expect(
+      listed.canonicalGameFacts.games.find((game) => game.id === gameId)
+        ?.gameKernelDiagnostics,
+    ).toEqual(resolved!.gameKernelDiagnostics);
+
+    const projection = await readModel.readProjection(gameId, PRODUCER_ACCESS);
+    expect(projection.game.gameKernelDiagnostics).toEqual(
+      resolved!.gameKernelDiagnostics,
+    );
+
+    const roundFacts = await readModel.readRoundFacts(
+      { gameIdOrSlug: gameId, round: 1 },
+      PRODUCER_ACCESS,
+    );
+    expect(roundFacts.schemaVersion).toBe(2);
+    expect(roundFacts.game.gameKernelDiagnostics).toEqual(
+      resolved!.gameKernelDiagnostics,
+    );
+    expect(JSON.stringify(roundFacts)).not.toContain("sourcePointers");
   });
 
   test("blocks producer event visibility for games-scope reads", async () => {

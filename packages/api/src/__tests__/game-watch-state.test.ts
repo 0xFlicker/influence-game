@@ -415,6 +415,22 @@ describe("GameWatchState", () => {
       ...fullViewerEvents.map((event) => event.sequence),
     ].sort((left, right) => left - right));
 
+    const presentationFrames = await getGameWatchReplayFrames(db, gameId, {
+      presentationOnly: true,
+    });
+    expect(presentationFrames?.length).toBeLessThan(fullFrames?.length ?? 0);
+    expect(
+      presentationFrames?.every(
+        (frame, index, frames) =>
+          Boolean(frame.viewerDecisionEvent) || index === frames.length - 1,
+      ),
+    ).toBe(true);
+    expect(presentationFrames?.at(-1)?.sequence).toBe(fullFrames?.at(-1)?.sequence);
+    expect(
+      presentationFrames
+        ?.flatMap((frame) => frame.viewerDecisionEvent ? [frame.viewerDecisionEvent] : []),
+    ).toEqual(fullViewerEvents);
+
     const cursor = fullFrames?.find((frame) => frame.viewerDecisionEvent?.type === "format.safety_bounce_started")?.sequence;
     if (cursor === undefined) throw new Error("Expected Safety Bounce start frame");
     const catchUpFrames = await getGameWatchReplayFrames(db, gameId, { afterSequence: cursor });

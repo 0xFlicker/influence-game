@@ -2171,11 +2171,20 @@ export async function getGameTranscript(
 
 export async function getGameReplayWatchFrames(
   id: string,
-  options: { afterSequence?: number; signal?: AbortSignal } = {},
+  options: {
+    afterSequence?: number;
+    presentationOnly?: boolean;
+    signal?: AbortSignal;
+  } = {},
 ): Promise<GameWatchReplayFrame[]> {
-  const query = options.afterSequence === undefined
-    ? ""
-    : `?afterSequence=${encodeURIComponent(options.afterSequence)}`;
+  const params = new URLSearchParams();
+  if (options.afterSequence !== undefined) {
+    params.set("afterSequence", String(options.afterSequence));
+  }
+  if (options.presentationOnly !== undefined) {
+    params.set("presentationOnly", String(options.presentationOnly));
+  }
+  const query = params.size === 0 ? "" : `?${params.toString()}`;
   return apiFetch(`/api/games/${id}/replay-watch-frames${query}`, {
     signal: options.signal,
   });

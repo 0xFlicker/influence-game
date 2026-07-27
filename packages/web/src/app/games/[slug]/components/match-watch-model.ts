@@ -55,7 +55,7 @@ export const MATCH_WATCH_FORMAT_PHASES: readonly PhaseKey[] = [
   "FORMAT_RESOLVE",
   "END",
 ];
-const REPLAY_FRAME_PHASE_ORDER: readonly PhaseKey[] = [
+export const REPLAY_FRAME_PHASE_ORDER: readonly PhaseKey[] = [
   "INIT",
   "INTRODUCTION",
   "LOBBY",
@@ -107,6 +107,32 @@ export interface GamePresentationRouteDecision {
 export interface PresentationHydrationState {
   status: "idle" | "loading" | "reconnecting" | "ready" | "unavailable";
   retryCount: number;
+}
+
+export const PRESENTATION_HYDRATION_ATTEMPT_TIMEOUT_MS = 10_000;
+
+export async function withPresentationHydrationDeadline<T>(
+  generationSignal: AbortSignal,
+  task: (attemptSignal: AbortSignal) => Promise<T>,
+  timeoutMs = PRESENTATION_HYDRATION_ATTEMPT_TIMEOUT_MS,
+): Promise<T> {
+  const attemptController = new AbortController();
+  const abortAttempt = () => attemptController.abort(generationSignal.reason);
+  if (generationSignal.aborted) abortAttempt();
+  else generationSignal.addEventListener("abort", abortAttempt, { once: true });
+  const timeout = setTimeout(
+    () => attemptController.abort(
+      new DOMException("Presentation hydration timed out.", "TimeoutError"),
+    ),
+    timeoutMs,
+  );
+
+  try {
+    return await task(attemptController.signal);
+  } finally {
+    clearTimeout(timeout);
+    generationSignal.removeEventListener("abort", abortAttempt);
+  }
 }
 
 export interface MatchWatchCounts {
@@ -285,26 +311,22 @@ export function mergeGameWatchReplayFrames(
   incoming: readonly GameWatchReplayFrame[],
   gameId: string,
 ): GameWatchReplayFrame[] {
-  const currentIsCanonical = current.every(
-    (frame, index) =>
-      frame.gameId === gameId
-      && (index === 0 || current[index - 1]!.sequence < frame.sequence),
-  );
-  let frames = currentIsCanonical
-    ? current
-    : current
-        .filter((frame) => frame.gameId === gameId)
-        .sort((left, right) => left.sequence - right.sequence);
-  let lastSequence = frames.at(-1)?.sequence ?? 0;
-
-  for (const frame of [...incoming].sort((left, right) => left.sequence - right.sequence)) {
-    if (frame.gameId !== gameId || frame.sequence <= lastSequence) continue;
-    if (frames === current) frames = [...current];
-    frames.push(frame);
-    lastSequence = frame.sequence;
+  const bySequence = new Map<number, GameWatchReplayFrame>();
+  for (const frame of current) {
+    if (frame.gameId === gameId) bySequence.set(frame.sequence, frame);
+  }
+  // A trusted hydration frame wins over a same-sequence synthetic live frame,
+  // and a missing lower sequence is allowed to backfill after an out-of-order
+  // WebSocket delivery.
+  for (const frame of incoming) {
+    if (frame.gameId === gameId) bySequence.set(frame.sequence, frame);
   }
 
-  return frames;
+  const frames = [...bySequence.values()]
+    .sort((left, right) => left.sequence - right.sequence);
+  const unchanged = frames.length === current.length
+    && frames.every((frame, index) => frame === current[index]);
+  return unchanged ? current : frames;
 }
 
 export function buildLiveViewerDecisionFrame(

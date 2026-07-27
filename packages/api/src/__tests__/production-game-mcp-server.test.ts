@@ -808,6 +808,74 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     );
     expect(JSON.stringify(roundFactsTool.outputSchema)).not.toContain("sealedBallots");
     expect(JSON.stringify(roundFactsTool.outputSchema)).not.toContain("sealedBallotAccess");
+    expect(roundFactsTool.outputSchema).toMatchObject({
+      properties: {
+        schemaVersion: { const: 2 },
+        game: {
+          required: expect.arrayContaining([
+            "gameKernel",
+            "gameKernelSource",
+            "gameKernelDiagnostics",
+          ]),
+        },
+      },
+    });
+    expect(JSON.stringify(roundFactsTool.outputSchema)).toContain(
+      "stored_kernel_event_contradiction",
+    );
+    expectMatchesJsonSchema({
+      schemaVersion: 2,
+      game: {
+        gameKernel: "classic",
+        gameKernelSource: "stored",
+        gameKernelDiagnostics: [{
+          code: "stored_kernel_event_contradiction",
+          message: "Stored classic kernel contradicts trusted format event.",
+          storedKernel: "classic",
+          evidenceKernel: "format",
+          eventType: "format.menu_offered",
+          sequence: 7,
+        }],
+      },
+      canonicalGameFacts: {
+        roundFacts: {
+          round: 1,
+          players: {},
+          standardVote: {},
+          format: {
+            acceptedBallots: [],
+            ballotPresentation: {
+              status: "sealed",
+              rollCall: [],
+            },
+          },
+        },
+        availability: {},
+      },
+    }, roundFactsTool.outputSchema);
+    expect(() => expectMatchesJsonSchema({
+      schemaVersion: 1,
+      game: {
+        gameKernel: "classic",
+        gameKernelSource: "stored",
+        gameKernelDiagnostics: [],
+      },
+      canonicalGameFacts: {
+        roundFacts: {
+          round: 1,
+          players: {},
+          standardVote: {},
+          format: {
+            acceptedBallots: [],
+            ballotPresentation: {
+              status: "sealed",
+              rollCall: [],
+            },
+          },
+        },
+        availability: {},
+      },
+    }, roundFactsTool.outputSchema)).toThrow("schemaVersion");
     const filterEventsTool = tools.find(
       (tool) => (tool as { name: string }).name === "filter_events",
     ) as { description: string };
@@ -1890,7 +1958,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
       readRoundFacts: async (args: unknown) => {
         calls.push(args);
-        return { schemaVersion: 1, canonicalGameFacts: { roundFacts: { round: 2 } } };
+        return { schemaVersion: 2, canonicalGameFacts: { roundFacts: { round: 2 } } };
       },
     }));
 
@@ -1904,6 +1972,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(response?.error).toBeUndefined();
     expect(calls).toEqual([{ gameIdOrSlug: "game-1", round: 2 }]);
     const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
+    expect(text).toContain("\"schemaVersion\": 2");
     expect(text).toContain("\"round\": 2");
   });
 

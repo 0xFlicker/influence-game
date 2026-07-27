@@ -392,7 +392,8 @@ export class PresentationDirector {
     const watermark = this.state.hydrationWatermark;
     const additions = canonicalizeCues(cues).filter((cue) => {
       if (existingKeys.has(cue.key)) return false;
-      return cue.canonicalSequence === null
+      return cue.source === "classic"
+        || cue.canonicalSequence === null
         || watermark === null
         || cue.canonicalSequence > watermark;
     });

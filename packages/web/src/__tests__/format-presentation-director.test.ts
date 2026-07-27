@@ -224,6 +224,18 @@ describe("presentation director", () => {
     expect(director.getSnapshot().canonicalSequence).toBe(22);
   });
 
+  it("retains unseen social cues anchored at the hydration watermark", () => {
+    const director = createPresentationDirector();
+    director.reconnect([cue("game:20", 20)]);
+
+    director.append([cue("social:20", 20, 1, "classic")]);
+
+    expect(director.getSnapshot().cueKeys).toEqual([
+      "game:20",
+      "social:20",
+    ]);
+  });
+
   it("follows separate live batches while remaining logically playing at the natural tail", () => {
     const clock = new FakeClock();
     const director = createPresentationDirector({ clock, followTail: true });

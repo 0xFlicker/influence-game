@@ -17,7 +17,12 @@ import {
   MatchWatchShell,
 } from "../app/games/[slug]/components/match-watch-shell";
 import type { MatchWatchPlayerCard } from "../app/games/[slug]/components/match-watch-model";
-import { isFormatSocialTranscriptMessage } from "../app/games/[slug]/components/dramatic-replay-viewer";
+import type { ClassicPresentationCue } from "../app/games/[slug]/components/types";
+import {
+  buildReplayPlayersForCue,
+  comparePresentationCues,
+  isFormatSocialTranscriptMessage,
+} from "../app/games/[slug]/components/dramatic-replay-viewer";
 import { buildReplayScenes } from "../app/games/[slug]/components/spectacle-viewer";
 
 const matchWatchShellSource = readFileSync(
@@ -363,6 +368,58 @@ describe("MatchWatchShell", () => {
     expect(html).not.toContain("Council");
   });
 
+  it("surfaces a live compiler diagnostic without inventing a replacement state", () => {
+    const currentGame = {
+      ...game(),
+      status: "in_progress" as const,
+      gameKernel: "format" as const,
+      gameKernelSource: "stored" as const,
+      currentPhase: "FORMAT_PICK" as const,
+    };
+    const invalidSelection: GameWatchReplayFrame = {
+      schemaVersion: 3,
+      gameId: currentGame.id,
+      slug: currentGame.slug,
+      sequence: 12,
+      eventType: "format.selected",
+      timestamp: 12,
+      round: 1,
+      phase: "FORMAT_PICK",
+      players: currentGame.players,
+      counts: {
+        totalPlayers: 2,
+        alivePlayers: 1,
+        eliminatedPlayers: 1,
+        unknownPlayers: 0,
+      },
+      viewerDecisionEvent: {
+        sequence: 12,
+        timestamp: "2026-07-26T00:00:00.000Z",
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        type: "format.selected",
+        payload: {
+          empoweredId: "p1",
+          formatId: "vote_bomb",
+        },
+      },
+    };
+
+    const html = renderToString(
+      <MatchWatchShell
+        game={currentGame}
+        messages={[]}
+        replayFrames={[invalidSelection]}
+        live
+        connStatus="live"
+      />,
+    );
+
+    expect(html).toContain('data-format-presentation="incomplete"');
+    expect(html).toContain("Presentation incomplete");
+    expect(html).toContain("trusted offered pair");
+  });
+
   it("keeps social dialogue while quarantining format authority transcript phases", () => {
     expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_MINGLE" }))).toBe(true);
     expect(isFormatSocialTranscriptMessage(entry({ phase: "LOBBY" }))).toBe(true);
@@ -370,6 +427,70 @@ describe("MatchWatchShell", () => {
     expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_MENU" }))).toBe(false);
     expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_PICK" }))).toBe(false);
     expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_RESOLVE" }))).toBe(false);
+  });
+
+  it("orders same-round diary scenes by canonical chronology after format beats", () => {
+    const formatBeat: ClassicPresentationCue = {
+      source: "classic",
+      key: "format:10",
+      canonicalSequence: 10,
+      round: 1,
+      phase: "FORMAT_MENU",
+      kind: "classic_transcript",
+      stage: "done",
+      baseDurationMs: 1,
+      sceneIndex: 0,
+      messageIndex: 0,
+    };
+    const diaryBeat: ClassicPresentationCue = {
+      ...formatBeat,
+      key: "diary:20",
+      canonicalSequence: 20,
+      phase: "DIARY_ROOM",
+      sceneIndex: 1,
+    };
+
+    expect([diaryBeat, formatBeat].sort(comparePresentationCues)).toEqual([
+      formatBeat,
+      diaryBeat,
+    ]);
+  });
+
+  it("derives format replay life state from the canonical frame, never transcript prose", () => {
+    const currentGame = game();
+    const canonicalPlayers = currentGame.players.map((player) => ({
+      ...player,
+      status: player.id === "p1" ? "eliminated" as const : "alive" as const,
+    }));
+    const frame: GameWatchReplayFrame = {
+      schemaVersion: 3,
+      gameId: currentGame.id,
+      slug: currentGame.slug,
+      sequence: 20,
+      eventType: "format.resolved",
+      timestamp: 20,
+      round: 1,
+      phase: "FORMAT_RESOLVE",
+      players: canonicalPlayers,
+      counts: {
+        totalPlayers: 2,
+        alivePlayers: 1,
+        eliminatedPlayers: 1,
+        unknownPlayers: 0,
+      },
+    };
+
+    const replayPlayers = buildReplayPlayersForCue({
+      players: currentGame.players,
+      isFormatGame: true,
+      canonicalFrame: frame,
+      classicEliminatedIds: new Set(),
+      live: false,
+    });
+
+    expect(replayPlayers.find((player) => player.id === "p1")?.status).toBe(
+      "eliminated",
+    );
   });
 
   it("keeps playback timing in the director and adds no audio behavior", () => {

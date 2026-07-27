@@ -4,7 +4,6 @@ import {
   type Locator,
   type Page,
   type TestInfo,
-  type WebSocketRoute,
 } from "@playwright/test";
 import {
   createFormatKernelViewerScenario,
@@ -13,15 +12,12 @@ import {
 import {
   displayNameForFormat,
 } from "../packages/engine/src/format-presentation-metadata";
-import { buildCompletedGameResults } from "../packages/engine/src/completed-game-results";
 import {
-  EDGE_SMOKE_DUSK_EXPECTED,
-  EDGE_SMOKE_DUSK_PLAYERS,
-  createEdgeSmokeDuskEvents,
-} from "../packages/engine/src/fixtures/edge-smoke-dusk";
-import {
-  projectViewerDecisionEvent,
-} from "../packages/engine/src/viewer-decision-events";
+  formatResultPattern,
+  installDeterministicClassicGame,
+  installDeterministicCompletedClassicGame,
+  installDeterministicFormatGame,
+} from "./format-aware-game-viewer.fixtures";
 
 const RUN_FORMAT_VIEWER = process.env.PLAYWRIGHT_FORMAT_VIEWER === "1";
 const FORMAT_VIEWER_SLUG =
@@ -145,6 +141,7 @@ test.describe("format-aware game viewer", () => {
       await expect(
         replayShell.getByText(entry.formatName, { exact: true }).first(),
       ).toBeVisible();
+      await assertCompletedFormatReplayProgression(page, replayShell);
 
       await page.goto("/games/dark-coral-horn/results", {
         waitUntil: "domcontentloaded",
@@ -291,6 +288,7 @@ test.describe("format-aware game viewer", () => {
 
     const pointerStage = page.locator('[data-format-cue="safety_bounce_pointer"]');
     await advanceUntilVisible(page, pointerStage, "Safety Bounce pointer");
+    await pauseAutoplay(page, "⏸ Pause");
     await assertCanonicalPointerLanding(pointerStage);
     const desktopBoard = await assertBoardPartition(pointerStage);
 
@@ -530,426 +528,6 @@ test.describe("format-aware game viewer", () => {
   });
 });
 
-type DeterministicGameStatus =
-  | "in_progress"
-  | "completed"
-  | "suspended"
-  | "cancelled";
-
-async function installDeterministicFormatGame(
-  page: Page,
-  options: {
-    slug: string;
-    scenarioId: FormatKernelViewerScenarioId;
-    status: DeterministicGameStatus;
-    initialDecisionCount?: number;
-  },
-): Promise<{
-  sockets: WebSocketRoute[];
-  setDecisionCount: (count: number) => void;
-  currentGame: () => ReturnType<typeof buildDeterministicFormatGame>;
-}> {
-  const scenario = createFormatKernelViewerScenario(options.scenarioId);
-  let decisionCount = options.initialDecisionCount ?? scenario.decisions.length;
-  const sockets: WebSocketRoute[] = [];
-  const currentDecisions = () => scenario.decisions.slice(0, decisionCount);
-  const currentGame = () => buildDeterministicFormatGame(
-    options.slug,
-    options.status,
-    scenario.roster,
-    currentDecisions(),
-  );
-
-  await page.route(gameApiPattern(options.slug), async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.endsWith("/replay-watch-frames")) {
-      const afterSequence = Number(url.searchParams.get("afterSequence") ?? 0);
-      await fulfillJson(
-        route,
-        buildDeterministicFormatFrames(
-          options.slug,
-          scenario.roster,
-          currentDecisions(),
-        ).filter((frame) => frame.sequence > afterSequence),
-      );
-      return;
-    }
-    if (url.pathname.endsWith("/transcript")) {
-      await fulfillJson(route, []);
-      return;
-    }
-    if (url.pathname === `/api/games/${options.slug}`) {
-      await fulfillJson(route, currentGame());
-      return;
-    }
-    await route.fulfill({ status: 404, body: "deterministic route not found" });
-  });
-  await page.routeWebSocket(
-    new RegExp(`/ws/games/${escapeRegExp(options.slug)}(?:\\?.*)?$`),
-    (socket) => {
-      sockets.push(socket);
-      setTimeout(() => {
-        socket.send(JSON.stringify({
-          type: "watch_state",
-          state: currentGame().watchState,
-        }));
-      }, 25);
-    },
-  );
-
-  return {
-    sockets,
-    setDecisionCount(count) {
-      decisionCount = Math.max(0, Math.min(count, scenario.decisions.length));
-    },
-    currentGame,
-  };
-}
-
-async function installDeterministicClassicGame(
-  page: Page,
-  options: {
-    slug: string;
-    status: DeterministicGameStatus;
-    gameKernel: "classic" | null;
-  },
-): Promise<void> {
-  const game = buildDeterministicClassicGame(options);
-  await page.route(gameApiPattern(options.slug), async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.endsWith("/transcript")) {
-      await fulfillJson(route, []);
-      return;
-    }
-    if (url.pathname.endsWith("/replay-watch-frames")) {
-      await fulfillJson(route, []);
-      return;
-    }
-    if (url.pathname === `/api/games/${options.slug}`) {
-      await fulfillJson(route, game);
-      return;
-    }
-    await route.fulfill({ status: 404, body: "deterministic route not found" });
-  });
-  await page.routeWebSocket(
-    new RegExp(`/ws/games/${escapeRegExp(options.slug)}(?:\\?.*)?$`),
-    () => {},
-  );
-}
-
-async function installDeterministicCompletedClassicGame(
-  page: Page,
-  slug: string,
-): Promise<void> {
-  const fixture = buildDeterministicCompletedClassicGame(slug);
-  await page.route(gameApiPattern(slug), async (route) => {
-    const url = new URL(route.request().url());
-    if (url.pathname.endsWith("/transcript")) {
-      await fulfillJson(route, fixture.transcript);
-      return;
-    }
-    if (url.pathname.endsWith("/replay-watch-frames")) {
-      await fulfillJson(route, fixture.frames);
-      return;
-    }
-    if (url.pathname.endsWith("/results")) {
-      await fulfillJson(route, {
-        ok: true,
-        schemaVersion: 2,
-        game: {
-          id: fixture.game.id,
-          slug,
-          status: "completed",
-          completedAt: fixture.game.completedAt,
-          gameKernel: "classic",
-          gameKernelSource: "stored",
-        },
-        results: fixture.results,
-      });
-      return;
-    }
-    if (url.pathname === `/api/games/${slug}`) {
-      await fulfillJson(route, fixture.game);
-      return;
-    }
-    await route.fulfill({ status: 404, body: "deterministic route not found" });
-  });
-}
-
-function buildDeterministicFormatGame(
-  slug: string,
-  status: DeterministicGameStatus,
-  roster: readonly { id: string; name: string }[],
-  decisions: ReturnType<typeof createFormatKernelViewerScenario>["decisions"],
-) {
-  const lastDecision = decisions.at(-1);
-  const players = roster.map((player) => ({
-    ...player,
-    persona: `${player.name} deterministic viewer fixture`,
-    personaKey: "observer",
-    status: "alive",
-    shielded: false,
-  }));
-  const sequence = lastDecision?.sequence ?? 0;
-  const currentPhase = lastDecision?.phase ?? "FORMAT_MENU";
-  return {
-    id: slug,
-    slug,
-    status,
-    gameKernel: "format",
-    gameKernelSource: "stored",
-    currentRound: 2,
-    maxRounds: 9,
-    currentPhase,
-    players,
-    modelTier: "standard",
-    visibility: "public",
-    viewerMode: "live",
-    createdAt: "2026-07-27T00:00:00.000Z",
-    startedAt: "2026-07-27T00:00:01.000Z",
-    ...(status === "completed"
-      ? { completedAt: "2026-07-27T00:10:00.000Z" }
-      : {}),
-    watchState: {
-      schemaVersion: 5,
-      gameId: slug,
-      slug,
-      status,
-      gameKernel: "format",
-      gameKernelSource: "stored",
-      source: "durable_projection",
-      currentRound: 2,
-      currentPhase,
-      maxRounds: 9,
-      eventCursor: {
-        sequence,
-        source: sequence > 0 ? "trusted_prefix" : "none",
-        ...(lastDecision
-          ? {
-              eventType: lastDecision.type,
-              createdAt: lastDecision.timestamp,
-            }
-          : {}),
-      },
-      projection: {
-        availability: "available",
-        eventLogStatus: "complete",
-        projectionStatus: "complete",
-        eventCount: decisions.length,
-        trustedEventCount: decisions.length,
-        validPrefixLength: decisions.length,
-        lastTrustedSequence: sequence,
-        diagnostics: [],
-      },
-      players,
-      counts: playerCounts(players),
-      final: {
-        status: status === "completed" ? "final" : "not_final",
-        ...(status === "completed" ? { roundsPlayed: 2 } : {}),
-      },
-    },
-  };
-}
-
-function buildDeterministicFormatFrames(
-  slug: string,
-  roster: readonly { id: string; name: string }[],
-  decisions: ReturnType<typeof createFormatKernelViewerScenario>["decisions"],
-) {
-  const players = roster.map((player) => ({
-    ...player,
-    persona: `${player.name} deterministic viewer fixture`,
-    personaKey: "observer",
-    status: "alive",
-    shielded: false,
-  }));
-  const counts = playerCounts(players);
-  return decisions.map((decision) => ({
-    schemaVersion: 3,
-    gameId: slug,
-    slug,
-    sequence: decision.sequence,
-    eventType: decision.type,
-    timestamp: Date.parse(decision.timestamp),
-    round: decision.round,
-    phase: decision.phase,
-    players,
-    counts,
-    viewerDecisionEvent: decision,
-  }));
-}
-
-function buildDeterministicCompletedClassicGame(slug: string) {
-  const gameId = `${slug}-browser-proof`;
-  const events = createEdgeSmokeDuskEvents(gameId);
-  const eliminatedIds = new Set<string>(EDGE_SMOKE_DUSK_EXPECTED.bootOrder);
-  const players = Object.values(EDGE_SMOKE_DUSK_PLAYERS).map((player) => ({
-    ...player,
-    persona: `${player.name} classic characterization`,
-    personaKey: "observer",
-    status: eliminatedIds.has(player.id) ? "eliminated" : "alive",
-    shielded: false,
-  }));
-  const counts = playerCounts(players);
-  const frames = events.flatMap((event) => {
-    const viewerDecisionEvent = projectViewerDecisionEvent(event);
-    return viewerDecisionEvent
-      ? [{
-          schemaVersion: 3,
-          gameId,
-          slug,
-          sequence: viewerDecisionEvent.sequence,
-          eventType: viewerDecisionEvent.type,
-          timestamp: Date.parse(viewerDecisionEvent.timestamp),
-          round: viewerDecisionEvent.round,
-          phase: viewerDecisionEvent.phase,
-          players,
-          counts,
-          viewerDecisionEvent,
-        }]
-      : [];
-  });
-  const transcriptTexts = [
-    {
-      phase: "VOTE",
-      text: "Lilith Voss votes: empower=Shadowtech, expose=Ash Calder",
-    },
-    {
-      phase: "POWER",
-      text: "Shadowtech power action: protect -> Lilith Voss",
-    },
-    {
-      phase: "COUNCIL",
-      text: "Lilith Voss council vote -> Ash Calder",
-    },
-  ] as const;
-  const transcript = transcriptTexts.map((entry, index) => ({
-    id: index + 1,
-    gameId,
-    round: 1,
-    phase: entry.phase,
-    fromPlayerId: null,
-    fromPlayerName: null,
-    scope: "system",
-    toPlayerIds: null,
-    text: entry.text,
-    timestamp: 1_720_100_000_000 + index,
-  }));
-  return {
-    game: {
-      id: gameId,
-      slug,
-      status: "completed",
-      gameKernel: "classic",
-      gameKernelSource: "stored",
-      currentRound: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
-      maxRounds: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
-      currentPhase: "END",
-      players,
-      modelTier: "standard",
-      visibility: "public",
-      viewerMode: "replay",
-      winner: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
-      createdAt: "2026-07-27T00:00:00.000Z",
-      startedAt: "2026-07-27T00:00:01.000Z",
-      completedAt: "2026-07-27T00:10:00.000Z",
-    },
-    frames,
-    transcript,
-    results: buildCompletedGameResults({
-      events,
-      gameKernel: "classic",
-    }),
-  };
-}
-
-function buildDeterministicClassicGame({
-  slug,
-  status,
-  gameKernel,
-}: {
-  slug: string;
-  status: DeterministicGameStatus;
-  gameKernel: "classic" | null;
-}) {
-  const players = [
-    {
-      id: "classic-atlas",
-      name: "Classic Atlas",
-      persona: "Legacy strategist",
-      status: "alive",
-      shielded: false,
-    },
-    {
-      id: "classic-lyra",
-      name: "Classic Lyra",
-      persona: "Legacy diplomat",
-      status: "alive",
-      shielded: false,
-    },
-  ];
-  return {
-    id: slug,
-    slug,
-    status,
-    ...(gameKernel ? { gameKernel, gameKernelSource: "stored" } : {}),
-    currentRound: 2,
-    maxRounds: 9,
-    currentPhase: status === "suspended" ? "SUSPENDED" : "MINGLE",
-    players,
-    modelTier: "standard",
-    visibility: "public",
-    viewerMode: "live",
-    createdAt: "2026-07-27T00:00:00.000Z",
-  };
-}
-
-function playerCounts(
-  players: readonly { status: string }[],
-): {
-  totalPlayers: number;
-  alivePlayers: number;
-  eliminatedPlayers: number;
-  unknownPlayers: number;
-} {
-  return {
-    totalPlayers: players.length,
-    alivePlayers: players.filter((player) => player.status === "alive").length,
-    eliminatedPlayers: players.filter(
-      (player) => player.status === "eliminated",
-    ).length,
-    unknownPlayers: players.filter((player) => player.status === "unknown").length,
-  };
-}
-
-function gameApiPattern(slug: string): RegExp {
-  return new RegExp(
-    `/api/games/${escapeRegExp(slug)}(?:/[^?]*)?(?:\\?.*)?$`,
-  );
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function formatResultPattern(formatName: string): RegExp {
-  const resultLabel = formatName === "Save-or-Eliminate"
-    ? "Save Or Eliminate"
-    : formatName;
-  return new RegExp(`${escapeRegExp(resultLabel)} (Clear|Tie|Auto)`, "i");
-}
-
-async function fulfillJson(
-  route: Parameters<Parameters<Page["route"]>[1]>[0],
-  value: unknown,
-): Promise<void> {
-  await route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify(value),
-  });
-}
-
 async function advanceUntilVisible(
   page: Page,
   locator: Locator,
@@ -959,6 +537,9 @@ async function advanceUntilVisible(
   for (let index = 0; index < maxAdvances; index += 1) {
     if (await locator.isVisible().catch(() => false)) return;
     await page.keyboard.press("ArrowRight");
+    // Room-transition overlays intentionally block keyboard navigation. Let
+    // their deterministic timer settle before the next manual step.
+    await page.clock.runFor(250);
   }
   throw new Error(
     `${stageLabel} did not appear for persisted fixture ${FORMAT_VIEWER_SLUG}.`,
@@ -990,8 +571,57 @@ async function pauseAutoplay(page: Page, accessibleName: string): Promise<void> 
   });
   await expect(pauseButton.or(playButton)).toBeVisible();
   if (await pauseButton.isVisible()) {
-    await pauseButton.click();
+    // Next.js dev tools occupy this mobile corner in local verification.
+    await pauseButton.click({ force: true });
   }
+}
+
+async function assertCompletedFormatReplayProgression(
+  page: Page,
+  replayShell: Locator,
+): Promise<void> {
+  await pauseAutoplay(page, "⏸ Pause");
+  const replayStart = page.getByRole("button", { name: "Go to replay start" });
+  if (await replayStart.isEnabled()) await replayStart.click();
+  const initial = await replayPlayerCounts(replayShell);
+
+  const aggregate = replayShell.locator('[data-format-cue="format_aggregate"]');
+  await advanceUntilVisible(page, aggregate, "format aggregate");
+  await expect(aggregate.locator("[data-ledger-voter]")).toHaveCount(0);
+
+  await page.keyboard.press("ArrowRight");
+  const rollCall = replayShell.locator('[data-format-cue="format_roll_call"]');
+  await expect(rollCall).toBeVisible();
+  await expect(rollCall.locator("[data-ledger-voter]")).toHaveCount(1);
+
+  const elimination = replayShell.locator(
+    '[data-format-cue="format_elimination"]',
+  );
+  await advanceUntilVisible(page, elimination, "format elimination");
+  await expect(elimination.getByText(/ is eliminated$/)).toBeVisible();
+  const resolved = await replayPlayerCounts(replayShell);
+  expect(resolved.alive).toBe(initial.alive - 1);
+  expect(resolved.out).toBe(initial.out + 1);
+}
+
+async function replayPlayerCounts(
+  replayShell: Locator,
+): Promise<{ alive: number; out: number }> {
+  const count = async (label: "Alive" | "Out") => {
+    const value = await replayShell
+      .getByTestId(`match-watch-count-${label.toLowerCase()}`)
+      .locator("strong")
+      .textContent();
+    const parsed = Number(value);
+    if (!Number.isInteger(parsed)) {
+      throw new Error(`Replay ${label} count is not canonical: ${value ?? "missing"}.`);
+    }
+    return parsed;
+  };
+  return {
+    alive: await count("Alive"),
+    out: await count("Out"),
+  };
 }
 
 async function assertCanonicalPointerLanding(stage: Locator): Promise<void> {

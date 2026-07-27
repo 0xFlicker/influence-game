@@ -1193,14 +1193,25 @@ export function createGameRoutes(
   app.get("/api/games/:id/replay-watch-frames", async (c) => {
     const idOrSlug = c.req.param("id");
     const afterSequenceParam = c.req.query("afterSequence");
+    const presentationOnlyParam = c.req.query("presentationOnly");
     const afterSequence = afterSequenceParam === undefined
       ? 0
       : Number(afterSequenceParam);
     if (!Number.isInteger(afterSequence) || afterSequence < 0) {
       return c.json({ error: "afterSequence must be a non-negative integer" }, 400);
     }
+    if (
+      presentationOnlyParam !== undefined
+      && presentationOnlyParam !== "true"
+      && presentationOnlyParam !== "false"
+    ) {
+      return c.json({ error: "presentationOnly must be true or false" }, 400);
+    }
 
-    const frames = await getGameWatchReplayFrames(db, idOrSlug, { afterSequence });
+    const frames = await getGameWatchReplayFrames(db, idOrSlug, {
+      afterSequence,
+      presentationOnly: presentationOnlyParam === "true",
+    });
     if (!frames) return c.json({ error: "Game not found" }, 404);
     return c.json(frames);
   });

@@ -13,6 +13,7 @@ import {
   type CanonicalGameEvent,
   type CanonicalGameEventType,
   type GameKernel,
+  type GameKernelContradictionDiagnostic,
   type PostgameAnalysisDetailLevel,
   type PostgameAnalysisProjection,
   type PostgamePlayerGameSummary,
@@ -112,6 +113,8 @@ export interface ProductionGameMcpGameIdentity {
   gameKernel: GameKernel;
   /** Whether gameKernel came from games.game_kernel or event inference. */
   gameKernelSource: "stored" | "inferred";
+  /** Canonical stored-vs-event contradictions; contains no private trace data. */
+  gameKernelDiagnostics: GameKernelContradictionDiagnostic[];
   createdAt: string;
   startedAt?: string;
   endedAt?: string;
@@ -537,13 +540,6 @@ export class ProductionGameMcpReadModel {
       .limit(1))[0];
 
     if (!row) return null;
-    // Stored kernel short-circuits inference; skip full event load on the hot path.
-    const storedKernel = row.gameKernel === "classic" || row.gameKernel === "format"
-      ? row.gameKernel
-      : null;
-    if (storedKernel) {
-      return gameIdentity(row, []);
-    }
     const events = await getPersistedGameEvents(this.db, row.id);
     return gameIdentity(row, events.events.map((rowEvent) => rowEvent.envelope));
   }
@@ -679,7 +675,7 @@ export class ProductionGameMcpReadModel {
     options: ProductionGameMcpRoundFactsOptions,
     access: ProductionGameMcpAccess,
   ): Promise<{
-    schemaVersion: 1;
+    schemaVersion: 2;
     game: ProductionGameMcpGameIdentity;
     canonicalGameFacts: RevealedRoundFactsRead;
   }> {
@@ -703,7 +699,7 @@ export class ProductionGameMcpReadModel {
       events: terminalSafeEvents,
     });
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       game,
       canonicalGameFacts: buildRevealedRoundFacts({
         events: terminalSafeEvents.map((event) => event.envelope),
@@ -1815,6 +1811,7 @@ function gameIdentity(
     ...(row.seasonId && { seasonId: row.seasonId }),
     gameKernel: resolved.kernel,
     gameKernelSource: resolved.source,
+    gameKernelDiagnostics: resolved.diagnostics,
     createdAt: row.createdAt,
     ...(row.startedAt && { startedAt: row.startedAt }),
     ...(row.endedAt && { endedAt: row.endedAt }),

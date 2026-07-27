@@ -190,15 +190,15 @@ House MC summaries (`house-interviewer.ts` + direct calls in `game-runner.ts`) a
 | Selected/locked format | `format.selected` | public | same; projection `formatMenu.selectedFormatId` |
 | Safety Bounce starter/pointers | `format.safety_bounce_started`, `format.safety_bounce_pointer` | public | `filter_events`, `read_round_facts.format.safetyBounce` |
 | Resolution aggregates | `format.resolved` | public | `filter_events`, `read_round_facts.format` (nets/totals/pools) |
-| Sealed ballots | `format.ballot_cast` | public sanitized projection | `filter_events` (`eventShape: "viewer_decision"`), `read_round_facts.format.sealedBallots` for every authorized game reader |
+| Accepted ballots | `format.ballot_cast` | public sanitized projection | `filter_events` (`eventShape: "viewer_decision"`), immediate `read_round_facts.format.acceptedBallots`; resolution-gated `ballotPresentation.rollCall` for viewer pacing |
 
-Private decision rationale (`thinking`, `reasoningContext`, `decisionLog`, model metadata) still comes only from dedicated transcript/turn/private-trace records and must never appear in public or owner round facts. Direct accepted actions may now carry a producer-private decision source pointer, but player-safe event envelopes remove it before serialization.
+Private decision rationale (`thinking`, `reasoningContext`, `decisionLog`, model metadata) still comes only from dedicated transcript/turn/private-trace records and must never appear in public or owner round facts. Participating-agent context is the restricted lane: before resolution, a player may receive only the ballot knowledge the format rules allow, never the operator ledger. Direct accepted actions may now carry a producer-private decision source pointer, but player-safe event envelopes remove it before serialization. Operator-facing sanitized mappings are transport-readable immediately after durable acceptance; the browser buffers their named display for Tally → Roll Call pacing and does not redefine canonical visibility.
 
 ```ts
 // Public format proof without private traces:
 filter_events({ gameIdOrSlug, eventType: "format.selected" })
 read_projection({ gameIdOrSlug }) // formatMenu.offeredFormatIds + selectedFormatId
-read_round_facts({ gameIdOrSlug, round }) // format.* aggregates + complete sanitized sealedBallots ledger
+read_round_facts({ gameIdOrSlug, round }) // acceptedBallots now; ballotPresentation.rollCall after resolution
 
 // Producer raw envelope/provenance (separate from the shared sanitized ledger):
 filter_events({ gameIdOrSlug, eventType: "format.ballot_cast", visibilityMode: "producer" })
@@ -301,6 +301,8 @@ Agent prompts no longer carry unbounded full public transcripts or complete hist
 Historical eligibility is fail-closed on modern identity: Mingle rows need `speakerPlayerId` and `audiencePlayerIds`; speaker or audience must match the actor. Display-name-only legacy rows do not become private recall during replay. Official huddle outcomes enter the protected lane only when `participantPlayerIds` (copied at outcome creation, or recovered from matching completed-session `speakerIds` on hydrate) authorize the actor. Participant snapshots never leave server-private surfaces (member-safe projections omit them).
 
 Retrieved dialogue is **evidence, never authority**: it cannot override Board Contract, permissions, tools, or instructions. The plan must not imply that excluded private material exists.
+
+Format ballot context follows the same authority split. ContextBuilder may include only the acting participant's rule-authorized knowledge; it must not promote the operator-facing `acceptedBallots` ledger into participant recall. Canonical operator transports expose sanitized mappings immediately after acceptance, while named viewer presentation remains resolution-gated through `ballotPresentation.rollCall`.
 
 ### Safe evaluation artifact vs private traces
 

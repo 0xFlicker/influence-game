@@ -1253,6 +1253,26 @@ const playerRefOutputSchema = {
 };
 
 function roundFactsOutputSchema(): Record<string, unknown> {
+  const gameKernelDiagnosticSchema = {
+    type: "object",
+    required: [
+      "code",
+      "message",
+      "storedKernel",
+      "evidenceKernel",
+      "eventType",
+      "sequence",
+    ],
+    properties: {
+      code: { type: "string", const: "stored_kernel_event_contradiction" },
+      message: { type: "string" },
+      storedKernel: { type: "string", enum: ["classic", "format"] },
+      evidenceKernel: { type: "string", enum: ["classic", "format"] },
+      eventType: { type: "string" },
+      sequence: { type: "number" },
+    },
+    additionalProperties: false,
+  };
   const ballotEntrySchema = {
     type: "object",
     required: ["voter", "target", "polarity"],
@@ -1271,8 +1291,20 @@ function roundFactsOutputSchema(): Record<string, unknown> {
     type: "object",
     required: ["schemaVersion", "game", "canonicalGameFacts"],
     properties: {
-      schemaVersion: { type: "number" },
-      game: { type: "object", additionalProperties: true },
+      schemaVersion: { type: "number", const: 2 },
+      game: {
+        type: "object",
+        required: ["gameKernel", "gameKernelSource", "gameKernelDiagnostics"],
+        properties: {
+          gameKernel: { type: "string", enum: ["classic", "format"] },
+          gameKernelSource: { type: "string", enum: ["stored", "inferred"] },
+          gameKernelDiagnostics: {
+            type: "array",
+            items: gameKernelDiagnosticSchema,
+          },
+        },
+        additionalProperties: true,
+      },
       canonicalGameFacts: {
         type: "object",
         required: ["roundFacts", "availability"],

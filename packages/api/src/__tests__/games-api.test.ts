@@ -1026,6 +1026,27 @@ describe("Game REST API", () => {
 
       const invalidCursor = await app.request(`/api/games/${id}/replay-watch-frames?afterSequence=-1`);
       expect(invalidCursor.status).toBe(400);
+
+      const presentationResponse = await app.request(
+        `/api/games/${id}/replay-watch-frames?presentationOnly=true`,
+      );
+      expect(presentationResponse.status).toBe(200);
+      const presentationFrames = await presentationResponse.json() as Array<{
+        sequence: number;
+        viewerDecisionEvent?: unknown;
+      }>;
+      expect(
+        presentationFrames.every(
+          (frame, index, frames) =>
+            Boolean(frame.viewerDecisionEvent) || index === frames.length - 1,
+        ),
+      ).toBe(true);
+      expect(presentationFrames.at(-1)?.sequence).toBe(allFrames.at(-1)?.sequence);
+
+      const invalidPresentationOnly = await app.request(
+        `/api/games/${id}/replay-watch-frames?presentationOnly=maybe`,
+      );
+      expect(invalidPresentationOnly.status).toBe(400);
     });
 
     test("labels older completed games as best-available terminal watch state", async () => {

@@ -160,9 +160,9 @@ Use `--house-summaries` when you want the same terminal to print only concise `[
 
 - `format.menu_offered` / `format.selected` / `format.resolved` / Safety Bounce pointer events in `game-N-events.jsonl` or Production `filter_events`
 - MCP `read_projection.summary.formatMenu` (`offeredFormatIds`, `selectedFormatId`)
-- MCP `read_round_facts.format` for public aggregates plus the complete sanitized sealed-ballot ledger for every authorized reader
+- MCP `read_round_facts.format.acceptedBallots` for the complete sanitized operator ledger immediately after durable acceptance; `ballotPresentation.rollCall` is populated only after resolution for viewer pacing
 
-Private decision rationale still lives in transcript/turn records (`format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`) and must not be treated as the public board-fact path.
+Private decision rationale still lives in transcript/turn records (`format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`) and must not be treated as the public board-fact path. Participating-agent context remains rule-restricted and must not receive the operator ledger before resolution. The web viewer may buffer already transport-readable sanitized mappings for Tally → Roll Call choreography; that delay is presentation, not confidentiality.
 
 ```bash
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \

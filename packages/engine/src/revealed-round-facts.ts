@@ -8,6 +8,12 @@ import {
   reconstructSafetyBouncePrefix,
   type FormatBallotPresentationStatus,
 } from "./viewer-decision-events";
+import {
+  booleanOrNull,
+  exposureBenchEntries,
+  stringArray,
+  stringValue,
+} from "./revealed-round-facts-values";
 
 export type RevealedFactsStatus = "available" | "not_yet_resolved" | "not_yet_flushed" | "unavailable";
 
@@ -979,34 +985,4 @@ function sanitizeExposureResolution(
     fallbackApplied: booleanOrNull(value.fallbackApplied),
     fallbackReason: stringValue(value.fallbackReason),
   };
-}
-
-function exposureBenchEntries(value: unknown, projection: CanonicalGameProjection): RevealedExposureBenchEntry[] {
-  if (!Array.isArray(value)) return [];
-  const entries: RevealedExposureBenchEntry[] = [];
-  for (const item of value) {
-    if (!isRecord(item) || typeof item.id !== "string") continue;
-    entries.push({
-      player: playerRef(projection, item.id),
-      exposeScore: typeof item.exposeScore === "number" ? item.exposeScore : null,
-    });
-  }
-  return entries;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
-function stringArray(value: unknown): UUID[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((item): item is UUID => typeof item === "string");
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function booleanOrNull(value: unknown): boolean | null {
-  return typeof value === "boolean" ? value : null;
 }

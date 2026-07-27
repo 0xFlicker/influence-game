@@ -45,6 +45,7 @@ import {
   getMatchWatchRouteDecision,
   mergeGameWatchReplayFrames,
   shouldApplyWatchStateUpdate,
+  withPresentationHydrationDeadline,
   type PresentationHydrationState,
 } from "./components/match-watch-model";
 import { ReplayControls } from "./components/replay-controls";
@@ -217,10 +218,14 @@ export function GameViewer({
       preserveScreen: boolean;
     }): Promise<boolean> => {
       const activeRequest = presentationHydrationRequestRef.current;
-      if (activeRequest?.afterSequence === afterSequence) {
+      if (
+        activeRequest?.afterSequence === afterSequence
+        && !activeRequest.controller.signal.aborted
+      ) {
         return activeRequest.promise;
       }
       activeRequest?.controller.abort();
+      presentationHydrationRequestRef.current = null;
 
       const controller = new AbortController();
       let hydrationState: PresentationHydrationState = {
@@ -232,10 +237,14 @@ export function GameViewer({
       const promise = (async (): Promise<boolean> => {
         while (!controller.signal.aborted) {
           try {
-            const incoming = await getGameReplayWatchFrames(gameId, {
-              ...(afterSequence > 0 ? { afterSequence } : {}),
-              signal: controller.signal,
-            });
+            const incoming = await withPresentationHydrationDeadline(
+              controller.signal,
+              (signal) => getGameReplayWatchFrames(gameId, {
+                ...(afterSequence > 0 ? { afterSequence } : {}),
+                presentationOnly: true,
+                signal,
+              }),
+            );
             if (controller.signal.aborted) return false;
             retainReplayFrames(
               incoming,
@@ -272,10 +281,11 @@ export function GameViewer({
     [gameId, retainReplayFrames],
   );
 
-  useEffect(
-    () => () => presentationHydrationRequestRef.current?.controller.abort(),
-    [],
-  );
+  useEffect(() => () => {
+    const request = presentationHydrationRequestRef.current;
+    presentationHydrationRequestRef.current = null;
+    request?.controller.abort();
+  }, []);
 
   // Set data-phase on root for cinematic CSS cascade (live mode)
   useEffect(() => {

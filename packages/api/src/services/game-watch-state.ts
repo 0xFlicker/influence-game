@@ -157,6 +157,11 @@ export interface GameWatchReplayFrame {
 export interface GameWatchReplayFrameOptions {
   /** Return only frames after this trusted canonical sequence. */
   afterSequence?: number;
+  /**
+   * Return format-presentation decision frames plus the trusted tail snapshot.
+   * The default full history remains available to classic replay consumers.
+   */
+  presentationOnly?: boolean;
 }
 
 interface GameRow {
@@ -322,19 +327,27 @@ export async function getGameWatchReplayFrames(
 
   const frames: GameWatchReplayFrame[] = [];
   let projection = createEmptyProjection(game.id);
+  const lastPersistedSequence = persistedEvents.events.at(-1)?.sequence;
 
   for (const event of persistedEvents.events) {
     projection = applyCanonicalEvent(projection, event.envelope);
     if (event.sequence <= afterSequence) continue;
 
     const summary = summarizeCanonicalProjection(projection);
+    const viewerDecisionEvent = projectViewerDecisionEvent(event.envelope);
+    if (
+      options.presentationOnly
+      && !viewerDecisionEvent
+      && event.sequence !== lastPersistedSequence
+    ) {
+      continue;
+    }
     const pressureByPlayerId = buildPressureByPlayerId(summary);
     const framePlayers = buildProjectedPlayers(
       players,
       summary.players.players,
       pressureByPlayerId,
     );
-    const viewerDecisionEvent = projectViewerDecisionEvent(event.envelope);
     frames.push({
       schemaVersion: 3,
       gameId: game.id,

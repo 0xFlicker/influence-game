@@ -373,7 +373,11 @@ function ShellHeader({
 
 function StatusPill({ value, label }: { value: number; label: string }) {
   return (
-    <span className="inline-flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 text-[10px] uppercase tracking-[0.14em] text-white/55">
+    <span
+      aria-label={`${value} ${label}`}
+      data-testid={`match-watch-count-${label.toLowerCase()}`}
+      className="inline-flex h-8 items-center gap-2 rounded-md border border-white/10 bg-white/[0.03] px-3 text-[10px] uppercase tracking-[0.14em] text-white/55"
+    >
       <strong className="text-xs text-white/95">{value}</strong>
       {label}
     </span>
