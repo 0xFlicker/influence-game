@@ -489,7 +489,7 @@ describe("compileRecallPlan", () => {
     expect(serializeRecallPlan(afterForeign)).toBe(serializeRecallPlan(empty));
   });
 
-  it("protected exhausts allowance → empty archive, protected content remains complete", () => {
+  it("protected overflow still reserves bounded strategic history, while protected content remains complete", () => {
     const hugePromises = Array.from({ length: 80 }, (_, i) =>
       `Promise block ${i}: ${"commitment ".repeat(40)}with Bob empowerment lock`,
     );
@@ -526,7 +526,7 @@ describe("compileRecallPlan", () => {
 
     const transcript: TranscriptEntry[] = [
       publicEntry({
-        text: "Alice Bob commitment empowerment public evidence should not enter when overflow",
+        text: "Alice commitment is the public evidence to carry into the vote",
         entrySequence: 1,
         from: "Bob",
         speakerPlayerId: BOB,
@@ -540,7 +540,7 @@ describe("compileRecallPlan", () => {
       promptClass: "strategic_decision",
       continuity: makeContinuity({
         strategyPacket: makeStrategyPacket({
-          objective: "x".repeat(8_000),
+          objective: `Alice commitment ${"x".repeat(8_000)}`,
           targetPosture: "y".repeat(4_000),
           coalitionPosture: "z".repeat(4_000),
           nextSocialProbe: "probe ".repeat(500),
@@ -555,14 +555,39 @@ describe("compileRecallPlan", () => {
     });
 
     expect(plan.budget.protectedOverflow).toBe(true);
-    expect(plan.history.dialogueEvidence).toEqual([]);
-    expect(plan.budget.historyBudgetChars).toBe(0);
+    expect(plan.history.dialogueEvidence.map((item) => item.dialogueText)).toEqual([
+      "Alice commitment is the public evidence to carry into the vote",
+    ]);
+    expect(plan.budget.historyBudgetChars).toBeGreaterThan(0);
     // Protected content remains complete
     expect(plan.protected.huddleOutcomes).toHaveLength(1);
     expect(plan.protected.huddleOutcomes[0]!.promises.length).toBe(hugePromises.length);
-    expect(plan.protected.strategyThread?.objective.length).toBe(8_000);
+    expect(plan.protected.strategyThread?.objective).toBe(`Alice commitment ${"x".repeat(8_000)}`);
     expect(plan.receipt.protectedOverflow).toBe(true);
-    expect(plan.receipt.selectedLaneCounts.history).toBe(0);
+    expect(plan.receipt.selectedLaneCounts.history).toBe(1);
+  });
+
+  it("hot-room saturation does not borrow the protected-overflow history reserve", () => {
+    const plan = compileRecallPlan({
+      actorId: ALICE,
+      promptClass: "strategic_decision",
+      continuity: makeContinuity(),
+      phaseContext: basePhaseContext({
+        mingleMessages: [{ from: "Bob", text: "hot ".repeat(5_000) }],
+      }),
+      transcript: [
+        publicEntry({
+          text: "Alice Bob commitment remains relevant archive evidence",
+          entrySequence: 1,
+          from: "Bob",
+          speakerPlayerId: BOB,
+        }),
+      ],
+    });
+
+    expect(plan.budget.protectedOverflow).toBe(false);
+    expect(plan.budget.historyBudgetChars).toBe(0);
+    expect(plan.history.dialogueEvidence).toEqual([]);
   });
 
   it("authorized public dialogue with zero seed overlap is rejected (recency cannot fill)", () => {

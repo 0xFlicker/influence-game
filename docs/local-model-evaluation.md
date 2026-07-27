@@ -277,7 +277,7 @@ When running with `--chatty`, the live terminal (and the written `game-*.txt`) w
 
 ### Selective context recall evaluation (no paid LLM required)
 
-Agent prompts are built from a server-owned **Recall Plan** (protected Board Contract + Strategy Thread + authorized compact huddle outcomes, hot active-room speech, and — only for strategic decision/reflection classes — budgeted authorized history). Ordinary speech has no historical archive lane. Reviewers should:
+Agent prompts are built from a server-owned **Recall Plan** (protected Board Contract + Strategy Thread + authorized compact huddle outcomes, hot active-room speech, and — only for strategic decision/reflection classes — budgeted authorized history). Ordinary speech has no historical archive lane. Protected overflow does not erase all strategic recall: decisions retain at most 1,200 archive characters and reflections at most 1,600, while protected material remains complete. Reviewers should:
 
 1. **Prove the release gate with fixture tests** (deterministic, offline):
    ```bash
@@ -285,7 +285,7 @@ Agent prompts are built from a server-owned **Recall Plan** (protected Board Con
    bun test packages/engine/src/__tests__/context-recall-plan.test.ts
    bun test packages/engine/src/__tests__/context-recall-replay.test.ts
    ```
-   These assert ≥50% estimated input-token reduction vs the frozen late-game baseline, equal model-call count, full protected coverage, and zero unauthorized private selections. Token estimates use `ceil(characters / 4)`; provider usage is informational only.
+   These assert ≥50% estimated input-token reduction vs the frozen late-game baseline, equal model-call count, full protected coverage, zero unauthorized private selections, and a relevant authorized memory under protected overflow. Token estimates use `ceil(characters / 4)`; provider usage is informational only.
 2. **Inspect structural receipts** from a simulation via `game-N-recall-plan.json` (`coverage: "structural_recall_receipts"`). Use lane counts and event-boundary rollups only.
 3. **Do not** treat full `game-N.json`, private-trace JSON, or turns JSONL as the promotion input for context reduction. Those remain producer debug surfaces; they can contain foreign private dialogue that must never re-enter another seat's Recall Plan.
 

@@ -5,7 +5,7 @@
  * Uses direct structured output — no ElizaOS runtime.
  */
 
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import OpenAI from "openai";
 import type {
   ChatCompletion,
@@ -78,6 +78,11 @@ import {
   renderProtectedHuddleOutcomesSection,
   toStructuralRecallPlanReceipt,
 } from "./context-recall-plan";
+
+type CachedResponseCreateParams = ResponseCreateParamsNonStreaming & {
+  prompt_cache_key?: string;
+  prompt_cache_options?: { ttl: "30m" };
+};
 
 // ---------------------------------------------------------------------------
 // Personality archetypes
@@ -4966,7 +4971,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     effectiveMaxTokens: number,
     systemPrompt?: string,
     options?: LlmCallOptions,
-  ): ResponseCreateParamsNonStreaming {
+  ): CachedResponseCreateParams {
     const reasoning = this.responseReasoningOptions(options);
     return {
       model: this.model,
@@ -4974,8 +4979,30 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       ...(systemPrompt && { instructions: systemPrompt }),
       max_output_tokens: effectiveMaxTokens,
       store: false,
+      // OpenAI uses this only to bucket similar prefixes. Hash IDs so the
+      // provider never receives a raw game or player identifier for caching.
+      prompt_cache_key: this.responsePromptCacheKey(),
+      ...(this.usesGpt56OrLaterPromptCaching() && {
+        prompt_cache_options: { ttl: "30m" as const },
+      }),
       ...(reasoning && { reasoning }),
     };
+  }
+
+  private responsePromptCacheKey(): string {
+    return `influence:${createHash("sha256")
+      .update(`${this.gameId ?? "unbound"}:${this.id}`)
+      .digest("hex")
+      .slice(0, 24)}`;
+  }
+
+  private usesGpt56OrLaterPromptCaching(): boolean {
+    const match = /^gpt-(\d+)(?:\.(\d+))?/.exec(this.model);
+    if (!match) return false;
+
+    const major = Number(match[1]);
+    const minor = Number(match[2] ?? 0);
+    return major > 5 || (major === 5 && minor >= 6);
   }
 
   private static extractFirstJsonObject(text: string): string | null {

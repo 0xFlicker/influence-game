@@ -26,14 +26,22 @@ import type {
 // ---------------------------------------------------------------------------
 // Budget envelopes (fixture-calibrated character ceilings per prompt class)
 // Protected is reserved first; history is remaining after protected+hot,
-// capped by historyCeilingChars. 50% reduction is a U5 promotion gate, not a budget value.
+// capped by historyCeilingChars. A protected-overflow reserve is the sole
+// bounded exception to the nominal envelope. 50% reduction is a U5 promotion
+// gate, not a budget value.
 // ---------------------------------------------------------------------------
 
 export interface RecallBudgetEnvelope {
-  /** Total character envelope for protected + hot + history. */
+  /** Nominal character envelope for protected + hot + history before any protected-overflow reserve. */
   readonly envelopeChars: number;
   /** Max characters for the historical archive lane (0 = no history). */
   readonly historyCeilingChars: number;
+  /**
+   * Small strategic-only archive allowance that survives protected overflow.
+   * It is intentionally bounded so an oversized Strategy Thread cannot turn
+   * historical recall into another unbounded prompt lane.
+   */
+  readonly overflowHistoryReserveChars: number;
 }
 
 /**
@@ -45,14 +53,17 @@ export const RECALL_BUDGET_ENVELOPES: Readonly<Record<RecallPromptClass, RecallB
   ordinary_speech: {
     envelopeChars: 12_000,
     historyCeilingChars: 0,
+    overflowHistoryReserveChars: 0,
   },
   strategic_decision: {
     envelopeChars: 16_000,
     historyCeilingChars: 4_000,
+    overflowHistoryReserveChars: 1_200,
   },
   strategic_reflection: {
     envelopeChars: 18_000,
     historyCeilingChars: 6_000,
+    overflowHistoryReserveChars: 1_600,
   },
 };
 
@@ -908,9 +919,16 @@ export function compileRecallPlan(params: CompileRecallPlanParams): RecallPlan {
     0,
     envelope.envelopeChars - protectedChars - hotChars,
   );
-  const historyBudgetChars = protectedOverflow
+  // Strategic calls keep a tiny bounded archive reserve even when protected
+  // material overflows. Protected lanes still render in full; the reserve is
+  // the only budget that can exceed the nominal envelope.
+  const normalHistoryBudgetChars = Math.min(envelope.historyCeilingChars, remainingAfterProtectedHot);
+  const overflowHistoryReserveChars = protectedOverflow
+    ? Math.min(envelope.historyCeilingChars, envelope.overflowHistoryReserveChars)
+    : 0;
+  const historyBudgetChars = promptClass === "ordinary_speech"
     ? 0
-    : Math.min(envelope.historyCeilingChars, remainingAfterProtectedHot);
+    : Math.max(normalHistoryBudgetChars, overflowHistoryReserveChars);
 
   // Authorize → project (foreign private rows never enter candidate set or boundary).
   const authorizedCandidates = collectAuthorizedCandidates(transcript, actorId);
