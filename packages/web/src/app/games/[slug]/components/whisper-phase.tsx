@@ -299,49 +299,6 @@ function RoomCardAvatar({
   );
 }
 
-function buildMovementRows(rooms: WhisperRoomStage[]): Array<{
-  playerKey: string;
-  playerName: string;
-  from: string | null;
-  to: string;
-  moved: boolean;
-}> {
-  const beats = Array.from(new Set(rooms.map((room) => room.beat).filter((beat): beat is number => beat != null))).sort((a, b) => a - b);
-  if (beats.length === 0) return [];
-
-  const currentBeat = beats[beats.length - 1]!;
-  const previousBeat = beats.length > 1 ? beats[beats.length - 2]! : null;
-  const currentRooms = rooms.filter((room) => room.beat === currentBeat);
-  const previousRooms = previousBeat == null ? [] : rooms.filter((room) => room.beat === previousBeat);
-  const previousByPlayer = new Map<string, string>();
-  const rows: Array<{ playerKey: string; playerName: string; from: string | null; to: string; moved: boolean }> = [];
-
-  for (const room of previousRooms) {
-    for (const [index, playerId] of room.playerIds.entries()) {
-      const playerName = room.playerNames[index] ?? playerId;
-      previousByPlayer.set(playerId, roomDisplayLabel(room));
-      previousByPlayer.set(playerName, roomDisplayLabel(room));
-    }
-  }
-
-  for (const room of currentRooms) {
-    for (const [index, playerId] of room.playerIds.entries()) {
-      const playerName = room.playerNames[index] ?? playerId;
-      const from = previousByPlayer.get(playerId) ?? previousByPlayer.get(playerName) ?? null;
-      const to = roomDisplayLabel(room);
-      rows.push({
-        playerKey: playerId,
-        playerName,
-        from,
-        to,
-        moved: from != null && from !== to,
-      });
-    }
-  }
-
-  return rows.sort((left, right) => left.playerName.localeCompare(right.playerName));
-}
-
 function MingleMap({
   rooms,
   players,
@@ -355,17 +312,9 @@ function MingleMap({
 }) {
   return (
     <div className="rounded-2xl border border-purple-500/25 bg-black/35 p-4 md:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/80">MINGLE MAP</p>
-          <p className="mt-1 text-xs text-white/35">Agents choose neutral rooms. Occupancy is the signal.</p>
-        </div>
-        <span className="rounded-full border border-purple-400/25 bg-purple-400/10 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-purple-200/80">
-          {rooms.length} rooms
-        </span>
-      </div>
+      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/80">MINGLE MAP</p>
 
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="mt-4 grid grid-cols-2 gap-3">
         {rooms.map((room) => {
           const selected = room.roomId === selectedRoomId;
           const state = roomStateLabel(room);
@@ -427,28 +376,6 @@ function MingleMap({
   );
 }
 
-function MovementTrail({ rows }: { rows: ReturnType<typeof buildMovementRows> }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/75">Mingle Movement</p>
-      {rows.length === 0 ? (
-        <p className="mt-3 text-xs text-white/35">Initial room choices are still settling.</p>
-      ) : (
-        <div className="mt-3 space-y-2">
-          {rows.map((row) => (
-            <div key={row.playerKey} className="grid grid-cols-[1fr_auto] items-center gap-3 text-xs">
-              <span className="truncate text-white/60">{row.playerName}</span>
-              <span className={row.moved ? "text-blue-200/80" : "text-white/35"}>
-                {row.from ? `${row.from} -> ${row.to}` : row.to}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 function ActiveRoomFeed({
   room,
   players,
@@ -466,34 +393,23 @@ function ActiveRoomFeed({
     );
   }
 
-  const occupants = resolveRoomPlayers(room, players);
   const state = roomStateLabel(room);
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-purple-500/25 bg-black/35">
-      <div className="border-b border-white/10 px-4 py-4 md:px-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <p className="text-lg font-semibold uppercase tracking-[0.08em] text-white">
+      <div className="border-b border-white/10 px-4 py-3 md:px-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-baseline gap-3">
+            <p className="text-base font-semibold uppercase tracking-[0.08em] text-white">
               {roomDisplayLabel(room)} / Mingle Feed
             </p>
-            <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-yellow-200/70">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-yellow-200/70">
               {state === "GROUP" ? "GROUP ROOM" : state}
             </p>
           </div>
           <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] uppercase tracking-[0.16em] text-white/45">
             {room.playerNames.length} agent{room.playerNames.length === 1 ? "" : "s"}
           </span>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          {room.playerNames.length === 0 ? (
-            <span className="text-xs text-white/35">No one entered this room.</span>
-          ) : room.playerNames.map((name, index) => (
-            <div key={`${room.roomId}-occupant-${name}`} className="flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-2 py-1">
-              <AgentInitial player={occupants[index]} name={name} size="6" />
-              <span className="max-w-24 truncate text-xs text-white/65">{name}</span>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -572,8 +488,6 @@ export function OpenWhisperRoomsView({
   const requestedRoomId = selection.phaseKey === phaseKey ? selection.roomId : null;
   const activeRoom = currentRooms.find((room) => room.roomId === requestedRoomId) ?? currentRooms[0] ?? null;
   const selectedRoomId = activeRoom?.roomId ?? null;
-  const movementRows = useMemo(() => buildMovementRows(stage.rooms), [stage.rooms]);
-
   const selectRoom = useCallback((roomId: number) => {
     setSelection({ phaseKey, roomId });
   }, [phaseKey, setSelection]);
@@ -585,11 +499,13 @@ export function OpenWhisperRoomsView({
   return (
     <div className="flex h-full min-h-0 w-full flex-col p-3 md:p-0">
       <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3 md:gap-4">
-        <div className="flex-shrink-0 rounded-2xl border border-white/10 bg-black/35 px-4 py-3 md:px-5">
+        <div className="flex-shrink-0 rounded-xl border border-white/10 bg-black/35 px-4 py-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+            <div className="flex items-baseline gap-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-purple-200/80">MINGLE</p>
-              <p className="mt-1 text-xs text-white/35">Room telemetry · turn {activeBeat} of {Math.max(beats.length, 1)}</p>
+              <p className="text-[10px] uppercase tracking-[0.16em] text-white/35">
+                Turn {activeBeat} of {Math.max(beats.length, 1)}
+              </p>
             </div>
             <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
               live
@@ -601,17 +517,13 @@ export function OpenWhisperRoomsView({
           </div>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto lg:grid lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.45fr)_minmax(14rem,0.65fr)] lg:overflow-hidden">
-          <div className="min-h-0 shrink-0 lg:overflow-y-auto lg:pr-1">
+        <div className="grid min-h-0 flex-1 auto-rows-[max-content] gap-4 overflow-y-auto lg:auto-rows-auto lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.7fr)] lg:overflow-hidden">
+          <div className="min-h-0 min-w-0 lg:overflow-y-auto lg:pr-1">
             <MingleMap rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
           </div>
 
-          <div className="flex min-h-[24rem] min-w-0 shrink-0 lg:min-h-0">
+          <div className="flex min-h-[24rem] min-w-0 lg:min-h-0">
             <ActiveRoomFeed room={activeRoom} players={players} showThinking={showThinking} />
-          </div>
-
-          <div className="min-h-0 shrink-0 lg:overflow-y-auto lg:pr-1">
-            <MovementTrail rows={movementRows} />
           </div>
         </div>
       </div>
