@@ -1,7 +1,11 @@
+import type { ReactNode } from "react";
 import type { FormatPresentationCue, FormatPresentationRosterPlayer } from "./types";
 import { ActiveFormatLabel } from "./active-format-label";
+import { FormatBallotReveal } from "./format-ballot-reveal";
 import { FormatEmpowerVoteStage } from "./format-empower-vote-stage";
 import { FormatOfferStage } from "./format-offer-stage";
+import { FormatResolutionStage } from "./format-resolution-stage";
+import { SafetyBounceStage } from "./safety-bounce-stage";
 
 export function FormatPresentation({
   cue,
@@ -68,27 +72,107 @@ export function FormatPresentation({
     );
   }
 
+  if (
+    cue.kind === "safety_bounce_started"
+    || cue.kind === "safety_bounce_pointer"
+  ) {
+    return (
+      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+        <SafetyBounceStage
+          cue={cue}
+          roster={roster}
+          currentStateEntry={currentStateEntry}
+        />
+      </PresentationShell>
+    );
+  }
+
+  if (cue.kind === "format_aggregate") {
+    return (
+      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+        <FormatResolutionStage cue={cue} roster={roster} />
+      </PresentationShell>
+    );
+  }
+
+  if (cue.kind === "format_roll_call") {
+    return (
+      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+        <FormatBallotReveal cue={cue} roster={roster} />
+      </PresentationShell>
+    );
+  }
+
+  if (cue.kind === "format_tiebreak") {
+    return (
+      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+        <section
+          data-format-cue="format_tiebreak"
+          className="w-full rounded-2xl border border-white/10 bg-white/[0.035] p-6 text-center"
+          aria-live="polite"
+        >
+          <p className="text-[10px] uppercase tracking-[0.24em] text-white/35">
+            Tiebreak receipt
+          </p>
+          <h2 className="mt-3 text-xl font-semibold text-white">
+            {playerName(cue.tiebreakerId, roster)} breaks the tie
+          </h2>
+          <p className="mt-3 text-sm text-white/55">
+            Tied: {cue.tiedPlayerIds.map((id) => playerName(id, roster)).join(" · ")}
+          </p>
+        </section>
+      </PresentationShell>
+    );
+  }
+
+  if (cue.kind === "format_elimination") {
+    return (
+      <PresentationShell cue={cue} currentStateEntry={currentStateEntry}>
+        <section
+          data-format-cue="format_elimination"
+          data-resolution-kind={cue.resolutionKind}
+          className="w-full rounded-2xl border border-rose-300/20 bg-rose-300/[0.045] p-6 text-center"
+          aria-live="polite"
+        >
+          <p className="text-[10px] uppercase tracking-[0.24em] text-rose-200/50">
+            Format resolved
+          </p>
+          <h2 className="mt-3 text-2xl font-semibold text-white">
+            {playerName(cue.eliminatedId, roster)} is eliminated
+          </h2>
+          <p className="mt-3 text-sm capitalize text-white/45">
+            {cue.resolutionKind} resolution
+          </p>
+        </section>
+      </PresentationShell>
+    );
+  }
+
+  return null;
+}
+
+function PresentationShell({
+  cue,
+  children,
+  currentStateEntry,
+}: {
+  cue: Exclude<
+    FormatPresentationCue,
+    { kind: "empowered_tally" | "format_menu" | "format_selected" }
+  >;
+  children: ReactNode;
+  currentStateEntry: boolean;
+}) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl flex-col items-center gap-4">
+    <div
+      data-presentation-cue={cue.key}
+      data-presentation-current-entry={currentStateEntry ? "true" : "false"}
+      className="mx-auto flex w-full max-w-5xl flex-col items-center gap-4"
+    >
       {cue.after.activeFormatId ? (
         <ActiveFormatLabel formatId={cue.after.activeFormatId} />
       ) : null}
-      <section
-        data-presentation-cue={cue.key}
-        data-format-cue={cue.kind}
-        className="w-full rounded-xl border border-white/10 bg-white/[0.035] p-6 text-center"
-        aria-live="polite"
-      >
-        <p className="text-[10px] uppercase tracking-[0.24em] text-white/35">
-          Canonical format beat
-        </p>
-        <h2 className="mt-3 text-2xl font-semibold text-white/95">
-          {formatCueTitle(cue)}
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-white/60">
-          {formatCueDescription(cue)}
-        </p>
-      </section>
+      {children}
     </div>
   );
 }
@@ -98,50 +182,4 @@ function playerName(
   roster: readonly FormatPresentationRosterPlayer[],
 ): string {
   return roster.find((player) => player.id === playerId)?.name ?? playerId;
-}
-
-function formatCueTitle(
-  cue: Exclude<
-    FormatPresentationCue,
-    { kind: "empowered_tally" | "format_menu" | "format_selected" }
-  >,
-): string {
-  switch (cue.kind) {
-    case "safety_bounce_started":
-      return "Safety Bounce begins";
-    case "safety_bounce_pointer":
-      return "Classification accepted";
-    case "format_aggregate":
-      return "Tally locked";
-    case "format_roll_call":
-      return "Ballot revealed";
-    case "format_tiebreak":
-      return "Tiebreak receipt";
-    case "format_elimination":
-      return "Format resolved";
-  }
-}
-
-function formatCueDescription(
-  cue: Exclude<
-    FormatPresentationCue,
-    { kind: "empowered_tally" | "format_menu" | "format_selected" }
-  >,
-): string {
-  switch (cue.kind) {
-    case "safety_bounce_started":
-      return `${cue.starterId} starts Safe and owns the first choice.`;
-    case "safety_bounce_pointer":
-      return `${cue.actorId} classifies ${cue.targetId} as ${cue.classification}.`;
-    case "format_aggregate":
-      return `The ${cue.resolution.formatId} aggregate is final.`;
-    case "format_roll_call":
-      return `${cue.ballot.voterId} → ${cue.ballot.targetId}${
-        cue.ballot.polarity ? ` (${cue.ballot.polarity})` : ""
-      }`;
-    case "format_tiebreak":
-      return `${cue.tiebreakerId} breaks the tie.`;
-    case "format_elimination":
-      return `${cue.eliminatedId} is eliminated.`;
-  }
 }

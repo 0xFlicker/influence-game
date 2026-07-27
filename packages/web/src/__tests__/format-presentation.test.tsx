@@ -136,7 +136,84 @@ describe("FormatPresentation", () => {
 
     expect(html).toContain('data-active-format="vote_bomb"');
     expect(html).toContain('data-format-cue="format_aggregate"');
+    expect(html).toContain("Zero votes · safe");
+    expect(html).toContain("Fewest positive · eligible");
     expect(html).not.toContain("Zero votes is safe");
+  });
+
+  it("renders Save-or-Eliminate math and sole-vulnerable Safety Bounce explicitly", () => {
+    const saveHtml = renderToString(
+      <FormatPresentation
+        cue={saveOrEliminateAggregateCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+    const soleHtml = renderToString(
+      <FormatPresentation
+        cue={soleVulnerableAggregateCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+
+    expect(saveHtml).toContain("Saves");
+    expect(saveHtml).toContain("Eliminates");
+    expect(saveHtml).toContain("Net");
+    expect(saveHtml).toContain("Elimination eligible");
+    expect(saveHtml).toContain('data-aggregate-player="p2"');
+    expect(saveHtml).toContain('data-aggregate-state="eligible"');
+
+    expect(soleHtml).toContain('data-resolution-pool="safe"');
+    expect(soleHtml).toContain('data-resolution-pool="vulnerable"');
+    expect(soleHtml).toContain('data-final-ballot="not_applicable"');
+    expect(soleHtml).toContain("sole Vulnerable agent");
+    expect(soleHtml).not.toContain("Roll call");
+  });
+
+  it("keeps the roster-ordered roll-call ledger cumulative and emphasizes the current receipt", () => {
+    const html = renderToString(
+      <FormatPresentation
+        cue={rollCallCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+
+    expect(html).toContain('data-roll-call-ledger="true"');
+    expect(html).toContain('data-ledger-voter="p1" data-ledger-current="false"');
+    expect(html).toContain('data-ledger-voter="p2" data-ledger-current="true"');
+    expect(html.indexOf('data-ledger-voter="p1"')).toBeLessThan(
+      html.indexOf('data-ledger-voter="p2"'),
+    );
+    expect(html).toContain("Atlas With A Deliberately Long Strategic Name");
+    expect(html).toContain("Lyra");
+    expect(html).toContain("Echo");
+    expect(html).toContain('data-ballot-polarity="eliminate"');
+  });
+
+  it("names the empowered tiebreak receipt and eliminated agent", () => {
+    const tiebreak = renderToString(
+      <FormatPresentation
+        cue={tiebreakCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+    const elimination = renderToString(
+      <FormatPresentation
+        cue={eliminationCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+
+    expect(withoutReactMarkers(tiebreak)).toContain(
+      "Atlas With A Deliberately Long Strategic Name breaks the tie",
+    );
+    expect(withoutReactMarkers(tiebreak)).toContain("Tied: Lyra · Echo");
+    expect(withoutReactMarkers(elimination)).toContain("Echo is eliminated");
+    expect(elimination).toContain('data-resolution-kind="clear"');
   });
 
   it("keeps the active label through same-round social cues and resets it for a new round", () => {
@@ -294,9 +371,9 @@ function aggregateCue(): Extract<FormatPresentationCue, { kind: "format_aggregat
   const resolution = {
     formatId: "vote_bomb" as const,
     empoweredId: "p1",
-    eliminatedId: "p2",
-    resolutionKind: "clear" as const,
-    tiedPlayerIds: [],
+    eliminatedId: "p3",
+    resolutionKind: "auto" as const,
+    tiedPlayerIds: ["p3"],
     tiebreakerId: null,
     saveOrEliminate: null,
     voteBomb: { totals: { p1: 0, p2: 2, p3: 1 }, zeroSafePlayerIds: ["p1"] },
@@ -311,7 +388,158 @@ function aggregateCue(): Extract<FormatPresentationCue, { kind: "format_aggregat
     ),
     kind: "format_aggregate",
     resolution,
+    ballotPresentationStatus: "revealed",
   };
+}
+
+function saveOrEliminateAggregateCue(): Extract<
+  FormatPresentationCue,
+  { kind: "format_aggregate" }
+> {
+  const before = resolvedBefore("save_or_eliminate");
+  const resolution = {
+    formatId: "save_or_eliminate" as const,
+    empoweredId: "p1",
+    eliminatedId: "p2",
+    resolutionKind: "auto" as const,
+    tiedPlayerIds: ["p2"],
+    tiebreakerId: null,
+    saveOrEliminate: {
+      nets: { p1: 1, p2: -1, p3: 0 },
+      savesReceived: { p1: 1, p2: 0, p3: 0 },
+      eliminateReceived: { p1: 0, p2: 1, p3: 0 },
+    },
+    voteBomb: null,
+    safetyBounce: null,
+  };
+  return {
+    ...baseCue(
+      10,
+      "FORMAT_RESOLVE",
+      before,
+      { ...before, canonicalSequence: 10, resolution },
+    ),
+    kind: "format_aggregate",
+    resolution,
+    ballotPresentationStatus: "revealed",
+  };
+}
+
+function soleVulnerableAggregateCue(): Extract<
+  FormatPresentationCue,
+  { kind: "format_aggregate" }
+> {
+  const before = {
+    ...resolvedBefore("safety_bounce"),
+    safetyBounce: {
+      starterId: "p1",
+      currentActorId: "p3",
+      safePlayerIds: ["p1", "p3"],
+      vulnerablePlayerIds: ["p2"],
+      benchPlayerIds: [],
+    },
+  };
+  const resolution = {
+    formatId: "safety_bounce" as const,
+    empoweredId: "p1",
+    eliminatedId: "p2",
+    resolutionKind: "auto" as const,
+    tiedPlayerIds: [],
+    tiebreakerId: null,
+    saveOrEliminate: null,
+    voteBomb: null,
+    safetyBounce: {
+      starterId: "p1",
+      safePlayerIds: ["p1", "p3"],
+      vulnerablePlayerIds: ["p2"],
+      voteTotals: {},
+    },
+  };
+  return {
+    ...baseCue(
+      10,
+      "FORMAT_RESOLVE",
+      before,
+      { ...before, canonicalSequence: 10, resolution },
+    ),
+    kind: "format_aggregate",
+    resolution,
+    ballotPresentationStatus: "not_applicable",
+  };
+}
+
+function rollCallCue(): Extract<
+  FormatPresentationCue,
+  { kind: "format_roll_call" }
+> {
+  const first = { voterId: "p1", targetId: "p2", polarity: "save" as const };
+  const current = {
+    voterId: "p2",
+    targetId: "p3",
+    polarity: "eliminate" as const,
+  };
+  const before = {
+    ...resolvedBefore("save_or_eliminate"),
+    revealedBallots: [first],
+  };
+  return {
+    ...baseCue(
+      10,
+      "FORMAT_RESOLVE",
+      before,
+      { ...before, revealedBallots: [first, current] },
+    ),
+    kind: "format_roll_call",
+    ballot: current,
+    rollCallIndex: 1,
+    rollCallCount: 3,
+    pacing: "decisive",
+  };
+}
+
+function tiebreakCue(): Extract<
+  FormatPresentationCue,
+  { kind: "format_tiebreak" }
+> {
+  const state = resolvedBefore("save_or_eliminate");
+  return {
+    ...baseCue(10, "FORMAT_RESOLVE", state, state),
+    kind: "format_tiebreak",
+    tiebreakerId: "p1",
+    tiedPlayerIds: ["p2", "p3"],
+  };
+}
+
+function eliminationCue(): Extract<
+  FormatPresentationCue,
+  { kind: "format_elimination" }
+> {
+  const state = resolvedBefore("save_or_eliminate");
+  return {
+    ...baseCue(
+      10,
+      "FORMAT_RESOLVE",
+      state,
+      { ...state, eliminatedId: "p3" },
+    ),
+    kind: "format_elimination",
+    eliminatedId: "p3",
+    resolutionKind: "clear",
+  };
+}
+
+function resolvedBefore(
+  activeFormatId: LaunchFormatId,
+): FormatPresentationSnapshot {
+  return snapshot({
+    phase: "FORMAT_RESOLVE",
+    canonicalSequence: 9,
+    empoweredId: "p1",
+    offeredFormatIds: activeFormatId === "save_or_eliminate"
+      ? ["save_or_eliminate", "vote_bomb"]
+      : ["safety_bounce", "vote_bomb"],
+    activeFormatId,
+  });
 }
 
 function withoutReactMarkers(html: string): string {

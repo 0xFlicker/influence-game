@@ -590,6 +590,7 @@ export type SafetyBouncePrefixDiagnosticCode =
   | "safety_bounce_duplicate_start"
   | "safety_bounce_missing_roster_player"
   | "safety_bounce_invalid_actor"
+  | "safety_bounce_classification_mismatch"
   | "safety_bounce_duplicate_target"
   | "safety_bounce_resolution_mismatch"
   | "safety_bounce_incomplete_at_resolution";
@@ -734,6 +735,20 @@ export function reconstructSafetyBouncePrefix(
         });
         continue;
       }
+      const expectedClassification = safePlayerIds.includes(event.payload.actorId)
+        ? "vulnerable"
+        : "safe";
+      if (event.payload.classification !== expectedClassification) {
+        addDiagnostic({
+          code: "safety_bounce_classification_mismatch",
+          sequence: event.sequence,
+          message:
+            `Safety Bounce ${event.payload.actorId} is ${
+              expectedClassification === "vulnerable" ? "SAFE" : "VULNERABLE"
+            } and must make the target ${expectedClassification.toUpperCase()}.`,
+        });
+        continue;
+      }
 
       classified.add(event.payload.targetId);
       if (event.payload.classification === "safe") {
@@ -774,6 +789,75 @@ export function reconstructSafetyBouncePrefix(
     completion: safetyBounceCompletion(resolved, vulnerablePlayerIds, finalBallotCount),
     diagnostics,
   };
+}
+
+export interface SafetyBouncePresentationCycleOptions {
+  gameId: string;
+  round: number;
+  canonicalSequence: number;
+  /** Stable canonical roster order; included in the deterministic seed. */
+  rosterPlayerIds: readonly UUID[];
+  /** Currently legal unclassified pointer targets. */
+  eligibleCandidateIds: readonly UUID[];
+  /** Accepted canonical target. Always the final returned candidate. */
+  acceptedTargetId: UUID;
+}
+
+/**
+ * Pure presentation-only pointer cycle. These candidates are never persisted,
+ * projected as facts, or exposed as agent reasoning. The accepted canonical
+ * target is withheld from intermediate positions and is always the landing.
+ */
+export function buildSafetyBouncePresentationCycle(
+  options: SafetyBouncePresentationCycleOptions,
+): UUID[] {
+  const eligible = uniqueIds(options.eligibleCandidateIds).filter((id) =>
+    options.rosterPlayerIds.includes(id)
+  );
+  if (!eligible.includes(options.acceptedTargetId)) {
+    return [];
+  }
+  const intermediate = eligible.filter((id) => id !== options.acceptedTargetId);
+  if (intermediate.length === 0) return [options.acceptedTargetId];
+
+  let state = hashSeed([
+    options.gameId,
+    String(options.round),
+    String(options.canonicalSequence),
+    options.rosterPlayerIds.join(","),
+    options.acceptedTargetId,
+  ].join("|"));
+  const count = Math.min(4, Math.max(2, intermediate.length));
+  const cycle: UUID[] = [];
+  for (let index = 0; index < count; index += 1) {
+    state = xorshift32(state);
+    const candidate = intermediate[state % intermediate.length]!;
+    if (cycle.at(-1) !== candidate) cycle.push(candidate);
+  }
+  if (cycle.length === 0) cycle.push(intermediate[0]!);
+  cycle.push(options.acceptedTargetId);
+  return cycle;
+}
+
+function uniqueIds(ids: readonly UUID[]): UUID[] {
+  return [...new Set(ids)];
+}
+
+function hashSeed(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return hash >>> 0 || 0x9e3779b9;
+}
+
+function xorshift32(value: number): number {
+  let next = value >>> 0;
+  next ^= next << 13;
+  next ^= next >>> 17;
+  next ^= next << 5;
+  return next >>> 0;
 }
 
 function validateSafetyBounceResolution(input: {

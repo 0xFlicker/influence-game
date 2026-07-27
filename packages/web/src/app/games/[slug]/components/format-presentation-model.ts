@@ -4,6 +4,7 @@ import type {
   PhaseKey,
   ViewerDecisionEvent,
 } from "@/lib/api";
+import { buildSafetyBouncePresentationCycle } from "@influence/engine/viewer-presentation";
 import type {
   FormatEmpowerVoteReceipt,
   FormatPresentationBallot,
@@ -29,6 +30,7 @@ export type FormatPresentationDiagnosticCode =
   | "safety_bounce_missing_start"
   | "safety_bounce_duplicate_start"
   | "safety_bounce_invalid_actor"
+  | "safety_bounce_classification_mismatch"
   | "safety_bounce_duplicate_target"
   | "safety_bounce_resolution_mismatch";
 
@@ -507,6 +509,42 @@ function applyDecision(input: {
           "Format ballot does not match the selected format.",
         );
       }
+      if (
+        decision.payload.formatId === "safety_bounce"
+        && (
+          !snapshot.safetyBounce
+          || snapshot.safetyBounce.benchPlayerIds.length > 0
+          || !snapshot.safetyBounce.vulnerablePlayerIds.includes(
+            decision.payload.targetId,
+          )
+        )
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "unknown_player",
+          decision.sequence,
+          "Safety Bounce ballot target must belong to the final Vulnerable pool.",
+        );
+      }
+      if (
+        (decision.payload.formatId === "save_or_eliminate"
+          && decision.payload.polarity === null)
+        || (decision.payload.formatId !== "save_or_eliminate"
+          && decision.payload.polarity !== null)
+        || (
+          decision.payload.formatId !== "safety_bounce"
+          && decision.payload.voterId === decision.payload.targetId
+        )
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "format_mismatch",
+          decision.sequence,
+          "Format ballot polarity or target is not legal for the selected format.",
+        );
+      }
       if (ballots.has(decision.payload.voterId)) {
         return incomplete(
           cues,
@@ -609,6 +647,32 @@ function applyDecision(input: {
           `Safety Bounce target ${decision.payload.targetId} is already classified or unknown.`,
         );
       }
+      const expectedClassification = board.safePlayerIds.includes(
+        decision.payload.actorId,
+      )
+        ? "vulnerable"
+        : "safe";
+      if (decision.payload.classification !== expectedClassification) {
+        return incomplete(
+          cues,
+          snapshot,
+          "safety_bounce_classification_mismatch",
+          decision.sequence,
+          `Safety Bounce actor ${decision.payload.actorId} must classify the target as ${expectedClassification}.`,
+        );
+      }
+      const pointerCandidateIds = buildSafetyBouncePresentationCycle({
+        gameId,
+        round: decision.round,
+        canonicalSequence: decision.sequence,
+        rosterPlayerIds: eligiblePlayerIds,
+        eligibleCandidateIds: board.benchPlayerIds,
+        acceptedTargetId: decision.payload.targetId,
+      });
+      const pacing = safetyBouncePointerPacing(
+        eligiblePlayerIds.length,
+        board.benchPlayerIds.length,
+      );
       const safePlayerIds = [...board.safePlayerIds];
       const vulnerablePlayerIds = [...board.vulnerablePlayerIds];
       if (decision.payload.classification === "safe") {
@@ -634,8 +698,10 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "bounce-pointer"),
         kind: "safety_bounce_pointer",
-        baseDurationMs: CUE_DURATION_MS.safety_bounce_pointer,
+        baseDurationMs: safetyBouncePointerDurationMs(pacing),
         ...decision.payload,
+        pointerCandidateIds,
+        pacing,
         after: cloneSnapshot(snapshot),
       });
       break;
@@ -684,14 +750,18 @@ function applyResolution(input: {
   }
   if (
     payload.safetyBounce
-    && !sameMembers(payload.safetyBounce.safePlayerIds, snapshot.safetyBounce?.safePlayerIds ?? [])
-      || payload.safetyBounce
-      && !sameMembers(
+    && (
+      payload.safetyBounce.starterId !== snapshot.safetyBounce?.starterId
+      || !sameMembers(
+        payload.safetyBounce.safePlayerIds,
+        snapshot.safetyBounce?.safePlayerIds ?? [],
+      )
+      || !sameMembers(
         payload.safetyBounce.vulnerablePlayerIds,
         snapshot.safetyBounce?.vulnerablePlayerIds ?? [],
       )
-      || payload.safetyBounce
-      && (snapshot.safetyBounce?.benchPlayerIds.length ?? 1) !== 0
+      || (snapshot.safetyBounce?.benchPlayerIds.length ?? 1) !== 0
+    )
   ) {
     return incomplete(
       cues,
@@ -706,6 +776,18 @@ function applyResolution(input: {
     payload.formatId === "safety_bounce"
     && payload.resolutionKind === "auto"
     && payload.safetyBounce?.vulnerablePlayerIds.length === 1;
+  if (
+    automaticSoleVulnerable
+    && !validSoleVulnerableResolution(payload, ballots)
+  ) {
+    return incomplete(
+      cues,
+      snapshot,
+      "aggregate_mismatch",
+      decision.sequence,
+      "Sole-vulnerable Safety Bounce must resolve without a final ballot.",
+    );
+  }
   if (!automaticSoleVulnerable && ballots.size !== eligiblePlayerIds.length) {
     return incomplete(
       cues,
@@ -715,13 +797,25 @@ function applyResolution(input: {
       `Format resolution has ${ballots.size} accepted ballots for ${eligiblePlayerIds.length} eligible agents.`,
     );
   }
-  if (!aggregatesMatch(payload, ballots, eligiblePlayerIds)) {
+  if (
+    !automaticSoleVulnerable
+    && !aggregatesMatch(payload, ballots, eligiblePlayerIds)
+  ) {
     return incomplete(
       cues,
       snapshot,
       "aggregate_mismatch",
       decision.sequence,
       "Format resolution aggregate does not match the accepted ballot prefix.",
+    );
+  }
+  if (!resolutionOutcomeMatchesRules(payload, eligiblePlayerIds)) {
+    return incomplete(
+      cues,
+      snapshot,
+      "aggregate_mismatch",
+      decision.sequence,
+      "Format resolution outcome does not match the canonical rule math.",
     );
   }
 
@@ -743,13 +837,19 @@ function applyResolution(input: {
     before,
     after: cloneSnapshot(snapshot),
     resolution: payload,
+    ballotPresentationStatus: automaticSoleVulnerable
+      ? "not_applicable"
+      : "revealed",
   });
 
-  const orderedBallots = eligiblePlayerIds.flatMap((voterId) => {
+  const orderedBallots = automaticSoleVulnerable
+    ? []
+    : eligiblePlayerIds.flatMap((voterId) => {
     const ballot = ballots.get(voterId);
     return ballot ? [ballot] : [];
-  });
+    });
   for (const [index, ballot] of orderedBallots.entries()) {
+    const pacing = rollCallPacing(index, orderedBallots.length);
     before = cloneSnapshot(snapshot);
     snapshot = {
       ...snapshot,
@@ -762,12 +862,13 @@ function applyResolution(input: {
       round: decision.round,
       phase,
       kind: "format_roll_call",
-      baseDurationMs: CUE_DURATION_MS.format_roll_call,
+      baseDurationMs: rollCallDurationMs(pacing),
       before,
       after: cloneSnapshot(snapshot),
       ballot: { ...ballot },
       rollCallIndex: index,
       rollCallCount: orderedBallots.length,
+      pacing,
     });
   }
 
@@ -950,6 +1051,154 @@ function latestSnapshot(
     canonicalSequence: sequence,
     phase,
   };
+}
+
+function safetyBouncePointerPacing(
+  rosterCount: number,
+  remainingBeforePointer: number,
+): "early" | "middle" | "closing" {
+  const pointerIndex = rosterCount - remainingBeforePointer;
+  if (remainingBeforePointer <= 2) return "closing";
+  if (pointerIndex <= 1) return "early";
+  return "middle";
+}
+
+function safetyBouncePointerDurationMs(
+  pacing: "early" | "middle" | "closing",
+): number {
+  if (pacing === "early") return 2_600;
+  if (pacing === "middle") return 1_600;
+  return 2_900;
+}
+
+function rollCallPacing(
+  index: number,
+  count: number,
+): "brisk" | "decisive" | "final" {
+  if (index === count - 1) return "final";
+  if (index >= Math.max(1, count - 3)) return "decisive";
+  return "brisk";
+}
+
+function rollCallDurationMs(
+  pacing: "brisk" | "decisive" | "final",
+): number {
+  if (pacing === "brisk") return 800;
+  if (pacing === "decisive") return 1_300;
+  return 2_000;
+}
+
+function validSoleVulnerableResolution(
+  resolution: FormatResolutionPresentation,
+  ballots: ReadonlyMap<string, FormatPresentationBallot>,
+): boolean {
+  return validSoleVulnerableResolutionShape(resolution) && ballots.size === 0;
+}
+
+function validSoleVulnerableResolutionShape(
+  resolution: FormatResolutionPresentation,
+): boolean {
+  const vulnerable = resolution.safetyBounce?.vulnerablePlayerIds ?? [];
+  return resolution.formatId === "safety_bounce"
+    && resolution.resolutionKind === "auto"
+    && resolution.saveOrEliminate === null
+    && resolution.voteBomb === null
+    && vulnerable.length === 1
+    && resolution.eliminatedId === vulnerable[0]
+    && resolution.tiedPlayerIds.length === 0
+    && resolution.tiebreakerId === null
+    && Object.keys(resolution.safetyBounce?.voteTotals ?? {}).length === 0;
+}
+
+function resolutionOutcomeMatchesRules(
+  resolution: FormatResolutionPresentation,
+  eligiblePlayerIds: readonly string[],
+): boolean {
+  if (
+    !eligiblePlayerIds.includes(resolution.empoweredId)
+    || !eligiblePlayerIds.includes(resolution.eliminatedId)
+    || (
+      resolution.tiebreakerId !== null
+      && resolution.tiebreakerId !== resolution.empoweredId
+    )
+  ) {
+    return false;
+  }
+
+  if (resolution.formatId === "save_or_eliminate") {
+    if (
+      !resolution.saveOrEliminate
+      || resolution.voteBomb
+      || resolution.safetyBounce
+    ) {
+      return false;
+    }
+    const nets = resolution.saveOrEliminate.nets;
+    const lowest = Math.min(...Object.values(nets));
+    return outcomeMatchesCandidates(
+      resolution,
+      eligiblePlayerIds.filter((id) => nets[id] === lowest),
+    );
+  }
+
+  if (resolution.formatId === "vote_bomb") {
+    if (
+      resolution.saveOrEliminate
+      || !resolution.voteBomb
+      || resolution.safetyBounce
+    ) {
+      return false;
+    }
+    const totals = resolution.voteBomb.totals;
+    const zeroSafe = eligiblePlayerIds.filter((id) => totals[id] === 0);
+    if (!sameMembers(zeroSafe, resolution.voteBomb.zeroSafePlayerIds)) {
+      return false;
+    }
+    const positive = eligiblePlayerIds.filter((id) => (totals[id] ?? 0) > 0);
+    if (positive.length === 0) return false;
+    const fewestPositive = Math.min(...positive.map((id) => totals[id]!));
+    return outcomeMatchesCandidates(
+      resolution,
+      positive.filter((id) => totals[id] === fewestPositive),
+    );
+  }
+
+  if (
+    resolution.saveOrEliminate
+    || resolution.voteBomb
+    || !resolution.safetyBounce
+  ) {
+    return false;
+  }
+  const vulnerable = resolution.safetyBounce.vulnerablePlayerIds;
+  if (vulnerable.length === 1) {
+    return validSoleVulnerableResolutionShape(resolution);
+  }
+  const totals = resolution.safetyBounce.voteTotals;
+  const highest = Math.max(...vulnerable.map((id) => totals[id] ?? 0));
+  return outcomeMatchesCandidates(
+    resolution,
+    vulnerable.filter((id) => totals[id] === highest),
+    "clear",
+  );
+}
+
+function outcomeMatchesCandidates(
+  resolution: FormatResolutionPresentation,
+  candidates: readonly string[],
+  uniqueResolutionKind: "auto" | "clear" = "auto",
+): boolean {
+  if (candidates.length === 0 || !candidates.includes(resolution.eliminatedId)) {
+    return false;
+  }
+  if (candidates.length === 1) {
+    return resolution.resolutionKind === uniqueResolutionKind
+      && resolution.tiebreakerId === null
+      && sameMembers(resolution.tiedPlayerIds, candidates);
+  }
+  return resolution.resolutionKind === "clear"
+    && resolution.tiebreakerId === resolution.empoweredId
+    && sameMembers(resolution.tiedPlayerIds, candidates);
 }
 
 function aggregatesMatch(

@@ -192,17 +192,93 @@ export function usePresentationDirector({
 
   useEffect(() => {
     if (!scope.current || !snapshot.activeKey) return;
-    const control = animate(
+    const controls: Array<{
+      control: RetainedMotionControl;
+      release: () => void;
+    }> = [];
+    const track = (control: RetainedMotionControl): void => {
+      control.speed = director.getSnapshot().speed;
+      controls.push({ control, release: animation.track(control) });
+    };
+    const rootControl = animate(
       scope.current,
       { opacity: reducedMotion ? 1 : [0.985, 1] },
       { duration: reducedMotion ? 0 : 0.18, ease: "easeOut" },
     ) as RetainedMotionControl;
-    const release = animation.track(control);
+    track(rootControl);
+
+    const activeCue = director.getActiveCue();
+    const currentStateEntry = scope.current.querySelector(
+      '[data-presentation-current-entry="true"]',
+    );
+    if (
+      !reducedMotion
+      && !currentStateEntry
+      && activeCue?.source === "format"
+      && activeCue.kind === "safety_bounce_pointer"
+    ) {
+      const candidates = scope.current.querySelectorAll<HTMLElement>(
+        '[data-pointer-cycle-candidate="true"]',
+      );
+      candidates.forEach((candidate, index) => {
+        const control = animate(
+          candidate,
+          {
+            opacity: [0.2, 1, 0.28],
+            scale: [0.97, 1.04, 1],
+          },
+          {
+            delay: index * 0.2,
+            duration: 0.32,
+            ease: "easeInOut",
+          },
+        ) as RetainedMotionControl;
+        track(control);
+      });
+      const acceptedTarget = Array.from(
+        scope.current.querySelectorAll<HTMLElement>("[data-accepted-target]"),
+      ).find((element) => element.dataset.acceptedTarget === activeCue.targetId);
+      const classifiedCard = Array.from(
+        scope.current.querySelectorAll<HTMLElement>("[data-board-member]"),
+      ).find((element) => element.dataset.boardMember === activeCue.targetId);
+      const landingDelay = candidates.length * 0.2;
+      if (classifiedCard) {
+        const control = animate(
+          classifiedCard,
+          {
+            opacity: [0.35, 1],
+            y: [20, 0],
+            scale: [0.96, 1],
+          },
+          {
+            delay: landingDelay,
+            duration: 0.38,
+            ease: "easeOut",
+          },
+        ) as RetainedMotionControl;
+        track(control);
+      }
+      if (acceptedTarget) {
+        const control = animate(
+          acceptedTarget,
+          { opacity: [0.45, 1], scale: [0.985, 1] },
+          {
+            delay: landingDelay,
+            duration: 0.35,
+            ease: "easeOut",
+          },
+        ) as RetainedMotionControl;
+        track(control);
+      }
+    }
+
     return () => {
-      control.complete();
-      release();
+      for (const { control, release } of controls) {
+        control.complete();
+        release();
+      }
     };
-  }, [animate, animation, reducedMotion, scope, snapshot.activeKey]);
+  }, [animate, animation, director, reducedMotion, scope, snapshot.activeKey]);
 
   return {
     director,

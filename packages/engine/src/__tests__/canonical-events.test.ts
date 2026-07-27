@@ -283,6 +283,11 @@ describe("Safety Bounce canonical prefixes", () => {
         ? { ...event, payload: { ...event.payload, targetId: "nobody" } }
         : event
     ));
+    const classificationMismatch = events.map((event, index) => (
+      index === pointerIndex && event.type === "format.safety_bounce_pointer"
+        ? { ...event, payload: { ...event.payload, classification: "safe" as const } }
+        : event
+    ));
     const sequenceGap = events.map((event, index) => (
       index === pointerIndex
         ? { ...event, sequence: event.sequence + 1 }
@@ -295,6 +300,10 @@ describe("Safety Bounce canonical prefixes", () => {
       .toContain("safety_bounce_duplicate_target");
     expect(reconstructSafetyBouncePrefix({ roster, events: missingPlayer }).diagnostics.map((d) => d.code))
       .toContain("safety_bounce_missing_roster_player");
+    expect(
+      reconstructSafetyBouncePrefix({ roster, events: classificationMismatch })
+        .diagnostics.map((diagnostic) => diagnostic.code),
+    ).toContain("safety_bounce_classification_mismatch");
     expect(reconstructSafetyBouncePrefix({ roster, events: sequenceGap }).diagnostics.map((d) => d.code))
       .toContain("safety_bounce_event_gap");
   });
@@ -305,7 +314,6 @@ describe("Safety Bounce canonical prefixes", () => {
         { id: "alice", name: "Alice" },
         { id: "bob", name: "Bob" },
         { id: "charlie", name: "Charlie" },
-        { id: "dave", name: "Dave" },
       ],
       { gameId: "game-safety-bounce-auto", now: () => 1_700_000_000_000 },
     );
@@ -313,7 +321,6 @@ describe("Safety Bounce canonical prefixes", () => {
     state.recordSafetyBounceStarted("alice");
     state.recordSafetyBouncePointer("alice", "bob", "vulnerable");
     state.recordSafetyBouncePointer("bob", "charlie", "safe");
-    state.recordSafetyBouncePointer("charlie", "dave", "safe");
     state.recordFormatResolution({
       formatId: "safety_bounce",
       empoweredId: "alice",
@@ -325,13 +332,16 @@ describe("Safety Bounce canonical prefixes", () => {
       voteBomb: null,
       safetyBounce: {
         starterId: "alice",
-        safePlayerIds: ["alice", "charlie", "dave"],
+        safePlayerIds: ["alice", "charlie"],
         vulnerablePlayerIds: ["bob"],
         voteTotals: {},
       },
     });
 
-    const prefix = reconstructSafetyBouncePrefix({ roster, events: state.getCanonicalEvents() });
+    const prefix = reconstructSafetyBouncePrefix({
+      roster: roster.slice(0, 3),
+      events: state.getCanonicalEvents(),
+    });
 
     expect(prefix.completion).toBe("sole_vulnerable_auto_elimination");
     expect(prefix.finalBallotCount).toBe(0);

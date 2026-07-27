@@ -167,16 +167,20 @@ export type FormatPresentationCue =
       actorId: string;
       targetId: string;
       classification: "safe" | "vulnerable";
+      pointerCandidateIds: string[];
+      pacing: "early" | "middle" | "closing";
     })
   | (FormatPresentationCueBase & {
       kind: "format_aggregate";
       resolution: FormatResolutionPresentation;
+      ballotPresentationStatus: "revealed" | "not_applicable";
     })
   | (FormatPresentationCueBase & {
       kind: "format_roll_call";
       ballot: FormatPresentationBallot;
       rollCallIndex: number;
       rollCallCount: number;
+      pacing: "brisk" | "decisive" | "final";
     })
   | (FormatPresentationCueBase & {
       kind: "format_tiebreak";
