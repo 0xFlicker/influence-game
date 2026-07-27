@@ -1,8 +1,14 @@
 import { describe, expect, it } from "bun:test";
+import { Phase } from "@influence/engine";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToString } from "react-dom/server";
-import type { GameDetail, GameWatchState, TranscriptEntry } from "../lib/api";
+import type {
+  GameDetail,
+  GameWatchReplayFrame,
+  GameWatchState,
+  TranscriptEntry,
+} from "../lib/api";
 import {
   AgentOwnerLink,
   buildDiaryArchiveEntries,
@@ -11,6 +17,7 @@ import {
   MatchWatchShell,
 } from "../app/games/[slug]/components/match-watch-shell";
 import type { MatchWatchPlayerCard } from "../app/games/[slug]/components/match-watch-model";
+import { isFormatSocialTranscriptMessage } from "../app/games/[slug]/components/dramatic-replay-viewer";
 import { buildReplayScenes } from "../app/games/[slug]/components/spectacle-viewer";
 
 const matchWatchShellSource = readFileSync(
@@ -266,6 +273,108 @@ describe("MatchWatchShell", () => {
     expect(html).not.toContain("Public Thinking");
     expect(html).not.toContain("Public Strategy");
     expect(html).not.toContain("Public Receipts");
+  });
+
+  it("renders a format-only phase rail with every format phase", () => {
+    const html = renderToString(
+      <MatchWatchShell
+        game={{
+          ...game(),
+          gameKernel: "format",
+          gameKernelSource: "stored",
+          currentPhase: "FORMAT_MINGLE",
+        }}
+        messages={[]}
+        live={false}
+        connStatus="replay"
+      />,
+    );
+    const textHtml = withoutReactTextMarkers(html);
+
+    expect(textHtml).toContain("Voting");
+    expect(textHtml).toContain("Format Menu");
+    expect(textHtml).toContain("Format Selection");
+    expect(textHtml).toContain("Format Mingle");
+    expect(textHtml).toContain("Format Resolution");
+    expect(textHtml).not.toContain("Power Play");
+    expect(textHtml).not.toContain("Council");
+  });
+
+  it("renders typed format cues inside the deep animation boundary", () => {
+    const currentGame = {
+      ...game(),
+      gameKernel: "format" as const,
+      gameKernelSource: "stored" as const,
+      currentPhase: "FORMAT_MENU" as const,
+    };
+    const menuFrame: GameWatchReplayFrame = {
+      schemaVersion: 3,
+      gameId: currentGame.id,
+      slug: currentGame.slug,
+      sequence: 12,
+      eventType: "format.menu_offered",
+      timestamp: 12,
+      round: 1,
+      phase: "FORMAT_MENU",
+      players: currentGame.players,
+      counts: {
+        totalPlayers: 2,
+        alivePlayers: 1,
+        eliminatedPlayers: 1,
+        unknownPlayers: 0,
+      },
+      viewerDecisionEvent: {
+        sequence: 12,
+        timestamp: "2026-07-26T00:00:00.000Z",
+        round: 1,
+        phase: Phase.FORMAT_MENU,
+        type: "format.menu_offered",
+        payload: {
+          empoweredId: "p1",
+          offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+        },
+      },
+    };
+    const html = renderToString(
+      <MatchWatchShell
+        game={currentGame}
+        messages={[]}
+        replayFrames={[menuFrame]}
+        live={false}
+        connStatus="replay"
+      />,
+    );
+
+    expect(html).toContain('data-presentation-animation-boundary="true"');
+    expect(html).toContain('data-format-cue="format_menu"');
+    expect(html).toContain("The House offers two formats");
+  });
+
+  it("keeps social dialogue while quarantining format authority transcript phases", () => {
+    expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_MINGLE" }))).toBe(true);
+    expect(isFormatSocialTranscriptMessage(entry({ phase: "LOBBY" }))).toBe(true);
+    expect(isFormatSocialTranscriptMessage(entry({ phase: "VOTE" }))).toBe(false);
+    expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_MENU" }))).toBe(false);
+    expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_PICK" }))).toBe(false);
+    expect(isFormatSocialTranscriptMessage(entry({ phase: "FORMAT_RESOLVE" }))).toBe(false);
+  });
+
+  it("keeps playback timing in the director and adds no audio behavior", () => {
+    const dramaticReplaySource = readFileSync(
+      join(import.meta.dir, "../app/games/[slug]/components/dramatic-replay-viewer.tsx"),
+      "utf8",
+    );
+    const presentationDirectorSource = readFileSync(
+      join(import.meta.dir, "../app/games/[slug]/components/format-presentation-director.ts"),
+      "utf8",
+    );
+
+    expect(dramaticReplaySource).not.toContain("setInterval(");
+    expect(dramaticReplaySource).not.toContain("setSceneIndex");
+    expect(dramaticReplaySource).not.toContain("setMessageIndex");
+    expect(dramaticReplaySource).not.toContain("new Audio(");
+    expect(dramaticReplaySource).not.toContain("<audio");
+    expect(presentationDirectorSource).not.toContain("new Audio(");
   });
 
   it("makes long thinking cards expandable from the inspector", () => {

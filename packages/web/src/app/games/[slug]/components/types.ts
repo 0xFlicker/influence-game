@@ -5,7 +5,9 @@ import type {
   GameDetail,
   GameWatchReplayFrame,
   PublicPostgameMediaResponse,
+  ViewerDecisionEvent,
 } from "@/lib/api";
+import type { LaunchFormatId } from "@influence/engine";
 
 export type RoomType = "lobby" | "private_rooms" | "tribunal" | "diary" | "endgame";
 
@@ -84,3 +86,112 @@ export interface GameViewerProps {
 }
 
 export type SpectacleMessagePhase = "typing" | "revealing" | "done";
+
+export interface FormatPresentationRosterPlayer {
+  id: string;
+  name: string;
+}
+
+export interface FormatPresentationBallot {
+  voterId: string;
+  targetId: string;
+  polarity: "save" | "eliminate" | null;
+}
+
+export interface SafetyBouncePresentationSnapshot {
+  starterId: string;
+  currentActorId: string;
+  safePlayerIds: string[];
+  vulnerablePlayerIds: string[];
+  benchPlayerIds: string[];
+}
+
+export type FormatResolutionPresentation =
+  Extract<ViewerDecisionEvent, { type: "format.resolved" }>["payload"];
+
+export interface FormatPresentationSnapshot {
+  round: number;
+  phase: PhaseKey;
+  canonicalSequence: number;
+  empoweredId: string | null;
+  empoweredTally: Record<string, number> | null;
+  offeredFormatIds: [LaunchFormatId, LaunchFormatId] | null;
+  activeFormatId: LaunchFormatId | null;
+  safetyBounce: SafetyBouncePresentationSnapshot | null;
+  resolution: FormatResolutionPresentation | null;
+  revealedBallots: FormatPresentationBallot[];
+  eliminatedId: string | null;
+}
+
+interface FormatPresentationCueBase {
+  source: "format";
+  key: string;
+  canonicalSequence: number;
+  round: number;
+  phase: PhaseKey;
+  baseDurationMs: number;
+  before: FormatPresentationSnapshot;
+  after: FormatPresentationSnapshot;
+}
+
+export type FormatPresentationCue =
+  | (FormatPresentationCueBase & {
+      kind: "empowered_tally";
+      empoweredId: string;
+      counts: Record<string, number>;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "format_menu";
+      empoweredId: string;
+      offeredFormatIds: [LaunchFormatId, LaunchFormatId];
+    })
+  | (FormatPresentationCueBase & {
+      kind: "format_selected";
+      empoweredId: string;
+      formatId: LaunchFormatId;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "safety_bounce_started";
+      starterId: string;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "safety_bounce_pointer";
+      actorId: string;
+      targetId: string;
+      classification: "safe" | "vulnerable";
+    })
+  | (FormatPresentationCueBase & {
+      kind: "format_aggregate";
+      resolution: FormatResolutionPresentation;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "format_roll_call";
+      ballot: FormatPresentationBallot;
+      rollCallIndex: number;
+      rollCallCount: number;
+    })
+  | (FormatPresentationCueBase & {
+      kind: "format_tiebreak";
+      tiebreakerId: string;
+      tiedPlayerIds: string[];
+    })
+  | (FormatPresentationCueBase & {
+      kind: "format_elimination";
+      eliminatedId: string;
+      resolutionKind: "clear" | "auto";
+    });
+
+export interface ClassicPresentationCue {
+  source: "classic";
+  key: string;
+  canonicalSequence: number | null;
+  round: number;
+  phase: PhaseKey;
+  kind: "classic_transcript";
+  stage: SpectacleMessagePhase;
+  baseDurationMs: number;
+  sceneIndex: number;
+  messageIndex: number;
+}
+
+export type PresentationCue = ClassicPresentationCue | FormatPresentationCue;

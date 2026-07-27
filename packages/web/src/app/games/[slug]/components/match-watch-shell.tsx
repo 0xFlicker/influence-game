@@ -208,6 +208,7 @@ export function MatchWatchShell({
         <TheaterPanel
           game={game}
           messages={displayMessages}
+          replayFrames={replayFrames}
           live={live}
           connStatus={connStatus}
           model={model}
@@ -533,6 +534,7 @@ function statusTagClasses(tag: MatchWatchPlayerStatusTag): string {
 function TheaterPanel({
   game,
   messages,
+  replayFrames,
   live,
   connStatus,
   model,
@@ -540,6 +542,7 @@ function TheaterPanel({
 }: {
   game: GameDetail;
   messages: TranscriptEntry[];
+  replayFrames: GameWatchReplayFrame[];
   live: boolean;
   connStatus?: WatchConnStatus;
   model: MatchWatchModel;
@@ -567,6 +570,7 @@ function TheaterPanel({
           game={game}
           messages={messages}
           players={game.players}
+          replayFrames={replayFrames}
           live={live}
           connStatus={connStatus}
           embedded
@@ -1002,6 +1006,7 @@ function isSamePlaybackState(
   return (
     current.round === next.round &&
     current.phase === next.phase &&
+    current.canonicalSequence === next.canonicalSequence &&
     current.visibleMessages.length === next.visibleMessages.length &&
     current.players.length === next.players.length &&
     currentLastMessage?.id === nextLastMessage?.id &&

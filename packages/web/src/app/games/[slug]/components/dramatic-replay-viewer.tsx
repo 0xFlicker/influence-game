@@ -1,9 +1,23 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import type { TranscriptEntry, GamePlayer, GameDetail } from "@/lib/api";
+import { MotionConfig } from "motion/react";
+import type {
+  TranscriptEntry,
+  GamePlayer,
+  GameDetail,
+  GameWatchReplayFrame,
+} from "@/lib/api";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
-import type { EndgameStage, EndgameScreenState, TransitionState, SpectacleMessagePhase } from "./types";
+import type {
+  ClassicPresentationCue,
+  EndgameStage,
+  EndgameScreenState,
+  FormatPresentationCue,
+  PresentationCue,
+  ReplayScene,
+  TransitionState,
+} from "./types";
 import {
   PHASE_TRANSITION_LABELS,
   PHASE_FLAVORS,
@@ -41,56 +55,369 @@ import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJuryOpeningStatementsExtraHoldMs, getJuryQuestionsExtraHoldMs } from "./dramatic-timing";
 import type { MatchWatchPlaybackState } from "./match-watch-model";
 import type { WatchConnStatus } from "./types";
+import {
+  compileFormatPresentationPrefix,
+  formatPresentationDecisionsFromFrames,
+  formatPresentationEligibilityFromFrames,
+} from "./format-presentation-model";
+import { usePresentationDirector } from "./format-presentation-director";
 
 function isRoomReplayPhase(phase: string): boolean {
   return phase === "MINGLE_I" || phase === "MINGLE" || phase === "POST_VOTE_MINGLE";
 }
 
-export function DramaticReplayViewer({
-  game,
-  messages,
-  players,
-  live = false,
-  connStatus,
-  embedded = false,
-  onPlaybackStateChange,
-}: {
+const FORMAT_AUTHORITY_TRANSCRIPT_PHASES = new Set([
+  "VOTE",
+  "FORMAT_MENU",
+  "FORMAT_PICK",
+  "FORMAT_RESOLVE",
+]);
+
+export function isFormatSocialTranscriptMessage(
+  message: Pick<TranscriptEntry, "phase">,
+): boolean {
+  return !FORMAT_AUTHORITY_TRANSCRIPT_PHASES.has(message.phase);
+}
+
+interface DramaticReplayViewerProps {
   game: GameDetail;
   messages: TranscriptEntry[];
   players: GamePlayer[];
+  replayFrames?: GameWatchReplayFrame[];
   live?: boolean;
   connStatus?: WatchConnStatus;
   embedded?: boolean;
   onPlaybackStateChange?: (state: MatchWatchPlaybackState) => void;
-}) {
+}
+
+export function DramaticReplayViewer(props: DramaticReplayViewerProps) {
+  return (
+    <MotionConfig reducedMotion="user">
+      <DramaticReplayTheater {...props} />
+    </MotionConfig>
+  );
+}
+
+function buildClassicPresentationCues(
+  scenes: ReturnType<typeof buildReplayScenes>,
+  replayFrames: readonly GameWatchReplayFrame[],
+): ClassicPresentationCue[] {
+  return scenes.flatMap((scene, sceneIndex) =>
+    scene.messages.flatMap((message, messageIndex) => {
+      const isLastInScene = messageIndex === scene.messages.length - 1;
+      const isChatStyle =
+        CHAT_FEED_PHASES.has(scene.phase)
+        || isRoomReplayPhase(scene.phase)
+        || scene.phase === "DIARY_ROOM"
+        || scene.phase === "JURY_QUESTIONS";
+      const typingMs = message.scope === "system" || !message.fromPlayerId
+        ? 0
+        : isChatStyle
+          ? CHAT_TYPING_HOLD_MS
+          : TYPING_HOLD_MS * (
+              DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1
+            );
+      const extraHoldMs =
+        getHouseSummaryExtraHoldMs(message, scene.messages, messageIndex)
+        + getJuryOpeningStatementsExtraHoldMs(message, scene.messages, messageIndex)
+        + getJuryQuestionsExtraHoldMs(message, scene.messages, messageIndex)
+        + getJuryClosingStatementsExtraHoldMs(message, scene.messages, messageIndex);
+      const holdMs = isLastInScene
+        ? (
+            isRoomReplayPhase(scene.phase) || scene.phase === "DIARY_ROOM"
+              ? DIARY_WHISPER_SCENE_END_HOLD_MS
+              : INTER_SCENE_PAUSE_MS
+          ) + (PACED_PHASES.has(scene.phase) ? PHASE_END_PAUSE_MS : 0)
+        : isChatStyle
+          ? Math.max(CHAT_POST_MSG_BASE_MS, message.text.length * CHAT_POST_MSG_PER_CHAR_MS)
+          : Math.max(POST_REVEAL_BASE_MS, message.text.length * POST_REVEAL_PER_CHAR_MS)
+            * (DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1);
+      const canonicalSequence = replayFrames
+        .filter((frame) =>
+          frame.round === scene.round
+          && frame.timestamp <= message.timestamp
+        )
+        .at(-1)?.sequence ?? null;
+
+      const stages: Array<{
+        stage: ClassicPresentationCue["stage"];
+        durationMs: number;
+      }> = [];
+      if (typingMs > 0) {
+        stages.push({ stage: "typing", durationMs: typingMs });
+      }
+      if (!isChatStyle) {
+        stages.push({
+          stage: "revealing",
+          durationMs: Math.max(600, message.text.length * 18),
+        });
+      }
+      stages.push({ stage: "done", durationMs: holdMs + extraHoldMs });
+
+      return stages.map(({ stage, durationMs }) => ({
+        source: "classic" as const,
+        key: `classic:${scene.id}:${messageIndex}:${message.id}:${stage}`,
+        canonicalSequence,
+        round: scene.round,
+        phase: scene.phase,
+        kind: "classic_transcript" as const,
+        stage,
+        baseDurationMs: durationMs,
+        sceneIndex,
+        messageIndex,
+      }));
+    }),
+  );
+}
+
+function mergeFormatAndSocialCues(
+  formatCues: readonly FormatPresentationCue[],
+  classicCues: readonly ClassicPresentationCue[],
+  scenes: ReturnType<typeof buildReplayScenes>,
+): PresentationCue[] {
+  const socialCues = classicCues.filter((cue) => {
+    const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
+    return message ? isFormatSocialTranscriptMessage(message) : false;
+  });
+  const phaseOrder: readonly string[] = [
+    "INTRODUCTION",
+    "LOBBY",
+    "MINGLE_I",
+    "PRE_VOTE_HUDDLE",
+    "VOTE",
+    "FORMAT_MENU",
+    "FORMAT_PICK",
+    "FORMAT_MINGLE",
+    "FORMAT_RESOLVE",
+    "END",
+  ];
+  return [...socialCues, ...formatCues].sort((left, right) => {
+    if (left.round !== right.round) return left.round - right.round;
+    const phaseDifference = phaseOrder.indexOf(left.phase) - phaseOrder.indexOf(right.phase);
+    if (phaseDifference !== 0) return phaseDifference;
+    if (left.source !== right.source) return left.source === "classic" ? -1 : 1;
+    if (left.source === "format" && right.source === "format") {
+      return left.canonicalSequence - right.canonicalSequence;
+    }
+    if (left.source === "classic" && right.source === "classic") {
+      return left.sceneIndex - right.sceneIndex || left.messageIndex - right.messageIndex;
+    }
+    return 0;
+  });
+}
+
+function formatCueScene(cue: FormatPresentationCue): ReplayScene {
+  return {
+    id: cue.key,
+    round: cue.round,
+    phase: cue.phase,
+    roomType: "tribunal" as const,
+    messages: [] as TranscriptEntry[],
+    houseIntro: null,
+  };
+}
+
+function findCueForAdjacentScene(
+  cues: readonly PresentationCue[],
+  cursor: number,
+  direction: -1 | 1,
+): number | null {
+  const current = cues[cursor];
+  if (!current) return null;
+  const identity = cueSceneIdentity(current);
+  if (direction === 1) {
+    for (let index = cursor + 1; index < cues.length; index += 1) {
+      if (cueSceneIdentity(cues[index]!) !== identity) return index;
+    }
+    return null;
+  }
+  let previous = cursor - 1;
+  while (previous >= 0 && cueSceneIdentity(cues[previous]!) === identity) previous -= 1;
+  if (previous < 0) return null;
+  const previousIdentity = cueSceneIdentity(cues[previous]!);
+  while (
+    previous > 0
+    && cueSceneIdentity(cues[previous - 1]!) === previousIdentity
+  ) {
+    previous -= 1;
+  }
+  return previous;
+}
+
+function cueSceneIdentity(cue: PresentationCue): string {
+  return cue.source === "classic"
+    ? `classic:${cue.sceneIndex}`
+    : cue.key;
+}
+
+function findPreviousRoundCue(
+  cues: readonly PresentationCue[],
+  cursor: number,
+): number {
+  const currentRound = cues[cursor]?.round;
+  if (currentRound === undefined) return 0;
+  for (let index = cursor - 1; index >= 0; index -= 1) {
+    const round = cues[index]!.round;
+    if (round < currentRound) {
+      while (index > 0 && cues[index - 1]!.round === round) index -= 1;
+      return index;
+    }
+  }
+  return 0;
+}
+
+function FormatCueSummary({ cue }: { cue: FormatPresentationCue }) {
+  return (
+    <section
+      data-presentation-cue={cue.key}
+      data-format-cue={cue.kind}
+      className="mx-auto max-w-2xl rounded-xl border border-white/10 bg-white/[0.035] p-6 text-center"
+      aria-live="polite"
+    >
+      <p className="text-[10px] uppercase tracking-[0.24em] text-white/35">
+        Canonical format beat
+      </p>
+      <h2 className="mt-3 text-2xl font-semibold text-white/95">
+        {formatCueTitle(cue)}
+      </h2>
+      <p className="mt-3 text-sm leading-6 text-white/60">
+        {formatCueDescription(cue)}
+      </p>
+    </section>
+  );
+}
+
+function formatCueTitle(cue: FormatPresentationCue): string {
+  switch (cue.kind) {
+    case "empowered_tally":
+      return "Empowered vote";
+    case "format_menu":
+      return "The House offers two formats";
+    case "format_selected":
+      return "Format selected";
+    case "safety_bounce_started":
+      return "Safety Bounce begins";
+    case "safety_bounce_pointer":
+      return "Classification accepted";
+    case "format_aggregate":
+      return "Tally locked";
+    case "format_roll_call":
+      return "Ballot revealed";
+    case "format_tiebreak":
+      return "Tiebreak receipt";
+    case "format_elimination":
+      return "Format resolved";
+  }
+}
+
+function formatCueDescription(cue: FormatPresentationCue): string {
+  switch (cue.kind) {
+    case "empowered_tally":
+      return `${cue.empoweredId} is Empowered.`;
+    case "format_menu":
+      return cue.offeredFormatIds.join(" versus ");
+    case "format_selected":
+      return `${cue.formatId} is active.`;
+    case "safety_bounce_started":
+      return `${cue.starterId} starts Safe and owns the first choice.`;
+    case "safety_bounce_pointer":
+      return `${cue.actorId} classifies ${cue.targetId} as ${cue.classification}.`;
+    case "format_aggregate":
+      return `The ${cue.resolution.formatId} aggregate is final.`;
+    case "format_roll_call":
+      return `${cue.ballot.voterId} → ${cue.ballot.targetId}${
+        cue.ballot.polarity ? ` (${cue.ballot.polarity})` : ""
+      }`;
+    case "format_tiebreak":
+      return `${cue.tiebreakerId} breaks the tie.`;
+    case "format_elimination":
+      return `${cue.eliminatedId} is eliminated.`;
+  }
+}
+
+function DramaticReplayTheater({
+  game,
+  messages,
+  players,
+  replayFrames = [],
+  live = false,
+  connStatus,
+  embedded = false,
+  onPlaybackStateChange,
+}: DramaticReplayViewerProps) {
   const [showThinking, setShowThinking] = useState(!live); // default true for replay
   // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
     () => messages.filter((m) => m.scope !== "thinking"),
     [messages],
   );
+  const isFormatGame =
+    (game.gameKernel ?? game.watchState?.gameKernel) === "format";
   const scenes = useMemo(() => buildReplayScenes(filteredMessages), [filteredMessages]);
+  const classicCues = useMemo(
+    () => buildClassicPresentationCues(scenes, replayFrames),
+    [replayFrames, scenes],
+  );
+  const formatCompilation = useMemo(
+    () => compileFormatPresentationPrefix({
+      gameId: game.id,
+      gameKernel: game.gameKernel ?? game.watchState?.gameKernel ?? "classic",
+      roster: players.map((player) => ({ id: player.id, name: player.name })),
+      decisions: formatPresentationDecisionsFromFrames(replayFrames),
+      eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(replayFrames),
+    }),
+    [game.gameKernel, game.id, game.watchState?.gameKernel, players, replayFrames],
+  );
+  const presentationCues = useMemo(
+    () => isFormatGame
+      ? mergeFormatAndSocialCues(formatCompilation.cues, classicCues, scenes)
+      : classicCues,
+    [
+      classicCues,
+      formatCompilation.cues,
+      isFormatGame,
+      scenes,
+    ],
+  );
+  const {
+    director,
+    snapshot: directorSnapshot,
+    scope: animationScope,
+    reducedMotion,
+  } = usePresentationDirector({ followTail: live });
   // Check if any per-message thinking exists (to decide whether to show toggle)
   const hasThinkingMessages = useMemo(() => messages.some((m) => m.thinking), [messages]);
-  const [sceneIndex, setSceneIndex] = useState(0);
-  const [messageIndex, setMessageIndex] = useState(0);
-  const [messagePhase, setMessagePhase] = useState<SpectacleMessagePhase>("typing");
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [speed, setSpeed] = useState(1);
-  const [showHouseOverlay, setShowHouseOverlay] = useState(false);
   const [activeEndgameScreen, setActiveEndgameScreen] = useState<EndgameScreenState | null>(null);
   const [activePhaseTransition, setActivePhaseTransition] = useState<TransitionState | null>(null);
-  const [showPhaseEndingCue, setShowPhaseEndingCue] = useState(false);
+  const resumeAfterTransitionRef = useRef(false);
   const seenEndgameStages = useRef<Set<string>>(new Set());
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const liveInitializedRef = useRef(false);
   // Scroll ref for stacked diary/mingle content (INF-93)
   const stackedScrollRef = useRef<HTMLDivElement>(null);
 
-  const scene = scenes[sceneIndex];
+  const fallbackCue = presentationCues[0] ?? null;
+  const activeCue = director.getActiveCue() ?? fallbackCue;
+  const classicCue = activeCue?.source === "classic" ? activeCue : null;
+  const formatCue = activeCue?.source === "format" ? activeCue : null;
+  const sceneIndex = classicCue?.sceneIndex ?? 0;
+  const messageIndex = classicCue?.messageIndex ?? 0;
+  const scene = classicCue
+    ? scenes[classicCue.sceneIndex]
+    : formatCue
+      ? formatCueScene(formatCue)
+      : undefined;
   const totalScenes = scenes.length;
   const currentMessage = scene?.messages[messageIndex] ?? null;
+  const messagePhase = classicCue?.stage ?? "done";
+  const isPlaying = directorSnapshot.isPlaying;
+  const speed = directorSnapshot.speed;
+  const showPhaseEndingCue = Boolean(
+    classicCue?.stage === "done"
+    && scene
+    && messageIndex === scene.messages.length - 1
+    && PACED_PHASES.has(scene.phase),
+  );
   const isSystemMessage = !currentMessage?.fromPlayerId || currentMessage?.scope === "system";
 
   // Set data-phase on root for cinematic CSS cascade
@@ -108,68 +435,24 @@ export function DramaticReplayViewer({
     };
   }, [scenePhase]);
 
-  // Live mode: jump to latest position when scenes first appear
   useEffect(() => {
-    if (!live || liveInitializedRef.current || totalScenes === 0) return;
-    liveInitializedRef.current = true;
-    const lastScene = scenes[totalScenes - 1]!;
-    setSceneIndex(totalScenes - 1);
-    setMessageIndex(lastScene.messages.length - 1);
-    setMessagePhase("done");
-  }, [live, totalScenes, scenes]);
-
-  // Live mode: independent catch-up interval that doesn't get cleared by
-  // scene rebuilds. The main auto-advance timer gets reset every time a
-  // WebSocket message triggers a scene rebuild, preventing progress through
-  // dramatic phases (e.g., vote tallies not incrementing). This interval
-  // reads state from refs and advances when the viewer falls behind.
-  const sceneMsgLenRef = useRef(0);
-  sceneMsgLenRef.current = scene?.messages.length ?? 0;
-  const liveStateRef = useRef({ messageIndex, messagePhase, speed });
-  liveStateRef.current = { messageIndex, messagePhase, speed };
-
-  useEffect(() => {
-    if (!live || !isPlaying) return;
-
-    const interval = setInterval(() => {
-      const { messageIndex: idx, messagePhase: phase } = liveStateRef.current;
-      const sceneLen = sceneMsgLenRef.current;
-      if (sceneLen === 0 || idx >= sceneLen - 1) return; // caught up
-
-      if (phase === "done") {
-        setMessageIndex((i) => i + 1);
-        setMessagePhase("typing");
-      } else if (phase === "typing" || phase === "revealing") {
-        // Skip animation to catch up
-        setMessagePhase("done");
-      }
-    }, 400);
-
-    return () => clearInterval(interval);
-  }, [live, isPlaying]);
-
-  // Live mode: auto-advance to new scenes when they appear (INF-83).
-  // When scenes rebuild and there are more scenes than before, advance from
-  // the old last scene to the next one. This handles phase transitions in live
-  // mode where the viewer was waiting at the end of available content.
-  const prevTotalScenes = useRef(0);
-  useEffect(() => {
-    if (!live || !isPlaying) {
-      prevTotalScenes.current = totalScenes;
+    if (presentationCues.length === 0) return;
+    if (live && directorSnapshot.cueKeys.length === 0) {
+      director.reconnect(presentationCues);
+      director.play();
       return;
     }
-    if (totalScenes > prevTotalScenes.current && prevTotalScenes.current > 0) {
-      // New scenes arrived — if we were at the old last scene, advance
-      const wasAtEnd = sceneIndex >= prevTotalScenes.current - 1;
-      if (wasAtEnd) {
-        setShowPhaseEndingCue(false);
-        setSceneIndex(prevTotalScenes.current); // first new scene
-        setMessageIndex(0);
-        setMessagePhase("typing");
-      }
+    if (directorSnapshot.cueKeys.length === 0) {
+      director.load(presentationCues);
+      director.play();
+      return;
     }
-    prevTotalScenes.current = totalScenes;
-  }, [live, isPlaying, totalScenes, sceneIndex]);
+    if (live) {
+      director.append(presentationCues);
+    } else {
+      director.load(presentationCues);
+    }
+  }, [director, directorSnapshot.cueKeys.length, live, presentationCues]);
 
   // Resolve current speaker (anonymous for RUMOR phase)
   const isCurrentRumor = currentMessage?.phase === "RUMOR" && currentMessage?.scope === "public";
@@ -184,16 +467,21 @@ export function DramaticReplayViewer({
   // All messages visible up to current point
   const allVisibleMessages = useMemo(() => {
     const msgs: TranscriptEntry[] = [];
-    for (let i = 0; i <= sceneIndex && i < scenes.length; i++) {
-      const s = scenes[i]!;
-      if (i < sceneIndex) {
-        msgs.push(...s.messages);
-      } else {
-        msgs.push(...s.messages.slice(0, messageIndex + 1));
+    const seenMessages = new Set<string>();
+    const visibleCues = presentationCues.slice(0, directorSnapshot.cursor + 1);
+    for (const cue of visibleCues) {
+      if (cue.source !== "classic") continue;
+      const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
+      if (!message || (isFormatGame && !isFormatSocialTranscriptMessage(message))) {
+        continue;
       }
+      const messageKey = `${cue.sceneIndex}:${cue.messageIndex}`;
+      if (seenMessages.has(messageKey)) continue;
+      seenMessages.add(messageKey);
+      msgs.push(message);
     }
     return msgs;
-  }, [scenes, sceneIndex, messageIndex]);
+  }, [directorSnapshot.cursor, isFormatGame, presentationCues, scenes]);
 
   // Determine rendering mode for current scene
   // Thinking-only scenes (from MINGLE/DIARY phases) should render as a chat feed,
@@ -280,10 +568,11 @@ export function DramaticReplayViewer({
     onPlaybackStateChange({
       round: scene.round,
       phase: scene.phase,
+      canonicalSequence: activeCue?.canonicalSequence ?? null,
       players: replayPlayers,
       visibleMessages: allVisibleMessages,
     });
-  }, [allVisibleMessages, onPlaybackStateChange, replayPlayers, scene]);
+  }, [activeCue?.canonicalSequence, allVisibleMessages, onPlaybackStateChange, replayPlayers, scene]);
 
   // For per-player diary scenes: build a DiaryRoomData for single-player rendering
   const diaryRoomData = useMemo(() => {
@@ -346,6 +635,12 @@ export function DramaticReplayViewer({
   const prevScene = sceneIndex > 0 ? scenes[sceneIndex - 1] : null;
   const isNewRound = scene && prevScene && scene.round !== prevScene.round;
   const isRoomChange = scene && prevScene && scene.roomType !== prevScene.roomType;
+  const showHouseOverlay = Boolean(
+    classicCue
+    && classicCue.messageIndex === 0
+    && scene?.houseIntro
+    && isRoomChange,
+  );
 
   // Phase transition overlay on room type changes
   const replayTransitionHoldMs =
@@ -353,6 +648,8 @@ export function DramaticReplayViewer({
 
   useEffect(() => {
     if (isRoomChange && scene) {
+      resumeAfterTransitionRef.current = director.getSnapshot().isPlaying;
+      if (resumeAfterTransitionRef.current) director.pause();
       const flavors = PHASE_FLAVORS[scene.phase] ?? [];
       const flavorText = flavors.length > 0
         ? flavors[Math.floor(Math.random() * flavors.length)]!
@@ -367,6 +664,14 @@ export function DramaticReplayViewer({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneIndex]);
+
+  const dismissPhaseTransition = useCallback(() => {
+    setActivePhaseTransition(null);
+    if (resumeAfterTransitionRef.current) {
+      resumeAfterTransitionRef.current = false;
+      director.play();
+    }
+  }, [director]);
 
   // Endgame entry screens at player-count thresholds
   useEffect(() => {
@@ -389,184 +694,38 @@ export function DramaticReplayViewer({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sceneIndex]);
 
-  // House overlay on room changes
-  useEffect(() => {
-    if (scene?.houseIntro && isRoomChange) {
-      setShowHouseOverlay(true);
-      const timer = window.setTimeout(() => setShowHouseOverlay(false), 3500);
-      return () => window.clearTimeout(timer);
-    }
-  }, [sceneIndex, scene?.houseIntro, isRoomChange]);
-
-  // Auto-advance state machine — pauses while phase transition overlay is active (INF-84)
-  useEffect(() => {
-    if (!isPlaying || !scene || !currentMessage || activePhaseTransition) return;
-
-    if (messagePhase === "typing") {
-      // Chat-style phases: short typing indicator then skip straight to "done"
-      if (isChatStyleScene) {
-        if (isSystemMessage) {
-          setMessagePhase("done");
-          return;
-        }
-        const timer = setTimeout(() => setMessagePhase("done"), CHAT_TYPING_HOLD_MS / speed);
-        return () => clearTimeout(timer);
-      }
-      // Overview scenes (e.g. mingle allocation) render a static component, not
-      // a Typewriter, so skip straight to "done" — there is no onComplete to fire.
-      if (isOverviewScene) {
-        setMessagePhase("done");
-        return;
-      }
-      // System messages skip typing indicator
-      if (isSystemMessage) {
-        setMessagePhase("revealing");
-        return;
-      }
-      const typingMul = DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1;
-      const timer = setTimeout(() => setMessagePhase("revealing"), (TYPING_HOLD_MS * typingMul) / speed);
-      return () => clearTimeout(timer);
-    }
-
-    if (messagePhase === "done") {
-      const isLastInScene = messageIndex >= scene.messages.length - 1;
-      const isLastScene = sceneIndex >= totalScenes - 1;
-
-      // Chat-style phases use faster timing
-      if (isChatStyleScene) {
-        const isPaced = PACED_PHASES.has(scene.phase);
-        const sceneEndHold = (isWhisperScene || isDiaryScene) ? DIARY_WHISPER_SCENE_END_HOLD_MS : INTER_SCENE_PAUSE_MS;
-        const pacedExtra = (isPaced && isLastInScene) ? PHASE_END_PAUSE_MS : 0;
-        const houseSummaryExtra = getHouseSummaryExtraHoldMs(currentMessage, scene.messages, messageIndex);
-        const juryOpeningExtra = getJuryOpeningStatementsExtraHoldMs(currentMessage, scene.messages, messageIndex);
-        const juryQuestionsExtra = getJuryQuestionsExtraHoldMs(currentMessage, scene.messages, messageIndex);
-        const juryClosingExtra = getJuryClosingStatementsExtraHoldMs(currentMessage, scene.messages, messageIndex);
-        const holdMs = isLastInScene
-          ? (sceneEndHold + pacedExtra + houseSummaryExtra + juryOpeningExtra + juryQuestionsExtra + juryClosingExtra) / speed
-          : Math.max(CHAT_POST_MSG_BASE_MS, currentMessage.text.length * CHAT_POST_MSG_PER_CHAR_MS) / speed;
-
-        if (isPaced && isLastInScene) setShowPhaseEndingCue(true);
-
-        // Live mode at end of available scenes: show indeterminate cue, wait for new data (INF-83)
-        if (live && isLastScene && isLastInScene) {
-          return; // No timer — live scene catch-up effect handles advancement
-        }
-
-        const timer = setTimeout(() => {
-          setShowPhaseEndingCue(false);
-          if (!isLastInScene) {
-            setMessageIndex((i) => i + 1);
-            setMessagePhase("typing");
-          } else if (!isLastScene) {
-            setSceneIndex((i) => i + 1);
-            setMessageIndex(0);
-            setMessagePhase("typing");
-          } else if (!live) {
-            setIsPlaying(false);
-          }
-        }, holdMs);
-        return () => clearTimeout(timer);
-      }
-
-      // Hold time proportional to message length; dramatic phases get extra weight
-      const dramaticMul = DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1;
-      const houseSummaryExtra = getHouseSummaryExtraHoldMs(currentMessage, scene.messages, messageIndex);
-      const juryOpeningExtra = getJuryOpeningStatementsExtraHoldMs(currentMessage, scene.messages, messageIndex);
-      const juryQuestionsExtra = getJuryQuestionsExtraHoldMs(currentMessage, scene.messages, messageIndex);
-      const juryClosingExtra = getJuryClosingStatementsExtraHoldMs(currentMessage, scene.messages, messageIndex);
-      const holdMs = isLastInScene
-        ? ((INTER_SCENE_PAUSE_MS * dramaticMul) + houseSummaryExtra + juryOpeningExtra + juryQuestionsExtra + juryClosingExtra) / speed
-        : ((Math.max(POST_REVEAL_BASE_MS, currentMessage.text.length * POST_REVEAL_PER_CHAR_MS) * dramaticMul) + houseSummaryExtra + juryOpeningExtra + juryQuestionsExtra + juryClosingExtra) / speed;
-
-      // Live mode at end of available scenes: wait for new data (INF-83)
-      if (live && isLastScene && isLastInScene) {
-        return;
-      }
-
-      const timer = setTimeout(() => {
-        if (!isLastInScene) {
-          setMessageIndex((i) => i + 1);
-          setMessagePhase("typing");
-        } else if (!isLastScene) {
-          setSceneIndex((i) => i + 1);
-          setMessageIndex(0);
-          setMessagePhase("typing");
-        } else if (!live) {
-          setIsPlaying(false);
-        }
-      }, holdMs);
-      return () => clearTimeout(timer);
-    }
-    // "revealing" phase transitions via Typewriter onComplete
-  }, [isPlaying, messagePhase, messageIndex, sceneIndex, scene, totalScenes, speed, currentMessage, isSystemMessage, isChatStyleScene, isOverviewScene, isWhisperScene, isDiaryScene, live, activePhaseTransition]);
-
-  // Debounce scene transitions to prevent rapid clicks from skipping content
-  const lastSceneAdvanceRef = useRef(0);
-  const SCENE_ADVANCE_COOLDOWN_MS = 400;
-
-  // Advance function — for click/tap and keyboard
   const advanceMessage = useCallback(() => {
-    if (!scene) return;
-    setShowPhaseEndingCue(false);
-    // If mid-animation, skip to fully revealed
-    if (messagePhase === "typing" || messagePhase === "revealing") {
-      setMessagePhase("done");
-      return;
-    }
-    // Advance to next message or scene
-    if (messageIndex < scene.messages.length - 1) {
-      setMessageIndex((i) => i + 1);
-      setMessagePhase("typing");
-    } else if (sceneIndex < totalScenes - 1) {
-      // Debounce scene transitions to prevent rapid clicks skipping entire phases
-      const now = Date.now();
-      if (now - lastSceneAdvanceRef.current < SCENE_ADVANCE_COOLDOWN_MS) return;
-      lastSceneAdvanceRef.current = now;
-      setSceneIndex((i) => i + 1);
-      setMessageIndex(0);
-      setMessagePhase("typing");
-    }
-  }, [scene, messagePhase, messageIndex, sceneIndex, totalScenes]);
+    director.manualAdvance();
+  }, [director]);
 
   const goToNextScene = useCallback(() => {
-    setShowPhaseEndingCue(false);
-    if (sceneIndex < totalScenes - 1) {
-      setSceneIndex((i) => i + 1);
-      setMessageIndex(0);
-      setMessagePhase("typing");
-    }
-  }, [sceneIndex, totalScenes]);
+    const nextIndex = findCueForAdjacentScene(
+      presentationCues,
+      directorSnapshot.cursor,
+      1,
+    );
+    if (nextIndex !== null) director.seek(nextIndex);
+  }, [director, directorSnapshot.cursor, presentationCues]);
 
   const goToEnd = useCallback(() => {
-    setShowPhaseEndingCue(false);
-    if (totalScenes > 0) {
-      const lastScene = scenes[totalScenes - 1]!;
-      setSceneIndex(totalScenes - 1);
-      setMessageIndex(lastScene.messages.length - 1);
-      setMessagePhase("done");
-      setIsPlaying(false);
+    if (presentationCues.length > 0) {
+      director.pause();
+      director.seek(presentationCues.length - 1);
     }
-  }, [totalScenes, scenes]);
+  }, [director, presentationCues.length]);
 
   const goToBeginning = useCallback(() => {
-    setShowPhaseEndingCue(false);
-    setSceneIndex(0);
-    setMessageIndex(0);
-    setMessagePhase("typing");
-  }, []);
+    director.seek(0);
+  }, [director]);
 
   const goToPrevScene = useCallback(() => {
-    setShowPhaseEndingCue(false);
-    if (messageIndex > 0) {
-      // If mid-scene, go to start of current scene
-      setMessageIndex(0);
-      setMessagePhase("typing");
-    } else if (sceneIndex > 0) {
-      setSceneIndex(sceneIndex - 1);
-      setMessageIndex(0);
-      setMessagePhase("typing");
-    }
-  }, [sceneIndex, messageIndex]);
+    const previousIndex = findCueForAdjacentScene(
+      presentationCues,
+      directorSnapshot.cursor,
+      -1,
+    );
+    if (previousIndex !== null) director.seek(previousIndex);
+  }, [director, directorSnapshot.cursor, presentationCues]);
 
   // Reset auto-hide timer helper
   const resetControlsTimer = useCallback(() => {
@@ -612,7 +771,8 @@ export function DramaticReplayViewer({
       switch (e.key) {
         case " ":
           e.preventDefault();
-          setIsPlaying((p) => !p);
+          if (isPlaying) director.pause();
+          else director.play();
           break;
         case "ArrowRight":
         case "Enter":
@@ -621,15 +781,7 @@ export function DramaticReplayViewer({
           break;
         case "ArrowLeft":
           e.preventDefault();
-          if (messageIndex > 0) {
-            setMessageIndex((i) => i - 1);
-            setMessagePhase("done");
-          } else if (sceneIndex > 0) {
-            const prev = scenes[sceneIndex - 1]!;
-            setSceneIndex((i) => i - 1);
-            setMessageIndex(prev.messages.length - 1);
-            setMessagePhase("done");
-          }
+          director.seek(directorSnapshot.cursor - 1);
           break;
         case "]":
           e.preventDefault();
@@ -637,33 +789,33 @@ export function DramaticReplayViewer({
           break;
         case "[":
           e.preventDefault();
-          if (scene) {
-            for (let i = sceneIndex - 1; i >= 0; i--) {
-              if (scenes[i]!.round !== scene.round) {
-                const targetRound = scenes[i]!.round;
-                let first = i;
-                while (first > 0 && scenes[first - 1]!.round === targetRound) first--;
-                setSceneIndex(first);
-                setMessageIndex(0);
-                setMessagePhase("typing");
-                break;
-              }
-            }
-          }
+          director.seek(findPreviousRoundCue(presentationCues, directorSnapshot.cursor));
           break;
-        case "1": setSpeed(0.5); break;
-        case "2": setSpeed(1); break;
-        case "3": setSpeed(2); break;
-        case "4": setSpeed(4); break;
+        case "1": director.setSpeed(0.5); break;
+        case "2": director.setSpeed(1); break;
+        case "3": director.setSpeed(2); break;
+        case "4": director.setSpeed(4); break;
       }
     }
     window.addEventListener("keydown", handleKey);
     return () => window.removeEventListener("keydown", handleKey);
-  }, [advanceMessage, goToNextScene, messageIndex, sceneIndex, scene, scenes]);
+  }, [
+    advanceMessage,
+    director,
+    directorSnapshot.cursor,
+    goToNextScene,
+    isPlaying,
+    presentationCues,
+  ]);
 
-  if (!scene || totalScenes === 0) {
+  if (!scene || presentationCues.length === 0) {
     return (
-      <div className={`${embedded ? "relative h-full min-h-[24rem]" : "fixed inset-0"} bg-black flex flex-col items-center justify-center gap-4`}>
+      <div
+        ref={animationScope}
+        data-presentation-animation-boundary="true"
+        data-reduced-motion={reducedMotion ? "reduce" : "no-preference"}
+        className={`${embedded ? "relative h-full min-h-[24rem]" : "fixed inset-0"} bg-black flex flex-col items-center justify-center gap-4`}
+      >
         {live ? (
           <>
             <div className="flex items-center gap-1.5">
@@ -705,6 +857,9 @@ export function DramaticReplayViewer({
 
   return (
     <div
+      ref={animationScope}
+      data-presentation-animation-boundary="true"
+      data-reduced-motion={reducedMotion ? "reduce" : "no-preference"}
       className={`flex flex-col cursor-pointer select-none ${
         embedded
           ? "relative h-full min-h-0 overflow-hidden"
@@ -726,7 +881,7 @@ export function DramaticReplayViewer({
       {activePhaseTransition && (
         <PhaseTransitionOverlay
           transition={activePhaseTransition}
-          onDismiss={() => setActivePhaseTransition(null)}
+          onDismiss={dismissPhaseTransition}
           holdMs={replayTransitionHoldMs}
         />
       )}
@@ -821,11 +976,15 @@ export function DramaticReplayViewer({
       {/* Scene progress bar */}
       <div className="px-6 z-[60]">
         <div className="flex h-0.5 rounded-full overflow-hidden bg-white/5 gap-px">
-          {scenes.map((s, i) => (
+          {presentationCues.map((cue, i) => (
             <div
-              key={s.id}
-              className={`flex-1 min-w-[2px] ${ROOM_TYPE_COLORS[s.roomType]} ${
-                i <= sceneIndex ? "opacity-80" : "opacity-10"
+              key={cue.key}
+              className={`flex-1 min-w-[2px] ${
+                cue.source === "classic"
+                  ? ROOM_TYPE_COLORS[scenes[cue.sceneIndex]?.roomType ?? "lobby"]
+                  : ROOM_TYPE_COLORS.tribunal
+              } ${
+                i <= directorSnapshot.cursor ? "opacity-80" : "opacity-10"
               }`}
             />
           ))}
@@ -841,8 +1000,12 @@ export function DramaticReplayViewer({
         } justify-center px-4 md:px-8 py-4 md:py-8`}
       >
         <div className={`w-full min-h-0 ${usesFullHeightContent ? "h-full" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+          {formatCue && (
+            <FormatCueSummary cue={formatCue} />
+          )}
+
           {/* --- Chat-style: Group Chat Feed --- */}
-          {isChatFeedScene && (
+          {!formatCue && isChatFeedScene && (
             <div className="flex h-full min-h-0 flex-col gap-2">
               <GroupChatFeed
                 messages={chatFeedMessages}
@@ -855,7 +1018,7 @@ export function DramaticReplayViewer({
           )}
 
           {/* --- Chat-style: Whisper Room DM (stacked) --- */}
-          {isOpenWhisperScene && (
+          {!formatCue && isOpenWhisperScene && (
             <OpenWhisperRoomsView
               phaseEntries={openWhisperMessages}
               players={replayPlayers}
@@ -865,7 +1028,7 @@ export function DramaticReplayViewer({
             />
           )}
 
-          {isWhisperScene && !isOpenWhisperScene && (
+          {!formatCue && isWhisperScene && !isOpenWhisperScene && (
             <div ref={stackedScrollRef} className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
               {previousWhisperRooms.map((prevRoom) => (
                 <div key={`mingle-prev-${prevRoom.roomId}`} className="opacity-60">
@@ -879,7 +1042,7 @@ export function DramaticReplayViewer({
           )}
 
           {/* --- Chat-style: Diary Room DM (stacked) --- */}
-          {isDiaryScene && (
+          {!formatCue && isDiaryScene && (
             <div ref={stackedScrollRef} className="flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1">
               {previousDiaryRooms.map((prevRoom) => (
                 <div key={`diary-prev-${prevRoom.playerName}`} className="flex max-h-full min-h-0 flex-shrink-0 flex-col opacity-60">
@@ -895,7 +1058,7 @@ export function DramaticReplayViewer({
           )}
 
           {/* --- Chat-style: Jury Questions DM --- */}
-          {isJuryScene && (
+          {!formatCue && isJuryScene && (
             <JuryDMView
               messages={juryMessages}
               players={replayPlayers}
@@ -904,7 +1067,7 @@ export function DramaticReplayViewer({
           )}
 
           {/* --- Whisper Overview: Rich allocation display --- */}
-          {isOverviewScene && !isOpenWhisperScene && overviewStageData && (
+          {!formatCue && isOverviewScene && !isOpenWhisperScene && overviewStageData && (
             <WhisperAllocationOverview
               stage={overviewStageData}
               players={replayPlayers}
@@ -913,7 +1076,7 @@ export function DramaticReplayViewer({
           )}
 
           {/* --- Dramatic: Single-message spotlight (votes/reveals/power/end) --- */}
-          {!isChatStyleScene && !isOverviewScene && (
+          {!formatCue && !isChatStyleScene && !isOverviewScene && (
             <>
               {/* Typing indicator */}
               {messagePhase === "typing" && currentMessage && !isSystemMessage && (
@@ -947,7 +1110,7 @@ export function DramaticReplayViewer({
                   scene={scene}
                   players={players}
                   messagePhase={messagePhase}
-                  onRevealComplete={() => setMessagePhase("done")}
+                  onRevealComplete={() => undefined}
                   isSystemMessage={isSystemMessage}
                   isElimination={isElimination}
                   currentPlayer={currentPlayer}
@@ -971,7 +1134,12 @@ export function DramaticReplayViewer({
           )}
 
           {/* Paused indicator */}
-          {!isPlaying && messagePhase === "done" && (
+          {!formatCue
+            && !isChatStyleScene
+            && !isOverviewScene
+            && !isPlaying
+            && messagePhase === "done"
+            && (
             <p className="text-center text-xs text-white/15 mt-8 animate-pulse">
               Click or press → to advance
             </p>
@@ -1000,7 +1168,11 @@ export function DramaticReplayViewer({
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
-              onClick={(e) => { e.stopPropagation(); setIsPlaying((p) => !p); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isPlaying) director.pause();
+                else director.play();
+              }}
               className="text-xs text-white/50 hover:text-white transition-colors px-3 py-2 rounded-lg border border-white/10 active:border-white/30"
             >
               {isPlaying ? "⏸" : "▶"}
@@ -1009,7 +1181,7 @@ export function DramaticReplayViewer({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); goToBeginning(); }}
-                disabled={sceneIndex === 0 && messageIndex === 0}
+                disabled={directorSnapshot.cursor === 0}
                 className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
               >
                 ⏮
@@ -1017,18 +1189,18 @@ export function DramaticReplayViewer({
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
-                disabled={sceneIndex === 0 && messageIndex === 0}
+                disabled={directorSnapshot.cursor === 0}
                 className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
               >
                 ◀◀
               </button>
               <span className="text-[10px] text-white/20 px-1 min-w-[3rem] text-center">
-                {sceneIndex + 1}/{totalScenes}
+                {directorSnapshot.cursor + 1}/{presentationCues.length}
               </span>
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); goToNextScene(); }}
-                disabled={sceneIndex >= totalScenes - 1}
+                disabled={directorSnapshot.cursor >= presentationCues.length - 1}
                 className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
               >
                 ▶▶
@@ -1046,7 +1218,10 @@ export function DramaticReplayViewer({
                 <button
                   key={opt.value}
                   type="button"
-                  onClick={(e) => { e.stopPropagation(); setSpeed(opt.value); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    director.setSpeed(opt.value);
+                  }}
                   className={`text-[10px] px-1.5 py-1.5 rounded transition-colors ${
                     speed === opt.value
                       ? "bg-white/10 text-white border border-white/20"
@@ -1078,7 +1253,11 @@ export function DramaticReplayViewer({
         <div className="hidden md:flex items-center justify-between max-w-3xl mx-auto">
           <button
             type="button"
-            onClick={(e) => { e.stopPropagation(); setIsPlaying((p) => !p); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (isPlaying) director.pause();
+              else director.play();
+            }}
             className="text-sm text-white/50 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20"
           >
             {isPlaying ? "⏸ Pause" : "▶ Play"}
@@ -1088,7 +1267,7 @@ export function DramaticReplayViewer({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); goToBeginning(); }}
-              disabled={sceneIndex === 0 && messageIndex === 0}
+              disabled={directorSnapshot.cursor === 0}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
             >
               ⏮ Start
@@ -1096,7 +1275,7 @@ export function DramaticReplayViewer({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
-              disabled={sceneIndex === 0 && messageIndex === 0}
+              disabled={directorSnapshot.cursor === 0}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
             >
               ◀◀ Prev
@@ -1104,7 +1283,7 @@ export function DramaticReplayViewer({
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); goToNextScene(); }}
-              disabled={sceneIndex >= totalScenes - 1}
+              disabled={directorSnapshot.cursor >= presentationCues.length - 1}
               className="text-xs text-white/40 hover:text-white transition-colors px-3 py-1.5 rounded-lg border border-white/10 hover:border-white/20 disabled:opacity-20 disabled:cursor-not-allowed"
             >
               Next ▶▶
@@ -1124,7 +1303,10 @@ export function DramaticReplayViewer({
               <button
                 key={opt.value}
                 type="button"
-                onClick={(e) => { e.stopPropagation(); setSpeed(opt.value); }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  director.setSpeed(opt.value);
+                }}
                 className={`text-xs px-2 py-1 rounded-lg transition-colors ${
                   speed === opt.value
                     ? "bg-white/10 text-white border border-white/20"

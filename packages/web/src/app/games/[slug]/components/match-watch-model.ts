@@ -43,6 +43,18 @@ const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
   "COUNCIL",
   "END",
 ];
+const MATCH_WATCH_FORMAT_PHASES: readonly PhaseKey[] = [
+  "INTRODUCTION",
+  "LOBBY",
+  "MINGLE_I",
+  "PRE_VOTE_HUDDLE",
+  "VOTE",
+  "FORMAT_MENU",
+  "FORMAT_PICK",
+  "FORMAT_MINGLE",
+  "FORMAT_RESOLVE",
+  "END",
+];
 const REPLAY_FRAME_PHASE_ORDER: readonly PhaseKey[] = [
   "INIT",
   "INTRODUCTION",
@@ -151,6 +163,7 @@ export interface MatchWatchModel {
 export interface MatchWatchPlaybackState {
   round: number;
   phase: PhaseKey;
+  canonicalSequence?: number | null;
   players: GamePlayer[];
   visibleMessages: TranscriptEntry[];
 }
@@ -453,7 +466,10 @@ export function buildMatchWatchModel({
     selectedPlayerId: selectedPlayer?.id ?? null,
     connectionLabel: getConnectionLabel(live, connStatus),
     sourceLabel: getSourceLabel(game),
-    phaseSegments: buildPhaseSegments(phase),
+    phaseSegments: buildPhaseSegments(
+      phase,
+      getGamePresentationRouteDecision(game).route,
+    ),
     latestPublicMessage: findLatestPublicMessage(visibleMessages),
   };
 }
@@ -545,8 +561,15 @@ function normalizePhase(phase: string): PhaseKey {
   return phase in PHASE_LABELS ? (phase as PhaseKey) : "INIT";
 }
 
-function buildPhaseSegments(currentPhase: PhaseKey): MatchWatchPhaseSegment[] {
-  const phases = currentPhase === "WHISPER" ? MATCH_WATCH_WHISPER_PHASES : MATCH_WATCH_PHASES;
+function buildPhaseSegments(
+  currentPhase: PhaseKey,
+  gameKernel: GameKernel,
+): MatchWatchPhaseSegment[] {
+  const phases = gameKernel === "format"
+    ? MATCH_WATCH_FORMAT_PHASES
+    : currentPhase === "WHISPER"
+      ? MATCH_WATCH_WHISPER_PHASES
+      : MATCH_WATCH_PHASES;
   const shellPhase = toShellPhaseSegment(currentPhase);
   const currentIndex = phases.indexOf(shellPhase);
   return phases.map((phase, index) => {
@@ -731,6 +754,11 @@ function selectReplayWatchFrame(
   playbackState: MatchWatchPlaybackState,
 ): GameWatchReplayFrame | null {
   if (frames.length === 0) return null;
+  if (typeof playbackState.canonicalSequence === "number") {
+    return frames
+      .filter((frame) => frame.sequence <= playbackState.canonicalSequence!)
+      .at(-1) ?? null;
+  }
   const cursorTimestamp = playbackState.visibleMessages.at(-1)?.timestamp;
   const eligible = typeof cursorTimestamp === "number"
     ? frames.filter((frame) => frame.timestamp <= cursorTimestamp && isFrameAtOrBeforePlayback(frame, playbackState))
