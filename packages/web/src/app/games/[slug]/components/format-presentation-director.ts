@@ -17,7 +17,7 @@ export interface PresentationAnimationControlAdapter {
   setSpeed(speed: number): void;
 }
 
-export interface PresentationDirectorState {
+interface PresentationDirectorState {
   cues: readonly PresentationCue[];
   cursor: number;
   isPlaying: boolean;
@@ -28,7 +28,7 @@ export interface PresentationDirectorState {
   reducedMotion: boolean;
 }
 
-export type PresentationDirectorAction =
+type PresentationDirectorAction =
   | { type: "load"; cues: readonly PresentationCue[]; cursor?: number }
   | { type: "append"; cues: readonly PresentationCue[]; cursor?: number }
   | { type: "set_playing"; isPlaying: boolean }
@@ -41,7 +41,7 @@ export type PresentationDirectorAction =
   | { type: "reset_round"; cues: readonly PresentationCue[] };
 
 export interface PresentationDirectorSnapshot {
-  cueKeys: string[];
+  cueKeys: readonly string[];
   cursor: number;
   activeKey: string | null;
   canonicalSequence: number | null;
@@ -76,7 +76,7 @@ const NOOP_ANIMATION: PresentationAnimationControlAdapter = {
   setSpeed() {},
 };
 
-export function reducePresentationDirectorState(
+function reducePresentationDirectorState(
   state: PresentationDirectorState,
   action: PresentationDirectorAction,
 ): PresentationDirectorState {
@@ -290,6 +290,7 @@ export function usePresentationDirector({
 
 export class PresentationDirector {
   private state: PresentationDirectorState;
+  private cueKeys: readonly string[] = [];
   private readonly clock: PresentationClock;
   private animation: PresentationAnimationControlAdapter;
   private readonly listeners = new Set<() => void>();
@@ -328,7 +329,7 @@ export class PresentationDirector {
   getSnapshot = (): PresentationDirectorSnapshot => {
     const cue = this.state.cues[this.state.cursor] ?? null;
     return {
-      cueKeys: this.state.cues.map((item) => item.key),
+      cueKeys: this.cueKeys,
       cursor: this.state.cursor,
       activeKey: cue?.key ?? null,
       canonicalSequence: cue?.canonicalSequence ?? null,
@@ -570,6 +571,9 @@ export class PresentationDirector {
   private apply(action: PresentationDirectorAction): void {
     const next = reducePresentationDirectorState(this.state, action);
     if (next === this.state) return;
+    if (next.cues !== this.state.cues) {
+      this.cueKeys = next.cues.map((cue) => cue.key);
+    }
     this.state = next;
     for (const listener of this.listeners) listener();
   }

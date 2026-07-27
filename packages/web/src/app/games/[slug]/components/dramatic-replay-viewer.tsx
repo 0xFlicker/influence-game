@@ -7,6 +7,7 @@ import type {
   GamePlayer,
   GameDetail,
   GameWatchReplayFrame,
+  PhaseKey,
 } from "@/lib/api";
 import { GamePlayerAvatarPreview } from "@/components/game-player-avatar-preview";
 import type {
@@ -53,9 +54,10 @@ import { VoteTallyOverlay, SpectacleMessageContent } from "./vote-display";
 import { buildReplayScenes } from "./spectacle-viewer";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJuryOpeningStatementsExtraHoldMs, getJuryQuestionsExtraHoldMs } from "./dramatic-timing";
-import type {
-  MatchWatchPlaybackState,
-  PresentationHydrationState,
+import {
+  MATCH_WATCH_FORMAT_PHASES,
+  type MatchWatchPlaybackState,
+  type PresentationHydrationState,
 } from "./match-watch-model";
 import type { WatchConnStatus } from "./types";
 import {
@@ -71,7 +73,7 @@ function isRoomReplayPhase(phase: string): boolean {
   return phase === "MINGLE_I" || phase === "MINGLE" || phase === "POST_VOTE_MINGLE";
 }
 
-const FORMAT_AUTHORITY_TRANSCRIPT_PHASES = new Set([
+const FORMAT_AUTHORITY_TRANSCRIPT_PHASES: ReadonlySet<PhaseKey> = new Set([
   "VOTE",
   "FORMAT_MENU",
   "FORMAT_PICK",
@@ -108,6 +110,12 @@ function buildClassicPresentationCues(
   scenes: ReturnType<typeof buildReplayScenes>,
   replayFrames: readonly GameWatchReplayFrame[],
 ): ClassicPresentationCue[] {
+  const framesByRound = new Map<number, GameWatchReplayFrame[]>();
+  for (const frame of replayFrames) {
+    const roundFrames = framesByRound.get(frame.round) ?? [];
+    roundFrames.push(frame);
+    framesByRound.set(frame.round, roundFrames);
+  }
   return scenes.flatMap((scene, sceneIndex) =>
     scene.messages.flatMap((message, messageIndex) => {
       const isLastInScene = messageIndex === scene.messages.length - 1;
@@ -138,12 +146,10 @@ function buildClassicPresentationCues(
           ? Math.max(CHAT_POST_MSG_BASE_MS, message.text.length * CHAT_POST_MSG_PER_CHAR_MS)
           : Math.max(POST_REVEAL_BASE_MS, message.text.length * POST_REVEAL_PER_CHAR_MS)
             * (DRAMATIC_PHASES.has(scene.phase) ? DRAMATIC_PHASE_MULTIPLIER : 1);
-      const canonicalSequence = replayFrames
-        .filter((frame) =>
-          frame.round === scene.round
-          && frame.timestamp <= message.timestamp
-        )
-        .at(-1)?.sequence ?? null;
+      const canonicalSequence = latestFrameSequenceAtOrBefore(
+        framesByRound.get(scene.round) ?? [],
+        message.timestamp,
+      );
 
       const stages: Array<{
         stage: ClassicPresentationCue["stage"];
@@ -176,6 +182,17 @@ function buildClassicPresentationCues(
   );
 }
 
+function latestFrameSequenceAtOrBefore(
+  frames: readonly GameWatchReplayFrame[],
+  timestamp: number,
+): number | null {
+  for (let index = frames.length - 1; index >= 0; index -= 1) {
+    const frame = frames[index]!;
+    if (frame.timestamp <= timestamp) return frame.sequence;
+  }
+  return null;
+}
+
 function mergeFormatAndSocialCues(
   formatCues: readonly FormatPresentationCue[],
   classicCues: readonly ClassicPresentationCue[],
@@ -185,21 +202,11 @@ function mergeFormatAndSocialCues(
     const message = scenes[cue.sceneIndex]?.messages[cue.messageIndex];
     return message ? isFormatSocialTranscriptMessage(message) : false;
   });
-  const phaseOrder: readonly string[] = [
-    "INTRODUCTION",
-    "LOBBY",
-    "MINGLE_I",
-    "PRE_VOTE_HUDDLE",
-    "VOTE",
-    "FORMAT_MENU",
-    "FORMAT_PICK",
-    "FORMAT_MINGLE",
-    "FORMAT_RESOLVE",
-    "END",
-  ];
   return [...socialCues, ...formatCues].sort((left, right) => {
     if (left.round !== right.round) return left.round - right.round;
-    const phaseDifference = phaseOrder.indexOf(left.phase) - phaseOrder.indexOf(right.phase);
+    const phaseDifference =
+      MATCH_WATCH_FORMAT_PHASES.indexOf(left.phase)
+      - MATCH_WATCH_FORMAT_PHASES.indexOf(right.phase);
     if (phaseDifference !== 0) return phaseDifference;
     if (left.source !== right.source) return left.source === "classic" ? -1 : 1;
     if (left.source === "format" && right.source === "format") {
@@ -306,6 +313,10 @@ function DramaticReplayTheater({
   );
   const isFormatGame =
     (game.gameKernel ?? game.watchState?.gameKernel) === "format";
+  const formatRoster = useMemo(
+    () => players.map((player) => ({ id: player.id, name: player.name })),
+    [players],
+  );
   const scenes = useMemo(() => buildReplayScenes(filteredMessages), [filteredMessages]);
   const classicCues = useMemo(
     () => buildClassicPresentationCues(scenes, replayFrames),
@@ -315,11 +326,17 @@ function DramaticReplayTheater({
     () => compileFormatPresentationPrefix({
       gameId: game.id,
       gameKernel: game.gameKernel ?? game.watchState?.gameKernel ?? "classic",
-      roster: players.map((player) => ({ id: player.id, name: player.name })),
+      roster: formatRoster,
       decisions: formatPresentationDecisionsFromFrames(replayFrames),
       eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(replayFrames),
     }),
-    [game.gameKernel, game.id, game.watchState?.gameKernel, players, replayFrames],
+    [
+      formatRoster,
+      game.gameKernel,
+      game.id,
+      game.watchState?.gameKernel,
+      replayFrames,
+    ],
   );
   const presentationCues = useMemo(
     () => isFormatGame
@@ -996,10 +1013,7 @@ function DramaticReplayTheater({
           {formatCue && (
             <FormatPresentation
               cue={formatCue}
-              roster={players.map((player) => ({
-                id: player.id,
-                name: player.name,
-              }))}
+              roster={formatRoster}
               currentStateEntry={Boolean(
                 live
                 && directorSnapshot.hydrationWatermark !== null

@@ -85,7 +85,6 @@ export function createSafetyBounceViewerDecisions(): ViewerDecisionEvent[] {
     }),
   ];
 }
-
 function viewerDecision<
   TType extends ViewerDecisionEvent["type"],
 >(
@@ -103,4 +102,3 @@ function viewerDecision<
     payload,
   } as Extract<ViewerDecisionEvent, { type: TType }>;
 }
-

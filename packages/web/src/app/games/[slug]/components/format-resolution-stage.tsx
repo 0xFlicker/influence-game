@@ -52,18 +52,19 @@ function SaveOrEliminateAggregate({
   const facts = resolution.saveOrEliminate;
   if (!facts) return null;
   const lowestNet = Math.min(...Object.values(facts.nets));
+  const ids = orderedIds(facts.nets, roster);
   return (
     <AggregateTable
       caption="Save-or-Eliminate aggregate"
       columns={["Agent", "Saves", "Eliminates", "Net", "Status"]}
-      rows={orderedIds(facts.nets, roster).map((playerId) => [
+      rows={ids.map((playerId) => [
         playerName(playerId, roster),
         String(facts.savesReceived[playerId] ?? 0),
         String(facts.eliminateReceived[playerId] ?? 0),
         signed(facts.nets[playerId] ?? 0),
         facts.nets[playerId] === lowestNet ? "Elimination eligible" : "Above the line",
       ])}
-      rowIds={orderedIds(facts.nets, roster)}
+      rowIds={ids}
       rowState={(playerId) =>
         facts.nets[playerId] === lowestNet ? "eligible" : "safe"
       }
@@ -112,12 +113,11 @@ function SafetyBounceAggregate({
 }) {
   const facts = resolution.safetyBounce;
   if (!facts) return null;
-  const vulnerable = new Set(facts.vulnerablePlayerIds);
   const highest = Math.max(
     ...facts.vulnerablePlayerIds.map((id) => facts.voteTotals[id] ?? 0),
     0,
   );
-  const ids = [...facts.safePlayerIds, ...facts.vulnerablePlayerIds];
+  const ids = facts.vulnerablePlayerIds;
   return (
     <div className="mt-6">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -145,14 +145,14 @@ function SafetyBounceAggregate({
         <AggregateTable
           caption="Safety Bounce final vote aggregate"
           columns={["Vulnerable agent", "Final votes", "Status"]}
-          rows={ids.filter((id) => vulnerable.has(id)).map((playerId) => [
+          rows={ids.map((playerId) => [
             playerName(playerId, roster),
             String(facts.voteTotals[playerId] ?? 0),
             facts.voteTotals[playerId] === highest
               ? "Elimination eligible"
               : "Below the high vote",
           ])}
-          rowIds={ids.filter((id) => vulnerable.has(id))}
+          rowIds={ids}
           rowState={(playerId) =>
             facts.voteTotals[playerId] === highest ? "eligible" : "neutral"
           }
@@ -230,44 +230,52 @@ function AggregateTable({
           </tr>
         </thead>
         <tbody>
-          {rows.map((cells, rowIndex) => (
-            <tr
-              key={rowIds[rowIndex]}
-              data-aggregate-player={rowIds[rowIndex]}
-              data-aggregate-state={rowState(rowIds[rowIndex]!)}
-              className="bg-black/20 text-white/75"
-            >
-              {cells.map((cell, cellIndex) => {
-                const className = `px-3 py-3 ${
-                  cellIndex === cells.length - 1
-                    ? rowState(rowIds[rowIndex]!) === "eligible"
-                      ? "text-rose-200"
-                      : rowState(rowIds[rowIndex]!) === "safe"
-                        ? "text-emerald-200"
-                        : "text-white/45"
-                    : ""
-                }`;
-                return cellIndex === 0 ? (
-                  <th
-                    key={`${cellIndex}-${cell}`}
-                    scope="row"
-                    className={`${className} font-medium`}
-                  >
-                    {cell}
-                  </th>
-                ) : (
-                  <td key={`${cellIndex}-${cell}`} className={className}>
-                    {cell}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {rows.map((cells, rowIndex) => {
+            const playerId = rowIds[rowIndex]!;
+            const state = rowState(playerId);
+            return (
+              <tr
+                key={playerId}
+                data-aggregate-player={playerId}
+                data-aggregate-state={state}
+                className="bg-black/20 text-white/75"
+              >
+                {cells.map((cell, cellIndex) => {
+                  const isStatus = cellIndex === cells.length - 1;
+                  const className = `px-3 py-3 ${
+                    isStatus ? AGGREGATE_STATUS_CLASS[state] : ""
+                  }`;
+                  return cellIndex === 0 ? (
+                    <th
+                      key={`${cellIndex}-${cell}`}
+                      scope="row"
+                      className={`${className} font-medium`}
+                    >
+                      {cell}
+                    </th>
+                  ) : (
+                    <td key={`${cellIndex}-${cell}`} className={className}>
+                      {cell}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
+
+const AGGREGATE_STATUS_CLASS: Record<
+  "eligible" | "safe" | "neutral",
+  string
+> = {
+  eligible: "text-rose-200",
+  safe: "text-emerald-200",
+  neutral: "text-white/45",
+};
 
 interface AggregateProps {
   resolution: FormatResolutionPresentation;

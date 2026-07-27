@@ -7,6 +7,7 @@
   "types": "src/index.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./format-rules": "./src/format-rules.ts",
     "./format-presentation-metadata": "./src/format-presentation-metadata.ts",
     "./viewer-presentation": "./src/viewer-decision-events.ts",
     "./fixtures/format-kernel-viewer": "./src/fixtures/format-kernel-viewer.ts"

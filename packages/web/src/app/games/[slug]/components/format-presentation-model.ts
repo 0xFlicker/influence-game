@@ -4,6 +4,14 @@ import type {
   PhaseKey,
   ViewerDecisionEvent,
 } from "@/lib/api";
+import {
+  applyFormatTiebreak,
+  computeSaveOrEliminateNets,
+  computeVoteBombTallies,
+  resolveSafetyBounceVote,
+  resolveSaveOrEliminate,
+  resolveVoteBomb,
+} from "@influence/engine/format-rules";
 import { buildSafetyBouncePresentationCycle } from "@influence/engine/viewer-presentation";
 import type {
   FormatEmpowerVoteReceipt,
@@ -68,17 +76,15 @@ interface EmpowerPresentationAccumulator {
   pendingTally: EmpowerTallyDecision | null;
 }
 
-const CUE_DURATION_MS: Record<FormatPresentationCue["kind"], number> = {
+const FIXED_CUE_DURATION_MS = {
   empowered_tally: 2_400,
   format_menu: 3_000,
   format_selected: 3_600,
   safety_bounce_started: 2_400,
-  safety_bounce_pointer: 2_200,
   format_aggregate: 3_200,
-  format_roll_call: 1_200,
   format_tiebreak: 2_400,
   format_elimination: 3_200,
-};
+} satisfies Partial<Record<FormatPresentationCue["kind"], number>>;
 
 export function formatPresentationDecisionsFromFrames(
   frames: readonly GameWatchReplayFrame[],
@@ -423,7 +429,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "menu"),
         kind: "format_menu",
-        baseDurationMs: CUE_DURATION_MS.format_menu,
+        baseDurationMs: FIXED_CUE_DURATION_MS.format_menu,
         empoweredId: decision.payload.empoweredId,
         offeredFormatIds: [...decision.payload.offeredFormatIds],
         after: cloneSnapshot(snapshot),
@@ -475,13 +481,13 @@ function applyDecision(input: {
         ...selectedCueBase,
         key: cueKey(gameId, decision.sequence, "selected-choice"),
         stage: "choice_legible",
-        baseDurationMs: CUE_DURATION_MS.format_selected / 2,
+        baseDurationMs: FIXED_CUE_DURATION_MS.format_selected / 2,
       });
       cues.push({
         ...selectedCueBase,
         key: cueKey(gameId, decision.sequence, "selected-rules"),
         stage: "rules_reveal",
-        baseDurationMs: CUE_DURATION_MS.format_selected / 2,
+        baseDurationMs: FIXED_CUE_DURATION_MS.format_selected / 2,
       });
       break;
     }
@@ -612,7 +618,7 @@ function applyDecision(input: {
         ...base,
         key: cueKey(gameId, decision.sequence, "bounce-started"),
         kind: "safety_bounce_started",
-        baseDurationMs: CUE_DURATION_MS.safety_bounce_started,
+        baseDurationMs: FIXED_CUE_DURATION_MS.safety_bounce_started,
         starterId: decision.payload.starterId,
         after: cloneSnapshot(snapshot),
       });
@@ -719,7 +725,6 @@ function applyDecision(input: {
       break;
   }
 
-  input.snapshot = snapshot;
   return null;
 }
 
@@ -809,7 +814,7 @@ function applyResolution(input: {
       "Format resolution aggregate does not match the accepted ballot prefix.",
     );
   }
-  if (!resolutionOutcomeMatchesRules(payload, eligiblePlayerIds)) {
+  if (!resolutionOutcomeMatchesRules(payload, eligiblePlayerIds, ballots)) {
     return incomplete(
       cues,
       snapshot,
@@ -833,7 +838,7 @@ function applyResolution(input: {
     round: decision.round,
     phase,
     kind: "format_aggregate",
-    baseDurationMs: CUE_DURATION_MS.format_aggregate,
+    baseDurationMs: FIXED_CUE_DURATION_MS.format_aggregate,
     before,
     after: cloneSnapshot(snapshot),
     resolution: payload,
@@ -881,7 +886,7 @@ function applyResolution(input: {
       round: decision.round,
       phase,
       kind: "format_tiebreak",
-      baseDurationMs: CUE_DURATION_MS.format_tiebreak,
+      baseDurationMs: FIXED_CUE_DURATION_MS.format_tiebreak,
       before,
       after: cloneSnapshot(snapshot),
       tiebreakerId: payload.tiebreakerId,
@@ -901,13 +906,12 @@ function applyResolution(input: {
     round: decision.round,
     phase,
     kind: "format_elimination",
-    baseDurationMs: CUE_DURATION_MS.format_elimination,
+    baseDurationMs: FIXED_CUE_DURATION_MS.format_elimination,
     before,
     after: cloneSnapshot(snapshot),
     eliminatedId: payload.eliminatedId,
     resolutionKind: payload.resolutionKind,
   });
-  input.snapshot = snapshot;
   return null;
 }
 
@@ -938,7 +942,7 @@ function appendEmpoweredTallyCue(input: {
     round: input.decision.round,
     phase,
     kind: "empowered_tally",
-    baseDurationMs: CUE_DURATION_MS.empowered_tally,
+    baseDurationMs: FIXED_CUE_DURATION_MS.empowered_tally,
     before: cloneSnapshot(input.snapshot),
     after: cloneSnapshot(snapshot),
     empoweredId: input.empoweredId,
@@ -1113,6 +1117,7 @@ function validSoleVulnerableResolutionShape(
 function resolutionOutcomeMatchesRules(
   resolution: FormatResolutionPresentation,
   eligiblePlayerIds: readonly string[],
+  ballots: ReadonlyMap<string, FormatPresentationBallot>,
 ): boolean {
   if (
     !eligiblePlayerIds.includes(resolution.empoweredId)
@@ -1133,11 +1138,11 @@ function resolutionOutcomeMatchesRules(
     ) {
       return false;
     }
-    const nets = resolution.saveOrEliminate.nets;
-    const lowest = Math.min(...Object.values(nets));
-    return outcomeMatchesCandidates(
+    const accepted = saveOrEliminateBallots(ballots);
+    if (!accepted) return false;
+    return outcomeMatchesRuleResolution(
       resolution,
-      eligiblePlayerIds.filter((id) => nets[id] === lowest),
+      resolveSaveOrEliminate(eligiblePlayerIds, accepted),
     );
   }
 
@@ -1149,17 +1154,11 @@ function resolutionOutcomeMatchesRules(
     ) {
       return false;
     }
-    const totals = resolution.voteBomb.totals;
-    const zeroSafe = eligiblePlayerIds.filter((id) => totals[id] === 0);
-    if (!sameMembers(zeroSafe, resolution.voteBomb.zeroSafePlayerIds)) {
-      return false;
-    }
-    const positive = eligiblePlayerIds.filter((id) => (totals[id] ?? 0) > 0);
-    if (positive.length === 0) return false;
-    const fewestPositive = Math.min(...positive.map((id) => totals[id]!));
-    return outcomeMatchesCandidates(
+    const accepted = unpolarizedBallots(ballots);
+    if (!accepted) return false;
+    return outcomeMatchesRuleResolution(
       resolution,
-      positive.filter((id) => totals[id] === fewestPositive),
+      resolveVoteBomb(eligiblePlayerIds, accepted),
     );
   }
 
@@ -1174,31 +1173,37 @@ function resolutionOutcomeMatchesRules(
   if (vulnerable.length === 1) {
     return validSoleVulnerableResolutionShape(resolution);
   }
-  const totals = resolution.safetyBounce.voteTotals;
-  const highest = Math.max(...vulnerable.map((id) => totals[id] ?? 0));
-  return outcomeMatchesCandidates(
+  return outcomeMatchesRuleResolution(
     resolution,
-    vulnerable.filter((id) => totals[id] === highest),
-    "clear",
+    resolveSafetyBounceVote(
+      vulnerable,
+      resolution.safetyBounce.voteTotals,
+    ),
   );
 }
 
-function outcomeMatchesCandidates(
+function outcomeMatchesRuleResolution(
   resolution: FormatResolutionPresentation,
-  candidates: readonly string[],
-  uniqueResolutionKind: "auto" | "clear" = "auto",
+  expected: ReturnType<
+    | typeof resolveSaveOrEliminate
+    | typeof resolveVoteBomb
+    | typeof resolveSafetyBounceVote
+  >,
 ): boolean {
-  if (candidates.length === 0 || !candidates.includes(resolution.eliminatedId)) {
-    return false;
-  }
-  if (candidates.length === 1) {
-    return resolution.resolutionKind === uniqueResolutionKind
+  if (expected.kind !== "tie") {
+    return resolution.resolutionKind === expected.kind
+      && resolution.eliminatedId === expected.eliminatedId
       && resolution.tiebreakerId === null
-      && sameMembers(resolution.tiedPlayerIds, candidates);
+      && sameMembers(resolution.tiedPlayerIds, expected.tiedSet);
   }
-  return resolution.resolutionKind === "clear"
+  const broken = applyFormatTiebreak(
+    expected.tiedSet,
+    resolution.eliminatedId,
+  );
+  return broken !== null
+    && resolution.resolutionKind === broken.kind
     && resolution.tiebreakerId === resolution.empoweredId
-    && sameMembers(resolution.tiedPlayerIds, candidates);
+    && sameMembers(resolution.tiedPlayerIds, broken.tiedSet);
 }
 
 function aggregatesMatch(
@@ -1214,22 +1219,18 @@ function aggregatesMatch(
     ) {
       return false;
     }
-    const saves: Record<string, number> = {};
-    const eliminates: Record<string, number> = {};
-    for (const ballot of ballots.values()) {
-      if (ballot.polarity === "save") {
-        saves[ballot.targetId] = (saves[ballot.targetId] ?? 0) + 1;
-      } else if (ballot.polarity === "eliminate") {
-        eliminates[ballot.targetId] = (eliminates[ballot.targetId] ?? 0) + 1;
-      } else {
-        return false;
-      }
-    }
-    return Object.keys(resolution.saveOrEliminate.nets).every((id) =>
-      (resolution.saveOrEliminate?.savesReceived[id] ?? 0) === (saves[id] ?? 0)
-      && (resolution.saveOrEliminate?.eliminateReceived[id] ?? 0) === (eliminates[id] ?? 0)
-      && (resolution.saveOrEliminate?.nets[id] ?? 0) === (saves[id] ?? 0) - (eliminates[id] ?? 0)
-    );
+    const accepted = saveOrEliminateBallots(ballots);
+    if (!accepted) return false;
+    const expected = computeSaveOrEliminateNets(rosterIds, accepted);
+    return sameCountRecord(resolution.saveOrEliminate.nets, expected.nets)
+      && sameCountRecord(
+        resolution.saveOrEliminate.savesReceived,
+        expected.savesReceived,
+      )
+      && sameCountRecord(
+        resolution.saveOrEliminate.eliminateReceived,
+        expected.eliminateReceived,
+      );
   }
   const totals = resolution.voteBomb?.totals ?? resolution.safetyBounce?.voteTotals;
   if (!totals) return false;
@@ -1237,13 +1238,53 @@ function aggregatesMatch(
     ? rosterIds
     : resolution.safetyBounce?.vulnerablePlayerIds ?? [];
   if (!hasExactKeys(totals, expectedTargetIds)) return false;
-  const actual: Record<string, number> = {};
-  for (const ballot of ballots.values()) {
-    if (ballot.polarity !== null) return false;
-    actual[ballot.targetId] = (actual[ballot.targetId] ?? 0) + 1;
-  }
-  return Object.keys(totals).every((id) => totals[id] === (actual[id] ?? 0))
-    && Object.keys(actual).every((id) => id in totals);
+  const accepted = unpolarizedBallots(ballots);
+  if (!accepted) return false;
+  const expected = computeVoteBombTallies(expectedTargetIds, accepted);
+  return sameCountRecord(totals, expected.totals)
+    && (
+      !resolution.voteBomb
+      || sameMembers(
+        resolution.voteBomb.zeroSafePlayerIds,
+        expected.zeroSafeIds,
+      )
+    );
+}
+
+function saveOrEliminateBallots(
+  ballots: ReadonlyMap<string, FormatPresentationBallot>,
+): Array<{
+  voterId: string;
+  targetId: string;
+  polarity: "save" | "eliminate";
+}> | null {
+  const accepted = [...ballots.values()].flatMap((ballot) =>
+    ballot.polarity === null ? [] : [{
+      voterId: ballot.voterId,
+      targetId: ballot.targetId,
+      polarity: ballot.polarity,
+    }]
+  );
+  return accepted.length === ballots.size ? accepted : null;
+}
+
+function unpolarizedBallots(
+  ballots: ReadonlyMap<string, FormatPresentationBallot>,
+): Array<{ voterId: string; targetId: string }> | null {
+  const accepted = [...ballots.values()].flatMap((ballot) =>
+    ballot.polarity === null
+      ? [{ voterId: ballot.voterId, targetId: ballot.targetId }]
+      : []
+  );
+  return accepted.length === ballots.size ? accepted : null;
+}
+
+function sameCountRecord(
+  left: Readonly<Record<string, number>>,
+  right: Readonly<Record<string, number>>,
+): boolean {
+  return hasExactKeys(left, Object.keys(right))
+    && Object.keys(right).every((id) => left[id] === right[id]);
 }
 
 function incomplete(

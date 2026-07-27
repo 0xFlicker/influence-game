@@ -53,7 +53,7 @@ export const LAUNCH_FORMAT_DISPLAY_NAMES: Readonly<
 };
 
 export function isLaunchFormatId(value: string): value is LaunchFormatId {
-  return Object.prototype.hasOwnProperty.call(FORMAT_PRESENTATION_METADATA, value);
+  return Object.hasOwn(FORMAT_PRESENTATION_METADATA, value);
 }
 
 export function displayNameForFormat(formatId: string): string {

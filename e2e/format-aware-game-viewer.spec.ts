@@ -22,7 +22,7 @@ test.describe("format-aware game viewer", () => {
     await pauseAutoplay(page);
 
     const pointerStage = page.locator('[data-format-cue="safety_bounce_pointer"]');
-    await advanceUntilVisible(page, pointerStage);
+    await advanceUntilVisible(page, pointerStage, "Safety Bounce pointer");
     await assertCanonicalPointerLanding(pointerStage);
     const desktopBoard = await assertBoardPartition(pointerStage);
 
@@ -65,7 +65,7 @@ test.describe("format-aware game viewer", () => {
 
     await page.setViewportSize({ width: 1440, height: 900 });
     const rollCall = page.locator('[data-format-cue="format_roll_call"]');
-    await advanceUntilVisible(page, rollCall);
+    await advanceUntilVisible(page, rollCall, "format roll call");
     await expect(rollCall.locator("[data-ledger-voter]")).toHaveCount(1);
     await page.keyboard.press("ArrowRight");
     await expect(rollCall.locator("[data-ledger-voter]")).toHaveCount(2);
@@ -89,7 +89,7 @@ test.describe("format-aware game viewer", () => {
     await pauseAutoplay(page);
 
     const pointerStage = page.locator('[data-format-cue="safety_bounce_pointer"]');
-    await advanceUntilVisible(page, pointerStage);
+    await advanceUntilVisible(page, pointerStage, "Safety Bounce pointer");
     await expect(
       page.locator('[data-presentation-animation-boundary="true"]'),
     ).toHaveAttribute("data-reduced-motion", "reduce");
@@ -105,6 +105,7 @@ test.describe("format-aware game viewer", () => {
 async function advanceUntilVisible(
   page: Page,
   locator: Locator,
+  stageLabel: string,
   maxAdvances = 1_500,
 ): Promise<void> {
   for (let index = 0; index < maxAdvances; index += 1) {
@@ -113,7 +114,7 @@ async function advanceUntilVisible(
     await page.clock.runFor(250);
   }
   throw new Error(
-    `Safety Bounce pointer did not appear for persisted fixture ${FORMAT_VIEWER_SLUG}.`,
+    `${stageLabel} did not appear for persisted fixture ${FORMAT_VIEWER_SLUG}.`,
   );
 }
 

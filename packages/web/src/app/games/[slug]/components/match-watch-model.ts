@@ -43,7 +43,7 @@ const MATCH_WATCH_WHISPER_PHASES: readonly PhaseKey[] = [
   "COUNCIL",
   "END",
 ];
-const MATCH_WATCH_FORMAT_PHASES: readonly PhaseKey[] = [
+export const MATCH_WATCH_FORMAT_PHASES: readonly PhaseKey[] = [
   "INTRODUCTION",
   "LOBBY",
   "MINGLE_I",

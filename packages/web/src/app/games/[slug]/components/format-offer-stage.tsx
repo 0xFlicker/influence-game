@@ -49,38 +49,39 @@ export function FormatOfferStage({
             : selectedFormatId === formatId
               ? "selected"
               : "unselected";
-          const showsRules = revealRules && cardState === "selected";
+          const isSelected = cardState === "selected";
+          const isRulesReveal = selectionStage === "rules_reveal";
+          const showsRules = revealRules && isSelected;
+          let fadeState = "not-applicable";
+          let cardClass =
+            "border-white/15 bg-white/[0.04]";
+          let cardLabel = "Offered format";
+          if (isSelected) {
+            cardLabel = "Selected";
+            cardClass = isRulesReveal
+              ? "border-cyan-100/55 bg-cyan-200/[0.12] sm:col-span-2 sm:mx-auto sm:w-[min(100%,32rem)] sm:scale-[1.02]"
+              : "border-cyan-100/55 bg-cyan-200/[0.12] sm:scale-[1.02]";
+          } else if (cardState === "unselected") {
+            cardLabel = "Not selected";
+            fadeState = isRulesReveal ? "applied" : "deferred";
+            if (isRulesReveal) {
+              cardClass =
+                "border-white/[0.06] bg-white/[0.015] opacity-35";
+            }
+          }
           return (
             <article
               key={formatId}
               data-format-card={formatId}
               data-card-state={cardState}
               data-selection-stage={selectionStage ?? "offer"}
-              data-unselected-fade={
-                cardState !== "unselected"
-                  ? "not-applicable"
-                  : selectionStage === "rules_reveal"
-                    ? "applied"
-                    : "deferred"
-              }
+              data-unselected-fade={fadeState}
               tabIndex={0}
-              aria-current={cardState === "selected" ? "true" : undefined}
-              className={`min-w-0 rounded-xl border p-4 outline-none focus-visible:ring-2 focus-visible:ring-cyan-100/70 sm:p-5 ${
-                cardState === "selected" && selectionStage === "rules_reveal"
-                  ? "border-cyan-100/55 bg-cyan-200/[0.12] sm:col-span-2 sm:mx-auto sm:w-[min(100%,32rem)] sm:scale-[1.02]"
-                  : cardState === "selected"
-                    ? "border-cyan-100/55 bg-cyan-200/[0.12] sm:scale-[1.02]"
-                  : cardState === "unselected" && selectionStage === "rules_reveal"
-                    ? "border-white/[0.06] bg-white/[0.015] opacity-35"
-                    : "border-white/15 bg-white/[0.04]"
-              }`}
+              aria-current={isSelected ? "true" : undefined}
+              className={`min-w-0 rounded-xl border p-4 outline-none focus-visible:ring-2 focus-visible:ring-cyan-100/70 sm:p-5 ${cardClass}`}
             >
               <p className="text-[9px] uppercase tracking-[0.18em] text-white/35">
-                {cardState === "selected"
-                  ? "Selected"
-                  : cardState === "unselected"
-                    ? "Not selected"
-                    : "Offered format"}
+                {cardLabel}
               </p>
               <h3 className="mt-2 break-words text-xl font-semibold text-white sm:text-2xl">
                 {metadata.displayName}
