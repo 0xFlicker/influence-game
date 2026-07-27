@@ -1187,6 +1187,7 @@ function DramaticReplayTheater({
           <div className="flex items-center justify-between gap-2">
             <button
               type="button"
+              aria-label={isPlaying ? "Pause replay" : "Play replay"}
               onClick={(e) => {
                 e.stopPropagation();
                 if (isPlaying) director.pause();
@@ -1199,6 +1200,7 @@ function DramaticReplayTheater({
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
+                aria-label="Go to replay start"
                 onClick={(e) => { e.stopPropagation(); goToBeginning(); }}
                 disabled={directorSnapshot.cursor === 0}
                 className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
@@ -1207,6 +1209,7 @@ function DramaticReplayTheater({
               </button>
               <button
                 type="button"
+                aria-label="Previous scene"
                 onClick={(e) => { e.stopPropagation(); goToPrevScene(); }}
                 disabled={directorSnapshot.cursor === 0}
                 className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
@@ -1218,6 +1221,7 @@ function DramaticReplayTheater({
               </span>
               <button
                 type="button"
+                aria-label="Next scene"
                 onClick={(e) => { e.stopPropagation(); goToNextScene(); }}
                 disabled={directorSnapshot.cursor >= presentationCues.length - 1}
                 className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10 disabled:opacity-20"
@@ -1226,6 +1230,7 @@ function DramaticReplayTheater({
               </button>
               <button
                 type="button"
+                aria-label="Go to replay end"
                 onClick={(e) => { e.stopPropagation(); goToEnd(); }}
                 className="text-xs text-white/40 active:text-white transition-colors px-2.5 py-2 rounded-lg border border-white/10"
               >

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useAnimate, useReducedMotion } from "motion/react";
+import { useAnimate } from "motion/react";
 import type { PresentationCue } from "./types";
 
 export interface PresentationClock {
@@ -141,7 +141,7 @@ export function usePresentationDirector({
   reducedMotion: boolean;
 } {
   const [scope, animate] = useAnimate<HTMLDivElement>();
-  const reducedMotion = Boolean(useReducedMotion());
+  const reducedMotion = usePrefersReducedMotion();
   const retainedControls = useRef(new Set<RetainedMotionControl>());
   const animation = useMemo<
     PresentationAnimationControlAdapter & {
@@ -286,6 +286,28 @@ export function usePresentationDirector({
     scope,
     reducedMotion,
   };
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [reducedMotion, setReducedMotion] = useState(false);
+  useEffect(() => {
+    if (
+      typeof window === "undefined"
+      || typeof window.matchMedia !== "function"
+    ) {
+      return;
+    }
+    const preference = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    );
+    const syncPreference = (): void => {
+      setReducedMotion(preference.matches);
+    };
+    syncPreference();
+    preference.addEventListener("change", syncPreference);
+    return () => preference.removeEventListener("change", syncPreference);
+  }, []);
+  return reducedMotion;
 }
 
 export class PresentationDirector {

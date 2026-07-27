@@ -19,7 +19,7 @@ test.describe("format-aware game viewer", () => {
     await page.goto(`/games/${FORMAT_VIEWER_SLUG}/replay`, {
       waitUntil: "domcontentloaded",
     });
-    await pauseAutoplay(page);
+    await pauseAutoplay(page, "⏸ Pause");
 
     const pointerStage = page.locator('[data-format-cue="safety_bounce_pointer"]');
     await advanceUntilVisible(page, pointerStage, "Safety Bounce pointer");
@@ -41,7 +41,7 @@ test.describe("format-aware game viewer", () => {
     await pauseButton.click();
     await expect(pointerStage).toBeVisible();
 
-    const fastestSpeed = page.getByRole("button", { name: "4×", exact: true });
+    const fastestSpeed = page.getByRole("button", { name: "4x", exact: true });
     await expect(fastestSpeed).toBeVisible();
     await fastestSpeed.click();
     const firstAcceptedTarget = await acceptedTarget(pointerStage);
@@ -86,7 +86,8 @@ test.describe("format-aware game viewer", () => {
     await page.goto(`/games/${FORMAT_VIEWER_SLUG}/replay`, {
       waitUntil: "domcontentloaded",
     });
-    await pauseAutoplay(page);
+    await page.clock.runFor(100);
+    await pauseAutoplay(page, "Pause replay");
 
     const pointerStage = page.locator('[data-format-cue="safety_bounce_pointer"]');
     await advanceUntilVisible(page, pointerStage, "Safety Bounce pointer");
@@ -111,16 +112,15 @@ async function advanceUntilVisible(
   for (let index = 0; index < maxAdvances; index += 1) {
     if (await locator.isVisible().catch(() => false)) return;
     await page.keyboard.press("ArrowRight");
-    await page.clock.runFor(250);
   }
   throw new Error(
     `${stageLabel} did not appear for persisted fixture ${FORMAT_VIEWER_SLUG}.`,
   );
 }
 
-async function pauseAutoplay(page: Page): Promise<void> {
+async function pauseAutoplay(page: Page, accessibleName: string): Promise<void> {
   const pauseButton = page.getByRole("button", {
-    name: "⏸ Pause",
+    name: accessibleName,
     exact: true,
   });
   await expect(pauseButton).toBeVisible();
