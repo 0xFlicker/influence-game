@@ -69,6 +69,7 @@ import {
 import { usePresentationDirector } from "./format-presentation-director";
 import { FormatPresentation } from "./format-presentation";
 import { ActiveFormatLabel } from "./active-format-label";
+import { findPresentationCueIndexForSequence } from "./presentation-sequence";
 
 function isRoomReplayPhase(phase: string): boolean {
   return phase === "MINGLE_I"
@@ -99,6 +100,8 @@ interface DramaticReplayViewerProps {
   connStatus?: WatchConnStatus;
   presentationHydrationStatus?: PresentationHydrationState["status"];
   embedded?: boolean;
+  /** Canonical event sequence to seek to on first load (completed replay deep-links). */
+  startSequence?: number;
   onPlaybackStateChange?: (state: MatchWatchPlaybackState) => void;
 }
 
@@ -350,9 +353,11 @@ function DramaticReplayTheater({
   connStatus,
   presentationHydrationStatus,
   embedded = false,
+  startSequence,
   onPlaybackStateChange,
 }: DramaticReplayViewerProps) {
   const [showThinking, setShowThinking] = useState(!live); // default true for replay
+  const initialSequenceSeekAppliedRef = useRef(false);
   // Backward compat: always filter out old scope='thinking' entries (they lack per-message association)
   const filteredMessages = useMemo(
     () => messages.filter((m) => m.scope !== "thinking"),
@@ -480,6 +485,18 @@ function DramaticReplayTheater({
     }
     if (directorSnapshot.cueKeys.length === 0) {
       director.load(presentationCues);
+      if (
+        !live
+        && startSequence !== undefined
+        && !initialSequenceSeekAppliedRef.current
+      ) {
+        const seekIndex = findPresentationCueIndexForSequence(
+          presentationCues,
+          startSequence,
+        );
+        if (seekIndex > 0) director.seek(seekIndex);
+        initialSequenceSeekAppliedRef.current = true;
+      }
       director.play();
       return;
     }
@@ -494,6 +511,7 @@ function DramaticReplayTheater({
     live,
     presentationCues,
     presentationHydrationStatus,
+    startSequence,
   ]);
 
   useEffect(() => {
@@ -1111,7 +1129,7 @@ function DramaticReplayTheater({
       )}
 
       {/* Scene progress bar */}
-      <div className="px-6 z-[60]">
+      <div className="shrink-0 px-6 z-[60]">
         <div className="flex h-0.5 rounded-full overflow-hidden bg-white/5 gap-px">
           {presentationCues.map((cue, i) => (
             <div
@@ -1128,39 +1146,41 @@ function DramaticReplayTheater({
         </div>
       </div>
 
-      {/* Center — phase-aware content */}
+      {/* Center — phase-aware content (scrolls; scrub controls stay pinned below) */}
       <div
         className={`flex-1 min-h-0 flex ${
           usesFullHeightContent
             ? "items-stretch overflow-hidden"
-            : "items-center overflow-y-auto"
+            : "items-center overflow-y-auto overscroll-y-contain"
         } justify-center px-4 md:px-8 py-4 md:py-8`}
       >
-        <div className={`w-full min-h-0 ${usesFullHeightContent ? "h-full" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+        <div className={`w-full min-h-0 ${usesFullHeightContent ? "flex h-full flex-col" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
           {formatCompilationNotice ? (
-            <div className="mb-3">{formatCompilationNotice}</div>
+            <div className="mb-3 shrink-0">{formatCompilationNotice}</div>
           ) : null}
           {activeFormatIdForSocialScene ? (
-            <div className="mb-3 flex justify-center">
+            <div className="mb-3 flex shrink-0 justify-center">
               <ActiveFormatLabel formatId={activeFormatIdForSocialScene} />
             </div>
           ) : null}
           {formatCue && (
-            <FormatPresentation
-              cue={formatCue}
-              roster={formatRoster}
-              currentStateEntry={Boolean(
-                live
-                && directorSnapshot.hydrationWatermark !== null
-                && formatCue.canonicalSequence
-                  <= directorSnapshot.hydrationWatermark,
-              )}
-            />
+            <div className="min-h-0 flex-1">
+              <FormatPresentation
+                cue={formatCue}
+                roster={formatRoster}
+                currentStateEntry={Boolean(
+                  live
+                  && directorSnapshot.hydrationWatermark !== null
+                  && formatCue.canonicalSequence
+                    <= directorSnapshot.hydrationWatermark,
+                )}
+              />
+            </div>
           )}
 
           {/* --- Chat-style: Group Chat Feed --- */}
           {!formatCue && isChatFeedScene && (
-            <div className="flex h-full min-h-0 flex-col gap-2">
+            <div className="flex min-h-0 flex-1 flex-col gap-2">
               <GroupChatFeed
                 messages={chatFeedMessages}
                 players={replayPlayers}
@@ -1171,15 +1191,17 @@ function DramaticReplayTheater({
             </div>
           )}
 
-          {/* --- Chat-style: Whisper Room DM (stacked) --- */}
+          {/* --- Chat-style: open Mingle rooms — feed fills remaining height */}
           {!formatCue && isOpenWhisperScene && (
-            <OpenWhisperRoomsView
-              phaseEntries={openWhisperMessages}
-              players={replayPlayers}
-              phaseKey={scene.id}
-              live={live}
-              showThinking={showThinking}
-            />
+            <div className="min-h-0 flex-1">
+              <OpenWhisperRoomsView
+                phaseEntries={openWhisperMessages}
+                players={replayPlayers}
+                phaseKey={scene.id}
+                live={live}
+                showThinking={showThinking}
+              />
+            </div>
           )}
 
           {!formatCue && isWhisperScene && !isOpenWhisperScene && (
@@ -1314,10 +1336,10 @@ function DramaticReplayTheater({
         </div>
       </div>
 
-      {/* Bottom controls — auto-hide when playing */}
+      {/* Bottom scrub controls — pinned under the scrollable content region */}
       <div
         data-replay-controls
-        className={`flex-shrink-0 px-3 md:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] ${
+        className={`shrink-0 border-t border-white/5 bg-black/70 px-3 md:px-6 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 md:py-4 transition-opacity duration-500 z-[60] backdrop-blur-sm ${
           controlsVisible || !isPlaying ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >

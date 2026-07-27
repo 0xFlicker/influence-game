@@ -212,11 +212,13 @@ describe("buildWhisperStageData", () => {
     expect(html).not.toContain("Mingle Movement");
     expect(html).not.toContain("Agents choose neutral rooms. Occupancy is the signal.");
     expect(html).not.toContain("3 rooms");
-    expect(html).toContain("flex h-full min-h-0 w-full flex-col");
-    expect(html).toContain("grid min-h-0 flex-1 auto-rows-[max-content]");
+    expect(html).toContain('data-testid="open-mingle-rooms"');
+    expect(html).toContain('data-testid="mingle-map-sticky-chrome"');
+    expect(html).toContain('data-testid="mingle-feed-scroll"');
+    expect(html).toContain("sticky top-0 z-20 shrink-0");
     expect(html).toContain("lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.7fr)]");
-    expect(html).toContain("min-h-0 min-w-0 lg:overflow-y-auto");
     expect(html).toContain("min-h-0 flex-1 overflow-y-auto");
+    expect(html).toContain("flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden");
     expect(html).not.toContain("data-controls");
     expect(html).not.toContain("Whisper Room 12");
     expect(html).not.toContain("MINGLE: OPEN ROOMS");

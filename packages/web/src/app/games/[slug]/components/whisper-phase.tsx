@@ -227,17 +227,23 @@ function RoomAvatarRow({
   room,
   players,
   size = "8",
+  compact = false,
 }: {
   room: WhisperRoomStage;
   players: GamePlayer[];
   size?: "6" | "8" | "10";
+  compact?: boolean;
 }) {
   const resolved = resolveRoomPlayers(room, players);
   const visibleCount = size === "6" ? 3 : 5;
   const visibleNames = room.playerNames.slice(0, visibleCount);
   const hiddenCount = Math.max(0, room.playerNames.length - visibleNames.length);
   if (room.playerNames.length === 0) {
-    return <span className="text-[11px] text-white/25">0 occupants</span>;
+    return (
+      <span className={`text-white/25 ${compact ? "text-[9px]" : "text-[11px]"}`}>
+        {compact ? "0" : "0 occupants"}
+      </span>
+    );
   }
 
   return (
@@ -255,13 +261,13 @@ function RoomAvatarRow({
           ))}
         </div>
         {hiddenCount > 0 && (
-          <span className="ml-2 shrink-0 rounded-full border border-white/10 bg-black/35 px-1.5 py-0.5 text-[10px] font-semibold text-white/45">
+          <span className={`shrink-0 rounded-full border border-white/10 bg-black/35 font-semibold text-white/45 ${compact ? "ml-1 px-1 py-0.5 text-[9px]" : "ml-2 px-1.5 py-0.5 text-[10px]"}`}>
             +{hiddenCount}
           </span>
         )}
       </div>
       {room.playerNames.length > 3 && (
-        <p className="mt-2 truncate text-[10px] leading-4 text-white/35">
+        <p className={`mt-2 truncate text-[10px] leading-4 text-white/35 ${compact ? "hidden lg:block" : ""}`}>
           {room.playerNames.slice(0, 3).join(", ")} + {room.playerNames.length - 3} more
         </p>
       )}
@@ -311,26 +317,19 @@ function MingleMap({
   onSelectRoom: (roomId: number) => void;
 }) {
   return (
-    <div className="rounded-2xl border border-purple-500/25 bg-black/35 p-4 md:p-5">
-      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/80">MINGLE MAP</p>
-
-      <div className="mt-4 grid grid-cols-2 gap-3">
-        {rooms.map((room) => {
-          const selected = room.roomId === selectedRoomId;
-          const state = roomStateLabel(room);
-          const hot = !selected && room.messages.length > 0;
-          return (
-            <div
-              key={room.roomId}
-              className={`min-h-32 overflow-hidden rounded-xl border p-3 text-left transition-colors ${
-                selected
-                  ? "border-purple-300/70 bg-purple-500/15"
-                  : hot
-                    ? "border-blue-400/50 bg-blue-500/10 hover:border-blue-300/70"
-                  : "border-white/10 bg-white/[0.035] hover:border-purple-300/35"
-              }`}
-            >
+    <div className="rounded-lg border border-purple-500/25 bg-black/35 px-2 py-1.5 lg:rounded-2xl lg:p-4">
+      {/* Compact (< lg): label + horizontal room chips on one strip */}
+      <div className="flex items-center gap-2 lg:hidden">
+        <p className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.16em] text-white/55">
+          Map
+        </p>
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-x-auto">
+          {rooms.map((room) => {
+            const selected = room.roomId === selectedRoomId;
+            const hot = !selected && room.messages.length > 0;
+            return (
               <button
+                key={room.roomId}
                 type="button"
                 aria-label={`Select Mingle room ${roomDisplayLabel(room)}`}
                 aria-pressed={selected}
@@ -338,39 +337,89 @@ function MingleMap({
                   event.stopPropagation();
                   onSelectRoom(room.roomId);
                 }}
-                className="flex min-h-11 w-full items-start justify-between gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300/70"
+                className={`flex shrink-0 items-center gap-1.5 rounded-md border px-1.5 py-1 text-left transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300/70 ${
+                  selected
+                    ? "border-purple-300/70 bg-purple-500/15"
+                    : hot
+                      ? "border-blue-400/50 bg-blue-500/10"
+                      : "border-white/10 bg-white/[0.035]"
+                }`}
               >
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/85">
-                    {roomDisplayLabel(room)}
-                  </p>
-                  <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/35">{state}</p>
-                </div>
-                <div className="flex shrink-0 items-center gap-1.5">
-                  <span className="rounded-full border border-white/10 bg-black/25 px-1.5 py-0.5 text-[10px] font-semibold text-white/45">
-                    {room.playerNames.length}
-                  </span>
-                  <span className={`h-2 w-2 rounded-full ${hot ? "bg-blue-300" : selected ? "bg-purple-300" : "bg-white/20"}`} />
-                </div>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.12em] text-white/85">
+                  {roomDisplayLabel(room)}
+                </span>
+                <span className="rounded-full border border-white/10 bg-black/25 px-1 py-0.5 text-[9px] font-semibold text-white/45">
+                  {room.playerNames.length}
+                </span>
+                <RoomAvatarRow room={room} players={players} size="6" compact />
+                <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${hot ? "bg-blue-300" : selected ? "bg-purple-300" : "bg-white/20"}`} />
               </button>
-              <div className="mt-4">
-                <RoomAvatarRow room={room} players={players} size="6" />
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Desktop (lg+): full map cards */}
+      <div className="hidden lg:block">
+        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-white/80">MINGLE MAP</p>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          {rooms.map((room) => {
+            const selected = room.roomId === selectedRoomId;
+            const state = roomStateLabel(room);
+            const hot = !selected && room.messages.length > 0;
+            return (
+              <div
+                key={room.roomId}
+                className={`min-h-32 overflow-hidden rounded-xl border p-3 text-left transition-colors ${
+                  selected
+                    ? "border-purple-300/70 bg-purple-500/15"
+                    : hot
+                      ? "border-blue-400/50 bg-blue-500/10 hover:border-blue-300/70"
+                      : "border-white/10 bg-white/[0.035] hover:border-purple-300/35"
+                }`}
+              >
+                <button
+                  type="button"
+                  aria-label={`Select Mingle room ${roomDisplayLabel(room)}`}
+                  aria-pressed={selected}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectRoom(room.roomId);
+                  }}
+                  className="flex min-h-11 w-full items-start justify-between gap-2 rounded text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-purple-300/70"
+                >
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/85">
+                      {roomDisplayLabel(room)}
+                    </p>
+                    <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-white/35">{state}</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <span className="rounded-full border border-white/10 bg-black/25 px-1.5 py-0.5 text-[10px] font-semibold text-white/45">
+                      {room.playerNames.length}
+                    </span>
+                    <span className={`h-2 w-2 rounded-full ${hot ? "bg-blue-300" : selected ? "bg-purple-300" : "bg-white/20"}`} />
+                  </div>
+                </button>
+                <div className="mt-4">
+                  <RoomAvatarRow room={room} players={players} size="6" />
+                </div>
+                <div className="mt-4 flex items-center gap-1">
+                  {[0, 1, 2, 3].map((index) => (
+                    <span
+                      key={index}
+                      className={`h-1.5 flex-1 rounded-full ${
+                        index < Math.min(room.messages.length, 4)
+                          ? hot ? "bg-blue-300/85" : "bg-purple-300/80"
+                          : "bg-white/12"
+                      }`}
+                    />
+                  ))}
+                </div>
               </div>
-              <div className="mt-4 flex items-center gap-1">
-                {[0, 1, 2, 3].map((index) => (
-                  <span
-                    key={index}
-                    className={`h-1.5 flex-1 rounded-full ${
-                      index < Math.min(room.messages.length, 4)
-                        ? hot ? "bg-blue-300/85" : "bg-purple-300/80"
-                        : "bg-white/12"
-                    }`}
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -397,13 +446,13 @@ function ActiveRoomFeed({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-purple-500/25 bg-black/35">
-      <div className="border-b border-white/10 px-4 py-3 md:px-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-baseline gap-3">
-            <p className="text-base font-semibold uppercase tracking-[0.08em] text-white">
+      <div className="shrink-0 border-b border-white/10 px-3 py-2 md:px-5 md:py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 md:gap-3">
+          <div className="flex min-w-0 items-baseline gap-2 md:gap-3">
+            <p className="truncate text-sm font-semibold uppercase tracking-[0.08em] text-white md:text-base">
               {roomDisplayLabel(room)} / Mingle Feed
             </p>
-            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-yellow-200/70">
+            <p className="shrink-0 text-[10px] font-semibold uppercase tracking-[0.18em] text-yellow-200/70">
               {state === "GROUP" ? "GROUP ROOM" : state}
             </p>
           </div>
@@ -413,9 +462,12 @@ function ActiveRoomFeed({
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-5">
+      <div
+        data-testid="mingle-feed-scroll"
+        className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain px-3 py-3 md:px-5 md:py-5"
+      >
         {room.messages.length === 0 ? (
-          <div className="flex min-h-56 items-center justify-center rounded-xl border border-white/10 bg-white/[0.025] p-6 text-center md:min-h-72">
+          <div className="flex h-full min-h-40 items-center justify-center rounded-xl border border-white/10 bg-white/[0.025] p-6 text-center">
             <p className="max-w-sm text-sm leading-relaxed text-white/40">
               {state === "EMPTY"
                 ? "No one chose this room. That absence is public information."
@@ -496,33 +548,63 @@ export function OpenWhisperRoomsView({
     return null;
   }
 
+  const turnHeader = (
+    <div className="flex h-8 items-center justify-between gap-2 rounded-md border border-white/10 bg-black/35 px-2.5 lg:h-auto lg:rounded-xl lg:px-4 lg:py-2">
+      <div className="flex min-w-0 items-baseline gap-2 lg:gap-3">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-purple-200/80 lg:text-[11px] lg:tracking-[0.26em]">MINGLE</p>
+        <p className="truncate text-[9px] uppercase tracking-[0.14em] text-white/35 lg:text-[10px] lg:tracking-[0.16em]">
+          Turn {activeBeat} of {Math.max(beats.length, 1)}
+        </p>
+      </div>
+      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] lg:px-2.5 lg:py-1 lg:text-[10px] lg:tracking-[0.16em] ${
+        live
+          ? "border-red-400/30 bg-red-500/15 text-red-100"
+          : "border-white/15 bg-white/5 text-white/55"
+      }`}>
+        {live ? "LIVE" : "REPLAY"}
+      </span>
+    </div>
+  );
+
   return (
-    <div className="flex h-full min-h-0 w-full flex-col p-3 md:p-0">
-      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col gap-3 md:gap-4">
-        <div className="flex-shrink-0 rounded-xl border border-white/10 bg-black/35 px-4 py-2">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-baseline gap-3">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.26em] text-purple-200/80">MINGLE</p>
-              <p className="text-[10px] uppercase tracking-[0.16em] text-white/35">
-                Turn {activeBeat} of {Math.max(beats.length, 1)}
-              </p>
-            </div>
-            <span className={`rounded-full border px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] ${
-              live
-                ? "border-red-400/30 bg-red-500/15 text-red-100"
-                : "border-white/15 bg-white/5 text-white/55"
-            }`}>
-              {live ? "LIVE" : "REPLAY"}
-            </span>
+    <div
+      className="flex h-full min-h-0 w-full flex-col overflow-hidden p-1.5 md:p-0"
+      data-testid="open-mingle-rooms"
+    >
+      <div className="mx-auto flex h-full min-h-0 w-full max-w-7xl flex-col overflow-hidden">
+        {/*
+          Pinned chrome (turn + map) sits outside the feed scroll region so room
+          switching stays available deep in a long chat. sticky is a fallback if a
+          parent container becomes the scroll root.
+        */}
+        <div
+          data-testid="mingle-map-sticky-chrome"
+          className="sticky top-0 z-20 shrink-0 space-y-1.5 bg-black/95 pb-1.5 backdrop-blur-md lg:static lg:z-auto lg:space-y-0 lg:bg-transparent lg:pb-0 lg:backdrop-blur-none"
+        >
+          {turnHeader}
+          <div className="lg:hidden">
+            <MingleMap
+              rooms={currentRooms}
+              players={players}
+              selectedRoomId={selectedRoomId}
+              onSelectRoom={selectRoom}
+            />
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 auto-rows-[max-content] gap-4 overflow-y-auto lg:auto-rows-auto lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.7fr)] lg:overflow-hidden">
-          <div className="min-h-0 min-w-0 lg:overflow-y-auto lg:pr-1">
-            <MingleMap rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden lg:mt-3 lg:grid lg:grid-cols-[minmax(0,0.78fr)_minmax(0,1.7fr)] lg:gap-4">
+          <div className="hidden min-h-0 min-w-0 lg:block lg:overflow-y-auto lg:pr-1">
+            <div className="lg:sticky lg:top-0">
+              <MingleMap
+                rooms={currentRooms}
+                players={players}
+                selectedRoomId={selectedRoomId}
+                onSelectRoom={selectRoom}
+              />
+            </div>
           </div>
 
-          <div className="flex min-h-[24rem] min-w-0 lg:min-h-0">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <ActiveRoomFeed room={activeRoom} players={players} showThinking={showThinking} />
           </div>
         </div>

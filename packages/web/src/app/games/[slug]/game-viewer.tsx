@@ -83,6 +83,7 @@ export function GameViewer({
   initialMessages,
   initialReplayFrames,
   initialPostgameMedia,
+  startSequence,
 }: GameViewerProps) {
   const { authenticated, openSignIn } = useAuth();
   const router = useRouter();
@@ -1047,7 +1048,7 @@ export function GameViewer({
   if (matchWatchDecision.eligible) {
     const matchWatchKey = matchWatchDecision.mode === "live"
       ? `live:${game.id}`
-      : `replay:${game.id}:${messages.length}:${messages[0]?.id ?? "start"}:${messages[messages.length - 1]?.id ?? "end"}`;
+      : `replay:${game.id}:${messages.length}:${messages[0]?.id ?? "start"}:${messages[messages.length - 1]?.id ?? "end"}:${startSequence ?? "start"}`;
     return (
       <div id={matchWatchDecision.mode === "replay" ? "replay" : undefined} className="scroll-mt-24">
         <MatchWatchShell
@@ -1058,6 +1059,7 @@ export function GameViewer({
           live={matchWatchDecision.mode === "live"}
           connStatus={connStatus}
           presentationHydrationStatus={presentationHydration.status}
+          startSequence={matchWatchDecision.mode === "replay" ? startSequence : undefined}
         />
         {gamePresentation.incomplete && (
           <div className="fixed bottom-4 left-4 z-50 max-w-sm rounded-lg border border-amber-700/50 bg-black/90 p-3 text-xs text-amber-100 shadow-xl">

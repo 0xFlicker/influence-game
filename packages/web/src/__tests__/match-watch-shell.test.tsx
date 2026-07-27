@@ -170,7 +170,8 @@ describe("MatchWatchShell", () => {
     expect(textHtml).toContain("Round 1 Replay");
     expect(html).toContain("Cast &amp; Status");
     expect(html).toContain('aria-label="Cast selection"');
-    expect(textHtml).toContain("1 alive / 1 out");
+    expect(html).toContain('data-testid="match-watch-count-alive"');
+    expect(html).toContain('data-testid="match-watch-count-out"');
     expect(html).toContain("Strategy Lens");
     expect(html).toContain("Audience Lens");
     expect(html).toContain("Thinking");
@@ -184,6 +185,9 @@ describe("MatchWatchShell", () => {
     expect(html).toContain("Atlas");
     expect(html).toContain("Lyra");
     expect(html).toContain("relative h-full min-h-0 overflow-hidden");
+    // Mobile app-shell: column flex with bounded theater so content can scroll under sticky chrome.
+    expect(html).toContain("relative flex min-h-0 flex-1 flex-col gap-1.5 overflow-hidden");
+    expect(html).toContain("flex min-h-0 flex-1 flex-col overflow-hidden");
     expect(html).not.toContain("Relationship Field");
     expect(html).not.toContain("Public Thinking");
     expect(html).not.toContain("Public Strategy");

@@ -33,6 +33,24 @@ export function gameReplayHref(gameIdOrSlug: string, anchor?: string): string {
   return `${gameHref(gameIdOrSlug)}/replay${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
 }
 
+/**
+ * Deep-link into a completed-game replay at a canonical event sequence.
+ * Path form (not a query string) so OG metadata and "view this action" links
+ * can eventually target a stable moment without hash-only URLs.
+ */
+export function gameReplaySequenceHref(gameIdOrSlug: string, sequence: number): string {
+  return `${gameHref(gameIdOrSlug)}/replay/${encodeURIComponent(String(sequence))}`;
+}
+
+/** Parse a `/replay/[sequence]` path segment into a non-negative safe integer. */
+export function parseReplaySequenceParam(value: string | undefined | null): number | undefined {
+  if (value == null || value === "") return undefined;
+  if (!/^\d+$/.test(value)) return undefined;
+  const sequence = Number(value);
+  if (!Number.isSafeInteger(sequence) || sequence < 0) return undefined;
+  return sequence;
+}
+
 export function completedGameModeHref(
   gameIdOrSlug: string,
   mode: CompletedGameMode,

@@ -83,6 +83,8 @@ export interface GameViewerProps {
   initialMessages?: TranscriptEntry[];
   initialReplayFrames?: GameWatchReplayFrame[];
   initialPostgameMedia?: PublicPostgameMediaResponse;
+  /** Canonical event sequence to open a completed replay at (path deep-link). */
+  startSequence?: number;
 }
 
 export type SpectacleMessagePhase = "typing" | "revealing" | "done";

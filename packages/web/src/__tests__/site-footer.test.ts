@@ -41,6 +41,7 @@ describe("site footer", () => {
   it("stays out of direct game-watch and replay routes", () => {
     expect(shouldShowSiteFooter("/games/cold-navy-horn")).toBe(false);
     expect(shouldShowSiteFooter("/games/cold-navy-horn/replay")).toBe(false);
+    expect(shouldShowSiteFooter("/games/cold-navy-horn/replay/42")).toBe(false);
   });
 
   it("keeps non-immersive game subpages covered", () => {
