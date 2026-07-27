@@ -415,7 +415,14 @@ describe("buildRevealedRoundFacts", () => {
   });
 
   it("exposes Safety Bounce public chain, sole-vulnerable auto-elim, and live in-progress facts", () => {
-    const state = createGameState();
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+      ],
+      { gameId: "game-round-facts-sole-vulnerable", now: fixedClock() },
+    );
     state.startRound();
     state.recordFormatMenu("charlie", ["safety_bounce", "save_or_eliminate"]);
     state.recordFormatSelected("charlie", "safety_bounce");
@@ -440,7 +447,6 @@ describe("buildRevealedRoundFacts", () => {
 
     // Finish classification with sole vulnerable auto-elim (no sealed vote).
     state.recordSafetyBouncePointer("bob", "charlie", "safe");
-    state.recordSafetyBouncePointer("charlie", "dave", "safe");
     state.recordFormatResolution({
       formatId: "safety_bounce",
       empoweredId: "charlie",
@@ -452,7 +458,7 @@ describe("buildRevealedRoundFacts", () => {
       voteBomb: null,
       safetyBounce: {
         starterId: "alice",
-        safePlayerIds: ["alice", "charlie", "dave"],
+        safePlayerIds: ["alice", "charlie"],
         vulnerablePlayerIds: ["bob"],
         voteTotals: {},
       },

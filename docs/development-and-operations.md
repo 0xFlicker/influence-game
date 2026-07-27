@@ -220,6 +220,52 @@ bun run test:e2e:layered-auth
 bun run test:e2e:layered-auth:clerk
 ```
 
+### Format-aware viewer verification
+
+Use deterministic fixtures before creating a fresh game:
+
+- `dark-coral-horn` — completed Save-or-Eliminate, Vote Bomb, and Safety Bounce.
+- `mild-cream-rune` — second all-format completed replay/results fixture.
+- `young-ruby-isle` — Safety Bounce-heavy completed fixture.
+- `edge-smoke-dusk` — frozen engine-authored classic characterization; the
+  browser story route-projects its canonical events, so no persisted row is
+  required.
+
+With the local API and web processes already running, execute:
+
+```bash
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001 \
+PLAYWRIGHT_FORMAT_VIEWER=1 \
+bunx playwright test e2e/format-aware-game-viewer.spec.ts
+```
+
+The story installs Playwright Clock and does not use sleep-based assertions. It
+checks browser-routed current-state entry for every format, deterministic
+WebSocket reconnect and higher-sequence repair, reload from a local mid-roll-call
+position, terminal/malformed trusted prefixes, canonical pointer landing, lane
+partition, aggregate-before-ledger ordering, roster receipts, focus,
+pause/manual/speed controls, desktop/mobile settlement, reduced-motion parity,
+completed results, classic lifecycle quarantine, and writes settled screenshots
+into the Playwright test output directory.
+
+For API/MCP disclosure proof, run the focused DB test with local PostgreSQL:
+
+```bash
+cd packages/api
+DRIZZLE_MIGRATIONS_DIR=./drizzle \
+bun test src/__tests__/production-game-mcp-read-model.test.ts
+```
+
+The test database path uses `setupTestDB()` and its process advisory lock. Do not
+run these DB tests concurrently inside one Bun process.
+
+A fresh controlled format game is still required for end-to-end API/WebSocket
+integration proof beyond the deterministic browser-routed story. Use
+deterministic/local agents or approved mocks. Do not run a paid provider
+simulation without explicit authorization. Verify reload/reconnect at menu,
+selection, mid-classification, sealed ballot, resolution, mid-roll-call, and
+after the next phase arrives.
+
 The deterministic layered-auth project injects provider assertions but drives
 the visible unified authentication wrapper and real Influence API/session
 coordinator. The real Clerk project is a separate, credential-gated lane and

@@ -1143,9 +1143,10 @@ describe("Game REST API", () => {
             canonicalFacts: {
               roundFacts: {
                 standardVote: { ledger: unknown[] };
-                council: { ledger: unknown[]; eliminated: { id: string } | null };
+                council?: { ledger: unknown[]; eliminated: { id: string } | null };
               };
             };
+            formatRecap?: unknown;
           }>;
           eliminationOrder: Array<{ player: { id: string }; source: string }>;
         };
@@ -1168,7 +1169,8 @@ describe("Game REST API", () => {
       expect(body.results.summary.winner).toEqual({ id: "mira", name: "Mira" });
       expect(body.results.summary.roundsPlayed).toBe(1);
       expect(body.results.rounds[0]?.canonicalFacts.roundFacts.standardVote.ledger).toHaveLength(4);
-      expect(body.results.rounds[0]?.canonicalFacts.roundFacts.council.ledger.length).toBeGreaterThan(0);
+      expect(body.results.rounds[0]?.canonicalFacts.roundFacts.council).toBeUndefined();
+      expect(body.results.rounds[0]?.formatRecap).toBeUndefined();
       expect(body.results.eliminationOrder[0]?.source).toBe("council");
       expect(JSON.stringify(body)).not.toContain(PRIVATE_DECISION_SENTINEL);
       expect(JSON.stringify(body)).not.toContain("sourcePointers");
