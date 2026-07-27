@@ -53,7 +53,10 @@ import { VoteTallyOverlay, SpectacleMessageContent } from "./vote-display";
 import { buildReplayScenes } from "./spectacle-viewer";
 import { shouldSuppressDramaticAdvance } from "./dramatic-interaction";
 import { getHouseSummaryExtraHoldMs, getJuryClosingStatementsExtraHoldMs, getJuryOpeningStatementsExtraHoldMs, getJuryQuestionsExtraHoldMs } from "./dramatic-timing";
-import type { MatchWatchPlaybackState } from "./match-watch-model";
+import type {
+  MatchWatchPlaybackState,
+  PresentationHydrationState,
+} from "./match-watch-model";
 import type { WatchConnStatus } from "./types";
 import {
   compileFormatPresentationPrefix,
@@ -61,6 +64,8 @@ import {
   formatPresentationEligibilityFromFrames,
 } from "./format-presentation-model";
 import { usePresentationDirector } from "./format-presentation-director";
+import { FormatPresentation } from "./format-presentation";
+import { ActiveFormatLabel } from "./active-format-label";
 
 function isRoomReplayPhase(phase: string): boolean {
   return phase === "MINGLE_I" || phase === "MINGLE" || phase === "POST_VOTE_MINGLE";
@@ -86,6 +91,7 @@ interface DramaticReplayViewerProps {
   replayFrames?: GameWatchReplayFrame[];
   live?: boolean;
   connStatus?: WatchConnStatus;
+  presentationHydrationStatus?: PresentationHydrationState["status"];
   embedded?: boolean;
   onPlaybackStateChange?: (state: MatchWatchPlaybackState) => void;
 }
@@ -250,6 +256,21 @@ function cueSceneIdentity(cue: PresentationCue): string {
     : cue.key;
 }
 
+export function activeFormatIdForPresentationCursor(
+  cues: readonly PresentationCue[],
+  cursor: number,
+  round: number,
+) {
+  for (let index = Math.min(cursor, cues.length - 1); index >= 0; index -= 1) {
+    const cue = cues[index]!;
+    if (cue.round !== round) continue;
+    if (cue.source === "format" && cue.after.activeFormatId) {
+      return cue.after.activeFormatId;
+    }
+  }
+  return null;
+}
+
 function findPreviousRoundCue(
   cues: readonly PresentationCue[],
   cursor: number,
@@ -266,75 +287,6 @@ function findPreviousRoundCue(
   return 0;
 }
 
-function FormatCueSummary({ cue }: { cue: FormatPresentationCue }) {
-  return (
-    <section
-      data-presentation-cue={cue.key}
-      data-format-cue={cue.kind}
-      className="mx-auto max-w-2xl rounded-xl border border-white/10 bg-white/[0.035] p-6 text-center"
-      aria-live="polite"
-    >
-      <p className="text-[10px] uppercase tracking-[0.24em] text-white/35">
-        Canonical format beat
-      </p>
-      <h2 className="mt-3 text-2xl font-semibold text-white/95">
-        {formatCueTitle(cue)}
-      </h2>
-      <p className="mt-3 text-sm leading-6 text-white/60">
-        {formatCueDescription(cue)}
-      </p>
-    </section>
-  );
-}
-
-function formatCueTitle(cue: FormatPresentationCue): string {
-  switch (cue.kind) {
-    case "empowered_tally":
-      return "Empowered vote";
-    case "format_menu":
-      return "The House offers two formats";
-    case "format_selected":
-      return "Format selected";
-    case "safety_bounce_started":
-      return "Safety Bounce begins";
-    case "safety_bounce_pointer":
-      return "Classification accepted";
-    case "format_aggregate":
-      return "Tally locked";
-    case "format_roll_call":
-      return "Ballot revealed";
-    case "format_tiebreak":
-      return "Tiebreak receipt";
-    case "format_elimination":
-      return "Format resolved";
-  }
-}
-
-function formatCueDescription(cue: FormatPresentationCue): string {
-  switch (cue.kind) {
-    case "empowered_tally":
-      return `${cue.empoweredId} is Empowered.`;
-    case "format_menu":
-      return cue.offeredFormatIds.join(" versus ");
-    case "format_selected":
-      return `${cue.formatId} is active.`;
-    case "safety_bounce_started":
-      return `${cue.starterId} starts Safe and owns the first choice.`;
-    case "safety_bounce_pointer":
-      return `${cue.actorId} classifies ${cue.targetId} as ${cue.classification}.`;
-    case "format_aggregate":
-      return `The ${cue.resolution.formatId} aggregate is final.`;
-    case "format_roll_call":
-      return `${cue.ballot.voterId} → ${cue.ballot.targetId}${
-        cue.ballot.polarity ? ` (${cue.ballot.polarity})` : ""
-      }`;
-    case "format_tiebreak":
-      return `${cue.tiebreakerId} breaks the tie.`;
-    case "format_elimination":
-      return `${cue.eliminatedId} is eliminated.`;
-  }
-}
-
 function DramaticReplayTheater({
   game,
   messages,
@@ -342,6 +294,7 @@ function DramaticReplayTheater({
   replayFrames = [],
   live = false,
   connStatus,
+  presentationHydrationStatus,
   embedded = false,
   onPlaybackStateChange,
 }: DramaticReplayViewerProps) {
@@ -393,6 +346,7 @@ function DramaticReplayTheater({
   const seenEndgameStages = useRef<Set<string>>(new Set());
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectHydrationPendingRef = useRef(false);
   // Scroll ref for stacked diary/mingle content (INF-93)
   const stackedScrollRef = useRef<HTMLDivElement>(null);
 
@@ -400,6 +354,14 @@ function DramaticReplayTheater({
   const activeCue = director.getActiveCue() ?? fallbackCue;
   const classicCue = activeCue?.source === "classic" ? activeCue : null;
   const formatCue = activeCue?.source === "format" ? activeCue : null;
+  const activeFormatIdForSocialScene = useMemo(() => {
+    if (!classicCue) return null;
+    return activeFormatIdForPresentationCursor(
+      presentationCues,
+      directorSnapshot.cursor,
+      classicCue.round,
+    );
+  }, [classicCue, directorSnapshot.cursor, presentationCues]);
   const sceneIndex = classicCue?.sceneIndex ?? 0;
   const messageIndex = classicCue?.messageIndex ?? 0;
   const scene = classicCue
@@ -453,6 +415,32 @@ function DramaticReplayTheater({
       director.load(presentationCues);
     }
   }, [director, directorSnapshot.cueKeys.length, live, presentationCues]);
+
+  useEffect(() => {
+    if (!live) return;
+    if (presentationHydrationStatus === "reconnecting") {
+      reconnectHydrationPendingRef.current = true;
+      return;
+    }
+    if (
+      presentationHydrationStatus !== "ready"
+      || !reconnectHydrationPendingRef.current
+      || presentationCues.length === 0
+    ) {
+      return;
+    }
+
+    const shouldResume = directorSnapshot.isPlaying;
+    reconnectHydrationPendingRef.current = false;
+    director.reconnect(presentationCues);
+    if (shouldResume) director.play();
+  }, [
+    director,
+    directorSnapshot.isPlaying,
+    live,
+    presentationCues,
+    presentationHydrationStatus,
+  ]);
 
   // Resolve current speaker (anonymous for RUMOR phase)
   const isCurrentRumor = currentMessage?.phase === "RUMOR" && currentMessage?.scope === "public";
@@ -1000,8 +988,25 @@ function DramaticReplayTheater({
         } justify-center px-4 md:px-8 py-4 md:py-8`}
       >
         <div className={`w-full min-h-0 ${usesFullHeightContent ? "h-full" : ""} ${(isDiaryScene || isWhisperScene || isOverviewScene || isOpenWhisperScene) ? "max-w-7xl" : isChatStyleScene ? "max-w-3xl" : "max-w-2xl"}`}>
+          {activeFormatIdForSocialScene ? (
+            <div className="mb-3 flex justify-center">
+              <ActiveFormatLabel formatId={activeFormatIdForSocialScene} />
+            </div>
+          ) : null}
           {formatCue && (
-            <FormatCueSummary cue={formatCue} />
+            <FormatPresentation
+              cue={formatCue}
+              roster={players.map((player) => ({
+                id: player.id,
+                name: player.name,
+              }))}
+              currentStateEntry={Boolean(
+                live
+                && directorSnapshot.hydrationWatermark !== null
+                && formatCue.canonicalSequence
+                  <= directorSnapshot.hydrationWatermark,
+              )}
+            />
           )}
 
           {/* --- Chat-style: Group Chat Feed --- */}

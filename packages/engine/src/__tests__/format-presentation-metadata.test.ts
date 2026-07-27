@@ -1,0 +1,41 @@
+import { describe, expect, it } from "bun:test";
+import {
+  displayNameForFormat,
+  FORMAT_PRESENTATION_METADATA,
+  formatPresentationMetadata,
+  isLaunchFormatId,
+  type LaunchFormatId,
+} from "../format-presentation-metadata";
+import { ruleSheetForFormat } from "../format-pressure";
+
+describe("format presentation metadata", () => {
+  it("owns immutable launch-format names and concise fixed rules", () => {
+    const formatIds = Object.keys(FORMAT_PRESENTATION_METADATA) as LaunchFormatId[];
+
+    expect(formatIds).toEqual([
+      "save_or_eliminate",
+      "vote_bomb",
+      "safety_bounce",
+    ]);
+    expect(formatPresentationMetadata("save_or_eliminate")).toMatchObject({
+      id: "save_or_eliminate",
+      displayName: "Save-or-Eliminate",
+      conciseRules:
+        "Cast one sealed SAVE (+1) or ELIMINATE (−1) ballot against another agent. Lowest net is eliminated; the Empowered agent breaks a lowest-net tie.",
+    });
+    expect(formatPresentationMetadata("vote_bomb").conciseRules).toContain(
+      "Zero votes is safe",
+    );
+    expect(formatPresentationMetadata("safety_bounce").conciseRules).toContain(
+      "Sole Vulnerable is automatically eliminated",
+    );
+    expect(ruleSheetForFormat("safety_bounce")).toBe(
+      "After mingle: one random starter is SAFE and points publicly. A SAFE player's pointer makes the target VULNERABLE; a VULNERABLE player's pointer makes the target SAFE until all are classified. Then a sealed vote among the vulnerable pool only — most votes out. Sole vulnerable auto-elims. Empowered breaks ties.",
+    );
+  });
+
+  it("rejects prototype keys as format IDs", () => {
+    expect(isLaunchFormatId("toString")).toBe(false);
+    expect(displayNameForFormat("toString")).toBe("toString");
+  });
+});

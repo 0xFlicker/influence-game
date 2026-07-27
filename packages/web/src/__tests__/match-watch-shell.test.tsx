@@ -306,6 +306,14 @@ describe("MatchWatchShell", () => {
       gameKernel: "format" as const,
       gameKernelSource: "stored" as const,
       currentPhase: "FORMAT_MENU" as const,
+      players: game().players.map((player, index) => ({
+        ...player,
+        shielded: true,
+        pressureStatus: index === 0
+          ? "empowered" as const
+          : "locked_at_risk" as const,
+        exposeScore: index === 0 ? 0 : 2,
+      })),
     };
     const menuFrame: GameWatchReplayFrame = {
       schemaVersion: 3,
@@ -348,6 +356,11 @@ describe("MatchWatchShell", () => {
     expect(html).toContain('data-presentation-animation-boundary="true"');
     expect(html).toContain('data-format-cue="format_menu"');
     expect(html).toContain("The House offers two formats");
+    expect(html).toContain("Empowered");
+    expect(html).not.toContain("Exposed");
+    expect(html).not.toContain("Shielded");
+    expect(html).not.toContain("Power Play");
+    expect(html).not.toContain("Council");
   });
 
   it("keeps social dialogue while quarantining format authority transcript phases", () => {

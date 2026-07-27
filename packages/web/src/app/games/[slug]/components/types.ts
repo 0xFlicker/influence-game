@@ -7,7 +7,7 @@ import type {
   PublicPostgameMediaResponse,
   ViewerDecisionEvent,
 } from "@/lib/api";
-import type { LaunchFormatId } from "@influence/engine";
+import type { LaunchFormatId } from "@influence/engine/format-presentation-metadata";
 
 export type RoomType = "lobby" | "private_rooms" | "tribunal" | "diary" | "endgame";
 
@@ -98,6 +98,12 @@ export interface FormatPresentationBallot {
   polarity: "save" | "eliminate" | null;
 }
 
+export interface FormatEmpowerVoteReceipt {
+  voterId: string;
+  targetId: string;
+  revoteTargetId: string | null;
+}
+
 export interface SafetyBouncePresentationSnapshot {
   starterId: string;
   currentActorId: string;
@@ -139,6 +145,7 @@ export type FormatPresentationCue =
       kind: "empowered_tally";
       empoweredId: string;
       counts: Record<string, number>;
+      receipts: FormatEmpowerVoteReceipt[];
     })
   | (FormatPresentationCueBase & {
       kind: "format_menu";
@@ -147,6 +154,7 @@ export type FormatPresentationCue =
     })
   | (FormatPresentationCueBase & {
       kind: "format_selected";
+      stage: "choice_legible" | "rules_reveal";
       empoweredId: string;
       formatId: LaunchFormatId;
     })

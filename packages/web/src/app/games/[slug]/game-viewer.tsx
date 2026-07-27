@@ -1004,6 +1004,7 @@ export function GameViewer({
           replayFrames={replayFrames}
           live={matchWatchDecision.mode === "live"}
           connStatus={connStatus}
+          presentationHydrationStatus={presentationHydration.status}
         />
         {gamePresentation.incomplete && (
           <div className="fixed bottom-4 left-4 z-50 max-w-sm rounded-lg border border-amber-700/50 bg-black/90 p-3 text-xs text-amber-100 shadow-xl">

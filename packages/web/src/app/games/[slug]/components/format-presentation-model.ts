@@ -5,6 +5,7 @@ import type {
   ViewerDecisionEvent,
 } from "@/lib/api";
 import type {
+  FormatEmpowerVoteReceipt,
   FormatPresentationBallot,
   FormatPresentationCue,
   FormatPresentationRosterPlayer,
@@ -16,6 +17,8 @@ export type FormatPresentationDiagnosticCode =
   | "duplicate_sequence"
   | "unknown_player"
   | "invalid_menu"
+  | "invalid_empower_receipt"
+  | "empower_tally_mismatch"
   | "empowered_mismatch"
   | "selection_without_menu"
   | "selection_not_offered"
@@ -48,6 +51,19 @@ export interface CompileFormatPresentationPrefixInput {
   roster: readonly FormatPresentationRosterPlayer[];
   decisions: readonly ViewerDecisionEvent[];
   eligiblePlayerIdsByRound?: ReadonlyMap<number, readonly string[]>;
+}
+
+type EmpowerTallyDecision = Extract<
+  ViewerDecisionEvent,
+  { type: "vote.empower_tally_resolved" }
+>;
+
+interface EmpowerPresentationAccumulator {
+  initialVotes: Map<string, string>;
+  activeVotes: Map<string, string>;
+  revotes: Map<string, string>;
+  clearedVotes: Set<string>;
+  pendingTally: EmpowerTallyDecision | null;
 }
 
 const CUE_DURATION_MS: Record<FormatPresentationCue["kind"], number> = {
@@ -98,6 +114,13 @@ export function compileFormatPresentationPrefix({
   const cues: FormatPresentationCue[] = [];
   const rosterIds = roster.map((player) => player.id);
   const ballots = new Map<string, FormatPresentationBallot>();
+  const empower: EmpowerPresentationAccumulator = {
+    initialVotes: new Map(),
+    activeVotes: new Map(),
+    revotes: new Map(),
+    clearedVotes: new Set(),
+    pendingTally: null,
+  };
   const seenSequences = new Map<number, string>();
 
   if (gameKernel !== "format") {
@@ -123,6 +146,11 @@ export function compileFormatPresentationPrefix({
     if (decision.round > snapshot.round) {
       snapshot = emptySnapshot(decision.round, phaseKey(decision.phase));
       ballots.clear();
+      empower.initialVotes.clear();
+      empower.activeVotes.clear();
+      empower.revotes.clear();
+      empower.clearedVotes.clear();
+      empower.pendingTally = null;
     } else if (decision.round < snapshot.round) {
       continue;
     }
@@ -136,6 +164,7 @@ export function compileFormatPresentationPrefix({
       eligiblePlayerIds,
       eligiblePlayerSet: new Set(eligiblePlayerIds),
       ballots,
+      empower,
       snapshot,
       cues,
     });
@@ -157,6 +186,7 @@ function applyDecision(input: {
   eligiblePlayerIds: readonly string[];
   eligiblePlayerSet: ReadonlySet<string>;
   ballots: Map<string, FormatPresentationBallot>;
+  empower: EmpowerPresentationAccumulator;
   snapshot: FormatPresentationSnapshot;
   cues: FormatPresentationCue[];
 }): FormatPresentationCompilation | null {
@@ -166,6 +196,7 @@ function applyDecision(input: {
     eligiblePlayerIds,
     eligiblePlayerSet,
     ballots,
+    empower,
     cues,
   } = input;
   let { snapshot } = input;
@@ -180,6 +211,30 @@ function applyDecision(input: {
   };
 
   switch (decision.type) {
+    case "vote.cast": {
+      if (
+        !eligiblePlayerSet.has(decision.payload.voterId)
+        || !eligiblePlayerSet.has(decision.payload.empowerTarget)
+        || empower.initialVotes.has(decision.payload.voterId)
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "invalid_empower_receipt",
+          decision.sequence,
+          "Empower receipt must name one eligible voter and one eligible target.",
+        );
+      }
+      empower.initialVotes.set(
+        decision.payload.voterId,
+        decision.payload.empowerTarget,
+      );
+      empower.activeVotes.set(
+        decision.payload.voterId,
+        decision.payload.empowerTarget,
+      );
+      break;
+    }
     case "vote.empower_tally_resolved": {
       if (!eligiblePlayerSet.has(decision.payload.empowered)) {
         return incomplete(
@@ -190,26 +245,147 @@ function applyDecision(input: {
           `Empowered agent ${decision.payload.empowered} is not eligible this round.`,
         );
       }
-      snapshot = {
-        ...snapshot,
-        phase,
-        canonicalSequence: decision.sequence,
+      if (
+        !empowerTallyMatchesReceipts(
+          decision.payload.counts,
+          empower.activeVotes,
+          eligiblePlayerIds,
+          decision.payload.method,
+        )
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "empower_tally_mismatch",
+          decision.sequence,
+          "Empowered aggregate does not match the accepted vote receipts.",
+        );
+      }
+      if (decision.payload.method === "tie_pending") {
+        if (
+          !decision.payload.tied
+          || decision.payload.tied.length < 2
+          || !decision.payload.tied.every((id) => eligiblePlayerSet.has(id))
+          || !tiedSetMatchesTally(
+            decision.payload.tied,
+            decision.payload.counts,
+          )
+        ) {
+          return incomplete(
+            cues,
+            snapshot,
+            "empower_tally_mismatch",
+            decision.sequence,
+            "Pending Empowered tally must name at least two eligible tied agents.",
+          );
+        }
+        empower.pendingTally = decision;
+        break;
+      }
+      if (decision.payload.tied !== null) {
+        return incomplete(
+          cues,
+          snapshot,
+          "empower_tally_mismatch",
+          decision.sequence,
+          "Resolved Empowered tally cannot retain a pending tied set.",
+        );
+      }
+      if (!resolvedEmpoweredMatchesTally(decision)) {
+        return incomplete(
+          cues,
+          snapshot,
+          "empower_tally_mismatch",
+          decision.sequence,
+          "Resolved Empowered agent does not match the trusted aggregate.",
+        );
+      }
+      snapshot = appendEmpoweredTallyCue({
+        gameId,
+        decision,
         empoweredId: decision.payload.empowered,
-        empoweredTally: { ...decision.payload.counts },
-      };
-      cues.push({
-        ...base,
-        key: cueKey(gameId, decision.sequence, "empowered-tally"),
-        kind: "empowered_tally",
-        baseDurationMs: CUE_DURATION_MS.empowered_tally,
-        empoweredId: decision.payload.empowered,
-        counts: { ...decision.payload.counts },
-        after: cloneSnapshot(snapshot),
+        counts: decision.payload.counts,
+        receipts: empowerReceipts(eligiblePlayerIds, empower),
+        snapshot,
+        cues,
       });
+      break;
+    }
+    case "vote.empower_vote_cleared": {
+      if (
+        !empower.pendingTally
+        || !eligiblePlayerSet.has(decision.payload.voterId)
+        || empower.pendingTally.payload.tied?.includes(decision.payload.voterId)
+        || empower.clearedVotes.has(decision.payload.voterId)
+        || !empower.activeVotes.delete(decision.payload.voterId)
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "invalid_empower_receipt",
+          decision.sequence,
+          "Empower vote clear does not match a pending accepted vote.",
+        );
+      }
+      empower.clearedVotes.add(decision.payload.voterId);
+      break;
+    }
+    case "vote.empower_revote_cast": {
+      const tied = empower.pendingTally?.payload.tied;
+      if (
+        !tied
+        || !eligiblePlayerSet.has(decision.payload.voterId)
+        || !tied.includes(decision.payload.target)
+        || !empower.clearedVotes.has(decision.payload.voterId)
+        || empower.revotes.has(decision.payload.voterId)
+      ) {
+        return incomplete(
+          cues,
+          snapshot,
+          "invalid_empower_receipt",
+          decision.sequence,
+          "Empower revote must name one eligible voter and a pending tied target.",
+        );
+      }
+      empower.activeVotes.set(decision.payload.voterId, decision.payload.target);
+      empower.revotes.set(decision.payload.voterId, decision.payload.target);
+      break;
+    }
+    case "vote.empowered_set": {
+      const pending = empower.pendingTally;
+      if (!pending) break;
+      if (!validEmpoweredSetWinner(decision, pending, empower)) {
+        return incomplete(
+          cues,
+          snapshot,
+          "empower_tally_mismatch",
+          decision.sequence,
+          "Final Empowered agent does not match the accepted revote state.",
+        );
+      }
+      snapshot = appendEmpoweredTallyCue({
+        gameId,
+        decision,
+        empoweredId: decision.payload.empowered,
+        counts: pending.payload.counts,
+        receipts: empowerReceipts(eligiblePlayerIds, empower),
+        snapshot,
+        cues,
+      });
+      empower.pendingTally = null;
       break;
     }
     case "format.menu_offered": {
       const [first, second] = decision.payload.offeredFormatIds;
+      if (empower.pendingTally) {
+        return incomplete(
+          cues,
+          snapshot,
+          "empowered_mismatch",
+          decision.sequence,
+          "Format menu opened before the pending Empowered tie was resolved.",
+        );
+      }
       if (
         !eligiblePlayerSet.has(decision.payload.empoweredId)
         || first === second
@@ -286,14 +462,24 @@ function applyDecision(input: {
         canonicalSequence: decision.sequence,
         activeFormatId: decision.payload.formatId,
       };
-      cues.push({
+      const selectedCueBase = {
         ...base,
-        key: cueKey(gameId, decision.sequence, "selected"),
         kind: "format_selected",
-        baseDurationMs: CUE_DURATION_MS.format_selected,
         empoweredId: decision.payload.empoweredId,
         formatId: decision.payload.formatId,
         after: cloneSnapshot(snapshot),
+      } as const;
+      cues.push({
+        ...selectedCueBase,
+        key: cueKey(gameId, decision.sequence, "selected-choice"),
+        stage: "choice_legible",
+        baseDurationMs: CUE_DURATION_MS.format_selected / 2,
+      });
+      cues.push({
+        ...selectedCueBase,
+        key: cueKey(gameId, decision.sequence, "selected-rules"),
+        stage: "rules_reveal",
+        baseDurationMs: CUE_DURATION_MS.format_selected / 2,
       });
       break;
     }
@@ -622,6 +808,132 @@ function applyResolution(input: {
   });
   input.snapshot = snapshot;
   return null;
+}
+
+function appendEmpoweredTallyCue(input: {
+  gameId: string;
+  decision: Extract<
+    ViewerDecisionEvent,
+    { type: "vote.empower_tally_resolved" | "vote.empowered_set" }
+  >;
+  empoweredId: string;
+  counts: Readonly<Record<string, number>>;
+  receipts: readonly FormatEmpowerVoteReceipt[];
+  snapshot: FormatPresentationSnapshot;
+  cues: FormatPresentationCue[];
+}): FormatPresentationSnapshot {
+  const phase = phaseKey(input.decision.phase);
+  const snapshot = {
+    ...input.snapshot,
+    phase,
+    canonicalSequence: input.decision.sequence,
+    empoweredId: input.empoweredId,
+    empoweredTally: { ...input.counts },
+  };
+  input.cues.push({
+    source: "format",
+    key: cueKey(input.gameId, input.decision.sequence, "empowered-tally"),
+    canonicalSequence: input.decision.sequence,
+    round: input.decision.round,
+    phase,
+    kind: "empowered_tally",
+    baseDurationMs: CUE_DURATION_MS.empowered_tally,
+    before: cloneSnapshot(input.snapshot),
+    after: cloneSnapshot(snapshot),
+    empoweredId: input.empoweredId,
+    counts: { ...input.counts },
+    receipts: input.receipts.map((receipt) => ({ ...receipt })),
+  });
+  return snapshot;
+}
+
+function empowerReceipts(
+  rosterIds: readonly string[],
+  empower: EmpowerPresentationAccumulator,
+): FormatEmpowerVoteReceipt[] {
+  return rosterIds.flatMap((voterId) => {
+    const targetId = empower.initialVotes.get(voterId);
+    return targetId
+      ? [{
+          voterId,
+          targetId,
+          revoteTargetId: empower.revotes.get(voterId) ?? null,
+        }]
+      : [];
+  });
+}
+
+function empowerTallyMatchesReceipts(
+  counts: Readonly<Record<string, number>>,
+  votes: ReadonlyMap<string, string>,
+  eligiblePlayerIds: readonly string[],
+  method: EmpowerTallyDecision["payload"]["method"],
+): boolean {
+  if (!hasExactKeys(counts, eligiblePlayerIds)) return false;
+  if (method === "wheel") {
+    return votes.size === 0 && Object.values(counts).every((count) => count === 0);
+  }
+  if (votes.size !== eligiblePlayerIds.length) return false;
+
+  const eligible = new Set(eligiblePlayerIds);
+  const expected = Object.fromEntries(eligiblePlayerIds.map((id) => [id, 0]));
+  for (const [voterId, targetId] of votes) {
+    if (!eligible.has(voterId) || !eligible.has(targetId)) return false;
+    expected[targetId] = (expected[targetId] ?? 0) + 1;
+  }
+  return eligiblePlayerIds.every((id) => counts[id] === expected[id]);
+}
+
+function tiedSetMatchesTally(
+  tiedPlayerIds: readonly string[],
+  counts: Readonly<Record<string, number>>,
+): boolean {
+  const highest = Math.max(...Object.values(counts), 0);
+  const expected = Object.keys(counts).filter((id) => counts[id] === highest);
+  return highest > 0 && sameMembers(tiedPlayerIds, expected);
+}
+
+function resolvedEmpoweredMatchesTally(
+  decision: EmpowerTallyDecision,
+): boolean {
+  if (decision.payload.method === "wheel") {
+    return Object.values(decision.payload.counts).every((count) => count === 0);
+  }
+  const highest = Math.max(...Object.values(decision.payload.counts), 0);
+  const leaders = Object.keys(decision.payload.counts).filter(
+    (id) => decision.payload.counts[id] === highest,
+  );
+  return decision.payload.method === "plurality"
+    && leaders.length === 1
+    && leaders[0] === decision.payload.empowered;
+}
+
+function validEmpoweredSetWinner(
+  decision: Extract<ViewerDecisionEvent, { type: "vote.empowered_set" }>,
+  pending: EmpowerTallyDecision,
+  empower: EmpowerPresentationAccumulator,
+): boolean {
+  const tied = pending.payload.tied;
+  if (!tied?.includes(decision.payload.empowered)) return false;
+  if (decision.payload.method === "manual") return true;
+  if (decision.payload.method === "initial") return false;
+
+  const expectedRevoters = [...empower.initialVotes.keys()].filter(
+    (voterId) => !tied.includes(voterId),
+  );
+  if (!sameMembers([...empower.revotes.keys()], expectedRevoters)) return false;
+  if (!sameMembers([...empower.clearedVotes], expectedRevoters)) return false;
+  const revoteCounts = Object.fromEntries(tied.map((id) => [id, 0]));
+  for (const targetId of empower.revotes.values()) {
+    if (!(targetId in revoteCounts)) return false;
+    revoteCounts[targetId] = (revoteCounts[targetId] ?? 0) + 1;
+  }
+  const highest = Math.max(...Object.values(revoteCounts), 0);
+  const finalists = tied.filter((id) => revoteCounts[id] === highest);
+
+  return decision.payload.method === "revote"
+    ? finalists.length === 1 && finalists[0] === decision.payload.empowered
+    : finalists.includes(decision.payload.empowered);
 }
 
 function latestSnapshot(

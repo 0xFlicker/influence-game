@@ -439,9 +439,10 @@ export function buildMatchWatchModel({
     : deriveMatchWatchCounts(game);
   const visibleMessages = playbackState?.visibleMessages ?? messages;
   const selectedPlayer = resolveSelectedPlayer(modelPlayers, selectedPlayerId);
+  const gameKernel = getGamePresentationRouteDecision(game).route;
   const players = modelPlayers.map((player) => {
     const statusLabel = getPlayerStatusLabel(player.status);
-    const statusTags = buildPlayerStatusTags(player);
+    const statusTags = buildPlayerStatusTags(player, gameKernel);
     return {
       player,
       statusLabel,
@@ -468,7 +469,7 @@ export function buildMatchWatchModel({
     sourceLabel: getSourceLabel(game),
     phaseSegments: buildPhaseSegments(
       phase,
-      getGamePresentationRouteDecision(game).route,
+      gameKernel,
     ),
     latestPublicMessage: findLatestPublicMessage(visibleMessages),
   };
@@ -638,7 +639,10 @@ function getPlayerStatusLabel(status: PlayerState): string {
   }
 }
 
-function buildPlayerStatusTags(player: GamePlayer): MatchWatchPlayerStatusTag[] {
+function buildPlayerStatusTags(
+  player: GamePlayer,
+  gameKernel: GameKernel,
+): MatchWatchPlayerStatusTag[] {
   const tags: MatchWatchPlayerStatusTag[] = [];
 
   if (player.pressureStatus === "empowered") {
@@ -648,7 +652,10 @@ function buildPlayerStatusTags(player: GamePlayer): MatchWatchPlayerStatusTag[] 
       label: "Empowered",
       title: "Empowered by the vote",
     });
-  } else if (player.pressureStatus === "locked_at_risk") {
+  }
+  if (gameKernel === "format") return tags;
+
+  if (player.pressureStatus === "locked_at_risk") {
     const exposeLabel = buildExposeLabel(player.exposeScore);
     tags.push({
       kind: "locked_at_risk",

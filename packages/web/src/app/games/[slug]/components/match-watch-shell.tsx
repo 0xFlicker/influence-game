@@ -36,6 +36,7 @@ import {
   type MatchWatchPlayerCard,
   type MatchWatchPlayerStatusTag,
   type MatchWatchPlaybackState,
+  type PresentationHydrationState,
 } from "./match-watch-model";
 import type { WatchConnStatus } from "./types";
 
@@ -45,12 +46,14 @@ export function MatchWatchShell({
   replayFrames = [],
   live = false,
   connStatus,
+  presentationHydrationStatus,
 }: {
   game: GameDetail;
   messages: TranscriptEntry[];
   replayFrames?: GameWatchReplayFrame[];
   live?: boolean;
   connStatus?: WatchConnStatus;
+  presentationHydrationStatus?: PresentationHydrationState["status"];
 }) {
   const [selectedPlayerId, setSelectedPlayerId] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<MatchWatchPlaybackState | null>(null);
@@ -211,6 +214,7 @@ export function MatchWatchShell({
           replayFrames={replayFrames}
           live={live}
           connStatus={connStatus}
+          presentationHydrationStatus={presentationHydrationStatus}
           model={model}
           onPlaybackStateChange={handlePlaybackStateChange}
         />
@@ -537,6 +541,7 @@ function TheaterPanel({
   replayFrames,
   live,
   connStatus,
+  presentationHydrationStatus,
   model,
   onPlaybackStateChange,
 }: {
@@ -545,6 +550,7 @@ function TheaterPanel({
   replayFrames: GameWatchReplayFrame[];
   live: boolean;
   connStatus?: WatchConnStatus;
+  presentationHydrationStatus?: PresentationHydrationState["status"];
   model: MatchWatchModel;
   onPlaybackStateChange: (state: MatchWatchPlaybackState) => void;
 }) {
@@ -573,6 +579,7 @@ function TheaterPanel({
           replayFrames={replayFrames}
           live={live}
           connStatus={connStatus}
+          presentationHydrationStatus={presentationHydrationStatus}
           embedded
           onPlaybackStateChange={live ? undefined : onPlaybackStateChange}
         />

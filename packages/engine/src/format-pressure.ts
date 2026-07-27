@@ -1,14 +1,9 @@
-import { displayNameForFormat, type LaunchFormatId } from "./formats";
+import {
+  displayNameForFormat,
+  formatPresentationMetadata,
+  type LaunchFormatId,
+} from "./format-presentation-metadata";
 import type { UUID } from "./types";
-
-const RULE_SHEETS: Record<LaunchFormatId, string> = {
-  save_or_eliminate:
-    "Each player casts one sealed ballot: SAVE (+1 net) or ELIMINATE (−1 net) against someone else. Lowest net is eliminated. The empowered player breaks lowest-net ties.",
-  vote_bomb:
-    "Each living player casts one sealed vote for another living player. Zero votes is safe. Among players with at least one vote, fewest votes is eliminated. The empowered player breaks fewest-positive ties.",
-  safety_bounce:
-    "After mingle: one random starter is SAFE and points publicly. A SAFE player's pointer makes the target VULNERABLE; a VULNERABLE player's pointer makes the target SAFE until all are classified. Then a sealed vote among the vulnerable pool only — most votes out. Sole vulnerable auto-elims. Empowered breaks ties.",
-};
 
 export interface FormatPressureProjection {
   empoweredId: UUID;
@@ -29,7 +24,7 @@ export interface FormatPressureProjection {
 }
 
 export function ruleSheetForFormat(formatId: LaunchFormatId): string {
-  return RULE_SHEETS[formatId];
+  return formatPresentationMetadata(formatId).ruleSheet;
 }
 
 export function buildFormatPressureProjection(input: {

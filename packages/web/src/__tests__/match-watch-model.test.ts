@@ -717,6 +717,50 @@ describe("match watch model", () => {
     });
   });
 
+  it("suppresses classic pressure and shield tags only on the format route", () => {
+    const players: GameDetail["players"] = [
+      {
+        ...baseGame().players[0]!,
+        pressureStatus: "empowered",
+        shielded: true,
+      },
+      {
+        ...baseGame().players[1]!,
+        pressureStatus: "locked_at_risk",
+        exposeScore: 2,
+        shielded: true,
+      },
+    ];
+    const classic = buildMatchWatchModel({
+      game: { ...baseGame(), currentPhase: "VOTE", players },
+      messages: [],
+      live: true,
+      connStatus: "live",
+    });
+    const format = buildMatchWatchModel({
+      game: {
+        ...baseGame(),
+        gameKernel: "format",
+        gameKernelSource: "stored",
+        currentPhase: "VOTE",
+        players,
+      },
+      messages: [],
+      live: true,
+      connStatus: "live",
+    });
+
+    expect(classic.players.map((card) => card.statusTags.map((tag) => tag.label))).toEqual([
+      ["Empowered", "Shielded"],
+      ["Exposed x2", "Shielded"],
+    ]);
+    expect(format.players.map((card) => card.statusTags.map((tag) => tag.label))).toEqual([
+      ["Empowered"],
+      [],
+    ]);
+    expect(format.phaseSegments.some((segment) => segment.key === "COUNCIL")).toBe(false);
+  });
+
   it("does not render duplicate life-state tags when no pressure applies", () => {
     const model = buildMatchWatchModel({
       game: baseGame(),

@@ -25,11 +25,38 @@ function event<T extends ViewerDecisionEvent>(
 
 const decisions: ViewerDecisionEvent[] = [
   event({
+    sequence: 7,
+    phase: Phase.VOTE,
+    type: "vote.cast",
+    payload: {
+      voterId: "atlas",
+      empowerTarget: "lyra",
+    },
+  }),
+  event({
+    sequence: 8,
+    phase: Phase.VOTE,
+    type: "vote.cast",
+    payload: {
+      voterId: "lyra",
+      empowerTarget: "atlas",
+    },
+  }),
+  event({
+    sequence: 9,
+    phase: Phase.VOTE,
+    type: "vote.cast",
+    payload: {
+      voterId: "echo",
+      empowerTarget: "atlas",
+    },
+  }),
+  event({
     sequence: 10,
     phase: Phase.VOTE,
     type: "vote.empower_tally_resolved",
     payload: {
-      counts: { atlas: 2, lyra: 1 },
+      counts: { atlas: 2, lyra: 1, echo: 0 },
       empowered: "atlas",
       tied: null,
       method: "plurality",
@@ -147,12 +174,18 @@ describe("format presentation compiler", () => {
       "empowered_tally",
       "format_menu",
       "format_selected",
+      "format_selected",
       "format_aggregate",
       "format_roll_call",
       "format_roll_call",
       "format_roll_call",
       "format_elimination",
     ]);
+    expect(
+      result.cues
+        .filter((cue) => cue.kind === "format_selected")
+        .map((cue) => cue.stage),
+    ).toEqual(["choice_legible", "rules_reveal"]);
     expect(
       result.cues
         .filter((cue) => cue.kind === "format_roll_call")
@@ -225,7 +258,7 @@ describe("format presentation compiler", () => {
       gameKernel: "format",
       roster,
       decisions: [
-        decisions[1]!,
+        decisions[4]!,
         event({
           sequence: 13,
           phase: Phase.FORMAT_PICK,
@@ -258,7 +291,7 @@ describe("format presentation compiler", () => {
       gameKernel: "format",
       roster,
       decisions: [
-        decisions[0]!,
+        ...decisions.slice(0, 4),
         event({
           sequence: 12,
           phase: Phase.FORMAT_MENU,
@@ -274,6 +307,132 @@ describe("format presentation compiler", () => {
     expect(result.status).toBe("incomplete");
     expect(result.diagnostic?.code).toBe("empowered_mismatch");
     expect(result.snapshot.empoweredId).toBe("atlas");
+  });
+
+  it("waits for the canonical revote winner instead of trusting the tie placeholder", () => {
+    const tieRoster = [...roster, { id: "rex", name: "Rex" }];
+    const tiedDecisions: ViewerDecisionEvent[] = [
+      event({
+        sequence: 1,
+        phase: Phase.VOTE,
+        type: "vote.cast",
+        payload: { voterId: "atlas", empowerTarget: "lyra" },
+      }),
+      event({
+        sequence: 2,
+        phase: Phase.VOTE,
+        type: "vote.cast",
+        payload: { voterId: "lyra", empowerTarget: "atlas" },
+      }),
+      event({
+        sequence: 3,
+        phase: Phase.VOTE,
+        type: "vote.cast",
+        payload: { voterId: "echo", empowerTarget: "atlas" },
+      }),
+      event({
+        sequence: 4,
+        phase: Phase.VOTE,
+        type: "vote.cast",
+        payload: { voterId: "rex", empowerTarget: "lyra" },
+      }),
+      event({
+        sequence: 5,
+        phase: Phase.VOTE,
+        type: "vote.empower_tally_resolved",
+        payload: {
+          counts: { atlas: 2, lyra: 2, echo: 0, rex: 0 },
+          empowered: "atlas",
+          tied: ["atlas", "lyra"],
+          method: "tie_pending",
+          cumulativeEmpowerVotes: { atlas: 2, lyra: 2, echo: 0, rex: 0 },
+        },
+      }),
+      event({
+        sequence: 6,
+        phase: Phase.VOTE,
+        type: "vote.empower_vote_cleared",
+        payload: { voterId: "echo" },
+      }),
+      event({
+        sequence: 7,
+        phase: Phase.VOTE,
+        type: "vote.empower_vote_cleared",
+        payload: { voterId: "rex" },
+      }),
+      event({
+        sequence: 8,
+        phase: Phase.VOTE,
+        type: "vote.empower_revote_cast",
+        payload: { voterId: "echo", target: "lyra" },
+      }),
+      event({
+        sequence: 9,
+        phase: Phase.VOTE,
+        type: "vote.empower_revote_cast",
+        payload: { voterId: "rex", target: "lyra" },
+      }),
+      event({
+        sequence: 10,
+        phase: Phase.VOTE,
+        type: "vote.empowered_set",
+        payload: { empowered: "lyra", method: "revote" },
+      }),
+      event({
+        sequence: 11,
+        phase: Phase.FORMAT_MENU,
+        type: "format.menu_offered",
+        payload: {
+          empoweredId: "lyra",
+          offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+        },
+      }),
+    ];
+
+    const pending = compileFormatPresentationPrefix({
+      gameId: "game-1",
+      gameKernel: "format",
+      roster: tieRoster,
+      decisions: tiedDecisions.slice(0, 5),
+    });
+    const resolved = compileFormatPresentationPrefix({
+      gameId: "game-1",
+      gameKernel: "format",
+      roster: tieRoster,
+      decisions: tiedDecisions,
+    });
+
+    expect(pending.status).toBe("ready");
+    expect(pending.cues).toHaveLength(0);
+    expect(pending.snapshot.empoweredId).toBeNull();
+    expect(resolved.status).toBe("ready");
+    expect(resolved.cues[0]).toMatchObject({
+      kind: "empowered_tally",
+      canonicalSequence: 10,
+      empoweredId: "lyra",
+      receipts: [
+        { voterId: "atlas", targetId: "lyra", revoteTargetId: null },
+        { voterId: "lyra", targetId: "atlas", revoteTargetId: null },
+        { voterId: "echo", targetId: "atlas", revoteTargetId: "lyra" },
+        { voterId: "rex", targetId: "lyra", revoteTargetId: "lyra" },
+      ],
+    });
+    expect(resolved.cues[1]).toMatchObject({
+      kind: "format_menu",
+      empoweredId: "lyra",
+    });
+
+    const missingWinner = compileFormatPresentationPrefix({
+      gameId: "game-1",
+      gameKernel: "format",
+      roster: tieRoster,
+      decisions: [
+        ...tiedDecisions.slice(0, 5),
+        tiedDecisions.at(-1)!,
+      ],
+    });
+    expect(missingWinner.status).toBe("incomplete");
+    expect(missingWinner.diagnostic?.code).toBe("empowered_mismatch");
   });
 
   it("rejects aggregates with incomplete roster key sets", () => {

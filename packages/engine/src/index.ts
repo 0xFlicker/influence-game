@@ -159,10 +159,14 @@ export type {
 export { buildPostgameAnalysisProjection } from "./postgame-analysis";
 export type {
   BuildPostgameAnalysisOptions,
+  PostgameAllianceOutcomeSummary,
+  PostgameAllianceSummary,
+  PostgameAllianceSummaryEntry,
   PostgameAnalysisDetailLevel,
   PostgameAnalysisDiagnostic,
   PostgameAnalysisEvidenceRef,
   PostgameAnalysisProjection,
+  PostgameBootOrderEntry,
   PostgameDerivedText,
   PostgameDerivedVoteCohort,
   PostgameDerivationConfidence,
@@ -177,6 +181,7 @@ export type {
   PostgamePlayerShape,
   PostgamePlayerShapeValue,
   PostgamePlayerVoteByRound,
+  PostgameRoundAllianceActivity,
   PostgameRoundSummary,
   PostgameTurningPoint,
   PostgameTurningPointType,
@@ -356,6 +361,11 @@ export { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse
 export type { RecallPlanReceiptAggregateSnapshot } from "./prompt-reuse";
 export type { LaunchFormatId } from "./formats";
 export { LAUNCH_FORMAT_IDS, isLaunchFormatId, displayNameForFormat } from "./formats";
+export {
+  FORMAT_PRESENTATION_METADATA,
+  formatPresentationMetadata,
+} from "./format-presentation-metadata";
+export type { LaunchFormatPresentationMetadata } from "./format-presentation-metadata";
 export {
   buildMingleInboxReplayFromTranscript,
   hydrateMingleInboxFromReplay,

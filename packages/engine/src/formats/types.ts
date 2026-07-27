@@ -1,27 +1,17 @@
 import type { UUID } from "../types";
+import {
+  LAUNCH_FORMAT_DISPLAY_NAMES,
+  LAUNCH_FORMAT_IDS,
+  displayNameForFormat,
+} from "../format-presentation-metadata";
 
 /** Launch-set round formats for the sequester format kernel. */
-export type LaunchFormatId = "save_or_eliminate" | "vote_bomb" | "safety_bounce";
-
-export const LAUNCH_FORMAT_IDS: readonly LaunchFormatId[] = [
-  "save_or_eliminate",
-  "vote_bomb",
-  "safety_bounce",
-] as const;
-
-/** Player/operator-facing names. Tools still use LaunchFormatId snake_case ids. */
-export const LAUNCH_FORMAT_DISPLAY_NAMES: Record<LaunchFormatId, string> = {
-  save_or_eliminate: "Save-or-Eliminate",
-  vote_bomb: "Vote Bomb",
-  safety_bounce: "Safety Bounce",
+export type { LaunchFormatId } from "../format-presentation-metadata";
+export {
+  LAUNCH_FORMAT_DISPLAY_NAMES,
+  LAUNCH_FORMAT_IDS,
+  displayNameForFormat,
 };
-
-export function displayNameForFormat(formatId: string): string {
-  if (formatId === "save_or_eliminate" || formatId === "vote_bomb" || formatId === "safety_bounce") {
-    return LAUNCH_FORMAT_DISPLAY_NAMES[formatId];
-  }
-  return formatId;
-}
 
 export type SaveOrEliminatePolarity = "save" | "eliminate";
 
