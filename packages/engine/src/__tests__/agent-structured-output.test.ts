@@ -1106,7 +1106,7 @@ describe("InfluenceAgent structured output mode", () => {
       "Atlas",
       "strategic",
       makeResponsesOpenAIStub(requests, outputText, "OpenAI summary: Atlas weighed vote pressure against coalition risk."),
-      "gpt-5-nano",
+      "gpt-5.6-luna",
       undefined,
       undefined,
       {
@@ -1137,6 +1137,8 @@ describe("InfluenceAgent structured output mode", () => {
         summary: "auto",
       },
       store: false,
+      prompt_cache_key: expect.stringMatching(/^influence:[a-f0-9]{24}$/),
+      prompt_cache_options: { ttl: "30m" },
       text: {
         format: {
           type: "json_schema",
@@ -1145,6 +1147,7 @@ describe("InfluenceAgent structured output mode", () => {
         },
       },
     });
+    expect(requests[0]).not.toHaveProperty("prompt_cache_retention");
     expect(traces).toHaveLength(1);
     expect(traces[0]!.providerReasoningSummary).toEqual({
       provider: "openai_responses",
@@ -1203,6 +1206,11 @@ describe("InfluenceAgent structured output mode", () => {
         },
       },
     });
+    expect(requests[0]).toMatchObject({
+      prompt_cache_key: expect.stringMatching(/^influence:[a-f0-9]{24}$/),
+    });
+    expect(requests[0]).not.toHaveProperty("prompt_cache_retention");
+    expect(requests[0]).not.toHaveProperty("prompt_cache_options");
     expect(traces[0]!.providerReasoningSummary?.mode).toBe("concise");
     expect(traces[0]!.providerReasoningSummary?.text).toBe("OpenAI summary: Atlas chose a friendly but observant introduction.");
     expect(traces[0]!.reasoningContext).toBeUndefined();

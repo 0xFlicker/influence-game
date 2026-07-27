@@ -296,7 +296,7 @@ Agent prompts no longer carry unbounded full public transcripts or complete hist
 |---|---|---|
 | **Protected** | Board Contract, Strategy Thread, authorized compact huddle outcomes, current receipts | Reserved first; never displaced by history |
 | **Hot** | Active-room Mingle messages for this turn | After protected |
-| **History** | Ranked public + actor-owned Mingle archive | Only strategic classes; remaining budget after protected+hot, capped by class history ceiling |
+| **History** | Ranked public + actor-owned Mingle archive | Only strategic classes; remaining budget after protected+hot, capped by class history ceiling. If protected context overflows, strategic classes retain a 1,200/1,600-character reserve (decision/reflection); ordinary speech remains zero. |
 
 Historical eligibility is fail-closed on modern identity: Mingle rows need `speakerPlayerId` and `audiencePlayerIds`; speaker or audience must match the actor. Display-name-only legacy rows do not become private recall during replay. Official huddle outcomes enter the protected lane only when `participantPlayerIds` (copied at outcome creation, or recovered from matching completed-session `speakerIds` on hydrate) authorize the actor. Participant snapshots never leave server-private surfaces (member-safe projections omit them).
 
@@ -318,7 +318,9 @@ bun test packages/engine/src/__tests__/context-recall-evaluation.test.ts
 bun test packages/engine/src/__tests__/context-recall-plan.test.ts
 ```
 
-Those tests compare legacy vs candidate token estimates with `estimateTokensFromChars` (`ceil(chars/4)`), assert equal model-call count, full protected coverage, and zero unauthorized history selections. Live `game-N-recall-plan.json` from a chatty run is a structural receipt for inspection, not a substitute for that deterministic gate.
+Those tests compare legacy vs candidate token estimates with `estimateTokensFromChars` (`ceil(chars/4)`), assert equal model-call count, full protected coverage, zero unauthorized history selections, and that a relevant authorized strategic memory survives protected overflow. Live `game-N-recall-plan.json` from a chatty run is a structural receipt for inspection, not a substitute for that deterministic gate.
+
+Responses calls also provide a stable, hashed game-and-actor cache key. GPT-5.6+ requests use the current 30-minute cache policy; older models retain their provider default rather than forcing extended retention. Treat provider cache metrics as an optimization signal after this deterministic gate: inspect reusable-prefix and cached-token rates, but never use cache hits as evidence that recall was selected or authorized.
 
 Prompt-class call sites: ordinary Lobby/Mingle/huddle/endgame speech → `ordinary_speech`; votes, powers, councils, format choices, and other non-speech strategy decisions → `strategic_decision`; DiaryRoom Strategy Reflection → `strategic_reflection`. Decision logs advance the next eligible strategic evidence version only; they never call the model or mutate the Strategy Thread outside reflection.
 
