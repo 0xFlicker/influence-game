@@ -243,6 +243,79 @@ describe("completed results model", () => {
     expect(model.voteMatrix.rows.find((row) => row.player.id === "alice")?.cells[0]?.targetName).toBe("Bob");
   });
 
+  it("adds format ballots with Save-or-Eliminate polarity without changing classic columns", () => {
+    const fixture = resultsFixture();
+    const round = fixture.rounds[0]!;
+    const formatResults = {
+      ...fixture,
+      rounds: [{
+        ...round,
+        formatRecap: {
+          status: "available" as const,
+          offeredFormatIds: ["save_or_eliminate", "vote_bomb"] as const,
+          selectedFormatId: "save_or_eliminate" as const,
+          resolutionKind: "clear" as const,
+          eliminated: player("dax", "Dax"),
+          tied: [],
+          tiebreaker: null,
+          scoring: {
+            kind: "save_or_eliminate" as const,
+            rows: [
+              { player: player("alice", "Alice"), savesReceived: 0, eliminateReceived: 0, net: 0 },
+              { player: player("bob", "Bob"), savesReceived: 1, eliminateReceived: 0, net: 1 },
+              { player: player("cara", "Cara"), savesReceived: 0, eliminateReceived: 0, net: 0 },
+              { player: player("dax", "Dax"), savesReceived: 0, eliminateReceived: 2, net: -2 },
+            ],
+          },
+          ballotPresentation: {
+            status: "revealed" as const,
+            rollCall: [
+              { voter: player("alice", "Alice"), target: player("dax", "Dax"), polarity: "eliminate" as const },
+              { voter: player("bob", "Bob"), target: player("dax", "Dax"), polarity: "eliminate" as const },
+              { voter: player("cara", "Cara"), target: player("bob", "Bob"), polarity: "save" as const },
+              { voter: player("dax", "Dax"), target: player("bob", "Bob"), polarity: "save" as const },
+            ],
+          },
+          safetyBounce: null,
+        },
+      }],
+    } satisfies CompletedGameResultsRead;
+
+    const model = buildCompletedResultsReviewModel(formatResults);
+
+    expect(model.voteMatrix.columns.map((column) => column.kind)).toEqual([
+      "empower",
+      "expose",
+      "council",
+      "format",
+      "jury",
+    ]);
+    const alice = model.voteMatrix.rows.find((row) => row.player.id === "alice");
+    const cara = model.voteMatrix.rows.find((row) => row.player.id === "cara");
+    expect(alice?.cells[3]).toMatchObject({ targetName: "Eliminate Dax" });
+    expect(cara?.cells[3]).toMatchObject({ targetName: "Save Bob" });
+    expect(model.agentCards.find((card) => card.player.id === "alice")?.votesCast).toBe(4);
+    expect(model.formatRecaps[0]).toMatchObject({
+      round: 1,
+      selectedFormat: "Save-or-Eliminate",
+      scoring: {
+        columns: ["Agent", "Saves", "Eliminates", "Net"],
+        rows: [
+          { playerName: "Alice", values: ["0", "0", "0"] },
+          { playerName: "Bob", values: ["1", "0", "+1"] },
+          { playerName: "Cara", values: ["0", "0", "0"] },
+          { playerName: "Dax", values: ["0", "2", "-2"] },
+        ],
+      },
+      ledger: [
+        { voterName: "Alice", targetName: "Dax", polarity: "Eliminate" },
+        { voterName: "Bob", targetName: "Dax", polarity: "Eliminate" },
+        { voterName: "Cara", targetName: "Bob", polarity: "Save" },
+        { voterName: "Dax", targetName: "Bob", polarity: "Save" },
+      ],
+    });
+  });
+
   it("builds overview, timeline, vote matrix, and agent cards", () => {
     const model = buildCompletedResultsReviewModel(resultsFixture());
 

@@ -69,10 +69,12 @@ export async function getCompletedGameResults(
   const projection = getPersistedGameProjection(persistedEvents);
   const playerNames = playerNameMap(players);
   const events = persistedEvents.events.map((event) => event.envelope);
+  const kernel = resolveGameKernel({ stored: game.gameKernel, events });
   const results = buildCompletedGameResults({
     events,
     eventLogStatus: persistedEvents.status,
     projectionStatus: projection.status,
+    gameKernel: kernel.kernel,
     terminalResult: terminalResult
       ? {
           winnerId: terminalResult.winnerId,
@@ -89,8 +91,6 @@ export async function getCompletedGameResults(
       error: "Completed results are not available for this game.",
     };
   }
-
-  const kernel = resolveGameKernel({ stored: game.gameKernel, events });
 
   return {
     ok: true,

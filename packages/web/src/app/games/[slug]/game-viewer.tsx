@@ -69,6 +69,11 @@ import { SpectacleMessageSpotlight } from "./components/spectacle-viewer";
 import { MatchWatchShell } from "./components/match-watch-shell";
 import { CompletedGameEntry } from "./components/completed-game-entry";
 import { CompletedResultsReview } from "./components/completed-results-review";
+import { FormatTerminalSnapshot } from "./components/format-terminal-snapshot";
+import {
+  formatPresentationDecisionsFromFrames,
+  formatPresentationEligibilityFromFrames,
+} from "./components/format-presentation-model";
 
 export function GameViewer({
   gameId,
@@ -901,6 +906,25 @@ export function GameViewer({
             {health.durableEventCount} durable events · {health.checkpointCount} checkpoints · {health.evidenceManifestCount} evidence manifests
           </p>
         )}
+        {gamePresentation.route === "format" ? (
+          <FormatTerminalSnapshot
+            gameId={game.id}
+            roster={game.players.map((player) => ({
+              id: player.id,
+              name: player.name,
+            }))}
+            decisions={formatPresentationDecisionsFromFrames(replayFrames)}
+            eligiblePlayerIdsByRound={formatPresentationEligibilityFromFrames(replayFrames)}
+            loading={
+              replayFrames.length === 0
+              && (
+                presentationHydration.status === "idle"
+                || presentationHydration.status === "loading"
+                || presentationHydration.status === "reconnecting"
+              )
+            }
+          />
+        ) : null}
         <button
           onClick={() => router.push("/games")}
           className="mt-2 text-sm px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 transition-colors"
@@ -921,6 +945,25 @@ export function GameViewer({
         <p className="text-white/50 text-sm max-w-md">
           This game did not finish cleanly, so replay and completed results are not available.
         </p>
+        {gamePresentation.route === "format" ? (
+          <FormatTerminalSnapshot
+            gameId={game.id}
+            roster={game.players.map((player) => ({
+              id: player.id,
+              name: player.name,
+            }))}
+            decisions={formatPresentationDecisionsFromFrames(replayFrames)}
+            eligiblePlayerIdsByRound={formatPresentationEligibilityFromFrames(replayFrames)}
+            loading={
+              replayFrames.length === 0
+              && (
+                presentationHydration.status === "idle"
+                || presentationHydration.status === "loading"
+                || presentationHydration.status === "reconnecting"
+              )
+            }
+          />
+        ) : null}
         <button
           onClick={() => router.push("/games")}
           className="mt-2 text-sm px-4 py-2 rounded-lg bg-white/10 hover:bg-white/15 text-white/70 transition-colors"

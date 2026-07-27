@@ -2,10 +2,16 @@ import type { CanonicalGameEvent } from "./canonical-events";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import {
   buildRevealedRoundFacts,
+  type RevealedFormatBallotPresentation,
   type RevealedFactsDiagnosticSeverity,
   type RevealedPlayerRef,
   type RevealedRoundFactsRead,
 } from "./revealed-round-facts";
+import type { LaunchFormatId } from "./formats";
+import {
+  resolveGameKernel,
+  type GameKernel,
+} from "./game-kernel";
 import type { EndgameStage, UUID } from "./types";
 
 export type CompletedGameResultsSource =
@@ -82,10 +88,71 @@ export interface CompletedGameResultsVotePattern {
   groupKey: string;
 }
 
+export interface CompletedGameResultsSaveOrEliminateScore {
+  player: RevealedPlayerRef;
+  savesReceived: number;
+  eliminateReceived: number;
+  net: number;
+}
+
+export interface CompletedGameResultsVoteBombScore {
+  player: RevealedPlayerRef;
+  votes: number;
+  zeroSafe: boolean;
+}
+
+export interface CompletedGameResultsSafetyBounceScore {
+  player: RevealedPlayerRef;
+  votes: number;
+}
+
+export type CompletedGameResultsFormatScoring =
+  | {
+      kind: "save_or_eliminate";
+      rows: CompletedGameResultsSaveOrEliminateScore[];
+    }
+  | {
+      kind: "vote_bomb";
+      rows: CompletedGameResultsVoteBombScore[];
+    }
+  | {
+      kind: "safety_bounce";
+      rows: CompletedGameResultsSafetyBounceScore[];
+    };
+
+export interface CompletedGameResultsSafetyBounceRecap {
+  starter: RevealedPlayerRef | null;
+  pointers: Array<{
+    actor: RevealedPlayerRef;
+    target: RevealedPlayerRef;
+    classification: "safe" | "vulnerable";
+  }>;
+  safe: RevealedPlayerRef[];
+  vulnerable: RevealedPlayerRef[];
+}
+
+export interface CompletedGameResultsFormatRecap {
+  status: "available" | "incomplete";
+  offeredFormatIds: [LaunchFormatId, LaunchFormatId] | null;
+  selectedFormatId: LaunchFormatId | null;
+  resolutionKind: "clear" | "auto" | null;
+  eliminated: RevealedPlayerRef | null;
+  tied: RevealedPlayerRef[];
+  tiebreaker: RevealedPlayerRef | null;
+  scoring: CompletedGameResultsFormatScoring | null;
+  ballotPresentation: RevealedFormatBallotPresentation;
+  safetyBounce: CompletedGameResultsSafetyBounceRecap | null;
+}
+
 export interface CompletedGameResultsRound {
   round: number;
   canonicalFacts: RevealedRoundFactsRead;
   endgameEliminations: CompletedGameResultsEndgameElimination[];
+  /**
+   * Canonical per-round format evidence. Absent from older cached reads and
+   * classic/endgame-only rounds.
+   */
+  formatRecap?: CompletedGameResultsFormatRecap | null;
 }
 
 export interface CompletedGameResultsRead {
@@ -118,6 +185,8 @@ export interface BuildCompletedGameResultsOptions {
   eventLogStatus?: string;
   projectionStatus?: string;
   terminalResult?: CompletedGameResultsTerminalFallback | null;
+  /** Stored-first kernel authority supplied by callers that have the game row. */
+  gameKernel?: GameKernel;
 }
 
 type EventOf<TType extends CanonicalGameEvent["type"]> = Extract<CanonicalGameEvent, { type: TType }>;
@@ -159,7 +228,16 @@ export function buildCompletedGameResults(
   const roundsPlayed = Math.max(options.terminalResult?.roundsPlayed ?? 0, latestRound(options.events));
   const finalists = finalistsFor(projection, winnerEvent);
   const eliminationOrder = buildEliminationOrder(options.events, projection, winnerEvent);
-  const rounds = buildRounds(options.events, eventLogStatus, projectionStatus, projection);
+  const gameKernel =
+    options.gameKernel
+    ?? resolveGameKernel({ events: options.events }).kernel;
+  const rounds = buildRounds(
+    options.events,
+    eventLogStatus,
+    projectionStatus,
+    projection,
+    gameKernel,
+  );
   const winner = refOrNull(projection, winnerId);
   const jury = buildJury(options.events, projection, winnerEvent, finalists);
   const players = buildPlayers(projection, winnerId, finalists, eliminationOrder);
@@ -240,20 +318,167 @@ function buildRounds(
   eventLogStatus: string,
   projectionStatus: string,
   projection: CanonicalGameProjection,
+  gameKernel: GameKernel,
 ): CompletedGameResultsRound[] {
   const roundNumbers = [...new Set(events.map((event) => event.round).filter((round) => round > 0))]
     .sort((left, right) => left - right);
   const endgameByRound = groupEndgameEliminations(events, projection);
-  return roundNumbers.map((round) => ({
-    round,
-    canonicalFacts: buildRevealedRoundFacts({
+  return roundNumbers.map((round) => {
+    const canonicalFacts = buildRevealedRoundFacts({
       events,
       round,
       eventLogStatus,
       projectionStatus,
-    }),
-    endgameEliminations: endgameByRound.get(round) ?? [],
-  }));
+      kernel: gameKernel,
+    });
+    const formatRecap = gameKernel === "format"
+      ? buildFormatRecap(canonicalFacts, projection)
+      : null;
+    return {
+      round,
+      canonicalFacts,
+      endgameEliminations: endgameByRound.get(round) ?? [],
+      ...(formatRecap ? { formatRecap } : {}),
+    };
+  });
+}
+
+function buildFormatRecap(
+  canonicalFacts: RevealedRoundFactsRead,
+  projection: CanonicalGameProjection,
+): CompletedGameResultsFormatRecap | null {
+  const format = canonicalFacts.roundFacts.format;
+  if (format.status !== "available") return null;
+
+  const resolutionTrusted =
+    format.ballotPresentation.status === "revealed"
+    || format.ballotPresentation.status === "not_applicable";
+  const scoring = resolutionTrusted
+    ? buildFormatScoring(format, projection)
+    : null;
+  const hasCompleteResolution =
+    format.selectedFormatId !== null
+    && format.eliminated !== null
+    && scoring !== null
+    && resolutionTrusted;
+
+  return {
+    status: hasCompleteResolution ? "available" : "incomplete",
+    offeredFormatIds: format.offeredFormatIds
+      ? [format.offeredFormatIds[0], format.offeredFormatIds[1]]
+      : null,
+    selectedFormatId: format.selectedFormatId,
+    resolutionKind: resolutionTrusted ? format.resolutionKind : null,
+    eliminated: resolutionTrusted ? format.eliminated : null,
+    tied: resolutionTrusted ? [...format.tied] : [],
+    tiebreaker: resolutionTrusted ? format.tiebreaker : null,
+    scoring,
+    ballotPresentation: {
+      status: format.ballotPresentation.status,
+      rollCall: format.ballotPresentation.rollCall.map((entry) => ({
+        voter: { ...entry.voter },
+        target: { ...entry.target },
+        polarity: entry.polarity,
+      })),
+    },
+    safetyBounce: format.safetyBounce
+      ? {
+          starter: format.safetyBounce.starter
+            ? { ...format.safetyBounce.starter }
+            : null,
+          pointers: format.safetyBounce.pointers.map((pointer) => ({
+            actor: { ...pointer.actor },
+            target: { ...pointer.target },
+            classification: pointer.classification,
+          })),
+          safe: format.safetyBounce.safe.map((player) => ({ ...player })),
+          vulnerable: format.safetyBounce.vulnerable.map((player) => ({
+            ...player,
+          })),
+        }
+      : null,
+  };
+}
+
+function buildFormatScoring(
+  format: RevealedRoundFactsRead["roundFacts"]["format"],
+  projection: CanonicalGameProjection,
+): CompletedGameResultsFormatScoring | null {
+  if (format.selectedFormatId === "save_or_eliminate" && format.saveOrEliminate) {
+    const netsByPlayer = voteCountMap(format.saveOrEliminate.nets);
+    const savesByPlayer = voteCountMap(format.saveOrEliminate.savesReceived);
+    const eliminatesByPlayer = voteCountMap(
+      format.saveOrEliminate.eliminateReceived,
+    );
+    if (
+      !sameMapKeys(netsByPlayer, savesByPlayer)
+      || !sameMapKeys(netsByPlayer, eliminatesByPlayer)
+    ) {
+      return null;
+    }
+    return {
+      kind: "save_or_eliminate",
+      rows: projection.playerOrder.flatMap((playerId) => {
+        const net = netsByPlayer.get(playerId);
+        const savesReceived = savesByPlayer.get(playerId);
+        const eliminateReceived = eliminatesByPlayer.get(playerId);
+        return net === undefined
+          || savesReceived === undefined
+          || eliminateReceived === undefined
+          ? []
+          : [{
+              player: playerRef(projection, playerId),
+              savesReceived,
+              eliminateReceived,
+              net,
+            }];
+      }),
+    };
+  }
+  if (format.selectedFormatId === "vote_bomb" && format.voteBomb) {
+    const zeroSafeIds = new Set(format.voteBomb.zeroSafe.map((player) => player.id));
+    const totalsByPlayer = voteCountMap(format.voteBomb.totals);
+    return {
+      kind: "vote_bomb",
+      rows: projection.playerOrder.flatMap((playerId) => {
+        const votes = totalsByPlayer.get(playerId);
+        return votes === undefined
+          ? []
+          : [{
+              player: playerRef(projection, playerId),
+              votes,
+              zeroSafe: zeroSafeIds.has(playerId),
+            }];
+      }),
+    };
+  }
+  if (format.selectedFormatId === "safety_bounce" && format.safetyBounce) {
+    const totalsByPlayer = voteCountMap(format.safetyBounce.voteTotals);
+    return {
+      kind: "safety_bounce",
+      rows: projection.playerOrder.flatMap((playerId) => {
+        const votes = totalsByPlayer.get(playerId);
+        return votes === undefined
+          ? []
+          : [{ player: playerRef(projection, playerId), votes }];
+      }),
+    };
+  }
+  return null;
+}
+
+function voteCountMap(
+  counts: readonly { player: RevealedPlayerRef; votes: number }[],
+): ReadonlyMap<UUID, number> {
+  return new Map(counts.map((entry) => [entry.player.id, entry.votes]));
+}
+
+function sameMapKeys(
+  left: ReadonlyMap<UUID, number>,
+  right: ReadonlyMap<UUID, number>,
+): boolean {
+  return left.size === right.size
+    && [...left.keys()].every((key) => right.has(key));
 }
 
 function buildEliminationOrder(
@@ -403,6 +628,14 @@ function buildVotePatterns(
     }
     if (event.type === "jury.vote_cast") {
       signatures.get(event.payload.jurorId)?.push(`r${event.round}:jury=${event.payload.finalistId}`);
+    }
+    if (event.type === "format.ballot_cast") {
+      const polarity = event.payload.polarity
+        ? `${event.payload.polarity}:`
+        : "";
+      signatures.get(event.payload.voterId)?.push(
+        `r${event.round}:format=${event.payload.formatId}:${polarity}${event.payload.targetId}`,
+      );
     }
   }
 

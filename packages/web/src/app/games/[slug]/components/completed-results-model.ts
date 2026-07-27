@@ -1,8 +1,10 @@
 import type {
+  CompletedGameResultsFormatRecap,
   CompletedGameResultsPlayer,
   CompletedGameResultsPlayerRef,
   CompletedGameResultsRead,
 } from "@/lib/api";
+import { displayNameForFormat } from "@influence/engine/format-presentation-metadata";
 
 export interface CompletedResultsOverview {
   headline: string;
@@ -28,7 +30,7 @@ export interface CompletedResultsVoteColumn {
   label: string;
   shortLabel: string;
   round: number;
-  kind: "empower" | "expose" | "council" | "endgame" | "jury";
+  kind: "empower" | "expose" | "format" | "council" | "endgame" | "jury";
 }
 
 export interface CompletedResultsVoteCell {
@@ -54,11 +56,37 @@ export interface CompletedResultsAgentCardModel {
 export interface CompletedResultsReviewModel {
   overview: CompletedResultsOverview;
   timeline: CompletedResultsTimelineItem[];
+  formatRecaps: CompletedResultsFormatRecapModel[];
   voteMatrix: {
     columns: CompletedResultsVoteColumn[];
     rows: CompletedResultsVoteRow[];
   };
   agentCards: CompletedResultsAgentCardModel[];
+}
+
+export interface CompletedResultsFormatRecapModel {
+  round: number;
+  status: "available" | "incomplete";
+  offeredFormats: string[];
+  selectedFormat: string | null;
+  resolution: string | null;
+  eliminatedName: string | null;
+  scoring: {
+    columns: string[];
+    rows: Array<{ playerName: string; values: string[] }>;
+  } | null;
+  ledgerStatus: CompletedGameResultsFormatRecap["ballotPresentation"]["status"];
+  ledger: Array<{
+    voterName: string;
+    targetName: string;
+    polarity: "Save" | "Eliminate" | null;
+  }>;
+  safetyBounce: {
+    starterName: string | null;
+    pointerChain: string[];
+    safeNames: string[];
+    vulnerableNames: string[];
+  } | null;
 }
 
 const COLOR_CLASSES = [
@@ -111,6 +139,10 @@ export function buildCompletedResultsReviewModel(
       source: labelFromToken(entry.source),
       method: entry.method ? labelFromToken(entry.method) : "Unknown",
     })),
+    formatRecaps: results.rounds.flatMap((round) => {
+      const recap = round.formatRecap;
+      return recap ? [buildFormatRecapModel(round.round, recap)] : [];
+    }),
     voteMatrix: { columns, rows },
     agentCards: buildAgentCards(results, rows),
   };
@@ -128,6 +160,22 @@ function buildVoteColumns(results: CompletedGameResultsRead): CompletedResultsVo
     }
     if ((facts.council?.ledger.length ?? 0) > 0) {
       columns.push({ id: `r${round.round}:council`, label: `Round ${round.round} council`, shortLabel: `R${round.round} C`, round: round.round, kind: "council" });
+    }
+    const formatRecap = round.formatRecap;
+    if (
+      formatRecap?.ballotPresentation.status === "revealed"
+      && formatRecap.ballotPresentation.rollCall.length > 0
+    ) {
+      const formatName = formatRecap.selectedFormatId
+        ? displayNameForFormat(formatRecap.selectedFormatId)
+        : "format";
+      columns.push({
+        id: formatColumnId(round.round, formatRecap.selectedFormatId),
+        label: `Round ${round.round} ${formatName}`,
+        shortLabel: `R${round.round} F`,
+        round: round.round,
+        kind: "format",
+      });
     }
     round.endgameEliminations.forEach((entry, index) => {
       if (entry.ledger.length > 0) {
@@ -170,6 +218,26 @@ function buildCellLookup(results: CompletedGameResultsRead): Map<string, Omit<Co
     for (const entry of facts.council?.ledger ?? []) {
       setCell(cells, `r${round.round}:council`, entry.voter, entry.target);
     }
+    const formatRecap = round.formatRecap;
+    if (formatRecap?.ballotPresentation.status === "revealed") {
+      const columnId = formatColumnId(
+        round.round,
+        formatRecap.selectedFormatId,
+      );
+      for (const entry of formatRecap.ballotPresentation.rollCall) {
+        const polarity = entry.polarity
+          ? labelFromToken(entry.polarity)
+          : null;
+        setCell(
+          cells,
+          columnId,
+          entry.voter,
+          entry.target,
+          polarity ? `${polarity} ${entry.target.name}` : entry.target.name,
+          `${columnId}:${entry.polarity ?? "vote"}:${entry.target.id}`,
+        );
+      }
+    }
     round.endgameEliminations.forEach((elimination, index) => {
       const voteColumnId = endgameColumnId(round.round, elimination.stage, index, "vote");
       for (const entry of elimination.ledger) {
@@ -191,16 +259,25 @@ function endgameColumnId(round: number, stage: string | null, index: number, led
   return `r${round}:endgame:${stage ?? "stage"}:${index}:${ledger}`;
 }
 
+function formatColumnId(
+  round: number,
+  formatId: string | null,
+): string {
+  return `r${round}:format:${formatId ?? "unknown"}`;
+}
+
 function setCell(
   cells: Map<string, Omit<CompletedResultsVoteCell, "colorClass">>,
   columnId: string,
   voter: CompletedGameResultsPlayerRef,
   target: CompletedGameResultsPlayerRef,
+  targetName = target.name,
+  groupKey = `${columnId}:${target.id}`,
 ): void {
   cells.set(`${columnId}:${voter.id}`, {
     targetId: target.id,
-    targetName: target.name,
-    groupKey: `${columnId}:${target.id}`,
+    targetName,
+    groupKey,
   });
 }
 
@@ -282,6 +359,11 @@ function leadingHostileTargets(results: CompletedGameResultsRead): Set<string> {
     for (const entry of round.canonicalFacts.roundFacts.council?.ledger ?? []) {
       increment(counts, entry.target.id);
     }
+    for (const entry of round.formatRecap?.ballotPresentation.rollCall ?? []) {
+      if (entry.polarity !== "save") {
+        increment(counts, entry.target.id);
+      }
+    }
     for (const elimination of round.endgameEliminations) {
       for (const entry of elimination.ledger) {
         increment(counts, entry.target.id);
@@ -292,6 +374,87 @@ function leadingHostileTargets(results: CompletedGameResultsRead): Set<string> {
     }
   }
   return leaders(counts);
+}
+
+function buildFormatRecapModel(
+  round: number,
+  recap: CompletedGameResultsFormatRecap,
+): CompletedResultsFormatRecapModel {
+  return {
+    round,
+    status: recap.status,
+    offeredFormats: recap.offeredFormatIds?.map(displayNameForFormat) ?? [],
+    selectedFormat: recap.selectedFormatId
+      ? displayNameForFormat(recap.selectedFormatId)
+      : null,
+    resolution: recap.resolutionKind
+      ? labelFromToken(recap.resolutionKind)
+      : null,
+    eliminatedName: recap.eliminated?.name ?? null,
+    scoring: formatScoringModel(recap),
+    ledgerStatus: recap.ballotPresentation.status,
+    ledger: recap.ballotPresentation.rollCall.map((entry) => ({
+      voterName: entry.voter.name,
+      targetName: entry.target.name,
+      polarity: entry.polarity
+        ? (labelFromToken(entry.polarity) as "Save" | "Eliminate")
+        : null,
+    })),
+    safetyBounce: recap.safetyBounce
+      ? {
+          starterName: recap.safetyBounce.starter?.name ?? null,
+          pointerChain: recap.safetyBounce.pointers.map(
+            (pointer) => (
+              `${pointer.actor.name} → ${pointer.target.name} · ${labelFromToken(pointer.classification)}`
+            ),
+          ),
+          safeNames: recap.safetyBounce.safe.map((player) => player.name),
+          vulnerableNames: recap.safetyBounce.vulnerable.map(
+            (player) => player.name,
+          ),
+        }
+      : null,
+  };
+}
+
+function formatScoringModel(
+  recap: CompletedGameResultsFormatRecap,
+): CompletedResultsFormatRecapModel["scoring"] {
+  const scoring = recap.scoring;
+  if (!scoring) return null;
+  if (scoring.kind === "save_or_eliminate") {
+    return {
+      columns: ["Agent", "Saves", "Eliminates", "Net"],
+      rows: scoring.rows.map((row) => ({
+        playerName: row.player.name,
+        values: [
+          String(row.savesReceived),
+          String(row.eliminateReceived),
+          formatSignedScore(row.net),
+        ],
+      })),
+    };
+  }
+  if (scoring.kind === "vote_bomb") {
+    return {
+      columns: ["Agent", "Votes", "Status"],
+      rows: scoring.rows.map((row) => ({
+        playerName: row.player.name,
+        values: [String(row.votes), row.zeroSafe ? "Zero-vote safe" : "At risk"],
+      })),
+    };
+  }
+  return {
+    columns: ["Vulnerable agent", "Votes"],
+    rows: scoring.rows.map((row) => ({
+      playerName: row.player.name,
+      values: [String(row.votes)],
+    })),
+  };
+}
+
+function formatSignedScore(score: number): string {
+  return score > 0 ? `+${score}` : String(score);
 }
 
 function mostAlignedWithWinner(

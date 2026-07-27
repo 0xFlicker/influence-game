@@ -8,6 +8,8 @@ import type {
   CompletedGameResultsAvailabilityStatus as EngineCompletedGameResultsAvailabilityStatus,
   CompletedGameResultsElimination as EngineCompletedGameResultsElimination,
   CompletedGameResultsEndgameElimination as EngineCompletedGameResultsEndgameElimination,
+  CompletedGameResultsFormatRecap as EngineCompletedGameResultsFormatRecap,
+  CompletedGameResultsFormatScoring as EngineCompletedGameResultsFormatScoring,
   CompletedGameResultsJury as EngineCompletedGameResultsJury,
   CompletedGameResultsPlayer as EngineCompletedGameResultsPlayer,
   CompletedGameResultsRead as EngineCompletedGameResultsRead,
@@ -879,6 +881,8 @@ export type CompletedGameResultsPlayerRef = EngineRevealedPlayerRef;
 export type CompletedGameResultsPlayer = EngineCompletedGameResultsPlayer;
 export type CompletedGameResultsElimination = EngineCompletedGameResultsElimination;
 export type CompletedGameResultsEndgameElimination = EngineCompletedGameResultsEndgameElimination;
+export type CompletedGameResultsFormatRecap = EngineCompletedGameResultsFormatRecap;
+export type CompletedGameResultsFormatScoring = EngineCompletedGameResultsFormatScoring;
 export type CompletedGameResultsJury = EngineCompletedGameResultsJury;
 export type CompletedGameResultsRead = EngineCompletedGameResultsRead;
 

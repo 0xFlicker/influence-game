@@ -1,12 +1,246 @@
 import { describe, expect, it } from "bun:test";
+import { Phase } from "@influence/engine";
 import { renderToString } from "react-dom/server";
 import { CompletedResultsVoteMatrix } from "../app/games/[slug]/components/completed-results-vote-matrix";
 import { CompletedResultsAgentCard } from "../app/games/[slug]/components/completed-results-agent-card";
 import { CompletedResultsAllianceArcs } from "../app/games/[slug]/components/completed-results-alliance-arcs";
 import { CompletedGameEntry } from "../app/games/[slug]/components/completed-game-entry";
-import { CompletedResultsSeasonSummary } from "../app/games/[slug]/components/completed-results-review";
+import {
+  CompletedFormatRoundRecap,
+  CompletedResultsSeasonSummary,
+} from "../app/games/[slug]/components/completed-results-review";
+import { FormatTerminalSnapshot } from "../app/games/[slug]/components/format-terminal-snapshot";
+import type { ViewerDecisionEvent } from "../lib/api";
 
 describe("completed results review components", () => {
+  it("renders the last trusted terminal format menu as a read-only snapshot", () => {
+    const html = renderToString(
+      <FormatTerminalSnapshot
+        gameId="terminal-format-game"
+        roster={[
+          { id: "alice", name: "Alice" },
+          { id: "bob", name: "Bob" },
+          { id: "cara", name: "Cara" },
+        ]}
+        decisions={[{
+          sequence: 10,
+          round: 1,
+          phase: Phase.FORMAT_MENU,
+          type: "format.menu_offered",
+          timestamp: "2026-07-27T00:00:00.000Z",
+          payload: {
+            empoweredId: "alice",
+            offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+          },
+        }]}
+      />,
+    );
+
+    expect(html).toContain("Read-only format snapshot");
+    expect(html).toContain("Save-or-Eliminate");
+    expect(html).toContain("Vote Bomb");
+    expect(html).not.toContain("Power");
+    expect(html).not.toContain("Council");
+  });
+
+  it("renders selected, classification, sealed, and resolved terminal prefixes without inventing an ending", () => {
+    const roster = [
+      { id: "alice", name: "Alice" },
+      { id: "bob", name: "Bob" },
+      { id: "cara", name: "Cara" },
+    ];
+    const menu = viewerDecision({
+      sequence: 10,
+      round: 1,
+      phase: Phase.FORMAT_MENU,
+      type: "format.menu_offered",
+      timestamp: "2026-07-27T00:00:00.000Z",
+      payload: {
+        empoweredId: "alice",
+        offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+      },
+    });
+    const selected = viewerDecision({
+      sequence: 11,
+      round: 1,
+      phase: Phase.FORMAT_PICK,
+      type: "format.selected",
+      timestamp: "2026-07-27T00:00:01.000Z",
+      payload: {
+        empoweredId: "alice",
+        formatId: "save_or_eliminate",
+      },
+    });
+    const sealedBallot = viewerDecision({
+      sequence: 12,
+      round: 1,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "format.ballot_cast",
+      timestamp: "2026-07-27T00:00:02.000Z",
+      payload: {
+        formatId: "save_or_eliminate",
+        voterId: "alice",
+        targetId: "bob",
+        polarity: "eliminate",
+      },
+    });
+    const selectedHtml = renderToString(
+      <FormatTerminalSnapshot
+        gameId="terminal-selected"
+        roster={roster}
+        decisions={[menu, selected]}
+      />,
+    );
+    const sealedHtml = renderToString(
+      <FormatTerminalSnapshot
+        gameId="terminal-sealed"
+        roster={roster}
+        decisions={[menu, selected, sealedBallot]}
+      />,
+    );
+    expect(selectedHtml).toContain("Format selected");
+    expect(selectedHtml).toContain("Save-or-Eliminate");
+    expect(selectedHtml).not.toContain('data-format-cue="format_elimination"');
+    expect(sealedHtml).toContain("Ballot sealed when the game ended");
+    expect(sealedHtml).not.toContain('data-format-cue="format_elimination"');
+
+    const bounceMenu = viewerDecision({
+      sequence: 10,
+      round: 1,
+      phase: Phase.FORMAT_MENU,
+      type: "format.menu_offered",
+      timestamp: "2026-07-27T00:00:00.000Z",
+      payload: {
+        empoweredId: "alice",
+        offeredFormatIds: ["safety_bounce", "vote_bomb"],
+      },
+    });
+    const bounceSelected = viewerDecision({
+      sequence: 11,
+      round: 1,
+      phase: Phase.FORMAT_PICK,
+      type: "format.selected",
+      timestamp: "2026-07-27T00:00:01.000Z",
+      payload: { empoweredId: "alice", formatId: "safety_bounce" },
+    });
+    const bounceStarted = viewerDecision({
+      sequence: 12,
+      round: 1,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "format.safety_bounce_started",
+      timestamp: "2026-07-27T00:00:02.000Z",
+      payload: { starterId: "alice" },
+    });
+    const bouncePointer = viewerDecision({
+      sequence: 13,
+      round: 1,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "format.safety_bounce_pointer",
+      timestamp: "2026-07-27T00:00:03.000Z",
+      payload: {
+        actorId: "alice",
+        targetId: "bob",
+        classification: "vulnerable",
+      },
+    });
+    const classificationHtml = renderToString(
+      <FormatTerminalSnapshot
+        gameId="terminal-classification"
+        roster={roster}
+        decisions={[
+          bounceMenu,
+          bounceSelected,
+          bounceStarted,
+          bouncePointer,
+        ]}
+      />,
+    );
+    expect(classificationHtml).toContain("Classification stage");
+    expect(classificationHtml).toContain("Accepted target");
+    expect(classificationHtml).toContain("Bob");
+    expect(classificationHtml).toContain("Vulnerable");
+
+    const twoPlayerRoster = roster.slice(0, 2);
+    const resolvedHtml = renderToString(
+      <FormatTerminalSnapshot
+        gameId="terminal-resolution"
+        roster={twoPlayerRoster}
+        decisions={[
+          bounceMenu,
+          bounceSelected,
+          bounceStarted,
+          bouncePointer,
+          viewerDecision({
+            sequence: 14,
+            round: 1,
+            phase: Phase.FORMAT_RESOLVE,
+            type: "format.resolved",
+            timestamp: "2026-07-27T00:00:04.000Z",
+            payload: {
+              formatId: "safety_bounce",
+              empoweredId: "alice",
+              eliminatedId: "bob",
+              resolutionKind: "auto",
+              tiedPlayerIds: [],
+              tiebreakerId: null,
+              saveOrEliminate: null,
+              voteBomb: null,
+              safetyBounce: {
+                starterId: "alice",
+                safePlayerIds: ["alice"],
+                vulnerablePlayerIds: ["bob"],
+                voteTotals: {},
+              },
+            },
+          }),
+        ]}
+      />,
+    );
+    expect(resolvedHtml).toContain("Bob");
+    expect(resolvedHtml).toContain("is eliminated");
+    expect(resolvedHtml).not.toContain("Ballot sealed when the game ended");
+  });
+
+  it("stops terminal presentation at the last valid cue after a contradiction", () => {
+    const html = renderToString(
+      <FormatTerminalSnapshot
+        gameId="terminal-invalid"
+        roster={[
+          { id: "alice", name: "Alice" },
+          { id: "bob", name: "Bob" },
+          { id: "cara", name: "Cara" },
+        ]}
+        decisions={[
+          viewerDecision({
+            sequence: 10,
+            round: 1,
+            phase: Phase.FORMAT_MENU,
+            type: "format.menu_offered",
+            timestamp: "2026-07-27T00:00:00.000Z",
+            payload: {
+              empoweredId: "alice",
+              offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+            },
+          }),
+          viewerDecision({
+            sequence: 11,
+            round: 1,
+            phase: Phase.FORMAT_PICK,
+            type: "format.selected",
+            timestamp: "2026-07-27T00:00:01.000Z",
+            payload: {
+              empoweredId: "alice",
+              formatId: "safety_bounce",
+            },
+          }),
+        ]}
+      />,
+    );
+
+    expect(html).toContain("The House offers two formats");
+    expect(html).toContain("Presentation incomplete");
+    expect(html).not.toContain("Safety Bounce");
+  });
   it("renders championship point receipts only in the results review", () => {
     const html = renderToString(
       <CompletedResultsSeasonSummary
@@ -67,6 +301,77 @@ describe("completed results review components", () => {
     expect(html).not.toContain(">Base<");
     expect(html).not.toContain(">Field<");
     expect(html.indexOf("Atlas")).toBeLessThan(html.indexOf("Sable"));
+  });
+
+  it("renders format scoring, Safety Bounce pools, and the canonical ledger", () => {
+    const html = renderToString(
+      <CompletedFormatRoundRecap
+        recap={{
+          round: 2,
+          status: "available",
+          offeredFormats: ["Safety Bounce", "Vote Bomb"],
+          selectedFormat: "Safety Bounce",
+          resolution: "Clear",
+          eliminatedName: "Dax",
+          scoring: {
+            columns: ["Vulnerable agent", "Votes"],
+            rows: [
+              { playerName: "Bob", values: ["1"] },
+              { playerName: "Dax", values: ["3"] },
+            ],
+          },
+          ledgerStatus: "revealed",
+          ledger: [
+            { voterName: "Alice", targetName: "Dax", polarity: null },
+            { voterName: "Bob", targetName: "Dax", polarity: null },
+          ],
+          safetyBounce: {
+            starterName: "Alice",
+            pointerChain: [
+              "Alice → Bob · Vulnerable",
+              "Bob → Cara · Safe",
+              "Cara → Dax · Vulnerable",
+            ],
+            safeNames: ["Alice", "Cara"],
+            vulnerableNames: ["Bob", "Dax"],
+          },
+        }}
+      />,
+    );
+
+    expect(html).toContain('id="format-round-2"');
+    expect(html).toContain("Safety Bounce");
+    expect(html).toContain("Safe: ");
+    expect(html).toContain("Alice");
+    expect(html).toContain("Vulnerable: ");
+    expect(html).toContain("Bob");
+    expect(html).toContain("Ballot ledger");
+    expect(html).toContain("Eliminated");
+    expect(html).toContain("Dax");
+  });
+
+  it("labels incomplete format recaps without fabricating scoring or a ledger", () => {
+    const html = renderToString(
+      <CompletedFormatRoundRecap
+        recap={{
+          round: 3,
+          status: "incomplete",
+          offeredFormats: ["Vote Bomb", "Save-or-Eliminate"],
+          selectedFormat: "Vote Bomb",
+          resolution: null,
+          eliminatedName: null,
+          scoring: null,
+          ledgerStatus: "unavailable",
+          ledger: [],
+          safetyBounce: null,
+        }}
+      />,
+    );
+
+    expect(html).toContain("last trusted format evidence");
+    expect(html).toContain("No completed elimination recorded");
+    expect(html).toContain("Ballot evidence unavailable");
+    expect(html).not.toContain("Zero-vote safe");
   });
 
   it("renders vote matrix cells and keeps formal alliance wording absent", () => {
@@ -242,3 +547,7 @@ describe("completed results review components", () => {
     expect(html).toContain("/games/edge%20smoke%2Fdusk/results");
   });
 });
+
+function viewerDecision(decision: ViewerDecisionEvent): ViewerDecisionEvent {
+  return decision;
+}

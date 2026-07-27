@@ -13,6 +13,7 @@ import {
 } from "@/lib/api";
 import { buildCompletedAllianceArcsModel, type AllianceFactsLoadState } from "./match-watch-alliance-model";
 import { buildCompletedResultsReviewModel } from "./completed-results-model";
+import type { CompletedResultsFormatRecapModel } from "./completed-results-model";
 import { CompletedResultsVoteMatrix } from "./completed-results-vote-matrix";
 import { CompletedResultsAgentCard } from "./completed-results-agent-card";
 import { CompletedResultsAllianceArcs } from "./completed-results-alliance-arcs";
@@ -117,9 +118,13 @@ export function CompletedResultsReview({
     facts: allianceFacts,
     error: allianceError,
   }, game.players);
-  const { overview, timeline, voteMatrix, agentCards } = model;
+  const { overview, timeline, formatRecaps, voteMatrix, agentCards } = model;
   const playerById = new Map(game.players.map((player) => [player.id, player]));
   const gameSlug = game.slug;
+  const kernelDiagnostic =
+    payload.game.gameKernelDiagnostics?.[0]
+    ?? game.gameKernelDiagnostics?.[0]
+    ?? null;
 
   return (
     <section id="results" className="space-y-6" data-testid="completed-results-review">
@@ -151,6 +156,16 @@ export function CompletedResultsReview({
           </Link>
         </div>
       </div>
+
+      {kernelDiagnostic ? (
+        <div
+          role="status"
+          className="rounded-lg border border-amber-200/15 bg-amber-200/[0.04] p-3 text-xs text-amber-100/70"
+        >
+          <p className="font-semibold text-amber-100">Results presentation incomplete</p>
+          <p className="mt-1">{kernelDiagnostic.message}</p>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-4">
         <OverviewStat label="Won By" value={overview.winnerResolution} />
@@ -194,6 +209,20 @@ export function CompletedResultsReview({
 
       <CompletedResultsAllianceArcs model={allianceArcs} />
 
+      {formatRecaps.length > 0 ? (
+        <section className="space-y-3" aria-label="Format round recaps">
+          <h3 className="text-sm font-semibold text-white/85">Format Rounds</h3>
+          <div className="grid gap-3">
+            {formatRecaps.map((recap) => (
+              <CompletedFormatRoundRecap
+                key={recap.round}
+                recap={recap}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <section className="space-y-3">
         <h3 className="text-sm font-semibold text-white/85">Vote History</h3>
         <CompletedResultsVoteMatrix columns={voteMatrix.columns} rows={voteMatrix.rows} />
@@ -227,6 +256,149 @@ export function CompletedResultsReview({
       </section>
     </section>
   );
+}
+
+export function CompletedFormatRoundRecap({
+  recap,
+}: {
+  recap: CompletedResultsFormatRecapModel;
+}) {
+  return (
+    <article
+      id={`format-round-${recap.round}`}
+      data-format-recap-status={recap.status}
+      className="scroll-mt-24 rounded-xl border border-white/10 bg-white/[0.035] p-4"
+    >
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-[11px] uppercase tracking-[0.16em] text-white/35">
+            Round {recap.round}
+          </div>
+          <h4 className="mt-1 text-base font-semibold text-white">
+            {recap.selectedFormat ?? "Format selection incomplete"}
+          </h4>
+          {recap.offeredFormats.length > 0 ? (
+            <p className="mt-1 text-xs text-white/45">
+              Offered {recap.offeredFormats.join(" vs ")}
+            </p>
+          ) : null}
+        </div>
+        <div className="text-right text-xs text-white/50">
+          {recap.eliminatedName ? (
+            <p>
+              Eliminated <span className="font-medium text-rose-100">{recap.eliminatedName}</span>
+            </p>
+          ) : (
+            <p className="text-amber-100/70">No completed elimination recorded</p>
+          )}
+          {recap.resolution ? <p className="mt-1">{recap.resolution} resolution</p> : null}
+        </div>
+      </div>
+
+      {recap.status === "incomplete" ? (
+        <p className="mt-3 rounded-lg border border-amber-200/15 bg-amber-200/[0.04] px-3 py-2 text-xs text-amber-100/70">
+          Only the last trusted format evidence is available for this round.
+        </p>
+      ) : null}
+
+      {recap.safetyBounce ? (
+        <div className="mt-4 grid gap-3 lg:grid-cols-2">
+          <div className="rounded-lg border border-white/10 bg-black/10 p-3">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-white/35">
+              Classification
+            </div>
+            {recap.safetyBounce.starterName ? (
+              <p className="mt-2 text-xs text-white/60">
+                Starter: {recap.safetyBounce.starterName}
+              </p>
+            ) : null}
+            <p className="mt-2 text-xs text-emerald-100/70">
+              Safe: {recap.safetyBounce.safeNames.join(", ") || "Unavailable"}
+            </p>
+            <p className="mt-1 text-xs text-rose-100/70">
+              Vulnerable: {recap.safetyBounce.vulnerableNames.join(", ") || "Unavailable"}
+            </p>
+          </div>
+          <div className="rounded-lg border border-white/10 bg-black/10 p-3">
+            <div className="text-[11px] uppercase tracking-[0.12em] text-white/35">
+              Pointer chain
+            </div>
+            {recap.safetyBounce.pointerChain.length > 0 ? (
+              <ol className="mt-2 space-y-1 text-xs text-white/60">
+                {recap.safetyBounce.pointerChain.map((pointer, index) => (
+                  <li key={`${pointer}:${index}`}>{pointer}</li>
+                ))}
+              </ol>
+            ) : (
+              <p className="mt-2 text-xs text-white/40">Pointer evidence unavailable.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      {recap.scoring ? (
+        <div className="mt-4 overflow-x-auto rounded-lg border border-white/10">
+          <table className="min-w-full border-collapse text-left text-xs">
+            <caption className="sr-only">
+              Round {recap.round} format scoring
+            </caption>
+            <thead className="bg-white/[0.04] text-white/45">
+              <tr>
+                {recap.scoring.columns.map((column) => (
+                  <th key={column} scope="col" className="px-3 py-2 font-medium">{column}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {recap.scoring.rows.map((row) => (
+                <tr key={row.playerName} className="border-t border-white/10">
+                  <th scope="row" className="px-3 py-2 font-medium text-white/75">
+                    {row.playerName}
+                  </th>
+                  {row.values.map((value, index) => (
+                    <td key={`${row.playerName}:${index}`} className="px-3 py-2 text-white/55">
+                      {value}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      <div className="mt-4">
+        <div className="text-[11px] uppercase tracking-[0.12em] text-white/35">
+          Ballot ledger
+        </div>
+        {recap.ledgerStatus === "revealed" && recap.ledger.length > 0 ? (
+          <ol className="mt-2 grid gap-1.5 sm:grid-cols-2">
+            {recap.ledger.map((entry, index) => (
+              <li
+                key={`${entry.voterName}:${index}`}
+                className="rounded-md border border-white/10 bg-black/10 px-3 py-2 text-xs text-white/65"
+              >
+                {entry.voterName} → {entry.polarity ? `${entry.polarity} ` : ""}
+                {entry.targetName}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="mt-2 text-xs text-white/45">
+            {formatLedgerStatusLabel(recap.ledgerStatus)}
+          </p>
+        )}
+      </div>
+    </article>
+  );
+}
+
+function formatLedgerStatusLabel(
+  status: CompletedResultsFormatRecapModel["ledgerStatus"],
+): string {
+  if (status === "not_applicable") return "Final ballot not applicable.";
+  if (status === "sealed") return "Ballot remained sealed when the trusted record ended.";
+  return "Ballot evidence unavailable.";
 }
 
 export function CompletedResultsSeasonSummary({
