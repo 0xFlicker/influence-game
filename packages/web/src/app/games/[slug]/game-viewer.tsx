@@ -38,9 +38,14 @@ import {
 import { wsEntryToTranscriptEntry } from "./components/message-parsing";
 import { useGameWebSocket } from "./components/use-game-websocket";
 import {
+  advancePresentationHydrationFailure,
   applyWatchStateToGameDetail,
+  buildLiveViewerDecisionFrame,
+  getGamePresentationRouteDecision,
   getMatchWatchRouteDecision,
+  mergeGameWatchReplayFrames,
   shouldApplyWatchStateUpdate,
+  type PresentationHydrationState,
 } from "./components/match-watch-model";
 import { ReplayControls } from "./components/replay-controls";
 import { MessageBubble } from "./components/message-bubble";
@@ -84,6 +89,21 @@ export function GameViewer({
   const [replayFrames, setReplayFrames] = useState<GameWatchReplayFrame[]>(
     initialReplayFrames ?? [],
   );
+  const replayFramesRef = useRef<GameWatchReplayFrame[]>(
+    initialReplayFrames ?? [],
+  );
+  const initialPresentationSequence = (initialReplayFrames ?? []).reduce(
+    (sequence, frame) => Math.max(sequence, frame.sequence),
+    0,
+  );
+  const presentationCursorRef = useRef(initialPresentationSequence);
+  const presentationHydrationRunRef = useRef(0);
+  const [presentationHydration, setPresentationHydration] =
+    useState<PresentationHydrationState>({
+      status: initialPresentationSequence > 0 ? "ready" : "idle",
+      retryCount: 0,
+      hasTrustedScreen: initialPresentationSequence > 0,
+    });
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
   const [replayIndex, setReplayIndex] = useState<number>(0);
@@ -101,6 +121,7 @@ export function GameViewer({
   const watchFinalStatusRef = useRef<"not_final" | "final" | undefined>(
     initialGame?.watchState?.final.status,
   );
+  const gameRef = useRef<GameDetail | null>(initialGame ?? null);
   // Track players whose next public message is their elimination last words.
   // Map: playerId → true (present = awaiting last words)
   const awaitingLastWordsRef = useRef<Set<string>>(new Set());
@@ -157,6 +178,76 @@ export function GameViewer({
   const [spectaclePhase, setSpectaclePhase] =
     useState<SpectacleMessagePhase>("done");
 
+  useEffect(() => {
+    gameRef.current = game;
+  }, [game]);
+
+  const retainReplayFrames = useCallback(
+    (incoming: readonly GameWatchReplayFrame[], expectedGameId?: string) => {
+      const canonicalGameId = expectedGameId
+        ?? incoming[0]?.gameId
+        ?? gameRef.current?.id
+        ?? gameId;
+      setReplayFrames((current) => {
+        const merged = mergeGameWatchReplayFrames(
+          current,
+          incoming,
+          canonicalGameId,
+        );
+        replayFramesRef.current = merged.frames;
+        presentationCursorRef.current = merged.lastSequence;
+        return merged.frames;
+      });
+    },
+    [gameId],
+  );
+
+  const hydratePresentationFrames = useCallback(
+    async ({
+      afterSequence,
+      preserveScreen,
+    }: {
+      afterSequence: number;
+      preserveScreen: boolean;
+    }): Promise<boolean> => {
+      const run = ++presentationHydrationRunRef.current;
+      let hydrationState: PresentationHydrationState = {
+        status: preserveScreen ? "reconnecting" : "loading",
+        retryCount: 0,
+        hasTrustedScreen: preserveScreen || replayFramesRef.current.length > 0,
+      };
+      setPresentationHydration(hydrationState);
+
+      while (run === presentationHydrationRunRef.current) {
+        try {
+          const incoming = await getGameReplayWatchFrames(
+            gameId,
+            afterSequence > 0 ? { afterSequence } : {},
+          );
+          if (run !== presentationHydrationRunRef.current) return false;
+          retainReplayFrames(
+            incoming,
+            gameRef.current?.id ?? incoming[0]?.gameId,
+          );
+          setPresentationHydration({
+            status: "ready",
+            retryCount: hydrationState.retryCount,
+            hasTrustedScreen:
+              hydrationState.hasTrustedScreen || incoming.length > 0,
+          });
+          return true;
+        } catch {
+          const failure = advancePresentationHydrationFailure(hydrationState);
+          hydrationState = failure.state;
+          setPresentationHydration(hydrationState);
+          if (!failure.shouldRetry) return false;
+        }
+      }
+      return false;
+    },
+    [gameId, retainReplayFrames],
+  );
+
   // Set data-phase on root for cinematic CSS cascade (live mode)
   useEffect(() => {
     if (game?.currentPhase) {
@@ -177,8 +268,30 @@ export function GameViewer({
   useEffect(() => {
     let cancelled = false;
 
-    async function loadReplayData(id: string) {
+    async function loadReplayData(id: string, replayGame: GameDetail) {
       setReplayLoading(true);
+      const isFormat =
+        getGamePresentationRouteDecision(replayGame).route === "format";
+      if (isFormat) {
+        const [transcriptResult] = await Promise.all([
+          getGameTranscript(id).then(
+            (transcript) => ({ ok: true as const, transcript }),
+            () => ({ ok: false as const }),
+          ),
+          hydratePresentationFrames({
+            afterSequence: 0,
+            preserveScreen: replayFramesRef.current.length > 0,
+          }),
+        ]);
+        if (!cancelled) {
+          setMessages(transcriptResult.ok ? transcriptResult.transcript : []);
+          setReplayIndex(0);
+          setLoadError(null);
+          setReplayLoading(false);
+        }
+        return;
+      }
+
       try {
         const [transcript, frames] = await Promise.all([
           getGameTranscript(id),
@@ -186,7 +299,7 @@ export function GameViewer({
         ]);
         if (cancelled) return;
         setMessages(transcript);
-        setReplayFrames(frames);
+        retainReplayFrames(frames, replayGame.id);
         setReplayIndex(0);
         setLoadError(null);
       } catch (err) {
@@ -203,6 +316,7 @@ export function GameViewer({
     if (initialGame) {
       // Already have game data; completed replays start unspoiled from the first message.
       setGame(initialGame);
+      gameRef.current = initialGame;
       setLoadError(null);
       maxRoundsRef.current = initialGame.maxRounds;
       watchCursorRef.current = initialGame.watchState?.eventCursor.sequence ?? 0;
@@ -212,17 +326,43 @@ export function GameViewer({
         initialGame.currentPhase) as PhaseKey;
       if (initialMessages) {
         setMessages(initialMessages);
-        setReplayFrames(initialReplayFrames ?? []);
+        retainReplayFrames(initialReplayFrames ?? [], initialGame.id);
         setReplayIndex(0);
         setReplayLoading(false);
       } else if (
         (initialGame.status === "completed" || initialGame.status === "cancelled") &&
         completedMode === "replay"
       ) {
-        void loadReplayData(gameId);
+        void loadReplayData(gameId, initialGame);
       } else {
-        setReplayFrames(initialReplayFrames ?? []);
+        retainReplayFrames(initialReplayFrames ?? [], initialGame.id);
         setReplayLoading(false);
+      }
+      const initialRoute = getGamePresentationRouteDecision(initialGame);
+      const replayLoadRequested =
+        !initialMessages
+        && (initialGame.status === "completed" || initialGame.status === "cancelled")
+        && completedMode === "replay";
+      const needsCurrentFormatPrefix =
+        initialRoute.route === "format"
+        && (
+          initialGame.status === "in_progress"
+          || initialGame.status === "suspended"
+          || initialGame.status === "cancelled"
+          || (
+            initialGame.status === "completed"
+            && completedMode === "replay"
+          )
+        );
+      if (
+        needsCurrentFormatPrefix
+        && !replayLoadRequested
+        && (initialReplayFrames?.length ?? 0) === 0
+      ) {
+        void hydratePresentationFrames({
+          afterSequence: 0,
+          preserveScreen: false,
+        });
       }
       return () => {
         cancelled = true;
@@ -240,6 +380,7 @@ export function GameViewer({
         const gameData = await getGame(gameId);
         if (cancelled) return;
         setGame(gameData);
+        gameRef.current = gameData;
         maxRoundsRef.current = gameData.maxRounds;
         watchCursorRef.current = gameData.watchState?.eventCursor.sequence ?? 0;
         gameStatusRef.current = gameData.status;
@@ -250,7 +391,19 @@ export function GameViewer({
           (gameData.status === "completed" || gameData.status === "cancelled") &&
           completedMode === "replay"
         ) {
-          await loadReplayData(gameId);
+          await loadReplayData(gameId, gameData);
+        } else if (
+          getGamePresentationRouteDecision(gameData).route === "format"
+          && (
+            gameData.status === "in_progress"
+            || gameData.status === "suspended"
+            || gameData.status === "cancelled"
+          )
+        ) {
+          await hydratePresentationFrames({
+            afterSequence: 0,
+            preserveScreen: false,
+          });
         }
       } catch (err) {
         if (!cancelled) {
@@ -265,7 +418,15 @@ export function GameViewer({
     return () => {
       cancelled = true;
     };
-  }, [gameId, completedMode, initialGame, initialMessages, initialReplayFrames]);
+  }, [
+    gameId,
+    completedMode,
+    hydratePresentationFrames,
+    initialGame,
+    initialMessages,
+    initialReplayFrames,
+    retainReplayFrames,
+  ]);
 
   const feedRef = useRef<HTMLDivElement>(null);
 
@@ -423,6 +584,22 @@ export function GameViewer({
       switch (ev.type) {
         case "watch_state": {
           const { state } = ev;
+          const presentationRoute =
+            state.gameKernel
+            ?? gameRef.current?.gameKernel
+            ?? gameRef.current?.watchState?.gameKernel
+            ?? "classic";
+          if (
+            presentationRoute === "format"
+            && state.eventCursor.sequence > presentationCursorRef.current
+          ) {
+            void hydratePresentationFrames({
+              afterSequence: presentationCursorRef.current,
+              preserveScreen:
+                presentationHydration.hasTrustedScreen
+                || replayFramesRef.current.length > 0,
+            });
+          }
           if (!shouldApplyWatchStateUpdate(
             watchCursorRef.current,
             state,
@@ -467,6 +644,21 @@ export function GameViewer({
               });
             }, 800);
           }
+          break;
+        }
+        case "viewer_decision_event": {
+          const currentGame = gameRef.current;
+          if (
+            !currentGame
+            || ev.gameId !== currentGame.id
+            || ev.event.sequence <= presentationCursorRef.current
+          ) {
+            break;
+          }
+          retainReplayFrames(
+            [buildLiveViewerDecisionFrame(currentGame, ev.event)],
+            ev.gameId,
+          );
           break;
         }
         case "phase_change": {
@@ -604,7 +796,12 @@ export function GameViewer({
           break;
       }
     },
-    [gameId],
+    [
+      gameId,
+      hydratePresentationFrames,
+      presentationHydration.hasTrustedScreen,
+      retainReplayFrames,
+    ],
   );
 
   const wsStatus = useGameWebSocket(
@@ -612,6 +809,30 @@ export function GameViewer({
     !!gameId && game?.status === "in_progress",
     handleWsEvent,
   );
+  const previousWsStatusRef = useRef(wsStatus);
+
+  useEffect(() => {
+    const previous = previousWsStatusRef.current;
+    previousWsStatusRef.current = wsStatus;
+    if (
+      wsStatus === "live"
+      && (previous === "reconnecting" || previous === "disconnected")
+      && game
+      && getGamePresentationRouteDecision(game).route === "format"
+    ) {
+      void hydratePresentationFrames({
+        afterSequence: presentationCursorRef.current,
+        preserveScreen:
+          presentationHydration.hasTrustedScreen
+          || replayFramesRef.current.length > 0,
+      });
+    }
+  }, [
+    game,
+    hydratePresentationFrames,
+    presentationHydration.hasTrustedScreen,
+    wsStatus,
+  ]);
 
   const connStatus = isReplay
     ? "replay"
@@ -635,6 +856,11 @@ export function GameViewer({
       </div>
     );
   }
+
+  const gamePresentation = getGamePresentationRouteDecision(game);
+  const hasTypedFormatReplay =
+    gamePresentation.route === "format"
+    && replayFrames.some((frame) => frame.viewerDecisionEvent);
 
   if (game.status === "suspended") {
     const health = game.kernelHealth;
@@ -689,7 +915,13 @@ export function GameViewer({
     return <CompletedResultsReview gameId={game.slug} game={game} />;
   }
 
-  if (game.status === "completed" && completedMode === "replay" && replayLoading && messages.length === 0) {
+  if (
+    game.status === "completed"
+    && completedMode === "replay"
+    && replayLoading
+    && messages.length === 0
+    && !hasTypedFormatReplay
+  ) {
     return (
       <div id="replay" className="influence-glass rounded-panel p-12 text-center text-white/40 text-sm scroll-mt-24">
         Loading replay...
@@ -697,7 +929,12 @@ export function GameViewer({
     );
   }
 
-  if (game.status === "completed" && completedMode === "replay" && messages.length === 0) {
+  if (
+    game.status === "completed"
+    && completedMode === "replay"
+    && messages.length === 0
+    && !hasTypedFormatReplay
+  ) {
     return (
       <div id="replay" className="flex min-h-[60vh] flex-col items-center justify-center gap-4 px-4 text-center scroll-mt-24">
         <div className="text-xs font-medium rounded-full border border-amber-900/60 bg-amber-950/30 px-2 py-1 text-amber-200">
@@ -728,7 +965,12 @@ export function GameViewer({
     );
   }
 
-  const matchWatchDecision = getMatchWatchRouteDecision(game, messages, completedMode);
+  const matchWatchDecision = getMatchWatchRouteDecision(
+    game,
+    messages,
+    completedMode,
+    replayFrames,
+  );
   if (matchWatchDecision.eligible) {
     const matchWatchKey = matchWatchDecision.mode === "live"
       ? `live:${game.id}`
@@ -743,6 +985,44 @@ export function GameViewer({
           live={matchWatchDecision.mode === "live"}
           connStatus={connStatus}
         />
+        {gamePresentation.incomplete && (
+          <div className="fixed bottom-4 left-4 z-50 max-w-sm rounded-lg border border-amber-700/50 bg-black/90 p-3 text-xs text-amber-100 shadow-xl">
+            <p className="font-semibold">Presentation incomplete</p>
+            <p className="mt-1 text-amber-100/70">
+              {gamePresentation.diagnostics[0]?.message
+                ?? "Stored game mode contradicts trusted event evidence."}
+            </p>
+          </div>
+        )}
+        {gamePresentation.route === "format"
+          && presentationHydration.status === "reconnecting" && (
+            <div className="fixed bottom-4 right-4 z-50 rounded-lg border border-white/10 bg-black/85 px-3 py-2 text-xs text-white/70 shadow-xl">
+              Reconnecting presentation…
+            </div>
+          )}
+        {gamePresentation.route === "format"
+          && presentationHydration.status === "unavailable" && (
+            <div className="fixed bottom-4 right-4 z-50 max-w-xs rounded-lg border border-red-800/50 bg-black/90 p-3 text-xs text-white/70 shadow-xl">
+              <p className="font-semibold text-white">Presentation unavailable</p>
+              <p className="mt-1">
+                The last trusted game state is still visible.
+              </p>
+              <button
+                type="button"
+                className="mt-2 rounded-md bg-white/10 px-3 py-1.5 font-medium text-white transition-colors hover:bg-white/15"
+                onClick={() => {
+                  void hydratePresentationFrames({
+                    afterSequence: presentationHydration.hasTrustedScreen
+                      ? presentationCursorRef.current
+                      : 0,
+                    preserveScreen: presentationHydration.hasTrustedScreen,
+                  });
+                }}
+              >
+                Reload presentation
+              </button>
+            </div>
+          )}
       </div>
     );
   }

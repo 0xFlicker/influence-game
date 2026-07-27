@@ -4,6 +4,7 @@ import {
   resolveGameKernel,
   type CompletedGameResultsRead,
   type GameKernel,
+  type GameKernelContradictionDiagnostic,
   type GameKernelSource,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -22,7 +23,7 @@ export type CompletedGameResultsReadStatus =
 export type CompletedGameResultsServiceResult =
   | {
       ok: true;
-      schemaVersion: 1;
+      schemaVersion: 2;
       game: {
         id: string;
         slug: string;
@@ -30,6 +31,7 @@ export type CompletedGameResultsServiceResult =
         completedAt?: string;
         gameKernel: GameKernel;
         gameKernelSource: GameKernelSource;
+        gameKernelDiagnostics: GameKernelContradictionDiagnostic[];
       };
       results: CompletedGameResultsRead;
     }
@@ -92,7 +94,7 @@ export async function getCompletedGameResults(
 
   return {
     ok: true,
-    schemaVersion: 1,
+    schemaVersion: 2,
     game: {
       id: game.id,
       slug: game.slug,
@@ -100,6 +102,7 @@ export async function getCompletedGameResults(
       ...(game.endedAt && { completedAt: game.endedAt }),
       gameKernel: kernel.kernel,
       gameKernelSource: kernel.source,
+      gameKernelDiagnostics: kernel.diagnostics,
     },
     results,
   };

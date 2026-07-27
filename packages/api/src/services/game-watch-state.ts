@@ -3,6 +3,10 @@ import {
   buildPostVotePressureProjection,
   createEmptyProjection,
   projectViewerDecisionEvent,
+  resolveGameKernel,
+  type GameKernel,
+  type GameKernelContradictionDiagnostic,
+  type GameKernelSource,
   type PostVotePressureStatus,
   type ViewerDecisionEvent,
 } from "@influence/engine";
@@ -103,10 +107,13 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 4;
+  schemaVersion: 5;
   gameId: string;
   slug: string;
   status: GameStatus;
+  gameKernel: GameKernel;
+  gameKernelSource: GameKernelSource;
+  gameKernelDiagnostics: GameKernelContradictionDiagnostic[];
   source: GameWatchStateSource;
   currentRound: number;
   currentPhase: string;
@@ -157,6 +164,7 @@ interface GameRow {
   slug: string;
   config: string;
   status: GameStatus;
+  gameKernel: GameKernel | null;
 }
 
 interface PlayerIdentity {
@@ -196,6 +204,7 @@ export async function getGameWatchState(
       slug: schema.games.slug,
       config: schema.games.config,
       status: schema.games.status,
+      gameKernel: schema.games.gameKernel,
     })
     .from(schema.games)
     .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))
@@ -217,6 +226,10 @@ export async function buildGameWatchState(
   ]);
   const config = parseConfig(game.config);
   const maxRounds = numberFromConfig(config.maxRounds, 10);
+  const kernel = resolveGameKernel({
+    stored: game.gameKernel,
+    events: persistedEvents.events.map((event) => event.envelope),
+  });
   const projection = game.status === "completed"
     ? getPersistedGameProjection(persistedEvents)
     : getPersistedGameProjectionBeforeTerminalOutcome(persistedEvents);
@@ -240,10 +253,13 @@ export async function buildGameWatchState(
   const final = buildFinalState(game.status, source, winner, committedResult);
 
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     gameId: game.id,
     slug: game.slug,
     status: game.status,
+    gameKernel: kernel.kernel,
+    gameKernelSource: kernel.source,
+    gameKernelDiagnostics: kernel.diagnostics,
     source,
     currentRound,
     currentPhase,
@@ -291,6 +307,7 @@ export async function getGameWatchReplayFrames(
       slug: schema.games.slug,
       config: schema.games.config,
       status: schema.games.status,
+      gameKernel: schema.games.gameKernel,
     })
     .from(schema.games)
     .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))

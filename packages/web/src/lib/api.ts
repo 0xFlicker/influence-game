@@ -12,6 +12,9 @@ import type {
   CompletedGameResultsPlayer as EngineCompletedGameResultsPlayer,
   CompletedGameResultsRead as EngineCompletedGameResultsRead,
   CompletedGameResultsSource as EngineCompletedGameResultsSource,
+  GameKernel as EngineGameKernel,
+  GameKernelContradictionDiagnostic as EngineGameKernelContradictionDiagnostic,
+  GameKernelSource as EngineGameKernelSource,
   Phase as EnginePhase,
   RevealedCanonicalFactsStatus as EngineRevealedCanonicalFactsStatus,
   RevealedFactsStatus as EngineRevealedFactsStatus,
@@ -23,6 +26,9 @@ import type {
 
 /** Viewer-safe canonical decisions shared by live websocket and replay v3 transport. */
 export type ViewerDecisionEvent = EngineViewerDecisionEvent;
+export type GameKernel = EngineGameKernel;
+export type GameKernelSource = EngineGameKernelSource;
+export type GameKernelContradictionDiagnostic = EngineGameKernelContradictionDiagnostic;
 
 let API_BASE =
   process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3000";
@@ -364,10 +370,14 @@ export interface GameWatchFinalState {
 }
 
 export interface GameWatchState {
-  schemaVersion: 3 | 4;
+  schemaVersion: 3 | 4 | 5;
   gameId: string;
   slug: string;
   status: GameStatus;
+  /** Added in schema v5. Missing legacy watch states preserve classic routing. */
+  gameKernel?: GameKernel;
+  gameKernelSource?: GameKernelSource;
+  gameKernelDiagnostics?: GameKernelContradictionDiagnostic[];
   source: GameWatchStateSource;
   currentRound: number;
   currentPhase: string;
@@ -874,12 +884,16 @@ export type CompletedGameResultsRead = EngineCompletedGameResultsRead;
 
 export interface CompletedGameResultsResponse {
   ok: true;
-  schemaVersion: 1;
+  /** v2 adds kernel routing; v1 remains accepted for cached legacy fixtures. */
+  schemaVersion: 1 | 2;
   game: {
     id: string;
     slug: string;
     status: GameStatus;
     completedAt?: string;
+    gameKernel?: GameKernel;
+    gameKernelSource?: GameKernelSource;
+    gameKernelDiagnostics?: GameKernelContradictionDiagnostic[];
   };
   results: CompletedGameResultsRead;
 }
@@ -2042,6 +2056,10 @@ export interface GameDetail {
   id: string;
   slug: string;
   status: GameStatus;
+  /** Missing only on legacy/mock payloads; the presentation router defaults those to classic. */
+  gameKernel?: GameKernel;
+  gameKernelSource?: GameKernelSource;
+  gameKernelDiagnostics?: GameKernelContradictionDiagnostic[];
   currentRound: number;
   maxRounds: number;
   currentPhase: PhaseKey;

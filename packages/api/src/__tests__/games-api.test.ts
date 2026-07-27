@@ -906,11 +906,17 @@ describe("Game REST API", () => {
       const body = (await res.json()) as {
         id: string;
         status: string;
+        gameKernel: string;
+        gameKernelSource: string;
+        gameKernelDiagnostics: unknown[];
         players: Array<{ name: string; persona: string }>;
         modelLabel: string;
       };
       expect(body.id).toBe(id);
       expect(body.status).toBe("waiting");
+      expect(body.gameKernel).toBe("format");
+      expect(body.gameKernelSource).toBe("stored");
+      expect(body.gameKernelDiagnostics).toEqual([]);
       expect(body.players).toHaveLength(2);
       expect(body.players[0]!.name).toBe("Atlas");
       expect(body.modelLabel).toBe("xAI Grok 4.3 · Low");
@@ -949,7 +955,7 @@ describe("Game REST API", () => {
       expect(body.currentPhase).toBe("LOBBY");
       expect(body.players.filter((player) => player.status === "eliminated")).toHaveLength(1);
       expect(body.watchState).toMatchObject({
-        schemaVersion: 4,
+        schemaVersion: 5,
         source: "durable_projection",
         currentRound: 2,
         currentPhase: "LOBBY",
@@ -1124,6 +1130,12 @@ describe("Game REST API", () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as {
         ok: true;
+        schemaVersion: number;
+        game: {
+          gameKernel: string;
+          gameKernelSource: string;
+          gameKernelDiagnostics: unknown[];
+        };
         results: {
           source: string;
           summary: { winner: { id: string; name: string } | null; roundsPlayed: number };
@@ -1140,6 +1152,18 @@ describe("Game REST API", () => {
       };
 
       expect(body.ok).toBe(true);
+      expect(body.schemaVersion).toBe(2);
+      expect(body.game).toMatchObject({
+        gameKernel: "format",
+        gameKernelSource: "stored",
+        gameKernelDiagnostics: [
+          {
+            code: "stored_kernel_event_contradiction",
+            storedKernel: "format",
+            evidenceKernel: "classic",
+          },
+        ],
+      });
       expect(body.results.source).toBe("durable_canonical_events");
       expect(body.results.summary.winner).toEqual({ id: "mira", name: "Mira" });
       expect(body.results.summary.roundsPlayed).toBe(1);

@@ -1,5 +1,8 @@
 import type {
   GameDetail,
+  GameKernel,
+  GameKernelContradictionDiagnostic,
+  GameKernelSource,
   GamePlayer,
   GameWatchPlayerPressureStatus,
   GameWatchReplayFrame,
@@ -8,6 +11,7 @@ import type {
   PhaseKey,
   PlayerState,
   TranscriptEntry,
+  ViewerDecisionEvent,
 } from "@/lib/api";
 import { PHASE_LABELS } from "./constants";
 import type { WatchConnStatus } from "./types";
@@ -73,11 +77,31 @@ export interface MatchWatchRouteDecision {
   mode: MatchWatchMode | null;
   reason:
     | "live_game"
+    | "replay_typed_frames"
     | "replay_transcript"
     | "waiting"
     | "completed_choice"
     | "non_entry_terminal"
     | "no_replay_transcript";
+}
+
+export interface GamePresentationRouteDecision {
+  route: GameKernel;
+  source: GameKernelSource;
+  incomplete: boolean;
+  diagnostics: GameKernelContradictionDiagnostic[];
+}
+
+export interface PresentationHydrationState {
+  status: "idle" | "loading" | "reconnecting" | "ready" | "unavailable";
+  retryCount: number;
+  hasTrustedScreen: boolean;
+}
+
+export interface MergedGameWatchReplayFrames {
+  frames: GameWatchReplayFrame[];
+  latestCompleteSnapshot: GameWatchReplayFrame | null;
+  lastSequence: number;
 }
 
 export interface MatchWatchCounts {
@@ -216,6 +240,11 @@ export function applyWatchStateToGameDetail(
     ...game,
     ...(state.slug ? { slug: state.slug } : {}),
     status: state.status,
+    ...(state.gameKernel && { gameKernel: state.gameKernel }),
+    ...(state.gameKernelSource && { gameKernelSource: state.gameKernelSource }),
+    ...(state.gameKernelDiagnostics && {
+      gameKernelDiagnostics: state.gameKernelDiagnostics,
+    }),
     currentRound: state.currentRound,
     currentPhase: state.currentPhase as PhaseKey,
     maxRounds: state.maxRounds,
@@ -225,10 +254,109 @@ export function applyWatchStateToGameDetail(
   };
 }
 
+export function getGamePresentationRouteDecision(
+  game: GameDetail,
+): GamePresentationRouteDecision {
+  const route = game.gameKernel ?? game.watchState?.gameKernel ?? "classic";
+  const source = game.gameKernelSource
+    ?? game.watchState?.gameKernelSource
+    ?? "inferred";
+  const diagnostics = game.gameKernelDiagnostics
+    ?? game.watchState?.gameKernelDiagnostics
+    ?? [];
+  return {
+    route,
+    source,
+    incomplete: diagnostics.some(
+      (diagnostic) => diagnostic.code === "stored_kernel_event_contradiction",
+    ),
+    diagnostics: [...diagnostics],
+  };
+}
+
+export function mergeGameWatchReplayFrames(
+  current: readonly GameWatchReplayFrame[],
+  incoming: readonly GameWatchReplayFrame[],
+  gameId: string,
+): MergedGameWatchReplayFrames {
+  const frames = current
+    .filter((frame) => frame.gameId === gameId)
+    .sort((left, right) => left.sequence - right.sequence);
+  let lastSequence = frames.at(-1)?.sequence ?? 0;
+
+  for (const frame of [...incoming].sort((left, right) => left.sequence - right.sequence)) {
+    if (frame.gameId !== gameId || frame.sequence <= lastSequence) continue;
+    frames.push(frame);
+    lastSequence = frame.sequence;
+  }
+
+  return {
+    frames,
+    latestCompleteSnapshot: frames.at(-1) ?? null,
+    lastSequence,
+  };
+}
+
+export function buildLiveViewerDecisionFrame(
+  game: GameDetail,
+  event: ViewerDecisionEvent,
+): GameWatchReplayFrame {
+  const players = game.watchState?.players ?? game.players.map((player) => ({
+    ...player,
+    currentAgent: player.currentAgent ?? null,
+  }));
+  const alivePlayers = players.filter((player) => player.status === "alive").length;
+  const eliminatedPlayers = players.filter(
+    (player) => player.status === "eliminated",
+  ).length;
+  return {
+    schemaVersion: 3,
+    gameId: game.id,
+    slug: game.slug,
+    sequence: event.sequence,
+    eventType: event.type,
+    timestamp: Date.parse(event.timestamp),
+    round: event.round,
+    phase: event.phase as PhaseKey,
+    players,
+    counts: {
+      totalPlayers: players.length,
+      alivePlayers,
+      eliminatedPlayers,
+      unknownPlayers: players.length - alivePlayers - eliminatedPlayers,
+    },
+    viewerDecisionEvent: event,
+  };
+}
+
+export function advancePresentationHydrationFailure(
+  state: PresentationHydrationState,
+): { state: PresentationHydrationState; shouldRetry: boolean } {
+  if (state.retryCount >= 2) {
+    return {
+      shouldRetry: false,
+      state: {
+        ...state,
+        status: "unavailable",
+      },
+    };
+  }
+
+  return {
+    shouldRetry: true,
+    state: {
+      ...state,
+      status: state.hasTrustedScreen ? "reconnecting" : "loading",
+      retryCount: state.retryCount + 1,
+    },
+  };
+}
+
 export function getMatchWatchRouteDecision(
   game: GameDetail,
   messages: readonly TranscriptEntry[],
   completedMode: "replay" | "results" | null = null,
+  replayFrames: readonly GameWatchReplayFrame[] = [],
 ): MatchWatchRouteDecision {
   if (game.status === "in_progress") {
     return {
@@ -244,6 +372,17 @@ export function getMatchWatchRouteDecision(
         eligible: true,
         mode: "replay",
         reason: "replay_transcript",
+      };
+    }
+    if (
+      completedMode === "replay"
+      && getGamePresentationRouteDecision(game).route === "format"
+      && replayFrames.some((frame) => frame.viewerDecisionEvent)
+    ) {
+      return {
+        eligible: true,
+        mode: "replay",
+        reason: "replay_typed_frames",
       };
     }
 

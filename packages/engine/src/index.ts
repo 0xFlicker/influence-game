@@ -262,6 +262,7 @@ export type {
 export { resolveGameKernel } from "./game-kernel";
 export type {
   GameKernel,
+  GameKernelContradictionDiagnostic,
   GameKernelSource,
   ResolveGameKernelOptions,
   ResolveGameKernelResult,

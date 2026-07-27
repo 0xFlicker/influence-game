@@ -43,7 +43,7 @@ describe("GameWatchState", () => {
 
     expect(state).not.toBeNull();
     expect(state).toMatchObject({
-      schemaVersion: 4,
+      schemaVersion: 5,
       gameId,
       slug: "watch-live-projection",
       source: "durable_projection",
@@ -426,6 +426,39 @@ describe("GameWatchState", () => {
     const serialized = JSON.stringify(fullFrames);
     expect(serialized).not.toContain("PRIVATE_SOURCE_POINTER_SENTINEL");
     expect(serialized).not.toContain("sourcePointers");
+  });
+
+  test("carries stored-first kernel identity and contradiction diagnostics in schema v5", async () => {
+    const gameId = await insertGame(db, {
+      slug: "watch-kernel-contradiction",
+      status: "in_progress",
+      config: gameConfig(),
+    });
+    await db.update(schema.games)
+      .set({ gameKernel: "classic" })
+      .where(eq(schema.games.id, gameId));
+    await insertFixturePlayers(db, gameId);
+    const ownerEpoch = await insertOwner(db, gameId);
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch,
+      events: createSafetyBounceViewerFixture(gameId),
+    });
+
+    const state = await getGameWatchState(db, gameId);
+
+    expect(state).toMatchObject({
+      schemaVersion: 5,
+      gameKernel: "classic",
+      gameKernelSource: "stored",
+      gameKernelDiagnostics: [
+        {
+          code: "stored_kernel_event_contradiction",
+          storedKernel: "classic",
+          evidenceKernel: "format",
+        },
+      ],
+    });
   });
 
   test("distinguishes shield fallback replacements from vote-derived exposed candidates", async () => {

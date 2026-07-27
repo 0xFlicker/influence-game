@@ -24,7 +24,7 @@ describe("resolveGameKernel", () => {
       stored: "format",
       events: [],
     });
-    expect(result).toEqual({ kernel: "format", source: "stored" });
+    expect(result).toEqual({ kernel: "format", source: "stored", diagnostics: [] });
   });
 
   test("stored classic wins even if format events present", () => {
@@ -32,7 +32,32 @@ describe("resolveGameKernel", () => {
       stored: "classic",
       events: [event("format.selected")],
     });
-    expect(result).toEqual({ kernel: "classic", source: "stored" });
+    expect(result).toMatchObject({ kernel: "classic", source: "stored" });
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "stored_kernel_event_contradiction",
+        storedKernel: "classic",
+        evidenceKernel: "format",
+        eventType: "format.selected",
+      }),
+    ]);
+  });
+
+  test("stored format keeps its route and diagnoses classic-only event evidence", () => {
+    const result = resolveGameKernel({
+      stored: "format",
+      events: [event("power.action_set")],
+    });
+
+    expect(result).toMatchObject({ kernel: "format", source: "stored" });
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: "stored_kernel_event_contradiction",
+        storedKernel: "format",
+        evidenceKernel: "classic",
+        eventType: "power.action_set",
+      }),
+    ]);
   });
 
   test("null stored + format evidence infers format", () => {
@@ -40,7 +65,7 @@ describe("resolveGameKernel", () => {
       stored: null,
       events: [event("format.menu_offered")],
     });
-    expect(result).toEqual({ kernel: "format", source: "inferred" });
+    expect(result).toEqual({ kernel: "format", source: "inferred", diagnostics: [] });
   });
 
   test("missing stored + classic-only events infers classic", () => {
@@ -48,7 +73,7 @@ describe("resolveGameKernel", () => {
       stored: undefined,
       events: [event("vote.empowered_set")],
     });
-    expect(result).toEqual({ kernel: "classic", source: "inferred" });
+    expect(result).toEqual({ kernel: "classic", source: "inferred", diagnostics: [] });
   });
 
   test("invalid stored falls through to inference", () => {
@@ -56,11 +81,11 @@ describe("resolveGameKernel", () => {
       stored: "werewolf",
       events: [event("format.resolved")],
     });
-    expect(result).toEqual({ kernel: "format", source: "inferred" });
+    expect(result).toEqual({ kernel: "format", source: "inferred", diagnostics: [] });
   });
 
   test("empty events with null stored infers classic", () => {
     const result = resolveGameKernel({ stored: null, events: [] });
-    expect(result).toEqual({ kernel: "classic", source: "inferred" });
+    expect(result).toEqual({ kernel: "classic", source: "inferred", diagnostics: [] });
   });
 });

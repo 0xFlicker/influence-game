@@ -542,7 +542,7 @@ describe("WebSocket Manager", () => {
     expect(sent).toHaveLength(1);
     const parsed = JSON.parse(sent[0]!);
     expect(parsed.type).toBe("watch_state");
-    expect(parsed.state.schemaVersion).toBe(4);
+    expect(parsed.state.schemaVersion).toBe(5);
     expect(parsed.state.gameId).toBe("game-123");
     expect(parsed.state.eventCursor.sequence).toBe(7);
     expect(parsed.state.players[0].currentAgent).toMatchObject({
@@ -564,7 +564,7 @@ describe("WebSocket Manager", () => {
     expect(parsed).toMatchObject({
       type: "watch_state",
       state: {
-        schemaVersion: 4,
+        schemaVersion: 5,
         gameId: "game-watch",
         eventCursor: { sequence: 11 },
         projection: { availability: "available" },
@@ -640,10 +640,13 @@ describe("WebSocket Manager", () => {
 
 function watchStateFixture(gameId: string, sequence: number): GameWatchState {
   return {
-    schemaVersion: 4,
+    schemaVersion: 5,
     gameId,
     slug: `test-${gameId}`,
     status: "in_progress",
+    gameKernel: "format",
+    gameKernelSource: "stored",
+    gameKernelDiagnostics: [],
     source: "durable_projection",
     currentRound: 2,
     currentPhase: "LOBBY",

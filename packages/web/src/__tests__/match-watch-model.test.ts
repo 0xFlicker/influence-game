@@ -9,10 +9,14 @@ import type {
 } from "../lib/api";
 import { createEdgeSmokeDuskEvents, Phase, projectViewerDecisionEvent } from "@influence/engine";
 import {
+  advancePresentationHydrationFailure,
   applyStructuredPostVotePressureSummaries,
   applyWatchStateToGameDetail,
+  buildLiveViewerDecisionFrame,
   buildMatchWatchModel,
+  getGamePresentationRouteDecision,
   getMatchWatchRouteDecision,
+  mergeGameWatchReplayFrames,
   shouldApplyWatchStateUpdate,
   watchStatusToPlayerState,
 } from "../app/games/[slug]/components/match-watch-model";
@@ -268,6 +272,12 @@ describe("match watch model", () => {
 
     expect(frame.viewerDecisionEvent).toEqual(liveEvent.event);
     expect(frame.phase).toBe("FORMAT_RESOLVE");
+    expect(buildLiveViewerDecisionFrame(baseGame(), liveEvent.event)).toMatchObject({
+      gameId: "game-1",
+      sequence: 13,
+      eventType: "format.safety_bounce_pointer",
+      viewerDecisionEvent: liveEvent.event,
+    });
   });
 
   it("applies watch state as the authoritative shell state", () => {
@@ -465,6 +475,139 @@ describe("match watch model", () => {
       eligible: true,
       mode: "replay",
       reason: "replay_transcript",
+    });
+  });
+
+  it("routes stored and inferred kernels without overriding a stored contradiction", () => {
+    expect(getGamePresentationRouteDecision({
+      ...baseGame(),
+      gameKernel: "format",
+      gameKernelSource: "stored",
+      gameKernelDiagnostics: [],
+    })).toEqual({
+      route: "format",
+      source: "stored",
+      incomplete: false,
+      diagnostics: [],
+    });
+
+    expect(getGamePresentationRouteDecision({
+      ...baseGame(),
+      gameKernel: "classic",
+      gameKernelSource: "stored",
+      gameKernelDiagnostics: [{
+        code: "stored_kernel_event_contradiction",
+        message: "Stored classic kernel contradicts trusted format evidence.",
+        storedKernel: "classic",
+        evidenceKernel: "format",
+        eventType: "format.menu_offered",
+        sequence: 12,
+      }],
+    })).toEqual({
+      route: "classic",
+      source: "stored",
+      incomplete: true,
+      diagnostics: [
+        expect.objectContaining({ code: "stored_kernel_event_contradiction" }),
+      ],
+    });
+
+    expect(getGamePresentationRouteDecision(baseGame())).toEqual({
+      route: "classic",
+      source: "inferred",
+      incomplete: false,
+      diagnostics: [],
+    });
+  });
+
+  it("merges trusted frames monotonically while allowing sparse viewer decisions", () => {
+    const existing = replayFrame(baseGame().players, {
+      sequence: 10,
+      schemaVersion: 3,
+    });
+    const duplicate = { ...existing };
+    const lower = replayFrame(baseGame().players, {
+      sequence: 9,
+      schemaVersion: 3,
+    });
+    const sparseDecision = replayFrame(baseGame().players, {
+      sequence: 14,
+      schemaVersion: 3,
+      viewerDecisionEvent: {
+        sequence: 14,
+        timestamp: "2026-07-26T00:00:00.000Z",
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        type: "format.selected",
+        payload: {
+          empoweredId: "p1",
+          formatId: "vote_bomb",
+        },
+      },
+    });
+
+    const merged = mergeGameWatchReplayFrames(
+      [existing],
+      [sparseDecision, lower, duplicate],
+      "game-1",
+    );
+
+    expect(merged.frames.map((frame) => frame.sequence)).toEqual([10, 14]);
+    expect(merged.latestCompleteSnapshot?.sequence).toBe(14);
+    expect(merged.lastSequence).toBe(14);
+  });
+
+  it("retries presentation hydration at most twice before becoming reloadable", () => {
+    const first = advancePresentationHydrationFailure({
+      status: "loading",
+      retryCount: 0,
+      hasTrustedScreen: false,
+    });
+    const second = advancePresentationHydrationFailure(first.state);
+    const exhausted = advancePresentationHydrationFailure(second.state);
+
+    expect(first).toMatchObject({ shouldRetry: true, state: { retryCount: 1 } });
+    expect(second).toMatchObject({ shouldRetry: true, state: { retryCount: 2 } });
+    expect(exhausted).toEqual({
+      shouldRetry: false,
+      state: {
+        status: "unavailable",
+        retryCount: 2,
+        hasTrustedScreen: false,
+      },
+    });
+  });
+
+  it("allows completed format replay from typed frames without transcript prose", () => {
+    const completedFormat = {
+      ...baseGame(),
+      status: "completed" as const,
+      currentPhase: "END" as const,
+      gameKernel: "format" as const,
+      gameKernelSource: "stored" as const,
+      gameKernelDiagnostics: [],
+    };
+    const typedFrame = replayFrame(baseGame().players, {
+      sequence: 12,
+      schemaVersion: 3,
+      phase: "FORMAT_MENU",
+      viewerDecisionEvent: {
+        sequence: 12,
+        timestamp: "2026-07-26T00:00:00.000Z",
+        round: 1,
+        phase: Phase.FORMAT_MENU,
+        type: "format.menu_offered",
+        payload: {
+          empoweredId: "p1",
+          offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
+        },
+      },
+    });
+
+    expect(getMatchWatchRouteDecision(completedFormat, [], "replay", [typedFrame])).toEqual({
+      eligible: true,
+      mode: "replay",
+      reason: "replay_typed_frames",
     });
   });
 

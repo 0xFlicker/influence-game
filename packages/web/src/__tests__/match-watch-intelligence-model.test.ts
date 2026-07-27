@@ -282,8 +282,8 @@ function publicIntelligence({
               saveOrEliminate: null,
               voteBomb: null,
               safetyBounce: null,
-              sealedBallots: [],
-              sealedBallotAccess: "public",
+              acceptedBallots: [],
+              ballotPresentation: { status: "not_applicable", rollCall: [] },
             },
             power: {
               status: "not_yet_resolved",

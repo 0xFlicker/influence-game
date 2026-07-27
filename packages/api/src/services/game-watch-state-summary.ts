@@ -9,7 +9,17 @@ import {
 
 export const GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION = 4;
 
-export type GameWatchStateSummary = Omit<GameWatchState, "players">;
+/**
+ * Persisted list-card summary remains on its independent v4 row schema.
+ * Kernel routing belongs to the fresh detail/watch contract, not this cached
+ * compatibility read model.
+ */
+export type GameWatchStateSummary = Omit<
+  GameWatchState,
+  "players" | "schemaVersion" | "gameKernel" | "gameKernelSource" | "gameKernelDiagnostics"
+> & {
+  schemaVersion: 4;
+};
 export type GameWatchStateSummaryStatus = "current" | "missing" | "stale";
 
 type SummaryRow = typeof schema.gameWatchStateSummaries.$inferSelect;
@@ -43,8 +53,18 @@ interface FallbackGameRow {
 }
 
 export function summarizeGameWatchState(state: GameWatchState): GameWatchStateSummary {
-  const { players: _players, ...summary } = state;
-  return summary;
+  const {
+    players: _players,
+    gameKernel: _gameKernel,
+    gameKernelSource: _gameKernelSource,
+    gameKernelDiagnostics: _gameKernelDiagnostics,
+    schemaVersion: _schemaVersion,
+    ...summary
+  } = state;
+  return {
+    ...summary,
+    schemaVersion: GAME_WATCH_STATE_SUMMARY_SCHEMA_VERSION,
+  };
 }
 
 export async function refreshGameWatchStateSummary(
