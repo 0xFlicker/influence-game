@@ -513,13 +513,24 @@ describe("ProductionGameMcpReadModel", () => {
           ? "safety_bounce"
           : fixture.formatId,
         resolutionKind: fixture.resolutionKind,
-        sealedBallotAccess: "public",
       });
-      expect(format.sealedBallots).toHaveLength(fixture.ballotCount);
+      expect(format.acceptedBallots).toHaveLength(fixture.ballotCount);
       expect(format.safetyBounce?.pointers ?? []).toHaveLength(fixture.pointerCount);
       if (fixture.formatId === "safety_bounce_sole_vulnerable") {
-        expect(format.sealedBallots).toEqual([]);
+        expect(format.acceptedBallots).toEqual([]);
+        expect(format.ballotPresentation).toEqual({
+          status: "not_applicable",
+          rollCall: [],
+        });
         expect(format.safetyBounce?.vulnerable).toHaveLength(1);
+      } else {
+        expect(format.ballotPresentation).toEqual({
+          status: "revealed",
+          rollCall: format.acceptedBallots,
+        });
+        expect(new Set(
+          format.ballotPresentation.rollCall.map((ballot) => ballot.voter.id),
+        ).size).toBe(fixture.ballotCount);
       }
 
       for (const eventType of [
@@ -556,7 +567,7 @@ describe("ProductionGameMcpReadModel", () => {
       expect(ballots.canonicalGameFacts.events.every((entry) => entry.event?.type === "format.ballot_cast")).toBe(true);
       const ballotPayloads = ballots.canonicalGameFacts.events.map((entry) => entry.event?.payload);
       expect(ballotPayloads).toEqual(
-        format.sealedBallots.map((ballot) => ({
+        format.acceptedBallots.map((ballot) => ({
           formatId: format.selectedFormatId,
           voterId: ballot.voter.id,
           targetId: ballot.target.id,
@@ -797,7 +808,7 @@ describe("ProductionGameMcpReadModel", () => {
     await db
       .update(schema.games)
       // Creator-only access is the current authorized non-seat observer lane.
-      .set({ createdById: spectatorUserId })
+      .set({ createdById: spectatorUserId, gameKernel: "format" })
       .where(eq(schema.games.id, gameId));
     const ownerPlayerId = await insertGamePlayer(db, {
       gameId,
@@ -809,190 +820,175 @@ describe("ProductionGameMcpReadModel", () => {
       userId: otherUserId,
       name: "PeerSeat",
     });
-    const ownerEpoch = await insertOwner(db, gameId);
-
-    const base = createCanonicalEventFixture(gameId);
-    // These producer-marked rows model historical persisted envelopes. Every
-    // reader now receives their sanitized choices without exposing provenance.
-    const formatEvents: CanonicalGameEvent[] = [
-      {
-        sequence: base.length + 1,
-        gameId,
-        round: 1,
-        phase: Phase.FORMAT_MENU,
-        type: "format.menu_offered",
-        timestamp: "2026-07-24T12:00:00.000Z",
-        source: "phase",
-        visibility: "public",
-        payloadVersion: 1,
-        sourcePointers: [],
-        payload: {
-          empoweredId: ownerPlayerId,
-          offeredFormatIds: ["save_or_eliminate", "vote_bomb"],
-        },
-      },
-      {
-        sequence: base.length + 2,
-        gameId,
-        round: 1,
-        phase: Phase.FORMAT_PICK,
-        type: "format.selected",
-        timestamp: "2026-07-24T12:00:01.000Z",
-        source: "phase",
-        visibility: "public",
-        payloadVersion: 1,
-        sourcePointers: [{
-          kind: "agent_turn",
-          decisionId: PRIVATE_DECISION_SENTINEL,
-          actorId: PRIVATE_DECISION_SENTINEL,
-          action: "format",
-          phase: Phase.FORMAT_PICK,
-          round: 1,
-        }],
-        payload: {
-          empoweredId: ownerPlayerId,
-          formatId: "save_or_eliminate",
-        },
-      },
-      {
-        sequence: base.length + 3,
-        gameId,
-        round: 1,
-        phase: Phase.FORMAT_RESOLVE,
-        type: "format.ballot_cast",
-        timestamp: "2026-07-24T12:00:02.000Z",
-        source: "phase",
-        visibility: "producer",
-        payloadVersion: 1,
-        sourcePointers: [{
-          kind: "agent_turn",
-          decisionId: PRIVATE_DECISION_SENTINEL,
-          actorId: ownerPlayerId,
-          action: "format-save-or-eliminate-ballot",
-          phase: Phase.FORMAT_RESOLVE,
-          round: 1,
-        }],
-        payload: {
-          formatId: "save_or_eliminate",
-          voterId: ownerPlayerId,
-          targetId: peerPlayerId,
-          polarity: "eliminate",
-        },
-      },
-      {
-        sequence: base.length + 4,
-        gameId,
-        round: 1,
-        phase: Phase.FORMAT_RESOLVE,
-        type: "format.ballot_cast",
-        timestamp: "2026-07-24T12:00:03.000Z",
-        source: "phase",
-        visibility: "producer",
-        payloadVersion: 1,
-        sourcePointers: [],
-        payload: {
-          formatId: "save_or_eliminate",
-          voterId: peerPlayerId,
-          targetId: ownerPlayerId,
-          polarity: "save",
-        },
-      },
-      {
-        sequence: base.length + 5,
-        gameId,
-        round: 1,
-        phase: Phase.FORMAT_RESOLVE,
-        type: "format.resolved",
-        timestamp: "2026-07-24T12:00:04.000Z",
-        source: "phase",
-        visibility: "public",
-        payloadVersion: 1,
-        sourcePointers: [{
-          kind: "agent_turn",
-          decisionId: PRIVATE_DECISION_SENTINEL,
-          actorId: PRIVATE_DECISION_SENTINEL,
-          action: "format-tiebreak",
-          phase: Phase.FORMAT_RESOLVE,
-          round: 1,
-        }],
-        payload: {
-          formatId: "save_or_eliminate",
-          empoweredId: ownerPlayerId,
-          eliminatedId: peerPlayerId,
-          resolutionKind: "clear",
-          tiedPlayerIds: [],
-          tiebreakerId: null,
-          saveOrEliminate: {
-            nets: { [ownerPlayerId]: 1, [peerPlayerId]: -1 },
-            savesReceived: { [ownerPlayerId]: 1, [peerPlayerId]: 0 },
-            eliminateReceived: { [ownerPlayerId]: 0, [peerPlayerId]: 1 },
-          },
-          voteBomb: null,
-          safetyBounce: null,
-        },
-      },
-      {
-        sequence: base.length + 6,
-        gameId,
-        round: 1,
-        phase: Phase.FORMAT_RESOLVE,
-        type: "format.safety_bounce_pointer",
-        timestamp: "2026-07-24T12:00:05.000Z",
-        source: "phase",
-        visibility: "public",
-        payloadVersion: 1,
-        sourcePointers: [{
-          kind: "agent_turn",
-          decisionId: PRIVATE_DECISION_SENTINEL,
-          actorId: PRIVATE_DECISION_SENTINEL,
-          action: "bounce-pointer",
-          phase: Phase.FORMAT_RESOLVE,
-          round: 1,
-        }],
-        payload: {
-          actorId: ownerPlayerId,
-          targetId: peerPlayerId,
-          classification: "vulnerable",
-        },
-      },
-    ];
-
-    await appendGameEvents(db, {
+    const thirdPlayerId = await insertGamePlayer(db, {
       gameId,
-      ownerEpoch,
-      events: [...base, ...formatEvents],
+      name: "ThirdSeat",
     });
+    const fourthPlayerId = await insertGamePlayer(db, {
+      gameId,
+      name: "FourthSeat",
+    });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const roster = [
+      { id: ownerPlayerId, name: "OwnerSeat" },
+      { id: peerPlayerId, name: "PeerSeat" },
+      { id: thirdPlayerId, name: "ThirdSeat" },
+      { id: fourthPlayerId, name: "FourthSeat" },
+    ] as const;
+    const state = new GameState([...roster], { gameId, now: fixedClock() });
+    const privatePointer = (
+      actorId: string,
+      action: "format-pick" | "format-save-or-eliminate-ballot" | "format-resolution",
+      phase: Phase,
+    ) => [{
+      kind: "agent_turn" as const,
+      decisionId: PRIVATE_DECISION_SENTINEL,
+      actorId,
+      action,
+      phase,
+      round: 1,
+    }];
 
+    state.startRound();
+    state.recordFormatMenu(ownerPlayerId, ["save_or_eliminate", "vote_bomb"]);
+    state.recordFormatSelected(
+      ownerPlayerId,
+      "save_or_eliminate",
+      privatePointer(PRIVATE_DECISION_SENTINEL, "format-pick", Phase.FORMAT_PICK),
+    );
+    // Deliberately submit out of roster order so the resolution projection has
+    // to establish canonical roll-call order instead of preserving timing.
+    const submittedBallots = [
+      { voterId: thirdPlayerId, targetId: peerPlayerId, polarity: "eliminate" as const },
+      { voterId: ownerPlayerId, targetId: peerPlayerId, polarity: "eliminate" as const },
+      { voterId: fourthPlayerId, targetId: peerPlayerId, polarity: "eliminate" as const },
+      { voterId: peerPlayerId, targetId: ownerPlayerId, polarity: "save" as const },
+    ];
+    for (const ballot of submittedBallots) {
+      state.recordFormatBallot(
+        { formatId: "save_or_eliminate", ...ballot },
+        privatePointer(
+          ballot.voterId,
+          "format-save-or-eliminate-ballot",
+          Phase.FORMAT_RESOLVE,
+        ),
+      );
+    }
+    state.recordFormatResolution({
+      formatId: "save_or_eliminate",
+      empoweredId: ownerPlayerId,
+      eliminatedId: peerPlayerId,
+      resolutionKind: "clear",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: {
+        nets: {
+          [ownerPlayerId]: 1,
+          [peerPlayerId]: -3,
+          [thirdPlayerId]: 0,
+          [fourthPlayerId]: 0,
+        },
+        savesReceived: {
+          [ownerPlayerId]: 1,
+          [peerPlayerId]: 0,
+          [thirdPlayerId]: 0,
+          [fourthPlayerId]: 0,
+        },
+        eliminateReceived: {
+          [ownerPlayerId]: 0,
+          [peerPlayerId]: 3,
+          [thirdPlayerId]: 0,
+          [fourthPlayerId]: 0,
+        },
+      },
+      voteBomb: null,
+      safetyBounce: null,
+    }, privatePointer(PRIVATE_DECISION_SENTINEL, "format-resolution", Phase.FORMAT_RESOLVE));
+    const events = state.getCanonicalEvents();
+    const ballotEvents = events.filter(
+      (event): event is Extract<CanonicalGameEvent, { type: "format.ballot_cast" }> =>
+        event.type === "format.ballot_cast",
+    );
     const readModel = new ProductionGameMcpReadModel(db);
     const ownerAccess = { userId: ownerUserId, authProfile: "subject" as const };
+    const playerNames = new Map(roster.map((player) => [player.id, player.name]));
+    const playerName = (playerId: string): string => {
+      const name = playerNames.get(playerId);
+      if (!name) throw new Error(`Missing roster name for ${playerId}`);
+      return name;
+    };
+    const expectedEntry = (ballot: typeof submittedBallots[number]) => ({
+      voter: { id: ballot.voterId, name: playerName(ballot.voterId) },
+      target: { id: ballot.targetId, name: playerName(ballot.targetId) },
+      polarity: ballot.polarity,
+    });
+
+    for (const ballotCount of [1, 2, 4]) {
+      const lastBallot = ballotEvents[ballotCount - 1];
+      if (!lastBallot) throw new Error(`Missing ballot prefix ${ballotCount}`);
+      await appendGameEvents(db, {
+        gameId,
+        ownerEpoch,
+        events: events.slice(0, lastBallot.sequence),
+      });
+
+      const prefixFacts = await readModel.readRoundFacts(
+        { gameIdOrSlug: gameId, round: 1 },
+        ownerAccess,
+      );
+      const format = prefixFacts.canonicalGameFacts.roundFacts.format;
+      expect(format.acceptedBallots).toEqual(
+        submittedBallots.slice(0, ballotCount).map(expectedEntry),
+      );
+      expect(format.ballotPresentation).toEqual({
+        status: "sealed",
+        rollCall: [],
+      });
+
+      const prefixEvents = await readModel.filterEvents({
+        gameIdOrSlug: gameId,
+        eventType: "format.ballot_cast",
+        visibilityMode: "public",
+      }, ownerAccess);
+      expect(prefixEvents.canonicalGameFacts.events.map((entry) => entry.event.payload)).toEqual(
+        submittedBallots.slice(0, ballotCount).map((ballot) => ({
+          formatId: "save_or_eliminate",
+          ...ballot,
+        })),
+      );
+      expect(JSON.stringify(prefixEvents)).not.toContain("sourcePointers");
+      expect(JSON.stringify(prefixEvents)).not.toContain(PRIVATE_DECISION_SENTINEL);
+    }
+
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
 
     const ownerFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, ownerAccess);
-    expect(ownerFacts.canonicalGameFacts.roundFacts.format.status).toBe("available");
-    expect(ownerFacts.canonicalGameFacts.roundFacts.format.selectedFormatId).toBe("save_or_eliminate");
-    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("public");
-    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toHaveLength(2);
-    expect(ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          voter: expect.objectContaining({ id: ownerPlayerId }),
-          target: expect.objectContaining({ id: peerPlayerId }),
-          polarity: "eliminate",
-        }),
-        expect.objectContaining({
-          voter: expect.objectContaining({ id: peerPlayerId }),
-          target: expect.objectContaining({ id: ownerPlayerId }),
-          polarity: "save",
-        }),
-      ]),
+    const ownerFormat = ownerFacts.canonicalGameFacts.roundFacts.format;
+    const expectedAcceptedBallots = submittedBallots.map(expectedEntry);
+    const expectedRollCall = roster.map((player) =>
+      expectedEntry(submittedBallots.find((ballot) => ballot.voterId === player.id)!));
+    expect(ownerFormat).toMatchObject({
+      status: "available",
+      selectedFormatId: "save_or_eliminate",
+      acceptedBallots: expectedAcceptedBallots,
+      ballotPresentation: {
+        status: "revealed",
+        rollCall: expectedRollCall,
+      },
+    });
+    expect(ownerFormat.ballotPresentation.rollCall).toHaveLength(
+      ownerFormat.acceptedBallots.length,
     );
+    expect(new Set(
+      ownerFormat.ballotPresentation.rollCall.map((ballot) => ballot.voter.id),
+    ).size).toBe(ownerFormat.acceptedBallots.length);
 
     const peerFacts = await readModel.readRoundFacts(
       { gameIdOrSlug: gameId, round: 1 },
       { userId: otherUserId, authProfile: "subject" },
     );
-    expect(peerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("public");
-    expect(peerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual(
-      ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots,
+    expect(peerFacts.canonicalGameFacts.roundFacts.format).toEqual(
+      ownerFacts.canonicalGameFacts.roundFacts.format,
     );
     expect(JSON.stringify(peerFacts)).not.toContain(PRIVATE_DECISION_SENTINEL);
 
@@ -1000,22 +996,19 @@ describe("ProductionGameMcpReadModel", () => {
       { gameIdOrSlug: gameId, round: 1 },
       { userId: spectatorUserId, authProfile: "subject" },
     );
-    expect(spectatorFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("public");
-    expect(spectatorFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual(
-      ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots,
+    expect(spectatorFacts.canonicalGameFacts.roundFacts.format).toEqual(
+      ownerFacts.canonicalGameFacts.roundFacts.format,
     );
 
     const producerFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, PRODUCER_ACCESS);
-    expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallotAccess).toBe("public");
-    expect(producerFacts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual(
-      ownerFacts.canonicalGameFacts.roundFacts.format.sealedBallots,
+    expect(producerFacts.canonicalGameFacts.roundFacts.format).toEqual(
+      ownerFacts.canonicalGameFacts.roundFacts.format,
     );
 
     // filter_events: public format facts stay visible in both non-producer
     // visibility modes, but the decision-bearing source pointers do not.
     for (const eventType of [
       "format.selected",
-      "format.safety_bounce_pointer",
       "format.resolved",
     ] as const) {
       for (const visibilityMode of ["public", "player"] as const) {
@@ -1035,19 +1028,12 @@ describe("ProductionGameMcpReadModel", () => {
       eventType: "format.ballot_cast",
       visibilityMode: "public",
     }, ownerAccess);
-    expect(publicBallots.canonicalGameFacts.events).toHaveLength(2);
-    expect(publicBallots.canonicalGameFacts.events.map((entry) => entry.event)).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          type: "format.ballot_cast",
-          payload: expect.objectContaining({
-            formatId: "save_or_eliminate",
-            voterId: ownerPlayerId,
-            targetId: peerPlayerId,
-            polarity: "eliminate",
-          }),
-        }),
-      ]),
+    expect(publicBallots.canonicalGameFacts.events).toHaveLength(4);
+    expect(publicBallots.canonicalGameFacts.events.map((entry) => entry.event.payload)).toEqual(
+      submittedBallots.map((ballot) => ({
+        formatId: "save_or_eliminate",
+        ...ballot,
+      })),
     );
     expect(JSON.stringify(publicBallots)).not.toContain("sourcePointers");
     expect(JSON.stringify(publicBallots)).not.toContain(PRIVATE_DECISION_SENTINEL);
@@ -1079,7 +1065,7 @@ describe("ProductionGameMcpReadModel", () => {
       eventType: "format.ballot_cast",
       visibilityMode: "producer",
     }, PRODUCER_ACCESS);
-    expect(producerBallots.canonicalGameFacts.events.length).toBe(2);
+    expect(producerBallots.canonicalGameFacts.events.length).toBe(4);
     expect(producerBallots.canonicalGameFacts.events.every((entry) => entry.eventShape === "canonical")).toBe(true);
     expect(JSON.stringify(producerBallots)).toContain("sourcePointers");
     expect(JSON.stringify(producerBallots)).toContain(PRIVATE_DECISION_SENTINEL);
@@ -1230,8 +1216,47 @@ describe("ProductionGameMcpReadModel", () => {
     expect(formatFacts.canonicalGameFacts.roundFacts).not.toHaveProperty("council");
 
     const classicFacts = await readModel.readRoundFacts({ gameIdOrSlug: classicGameId, round: 1 }, access);
+    expect(classicFacts.canonicalGameFacts.roundFacts.standardVote).toMatchObject({
+      status: "available",
+      ledger: expect.arrayContaining([
+        expect.objectContaining({
+          voter: { id: "atlas", name: "Atlas" },
+          empowerTarget: { id: "mira", name: "Mira" },
+          exposeTarget: { id: "echo", name: "Echo" },
+        }),
+      ]),
+    });
     expect(classicFacts.canonicalGameFacts.roundFacts.power?.status).toBe("available");
     expect(classicFacts.canonicalGameFacts.roundFacts.council?.status).toBe("available");
+
+    const classicProjection = await readModel.readProjection(classicGameId, PRODUCER_ACCESS);
+    expect(classicProjection.canonicalGameFacts.projection.summary?.voteState).toMatchObject({
+      empowerVotes: expect.objectContaining({ atlas: "mira" }),
+      exposeVotes: expect.objectContaining({ atlas: "echo" }),
+      powerAction: { action: "protect", target: "echo" },
+      councilVotes: expect.objectContaining({
+        atlas: expect.any(String),
+        echo: expect.any(String),
+        mira: expect.any(String),
+        nyx: expect.any(String),
+      }),
+    });
+
+    for (const [eventType, expectedCount] of [
+      ["vote.cast", 4],
+      ["power.action_set", 1],
+      ["council.vote_cast", 4],
+    ] as const) {
+      const filtered = await readModel.filterEvents({
+        gameIdOrSlug: classicGameId,
+        eventType,
+        visibilityMode: "public",
+      }, PRODUCER_ACCESS);
+      expect(filtered.canonicalGameFacts.events).toHaveLength(expectedCount);
+      expect(filtered.canonicalGameFacts.events.every(
+        (event) => event.eventShape === "viewer_decision",
+      )).toBe(true);
+    }
   });
 
   test("blocks producer event visibility for games-scope reads", async () => {

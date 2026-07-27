@@ -141,7 +141,8 @@ export interface GameWatchReplayFrame {
   counts: GameWatchState["counts"];
   /**
    * Additive v3 decision data. The frame remains a v3 player snapshot even
-   * when its canonical event is not a viewer decision.
+   * when its canonical event is not a viewer decision. Accepted format ballots
+   * remain present here before resolution as sanitized operator facts.
    */
   viewerDecisionEvent?: ViewerDecisionEvent;
 }

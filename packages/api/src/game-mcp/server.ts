@@ -738,8 +738,8 @@ function productionGameMcpTools(
     tool({
       name: "read_round_facts",
       description: includeProducerVariant
-        ? "Read sanitized revealed board facts for one deployed game round. Default path is format kernel: empower vote + format menu/pick/resolution (Save-or-Eliminate, Vote Bomb, Safety Bounce) and endgame stage facts when present. Classic Power/Council sections appear only on classic-kernel games. Every authorized viewer receives the complete sanitized format voter-to-target ledger immediately after durable record; producer provenance remains a separate raw-event read."
-        : "Read sanitized revealed board facts for one accessible game round. Default path is format kernel: empower + format menu/pick/resolution and its complete sanitized ballot ledger, with endgame stage facts when present. Classic Power/Council only on classic-kernel games. The ledger is shared by every authorized game reader and contains no reasoning or provenance.",
+        ? "Read sanitized operator-facing board facts for one deployed game round. Format acceptedBallots contains each sanitized voter-to-target mapping immediately after durable record; ballotPresentation.rollCall remains resolution-gated and canonical-roster-ordered. Here sealed describes participating-agent knowledge and UI pacing, not operator or MCP confidentiality. Classic standard vote, Power, and Council sections remain available only on classic-kernel games. Producer provenance remains a separate raw-event read."
+        : "Read sanitized operator-facing board facts for one accessible game round. Format acceptedBallots contains each sanitized voter-to-target mapping immediately after durable record; ballotPresentation.rollCall remains resolution-gated and canonical-roster-ordered. Here sealed describes participating-agent knowledge and UI pacing, not operator or MCP confidentiality. Classic standard vote, Power, and Council sections remain available only on classic-kernel games. These facts contain no reasoning or provenance.",
       properties: {
         gameIdOrSlug: { type: "string" },
         round: { type: "number" },
@@ -747,6 +747,7 @@ function productionGameMcpTools(
       required: ["gameIdOrSlug"],
       scopes: gameReadScopes,
       readOnlyHint: true,
+      outputSchema: roundFactsOutputSchema(),
     }),
     tool({
       name: "read_agent_alliances",
@@ -767,8 +768,8 @@ function productionGameMcpTools(
     tool({
       name: "filter_events",
       description: includeProducerVariant
-        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Each row marks eventShape as viewer_decision for the sanitized public/player DTO or canonical for an envelope. Historical format ballots are viewer decisions; producer mode retains raw provenance envelopes."
-        : "Filter viewer-safe canonical decisions by game, type, phase, actor, sequence range, or limit. Rows mark the sanitized decision shape with eventShape: viewer_decision. Historical format ballots are available as sanitized voter-to-target facts.",
+        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Public/player reads expose sanitized format.ballot_cast mappings immediately after durable record with eventShape: viewer_decision; producer mode retains raw canonical envelopes and provenance."
+        : "Filter viewer-safe canonical decisions by game, type, phase, actor, sequence range, or limit. Rows mark the sanitized decision shape with eventShape: viewer_decision, including sanitized format.ballot_cast mappings immediately after durable record.",
       properties: {
         gameIdOrSlug: { type: "string" },
         eventType: { type: "string" },
@@ -1240,6 +1241,92 @@ function tool(input: {
 }
 
 type GameMcpToolDescriptor = ReturnType<typeof tool>;
+
+function roundFactsOutputSchema(): Record<string, unknown> {
+  const playerRefSchema = {
+    type: "object",
+    required: ["id", "name"],
+    properties: {
+      id: { type: "string" },
+      name: { type: "string" },
+    },
+    additionalProperties: true,
+  };
+  const ballotEntrySchema = {
+    type: "object",
+    required: ["voter", "target", "polarity"],
+    properties: {
+      voter: playerRefSchema,
+      target: playerRefSchema,
+      polarity: nullableSchema({
+        type: "string",
+        enum: ["save", "eliminate"],
+      }),
+    },
+    additionalProperties: true,
+  };
+
+  return {
+    type: "object",
+    required: ["schemaVersion", "game", "canonicalGameFacts"],
+    properties: {
+      schemaVersion: { type: "number" },
+      game: { type: "object", additionalProperties: true },
+      canonicalGameFacts: {
+        type: "object",
+        required: ["roundFacts", "availability"],
+        properties: {
+          roundFacts: {
+            type: "object",
+            required: ["round", "players", "standardVote", "format"],
+            properties: {
+              round: { type: "number" },
+              phase: nullableSchema({ type: "string" }),
+              players: { type: "object", additionalProperties: true },
+              standardVote: { type: "object", additionalProperties: true },
+              format: {
+                type: "object",
+                required: ["acceptedBallots", "ballotPresentation"],
+                properties: {
+                  acceptedBallots: {
+                    type: "array",
+                    description: "Sanitized accepted mappings readable by operators immediately after durable record.",
+                    items: ballotEntrySchema,
+                  },
+                  ballotPresentation: {
+                    type: "object",
+                    description: "Resolution and UI lifecycle; sealed is not an operator or MCP confidentiality marker.",
+                    required: ["status", "rollCall"],
+                    properties: {
+                      status: {
+                        type: "string",
+                        enum: ["sealed", "revealed", "not_applicable", "unavailable"],
+                      },
+                      rollCall: {
+                        type: "array",
+                        description: "Resolution-gated accepted ballots in canonical roster order.",
+                        items: ballotEntrySchema,
+                      },
+                    },
+                    additionalProperties: true,
+                  },
+                },
+                additionalProperties: true,
+              },
+              power: { type: "object", additionalProperties: true },
+              council: { type: "object", additionalProperties: true },
+              endgame: { type: "object", additionalProperties: true },
+            },
+            additionalProperties: true,
+          },
+          availability: { type: "object", additionalProperties: true },
+        },
+        additionalProperties: true,
+      },
+    },
+    additionalProperties: true,
+  };
+}
 
 function postgameOutputSchema(kind: string): Record<string, unknown> {
   const playerRefSchema = {

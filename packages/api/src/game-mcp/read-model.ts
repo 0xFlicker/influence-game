@@ -128,8 +128,9 @@ export interface ProductionGameEventResult {
   /** Distinguishes a safe viewer decision from a canonical event envelope. */
   eventShape: "canonical" | "viewer_decision";
   /**
-   * Public/player decision events use the allowlisted viewer DTO. Producer
-   * mode retains the raw canonical envelope for provenance diagnostics.
+   * Public/player decision events use the allowlisted viewer DTO immediately,
+   * including accepted format ballots. Producer mode retains the raw canonical
+   * envelope for provenance diagnostics.
    */
   event: ProductionGameEventEnvelope | ViewerDecisionEvent;
   matchSources?: string[];
@@ -682,6 +683,9 @@ export class ProductionGameMcpReadModel {
     game: ProductionGameMcpGameIdentity;
     canonicalGameFacts: RevealedRoundFactsRead;
   }> {
+    // This is an operator read: acceptedBallots is immediate sanitized transport
+    // state, while ballotPresentation is the resolution/UI lifecycle projected
+    // by the engine. Participating-agent prompt context is a separate lane.
     const game = await this.requireGame(options.gameIdOrSlug, access);
     const [events, settlementState] = await Promise.all([
       getPersistedGameEvents(this.db, game.id),

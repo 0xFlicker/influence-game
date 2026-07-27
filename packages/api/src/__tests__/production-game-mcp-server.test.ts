@@ -792,6 +792,31 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       type: "string",
       enum: ["compact", "full"],
     });
+    const roundFactsTool = tools.find(
+      (tool) => (tool as { name: string }).name === "read_round_facts",
+    ) as {
+      description: string;
+      outputSchema: Record<string, unknown>;
+    };
+    expect(roundFactsTool.description).toContain(
+      "sealed describes participating-agent knowledge and UI pacing, not operator or MCP confidentiality",
+    );
+    expect(JSON.stringify(roundFactsTool.outputSchema)).toContain("acceptedBallots");
+    expect(JSON.stringify(roundFactsTool.outputSchema)).toContain("ballotPresentation");
+    expect(JSON.stringify(roundFactsTool.outputSchema)).toContain(
+      "\"sealed\",\"revealed\",\"not_applicable\",\"unavailable\"",
+    );
+    expect(JSON.stringify(roundFactsTool.outputSchema)).not.toContain("sealedBallots");
+    expect(JSON.stringify(roundFactsTool.outputSchema)).not.toContain("sealedBallotAccess");
+    const filterEventsTool = tools.find(
+      (tool) => (tool as { name: string }).name === "filter_events",
+    ) as { description: string };
+    expect(filterEventsTool.description).toContain(
+      "sanitized format.ballot_cast mappings immediately after durable record",
+    );
+    expect(filterEventsTool.description).toContain(
+      "producer mode retains raw canonical envelopes and provenance",
+    );
     const juryTool = tools.find((tool) => (tool as { name: string }).name === "read_jury_breakdown") as {
       inputSchema: { properties: Record<string, unknown> };
       outputSchema: unknown;

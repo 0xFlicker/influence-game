@@ -206,7 +206,8 @@ export function broadcastWatchState(gameId: string, state: GameWatchState): void
 /**
  * Broadcast one durable canonical decision through the shared viewer projector.
  * The client key is `gameId + event.sequence`; raw event envelopes never cross
- * this boundary.
+ * this boundary. Accepted format ballots cross immediately in sanitized form;
+ * their later roll-call presentation is browser pacing, not transport secrecy.
  */
 export function broadcastViewerDecisionEvent(gameId: string, event: CanonicalGameEvent): void {
   if (!_server) return;

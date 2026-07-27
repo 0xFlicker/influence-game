@@ -192,13 +192,19 @@ describe("getPublicWatchIntelligence", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("Expected public watch result");
     expect(result.intelligence.receipts.canonicalGameFacts.roundFacts.format.eliminated).toBeNull();
-    expect(result.intelligence.receipts.canonicalGameFacts.roundFacts.format.sealedBallots).toEqual([
+    expect(result.intelligence.receipts.canonicalGameFacts.roundFacts.format.acceptedBallots).toEqual([
       {
         voter: { id: "atlas", name: "Atlas" },
         target: { id: "echo", name: "Echo" },
         polarity: null,
       },
     ]);
+    expect(
+      result.intelligence.receipts.canonicalGameFacts.roundFacts.format.ballotPresentation,
+    ).toEqual({
+      status: "sealed",
+      rollCall: [],
+    });
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain("sourcePointers");
     expect(serialized).not.toContain("WATCH_PRIVATE_DECISION_SENTINEL");

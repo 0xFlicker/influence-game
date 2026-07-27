@@ -331,7 +331,7 @@ describe("GameWatchState", () => {
     });
   });
 
-  test("replays the same viewer decisions as a live canonical batch and supports trusted catch-up", async () => {
+  test("replays first, middle, and final accepted ballots like a live batch with trusted catch-up", async () => {
     const gameId = await insertGame(db, {
       slug: "watch-viewer-decision-catch-up",
       status: "in_progress",
@@ -379,6 +379,33 @@ describe("GameWatchState", () => {
         payload: {
           formatId: "safety_bounce",
           voterId: "atlas",
+          targetId: "echo",
+          polarity: null,
+        },
+      },
+      {
+        type: "format.ballot_cast",
+        payload: {
+          formatId: "safety_bounce",
+          voterId: "echo",
+          targetId: "nyx",
+          polarity: null,
+        },
+      },
+      {
+        type: "format.ballot_cast",
+        payload: {
+          formatId: "safety_bounce",
+          voterId: "mira",
+          targetId: "echo",
+          polarity: null,
+        },
+      },
+      {
+        type: "format.ballot_cast",
+        payload: {
+          formatId: "safety_bounce",
+          voterId: "nyx",
           targetId: "echo",
           polarity: null,
         },
@@ -805,6 +832,21 @@ function createSafetyBounceViewerFixture(gameId: string): readonly CanonicalGame
   state.recordFormatBallot({
     formatId: "safety_bounce",
     voterId: "atlas",
+    targetId: "echo",
+  }, privatePointer);
+  state.recordFormatBallot({
+    formatId: "safety_bounce",
+    voterId: "echo",
+    targetId: "nyx",
+  }, privatePointer);
+  state.recordFormatBallot({
+    formatId: "safety_bounce",
+    voterId: "mira",
+    targetId: "echo",
+  }, privatePointer);
+  state.recordFormatBallot({
+    formatId: "safety_bounce",
+    voterId: "nyx",
     targetId: "echo",
   }, privatePointer);
 

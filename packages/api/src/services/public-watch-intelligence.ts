@@ -303,7 +303,8 @@ async function loadArtifactCards(
       inArray(schema.gameCognitiveArtifacts.actorRole, ["player", "juror"]),
       ne(schema.gameCognitiveArtifacts.action, "alliance-action"),
       not(like(schema.gameCognitiveArtifacts.action, "alliance-huddle-%")),
-      // Sealed format-ballot thinking/strategy is owner/producer only until House reveal.
+      // Ballot cognition stays private; the separate sanitized accepted-ballot
+      // receipts remain operator-readable immediately through canonical facts.
       ne(schema.gameCognitiveArtifacts.action, "format-ballot"),
       ne(schema.gameCognitiveArtifacts.action, "format-save-or-eliminate-ballot"),
       ne(schema.gameCognitiveArtifacts.action, "format-vote-bomb-ballot"),
