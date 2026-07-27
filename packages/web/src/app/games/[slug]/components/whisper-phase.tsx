@@ -601,16 +601,16 @@ export function OpenWhisperRoomsView({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 auto-rows-[max-content] gap-4 overflow-y-auto lg:auto-rows-auto lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.45fr)_minmax(14rem,0.65fr)] lg:overflow-hidden">
-          <div className="min-h-0 lg:overflow-y-auto lg:pr-1">
+        <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto lg:grid lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.45fr)_minmax(14rem,0.65fr)] lg:overflow-hidden">
+          <div className="min-h-0 shrink-0 lg:overflow-y-auto lg:pr-1">
             <MingleMap rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
           </div>
 
-          <div className="flex min-h-[24rem] min-w-0 lg:min-h-0">
+          <div className="flex min-h-[24rem] min-w-0 shrink-0 lg:min-h-0">
             <ActiveRoomFeed room={activeRoom} players={players} showThinking={showThinking} />
           </div>
 
-          <div className="min-h-0 lg:overflow-y-auto lg:pr-1">
+          <div className="min-h-0 shrink-0 lg:overflow-y-auto lg:pr-1">
             <MovementTrail rows={movementRows} />
           </div>
         </div>
