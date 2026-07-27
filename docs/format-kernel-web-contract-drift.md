@@ -57,6 +57,12 @@ clear and tied resolution, normal and sole-vulnerable Safety Bounce, terminal
 prefixes, and malformed selection/ballot/bounce histories. `edge-smoke-dusk` remains the classic
 characterization authority.
 
+`read_round_facts`, public watch, WebSocket clients, public API/event readers,
+and ordinary MCP reads expose the same sanitized ballot facts after durable
+append. Active-match MCP does not expose in-match vote tools. The presentation
+may hold already-received identities until phase-end, then shows the aggregate
+before the canonical roster-ordered roll call.
+
 ## Verification status
 
 Automated model/component coverage proves:

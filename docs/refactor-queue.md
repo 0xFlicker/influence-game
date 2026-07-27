@@ -8,6 +8,8 @@ Last format-kernel review follow-ups added: 2026-07-25
 
 Last continuity audit added: 2026-07-26
 
+Last watch-shell accessibility audit added: 2026-07-26
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -78,6 +80,26 @@ Items are ordered by current priority.
 - Automated proof: exhaustive registry coverage plus DB-backed exact-sequence, retry/degradation, prompt-reuse watermark, producer navigation, owner citation, sealed-ballot, actor-filter, API, results, transcript, and WebSocket privacy tests.
 - Remaining validation path: run one local API-backed game with private trace capture through representative vote, format, Power, and Council actions. In producer reads, reconcile `inspect_durable_run`, `list_trace_manifests`, `read_producer_match_narrative`, and exact-sequence `filter_events` before opening one bounded `read_trace_content`; confirm expected unlinked calls keep prompt-reuse coverage `partial` while linked actions advance the watermark.
 - Deferred: historical inference/backfill and a dedicated cache/linkage dashboard remain separate product decisions, not R13 exit work.
+
+### R17. Watch-shell accessibility baseline
+
+- Status: `ready`
+- Priority: **medium**
+- Sources: `packages/web/src/app/games/[slug]/components/match-watch-shell.tsx`, `packages/web/src/app/games/[slug]/components/dramatic-replay-viewer.tsx`, `packages/web/src/app/games/[slug]/components/replay-controls.tsx`, and the format-aware game-viewer planning review on 2026-07-26.
+- Signal: the watch shell has useful structural accessibility—semantic regions, real buttons and links, focus-visible styles, cast-selection labels, pressed states, and inspector tab roles—but no coherent accessibility contract for changing theater content. It has no game-event live region or watch-specific status surface; replay navigation uses unlabeled icon-only buttons; and inspector tabs declare tab semantics without standard keyboard navigation.
+- Concrete seam: watch-shell landmarks and status regions, replay controls, inspector tabs, dynamic phase/result announcements, focus behavior, and shared component accessibility tests.
+- Validation path: keyboard-only navigation, screen-reader-oriented role/name/state assertions, one live-event announcement story, replay-control accessible-name coverage, tab arrow-key behavior, and focus retention through responsive reflow.
+- Suggested slice: audit and repair the shared watch shell as one accessibility pass before adding format-specific announcements. Establish accessible control names, correct tab keyboard behavior, a single canonical event/status announcement policy, and focused component/browser coverage without changing game authority or presentation pacing.
+
+### R19. Extract a lightweight simulation package above the engine
+
+- Status: `ready`
+- Priority: **medium**
+- Sources: `packages/engine/package.json`, `packages/engine/src/index.ts`, `packages/engine/src/simulate.ts`, `packages/engine/src/api-simulate.ts`, `packages/engine/src/simulation-instrumentation.ts`, `packages/engine/src/game-mcp/`, `packages/engine/src/agent.ts`, `packages/engine/src/house-interviewer.ts`, and the format-aware game-viewer planning review on 2026-07-26.
+- Signal: `@influence/engine` has one broad source entry and no explicit exports map. Its public barrel combines pure domain events/projections with the filesystem-backed local simulation MCP, simulation runners, artifact writers, OpenAI-coupled agents, provider configuration, and Node-only utilities. The simulator is a major source of package-boundary pollution, although it is not the only one: crypto and provider dependencies also remain in core-adjacent agent, House, state, hashing, and prompt-reuse modules.
+- Concrete seam: a new lightweight `@influence/simulation` workspace package above the engine; simulator CLI/configuration, artifact writers, local corpus MCP, Node filesystem/process utilities, and simulation-only dependencies; explicit engine exports for pure domain, runtime/provider adapters, and browser-safe leaves.
+- Validation path: preserve existing root simulation commands and artifact formats through the new package; keep deterministic engine and API tests passing; prove browser-safe engine subpaths with a production Next.js build; add an import-boundary test that rejects Node/provider/simulation dependencies from designated pure/browser entries.
+- Suggested slice: first move `simulate.ts`, `api-simulate.ts`, simulation instrumentation, local artifact writing, and the filesystem-backed simulation MCP into `@influence/simulation` without redesigning gameplay. Then inventory the remaining Node/OpenAI coupling and lift it behind injected runtime/provider/UUID/hash ports in bounded follow-ups. Do not claim the engine is environment-agnostic until those remaining imports are removed from its designated core boundary.
 
 ### R4. Private trace purge execution
 
