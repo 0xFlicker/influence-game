@@ -48,6 +48,7 @@ export default async function UpdatePostPage({ params }: Props) {
         </Link>
       </p>
 
+
       <header className="mb-10">
         <p className="influence-table-header text-xs uppercase tracking-wide mb-3 opacity-70">
           {formatUpdateDate(post.date)}

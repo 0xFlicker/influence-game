@@ -29,72 +29,41 @@ export default function UpdatesIndexPage() {
       {posts.length === 0 ? (
         <p className="influence-copy text-base opacity-80">No public updates yet.</p>
       ) : (
-        <>
-          {/* Mobile / tablet: full summary list (desktop uses the sidebar). */}
-          <ul className="space-y-8 list-none p-0 m-0 lg:hidden">
-            {posts.map((post) => (
-              <li
-                key={post.slug}
-                className="border-t border-white/10 pt-8 first:border-t-0 first:pt-0"
-              >
-                <p className="influence-table-header text-xs uppercase tracking-wide mb-2 opacity-70">
-                  {formatUpdateDate(post.date)}
-                </p>
-                <h2 className="influence-section-title text-2xl font-semibold mb-2">
-                  <Link
-                    href={`/updates/${post.slug}`}
-                    className="influence-link hover:underline"
-                  >
-                    {post.title}
-                  </Link>
-                </h2>
-                <p className="influence-copy text-base leading-relaxed mb-3">
-                  {post.summary}
-                </p>
-                {post.tags.length > 0 ? (
-                  <ul className="flex flex-wrap gap-2 list-none p-0 m-0">
-                    {post.tags.map((tag) => (
-                      <li
-                        key={tag}
-                        className="text-xs px-2 py-0.5 rounded border border-white/15 opacity-80"
-                      >
-                        {tag}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-
-          {/* Desktop: latest post as the landing main column. */}
-          {posts[0] ? (
-            <article className="hidden lg:block">
-              <p className="influence-table-header text-xs uppercase tracking-wide mb-3 opacity-70">
-                Latest · {formatUpdateDate(posts[0].date)}
+        <ul className="space-y-8 list-none p-0 m-0">
+          {posts.map((post) => (
+            <li
+              key={post.slug}
+              className="border-t border-white/10 pt-8 first:border-t-0 first:pt-0"
+            >
+              <p className="influence-table-header text-xs uppercase tracking-wide mb-2 opacity-70">
+                {formatUpdateDate(post.date)}
               </p>
-              <h2 className="influence-section-title text-3xl font-semibold mb-4 tracking-tight">
+              <h2 className="influence-section-title text-2xl font-semibold mb-2">
                 <Link
-                  href={`/updates/${posts[0].slug}`}
+                  href={`/updates/${post.slug}`}
                   className="influence-link hover:underline"
                 >
-                  {posts[0].title}
+                  {post.title}
                 </Link>
               </h2>
-              <p className="influence-copy text-lg leading-relaxed mb-6">
-                {posts[0].summary}
+              <p className="influence-copy text-base leading-relaxed mb-3">
+                {post.summary}
               </p>
-              <p>
-                <Link
-                  href={`/updates/${posts[0].slug}`}
-                  className="influence-link text-sm"
-                >
-                  Read full update →
-                </Link>
-              </p>
-            </article>
-          ) : null}
-        </>
+              {post.tags.length > 0 ? (
+                <ul className="flex flex-wrap gap-2 list-none p-0 m-0">
+                  {post.tags.map((tag) => (
+                    <li
+                      key={tag}
+                      className="text-xs px-2 py-0.5 rounded border border-white/15 opacity-80"
+                    >
+                      {tag}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </li>
+          ))}
+        </ul>
       )}
     </UpdatesShell>
   );

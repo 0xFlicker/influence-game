@@ -115,13 +115,19 @@ describe("updates pages", () => {
     );
   });
 
-  it("uses a desktop sidebar of all post summaries", () => {
-    expect(shellSource).toContain("lg:grid");
+  it("uses a desktop sidebar only on article pages, with a back link to the archive", () => {
+    expect(shellSource).toContain("isArticle");
     expect(shellSource).toContain("UpdatesSidebar");
     expect(shellSource).toContain("lg:sticky");
+    expect(shellSource).toContain('href="/updates"');
+    expect(shellSource).toContain("← All updates");
     expect(sidebarSource).toContain("All updates");
     expect(sidebarSource).toContain("post.summary");
     expect(sidebarSource).toContain('href={`/updates/${post.slug}`}');
     expect(sidebarSource).toContain("aria-current");
+    // Index is full-width list, not the single-latest desktop teaser
+    expect(indexSource).not.toContain("Read full update");
+    expect(indexSource).not.toContain("lg:hidden");
+    expect(indexSource).toContain("space-y-8");
   });
 });
