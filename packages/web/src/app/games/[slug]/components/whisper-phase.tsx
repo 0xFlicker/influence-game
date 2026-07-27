@@ -601,7 +601,7 @@ export function OpenWhisperRoomsView({
           </div>
         </div>
 
-        <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.45fr)_minmax(14rem,0.65fr)] lg:overflow-hidden">
+        <div className="grid min-h-0 flex-1 auto-rows-[max-content] gap-4 overflow-y-auto lg:auto-rows-auto lg:grid-cols-[minmax(18rem,0.9fr)_minmax(28rem,1.45fr)_minmax(14rem,0.65fr)] lg:overflow-hidden">
           <div className="min-h-0 lg:overflow-y-auto lg:pr-1">
             <MingleMap rooms={currentRooms} players={players} selectedRoomId={selectedRoomId} onSelectRoom={selectRoom} />
           </div>
