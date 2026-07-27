@@ -146,6 +146,30 @@ export type ViewerFormatResolutionPayload = {
   } | null;
 };
 
+export type FormatBallotPresentationStatus =
+  | "sealed"
+  | "revealed"
+  | "not_applicable"
+  | "unavailable";
+
+export interface ProjectedFormatBallotEntry {
+  voterId: UUID;
+  targetId: UUID;
+  polarity: "save" | "eliminate" | null;
+}
+
+export interface ProjectedFormatBallotPresentation {
+  status: FormatBallotPresentationStatus;
+  rollCall: ProjectedFormatBallotEntry[];
+}
+
+export interface ProjectFormatBallotPresentationOptions {
+  events: readonly CanonicalGameEvent[];
+  round: number;
+  /** Canonical roster order, narrowed to agents eligible to vote in this round. */
+  eligibleVoterIds: readonly UUID[];
+}
+
 /**
  * Projects one canonical event into an allowlisted viewer decision, or null
  * when the event is not a decision the watch/replay contract publishes.
@@ -322,6 +346,230 @@ function projectFormatResolution(payload: FormatResolutionPayload): ViewerFormat
 
 function copyRecord<T>(record: Record<UUID, T>): Record<UUID, T> {
   return { ...record };
+}
+
+/**
+ * Builds the phase-end ballot presentation from the existing accepted ballot
+ * events. Accepted ballot transport remains independent: this projection gates
+ * only the roster-ordered roll call drawn after a trusted resolution.
+ */
+export function projectFormatBallotPresentation(
+  options: ProjectFormatBallotPresentationOptions,
+): ProjectedFormatBallotPresentation {
+  const events = options.events.filter((event) => event.round === options.round);
+  const menus = eventsOfType(events, "format.menu_offered");
+  const selections = eventsOfType(events, "format.selected");
+  const ballots = eventsOfType(events, "format.ballot_cast");
+  const resolutions = eventsOfType(events, "format.resolved");
+  const selected = selections.at(-1) ?? null;
+  const resolved = resolutions.at(-1) ?? null;
+
+  if (!selected && !resolved && ballots.length === 0) {
+    return ballotPresentation("not_applicable");
+  }
+  if (
+    menus.length !== 1
+    || selections.length !== 1
+    || !selected
+    || !menuMatchesSelection(menus[0]!, selected)
+  ) {
+    return ballotPresentation("unavailable");
+  }
+  if (!validAcceptedBallots(ballots, selected.payload.formatId, options.eligibleVoterIds)) {
+    return ballotPresentation("unavailable");
+  }
+  if (!resolved) {
+    return ballotPresentation("sealed");
+  }
+  if (
+    resolutions.length !== 1
+    || resolved.payload.formatId !== selected.payload.formatId
+    || resolved.payload.empoweredId !== selected.payload.empoweredId
+    || !validResolutionShape(resolved)
+  ) {
+    return ballotPresentation("unavailable");
+  }
+
+  const bouncePrefix = resolved.payload.formatId === "safety_bounce"
+    ? reconstructSafetyBouncePrefix({
+        roster: options.eligibleVoterIds.map((id) => ({ id })),
+        events,
+      })
+    : null;
+  if (bouncePrefix?.diagnostics.length) {
+    return ballotPresentation("unavailable");
+  }
+  if (soleVulnerableSafetyBounce(resolved, ballots)) {
+    return ballotPresentation("not_applicable");
+  }
+
+  if (
+    ballots.length !== options.eligibleVoterIds.length
+    || !aggregateMatchesBallots(resolved, ballots, options.eligibleVoterIds)
+  ) {
+    return ballotPresentation("unavailable");
+  }
+
+  const byVoter = new Map(ballots.map((event) => [event.payload.voterId, event.payload]));
+  return {
+    status: "revealed",
+    rollCall: options.eligibleVoterIds.map((voterId) => {
+      const ballot = byVoter.get(voterId)!;
+      return {
+        voterId,
+        targetId: ballot.targetId,
+        polarity: ballot.polarity,
+      };
+    }),
+  };
+}
+
+function ballotPresentation(
+  status: Exclude<FormatBallotPresentationStatus, "revealed">,
+): ProjectedFormatBallotPresentation {
+  return { status, rollCall: [] };
+}
+
+function menuMatchesSelection(
+  menu: Extract<CanonicalGameEvent, { type: "format.menu_offered" }>,
+  selected: Extract<CanonicalGameEvent, { type: "format.selected" }>,
+): boolean {
+  return menu.payload.empoweredId === selected.payload.empoweredId
+    && menu.payload.offeredFormatIds.includes(selected.payload.formatId);
+}
+
+function validAcceptedBallots(
+  ballots: readonly Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>[],
+  formatId: LaunchFormatId,
+  eligibleVoterIds: readonly UUID[],
+): boolean {
+  const eligible = new Set(eligibleVoterIds);
+  const voters = new Set<UUID>();
+  for (const ballot of ballots) {
+    const payload = ballot.payload;
+    if (
+      payload.formatId !== formatId
+      || !eligible.has(payload.voterId)
+      || !eligible.has(payload.targetId)
+      || voters.has(payload.voterId)
+    ) {
+      return false;
+    }
+    if (
+      (formatId === "save_or_eliminate" && payload.polarity === null)
+      || (formatId !== "save_or_eliminate" && payload.polarity !== null)
+    ) {
+      return false;
+    }
+    voters.add(payload.voterId);
+  }
+  return true;
+}
+
+function validResolutionShape(
+  resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
+): boolean {
+  const payload = resolved.payload;
+  if (payload.formatId === "save_or_eliminate") {
+    return payload.saveOrEliminate !== null
+      && payload.voteBomb === null
+      && payload.safetyBounce === null;
+  }
+  if (payload.formatId === "vote_bomb") {
+    return payload.saveOrEliminate === null
+      && payload.voteBomb !== null
+      && payload.safetyBounce === null;
+  }
+  return payload.saveOrEliminate === null
+    && payload.voteBomb === null
+    && payload.safetyBounce !== null;
+}
+
+function soleVulnerableSafetyBounce(
+  resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
+  ballots: readonly Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>[],
+): boolean {
+  const bounce = resolved.payload.safetyBounce;
+  return resolved.payload.formatId === "safety_bounce"
+    && resolved.payload.resolutionKind === "auto"
+    && bounce?.vulnerablePlayerIds.length === 1
+    && bounce.vulnerablePlayerIds[0] === resolved.payload.eliminatedId
+    && Object.keys(bounce.voteTotals).length === 0
+    && ballots.length === 0;
+}
+
+function aggregateMatchesBallots(
+  resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
+  ballots: readonly Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>[],
+  eligibleVoterIds: readonly UUID[],
+): boolean {
+  const eligible = new Set(eligibleVoterIds);
+  if (resolved.payload.formatId === "save_or_eliminate") {
+    const aggregate = resolved.payload.saveOrEliminate!;
+    const saves = zeroCounts(eligibleVoterIds);
+    const eliminates = zeroCounts(eligibleVoterIds);
+    for (const ballot of ballots) {
+      const bucket = ballot.payload.polarity === "save" ? saves : eliminates;
+      bucket[ballot.payload.targetId] = (bucket[ballot.payload.targetId] ?? 0) + 1;
+    }
+    const nets = Object.fromEntries(
+      eligibleVoterIds.map((id) => [id, (saves[id] ?? 0) - (eliminates[id] ?? 0)]),
+    );
+    return countRecordMatches(aggregate.savesReceived, saves, eligible)
+      && countRecordMatches(aggregate.eliminateReceived, eliminates, eligible)
+      && countRecordMatches(aggregate.nets, nets, eligible);
+  }
+  if (resolved.payload.formatId === "vote_bomb") {
+    const totals = zeroCounts(eligibleVoterIds);
+    for (const ballot of ballots) {
+      totals[ballot.payload.targetId] = (totals[ballot.payload.targetId] ?? 0) + 1;
+    }
+    const zeroSafe = eligibleVoterIds.filter((id) => totals[id] === 0);
+    return countRecordMatches(resolved.payload.voteBomb!.totals, totals, eligible)
+      && sameIdSet(resolved.payload.voteBomb!.zeroSafePlayerIds, zeroSafe);
+  }
+
+  const bounce = resolved.payload.safetyBounce!;
+  const vulnerable = new Set(bounce.vulnerablePlayerIds);
+  if (
+    bounce.vulnerablePlayerIds.some((id) => !eligible.has(id))
+    || ballots.some((ballot) => !vulnerable.has(ballot.payload.targetId))
+  ) {
+    return false;
+  }
+  const totals = zeroCounts(bounce.vulnerablePlayerIds);
+  for (const ballot of ballots) {
+    totals[ballot.payload.targetId] = (totals[ballot.payload.targetId] ?? 0) + 1;
+  }
+  return countRecordMatches(bounce.voteTotals, totals, vulnerable);
+}
+
+function zeroCounts(ids: readonly UUID[]): Record<UUID, number> {
+  return Object.fromEntries(ids.map((id) => [id, 0]));
+}
+
+function countRecordMatches(
+  actual: Record<UUID, number>,
+  expected: Record<UUID, number>,
+  expectedIds: ReadonlySet<UUID>,
+): boolean {
+  const actualIds = Object.keys(actual);
+  return actualIds.length === expectedIds.size
+    && actualIds.every((id) => expectedIds.has(id))
+    && actualIds.every((id) => actual[id] === expected[id]);
+}
+
+function sameIdSet(left: readonly UUID[], right: readonly UUID[]): boolean {
+  return left.length === right.length && left.every((id) => right.includes(id));
+}
+
+function eventsOfType<TType extends CanonicalGameEvent["type"]>(
+  events: readonly CanonicalGameEvent[],
+  type: TType,
+): Array<Extract<CanonicalGameEvent, { type: TType }>> {
+  return events.filter(
+    (event): event is Extract<CanonicalGameEvent, { type: TType }> => event.type === type,
+  );
 }
 
 export interface SafetyBounceRosterPlayer {

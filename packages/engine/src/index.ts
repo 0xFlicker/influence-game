@@ -85,7 +85,11 @@ export type {
   JudgmentSpeechKind,
   JudgmentSpeechProvenance,
 } from "./canonical-events";
-export { projectViewerDecisionEvent, reconstructSafetyBouncePrefix } from "./viewer-decision-events";
+export {
+  projectFormatBallotPresentation,
+  projectViewerDecisionEvent,
+  reconstructSafetyBouncePrefix,
+} from "./viewer-decision-events";
 export type {
   ReconstructSafetyBouncePrefixOptions,
   SafetyBounceCompletion,
@@ -96,6 +100,10 @@ export type {
   ViewerDecisionEvent,
   ViewerDecisionEventBase,
   ViewerDecisionEventType,
+  FormatBallotPresentationStatus,
+  ProjectedFormatBallotEntry,
+  ProjectedFormatBallotPresentation,
+  ProjectFormatBallotPresentationOptions,
   ViewerFormatResolutionPayload,
 } from "./viewer-decision-events";
 export {
@@ -270,9 +278,8 @@ export type {
   RevealedExposureResolutionSummary,
   RevealedFactsDiagnosticSeverity,
   RevealedFactsStatus,
-  RevealedFormatBallotAccess,
-  RevealedFormatBallotAccessMode,
   RevealedFormatBallotEntry,
+  RevealedFormatBallotPresentation,
   RevealedFormatBouncePointer,
   RevealedFormatFacts,
   RevealedPlayerRef,

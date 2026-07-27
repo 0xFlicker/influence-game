@@ -125,6 +125,24 @@ describe("buildCompletedGameResults", () => {
       targetId: "bob",
       polarity: "eliminate",
     }, [sourcePointer("format-save-or-eliminate-ballot", "alice")]);
+    state.recordFormatBallot({
+      formatId: "save_or_eliminate",
+      voterId: "bob",
+      targetId: "dave",
+      polarity: "save",
+    });
+    state.recordFormatBallot({
+      formatId: "save_or_eliminate",
+      voterId: "charlie",
+      targetId: "bob",
+      polarity: "eliminate",
+    });
+    state.recordFormatBallot({
+      formatId: "save_or_eliminate",
+      voterId: "dave",
+      targetId: "bob",
+      polarity: "eliminate",
+    });
     state.recordFormatResolution({
       formatId: "save_or_eliminate",
       empoweredId: "alice",
@@ -133,9 +151,9 @@ describe("buildCompletedGameResults", () => {
       tiedPlayerIds: [],
       tiebreakerId: null,
       saveOrEliminate: {
-        nets: { alice: 1, bob: -2, charlie: 0, dave: 1 },
-        savesReceived: { alice: 1, bob: 0, charlie: 0, dave: 1 },
-        eliminateReceived: { alice: 0, bob: 2, charlie: 0, dave: 0 },
+        nets: { alice: 0, bob: -3, charlie: 0, dave: 1 },
+        savesReceived: { alice: 0, bob: 0, charlie: 0, dave: 1 },
+        eliminateReceived: { alice: 0, bob: 3, charlie: 0, dave: 0 },
       },
       voteBomb: null,
       safetyBounce: null,
@@ -152,13 +170,32 @@ describe("buildCompletedGameResults", () => {
     expect(read.rounds[0]?.canonicalFacts.roundFacts.power).toBeUndefined();
     expect(read.rounds[0]?.canonicalFacts.roundFacts.council).toBeUndefined();
     expect(read.rounds[0]?.canonicalFacts.roundFacts.format.status).toBe("available");
-    expect(read.rounds[0]?.canonicalFacts.roundFacts.format.sealedBallots).toEqual([
+    expect(read.rounds[0]?.canonicalFacts.roundFacts.format.acceptedBallots).toHaveLength(4);
+    expect(read.rounds[0]?.canonicalFacts.roundFacts.format.ballotPresentation).toEqual({
+      status: "revealed",
+      rollCall: [
       {
         voter: { id: "alice", name: "Alice" },
         target: { id: "bob", name: "Bob" },
         polarity: "eliminate",
       },
-    ]);
+      {
+        voter: { id: "bob", name: "Bob" },
+        target: { id: "dave", name: "Dave" },
+        polarity: "save",
+      },
+      {
+        voter: { id: "charlie", name: "Charlie" },
+        target: { id: "bob", name: "Bob" },
+        polarity: "eliminate",
+      },
+      {
+        voter: { id: "dave", name: "Dave" },
+        target: { id: "bob", name: "Bob" },
+        polarity: "eliminate",
+      },
+      ],
+    });
     expect(JSON.stringify(read)).not.toContain("sourcePointers");
   });
 

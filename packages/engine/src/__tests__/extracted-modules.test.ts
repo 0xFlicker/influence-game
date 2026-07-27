@@ -274,7 +274,7 @@ describe("ContextBuilder", () => {
     ]);
   });
 
-  it("keeps format ballot voter mappings sealed in direct agent context", () => {
+  it("keeps peer format ballots absent while retaining the acting agent's own sealed receipt", () => {
     const alice = gs.getAlivePlayers().find((player) => player.name === "Alice")!;
     const bob = gs.getAlivePlayers().find((player) => player.name === "Bob")!;
     gs.recordFormatMenu(alice.id, ["save_or_eliminate", "vote_bomb"]);
@@ -286,15 +286,13 @@ describe("ContextBuilder", () => {
       polarity: "eliminate",
     });
 
-    const context = builder.buildPhaseContext(bob.id, Phase.FORMAT_RESOLVE);
-    const ballotRecord = context.gameEventRecord?.find((record) =>
-      record.includes("Format ballot recorded"),
-    );
+    const bobContext = builder.buildPhaseContext(bob.id, Phase.FORMAT_RESOLVE);
+    const aliceContext = builder.buildPhaseContext(alice.id, Phase.FORMAT_RESOLVE);
 
-    expect(ballotRecord).toContain("Format ballot recorded (sealed)");
-    expect(ballotRecord).not.toContain("Alice");
-    expect(ballotRecord).not.toContain("Bob");
-    expect(ballotRecord).not.toContain("eliminate");
+    expect(bobContext.gameEventRecord?.some((record) => record.includes("format ballot"))).toBe(false);
+    expect(aliceContext.gameEventRecord).toContain(
+      "R1/FORMAT_RESOLVE: Your format ballot: eliminate → Bob (sealed).",
+    );
   });
 
   it("does not turn private format-ballot operator turns into player transcript context", () => {

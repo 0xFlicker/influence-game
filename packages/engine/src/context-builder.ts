@@ -36,6 +36,7 @@ import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
 import type { CanonicalGameEvent } from "./canonical-events";
+import { projectFormatBallotPresentation } from "./viewer-decision-events";
 
 export type PhaseContextBuildExtra = {
   empoweredId?: UUID;
@@ -326,9 +327,11 @@ export class ContextBuilder {
         return `${prefix}: ${this.name(event.payload.empoweredId)} was offered ${event.payload.offeredFormatIds.join(" vs ")}.`;
       case "format.selected":
         return `${prefix}: ${this.name(event.payload.empoweredId)} locked format ${event.payload.formatId}.`;
-      case "format.ballot_cast":
-        // The viewer ledger is public, but in-game agents never receive mappings.
-        return `${prefix}: Format ballot recorded (sealed).`;
+      case "format.ballot_cast": {
+        const polarity = event.payload.polarity ?? "eliminate";
+        const target = this.name(event.payload.targetId);
+        return `${prefix}: Your format ballot: ${polarity} → ${target} (sealed).`;
+      }
       case "format.safety_bounce_started":
         return `${prefix}: Safety Bounce started by ${this.name(event.payload.starterId)} (SAFE).`;
       case "format.safety_bounce_pointer":
@@ -406,8 +409,15 @@ export class ContextBuilder {
     }
   }
 
-  private canonicalEventVisibleToAgent(event: CanonicalGameEvent, agentId: UUID): boolean {
+  private canonicalEventVisibleToAgent(
+    event: CanonicalGameEvent,
+    agentId: UUID,
+    resolvedFormats?: ReadonlyMap<string, number>,
+  ): boolean {
     switch (event.type) {
+      case "format.ballot_cast":
+        return event.payload.voterId === agentId
+          || this.formatBallotIsResolved(event, resolvedFormats);
       case "alliance.proposal_submitted":
       case "alliance.response_recorded":
       case "alliance.counter_submitted":
@@ -435,9 +445,79 @@ export class ContextBuilder {
   }
 
   private buildGameEventRecord(agentId: UUID): string[] {
-    return this.gameState.getCanonicalEvents()
-      .filter((event) => this.canonicalEventVisibleToAgent(event, agentId))
-      .map((event) => this.formatCanonicalEvent(event));
+    const events = this.gameState.getCanonicalEvents();
+    const resolvedFormats = new Map(
+      events
+        .filter(
+          (event): event is Extract<CanonicalGameEvent, { type: "format.resolved" }> =>
+            event.type === "format.resolved",
+        )
+        .map((event) => [`${event.round}:${event.payload.formatId}`, event.sequence] as const),
+    );
+    const records: string[] = [];
+    for (const event of events) {
+      if (!this.canonicalEventVisibleToAgent(event, agentId, resolvedFormats)) continue;
+      if (
+        event.type === "format.ballot_cast"
+        && this.formatBallotIsResolved(event, resolvedFormats)
+      ) {
+        continue;
+      }
+      records.push(this.formatCanonicalEvent(event));
+      if (event.type === "format.resolved") {
+        records.push(...this.resolvedFormatBallotRecords(events, event));
+      }
+    }
+    return records;
+  }
+
+  private formatBallotIsResolved(
+    ballot: Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>,
+    resolvedFormats?: ReadonlyMap<string, number>,
+  ): boolean {
+    if (resolvedFormats) {
+      const resolutionSequence = resolvedFormats.get(
+        `${ballot.round}:${ballot.payload.formatId}`,
+      );
+      return resolutionSequence !== undefined && resolutionSequence > ballot.sequence;
+    }
+    return this.gameState.getCanonicalEvents().some(
+      (event) =>
+        event.type === "format.resolved"
+        && event.round === ballot.round
+        && event.sequence > ballot.sequence
+        && event.payload.formatId === ballot.payload.formatId,
+    );
+  }
+
+  private resolvedFormatBallotRecords(
+    events: readonly CanonicalGameEvent[],
+    resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
+  ): string[] {
+    const roster = events.find((event) => event.type === "game.roster_initialized");
+    if (!roster || roster.type !== "game.roster_initialized") return [];
+    const eliminatedBeforeRound = new Set(
+      events
+        .filter(
+          (event): event is Extract<CanonicalGameEvent, { type: "player.eliminated" }> =>
+            event.type === "player.eliminated"
+            && event.payload.eliminatedRound < resolved.round,
+        )
+        .map((event) => event.payload.playerId),
+    );
+    const presentation = projectFormatBallotPresentation({
+      events,
+      round: resolved.round,
+      eligibleVoterIds: roster.payload.players
+        .map((player) => player.id)
+        .filter((playerId) => !eliminatedBeforeRound.has(playerId)),
+    });
+    if (presentation.status !== "revealed") return [];
+    const prefix = `R${resolved.round}${resolved.phase ? `/${resolved.phase}` : ""}`;
+    return presentation.rollCall.map((entry) => {
+      const polarity = entry.polarity ?? "eliminate";
+      return `${prefix}: ${this.name(entry.voterId)} format ballot: ${polarity} → ${this.name(entry.targetId)}.`;
+    });
   }
 
   private buildPublicTranscriptContext(): PublicTranscriptContextEntry[] {

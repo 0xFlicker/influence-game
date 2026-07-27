@@ -3,26 +3,17 @@ import type { LaunchFormatId } from "./formats";
 import { resolveGameKernel, type GameKernel } from "./game-kernel";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import { PlayerStatus, type Phase, type PowerActionType, type UUID } from "./types";
-import { reconstructSafetyBouncePrefix } from "./viewer-decision-events";
+import {
+  projectFormatBallotPresentation,
+  reconstructSafetyBouncePrefix,
+  type FormatBallotPresentationStatus,
+} from "./viewer-decision-events";
 
 export type RevealedFactsStatus = "available" | "not_yet_resolved" | "not_yet_flushed" | "unavailable";
 
 export type RevealedCanonicalFactsStatus = "available" | "not_yet_flushed" | "unavailable";
 
 export type RevealedFactsDiagnosticSeverity = "info" | "warning" | "error";
-
-/**
- * Historical compatibility input for callers that used audience-specific
- * format ballot reads. All modes now produce the same viewer-safe ledger;
- * provenance remains on the raw producer event envelope instead.
- */
-export type RevealedFormatBallotAccessMode = "public" | "owner" | "producer";
-
-export interface RevealedFormatBallotAccess {
-  mode: RevealedFormatBallotAccessMode;
-  /** @deprecated No longer used; all authorized viewers receive the same ledger. */
-  ownedPlayerIds?: ReadonlySet<UUID> | readonly UUID[];
-}
 
 export interface RevealedRoundFactsDiagnostic {
   code: string;
@@ -113,6 +104,11 @@ export interface RevealedFormatBallotEntry {
   polarity: "save" | "eliminate" | null;
 }
 
+export interface RevealedFormatBallotPresentation {
+  status: FormatBallotPresentationStatus;
+  rollCall: RevealedFormatBallotEntry[];
+}
+
 export interface RevealedFormatBouncePointer {
   actor: RevealedPlayerRef;
   target: RevealedPlayerRef;
@@ -151,13 +147,10 @@ export interface RevealedFormatFacts {
   saveOrEliminate: RevealedSaveOrEliminateFacts | null;
   voteBomb: RevealedVoteBombFacts | null;
   safetyBounce: RevealedSafetyBounceFacts | null;
-  /**
-   * Viewer-safe accepted voter-to-target ledger, available immediately after
-   * durable append. Never includes provenance, cognition, or raw envelopes.
-   */
-  sealedBallots: RevealedFormatBallotEntry[];
-  /** Compatibility marker: the ledger is public to every authorized viewer. */
-  sealedBallotAccess: RevealedFormatBallotAccessMode;
+  /** Sanitized accepted ballots in canonical event order, readable immediately by operators. */
+  acceptedBallots: RevealedFormatBallotEntry[];
+  /** Resolution-gated, canonical roster-ordered presentation roll call. */
+  ballotPresentation: RevealedFormatBallotPresentation;
 }
 
 export interface RevealedEndgameVoteEntry {
@@ -233,8 +226,6 @@ export interface BuildRevealedRoundFactsOptions {
    * Callers with a stored column should pass the resolved kernel from resolveGameKernel.
    */
   kernel?: GameKernel;
-  /** @deprecated Audience input is retained for callers but no longer changes ballot facts. */
-  ballotAccess?: RevealedFormatBallotAccess;
 }
 
 type EventOf<TType extends CanonicalGameEvent["type"]> = Extract<CanonicalGameEvent, { type: TType }>;
@@ -455,10 +446,10 @@ function buildFormatFacts(
   const resolved = latestEvent(events, "format.resolved");
   const bounceStarted = latestEvent(events, "format.safety_bounce_started");
   const hasBouncePointers = eventsOfType(events, "format.safety_bounce_pointer").length > 0;
-  const accessMode: RevealedFormatBallotAccessMode = "public";
+  const hasBallots = eventsOfType(events, "format.ballot_cast").length > 0;
 
-  if (!menu && !selected && !resolved && !bounceStarted && !hasBouncePointers) {
-    return emptyFormat("not_yet_resolved", accessMode);
+  if (!menu && !selected && !resolved && !bounceStarted && !hasBouncePointers && !hasBallots) {
+    return emptyFormat("not_yet_resolved");
   }
 
   const offeredFormatIds = menu
@@ -513,6 +504,26 @@ function buildFormatFacts(
     && !tiebreakerId
       ? []
       : rawTiedIds;
+  const acceptedBallots = buildAcceptedFormatBallots(events, projection);
+  const eligibleVoterIds = projection.playerOrder.filter((playerId) =>
+    projection.players[playerId]?.status === PlayerStatus.ALIVE
+    || events.some(
+      (event) => event.type === "player.eliminated" && event.payload.playerId === playerId,
+    )
+  );
+  const projectedPresentation = projectFormatBallotPresentation({
+    events,
+    round: events[0]?.round ?? 0,
+    eligibleVoterIds,
+  });
+  const ballotPresentation: RevealedFormatBallotPresentation = {
+    status: projectedPresentation.status,
+    rollCall: projectedPresentation.rollCall.map((entry) => ({
+      voter: playerRef(projection, entry.voterId),
+      target: playerRef(projection, entry.targetId),
+      polarity: entry.polarity,
+    })),
+  };
 
   // Status: available once any public format fact exists (menu/pick/bounce/resolve).
   // Partial in-progress rounds still return available with null resolution fields.
@@ -528,8 +539,8 @@ function buildFormatFacts(
     saveOrEliminate,
     voteBomb,
     safetyBounce,
-    sealedBallots: buildSealedFormatBallots(events, projection),
-    sealedBallotAccess: accessMode,
+    acceptedBallots,
+    ballotPresentation,
   };
 }
 
@@ -568,12 +579,12 @@ function buildSafetyBounceFacts(
  * but this aggregate is a viewer fact. It is intentionally built only from
  * canonical ballot payloads, never transcript prose or private artifacts.
  */
-function buildSealedFormatBallots(
+function buildAcceptedFormatBallots(
   events: readonly CanonicalGameEvent[],
   projection: CanonicalGameProjection,
 ): RevealedFormatBallotEntry[] {
   const ballotEvents = eventsOfType(events, "format.ballot_cast");
-  return sortByPlayerOrder(ballotEvents, projection, (event) => event.payload.voterId).map((event) => ({
+  return ballotEvents.map((event) => ({
     voter: playerRef(projection, event.payload.voterId),
     target: playerRef(projection, event.payload.targetId),
     polarity: event.payload.polarity,
@@ -760,7 +771,7 @@ function emptyRoundFacts(
     phase,
     players,
     standardVote: emptyStandardVote(status),
-    format: emptyFormat(status, "public"),
+    format: emptyFormat(status),
     ...(includeClassicPowerCouncil
       ? {
           power: emptyPower(status),
@@ -772,7 +783,6 @@ function emptyRoundFacts(
 
 function emptyFormat(
   status: RevealedFactsStatus,
-  sealedBallotAccess: RevealedFormatBallotAccessMode,
 ): RevealedFormatFacts {
   return {
     status,
@@ -786,8 +796,13 @@ function emptyFormat(
     saveOrEliminate: null,
     voteBomb: null,
     safetyBounce: null,
-    sealedBallots: [],
-    sealedBallotAccess,
+    acceptedBallots: [],
+    ballotPresentation: {
+      status: status === "unavailable" || status === "not_yet_flushed"
+        ? "unavailable"
+        : "not_applicable",
+      rollCall: [],
+    },
   };
 }
 

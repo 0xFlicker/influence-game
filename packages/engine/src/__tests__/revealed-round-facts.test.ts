@@ -231,14 +231,14 @@ describe("buildRevealedRoundFacts", () => {
     expect(json).not.toContain("rawProviderResponse");
   });
 
-  it("exposes the complete Save-or-Eliminate ledger to every viewer audience", () => {
+  it("keeps accepted Save-or-Eliminate ballots operator-readable and reveals them in roster order", () => {
     const state = createGameState();
     state.startRound();
     state.recordFormatMenu("alice", ["save_or_eliminate", "vote_bomb"]);
     state.recordFormatSelected("alice", "save_or_eliminate");
     state.recordFormatBallot({
       formatId: "save_or_eliminate",
-      voterId: "alice",
+      voterId: "dave",
       targetId: "bob",
       polarity: "eliminate",
     });
@@ -250,13 +250,13 @@ describe("buildRevealedRoundFacts", () => {
     });
     state.recordFormatBallot({
       formatId: "save_or_eliminate",
-      voterId: "charlie",
+      voterId: "alice",
       targetId: "bob",
       polarity: "eliminate",
     });
     state.recordFormatBallot({
       formatId: "save_or_eliminate",
-      voterId: "dave",
+      voterId: "charlie",
       targetId: "bob",
       polarity: "eliminate",
     });
@@ -268,7 +268,7 @@ describe("buildRevealedRoundFacts", () => {
       tiedPlayerIds: ["bob", "charlie"],
       tiebreakerId: "alice",
       saveOrEliminate: {
-        nets: { alice: 0, bob: -2, charlie: 1, dave: 0 },
+        nets: { alice: 0, bob: -3, charlie: 1, dave: 0 },
         savesReceived: { alice: 0, bob: 0, charlie: 1, dave: 0 },
         eliminateReceived: { alice: 0, bob: 3, charlie: 0, dave: 0 },
       },
@@ -286,8 +286,16 @@ describe("buildRevealedRoundFacts", () => {
     expect(format.eliminated).toEqual({ id: "bob", name: "Bob" });
     expect(format.tied.map((p) => p.id)).toEqual(["bob", "charlie"]);
     expect(format.tiebreaker).toEqual({ id: "alice", name: "Alice" });
-    expect(format.saveOrEliminate?.nets.find((row) => row.player.id === "bob")?.votes).toBe(-2);
-    expect(format.sealedBallots).toEqual([
+    expect(format.saveOrEliminate?.nets.find((row) => row.player.id === "bob")?.votes).toBe(-3);
+    expect(format.acceptedBallots.map((entry) => entry.voter.id)).toEqual([
+      "dave",
+      "bob",
+      "alice",
+      "charlie",
+    ]);
+    expect(format.ballotPresentation).toEqual({
+      status: "revealed",
+      rollCall: [
       {
         voter: { id: "alice", name: "Alice" },
         target: { id: "bob", name: "Bob" },
@@ -308,8 +316,8 @@ describe("buildRevealedRoundFacts", () => {
         target: { id: "bob", name: "Bob" },
         polarity: "eliminate",
       },
-    ]);
-    expect(format.sealedBallotAccess).toBe("public");
+      ],
+    });
     // Format-kernel omits classic Power/Council keys entirely.
     expect(publicRead.roundFacts.power).toBeUndefined();
     expect(publicRead.roundFacts.council).toBeUndefined();
@@ -320,38 +328,38 @@ describe("buildRevealedRoundFacts", () => {
       expect("exposeTarget" in entry).toBe(false);
     }
 
-    const ownerRead = buildRevealedRoundFacts({
-      events: state.getCanonicalEvents(),
-      round: 1,
-      ballotAccess: { mode: "owner", ownedPlayerIds: ["alice"] },
-    });
-    expect(ownerRead.roundFacts.format.sealedBallotAccess).toBe("public");
-    expect(ownerRead.roundFacts.format.sealedBallots).toEqual(format.sealedBallots);
-
-    const producerRead = buildRevealedRoundFacts({
-      events: state.getCanonicalEvents(),
-      round: 1,
-      ballotAccess: { mode: "producer" },
-    });
-    expect(producerRead.roundFacts.format.sealedBallotAccess).toBe("public");
-    expect(producerRead.roundFacts.format.sealedBallots).toEqual(format.sealedBallots);
   });
 
-  it("exposes Vote Bomb aggregates and null-polarity ledger before resolution", () => {
+  it("keeps Vote Bomb accepted ballots readable while presentation stays sealed until resolution", () => {
     const state = createGameState();
     state.startRound();
     state.recordFormatMenu("bob", ["vote_bomb", "safety_bounce"]);
     state.recordFormatSelected("bob", "vote_bomb");
-    for (const voter of ["alice", "bob", "charlie", "dave"] as const) {
+    const ballotPrefixes = [];
+    for (const [index, voter] of (["alice", "bob", "charlie", "dave"] as const).entries()) {
       state.recordFormatBallot({
         formatId: "vote_bomb",
         voterId: voter,
         targetId: voter === "dave" ? "alice" : "charlie",
       });
+      if (index === 0 || index === 1 || index === 3) {
+        ballotPrefixes.push(
+          buildRevealedRoundFacts({ events: state.getCanonicalEvents(), round: 1 }),
+        );
+      }
     }
-    const beforeResolution = buildRevealedRoundFacts({ events: state.getCanonicalEvents(), round: 1 });
+    expect(ballotPrefixes.map((prefix) =>
+      prefix.roundFacts.format.acceptedBallots.map((entry) => entry.voter.id)
+    )).toEqual([
+      ["alice"],
+      ["alice", "bob"],
+      ["alice", "bob", "charlie", "dave"],
+    ]);
+    expect(ballotPrefixes.map((prefix) => prefix.roundFacts.format.ballotPresentation.status))
+      .toEqual(["sealed", "sealed", "sealed"]);
+    const beforeResolution = ballotPrefixes.at(-1)!;
     expect(beforeResolution.roundFacts.format.eliminated).toBeNull();
-    expect(beforeResolution.roundFacts.format.sealedBallots).toEqual([
+    expect(beforeResolution.roundFacts.format.acceptedBallots).toEqual([
       {
         voter: { id: "alice", name: "Alice" },
         target: { id: "charlie", name: "Charlie" },
@@ -373,6 +381,10 @@ describe("buildRevealedRoundFacts", () => {
         polarity: null,
       },
     ]);
+    expect(beforeResolution.roundFacts.format.ballotPresentation).toEqual({
+      status: "sealed",
+      rollCall: [],
+    });
 
     state.recordFormatResolution({
       formatId: "vote_bomb",
@@ -393,7 +405,13 @@ describe("buildRevealedRoundFacts", () => {
     expect(read.roundFacts.format.selectedFormatId).toBe("vote_bomb");
     expect(read.roundFacts.format.voteBomb?.zeroSafe.map((p) => p.id).sort()).toEqual(["bob", "dave"]);
     expect(read.roundFacts.format.voteBomb?.totals.find((row) => row.player.id === "charlie")?.votes).toBe(3);
-    expect(read.roundFacts.format.sealedBallots).toEqual(beforeResolution.roundFacts.format.sealedBallots);
+    expect(read.roundFacts.format.acceptedBallots).toEqual(
+      beforeResolution.roundFacts.format.acceptedBallots,
+    );
+    expect(read.roundFacts.format.ballotPresentation).toEqual({
+      status: "revealed",
+      rollCall: beforeResolution.roundFacts.format.acceptedBallots,
+    });
   });
 
   it("exposes Safety Bounce public chain, sole-vulnerable auto-elim, and live in-progress facts", () => {
@@ -445,7 +463,105 @@ describe("buildRevealedRoundFacts", () => {
     expect(resolved.roundFacts.format.eliminated).toEqual({ id: "bob", name: "Bob" });
     expect(resolved.roundFacts.format.safetyBounce?.vulnerable.map((p) => p.id)).toEqual(["bob"]);
     expect(resolved.roundFacts.format.safetyBounce?.voteTotals).toEqual([]);
-    expect(resolved.roundFacts.format.sealedBallots).toEqual([]);
+    expect(resolved.roundFacts.format.acceptedBallots).toEqual([]);
+    expect(resolved.roundFacts.format.ballotPresentation).toEqual({
+      status: "not_applicable",
+      rollCall: [],
+    });
+  });
+
+  it("marks missing, duplicate, unknown-player, wrong-format, and aggregate-mismatch ballots unavailable", () => {
+    function validVoteBombEvents(): CanonicalGameEvent[] {
+      const state = createGameState();
+      state.startRound();
+      state.recordFormatMenu("alice", ["vote_bomb", "save_or_eliminate"]);
+      state.recordFormatSelected("alice", "vote_bomb");
+      state.recordFormatBallot({ formatId: "vote_bomb", voterId: "dave", targetId: "bob" });
+      state.recordFormatBallot({ formatId: "vote_bomb", voterId: "bob", targetId: "charlie" });
+      state.recordFormatBallot({ formatId: "vote_bomb", voterId: "alice", targetId: "bob" });
+      state.recordFormatBallot({ formatId: "vote_bomb", voterId: "charlie", targetId: "bob" });
+      state.recordFormatResolution({
+        formatId: "vote_bomb",
+        empoweredId: "alice",
+        eliminatedId: "charlie",
+        resolutionKind: "clear",
+        tiedPlayerIds: [],
+        tiebreakerId: null,
+        saveOrEliminate: null,
+        voteBomb: {
+          totals: { alice: 0, bob: 3, charlie: 1, dave: 0 },
+          zeroSafePlayerIds: ["alice", "dave"],
+        },
+        safetyBounce: null,
+      });
+      return [...state.getCanonicalEvents()];
+    }
+
+    const ballotIndexes = validVoteBombEvents()
+      .map((event, index) => ({ event, index }))
+      .filter(({ event }) => event.type === "format.ballot_cast")
+      .map(({ index }) => index);
+    const firstBallotIndex = ballotIndexes[0]!;
+    const secondBallotIndex = ballotIndexes[1]!;
+
+    const cases: Array<{ name: string; events: CanonicalGameEvent[] }> = [
+      {
+        name: "missing",
+        events: validVoteBombEvents()
+          .filter((_, index) => index !== firstBallotIndex)
+          .map((event, index) => ({ ...event, sequence: index + 1 })),
+      },
+      {
+        name: "duplicate",
+        events: validVoteBombEvents().map((event, index) =>
+          index === secondBallotIndex && event.type === "format.ballot_cast"
+            ? { ...event, payload: { ...event.payload, voterId: "dave" } }
+            : event
+        ),
+      },
+      {
+        name: "unknown-player",
+        events: validVoteBombEvents().map((event, index) =>
+          index === firstBallotIndex && event.type === "format.ballot_cast"
+            ? { ...event, payload: { ...event.payload, targetId: "unknown" } }
+            : event
+        ),
+      },
+      {
+        name: "wrong-format",
+        events: validVoteBombEvents().map((event, index) =>
+          index === firstBallotIndex && event.type === "format.ballot_cast"
+            ? { ...event, payload: { ...event.payload, formatId: "save_or_eliminate" } }
+            : event
+        ),
+      },
+      {
+        name: "aggregate-mismatch",
+        events: validVoteBombEvents().map((event) =>
+          event.type === "format.resolved"
+            ? {
+                ...event,
+                payload: {
+                  ...event.payload,
+                  voteBomb: {
+                    totals: { alice: 0, bob: 2, charlie: 2, dave: 0 },
+                    zeroSafePlayerIds: ["alice", "dave"],
+                  },
+                },
+              }
+            : event
+        ),
+      },
+    ];
+
+    for (const testCase of cases) {
+      const presentation = buildRevealedRoundFacts({
+        events: testCase.events,
+        round: 1,
+      }).roundFacts.format.ballotPresentation;
+      expect(presentation.status, testCase.name).toBe("unavailable");
+      expect(presentation.rollCall, testCase.name).toEqual([]);
+    }
   });
 
   it("freezes last regular empower across startRound into endgame.stage_set and endgame facts", () => {
@@ -553,24 +669,16 @@ describe("buildRevealedRoundFacts", () => {
       safetyBounce: null,
     });
 
-    for (const ballotAccess of [
-      undefined,
-      { mode: "public" as const },
-      { mode: "owner" as const, ownedPlayerIds: ["alice"] },
-      { mode: "producer" as const },
-    ]) {
-      const json = JSON.stringify(
-        buildRevealedRoundFacts({
-          events: state.getCanonicalEvents(),
-          round: 1,
-          ballotAccess,
-        }),
-      );
-      expect(json).not.toContain("thinking");
-      expect(json).not.toContain("reasoningContext");
-      expect(json).not.toContain("decisionLog");
-      expect(json).not.toContain("sourcePointers");
-      expect(json).not.toContain("private-trace-source-pointer");
-    }
+    const json = JSON.stringify(
+      buildRevealedRoundFacts({
+        events: state.getCanonicalEvents(),
+        round: 1,
+      }),
+    );
+    expect(json).not.toContain("thinking");
+    expect(json).not.toContain("reasoningContext");
+    expect(json).not.toContain("decisionLog");
+    expect(json).not.toContain("sourcePointers");
+    expect(json).not.toContain("private-trace-source-pointer");
   });
 });

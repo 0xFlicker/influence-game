@@ -11,6 +11,7 @@ import type {
   HouseFormatScoreLine,
 } from "../game-runner.types";
 import type { UUID } from "../types";
+import { projectFormatBallotPresentation } from "../viewer-decision-events";
 import { isLaunchFormatId } from "./menu";
 import { displayNameForFormat, type LaunchFormatId } from "./types";
 
@@ -43,14 +44,32 @@ export function buildHouseFormatResolutionFacts(
       ? ([offeredRaw[0]!, offeredRaw[1]!] as [LaunchFormatId, LaunchFormatId])
       : null;
 
-  const ballots: HouseFormatBallotLine[] = roundEvents
-    .filter((event): event is Extract<CanonicalGameEvent, { type: "format.ballot_cast" }> =>
-      event.type === "format.ballot_cast"
-    )
-    .map((event) => ({
-      voterName: playerName(event.payload.voterId),
-      targetName: playerName(event.payload.targetId),
-      ...(event.payload.polarity ? { polarity: event.payload.polarity } : {}),
+  const roster = events.find((event) => event.type === "game.roster_initialized");
+  if (!roster || roster.type !== "game.roster_initialized") return null;
+  const eliminatedBeforeRound = new Set(
+    events
+      .filter(
+        (event): event is Extract<CanonicalGameEvent, { type: "player.eliminated" }> =>
+          event.type === "player.eliminated" && event.payload.eliminatedRound < round,
+      )
+      .map((event) => event.payload.playerId),
+  );
+  const eligibleVoterIds = roster.payload.players
+    .map((player) => player.id)
+    .filter((playerId) => !eliminatedBeforeRound.has(playerId));
+  const ballotPresentation = projectFormatBallotPresentation({
+    events,
+    round,
+    eligibleVoterIds,
+  });
+  if (ballotPresentation.status === "unavailable" || ballotPresentation.status === "sealed") {
+    return null;
+  }
+  const ballots: HouseFormatBallotLine[] = ballotPresentation.rollCall
+    .map((entry) => ({
+      voterName: playerName(entry.voterId),
+      targetName: playerName(entry.targetId),
+      ...(entry.polarity ? { polarity: entry.polarity } : {}),
     }));
 
   const bouncePointers: HouseFormatBouncePointerLine[] = roundEvents

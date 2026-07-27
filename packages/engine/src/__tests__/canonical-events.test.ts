@@ -137,6 +137,56 @@ describe("viewer decision events", () => {
     expect(json).not.toContain("private-trace.jsonl");
     expect(projectViewerDecisionEvent(sampleEvent())).toBeNull();
   });
+
+  it("keeps accepted format ballots as sanitized operator-readable viewer decisions", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "game-viewer-format-ballot", now: () => 1_700_000_000_000 },
+    );
+    state.startRound();
+    state.recordFormatBallot(
+      {
+        formatId: "save_or_eliminate",
+        voterId: "alice",
+        targetId: "bob",
+        polarity: "eliminate",
+      },
+      [{
+        kind: "agent_turn",
+        actorId: "alice",
+        action: "format-save-or-eliminate-ballot",
+        decisionId: "private-format-decision",
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+      }],
+    );
+
+    const ballot = state.getCanonicalEvents().find(
+      (event) => event.type === "format.ballot_cast",
+    );
+    if (!ballot || ballot.type !== "format.ballot_cast") {
+      throw new Error("Expected canonical format ballot");
+    }
+
+    const viewerEvent = projectViewerDecisionEvent(ballot);
+    expect(viewerEvent).toEqual({
+      sequence: ballot.sequence,
+      timestamp: ballot.timestamp,
+      round: 1,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "format.ballot_cast",
+      payload: {
+        formatId: "save_or_eliminate",
+        voterId: "alice",
+        targetId: "bob",
+        polarity: "eliminate",
+      },
+    });
+    expect(JSON.stringify(viewerEvent)).not.toContain("private-format-decision");
+  });
 });
 
 describe("Safety Bounce canonical prefixes", () => {

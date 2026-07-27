@@ -13,6 +13,8 @@ import {
 import type { PhaseContext } from "../game-runner";
 import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
+import { ContextBuilder } from "../context-builder";
+import { TranscriptLogger } from "../transcript-logger";
 
 const TEST_CONFIG: GameConfig = {
   timers: {
@@ -30,6 +32,72 @@ const TEST_CONFIG: GameConfig = {
 };
 
 describe("Format kernel integration (MockAgent)", () => {
+  it("retains only an agent's own ballot receipt before resolution and reveals peers afterward", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+      ],
+      { gameId: "format-agent-ballot-boundary", now: () => 1_700_000_000_000 },
+    );
+    state.startRound();
+    state.recordFormatMenu("alice", ["vote_bomb", "save_or_eliminate"]);
+    state.recordFormatSelected("alice", "vote_bomb");
+    state.recordFormatBallot({ formatId: "vote_bomb", voterId: "bob", targetId: "charlie" });
+    state.recordFormatBallot({ formatId: "vote_bomb", voterId: "alice", targetId: "bob" });
+
+    const builder = new ContextBuilder(
+      state,
+      new TranscriptLogger(state),
+      new Map(),
+      3,
+    );
+    const aliceSealed = builder.buildPhaseContext("alice", Phase.FORMAT_RESOLVE);
+    const charlieSealed = builder.buildPhaseContext("charlie", Phase.FORMAT_RESOLVE);
+    const aliceBallotLines = aliceSealed.gameEventRecord?.filter((line) =>
+      line.includes("format ballot"),
+    ) ?? [];
+    const charlieBallotLines = charlieSealed.gameEventRecord?.filter((line) =>
+      line.includes("format ballot"),
+    ) ?? [];
+
+    expect(aliceBallotLines).toEqual([
+      "R1/FORMAT_RESOLVE: Your format ballot: eliminate → Bob (sealed).",
+    ]);
+    expect(charlieBallotLines).toEqual([]);
+
+    state.recordFormatBallot({
+      formatId: "vote_bomb",
+      voterId: "charlie",
+      targetId: "bob",
+    });
+    state.recordFormatResolution({
+      formatId: "vote_bomb",
+      empoweredId: "alice",
+      eliminatedId: "charlie",
+      resolutionKind: "clear",
+      tiedPlayerIds: [],
+      tiebreakerId: null,
+      saveOrEliminate: null,
+      voteBomb: {
+        totals: { alice: 0, bob: 2, charlie: 1 },
+        zeroSafePlayerIds: ["alice"],
+      },
+      safetyBounce: null,
+    });
+
+    const resolvedLines = builder
+      .buildPhaseContext("charlie", Phase.FORMAT_RESOLVE)
+      .gameEventRecord
+      ?.filter((line) => line.includes("format ballot")) ?? [];
+    expect(resolvedLines).toEqual([
+      "R1/FORMAT_RESOLVE: Alice format ballot: eliminate → Bob.",
+      "R1/FORMAT_RESOLVE: Bob format ballot: eliminate → Charlie.",
+      "R1/FORMAT_RESOLVE: Charlie format ballot: eliminate → Bob.",
+    ]);
+  });
+
   it("uses only current-call format receipts and never a mutable stale receipt", async () => {
     const agents = ["A", "B", "C", "D", "E"].map((name) => new MockAgent(createUUID(), name));
     for (const agent of agents) {

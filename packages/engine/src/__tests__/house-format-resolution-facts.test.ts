@@ -28,7 +28,7 @@ describe("buildHouseFormatResolutionFacts", () => {
     state.recordFormatSelected("alice", "save_or_eliminate");
     state.recordFormatBallot({
       formatId: "save_or_eliminate",
-      voterId: "alice",
+      voterId: "dave",
       targetId: "bob",
       polarity: "eliminate",
     });
@@ -40,13 +40,13 @@ describe("buildHouseFormatResolutionFacts", () => {
     });
     state.recordFormatBallot({
       formatId: "save_or_eliminate",
-      voterId: "charlie",
+      voterId: "alice",
       targetId: "bob",
       polarity: "eliminate",
     });
     state.recordFormatBallot({
       formatId: "save_or_eliminate",
-      voterId: "dave",
+      voterId: "charlie",
       targetId: "bob",
       polarity: "eliminate",
     });
@@ -72,6 +72,12 @@ describe("buildHouseFormatResolutionFacts", () => {
     expect(facts.formatId).toBe("save_or_eliminate");
     expect(facts.offeredFormatIds).toEqual(["save_or_eliminate", "vote_bomb"]);
     expect(facts.ballots).toHaveLength(4);
+    expect(facts.ballots.map((ballot) => ballot.voterName)).toEqual([
+      "Alice",
+      "Bob",
+      "Charlie",
+      "Dave",
+    ]);
     expect(facts.ballots.some((b) => b.voterName === "Alice" && b.polarity === "eliminate")).toBe(true);
     expect(facts.scores.find((s) => s.playerName === "Bob")?.value).toBe(-3);
     expect(facts.eliminatedName).toBe("Bob");
@@ -135,6 +141,10 @@ describe("buildHouseFormatResolutionFacts", () => {
     bounce.recordSafetyBouncePointer("a", "b", "vulnerable");
     bounce.recordSafetyBouncePointer("b", "c", "safe");
     bounce.recordSafetyBouncePointer("c", "d", "vulnerable");
+    bounce.recordFormatBallot({ formatId: "safety_bounce", voterId: "a", targetId: "d" });
+    bounce.recordFormatBallot({ formatId: "safety_bounce", voterId: "b", targetId: "d" });
+    bounce.recordFormatBallot({ formatId: "safety_bounce", voterId: "c", targetId: "d" });
+    bounce.recordFormatBallot({ formatId: "safety_bounce", voterId: "d", targetId: "b" });
     bounce.recordFormatResolution({
       formatId: "safety_bounce",
       empoweredId: "a",
