@@ -2167,12 +2167,14 @@ export async function getGameTranscript(
 
 export async function getGameReplayWatchFrames(
   id: string,
-  options: { afterSequence?: number } = {},
+  options: { afterSequence?: number; signal?: AbortSignal } = {},
 ): Promise<GameWatchReplayFrame[]> {
   const query = options.afterSequence === undefined
     ? ""
     : `?afterSequence=${encodeURIComponent(options.afterSequence)}`;
-  return apiFetch(`/api/games/${id}/replay-watch-frames${query}`);
+  return apiFetch(`/api/games/${id}/replay-watch-frames${query}`, {
+    signal: options.signal,
+  });
 }
 
 // ---------------------------------------------------------------------------

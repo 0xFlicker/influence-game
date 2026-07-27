@@ -96,13 +96,15 @@ export function GameViewer({
     (sequence, frame) => Math.max(sequence, frame.sequence),
     0,
   );
-  const presentationCursorRef = useRef(initialPresentationSequence);
-  const presentationHydrationRunRef = useRef(0);
+  const presentationHydrationRequestRef = useRef<{
+    afterSequence: number;
+    controller: AbortController;
+    promise: Promise<boolean>;
+  } | null>(null);
   const [presentationHydration, setPresentationHydration] =
     useState<PresentationHydrationState>({
       status: initialPresentationSequence > 0 ? "ready" : "idle",
       retryCount: 0,
-      hasTrustedScreen: initialPresentationSequence > 0,
     });
   const [loadError, setLoadError] = useState<string | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
@@ -189,63 +191,85 @@ export function GameViewer({
         ?? gameRef.current?.id
         ?? gameId;
       setReplayFrames((current) => {
-        const merged = mergeGameWatchReplayFrames(
+        const frames = mergeGameWatchReplayFrames(
           current,
           incoming,
           canonicalGameId,
         );
-        replayFramesRef.current = merged.frames;
-        presentationCursorRef.current = merged.lastSequence;
-        return merged.frames;
+        replayFramesRef.current = frames;
+        return frames;
       });
     },
     [gameId],
   );
 
   const hydratePresentationFrames = useCallback(
-    async ({
+    ({
       afterSequence,
       preserveScreen,
     }: {
       afterSequence: number;
       preserveScreen: boolean;
     }): Promise<boolean> => {
-      const run = ++presentationHydrationRunRef.current;
+      const activeRequest = presentationHydrationRequestRef.current;
+      if (activeRequest?.afterSequence === afterSequence) {
+        return activeRequest.promise;
+      }
+      activeRequest?.controller.abort();
+
+      const controller = new AbortController();
       let hydrationState: PresentationHydrationState = {
         status: preserveScreen ? "reconnecting" : "loading",
         retryCount: 0,
-        hasTrustedScreen: preserveScreen || replayFramesRef.current.length > 0,
       };
       setPresentationHydration(hydrationState);
 
-      while (run === presentationHydrationRunRef.current) {
-        try {
-          const incoming = await getGameReplayWatchFrames(
-            gameId,
-            afterSequence > 0 ? { afterSequence } : {},
-          );
-          if (run !== presentationHydrationRunRef.current) return false;
-          retainReplayFrames(
-            incoming,
-            gameRef.current?.id ?? incoming[0]?.gameId,
-          );
-          setPresentationHydration({
-            status: "ready",
-            retryCount: hydrationState.retryCount,
-            hasTrustedScreen:
-              hydrationState.hasTrustedScreen || incoming.length > 0,
-          });
-          return true;
-        } catch {
-          const failure = advancePresentationHydrationFailure(hydrationState);
-          hydrationState = failure.state;
-          setPresentationHydration(hydrationState);
-          if (!failure.shouldRetry) return false;
+      const promise = (async (): Promise<boolean> => {
+        while (!controller.signal.aborted) {
+          try {
+            const incoming = await getGameReplayWatchFrames(gameId, {
+              ...(afterSequence > 0 ? { afterSequence } : {}),
+              signal: controller.signal,
+            });
+            if (controller.signal.aborted) return false;
+            retainReplayFrames(
+              incoming,
+              gameRef.current?.id ?? incoming[0]?.gameId,
+            );
+            setPresentationHydration({
+              status: "ready",
+              retryCount: hydrationState.retryCount,
+            });
+            return true;
+          } catch {
+            if (controller.signal.aborted) return false;
+            const failure = advancePresentationHydrationFailure(hydrationState);
+            hydrationState = failure.state;
+            setPresentationHydration(hydrationState);
+            if (!failure.shouldRetry) return false;
+          }
         }
-      }
-      return false;
+        return false;
+      })();
+
+      presentationHydrationRequestRef.current = {
+        afterSequence,
+        controller,
+        promise,
+      };
+      void promise.finally(() => {
+        if (presentationHydrationRequestRef.current?.promise === promise) {
+          presentationHydrationRequestRef.current = null;
+        }
+      });
+      return promise;
     },
     [gameId, retainReplayFrames],
+  );
+
+  useEffect(
+    () => () => presentationHydrationRequestRef.current?.controller.abort(),
+    [],
   );
 
   // Set data-phase on root for cinematic CSS cascade (live mode)
@@ -591,13 +615,12 @@ export function GameViewer({
             ?? "classic";
           if (
             presentationRoute === "format"
-            && state.eventCursor.sequence > presentationCursorRef.current
+            && state.eventCursor.sequence
+              > (replayFramesRef.current.at(-1)?.sequence ?? 0)
           ) {
             void hydratePresentationFrames({
-              afterSequence: presentationCursorRef.current,
-              preserveScreen:
-                presentationHydration.hasTrustedScreen
-                || replayFramesRef.current.length > 0,
+              afterSequence: replayFramesRef.current.at(-1)?.sequence ?? 0,
+              preserveScreen: replayFramesRef.current.length > 0,
             });
           }
           if (!shouldApplyWatchStateUpdate(
@@ -651,7 +674,8 @@ export function GameViewer({
           if (
             !currentGame
             || ev.gameId !== currentGame.id
-            || ev.event.sequence <= presentationCursorRef.current
+            || ev.event.sequence
+              <= (replayFramesRef.current.at(-1)?.sequence ?? 0)
           ) {
             break;
           }
@@ -799,7 +823,6 @@ export function GameViewer({
     [
       gameId,
       hydratePresentationFrames,
-      presentationHydration.hasTrustedScreen,
       retainReplayFrames,
     ],
   );
@@ -821,16 +844,13 @@ export function GameViewer({
       && getGamePresentationRouteDecision(game).route === "format"
     ) {
       void hydratePresentationFrames({
-        afterSequence: presentationCursorRef.current,
-        preserveScreen:
-          presentationHydration.hasTrustedScreen
-          || replayFramesRef.current.length > 0,
+        afterSequence: replayFramesRef.current.at(-1)?.sequence ?? 0,
+        preserveScreen: replayFramesRef.current.length > 0,
       });
     }
   }, [
     game,
     hydratePresentationFrames,
-    presentationHydration.hasTrustedScreen,
     wsStatus,
   ]);
 
@@ -1012,10 +1032,10 @@ export function GameViewer({
                 className="mt-2 rounded-md bg-white/10 px-3 py-1.5 font-medium text-white transition-colors hover:bg-white/15"
                 onClick={() => {
                   void hydratePresentationFrames({
-                    afterSequence: presentationHydration.hasTrustedScreen
-                      ? presentationCursorRef.current
+                    afterSequence: replayFramesRef.current.length > 0
+                      ? (replayFramesRef.current.at(-1)?.sequence ?? 0)
                       : 0,
-                    preserveScreen: presentationHydration.hasTrustedScreen,
+                    preserveScreen: replayFramesRef.current.length > 0,
                   });
                 }}
               >

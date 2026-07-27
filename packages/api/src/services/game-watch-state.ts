@@ -307,7 +307,6 @@ export async function getGameWatchReplayFrames(
       slug: schema.games.slug,
       config: schema.games.config,
       status: schema.games.status,
-      gameKernel: schema.games.gameKernel,
     })
     .from(schema.games)
     .where(or(eq(schema.games.id, idOrSlug), eq(schema.games.slug, idOrSlug)))

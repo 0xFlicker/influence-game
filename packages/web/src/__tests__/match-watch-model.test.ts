@@ -552,16 +552,16 @@ describe("match watch model", () => {
       "game-1",
     );
 
-    expect(merged.frames.map((frame) => frame.sequence)).toEqual([10, 14]);
-    expect(merged.latestCompleteSnapshot?.sequence).toBe(14);
-    expect(merged.lastSequence).toBe(14);
+    expect(merged.map((frame) => frame.sequence)).toEqual([10, 14]);
+    expect(mergeGameWatchReplayFrames(merged, [duplicate, lower], "game-1")).toBe(
+      merged,
+    );
   });
 
   it("retries presentation hydration at most twice before becoming reloadable", () => {
     const first = advancePresentationHydrationFailure({
       status: "loading",
       retryCount: 0,
-      hasTrustedScreen: false,
     });
     const second = advancePresentationHydrationFailure(first.state);
     const exhausted = advancePresentationHydrationFailure(second.state);
@@ -573,7 +573,6 @@ describe("match watch model", () => {
       state: {
         status: "unavailable",
         retryCount: 2,
-        hasTrustedScreen: false,
       },
     });
   });

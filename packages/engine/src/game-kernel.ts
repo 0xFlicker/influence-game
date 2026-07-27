@@ -75,20 +75,7 @@ function normalizeStoredKernel(stored: string | null | undefined): GameKernel | 
 }
 
 function hasFormatKernelEvidence(events: readonly CanonicalGameEvent[]): boolean {
-  for (const event of events) {
-    switch (event.type) {
-      case "format.menu_offered":
-      case "format.selected":
-      case "format.resolved":
-      case "format.ballot_cast":
-      case "format.safety_bounce_started":
-      case "format.safety_bounce_pointer":
-        return true;
-      default:
-        break;
-    }
-  }
-  return false;
+  return events.some((event) => eventKernelEvidence(event) === "format");
 }
 
 function firstContradictoryKernelEvent(

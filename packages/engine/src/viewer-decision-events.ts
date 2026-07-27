@@ -2,7 +2,11 @@ import type {
   CanonicalGameEvent,
   FormatResolutionPayload,
 } from "./canonical-events";
-import type { LaunchFormatId } from "./formats";
+import {
+  computeSaveOrEliminateNets,
+  computeVoteBombTallies,
+  type LaunchFormatId,
+} from "./formats";
 import type { Phase, PowerAction, UUID } from "./types";
 
 /**
@@ -506,27 +510,35 @@ function aggregateMatchesBallots(
   const eligible = new Set(eligibleVoterIds);
   if (resolved.payload.formatId === "save_or_eliminate") {
     const aggregate = resolved.payload.saveOrEliminate!;
-    const saves = zeroCounts(eligibleVoterIds);
-    const eliminates = zeroCounts(eligibleVoterIds);
-    for (const ballot of ballots) {
-      const bucket = ballot.payload.polarity === "save" ? saves : eliminates;
-      bucket[ballot.payload.targetId] = (bucket[ballot.payload.targetId] ?? 0) + 1;
-    }
-    const nets = Object.fromEntries(
-      eligibleVoterIds.map((id) => [id, (saves[id] ?? 0) - (eliminates[id] ?? 0)]),
+    const computed = computeSaveOrEliminateNets(
+      eligibleVoterIds,
+      ballots.map((ballot) => ({
+        voterId: ballot.payload.voterId,
+        targetId: ballot.payload.targetId,
+        polarity: ballot.payload.polarity as "save" | "eliminate",
+      })),
     );
-    return countRecordMatches(aggregate.savesReceived, saves, eligible)
-      && countRecordMatches(aggregate.eliminateReceived, eliminates, eligible)
-      && countRecordMatches(aggregate.nets, nets, eligible);
+    return countRecordMatches(aggregate.savesReceived, computed.savesReceived, eligible)
+      && countRecordMatches(
+        aggregate.eliminateReceived,
+        computed.eliminateReceived,
+        eligible,
+      )
+      && countRecordMatches(aggregate.nets, computed.nets, eligible);
   }
   if (resolved.payload.formatId === "vote_bomb") {
-    const totals = zeroCounts(eligibleVoterIds);
-    for (const ballot of ballots) {
-      totals[ballot.payload.targetId] = (totals[ballot.payload.targetId] ?? 0) + 1;
-    }
-    const zeroSafe = eligibleVoterIds.filter((id) => totals[id] === 0);
-    return countRecordMatches(resolved.payload.voteBomb!.totals, totals, eligible)
-      && sameIdSet(resolved.payload.voteBomb!.zeroSafePlayerIds, zeroSafe);
+    const computed = computeVoteBombTallies(
+      eligibleVoterIds,
+      ballots.map((ballot) => ({
+        voterId: ballot.payload.voterId,
+        targetId: ballot.payload.targetId,
+      })),
+    );
+    return countRecordMatches(resolved.payload.voteBomb!.totals, computed.totals, eligible)
+      && samePlayerSet(
+        resolved.payload.voteBomb!.zeroSafePlayerIds,
+        computed.zeroSafeIds,
+      );
   }
 
   const bounce = resolved.payload.safetyBounce!;
@@ -557,10 +569,6 @@ function countRecordMatches(
   return actualIds.length === expectedIds.size
     && actualIds.every((id) => expectedIds.has(id))
     && actualIds.every((id) => actual[id] === expected[id]);
-}
-
-function sameIdSet(left: readonly UUID[], right: readonly UUID[]): boolean {
-  return left.length === right.length && left.every((id) => right.includes(id));
 }
 
 function eventsOfType<TType extends CanonicalGameEvent["type"]>(

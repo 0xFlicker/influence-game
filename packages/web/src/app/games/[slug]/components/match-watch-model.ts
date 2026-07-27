@@ -95,13 +95,6 @@ export interface GamePresentationRouteDecision {
 export interface PresentationHydrationState {
   status: "idle" | "loading" | "reconnecting" | "ready" | "unavailable";
   retryCount: number;
-  hasTrustedScreen: boolean;
-}
-
-export interface MergedGameWatchReplayFrames {
-  frames: GameWatchReplayFrame[];
-  latestCompleteSnapshot: GameWatchReplayFrame | null;
-  lastSequence: number;
 }
 
 export interface MatchWatchCounts {
@@ -275,26 +268,30 @@ export function getGamePresentationRouteDecision(
 }
 
 export function mergeGameWatchReplayFrames(
-  current: readonly GameWatchReplayFrame[],
+  current: GameWatchReplayFrame[],
   incoming: readonly GameWatchReplayFrame[],
   gameId: string,
-): MergedGameWatchReplayFrames {
-  const frames = current
-    .filter((frame) => frame.gameId === gameId)
-    .sort((left, right) => left.sequence - right.sequence);
+): GameWatchReplayFrame[] {
+  const currentIsCanonical = current.every(
+    (frame, index) =>
+      frame.gameId === gameId
+      && (index === 0 || current[index - 1]!.sequence < frame.sequence),
+  );
+  let frames = currentIsCanonical
+    ? current
+    : current
+        .filter((frame) => frame.gameId === gameId)
+        .sort((left, right) => left.sequence - right.sequence);
   let lastSequence = frames.at(-1)?.sequence ?? 0;
 
   for (const frame of [...incoming].sort((left, right) => left.sequence - right.sequence)) {
     if (frame.gameId !== gameId || frame.sequence <= lastSequence) continue;
+    if (frames === current) frames = [...current];
     frames.push(frame);
     lastSequence = frame.sequence;
   }
 
-  return {
-    frames,
-    latestCompleteSnapshot: frames.at(-1) ?? null,
-    lastSequence,
-  };
+  return frames;
 }
 
 export function buildLiveViewerDecisionFrame(
@@ -305,10 +302,6 @@ export function buildLiveViewerDecisionFrame(
     ...player,
     currentAgent: player.currentAgent ?? null,
   }));
-  const alivePlayers = players.filter((player) => player.status === "alive").length;
-  const eliminatedPlayers = players.filter(
-    (player) => player.status === "eliminated",
-  ).length;
   return {
     schemaVersion: 3,
     gameId: game.id,
@@ -319,12 +312,7 @@ export function buildLiveViewerDecisionFrame(
     round: event.round,
     phase: event.phase as PhaseKey,
     players,
-    counts: {
-      totalPlayers: players.length,
-      alivePlayers,
-      eliminatedPlayers,
-      unknownPlayers: players.length - alivePlayers - eliminatedPlayers,
-    },
+    counts: deriveMatchWatchCountsFromPlayers(players),
     viewerDecisionEvent: event,
   };
 }
@@ -346,7 +334,6 @@ export function advancePresentationHydrationFailure(
     shouldRetry: true,
     state: {
       ...state,
-      status: state.hasTrustedScreen ? "reconnecting" : "loading",
       retryCount: state.retryCount + 1,
     },
   };

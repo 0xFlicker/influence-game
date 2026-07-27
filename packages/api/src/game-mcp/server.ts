@@ -1242,22 +1242,23 @@ function tool(input: {
 
 type GameMcpToolDescriptor = ReturnType<typeof tool>;
 
+const playerRefOutputSchema = {
+  type: "object",
+  required: ["id", "name"],
+  properties: {
+    id: { type: "string" },
+    name: { type: "string" },
+  },
+  additionalProperties: true,
+};
+
 function roundFactsOutputSchema(): Record<string, unknown> {
-  const playerRefSchema = {
-    type: "object",
-    required: ["id", "name"],
-    properties: {
-      id: { type: "string" },
-      name: { type: "string" },
-    },
-    additionalProperties: true,
-  };
   const ballotEntrySchema = {
     type: "object",
     required: ["voter", "target", "polarity"],
     properties: {
-      voter: playerRefSchema,
-      target: playerRefSchema,
+      voter: playerRefOutputSchema,
+      target: playerRefOutputSchema,
       polarity: nullableSchema({
         type: "string",
         enum: ["save", "eliminate"],
@@ -1329,20 +1330,11 @@ function roundFactsOutputSchema(): Record<string, unknown> {
 }
 
 function postgameOutputSchema(kind: string): Record<string, unknown> {
-  const playerRefSchema = {
-    type: "object",
-    required: ["id", "name"],
-    properties: {
-      id: { type: "string" },
-      name: { type: "string" },
-    },
-    additionalProperties: true,
-  };
   const voteCountSchema = {
     type: "object",
     required: ["player", "votes"],
     properties: {
-      player: playerRefSchema,
+      player: playerRefOutputSchema,
       votes: { type: "number" },
     },
     additionalProperties: true,
@@ -1352,8 +1344,8 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     required: ["status", "winner", "runnerUp", "voteCounts", "totalVotes", "margin", "method"],
     properties: {
       status: { type: "string", enum: ["available", "unavailable"] },
-      winner: nullableSchema(playerRefSchema),
-      runnerUp: nullableSchema(playerRefSchema),
+      winner: nullableSchema(playerRefOutputSchema),
+      runnerUp: nullableSchema(playerRefOutputSchema),
       voteCounts: { type: "array", items: voteCountSchema },
       totalVotes: { type: "number" },
       margin: nullableSchema({ type: "number" }),
@@ -1402,17 +1394,17 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       round: { type: "number" },
       phase: nullableSchema({ type: "string" }),
       headline: nullableSchema(derivedTextSchema),
-      empowered: nullableSchema(playerRefSchema),
+      empowered: nullableSchema(playerRefOutputSchema),
       empowerVoteCounts: { type: "array", items: voteCountSchema },
       exposeLeaders: { type: "array", items: voteCountSchema },
-      eliminated: nullableSchema(playerRefSchema),
+      eliminated: nullableSchema(playerRefOutputSchema),
       majorityCohort: {
         type: "object",
         required: ["basis", "target", "votes", "confidence"],
         properties: {
           basis: { type: "string" },
-          alignedPlayers: { type: "array", items: playerRefSchema },
-          target: nullableSchema(playerRefSchema),
+          alignedPlayers: { type: "array", items: playerRefOutputSchema },
+          target: nullableSchema(playerRefOutputSchema),
           votes: { type: "number" },
           confidence: { type: "string", enum: ["high", "medium", "low"] },
           derivationMethod: { type: "string" },
@@ -1427,8 +1419,8 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     type: "object",
     required: ["juror", "finalist", "jurorEliminatedRound", "relationshipFlags"],
     properties: {
-      juror: playerRefSchema,
-      finalist: playerRefSchema,
+      juror: playerRefOutputSchema,
+      finalist: playerRefOutputSchema,
       jurorEliminatedRound: nullableSchema({ type: "number" }),
       votedForMatchingVotePattern: nullableSchema({ type: "boolean" }),
       votedForFinalistWhoVotedToEliminateThem: nullableSchema({ type: "boolean" }),
@@ -1441,15 +1433,15 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     required: ["status", "finalists", "winner", "finalVote", "perJurorVotes", "juryNarrative", "winnerSupporters", "runnerUpSupporters"],
     properties: {
       status: { type: "string" },
-      finalists: { type: "array", items: playerRefSchema },
-      winner: nullableSchema(playerRefSchema),
+      finalists: { type: "array", items: playerRefOutputSchema },
+      winner: nullableSchema(playerRefOutputSchema),
       finalVote: finalVoteSchema,
       perJurorVotes: { type: "array", items: juryVoteSchema },
       juryNarrative: { type: "array", items: derivedTextSchema },
-      winnerSupporters: { type: "array", items: playerRefSchema },
-      runnerUpSupporters: { type: "array", items: playerRefSchema },
+      winnerSupporters: { type: "array", items: playerRefOutputSchema },
+      runnerUpSupporters: { type: "array", items: playerRefOutputSchema },
       narrativeHints: { type: "array", items: { type: "string" } },
-      nonWinnerSupporters: { type: "array", items: playerRefSchema },
+      nonWinnerSupporters: { type: "array", items: playerRefOutputSchema },
     },
     additionalProperties: true,
   };
@@ -1469,7 +1461,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       "readableSummary",
     ],
     properties: {
-      player: playerRefSchema,
+      player: playerRefOutputSchema,
       placement: nullableSchema({ type: "number" }),
       status: { type: "string", enum: ["winner", "finalist", "eliminated", "unknown"] },
       eliminatedRound: nullableSchema({ type: "number" }),
@@ -1512,7 +1504,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
           "format_bounce_alliance_vulnerable",
         ],
       },
-      players: { type: "array", items: playerRefSchema },
+      players: { type: "array", items: playerRefOutputSchema },
       confidence: { type: "string", enum: ["high", "medium", "low"] },
       description: { type: "string" },
       derivationMethod: { type: "string" },
@@ -1578,8 +1570,8 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     type: "object",
     required: ["winner", "finalists", "finalVote", "bootOrder", "roundCount", "playerCount"],
     properties: {
-      winner: nullableSchema(playerRefSchema),
-      finalists: { type: "array", items: playerRefSchema },
+      winner: nullableSchema(playerRefOutputSchema),
+      finalists: { type: "array", items: playerRefOutputSchema },
       finalVote: finalVoteSchema,
       bootOrder: { type: "array", items: { type: "object", additionalProperties: true } },
       roundCount: { type: "number" },
@@ -1629,14 +1621,14 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
               required: ["status", "finalists", "winner", "finalVote", "juryNarrative", "winnerSupporters", "runnerUpSupporters"],
               properties: {
                 status: { type: "string" },
-                finalists: { type: "array", items: playerRefSchema },
-                winner: nullableSchema(playerRefSchema),
+                finalists: { type: "array", items: playerRefOutputSchema },
+                winner: nullableSchema(playerRefOutputSchema),
                 finalVote: finalVoteSchema,
                 juryNarrative: { type: "array", items: derivedTextSchema },
-                winnerSupporters: { type: "array", items: playerRefSchema },
-                runnerUpSupporters: { type: "array", items: playerRefSchema },
+                winnerSupporters: { type: "array", items: playerRefOutputSchema },
+                runnerUpSupporters: { type: "array", items: playerRefOutputSchema },
                 narrativeHints: { type: "array", items: { type: "string" } },
-                nonWinnerSupporters: { type: "array", items: playerRefSchema },
+                nonWinnerSupporters: { type: "array", items: playerRefOutputSchema },
               },
               additionalProperties: true,
             },
