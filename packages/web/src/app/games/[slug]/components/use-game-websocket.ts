@@ -4,8 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { getAuthToken, type WsGameEvent } from "@/lib/api";
 import type { ConnStatus } from "./types";
 
+function browserWebSocketBase(): string {
+  if (typeof window === "undefined") return "";
+  const url = new URL(window.location.origin);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  return url.origin;
+}
+
 let WS_BASE =
-  process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:3000";
+  process.env.NEXT_PUBLIC_WS_URL ?? browserWebSocketBase();
 
 /** Called by RuntimeConfigProvider once runtime config is fetched. */
 export function setWsBase(url: string): void {

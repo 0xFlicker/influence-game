@@ -7,6 +7,10 @@ const managedAuthEnvKeys = [
   "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
   "CLERK_SECRET_KEY",
   "CLERK_JWT_KEY",
+  "API_URL",
+  "NEXT_PUBLIC_API_URL",
+  "WS_URL",
+  "NEXT_PUBLIC_WS_URL",
 ] as const;
 
 const originalEnv = Object.fromEntries(
@@ -34,6 +38,15 @@ describe("managed authentication public runtime config", () => {
     expect(config.CLERK_PUBLISHABLE_KEY).toBe("");
     expect(config).not.toHaveProperty("CLERK_SECRET_KEY");
     expect(config).not.toHaveProperty("CLERK_JWT_KEY");
+  });
+
+  it("uses hostless browser transports until runtime configuration supplies an origin", () => {
+    for (const key of managedAuthEnvKeys) delete process.env[key];
+
+    const config = getPublicRuntimeConfig();
+
+    expect(config.API_URL).toBe("");
+    expect(config.WS_URL).toBe("");
   });
 
   it("exposes only the publishable key and mode when managed auth is enabled", () => {

@@ -1,5 +1,9 @@
 import { describe, it, expect } from "bun:test";
-import { estimateCost, isFillAccepted } from "../lib/api";
+import {
+  estimateCost,
+  isFillAccepted,
+  resolveApiUrl,
+} from "../lib/api";
 import type { FillGameResponse } from "../lib/api";
 
 describe("estimateCost", () => {
@@ -57,5 +61,11 @@ describe("isFillAccepted", () => {
       players: [{ id: "1", name: "Alice", archetype: "strategic" }],
     };
     expect(isFillAccepted(result)).toBe(false);
+  });
+});
+
+describe("resolveApiUrl", () => {
+  it("keeps API calls hostless until runtime configuration supplies an API origin", () => {
+    expect(resolveApiUrl("/api/auth/me")).toBe("/api/auth/me");
   });
 });

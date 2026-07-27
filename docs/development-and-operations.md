@@ -173,6 +173,8 @@ bun run dev:web
 
 The frontend runs on `http://localhost:3001`. Doppler injects Privy/admin/runtime config for the web app; the `env ...` overrides keep Next.js off the API port and make browser API calls use IPv4 `127.0.0.1` instead of `localhost`. Server components must use `serverApiFetch` (or its typed helpers) so they resolve through `API_BACKEND_URL`; importing the browser `apiFetch` client into a server component can recurse into the web container in Docker.
 
+When no browser API or websocket origin is configured yet, the web client uses same-origin `/api/*` and `/ws/*` paths. Never ship a loopback (`127.0.0.1` or `localhost`) browser fallback: current Chromium versions treat that as access to apps on the visitor's device.
+
 **Terminal 3 -- Start the House Highlights render worker:**
 
 ```bash

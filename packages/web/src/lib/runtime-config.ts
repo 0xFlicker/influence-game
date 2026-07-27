@@ -32,7 +32,7 @@ export interface RuntimeConfig {
 export type PublicRuntimeConfig = Omit<RuntimeConfig, "ready">;
 
 // ---------------------------------------------------------------------------
-// Defaults — uses NEXT_PUBLIC_ values for SSR / hydration / local dev
+// Defaults — keep browser transport hostless until runtime config is available.
 // ---------------------------------------------------------------------------
 
 const hasLocalDefaults = !!process.env.NEXT_PUBLIC_PRIVY_APP_ID;
@@ -41,8 +41,8 @@ const defaults: RuntimeConfig = {
   PRIVY_APP_ID: process.env.NEXT_PUBLIC_PRIVY_APP_ID ?? "",
   CLERK_PUBLISHABLE_KEY: "",
   MANAGED_AUTH_MODE: "disabled",
-  API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:3000",
-  WS_URL: process.env.NEXT_PUBLIC_WS_URL ?? "ws://127.0.0.1:3000",
+  API_URL: process.env.NEXT_PUBLIC_API_URL ?? "",
+  WS_URL: process.env.NEXT_PUBLIC_WS_URL ?? "",
   ADMIN_ADDRESS: process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? "",
   EPHEMERAL: false,
   EPHEMERAL_PR: "",
