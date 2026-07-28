@@ -200,7 +200,11 @@ export async function readEvidenceManifest(
  */
 export async function readEvidenceManifestForExperiment(
   db: DrizzleDB,
-  request: EvidenceManifestReadRequest,
+  request: Omit<EvidenceManifestReadRequest, "accessor" | "purpose">,
 ): Promise<EvidenceManifestReadResult> {
-  return readEvidenceManifestInternal(db, request, { audit: false });
+  return readEvidenceManifestInternal(db, {
+    ...request,
+    accessor: { roles: ["producer"] },
+    purpose: "prompt_thread_case_materialization",
+  }, { audit: false });
 }

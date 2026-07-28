@@ -341,16 +341,10 @@ export class PrivateTraceReadModel {
    */
   async readCompleteContentForExperiment(
     manifestId: string,
-    params: {
-      gameId: string;
-      accessor: EvidenceAccessor;
-      purpose?: string;
-    },
+    params: { gameId: string },
   ): Promise<PrivateTraceContentReadResult> {
     const result = await this.readContentInternal(manifestId, {
       gameId: params.gameId,
-      accessor: params.accessor,
-      purpose: params.purpose ?? "prompt_thread_case_materialization",
     }, true);
     if (result.ok && result.response.truncated) {
       return {
@@ -372,15 +366,17 @@ export class PrivateTraceReadModel {
     },
     experimentNoAudit: boolean,
   ): Promise<PrivateTraceContentReadResult> {
-    const readManifest = experimentNoAudit
-      ? readEvidenceManifestForExperiment
-      : readEvidenceManifest;
-    const read = await readManifest(this.db, {
-      manifestId,
-      gameId: params.gameId,
-      accessor: params.accessor ?? LOCAL_PRODUCER_ACCESSOR,
-      purpose: params.purpose ?? "local_trace_mcp_read_content",
-    });
+    const read = experimentNoAudit
+      ? await readEvidenceManifestForExperiment(this.db, {
+          manifestId,
+          gameId: params.gameId,
+        })
+      : await readEvidenceManifest(this.db, {
+          manifestId,
+          gameId: params.gameId,
+          accessor: params.accessor ?? LOCAL_PRODUCER_ACCESSOR,
+          purpose: params.purpose ?? "local_trace_mcp_read_content",
+        });
     if (!read.ok) {
       if (read.status === "expired" || read.status === "redacted") {
         return { ok: false, status: read.status, error: `Evidence manifest is ${read.status}` };

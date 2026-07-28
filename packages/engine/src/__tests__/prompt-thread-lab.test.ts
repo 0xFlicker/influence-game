@@ -1,0 +1,407 @@
+import { describe, expect, test } from "bun:test";
+import {
+  PROTOCOL_SCHEMA_HASH,
+  PROTOCOL_VERSION,
+  hashCanonicalJson,
+  type FrozenCaseArtifact,
+  type JsonObject,
+} from "@influence/prompt-lab-protocol";
+import { GameState } from "../game-state";
+import {
+  capturePromptThreadReplay,
+  runPromptThreadSourceGate,
+  verifyPromptThreadSourceFidelity,
+} from "../prompt-thread-lab";
+import { Phase } from "../types";
+
+const ROSTER = [
+  { id: "a", name: "A", personality: "strategic" },
+  { id: "b", name: "B", personality: "social" },
+  { id: "c", name: "C", personality: "observer" },
+  { id: "d", name: "D", personality: "honest" },
+  { id: "e", name: "E", personality: "broker" },
+] as const;
+
+function continuity(playerId: string, playerName: string) {
+  return {
+    version: 1,
+    playerId,
+    playerName,
+    strategyPacket: null,
+    reflectionSummary: null,
+    notes: [],
+    relationships: { allies: [], threats: [] },
+    powerActionMemory: [],
+    roundHistory: [],
+    recentStrategicDecisions: [],
+    strategyPacketRevisionCounter: 0,
+  };
+}
+
+function intent(actorId: string, other: string, round = 1) {
+  return {
+    manifestId: `intent-${actorId}`,
+    actorId,
+    action: "mingle-intent",
+    byteLength: 1,
+    sha256: hashCanonicalJson(actorId),
+    body: {
+      version: 2,
+      actor: { id: actorId, name: actorId.toUpperCase(), role: "player" },
+      action: "mingle-intent",
+      phase: Phase.MINGLE_I,
+      round,
+      model: { name: "fixture-model" },
+      requestedReasoningEffort: "low",
+      reasoningPolicy: "action-policy",
+      prompt: { messages: [] },
+      request: { transportOnly: "source-request-id" },
+      output: {
+        seekPlayers: [other],
+        avoidPlayers: [],
+        preferredRoomSize: "pair",
+        purpose: `Compare notes with ${other}`,
+        provisionalTarget: null,
+        noTargetReason: "Still gathering evidence",
+        openingAsk: `Ask ${other} what changed`,
+        strategicLens: "broad_read",
+        strategicLensRationale: "Use the room to compare reads.",
+        decisionLog: `Keep ${other} close for this vote.`,
+        thinking: "fixture intent",
+      },
+    },
+  };
+}
+
+function speech(
+  id: string,
+  actorId: string,
+  message: string,
+  gotoRoomId: number | null = null,
+  round = 1,
+  gotoPlayerName: string | null = null,
+) {
+  return {
+    manifestId: id,
+    actorId,
+    action: "mingle-turn",
+    byteLength: 1,
+    sha256: hashCanonicalJson(id),
+    body: {
+      version: 2,
+      actor: { id: actorId, name: actorId.toUpperCase(), role: "player" },
+      action: "mingle-turn",
+      phase: Phase.MINGLE_I,
+      round,
+      model: { name: "fixture-model" },
+      requestedReasoningEffort: "low",
+      reasoningPolicy: "action-policy",
+      prompt: { messages: [] },
+      request: { transportOnly: "source-request-id" },
+      output: {
+        message,
+        noReply: false,
+        gotoRoomId,
+        gotoPlayerName,
+        proposedTarget: null,
+        proposedAction: null,
+        commitment: null,
+        noProposalReason: null,
+        decisionLog: `Recorded ${id}`,
+        thinking: `Thinking ${id}`,
+      },
+    },
+  };
+}
+
+function caseFixture(options: { resolvedPriorVote?: boolean } = {}): FrozenCaseArtifact {
+  const source = new GameState(
+    ROSTER.map(({ id, name }) => ({ id, name })),
+    { gameId: "prompt-thread-fixture", now: () => 1_700_000_000_000 },
+  );
+  source.startRound();
+  if (options.resolvedPriorVote) {
+    source.recordVote("a", "b");
+    source.recordVote("b", "a");
+    source.recordVote("c", "b");
+    source.recordVote("d", "b");
+    source.recordVote("e", "b");
+    source.tallyEmpowerVotes();
+    source.startRound();
+  }
+  const round = source.round;
+  const privateData = {
+    version: 1,
+    materializerVersion: "test/v1",
+    baselineClaim: "trace_observable_message_equivalent",
+    selection: {
+      gameId: "prompt-thread-fixture",
+      boundarySequence: source.getCanonicalEvents().length,
+      phase: Phase.MINGLE_I,
+      round,
+      actorIds: ["a", "b"],
+      targetManifestIds: ["turn-a-1", "turn-b-1", "turn-a-2", "turn-b-2"],
+      intentManifestIds: ["intent-a", "intent-b"],
+    },
+    startingState: {
+      canonicalEvents: source.getCanonicalEvents(),
+      canonicalProjection: source.getDomainProjection(),
+      config: {},
+      roster: ROSTER.map((player) => ({
+        id: player.id,
+        persona: {
+          name: player.name,
+          personality: player.personality,
+        },
+        agentConfig: {
+          model: "fixture-model",
+          catalogId: "fixture-catalog",
+          reasoningPolicy: "action-policy",
+          providerProfileId: "openai",
+        },
+      })),
+      continuity: {
+        playerContinuityCapsules: [
+          continuity("a", "A"),
+          continuity("b", "B"),
+        ],
+      },
+      transcriptReplay: [],
+      historyCatalog: [],
+      roomSchedule: [
+        { roomId: 2, round, beat: 1, playerIds: ["a", "b"], playerCount: 2 },
+        { roomId: 2, round, beat: 2, playerIds: ["a", "b"], playerCount: 2 },
+      ],
+      roomCounts: [
+        {
+          beat: 1,
+          rooms: [
+            { roomId: 1, playerCount: 1 },
+            { roomId: 2, playerCount: 2 },
+            { roomId: 3, playerCount: 2 },
+          ],
+        },
+        {
+          beat: 2,
+          rooms: [
+            { roomId: 1, playerCount: 1 },
+            { roomId: 2, playerCount: 2 },
+            { roomId: 3, playerCount: 2 },
+          ],
+        },
+      ],
+    },
+    traces: [
+      intent("a", "B", round),
+      intent("b", "A", round),
+      speech("turn-a-1", "a", "A opens", null, round, "B"),
+      speech("turn-b-1", "b", "B answers", 3, round),
+      speech("turn-a-2", "a", "A returns", null, round),
+      speech("turn-b-2", "b", "B closes", null, round),
+    ],
+    fidelityContract: {
+      canonicalizerId: "influence-canonical-json",
+      canonicalizerVersion: "1",
+      bytePreservingMessageContent: true,
+      transportOnlyExclusions: ["request.transportOnly"],
+    },
+  } as unknown as JsonObject;
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    schemaHash: PROTOCOL_SCHEMA_HASH,
+    kind: "frozen_case",
+    createdAt: "2026-07-28T00:00:00.000Z",
+    caseId: hashCanonicalJson(privateData),
+    sourceReceiptHash: hashCanonicalJson("source"),
+    privateData,
+  };
+}
+
+function withCapturedSource(
+  fixture: FrozenCaseArtifact,
+  traces: Awaited<ReturnType<typeof capturePromptThreadReplay>>["traces"],
+): FrozenCaseArtifact {
+  const privateData = structuredClone(fixture.privateData);
+  const stored = privateData.traces as Array<Record<string, unknown>>;
+  for (let index = 0; index < stored.length; index += 1) {
+    const body = stored[index]!.body as Record<string, unknown>;
+    const captured = traces[index]!;
+    body.prompt = structuredClone(captured.prompt);
+    body.request = {
+      ...(structuredClone(captured.request) as Record<string, unknown>),
+      transportOnly: `different-${index}`,
+    };
+    body.model = structuredClone(captured.model);
+    if (captured.requestedReasoningEffort !== undefined) {
+      body.requestedReasoningEffort = captured.requestedReasoningEffort;
+    } else {
+      delete body.requestedReasoningEffort;
+    }
+    if (captured.reasoningPolicy !== undefined) {
+      body.reasoningPolicy = captured.reasoningPolicy;
+    } else {
+      delete body.reasoningPolicy;
+    }
+    if (captured.toolName !== undefined) {
+      body.toolName = captured.toolName;
+    } else {
+      delete body.toolName;
+    }
+    if (captured.promptReuse !== undefined) {
+      body.promptReuse = structuredClone(captured.promptReuse);
+    } else {
+      delete body.promptReuse;
+    }
+  }
+  return {
+    ...fixture,
+    caseId: hashCanonicalJson(privateData),
+    privateData,
+  };
+}
+
+describe("real prompt-thread replay", () => {
+  test("hydrates canonical revealed votes and preserves the configured phase beat count", async () => {
+    const fixture = caseFixture({ resolvedPriorVote: true });
+    const roster = (fixture.privateData.startingState as JsonObject).roster as Array<{
+      agentConfig: Record<string, unknown>;
+    }>;
+    for (const player of roster) {
+      player.agentConfig.model = "gpt-5.4-nano";
+    }
+    fixture.caseId = hashCanonicalJson(fixture.privateData);
+    const capture = await capturePromptThreadReplay(fixture);
+    const firstTurnUser = capture.traces[2]?.prompt.messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.content)
+      .join("\n") ?? "";
+    const returningTurnUser = capture.traces[4]?.prompt.messages
+      .filter((message) => message.role === "user")
+      .map((message) => message.content)
+      .join("\n") ?? "";
+
+    expect(firstTurnUser).toContain("## Revealed Vote Ledger");
+    expect(firstTurnUser).toContain("A: empowered B");
+    expect(firstTurnUser).toContain("E: empowered B");
+    expect(returningTurnUser).toContain(
+      "This is Mingle turn 2 of 3; 1 Mingle turn remains after this.",
+    );
+    expect(returningTurnUser).not.toContain(
+      "This is your final Mingle turn this phase.",
+    );
+    expect(capture.traces[2]?.promptReuse?.requestShape).toBe("responses");
+
+    const accepted = withCapturedSource(fixture, capture.traces);
+    const acceptedCapture = await capturePromptThreadReplay(accepted);
+    expect(
+      verifyPromptThreadSourceFidelity(accepted, acceptedCapture).status,
+    ).toBe("matched");
+  });
+
+  test("replays intents and A-B-A-B turns with exact inbox/beat and checkpoint semantics", async () => {
+    const fixture = caseFixture();
+    const capture = await capturePromptThreadReplay(fixture);
+
+    expect(capture.actorOrder).toEqual(["a", "b", "a", "b"]);
+    expect(capture.turns.map((turn) => turn.conversationHistoryBefore)).toEqual([
+      [],
+      [{ from: "A", text: "A opens" }],
+      [],
+      [{ from: "A", text: "A returns" }],
+    ]);
+    expect(capture.turns.map((turn) => turn.inboxBefore)).toEqual([
+      [],
+      [{ from: "A", text: "A opens" }],
+      [{ from: "B", text: "B answers" }],
+      [
+        { from: "A", text: "A opens" },
+        { from: "A", text: "A returns" },
+      ],
+    ]);
+    expect(capture.checkpoints).toHaveLength(4);
+    expect(capture.checkpoints.map((checkpoint) => checkpoint.turn)).toEqual([1, 2, 3, 4]);
+    expect(capture.movementRecords[0]).toMatchObject({
+      toRoomId: 2,
+      requestedToRoomId: 3,
+      movementApplied: false,
+      gotoStatus: "player_valid",
+    });
+    expect(capture.traces.slice(0, 2).map((trace) => trace.action))
+      .toEqual(["mingle-intent", "mingle-intent"]);
+    expect(capture.traces[2]?.request).toMatchObject({
+      catalogId: "fixture-catalog",
+    });
+
+    const accepted = withCapturedSource(fixture, capture.traces);
+    const acceptedCapture = await capturePromptThreadReplay(accepted);
+    expect(verifyPromptThreadSourceFidelity(accepted, acceptedCapture).status).toBe("matched");
+    expect((await runPromptThreadSourceGate(accepted)).receipt.status).toBe("matched");
+
+    const fresh = await capturePromptThreadReplay(fixture);
+    expect(fresh.turns[0]?.inboxBefore).toEqual([]);
+    expect(fresh.actorOrder).toEqual(capture.actorOrder);
+    expect(fresh.checkpoints).toHaveLength(4);
+  });
+
+  test("fails on the first changed byte but ignores only the explicit transport exclusion", async () => {
+    const fixture = caseFixture();
+    const capture = await capturePromptThreadReplay(fixture);
+    const accepted = withCapturedSource(fixture, capture.traces);
+    const acceptedCapture = await capturePromptThreadReplay(accepted);
+    expect(() => verifyPromptThreadSourceFidelity(accepted, acceptedCapture)).not.toThrow();
+    const unprovenEnvelopeChange = structuredClone(accepted);
+    const unprovenTraces = unprovenEnvelopeChange.privateData.traces as Array<Record<string, unknown>>;
+    const unprovenBody = unprovenTraces[2]!.body as Record<string, unknown>;
+    unprovenBody.request = {
+      ...(unprovenBody.request as Record<string, unknown>),
+      catalogId: "unavailable-historical-routing",
+      transportOnly: "different-transport",
+    };
+    unprovenEnvelopeChange.caseId = hashCanonicalJson(
+      unprovenEnvelopeChange.privateData,
+    );
+    const unprovenCapture = await capturePromptThreadReplay(
+      unprovenEnvelopeChange,
+    );
+    expect(() => verifyPromptThreadSourceFidelity(
+      unprovenEnvelopeChange,
+      unprovenCapture,
+    )).not.toThrow();
+
+    const changed = structuredClone(accepted);
+    const traces = changed.privateData.traces as Array<Record<string, unknown>>;
+    const prompt = (traces[2]!.body as Record<string, unknown>).prompt as {
+      messages: Array<{ role: string; content: string }>;
+    };
+    prompt.messages[0]!.content += " ";
+    changed.caseId = hashCanonicalJson(changed.privateData);
+    const changedCapture = await capturePromptThreadReplay(changed);
+    expect(() => verifyPromptThreadSourceFidelity(changed, changedCapture))
+      .toThrow("turn 1 lane prompt.messages");
+  });
+
+  test("rejects mutated source state and missing intent before provider setup", async () => {
+    const missingIntent = caseFixture();
+    (missingIntent.privateData.traces as unknown[]).shift();
+    missingIntent.caseId = hashCanonicalJson(missingIntent.privateData);
+    let setups = 0;
+    await expect(capturePromptThreadReplay(missingIntent, {
+      onDeterministicProviderSetup: () => {
+        setups += 1;
+      },
+    })).rejects.toThrow("six ordered traces");
+    expect(setups).toBe(0);
+
+    const mutated = caseFixture();
+    (mutated.privateData.startingState as JsonObject).canonicalProjection = {
+      changed: true,
+    };
+    mutated.caseId = hashCanonicalJson(mutated.privateData);
+    await expect(capturePromptThreadReplay(mutated, {
+      onDeterministicProviderSetup: () => {
+        setups += 1;
+      },
+    })).rejects.toThrow("projection");
+    expect(setups).toBe(0);
+  });
+});

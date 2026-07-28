@@ -86,24 +86,28 @@ async function seedCase(db: DrizzleDB): Promise<SeededCase> {
     {
       id: "atlas",
       gameId,
+      joinedAt: "2026-01-01T00:00:04.000Z",
       persona: JSON.stringify({ name: "Atlas", personality: "steady" }),
       agentConfig: JSON.stringify({ model: "fixture-model" }),
     },
     {
       id: "echo",
       gameId,
+      joinedAt: "2026-01-01T00:00:03.000Z",
       persona: JSON.stringify({ name: "Echo", personality: "sharp" }),
       agentConfig: JSON.stringify({ model: "fixture-model" }),
     },
     {
       id: "mira",
       gameId,
+      joinedAt: "2026-01-01T00:00:02.000Z",
       persona: JSON.stringify({ name: "Mira", personality: "social" }),
       agentConfig: JSON.stringify({ model: "fixture-model" }),
     },
     {
       id: "nyx",
       gameId,
+      joinedAt: "2026-01-01T00:00:01.000Z",
       persona: JSON.stringify({ name: "Nyx", personality: "quiet" }),
       agentConfig: JSON.stringify({ model: "fixture-model" }),
     },
@@ -161,16 +165,16 @@ async function seedCase(db: DrizzleDB): Promise<SeededCase> {
     .from(schema.gameCheckpoints)
     .where(eq(schema.gameCheckpoints.gameId, gameId)))[0]!;
 
-  await db.insert(schema.transcripts).values({
+  await db.insert(schema.transcripts).values([1, 2].map((beat) => ({
     gameId,
     round: 1,
     phase: String(checkpoint.phase),
     fromPlayerId: null,
-    scope: "system",
+    scope: "system" as const,
     roomMetadata: JSON.stringify({
       rooms: [
-        { roomId: 2, round: 1, beat: 1, playerIds: ["atlas", "echo"] },
-        { roomId: 2, round: 1, beat: 2, playerIds: ["atlas", "echo"] },
+        { roomId: 2, round: 1, beat, playerIds: ["atlas", "echo"] },
+        { roomId: 1, round: 1, beat, playerIds: ["mira", "nyx"] },
       ],
       excluded: [],
       diagnostics: {
@@ -179,8 +183,8 @@ async function seedCase(db: DrizzleDB): Promise<SeededCase> {
       },
     }),
     text: "POST_BOUNDARY_PROSE_SENTINEL",
-    timestamp: 3,
-  });
+    timestamp: 2 + beat,
+  })));
 
   const storage = new FakeTraceStorage();
   const targetManifestIds = [
@@ -198,6 +202,32 @@ async function seedCase(db: DrizzleDB): Promise<SeededCase> {
     { id: targetManifestIds[3], actorId: "echo", actorName: "Echo", action: "mingle-turn", createdAt: "2026-01-01T00:00:04.000Z" },
   ];
   for (const trace of traceInputs) {
+    const output = trace.action === "mingle-intent"
+      ? {
+          seekPlayers: [trace.actorId === "atlas" ? "Echo" : "Atlas"],
+          avoidPlayers: [],
+          preferredRoomSize: "pair",
+          purpose: "Compare notes",
+          provisionalTarget: null,
+          noTargetReason: "Still gathering evidence",
+          openingAsk: "What changed?",
+          strategicLens: "broad_read",
+          strategicLensRationale: "Use the room to compare reads.",
+          decisionLog: "Keep comparing notes.",
+          thinking: `thinking-${trace.id}`,
+        }
+      : {
+          message: `response-${trace.id}`,
+          noReply: false,
+          gotoRoomId: null,
+          gotoPlayerName: null,
+          proposedTarget: null,
+          proposedAction: null,
+          commitment: null,
+          noProposalReason: null,
+          decisionLog: `Recorded ${trace.id}`,
+          thinking: `thinking-${trace.id}`,
+        };
     const body = JSON.stringify({
       actor: { id: trace.actorId, name: trace.actorName, role: "player" },
       action: trace.action,
@@ -213,6 +243,7 @@ async function seedCase(db: DrizzleDB): Promise<SeededCase> {
         ],
       },
       request: { model: "fixture-model", transportOnly: trace.id },
+      output,
       response: { message: `response-${trace.id}` },
       createdAt: trace.createdAt,
     });
@@ -314,6 +345,27 @@ describe("prompt-thread case materializer", () => {
     expect(privateData).not.toContain("FOREIGN_PRIVATE_SENTINEL");
     expect(privateData).not.toContain("POST_BOUNDARY_ACTION_SENTINEL");
     expect(privateData).not.toContain("POST_BOUNDARY_PROSE_SENTINEL");
+    expect(result.caseArtifact.privateData.startingState).toMatchObject({
+      roster: [
+        { id: "atlas" },
+        { id: "echo" },
+        { id: "mira" },
+        { id: "nyx" },
+      ],
+      roomCounts: [{
+        beat: 1,
+        rooms: [
+          { roomId: 1, playerCount: 2 },
+          { roomId: 2, playerCount: 2 },
+        ],
+      }, {
+        beat: 2,
+        rooms: [
+          { roomId: 1, playerCount: 2 },
+          { roomId: 2, playerCount: 2 },
+        ],
+      }],
+    });
     expect(result.casePath).toEndWith("/case.json");
     expect(result.sourceReceiptPath).toEndWith("/source-receipt.json");
     expect(await getSupportedRecovery(db, fixture.gameId)).toEqual({

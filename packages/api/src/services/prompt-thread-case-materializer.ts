@@ -109,7 +109,7 @@ function parseJsonObject(value: string, label: string): Record<string, unknown> 
 }
 
 function toJsonObject(value: unknown): JsonObject {
-  return JSON.parse(JSON.stringify(value)) as JsonObject;
+  return toJsonValue(value) as JsonObject;
 }
 
 function toJsonValue(value: unknown): JsonValue {
@@ -313,10 +313,15 @@ function actorVisibleTranscriptReplay(
     }));
 }
 
+interface ParsedRoomTape {
+  schedule: JsonValue[];
+  roomCounts: JsonValue[];
+}
+
 function parseRoomSchedule(
   rows: readonly { roomMetadata: string | null }[],
   actorIds: readonly [string, string],
-): JsonValue[] {
+): ParsedRoomTape {
   const schedule: Array<{
     roomId: number;
     round: number;
@@ -324,10 +329,18 @@ function parseRoomSchedule(
     playerIds: string[];
     playerCount: number;
   }> = [];
+  const roomCountsByBeat = new Map<number, Array<{
+    roomId: number;
+    playerCount: number;
+  }>>();
   for (const row of rows) {
     if (!row.roomMetadata) continue;
     const metadata = parseJsonObject(row.roomMetadata, "Room allocation metadata");
     if (!Array.isArray(metadata.rooms)) continue;
+    const rowCountsByBeat = new Map<number, Array<{
+      roomId: number;
+      playerCount: number;
+    }>>();
     for (const candidate of metadata.rooms) {
       if (!isRecord(candidate) ||
           typeof candidate.roomId !== "number" ||
@@ -338,6 +351,12 @@ function parseRoomSchedule(
         throw new Error("Room allocation metadata contains an invalid structured room");
       }
       const playerIds = candidate.playerIds as string[];
+      const rowCounts = rowCountsByBeat.get(candidate.beat) ?? [];
+      rowCounts.push({
+        roomId: candidate.roomId,
+        playerCount: playerIds.length,
+      });
+      rowCountsByBeat.set(candidate.beat, rowCounts);
       if (!actorIds.every((actorId) => playerIds.includes(actorId))) continue;
       schedule.push({
         roomId: candidate.roomId,
@@ -346,6 +365,14 @@ function parseRoomSchedule(
         playerIds: [...playerIds],
         playerCount: playerIds.length,
       });
+    }
+    for (const [beat, rowCounts] of rowCountsByBeat) {
+      const existing = roomCountsByBeat.get(beat);
+      const normalized = rowCounts.sort((left, right) => left.roomId - right.roomId);
+      if (existing && JSON.stringify(existing) !== JSON.stringify(normalized)) {
+        throw new Error(`Conflicting structured room counts for beat ${beat}`);
+      }
+      roomCountsByBeat.set(beat, normalized);
     }
   }
   const uniqueByBeat = new Map<number, (typeof schedule)[number]>();
@@ -358,7 +385,15 @@ function parseRoomSchedule(
   if (uniqueByBeat.size === 0) {
     throw new Error("Selected actors have no structured room schedule");
   }
-  return [...uniqueByBeat.values()].map(toJsonValue);
+  return {
+    schedule: [...uniqueByBeat.values()].map(toJsonValue),
+    roomCounts: [...uniqueByBeat.keys()]
+      .sort((left, right) => left - right)
+      .map((beat) => toJsonValue({
+        beat,
+        rooms: roomCountsByBeat.get(beat) ?? [],
+      })),
+  };
 }
 
 function corroboratingSources(
@@ -445,24 +480,25 @@ async function readMaterializedSource(
       .from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, game.id))
       .orderBy(asc(schema.gamePlayers.joinedAt), asc(schema.gamePlayers.id));
-    const roster = rosterRows.map((row) => ({
+    const rosterById = new Map(rosterRows.map((row) => [row.id, {
       id: row.id,
       userId: row.userId,
       agentProfileId: row.agentProfileId,
       agentRevisionId: row.agentRevisionId,
       persona: parseJsonObject(row.persona, `Roster persona ${row.id}`),
       agentConfig: parseJsonObject(row.agentConfig, `Roster agent config ${row.id}`),
-    }));
-    const projectedPlayers = new Map(
-      startingState.getAllPlayers().map((player) => [player.id, player.name]),
-    );
-    if (roster.length !== projectedPlayers.size ||
-        roster.some((row) => {
-          const personaName = typeof row.persona.name === "string" ? row.persona.name : null;
-          return projectedPlayers.get(row.id) !== personaName;
+    }] as const));
+    const canonicalPlayers = startingState.getAllPlayers();
+    const roster = canonicalPlayers.map((player) => rosterById.get(player.id));
+    if (roster.some((row) => !row) ||
+        rosterRows.length !== canonicalPlayers.length ||
+        roster.some((row, index) => {
+          const personaName = typeof row?.persona.name === "string" ? row.persona.name : null;
+          return personaName !== canonicalPlayers[index]!.name;
         })) {
       throw new Error("Roster identity does not match the canonical starting projection");
     }
+    const canonicalRoster = roster.map((row) => row!);
 
     const manifestRows = await tx
       .select({
@@ -494,7 +530,6 @@ async function readMaterializedSource(
     for (const row of traceRows) {
       const read = await traceReadModel.readCompleteContentForExperiment(row.id, {
         gameId: game.id,
-        accessor: { roles: ["producer"] },
       });
       if (!read.ok) {
         throw new Error(`Trace ${row.id} integrity/read failed (${read.status}): ${read.error}`);
@@ -536,7 +571,7 @@ async function readMaterializedSource(
         eq(schema.transcripts.phase, selection.phase),
       ))
       .orderBy(asc(schema.transcripts.timestamp), asc(schema.transcripts.id));
-    const roomSchedule = parseRoomSchedule(roomRows, actorIds);
+    const roomTape = parseRoomSchedule(roomRows, actorIds);
     const eligibleTranscriptReplay = actorVisibleTranscriptReplay(
       historical.resumeFrom.transcriptReplay,
       actorIds,
@@ -571,7 +606,7 @@ async function readMaterializedSource(
         canonicalEvents: canonicalPrefix,
         canonicalProjection: projection,
         config,
-        roster,
+        roster: canonicalRoster,
         continuity: {
           playerContinuityCapsules: historical.resumeFrom.playerContinuityCapsules ?? [],
           houseContinuityCapsule: historical.resumeFrom.houseContinuityCapsule,
@@ -593,7 +628,8 @@ async function readMaterializedSource(
             (entry) => isRecord(entry) && entry.lane === "history",
           ),
         },
-        roomSchedule,
+        roomSchedule: roomTape.schedule,
+        roomCounts: roomTape.roomCounts,
       },
       traces,
       fidelityContract: {
