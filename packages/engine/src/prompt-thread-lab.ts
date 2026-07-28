@@ -46,7 +46,21 @@ import {
   type UUID,
 } from "./types";
 
-const TRANSPORT_ONLY_EXCLUSIONS = ["request.transportOnly"] as const;
+export const PROMPT_THREAD_FIDELITY_LANES = [
+  "prompt.messages",
+  "prompt.raw_system_content",
+  "prompt.raw_user_content",
+  "action",
+  "request_shape",
+  "model.name",
+  "requestedReasoningEffort",
+  "reasoningPolicy",
+  "toolName",
+] as const;
+
+export const PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS = [
+  "request.transportOnly",
+] as const;
 const PERSONALITIES = new Set<Personality>([
   "honest",
   "strategic",
@@ -108,7 +122,7 @@ interface ValidatedPromptThreadCase {
     StoredTrace,
     StoredTrace,
   ];
-  exclusions: readonly (typeof TRANSPORT_ONLY_EXCLUSIONS)[number][];
+  exclusions: readonly (typeof PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS)[number][];
 }
 
 export interface PromptThreadReplayTurn {
@@ -472,17 +486,7 @@ export function verifyPromptThreadSourceFidelity(
   if (actualTurns.length !== 4) {
     throw new Error(`Prompt-thread capture has ${actualTurns.length} turn traces; expected four`);
   }
-  const lanes = [
-    "prompt.messages",
-    "prompt.raw_system_content",
-    "prompt.raw_user_content",
-    "action",
-    "request_shape",
-    "model.name",
-    "requestedReasoningEffort",
-    "reasoningPolicy",
-    "toolName",
-  ];
+  const lanes = PROMPT_THREAD_FIDELITY_LANES;
   for (let index = 0; index < expectedTurns.length; index += 1) {
     const expected = fidelityLanes(expectedTurns[index]!.body);
     const actual = fidelityLanes(
@@ -503,7 +507,7 @@ export function verifyPromptThreadSourceFidelity(
     turnCount: 4,
     canonicalizerId: CANONICALIZER_ID,
     canonicalizerVersion: CANONICALIZER_VERSION,
-    comparedLanes: lanes,
+    comparedLanes: [...lanes],
     transportOnlyExclusions: [...validated.exclusions],
     sourceMutation: false,
   };
@@ -601,9 +605,12 @@ function validatePromptThreadCase(
   }
   if (
     !Array.isArray(fidelity.transportOnlyExclusions)
-    || fidelity.transportOnlyExclusions.length !== TRANSPORT_ONLY_EXCLUSIONS.length
+    || fidelity.transportOnlyExclusions.length
+      !== PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS.length
     || fidelity.transportOnlyExclusions.some(
-      (value, index) => value !== TRANSPORT_ONLY_EXCLUSIONS[index],
+      (value, index) => (
+        value !== PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS[index]
+      ),
     )
   ) {
     throw new Error("Prompt-thread case requests an unsupported transport-only exclusion");
@@ -640,7 +647,7 @@ function validatePromptThreadCase(
     transcriptReplay: structuredClone(starting.transcriptReplay) as TranscriptEntry[],
     schedule,
     traces,
-    exclusions: TRANSPORT_ONLY_EXCLUSIONS,
+    exclusions: PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
   };
 }
 

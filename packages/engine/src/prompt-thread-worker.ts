@@ -15,8 +15,8 @@ import {
   type ProtocolHandshake,
 } from "@influence/prompt-lab-protocol";
 import { createHash, randomUUID } from "node:crypto";
-import { chmod, readFile, rename, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { chmod, readFile, readdir, rename, writeFile } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
 import {
   runPromptThreadGeneratedCell,
   type PromptThreadGeneratedCellResult,
@@ -186,26 +186,50 @@ export function createPromptThreadWorkerHandshake(input: {
   };
 }
 
+const PROMPT_THREAD_WORKER_EXTERNAL_HARNESS_FILES = [
+  "bun.lock",
+  "packages/api/src/services/prompt-thread-provider-broker.ts",
+  "packages/prompt-lab-protocol/src/schemas.ts",
+] as const;
+
+export async function listPromptThreadWorkerHarnessFiles(
+  checkoutRoot = resolve(import.meta.dir, "../../.."),
+): Promise<string[]> {
+  const engineRoot = join(checkoutRoot, "packages/engine/src");
+  const engineFiles = (await listTypeScriptFiles(engineRoot))
+    .map((path) => relative(checkoutRoot, path))
+    .filter((path) => (
+      !path.includes("/__tests__/")
+      && !path.endsWith(".test.ts")
+      && path !== "packages/engine/src/context-recall-plan.ts"
+    ));
+  return [...new Set([
+    ...PROMPT_THREAD_WORKER_EXTERNAL_HARNESS_FILES,
+    ...engineFiles,
+  ])].sort();
+}
+
 export async function computePromptThreadWorkerHarnessDigest(
   checkoutRoot = resolve(import.meta.dir, "../../.."),
 ): Promise<string> {
-  const files = [
-    "bun.lock",
-    "packages/engine/src/agent.ts",
-    "packages/engine/src/context-builder.ts",
-    "packages/engine/src/mingle-turn-execution.ts",
-    "packages/engine/src/prompt-thread-lab.ts",
-    "packages/api/src/services/prompt-thread-provider-broker.ts",
-    "packages/prompt-lab-protocol/src/schemas.ts",
-  ] as const;
   const digest = createHash("sha256");
   digest.update(`bun:${Bun.version}\n`);
-  for (const relativePath of files) {
+  for (const relativePath of await listPromptThreadWorkerHarnessFiles(checkoutRoot)) {
     digest.update(`${relativePath}\0`);
     digest.update(await readFile(join(checkoutRoot, relativePath)));
     digest.update("\0");
   }
   return `sha256:${digest.digest("hex")}`;
+}
+
+async function listTypeScriptFiles(directory: string): Promise<string[]> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(entries.map((entry) => {
+    const path = join(directory, entry.name);
+    if (entry.isDirectory()) return listTypeScriptFiles(path);
+    return entry.isFile() && entry.name.endsWith(".ts") ? [path] : [];
+  }));
+  return files.flat();
 }
 
 export async function computePromptThreadWorkerPolicyDigest(

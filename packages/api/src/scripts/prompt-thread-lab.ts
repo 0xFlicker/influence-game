@@ -13,6 +13,8 @@ import {
   type UnblindingKeyArtifact,
 } from "@influence/prompt-lab-protocol";
 import {
+  PROMPT_THREAD_FIDELITY_LANES,
+  PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
   runPromptThreadSourceGate,
   type PromptThreadFidelityReceipt,
 } from "@influence/engine/prompt-thread-lab";
@@ -338,12 +340,10 @@ export async function runPromptThreadLabCli(
         workspace,
         requiredFlag(flags, "evidence-approval"),
       );
-      const sourceFidelity = parseSourceFidelityReceipt(flags.has("source-fidelity-path")
-        ? await readPrivateJson(
-            workspace,
-            requiredFlag(flags, "source-fidelity-path"),
-          )
-        : parseJsonFlag(flags, "source-fidelity"));
+      const sourceFidelity = parseSourceFidelityReceipt(await readPrivateJson(
+        workspace,
+        requiredFlag(flags, "source-fidelity-path"),
+      ));
       const manifest = await createPromptThreadPanelManifest({
         caseValue,
         sourceFidelity,
@@ -440,6 +440,7 @@ export async function runPromptThreadLabCli(
         manifest.cells,
         completed,
         manifest.runId,
+        inspection.invalidReason,
       ));
     }
 
@@ -1280,6 +1281,14 @@ function parseSourceFidelityReceipt(value: unknown): PromptThreadFidelityReceipt
     || !isStringArray(
       (value as { transportOnlyExclusions?: unknown }).transportOnlyExclusions,
     )
+    || !sameStrings(
+      (value as { comparedLanes: string[] }).comparedLanes,
+      PROMPT_THREAD_FIDELITY_LANES,
+    )
+    || !sameStrings(
+      (value as { transportOnlyExclusions: string[] }).transportOnlyExclusions,
+      PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+    )
   ) {
     throw new Error("Source-fidelity receipt is invalid or unmatched");
   }
@@ -1288,6 +1297,14 @@ function parseSourceFidelityReceipt(value: unknown): PromptThreadFidelityReceipt
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function sameStrings(
+  actual: readonly string[],
+  expected: readonly string[],
+): boolean {
+  return actual.length === expected.length
+    && actual.every((value, index) => value === expected[index]);
 }
 
 function parseBlindChoice(value: string): BlindChoice {

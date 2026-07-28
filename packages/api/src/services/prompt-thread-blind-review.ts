@@ -9,6 +9,7 @@ import {
   type BlindPacketArtifact,
   type ContinuationCheckpointArtifact,
   type FinalReportArtifact,
+  type FrozenCaseArtifact,
   type JsonObject,
   type UnblindingKeyArtifact,
 } from "@influence/prompt-lab-protocol";
@@ -88,6 +89,12 @@ export interface BlindReviewStatus {
 export interface PromptThreadUnblindedReview {
   decisionsArtifact: BlindDecisionsArtifact;
   revealedDecisions: PromptThreadRevealedDecision[];
+}
+
+interface LockedBlindDecision {
+  pairToken: string;
+  choice: BlindChoice;
+  reasons?: BlindDecisionReasons;
 }
 
 export function createPromptThreadBlindArtifacts(
@@ -260,11 +267,7 @@ export async function unblindPromptThreadReview(
   if (key.packetHash !== hashCanonicalJson(packet)) {
     throw new Error("Unblinding key does not match the blind packet");
   }
-  const decisions: Array<{
-    pairToken: string;
-    choice: BlindChoice;
-    reasons?: BlindDecisionReasons;
-  }> = [];
+  const decisions: LockedBlindDecision[] = [];
   let reviewer: string | null = null;
   for (const pairToken of packetPairTokens(packet)) {
     const artifact = parseArtifact(await readArtifact(
@@ -299,21 +302,7 @@ export async function unblindPromptThreadReview(
     },
   );
   parseArtifact(decisionsArtifact);
-  const mappings = parseMappings(key);
-  const revealedDecisions = decisions.map((decision) => {
-    const mapping = mappings.get(decision.pairToken);
-    if (!mapping) throw new Error("Unblinding key is missing a pair mapping");
-    return {
-      pairToken: decision.pairToken,
-      choice: decision.choice,
-      preferredArm: decision.choice === "A"
-        ? mapping.aArm
-        : decision.choice === "B"
-          ? mapping.bArm
-          : null,
-      ...(decision.reasons && { reasons: structuredClone(decision.reasons) }),
-    } satisfies PromptThreadRevealedDecision;
-  });
+  const revealedDecisions = revealBlindDecisions(decisions, key);
   await withRunMutationLock(workspace, runId, async (lock) => {
     await atomicWriteArtifact(
       lock,
@@ -334,18 +323,37 @@ export async function buildPromptThreadReportFromRun(
   manifest: PromptThreadPanelManifest,
   evidenceCard: PromptThreadEvidenceCard,
   decisions: PromptThreadUnblindedReview,
-  caseValue: { privateData: JsonObject },
+  caseValue: FrozenCaseArtifact,
   options: { now?: Date } = {},
 ): Promise<{ report: FinalReportArtifact; markdown: string }> {
   await assertCompletedRun(workspace, manifest);
-  const packet = parseArtifact(await readArtifact(
-    workspace,
-    `runs/${manifest.runId}/blind-packet.json`,
-  ));
+  const [packet, key] = await Promise.all([
+    readArtifact(workspace, `runs/${manifest.runId}/blind-packet.json`)
+      .then(parseArtifact),
+    readArtifact(workspace, `runs/${manifest.runId}/unblinding-key.json`)
+      .then(parseArtifact),
+  ]);
   if (packet.kind !== "blind_packet") {
     throw new Error("Report requires the run's blind packet");
   }
-  assertUnblindedReviewMatchesPacket(packet, decisions);
+  if (key.kind !== "unblinding_key") {
+    throw new Error("Report requires the run's unblinding key");
+  }
+  if (manifest.caseHash !== hashCanonicalJson(caseValue)) {
+    throw new Error("Report case changed after panel approval");
+  }
+  if (manifest.evidenceCardHash !== hashCanonicalJson(evidenceCard)) {
+    throw new Error("Report evidence card changed after panel approval");
+  }
+  if (packet.evidenceCardHash !== manifest.evidenceCardHash) {
+    throw new Error("Report blind packet does not match the approved evidence card");
+  }
+  if (key.packetHash !== hashCanonicalJson(packet)) {
+    throw new Error("Report unblinding key does not match the blind packet");
+  }
+  const lockedDecisions = assertUnblindedReviewMatchesPacket(packet, decisions);
+  const revealedDecisions = revealBlindDecisions(lockedDecisions, key);
+  assertRevealedDecisionsMatchKey(decisions.revealedDecisions, revealedDecisions);
   const reportCells = await loadReportCells(
     workspace,
     manifest,
@@ -360,7 +368,7 @@ export async function buildPromptThreadReportFromRun(
     verdictScope: manifest.verdictScope,
     expectedCalls: 28,
     cells: reportCells,
-    blindDecisions: decisions.revealedDecisions,
+    blindDecisions: revealedDecisions,
     rateCardVersion: manifest.rateCardVersion,
     pricingSourceId: manifest.pricingSourceId,
     now: options.now,
@@ -384,43 +392,96 @@ export async function buildPromptThreadReportFromRun(
 function assertUnblindedReviewMatchesPacket(
   packet: BlindPacketArtifact,
   review: PromptThreadUnblindedReview,
-): void {
+): LockedBlindDecision[] {
+  const decisionsArtifact = parseArtifact(review.decisionsArtifact);
   if (
-    review.decisionsArtifact.packetHash !== hashCanonicalJson(packet)
-    || !review.decisionsArtifact.locked
-    || review.decisionsArtifact.decisions.length !== 3
+    decisionsArtifact.kind !== "blind_decisions"
+    || decisionsArtifact.packetHash !== hashCanonicalJson(packet)
+    || !decisionsArtifact.locked
+    || decisionsArtifact.decisions.length !== 3
     || review.revealedDecisions.length !== 3
   ) {
     throw new Error("Report requires complete unblinding data for this run");
   }
-  const choices = new Map<string, BlindChoice>();
-  for (const candidate of review.decisionsArtifact.decisions) {
+  const decisions = new Map<string, LockedBlindDecision>();
+  for (const candidate of decisionsArtifact.decisions) {
     const decision = record(candidate, "locked blind decision");
     if (
       typeof decision.pairToken !== "string"
       || !isBlindChoice(decision.choice)
-      || choices.has(decision.pairToken)
+      || decisions.has(decision.pairToken)
     ) {
       throw new Error("Report received invalid locked blind decisions");
     }
-    choices.set(decision.pairToken, decision.choice);
+    const reasons = nullableRecord(decision.reasons, "locked blind decision reasons");
+    decisions.set(decision.pairToken, {
+      pairToken: decision.pairToken,
+      choice: decision.choice,
+      ...(reasons && { reasons: reasons as BlindDecisionReasons }),
+    });
   }
   const packetTokens = packetPairTokens(packet);
   if (
-    packetTokens.some((token) => !choices.has(token))
+    packetTokens.some((token) => !decisions.has(token))
     || review.revealedDecisions.some((decision) => (
-      choices.get(decision.pairToken) !== decision.choice
+      decisions.get(decision.pairToken)?.choice !== decision.choice
     ))
   ) {
     throw new Error("Report unblinding data does not match the blind packet");
+  }
+  return packetTokens.map((pairToken) => decisions.get(pairToken)!);
+}
+
+function revealBlindDecisions(
+  decisions: readonly LockedBlindDecision[],
+  key: UnblindingKeyArtifact,
+): PromptThreadRevealedDecision[] {
+  const mappings = parseMappings(key);
+  return decisions.map((decision) => {
+    const mapping = mappings.get(decision.pairToken);
+    if (!mapping) throw new Error("Unblinding key is missing a pair mapping");
+    return {
+      pairToken: decision.pairToken,
+      choice: decision.choice,
+      preferredArm: decision.choice === "A"
+        ? mapping.aArm
+        : decision.choice === "B"
+          ? mapping.bArm
+          : null,
+      ...(decision.reasons && { reasons: structuredClone(decision.reasons) }),
+    };
+  });
+}
+
+function assertRevealedDecisionsMatchKey(
+  supplied: readonly PromptThreadRevealedDecision[],
+  expected: readonly PromptThreadRevealedDecision[],
+): void {
+  const expectedByPair = new Map(expected.map((decision) => [
+    decision.pairToken,
+    decision,
+  ]));
+  const seen = new Set<string>();
+  if (
+    supplied.length !== expected.length
+    || supplied.some((decision) => {
+      const expectedDecision = expectedByPair.get(decision.pairToken);
+      if (!expectedDecision || seen.has(decision.pairToken)) return true;
+      seen.add(decision.pairToken);
+      return (
+        decision.choice !== expectedDecision.choice
+        || decision.preferredArm !== expectedDecision.preferredArm
+      );
+    })
+  ) {
+    throw new Error("Report revealed decisions do not match the stored unblinding key");
   }
 }
 
 export function renderPromptThreadBlindPacket(
   packet: BlindPacketArtifact,
 ): string {
-  assertBlindPacketSafe(packet);
-  const pairs = packet.pairs as unknown as PromptThreadBlindPair[];
+  const pairs = assertBlindPacketSafe(packet);
   return pairs.flatMap((pair) => [
     `## ${pair.pairToken}`,
     "",
@@ -768,7 +829,7 @@ async function readCheckpoint(
 }
 
 function packetPairTokens(packet: BlindPacketArtifact): string[] {
-  return (packet.pairs as unknown as PromptThreadBlindPair[])
+  return assertBlindPacketSafe(packet)
     .map((pair) => pair.pairToken);
 }
 
@@ -786,7 +847,13 @@ function requireBranch(
   return matches[0]!;
 }
 
-function assertBlindPacketSafe(packet: BlindPacketArtifact): void {
+function assertBlindPacketSafe(
+  packet: BlindPacketArtifact,
+): PromptThreadBlindPair[] {
+  const parsed = parseArtifact(packet);
+  if (parsed.kind !== "blind_packet") {
+    throw new Error("Expected a blind packet");
+  }
   const forbiddenKeys = new Set([
     "arm",
     "commit",
@@ -815,7 +882,8 @@ function assertBlindPacketSafe(packet: BlindPacketArtifact): void {
       visit(child);
     }
   };
-  visit(packet);
+  visit(parsed);
+  return parsed.pairs as unknown as PromptThreadBlindPair[];
 }
 
 function assertSingleDecision(
@@ -857,6 +925,9 @@ function parseMappings(
       || typeof mapping.repetition !== "number"
     ) {
       throw new Error("Unblinding mapping is invalid");
+    }
+    if (mappings.has(mapping.pairToken)) {
+      throw new Error("Unblinding mapping has a duplicate pair token");
     }
     mappings.set(mapping.pairToken, mapping as unknown as PromptThreadBlindMapping);
   }

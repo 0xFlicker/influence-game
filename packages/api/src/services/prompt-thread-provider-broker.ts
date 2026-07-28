@@ -25,6 +25,10 @@ export interface PromptThreadBrokerCell {
   lineage: string;
   firstCall?: boolean;
   requestedServiceTier?: "flex" | "auto";
+  /** Approved character-derived input-token ceiling for this exact provider cell. */
+  estimatedInputTokens?: number;
+  /** Approved maximum Responses output-token ceiling for this exact provider cell. */
+  maxOutputTokens?: number;
   maxCostUsd?: number;
   controlReturnTurn?: boolean;
 }
@@ -125,9 +129,10 @@ export class PromptThreadProviderBroker {
     if (this.dispatched.size >= PROMPT_THREAD_MAX_PROVIDER_ATTEMPTS) {
       throw new PromptThreadBrokerError("attempt_cap");
     }
+    const envelope = applyApprovedEnvelope(request.request, cell);
     const injected = this.requestKind === "panel"
-      ? injectCacheMarker(request.request)
-      : structuredClone(request.request);
+      ? injectCacheMarker(envelope)
+      : envelope;
     const transformed = cell.controlReturnTurn ? applyCacheControl(injected) : injected;
     return {
       cell,
@@ -252,6 +257,27 @@ function injectCacheMarker(request: Record<string, unknown>): Record<string, unk
   return copy;
 }
 
+function applyApprovedEnvelope(
+  request: Record<string, unknown>,
+  cell: PromptThreadBrokerCell,
+): Record<string, unknown> {
+  const copy = structuredClone(request);
+  if (copy.store !== undefined && copy.store !== false) {
+    throw new PromptThreadBrokerError("invalid_request");
+  }
+  copy.store = false;
+  if (cell.requestedServiceTier) {
+    if (
+      copy.service_tier !== undefined
+      && copy.service_tier !== cell.requestedServiceTier
+    ) {
+      throw new PromptThreadBrokerError("tier_mismatch");
+    }
+    copy.service_tier = cell.requestedServiceTier;
+  }
+  return copy;
+}
+
 /** Construction seam only: callers inject/stub dispatch; it never calls the network here. */
 export function createPromptThreadOpenAIClient(apiKey: string): OpenAI {
   return new OpenAI({ apiKey, maxRetries: 0 });
@@ -274,7 +300,30 @@ function validateFinalRequest(
   if (typeof request.input !== "string") {
     throw new PromptThreadBrokerError("invalid_request");
   }
-  if (request.model !== policy.model || request.prompt_cache_options !== undefined) {
+  if (
+    request.model !== policy.model
+    || request.store !== false
+    || request.prompt_cache_options !== undefined
+  ) {
+    throw new PromptThreadBrokerError("invalid_request");
+  }
+  if (
+    cell.estimatedInputTokens !== undefined
+    && (
+      !isNonNegativeSafeInteger(cell.estimatedInputTokens)
+      || estimateRequestInputTokens(request) > cell.estimatedInputTokens
+    )
+  ) {
+    throw new PromptThreadBrokerError("invalid_request");
+  }
+  if (
+    cell.maxOutputTokens !== undefined
+    && (
+      !isNonNegativeSafeInteger(cell.maxOutputTokens)
+      || !isNonNegativeSafeInteger(request.max_output_tokens)
+      || request.max_output_tokens > cell.maxOutputTokens
+    )
+  ) {
     throw new PromptThreadBrokerError("invalid_request");
   }
   if (policy.requestKind === "curator") {
@@ -313,4 +362,18 @@ function stringOrUndefined(value: unknown): string | undefined {
 
 function numberOrZero(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function estimateTokensFromChars(chars: number): number {
+  return Math.ceil(chars / 4);
+}
+
+function estimateRequestInputTokens(request: Record<string, unknown>): number {
+  const input = typeof request.input === "string" ? request.input : "";
+  const instructions = typeof request.instructions === "string" ? request.instructions : "";
+  return estimateTokensFromChars(input.length + instructions.length);
+}
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }

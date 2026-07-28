@@ -149,4 +149,51 @@ describe("prompt thread evidence cards", () => {
       maxItemsPerPartition: 1,
     })).toThrow("complete eligible catalog");
   });
+
+  it("merges actor-partition scores for a shared public source", () => {
+    const sharedCase = structuredClone(caseValue);
+    const startingState = sharedCase.privateData.startingState as {
+      historyCatalog: Array<Record<string, unknown>>;
+    };
+    startingState.historyCatalog.push({
+      sourceId: "history:shared",
+      eligibleActorIds: ["a", "b"],
+      dialogueText: "public signal",
+    });
+    const manifest = buildCuratorManifest(sharedCase, {
+      model: "frontier-curator",
+      maximumCalls: 4,
+      maximumSpendUsd: 1,
+      maxItemsPerPartition: 2,
+    });
+    const approval = approveCuratorManifest(manifest, "producer");
+    const responses = manifest.partitions.map((partition) => ({
+      partitionId: partition.partitionId,
+      items: partition.sourceIds.flatMap((sourceId) => (
+        sourceId === "history:shared"
+          ? [{
+              sourceId,
+              classification: partition.actorId === "a"
+                ? "required" as const
+                : "useful" as const,
+              applicableTurns: partition.actorId === "a" ? [1] : [2],
+              rationale: `signal for ${partition.actorId}`,
+            }]
+          : []
+      )),
+    }));
+    const draft = applyCuratorResponses(
+      sharedCase,
+      manifest,
+      approval,
+      responses,
+    );
+    expect(draft.items.find(({ sourceId }) => sourceId === "history:shared"))
+      .toEqual({
+        sourceId: "history:shared",
+        classification: "required",
+        applicableTurns: [1, 2],
+        rationale: "signal for a | signal for b",
+      });
+  });
 });

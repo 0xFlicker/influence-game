@@ -3,12 +3,18 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CANONICALIZER_ID,
+  CANONICALIZER_VERSION,
   PROTOCOL_SCHEMA_HASH,
   PROTOCOL_VERSION,
   hashCanonicalJson,
   type EvidenceCardApprovalArtifact,
   type FrozenCaseArtifact,
 } from "@influence/prompt-lab-protocol";
+import {
+  PROMPT_THREAD_FIDELITY_LANES,
+  PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+} from "@influence/engine/prompt-thread-lab";
 import {
   createPromptThreadWorkerHandshake,
   runPromptThreadWorker,
@@ -213,6 +219,46 @@ describe("prompt-thread blind review", () => {
         },
         reportCase,
       )).rejects.toThrow("this run");
+      await expect(buildPromptThreadReportFromRun(
+        workspace,
+        manifest,
+        {
+          ...reportEvidence,
+          createdAt: "2026-01-01T00:00:01.000Z",
+        },
+        unblinded,
+        reportCase,
+      )).rejects.toThrow("evidence card");
+      await expect(buildPromptThreadReportFromRun(
+        workspace,
+        manifest,
+        reportEvidence,
+        unblinded,
+        {
+          ...reportCase,
+          createdAt: "2026-01-01T00:00:01.000Z",
+        },
+      )).rejects.toThrow("case");
+      const preferredArm = unblinded.revealedDecisions[0]!.preferredArm;
+      await expect(buildPromptThreadReportFromRun(
+        workspace,
+        manifest,
+        reportEvidence,
+        {
+          ...unblinded,
+          revealedDecisions: unblinded.revealedDecisions.map((decision, index) => (
+            index === 0
+              ? {
+                  ...decision,
+                  preferredArm: preferredArm === "baseline"
+                    ? "candidate"
+                    : "baseline",
+                }
+              : decision
+          )),
+        },
+        reportCase,
+      )).rejects.toThrow("unblinding key");
       const { report, markdown } = await buildPromptThreadReportFromRun(
         workspace,
         manifest,
@@ -290,9 +336,16 @@ async function reportManifest() {
   return createPromptThreadPanelManifest({
     caseValue: reportCase,
     sourceFidelity: {
+      version: 1,
       status: "matched",
       caseId: reportCase.caseId,
       turnCount: 4,
+      canonicalizerId: CANONICALIZER_ID,
+      canonicalizerVersion: CANONICALIZER_VERSION,
+      comparedLanes: [...PROMPT_THREAD_FIDELITY_LANES],
+      transportOnlyExclusions: [
+        ...PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+      ],
       sourceMutation: false,
     },
     evidenceDraft: reportEvidence,
@@ -318,6 +371,7 @@ async function reportManifest() {
         : reportCandidate.commitSha,
       dirty: false,
     }),
+    computeWorkerHarnessDigest: async () => reportBaseline.harnessDigest,
     inspectWorkerHandshake: async (revision) =>
       createPromptThreadWorkerHandshake({
         harnessDigest: revision.harnessDigest,
@@ -350,6 +404,7 @@ function reportRunner(
           prompt_cache_key: value.promptCacheKey,
           input: "x".repeat(1_024),
           instructions: "stable panel instructions",
+          max_output_tokens: 1_000,
         };
         const response = await value.dispatch(request);
         return {

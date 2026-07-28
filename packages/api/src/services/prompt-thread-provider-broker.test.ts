@@ -90,6 +90,64 @@ describe("PromptThreadProviderBroker", () => {
     });
   });
 
+  it("injects the approved provider envelope and rejects conflicting tiers or ceilings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "prompt-thread-broker-envelope-"));
+    const workspace = await createPrivateWorkspace(root, { gitWorktreeRoots: [] });
+    const broker = new PromptThreadProviderBroker([{
+      ...cells[0]!,
+      lineage: "opaque-lineage",
+      requestedServiceTier: "flex",
+      estimatedInputTokens: 300,
+      maxOutputTokens: 40,
+    }]);
+    const request = {
+      model: PROMPT_THREAD_PANEL_MODEL,
+      prompt_cache_key: "opaque-lineage",
+      input: "x".repeat(1_024),
+      max_output_tokens: 40,
+    };
+
+    expect(() => broker.prepare({
+      cellId: "one",
+      model: PROMPT_THREAD_PANEL_MODEL,
+      request: { ...request, service_tier: "auto" },
+    })).toThrow(new PromptThreadBrokerError("tier_mismatch"));
+
+    await withRunMutationLock(workspace, "run-envelope", async (lock) => {
+      await expect(broker.dispatch(lock, {
+        cellId: "one",
+        model: PROMPT_THREAD_PANEL_MODEL,
+        request: { ...request, input: "x".repeat(1_200) },
+      }, async () => ({ status: "completed", service_tier: "flex" })))
+        .rejects.toThrow(new PromptThreadBrokerError("invalid_request"));
+
+      await expect(broker.dispatch(lock, {
+        cellId: "one",
+        model: PROMPT_THREAD_PANEL_MODEL,
+        request: { ...request, max_output_tokens: 41 },
+      }, async () => ({ status: "completed", service_tier: "flex" })))
+        .rejects.toThrow(new PromptThreadBrokerError("invalid_request"));
+
+      const result = await broker.dispatch(lock, {
+        cellId: "one",
+        model: PROMPT_THREAD_PANEL_MODEL,
+        request,
+      }, async (finalRequest) => {
+        expect(finalRequest).toMatchObject({
+          service_tier: "flex",
+          store: false,
+          max_output_tokens: 40,
+        });
+        return {
+          status: "completed",
+          service_tier: "flex",
+          usage: { input_tokens_details: { cached_tokens: 0 } },
+        };
+      });
+      expect(result.receipt.effectiveServiceTier).toBe("flex");
+    });
+  });
+
   it("brokers a strict curator Responses request without panel cache controls", async () => {
     const root = await mkdtemp(join(tmpdir(), "prompt-thread-curator-broker-"));
     const workspace = await createPrivateWorkspace(root, { gitWorktreeRoots: [] });

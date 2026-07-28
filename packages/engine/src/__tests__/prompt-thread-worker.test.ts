@@ -12,6 +12,7 @@ import {
   computePromptThreadWorkerActionSchemaHash,
   computePromptThreadWorkerHarnessDigest,
   computePromptThreadWorkerPolicyDigest,
+  listPromptThreadWorkerHarnessFiles,
   PromptThreadWorkerError,
   runPromptThreadWorker,
 } from "../prompt-thread-worker";
@@ -125,10 +126,23 @@ describe("prompt-thread worker", () => {
     const second = await computePromptThreadWorkerHarnessDigest();
     const policy = await computePromptThreadWorkerPolicyDigest();
     const action = await computePromptThreadWorkerActionSchemaHash();
+    const harnessFiles = await listPromptThreadWorkerHarnessFiles();
     expect(first).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(second).toBe(first);
     expect(policy).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(action).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(harnessFiles).toEqual(expect.arrayContaining([
+      "packages/engine/src/prompt-thread-worker.ts",
+      "packages/engine/src/prompt-thread-lab.ts",
+      "packages/engine/src/game-state.ts",
+      "packages/engine/src/operator-turn-text.ts",
+      "packages/engine/src/phases/phase-runner-context.ts",
+      "packages/api/src/services/prompt-thread-provider-broker.ts",
+      "packages/prompt-lab-protocol/src/schemas.ts",
+    ]));
+    expect(harnessFiles).not.toContain(
+      "packages/engine/src/context-recall-plan.ts",
+    );
   });
 
   it("uses only the injected broker once and checkpoints isolated branch state", async () => {

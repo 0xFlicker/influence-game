@@ -36,7 +36,7 @@ describe("prompt lab canonical protocol", () => {
     expect(CANONICALIZER_ID).toBe("influence-canonical-json");
     expect(CANONICALIZER_VERSION).toBe("1");
     expect(PROTOCOL_SCHEMA_HASH).toBe(
-      "sha256:adac4ae57ddfd51956ae469d0e576c2b106b86fd5b0bf2676558caf583175175",
+      "sha256:f78427eac1d330b456bd94d17a320548ded773543d98e120dab43b7263e3a517",
     );
     expect(GOLDEN_CANONICAL_VECTORS).toEqual([
       {
@@ -115,6 +115,54 @@ describe("runtime artifact schemas", () => {
       cellId: "cell-1",
       createdAt: "2026-07-27T12:00:00.000Z",
     })).toThrow("requestHash");
+  });
+
+  test("deeply validates blind packet pairs and conversations", () => {
+    const turn = (turnNumber: number) => ({
+      turn: turnNumber,
+      actor: turnNumber % 2 === 1 ? "finn" : "lyra",
+      message: `turn ${turnNumber}`,
+      noReply: false,
+      gotoRoomId: null,
+      gotoPlayerName: null,
+      coordinationReceipt: null,
+      evidenceReferences: [`history:${turnNumber}`],
+    });
+    const pair = {
+      pairToken: "pair-one",
+      conversationA: [1, 2, 3, 4].map(turn),
+      conversationB: [1, 2, 3, 4].map(turn),
+    };
+    const packet = {
+      protocolVersion: PROTOCOL_VERSION,
+      schemaHash: PROTOCOL_SCHEMA_HASH,
+      kind: "blind_packet",
+      createdAt: "2026-07-27T12:00:00.000Z",
+      evidenceCardHash: "sha256:card",
+      pairs: [pair],
+    };
+
+    expect(() => parseArtifact(packet)).not.toThrow();
+    expect(() => parseArtifact({
+      ...packet,
+      pairs: [pair, { ...pair }],
+    })).toThrow("duplicate pair token");
+    expect(() => parseArtifact({
+      ...packet,
+      pairs: [{
+        ...pair,
+        conversationA: pair.conversationA.slice(0, 3),
+      }],
+    })).toThrow("four turns");
+    expect(() => parseArtifact({
+      ...packet,
+      pairs: [{
+        ...pair,
+        conversationB: pair.conversationB.map((value, index) => (
+          index === 2 ? { ...value, evidenceReferences: "history:3" } : value
+        )),
+      }],
+    })).toThrow("evidenceReferences");
   });
 
   test("keeps structural summaries content-free", () => {

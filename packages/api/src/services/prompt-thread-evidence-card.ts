@@ -279,7 +279,7 @@ export function applyCuratorResponses(
     new Set(partition.sourceIds),
   ]));
   if (responses.length !== expected.size) throw new Error("Curator response set is incomplete");
-  const proposed: PromptThreadEvidenceCitation[] = [];
+  const proposed = new Map<string, PromptThreadEvidenceCitation>();
   const seenPartitions = new Set<string>();
   for (const response of responses) {
     const allowed = expected.get(response.partitionId);
@@ -291,10 +291,45 @@ export function applyCuratorResponses(
       if (!allowed.has(item.sourceId)) {
         throw new Error("Curator response cited data outside its actor partition");
       }
-      proposed.push(item);
+      const existing = proposed.get(item.sourceId);
+      proposed.set(
+        item.sourceId,
+        existing ? mergeCuratorCitations(existing, item) : structuredClone(item),
+      );
     }
   }
-  return draft(caseValue, "curator", completeCuratorCard(caseValue, proposed), now);
+  return draft(
+    caseValue,
+    "curator",
+    completeCuratorCard(caseValue, [...proposed.values()]),
+    now,
+  );
+}
+
+function mergeCuratorCitations(
+  left: PromptThreadEvidenceCitation,
+  right: PromptThreadEvidenceCitation,
+): PromptThreadEvidenceCitation {
+  const rank: Record<EvidenceClass, number> = {
+    unscored: 0,
+    known_distractor: 1,
+    useful: 2,
+    required: 3,
+  };
+  const rationale = [...new Set([left.rationale.trim(), right.rationale.trim()])]
+    .filter(Boolean)
+    .join(" | ");
+  return {
+    sourceId: left.sourceId,
+    classification: rank[left.classification] >= rank[right.classification]
+      ? left.classification
+      : right.classification,
+    applicableTurns: [...new Set([
+      ...left.applicableTurns,
+      ...right.applicableTurns,
+    ])].sort((a, b) => a - b),
+    rationale: rationale || "Not scored by curator",
+  };
 }
 
 /** Any omitted catalog item stays visible as unscored, never silently disappears. */

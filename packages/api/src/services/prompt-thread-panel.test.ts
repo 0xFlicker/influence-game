@@ -16,6 +16,10 @@ import {
   runPromptThreadWorker,
 } from "@influence/engine/prompt-thread-worker";
 import {
+  PROMPT_THREAD_FIDELITY_LANES,
+  PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+} from "@influence/engine/prompt-thread-lab";
+import {
   createPrivateWorkspace,
   withRunMutationLock,
 } from "./prompt-thread-workspace.js";
@@ -94,9 +98,16 @@ function preflightInput(
   return {
     caseValue,
     sourceFidelity: {
+      version: 1,
       status: "matched",
       caseId: caseValue.caseId,
       turnCount: 4,
+      canonicalizerId: CANONICALIZER_ID,
+      canonicalizerVersion: CANONICALIZER_VERSION,
+      comparedLanes: [...PROMPT_THREAD_FIDELITY_LANES],
+      transportOnlyExclusions: [
+        ...PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+      ],
       sourceMutation: false,
     },
     evidenceDraft,
@@ -130,10 +141,12 @@ const inspectWorkerHandshake = async (
   compilerPolicyDigest: revision.compilerPolicyDigest,
   actionSchemaHash: "sha256:action",
 });
+const computeWorkerHarnessDigest = async () => baseline.harnessDigest;
 
 async function manifest(): Promise<PromptThreadPanelManifest> {
   return createPromptThreadPanelManifest(preflightInput(), {
     inspectCheckout,
+    computeWorkerHarnessDigest,
     inspectWorkerHandshake,
   });
 }
@@ -158,6 +171,7 @@ function runner(
           prompt_cache_key: value.promptCacheKey,
           input: "x".repeat(1_024),
           instructions: "stable panel instructions",
+          max_output_tokens: 1_000,
         };
         const response = await value.dispatch(request);
         return {
@@ -216,24 +230,45 @@ describe("prompt thread panel", () => {
         inspections += 1;
         return inspectCheckout(path);
       },
+      computeWorkerHarnessDigest,
       inspectWorkerHandshake,
     });
     expect(inspections).toBe(2);
     expect(value.cells).toHaveLength(28);
     expect(value.maximumCalls).toBe(28);
+    expect(value.sourceFidelityHash).toBe(
+      hashCanonicalJson(preflightInput().sourceFidelity),
+    );
+    expect(value.estimatedInputTokensPerCall).toBe(4_000);
+    expect(value.maximumOutputTokensPerCall).toBe(1_000);
+    await expect(createPromptThreadPanelManifest(preflightInput({
+      sourceFidelity: {
+        ...preflightInput().sourceFidelity,
+        comparedLanes: ["prompt.messages"],
+      },
+    }), { inspectCheckout, inspectWorkerHandshake })).rejects.toThrow(
+      "source-fidelity",
+    );
+    await expect(createPromptThreadPanelManifest(preflightInput(), {
+      inspectCheckout,
+      computeWorkerHarnessDigest: async () => "sha256:untrusted",
+      inspectWorkerHandshake,
+    })).rejects.toThrow("harness digest");
     await expect(createPromptThreadPanelManifest(preflightInput({
       verdictScope: "full",
       historyEnabled: false,
-    }), { inspectCheckout, inspectWorkerHandshake })).rejects.toThrow("policy");
+    }), { inspectCheckout, computeWorkerHarnessDigest, inspectWorkerHandshake })).rejects.toThrow("policy");
     await expect(createPromptThreadPanelManifest(preflightInput(), {
       inspectCheckout: async (path) => ({
         ...(await inspectCheckout(path)),
         dirty: true,
       }),
+      computeWorkerHarnessDigest,
       inspectWorkerHandshake,
     })).rejects.toThrow("dirty");
     await expect(createPromptThreadPanelManifest(preflightInput(), {
       inspectCheckout,
+      computeWorkerHarnessDigest,
       inspectWorkerHandshake: async () =>
         createPromptThreadWorkerHandshake({
           harnessDigest: "sha256:different-harness",
@@ -243,6 +278,7 @@ describe("prompt thread panel", () => {
     })).rejects.toThrow("harness");
     await expect(createPromptThreadPanelManifest(preflightInput(), {
       inspectCheckout,
+      computeWorkerHarnessDigest,
       inspectWorkerHandshake: async (revision) =>
         createPromptThreadWorkerHandshake({
           harnessDigest: revision.harnessDigest,
@@ -252,6 +288,7 @@ describe("prompt thread panel", () => {
     })).rejects.toThrow("attested");
     await expect(createPromptThreadPanelManifest(preflightInput(), {
       inspectCheckout,
+      computeWorkerHarnessDigest,
       inspectWorkerHandshake: async (revision) =>
         createPromptThreadWorkerHandshake({
           harnessDigest: revision.harnessDigest,
@@ -446,7 +483,7 @@ describe("prompt thread panel", () => {
           };
         }),
       );
-      expect(result.lifecycle).toBe("completed");
+      expect(result).toMatchObject({ lifecycle: "completed" });
       expect(resumeCalls).toBe(27);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -485,6 +522,7 @@ describe("prompt thread panel", () => {
             : processCandidate.commitSha,
           dirty: false,
         }),
+        computeWorkerHarnessDigest,
       });
       const approval = approvePromptThreadPanel(value, "producer");
       await initializePromptThreadPanelRun(workspace, value, approval);
@@ -513,9 +551,10 @@ describe("prompt thread panel", () => {
             commitSha: path === baselineCheckout
               ? processBaseline.commitSha
               : processCandidate.commitSha,
-            dirty: false,
-          }),
-        },
+          dirty: false,
+        }),
+          computeWorkerHarnessDigest,
+      },
       );
       expect((await dependencies.workerHandshake(value.cells[0]!)).kind)
         .toBe("handshake");
@@ -528,8 +567,8 @@ describe("prompt thread panel", () => {
         evidenceApproval,
         dependencies,
       );
-      expect(result.lifecycle).toBe("completed");
       expect(calls).toBe(28);
+      expect(result).toMatchObject({ lifecycle: "completed" });
     } finally {
       await rm(root, { recursive: true, force: true });
     }
@@ -603,7 +642,8 @@ if (command === "handshake") {
     model: input.cell.model,
     prompt_cache_key: input.cell.actorLineage,
     input: "x".repeat(1024),
-    instructions: "stable panel instructions"
+    instructions: "stable panel instructions",
+    max_output_tokens: 1000
   };
   const saved = input.savedResponse;
   const response = saved === undefined

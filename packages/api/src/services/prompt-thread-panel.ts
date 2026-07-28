@@ -3,6 +3,8 @@ import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
+  CANONICALIZER_ID,
+  CANONICALIZER_VERSION,
   PROTOCOL_SCHEMA_HASH,
   PROTOCOL_VERSION,
   createApproval,
@@ -19,12 +21,18 @@ import {
   type StructuralRunSummary,
 } from "@influence/prompt-lab-protocol";
 import {
+  computePromptThreadWorkerHarnessDigest,
   createPromptThreadWorkerHandshake,
   type PromptThreadWorkerBranchState,
   type PromptThreadWorkerCell,
   type PromptThreadWorkerHandshake,
   type PromptThreadWorkerResult,
 } from "@influence/engine/prompt-thread-worker";
+import {
+  PROMPT_THREAD_FIDELITY_LANES,
+  PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+  type PromptThreadFidelityReceipt,
+} from "@influence/engine/prompt-thread-lab";
 import { assertEvidenceCardApproval, type PromptThreadEvidenceCard } from "./prompt-thread-evidence-card.js";
 import {
   PROMPT_THREAD_PANEL_MODEL,
@@ -52,6 +60,7 @@ const execFile = promisify(execFileCallback);
 export const PROMPT_THREAD_PRIMARY_CALLS = 24;
 export const PROMPT_THREAD_CONTROL_CALLS = 4;
 export const PROMPT_THREAD_TOTAL_CALLS = 28;
+export const PROMPT_THREAD_WORKER_TIMEOUT_MS = 60_000;
 
 export type PromptThreadVerdictScope = "full" | "cache_quality_only";
 export type PromptThreadArm = "baseline" | "candidate" | "control";
@@ -92,6 +101,8 @@ export interface PromptThreadPanelManifest {
   maximumSpendUsd: number;
   runId: string;
   sourceReceiptHash: string;
+  sourceFidelityHash: string;
+  sourceFidelity: PromptThreadFidelityReceipt;
   verdictScope: PromptThreadVerdictScope;
   modelSnapshot: string;
   requestedServiceTier: "flex";
@@ -100,6 +111,8 @@ export interface PromptThreadPanelManifest {
   actionSchemaHash: string;
   rateCardVersion: string;
   pricingSourceId: string;
+  estimatedInputTokensPerCall: number;
+  maximumOutputTokensPerCall: number;
   baseline: PromptThreadRevision;
   candidate: PromptThreadRevision;
   cells: PromptThreadPanelCell[];
@@ -107,12 +120,7 @@ export interface PromptThreadPanelManifest {
 
 export interface PanelPreflightInput {
   caseValue: FrozenCaseArtifact;
-  sourceFidelity: {
-    status: "matched";
-    caseId: string;
-    turnCount: number;
-    sourceMutation: false;
-  };
+  sourceFidelity: PromptThreadFidelityReceipt;
   evidenceDraft: PromptThreadEvidenceCard;
   evidenceApproval: EvidenceCardApprovalArtifact;
   baseline: PromptThreadRevision;
@@ -138,6 +146,7 @@ export interface CheckoutInspection {
 
 export interface PanelPreflightDependencies {
   inspectCheckout?: (path: string) => Promise<CheckoutInspection>;
+  computeWorkerHarnessDigest?: (checkoutPath: string) => Promise<string>;
   inspectWorkerHandshake?: (
     revision: PromptThreadRevision,
   ) => Promise<PromptThreadWorkerHandshake>;
@@ -180,10 +189,16 @@ export function createTrustedCheckoutPanelDependencies(
     stopBeforeCell?: () => boolean;
     bunExecutable?: string;
     inspectCheckout?: (path: string) => Promise<CheckoutInspection>;
+    computeWorkerHarnessDigest?: (checkoutPath: string) => Promise<string>;
+    trustedWorkerTimeoutMs?: number;
   } = {},
 ): RunPanelDependencies {
   const bunExecutable = options.bunExecutable ?? process.execPath;
   const inspectCheckout = options.inspectCheckout ?? inspectGitCheckout;
+  const computeWorkerHarnessDigest = options.computeWorkerHarnessDigest
+    ?? computePromptThreadWorkerHarnessDigest;
+  const trustedWorkerTimeoutMs = options.trustedWorkerTimeoutMs
+    ?? PROMPT_THREAD_WORKER_TIMEOUT_MS;
   return {
     validateCheckouts: async () => {
       for (const revision of [manifest.baseline, manifest.candidate]) {
@@ -191,12 +206,18 @@ export function createTrustedCheckoutPanelDependencies(
         if (checkout.dirty || checkout.commitSha !== revision.commitSha) {
           throw new Error(`Checkout ${revision.arm} changed after panel approval`);
         }
+        await assertTrustedWorkerHarnessDigest(
+          revision.checkoutPath,
+          revision.harnessDigest,
+          computeWorkerHarnessDigest,
+        );
         await readTrustedWorkerHandshake(
           revision.checkoutPath,
           revision.harnessDigest,
           revision.compilerPolicyDigest,
           manifest.actionSchemaHash,
           bunExecutable,
+          trustedWorkerTimeoutMs,
         );
       }
     },
@@ -206,12 +227,14 @@ export function createTrustedCheckoutPanelDependencies(
       revisionForCell(manifest, cell).compilerPolicyDigest,
       manifest.actionSchemaHash,
       bunExecutable,
+      trustedWorkerTimeoutMs,
     ),
     runWorker: (input) => runTrustedCheckoutWorker(
       workspace,
       manifest,
       input,
       bunExecutable,
+      trustedWorkerTimeoutMs,
     ),
     providerDispatch,
     ...(options.stopAfterCell && { stopAfterCell: options.stopAfterCell }),
@@ -288,9 +311,20 @@ export async function createPromptThreadPanelManifest(
   const caseArtifact = parseArtifact(input.caseValue);
   if (caseArtifact.kind !== "frozen_case" ||
       input.sourceFidelity.status !== "matched" ||
+      input.sourceFidelity.version !== 1 ||
       input.sourceFidelity.caseId !== caseArtifact.caseId ||
       input.sourceFidelity.turnCount !== 4 ||
-      input.sourceFidelity.sourceMutation !== false) {
+      input.sourceFidelity.canonicalizerId !== CANONICALIZER_ID ||
+      input.sourceFidelity.canonicalizerVersion !== CANONICALIZER_VERSION ||
+      input.sourceFidelity.sourceMutation !== false ||
+      !sameStrings(
+        input.sourceFidelity.comparedLanes,
+        PROMPT_THREAD_FIDELITY_LANES,
+      ) ||
+      !sameStrings(
+        input.sourceFidelity.transportOnlyExclusions,
+        PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+      )) {
     throw new Error("Panel preflight requires a matching source-fidelity receipt");
   }
   assertEvidenceCardApproval(input.caseValue, input.evidenceDraft, input.evidenceApproval);
@@ -304,6 +338,14 @@ export async function createPromptThreadPanelManifest(
     throw new Error("Runtime hash must equal the attested non-variant harness digest");
   }
   if (
+    !Number.isSafeInteger(input.estimatedInputTokensPerCall)
+    || input.estimatedInputTokensPerCall < 1
+    || !Number.isSafeInteger(input.maximumOutputTokensPerCall)
+    || input.maximumOutputTokensPerCall < 1
+  ) {
+    throw new Error("Panel token ceilings must be positive safe integers");
+  }
+  if (
     input.verdictScope === "full" &&
     (!input.historyEnabled ||
       input.baseline.compilerPolicyDigest === input.candidate.compilerPolicyDigest)
@@ -311,6 +353,8 @@ export async function createPromptThreadPanelManifest(
     throw new Error("Full verdict scope requires a candidate recall-policy delta");
   }
   const inspect = dependencies.inspectCheckout ?? inspectGitCheckout;
+  const computeWorkerHarnessDigest = dependencies.computeWorkerHarnessDigest
+    ?? computePromptThreadWorkerHarnessDigest;
   const inspectHandshake = dependencies.inspectWorkerHandshake
     ?? ((revision: PromptThreadRevision) => readTrustedWorkerHandshake(
       revision.checkoutPath,
@@ -324,6 +368,11 @@ export async function createPromptThreadPanelManifest(
     if (checkout.dirty || checkout.commitSha !== revision.commitSha) {
       throw new Error(`Checkout ${revision.arm} is dirty or SHA-mismatched`);
     }
+    await assertTrustedWorkerHarnessDigest(
+      revision.checkoutPath,
+      revision.harnessDigest,
+      computeWorkerHarnessDigest,
+    );
     const handshake = await inspectHandshake(revision);
     validateHandshake(
       createPromptThreadWorkerHandshake({
@@ -364,11 +413,15 @@ export async function createPromptThreadPanelManifest(
   const createdAt = (input.now ?? new Date()).toISOString();
   const caseHash = hashCanonicalJson(input.caseValue);
   const evidenceCardHash = hashCanonicalJson(input.evidenceDraft);
+  const sourceFidelityHash = hashCanonicalJson(input.sourceFidelity);
   const runSeed = hashCanonicalJson({
     caseHash,
     evidenceCardHash,
+    sourceFidelityHash,
     baseline: input.baseline.commitSha,
     candidate: input.candidate.commitSha,
+    estimatedInputTokensPerCall: input.estimatedInputTokensPerCall,
+    maximumOutputTokensPerCall: input.maximumOutputTokensPerCall,
     createdAt,
   });
   const cells = planPromptThreadPanel(input.verdictScope, input.historyEnabled, {
@@ -387,6 +440,8 @@ export async function createPromptThreadPanelManifest(
     runId,
     caseHash,
     sourceReceiptHash: input.caseValue.sourceReceiptHash,
+    sourceFidelityHash,
+    sourceFidelity: structuredClone(input.sourceFidelity),
     evidenceCardHash,
     maximumCalls: PROMPT_THREAD_TOTAL_CALLS,
     maximumSpendUsd: input.maximumSpendUsd,
@@ -398,6 +453,8 @@ export async function createPromptThreadPanelManifest(
     actionSchemaHash: input.actionSchemaHash,
     rateCardVersion: quote.rateCardVersion,
     pricingSourceId: quote.pricingSourceId,
+    estimatedInputTokensPerCall: input.estimatedInputTokensPerCall,
+    maximumOutputTokensPerCall: input.maximumOutputTokensPerCall,
     baseline: structuredClone(input.baseline),
     candidate: structuredClone(input.candidate),
     cells,
@@ -411,6 +468,7 @@ export function approvePromptThreadPanel(
   operator: string,
   now = new Date(),
 ): PaidApprovalArtifact {
+  assertManifestTrustContract(manifest);
   if (!operator.trim()) throw new Error("Panel approval requires an operator");
   return createApproval(manifest, {
     kind: "paid_approval",
@@ -477,6 +535,8 @@ export async function runPromptThreadPanel(
         lineage: cell.actorLineage,
         firstCall: cell.firstCall,
         requestedServiceTier: manifest.requestedServiceTier,
+        estimatedInputTokens: manifest.estimatedInputTokensPerCall,
+        maxOutputTokens: manifest.maximumOutputTokensPerCall,
         maxCostUsd: cell.maxCostUsd,
         controlReturnTurn: cell.controlReturnTurn,
       })),
@@ -572,6 +632,7 @@ async function readTrustedWorkerHandshake(
   compilerPolicyDigest: string,
   actionSchemaHash: string,
   bunExecutable: string,
+  timeoutMs = PROMPT_THREAD_WORKER_TIMEOUT_MS,
 ): Promise<PromptThreadWorkerHandshake> {
   const workerPath = join(
     checkoutPath,
@@ -585,11 +646,11 @@ async function readTrustedWorkerHandshake(
       stderr: "pipe",
     },
   );
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ]);
+  const [exitCode, stdout, stderr] = await waitForTrustedWorker(
+    child,
+    "handshake",
+    timeoutMs,
+  );
   if (exitCode !== 0) {
     throw new Error(`Trusted worker handshake failed: ${structuralWorkerError(stderr)}`);
   }
@@ -617,6 +678,7 @@ async function runTrustedCheckoutWorker(
   manifest: PromptThreadPanelManifest,
   invocation: PanelWorkerInvocation,
   bunExecutable: string,
+  timeoutMs = PROMPT_THREAD_WORKER_TIMEOUT_MS,
 ): Promise<PromptThreadWorkerResult> {
   const revision = revisionForWorker(manifest, invocation.cell.revision);
   const brokerToken = randomUUID();
@@ -684,11 +746,11 @@ async function runTrustedCheckoutWorker(
         stderr: "pipe",
       },
     );
-    const [exitCode, stdout, stderr] = await Promise.all([
-      child.exited,
-      new Response(child.stdout).text(),
-      new Response(child.stderr).text(),
-    ]);
+    const [exitCode, stdout, stderr] = await waitForTrustedWorker(
+      child,
+      `cell ${invocation.cell.cellId}`,
+      timeoutMs,
+    );
     if (exitCode !== 0) {
       throw new Error(`Trusted worker failed: ${structuralWorkerError(stderr)}`);
     }
@@ -716,11 +778,74 @@ async function runTrustedCheckoutWorker(
   }
 }
 
+async function assertTrustedWorkerHarnessDigest(
+  checkoutPath: string,
+  expectedDigest: string,
+  computeDigest: (checkoutPath: string) => Promise<string>,
+): Promise<void> {
+  const actualDigest = await computeDigest(checkoutPath);
+  if (actualDigest !== expectedDigest) {
+    throw new Error("Trusted worker harness digest does not match the approved manifest");
+  }
+}
+
+async function waitForTrustedWorker(
+  child: {
+    exited: Promise<number>;
+    stdout: ReadableStream<Uint8Array>;
+    stderr: ReadableStream<Uint8Array>;
+    kill: (signal?: number) => unknown;
+  },
+  label: string,
+  timeoutMs: number,
+): Promise<[number, string, string]> {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+    throw new Error("Trusted worker timeout must be a positive finite number");
+  }
+  const completed = Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]) as Promise<[number, string, string]>;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      completed,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`Trusted worker ${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } catch (error) {
+    child.kill(9);
+    await completed.catch(() => undefined);
+    throw error;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
 export function structuralPanelStatus(
   cells: readonly PromptThreadPanelCell[],
   completedCellIdsValue: readonly string[],
   runId = "unpersisted",
+  invalidReason: string | null = null,
 ): StructuralRunSummary {
+  if (invalidReason) {
+    return {
+      protocolVersion: PROTOCOL_VERSION,
+      runId,
+      lifecycle: "invalidated",
+      reasonCode: invalidReason,
+      completedCells: completedCellIdsValue.length,
+      outstandingCells: 0,
+      reservedSpendUsd: cells.reduce((sum, cell) => sum + cell.maxCostUsd, 0),
+      settledSpendUsd: 0,
+      nextActions: [],
+      requiresHuman: false,
+    };
+  }
   const completed = new Set(completedCellIdsValue);
   const next = cells.find((cell) => !completed.has(cell.cellId));
   return {
@@ -794,6 +919,7 @@ function assertPanelApproval(
   manifest: PromptThreadPanelManifest,
   approval: PaidApprovalArtifact,
 ): void {
+  assertManifestTrustContract(manifest);
   const artifact = parseArtifact(approval);
   if (
     artifact.kind !== "paid_approval" ||
@@ -805,6 +931,42 @@ function assertPanelApproval(
   }
 }
 
+function assertManifestTrustContract(
+  manifest: PromptThreadPanelManifest,
+): void {
+  const sourceFidelity = manifest.sourceFidelity as
+    | PromptThreadFidelityReceipt
+    | undefined;
+  if (
+    !sourceFidelity
+    || manifest.requestedServiceTier !== "flex"
+    || manifest.maximumCalls !== PROMPT_THREAD_TOTAL_CALLS
+    || manifest.cells.length !== PROMPT_THREAD_TOTAL_CALLS
+    || !Number.isSafeInteger(manifest.estimatedInputTokensPerCall)
+    || manifest.estimatedInputTokensPerCall < 1
+    || !Number.isSafeInteger(manifest.maximumOutputTokensPerCall)
+    || manifest.maximumOutputTokensPerCall < 1
+    || sourceFidelity.status !== "matched"
+    || sourceFidelity.version !== 1
+    || sourceFidelity.turnCount !== 4
+    || sourceFidelity.canonicalizerId !== CANONICALIZER_ID
+    || sourceFidelity.canonicalizerVersion !== CANONICALIZER_VERSION
+    || sourceFidelity.sourceMutation !== false
+    || manifest.sourceFidelityHash
+      !== hashCanonicalJson(sourceFidelity)
+    || !sameStrings(
+      sourceFidelity.comparedLanes,
+      PROMPT_THREAD_FIDELITY_LANES,
+    )
+    || !sameStrings(
+      sourceFidelity.transportOnlyExclusions,
+      PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+    )
+  ) {
+    throw new Error("Panel manifest trust contract is invalid");
+  }
+}
+
 function assertRunInputs(
   manifest: PromptThreadPanelManifest,
   caseValue: FrozenCaseArtifact,
@@ -813,11 +975,29 @@ function assertRunInputs(
 ): void {
   if (
     manifest.caseHash !== hashCanonicalJson(caseValue) ||
-    manifest.evidenceCardHash !== hashCanonicalJson(evidenceDraft)
+    manifest.evidenceCardHash !== hashCanonicalJson(evidenceDraft) ||
+    manifest.sourceFidelityHash !== hashCanonicalJson(manifest.sourceFidelity) ||
+    manifest.sourceFidelity.caseId !== caseValue.caseId ||
+    !sameStrings(
+      manifest.sourceFidelity.comparedLanes,
+      PROMPT_THREAD_FIDELITY_LANES,
+    ) ||
+    !sameStrings(
+      manifest.sourceFidelity.transportOnlyExclusions,
+      PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+    )
   ) {
     throw new Error("Panel inputs changed after approval");
   }
   assertEvidenceCardApproval(caseValue, evidenceDraft, evidenceApproval);
+}
+
+function sameStrings(
+  actual: readonly string[],
+  expected: readonly string[],
+): boolean {
+  return actual.length === expected.length
+    && actual.every((value, index) => value === expected[index]);
 }
 
 function latestCellStages(

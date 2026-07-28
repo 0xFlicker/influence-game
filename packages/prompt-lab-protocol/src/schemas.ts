@@ -274,6 +274,36 @@ const SCHEMA_DESCRIPTOR = {
     version: CANONICALIZER_VERSION,
   },
   artifacts: ARTIFACT_REQUIREMENTS,
+  blindPacket: {
+    pair: {
+      required: ["pairToken", "conversationA", "conversationB"],
+      unique: ["pairToken"],
+      additionalFields: false,
+    },
+    conversation: {
+      turnCount: 4,
+      turnSequence: [1, 2, 3, 4],
+      actors: ["finn", "lyra"],
+      requiredTurnFields: [
+        "turn",
+        "actor",
+        "message",
+        "noReply",
+        "gotoRoomId",
+        "gotoPlayerName",
+        "coordinationReceipt",
+        "evidenceReferences",
+      ],
+      additionalTurnFields: false,
+      nullableTurnFields: [
+        "message",
+        "gotoRoomId",
+        "gotoPlayerName",
+        "coordinationReceipt",
+      ],
+      evidenceReferences: "string[]",
+    },
+  },
   cellStages: CELL_STAGES,
   structuralSummary: {
     required: [
@@ -399,6 +429,7 @@ export function parseArtifact(value: unknown): ProtocolArtifact {
     }
   }
   validateArtifactFields(kind, artifact);
+  if (kind === "blind_packet") validateBlindPacket(artifact);
   return artifact as ProtocolArtifact;
 }
 
@@ -712,6 +743,112 @@ function validateArtifactFields(
   if (kind === "blind_decisions" && typeof artifact.locked !== "boolean") {
     throw new Error("blind_decisions.locked must be boolean");
   }
+}
+
+function validateBlindPacket(artifact: Record<string, unknown>): void {
+  const pairs = artifact.pairs as unknown[];
+  const pairTokens = new Set<string>();
+  for (const [pairIndex, candidate] of pairs.entries()) {
+    const pair = requireExactRecord(
+      candidate,
+      `blind_packet pair ${pairIndex}`,
+      ["pairToken", "conversationA", "conversationB"],
+    );
+    const pairToken = requireString(pair, "pairToken");
+    if (!pairToken.trim()) {
+      throw new Error(`blind_packet pair ${pairIndex} has an empty pair token`);
+    }
+    if (pairTokens.has(pairToken)) {
+      throw new Error(`blind_packet has duplicate pair token ${pairToken}`);
+    }
+    pairTokens.add(pairToken);
+    validateBlindConversation(pair.conversationA, pairIndex, "A");
+    validateBlindConversation(pair.conversationB, pairIndex, "B");
+  }
+}
+
+function validateBlindConversation(
+  value: unknown,
+  pairIndex: number,
+  side: "A" | "B",
+): void {
+  if (!Array.isArray(value) || value.length !== 4) {
+    throw new Error(
+      `blind_packet pair ${pairIndex} conversation ${side} must contain four turns`,
+    );
+  }
+  for (const [turnIndex, candidate] of value.entries()) {
+    const label = `blind_packet pair ${pairIndex} conversation ${side} turn ${turnIndex + 1}`;
+    const turn = requireExactRecord(candidate, label, [
+      "turn",
+      "actor",
+      "message",
+      "noReply",
+      "gotoRoomId",
+      "gotoPlayerName",
+      "coordinationReceipt",
+      "evidenceReferences",
+    ]);
+    if (turn.turn !== turnIndex + 1) {
+      throw new Error(`${label} has an invalid turn number`);
+    }
+    if (turn.actor !== "finn" && turn.actor !== "lyra") {
+      throw new Error(`${label} has an invalid actor`);
+    }
+    if (turn.message !== null && typeof turn.message !== "string") {
+      throw new Error(`${label} has an invalid message`);
+    }
+    if (typeof turn.noReply !== "boolean") {
+      throw new Error(`${label} has an invalid noReply flag`);
+    }
+    if (
+      turn.gotoRoomId !== null
+      && !Number.isInteger(turn.gotoRoomId)
+    ) {
+      throw new Error(`${label} has an invalid gotoRoomId`);
+    }
+    if (
+      turn.gotoPlayerName !== null
+      && typeof turn.gotoPlayerName !== "string"
+    ) {
+      throw new Error(`${label} has an invalid gotoPlayerName`);
+    }
+    if (
+      turn.coordinationReceipt !== null
+      && (
+        typeof turn.coordinationReceipt !== "object"
+        || Array.isArray(turn.coordinationReceipt)
+      )
+    ) {
+      throw new Error(`${label} has an invalid coordinationReceipt`);
+    }
+    if (
+      !Array.isArray(turn.evidenceReferences)
+      || turn.evidenceReferences.some((reference) => typeof reference !== "string")
+    ) {
+      throw new Error(`${label} has invalid evidenceReferences`);
+    }
+  }
+}
+
+function requireExactRecord(
+  value: unknown,
+  label: string,
+  requiredKeys: readonly string[],
+): Record<string, unknown> {
+  const record = requireRecord(value, label);
+  const expected = new Set(requiredKeys);
+  for (const key of Object.keys(record)) {
+    if (!expected.has(key)) {
+      throw new Error(`${label} has unknown field ${key}`);
+    }
+  }
+  for (const key of requiredKeys) {
+    if (!Object.hasOwn(record, key)) {
+      throw new Error(`${label} is missing required field ${key}`);
+    }
+  }
+  return record;
 }
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {

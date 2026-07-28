@@ -134,10 +134,10 @@ bun run prompt-thread:lab -- <command> --workspace /absolute/private/root ...
 
 The private root must be outside every Git worktree. The typical sequence is:
 
-1. `materialize`, then `verify-source --case cases/<hash>/case.json`. Materialization reads the configured durable DB and trace storage; verification writes `source/source-fidelity.json` without provider access.
+1. `materialize`, then `verify-source --case cases/<hash>/case.json`. Materialization reads the configured durable DB and trace storage; verification writes `source/source-fidelity.json` without provider access. `panel-manifest` accepts this receipt only by private-workspace path, validates the complete versioned lane/exclusion contract, and binds both the receipt and its canonical hash into the approval target.
 2. Create evidence with `manual-draft --case ... --items '<json>'`, or create and separately approve a curator manifest. Only `curate` can dispatch the curator. Review the resulting draft rather than rubber-stamping it.
 3. Run `freeze --case ... --draft ... --reviewer ... --confirm` to bind the human-owned evidence card.
-4. Run `panel-manifest` with the source-fidelity path, frozen evidence paths, both checkout paths and SHAs, both compiler-policy digests, the shared harness/runtime digest, action-schema hash, exact model snapshot, Flex service tier assumptions, actor IDs, token ceilings, and maximum spend.
+4. Run `panel-manifest` with the source-fidelity path, frozen evidence paths, both checkout paths and SHAs, both compiler-policy digests, the shared harness/runtime digest, action-schema hash, exact model snapshot, Flex service tier assumptions, actor IDs, token ceilings, and maximum spend. The broker injects the approved Flex tier and `store: false`, then rejects a final transformed request whose estimated input or `max_output_tokens` exceeds the approved per-call ceilings.
 5. Run `panel-approve --manifest ... --reviewer ... --confirm`, then `panel-init`. Approval does not dispatch. `panel-status` is always provider-free.
 6. Run `panel-run` once. After a clean stop between calls, use `panel-resume`; never rerun `panel-run` against a started journal. These are the only panel commands with provider access.
 7. Run `blind-init`, `render-blind-packet`, and one confirmed `record-blind-decision` for each opaque pair token. `unblind --confirm` is unavailable until all three decisions are locked.
@@ -155,7 +155,7 @@ On 2026-07-28, the implemented CLI materialized and source-verified the authoriz
 - matched turns: `4`
 - source mutation: `false`
 - case ID: `sha256:5cc1bc00da94ff15a44e9a09190b257a7f9146ea0ee211b9326200bdeff806d9`
-- source receipt hash: `sha256:b59360d91b2e347e93870862739130929e74ef7b7062b4abb0e9b507ce0c7b53`
+- source receipt hash: `sha256:3e5b1b6e1c63209eb7fed8c14147c46645b5f007c6e7477b09ac1b7ba126a08d`
 - canonicalizer: `influence-canonical-json` version `1`
 - compared lanes: `9`
 - excluded source field: transport-only request metadata

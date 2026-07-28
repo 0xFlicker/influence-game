@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -12,6 +12,11 @@ import {
 } from "@influence/prompt-lab-protocol";
 import { createPromptThreadWorkerHandshake } from "@influence/engine/prompt-thread-worker";
 import {
+  PROMPT_THREAD_FIDELITY_LANES,
+  PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+} from "@influence/engine/prompt-thread-lab";
+import {
+  appendCellTransition,
   atomicWriteArtifact,
   createPrivateWorkspace,
   readArtifact,
@@ -245,21 +250,23 @@ describe("prompt-thread lab CLI primitives", () => {
       ], { isTTY: true });
       const baselineSha = "a".repeat(40);
       const candidateSha = "b".repeat(40);
+      await mkdir(join(root, "source"), { recursive: true });
+      await writeFile(join(root, "source/source-fidelity.json"), JSON.stringify({
+        version: 1,
+        status: "matched",
+        caseId: caseValue.caseId,
+        turnCount: 4,
+        canonicalizerId: CANONICALIZER_ID,
+        canonicalizerVersion: CANONICALIZER_VERSION,
+        comparedLanes: PROMPT_THREAD_FIDELITY_LANES,
+        transportOnlyExclusions: PROMPT_THREAD_TRANSPORT_ONLY_EXCLUSIONS,
+        sourceMutation: false,
+      }), { mode: 0o600 });
       const manifest = await runPromptThreadLabCli([
         "panel-manifest", "--workspace", root, "--case", "cases/case.json",
         "--draft", "evidence/manual-draft.json",
         "--evidence-approval", "evidence/evidence-card-approval.json",
-        "--source-fidelity", JSON.stringify({
-          version: 1,
-          status: "matched",
-          caseId: caseValue.caseId,
-          turnCount: 4,
-          canonicalizerId: CANONICALIZER_ID,
-          canonicalizerVersion: CANONICALIZER_VERSION,
-          comparedLanes: ["prompt.messages"],
-          transportOnlyExclusions: ["request.transportOnly"],
-          sourceMutation: false,
-        }),
+        "--source-fidelity-path", "source/source-fidelity.json",
         "--baseline-checkout", "/baseline", "--baseline-sha", baselineSha,
         "--baseline-policy-digest", "sha256:baseline",
         "--candidate-checkout", "/candidate", "--candidate-sha", candidateSha,
@@ -281,6 +288,7 @@ describe("prompt-thread lab CLI primitives", () => {
             commitSha: path === "/baseline" ? baselineSha : candidateSha,
             dirty: false,
           }),
+          computeWorkerHarnessDigest: async () => "sha256:harness",
           inspectWorkerHandshake: async (revision) =>
             createPromptThreadWorkerHandshake({
               harnessDigest: revision.harnessDigest,
@@ -306,13 +314,24 @@ describe("prompt-thread lab CLI primitives", () => {
         completedCells: 0,
         outstandingCells: 28,
       });
+      const workspace = await createPrivateWorkspace(root, { gitWorktreeRoots: [] });
+      const persistedManifest = await readArtifact(
+        workspace,
+        "panel/run-manifest.json",
+      ) as unknown as { kind: string; runId: string; cells: Array<{ cellId: string }> };
+      if (persistedManifest.kind !== "run_manifest") throw new Error("expected run manifest");
+      const firstCell = persistedManifest.cells[0] as { cellId: string };
+      await withRunMutationLock(workspace, persistedManifest.runId, async (lock) => {
+        await appendCellTransition(lock, { cellId: firstCell.cellId, stage: "started" });
+      });
       const status = await runPromptThreadLabCli([
         "panel-status", "--workspace", root,
         "--manifest", "panel/run-manifest.json",
       ]);
       expect(status).toMatchObject({
-        lifecycle: "running",
-        outstandingCells: 28,
+        lifecycle: "invalidated",
+        guidance: "started_without_response",
+        outstandingCells: 0,
       });
     } finally {
       await rm(root, { recursive: true, force: true });
