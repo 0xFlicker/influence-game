@@ -1,5 +1,6 @@
 import { execFile as execFileCallback } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
@@ -45,6 +46,7 @@ import {
   inspectRunRecovery,
   invalidateRunUnderLock,
   readArtifact,
+  readDurableProviderSettledSpendUsd,
   recordContinuationCheckpoint,
   recoverOrInvalidateRun,
   atomicWriteJson,
@@ -167,7 +169,10 @@ export interface PanelWorkerInvocation {
   };
   branchState?: PromptThreadWorkerBranchState;
   savedResponse?: unknown;
-  brokerTransport?: (request: Record<string, unknown>) => Promise<unknown>;
+  brokerTransport?: (
+    request: Record<string, unknown>,
+    signal?: AbortSignal,
+  ) => Promise<unknown>;
   mutationLock: RunMutationLock;
 }
 
@@ -327,6 +332,7 @@ export async function createPromptThreadPanelManifest(
       )) {
     throw new Error("Panel preflight requires a matching source-fidelity receipt");
   }
+  assertPanelActorOrder(caseArtifact, input.actorIds);
   assertEvidenceCardApproval(input.caseValue, input.evidenceDraft, input.evidenceApproval);
   if (input.modelSnapshot !== PROMPT_THREAD_PANEL_MODEL) {
     throw new Error("Panel preflight model snapshot is not supported");
@@ -486,6 +492,11 @@ export async function initializePromptThreadPanelRun(
 ): Promise<void> {
   assertPanelApproval(manifest, approval);
   await withRunMutationLock(workspace, manifest.runId, async (lock) => {
+    if (await terminalRunSummaryExists(workspace, manifest.runId)) {
+      throw new Error(
+        "Terminal panel run IDs cannot be reused; create a fresh manifest and approval",
+      );
+    }
     await atomicWriteArtifact(
       lock,
       `runs/${manifest.runId}/run-manifest.json`,
@@ -592,11 +603,14 @@ export async function runPromptThreadPanel(
           ...(savedResponse !== undefined
             ? { savedResponse }
             : {
-                brokerTransport: (request) => broker.dispatch(
+                brokerTransport: (request, signal) => broker.dispatch(
                   lock,
                   { cellId: cell.cellId, model: manifest.modelSnapshot, request },
                   dependencies.providerDispatch,
-                  { alreadyPlanned: true },
+                  {
+                    alreadyPlanned: true,
+                    ...(signal && { signal }),
+                  },
                 ).then(({ response }) => response),
               }),
         });
@@ -618,10 +632,17 @@ export async function runPromptThreadPanel(
       );
     }
     const after = await inspectRunRecovery(workspace, manifest.runId);
+    const settledSpendUsd = await readDurableProviderSettledSpendUsd(
+      workspace,
+      manifest.runId,
+    );
     return structuralPanelStatus(
       manifest.cells,
       completedCellIds(manifest.cells, latestCellStages(after.transitions)),
       manifest.runId,
+      null,
+      after.transitions.some((transition) => transition.stage !== "planned"),
+      settledSpendUsd,
     );
   });
 }
@@ -682,7 +703,9 @@ async function runTrustedCheckoutWorker(
 ): Promise<PromptThreadWorkerResult> {
   const revision = revisionForWorker(manifest, invocation.cell.revision);
   const brokerToken = randomUUID();
+  const providerAbort = new AbortController();
   let brokerCalls = 0;
+  let brokerSettlement: Promise<void> | undefined;
   const server = Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
@@ -697,9 +720,15 @@ async function runTrustedCheckoutWorker(
       }
       brokerCalls += 1;
       try {
-        const value = await invocation.brokerTransport(
+        const dispatched = invocation.brokerTransport(
           await request.json() as Record<string, unknown>,
+          providerAbort.signal,
         );
+        brokerSettlement = dispatched.then(
+          () => undefined,
+          () => undefined,
+        );
+        const value = await dispatched;
         return Response.json(value);
       } catch {
         return Response.json({ code: "broker_dispatch_failed" }, { status: 502 });
@@ -750,6 +779,9 @@ async function runTrustedCheckoutWorker(
       child,
       `cell ${invocation.cell.cellId}`,
       timeoutMs,
+      () => providerAbort.abort(
+        new Error(`Trusted worker cell ${invocation.cell.cellId} timed out`),
+      ),
     );
     if (exitCode !== 0) {
       throw new Error(`Trusted worker failed: ${structuralWorkerError(stderr)}`);
@@ -774,6 +806,7 @@ async function runTrustedCheckoutWorker(
     }
     return result;
   } finally {
+    await brokerSettlement;
     server.stop(true);
   }
 }
@@ -798,6 +831,7 @@ export async function waitForPromptThreadWorker(
   },
   label: string,
   timeoutMs: number,
+  onTimeout?: () => void,
 ): Promise<[number, string, string]> {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error("Trusted worker timeout must be a positive finite number");
@@ -813,6 +847,11 @@ export async function waitForPromptThreadWorker(
       completed,
       new Promise<never>((_resolve, reject) => {
         timer = setTimeout(() => {
+          try {
+            onTimeout?.();
+          } catch {
+            // The timeout still owns termination even if a cancellation hook fails.
+          }
           reject(new Error(`Trusted worker ${label} timed out after ${timeoutMs}ms`));
         }, timeoutMs);
       }),
@@ -831,6 +870,8 @@ export function structuralPanelStatus(
   completedCellIdsValue: readonly string[],
   runId = "unpersisted",
   invalidReason: string | null = null,
+  hasProgress = completedCellIdsValue.length > 0,
+  settledSpendUsd = 0,
 ): StructuralRunSummary {
   if (invalidReason) {
     return {
@@ -841,7 +882,7 @@ export function structuralPanelStatus(
       completedCells: completedCellIdsValue.length,
       outstandingCells: 0,
       reservedSpendUsd: cells.reduce((sum, cell) => sum + cell.maxCostUsd, 0),
-      settledSpendUsd: 0,
+      settledSpendUsd,
       nextActions: [],
       requiresHuman: false,
     };
@@ -855,8 +896,10 @@ export function structuralPanelStatus(
     completedCells: completed.size,
     outstandingCells: cells.length - completed.size,
     reservedSpendUsd: cells.reduce((sum, cell) => sum + cell.maxCostUsd, 0),
-    settledSpendUsd: 0,
-    nextActions: next ? ["dispatch"] : ["blind-init"],
+    settledSpendUsd,
+    nextActions: next
+      ? [hasProgress ? "panel-resume" : "panel-run"]
+      : ["blind-init"],
     requiresHuman: false,
   };
 }
@@ -966,6 +1009,48 @@ function assertManifestTrustContract(
     )
   ) {
     throw new Error("Panel manifest trust contract is invalid");
+  }
+}
+
+function assertPanelActorOrder(
+  caseValue: FrozenCaseArtifact,
+  actorIds: readonly [string, string],
+): void {
+  const traces = caseValue.privateData.traces;
+  if (!Array.isArray(traces)) {
+    throw new Error("Panel preflight requires frozen replay traces");
+  }
+  const replayActors = traces.flatMap((value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return [];
+    const trace = value as JsonObject;
+    return trace.action === "mingle-turn" && typeof trace.actorId === "string"
+      ? [trace.actorId]
+      : [];
+  });
+  if (
+    replayActors.length !== 4
+    || replayActors[0] !== replayActors[2]
+    || replayActors[1] !== replayActors[3]
+    || replayActors[0] === replayActors[1]
+    || actorIds[0] !== replayActors[0]
+    || actorIds[1] !== replayActors[1]
+  ) {
+    throw new Error(
+      "Panel actor IDs must exactly match the ordered frozen replay actors",
+    );
+  }
+}
+
+async function terminalRunSummaryExists(
+  workspace: PrivateWorkspace,
+  runId: string,
+): Promise<boolean> {
+  try {
+    await access(join(workspace.root, "summaries", `${runId}.json`));
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
   }
 }
 

@@ -25,7 +25,26 @@ const caseValue = {
   privateData: {
     startingState: {
       canonicalProjection: { round: 4 },
-      roster: [{ id: "a" }, { id: "b" }],
+      roster: [
+        {
+          id: "a",
+          displayName: "Alpha",
+          userId: "user-a",
+          agentProfileId: "profile-a",
+          agentRevisionId: "revision-a",
+          persona: { name: "Alpha", secret: "PERSONA_A_SENTINEL" },
+          agentConfig: { model: "AGENT_CONFIG_A_SENTINEL" },
+        },
+        {
+          id: "b",
+          displayName: "Beta",
+          userId: "user-b",
+          agentProfileId: "profile-b",
+          agentRevisionId: "revision-b",
+          persona: { name: "Beta", secret: "PERSONA_B_SENTINEL" },
+          agentConfig: { model: "AGENT_CONFIG_B_SENTINEL" },
+        },
+      ],
       config: {},
       continuity: {
         playerContinuityCapsules: [
@@ -35,16 +54,32 @@ const caseValue = {
       },
       historyCatalog: [
         {
+          sourceId: "prelude:one",
+          lane: "prelude",
+          eligibleActorIds: ["a"],
+          dialogueText: "fixed private prelude",
+        },
+        {
           sourceId: "history:one",
+          lane: "history",
           eligibleActorIds: ["a"],
           dialogueText: "private a",
         },
         {
           sourceId: "history:two",
+          lane: "history",
           eligibleActorIds: ["b"],
           dialogueText: "private b",
         },
       ],
+      lanes: {
+        prelude: [{
+          sourceId: "prelude:one",
+          lane: "prelude",
+          eligibleActorIds: ["a"],
+          dialogueText: "fixed private prelude",
+        }],
+      },
     },
     traces: [
       { action: "mingle-intent", actorId: "a" },
@@ -111,6 +146,8 @@ describe("prompt thread evidence cards", () => {
     });
     expect(manifest.partitions.map(({ partitionId }) => partitionId))
       .toEqual(["a:001", "b:001"]);
+    expect(manifest.partitions.flatMap(({ sourceIds }) => sourceIds))
+      .toEqual(["history:one", "history:two"]);
     expect(JSON.stringify(manifest)).not.toContain("variant");
     const approval = approveCuratorManifest(
       manifest,
@@ -139,6 +176,59 @@ describe("prompt thread evidence cards", () => {
       ...manifest,
       maximumSpendUsd: 2,
     }, approval, [])).toThrow("stale");
+  });
+
+  it("keeps prelude protected and serializes only the curator-safe roster identity", () => {
+    const manifest = buildCuratorManifest(caseValue, {
+      model: "frontier-curator",
+      maximumCalls: 2,
+      maximumSpendUsd: 1,
+      maxItemsPerPartition: 1,
+      now: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    const actorAContext = manifest.partitions.find(({ actorId }) => actorId === "a")
+      ?.privateContext;
+
+    expect(actorAContext).toMatchObject({
+      roster: [
+        { id: "a", displayName: "Alpha" },
+        { id: "b", displayName: "Beta" },
+      ],
+      prelude: [{
+        sourceId: "prelude:one",
+        lane: "prelude",
+        eligibleActorIds: ["a"],
+        dialogueText: "fixed private prelude",
+      }],
+    });
+    expect(actorAContext?.roster).toEqual([
+      { id: "a", displayName: "Alpha" },
+      { id: "b", displayName: "Beta" },
+    ]);
+    expect(manifest.partitions.find(({ actorId }) => actorId === "b")
+      ?.privateContext.prelude).toEqual([]);
+    expect(manifest.privateDataClasses).toEqual([
+      "canonical_facts",
+      "typed_strategic_receipts",
+      "canonical_roster_player_ids_and_display_names",
+      "game_config",
+      "actor_owned_continuity",
+      "fixed_prelude",
+      "public_dialogue",
+      "actor_owned_private_dialogue",
+    ]);
+    const serialized = JSON.stringify(manifest);
+    for (const forbidden of [
+      "userId",
+      "agentProfileId",
+      "agentRevisionId",
+      "persona",
+      "agentConfig",
+      "PERSONA_A_SENTINEL",
+      "AGENT_CONFIG_A_SENTINEL",
+    ]) {
+      expect(serialized).not.toContain(forbidden);
+    }
   });
 
   it("refuses a call cap that would truncate the eligible catalog", () => {

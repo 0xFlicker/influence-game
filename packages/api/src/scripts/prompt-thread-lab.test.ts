@@ -8,6 +8,7 @@ import {
   PROTOCOL_SCHEMA_HASH,
   PROTOCOL_VERSION,
   hashCanonicalJson,
+  type ArtifactEnvelope,
   type FrozenCaseArtifact,
 } from "@influence/prompt-lab-protocol";
 import { createPromptThreadWorkerHandshake } from "@influence/engine/prompt-thread-worker";
@@ -22,6 +23,10 @@ import {
   readArtifact,
   withRunMutationLock,
 } from "../services/prompt-thread-workspace.js";
+import {
+  approveCuratorManifest,
+  type CuratorManifest,
+} from "../services/prompt-thread-evidence-card.js";
 import { runPromptThreadLabCli } from "./prompt-thread-lab.js";
 
 async function workspaceWithCase() {
@@ -30,20 +35,24 @@ async function workspaceWithCase() {
   const privateData = {
     startingState: {
       canonicalProjection: { round: 4 },
-      roster: [{ id: "finn" }],
+      roster: [
+        { id: "finn", displayName: "Finn" },
+        { id: "lyra", displayName: "Lyra" },
+      ],
       config: {},
       continuity: {
         playerContinuityCapsules: [
           { playerId: "finn", recentStrategicDecisions: [] },
+          { playerId: "lyra", recentStrategicDecisions: [] },
         ],
       },
       historyCatalog: [{ sourceId: "history:one", eligibleActorIds: ["finn"] }],
     },
     traces: [
       { action: "mingle-turn", actorId: "finn" },
+      { action: "mingle-turn", actorId: "lyra" },
       { action: "mingle-turn", actorId: "finn" },
-      { action: "mingle-turn", actorId: "finn" },
-      { action: "mingle-turn", actorId: "finn" },
+      { action: "mingle-turn", actorId: "lyra" },
     ],
   };
   const caseValue = {
@@ -247,7 +256,7 @@ describe("prompt-thread lab CLI primitives", () => {
     try {
       await runPromptThreadLabCli([
         "curator-manifest", "--workspace", root, "--case", "cases/case.json",
-        "--model", "frontier-curator", "--max-calls", "1",
+        "--model", "gpt-5.4-nano-2026-03-17", "--max-calls", "1",
         "--max-spend-usd", "0.01", "--max-items-per-partition", "1",
       ]);
       const approved = await runPromptThreadLabCli([
@@ -299,6 +308,99 @@ describe("prompt-thread lab CLI primitives", () => {
         "--reviewer", "producer", "--confirm",
       ], { isTTY: true });
       expect(frozen).toMatchObject({ status: "ok", lifecycle: "frozen" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects zero and underquoted curator caps before provider dispatch", async () => {
+    const { root, workspace } = await workspaceWithCase();
+    try {
+      await runPromptThreadLabCli([
+        "curator-manifest", "--workspace", root, "--case", "cases/case.json",
+        "--model", "gpt-5.4-nano-2026-03-17", "--max-calls", "1",
+        "--max-spend-usd", "0.01", "--max-items-per-partition", "1",
+      ]);
+      const validManifest = await readArtifact(
+        workspace,
+        "evidence/curator-manifest.json",
+      ) as unknown as CuratorManifest;
+
+      for (const [index, maximumSpendUsd] of [0, 0.000_001].entries()) {
+        const manifest = { ...validManifest, maximumSpendUsd };
+        const approval = approveCuratorManifest(manifest, "producer");
+        const manifestPath = `evidence/underquoted-curator-${index}.json`;
+        const approvalPath = `evidence/underquoted-curator-approval-${index}.json`;
+        await withRunMutationLock(workspace, "underquoted-curator", async (lock) => {
+          await atomicWriteArtifact(lock, manifestPath, manifest as unknown as ArtifactEnvelope);
+          await atomicWriteArtifact(lock, approvalPath, approval);
+        });
+        let dispatches = 0;
+        const result = await runPromptThreadLabCli([
+          "curate", "--workspace", root,
+          "--manifest", manifestPath,
+          "--approval", approvalPath, "--confirm",
+        ], {
+          isTTY: true,
+          curatorBroker: {
+            async dispatchPartition() {
+              dispatches += 1;
+              throw new Error("provider dispatch must not run");
+            },
+          },
+        });
+
+        expect(result).toMatchObject({
+          status: "error",
+          errorCode: "invalid_request",
+          guidance: "Curator spend cap is below the complete partition ceiling",
+        });
+        expect(dispatches).toBe(0);
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("dispatches a quoted curator cell through the enforcing broker", async () => {
+    const { root } = await workspaceWithCase();
+    try {
+      await runPromptThreadLabCli([
+        "curator-manifest", "--workspace", root, "--case", "cases/case.json",
+        "--model", "gpt-5.4-nano-2026-03-17", "--max-calls", "1",
+        "--max-spend-usd", "0.01", "--max-items-per-partition", "1",
+      ]);
+      await runPromptThreadLabCli([
+        "curator-approve", "--workspace", root,
+        "--manifest", "evidence/curator-manifest.json",
+        "--reviewer", "producer", "--confirm",
+      ], { isTTY: true });
+      let providerRequest: Record<string, unknown> | undefined;
+      const result = await runPromptThreadLabCli([
+        "curate", "--workspace", root,
+        "--manifest", "evidence/curator-manifest.json",
+        "--approval", "evidence/curator-approval.json", "--confirm",
+      ], {
+        isTTY: true,
+        curatorProviderDispatch: async (request) => {
+          providerRequest = request;
+          return {
+            id: "curator-response",
+            status: "completed",
+            service_tier: "flex",
+            output_text: JSON.stringify({ items: [] }),
+            usage: { input_tokens_details: { cached_tokens: 0 } },
+          };
+        },
+      });
+
+      expect(result).toMatchObject({ status: "ok", completedCells: 1 });
+      expect(providerRequest).toMatchObject({
+        model: "gpt-5.4-nano-2026-03-17",
+        max_output_tokens: 8_192,
+        service_tier: "flex",
+        store: false,
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

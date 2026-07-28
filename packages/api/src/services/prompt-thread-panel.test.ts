@@ -1,7 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   PROTOCOL_SCHEMA_HASH,
   PROTOCOL_VERSION,
@@ -10,8 +10,13 @@ import {
   hashCanonicalJson,
   type EvidenceCardApprovalArtifact,
   type FrozenCaseArtifact,
+  type JsonObject,
 } from "@influence/prompt-lab-protocol";
+import { GameState, Phase } from "@influence/engine";
 import {
+  computePromptThreadWorkerActionSchemaHash,
+  computePromptThreadWorkerHarnessDigest,
+  computePromptThreadWorkerPolicyDigest,
   createPromptThreadWorkerHandshake,
   runPromptThreadWorker,
 } from "@influence/engine/prompt-thread-worker";
@@ -21,6 +26,8 @@ import {
 } from "@influence/engine/prompt-thread-lab";
 import {
   createPrivateWorkspace,
+  readArtifact,
+  readPrivateJson,
   withRunMutationLock,
 } from "./prompt-thread-workspace.js";
 import {
@@ -56,6 +63,187 @@ const caseValue = {
     ],
   },
 } satisfies FrozenCaseArtifact;
+
+const realWorkerRoster = [
+  { id: "a", name: "A", personality: "strategic" },
+  { id: "b", name: "B", personality: "social" },
+  { id: "c", name: "C", personality: "observer" },
+  { id: "d", name: "D", personality: "honest" },
+  { id: "e", name: "E", personality: "broker" },
+] as const;
+
+function realWorkerContinuity(playerId: string, playerName: string) {
+  return {
+    version: 1,
+    playerId,
+    playerName,
+    strategyPacket: null,
+    reflectionSummary: null,
+    notes: [],
+    relationships: { allies: [], threats: [] },
+    powerActionMemory: [],
+    roundHistory: [],
+    recentStrategicDecisions: [],
+    strategyPacketRevisionCounter: 0,
+  };
+}
+
+function realWorkerIntent(actorId: string, other: string, round: number) {
+  return {
+    manifestId: `intent-${actorId}`,
+    actorId,
+    action: "mingle-intent",
+    byteLength: 1,
+    sha256: hashCanonicalJson(actorId),
+    body: {
+      version: 2,
+      actor: { id: actorId, name: actorId.toUpperCase(), role: "player" },
+      action: "mingle-intent",
+      phase: Phase.MINGLE_I,
+      round,
+      model: { name: "fixture-model" },
+      requestedReasoningEffort: "low",
+      reasoningPolicy: "action-policy",
+      prompt: { messages: [] },
+      request: { transportOnly: "source-request-id" },
+      output: {
+        seekPlayers: [other],
+        avoidPlayers: [],
+        preferredRoomSize: "pair",
+        purpose: `Compare notes with ${other}`,
+        provisionalTarget: null,
+        noTargetReason: "Still gathering evidence",
+        openingAsk: `Ask ${other} what changed`,
+        strategicLens: "broad_read",
+        strategicLensRationale: "Use the room to compare reads.",
+        decisionLog: `Keep ${other} close for this vote.`,
+        thinking: "fixture intent",
+      },
+    },
+  };
+}
+
+function realWorkerSpeech(
+  id: string,
+  actorId: string,
+  message: string,
+  round: number,
+) {
+  return {
+    manifestId: id,
+    actorId,
+    action: "mingle-turn",
+    byteLength: 1,
+    sha256: hashCanonicalJson(id),
+    body: {
+      version: 2,
+      actor: { id: actorId, name: actorId.toUpperCase(), role: "player" },
+      action: "mingle-turn",
+      phase: Phase.MINGLE_I,
+      round,
+      model: { name: "fixture-model" },
+      requestedReasoningEffort: "low",
+      reasoningPolicy: "action-policy",
+      prompt: { messages: [] },
+      request: { transportOnly: "source-request-id" },
+      output: generatedSpeechOutput(message),
+    },
+  };
+}
+
+function realWorkerCase(): FrozenCaseArtifact {
+  const state = new GameState(
+    realWorkerRoster.map(({ id, name }) => ({ id, name })),
+    { gameId: "prompt-thread-process-fixture", now: () => 1_700_000_000_000 },
+  );
+  state.startRound();
+  const round = state.round;
+  const privateData = {
+    version: 1,
+    materializerVersion: "test/v1",
+    baselineClaim: "trace_observable_message_equivalent",
+    selection: {
+      gameId: "prompt-thread-process-fixture",
+      boundarySequence: state.getCanonicalEvents().length,
+      phase: Phase.MINGLE_I,
+      round,
+      actorIds: ["a", "b"],
+      targetManifestIds: ["turn-a-1", "turn-b-1", "turn-a-2", "turn-b-2"],
+      intentManifestIds: ["intent-a", "intent-b"],
+    },
+    startingState: {
+      canonicalEvents: state.getCanonicalEvents(),
+      canonicalProjection: state.getDomainProjection(),
+      config: {},
+      roster: realWorkerRoster.map((player) => ({
+        id: player.id,
+        persona: {
+          name: player.name,
+          personality: player.personality,
+        },
+        agentConfig: {
+          model: "fixture-model",
+          catalogId: "fixture-catalog",
+          reasoningPolicy: "action-policy",
+          providerProfileId: "openai",
+        },
+      })),
+      continuity: {
+        playerContinuityCapsules: [
+          realWorkerContinuity("a", "A"),
+          realWorkerContinuity("b", "B"),
+        ],
+      },
+      transcriptReplay: [],
+      historyCatalog: [],
+      roomSchedule: [
+        { roomId: 2, round, beat: 1, playerIds: ["a", "b"], playerCount: 2 },
+        { roomId: 2, round, beat: 2, playerIds: ["a", "b"], playerCount: 2 },
+      ],
+      roomCounts: [
+        {
+          beat: 1,
+          rooms: [
+            { roomId: 1, playerCount: 1 },
+            { roomId: 2, playerCount: 2 },
+            { roomId: 3, playerCount: 2 },
+          ],
+        },
+        {
+          beat: 2,
+          rooms: [
+            { roomId: 1, playerCount: 1 },
+            { roomId: 2, playerCount: 2 },
+            { roomId: 3, playerCount: 2 },
+          ],
+        },
+      ],
+    },
+    traces: [
+      realWorkerIntent("a", "B", round),
+      realWorkerIntent("b", "A", round),
+      realWorkerSpeech("turn-a-1", "a", "A opens", round),
+      realWorkerSpeech("turn-b-1", "b", "B answers", round),
+      realWorkerSpeech("turn-a-2", "a", "A returns", round),
+      realWorkerSpeech("turn-b-2", "b", "B closes", round),
+    ],
+    fidelityContract: {
+      canonicalizerId: CANONICALIZER_ID,
+      canonicalizerVersion: CANONICALIZER_VERSION,
+      bytePreservingMessageContent: true,
+      transportOnlyExclusions: ["request.transportOnly"],
+    },
+  } as unknown as JsonObject;
+  return {
+    protocolVersion: PROTOCOL_VERSION,
+    schemaHash: PROTOCOL_SCHEMA_HASH,
+    kind: "frozen_case",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    caseId: hashCanonicalJson(privateData),
+    sourceReceiptHash: hashCanonicalJson("process-source"),
+    privateData,
+  };
+}
 
 const evidenceDraft = {
   protocolVersion: PROTOCOL_VERSION,
@@ -220,7 +408,9 @@ describe("prompt thread panel", () => {
     expect(cells.slice(-2).every((cell) => cell.controlReturnTurn)).toBe(true);
     expect(cells.slice(0, 4).map((cell) => cell.branchId))
       .toEqual(["baseline-1", "baseline-1", "baseline-1", "baseline-1"]);
-    expect(structuralPanelStatus(cells, []).nextActions).toEqual(["dispatch"]);
+    expect(structuralPanelStatus(cells, []).nextActions).toEqual(["panel-run"]);
+    expect(structuralPanelStatus(cells, [cells[0]!.cellId]).nextActions)
+      .toEqual(["panel-resume"]);
   });
 
   it("preflights immutable revisions, policy scope, rate card, and spend without dispatch", async () => {
@@ -296,6 +486,13 @@ describe("prompt thread panel", () => {
           actionSchemaHash: "sha256:unattested-action",
         }),
     })).rejects.toThrow("attested");
+    await expect(createPromptThreadPanelManifest(preflightInput({
+      actorIds: ["lyra", "finn"],
+    }), {
+      inspectCheckout,
+      computeWorkerHarnessDigest,
+      inspectWorkerHandshake,
+    })).rejects.toThrow("ordered frozen replay actors");
   });
 
   it("runs exactly 28 fake-provider cells and resumes without duplicate dispatch", async () => {
@@ -336,6 +533,7 @@ describe("prompt thread panel", () => {
         }),
       );
       expect(first.completedCells).toBe(1);
+      expect(first.settledSpendUsd).toBeCloseTo(value.cells[0]!.maxCostUsd);
       const completed = await runPromptThreadPanel(
         workspace,
         value,
@@ -347,6 +545,9 @@ describe("prompt thread panel", () => {
       );
       expect(completed.lifecycle).toBe("completed");
       expect(completed.completedCells).toBe(28);
+      expect(completed.settledSpendUsd).toBeCloseTo(
+        value.cells.reduce((sum, cell) => sum + cell.maxCostUsd, 0),
+      );
       expect(calls).toBe(28);
     } finally {
       await rm(root, { recursive: true, force: true });
@@ -574,6 +775,286 @@ describe("prompt thread panel", () => {
     }
   }, 30_000);
 
+  it("runs the real worker CLI through the broker and replays its saved response", async () => {
+    const root = await mkdtemp(join(tmpdir(), "prompt-thread-panel-real-worker-"));
+    try {
+      const checkoutPath = resolve(import.meta.dir, "../../../..");
+      const [harnessDigest, compilerPolicyDigest, actionSchemaHash] = await Promise.all([
+        computePromptThreadWorkerHarnessDigest(checkoutPath),
+        computePromptThreadWorkerPolicyDigest(checkoutPath),
+        computePromptThreadWorkerActionSchemaHash(checkoutPath),
+      ]);
+      const actualCase = realWorkerCase();
+      const actualEvidence = {
+        ...evidenceDraft,
+        caseHash: hashCanonicalJson(actualCase),
+      };
+      const actualEvidenceApproval = {
+        ...evidenceApproval,
+        caseHash: hashCanonicalJson(actualCase),
+        cardHash: hashCanonicalJson(actualEvidence),
+      };
+      const actualBaseline = {
+        arm: "baseline" as const,
+        checkoutPath,
+        commitSha: "c".repeat(40),
+        compilerPolicyDigest,
+        harnessDigest,
+      };
+      const actualCandidate = {
+        ...actualBaseline,
+        arm: "candidate" as const,
+      };
+      const value = await createPromptThreadPanelManifest(preflightInput({
+        caseValue: actualCase,
+        sourceFidelity: {
+          ...preflightInput().sourceFidelity,
+          caseId: actualCase.caseId,
+        },
+        evidenceDraft: actualEvidence,
+        evidenceApproval: actualEvidenceApproval,
+        baseline: actualBaseline,
+        candidate: actualCandidate,
+        runtimeHash: harnessDigest,
+        actionSchemaHash,
+        estimatedInputTokensPerCall: 50_000,
+        maximumOutputTokensPerCall: 10_000,
+        actorIds: ["a", "b"],
+      }), {
+        inspectCheckout: async () => ({
+          commitSha: actualBaseline.commitSha,
+          dirty: false,
+        }),
+        computeWorkerHarnessDigest: () =>
+          computePromptThreadWorkerHarnessDigest(checkoutPath),
+      });
+      const approval = approvePromptThreadPanel(value, "producer");
+      const firstWorkspace = await createPrivateWorkspace(
+        join(root, "first-workspace"),
+        { gitWorktreeRoots: [] },
+      );
+      await initializePromptThreadPanelRun(firstWorkspace, value, approval);
+      const response = generatedProviderResponse("A opens");
+      let brokerRequest: Record<string, unknown> | undefined;
+      const firstDependencies = createTrustedCheckoutPanelDependencies(
+        firstWorkspace,
+        value,
+        async (request) => {
+          brokerRequest = structuredClone(request);
+          return structuredClone(response);
+        },
+        {
+          inspectCheckout: async () => ({
+            commitSha: actualBaseline.commitSha,
+            dirty: false,
+          }),
+          computeWorkerHarnessDigest: () =>
+            computePromptThreadWorkerHarnessDigest(checkoutPath),
+          stopAfterCell: () => true,
+        },
+      );
+      const first = await runPromptThreadPanel(
+        firstWorkspace,
+        value,
+        approval,
+        actualCase,
+        actualEvidence,
+        actualEvidenceApproval,
+        firstDependencies,
+      );
+      const firstCell = value.cells[0]!;
+      expect(first).toMatchObject({ lifecycle: "running", completedCells: 1 });
+      expect(brokerRequest).toMatchObject({
+        model: PROMPT_THREAD_PANEL_MODEL,
+        prompt_cache_key: firstCell.actorLineage,
+        store: false,
+        service_tier: "flex",
+      });
+      const firstCheckpoint = await readArtifact(
+        firstWorkspace,
+        `runs/${value.runId}/cells/${firstCell.cellId}/continuation-checkpoint.json`,
+      );
+      expect(firstCheckpoint).toMatchObject({
+        kind: "continuation_checkpoint",
+        cellId: firstCell.cellId,
+        turn: 1,
+      });
+      const firstWorkerResult = await readPrivateJson(
+        firstWorkspace,
+        `runs/${value.runId}/cells/${firstCell.cellId}/worker-output.json`,
+      ) as { request: Record<string, unknown> };
+
+      const replayWorkspace = await createPrivateWorkspace(
+        join(root, "replay-workspace"),
+        { gitWorktreeRoots: [] },
+      );
+      await initializePromptThreadPanelRun(replayWorkspace, value, approval);
+      const broker = new PromptThreadProviderBroker(
+        value.cells.map((cell) => ({
+          cellId: cell.cellId,
+          ordinal: cell.ordinal,
+          actorId: cell.actorId,
+          lineage: cell.actorLineage,
+          firstCall: cell.firstCall,
+          requestedServiceTier: value.requestedServiceTier,
+          estimatedInputTokens: value.estimatedInputTokensPerCall,
+          maxOutputTokens: value.maximumOutputTokensPerCall,
+          maxCostUsd: cell.maxCostUsd,
+          controlReturnTurn: cell.controlReturnTurn,
+        })),
+        value.maximumSpendUsd,
+      );
+      await withRunMutationLock(replayWorkspace, value.runId, (lock) =>
+        broker.dispatch(
+          lock,
+          {
+            cellId: firstCell.cellId,
+            model: value.modelSnapshot,
+            request: firstWorkerResult.request,
+          },
+          async () => structuredClone(response),
+          { alreadyPlanned: true },
+        )
+      );
+      let replayDispatches = 0;
+      const replayDependencies = createTrustedCheckoutPanelDependencies(
+        replayWorkspace,
+        value,
+        async () => {
+          replayDispatches += 1;
+          throw new Error("saved response replay must not redispatch");
+        },
+        {
+          inspectCheckout: async () => ({
+            commitSha: actualBaseline.commitSha,
+            dirty: false,
+          }),
+          computeWorkerHarnessDigest: () =>
+            computePromptThreadWorkerHarnessDigest(checkoutPath),
+          stopAfterCell: () => true,
+        },
+      );
+      const replayed = await runPromptThreadPanel(
+        replayWorkspace,
+        value,
+        approval,
+        actualCase,
+        actualEvidence,
+        actualEvidenceApproval,
+        replayDependencies,
+      );
+      expect(replayed).toMatchObject({ lifecycle: "running", completedCells: 1 });
+      expect(replayDispatches).toBe(0);
+      const replayCheckpoint = await readArtifact(
+        replayWorkspace,
+        `runs/${value.runId}/cells/${firstCell.cellId}/continuation-checkpoint.json`,
+      );
+      expect(replayCheckpoint).toMatchObject({
+        kind: "continuation_checkpoint",
+        cellId: firstCell.cellId,
+        turn: 1,
+      });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("aborts and settles provider dispatch before timeout cleanup completes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "prompt-thread-panel-timeout-"));
+    try {
+      const workspace = await createPrivateWorkspace(join(root, "workspace"), {
+        gitWorktreeRoots: [],
+      });
+      const baselineCheckout = join(root, "baseline");
+      const candidateCheckout = join(root, "candidate");
+      await Promise.all([
+        writeFixtureWorker(
+          baselineCheckout,
+          baseline.harnessDigest,
+          baseline.compilerPolicyDigest,
+        ),
+        writeFixtureWorker(
+          candidateCheckout,
+          candidate.harnessDigest,
+          candidate.compilerPolicyDigest,
+        ),
+      ]);
+      const processBaseline = { ...baseline, checkoutPath: baselineCheckout };
+      const processCandidate = { ...candidate, checkoutPath: candidateCheckout };
+      const value = await createPromptThreadPanelManifest(preflightInput({
+        baseline: processBaseline,
+        candidate: processCandidate,
+      }), {
+        inspectCheckout: async (path) => ({
+          commitSha: path === baselineCheckout
+            ? processBaseline.commitSha
+            : processCandidate.commitSha,
+          dirty: false,
+        }),
+        computeWorkerHarnessDigest,
+      });
+      const approval = approvePromptThreadPanel(value, "producer");
+      await initializePromptThreadPanelRun(workspace, value, approval);
+      let providerSignal: AbortSignal | undefined;
+      let providerSettled = false;
+      const dependencies = createTrustedCheckoutPanelDependencies(
+        workspace,
+        value,
+        async (_request, options) => {
+          providerSignal = options?.signal;
+          try {
+            await new Promise<never>((_resolve, reject) => {
+              if (!providerSignal) {
+                reject(new Error("missing abort signal"));
+                return;
+              }
+              const rejectAbort = () => reject(
+                providerSignal?.reason ?? new Error("aborted"),
+              );
+              if (providerSignal.aborted) {
+                rejectAbort();
+                return;
+              }
+              providerSignal.addEventListener("abort", rejectAbort, {
+                once: true,
+              });
+            });
+          } finally {
+            providerSettled = true;
+          }
+        },
+        {
+          inspectCheckout: async (path) => ({
+            commitSha: path === baselineCheckout
+              ? processBaseline.commitSha
+              : processCandidate.commitSha,
+            dirty: false,
+          }),
+          computeWorkerHarnessDigest,
+          trustedWorkerTimeoutMs: 100,
+        },
+      );
+      const result = await runPromptThreadPanel(
+        workspace,
+        value,
+        approval,
+        caseValue,
+        evidenceDraft,
+        evidenceApproval,
+        dependencies,
+      );
+      expect(result.lifecycle).toBe("invalidated");
+      expect(providerSignal?.aborted).toBe(true);
+      expect(providerSettled).toBe(true);
+      await expect(readArtifact(
+        workspace,
+        `runs/${value.runId}/cells/${value.cells[0]!.cellId}/provider-result.json`,
+      )).rejects.toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 10_000);
+
   it("invalidates and removes private run data after a provider non-response", async () => {
     const root = await mkdtemp(join(tmpdir(), "prompt-thread-panel-fail-"));
     try {
@@ -594,11 +1075,57 @@ describe("prompt thread panel", () => {
       );
       expect(result.lifecycle).toBe("invalidated");
       expect(result.outstandingCells).toBe(0);
+      await expect(
+        initializePromptThreadPanelRun(workspace, value, approval),
+      ).rejects.toThrow("fresh manifest and approval");
     } finally {
       await rm(root, { recursive: true, force: true });
     }
   });
 });
+
+function generatedSpeechOutput(message: string) {
+  return {
+    message,
+    noReply: false,
+    gotoRoomId: null,
+    gotoPlayerName: null,
+    proposedTarget: null,
+    proposedAction: null,
+    commitment: null,
+    noProposalReason: null,
+    decisionLog: `Recorded ${message}`,
+    thinking: `Thinking about ${message}`,
+  };
+}
+
+function generatedProviderResponse(message: string) {
+  const outputText = JSON.stringify(generatedSpeechOutput(message));
+  return {
+    id: "real-worker-response",
+    object: "response",
+    status: "completed",
+    service_tier: "flex",
+    output_text: outputText,
+    output: [{
+      id: "real-worker-message",
+      type: "message",
+      role: "assistant",
+      status: "completed",
+      content: [{
+        type: "output_text",
+        text: outputText,
+      }],
+    }],
+    usage: {
+      input_tokens: 1,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens: 1,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 2,
+    },
+  };
+}
 
 async function writeFixtureWorker(
   checkoutPath: string,

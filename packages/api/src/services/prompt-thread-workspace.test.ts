@@ -18,6 +18,7 @@ import {
   inspectRunRecovery,
   promoteValidatedMaterialization,
   readArtifact,
+  readDurableProviderSettledSpendUsd,
   recordCellProviderResult,
   recordContinuationCheckpoint,
   recoverOrInvalidateRun,
@@ -147,16 +148,26 @@ describe("materialization promotion", () => {
 });
 
 describe("OS lock and durable lifecycle journal", () => {
-  function providerResult(cellId: string) {
+  function providerResult(cellId: string, costUsd = 0.125) {
+    const requestHash = `sha256:${cellId}`;
     return {
       protocolVersion: PROTOCOL_VERSION,
       schemaHash: PROTOCOL_SCHEMA_HASH,
       kind: "provider_result" as const,
       createdAt: "2026-07-27T12:00:00.000Z",
       cellId,
-      requestHash: `sha256:${cellId}`,
+      requestHash,
       status: "completed",
-      privateResponse: { id: `response-${cellId}` },
+      privateResponse: {
+        response: { id: `response-${cellId}` },
+        receipt: {
+          cellId,
+          requestDigest: requestHash,
+          elapsedMs: 10,
+          cachedInputTokens: 0,
+          costUsd,
+        },
+      },
     };
   }
 
@@ -243,6 +254,29 @@ describe("OS lock and durable lifecycle journal", () => {
     });
   });
 
+  test("rejects a durable provider receipt whose request identity does not match", async () => {
+    const workspace = await workspaceFixture();
+    await withRunMutationLock(workspace, "run-forged-receipt", async (lock) => {
+      await appendCellTransition(lock, { cellId: "cell-1", stage: "planned" });
+      await appendCellTransition(lock, { cellId: "cell-1", stage: "started" });
+      const artifact = providerResult("cell-1", 50);
+      await recordCellProviderResult(lock, "cell-1", {
+        ...artifact,
+        privateResponse: {
+          ...artifact.privateResponse,
+          receipt: {
+            ...artifact.privateResponse.receipt,
+            requestDigest: "sha256:different-request",
+          },
+        },
+      });
+    });
+
+    await expect(
+      readDurableProviderSettledSpendUsd(workspace, "run-forged-receipt"),
+    ).rejects.toThrow("identity");
+  });
+
   test("dispatches only planned cells and resumes after the durable apply cut points", async () => {
     const workspace = await workspaceFixture();
     await withRunMutationLock(workspace, "run-b", async (lock) => {
@@ -296,6 +330,20 @@ describe("OS lock and durable lifecycle journal", () => {
   test("started without a response and explicit abort clean private content", async () => {
     const workspace = await workspaceFixture();
     await withRunMutationLock(workspace, "run-invalid", async (lock) => {
+      await appendCellTransition(lock, { cellId: "cell-completed", stage: "planned" });
+      await appendCellTransition(lock, { cellId: "cell-completed", stage: "started" });
+      await recordCellProviderResult(
+        lock,
+        "cell-completed",
+        providerResult("cell-completed", 0.375),
+      );
+      await appendCellTransition(lock, { cellId: "cell-completed", stage: "applied" });
+      await recordContinuationCheckpoint(
+        lock,
+        "cell-completed",
+        checkpoint("cell-completed"),
+      );
+      await appendCellTransition(lock, { cellId: "cell-completed", stage: "completed" });
       await appendCellTransition(lock, { cellId: "cell-1", stage: "planned" });
       await appendCellTransition(lock, { cellId: "cell-1", stage: "started" });
       await atomicWriteArtifact(lock, "runs/run-invalid/private.json", {
@@ -312,12 +360,14 @@ describe("OS lock and durable lifecycle journal", () => {
     const invalidated = await recoverOrInvalidateRun(workspace, "run-invalid");
     expect(invalidated.lifecycle).toBe("invalidated");
     expect(invalidated.reasonCode).toBe("started_without_response");
+    expect(invalidated.settledSpendUsd).toBe(0.375);
     expect(await Bun.file(join(workspace.root, "runs/run-invalid/private.json")).exists())
       .toBe(false);
     const summaryText = await readFile(
       join(workspace.root, "summaries/run-invalid.json"),
       "utf8",
     );
+    expect(JSON.parse(summaryText).settledSpendUsd).toBe(0.375);
     expect(summaryText).not.toContain("must disappear");
 
     await withRunMutationLock(workspace, "run-abort", async () => {

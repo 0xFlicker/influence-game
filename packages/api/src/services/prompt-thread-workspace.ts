@@ -488,19 +488,27 @@ export async function recoverOrInvalidateRun(
   assertSafeRunId(runId);
   return withRunMutationLock(workspace, runId, async (lock) => {
     let inspection: RunRecoveryInspection;
+    let settledSpendUsd: number;
     try {
       await reconcileSavedResponses(lock);
       inspection = await inspectRunRecovery(workspace, runId);
+      settledSpendUsd = await readDurableProviderSettledSpendUsd(workspace, runId);
     } catch {
       return cleanupUnusableRun(lock, "failed", "invalid_journal");
     }
     if (inspection.invalidReason) {
-      return cleanupUnusableRun(lock, "invalidated", inspection.invalidReason);
+      return cleanupUnusableRun(
+        lock,
+        "invalidated",
+        inspection.invalidReason,
+        settledSpendUsd,
+      );
     }
     return structuralSummary(runId, {
       lifecycle: "running",
       completedCells: countCompletedCells(inspection.transitions),
       outstandingCells: inspection.actions.length,
+      settledSpendUsd,
       nextActions: [...new Set(inspection.actions.map(({ action }) => action))],
     });
   });
@@ -549,15 +557,20 @@ async function cleanupUnusableRun(
   lockValue: RunMutationLock,
   lifecycle: "invalidated" | "aborted" | "failed",
   reasonCode: string,
+  knownSettledSpendUsd?: number,
 ): Promise<StructuralRunSummary> {
   const lock = requireActiveLock(lockValue);
   const transitions = await readTransitionJournal(lock.workspace, lock.runId)
     .catch(() => [] as CellTransition[]);
+  const settledSpendUsd = knownSettledSpendUsd
+    ?? await settledSpendFromTransitions(lock.workspace, lock.runId, transitions)
+      .catch(() => 0);
   const summary = structuralSummary(lock.runId, {
     lifecycle,
     reasonCode,
     completedCells: countCompletedCells(transitions),
     outstandingCells: 0,
+    settledSpendUsd,
     nextActions: [],
   });
   await rm(join(lock.workspace.root, "runs", lock.runId), {
@@ -572,6 +585,70 @@ async function cleanupUnusableRun(
     { overwrite: true },
   );
   return summary;
+}
+
+export async function readDurableProviderSettledSpendUsd(
+  workspace: PrivateWorkspace,
+  runId: string,
+): Promise<number> {
+  assertSafeRunId(runId);
+  return settledSpendFromTransitions(
+    workspace,
+    runId,
+    await readTransitionJournal(workspace, runId),
+  );
+}
+
+async function settledSpendFromTransitions(
+  workspace: PrivateWorkspace,
+  runId: string,
+  transitions: readonly CellTransition[],
+): Promise<number> {
+  let settledSpendUsd = 0;
+  for (const transition of transitions) {
+    if (transition.stage !== "response_recorded") continue;
+    const expectedPath =
+      `runs/${runId}/cells/${transition.cellId}/provider-result.json`;
+    if (transition.artifactPath !== expectedPath) {
+      throw new Error("Provider result is not bound to its run and cell");
+    }
+    await verifyTransitionArtifact(workspace, transition);
+    const artifact = await readArtifact(workspace, expectedPath);
+    if (
+      artifact.kind !== "provider_result"
+      || artifact.status !== "completed"
+      || artifact.cellId !== transition.cellId
+    ) {
+      throw new Error("Durable provider result is incomplete or mismatched");
+    }
+    const privateResponse = requireJsonRecord(
+      artifact.privateResponse,
+      "provider result payload",
+    );
+    const receipt = requireJsonRecord(
+      privateResponse.receipt,
+      "provider result receipt",
+    );
+    if (
+      receipt.cellId !== artifact.cellId
+      || receipt.requestDigest !== artifact.requestHash
+    ) {
+      throw new Error("Durable provider receipt identity does not match");
+    }
+    const costUsd = receipt.costUsd;
+    if (
+      typeof costUsd !== "number"
+      || !Number.isFinite(costUsd)
+      || costUsd < 0
+    ) {
+      throw new Error("Durable provider receipt cost must be non-negative");
+    }
+    settledSpendUsd += costUsd;
+    if (!Number.isFinite(settledSpendUsd)) {
+      throw new Error("Durable provider settled spend is not finite");
+    }
+  }
+  return settledSpendUsd;
 }
 
 async function reconcileSavedResponses(lockValue: RunMutationLock): Promise<void> {
@@ -622,6 +699,7 @@ function structuralSummary(
     reasonCode?: string;
     completedCells: number;
     outstandingCells: number;
+    settledSpendUsd?: number;
     nextActions: string[];
   },
 ): StructuralRunSummary {
@@ -633,10 +711,20 @@ function structuralSummary(
     completedCells: input.completedCells,
     outstandingCells: input.outstandingCells,
     reservedSpendUsd: 0,
-    settledSpendUsd: 0,
+    settledSpendUsd: input.settledSpendUsd ?? 0,
     nextActions: input.nextActions,
     requiresHuman: false,
   });
+}
+
+function requireJsonRecord(
+  value: unknown,
+  label: string,
+): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
 }
 
 async function readTransitionJournal(

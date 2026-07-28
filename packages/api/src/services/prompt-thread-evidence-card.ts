@@ -64,6 +64,11 @@ export interface CuratorPartitionResponse {
   items: PromptThreadEvidenceCitation[];
 }
 
+type CuratorSafeRosterPlayer = JsonObject & {
+  id: string;
+  displayName: string;
+};
+
 const EVIDENCE_CLASSES = new Set<EvidenceClass>([
   "required",
   "useful",
@@ -106,7 +111,7 @@ export function eligibleHistoryCatalog(caseValue: FrozenCaseArtifact): EligibleH
   const catalog = starting.historyCatalog;
   if (!Array.isArray(catalog)) throw new Error("Case has no eligible history catalog");
   const seen = new Set<string>();
-  return catalog.map((value, index) => {
+  return catalog.flatMap((value, index) => {
     const row = requireObject(value, `history item ${index}`);
     if (typeof row.sourceId !== "string" || row.sourceId.length === 0 || seen.has(row.sourceId)) {
       throw new Error(`History item ${index} has an invalid sourceId`);
@@ -116,11 +121,12 @@ export function eligibleHistoryCatalog(caseValue: FrozenCaseArtifact): EligibleH
         row.eligibleActorIds.some((actorId) => typeof actorId !== "string")) {
       throw new Error(`History item ${row.sourceId} has invalid actor eligibility`);
     }
-    return {
+    if (row.lane !== undefined && row.lane !== "history") return [];
+    return [{
       sourceId: row.sourceId,
       eligibleActorIds: [...new Set(row.eligibleActorIds as string[])].sort(),
       privateItem: structuredClone(row),
-    };
+    }];
   });
 }
 
@@ -171,7 +177,7 @@ export function buildCuratorManifest(
             actorId,
             sourceIds: slice.map(({ sourceId }) => sourceId),
             privateItems: slice.map(({ privateItem }) => structuredClone(privateItem)),
-            privateContext: curatorActorContext(starting, actorId, catalog),
+            privateContext: curatorActorContext(starting, actorId),
           };
         },
       )
@@ -190,6 +196,10 @@ export function buildCuratorManifest(
     privateDataClasses: [
       "canonical_facts",
       "typed_strategic_receipts",
+      "canonical_roster_player_ids_and_display_names",
+      "game_config",
+      "actor_owned_continuity",
+      "fixed_prelude",
       "public_dialogue",
       "actor_owned_private_dialogue",
     ],
@@ -204,7 +214,6 @@ export function buildCuratorManifest(
 function curatorActorContext(
   starting: JsonObject,
   actorId: string,
-  catalog: readonly EligibleHistoryItem[],
 ): JsonObject {
   const continuity = requireObject(starting.continuity, "continuity");
   const capsules = Array.isArray(continuity.playerContinuityCapsules)
@@ -220,20 +229,63 @@ function curatorActorContext(
     ...(starting.canonicalProjection !== undefined
       ? { canonicalProjection: structuredClone(starting.canonicalProjection) }
       : {}),
-    ...(starting.roster !== undefined
-      ? { roster: structuredClone(starting.roster) }
-      : {}),
+    roster: curatorSafeRoster(starting),
     ...(starting.config !== undefined
       ? { config: structuredClone(starting.config) }
       : {}),
     continuity: capsules,
-    prelude: catalog
-      .filter((item) => (
-        item.privateItem.lane === "prelude" &&
-        item.eligibleActorIds.includes(actorId)
-      ))
-      .map((item) => structuredClone(item.privateItem)),
+    prelude: curatorPrelude(starting, actorId),
   };
+}
+
+function curatorSafeRoster(starting: JsonObject): CuratorSafeRosterPlayer[] {
+  if (!Array.isArray(starting.roster)) throw new Error("Starting state has no roster");
+  return starting.roster.map((value, index) => {
+    const player = requireObject(value, `roster player ${index}`);
+    const persona = player.persona && typeof player.persona === "object" &&
+      !Array.isArray(player.persona)
+      ? player.persona as JsonObject
+      : null;
+    const displayName = typeof player.displayName === "string"
+      ? player.displayName
+      : persona?.name;
+    if (
+      typeof player.id !== "string" ||
+      player.id.length === 0 ||
+      typeof displayName !== "string" ||
+      displayName.length === 0
+    ) {
+      throw new Error(`Roster player ${index} has invalid canonical identity`);
+    }
+    return {
+      id: player.id,
+      displayName,
+    };
+  });
+}
+
+function curatorPrelude(starting: JsonObject, actorId: string): JsonValue[] {
+  if (starting.lanes === undefined) return [];
+  const lanes = requireObject(starting.lanes, "starting lanes");
+  if (lanes.prelude === undefined) return [];
+  if (!Array.isArray(lanes.prelude)) throw new Error("Starting prelude lane is invalid");
+  return lanes.prelude.flatMap((value, index) => {
+    const item = requireObject(value, `prelude item ${index}`);
+    if (
+      item.eligibleActorIds !== undefined &&
+      (!Array.isArray(item.eligibleActorIds) ||
+        item.eligibleActorIds.some((eligibleId) => typeof eligibleId !== "string"))
+    ) {
+      throw new Error(`Prelude item ${index} has invalid actor eligibility`);
+    }
+    if (
+      Array.isArray(item.eligibleActorIds) &&
+      !item.eligibleActorIds.includes(actorId)
+    ) {
+      return [];
+    }
+    return [structuredClone(item)];
+  });
 }
 
 export function approveCuratorManifest(

@@ -329,6 +329,9 @@ describe("compileRecallPlan", () => {
     expect(a.history.dialogueEvidence.map((e) => e.entrySequence)).toEqual(
       b.history.dialogueEvidence.map((e) => e.entrySequence),
     );
+    expect(a.budget.historyChars).toBeLessThanOrEqual(
+      a.budget.historyBudgetChars,
+    );
     expect(a.budget).toEqual(b.budget);
     expect(a.receipt).toEqual(b.receipt);
   });
@@ -610,6 +613,9 @@ describe("compileRecallPlan", () => {
       "Alice commitment is the public evidence to carry into the vote",
     ]);
     expect(plan.budget.historyBudgetChars).toBeGreaterThan(0);
+    expect(plan.budget.historyChars).toBeLessThanOrEqual(
+      plan.budget.historyBudgetChars,
+    );
     // Protected content remains complete
     expect(plan.protected.huddleOutcomes).toHaveLength(1);
     expect(plan.protected.huddleOutcomes[0]!.promises.length).toBe(hugePromises.length);
@@ -676,6 +682,9 @@ describe("compileRecallPlan", () => {
     expect(plan.budget.protectedOverflow).toBe(true);
     expect(plan.budget.historyBudgetChars).toBe(
       VAST_AZURE_SURGE_R4_RECALL.reserveChars,
+    );
+    expect(plan.budget.historyChars).toBeLessThanOrEqual(
+      plan.budget.historyBudgetChars,
     );
     expect(plan.history.dialogueEvidence[0]?.entrySequence).toBe(
       VAST_AZURE_SURGE_R4_RECALL.requiredFirstSequence,

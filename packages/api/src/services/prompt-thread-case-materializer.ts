@@ -503,7 +503,10 @@ async function readMaterializedSource(
         })) {
       throw new Error("Roster identity does not match the canonical starting projection");
     }
-    const canonicalRoster = roster.map((row) => row!);
+    const canonicalRoster = roster.map((row, index) => ({
+      ...row!,
+      displayName: canonicalPlayers[index]!.name,
+    }));
 
     const manifestRows = await tx
       .select({

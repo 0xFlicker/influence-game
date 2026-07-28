@@ -347,10 +347,10 @@ describe("prompt-thread case materializer", () => {
     expect(privateData).not.toContain("POST_BOUNDARY_PROSE_SENTINEL");
     expect(result.caseArtifact.privateData.startingState).toMatchObject({
       roster: [
-        { id: "atlas" },
-        { id: "echo" },
-        { id: "mira" },
-        { id: "nyx" },
+        { id: "atlas", displayName: "Atlas" },
+        { id: "echo", displayName: "Echo" },
+        { id: "mira", displayName: "Mira" },
+        { id: "nyx", displayName: "Nyx" },
       ],
       roomCounts: [{
         beat: 1,

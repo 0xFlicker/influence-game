@@ -60,7 +60,10 @@ interface PreparedBrokerRequest {
   controlPrefixAfterDigest?: string;
 }
 
-export type PromptThreadProviderDispatch = (request: Record<string, unknown>) => Promise<unknown>;
+export type PromptThreadProviderDispatch = (
+  request: Record<string, unknown>,
+  options?: { signal?: AbortSignal },
+) => Promise<unknown>;
 export interface PromptThreadBrokerPolicy {
   model?: string;
   requestKind?: "panel" | "curator";
@@ -178,7 +181,7 @@ export class PromptThreadProviderBroker {
     lock: RunMutationLock,
     input: PromptThreadBrokerRequest,
     send: PromptThreadProviderDispatch,
-    options: { alreadyPlanned?: boolean } = {},
+    options: { alreadyPlanned?: boolean; signal?: AbortSignal } = {},
   ): Promise<{ response: unknown; receipt: PromptThreadBrokerReceipt }> {
     const prepared = this.prepare(input);
     validateFinalRequest(prepared.cell, prepared.request, {
@@ -203,7 +206,9 @@ export class PromptThreadProviderBroker {
     const startedAt = performance.now();
     let response: unknown;
     try {
-      response = await send(prepared.request);
+      response = await send(prepared.request, {
+        ...(options.signal && { signal: options.signal }),
+      });
     } catch {
       await invalidateRunUnderLock(lock, "provider_no_complete_response");
       throw new PromptThreadBrokerError("invalid_response");
@@ -287,8 +292,9 @@ export function createPromptThreadOpenAIDispatch(
   apiKey: string,
 ): PromptThreadProviderDispatch {
   const client = createPromptThreadOpenAIClient(apiKey);
-  return (request) => client.responses.create(
+  return (request, options) => client.responses.create(
     request as unknown as ResponseCreateParamsNonStreaming,
+    options,
   );
 }
 

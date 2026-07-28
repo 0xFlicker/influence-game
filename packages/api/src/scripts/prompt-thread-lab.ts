@@ -52,7 +52,9 @@ import {
 import {
   createPromptThreadOpenAIDispatch,
   PromptThreadProviderBroker,
+  type PromptThreadProviderDispatch,
 } from "../services/prompt-thread-provider-broker.js";
+import { quoteProviderUsageCeiling } from "../services/provider-cost-accounting.js";
 import {
   approvePromptThreadPanel,
   createTrustedCheckoutPanelDependencies,
@@ -77,6 +79,7 @@ import {
   createPrivateWorkspace,
   readArtifact,
   readArtifactIfExists,
+  readDurableProviderSettledSpendUsd,
   readPrivateJson,
   recoverOrInvalidateRun,
   inspectRunRecovery,
@@ -154,6 +157,7 @@ export interface PromptThreadLabCliDependencies {
       partition: CuratorManifest["partitions"][number];
     }): Promise<CuratorPartitionResponse>;
   };
+  curatorProviderDispatch?: PromptThreadProviderDispatch;
   panelRunner?: RunPanelDependencies;
   panelPreflight?: PanelPreflightDependencies;
   materializeCase?: (
@@ -179,6 +183,8 @@ const DEFAULT_PATHS = {
   panelManifest: "panel/run-manifest.json",
   panelApproval: "panel/paid-approval.json",
 } as const;
+
+const CURATOR_MAX_OUTPUT_TOKENS = 8_192;
 
 export async function runPromptThreadLabCli(
   argv: readonly string[],
@@ -259,6 +265,7 @@ export async function runPromptThreadLabCli(
         maxItemsPerPartition: numberFlag(flags, "max-items-per-partition"),
         now,
       });
+      quoteCuratorManifest(manifest);
       return writeArtifactResult(workspace, flags, "curator-manifest", DEFAULT_PATHS.curatorManifest, manifest, {
         lifecycle: "draft",
         nextActions: ["curator-approve"],
@@ -269,6 +276,7 @@ export async function runPromptThreadLabCli(
       const blocked = requireInteractiveConfirmation(dependencies.isTTY ?? Boolean(process.stdin.isTTY), flags);
       if (blocked) return blocked;
       const manifest = await readCuratorManifest(workspace, requiredFlag(flags, "manifest"));
+      quoteCuratorManifest(manifest);
       const approval = approveCuratorManifest(manifest, requiredFlag(flags, "reviewer"), now);
       return writeArtifactResult(workspace, flags, "curator-approve", DEFAULT_PATHS.curatorApproval, approval, {
         lifecycle: "approved",
@@ -291,6 +299,7 @@ export async function runPromptThreadLabCli(
         requiredFlag(flags, "approval"),
       );
       assertCuratorApproval(manifest, approval);
+      quoteCuratorManifest(manifest);
       const responses = dependencies.curatorBroker
         ? await dispatchInjectedCurator(
             dependencies.curatorBroker,
@@ -302,6 +311,7 @@ export async function runPromptThreadLabCli(
             manifest,
             approval,
             process.env.OPENAI_API_KEY,
+            dependencies.curatorProviderDispatch,
           );
       const artifactPath = flags.get("output") ?? DEFAULT_PATHS.curatorResponses;
       await withRunMutationLock(workspace, "evidence-curate", async (lock) => {
@@ -517,11 +527,17 @@ export async function runPromptThreadLabCli(
       const completed = manifest.cells
         .filter((cell) => latestStages.get(cell.cellId) === "completed")
         .map(({ cellId }) => cellId);
+      const settledSpendUsd = await readDurableProviderSettledSpendUsd(
+        workspace,
+        manifest.runId,
+      );
       return panelResult(structuralPanelStatus(
         manifest.cells,
         completed,
         manifest.runId,
         inspection.invalidReason,
+        inspection.transitions.some((transition) => transition.stage !== "planned"),
+        settledSpendUsd,
       ));
     }
 
@@ -942,25 +958,29 @@ async function dispatchApprovedCurator(
   manifest: CuratorManifest,
   approval: CuratorApprovalArtifact,
   apiKey: string | undefined,
+  injectedProviderDispatch?: PromptThreadProviderDispatch,
 ): Promise<CuratorPartitionResponse[]> {
-  if (!apiKey?.trim()) throw new Error("OPENAI_API_KEY is required for approved curator dispatch");
+  if (!injectedProviderDispatch && !apiKey?.trim()) {
+    throw new Error("OPENAI_API_KEY is required for approved curator dispatch");
+  }
   assertCuratorApproval(manifest, approval);
-  const perCallCap = manifest.partitions.length === 0
-    ? 0
-    : manifest.maximumSpendUsd / manifest.partitions.length;
-  const cells = manifest.partitions.map((partition, index) => ({
+  const quote = quoteCuratorManifest(manifest);
+  const cells = quote.partitions.map((partition, index) => ({
     cellId: partition.partitionId.replace(/[^A-Za-z0-9._-]/gu, "-"),
     ordinal: index + 1,
     actorId: partition.actorId,
     lineage: "",
     requestedServiceTier: "flex" as const,
-    maxCostUsd: perCallCap,
+    estimatedInputTokens: partition.estimatedInputTokens,
+    maxOutputTokens: partition.maxOutputTokens,
+    maxCostUsd: partition.maxCostUsd,
   }));
   const broker = new PromptThreadProviderBroker(cells, manifest.maximumSpendUsd, {
     model: manifest.model,
     requestKind: "curator",
   });
-  const providerDispatch = createPromptThreadOpenAIDispatch(apiKey);
+  const providerDispatch = injectedProviderDispatch
+    ?? createPromptThreadOpenAIDispatch(apiKey!);
   const responses: CuratorPartitionResponse[] = [];
   const runId = `curator-${hashCanonicalJson(manifest).slice("sha256:".length, 25)}`;
   const recovery = await recoverOrInvalidateRun(workspace, runId);
@@ -1021,7 +1041,7 @@ function curatorRequest(
       "Do not infer variant identity, cost, cache behavior, or a winner.",
       "Return every item you score using its exact sourceId.",
     ].join("\n"),
-    max_output_tokens: 8_192,
+    max_output_tokens: CURATOR_MAX_OUTPUT_TOKENS,
     store: false,
     service_tier: "flex",
     text: {
@@ -1033,6 +1053,55 @@ function curatorRequest(
       },
     },
   };
+}
+
+function quoteCuratorManifest(manifest: CuratorManifest): {
+  quotedMaximumSpendUsd: number;
+  partitions: Array<{
+    partitionId: string;
+    actorId: string;
+    estimatedInputTokens: number;
+    maxOutputTokens: number;
+    maxCostUsd: number;
+  }>;
+} {
+  const partitions = manifest.partitions.map((partition) => {
+    const request = curatorRequest(manifest, partition);
+    const estimatedInputTokens = Math.ceil(JSON.stringify(request).length / 4);
+    const quote = quoteProviderUsageCeiling({
+      modelSnapshot: manifest.model,
+      promptTokenCeiling: estimatedInputTokens,
+      cachedPromptTokenCeiling: 0,
+      outputTokenCeiling: CURATOR_MAX_OUTPUT_TOKENS,
+      serviceTier: "flex",
+    });
+    if (
+      quote.status !== "estimated"
+      || quote.estimatedCostUsd === undefined
+      || !quote.rateCardVersion
+      || !quote.pricingSourceId
+    ) {
+      throw new Error("Curator manifest has no pinned snapshot rate-card mapping");
+    }
+    return {
+      partitionId: partition.partitionId,
+      actorId: partition.actorId,
+      estimatedInputTokens,
+      maxOutputTokens: CURATOR_MAX_OUTPUT_TOKENS,
+      maxCostUsd: quote.estimatedCostUsd,
+    };
+  });
+  const quotedMaximumSpendUsd = partitions.reduce(
+    (total, partition) => total + partition.maxCostUsd,
+    0,
+  );
+  if (
+    !Number.isFinite(manifest.maximumSpendUsd)
+    || manifest.maximumSpendUsd < quotedMaximumSpendUsd
+  ) {
+    throw new Error("Curator spend cap is below the complete partition ceiling");
+  }
+  return { quotedMaximumSpendUsd, partitions };
 }
 
 function parseCuratorResponse(responseValue: unknown): PromptThreadEvidenceCitation[] {

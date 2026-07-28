@@ -932,6 +932,12 @@ function historyItemChars(item: RecallHistoryDialogueEvidence): number {
   return measureStructuredChars(item);
 }
 
+function historyLaneChars(
+  dialogueEvidence: readonly RecallHistoryDialogueEvidence[],
+): number {
+  return measureStructuredChars({ dialogueEvidence });
+}
+
 function projectHistoryEvidence(
   candidate: ProjectedRecallCandidate,
 ): RecallHistoryDialogueEvidence {
@@ -952,13 +958,10 @@ function fillHistoryWithinBudget(
 ): RecallHistoryDialogueEvidence[] {
   if (budgetChars <= 0 || ranked.length === 0) return [];
   const selected: RecallHistoryDialogueEvidence[] = [];
-  let used = 0;
   for (const candidate of ranked) {
     const item = projectHistoryEvidence(candidate);
-    const cost = historyItemChars(item);
-    if (used + cost > budgetChars) continue;
+    if (historyLaneChars([...selected, item]) > budgetChars) continue;
     selected.push(item);
-    used += cost;
   }
   return selected;
 }
@@ -1074,7 +1077,7 @@ export function compileRecallPlan(params: CompileRecallPlanParams): RecallPlan {
   }
 
   const historyLane = { dialogueEvidence: historyEvidence };
-  const historyChars = measureStructuredChars(historyLane);
+  const historyChars = historyLaneChars(historyEvidence);
 
   const budget: RecallPlanBudgetLedger = {
     envelopeChars: envelope.envelopeChars,
