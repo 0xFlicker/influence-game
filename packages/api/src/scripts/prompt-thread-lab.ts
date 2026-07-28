@@ -2,10 +2,13 @@ import {
   hashCanonicalJson,
   parseArtifact,
   type ArtifactEnvelope,
+  type BlindDecisionsArtifact,
+  type BlindPacketArtifact,
   type CuratorApprovalArtifact,
   type EvidenceCardApprovalArtifact,
   type FrozenCaseArtifact,
   type PaidApprovalArtifact,
+  type UnblindingKeyArtifact,
 } from "@influence/prompt-lab-protocol";
 import type { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
 import {
@@ -21,6 +24,18 @@ import {
   type PromptThreadEvidenceCard,
   type PromptThreadEvidenceCitation,
 } from "../services/prompt-thread-evidence-card.js";
+import {
+  buildPromptThreadReportFromRun,
+  initializePromptThreadBlindReview,
+  promptThreadBlindReviewStatus,
+  recordPromptThreadBlindDecision,
+  renderPromptThreadBlindPacket,
+  unblindPromptThreadReview,
+  type BlindChoice,
+  type BlindDecisionReasons,
+  type BlindReviewStatus,
+  type PromptThreadUnblindedReview,
+} from "../services/prompt-thread-blind-review.js";
 import {
   createPromptThreadOpenAIClient,
   createPromptThreadOpenAIDispatch,
@@ -47,6 +62,7 @@ import {
   readPrivateJson,
   recoverOrInvalidateRun,
   inspectRunRecovery,
+  purgeCompletedRun,
   withRunMutationLock,
 } from "../services/prompt-thread-workspace.js";
 
@@ -62,11 +78,31 @@ type PromptThreadLabCommand =
   | "panel-init"
   | "panel-status"
   | "panel-run"
-  | "panel-resume";
+  | "panel-resume"
+  | "blind-init"
+  | "render-blind-packet"
+  | "blind-status"
+  | "record-blind-decision"
+  | "unblind"
+  | "report"
+  | "purge";
 
 export interface PromptThreadLabResult {
   status: "ok" | "error";
-  lifecycle: "draft" | "approved" | "frozen" | "running" | "completed" | "invalidated" | "error";
+  lifecycle:
+    | "draft"
+    | "approved"
+    | "frozen"
+    | "running"
+    | "completed"
+    | "invalidated"
+    | "blind_ready"
+    | "review_in_progress"
+    | "reviewed"
+    | "unblinded"
+    | "reported"
+    | "purged"
+    | "error";
   errorCode?: string;
   requiresHuman: boolean;
   guidance?: string;
@@ -78,6 +114,8 @@ export interface PromptThreadLabResult {
   settledSpendUsd: number;
   completedCells: number;
   outstandingCells: number;
+  completedPairTokens?: string[];
+  outstandingPairTokens?: string[];
 }
 
 export interface PromptThreadLabCliDependencies {
@@ -352,6 +390,12 @@ export async function runPromptThreadLabCli(
         requiredFlag(flags, "evidence-approval"),
       );
       const inspection = await inspectRunRecovery(workspace, manifest.runId);
+      if (await readArtifactIfExists(
+        workspace,
+        `runs/${manifest.runId}/blind-decisions.json`,
+      )) {
+        throw new Error("An unblinded panel run is terminal and cannot run or resume");
+      }
       assertPanelCommandState(command, manifest, inspection.transitions);
       const interrupt = dependencies.panelRunner ? null : installPanelInterruptHandler();
       const panelRunner = dependencies.panelRunner
@@ -374,6 +418,215 @@ export async function runPromptThreadLabCli(
       } finally {
         interrupt?.dispose();
       }
+    }
+
+    if (command === "blind-init") {
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const draft = await readEvidenceDraft(
+        workspace,
+        requiredFlag(flags, "draft"),
+      );
+      const { packet } = await initializePromptThreadBlindReview(
+        workspace,
+        manifest,
+        draft,
+        { now },
+      );
+      const status = await promptThreadBlindReviewStatus(
+        workspace,
+        manifest.runId,
+        packet,
+      );
+      return blindResult(status, {
+        artifactPath: `runs/${manifest.runId}/blind-packet.json`,
+        artifactHash: hashCanonicalJson(packet),
+        nextActions: ["render-blind-packet", "record-blind-decision"],
+      });
+    }
+
+    if (command === "render-blind-packet") {
+      const packetPath = requiredFlag(flags, "packet");
+      const packet = await readBlindPacket(workspace, packetPath);
+      return {
+        status: "ok",
+        lifecycle: "blind_ready",
+        requiresHuman: true,
+        artifactPath: packetPath,
+        artifactHash: hashCanonicalJson(packet),
+        markdown: renderPromptThreadBlindPacket(packet),
+        nextActions: ["record-blind-decision"],
+        reservedSpendUsd: 0,
+        settledSpendUsd: 0,
+        completedCells: 0,
+        outstandingCells: 0,
+        outstandingPairTokens: packetPairTokens(packet),
+      };
+    }
+
+    if (command === "blind-status") {
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const packet = await readBlindPacket(
+        workspace,
+        requiredFlag(flags, "packet"),
+      );
+      const status = await promptThreadBlindReviewStatus(
+        workspace,
+        manifest.runId,
+        packet,
+      );
+      return blindResult(status, {
+        nextActions: status.outstandingPairTokens.length > 0
+          ? ["record-blind-decision"]
+          : ["unblind"],
+      });
+    }
+
+    if (command === "record-blind-decision") {
+      const blocked = requireInteractiveConfirmation(
+        dependencies.isTTY ?? Boolean(process.stdin.isTTY),
+        flags,
+      );
+      if (blocked) return blocked;
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const packet = await readBlindPacket(
+        workspace,
+        requiredFlag(flags, "packet"),
+      );
+      const decision = await recordPromptThreadBlindDecision(
+        workspace,
+        manifest.runId,
+        packet,
+        {
+          pairToken: requiredFlag(flags, "pair-token"),
+          choice: parseBlindChoice(requiredFlag(flags, "choice")),
+          reviewer: requiredFlag(flags, "reviewer"),
+          ...(flags.has("reasons") && {
+            reasons: parseJsonFlag<BlindDecisionReasons>(flags, "reasons"),
+          }),
+          now,
+        },
+      );
+      const status = await promptThreadBlindReviewStatus(
+        workspace,
+        manifest.runId,
+        packet,
+      );
+      return blindResult(status, {
+        artifactPath: `runs/${manifest.runId}/blind-decisions/${requiredFlag(flags, "pair-token")}.json`,
+        artifactHash: hashCanonicalJson(decision),
+        nextActions: status.outstandingPairTokens.length > 0
+          ? ["record-blind-decision"]
+          : ["unblind"],
+      });
+    }
+
+    if (command === "unblind") {
+      const blocked = requireInteractiveConfirmation(
+        dependencies.isTTY ?? Boolean(process.stdin.isTTY),
+        flags,
+      );
+      if (blocked) return blocked;
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const packet = await readBlindPacket(
+        workspace,
+        requiredFlag(flags, "packet"),
+      );
+      const key = await readUnblindingKey(
+        workspace,
+        requiredFlag(flags, "key"),
+      );
+      const review = await unblindPromptThreadReview(
+        workspace,
+        manifest.runId,
+        packet,
+        key,
+      );
+      return {
+        status: "ok",
+        lifecycle: "unblinded",
+        requiresHuman: false,
+        artifactPath: `runs/${manifest.runId}/blind-decisions.json`,
+        artifactHash: hashCanonicalJson(review.decisionsArtifact),
+        nextActions: ["report"],
+        reservedSpendUsd: 0,
+        settledSpendUsd: 0,
+        completedCells: 0,
+        outstandingCells: 0,
+        completedPairTokens: packetPairTokens(packet),
+        outstandingPairTokens: [],
+      };
+    }
+
+    if (command === "report") {
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const draft = await readEvidenceDraft(
+        workspace,
+        requiredFlag(flags, "draft"),
+      );
+      const caseValue = await readFrozenCase(
+        workspace,
+        requiredFlag(flags, "case"),
+      );
+      const review = await readUnblindedReview(workspace, manifest.runId);
+      const { report, markdown } = await buildPromptThreadReportFromRun(
+        workspace,
+        manifest,
+        draft,
+        review,
+        caseValue,
+        { now },
+      );
+      return {
+        status: "ok",
+        lifecycle: "reported",
+        requiresHuman: false,
+        artifactPath: `runs/${manifest.runId}/final-report.json`,
+        artifactHash: hashCanonicalJson(report),
+        markdown,
+        nextActions: ["purge"],
+        reservedSpendUsd: manifest.maximumSpendUsd,
+        settledSpendUsd: 0,
+        completedCells: manifest.cells.length,
+        outstandingCells: 0,
+      };
+    }
+
+    if (command === "purge") {
+      const blocked = requireInteractiveConfirmation(
+        dependencies.isTTY ?? Boolean(process.stdin.isTTY),
+        flags,
+      );
+      if (blocked) return blocked;
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      await purgeCompletedRun(workspace, manifest.runId);
+      return {
+        status: "ok",
+        lifecycle: "purged",
+        requiresHuman: false,
+        nextActions: [],
+        reservedSpendUsd: 0,
+        settledSpendUsd: 0,
+        completedCells: manifest.cells.length,
+        outstandingCells: 0,
+      };
     }
 
     const blocked = requireInteractiveConfirmation(dependencies.isTTY ?? Boolean(process.stdin.isTTY), flags);
@@ -481,6 +734,30 @@ function panelResult(
     completedCells: summary.completedCells,
     outstandingCells: summary.outstandingCells,
     ...(summary.reasonCode ? { guidance: summary.reasonCode } : {}),
+  };
+}
+
+function blindResult(
+  status: BlindReviewStatus,
+  metadata: {
+    artifactPath?: string;
+    artifactHash?: string;
+    nextActions: string[];
+  },
+): PromptThreadLabResult {
+  return {
+    status: "ok",
+    lifecycle: status.lifecycle,
+    requiresHuman: true,
+    ...(metadata.artifactPath ? { artifactPath: metadata.artifactPath } : {}),
+    ...(metadata.artifactHash ? { artifactHash: metadata.artifactHash } : {}),
+    nextActions: metadata.nextActions,
+    reservedSpendUsd: 0,
+    settledSpendUsd: 0,
+    completedCells: 0,
+    outstandingCells: 0,
+    completedPairTokens: status.completedPairTokens,
+    outstandingPairTokens: status.outstandingPairTokens,
   };
 }
 
@@ -752,6 +1029,77 @@ async function readPaidApproval(
   return artifact;
 }
 
+async function readBlindPacket(
+  workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+  path: string,
+): Promise<BlindPacketArtifact> {
+  const artifact = parseArtifact(await readArtifact(workspace, path));
+  if (artifact.kind !== "blind_packet") throw new Error("Expected a blind_packet artifact");
+  return artifact;
+}
+
+async function readUnblindingKey(
+  workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+  path: string,
+): Promise<UnblindingKeyArtifact> {
+  const artifact = parseArtifact(await readArtifact(workspace, path));
+  if (artifact.kind !== "unblinding_key") {
+    throw new Error("Expected an unblinding_key artifact");
+  }
+  return artifact;
+}
+
+async function readUnblindedReview(
+  workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+  runId: string,
+): Promise<PromptThreadUnblindedReview> {
+  const artifact = parseArtifact(await readArtifact(
+    workspace,
+    `runs/${runId}/blind-decisions.json`,
+  ));
+  if (artifact.kind !== "blind_decisions") {
+    throw new Error("Expected a blind_decisions artifact");
+  }
+  const privateValue = await readPrivateJson(
+    workspace,
+    `runs/${runId}/unblinded.json`,
+  );
+  if (
+    !privateValue
+    || typeof privateValue !== "object"
+    || Array.isArray(privateValue)
+    || !Array.isArray((privateValue as { revealedDecisions?: unknown }).revealedDecisions)
+  ) {
+    throw new Error("Expected complete private unblinding data");
+  }
+  const revealedDecisions = (
+    privateValue as { revealedDecisions: unknown[] }
+  ).revealedDecisions.map((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      throw new Error("Invalid revealed blind decision");
+    }
+    const decision = candidate as Record<string, unknown>;
+    if (
+      typeof decision.pairToken !== "string"
+      || typeof decision.choice !== "string"
+    ) {
+      throw new Error("Invalid revealed blind decision");
+    }
+    return {
+      pairToken: decision.pairToken,
+      choice: parseBlindChoice(decision.choice),
+      preferredArm: parsePreferredArm(decision.preferredArm),
+      ...(decision.reasons !== undefined && {
+        reasons: parseDecisionReasons(decision.reasons),
+      }),
+    };
+  });
+  return {
+    decisionsArtifact: artifact as BlindDecisionsArtifact,
+    revealedDecisions,
+  };
+}
+
 function parseCommand(argv: readonly string[]): {
   command: PromptThreadLabCommand;
   flags: Map<string, string>;
@@ -788,7 +1136,14 @@ function isCommand(value: string | undefined): value is PromptThreadLabCommand {
     || value === "panel-init"
     || value === "panel-status"
     || value === "panel-run"
-    || value === "panel-resume";
+    || value === "panel-resume"
+    || value === "blind-init"
+    || value === "render-blind-packet"
+    || value === "blind-status"
+    || value === "record-blind-decision"
+    || value === "unblind"
+    || value === "report"
+    || value === "purge";
 }
 
 function requiredFlag(flags: ReadonlyMap<string, string>, name: string): string {
@@ -825,6 +1180,57 @@ function parseZdrStatus(value: string): "enabled" | "disabled" | "unknown" {
 function parseVerdictScope(value: string): "full" | "cache_quality_only" {
   if (value === "full" || value === "cache_quality_only") return value;
   throw new Error("--verdict-scope must be full or cache_quality_only");
+}
+
+function parseBlindChoice(value: string): BlindChoice {
+  if (
+    value === "A"
+    || value === "B"
+    || value === "no_preference"
+    || value === "insufficient_evidence"
+  ) {
+    return value;
+  }
+  throw new Error("--choice must be A, B, no_preference, or insufficient_evidence");
+}
+
+function parsePreferredArm(value: unknown): "baseline" | "candidate" | null {
+  if (value === null || value === "baseline" || value === "candidate") {
+    return value;
+  }
+  throw new Error("Revealed blind decision has an invalid preferred arm");
+}
+
+function parseDecisionReasons(
+  value: unknown,
+): NonNullable<PromptThreadUnblindedReview["revealedDecisions"][number]["reasons"]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Revealed blind decision reasons must be an object");
+  }
+  const reasons: BlindDecisionReasons = {};
+  for (const key of ["strategy", "coherence", "evidenceUse", "watchability"] as const) {
+    const reason = (value as Record<string, unknown>)[key];
+    if (reason !== undefined) {
+      if (typeof reason !== "string") {
+        throw new Error(`Revealed blind decision reason ${key} must be a string`);
+      }
+      reasons[key] = reason;
+    }
+  }
+  return reasons;
+}
+
+function packetPairTokens(packet: BlindPacketArtifact): string[] {
+  return packet.pairs.map((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+      throw new Error("Blind packet contains an invalid pair");
+    }
+    const pairToken = (candidate as Record<string, unknown>).pairToken;
+    if (typeof pairToken !== "string") {
+      throw new Error("Blind packet pair has no token");
+    }
+    return pairToken;
+  });
 }
 
 if (import.meta.main) {

@@ -89,6 +89,7 @@ const dependencies = {
         turns: [],
         movementRecords: [],
         checkpoints: [],
+        selectionExplanations: [],
       },
       checkpoint: {
         protocolVersion: PROTOCOL_VERSION,

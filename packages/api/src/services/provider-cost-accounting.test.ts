@@ -69,6 +69,22 @@ describe("provider cost accounting", () => {
     });
   });
 
+  test("quotes approved Flex usage against the pinned Flex rate card", () => {
+    expect(quoteProviderUsageCeiling({
+      modelSnapshot: "gpt-5.4-nano-2026-03-17",
+      promptTokenCeiling: 1_000_000,
+      cachedPromptTokenCeiling: 250_000,
+      outputTokenCeiling: 100_000,
+      serviceTier: "flex",
+    })).toEqual({
+      status: "estimated",
+      estimatedCostUsd: 0.14,
+      estimatedCostMicrousd: 140_000,
+      pricingSourceId: "engine.OPENAI_FLEX_MODEL_PRICING",
+      rateCardVersion: "2026-07-04",
+    });
+  });
+
   test("makes an unknown model snapshot unavailable instead of guessing", () => {
     expect(quoteProviderUsageCeiling({
       modelSnapshot: "gpt-5.4-nano-unrecognized-snapshot",

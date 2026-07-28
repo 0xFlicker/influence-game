@@ -143,6 +143,9 @@ export async function runPromptThreadWorker(
       actorLineages: structuredClone(branchState.actorLineages),
       branchState: jsonValue(branchState),
       applied: generated.checkpoint.privateState,
+      selectionExplanation: jsonValue(
+        generated.capture.selectionExplanations.at(-1) ?? null,
+      ),
     },
   };
   parseArtifact(checkpoint);

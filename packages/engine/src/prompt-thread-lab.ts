@@ -127,6 +127,30 @@ export interface PromptThreadReplayCapture {
   turns: PromptThreadReplayTurn[];
   movementRecords: MingleTurnExecutionRecord[];
   checkpoints: ContinuationCheckpointArtifact[];
+  selectionExplanations: PromptThreadSelectionExplanation[];
+}
+
+export interface PromptThreadSelectionExplanation {
+  turn: number;
+  actorId: UUID;
+  promptClass: string;
+  laneSummary: {
+    protectedCount: number;
+    hotCount: number;
+    authorizedHistoryCount: number;
+    selectedHistoryCount: number;
+  };
+  budget: {
+    envelopeChars: number;
+    historyBudgetChars: number;
+    protectedChars: number;
+    hotChars: number;
+    historyChars: number;
+  };
+  items: Array<{
+    sourceId: string;
+    terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
+  }>;
 }
 
 export interface PromptThreadGeneratedCellInput {
@@ -177,11 +201,24 @@ export async function capturePromptThreadReplay(
   const logger = new TranscriptLogger(gameState);
   logger.seed(validated.transcriptReplay);
   const mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
+  const selectionExplanations: PromptThreadSelectionExplanation[] = [];
   const contextBuilder = new ContextBuilder(
     gameState,
     logger,
     mingleInbox,
     validated.roster.length,
+    undefined,
+    (observation) => {
+      if (observation.promptClass !== "ordinary_speech") return;
+      selectionExplanations.push({
+        turn: selectionExplanations.length + 1,
+        actorId: observation.actorId,
+        promptClass: observation.promptClass,
+        laneSummary: structuredClone(observation.laneSummary),
+        budget: structuredClone(observation.budget),
+        items: structuredClone(observation.explanation),
+      });
+    },
   );
   hydrateRevealedVoteLedger(
     contextBuilder,
@@ -386,6 +423,7 @@ export async function capturePromptThreadReplay(
     turns,
     movementRecords,
     checkpoints,
+    selectionExplanations,
   };
 }
 

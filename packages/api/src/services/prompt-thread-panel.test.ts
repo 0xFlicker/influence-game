@@ -160,6 +160,7 @@ function runner(
             turns: [],
             movementRecords: [],
             checkpoints: [],
+            selectionExplanations: [],
           },
           checkpoint: {
             protocolVersion: PROTOCOL_VERSION,
@@ -169,7 +170,15 @@ function runner(
             branchId: "fixture",
             cellId: "fixture",
             turn: value.turn,
-            privateState: {},
+            privateState: {
+              output: {
+                message: `generated turn ${value.turn}`,
+                noReply: false,
+                gotoRoomId: null,
+                gotoPlayerName: null,
+                coordinationReceipt: null,
+              },
+            },
           },
         };
       },

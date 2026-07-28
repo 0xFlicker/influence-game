@@ -1038,6 +1038,16 @@ export function explainRecallPlanSelection(params: CompileRecallPlanParams): Arr
   terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
 }> {
   const plan = compileRecallPlan(params);
+  return explainRecallPlanSelectionForPlan(params, plan);
+}
+
+export function explainRecallPlanSelectionForPlan(
+  params: CompileRecallPlanParams,
+  plan: RecallPlan,
+): Array<{
+  sourceId: string;
+  terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
+}> {
   const authorized = collectAuthorizedCandidates(params.transcript, params.actorId);
   const selected = new Set(
     plan.history.dialogueEvidence.map((entry) => entry.entrySequence),

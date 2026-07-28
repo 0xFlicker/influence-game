@@ -238,4 +238,29 @@ describe("prompt-thread lab CLI primitives", () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  it("keeps blind decisions, unblinding, and purge behind an interactive confirmation", async () => {
+    const { root } = await workspaceWithCase();
+    try {
+      for (const command of [
+        "record-blind-decision",
+        "unblind",
+        "purge",
+      ] as const) {
+        const result = await runPromptThreadLabCli([
+          command,
+          "--workspace",
+          root,
+          "--confirm",
+        ], { isTTY: false });
+        expect(result).toMatchObject({
+          status: "error",
+          errorCode: "interactive_tty_required",
+          requiresHuman: true,
+        });
+      }
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

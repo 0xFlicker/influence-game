@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   estimateCostForKnownModel,
+  estimateTierAwareOpenAICost,
   type PrivateDecisionTrace,
   type TokenUsage,
 } from "@influence/engine";
@@ -9,6 +10,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
 const PRICING_SOURCE_ID = "engine.MODEL_PRICING";
+const FLEX_PRICING_SOURCE_ID = "engine.OPENAI_FLEX_MODEL_PRICING";
 const RATE_CARD_VERSION = "2026-07-04";
 
 const PROVIDER_SNAPSHOT_RATE_CARDS = {
@@ -94,6 +96,7 @@ export interface ProviderUsageCeilingQuoteInput {
   promptTokenCeiling: number;
   cachedPromptTokenCeiling: number;
   outputTokenCeiling: number;
+  serviceTier?: "flex";
 }
 
 export type ProviderUsageCeilingQuote =
@@ -133,7 +136,7 @@ export function quoteProviderUsageCeiling(
     };
   }
 
-  const estimate = estimateCostForKnownModel({
+  const usage = {
     promptTokens: input.promptTokenCeiling,
     cachedTokens: input.cachedPromptTokenCeiling,
     completionTokens: input.outputTokenCeiling,
@@ -141,8 +144,11 @@ export function quoteProviderUsageCeiling(
     totalTokens: input.promptTokenCeiling + input.outputTokenCeiling,
     callCount: 1,
     emptyResponses: 0,
-  }, model);
-  if (!estimate) {
+  };
+  const totalCost = input.serviceTier === "flex"
+    ? estimateTierAwareOpenAICost({ flex: usage }, model)?.totalCost
+    : estimateCostForKnownModel(usage, model)?.totalCost;
+  if (totalCost === undefined) {
     return {
       status: "unavailable",
       pricingSourceId: null,
@@ -152,11 +158,29 @@ export function quoteProviderUsageCeiling(
 
   return {
     status: "estimated",
-    estimatedCostUsd: estimate.totalCost,
-    estimatedCostMicrousd: Math.max(0, Math.round(estimate.totalCost * 1_000_000)),
-    pricingSourceId: PRICING_SOURCE_ID,
+    estimatedCostUsd: totalCost,
+    estimatedCostMicrousd: Math.max(0, Math.round(totalCost * 1_000_000)),
+    pricingSourceId: input.serviceTier === "flex"
+      ? FLEX_PRICING_SOURCE_ID
+      : PRICING_SOURCE_ID,
     rateCardVersion: RATE_CARD_VERSION,
   };
+}
+
+export function estimateProviderUsageForSnapshot(input: {
+  modelSnapshot: string;
+  serviceTier: "flex";
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+}): ProviderUsageCeilingQuote {
+  return quoteProviderUsageCeiling({
+    modelSnapshot: input.modelSnapshot,
+    promptTokenCeiling: input.inputTokens,
+    cachedPromptTokenCeiling: input.cachedInputTokens,
+    outputTokenCeiling: input.outputTokens,
+    serviceTier: input.serviceTier,
+  });
 }
 
 function sha256(value: unknown): string {

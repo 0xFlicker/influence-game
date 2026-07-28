@@ -326,6 +326,7 @@ export async function createPromptThreadPanelManifest(
     promptTokenCeiling: input.estimatedInputTokensPerCall,
     cachedPromptTokenCeiling: 0,
     outputTokenCeiling: input.maximumOutputTokensPerCall,
+    serviceTier: input.requestedServiceTier,
   });
   if (quote.status !== "estimated" ||
       quote.estimatedCostUsd === undefined ||
@@ -697,7 +698,7 @@ export function structuralPanelStatus(
     outstandingCells: cells.length - completed.size,
     reservedSpendUsd: cells.reduce((sum, cell) => sum + cell.maxCostUsd, 0),
     settledSpendUsd: 0,
-    nextActions: next ? ["dispatch"] : [],
+    nextActions: next ? ["dispatch"] : ["blind-init"],
     requiresHuman: false,
   };
 }
