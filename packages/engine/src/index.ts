@@ -53,6 +53,7 @@ export type {
   CompileRecallPlanParams,
   ProjectedRecallCandidate,
   RecallBudgetEnvelope,
+  RecallPlanSelectionExplanation,
   RecallPromotionCaseInput,
   RecallPromotionCaseResult,
   RecallProtectedCoverageExpectation,

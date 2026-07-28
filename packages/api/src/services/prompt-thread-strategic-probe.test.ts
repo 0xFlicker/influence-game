@@ -136,9 +136,16 @@ function workerResult(
           hotChars: 2,
           historyChars: revision.arm === "candidate" ? 400 : 6,
         },
-        items: items[actorId as keyof typeof items].map((sequence) => ({
+        items: items[actorId as keyof typeof items].map((sequence, rankSlot) => ({
           sourceId: `worker-local:${sequence}`,
           entrySequence: Number(sequence),
+          rankSlot,
+          overlapCount: 3,
+          relevanceScore: 30.5,
+          prioritySpeakerMatch: false,
+          currentRoundMatch: false,
+          rankingScore: 30.5,
+          serializedChars: 200,
           terminalReason: selectedByActor[actorId]?.includes(sequence)
             ? "selected_history" as const
             : revision.arm === "baseline"
@@ -194,6 +201,16 @@ describe("prompt-thread strategic probes", () => {
       "history:distractor",
       "history:lyra",
     ]);
+    expect(result.probes
+      .find(({ arm, actorId }) => arm === "candidate" && actorId === "finn")
+      ?.evidence[0]).toMatchObject({
+        sourceId: "history:required",
+        rankSlot: 0,
+        overlapCount: 3,
+        relevanceScore: 30.5,
+        rankingScore: 30.5,
+        serializedChars: 200,
+      });
   });
 
   it("fails closed for invalid strategic probe worker results", async () => {

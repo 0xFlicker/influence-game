@@ -13,6 +13,7 @@ import {
 } from "@influence/prompt-lab-protocol";
 import type OpenAI from "openai";
 import { InfluenceAgent, type Personality } from "./agent";
+import type { RecallPlanSelectionExplanation } from "./context-recall-plan";
 import { ContextBuilder } from "./context-builder";
 import { GameState } from "./game-state";
 import type {
@@ -161,11 +162,7 @@ export interface PromptThreadSelectionExplanation {
     hotChars: number;
     historyChars: number;
   };
-  items: Array<{
-    sourceId: string;
-    entrySequence: number;
-    terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
-  }>;
+  items: RecallPlanSelectionExplanation[];
 }
 
 export interface PromptThreadStrategicProbe
@@ -269,7 +266,7 @@ export async function capturePromptThreadReplay(
           promptClass: observation.promptClass,
           laneSummary: structuredClone(observation.laneSummary),
           budget: structuredClone(observation.budget),
-          items: structuredClone(observation.explanation),
+          items: observation.explanation,
         });
         return;
       }
@@ -280,7 +277,7 @@ export async function capturePromptThreadReplay(
         promptClass: observation.promptClass,
         laneSummary: structuredClone(observation.laneSummary),
         budget: structuredClone(observation.budget),
-        items: structuredClone(observation.explanation),
+        items: observation.explanation,
       });
     },
   );

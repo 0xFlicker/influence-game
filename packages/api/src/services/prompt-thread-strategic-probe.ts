@@ -50,6 +50,24 @@ export interface PromptThreadStrategicProbeRevision {
 export type PromptThreadStrategicProbeEvidenceTotals =
   PromptThreadEvidenceTotals;
 
+type PromptThreadStrategicProbeItem =
+  PromptThreadIntentProbeWorkerResult["probe"]["probes"][number]["items"][number];
+type PromptThreadStrategicProbeDiagnostic = Pick<
+  PromptThreadStrategicProbeItem,
+  | "rankSlot"
+  | "overlapCount"
+  | "relevanceScore"
+  | "prioritySpeakerMatch"
+  | "currentRoundMatch"
+  | "rankingScore"
+  | "serializedChars"
+>;
+type PromptThreadStrategicProbeEvidence = PromptThreadStrategicProbeDiagnostic & {
+  sourceId: string;
+  label: PromptThreadEvidenceCitation["classification"];
+  reason: "selected" | "policy_disabled" | "zero_overlap" | "budget_exhausted";
+};
+
 export interface PromptThreadStrategicProbeLedger {
   arm: PromptThreadStrategicProbeArm;
   actorId: string;
@@ -68,11 +86,7 @@ export interface PromptThreadStrategicProbeLedger {
     hotChars: number;
     historyChars: number;
   };
-  evidence: Array<{
-    sourceId: string;
-    label: PromptThreadEvidenceCitation["classification"];
-    reason: "selected" | "policy_disabled" | "zero_overlap" | "budget_exhausted";
-  }>;
+  evidence: PromptThreadStrategicProbeEvidence[];
 }
 
 export interface PromptThreadStrategicProbeComparison {
@@ -236,7 +250,12 @@ export function renderPromptThreadStrategicProbeMarkdown(
       probe.evidence.length === 0
         ? "none"
         : probe.evidence
-            .map((item) => `${item.sourceId}:${item.label}:${item.reason}`)
+            .map((item) => (
+              `${item.sourceId}:${item.label}:${item.reason}` +
+              ` (rank=${item.rankSlot ?? "none"}, ` +
+              `score=${item.rankingScore.toFixed(1)}, ` +
+              `chars=${item.serializedChars})`
+            ))
             .join("<br>"),
     ].join(" | ") + " |"),
     "",
@@ -281,32 +300,40 @@ function validateProbeResult(
 }
 
 function evidenceForProbe(
-  items: readonly {
-    sourceId: string;
-    entrySequence: number;
-    terminalReason:
-      | "selected_history"
-      | "history_disabled"
-      | "seed_miss"
-      | "budget_excluded";
-  }[],
+  items: readonly PromptThreadStrategicProbeItem[],
   citations: readonly PromptThreadEvidenceCitation[],
   sourceIds: ReadonlyMap<string, string>,
 ): PromptThreadStrategicProbeLedger["evidence"] {
-  const reasons = new Map<string, PromptThreadStrategicProbeLedger["evidence"][number]["reason"]>();
+  const explanations = new Map<
+    string,
+    Omit<PromptThreadStrategicProbeEvidence, "sourceId" | "label">
+  >();
+  const citationSourceIds = new Set(
+    citations.map((citation) => citation.sourceId),
+  );
   for (const item of items) {
     const stableSourceId = sourceIds.get(String(item.entrySequence));
     if (!stableSourceId) {
       throw new Error("Strategic probe selection source is unavailable in the case");
     }
-    reasons.set(
+    if (!citationSourceIds.has(stableSourceId)) continue;
+    explanations.set(
       stableSourceId,
-      promptThreadSelectionReason(item.terminalReason),
+      {
+        reason: promptThreadSelectionReason(item.terminalReason),
+        rankSlot: item.rankSlot,
+        overlapCount: item.overlapCount,
+        relevanceScore: item.relevanceScore,
+        prioritySpeakerMatch: item.prioritySpeakerMatch,
+        currentRoundMatch: item.currentRoundMatch,
+        rankingScore: item.rankingScore,
+        serializedChars: item.serializedChars,
+      },
     );
   }
   return citations.map((citation) => {
-    const reason = reasons.get(citation.sourceId);
-    if (!reason) {
+    const explanation = explanations.get(citation.sourceId);
+    if (!explanation) {
       throw new Error(
         `Approved evidence ${citation.sourceId} is unavailable for strategic probe`,
       );
@@ -314,7 +341,7 @@ function evidenceForProbe(
     return {
       sourceId: citation.sourceId,
       label: citation.classification,
-      reason,
+      ...explanation,
     };
   });
 }

@@ -154,6 +154,13 @@ The command writes `probes/strategic-intent-comparison.json` and Markdown. It ma
 - `not_exercised` when both policies allocate no history;
 - `inconclusive` when the evidence card contains no scored applicable items.
 
+For every approved citation, the probe also records the rank slot, lexical
+relevance score, bounded combined ranking score, explicit-target-speaker match,
+current-round match, serialized item cost, and terminal reason. These
+diagnostics contain stable source IDs and numbers, not dialogue. Use them to
+distinguish ranking misses from items that simply cannot fit the approved
+reserve.
+
 This proves selection direction for the two real strategic contexts. It does not prove that a model uses the selected evidence well; that requires a separately approved generated-intent or threaded behavior experiment.
 
 ## Terminal workflow

@@ -147,6 +147,13 @@ function validIntentProbe(): PromptThreadMingleIntentProbeResult {
       items: [{
         sourceId: "transcript:1",
         entrySequence: 1,
+        rankSlot: 0,
+        overlapCount: 3,
+        relevanceScore: 30.5,
+        prioritySpeakerMatch: true,
+        currentRoundMatch: true,
+        rankingScore: 255.5,
+        serializedChars: 200,
         terminalReason: "selected_history" as const,
       }],
     })),

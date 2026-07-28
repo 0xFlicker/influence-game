@@ -300,6 +300,15 @@ Agent prompts no longer carry unbounded full public transcripts or complete hist
 
 Historical eligibility is fail-closed on modern identity: Mingle rows need `speakerPlayerId` and `audiencePlayerIds`; speaker or audience must match the actor. Display-name-only legacy rows do not become private recall during replay. Official huddle outcomes enter the protected lane only when `participantPlayerIds` (copied at outcome creation, or recovered from matching completed-session `speakerIds` on hydrate) authorize the actor. Participant snapshots never leave server-private surfaces (member-safe projections omit them).
 
+History ranking first rejects zero-overlap dialogue, then combines lexical overlap
+with two bounded signals: the current round and a living speaker explicitly named
+by Strategy Thread `targetPosture` (falling back to the next probe/reflection
+threats only when no explicit target exists). For the same current-round target
+speaker, the latest statement wins. Evaluation-only selection explanations expose
+rank slot, lexical and combined scores, the two match flags, serialized item cost,
+and terminal reason without including dialogue. The structural Recall Plan receipt
+remains content-free.
+
 Retrieved dialogue is **evidence, never authority**: it cannot override Board Contract, permissions, tools, or instructions. The plan must not imply that excluded private material exists.
 
 Format ballot context follows the same authority split. ContextBuilder may include only the acting participant's rule-authorized knowledge; it must not promote the operator-facing `acceptedBallots` ledger into participant recall. Canonical operator transports expose sanitized mappings immediately after acceptance, while named viewer presentation remains resolution-gated through `ballotPresentation.rollCall`.
@@ -326,7 +335,7 @@ Prompt-class call sites: ordinary Lobby/Mingle/huddle/endgame speech → `ordina
 
 ### Producer prompt scenario replay
 
-`packages/engine/src/prompt-scenario-lab.ts` replays one frozen, producer-only decision snapshot through a real public `InfluenceAgent` method and a deterministic fake provider. It is the structural-fixture seam for comparing context-builder revisions without paying for another complete game. A private scenario pack may contain the actor-visible `PhaseContext`, continuity snapshot, and transcript rows from a real game; do not commit or export that pack.
+`packages/engine/src/prompt-scenario-lab.ts` replays one frozen, producer-only decision snapshot through a real public `InfluenceAgent` method and a deterministic fake provider. It is the structural-fixture seam for comparing context-builder revisions without paying for another complete game. A local scenario pack may contain the actor-visible `PhaseContext`, continuity snapshot, and transcript rows from a real game; keep that source pack local unless the evaluation explicitly calls for a durable fixture.
 
 The runner emits only a structural report: rendered prompt characters/tokens, Recall Plan receipt, a redacted request fingerprint, and renderer-overhead characters relative to the Recall Plan lanes. Scenario reports require producer-minted opaque keys; they never return prompt text, dialogue, player/game IDs, actor lanes, or fake model output. Current action adapters cover `vote` and `plea`; add adapters for more real decision surfaces before using the lab as a model panel. Run its deterministic suite with:
 
@@ -337,7 +346,7 @@ bun test packages/engine/src/__tests__/prompt-scenario-lab.test.ts
 Use three evaluation levels without pretending they are interchangeable:
 
 1. Structural fixtures prove deterministic budgets, authority lanes, renderer structure, and replay mechanics.
-2. The local [real-thread context evaluator](prompt-thread-context-evaluation.md) materializes one authorized durable thread and attests two isolated policy revisions. Its `strategic-probe` makes zero provider calls and proves only selection direction for the two real Mingle-intent contexts, not whether a model uses that evidence or changes behavior; the separately approved panel measures provider/cache evidence and ends in blind human review. Every verdict is case-specific.
+2. The local [real-thread context evaluator](prompt-thread-context-evaluation.md) materializes one authorized durable thread and attests two isolated policy revisions. Its `strategic-probe` makes zero provider calls and proves only selection direction for the two real Mingle-intent contexts, not whether a model uses that evidence or changes behavior. The probe records content-free rank, score, match-flag, serialized-cost, and terminal-reason diagnostics for approved citations; the separately approved panel measures provider/cache evidence and ends in blind human review. Every verdict is case-specific.
 3. A bounded full-game simulation validates cross-phase integration, long-running strategy, pacing, and watchability. It does not isolate one context-policy cause.
 
 Keep real-source ingestion, approval, and paid-run authority outside the engine fixture runner. Ordered same-agent replay is required before interpreting cache reuse. No provider dispatch is allowed during source validation, tests, builds, status, or report assembly.

@@ -81,7 +81,9 @@
  *   question remains, use the local targeted workflow in
  *   `docs/prompt-thread-context-evaluation.md` before paying for another whole game.
  *   Its `strategic-probe` makes zero provider calls and proves only selection direction
- *   for the two real Mingle-intent contexts, not model use or behavior.
+ *   for the two real Mingle-intent contexts, not model use or behavior. The probe's
+ *   evaluation-only output includes content-free rank, score, target/current-round
+ *   match, serialized-cost, and terminal-reason diagnostics.
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.
