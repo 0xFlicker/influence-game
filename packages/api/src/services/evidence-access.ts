@@ -89,9 +89,10 @@ async function auditEvidenceManifestRead(
     });
 }
 
-export async function readEvidenceManifest(
+async function readEvidenceManifestInternal(
   db: DrizzleDB,
   request: EvidenceManifestReadRequest,
+  options: { audit: boolean },
 ): Promise<EvidenceManifestReadResult> {
   const conditions = request.gameId
     ? and(
@@ -110,25 +111,29 @@ export async function readEvidenceManifest(
   }
 
   if (!hasPrivateEvidenceAccess(request.accessor)) {
-    await auditEvidenceManifestRead(db, {
-      manifestId: row.id,
-      gameId: row.gameId,
-      accessor: request.accessor,
-      purpose: request.purpose,
-      outcome: "denied",
-    });
+    if (options.audit) {
+      await auditEvidenceManifestRead(db, {
+        manifestId: row.id,
+        gameId: row.gameId,
+        accessor: request.accessor,
+        purpose: request.purpose,
+        outcome: "denied",
+      });
+    }
     return { ok: false, status: "denied", error: "Insufficient evidence permissions" };
   }
 
   const status = unavailableStatus(row);
   if (status) {
-    await auditEvidenceManifestRead(db, {
-      manifestId: row.id,
-      gameId: row.gameId,
-      accessor: request.accessor,
-      purpose: request.purpose,
-      outcome: status,
-    });
+    if (options.audit) {
+      await auditEvidenceManifestRead(db, {
+        manifestId: row.id,
+        gameId: row.gameId,
+        accessor: request.accessor,
+        purpose: request.purpose,
+        outcome: status,
+      });
+    }
     return {
       ok: false,
       status,
@@ -146,13 +151,15 @@ export async function readEvidenceManifest(
     };
   }
 
-  await auditEvidenceManifestRead(db, {
-    manifestId: row.id,
-    gameId: row.gameId,
-    accessor: request.accessor,
-    purpose: request.purpose,
-    outcome: "allowed",
-  });
+  if (options.audit) {
+    await auditEvidenceManifestRead(db, {
+      manifestId: row.id,
+      gameId: row.gameId,
+      accessor: request.accessor,
+      purpose: request.purpose,
+      outcome: "allowed",
+    });
+  }
 
   return {
     ok: true,
@@ -174,4 +181,26 @@ export async function readEvidenceManifest(
       createdAt: row.createdAt,
     },
   };
+}
+
+export async function readEvidenceManifest(
+  db: DrizzleDB,
+  request: EvidenceManifestReadRequest,
+): Promise<EvidenceManifestReadResult> {
+  return readEvidenceManifestInternal(db, request, { audit: true });
+}
+
+/**
+ * Producer-authorized read seam for immutable experiment materialization.
+ *
+ * Unlike the ordinary evidence read, this performs no database audit insert:
+ * the caller records a structural access receipt in the external private
+ * workspace instead. Authorization, expiry, redaction, and storage-pointer
+ * checks are otherwise identical.
+ */
+export async function readEvidenceManifestForExperiment(
+  db: DrizzleDB,
+  request: EvidenceManifestReadRequest,
+): Promise<EvidenceManifestReadResult> {
+  return readEvidenceManifestInternal(db, request, { audit: false });
 }
