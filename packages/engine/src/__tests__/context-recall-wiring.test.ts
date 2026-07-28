@@ -8,6 +8,7 @@ import { InfluenceAgent } from "../agent";
 import { ContextBuilder } from "../context-builder";
 import {
   buildRecallEvidenceBoundaryKey,
+  compileRecallPlan,
   emptyRecallContinuitySnapshot,
   serializeRecallPlan,
 } from "../context-recall-plan";
@@ -483,6 +484,28 @@ describe("U3 decision-log cache break and selected-reference cache", () => {
     expect(serializeRecallPlan(c)).toBe(serializeRecallPlan(a));
     expect(c.receipt.promptClass).toBe("strategic_decision");
     expect(c.protected.boardContract.selfId).toBe(aliceId);
+  });
+
+  it("uses an injected recall compiler without changing the caller authorization inputs", () => {
+    const calls: Array<{ actorId: string; promptClass: string }> = [];
+    const variantBuilder = new ContextBuilder(gs, logger, new Map(), 3, {
+      id: "candidate-history-policy",
+      protocolVersion: "1",
+      policyDigest: "sha256:candidate",
+      compile(params) {
+        calls.push({ actorId: params.actorId, promptClass: params.promptClass });
+        return compileRecallPlan(params);
+      },
+    });
+    const plan = variantBuilder.compileRecallPlan({
+      agentId: aliceId,
+      promptClass: "strategic_decision",
+      continuity: makeContinuity(),
+      phase: Phase.VOTE,
+      phaseContext: phaseContextFor(aliceId, Phase.VOTE),
+    });
+    expect(calls).toEqual([{ actorId: aliceId, promptClass: "strategic_decision" }]);
+    expect(plan.actorId).toBe(aliceId);
   });
 
   it("ordinary_speech plan stays archive-free after strategic decision log", async () => {

@@ -10,7 +10,8 @@ import {
 } from "./alliance-huddle-outcome";
 import {
   buildRecallEvidenceBoundaryKey,
-  compileRecallPlan,
+  defaultRecallPlanCompiler,
+  type RecallPlanCompiler,
   emptyRecallContinuitySnapshot,
 } from "./context-recall-plan";
 import type { GameState } from "./game-state";
@@ -80,6 +81,7 @@ export class ContextBuilder {
     private readonly logger: TranscriptLogger,
     private readonly mingleInbox: Map<UUID, Array<{ from: string; text: string }>>,
     private readonly totalPlayerCount: number,
+    private readonly recallPlanCompiler: RecallPlanCompiler = defaultRecallPlanCompiler,
   ) {}
 
   /** Drop process-local recall selection cache (tests / simulated restart). */
@@ -896,7 +898,7 @@ export class ContextBuilder {
       return structuredClone(cached.plan);
     }
 
-    const plan = compileRecallPlan({
+    const plan = this.recallPlanCompiler.compile({
       actorId: params.agentId,
       promptClass: params.promptClass,
       continuity: params.continuity,

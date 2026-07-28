@@ -477,6 +477,14 @@ export async function abortRun(
   ));
 }
 
+/** Used by the broker after a durable `started` call cannot produce a complete response. */
+export async function invalidateRunUnderLock(
+  lockValue: RunMutationLock,
+  reasonCode: string,
+): Promise<StructuralRunSummary> {
+  return cleanupUnusableRun(lockValue, "invalidated", reasonCode);
+}
+
 export async function purgeCompletedRun(
   workspace: PrivateWorkspace,
   runId: string,

@@ -870,6 +870,24 @@ export interface CompileRecallPlanParams {
 }
 
 /**
+ * Swappable deterministic policy seam for revision-isolated prompt evaluation.
+ * Implementations must preserve the authorization contract of `compileRecallPlan`.
+ */
+export interface RecallPlanCompiler {
+  readonly id: string;
+  readonly protocolVersion: string;
+  readonly policyDigest: string;
+  compile(params: CompileRecallPlanParams): RecallPlan;
+}
+
+export const defaultRecallPlanCompiler: RecallPlanCompiler = {
+  id: "production",
+  protocolVersion: "1",
+  policyDigest: "compileRecallPlan/v1",
+  compile: compileRecallPlan,
+};
+
+/**
  * Pure Recall Plan compiler.
  * Given identical authorized inputs, produces a byte-stable plan, budget ledger, and receipt.
  */
@@ -1012,6 +1030,41 @@ export function compileRecallPlan(params: CompileRecallPlanParams): RecallPlan {
 /** Normalize a plan to a stable JSON string for byte-stability assertions. */
 export function serializeRecallPlan(plan: RecallPlan): string {
   return JSON.stringify(plan);
+}
+
+/** Private-lab-only selection explanation. Do not serialize this into RecallPlanReceipt. */
+export function explainRecallPlanSelection(params: CompileRecallPlanParams): Array<{
+  sourceId: string;
+  terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
+}> {
+  const plan = compileRecallPlan(params);
+  const authorized = collectAuthorizedCandidates(params.transcript, params.actorId);
+  const selected = new Set(
+    plan.history.dialogueEvidence.map((entry) => entry.entrySequence),
+  );
+  if (params.promptClass === "ordinary_speech" || plan.budget.historyBudgetChars === 0) {
+    return authorized.map((entry) => ({
+      sourceId: `transcript:${entry.entrySequence}`,
+      terminalReason: "history_disabled" as const,
+    }));
+  }
+  const seeds = compileRecallSeedTerms({
+    promptClass: params.promptClass,
+    phaseContext: params.phaseContext,
+    continuity: params.continuity,
+    huddleOutcomes: plan.protected.huddleOutcomes,
+  });
+  const rankedIds = new Set(
+    scoreAndRankCandidates(authorized, seeds).map((entry) => entry.entrySequence),
+  );
+  return authorized.map((entry) => ({
+    sourceId: `transcript:${entry.entrySequence}`,
+    terminalReason: selected.has(entry.entrySequence)
+      ? "selected_history" as const
+      : rankedIds.has(entry.entrySequence)
+        ? "budget_excluded" as const
+        : "seed_miss" as const,
+  }));
 }
 
 // ---------------------------------------------------------------------------
