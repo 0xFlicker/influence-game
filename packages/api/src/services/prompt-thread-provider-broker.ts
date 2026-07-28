@@ -56,6 +56,10 @@ interface PreparedBrokerRequest {
 }
 
 export type PromptThreadProviderDispatch = (request: Record<string, unknown>) => Promise<unknown>;
+export interface PromptThreadBrokerPolicy {
+  model?: string;
+  requestKind?: "panel" | "curator";
+}
 
 export class PromptThreadBrokerError extends Error {
   constructor(readonly code: "unplanned_cell" | "out_of_order" | "duplicate_cell" | "attempt_cap" | "model_drift" | "invalid_response" | "invalid_request" | "cache_contaminated" | "tier_mismatch" | "spend_cap") {
@@ -73,8 +77,14 @@ export class PromptThreadProviderBroker {
   private nextOrdinal = 1;
   private readonly maxSpendUsd: number;
   private reservedSpendUsd = 0;
+  private readonly model: string;
+  private readonly requestKind: "panel" | "curator";
 
-  constructor(cells: readonly PromptThreadBrokerCell[], maxSpendUsd = Number.POSITIVE_INFINITY) {
+  constructor(
+    cells: readonly PromptThreadBrokerCell[],
+    maxSpendUsd = Number.POSITIVE_INFINITY,
+    policy: PromptThreadBrokerPolicy = {},
+  ) {
     if (cells.length > PROMPT_THREAD_MAX_PROVIDER_ATTEMPTS) {
       throw new PromptThreadBrokerError("attempt_cap");
     }
@@ -84,11 +94,13 @@ export class PromptThreadProviderBroker {
       this.reservedSpendUsd += cell.maxCostUsd ?? 0;
     }
     this.maxSpendUsd = maxSpendUsd;
+    this.model = policy.model ?? PROMPT_THREAD_PANEL_MODEL;
+    this.requestKind = policy.requestKind ?? "panel";
     if (this.reservedSpendUsd > maxSpendUsd) throw new PromptThreadBrokerError("spend_cap");
   }
 
   prepare(request: PromptThreadBrokerRequest): PreparedBrokerRequest {
-    if (request.model !== PROMPT_THREAD_PANEL_MODEL) throw new PromptThreadBrokerError("model_drift");
+    if (request.model !== this.model) throw new PromptThreadBrokerError("model_drift");
     const cell = this.cells.get(request.cellId);
     if (!cell) throw new PromptThreadBrokerError("unplanned_cell");
     if (this.dispatched.has(cell.cellId)) throw new PromptThreadBrokerError("duplicate_cell");
@@ -96,7 +108,9 @@ export class PromptThreadProviderBroker {
     if (this.dispatched.size >= PROMPT_THREAD_MAX_PROVIDER_ATTEMPTS) {
       throw new PromptThreadBrokerError("attempt_cap");
     }
-    const injected = injectCacheMarker(request.request);
+    const injected = this.requestKind === "panel"
+      ? injectCacheMarker(request.request)
+      : structuredClone(request.request);
     const transformed = cell.controlReturnTurn ? applyCacheControl(injected) : injected;
     return {
       cell,
@@ -140,7 +154,10 @@ export class PromptThreadProviderBroker {
 
   async dispatch(lock: RunMutationLock, input: PromptThreadBrokerRequest, send: PromptThreadProviderDispatch): Promise<{ response: unknown; receipt: PromptThreadBrokerReceipt }> {
     const prepared = this.prepare(input);
-    validateFinalRequest(prepared.cell, prepared.request);
+    validateFinalRequest(prepared.cell, prepared.request, {
+      model: this.model,
+      requestKind: this.requestKind,
+    });
     const base = `runs/${lock.runId}/cells/${prepared.cell.cellId}`;
     const preparedArtifact = {
       protocolVersion: PROTOCOL_VERSION,
@@ -216,14 +233,32 @@ export function createPromptThreadOpenAIClient(apiKey: string): OpenAI {
   return new OpenAI({ apiKey, maxRetries: 0 });
 }
 
-function validateFinalRequest(cell: PromptThreadBrokerCell, request: Record<string, unknown>): void {
-  if (typeof request.input !== "string" || request.input.length < 1_024) {
+function validateFinalRequest(
+  cell: PromptThreadBrokerCell,
+  request: Record<string, unknown>,
+  policy: Required<PromptThreadBrokerPolicy>,
+): void {
+  if (typeof request.input !== "string") {
     throw new PromptThreadBrokerError("invalid_request");
   }
-  if (request.model !== PROMPT_THREAD_PANEL_MODEL || request.prompt_cache_options !== undefined) {
+  if (request.model !== policy.model || request.prompt_cache_options !== undefined) {
     throw new PromptThreadBrokerError("invalid_request");
   }
-  if (request.prompt_cache_key !== cell.lineage) throw new PromptThreadBrokerError("invalid_request");
+  if (policy.requestKind === "curator") {
+    const text = asRecord(request.text);
+    const format = asRecord(text?.format);
+    if (
+      request.input.length === 0 ||
+      format?.type !== "json_schema" ||
+      format.strict !== true
+    ) {
+      throw new PromptThreadBrokerError("invalid_request");
+    }
+    return;
+  }
+  if (request.input.length < 1_024 || request.prompt_cache_key !== cell.lineage) {
+    throw new PromptThreadBrokerError("invalid_request");
+  }
   if (request.tools !== undefined || request.tool_choice !== undefined) {
     throw new PromptThreadBrokerError("invalid_request");
   }

@@ -89,4 +89,41 @@ describe("PromptThreadProviderBroker", () => {
       expect(result.receipt.responseId).toBe("response-1");
     });
   });
+
+  it("brokers a strict curator Responses request without panel cache controls", async () => {
+    const root = await mkdtemp(join(tmpdir(), "prompt-thread-curator-broker-"));
+    const workspace = await createPrivateWorkspace(root, { gitWorktreeRoots: [] });
+    const broker = new PromptThreadProviderBroker([{
+      cellId: "curator-1",
+      ordinal: 1,
+      actorId: "finn",
+      lineage: "",
+      requestedServiceTier: "flex",
+      maxCostUsd: 0.1,
+    }], 0.1, {
+      model: "frontier-curator",
+      requestKind: "curator",
+    });
+    await withRunMutationLock(workspace, "curator-run", async (lock) => {
+      const result = await broker.dispatch(lock, {
+        cellId: "curator-1",
+        model: "frontier-curator",
+        request: {
+          model: "frontier-curator",
+          input: "{}",
+          service_tier: "flex",
+          text: { format: { type: "json_schema", strict: true } },
+        },
+      }, async (request) => ({
+        id: "curator-response",
+        status: "completed",
+        service_tier: "flex",
+        output_text: "{\"items\":[]}",
+        echoedCacheKey: request.prompt_cache_key,
+      }));
+      expect(result.response).toMatchObject({
+        echoedCacheKey: undefined,
+      });
+    });
+  });
 });

@@ -99,7 +99,7 @@ export async function createPrivateWorkspace(
   }
   for (const directory of [".locks", ".tmp", "cases", "runs", "summaries"]) {
     const path = join(resolvedRoot, directory);
-    await mkdir(path, { mode: 0o700 });
+    await mkdir(path, { recursive: true, mode: 0o700 });
     await chmod(path, 0o700);
   }
   await fsyncDirectory(resolvedRoot);
@@ -148,6 +148,20 @@ export async function atomicWriteJson(
   value: unknown,
   options: { overwrite?: boolean } = {},
 ): Promise<string> {
+  return atomicWritePrivateText(
+    lockValue,
+    relativePath,
+    canonicalJson(value),
+    options,
+  );
+}
+
+export async function atomicWritePrivateText(
+  lockValue: RunMutationLock,
+  relativePath: string,
+  value: string,
+  options: { overwrite?: boolean } = {},
+): Promise<string> {
   const lock = requireActiveLock(lockValue);
   const target = await resolveArtifactPath(lock.workspace, relativePath, {
     createParents: true,
@@ -159,7 +173,7 @@ export async function atomicWriteJson(
   const handle = await open(temporary, "wx", 0o600);
   let renamed = false;
   try {
-    await handle.writeFile(canonicalJson(value), "utf8");
+    await handle.writeFile(value, "utf8");
     await handle.sync();
     await handle.close();
     await chmod(temporary, 0o600);
@@ -193,6 +207,32 @@ export async function readArtifact(
     );
   }
   return parseArtifact(decoded);
+}
+
+export async function readArtifactIfExists(
+  workspace: PrivateWorkspace,
+  relativePath: string,
+): Promise<ArtifactEnvelope | null> {
+  const target = await resolveArtifactPath(workspace, relativePath);
+  if (!await pathExists(target)) return null;
+  return readArtifact(workspace, relativePath);
+}
+
+export async function readPrivateJson(
+  workspace: PrivateWorkspace,
+  relativePath: string,
+): Promise<unknown> {
+  const target = await resolveArtifactPath(workspace, relativePath);
+  await assertPrivateRegularFile(target);
+  try {
+    return JSON.parse(await readFile(target, "utf8")) as unknown;
+  } catch (error) {
+    throw new Error(
+      `Invalid JSON in private file ${relativePath}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
 }
 
 export async function withRunMutationLock<T>(

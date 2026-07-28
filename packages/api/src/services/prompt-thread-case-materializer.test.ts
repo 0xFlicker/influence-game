@@ -366,6 +366,15 @@ describe("prompt-thread case materializer", () => {
         ],
       }],
     });
+    const historyCatalog = (
+      result.caseArtifact.privateData.startingState as { historyCatalog: Array<{
+        sourceId?: unknown;
+      }> }
+    ).historyCatalog;
+    expect(historyCatalog.every(({ sourceId }) => (
+      typeof sourceId === "string" &&
+      /^transcript:\d+:[a-f0-9]{16}$/u.test(sourceId)
+    ))).toBe(true);
     expect(result.casePath).toEndWith("/case.json");
     expect(result.sourceReceiptPath).toEndWith("/source-receipt.json");
     expect(await getSupportedRecovery(db, fixture.gameId)).toEqual({

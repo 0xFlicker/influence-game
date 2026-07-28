@@ -233,7 +233,10 @@ function buildHistoryCatalog(
 ): JsonValue[] {
   const selected = new Set(actorIds);
   const catalog: JsonValue[] = [];
-  for (const entry of transcriptReplay) {
+  for (const [sourceIndex, entry] of transcriptReplay.entries()) {
+    const sourceId = `transcript:${sourceIndex + 1}:${
+      hashCanonicalJson(toJsonValue(entry)).slice("sha256:".length, "sha256:".length + 16)
+    }`;
     const speakerId = typeof entry.speakerPlayerId === "string"
       ? entry.speakerPlayerId
       : null;
@@ -244,6 +247,7 @@ function buildHistoryCatalog(
     if (entry.scope === "system") {
       if (entry.dialogueKind !== "system_phase_banner") continue;
       catalog.push(toJsonValue({
+        sourceId,
         lane: "prelude",
         sequence: entry.entrySequence ?? null,
         round: entry.round,
@@ -266,6 +270,7 @@ function buildHistoryCatalog(
       continue;
     }
     catalog.push(toJsonValue({
+      sourceId,
       lane: "history",
       sequence: entry.entrySequence ?? null,
       round: entry.round,
