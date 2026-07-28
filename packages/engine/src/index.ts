@@ -365,6 +365,13 @@ export {
 } from "./game-runner";
 export { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";
 export type { RecallPlanReceiptAggregateSnapshot } from "./prompt-reuse";
+export { comparePromptScenarioReports, runPromptScenario } from "./prompt-scenario-lab";
+export type {
+  PromptScenario,
+  PromptScenarioAction,
+  PromptScenarioComparison,
+  PromptScenarioStructuralReport,
+} from "./prompt-scenario-lab";
 export type { LaunchFormatId } from "./formats";
 export { LAUNCH_FORMAT_IDS, isLaunchFormatId, displayNameForFormat } from "./formats";
 export {

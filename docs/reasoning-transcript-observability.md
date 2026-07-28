@@ -324,6 +324,18 @@ Responses calls also provide a stable, hashed game-and-actor cache key. GPT-5.6+
 
 Prompt-class call sites: ordinary Lobby/Mingle/huddle/endgame speech → `ordinary_speech`; votes, powers, councils, format choices, and other non-speech strategy decisions → `strategic_decision`; DiaryRoom Strategy Reflection → `strategic_reflection`. Decision logs advance the next eligible strategic evidence version only; they never call the model or mutate the Strategy Thread outside reflection.
 
+### Producer prompt scenario replay
+
+`packages/engine/src/prompt-scenario-lab.ts` replays one frozen, producer-only decision snapshot through a real public `InfluenceAgent` method and a deterministic fake provider. It is the first benchmark seam for comparing context-builder revisions without paying for another complete game. A private scenario pack may contain the actor-visible `PhaseContext`, continuity snapshot, and transcript rows from a real game; do not commit or export that pack.
+
+The runner emits only a structural report: rendered prompt characters/tokens, Recall Plan receipt, a redacted request fingerprint, and renderer-overhead characters relative to the Recall Plan lanes. Scenario reports require producer-minted opaque keys; they never return prompt text, dialogue, player/game IDs, actor lanes, or fake model output. Current action adapters cover `vote` and `plea`; add adapters for more real decision surfaces before using the lab as a model panel. Run its deterministic suite with:
+
+```bash
+bun test packages/engine/src/__tests__/prompt-scenario-lab.test.ts
+```
+
+Later producer tooling may extract private scenario packs from durable traces/storage and send a selected panel to local or hosted models. Keep that ingestion and paid-run authority outside the engine runner; add ordered same-agent replay before interpreting cache reuse, then cache baseline panel results by scenario fingerprint, context-build revision, model, and seed.
+
 ### Replay / hydration contract
 
 - Modern transcript rows that keep `entrySequence`, `speakerPlayerId`, and `audiencePlayerIds` through serialize→hydrate must recompile the same normalized plan and budget ledger for the same actor/prompt class/continuity.
