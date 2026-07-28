@@ -28,6 +28,7 @@
     "check": "bun run typecheck && bun run lint"
   },
   "dependencies": {
+    "@influence/prompt-lab-protocol": "workspace:*",
     "openai": "^4.77.0",
     "rxjs": "^7.8.2",
     "xstate": "^5.20.1"
