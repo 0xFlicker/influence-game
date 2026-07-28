@@ -31,6 +31,10 @@ import {
   withRunMutationLock,
   type PrivateWorkspace,
 } from "./prompt-thread-workspace.js";
+import {
+  promptThreadSelectionReason,
+  promptThreadSourceIdBySequence,
+} from "./prompt-thread-evidence-mapping.js";
 import type {
   PromptThreadPanelCell,
   PromptThreadPanelManifest,
@@ -578,7 +582,7 @@ async function loadReportCells(
   evidenceCard: PromptThreadEvidenceCard,
   caseValue: { privateData: JsonObject },
 ): Promise<PromptThreadReportCell[]> {
-  const sourceIds = sourceIdBySequence(caseValue.privateData);
+  const sourceIds = promptThreadSourceIdBySequence(caseValue.privateData);
   const loaded = await Promise.all(manifest.cells.map(async (cell) => {
     const [checkpoint, provider, prepared] = await Promise.all([
       readCheckpoint(workspace, manifest.runId, cell.cellId),
@@ -708,13 +712,17 @@ function evidenceForCell(
   if (applicable.length === 0) return [];
   const reasonBySourceId = new Map<string, PromptThreadSelectionReason>();
   for (const item of selectionItems) {
-    const sequenceSourceId = requiredString(item.sourceId, "selection source ID");
-    const sequence = sequenceSourceId.split(":")[1];
-    const sourceId = sequence ? sourceIds.get(sequence) : undefined;
+    const sequence = requiredNumber(
+      item.entrySequence,
+      "selection entry sequence",
+    );
+    const sourceId = sourceIds.get(String(sequence));
     if (!sourceId) throw new Error("Selection explanation source is unavailable in the case");
     reasonBySourceId.set(
       sourceId,
-      selectionReason(requiredString(item.terminalReason, "selection reason")),
+      promptThreadSelectionReason(
+        requiredString(item.terminalReason, "selection reason"),
+      ),
     );
   }
   return applicable.map((citation) => {
@@ -768,31 +776,6 @@ function reportSelection(
       historyChars: requiredNumber(budget.historyChars, "history characters"),
     },
   };
-}
-
-function sourceIdBySequence(privateData: JsonObject): Map<string, string> {
-  const starting = record(privateData.startingState, "starting state");
-  if (!Array.isArray(starting.historyCatalog)) {
-    throw new Error("Case has no history catalog for report mapping");
-  }
-  const mapping = new Map<string, string>();
-  for (const candidate of starting.historyCatalog) {
-    const item = record(candidate, "history catalog item");
-    if (item.sequence === null) continue;
-    mapping.set(
-      String(item.sequence),
-      requiredString(item.sourceId, "history source ID"),
-    );
-  }
-  return mapping;
-}
-
-function selectionReason(value: string): PromptThreadSelectionReason {
-  if (value === "selected_history") return "selected";
-  if (value === "history_disabled") return "policy_disabled";
-  if (value === "seed_miss") return "zero_overlap";
-  if (value === "budget_excluded") return "budget_exhausted";
-  throw new Error(`Unsupported selection reason ${value}`);
 }
 
 async function assertCompletedRun(

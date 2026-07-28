@@ -1032,9 +1032,10 @@ export function serializeRecallPlan(plan: RecallPlan): string {
   return JSON.stringify(plan);
 }
 
-/** Private-lab-only selection explanation. Do not serialize this into RecallPlanReceipt. */
+/** Evaluation-lab-only selection explanation. Do not serialize this into RecallPlanReceipt. */
 export function explainRecallPlanSelection(params: CompileRecallPlanParams): Array<{
   sourceId: string;
+  entrySequence: number;
   terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
 }> {
   const plan = compileRecallPlan(params);
@@ -1046,6 +1047,7 @@ export function explainRecallPlanSelectionForPlan(
   plan: RecallPlan,
 ): Array<{
   sourceId: string;
+  entrySequence: number;
   terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
 }> {
   const authorized = collectAuthorizedCandidates(params.transcript, params.actorId);
@@ -1055,6 +1057,7 @@ export function explainRecallPlanSelectionForPlan(
   if (params.promptClass === "ordinary_speech" || plan.budget.historyBudgetChars === 0) {
     return authorized.map((entry) => ({
       sourceId: `transcript:${entry.entrySequence}`,
+      entrySequence: entry.entrySequence,
       terminalReason: "history_disabled" as const,
     }));
   }
@@ -1069,6 +1072,7 @@ export function explainRecallPlanSelectionForPlan(
   );
   return authorized.map((entry) => ({
     sourceId: `transcript:${entry.entrySequence}`,
+    entrySequence: entry.entrySequence,
     terminalReason: selected.has(entry.entrySequence)
       ? "selected_history" as const
       : rankedIds.has(entry.entrySequence)

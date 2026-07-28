@@ -104,6 +104,8 @@ Choose the smallest evaluation that can reject the product decision:
 
 These are cumulative evidence, not substitutes. Real-thread source validation, tests, status, and report assembly make no provider calls. Curator and panel dispatch require separate immutable approvals; implementation agents must not spend either budget without explicit operator approval.
 
+The evaluator's `strategic-probe` also makes zero provider calls. It compares selection direction for the two real Mingle-intent contexts only; it does not prove that a model uses the selected evidence or changes behavior. See [the full evaluator contract](docs/prompt-thread-context-evaluation.md).
+
 ### Running Tests
 
 ```bash

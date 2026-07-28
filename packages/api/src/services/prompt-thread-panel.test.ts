@@ -567,8 +567,8 @@ describe("prompt thread panel", () => {
         evidenceApproval,
         dependencies,
       );
-      expect(calls).toBe(28);
       expect(result).toMatchObject({ lifecycle: "completed" });
+      expect(calls).toBe(28);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

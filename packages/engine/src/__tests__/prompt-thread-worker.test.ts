@@ -14,8 +14,10 @@ import {
   computePromptThreadWorkerPolicyDigest,
   listPromptThreadWorkerHarnessFiles,
   PromptThreadWorkerError,
+  runPromptThreadWorkerIntentProbe,
   runPromptThreadWorker,
 } from "../prompt-thread-worker";
+import type { PromptThreadMingleIntentProbeResult } from "../prompt-thread-lab";
 
 const caseValue = {
   protocolVersion: PROTOCOL_VERSION,
@@ -120,7 +122,106 @@ const dependencies = {
   },
 };
 
+function validIntentProbe(): PromptThreadMingleIntentProbeResult {
+  return {
+    version: 1,
+    caseId: caseValue.caseId,
+    providerCalls: 0,
+    probes: ["finn", "lyra"].map((actorId) => ({
+      action: "mingle-intent" as const,
+      actorId,
+      promptClass: "strategic_decision",
+      laneSummary: {
+        protectedCount: 4,
+        hotCount: 0,
+        authorizedHistoryCount: 1,
+        selectedHistoryCount: 1,
+      },
+      budget: {
+        envelopeChars: 16_000,
+        historyBudgetChars: 1_200,
+        protectedChars: 17_000,
+        hotChars: 2,
+        historyChars: 400,
+      },
+      items: [{
+        sourceId: "transcript:1",
+        entrySequence: 1,
+        terminalReason: "selected_history" as const,
+      }],
+    })),
+  };
+}
+
 describe("prompt-thread worker", () => {
+  it("emits an attested provider-free strategic intent probe", async () => {
+    const result = await runPromptThreadWorkerIntentProbe(caseValue, {
+      computeHarnessDigest: async () => "harness-probe",
+      computePolicyDigest: async () => "policy-probe",
+      computeActionSchemaHash: async () => "action-probe",
+      executeProbe: async () => validIntentProbe(),
+    });
+
+    expect(result.status).toBe("completed");
+    expect(result.caseHash).toBe(hashCanonicalJson(caseValue));
+    expect(result.handshake).toMatchObject({
+      harnessDigest: "harness-probe",
+      compilerPolicyDigest: "policy-probe",
+      actionSchemaHash: "action-probe",
+    });
+    expect(result.probe.providerCalls).toBe(0);
+  });
+
+  it("rejects invalid injected strategic intent probe results", async () => {
+    const invalidProbes: Array<PromptThreadMingleIntentProbeResult> = [
+      {
+        ...validIntentProbe(),
+        providerCalls: 1,
+      } as unknown as PromptThreadMingleIntentProbeResult,
+      {
+        ...validIntentProbe(),
+        caseId: `sha256:${"9".repeat(64)}`,
+      },
+      {
+        ...validIntentProbe(),
+        probes: validIntentProbe().probes.slice(0, 1),
+      },
+      {
+        ...validIntentProbe(),
+        probes: validIntentProbe().probes.map((probe, index) => (
+          index === 0
+            ? {
+                ...probe,
+                action: "mingle-turn",
+              }
+            : probe
+        )),
+      } as unknown as PromptThreadMingleIntentProbeResult,
+      {
+        ...validIntentProbe(),
+        probes: validIntentProbe().probes.map((probe, index) => (
+          index === 0
+            ? {
+                ...probe,
+                promptClass: "ordinary_speech",
+              }
+            : probe
+        )),
+      } as unknown as PromptThreadMingleIntentProbeResult,
+    ];
+
+    for (const probe of invalidProbes) {
+      await expect(runPromptThreadWorkerIntentProbe(caseValue, {
+        computeHarnessDigest: async () => "harness-probe",
+        computePolicyDigest: async () => "policy-probe",
+        computeActionSchemaHash: async () => "action-probe",
+        executeProbe: async () => probe,
+      })).rejects.toMatchObject({
+        code: "worker_failure",
+      });
+    }
+  });
+
   it("computes its harness digest from the checkout instead of accepting one", async () => {
     const first = await computePromptThreadWorkerHarnessDigest();
     const second = await computePromptThreadWorkerHarnessDigest();

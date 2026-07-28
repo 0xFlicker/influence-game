@@ -159,6 +159,74 @@ describe("prompt-thread lab CLI primitives", () => {
     }
   });
 
+  it("writes a provider-free strategic probe comparison from pinned revisions", async () => {
+    const { root } = await workspaceWithCase();
+    try {
+      await runPromptThreadLabCli([
+        "manual-draft", "--workspace", root, "--case", "cases/case.json",
+        "--items", "[]",
+      ]);
+      const frozen = await runPromptThreadLabCli([
+        "freeze", "--workspace", root, "--case", "cases/case.json",
+        "--draft", "evidence/manual-draft.json", "--reviewer", "producer",
+        "--confirm",
+      ], { isTTY: true });
+      expect(frozen).toMatchObject({
+        status: "ok",
+        lifecycle: "frozen",
+        nextActions: ["strategic-probe", "panel-manifest"],
+      });
+      const result = await runPromptThreadLabCli([
+        "strategic-probe", "--workspace", root, "--case", "cases/case.json",
+        "--draft", "evidence/manual-draft.json",
+        "--evidence-approval", "evidence/evidence-card-approval.json",
+        "--baseline-checkout", "/baseline", "--baseline-sha", "base-sha",
+        "--baseline-policy-digest", "base-policy",
+        "--candidate-checkout", "/candidate", "--candidate-sha", "candidate-sha",
+        "--candidate-policy-digest", "candidate-policy",
+        "--harness-digest", "harness", "--action-schema-hash", "action",
+      ], {
+        strategicProbe: async () => ({
+          version: 1,
+          caseHash: "case-hash",
+          evidenceCardHash: "card-hash",
+          providerCalls: 0,
+          verdict: "inconclusive",
+          baselineRevision: "base-sha",
+          candidateRevision: "candidate-sha",
+          baseline: {
+            requiredSelected: 0,
+            requiredAvailable: 0,
+            usefulSelected: 0,
+            usefulAvailable: 0,
+            distractorSelected: 0,
+          },
+          candidate: {
+            requiredSelected: 0,
+            requiredAvailable: 0,
+            usefulSelected: 0,
+            usefulAvailable: 0,
+            distractorSelected: 0,
+          },
+          probes: [],
+        }),
+      });
+
+      expect(result).toMatchObject({
+        status: "ok",
+        lifecycle: "probed",
+        artifactPath: "probes/strategic-intent-comparison.json",
+        nextActions: ["manual-draft", "curator-manifest"],
+      });
+      expect(JSON.parse(await readFile(
+        join(root, "probes/strategic-intent-comparison.json"),
+        "utf8",
+      ))).toMatchObject({ providerCalls: 0, verdict: "inconclusive" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("requires an injected interactive TTY before curator approval or freeze", async () => {
     const { root } = await workspaceWithCase();
     try {

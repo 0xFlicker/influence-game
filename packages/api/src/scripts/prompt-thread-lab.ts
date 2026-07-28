@@ -65,6 +65,12 @@ import {
   type RunPanelDependencies,
 } from "../services/prompt-thread-panel.js";
 import {
+  comparePromptThreadStrategicProbes,
+  renderPromptThreadStrategicProbeMarkdown,
+  type PromptThreadStrategicProbeComparison,
+  type PromptThreadStrategicProbeInput,
+} from "../services/prompt-thread-strategic-probe.js";
+import {
   atomicWriteArtifact,
   atomicWriteJson,
   atomicWritePrivateText,
@@ -87,6 +93,7 @@ type PromptThreadLabCommand =
   | "curate"
   | "apply-curator-response"
   | "freeze"
+  | "strategic-probe"
   | "panel-manifest"
   | "panel-approve"
   | "panel-init"
@@ -109,6 +116,7 @@ export interface PromptThreadLabResult {
     | "frozen"
     | "materialized"
     | "source_verified"
+    | "probed"
     | "running"
     | "completed"
     | "invalidated"
@@ -154,6 +162,9 @@ export interface PromptThreadLabCliDependencies {
   verifySource?: (
     caseValue: FrozenCaseArtifact,
   ) => Promise<{ receipt: PromptThreadFidelityReceipt }>;
+  strategicProbe?: (
+    input: PromptThreadStrategicProbeInput,
+  ) => Promise<PromptThreadStrategicProbeComparison>;
 }
 
 const DEFAULT_PATHS = {
@@ -164,6 +175,7 @@ const DEFAULT_PATHS = {
   curatorDraft: "evidence/curator-draft.json",
   evidenceApproval: "evidence/evidence-card-approval.json",
   sourceFidelity: "source/source-fidelity.json",
+  strategicProbe: "probes/strategic-intent-comparison.json",
   panelManifest: "panel/run-manifest.json",
   panelApproval: "panel/paid-approval.json",
 } as const;
@@ -384,6 +396,75 @@ export async function runPromptThreadLabCli(
         manifest,
         { lifecycle: "draft", nextActions: ["panel-approve"] },
       );
+    }
+
+    if (command === "strategic-probe") {
+      const caseValue = await readFrozenCase(
+        workspace,
+        requiredFlag(flags, "case"),
+      );
+      const evidenceDraft = await readEvidenceDraft(
+        workspace,
+        requiredFlag(flags, "draft"),
+      );
+      const evidenceApproval = await readEvidenceApproval(
+        workspace,
+        requiredFlag(flags, "evidence-approval"),
+      );
+      const input: PromptThreadStrategicProbeInput = {
+        caseValue,
+        evidenceDraft,
+        evidenceApproval,
+        baseline: {
+          arm: "baseline",
+          checkoutPath: requiredFlag(flags, "baseline-checkout"),
+          commitSha: requiredFlag(flags, "baseline-sha"),
+          compilerPolicyDigest: requiredFlag(
+            flags,
+            "baseline-policy-digest",
+          ),
+          harnessDigest: requiredFlag(flags, "harness-digest"),
+        },
+        candidate: {
+          arm: "candidate",
+          checkoutPath: requiredFlag(flags, "candidate-checkout"),
+          commitSha: requiredFlag(flags, "candidate-sha"),
+          compilerPolicyDigest: requiredFlag(
+            flags,
+            "candidate-policy-digest",
+          ),
+          harnessDigest: requiredFlag(flags, "harness-digest"),
+        },
+        actionSchemaHash: requiredFlag(flags, "action-schema-hash"),
+      };
+      const result = dependencies.strategicProbe
+        ? await dependencies.strategicProbe(input)
+        : await comparePromptThreadStrategicProbes(input);
+      const artifactPath = flags.get("output") ?? DEFAULT_PATHS.strategicProbe;
+      const markdown = renderPromptThreadStrategicProbeMarkdown(result);
+      await withRunMutationLock(workspace, "strategic-probe", async (lock) => {
+        await atomicWriteJson(lock, artifactPath, result);
+        await atomicWritePrivateText(
+          lock,
+          artifactPath.replace(/\.json$/u, ".md"),
+          markdown,
+        );
+      });
+      return {
+        status: "ok",
+        lifecycle: "probed",
+        requiresHuman: false,
+        artifactPath,
+        artifactHash: hashCanonicalJson(result),
+        markdown,
+        nextActions: result.verdict === "inconclusive"
+          ? ["manual-draft", "curator-manifest"]
+          : ["panel-manifest"],
+        reservedSpendUsd: 0,
+        settledSpendUsd: 0,
+        completedCells: result.probes.length,
+        outstandingCells: 0,
+      };
     }
 
     if (command === "panel-approve") {
@@ -706,7 +787,7 @@ export async function runPromptThreadLabCli(
     const approval = freezeEvidenceCard(caseValue, draft, requiredFlag(flags, "reviewer"), now);
     return writeArtifactResult(workspace, flags, "freeze", DEFAULT_PATHS.evidenceApproval, approval, {
       lifecycle: "frozen",
-      nextActions: ["panel-manifest"],
+      nextActions: ["strategic-probe", "panel-manifest"],
     });
   } catch (error) {
     return errorResult(error);
@@ -1214,6 +1295,7 @@ function isCommand(value: string | undefined): value is PromptThreadLabCommand {
     || value === "curate"
     || value === "apply-curator-response"
     || value === "freeze"
+    || value === "strategic-probe"
     || value === "panel-manifest"
     || value === "panel-approve"
     || value === "panel-init"

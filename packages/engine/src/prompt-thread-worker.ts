@@ -18,7 +18,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { chmod, readFile, readdir, rename, writeFile } from "node:fs/promises";
 import { dirname, join, relative, resolve } from "node:path";
 import {
+  runPromptThreadMingleIntentProbe,
   runPromptThreadGeneratedCell,
+  type PromptThreadMingleIntentProbeResult,
   type PromptThreadGeneratedCellResult,
 } from "./prompt-thread-lab";
 
@@ -68,6 +70,22 @@ export interface PromptThreadWorkerResult {
   response: unknown;
   branchState: PromptThreadWorkerBranchState;
   checkpoint: ContinuationCheckpointArtifact;
+}
+
+export interface PromptThreadIntentProbeWorkerResult {
+  status: "completed";
+  caseHash: string;
+  handshake: PromptThreadWorkerHandshake;
+  probe: PromptThreadMingleIntentProbeResult;
+}
+
+export interface PromptThreadIntentProbeWorkerDependencies {
+  computeHarnessDigest?: () => Promise<string>;
+  computePolicyDigest?: () => Promise<string>;
+  computeActionSchemaHash?: () => Promise<string>;
+  executeProbe?: (
+    caseValue: FrozenCaseArtifact,
+  ) => Promise<PromptThreadMingleIntentProbeResult>;
 }
 
 export class PromptThreadWorkerError extends Error {
@@ -178,11 +196,54 @@ export function createPromptThreadWorkerHandshake(input: {
 }): PromptThreadWorkerHandshake {
   return {
     ...createHandshake({
-      capabilities: ["prompt-thread-worker", "saved-response-apply", "broker-transport-only"],
+      capabilities: [
+        "prompt-thread-worker",
+        "saved-response-apply",
+        "broker-transport-only",
+      ],
       harnessDigest: input.harnessDigest,
     }),
     compilerPolicyDigest: input.compilerPolicyDigest,
     actionSchemaHash: input.actionSchemaHash,
+  };
+}
+
+export async function runPromptThreadWorkerIntentProbe(
+  caseValue: FrozenCaseArtifact,
+  dependencies: PromptThreadIntentProbeWorkerDependencies = {},
+): Promise<PromptThreadIntentProbeWorkerResult> {
+  const parsed = parseArtifact(caseValue);
+  if (parsed.kind !== "frozen_case") {
+    throw new PromptThreadWorkerError("input_mismatch");
+  }
+  const [harnessDigest, compilerPolicyDigest, actionSchemaHash] = await Promise.all([
+    dependencies.computeHarnessDigest?.() ?? computePromptThreadWorkerHarnessDigest(),
+    dependencies.computePolicyDigest?.() ?? computePromptThreadWorkerPolicyDigest(),
+    dependencies.computeActionSchemaHash?.() ?? computePromptThreadWorkerActionSchemaHash(),
+  ]);
+  const probe = await (
+    dependencies.executeProbe ?? runPromptThreadMingleIntentProbe
+  )(caseValue);
+  if (
+    probe.providerCalls !== 0
+    || probe.caseId !== caseValue.caseId
+    || probe.probes.length !== 2
+    || probe.probes.some((item) => (
+      item.action !== "mingle-intent"
+      || item.promptClass !== "strategic_decision"
+    ))
+  ) {
+    throw new PromptThreadWorkerError("worker_failure");
+  }
+  return {
+    status: "completed",
+    caseHash: hashCanonicalJson(caseValue),
+    handshake: createPromptThreadWorkerHandshake({
+      harnessDigest,
+      compilerPolicyDigest,
+      actionSchemaHash,
+    }),
+    probe,
   };
 }
 
@@ -367,7 +428,14 @@ async function main(args: string[]): Promise<void> {
     process.stdout.write('{"status":"completed"}\n');
     return;
   }
-  throw new Error("Expected prompt-thread-worker handshake or run");
+  if (command === "intent-probe") {
+    const caseValue = JSON.parse(await Bun.stdin.text()) as FrozenCaseArtifact;
+    process.stdout.write(
+      `${JSON.stringify(await runPromptThreadWorkerIntentProbe(caseValue))}\n`,
+    );
+    return;
+  }
+  throw new Error("Expected prompt-thread-worker handshake, run, or intent-probe");
 }
 
 if (import.meta.main) {

@@ -163,8 +163,21 @@ export interface PromptThreadSelectionExplanation {
   };
   items: Array<{
     sourceId: string;
+    entrySequence: number;
     terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
   }>;
+}
+
+export interface PromptThreadStrategicProbe
+  extends Omit<PromptThreadSelectionExplanation, "turn"> {
+  action: "mingle-intent";
+}
+
+export interface PromptThreadMingleIntentProbeResult {
+  version: 1;
+  caseId: string;
+  providerCalls: 0;
+  probes: PromptThreadStrategicProbe[];
 }
 
 export interface PromptThreadGeneratedCellInput {
@@ -194,16 +207,38 @@ export interface PromptThreadFidelityReceipt {
   sourceMutation: false;
 }
 
+interface PromptThreadReplayOptions {
+  onDeterministicProviderSetup?: () => void;
+  generatedCell?: PromptThreadGeneratedCellInput;
+  intentProbeOnly?: false;
+}
+
+interface PromptThreadIntentProbeOptions {
+  onDeterministicProviderSetup?: () => void;
+  intentProbeOnly: true;
+}
+
+interface PromptThreadIntentProbeCapture extends PromptThreadReplayCapture {
+  strategicProbes: PromptThreadStrategicProbe[];
+}
+
+export function capturePromptThreadReplay(
+  caseValue: FrozenCaseArtifact,
+  options: PromptThreadIntentProbeOptions,
+): Promise<PromptThreadIntentProbeCapture>;
+export function capturePromptThreadReplay(
+  caseValue: FrozenCaseArtifact,
+  options?: PromptThreadReplayOptions,
+): Promise<PromptThreadReplayCapture>;
 export async function capturePromptThreadReplay(
   caseValue: FrozenCaseArtifact,
-  options: {
-    onDeterministicProviderSetup?: () => void;
-    generatedCell?: PromptThreadGeneratedCellInput;
-  } = {},
-): Promise<PromptThreadReplayCapture> {
+  options: PromptThreadReplayOptions | PromptThreadIntentProbeOptions = {},
+): Promise<PromptThreadReplayCapture | PromptThreadIntentProbeCapture> {
   const validated = validatePromptThreadCase(caseValue);
   options.onDeterministicProviderSetup?.();
-  const generatedCell = options.generatedCell;
+  const generatedCell = options.intentProbeOnly
+    ? undefined
+    : options.generatedCell;
   if (
     generatedCell
     && generatedCell.previousResponses.length !== generatedCell.turn - 1
@@ -216,6 +251,7 @@ export async function capturePromptThreadReplay(
   logger.seed(validated.transcriptReplay);
   const mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   const selectionExplanations: PromptThreadSelectionExplanation[] = [];
+  const strategicProbes: PromptThreadStrategicProbe[] = [];
   const contextBuilder = new ContextBuilder(
     gameState,
     logger,
@@ -223,6 +259,20 @@ export async function capturePromptThreadReplay(
     validated.roster.length,
     undefined,
     (observation) => {
+      if (
+        options.intentProbeOnly
+        && observation.promptClass === "strategic_decision"
+      ) {
+        strategicProbes.push({
+          action: "mingle-intent",
+          actorId: observation.actorId,
+          promptClass: observation.promptClass,
+          laneSummary: structuredClone(observation.laneSummary),
+          budget: structuredClone(observation.budget),
+          items: structuredClone(observation.explanation),
+        });
+        return;
+      }
       if (observation.promptClass !== "ordinary_speech") return;
       selectionExplanations.push({
         turn: selectionExplanations.length + 1,
@@ -344,6 +394,26 @@ export async function capturePromptThreadReplay(
     intents.set(actorId, intent);
   }
 
+  if (options.intentProbeOnly) {
+    if (
+      capturedTraces.length !== 2
+      || strategicProbes.length !== 2
+      || strategicProbes.some((probe) => probe.promptClass !== "strategic_decision")
+    ) {
+      throw new Error("Prompt-thread intent probe did not capture two strategic decisions");
+    }
+    return {
+      caseId: validated.artifact.caseId,
+      actorOrder: [],
+      traces: capturedTraces,
+      turns: [],
+      movementRecords: [],
+      checkpoints: [],
+      selectionExplanations: [],
+      strategicProbes,
+    };
+  }
+
   const turns: PromptThreadReplayTurn[] = [];
   const movementRecords: MingleTurnExecutionRecord[] = [];
   const checkpoints: ContinuationCheckpointArtifact[] = [];
@@ -438,6 +508,20 @@ export async function capturePromptThreadReplay(
     movementRecords,
     checkpoints,
     selectionExplanations,
+  };
+}
+
+export async function runPromptThreadMingleIntentProbe(
+  caseValue: FrozenCaseArtifact,
+): Promise<PromptThreadMingleIntentProbeResult> {
+  const capture = await capturePromptThreadReplay(caseValue, {
+    intentProbeOnly: true,
+  });
+  return {
+    version: 1,
+    caseId: capture.caseId,
+    providerCalls: 0,
+    probes: capture.strategicProbes,
   };
 }
 

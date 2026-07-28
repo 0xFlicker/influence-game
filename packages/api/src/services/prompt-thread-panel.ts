@@ -194,7 +194,7 @@ export function createTrustedCheckoutPanelDependencies(
   } = {},
 ): RunPanelDependencies {
   const bunExecutable = options.bunExecutable ?? process.execPath;
-  const inspectCheckout = options.inspectCheckout ?? inspectGitCheckout;
+  const inspectCheckout = options.inspectCheckout ?? inspectPromptThreadGitCheckout;
   const computeWorkerHarnessDigest = options.computeWorkerHarnessDigest
     ?? computePromptThreadWorkerHarnessDigest;
   const trustedWorkerTimeoutMs = options.trustedWorkerTimeoutMs
@@ -352,7 +352,7 @@ export async function createPromptThreadPanelManifest(
   ) {
     throw new Error("Full verdict scope requires a candidate recall-policy delta");
   }
-  const inspect = dependencies.inspectCheckout ?? inspectGitCheckout;
+  const inspect = dependencies.inspectCheckout ?? inspectPromptThreadGitCheckout;
   const computeWorkerHarnessDigest = dependencies.computeWorkerHarnessDigest
     ?? computePromptThreadWorkerHarnessDigest;
   const inspectHandshake = dependencies.inspectWorkerHandshake
@@ -646,7 +646,7 @@ async function readTrustedWorkerHandshake(
       stderr: "pipe",
     },
   );
-  const [exitCode, stdout, stderr] = await waitForTrustedWorker(
+  const [exitCode, stdout, stderr] = await waitForPromptThreadWorker(
     child,
     "handshake",
     timeoutMs,
@@ -746,7 +746,7 @@ async function runTrustedCheckoutWorker(
         stderr: "pipe",
       },
     );
-    const [exitCode, stdout, stderr] = await waitForTrustedWorker(
+    const [exitCode, stdout, stderr] = await waitForPromptThreadWorker(
       child,
       `cell ${invocation.cell.cellId}`,
       timeoutMs,
@@ -789,7 +789,7 @@ async function assertTrustedWorkerHarnessDigest(
   }
 }
 
-async function waitForTrustedWorker(
+export async function waitForPromptThreadWorker(
   child: {
     exited: Promise<number>;
     stdout: ReadableStream<Uint8Array>;
@@ -907,7 +907,9 @@ function placeholderRevision(arm: "baseline" | "candidate"): PromptThreadRevisio
   };
 }
 
-async function inspectGitCheckout(path: string): Promise<CheckoutInspection> {
+export async function inspectPromptThreadGitCheckout(
+  path: string,
+): Promise<CheckoutInspection> {
   const [{ stdout: sha }, { stdout: status }] = await Promise.all([
     execFile("git", ["-C", path, "rev-parse", "HEAD"]),
     execFile("git", ["-C", path, "status", "--porcelain"]),

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { resolve } from "node:path";
 import {
   PROTOCOL_SCHEMA_HASH,
   PROTOCOL_VERSION,
@@ -10,6 +11,7 @@ import { GameState } from "../game-state";
 import {
   capturePromptThreadReplay,
   runPromptThreadGeneratedCell,
+  runPromptThreadMingleIntentProbe,
   runPromptThreadSourceGate,
   verifyPromptThreadSourceFidelity,
 } from "../prompt-thread-lab";
@@ -261,7 +263,82 @@ function withCapturedSource(
   };
 }
 
+async function runIntentProbeWorker(stdin: string): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+}> {
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      resolve(import.meta.dir, "../prompt-thread-worker.ts"),
+      "intent-probe",
+    ],
+    {
+      cwd: resolve(import.meta.dir, "../../../.."),
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  child.stdin.write(stdin);
+  child.stdin.end();
+  const [exitCode, stdout, stderr] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ]);
+  return { exitCode, stdout, stderr };
+}
+
 describe("real prompt-thread replay", () => {
+  test("captures the two strategic intent selections without running continuation turns", async () => {
+    const fixture = caseFixture();
+    const result = await runPromptThreadMingleIntentProbe(fixture);
+
+    expect(result.caseId).toBe(fixture.caseId);
+    expect(result.providerCalls).toBe(0);
+    expect(result.probes).toHaveLength(2);
+    expect(result.probes.map(({ actorId, action, promptClass }) => ({
+      actorId,
+      action,
+      promptClass,
+    }))).toEqual([
+      { actorId: "a", action: "mingle-intent", promptClass: "strategic_decision" },
+      { actorId: "b", action: "mingle-intent", promptClass: "strategic_decision" },
+    ]);
+    expect(result.probes.every(({ laneSummary, budget, items }) => (
+      laneSummary.authorizedHistoryCount === items.length
+      && budget.envelopeChars > 0
+    ))).toBe(true);
+  });
+
+  test("runs the provider-free intent probe through the worker stdin/stdout boundary", async () => {
+    const fixture = caseFixture();
+    const completed = await runIntentProbeWorker(JSON.stringify(fixture));
+    const result = JSON.parse(completed.stdout) as {
+      status: "completed";
+      probe: Awaited<ReturnType<typeof runPromptThreadMingleIntentProbe>>;
+    };
+
+    expect(completed).toMatchObject({
+      exitCode: 0,
+      stderr: "",
+    });
+    expect(result.status).toBe("completed");
+    expect(result.probe).toMatchObject({
+      caseId: fixture.caseId,
+      providerCalls: 0,
+    });
+
+    const malformed = await runIntentProbeWorker("{");
+    expect(malformed.exitCode).not.toBe(0);
+    expect(malformed.stdout).toBe("");
+    expect(JSON.parse(malformed.stderr)).toEqual({
+      code: "worker_failed",
+    });
+  });
+
   test("hydrates canonical revealed votes and preserves the configured phase beat count", async () => {
     const fixture = caseFixture({ resolvedPriorVote: true });
     const roster = (fixture.privateData.startingState as JsonObject).roster as Array<{

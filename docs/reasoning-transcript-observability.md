@@ -337,7 +337,7 @@ bun test packages/engine/src/__tests__/prompt-scenario-lab.test.ts
 Use three evaluation levels without pretending they are interchangeable:
 
 1. Structural fixtures prove deterministic budgets, authority lanes, renderer structure, and replay mechanics.
-2. The private [real-thread context evaluator](prompt-thread-context-evaluation.md) materializes one authorized durable thread, attests two isolated policy revisions, measures provider/cache evidence through a capped broker, and ends in blind human review. Its verdict is case-specific.
+2. The local [real-thread context evaluator](prompt-thread-context-evaluation.md) materializes one authorized durable thread and attests two isolated policy revisions. Its `strategic-probe` makes zero provider calls and proves only selection direction for the two real Mingle-intent contexts, not whether a model uses that evidence or changes behavior; the separately approved panel measures provider/cache evidence and ends in blind human review. Every verdict is case-specific.
 3. A bounded full-game simulation validates cross-phase integration, long-running strategy, pacing, and watchability. It does not isolate one context-policy cause.
 
 Keep real-source ingestion, approval, and paid-run authority outside the engine fixture runner. Ordered same-agent replay is required before interpreting cache reuse. No provider dispatch is allowed during source validation, tests, builds, status, or report assembly.
@@ -504,6 +504,7 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - Do agent prompts use Recall Plan sections (Board Contract, Strategy Thread, compact huddle outcomes, hot room, optional strategic history) rather than unbounded full public transcript / complete game-event record?
 - Is historical Mingle eligibility fail-closed on `speakerPlayerId`/`audiencePlayerIds`, and are structural receipts free of dialogue/names/entry IDs?
 - Is `game-N-recall-plan.json` treated as the safe evaluation aggregate, separate from full `game-N.json` / private traces?
+- When evaluating the two Mingle-intent contexts, is `strategic-probe` treated as zero-provider selection evidence rather than proof of model use or behavior?
 - When the legacy/classic lane is exercised, do Council diary prompts use the interviewee's actual role without inventing a vote?
 - Do Judgment juror question prompts receive questions-only history while finalist answer, closing, and jury-vote prompts can still use full Q&A history?
 - Do House MC summaries lead with consequence, leverage, debt, heat, and next tension without claiming the currently limited `response.roundFacts` carries format proof?

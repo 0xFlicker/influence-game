@@ -96,8 +96,8 @@ export interface PromptThreadReportVerdicts {
   };
   historySelection: {
     status: "improved" | "regressed" | "mixed" | "not_exercised" | "inconclusive";
-    baseline: EvidenceTotals;
-    candidate: EvidenceTotals;
+    baseline: PromptThreadEvidenceTotals;
+    candidate: PromptThreadEvidenceTotals;
     turns: PromptThreadHistoryTurnLedger[];
   };
   cacheAndCost: {
@@ -127,12 +127,17 @@ export interface PromptThreadReportVerdicts {
   };
 }
 
-interface EvidenceTotals {
+export interface PromptThreadEvidenceTotals {
   requiredSelected: number;
   requiredAvailable: number;
   usefulSelected: number;
   usefulAvailable: number;
   distractorSelected: number;
+}
+
+export interface PromptThreadScoredEvidence {
+  label: PromptThreadEvidenceLabel;
+  reason: PromptThreadSelectionReason;
 }
 
 interface PromptThreadHistoryTurnLedger {
@@ -403,25 +408,8 @@ function historyVerdict(
   ) {
     return { status: "not_exercised", baseline, candidate, turns };
   }
-  const candidateBetter =
-    candidate.requiredSelected >= baseline.requiredSelected
-    && candidate.usefulSelected >= baseline.usefulSelected
-    && candidate.distractorSelected <= baseline.distractorSelected
-    && (
-      candidate.requiredSelected > baseline.requiredSelected
-      || candidate.usefulSelected > baseline.usefulSelected
-      || candidate.distractorSelected < baseline.distractorSelected
-    );
-  const candidateWorse =
-    candidate.requiredSelected < baseline.requiredSelected
-    || candidate.usefulSelected < baseline.usefulSelected
-    || candidate.distractorSelected > baseline.distractorSelected;
   return {
-    status: candidateBetter
-      ? "improved"
-      : candidateWorse
-        ? "regressed"
-        : "mixed",
+    status: comparePromptThreadEvidenceTotals(baseline, candidate),
     baseline,
     candidate,
     turns,
@@ -462,15 +450,23 @@ function historyTurnLedger(
 function evidenceTotals(
   cells: readonly PromptThreadReportCell[],
   arm: "baseline" | "candidate",
-): EvidenceTotals {
-  const totals: EvidenceTotals = {
+): PromptThreadEvidenceTotals {
+  return summarizePromptThreadEvidence(
+    cells.filter((cell) => cell.arm === arm).flatMap((cell) => cell.evidence),
+  );
+}
+
+export function summarizePromptThreadEvidence(
+  items: readonly PromptThreadScoredEvidence[],
+): PromptThreadEvidenceTotals {
+  const totals: PromptThreadEvidenceTotals = {
     requiredSelected: 0,
     requiredAvailable: 0,
     usefulSelected: 0,
     usefulAvailable: 0,
     distractorSelected: 0,
   };
-  for (const item of cells.filter((cell) => cell.arm === arm).flatMap((cell) => cell.evidence)) {
+  for (const item of items) {
     const selected = item.reason === "selected";
     if (item.label === "required") {
       totals.requiredAvailable += 1;
@@ -483,6 +479,30 @@ function evidenceTotals(
     }
   }
   return totals;
+}
+
+export function comparePromptThreadEvidenceTotals(
+  baseline: PromptThreadEvidenceTotals,
+  candidate: PromptThreadEvidenceTotals,
+): "improved" | "regressed" | "mixed" {
+  const candidateBetter =
+    candidate.requiredSelected >= baseline.requiredSelected
+    && candidate.usefulSelected >= baseline.usefulSelected
+    && candidate.distractorSelected <= baseline.distractorSelected
+    && (
+      candidate.requiredSelected > baseline.requiredSelected
+      || candidate.usefulSelected > baseline.usefulSelected
+      || candidate.distractorSelected < baseline.distractorSelected
+    );
+  const candidateWorse =
+    candidate.requiredSelected < baseline.requiredSelected
+    || candidate.usefulSelected < baseline.usefulSelected
+    || candidate.distractorSelected > baseline.distractorSelected;
+  return candidateBetter
+    ? "improved"
+    : candidateWorse
+      ? "regressed"
+      : "mixed";
 }
 
 function cacheAndCostVerdict(
