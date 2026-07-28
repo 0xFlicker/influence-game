@@ -11,6 +11,10 @@ import { schema } from "../db/index.js";
 const PRICING_SOURCE_ID = "engine.MODEL_PRICING";
 const RATE_CARD_VERSION = "2026-07-04";
 
+const PROVIDER_SNAPSHOT_RATE_CARDS = {
+  "gpt-5.4-nano-2026-03-17": "gpt-5.4-nano",
+} as const;
+
 const UNSAFE_KEY_PATTERN = /prompt|messages|response|content|tool|arguments|thinking|reasoning|key|secret|token/i;
 
 type SpendRow = typeof schema.gameProviderSpendEntries.$inferSelect;
@@ -83,6 +87,76 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
     pricedAt: string[];
   };
   reconciliation: Array<Record<string, unknown>>;
+}
+
+export interface ProviderUsageCeilingQuoteInput {
+  modelSnapshot: string;
+  promptTokenCeiling: number;
+  cachedPromptTokenCeiling: number;
+  outputTokenCeiling: number;
+}
+
+export type ProviderUsageCeilingQuote =
+  | {
+      status: "estimated";
+      estimatedCostUsd: number;
+      estimatedCostMicrousd: number;
+      pricingSourceId: string;
+      rateCardVersion: string;
+    }
+  | {
+      status: "unavailable";
+      pricingSourceId: null;
+      rateCardVersion: null;
+    };
+
+/**
+ * Quotes a bounded provider request using an explicitly pinned model snapshot.
+ * Snapshot aliases are intentionally rejected so preflight never prices a
+ * request against a rate card it cannot prove applies.
+ */
+export function quoteProviderUsageCeiling(
+  input: ProviderUsageCeilingQuoteInput,
+): ProviderUsageCeilingQuote {
+  const model = PROVIDER_SNAPSHOT_RATE_CARDS[
+    input.modelSnapshot as keyof typeof PROVIDER_SNAPSHOT_RATE_CARDS
+  ];
+  if (!model ||
+      !Number.isSafeInteger(input.promptTokenCeiling) || input.promptTokenCeiling < 0 ||
+      !Number.isSafeInteger(input.cachedPromptTokenCeiling) || input.cachedPromptTokenCeiling < 0 ||
+      input.cachedPromptTokenCeiling > input.promptTokenCeiling ||
+      !Number.isSafeInteger(input.outputTokenCeiling) || input.outputTokenCeiling < 0) {
+    return {
+      status: "unavailable",
+      pricingSourceId: null,
+      rateCardVersion: null,
+    };
+  }
+
+  const estimate = estimateCostForKnownModel({
+    promptTokens: input.promptTokenCeiling,
+    cachedTokens: input.cachedPromptTokenCeiling,
+    completionTokens: input.outputTokenCeiling,
+    reasoningTokens: 0,
+    totalTokens: input.promptTokenCeiling + input.outputTokenCeiling,
+    callCount: 1,
+    emptyResponses: 0,
+  }, model);
+  if (!estimate) {
+    return {
+      status: "unavailable",
+      pricingSourceId: null,
+      rateCardVersion: null,
+    };
+  }
+
+  return {
+    status: "estimated",
+    estimatedCostUsd: estimate.totalCost,
+    estimatedCostMicrousd: Math.max(0, Math.round(estimate.totalCost * 1_000_000)),
+    pricingSourceId: PRICING_SOURCE_ID,
+    rateCardVersion: RATE_CARD_VERSION,
+  };
 }
 
 function sha256(value: unknown): string {

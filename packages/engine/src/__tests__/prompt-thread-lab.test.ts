@@ -9,6 +9,7 @@ import {
 import { GameState } from "../game-state";
 import {
   capturePromptThreadReplay,
+  runPromptThreadGeneratedCell,
   runPromptThreadSourceGate,
   verifyPromptThreadSourceFidelity,
 } from "../prompt-thread-lab";
@@ -343,6 +344,31 @@ describe("real prompt-thread replay", () => {
     expect(fresh.checkpoints).toHaveLength(4);
   });
 
+  test("rebuilds a generated branch from saved responses before each brokered cell", async () => {
+    const fixture = caseFixture();
+    const previousResponses: unknown[] = [];
+    for (const turn of [1, 2, 3, 4] as const) {
+      let calls = 0;
+      const result = await runPromptThreadGeneratedCell(fixture, {
+        turn,
+        model: "gpt-5.4-nano-2026-03-17",
+        promptCacheKey: `opaque-${turn % 2}`,
+        previousResponses,
+        dispatch: async (request) => {
+          calls += 1;
+          expect(request.model).toBe("gpt-5.4-nano-2026-03-17");
+          expect(request.prompt_cache_key).toBe(`opaque-${turn % 2}`);
+          return generatedResponse(turn);
+        },
+      });
+      expect(calls).toBe(1);
+      expect(result.capture.turns).toHaveLength(turn);
+      expect(result.checkpoint.turn).toBe(turn);
+      previousResponses.push(result.response);
+    }
+    expect(previousResponses).toHaveLength(4);
+  });
+
   test("fails on the first changed byte but ignores only the explicit transport exclusion", async () => {
     const fixture = caseFixture();
     const capture = await capturePromptThreadReplay(fixture);
@@ -405,3 +431,39 @@ describe("real prompt-thread replay", () => {
     expect(setups).toBe(0);
   });
 });
+
+function generatedResponse(turn: number): Record<string, unknown> {
+  const outputText = JSON.stringify({
+    thinking: `thinking ${turn}`,
+    message: `generated turn ${turn}`,
+    noReply: false,
+    gotoRoomId: null,
+    gotoPlayerName: null,
+    proposedTarget: null,
+    proposedAction: null,
+    commitment: null,
+    noProposalReason: null,
+    decisionLog: `generated ${turn}`,
+  });
+  return {
+    id: `generated-${turn}`,
+    object: "response",
+    status: "completed",
+    service_tier: "flex",
+    output_text: outputText,
+    output: [{
+      id: `message-${turn}`,
+      type: "message",
+      role: "assistant",
+      status: "completed",
+      content: [{ type: "output_text", text: outputText }],
+    }],
+    usage: {
+      input_tokens: 2_000,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens: 100,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 2_100,
+    },
+  };
+}

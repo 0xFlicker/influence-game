@@ -1,0 +1,291 @@
+import {
+  CANONICALIZER_ID,
+  CANONICALIZER_VERSION,
+  PROTOCOL_SCHEMA_HASH,
+  PROTOCOL_VERSION,
+  createHandshake,
+  hashCanonicalJson,
+  parseArtifact,
+  validateHandshake,
+  type ContinuationCheckpointArtifact,
+  type EvidenceCardApprovalArtifact,
+  type EvidenceCardDraftArtifact,
+  type FrozenCaseArtifact,
+  type JsonValue,
+  type ProtocolHandshake,
+} from "@influence/prompt-lab-protocol";
+import { createHash, randomUUID } from "node:crypto";
+import { chmod, readFile, rename, writeFile } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
+import {
+  runPromptThreadGeneratedCell,
+  type PromptThreadGeneratedCellResult,
+} from "./prompt-thread-lab";
+
+export interface PromptThreadWorkerCell {
+  cellId: string;
+  branchId: string;
+  turn: number;
+  actorId: string;
+  actorLineage: string;
+  model: string;
+  revision: string;
+  runtimeHash: string;
+  actionSchemaHash: string;
+  harnessDigest: string;
+}
+
+export interface PromptThreadWorkerBranchState {
+  appliedCellIds: string[];
+  actorLineages: Record<string, string>;
+  providerResponses: unknown[];
+}
+
+export interface PromptThreadWorkerInput {
+  handshake: ProtocolHandshake;
+  caseValue: FrozenCaseArtifact;
+  evidenceDraft: EvidenceCardDraftArtifact;
+  evidenceApproval: EvidenceCardApprovalArtifact;
+  cell: PromptThreadWorkerCell;
+  expected: Pick<PromptThreadWorkerCell, "revision" | "runtimeHash" | "actionSchemaHash" | "harnessDigest">;
+  branchState?: PromptThreadWorkerBranchState;
+  savedResponse?: unknown;
+  brokerTransport?: (request: Record<string, unknown>) => Promise<unknown>;
+}
+
+export interface PromptThreadWorkerResult {
+  dispatched: boolean;
+  request?: Record<string, unknown>;
+  response: unknown;
+  branchState: PromptThreadWorkerBranchState;
+  checkpoint: ContinuationCheckpointArtifact;
+}
+
+export class PromptThreadWorkerError extends Error {
+  constructor(readonly code: "protocol_mismatch" | "input_mismatch" | "duplicate_cell" | "missing_transport" | "provider_failure") {
+    super(`Prompt-thread worker rejected cell: ${code}`);
+  }
+}
+
+export interface PromptThreadWorkerDependencies {
+  executeCell?: (
+    caseValue: FrozenCaseArtifact,
+    input: {
+      turn: 1 | 2 | 3 | 4;
+      model: string;
+      promptCacheKey: string;
+      previousResponses: unknown[];
+      dispatch: (request: Record<string, unknown>) => Promise<unknown>;
+    },
+  ) => Promise<PromptThreadGeneratedCellResult>;
+}
+
+/**
+ * Trusted local revision-worker boundary. It never constructs an OpenAI client:
+ * the injected broker transport is the sole outbound seam. Each cell rebuilds
+ * its branch through this checkout's real Mingle path before applying the
+ * current provider response.
+ */
+export async function runPromptThreadWorker(
+  input: PromptThreadWorkerInput,
+  dependencies: PromptThreadWorkerDependencies = {},
+): Promise<PromptThreadWorkerResult> {
+  validateWorkerInput(input);
+  const branchState = freshBranchState(input.branchState);
+  if (branchState.appliedCellIds.includes(input.cell.cellId)) {
+    throw new PromptThreadWorkerError("duplicate_cell");
+  }
+  const existingLineage = branchState.actorLineages[input.cell.actorId];
+  if (existingLineage && existingLineage !== input.cell.actorLineage) {
+    throw new PromptThreadWorkerError("input_mismatch");
+  }
+
+  const saved = input.savedResponse;
+  if (saved === undefined && !input.brokerTransport) {
+    throw new PromptThreadWorkerError("missing_transport");
+  }
+  let dispatched = false;
+  const executeCell = dependencies.executeCell ?? runPromptThreadGeneratedCell;
+  let generated: PromptThreadGeneratedCellResult;
+  try {
+    generated = await executeCell(input.caseValue, {
+      turn: workerTurn(input.cell.turn),
+      model: input.cell.model,
+      promptCacheKey: input.cell.actorLineage,
+      previousResponses: structuredClone(branchState.providerResponses),
+      dispatch: async (request) => {
+        if (saved !== undefined) return structuredClone(saved);
+        dispatched = true;
+        return input.brokerTransport!(request);
+      },
+    });
+  } catch (error) {
+    if (error instanceof PromptThreadWorkerError) throw error;
+    throw new PromptThreadWorkerError("provider_failure");
+  }
+  const { request, response } = generated;
+  branchState.appliedCellIds.push(input.cell.cellId);
+  branchState.actorLineages[input.cell.actorId] = input.cell.actorLineage;
+  branchState.providerResponses.push(structuredClone(response));
+  const checkpoint: ContinuationCheckpointArtifact = {
+    ...generated.checkpoint,
+    protocolVersion: PROTOCOL_VERSION,
+    schemaHash: PROTOCOL_SCHEMA_HASH,
+    kind: "continuation_checkpoint",
+    createdAt: new Date().toISOString(),
+    branchId: input.cell.branchId,
+    cellId: input.cell.cellId,
+    turn: input.cell.turn,
+    privateState: {
+      caseHash: hashCanonicalJson(input.caseValue),
+      cardHash: hashCanonicalJson(input.evidenceDraft),
+      appliedCellIds: [...branchState.appliedCellIds],
+      actorLineages: structuredClone(branchState.actorLineages),
+      branchState: jsonValue(branchState),
+      applied: generated.checkpoint.privateState,
+    },
+  };
+  parseArtifact(checkpoint);
+  return { dispatched, request, response, branchState, checkpoint };
+}
+
+export function createPromptThreadWorkerHandshake(harnessDigest: string): ProtocolHandshake {
+  return createHandshake({
+    capabilities: ["prompt-thread-worker", "saved-response-apply", "broker-transport-only"],
+    harnessDigest,
+  });
+}
+
+export async function computePromptThreadWorkerHarnessDigest(
+  checkoutRoot = resolve(import.meta.dir, "../../.."),
+): Promise<string> {
+  const files = [
+    "bun.lock",
+    "packages/engine/src/agent.ts",
+    "packages/engine/src/context-builder.ts",
+    "packages/engine/src/mingle-turn-execution.ts",
+    "packages/engine/src/prompt-thread-lab.ts",
+    "packages/api/src/services/prompt-thread-provider-broker.ts",
+    "packages/prompt-lab-protocol/src/schemas.ts",
+  ] as const;
+  const digest = createHash("sha256");
+  digest.update(`bun:${Bun.version}\n`);
+  for (const relativePath of files) {
+    digest.update(`${relativePath}\0`);
+    digest.update(await readFile(join(checkoutRoot, relativePath)));
+    digest.update("\0");
+  }
+  return `sha256:${digest.digest("hex")}`;
+}
+
+function validateWorkerInput(input: PromptThreadWorkerInput): void {
+  try {
+    validateHandshake(
+      createPromptThreadWorkerHandshake(input.cell.harnessDigest),
+      input.handshake,
+      ["prompt-thread-worker"],
+    );
+  } catch {
+    throw new PromptThreadWorkerError("protocol_mismatch");
+  }
+  const caseArtifact = parseArtifact(input.caseValue);
+  const draft = parseArtifact(input.evidenceDraft);
+  const approval = parseArtifact(input.evidenceApproval);
+  if (caseArtifact.kind !== "frozen_case" || draft.kind !== "evidence_card_draft" || approval.kind !== "evidence_card_approval") {
+    throw new PromptThreadWorkerError("input_mismatch");
+  }
+  if (
+    approval.caseHash !== hashCanonicalJson(caseArtifact)
+    || approval.cardHash !== hashCanonicalJson(draft)
+    || input.cell.revision !== input.expected.revision
+    || input.cell.runtimeHash !== input.expected.runtimeHash
+    || input.cell.actionSchemaHash !== input.expected.actionSchemaHash
+    || input.cell.harnessDigest !== input.expected.harnessDigest
+    || input.cell.turn < 1
+    || !Number.isInteger(input.cell.turn)
+    || !input.cell.actorLineage
+    || (input.branchState?.appliedCellIds?.length ?? 0) !== input.cell.turn - 1
+    || (input.branchState?.providerResponses?.length ?? 0) !== input.cell.turn - 1
+  ) {
+    throw new PromptThreadWorkerError("input_mismatch");
+  }
+  if (
+    input.handshake.protocolVersion !== PROTOCOL_VERSION
+    || input.handshake.schemaHash !== PROTOCOL_SCHEMA_HASH
+    || input.handshake.canonicalizerId !== CANONICALIZER_ID
+    || input.handshake.canonicalizerVersion !== CANONICALIZER_VERSION
+  ) {
+    throw new PromptThreadWorkerError("protocol_mismatch");
+  }
+}
+
+function freshBranchState(value: PromptThreadWorkerBranchState | undefined): PromptThreadWorkerBranchState {
+  return {
+    appliedCellIds: [...(value?.appliedCellIds ?? [])],
+    actorLineages: { ...(value?.actorLineages ?? {}) },
+    providerResponses: structuredClone(value?.providerResponses ?? []),
+  };
+}
+
+function workerTurn(value: number): 1 | 2 | 3 | 4 {
+  if (value === 1 || value === 2 || value === 3 || value === 4) return value;
+  throw new PromptThreadWorkerError("input_mismatch");
+}
+
+function jsonValue(value: unknown): JsonValue {
+  return JSON.parse(JSON.stringify(value)) as JsonValue;
+}
+
+interface WorkerRunFile {
+  input: Omit<PromptThreadWorkerInput, "brokerTransport">;
+  brokerUrl: string;
+  brokerToken: string;
+}
+
+async function runWorkerFile(inputPath: string, outputPath: string): Promise<void> {
+  const envelope = JSON.parse(await readFile(inputPath, "utf8")) as WorkerRunFile;
+  const result = await runPromptThreadWorker({
+    ...envelope.input,
+    brokerTransport: async (request) => {
+      const response = await fetch(envelope.brokerUrl, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${envelope.brokerToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(request),
+      });
+      if (!response.ok) throw new Error(`Broker rejected worker request: ${response.status}`);
+      return response.json();
+    },
+  });
+  const temporaryPath = join(dirname(outputPath), `.${randomUUID()}.tmp`);
+  await writeFile(temporaryPath, JSON.stringify(result), { mode: 0o600 });
+  await chmod(temporaryPath, 0o600);
+  await rename(temporaryPath, outputPath);
+}
+
+async function main(args: string[]): Promise<void> {
+  const [command, ...rest] = args;
+  if (command === "handshake") {
+    const harnessDigest = await computePromptThreadWorkerHarnessDigest();
+    process.stdout.write(`${JSON.stringify(createPromptThreadWorkerHandshake(harnessDigest))}\n`);
+    return;
+  }
+  if (command === "run") {
+    const [inputPath, outputPath] = rest;
+    if (!inputPath || !outputPath) throw new Error("run requires private input and output paths");
+    await runWorkerFile(inputPath, outputPath);
+    process.stdout.write('{"status":"completed"}\n');
+    return;
+  }
+  throw new Error("Expected prompt-thread-worker handshake or run");
+}
+
+if (import.meta.main) {
+  main(process.argv.slice(2)).catch((error) => {
+    const code = error instanceof PromptThreadWorkerError ? error.code : "worker_failed";
+    process.stderr.write(`${JSON.stringify({ code })}\n`);
+    process.exitCode = 1;
+  });
+}

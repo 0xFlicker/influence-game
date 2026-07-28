@@ -129,6 +129,21 @@ export interface PromptThreadReplayCapture {
   checkpoints: ContinuationCheckpointArtifact[];
 }
 
+export interface PromptThreadGeneratedCellInput {
+  turn: 1 | 2 | 3 | 4;
+  model: string;
+  promptCacheKey: string;
+  previousResponses: unknown[];
+  dispatch: (request: Record<string, unknown>) => Promise<unknown>;
+}
+
+export interface PromptThreadGeneratedCellResult {
+  request: Record<string, unknown>;
+  response: unknown;
+  capture: PromptThreadReplayCapture;
+  checkpoint: ContinuationCheckpointArtifact;
+}
+
 export interface PromptThreadFidelityReceipt {
   version: 1;
   status: "matched";
@@ -145,10 +160,18 @@ export async function capturePromptThreadReplay(
   caseValue: FrozenCaseArtifact,
   options: {
     onDeterministicProviderSetup?: () => void;
+    generatedCell?: PromptThreadGeneratedCellInput;
   } = {},
 ): Promise<PromptThreadReplayCapture> {
   const validated = validatePromptThreadCase(caseValue);
   options.onDeterministicProviderSetup?.();
+  const generatedCell = options.generatedCell;
+  if (
+    generatedCell
+    && generatedCell.previousResponses.length !== generatedCell.turn - 1
+  ) {
+    throw new Error("Generated prompt-thread cell requires every prior branch response");
+  }
 
   const { gameState } = validated;
   const logger = new TranscriptLogger(gameState);
@@ -172,6 +195,9 @@ export async function capturePromptThreadReplay(
     scripts.push(trace);
     scriptsByActor.set(trace.actorId, scripts);
   }
+  const generatedProvider = generatedCell
+    ? createGeneratedCellProvider(validated, generatedCell)
+    : null;
 
   for (const actorId of validated.actorIds) {
     const roster = validated.roster.find((entry) => entry.id === actorId)!;
@@ -181,8 +207,9 @@ export async function capturePromptThreadReplay(
       roster.id,
       roster.name,
       roster.personality,
-      deterministicOpenAIStub(scriptsByActor.get(actorId) ?? []),
-      roster.model,
+      generatedProvider?.clientFor(actorId)
+        ?? deterministicOpenAIStub(scriptsByActor.get(actorId) ?? []),
+      generatedCell?.model ?? roster.model,
       roster.backstory,
       undefined,
       {
@@ -200,6 +227,14 @@ export async function capturePromptThreadReplay(
           : {}),
         ...(roster.strategyInstructions
           ? { strategyInstructions: roster.strategyInstructions }
+          : {}),
+        ...(generatedCell
+          ? {
+              promptCacheLineage: generatedCell.promptCacheKey,
+              requireOpenAIResponses: true,
+              evaluationFailFast: true,
+              structuredCallMaxAttempts: 1,
+            }
           : {}),
       },
     );
@@ -269,6 +304,7 @@ export async function capturePromptThreadReplay(
   );
   let turnNumber = 0;
 
+  replayBeats:
   for (const beat of validated.schedule) {
     for (const playerId of beat.playerIds) {
       roomByPlayerId.set(playerId, beat.roomId);
@@ -323,6 +359,9 @@ export async function capturePromptThreadReplay(
         agents,
         output: collected.action,
       }));
+      if (generatedCell && turnNumber === generatedCell.turn) {
+        break replayBeats;
+      }
     }
     movementRecords.push(...commitMingleTurnMovements({
       ctx,
@@ -334,9 +373,10 @@ export async function capturePromptThreadReplay(
     }));
   }
 
-  if (capturedTraces.length !== 6) {
+  const expectedTraceCount = generatedCell ? generatedCell.turn + 2 : 6;
+  if (capturedTraces.length !== expectedTraceCount) {
     throw new Error(
-      `Deterministic replay emitted ${capturedTraces.length} traces; expected six`,
+      `Deterministic replay emitted ${capturedTraces.length} traces; expected ${expectedTraceCount}`,
     );
   }
   return {
@@ -346,6 +386,38 @@ export async function capturePromptThreadReplay(
     turns,
     movementRecords,
     checkpoints,
+  };
+}
+
+export async function runPromptThreadGeneratedCell(
+  caseValue: FrozenCaseArtifact,
+  input: PromptThreadGeneratedCellInput,
+): Promise<PromptThreadGeneratedCellResult> {
+  let generated:
+    | { request: Record<string, unknown>; response: unknown }
+    | undefined;
+  const capture = await capturePromptThreadReplay(caseValue, {
+    generatedCell: {
+      ...input,
+      dispatch: async (request) => {
+        const response = await input.dispatch(request);
+        generated = {
+          request: structuredClone(request),
+          response: structuredClone(response),
+        };
+        return response;
+      },
+    },
+  });
+  const checkpoint = capture.checkpoints.at(-1);
+  if (!generated || !checkpoint) {
+    throw new Error("Generated prompt-thread cell did not reach its provider boundary");
+  }
+  return {
+    request: generated.request,
+    response: generated.response,
+    capture,
+    checkpoint,
   };
 }
 
@@ -745,30 +817,7 @@ function deterministicOpenAIStub(scripts: StoredTrace[]): OpenAI {
     responses: {
       create: async () => {
         const script = nextScript();
-        const outputText = JSON.stringify(script.output);
-        return {
-          id: `deterministic-${script.manifestId}`,
-          object: "response",
-          status: "completed",
-          output_text: outputText,
-          output: [{
-            id: `message-${script.manifestId}`,
-            type: "message",
-            role: "assistant",
-            status: "completed",
-            content: [{
-              type: "output_text",
-              text: outputText,
-            }],
-          }],
-          usage: {
-            input_tokens: 0,
-            input_tokens_details: { cached_tokens: 0 },
-            output_tokens: 0,
-            output_tokens_details: { reasoning_tokens: 0 },
-            total_tokens: 0,
-          },
-        };
+        return storedTraceResponse(script);
       },
     },
     chat: {
@@ -817,6 +866,84 @@ function deterministicOpenAIStub(scripts: StoredTrace[]): OpenAI {
       },
     },
   } as unknown as OpenAI;
+}
+
+function createGeneratedCellProvider(
+  validated: ValidatedPromptThreadCase,
+  input: PromptThreadGeneratedCellInput,
+): { clientFor: (actorId: UUID) => OpenAI } {
+  const intentByActor = new Map(
+    validated.traces
+      .slice(0, 2)
+      .map((trace) => [trace.actorId, trace] as const),
+  );
+  return {
+    clientFor: (actorId) => {
+      let invocation = 0;
+      return {
+        responses: {
+          create: async (params: Record<string, unknown>) => {
+            invocation += 1;
+            if (invocation === 1) {
+              const intent = intentByActor.get(actorId);
+              if (!intent) {
+                throw new Error(`Generated replay is missing intent for ${actorId}`);
+              }
+              return storedTraceResponse(intent);
+            }
+            const actorOffset = validated.actorIds.indexOf(actorId);
+            if (actorOffset < 0) {
+              throw new Error(`Generated replay actor ${actorId} is not selected`);
+            }
+            const turn = actorOffset + 1 + ((invocation - 2) * 2);
+            if (turn < input.turn) {
+              const prior = input.previousResponses[turn - 1];
+              if (prior === undefined) {
+                throw new Error(`Generated replay is missing prior response for turn ${turn}`);
+              }
+              return structuredClone(prior);
+            }
+            if (turn !== input.turn) {
+              throw new Error(`Generated replay attempted future turn ${turn}`);
+            }
+            const request = {
+              ...structuredClone(params),
+              model: input.model,
+              prompt_cache_key: input.promptCacheKey,
+            };
+            return input.dispatch(request);
+          },
+        },
+      } as unknown as OpenAI;
+    },
+  };
+}
+
+function storedTraceResponse(script: StoredTrace): Record<string, unknown> {
+  const outputText = JSON.stringify(script.output);
+  return {
+    id: `deterministic-${script.manifestId}`,
+    object: "response",
+    status: "completed",
+    output_text: outputText,
+    output: [{
+      id: `message-${script.manifestId}`,
+      type: "message",
+      role: "assistant",
+      status: "completed",
+      content: [{
+        type: "output_text",
+        text: outputText,
+      }],
+    }],
+    usage: {
+      input_tokens: 0,
+      input_tokens_details: { cached_tokens: 0 },
+      output_tokens: 0,
+      output_tokens_details: { reasoning_tokens: 0 },
+      total_tokens: 0,
+    },
+  };
 }
 
 function createContinuationCheckpoint(input: {

@@ -3,7 +3,9 @@ import {
   parseArtifact,
   type ArtifactEnvelope,
   type CuratorApprovalArtifact,
+  type EvidenceCardApprovalArtifact,
   type FrozenCaseArtifact,
+  type PaidApprovalArtifact,
 } from "@influence/prompt-lab-protocol";
 import type { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
 import {
@@ -21,8 +23,20 @@ import {
 } from "../services/prompt-thread-evidence-card.js";
 import {
   createPromptThreadOpenAIClient,
+  createPromptThreadOpenAIDispatch,
   PromptThreadProviderBroker,
 } from "../services/prompt-thread-provider-broker.js";
+import {
+  approvePromptThreadPanel,
+  createTrustedCheckoutPanelDependencies,
+  createPromptThreadPanelManifest,
+  initializePromptThreadPanelRun,
+  runPromptThreadPanel,
+  structuralPanelStatus,
+  type PanelPreflightDependencies,
+  type PromptThreadPanelManifest,
+  type RunPanelDependencies,
+} from "../services/prompt-thread-panel.js";
 import {
   atomicWriteArtifact,
   atomicWriteJson,
@@ -32,6 +46,7 @@ import {
   readArtifactIfExists,
   readPrivateJson,
   recoverOrInvalidateRun,
+  inspectRunRecovery,
   withRunMutationLock,
 } from "../services/prompt-thread-workspace.js";
 
@@ -41,11 +56,17 @@ type PromptThreadLabCommand =
   | "curator-approve"
   | "curate"
   | "apply-curator-response"
-  | "freeze";
+  | "freeze"
+  | "panel-manifest"
+  | "panel-approve"
+  | "panel-init"
+  | "panel-status"
+  | "panel-run"
+  | "panel-resume";
 
 export interface PromptThreadLabResult {
   status: "ok" | "error";
-  lifecycle: "draft" | "approved" | "frozen" | "error";
+  lifecycle: "draft" | "approved" | "frozen" | "running" | "completed" | "invalidated" | "error";
   errorCode?: string;
   requiresHuman: boolean;
   guidance?: string;
@@ -69,6 +90,8 @@ export interface PromptThreadLabCliDependencies {
       partition: CuratorManifest["partitions"][number];
     }): Promise<CuratorPartitionResponse>;
   };
+  panelRunner?: RunPanelDependencies;
+  panelPreflight?: PanelPreflightDependencies;
 }
 
 const DEFAULT_PATHS = {
@@ -78,6 +101,8 @@ const DEFAULT_PATHS = {
   curatorResponses: "evidence/curator-responses.json",
   curatorDraft: "evidence/curator-draft.json",
   evidenceApproval: "evidence/evidence-card-approval.json",
+  panelManifest: "panel/run-manifest.json",
+  panelApproval: "panel/paid-approval.json",
 } as const;
 
 export async function runPromptThreadLabCli(
@@ -199,6 +224,158 @@ export async function runPromptThreadLabCli(
       });
     }
 
+    if (command === "panel-manifest") {
+      const caseValue = await readFrozenCase(workspace, requiredFlag(flags, "case"));
+      const draft = await readEvidenceDraft(workspace, requiredFlag(flags, "draft"));
+      const evidenceApproval = await readEvidenceApproval(
+        workspace,
+        requiredFlag(flags, "evidence-approval"),
+      );
+      const sourceFidelity = parseJsonFlag<{
+        status: "matched";
+        caseId: string;
+        turnCount: number;
+        sourceMutation: false;
+      }>(flags, "source-fidelity");
+      const manifest = await createPromptThreadPanelManifest({
+        caseValue,
+        sourceFidelity,
+        evidenceDraft: draft,
+        evidenceApproval,
+        baseline: {
+          arm: "baseline",
+          checkoutPath: requiredFlag(flags, "baseline-checkout"),
+          commitSha: requiredFlag(flags, "baseline-sha"),
+          compilerPolicyDigest: requiredFlag(flags, "baseline-policy-digest"),
+          harnessDigest: requiredFlag(flags, "harness-digest"),
+        },
+        candidate: {
+          arm: "candidate",
+          checkoutPath: requiredFlag(flags, "candidate-checkout"),
+          commitSha: requiredFlag(flags, "candidate-sha"),
+          compilerPolicyDigest: requiredFlag(flags, "candidate-policy-digest"),
+          harnessDigest: requiredFlag(flags, "harness-digest"),
+        },
+        verdictScope: parseVerdictScope(requiredFlag(flags, "verdict-scope")),
+        historyEnabled: flags.get("history-enabled") === "true",
+        modelSnapshot: requiredFlag(flags, "model"),
+        requestedServiceTier: "flex",
+        zdrStatus: parseZdrStatus(requiredFlag(flags, "zdr-status")),
+        runtimeHash: requiredFlag(flags, "runtime-hash"),
+        actionSchemaHash: requiredFlag(flags, "action-schema-hash"),
+        maximumSpendUsd: numberFlag(flags, "max-spend-usd"),
+        estimatedInputTokensPerCall: numberFlag(flags, "input-token-ceiling"),
+        maximumOutputTokensPerCall: numberFlag(flags, "output-token-ceiling"),
+        actorIds: parseActorIds(requiredFlag(flags, "actor-ids")),
+        now,
+      }, dependencies.panelPreflight);
+      return writeArtifactResult(
+        workspace,
+        flags,
+        "panel-manifest",
+        DEFAULT_PATHS.panelManifest,
+        manifest,
+        { lifecycle: "draft", nextActions: ["panel-approve"] },
+      );
+    }
+
+    if (command === "panel-approve") {
+      const blocked = requireInteractiveConfirmation(
+        dependencies.isTTY ?? Boolean(process.stdin.isTTY),
+        flags,
+      );
+      if (blocked) return blocked;
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const approval = approvePromptThreadPanel(
+        manifest,
+        requiredFlag(flags, "reviewer"),
+        now,
+      );
+      return writeArtifactResult(
+        workspace,
+        flags,
+        "panel-approve",
+        DEFAULT_PATHS.panelApproval,
+        approval,
+        { lifecycle: "approved", nextActions: ["panel-init"] },
+      );
+    }
+
+    if (command === "panel-init") {
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const approval = await readPaidApproval(
+        workspace,
+        requiredFlag(flags, "approval"),
+      );
+      await initializePromptThreadPanelRun(workspace, manifest, approval);
+      return panelResult(
+        structuralPanelStatus(manifest.cells, [], manifest.runId),
+      );
+    }
+
+    if (command === "panel-status") {
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const inspection = await inspectRunRecovery(workspace, manifest.runId);
+      const latestStages = latestTransitionStages(inspection.transitions);
+      const completed = manifest.cells
+        .filter((cell) => latestStages.get(cell.cellId) === "completed")
+        .map(({ cellId }) => cellId);
+      return panelResult(structuralPanelStatus(
+        manifest.cells,
+        completed,
+        manifest.runId,
+      ));
+    }
+
+    if (command === "panel-run" || command === "panel-resume") {
+      const manifest = await readPanelManifest(
+        workspace,
+        requiredFlag(flags, "manifest"),
+      );
+      const approval = await readPaidApproval(
+        workspace,
+        requiredFlag(flags, "approval"),
+      );
+      const caseValue = await readFrozenCase(workspace, requiredFlag(flags, "case"));
+      const draft = await readEvidenceDraft(workspace, requiredFlag(flags, "draft"));
+      const evidenceApproval = await readEvidenceApproval(
+        workspace,
+        requiredFlag(flags, "evidence-approval"),
+      );
+      const inspection = await inspectRunRecovery(workspace, manifest.runId);
+      assertPanelCommandState(command, manifest, inspection.transitions);
+      const interrupt = dependencies.panelRunner ? null : installPanelInterruptHandler();
+      const panelRunner = dependencies.panelRunner
+        ?? defaultPanelRunner(
+          workspace,
+          manifest,
+          process.env.OPENAI_API_KEY,
+          interrupt?.stopRequested,
+        );
+      try {
+        return panelResult(await runPromptThreadPanel(
+          workspace,
+          manifest,
+          approval,
+          caseValue,
+          draft,
+          evidenceApproval,
+          panelRunner,
+        ));
+      } finally {
+        interrupt?.dispose();
+      }
+    }
+
     const blocked = requireInteractiveConfirmation(dependencies.isTTY ?? Boolean(process.stdin.isTTY), flags);
     if (blocked) return blocked;
     const caseValue = await readFrozenCase(workspace, requiredFlag(flags, "case"));
@@ -211,6 +388,100 @@ export async function runPromptThreadLabCli(
   } catch (error) {
     return errorResult(error);
   }
+}
+
+function assertPanelCommandState(
+  command: "panel-run" | "panel-resume",
+  manifest: PromptThreadPanelManifest,
+  transitions: readonly { cellId: string; stage: string }[],
+): void {
+  const latest = latestTransitionStages(transitions);
+  if (
+    manifest.cells.some((cell) => !latest.has(cell.cellId))
+    || latest.size !== manifest.cells.length
+  ) {
+    throw new Error("Panel run must be initialized before execution");
+  }
+  if (
+    command === "panel-run"
+    && manifest.cells.some((cell) => latest.get(cell.cellId) !== "planned")
+  ) {
+    throw new Error("panel-run requires an untouched initialized journal; use panel-resume");
+  }
+}
+
+function latestTransitionStages(
+  transitions: readonly { cellId: string; stage: string }[],
+): Map<string, string> {
+  const latest = new Map<string, string>();
+  for (const transition of transitions) {
+    latest.set(transition.cellId, transition.stage);
+  }
+  return latest;
+}
+
+function defaultPanelRunner(
+  workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+  manifest: PromptThreadPanelManifest,
+  apiKey: string | undefined,
+  stopRequested: (() => boolean) | undefined,
+): RunPanelDependencies {
+  if (!apiKey?.trim()) {
+    throw new Error("OPENAI_API_KEY is required for an approved panel dispatch");
+  }
+  return createTrustedCheckoutPanelDependencies(
+    workspace,
+    manifest,
+    createPromptThreadOpenAIDispatch(apiKey),
+    {
+      ...(stopRequested && {
+        stopBeforeCell: stopRequested,
+        stopAfterCell: stopRequested,
+      }),
+    },
+  );
+}
+
+function installPanelInterruptHandler(): {
+  stopRequested: () => boolean;
+  dispose: () => void;
+} {
+  let requested = false;
+  let interrupts = 0;
+  const handler = () => {
+    interrupts += 1;
+    if (interrupts === 1) {
+      requested = true;
+      return;
+    }
+    process.removeListener("SIGINT", handler);
+    process.kill(process.pid, "SIGINT");
+  };
+  process.on("SIGINT", handler);
+  return {
+    stopRequested: () => requested,
+    dispose: () => process.removeListener("SIGINT", handler),
+  };
+}
+
+function panelResult(
+  summary: Awaited<ReturnType<typeof runPromptThreadPanel>>,
+): PromptThreadLabResult {
+  return {
+    status: summary.lifecycle === "failed" || summary.lifecycle === "aborted"
+      ? "error"
+      : "ok",
+    lifecycle: summary.lifecycle === "failed" || summary.lifecycle === "aborted"
+      ? "error"
+      : summary.lifecycle,
+    requiresHuman: summary.requiresHuman,
+    nextActions: summary.nextActions,
+    reservedSpendUsd: summary.reservedSpendUsd,
+    settledSpendUsd: summary.settledSpendUsd,
+    completedCells: summary.completedCells,
+    outstandingCells: summary.outstandingCells,
+    ...(summary.reasonCode ? { guidance: summary.reasonCode } : {}),
+  };
 }
 
 async function dispatchInjectedCurator(
@@ -452,6 +723,35 @@ async function readEvidenceDraft(
   return artifact as unknown as PromptThreadEvidenceCard;
 }
 
+async function readEvidenceApproval(
+  workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+  path: string,
+): Promise<EvidenceCardApprovalArtifact> {
+  const artifact = parseArtifact(await readArtifact(workspace, path));
+  if (artifact.kind !== "evidence_card_approval") {
+    throw new Error("Expected an evidence_card_approval artifact");
+  }
+  return artifact;
+}
+
+async function readPanelManifest(
+  workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+  path: string,
+): Promise<PromptThreadPanelManifest> {
+  const artifact = parseArtifact(await readArtifact(workspace, path));
+  if (artifact.kind !== "run_manifest") throw new Error("Expected a run_manifest artifact");
+  return artifact as unknown as PromptThreadPanelManifest;
+}
+
+async function readPaidApproval(
+  workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+  path: string,
+): Promise<PaidApprovalArtifact> {
+  const artifact = parseArtifact(await readArtifact(workspace, path));
+  if (artifact.kind !== "paid_approval") throw new Error("Expected a paid_approval artifact");
+  return artifact;
+}
+
 function parseCommand(argv: readonly string[]): {
   command: PromptThreadLabCommand;
   flags: Map<string, string>;
@@ -482,7 +782,13 @@ function isCommand(value: string | undefined): value is PromptThreadLabCommand {
     || value === "curator-approve"
     || value === "curate"
     || value === "apply-curator-response"
-    || value === "freeze";
+    || value === "freeze"
+    || value === "panel-manifest"
+    || value === "panel-approve"
+    || value === "panel-init"
+    || value === "panel-status"
+    || value === "panel-run"
+    || value === "panel-resume";
 }
 
 function requiredFlag(flags: ReadonlyMap<string, string>, name: string): string {
@@ -503,6 +809,22 @@ function parseJsonFlag<T>(flags: ReadonlyMap<string, string>, name: string): T {
   } catch {
     throw new Error(`--${name} must contain valid JSON`);
   }
+}
+
+function parseActorIds(value: string): readonly [string, string] {
+  const actorIds = value.split(",").map((entry) => entry.trim()).filter(Boolean);
+  if (actorIds.length !== 2) throw new Error("--actor-ids requires exactly two IDs");
+  return [actorIds[0]!, actorIds[1]!];
+}
+
+function parseZdrStatus(value: string): "enabled" | "disabled" | "unknown" {
+  if (value === "enabled" || value === "disabled" || value === "unknown") return value;
+  throw new Error("--zdr-status must be enabled, disabled, or unknown");
+}
+
+function parseVerdictScope(value: string): "full" | "cache_quality_only" {
+  if (value === "full" || value === "cache_quality_only") return value;
+  throw new Error("--verdict-scope must be full or cache_quality_only");
 }
 
 if (import.meta.main) {

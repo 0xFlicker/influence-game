@@ -10,6 +10,7 @@
     "./format-rules": "./src/format-rules.ts",
     "./format-presentation-metadata": "./src/format-presentation-metadata.ts",
     "./prompt-thread-lab": "./src/prompt-thread-lab.ts",
+    "./prompt-thread-worker": "./src/prompt-thread-worker.ts",
     "./viewer-presentation": "./src/viewer-decision-events.ts",
     "./fixtures/format-kernel-viewer": "./src/fixtures/format-kernel-viewer.ts"
   },

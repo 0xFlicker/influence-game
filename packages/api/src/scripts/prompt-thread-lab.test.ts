@@ -8,6 +8,7 @@ import {
   hashCanonicalJson,
   type FrozenCaseArtifact,
 } from "@influence/prompt-lab-protocol";
+import { createPromptThreadWorkerHandshake } from "@influence/engine/prompt-thread-worker";
 import {
   atomicWriteArtifact,
   createPrivateWorkspace,
@@ -154,6 +155,85 @@ describe("prompt-thread lab CLI primitives", () => {
         "--reviewer", "producer", "--confirm",
       ], { isTTY: true });
       expect(frozen).toMatchObject({ status: "ok", lifecycle: "frozen" });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("preflights, approves, initializes, and inspects a 28-cell panel without dispatch", async () => {
+    const { root, caseValue } = await workspaceWithCase();
+    try {
+      await runPromptThreadLabCli([
+        "manual-draft", "--workspace", root, "--case", "cases/case.json",
+        "--items", JSON.stringify([]),
+      ]);
+      await runPromptThreadLabCli([
+        "freeze", "--workspace", root, "--case", "cases/case.json",
+        "--draft", "evidence/manual-draft.json",
+        "--reviewer", "producer", "--confirm",
+      ], { isTTY: true });
+      const baselineSha = "a".repeat(40);
+      const candidateSha = "b".repeat(40);
+      const manifest = await runPromptThreadLabCli([
+        "panel-manifest", "--workspace", root, "--case", "cases/case.json",
+        "--draft", "evidence/manual-draft.json",
+        "--evidence-approval", "evidence/evidence-card-approval.json",
+        "--source-fidelity", JSON.stringify({
+          status: "matched",
+          caseId: caseValue.caseId,
+          turnCount: 4,
+          sourceMutation: false,
+        }),
+        "--baseline-checkout", "/baseline", "--baseline-sha", baselineSha,
+        "--baseline-policy-digest", "sha256:baseline",
+        "--candidate-checkout", "/candidate", "--candidate-sha", candidateSha,
+        "--candidate-policy-digest", "sha256:candidate",
+        "--harness-digest", "sha256:harness",
+        "--verdict-scope", "cache_quality_only",
+        "--history-enabled", "false",
+        "--model", "gpt-5.4-nano-2026-03-17",
+        "--zdr-status", "unknown",
+        "--runtime-hash", "sha256:runtime",
+        "--action-schema-hash", "sha256:action",
+        "--max-spend-usd", "10",
+        "--input-token-ceiling", "4000",
+        "--output-token-ceiling", "1000",
+        "--actor-ids", "finn,lyra",
+      ], {
+        panelPreflight: {
+          inspectCheckout: async (path) => ({
+            commitSha: path === "/baseline" ? baselineSha : candidateSha,
+            dirty: false,
+          }),
+          inspectWorkerHandshake: async (revision) =>
+            createPromptThreadWorkerHandshake(revision.harnessDigest),
+        },
+      });
+      expect(manifest).toMatchObject({ status: "ok", lifecycle: "draft" });
+      const approved = await runPromptThreadLabCli([
+        "panel-approve", "--workspace", root,
+        "--manifest", "panel/run-manifest.json",
+        "--reviewer", "producer", "--confirm",
+      ], { isTTY: true });
+      expect(approved.lifecycle).toBe("approved");
+      const initialized = await runPromptThreadLabCli([
+        "panel-init", "--workspace", root,
+        "--manifest", "panel/run-manifest.json",
+        "--approval", "panel/paid-approval.json",
+      ]);
+      expect(initialized).toMatchObject({
+        lifecycle: "running",
+        completedCells: 0,
+        outstandingCells: 28,
+      });
+      const status = await runPromptThreadLabCli([
+        "panel-status", "--workspace", root,
+        "--manifest", "panel/run-manifest.json",
+      ]);
+      expect(status).toMatchObject({
+        lifecycle: "running",
+        outstandingCells: 28,
+      });
     } finally {
       await rm(root, { recursive: true, force: true });
     }

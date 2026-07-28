@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import OpenAI from "openai";
+import type { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
 import {
   PROTOCOL_SCHEMA_HASH,
   PROTOCOL_VERSION,
@@ -59,6 +60,7 @@ export type PromptThreadProviderDispatch = (request: Record<string, unknown>) =>
 export interface PromptThreadBrokerPolicy {
   model?: string;
   requestKind?: "panel" | "curator";
+  completedCellIds?: readonly string[];
 }
 
 export class PromptThreadBrokerError extends Error {
@@ -96,6 +98,21 @@ export class PromptThreadProviderBroker {
     this.maxSpendUsd = maxSpendUsd;
     this.model = policy.model ?? PROMPT_THREAD_PANEL_MODEL;
     this.requestKind = policy.requestKind ?? "panel";
+    const completedCellIds = new Set(policy.completedCellIds ?? []);
+    for (const cell of [...this.cells.values()].sort((left, right) => left.ordinal - right.ordinal)) {
+      if (completedCellIds.has(cell.cellId)) {
+        if (cell.ordinal !== this.nextOrdinal) {
+          throw new PromptThreadBrokerError("out_of_order");
+        }
+        this.dispatched.add(cell.cellId);
+        this.nextOrdinal += 1;
+      } else {
+        break;
+      }
+    }
+    if (this.dispatched.size !== completedCellIds.size) {
+      throw new PromptThreadBrokerError("out_of_order");
+    }
     if (this.reservedSpendUsd > maxSpendUsd) throw new PromptThreadBrokerError("spend_cap");
   }
 
@@ -152,7 +169,12 @@ export class PromptThreadProviderBroker {
     };
   }
 
-  async dispatch(lock: RunMutationLock, input: PromptThreadBrokerRequest, send: PromptThreadProviderDispatch): Promise<{ response: unknown; receipt: PromptThreadBrokerReceipt }> {
+  async dispatch(
+    lock: RunMutationLock,
+    input: PromptThreadBrokerRequest,
+    send: PromptThreadProviderDispatch,
+    options: { alreadyPlanned?: boolean } = {},
+  ): Promise<{ response: unknown; receipt: PromptThreadBrokerReceipt }> {
     const prepared = this.prepare(input);
     validateFinalRequest(prepared.cell, prepared.request, {
       model: this.model,
@@ -168,7 +190,9 @@ export class PromptThreadProviderBroker {
       requestHash: prepared.requestDigest,
       privateRequest: JSON.parse(JSON.stringify(prepared.request)),
     };
-    await appendCellTransition(lock, { cellId: prepared.cell.cellId, stage: "planned" });
+    if (!options.alreadyPlanned) {
+      await appendCellTransition(lock, { cellId: prepared.cell.cellId, stage: "planned" });
+    }
     await atomicWriteArtifact(lock, `${base}/prepared-request.json`, preparedArtifact);
     await appendCellTransition(lock, { cellId: prepared.cell.cellId, stage: "started" });
     const startedAt = performance.now();
@@ -233,10 +257,19 @@ export function createPromptThreadOpenAIClient(apiKey: string): OpenAI {
   return new OpenAI({ apiKey, maxRetries: 0 });
 }
 
+export function createPromptThreadOpenAIDispatch(
+  apiKey: string,
+): PromptThreadProviderDispatch {
+  const client = createPromptThreadOpenAIClient(apiKey);
+  return (request) => client.responses.create(
+    request as unknown as ResponseCreateParamsNonStreaming,
+  );
+}
+
 function validateFinalRequest(
   cell: PromptThreadBrokerCell,
   request: Record<string, unknown>,
-  policy: Required<PromptThreadBrokerPolicy>,
+  policy: Required<Pick<PromptThreadBrokerPolicy, "model" | "requestKind">>,
 ): void {
   if (typeof request.input !== "string") {
     throw new PromptThreadBrokerError("invalid_request");

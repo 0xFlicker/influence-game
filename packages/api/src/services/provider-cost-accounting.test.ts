@@ -7,6 +7,7 @@ import { insertGame, insertOwner } from "../__tests__/durable-run-test-utils.js"
 import {
   backfillGameCostAccounting,
   getGameCostDetail,
+  quoteProviderUsageCeiling,
   recordProviderSpendForTrace,
 } from "./provider-cost-accounting.js";
 
@@ -53,6 +54,34 @@ function createTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDeci
 }
 
 describe("provider cost accounting", () => {
+  test("quotes the pinned GPT-5.4 nano snapshot with versioned provenance", () => {
+    expect(quoteProviderUsageCeiling({
+      modelSnapshot: "gpt-5.4-nano-2026-03-17",
+      promptTokenCeiling: 1_000_000,
+      cachedPromptTokenCeiling: 250_000,
+      outputTokenCeiling: 100_000,
+    })).toEqual({
+      status: "estimated",
+      estimatedCostUsd: 0.28,
+      estimatedCostMicrousd: 280_000,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-07-04",
+    });
+  });
+
+  test("makes an unknown model snapshot unavailable instead of guessing", () => {
+    expect(quoteProviderUsageCeiling({
+      modelSnapshot: "gpt-5.4-nano-unrecognized-snapshot",
+      promptTokenCeiling: 1_000,
+      cachedPromptTokenCeiling: 0,
+      outputTokenCeiling: 100,
+    })).toEqual({
+      status: "unavailable",
+      pricingSourceId: null,
+      rateCardVersion: null,
+    });
+  });
+
   test("records OpenAI Responses usage with pricing provenance and idempotent source keys", async () => {
     const db = await setupTestDB();
     const gameId = await insertGame(db);
