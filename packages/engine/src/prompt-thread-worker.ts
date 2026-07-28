@@ -30,9 +30,15 @@ export interface PromptThreadWorkerCell {
   actorLineage: string;
   model: string;
   revision: string;
+  compilerPolicyDigest: string;
   runtimeHash: string;
   actionSchemaHash: string;
   harnessDigest: string;
+}
+
+export interface PromptThreadWorkerHandshake extends ProtocolHandshake {
+  compilerPolicyDigest: string;
+  actionSchemaHash: string;
 }
 
 export interface PromptThreadWorkerBranchState {
@@ -47,7 +53,10 @@ export interface PromptThreadWorkerInput {
   evidenceDraft: EvidenceCardDraftArtifact;
   evidenceApproval: EvidenceCardApprovalArtifact;
   cell: PromptThreadWorkerCell;
-  expected: Pick<PromptThreadWorkerCell, "revision" | "runtimeHash" | "actionSchemaHash" | "harnessDigest">;
+  expected: Pick<
+    PromptThreadWorkerCell,
+    "revision" | "compilerPolicyDigest" | "runtimeHash" | "actionSchemaHash" | "harnessDigest"
+  >;
   branchState?: PromptThreadWorkerBranchState;
   savedResponse?: unknown;
   brokerTransport?: (request: Record<string, unknown>) => Promise<unknown>;
@@ -62,7 +71,13 @@ export interface PromptThreadWorkerResult {
 }
 
 export class PromptThreadWorkerError extends Error {
-  constructor(readonly code: "protocol_mismatch" | "input_mismatch" | "duplicate_cell" | "missing_transport" | "provider_failure") {
+  constructor(readonly code:
+    | "protocol_mismatch"
+    | "input_mismatch"
+    | "duplicate_cell"
+    | "missing_transport"
+    | "provider_failure"
+    | "worker_failure") {
     super(`Prompt-thread worker rejected cell: ${code}`);
   }
 }
@@ -116,12 +131,16 @@ export async function runPromptThreadWorker(
       dispatch: async (request) => {
         if (saved !== undefined) return structuredClone(saved);
         dispatched = true;
-        return input.brokerTransport!(request);
+        try {
+          return await input.brokerTransport!(request);
+        } catch {
+          throw new PromptThreadWorkerError("provider_failure");
+        }
       },
     });
   } catch (error) {
     if (error instanceof PromptThreadWorkerError) throw error;
-    throw new PromptThreadWorkerError("provider_failure");
+    throw new PromptThreadWorkerError("worker_failure");
   }
   const { request, response } = generated;
   branchState.appliedCellIds.push(input.cell.cellId);
@@ -152,11 +171,19 @@ export async function runPromptThreadWorker(
   return { dispatched, request, response, branchState, checkpoint };
 }
 
-export function createPromptThreadWorkerHandshake(harnessDigest: string): ProtocolHandshake {
-  return createHandshake({
-    capabilities: ["prompt-thread-worker", "saved-response-apply", "broker-transport-only"],
-    harnessDigest,
-  });
+export function createPromptThreadWorkerHandshake(input: {
+  harnessDigest: string;
+  compilerPolicyDigest: string;
+  actionSchemaHash: string;
+}): PromptThreadWorkerHandshake {
+  return {
+    ...createHandshake({
+      capabilities: ["prompt-thread-worker", "saved-response-apply", "broker-transport-only"],
+      harnessDigest: input.harnessDigest,
+    }),
+    compilerPolicyDigest: input.compilerPolicyDigest,
+    actionSchemaHash: input.actionSchemaHash,
+  };
 }
 
 export async function computePromptThreadWorkerHarnessDigest(
@@ -181,10 +208,29 @@ export async function computePromptThreadWorkerHarnessDigest(
   return `sha256:${digest.digest("hex")}`;
 }
 
+export async function computePromptThreadWorkerPolicyDigest(
+  checkoutRoot = resolve(import.meta.dir, "../../.."),
+): Promise<string> {
+  return fileDigest(join(
+    checkoutRoot,
+    "packages/engine/src/context-recall-plan.ts",
+  ));
+}
+
+export async function computePromptThreadWorkerActionSchemaHash(
+  checkoutRoot = resolve(import.meta.dir, "../../.."),
+): Promise<string> {
+  return fileDigest(join(checkoutRoot, "packages/engine/src/agent.ts"));
+}
+
 function validateWorkerInput(input: PromptThreadWorkerInput): void {
   try {
     validateHandshake(
-      createPromptThreadWorkerHandshake(input.cell.harnessDigest),
+      createPromptThreadWorkerHandshake({
+        harnessDigest: input.cell.harnessDigest,
+        compilerPolicyDigest: input.cell.compilerPolicyDigest,
+        actionSchemaHash: input.cell.actionSchemaHash,
+      }),
       input.handshake,
       ["prompt-thread-worker"],
     );
@@ -201,6 +247,7 @@ function validateWorkerInput(input: PromptThreadWorkerInput): void {
     approval.caseHash !== hashCanonicalJson(caseArtifact)
     || approval.cardHash !== hashCanonicalJson(draft)
     || input.cell.revision !== input.expected.revision
+    || input.cell.compilerPolicyDigest !== input.expected.compilerPolicyDigest
     || input.cell.runtimeHash !== input.expected.runtimeHash
     || input.cell.actionSchemaHash !== input.expected.actionSchemaHash
     || input.cell.harnessDigest !== input.expected.harnessDigest
@@ -217,9 +264,15 @@ function validateWorkerInput(input: PromptThreadWorkerInput): void {
     || input.handshake.schemaHash !== PROTOCOL_SCHEMA_HASH
     || input.handshake.canonicalizerId !== CANONICALIZER_ID
     || input.handshake.canonicalizerVersion !== CANONICALIZER_VERSION
+    || input.handshake.compilerPolicyDigest !== input.cell.compilerPolicyDigest
+    || input.handshake.actionSchemaHash !== input.cell.actionSchemaHash
   ) {
     throw new PromptThreadWorkerError("protocol_mismatch");
   }
+}
+
+async function fileDigest(path: string): Promise<string> {
+  return `sha256:${createHash("sha256").update(await readFile(path)).digest("hex")}`;
 }
 
 function freshBranchState(value: PromptThreadWorkerBranchState | undefined): PromptThreadWorkerBranchState {
@@ -271,8 +324,16 @@ async function runWorkerFile(inputPath: string, outputPath: string): Promise<voi
 async function main(args: string[]): Promise<void> {
   const [command, ...rest] = args;
   if (command === "handshake") {
-    const harnessDigest = await computePromptThreadWorkerHarnessDigest();
-    process.stdout.write(`${JSON.stringify(createPromptThreadWorkerHandshake(harnessDigest))}\n`);
+    const [harnessDigest, compilerPolicyDigest, actionSchemaHash] = await Promise.all([
+      computePromptThreadWorkerHarnessDigest(),
+      computePromptThreadWorkerPolicyDigest(),
+      computePromptThreadWorkerActionSchemaHash(),
+    ]);
+    process.stdout.write(`${JSON.stringify(createPromptThreadWorkerHandshake({
+      harnessDigest,
+      compilerPolicyDigest,
+      actionSchemaHash,
+    }))}\n`);
     return;
   }
   if (command === "run") {

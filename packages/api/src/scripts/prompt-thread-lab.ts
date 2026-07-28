@@ -1,4 +1,6 @@
 import {
+  CANONICALIZER_ID,
+  CANONICALIZER_VERSION,
   hashCanonicalJson,
   parseArtifact,
   type ArtifactEnvelope,
@@ -10,7 +12,16 @@ import {
   type PaidApprovalArtifact,
   type UnblindingKeyArtifact,
 } from "@influence/prompt-lab-protocol";
-import type { ResponseCreateParamsNonStreaming } from "openai/resources/responses/responses";
+import {
+  runPromptThreadSourceGate,
+  type PromptThreadFidelityReceipt,
+} from "@influence/engine/prompt-thread-lab";
+import { relative } from "node:path";
+import { closeDB, createDB } from "../db/index.js";
+import {
+  materializePromptThreadCase,
+  type MaterializePromptThreadCaseResult,
+} from "../services/prompt-thread-case-materializer.js";
 import {
   applyCuratorResponses,
   approveCuratorManifest,
@@ -37,7 +48,6 @@ import {
   type PromptThreadUnblindedReview,
 } from "../services/prompt-thread-blind-review.js";
 import {
-  createPromptThreadOpenAIClient,
   createPromptThreadOpenAIDispatch,
   PromptThreadProviderBroker,
 } from "../services/prompt-thread-provider-broker.js";
@@ -67,6 +77,8 @@ import {
 } from "../services/prompt-thread-workspace.js";
 
 type PromptThreadLabCommand =
+  | "materialize"
+  | "verify-source"
   | "manual-draft"
   | "curator-manifest"
   | "curator-approve"
@@ -93,6 +105,8 @@ export interface PromptThreadLabResult {
     | "draft"
     | "approved"
     | "frozen"
+    | "materialized"
+    | "source_verified"
     | "running"
     | "completed"
     | "invalidated"
@@ -116,6 +130,8 @@ export interface PromptThreadLabResult {
   outstandingCells: number;
   completedPairTokens?: string[];
   outstandingPairTokens?: string[];
+  sourceManifestCount?: number;
+  matchedTurns?: number;
 }
 
 export interface PromptThreadLabCliDependencies {
@@ -130,6 +146,12 @@ export interface PromptThreadLabCliDependencies {
   };
   panelRunner?: RunPanelDependencies;
   panelPreflight?: PanelPreflightDependencies;
+  materializeCase?: (
+    workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+  ) => Promise<MaterializePromptThreadCaseResult>;
+  verifySource?: (
+    caseValue: FrozenCaseArtifact,
+  ) => Promise<{ receipt: PromptThreadFidelityReceipt }>;
 }
 
 const DEFAULT_PATHS = {
@@ -139,6 +161,7 @@ const DEFAULT_PATHS = {
   curatorResponses: "evidence/curator-responses.json",
   curatorDraft: "evidence/curator-draft.json",
   evidenceApproval: "evidence/evidence-card-approval.json",
+  sourceFidelity: "source/source-fidelity.json",
   panelManifest: "panel/run-manifest.json",
   panelApproval: "panel/paid-approval.json",
 } as const;
@@ -152,6 +175,52 @@ export async function runPromptThreadLabCli(
     const workspaceRoot = requiredFlag(flags, "workspace");
     const workspace = await createPrivateWorkspace(workspaceRoot);
     const now = dependencies.now?.() ?? new Date();
+
+    if (command === "materialize") {
+      const result = dependencies.materializeCase
+        ? await dependencies.materializeCase(workspace)
+        : await materializeDefaultCase(workspace);
+      return {
+        status: "ok",
+        lifecycle: "materialized",
+        requiresHuman: false,
+        artifactPath: relative(workspace.root, result.casePath),
+        artifactHash: hashCanonicalJson(result.caseArtifact),
+        nextActions: ["verify-source"],
+        reservedSpendUsd: 0,
+        settledSpendUsd: 0,
+        completedCells: 0,
+        outstandingCells: 0,
+        sourceManifestCount: result.traceManifestIds.length,
+      };
+    }
+
+    if (command === "verify-source") {
+      const caseValue = await readFrozenCase(
+        workspace,
+        requiredFlag(flags, "case"),
+      );
+      const { receipt } = dependencies.verifySource
+        ? await dependencies.verifySource(caseValue)
+        : await runPromptThreadSourceGate(caseValue);
+      const artifactPath = flags.get("output") ?? DEFAULT_PATHS.sourceFidelity;
+      await withRunMutationLock(workspace, "source-fidelity", async (lock) => {
+        await atomicWriteJson(lock, artifactPath, receipt);
+      });
+      return {
+        status: "ok",
+        lifecycle: "source_verified",
+        requiresHuman: false,
+        artifactPath,
+        artifactHash: hashCanonicalJson(receipt),
+        nextActions: ["manual-draft", "curator-manifest"],
+        reservedSpendUsd: 0,
+        settledSpendUsd: 0,
+        completedCells: 0,
+        outstandingCells: 0,
+        matchedTurns: receipt.turnCount,
+      };
+    }
 
     if (command === "manual-draft") {
       const caseValue = await readFrozenCase(workspace, requiredFlag(flags, "case"));
@@ -189,7 +258,7 @@ export async function runPromptThreadLabCli(
       const approval = approveCuratorManifest(manifest, requiredFlag(flags, "reviewer"), now);
       return writeArtifactResult(workspace, flags, "curator-approve", DEFAULT_PATHS.curatorApproval, approval, {
         lifecycle: "approved",
-        nextActions: ["apply-curator-response"],
+        nextActions: ["curate"],
       });
     }
 
@@ -269,12 +338,12 @@ export async function runPromptThreadLabCli(
         workspace,
         requiredFlag(flags, "evidence-approval"),
       );
-      const sourceFidelity = parseJsonFlag<{
-        status: "matched";
-        caseId: string;
-        turnCount: number;
-        sourceMutation: false;
-      }>(flags, "source-fidelity");
+      const sourceFidelity = parseSourceFidelityReceipt(flags.has("source-fidelity-path")
+        ? await readPrivateJson(
+            workspace,
+            requiredFlag(flags, "source-fidelity-path"),
+          )
+        : parseJsonFlag(flags, "source-fidelity"));
       const manifest = await createPromptThreadPanelManifest({
         caseValue,
         sourceFidelity,
@@ -636,7 +705,7 @@ export async function runPromptThreadLabCli(
     const approval = freezeEvidenceCard(caseValue, draft, requiredFlag(flags, "reviewer"), now);
     return writeArtifactResult(workspace, flags, "freeze", DEFAULT_PATHS.evidenceApproval, approval, {
       lifecycle: "frozen",
-      nextActions: ["create-run"],
+      nextActions: ["panel-manifest"],
     });
   } catch (error) {
     return errorResult(error);
@@ -693,6 +762,19 @@ function defaultPanelRunner(
       }),
     },
   );
+}
+
+async function materializeDefaultCase(
+  workspace: Awaited<ReturnType<typeof createPrivateWorkspace>>,
+): Promise<MaterializePromptThreadCaseResult> {
+  const connectionString = process.env.DATABASE_URL;
+  try {
+    return await materializePromptThreadCase(createDB(connectionString), {
+      workspace,
+    });
+  } finally {
+    await closeDB(connectionString);
+  }
 }
 
 function installPanelInterruptHandler(): {
@@ -796,7 +878,7 @@ async function dispatchApprovedCurator(
     model: manifest.model,
     requestKind: "curator",
   });
-  const client = createPromptThreadOpenAIClient(apiKey);
+  const providerDispatch = createPromptThreadOpenAIDispatch(apiKey);
   const responses: CuratorPartitionResponse[] = [];
   const runId = `curator-${hashCanonicalJson(manifest).slice("sha256:".length, 25)}`;
   const recovery = await recoverOrInvalidateRun(workspace, runId);
@@ -828,9 +910,7 @@ async function dispatchApprovedCurator(
         const result = await broker.dispatch(
           lock,
           brokerRequest,
-          (request) => client.responses.create(
-            request as unknown as ResponseCreateParamsNonStreaming,
-          ),
+          providerDispatch,
         );
         response = result.response;
       }
@@ -1125,7 +1205,9 @@ function parseCommand(argv: readonly string[]): {
 }
 
 function isCommand(value: string | undefined): value is PromptThreadLabCommand {
-  return value === "manual-draft"
+  return value === "materialize"
+    || value === "verify-source"
+    || value === "manual-draft"
     || value === "curator-manifest"
     || value === "curator-approve"
     || value === "curate"
@@ -1180,6 +1262,32 @@ function parseZdrStatus(value: string): "enabled" | "disabled" | "unknown" {
 function parseVerdictScope(value: string): "full" | "cache_quality_only" {
   if (value === "full" || value === "cache_quality_only") return value;
   throw new Error("--verdict-scope must be full or cache_quality_only");
+}
+
+function parseSourceFidelityReceipt(value: unknown): PromptThreadFidelityReceipt {
+  if (
+    !value
+    || typeof value !== "object"
+    || (value as { version?: unknown }).version !== 1
+    || (value as { status?: unknown }).status !== "matched"
+    || typeof (value as { caseId?: unknown }).caseId !== "string"
+    || !Number.isInteger((value as { turnCount?: unknown }).turnCount)
+    || (value as { sourceMutation?: unknown }).sourceMutation !== false
+    || (value as { canonicalizerId?: unknown }).canonicalizerId !== CANONICALIZER_ID
+    || (value as { canonicalizerVersion?: unknown }).canonicalizerVersion
+      !== CANONICALIZER_VERSION
+    || !isStringArray((value as { comparedLanes?: unknown }).comparedLanes)
+    || !isStringArray(
+      (value as { transportOnlyExclusions?: unknown }).transportOnlyExclusions,
+    )
+  ) {
+    throw new Error("Source-fidelity receipt is invalid or unmatched");
+  }
+  return value as PromptThreadFidelityReceipt;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function parseBlindChoice(value: string): BlindChoice {

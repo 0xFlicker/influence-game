@@ -304,7 +304,7 @@ async function reportManifest() {
     modelSnapshot: "gpt-5.4-nano-2026-03-17",
     requestedServiceTier: "flex",
     zdrStatus: "unknown",
-    runtimeHash: "sha256:runtime",
+    runtimeHash: reportBaseline.harnessDigest,
     actionSchemaHash: "sha256:action",
     maximumSpendUsd: 10,
     estimatedInputTokensPerCall: 4_000,
@@ -319,7 +319,11 @@ async function reportManifest() {
       dirty: false,
     }),
     inspectWorkerHandshake: async (revision) =>
-      createPromptThreadWorkerHandshake(revision.harnessDigest),
+      createPromptThreadWorkerHandshake({
+        harnessDigest: revision.harnessDigest,
+        compilerPolicyDigest: revision.compilerPolicyDigest,
+        actionSchemaHash: "sha256:action",
+      }),
   });
 }
 
@@ -330,11 +334,15 @@ function reportRunner(
   return {
     validateCheckouts: async () => undefined,
     workerHandshake: async (cell) =>
-      createPromptThreadWorkerHandshake(
-        cell.arm === "candidate"
+      createPromptThreadWorkerHandshake({
+        harnessDigest: cell.arm === "candidate"
           ? reportCandidate.harnessDigest
           : reportBaseline.harnessDigest,
-      ),
+        compilerPolicyDigest: cell.arm === "candidate"
+          ? reportCandidate.compilerPolicyDigest
+          : reportBaseline.compilerPolicyDigest,
+        actionSchemaHash: "sha256:action",
+      }),
     runWorker: (input) => runPromptThreadWorker(input, {
       executeCell: async (_caseValue, value) => {
         const request = {

@@ -76,6 +76,10 @@
  *   Full simulation JSON / private traces remain separate producer artifacts and are
  *   **not** the R13 promotion input — use this file (or the frozen late-game corpus
  *   tests in `context-recall-evaluation.test.ts`) for the deterministic promotion gate.
+ *   A full simulation is the integration/watchability evaluation level, not controlled
+ *   evidence that one Recall Plan revision caused a quality change. When that causal
+ *   question remains, use the private targeted workflow in
+ *   `docs/prompt-thread-context-evaluation.md` before paying for another whole game.
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.

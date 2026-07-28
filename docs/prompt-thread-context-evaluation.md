@@ -4,7 +4,17 @@ The real-thread evaluator is a producer-operated, private experiment for compari
 
 The first case is the four-turn Finn → Lyra → Finn → Lyra Mingle thread from `vast-azure-surge`. Canonical events remain game-state authority. Checkpoint data, typed transcript and continuity artifacts, and complete private traces reconstruct the model-facing situation. The evaluator never resumes or mutates the source game.
 
-This document establishes the safety and lifecycle contract. The U1 tooling does not dispatch a provider request. Provider-capable commands must preserve every gate below when they are added.
+The tooling is implemented through terminal blind review and report generation. `materialize`, `verify-source`, manual evidence drafting, manifest construction, status, rendering, and report assembly are provider-free. `curate` and `panel-run` are the only provider-capable commands, and each requires its own immutable approval.
+
+## Choose the right evaluation level
+
+| Level | Use it for | It can prove | It cannot prove |
+|---|---|---|---|
+| Structural fixtures | Fast context-policy and renderer regressions | Deterministic budgets, authority lanes, stable prompt structure, replay mechanics | Real-source fidelity, provider cache reuse, or conversation quality |
+| Targeted real-thread experiment | A concrete context-builder decision on one replayable situation | Source fidelity, branch continuity, selection reasons, provider usage/cache evidence, and blind preference for this case | Universal quality, full-game strategy, or a rollout threshold |
+| Full-game simulation | Integration and watchability across the game arc | Cross-phase behavior, long-running strategy, fallbacks, pacing, and endgame coherence | Controlled causal attribution to one context change |
+
+Start with fixtures. Use this real-thread workflow when one product decision remains unresolved and a replayable case can reject it. Run a bounded full game only when the remaining question is integration or season-level behavior.
 
 ## Proof and spending lanes
 
@@ -29,7 +39,15 @@ The evidence card is human-owned. A curator proposal or manual draft remains non
 - byte-preserving canonical JSON and SHA-256 helpers;
 - frozen golden canonicalizer vectors and a schema hash.
 
-Every process handshake reports the protocol version, schema hash, canonicalizer identifier and version, sorted capability set, and non-variant harness digest. Unknown protocol majors, schema or canonicalizer drift, missing or changed capabilities, and harness mismatch fail before private data or broker access crosses the revision boundary.
+Every process handshake reports the protocol version, schema hash, canonicalizer identifier and version, sorted capability set, non-variant harness digest, recall compiler-policy digest, and action-schema hash. Unknown protocol majors, schema or canonicalizer drift, missing or changed capabilities, harness mismatch, unapproved compiler policy, and action-schema drift fail before private data or broker access crosses the revision boundary.
+
+The baseline and candidate must be clean, immutable experimental checkouts that contain the same evaluator harness. They are not arbitrary `main` and feature checkouts: each needs the worker/protocol surface, while the recall policy under test is the intended variant. Run this from each checkout root:
+
+```bash
+bun packages/engine/src/prompt-thread-worker.ts handshake
+```
+
+The two handshakes must have the same `harnessDigest` and `actionSchemaHash`. Their `compilerPolicyDigest` values identify the baseline and candidate policies and may differ. The panel `runtimeHash` must equal the attested shared `harnessDigest`; it is not a free-form label. Manifest preflight also resolves each checkout's actual Git SHA and rejects dirty or mismatched revisions. Execution repeats those checks before and during the run.
 
 Canonical hashing sorts object keys but does not rewrite strings or invent defaults. Non-finite numbers, `undefined`, `bigint`, sparse arrays, class instances, and cycles are rejected. Approval receipts bind the complete canonical manifest hash plus the displayed call and spend caps. Changing a case, card, revision, runtime policy, cache lineage, control, rate mapping, execution order, call cap, or spend cap makes the old approval stale.
 
@@ -94,14 +112,52 @@ Starting again requires a new run identity, fresh cache lineages, a new manifest
 
 ## Operator checklist
 
-Before any future curator or panel command can dispatch:
+Before any curator or panel command can dispatch:
 
 - source and protocol fingerprints match;
 - the human-approved evidence card hash is current;
-- both revision handshakes agree on protocol, canonicalizer, capabilities, and non-variant harness;
+- both revision handshakes agree on protocol, canonicalizer, capabilities, non-variant harness, and action schema, while each attests its approved compiler policy;
 - case, schedule, policy, action surface, runtime, model snapshot, rate mapping, cache lineages, and caps match the manifest;
 - the correct interactive approval matches the exact manifest;
 - maximum calls and spend remain available;
 - one OS mutation lock is held and no more than one request can be in flight.
 
 If any item differs, stop before provider access. There is no automatic retry, provider fallback, approval reuse, partial result, or “close enough” replay mode.
+
+## Terminal workflow
+
+All commands run from the repository root:
+
+```bash
+bun run prompt-thread:lab -- <command> --workspace /absolute/private/root ...
+```
+
+The private root must be outside every Git worktree. The typical sequence is:
+
+1. `materialize`, then `verify-source --case cases/<hash>/case.json`. Materialization reads the configured durable DB and trace storage; verification writes `source/source-fidelity.json` without provider access.
+2. Create evidence with `manual-draft --case ... --items '<json>'`, or create and separately approve a curator manifest. Only `curate` can dispatch the curator. Review the resulting draft rather than rubber-stamping it.
+3. Run `freeze --case ... --draft ... --reviewer ... --confirm` to bind the human-owned evidence card.
+4. Run `panel-manifest` with the source-fidelity path, frozen evidence paths, both checkout paths and SHAs, both compiler-policy digests, the shared harness/runtime digest, action-schema hash, exact model snapshot, Flex service tier assumptions, actor IDs, token ceilings, and maximum spend.
+5. Run `panel-approve --manifest ... --reviewer ... --confirm`, then `panel-init`. Approval does not dispatch. `panel-status` is always provider-free.
+6. Run `panel-run` once. After a clean stop between calls, use `panel-resume`; never rerun `panel-run` against a started journal. These are the only panel commands with provider access.
+7. Run `blind-init`, `render-blind-packet`, and one confirmed `record-blind-decision` for each opaque pair token. `unblind --confirm` is unavailable until all three decisions are locked.
+8. Run `report` for the terminal four-verdict report. Keep valuable completed runs private until an explicit confirmed `purge`.
+
+Use verdict scope `cache_quality_only` when the replayed action class has no historical archive lane. A `full` verdict requires history to be enabled and the baseline/candidate compiler policies to differ. If those preconditions are absent, report history as `not_exercised`; do not promote a cache result into a recall-quality claim.
+
+## Provider-free acceptance evidence
+
+On 2026-07-28, the implemented CLI materialized and source-verified the authorized four-turn case against the configured local API database and trace storage. No curator, panel, hosted model, or provider request ran.
+
+- materialized lifecycle: `materialized`
+- source manifests: `6`
+- source verification lifecycle: `source_verified`
+- matched turns: `4`
+- source mutation: `false`
+- case ID: `sha256:5cc1bc00da94ff15a44e9a09190b257a7f9146ea0ee211b9326200bdeff806d9`
+- source receipt hash: `sha256:b59360d91b2e347e93870862739130929e74ef7b7062b4abb0e9b507ce0c7b53`
+- canonicalizer: `influence-canonical-json` version `1`
+- compared lanes: `9`
+- excluded source field: transport-only request metadata
+
+The raw case and source-fidelity artifacts remain in a private directory outside the worktree and are not committed. This proves source fidelity and provider-free orchestration for this case. It does not prove model quality, provider cache reuse, or a rollout decision; those require a separately approved panel and human blind review.

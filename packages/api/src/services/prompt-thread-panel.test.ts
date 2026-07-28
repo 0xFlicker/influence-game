@@ -108,7 +108,7 @@ function preflightInput(
     modelSnapshot: PROMPT_THREAD_PANEL_MODEL,
     requestedServiceTier: "flex",
     zdrStatus: "unknown",
-    runtimeHash: "sha256:runtime",
+    runtimeHash: baseline.harnessDigest,
     actionSchemaHash: "sha256:action",
     maximumSpendUsd: 10,
     estimatedInputTokensPerCall: 4_000,
@@ -125,7 +125,11 @@ const inspectCheckout = async (path: string) => ({
 });
 const inspectWorkerHandshake = async (
   revision: typeof baseline | typeof candidate,
-) => createPromptThreadWorkerHandshake(revision.harnessDigest);
+) => createPromptThreadWorkerHandshake({
+  harnessDigest: revision.harnessDigest,
+  compilerPolicyDigest: revision.compilerPolicyDigest,
+  actionSchemaHash: "sha256:action",
+});
 
 async function manifest(): Promise<PromptThreadPanelManifest> {
   return createPromptThreadPanelManifest(preflightInput(), {
@@ -140,7 +144,13 @@ function runner(
 ): RunPanelDependencies {
   return {
     validateCheckouts: async () => undefined,
-    workerHandshake: async () => createPromptThreadWorkerHandshake(baseline.harnessDigest),
+    workerHandshake: async (cell) => createPromptThreadWorkerHandshake({
+      harnessDigest: baseline.harnessDigest,
+      compilerPolicyDigest: cell.arm === "candidate"
+        ? candidate.compilerPolicyDigest
+        : baseline.compilerPolicyDigest,
+      actionSchemaHash: "sha256:action",
+    }),
     runWorker: (input) => runPromptThreadWorker(input, {
       executeCell: async (_caseValue, value) => {
         const request = {
@@ -225,8 +235,30 @@ describe("prompt thread panel", () => {
     await expect(createPromptThreadPanelManifest(preflightInput(), {
       inspectCheckout,
       inspectWorkerHandshake: async () =>
-        createPromptThreadWorkerHandshake("sha256:different-harness"),
+        createPromptThreadWorkerHandshake({
+          harnessDigest: "sha256:different-harness",
+          compilerPolicyDigest: baseline.compilerPolicyDigest,
+          actionSchemaHash: "sha256:action",
+        }),
     })).rejects.toThrow("harness");
+    await expect(createPromptThreadPanelManifest(preflightInput(), {
+      inspectCheckout,
+      inspectWorkerHandshake: async (revision) =>
+        createPromptThreadWorkerHandshake({
+          harnessDigest: revision.harnessDigest,
+          compilerPolicyDigest: "sha256:unattested-policy",
+          actionSchemaHash: "sha256:action",
+        }),
+    })).rejects.toThrow("attested");
+    await expect(createPromptThreadPanelManifest(preflightInput(), {
+      inspectCheckout,
+      inspectWorkerHandshake: async (revision) =>
+        createPromptThreadWorkerHandshake({
+          harnessDigest: revision.harnessDigest,
+          compilerPolicyDigest: revision.compilerPolicyDigest,
+          actionSchemaHash: "sha256:unattested-action",
+        }),
+    })).rejects.toThrow("attested");
   });
 
   it("runs exactly 28 fake-provider cells and resumes without duplicate dispatch", async () => {
@@ -430,8 +462,16 @@ describe("prompt thread panel", () => {
       const baselineCheckout = join(root, "baseline");
       const candidateCheckout = join(root, "candidate");
       await Promise.all([
-        writeFixtureWorker(baselineCheckout, baseline.harnessDigest),
-        writeFixtureWorker(candidateCheckout, candidate.harnessDigest),
+        writeFixtureWorker(
+          baselineCheckout,
+          baseline.harnessDigest,
+          baseline.compilerPolicyDigest,
+        ),
+        writeFixtureWorker(
+          candidateCheckout,
+          candidate.harnessDigest,
+          candidate.compilerPolicyDigest,
+        ),
       ]);
       const processBaseline = { ...baseline, checkoutPath: baselineCheckout };
       const processCandidate = { ...candidate, checkoutPath: candidateCheckout };
@@ -524,17 +564,21 @@ describe("prompt thread panel", () => {
 async function writeFixtureWorker(
   checkoutPath: string,
   harnessDigest: string,
+  compilerPolicyDigest: string,
 ): Promise<void> {
   const workerDirectory = join(checkoutPath, "packages/engine/src");
   await mkdir(workerDirectory, { recursive: true });
   await writeFile(
     join(workerDirectory, "prompt-thread-worker.ts"),
-    fixtureWorkerSource(harnessDigest),
+    fixtureWorkerSource(harnessDigest, compilerPolicyDigest),
     { mode: 0o600 },
   );
 }
 
-function fixtureWorkerSource(harnessDigest: string): string {
+function fixtureWorkerSource(
+  harnessDigest: string,
+  compilerPolicyDigest: string,
+): string {
   return `
 import { chmod, readFile, rename, writeFile } from "node:fs/promises";
 const [command, ...args] = process.argv.slice(2);
@@ -547,7 +591,9 @@ if (command === "handshake") {
     canonicalizerId: ${JSON.stringify(CANONICALIZER_ID)},
     canonicalizerVersion: ${JSON.stringify(CANONICALIZER_VERSION)},
     capabilities: ["broker-transport-only", "prompt-thread-worker", "saved-response-apply"],
-    harnessDigest: ${JSON.stringify(harnessDigest)}
+    harnessDigest: ${JSON.stringify(harnessDigest)},
+    compilerPolicyDigest: ${JSON.stringify(compilerPolicyDigest)},
+    actionSchemaHash: "sha256:action"
   }));
 } else if (command === "run") {
   const [inputPath, outputPath] = args;

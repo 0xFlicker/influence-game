@@ -326,7 +326,7 @@ Prompt-class call sites: ordinary Lobby/Mingle/huddle/endgame speech → `ordina
 
 ### Producer prompt scenario replay
 
-`packages/engine/src/prompt-scenario-lab.ts` replays one frozen, producer-only decision snapshot through a real public `InfluenceAgent` method and a deterministic fake provider. It is the first benchmark seam for comparing context-builder revisions without paying for another complete game. A private scenario pack may contain the actor-visible `PhaseContext`, continuity snapshot, and transcript rows from a real game; do not commit or export that pack.
+`packages/engine/src/prompt-scenario-lab.ts` replays one frozen, producer-only decision snapshot through a real public `InfluenceAgent` method and a deterministic fake provider. It is the structural-fixture seam for comparing context-builder revisions without paying for another complete game. A private scenario pack may contain the actor-visible `PhaseContext`, continuity snapshot, and transcript rows from a real game; do not commit or export that pack.
 
 The runner emits only a structural report: rendered prompt characters/tokens, Recall Plan receipt, a redacted request fingerprint, and renderer-overhead characters relative to the Recall Plan lanes. Scenario reports require producer-minted opaque keys; they never return prompt text, dialogue, player/game IDs, actor lanes, or fake model output. Current action adapters cover `vote` and `plea`; add adapters for more real decision surfaces before using the lab as a model panel. Run its deterministic suite with:
 
@@ -334,7 +334,13 @@ The runner emits only a structural report: rendered prompt characters/tokens, Re
 bun test packages/engine/src/__tests__/prompt-scenario-lab.test.ts
 ```
 
-Later producer tooling may extract private scenario packs from durable traces/storage and send a selected panel to local or hosted models. Keep that ingestion and paid-run authority outside the engine runner; add ordered same-agent replay before interpreting cache reuse, then cache baseline panel results by scenario fingerprint, context-build revision, model, and seed.
+Use three evaluation levels without pretending they are interchangeable:
+
+1. Structural fixtures prove deterministic budgets, authority lanes, renderer structure, and replay mechanics.
+2. The private [real-thread context evaluator](prompt-thread-context-evaluation.md) materializes one authorized durable thread, attests two isolated policy revisions, measures provider/cache evidence through a capped broker, and ends in blind human review. Its verdict is case-specific.
+3. A bounded full-game simulation validates cross-phase integration, long-running strategy, pacing, and watchability. It does not isolate one context-policy cause.
+
+Keep real-source ingestion, approval, and paid-run authority outside the engine fixture runner. Ordered same-agent replay is required before interpreting cache reuse. No provider dispatch is allowed during source validation, tests, builds, status, or report assembly.
 
 ### Replay / hydration contract
 

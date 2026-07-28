@@ -3,6 +3,8 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  CANONICALIZER_ID,
+  CANONICALIZER_VERSION,
   PROTOCOL_SCHEMA_HASH,
   PROTOCOL_VERSION,
   hashCanonicalJson,
@@ -55,6 +57,75 @@ async function workspaceWithCase() {
 }
 
 describe("prompt-thread lab CLI primitives", () => {
+  it("materializes and source-verifies through provider-free operator primitives", async () => {
+    const { root, caseValue } = await workspaceWithCase();
+    try {
+      const sourceReceipt = {
+        protocolVersion: PROTOCOL_VERSION,
+        schemaHash: PROTOCOL_SCHEMA_HASH,
+        kind: "source_receipt" as const,
+        createdAt: "2026-01-01T00:00:00.000Z",
+        caseId: caseValue.caseId,
+        sources: [],
+      };
+      const materialized = await runPromptThreadLabCli([
+        "materialize",
+        "--workspace",
+        root,
+      ], {
+        materializeCase: async (workspace) => {
+          return {
+            caseId: caseValue.caseId,
+            caseArtifact: caseValue,
+            sourceReceiptArtifact: sourceReceipt,
+            casePath: join(workspace.root, "cases/case.json"),
+            sourceReceiptPath: join(workspace.root, "cases/source-receipt.json"),
+            traceManifestIds: ["one", "two", "three", "four", "five", "six"],
+          };
+        },
+      });
+      expect(materialized).toMatchObject({
+        status: "ok",
+        lifecycle: "materialized",
+        artifactPath: "cases/case.json",
+        sourceManifestCount: 6,
+        nextActions: ["verify-source"],
+      });
+
+      const verified = await runPromptThreadLabCli([
+        "verify-source",
+        "--workspace",
+        root,
+        "--case",
+        "cases/case.json",
+      ], {
+        verifySource: async () => ({
+          receipt: {
+            version: 1,
+            status: "matched",
+            caseId: caseValue.caseId,
+            turnCount: 4,
+            canonicalizerId: CANONICALIZER_ID,
+            canonicalizerVersion: CANONICALIZER_VERSION,
+            comparedLanes: ["prompt.messages"],
+            transportOnlyExclusions: ["request.transportOnly"],
+            sourceMutation: false,
+          },
+        }),
+      });
+      expect(verified).toMatchObject({
+        status: "ok",
+        lifecycle: "source_verified",
+        matchedTurns: 4,
+      });
+      expect(JSON.parse(
+        await readFile(join(root, "source/source-fidelity.json"), "utf8"),
+      )).toMatchObject({ status: "matched", sourceMutation: false });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("writes an offline manual card and curator proposal artifacts", async () => {
     const { root, workspace } = await workspaceWithCase();
     try {
@@ -179,9 +250,14 @@ describe("prompt-thread lab CLI primitives", () => {
         "--draft", "evidence/manual-draft.json",
         "--evidence-approval", "evidence/evidence-card-approval.json",
         "--source-fidelity", JSON.stringify({
+          version: 1,
           status: "matched",
           caseId: caseValue.caseId,
           turnCount: 4,
+          canonicalizerId: CANONICALIZER_ID,
+          canonicalizerVersion: CANONICALIZER_VERSION,
+          comparedLanes: ["prompt.messages"],
+          transportOnlyExclusions: ["request.transportOnly"],
           sourceMutation: false,
         }),
         "--baseline-checkout", "/baseline", "--baseline-sha", baselineSha,
@@ -193,7 +269,7 @@ describe("prompt-thread lab CLI primitives", () => {
         "--history-enabled", "false",
         "--model", "gpt-5.4-nano-2026-03-17",
         "--zdr-status", "unknown",
-        "--runtime-hash", "sha256:runtime",
+        "--runtime-hash", "sha256:harness",
         "--action-schema-hash", "sha256:action",
         "--max-spend-usd", "10",
         "--input-token-ceiling", "4000",
@@ -206,7 +282,11 @@ describe("prompt-thread lab CLI primitives", () => {
             dirty: false,
           }),
           inspectWorkerHandshake: async (revision) =>
-            createPromptThreadWorkerHandshake(revision.harnessDigest),
+            createPromptThreadWorkerHandshake({
+              harnessDigest: revision.harnessDigest,
+              compilerPolicyDigest: revision.compilerPolicyDigest,
+              actionSchemaHash: "sha256:action",
+            }),
         },
       });
       expect(manifest).toMatchObject({ status: "ok", lifecycle: "draft" });

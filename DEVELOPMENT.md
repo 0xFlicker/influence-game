@@ -94,6 +94,16 @@ Tests are organized into three tiers with different requirements:
 | **DB integration** | `bun run test:db` | Yes (PostgreSQL) | No for most tests; configured provider for optional LLM generation tests | Before merging API changes |
 | **Full LLM** | `bun run test:engine:full` | No | Yes (`OPENAI_API_KEY` via Doppler or `INFLUENCE_LLM_BASE_URL` for LM Studio) | Before releasing engine changes |
 
+### Context evaluation levels
+
+Choose the smallest evaluation that can reject the product decision:
+
+- deterministic Recall Plan and prompt-scenario fixtures for budgets, authorization, stable rendering, and replay mechanics;
+- the private [real-thread context evaluator](docs/prompt-thread-context-evaluation.md) for one authorized durable situation, isolated context-policy revisions, provider/cache accounting, and blind human preference;
+- a bounded full-game simulation for cross-phase integration, strategy, pacing, and watchability.
+
+These are cumulative evidence, not substitutes. Real-thread source validation, tests, status, and report assembly make no provider calls. Curator and panel dispatch require separate immutable approvals; implementation agents must not spend either budget without explicit operator approval.
+
 ### Running Tests
 
 ```bash

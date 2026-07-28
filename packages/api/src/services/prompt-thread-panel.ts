@@ -16,13 +16,13 @@ import {
   type FrozenCaseArtifact,
   type JsonObject,
   type PaidApprovalArtifact,
-  type ProtocolHandshake,
   type StructuralRunSummary,
 } from "@influence/prompt-lab-protocol";
 import {
   createPromptThreadWorkerHandshake,
   type PromptThreadWorkerBranchState,
   type PromptThreadWorkerCell,
+  type PromptThreadWorkerHandshake,
   type PromptThreadWorkerResult,
 } from "@influence/engine/prompt-thread-worker";
 import { assertEvidenceCardApproval, type PromptThreadEvidenceCard } from "./prompt-thread-evidence-card.js";
@@ -140,17 +140,18 @@ export interface PanelPreflightDependencies {
   inspectCheckout?: (path: string) => Promise<CheckoutInspection>;
   inspectWorkerHandshake?: (
     revision: PromptThreadRevision,
-  ) => Promise<ProtocolHandshake>;
+  ) => Promise<PromptThreadWorkerHandshake>;
 }
 
 export interface PanelWorkerInvocation {
-  handshake: ProtocolHandshake;
+  handshake: PromptThreadWorkerHandshake;
   caseValue: FrozenCaseArtifact;
   evidenceDraft: EvidenceCardDraftArtifact;
   evidenceApproval: EvidenceCardApprovalArtifact;
   cell: PromptThreadWorkerCell;
   expected: {
     revision: string;
+    compilerPolicyDigest: string;
     runtimeHash: string;
     actionSchemaHash: string;
     harnessDigest: string;
@@ -163,7 +164,7 @@ export interface PanelWorkerInvocation {
 
 export interface RunPanelDependencies {
   validateCheckouts: () => Promise<void>;
-  workerHandshake: (cell: PromptThreadPanelCell) => Promise<ProtocolHandshake>;
+  workerHandshake: (cell: PromptThreadPanelCell) => Promise<PromptThreadWorkerHandshake>;
   runWorker: (input: PanelWorkerInvocation) => Promise<PromptThreadWorkerResult>;
   providerDispatch: PromptThreadProviderDispatch;
   stopAfterCell?: () => boolean;
@@ -193,6 +194,8 @@ export function createTrustedCheckoutPanelDependencies(
         await readTrustedWorkerHandshake(
           revision.checkoutPath,
           revision.harnessDigest,
+          revision.compilerPolicyDigest,
+          manifest.actionSchemaHash,
           bunExecutable,
         );
       }
@@ -200,6 +203,8 @@ export function createTrustedCheckoutPanelDependencies(
     workerHandshake: (cell) => readTrustedWorkerHandshake(
       cell.checkoutPath,
       revisionForCell(manifest, cell).harnessDigest,
+      revisionForCell(manifest, cell).compilerPolicyDigest,
+      manifest.actionSchemaHash,
       bunExecutable,
     ),
     runWorker: (input) => runTrustedCheckoutWorker(
@@ -295,6 +300,9 @@ export async function createPromptThreadPanelManifest(
   if (input.baseline.harnessDigest !== input.candidate.harnessDigest) {
     throw new Error("Non-variant harness digest mismatch");
   }
+  if (input.runtimeHash !== input.baseline.harnessDigest) {
+    throw new Error("Runtime hash must equal the attested non-variant harness digest");
+  }
   if (
     input.verdictScope === "full" &&
     (!input.historyEnabled ||
@@ -307,6 +315,8 @@ export async function createPromptThreadPanelManifest(
     ?? ((revision: PromptThreadRevision) => readTrustedWorkerHandshake(
       revision.checkoutPath,
       revision.harnessDigest,
+      revision.compilerPolicyDigest,
+      input.actionSchemaHash,
       process.execPath,
     ));
   for (const revision of [input.baseline, input.candidate]) {
@@ -316,10 +326,20 @@ export async function createPromptThreadPanelManifest(
     }
     const handshake = await inspectHandshake(revision);
     validateHandshake(
-      createPromptThreadWorkerHandshake(revision.harnessDigest),
+      createPromptThreadWorkerHandshake({
+        harnessDigest: revision.harnessDigest,
+        compilerPolicyDigest: revision.compilerPolicyDigest,
+        actionSchemaHash: input.actionSchemaHash,
+      }),
       handshake,
       ["prompt-thread-worker"],
     );
+    if (
+      handshake.compilerPolicyDigest !== revision.compilerPolicyDigest
+      || handshake.actionSchemaHash !== input.actionSchemaHash
+    ) {
+      throw new Error(`Checkout ${revision.arm} worker metadata is not attested`);
+    }
   }
   const quote = quoteProviderUsageCeiling({
     modelSnapshot: input.modelSnapshot,
@@ -502,6 +522,7 @@ export async function runPromptThreadPanel(
           cell: workerCell,
           expected: {
             revision: workerCell.revision,
+            compilerPolicyDigest: workerCell.compilerPolicyDigest,
             runtimeHash: manifest.runtimeHash,
             actionSchemaHash: manifest.actionSchemaHash,
             harnessDigest: workerCell.harnessDigest,
@@ -548,8 +569,10 @@ export async function runPromptThreadPanel(
 async function readTrustedWorkerHandshake(
   checkoutPath: string,
   harnessDigest: string,
+  compilerPolicyDigest: string,
+  actionSchemaHash: string,
   bunExecutable: string,
-): Promise<ProtocolHandshake> {
+): Promise<PromptThreadWorkerHandshake> {
   const workerPath = join(
     checkoutPath,
     "packages/engine/src/prompt-thread-worker.ts",
@@ -570,12 +593,22 @@ async function readTrustedWorkerHandshake(
   if (exitCode !== 0) {
     throw new Error(`Trusted worker handshake failed: ${structuralWorkerError(stderr)}`);
   }
-  const handshake = JSON.parse(stdout) as ProtocolHandshake;
+  const handshake = JSON.parse(stdout) as PromptThreadWorkerHandshake;
   validateHandshake(
-    createPromptThreadWorkerHandshake(harnessDigest),
+    createPromptThreadWorkerHandshake({
+      harnessDigest,
+      compilerPolicyDigest,
+      actionSchemaHash,
+    }),
     handshake,
     ["prompt-thread-worker"],
   );
+  if (
+    handshake.compilerPolicyDigest !== compilerPolicyDigest
+    || handshake.actionSchemaHash !== actionSchemaHash
+  ) {
+    throw new Error("Trusted worker metadata does not match the approved manifest");
+  }
   return handshake;
 }
 
@@ -881,6 +914,7 @@ function toWorkerCell(
     actorLineage: cell.actorLineage,
     model: manifest.modelSnapshot,
     revision: revision.commitSha,
+    compilerPolicyDigest: revision.compilerPolicyDigest,
     runtimeHash: manifest.runtimeHash,
     actionSchemaHash: manifest.actionSchemaHash,
     harnessDigest: revision.harnessDigest,

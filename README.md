@@ -96,7 +96,8 @@ flowchart LR
 - Postgame analysis design: [docs/endgame-analysis-v0.1.0.md](docs/endgame-analysis-v0.1.0.md)
 - Reasoning and transcript observability (includes Recall Plan lanes and safe evaluation artifacts): [docs/reasoning-transcript-observability.md](docs/reasoning-transcript-observability.md)
 - Operator-only, max-two-round hosted/local format proof: [docs/local-model-evaluation.md#operator-only-bounded-format-kernel-proof](docs/local-model-evaluation.md#operator-only-bounded-format-kernel-proof)
-- Selective context recall evaluation path (offline fixture gate + `game-N-recall-plan.json`): [docs/local-model-evaluation.md](docs/local-model-evaluation.md)
+- Selective context recall evaluation levels (fixtures, targeted real thread, bounded full game): [docs/local-model-evaluation.md#selective-context-recall-evaluation-levels](docs/local-model-evaluation.md#selective-context-recall-evaluation-levels)
+- Private targeted real-thread evaluator and approval contract: [docs/prompt-thread-context-evaluation.md](docs/prompt-thread-context-evaluation.md)
 
 ## Development
 

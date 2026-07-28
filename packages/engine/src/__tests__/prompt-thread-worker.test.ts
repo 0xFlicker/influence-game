@@ -9,7 +9,9 @@ import {
 } from "@influence/prompt-lab-protocol";
 import {
   createPromptThreadWorkerHandshake,
+  computePromptThreadWorkerActionSchemaHash,
   computePromptThreadWorkerHarnessDigest,
+  computePromptThreadWorkerPolicyDigest,
   PromptThreadWorkerError,
   runPromptThreadWorker,
 } from "../prompt-thread-worker";
@@ -46,17 +48,29 @@ const approval = {
 
 function input(overrides: Record<string, unknown> = {}) {
   const harnessDigest = "harness-a";
+  const compilerPolicyDigest = "policy-a";
+  const actionSchemaHash = "action";
   return {
-    handshake: createPromptThreadWorkerHandshake(harnessDigest),
+    handshake: createPromptThreadWorkerHandshake({
+      harnessDigest,
+      compilerPolicyDigest,
+      actionSchemaHash,
+    }),
     caseValue,
     evidenceDraft: draft,
     evidenceApproval: approval,
     cell: {
       cellId: "cell-1", branchId: "branch-1", turn: 1, actorId: "finn",
       actorLineage: "opaque-lineage-finn", model: "gpt-5.4-nano-2026-03-17",
-      revision: "sha", runtimeHash: "runtime", actionSchemaHash: "action", harnessDigest,
+      revision: "sha", compilerPolicyDigest, runtimeHash: "runtime", actionSchemaHash, harnessDigest,
     },
-    expected: { revision: "sha", runtimeHash: "runtime", actionSchemaHash: "action", harnessDigest },
+    expected: {
+      revision: "sha",
+      compilerPolicyDigest,
+      runtimeHash: "runtime",
+      actionSchemaHash,
+      harnessDigest,
+    },
     ...overrides,
   };
 }
@@ -109,8 +123,12 @@ describe("prompt-thread worker", () => {
   it("computes its harness digest from the checkout instead of accepting one", async () => {
     const first = await computePromptThreadWorkerHarnessDigest();
     const second = await computePromptThreadWorkerHarnessDigest();
+    const policy = await computePromptThreadWorkerPolicyDigest();
+    const action = await computePromptThreadWorkerActionSchemaHash();
     expect(first).toMatch(/^sha256:[a-f0-9]{64}$/);
     expect(second).toBe(first);
+    expect(policy).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(action).toMatch(/^sha256:[a-f0-9]{64}$/);
   });
 
   it("uses only the injected broker once and checkpoints isolated branch state", async () => {
@@ -140,7 +158,14 @@ describe("prompt-thread worker", () => {
 
   it("rejects protocol mismatch, actor lineage reuse drift, duplicate cells, and transport failure", async () => {
     await expect(runPromptThreadWorker(input({
-      handshake: { ...createPromptThreadWorkerHandshake("other"), schemaHash: "sha256:bad" },
+      handshake: {
+        ...createPromptThreadWorkerHandshake({
+          harnessDigest: "other",
+          compilerPolicyDigest: "policy-a",
+          actionSchemaHash: "action",
+        }),
+        schemaHash: "sha256:bad",
+      },
     }), dependencies)).rejects.toMatchObject({ code: "protocol_mismatch" } satisfies Partial<PromptThreadWorkerError>);
     await expect(runPromptThreadWorker(input({
       branchState: { appliedCellIds: [], actorLineages: { finn: "other-lineage" }, providerResponses: [] },
@@ -159,5 +184,10 @@ describe("prompt-thread worker", () => {
     await expect(runPromptThreadWorker(input({
       brokerTransport: async () => { throw new Error("boom"); },
     }), dependencies)).rejects.toMatchObject({ code: "provider_failure" });
+    await expect(runPromptThreadWorker(input({
+      brokerTransport: async () => ({ status: "completed" }),
+    }), {
+      executeCell: async () => { throw new Error("compiler failed"); },
+    })).rejects.toMatchObject({ code: "worker_failure" });
   });
 });
