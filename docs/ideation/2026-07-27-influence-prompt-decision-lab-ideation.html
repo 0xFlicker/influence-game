@@ -1,0 +1,735 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Influence Prompt Decision Lab</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --void: #080b10;
+      --surface: #10151d;
+      --surface-raised: #171e28;
+      --surface-soft: #121a24;
+      --surface-cyan: #10232a;
+      --surface-violet: #1d1930;
+      --surface-gold: #2b2415;
+      --surface-green: #14261f;
+      --text: #edf4f7;
+      --text-secondary: #b8c5cd;
+      --text-muted: #83939f;
+      --border: #293642;
+      --border-strong: #425563;
+      --cyan: #6ad9e8;
+      --cyan-text: #bceff5;
+      --violet: #b7a3ff;
+      --violet-text: #ddd5ff;
+      --gold: #f5c96d;
+      --gold-text: #ffe3a3;
+      --green: #67d5a1;
+      --green-text: #b9f2d6;
+      --red: #f18c91;
+      --radius: 16px;
+      --radius-small: 10px;
+      --mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+      --body: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --display: "Inter Tight", "Arial Narrow", Inter, ui-sans-serif, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background:
+        radial-gradient(circle at 12% -10%, rgba(106, 217, 232, .10), transparent 30rem),
+        radial-gradient(circle at 90% 10%, rgba(183, 163, 255, .08), transparent 28rem),
+        var(--void);
+      color: var(--text);
+      font-family: var(--body);
+      font-size: 15px;
+      line-height: 1.65;
+    }
+
+    a { color: var(--cyan); text-decoration-thickness: .08em; text-underline-offset: .2em; }
+    code {
+      color: #d6e4eb;
+      font-family: var(--mono);
+      font-size: .88em;
+      overflow-wrap: anywhere;
+    }
+    strong { color: inherit; }
+
+    .page {
+      width: min(94vw, 960px);
+      margin: 0 auto;
+      padding: 42px 0 72px;
+    }
+
+    .hero {
+      padding: 34px;
+      border: 1px solid var(--border-strong);
+      border-radius: 22px;
+      background: rgba(16, 21, 29, .92);
+      box-shadow: 0 24px 80px rgba(0, 0, 0, .34);
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--cyan);
+      font-family: var(--display);
+      font-size: .75rem;
+      font-weight: 800;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+
+    h1, h2, h3 {
+      font-family: var(--display);
+      line-height: 1.12;
+      letter-spacing: -.025em;
+    }
+    h1 { max-width: 15ch; margin: 0; font-size: clamp(2.2rem, 6vw, 4.25rem); }
+    h2 { margin: 0 0 18px; font-size: clamp(1.6rem, 3vw, 2.15rem); }
+    h3 { margin: 0; font-size: 1.38rem; }
+    p { max-width: 74ch; }
+
+    .dek {
+      margin: 18px 0 0;
+      max-width: 69ch;
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+    }
+
+    .metadata, .stats, .idea-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 22px;
+    }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      min-height: 30px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface-raised);
+      color: var(--text-secondary);
+      font-size: .78rem;
+    }
+    .pill.cyan { background: var(--surface-cyan); color: var(--cyan-text); }
+    .pill.violet { background: var(--surface-violet); color: var(--violet-text); }
+    .pill.gold { background: var(--surface-gold); color: var(--gold-text); }
+    .pill.green { background: var(--surface-green); color: var(--green-text); }
+
+    .recommendation {
+      margin-top: 24px;
+      padding: 20px;
+      border: 1px solid #3d6269;
+      border-radius: var(--radius);
+      background: var(--surface-cyan);
+      color: var(--cyan-text);
+    }
+    .recommendation p { margin: 6px 0 0; color: var(--cyan-text); }
+
+    nav {
+      margin: 20px 0 0;
+      padding: 18px 22px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: rgba(16, 21, 29, .88);
+    }
+    nav ul, .jump-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      margin: 8px 0 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    section { margin-top: 54px; }
+    .section-intro { color: var(--text-secondary); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .context-card, .axis-card {
+      padding: 18px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .context-card h3 { margin-bottom: 8px; font-size: 1.02rem; }
+    .context-card p, .context-card li { color: var(--text-secondary); }
+    .context-card ul { margin: 8px 0 0; padding-left: 20px; }
+
+    .boundary {
+      margin-top: 14px;
+      padding: 18px;
+      border: 1px solid #60512f;
+      border-radius: var(--radius);
+      background: var(--surface-gold);
+      color: var(--gold-text);
+    }
+    .boundary p { color: var(--gold-text); }
+
+    .axes {
+      display: grid;
+      grid-template-columns: repeat(5, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .axis-card {
+      min-height: 126px;
+      background: var(--surface-raised);
+    }
+    .axis-card b {
+      display: block;
+      margin-bottom: 8px;
+      color: var(--cyan);
+      font-family: var(--mono);
+      font-size: .76rem;
+      letter-spacing: .08em;
+    }
+
+    .jump-list {
+      margin-bottom: 18px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-small);
+      background: var(--surface);
+    }
+
+    .idea {
+      margin: 18px 0;
+      padding: 24px;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      background: linear-gradient(145deg, rgba(23, 30, 40, .98), rgba(14, 19, 26, .98));
+    }
+    .idea-head {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .rank {
+      display: grid;
+      flex: 0 0 38px;
+      width: 38px;
+      height: 38px;
+      place-items: center;
+      border-radius: 50%;
+      background: var(--surface-cyan);
+      color: var(--cyan);
+      font-family: var(--mono);
+      font-weight: 800;
+    }
+    .idea .description { color: var(--text-secondary); }
+    .idea dl {
+      display: grid;
+      grid-template-columns: 110px minmax(0, 1fr);
+      gap: 9px 14px;
+      margin: 20px 0 0;
+      padding: 16px;
+      border-radius: var(--radius-small);
+      background: rgba(8, 11, 16, .45);
+    }
+    .idea dt {
+      color: var(--text-muted);
+      font-family: var(--mono);
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+    }
+    .idea dd { margin: 0; color: var(--text-secondary); }
+
+    .diagram {
+      margin: 22px 0 2px;
+      padding: 14px;
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: #0b1016;
+    }
+    .diagram svg { display: block; width: 100%; min-width: 680px; height: auto; }
+    .diagram .box { fill: #17212c; stroke: #425563; stroke-width: 1.5; }
+    .diagram .box-cyan { fill: #102b33; stroke: #58b8c6; stroke-width: 1.5; }
+    .diagram .box-violet { fill: #241e3d; stroke: #8f7bd6; stroke-width: 1.5; }
+    .diagram .box-gold { fill: #332917; stroke: #caa552; stroke-width: 1.5; }
+    .diagram .box-green { fill: #163127; stroke: #57b88b; stroke-width: 1.5; }
+    .diagram .line { fill: none; stroke: #728594; stroke-width: 2; }
+    .diagram text {
+      fill: #edf4f7;
+      font-family: var(--body);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .diagram text.small { fill: #aab9c2; font-size: 11px; font-weight: 500; }
+    .caption { margin: 10px 2px 0; color: var(--text-muted); font-size: .8rem; }
+
+    .table-wrap {
+      overflow-x: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      font-size: .84rem;
+    }
+    th, td {
+      padding: 11px 13px;
+      border-bottom: 1px solid var(--border);
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: var(--surface-raised);
+      color: var(--text);
+      font-family: var(--display);
+      font-size: .74rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    td { color: var(--text-secondary); }
+    tr:last-child td { border-bottom: 0; }
+
+    .sources {
+      margin-top: 16px;
+      padding: 18px 22px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--surface);
+    }
+    .sources li { margin: 7px 0; color: var(--text-secondary); }
+
+    footer {
+      margin-top: 56px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+      color: var(--text-muted);
+      font-size: .78rem;
+    }
+
+    @media (max-width: 820px) {
+      .grid { grid-template-columns: 1fr; }
+      .axes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .hero { padding: 24px; }
+    }
+    @media (max-width: 560px) {
+      .page { width: min(92vw, 960px); padding-top: 20px; }
+      .axes { grid-template-columns: 1fr; }
+      .idea { padding: 18px; }
+      .idea dl { grid-template-columns: 1fr; gap: 4px; }
+      .idea dd { margin-bottom: 8px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header class="hero">
+      <p class="eyebrow">Influence · Ideation</p>
+      <h1>Prompt Decision Lab</h1>
+      <p class="dek">A production-grounded workbench for deciding whether a prompt or context-policy change is cheaper, remembers the right history, reuses cache effectively, and produces better strategic play—without buying another full game for every edit.</p>
+
+      <div class="metadata" aria-label="Document metadata">
+        <span class="pill"><time datetime="2026-07-27">2026-07-27</time></span>
+        <span class="pill cyan">Topic: influence-prompt-decision-lab</span>
+        <span class="pill violet">Mode: repo-grounded</span>
+        <span class="pill gold">Focus: prompt building · budget · quality</span>
+      </div>
+
+      <div class="stats" aria-label="Ideation counts">
+        <span class="pill green">6 ranked ideas</span>
+        <span class="pill">30 merged candidates</span>
+        <span class="pill">5 topic axes</span>
+        <span class="pill">1 coherent product</span>
+      </div>
+
+      <div class="recommendation">
+        <strong>End goal:</strong>
+        <p>A producer-facing, read-only decision workbench that harvests real game moments from the DB and private storage, materializes them as immutable replayable experiment cases, compares context-policy variants against the same state, and presents retrieval, cache, cost, behavior, and human-review evidence together.</p>
+      </div>
+    </header>
+
+    <nav aria-label="Document sections">
+      <p class="eyebrow">Navigate</p>
+      <ul>
+        <li><a href="#grounding-context">Grounding Context</a></li>
+        <li><a href="#topic-axes">Topic Axes</a></li>
+        <li><a href="#ranked-ideas">Ranked Ideas</a></li>
+        <li><a href="#rejection-summary">Rejection Summary</a></li>
+      </ul>
+    </nav>
+
+    <section id="grounding-context">
+      <p class="eyebrow">Grounding Context</p>
+      <h2>Codebase Context</h2>
+      <p class="section-intro">The repo is much closer to supporting this lab than the current fixture harness makes it look. The hard missing piece is not token counting; it is a trustworthy experiment boundary that binds real state, context selection, provider execution, and review.</p>
+
+      <div class="grid">
+        <article class="context-card">
+          <h3>What already exists</h3>
+          <ul>
+            <li>Canonical events and projections for authoritative game state.</li>
+            <li>Ordered transcripts, actor continuity, phase-boundary checkpoints, and recovery evidence.</li>
+            <li>Private call traces with prompt/request/response, usage, model, action, and output evidence.</li>
+            <li>RecallPlan receipts, reusable-prefix estimates, provider cached-token usage, and cost rollups.</li>
+            <li>Hosted OpenAI, Katana, LM Studio, and custom OpenAI-compatible provider lanes.</li>
+          </ul>
+        </article>
+
+        <article class="context-card">
+          <h3>What is actually missing</h3>
+          <ul>
+            <li>A case materializer that selects one real decision or short thread from DB/storage.</li>
+            <li>A versioned prompt/context policy stack that baseline and candidate can swap cleanly.</li>
+            <li>A deterministic runway from a supported checkpoint to the call being compared.</li>
+            <li>A persistent experiment identity joining state, outputs, repetitions, cache, spend, and review.</li>
+            <li>A producer workbench that makes those differences legible.</li>
+          </ul>
+        </article>
+
+        <article class="context-card">
+          <h3>What the current harness is</h3>
+          <p>The uncommitted <code>prompt-scenario-lab</code> is a structural unit-test seam: hand-built snapshot, two action adapters, fake provider, fresh agent, no DB selector, no model output, no actual spend, and no ordered conversation. Its fresh-agent reuse result cannot validate cache behavior.</p>
+        </article>
+
+        <article class="context-card">
+          <h3>What quality can mean</h3>
+          <p>Quality is not one score. The lab can prove canonical and structured validity, retrieval coverage, fallbacks, budget adherence, and cache accounting. It can estimate behavior through repetitions and calibrated model graders. Strategy, persuasion, promise-following, novelty, and watchability still require blinded human judgment.</p>
+        </article>
+      </div>
+
+      <div class="boundary">
+        <strong>DB or fixtures?</strong>
+        <p>Both, with a hard distinction. Real DB/private storage is the case source. The lab then materializes an immutable, provenance-rich experiment snapshot so the same case can be rerun safely and cheaply. Hand-authored synthetic fixtures stay in unit tests; they do not count as product-level evidence.</p>
+      </div>
+
+      <div class="sources">
+        <strong>External grounding</strong>
+        <ul>
+          <li><a href="https://developers.openai.com/api/docs/guides/prompt-caching">OpenAI prompt caching</a> — exact-prefix behavior, cache keys, retention, and usage fields.</li>
+          <li><a href="https://developers.openai.com/api/docs/guides/evaluation-best-practices">OpenAI evaluation best practices</a> — pairwise grading, human calibration, retrieval metrics, and nondeterminism.</li>
+          <li><a href="https://www.braintrust.dev/docs/evaluate">Braintrust evaluations</a> — immutable experiments, cases, scorers, traces, and comparisons.</li>
+          <li><a href="https://docs.langchain.com/langsmith/repetition">LangSmith repetitions</a> — repeated trials and dispersion.</li>
+          <li><a href="https://docs.ragas.io/en/latest/concepts/metrics/available_metrics/">Ragas metrics</a> — separation of retrieval and response-quality evaluation.</li>
+          <li><a href="https://www.promptfoo.dev/docs/configuration/chat/">Promptfoo conversations</a> — generic multi-turn replay prior art.</li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="topic-axes">
+      <p class="eyebrow">Topic Axes</p>
+      <h2>The surface the lab must cover</h2>
+      <div class="axes">
+        <article class="axis-card"><b>AXIS 1</b>Real-game case corpus and replay fidelity</article>
+        <article class="axis-card"><b>AXIS 2</b>Relevant-history selection and prompt/context variant comparison</article>
+        <article class="axis-card"><b>AXIS 3</b>Threaded conversations and prompt-cache reuse</article>
+        <article class="axis-card"><b>AXIS 4</b>Provider panels, spend governance, and experiment repeatability</article>
+        <article class="axis-card"><b>AXIS 5</b>Behavioral quality evidence and review</article>
+      </div>
+    </section>
+
+    <section id="ranked-ideas">
+      <p class="eyebrow">Ranked survivors</p>
+      <h2>Ranked Ideas</h2>
+      <p class="section-intro">These are complementary parts of one useful lab. Idea 1 is the product definition; ideas 2–6 are the capabilities and evidence contracts that keep it honest.</p>
+
+      <ol class="jump-list">
+        <li><a href="#idea-1">1. Influence Decision Workbench</a></li>
+        <li><a href="#idea-2">2. Replay Fidelity Contract</a></li>
+        <li><a href="#idea-3">3. Differential Context Compiler</a></li>
+        <li><a href="#idea-4">4. Threaded Cache Wind Tunnel</a></li>
+        <li><a href="#idea-5">5. Evidence-per-Dollar Experiment Ladder</a></li>
+        <li><a href="#idea-6">6. Quality Claim Ledger and Blind Strategy Jury</a></li>
+      </ol>
+
+      <article class="idea" id="idea-1">
+        <div class="idea-head">
+          <span class="rank">1</span>
+          <div>
+            <p class="eyebrow">Real-game case corpus and replay fidelity</p>
+            <h3>1. Influence Decision Workbench</h3>
+          </div>
+        </div>
+        <p class="description">The coherent product: select an immutable production decision episode or short social thread, choose baseline and candidate policy stacks, inspect the state/history/RecallPlan/request delta, run the cheapest provider panel that can answer the question, and review all evidence in one experiment notebook. The workbench is backed by real DB/storage cases but runs on lab-owned immutable snapshots; it never appends production events.</p>
+
+        <div class="diagram">
+          <svg viewBox="0 0 860 310" role="img" aria-label="Decision Workbench flow from real case selection through policy comparison, model panels, evidence review, and scoped claims">
+            <defs>
+              <marker id="arrow-1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0 0L10 5L0 10Z" fill="#728594"/>
+              </marker>
+            </defs>
+            <rect class="box-cyan" x="20" y="40" width="210" height="92" rx="14"/>
+            <text x="125" y="72" text-anchor="middle">Select real case</text>
+            <text class="small" x="125" y="96" text-anchor="middle">DB · events · trace · checkpoint</text>
+            <path class="line" d="M230 86H324" marker-end="url(#arrow-1)"/>
+            <rect class="box-violet" x="335" y="40" width="190" height="92" rx="14"/>
+            <text x="430" y="72" text-anchor="middle">Choose variants</text>
+            <text class="small" x="430" y="96" text-anchor="middle">baseline · candidate · controls</text>
+            <path class="line" d="M525 86H619" marker-end="url(#arrow-1)"/>
+            <rect class="box-gold" x="630" y="40" width="210" height="92" rx="14"/>
+            <text x="735" y="72" text-anchor="middle">Inspect context delta</text>
+            <text class="small" x="735" y="96" text-anchor="middle">history · RecallPlan · request</text>
+            <path class="line" d="M735 132V188" marker-end="url(#arrow-1)"/>
+            <rect class="box-green" x="630" y="198" width="210" height="92" rx="14"/>
+            <text x="735" y="230" text-anchor="middle">Run evidence panel</text>
+            <text class="small" x="735" y="254" text-anchor="middle">local · hosted · repetitions</text>
+            <path class="line" d="M630 244H536" marker-end="url(#arrow-1)"/>
+            <rect class="box" x="335" y="198" width="190" height="92" rx="14"/>
+            <text x="430" y="230" text-anchor="middle">Review notebook</text>
+            <text class="small" x="430" y="254" text-anchor="middle">cache · cost · output · jury</text>
+            <path class="line" d="M335 244H241" marker-end="url(#arrow-1)"/>
+            <rect class="box-cyan" x="20" y="198" width="210" height="92" rx="14"/>
+            <text x="125" y="230" text-anchor="middle">Make scoped claim</text>
+            <text class="small" x="125" y="254" text-anchor="middle">cheaper · better recall · preferred</text>
+          </svg>
+          <p class="caption">Illustrative product loop: one immutable case identity binds every comparison and review artifact.</p>
+        </div>
+
+        <dl>
+          <dt>Axis</dt><dd>Real-game case corpus and replay fidelity</dd>
+          <dt>Basis</dt><dd><code>direct:</code> canonical events rebuild board state while traces and turns explain model attempts; the repo already stores request, usage, reuse, and cost evidence but has no bound comparison object (<code>CONCEPTS.md:342-350</code>).</dd>
+          <dt>Rationale</dt><dd>This defines the end state clearly and prevents six disconnected utilities from recreating the manual stitching the lab is supposed to remove.</dd>
+          <dt>Downsides</dt><dd>High product and architecture scope. Read-only authority, case provenance, replay fidelity, and immutable experiment identity are non-negotiable or this becomes expensive theater.</dd>
+          <dt>Confidence</dt><dd>95%</dd>
+          <dt>Complexity</dt><dd>High</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-2">
+        <div class="idea-head">
+          <span class="rank">2</span>
+          <div>
+            <p class="eyebrow">Real-game case corpus and replay fidelity</p>
+            <h3>2. Replay Fidelity Contract</h3>
+          </div>
+        </div>
+        <p class="description">Every case declares one of three honest capabilities: exact pre-render capture, deterministic checkpoint-to-call reconstruction, or request-only observation. Experiments may compare rendered historical requests in all three classes, but only the first two can support rerendering a different context policy against the same state; every conclusion is visibly capped by the case’s fidelity.</p>
+        <dl>
+          <dt>Axis</dt><dd>Real-game case corpus and replay fidelity</dd>
+          <dt>Basis</dt><dd><code>direct:</code> checkpoints are phase-boundary evidence while private traces separately preserve rendered prompt/request/response artifacts (<code>packages/api/src/db/schema.ts:1204-1221</code>; <code>packages/engine/src/game-runner.types.ts:460-509</code>).</dd>
+          <dt>Rationale</dt><dd>A lab is trustworthy only if it says what it actually replayed. Existing games still provide valuable observation cases while future capture earns stronger counterfactual claims.</dd>
+          <dt>Downsides</dt><dd>Many historical calls will initially be observation-only. Stronger comparisons require pre-render capture or a verified deterministic runway from a checkpoint.</dd>
+          <dt>Confidence</dt><dd>97%</dd>
+          <dt>Complexity</dt><dd>Medium</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-3">
+        <div class="idea-head">
+          <span class="rank">3</span>
+          <div>
+            <p class="eyebrow">Relevant-history selection and prompt/context variant comparison</p>
+            <h3>3. Differential Context Compiler</h3>
+          </div>
+        </div>
+        <p class="description">Treat authoritative game state and eligible history as source, RecallPlan as an intermediate representation, and the provider request as emitted output. The workbench compares baseline and candidate across all three layers: included and omitted evidence, selection reason and rank, protected facts, ordering, rendered blocks, prefix stability, token burden, and the resulting decision. A prompt that is smaller but forgets the decisive promise loses.</p>
+
+        <div class="diagram">
+          <svg viewBox="0 0 860 220" role="img" aria-label="Differential context compiler compares source evidence, RecallPlan, provider request, and model decision across baseline and candidate">
+            <defs>
+              <marker id="arrow-3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0 0L10 5L0 10Z" fill="#728594"/>
+              </marker>
+            </defs>
+            <rect class="box" x="20" y="58" width="170" height="92" rx="14"/>
+            <text x="105" y="89" text-anchor="middle">Source evidence</text>
+            <text class="small" x="105" y="113" text-anchor="middle">board · receipts · history</text>
+            <path class="line" d="M190 104H245" marker-end="url(#arrow-3)"/>
+            <rect class="box-violet" x="255" y="58" width="170" height="92" rx="14"/>
+            <text x="340" y="89" text-anchor="middle">RecallPlan IR</text>
+            <text class="small" x="340" y="113" text-anchor="middle">rank · reason · budget</text>
+            <path class="line" d="M425 104H480" marker-end="url(#arrow-3)"/>
+            <rect class="box-cyan" x="490" y="58" width="170" height="92" rx="14"/>
+            <text x="575" y="89" text-anchor="middle">Provider request</text>
+            <text class="small" x="575" y="113" text-anchor="middle">blocks · prefix · tokens</text>
+            <path class="line" d="M660 104H715" marker-end="url(#arrow-3)"/>
+            <rect class="box-green" x="725" y="58" width="115" height="92" rx="14"/>
+            <text x="782" y="89" text-anchor="middle">Decision</text>
+            <text class="small" x="782" y="113" text-anchor="middle">attempt + result</text>
+            <text class="small" x="430" y="190" text-anchor="middle">Baseline and candidate are diffed at every semantic boundary—not only by total tokens.</text>
+          </svg>
+          <p class="caption">Illustrative compiler view: context optimization has semantic output, not just byte output.</p>
+        </div>
+
+        <dl>
+          <dt>Axis</dt><dd>Relevant-history selection and prompt/context variant comparison</dd>
+          <dt>Basis</dt><dd><code>direct:</code> ContextBuilder attaches a compiled RecallPlan, while the current harness reports mostly size, count, and overflow deltas (<code>packages/engine/src/context-builder.ts:848-859</code>; <code>packages/engine/src/prompt-scenario-lab.ts:278-287</code>).</dd>
+          <dt>Rationale</dt><dd>This directly answers the question the user cares about: did the candidate select the right history, and did that different evidence plausibly improve the decision?</dd>
+          <dt>Downsides</dt><dd>A decision change is correlated with the context delta, not automatically causal. Targeted ablations and repetitions are still necessary.</dd>
+          <dt>Confidence</dt><dd>95%</dd>
+          <dt>Complexity</dt><dd>Medium</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-4">
+        <div class="idea-head">
+          <span class="rank">4</span>
+          <div>
+            <p class="eyebrow">Threaded conversations and prompt-cache reuse</p>
+            <h3>4. Threaded Cache Wind Tunnel</h3>
+          </div>
+        </div>
+        <p class="description">Replay one authentic three-to-four-turn multi-agent Mingle or huddle tape with the original turn order and repeated calls by the same actor. Baseline and candidate see the same starting state and conversation growth. Each turn reports structural reusable-prefix potential, provider cache reads and writes, latency, and actual cost; an early-prefix mutation and a late-conversation mutation prove the measurement reacts for the expected reason.</p>
+
+        <div class="diagram">
+          <svg viewBox="0 0 860 260" role="img" aria-label="Threaded cache experiment with an authentic multi-agent conversation, repeated actor turns, and separate structural, provider, and cost ledgers">
+            <defs>
+              <marker id="arrow-4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+                <path d="M0 0L10 5L0 10Z" fill="#728594"/>
+              </marker>
+            </defs>
+            <rect class="box-cyan" x="20" y="38" width="150" height="76" rx="14"/>
+            <text x="95" y="68" text-anchor="middle">Turn 1 · Atlas</text>
+            <text class="small" x="95" y="91" text-anchor="middle">warm shared prefix</text>
+            <path class="line" d="M170 76H225" marker-end="url(#arrow-4)"/>
+            <rect class="box-violet" x="235" y="38" width="150" height="76" rx="14"/>
+            <text x="310" y="68" text-anchor="middle">Turn 2 · Rowan</text>
+            <text class="small" x="310" y="91" text-anchor="middle">append conversation</text>
+            <path class="line" d="M385 76H440" marker-end="url(#arrow-4)"/>
+            <rect class="box-cyan" x="450" y="38" width="150" height="76" rx="14"/>
+            <text x="525" y="68" text-anchor="middle">Turn 3 · Atlas</text>
+            <text class="small" x="525" y="91" text-anchor="middle">same actor returns</text>
+            <path class="line" d="M600 76H655" marker-end="url(#arrow-4)"/>
+            <rect class="box-gold" x="665" y="38" width="175" height="76" rx="14"/>
+            <text x="752" y="68" text-anchor="middle">Break control</text>
+            <text class="small" x="752" y="91" text-anchor="middle">mutate early vs late</text>
+            <rect class="box" x="62" y="158" width="210" height="70" rx="14"/>
+            <text x="167" y="187" text-anchor="middle">Structural ledger</text>
+            <text class="small" x="167" y="208" text-anchor="middle">first break · reusable estimate</text>
+            <rect class="box" x="325" y="158" width="210" height="70" rx="14"/>
+            <text x="430" y="187" text-anchor="middle">Provider ledger</text>
+            <text class="small" x="430" y="208" text-anchor="middle">cache read · cache write</text>
+            <rect class="box" x="588" y="158" width="210" height="70" rx="14"/>
+            <text x="693" y="187" text-anchor="middle">Economics ledger</text>
+            <text class="small" x="693" y="208" text-anchor="middle">latency · tier · actual cost</text>
+          </svg>
+          <p class="caption">Illustrative cache tape: social continuity and cache economics are measured on the same ordered thread, but remain separate claims.</p>
+        </div>
+
+        <dl>
+          <dt>Axis</dt><dd>Threaded conversations and prompt-cache reuse</dd>
+          <dt>Basis</dt><dd><code>direct:</code> Mingle accumulates ordered conversation history and the docs require ordered same-agent replay before interpreting reuse (<code>packages/engine/src/phases/mingle.ts:583-617,642-652</code>; <code>docs/reasoning-transcript-observability.md:337</code>). Structural reuse and provider cached tokens already exist as separate signals.</dd>
+          <dt>Rationale</dt><dd>This is the smallest bounded experiment that still behaves like Influence social gameplay and can validate real OpenAI cache economics.</dd>
+          <dt>Downsides</dt><dd>Real cache validation requires hosted calls within the provider’s cache window. Local models can test behavior, not OpenAI billing.</dd>
+          <dt>Confidence</dt><dd>98%</dd>
+          <dt>Complexity</dt><dd>Medium</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-5">
+        <div class="idea-head">
+          <span class="rank">5</span>
+          <div>
+            <p class="eyebrow">Provider panels, spend governance, and experiment repeatability</p>
+            <h3>5. Evidence-per-Dollar Experiment Ladder</h3>
+          </div>
+        </div>
+        <p class="description">Every experiment states the question it is trying to answer. Structural and retrieval checks run first, selected local 9B–31B models run second, and targeted hosted repetitions run only when cheaper evidence leaves a meaningful disagreement. An immutable receipt locks case, variant, actor/runtime snapshot, model/provider policy, repetition, effective service tier, usage, and cost provenance so a result cannot quietly become apples-to-oranges.</p>
+
+        <div class="diagram">
+          <svg viewBox="0 0 860 230" role="img" aria-label="Evidence escalation ladder from zero-cost structural checks through local model screening to targeted hosted repetitions">
+            <rect class="box-green" x="35" y="142" width="220" height="62" rx="14"/>
+            <text x="145" y="169" text-anchor="middle">Structural + retrieval</text>
+            <text class="small" x="145" y="189" text-anchor="middle">$0 · run broadly</text>
+            <rect class="box-cyan" x="320" y="91" width="220" height="113" rx="14"/>
+            <text x="430" y="126" text-anchor="middle">Local 9B–31B panel</text>
+            <text class="small" x="430" y="150" text-anchor="middle">screen behavior + disagreement</text>
+            <text class="small" x="430" y="177" text-anchor="middle">bounded machine time</text>
+            <rect class="box-gold" x="605" y="38" width="220" height="166" rx="14"/>
+            <text x="715" y="78" text-anchor="middle">Targeted hosted calls</text>
+            <text class="small" x="715" y="104" text-anchor="middle">survivors · repetitions · cache proof</text>
+            <text class="small" x="715" y="132" text-anchor="middle">explicit dollar ceiling</text>
+            <text class="small" x="715" y="169" text-anchor="middle">spend only when evidence can change</text>
+          </svg>
+          <p class="caption">Illustrative escalation: spend is justified by the unresolved question, not by a default model matrix.</p>
+        </div>
+
+        <dl>
+          <dt>Axis</dt><dd>Provider panels, spend governance, and experiment repeatability</dd>
+          <dt>Basis</dt><dd><code>direct:</code> the provider catalog already spans hosted OpenAI, Katana, LM Studio, and custom-compatible models; accounting already records provider, model, token, tier, and cost provenance (<code>packages/engine/src/model-catalog.ts:245-270</code>; <code>packages/api/src/services/provider-cost-accounting.ts:490-568</code>).</dd>
+          <dt>Rationale</dt><dd>The user can spend more on decisive evidence while spending nothing on variants that already failed structural or retrieval checks.</dd>
+          <dt>Downsides</dt><dd>Seed/repetition support and pre-run budget enforcement are not fully established. Local-model behavior is screening evidence, not a proxy for hosted behavior.</dd>
+          <dt>Confidence</dt><dd>94%</dd>
+          <dt>Complexity</dt><dd>Medium</dd>
+        </dl>
+      </article>
+
+      <article class="idea" id="idea-6">
+        <div class="idea-head">
+          <span class="rank">6</span>
+          <div>
+            <p class="eyebrow">Behavioral quality evidence and review</p>
+            <h3>6. Quality Claim Ledger and Blind Strategy Jury</h3>
+          </div>
+        </div>
+        <p class="description">The lab keeps separate verdict lanes for canonical and structured validity, relevant-history retrieval, fallback provenance, cache and cost, repetition stability, model-grader triage, and blinded human preference. Humans see baseline and candidate decisions without model labels, with canonical exhibits beside them, and judge promise-following, strategic coherence, persuasion, novelty, repetition, and watchability. The lab never emits one universal quality number.</p>
+        <dl>
+          <dt>Axis</dt><dd>Behavioral quality evidence and review</dd>
+          <dt>Basis</dt><dd><code>direct:</code> reasoning artifacts explain attempted action but are not canonical game facts, while the existing human rubric already asks about good and bad strategy, pivots, coherence, repetition, and watchability (<code>docs/local-model-evaluation.md:262-276</code>).</dd>
+          <dt>Rationale</dt><dd>This makes quality evaluation possible and useful without pretending subjective social strategy is a deterministic unit test.</dd>
+          <dt>Downsides</dt><dd>Human labels are sparse and may disagree. Model judges must be calibrated against them, used mainly for triage, and never presented as final truth.</dd>
+          <dt>Confidence</dt><dd>94%</dd>
+          <dt>Complexity</dt><dd>Medium</dd>
+        </dl>
+      </article>
+    </section>
+
+    <section id="rejection-summary">
+      <p class="eyebrow">Adversarial cut</p>
+      <h2>Rejection Summary</h2>
+      <p class="section-intro">Most raw candidates were useful ingredients but not distinct product ideas. Folding them is deliberate: complexity is already expensive enough without giving every dashboard panel its own mythology.</p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Idea</th><th>Reason Rejected or Folded</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>1</td><td>Case Quarry / Decision Biobank</td><td>Folded into Influence Decision Workbench.</td></tr>
+            <tr><td>2</td><td>Replay Fidelity Contract</td><td>Promoted.</td></tr>
+            <tr><td>3</td><td>Replay Equality or No Case</td><td>Refuted: discards useful observation-only cases, and its basis does not prove reconstruction equality.</td></tr>
+            <tr><td>4</td><td>Decision Episode Ledger</td><td>Folded into the Workbench experiment primitive.</td></tr>
+            <tr><td>5</td><td>Case Graph, Not Case Bag</td><td>Deferred: ordered replay does not yet prove a promise-to-outcome dependency graph.</td></tr>
+            <tr><td>6</td><td>Failure-Grown Curriculum</td><td>Folded into future corpus harvesting; fallback evidence is grounded, broader failure classes need a stronger seam.</td></tr>
+            <tr><td>7</td><td>Million-Case Corpus, Twelve-Case Run</td><td>Rejected as ungrounded scale garnish; bounded selection remains a later corpus concern.</td></tr>
+            <tr><td>8</td><td>Variant as Policy Stack</td><td>Folded into Differential Context Compiler.</td></tr>
+            <tr><td>9</td><td>Differential Context Compiler</td><td>Promoted.</td></tr>
+            <tr><td>10</td><td>Memory Cross-Examination</td><td>Folded into the compiler’s evidence delta.</td></tr>
+            <tr><td>11</td><td>Context Subtraction Deck</td><td>Retained as an experiment mode, not a standalone product.</td></tr>
+            <tr><td>12</td><td>Review Findings Become Retrieval Gold</td><td>Deferred until reviewer labels have a concrete retrieval-gold data seam.</td></tr>
+            <tr><td>13</td><td>Full-Context Oracle</td><td>Deferred: “all relevant” is not credible before calibrated gold history exists.</td></tr>
+            <tr><td>14</td><td>Mingle Tape / Social Flight Recorder</td><td>Folded into Threaded Cache Wind Tunnel.</td></tr>
+            <tr><td>15</td><td>Cache Double-Entry Ledger</td><td>Folded into Threaded Cache Wind Tunnel.</td></tr>
+            <tr><td>16</td><td>Cache Tracer-Dye Controls</td><td>Folded into Threaded Cache Wind Tunnel.</td></tr>
+            <tr><td>17</td><td>Cache Choreography</td><td>Folded into variant policy layout and cache diagnostics.</td></tr>
+            <tr><td>18</td><td>Evidence-per-Dollar Escalation Ladder</td><td>Promoted and expanded with experiment comparability.</td></tr>
+            <tr><td>19</td><td>Question-Budgeted Experiments</td><td>Folded into the ladder; current accounting does not yet enforce a full pre-run estimator.</td></tr>
+            <tr><td>20</td><td>Comparable Experiment Receipt</td><td>Folded into Evidence-per-Dollar Experiment Ladder.</td></tr>
+            <tr><td>21</td><td>N-of-1 Crossover Trials</td><td>Retained as an execution mode; seed and repetition support still need proof.</td></tr>
+            <tr><td>22</td><td>Historical Self as the Third Arm</td><td>Refuted as a comparable arm unless its complete historical runtime snapshot matches; keep only as observation.</td></tr>
+            <tr><td>23</td><td>Immutable Experiments, Mutable Promotion Views</td><td>Folded into the experiment receipt and Quality Claim Ledger.</td></tr>
+            <tr><td>24</td><td>Blind Strategy Jury</td><td>Promoted and combined with separate quality claims.</td></tr>
+            <tr><td>25</td><td>Honest Evidence Map / Claim Ledger</td><td>Promoted and combined with Blind Strategy Jury.</td></tr>
+            <tr><td>26</td><td>Five-Minute Human Budget</td><td>Rejected as arbitrary; bounded human review is valuable, five minutes is not grounded.</td></tr>
+            <tr><td>27</td><td>Influence Decision Workbench</td><td>Promoted as the top coherent product.</td></tr>
+            <tr><td>28</td><td>Decision Delta Notebook</td><td>Folded into the Workbench’s primary experiment artifact.</td></tr>
+            <tr><td>29</td><td>Harvest-to-Gold Loop</td><td>Deferred until reviewer labels and retrieval gold have a concrete data contract.</td></tr>
+            <tr><td>30</td><td>Promotion Claim Matrix</td><td>Folded into Quality Claim Ledger.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <footer class="composition-signal">Composed 2026-07-27T21:56Z by ce-ideate from the current user prompt and the Influence codebase.</footer>
+  </main>
+</body>
+</html>

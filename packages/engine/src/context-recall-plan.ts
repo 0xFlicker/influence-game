@@ -702,7 +702,58 @@ function addStrategyThreadSeeds(
 
 export interface ScoredRecallCandidate extends ProjectedRecallCandidate {
   overlapCount: number;
+  /** Lexical overlap score before bounded strategic/recency signals. */
   relevanceScore: number;
+  prioritySpeakerMatch: boolean;
+  currentRoundMatch: boolean;
+  rankingScore: number;
+}
+
+interface RecallRankingContext {
+  currentRound: number;
+  prioritySpeakerTokens: ReadonlySet<string>;
+}
+
+const PRIORITY_SPEAKER_SCORE_BONUS = 125;
+const CURRENT_ROUND_SCORE_BONUS = 100;
+
+/**
+ * Identify living speakers explicitly named in target/probe-oriented strategy.
+ * Coalition/alliance prose is deliberately excluded so every ally does not
+ * become equally "priority" merely by appearing in protected context.
+ */
+function compileRecallPrioritySpeakerTokens(params: {
+  phaseContext: PhaseContext;
+  continuity: RecallContinuitySnapshot;
+}): Set<string> {
+  const packet = params.continuity.strategyPacket;
+  const livingSpeakers = params.phaseContext.alivePlayers.map((player) => ({
+    tokens: tokenizeRecallText(player.name),
+  }));
+  const priorityFrom = (texts: readonly (string | null | undefined)[]): Set<string> => {
+    const focusTokens = new Set<string>();
+    for (const text of texts) addTokens(focusTokens, text);
+    const priority = new Set<string>();
+    for (const { tokens: nameTokens } of livingSpeakers) {
+      if (
+        nameTokens.length > 0
+        && nameTokens.every((token) => focusTokens.has(token))
+      ) {
+        for (const token of nameTokens) priority.add(token);
+      }
+    }
+    return priority;
+  };
+
+  const explicitTargets = priorityFrom([packet?.targetPosture]);
+  if (explicitTargets.size > 0) return explicitTargets;
+
+  const reflection = params.continuity.reflectionSummary;
+  return priorityFrom([
+    packet?.nextSocialProbe,
+    ...(reflection?.suspicions ?? []),
+    ...(reflection?.threats ?? []),
+  ]);
 }
 
 /**
@@ -712,8 +763,10 @@ export interface ScoredRecallCandidate extends ProjectedRecallCandidate {
 export function scoreAndRankCandidates(
   candidates: readonly ProjectedRecallCandidate[],
   seeds: ReadonlySet<string>,
+  rankingContext?: RecallRankingContext,
 ): ScoredRecallCandidate[] {
   const scored: ScoredRecallCandidate[] = [];
+  const prioritySpeakerMatches = new Map<string, boolean>();
   for (const candidate of candidates) {
     const tokens = tokenizeRecallText(candidate.dialogueText);
     let overlapCount = 0;
@@ -729,16 +782,49 @@ export function scoreAndRankCandidates(
     // Lexical relevance: unique seed overlap; light boost for denser short messages.
     const density = overlapCount / Math.max(tokens.length, 1);
     const relevanceScore = overlapCount * 10 + density;
+    let prioritySpeakerMatch = prioritySpeakerMatches.get(
+      candidate.speakerLabel,
+    );
+    if (prioritySpeakerMatch === undefined) {
+      prioritySpeakerMatch = Boolean(
+        rankingContext
+        && tokenizeRecallText(candidate.speakerLabel).some((token) =>
+          rankingContext.prioritySpeakerTokens.has(token),
+        ),
+      );
+      prioritySpeakerMatches.set(candidate.speakerLabel, prioritySpeakerMatch);
+    }
+    const currentRoundMatch =
+      rankingContext?.currentRound === candidate.round;
+    const rankingScore =
+      relevanceScore
+      + (prioritySpeakerMatch ? PRIORITY_SPEAKER_SCORE_BONUS : 0)
+      + (currentRoundMatch ? CURRENT_ROUND_SCORE_BONUS : 0);
 
     scored.push({
       ...candidate,
       overlapCount,
       relevanceScore,
+      prioritySpeakerMatch,
+      currentRoundMatch,
+      rankingScore,
     });
   }
 
-  // Higher relevance first; then more recent (higher entrySequence); then source order; then sequence asc as final stable key.
+  // Target-speaker and current-round signals may overcome roughly 12.5 and
+  // 10 lexical terms respectively. Within the same current-round target, the
+  // latest statement wins; zero-overlap candidates never enter the ranking.
   scored.sort((a, b) => {
+    if (
+      a.prioritySpeakerMatch
+      && b.prioritySpeakerMatch
+      && a.currentRoundMatch
+      && b.currentRoundMatch
+      && b.entrySequence !== a.entrySequence
+    ) {
+      return b.entrySequence - a.entrySequence;
+    }
+    if (b.rankingScore !== a.rankingScore) return b.rankingScore - a.rankingScore;
     if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore;
     if (b.entrySequence !== a.entrySequence) return b.entrySequence - a.entrySequence;
     if (a.sourceOrder !== b.sourceOrder) return a.sourceOrder - b.sourceOrder;
@@ -746,6 +832,20 @@ export function scoreAndRankCandidates(
   });
 
   return scored;
+}
+
+function rankRecallCandidates(params: {
+  candidates: readonly ProjectedRecallCandidate[];
+  promptClass: RecallPromptClass;
+  phaseContext: PhaseContext;
+  continuity: RecallContinuitySnapshot;
+  huddleOutcomes: readonly RecallProtectedHuddleOutcome[];
+}): ScoredRecallCandidate[] {
+  const seeds = compileRecallSeedTerms(params);
+  return scoreAndRankCandidates(params.candidates, seeds, {
+    currentRound: params.phaseContext.round,
+    prioritySpeakerTokens: compileRecallPrioritySpeakerTokens(params),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -832,27 +932,36 @@ function historyItemChars(item: RecallHistoryDialogueEvidence): number {
   return measureStructuredChars(item);
 }
 
+function historyLaneChars(
+  dialogueEvidence: readonly RecallHistoryDialogueEvidence[],
+): number {
+  return measureStructuredChars({ dialogueEvidence });
+}
+
+function projectHistoryEvidence(
+  candidate: ProjectedRecallCandidate,
+): RecallHistoryDialogueEvidence {
+  return {
+    entrySequence: candidate.entrySequence,
+    round: candidate.round,
+    phase: candidate.phase,
+    speakerLabel: candidate.speakerLabel,
+    dialogueText: candidate.dialogueText,
+    sourceClass: candidate.sourceClass,
+    evidenceRole: "historical_evidence",
+  };
+}
+
 function fillHistoryWithinBudget(
   ranked: readonly ScoredRecallCandidate[],
   budgetChars: number,
 ): RecallHistoryDialogueEvidence[] {
   if (budgetChars <= 0 || ranked.length === 0) return [];
   const selected: RecallHistoryDialogueEvidence[] = [];
-  let used = 0;
   for (const candidate of ranked) {
-    const item: RecallHistoryDialogueEvidence = {
-      entrySequence: candidate.entrySequence,
-      round: candidate.round,
-      phase: candidate.phase,
-      speakerLabel: candidate.speakerLabel,
-      dialogueText: candidate.dialogueText,
-      sourceClass: candidate.sourceClass,
-      evidenceRole: "historical_evidence",
-    };
-    const cost = historyItemChars(item);
-    if (used + cost > budgetChars) continue;
+    const item = projectHistoryEvidence(candidate);
+    if (historyLaneChars([...selected, item]) > budgetChars) continue;
     selected.push(item);
-    used += cost;
   }
   return selected;
 }
@@ -868,6 +977,24 @@ export interface CompileRecallPlanParams {
   phaseContext: PhaseContext;
   transcript: readonly TranscriptEntry[];
 }
+
+/**
+ * Swappable deterministic policy seam for revision-isolated prompt evaluation.
+ * Implementations must preserve the authorization contract of `compileRecallPlan`.
+ */
+export interface RecallPlanCompiler {
+  readonly id: string;
+  readonly protocolVersion: string;
+  readonly policyDigest: string;
+  compile(params: CompileRecallPlanParams): RecallPlan;
+}
+
+export const defaultRecallPlanCompiler: RecallPlanCompiler = {
+  id: "production",
+  protocolVersion: "1",
+  policyDigest: "compileRecallPlan/v1",
+  compile: compileRecallPlan,
+};
 
 /**
  * Pure Recall Plan compiler.
@@ -937,21 +1064,20 @@ export function compileRecallPlan(params: CompileRecallPlanParams): RecallPlan {
     null,
   );
 
-  const seeds = compileRecallSeedTerms({
-    promptClass,
-    phaseContext,
-    continuity,
-    huddleOutcomes,
-  });
-
   let historyEvidence: RecallHistoryDialogueEvidence[] = [];
   if (historyBudgetChars > 0 && promptClass !== "ordinary_speech") {
-    const ranked = scoreAndRankCandidates(authorizedCandidates, seeds);
+    const ranked = rankRecallCandidates({
+      candidates: authorizedCandidates,
+      promptClass,
+      phaseContext,
+      continuity,
+      huddleOutcomes,
+    });
     historyEvidence = fillHistoryWithinBudget(ranked, historyBudgetChars);
   }
 
   const historyLane = { dialogueEvidence: historyEvidence };
-  const historyChars = measureStructuredChars(historyLane);
+  const historyChars = historyLaneChars(historyEvidence);
 
   const budget: RecallPlanBudgetLedger = {
     envelopeChars: envelope.envelopeChars,
@@ -1012,6 +1138,71 @@ export function compileRecallPlan(params: CompileRecallPlanParams): RecallPlan {
 /** Normalize a plan to a stable JSON string for byte-stability assertions. */
 export function serializeRecallPlan(plan: RecallPlan): string {
   return JSON.stringify(plan);
+}
+
+/** Evaluation-lab-only selection explanation. Do not serialize this into RecallPlanReceipt. */
+export interface RecallPlanSelectionExplanation {
+  sourceId: string;
+  entrySequence: number;
+  rankSlot: number | null;
+  overlapCount: number;
+  relevanceScore: number;
+  prioritySpeakerMatch: boolean;
+  currentRoundMatch: boolean;
+  rankingScore: number;
+  serializedChars: number;
+  terminalReason: "selected_history" | "history_disabled" | "seed_miss" | "budget_excluded";
+}
+
+export function explainRecallPlanSelection(
+  params: CompileRecallPlanParams,
+): RecallPlanSelectionExplanation[] {
+  const plan = compileRecallPlan(params);
+  return explainRecallPlanSelectionForPlan(params, plan);
+}
+
+export function explainRecallPlanSelectionForPlan(
+  params: CompileRecallPlanParams,
+  plan: RecallPlan,
+): RecallPlanSelectionExplanation[] {
+  const authorized = collectAuthorizedCandidates(params.transcript, params.actorId);
+  const selected = new Set(
+    plan.history.dialogueEvidence.map((entry) => entry.entrySequence),
+  );
+  const ranked = rankRecallCandidates({
+    candidates: authorized,
+    promptClass: params.promptClass,
+    phaseContext: params.phaseContext,
+    continuity: params.continuity,
+    huddleOutcomes: plan.protected.huddleOutcomes,
+  });
+  const rankedBySequence = new Map(
+    ranked.map((entry, rankSlot) => [entry.entrySequence, { entry, rankSlot }]),
+  );
+  const historyDisabled =
+    params.promptClass === "ordinary_speech"
+    || plan.budget.historyBudgetChars === 0;
+  return authorized.map((entry) => {
+    const ranking = rankedBySequence.get(entry.entrySequence);
+    return {
+      sourceId: `transcript:${entry.entrySequence}`,
+      entrySequence: entry.entrySequence,
+      rankSlot: ranking?.rankSlot ?? null,
+      overlapCount: ranking?.entry.overlapCount ?? 0,
+      relevanceScore: ranking?.entry.relevanceScore ?? 0,
+      prioritySpeakerMatch: ranking?.entry.prioritySpeakerMatch ?? false,
+      currentRoundMatch: ranking?.entry.currentRoundMatch ?? false,
+      rankingScore: ranking?.entry.rankingScore ?? 0,
+      serializedChars: historyItemChars(projectHistoryEvidence(entry)),
+      terminalReason: historyDisabled
+        ? "history_disabled" as const
+        : selected.has(entry.entrySequence)
+          ? "selected_history" as const
+          : ranking
+            ? "budget_excluded" as const
+            : "seed_miss" as const,
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------

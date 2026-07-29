@@ -10,7 +10,9 @@ import {
 } from "./alliance-huddle-outcome";
 import {
   buildRecallEvidenceBoundaryKey,
-  compileRecallPlan,
+  defaultRecallPlanCompiler,
+  explainRecallPlanSelectionForPlan,
+  type RecallPlanCompiler,
   emptyRecallContinuitySnapshot,
 } from "./context-recall-plan";
 import type { GameState } from "./game-state";
@@ -32,6 +34,25 @@ import type {
   RecallPromptClass,
   RevealedVoteLedgerEntry,
 } from "./game-runner.types";
+
+export interface PrivateRecallSelectionObservation {
+  actorId: UUID;
+  promptClass: RecallPromptClass;
+  explanation: ReturnType<typeof explainRecallPlanSelectionForPlan>;
+  laneSummary: {
+    protectedCount: number;
+    hotCount: number;
+    authorizedHistoryCount: number;
+    selectedHistoryCount: number;
+  };
+  budget: {
+    envelopeChars: number;
+    historyBudgetChars: number;
+    protectedChars: number;
+    hotChars: number;
+    historyChars: number;
+  };
+}
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
@@ -80,6 +101,10 @@ export class ContextBuilder {
     private readonly logger: TranscriptLogger,
     private readonly mingleInbox: Map<UUID, Array<{ from: string; text: string }>>,
     private readonly totalPlayerCount: number,
+    private readonly recallPlanCompiler: RecallPlanCompiler = defaultRecallPlanCompiler,
+    private readonly privateRecallSelectionSink?: (
+      observation: PrivateRecallSelectionObservation,
+    ) => void,
   ) {}
 
   /** Drop process-local recall selection cache (tests / simulated restart). */
@@ -852,6 +877,30 @@ export class ContextBuilder {
       phase: params.phase,
       phaseContext: base,
     });
+    this.privateRecallSelectionSink?.({
+      actorId: params.agentId,
+      promptClass,
+      explanation: explainRecallPlanSelectionForPlan({
+        actorId: params.agentId,
+        promptClass,
+        continuity,
+        phaseContext: base,
+        transcript: this.logger.transcript,
+      }, plan),
+      laneSummary: {
+        protectedCount: plan.receipt.selectedLaneCounts.protected,
+        hotCount: plan.receipt.selectedLaneCounts.hot,
+        authorizedHistoryCount: plan.receipt.eventBoundary.authorizedCandidateCount,
+        selectedHistoryCount: plan.receipt.selectedLaneCounts.history,
+      },
+      budget: {
+        envelopeChars: plan.budget.envelopeChars,
+        historyBudgetChars: plan.budget.historyBudgetChars,
+        protectedChars: plan.budget.protectedChars,
+        hotChars: plan.budget.hotChars,
+        historyChars: plan.budget.historyChars,
+      },
+    });
     return {
       ...base,
       recallPromptClass: promptClass,
@@ -896,7 +945,7 @@ export class ContextBuilder {
       return structuredClone(cached.plan);
     }
 
-    const plan = compileRecallPlan({
+    const plan = this.recallPlanCompiler.compile({
       actorId: params.agentId,
       promptClass: params.promptClass,
       continuity: params.continuity,

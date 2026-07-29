@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   estimateCostForKnownModel,
+  estimateTierAwareOpenAICost,
   type PrivateDecisionTrace,
   type TokenUsage,
 } from "@influence/engine";
@@ -9,7 +10,12 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 
 const PRICING_SOURCE_ID = "engine.MODEL_PRICING";
+const FLEX_PRICING_SOURCE_ID = "engine.OPENAI_FLEX_MODEL_PRICING";
 const RATE_CARD_VERSION = "2026-07-04";
+
+const PROVIDER_SNAPSHOT_RATE_CARDS = {
+  "gpt-5.4-nano-2026-03-17": "gpt-5.4-nano",
+} as const;
 
 const UNSAFE_KEY_PATTERN = /prompt|messages|response|content|tool|arguments|thinking|reasoning|key|secret|token/i;
 
@@ -83,6 +89,98 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
     pricedAt: string[];
   };
   reconciliation: Array<Record<string, unknown>>;
+}
+
+export interface ProviderUsageCeilingQuoteInput {
+  modelSnapshot: string;
+  promptTokenCeiling: number;
+  cachedPromptTokenCeiling: number;
+  outputTokenCeiling: number;
+  serviceTier?: "flex";
+}
+
+export type ProviderUsageCeilingQuote =
+  | {
+      status: "estimated";
+      estimatedCostUsd: number;
+      estimatedCostMicrousd: number;
+      pricingSourceId: string;
+      rateCardVersion: string;
+    }
+  | {
+      status: "unavailable";
+      pricingSourceId: null;
+      rateCardVersion: null;
+    };
+
+/**
+ * Quotes a bounded provider request using an explicitly pinned model snapshot.
+ * Snapshot aliases are intentionally rejected so preflight never prices a
+ * request against a rate card it cannot prove applies.
+ */
+export function quoteProviderUsageCeiling(
+  input: ProviderUsageCeilingQuoteInput,
+): ProviderUsageCeilingQuote {
+  const model = PROVIDER_SNAPSHOT_RATE_CARDS[
+    input.modelSnapshot as keyof typeof PROVIDER_SNAPSHOT_RATE_CARDS
+  ];
+  if (!model ||
+      !Number.isSafeInteger(input.promptTokenCeiling) || input.promptTokenCeiling < 0 ||
+      !Number.isSafeInteger(input.cachedPromptTokenCeiling) || input.cachedPromptTokenCeiling < 0 ||
+      input.cachedPromptTokenCeiling > input.promptTokenCeiling ||
+      !Number.isSafeInteger(input.outputTokenCeiling) || input.outputTokenCeiling < 0) {
+    return {
+      status: "unavailable",
+      pricingSourceId: null,
+      rateCardVersion: null,
+    };
+  }
+
+  const usage = {
+    promptTokens: input.promptTokenCeiling,
+    cachedTokens: input.cachedPromptTokenCeiling,
+    completionTokens: input.outputTokenCeiling,
+    reasoningTokens: 0,
+    totalTokens: input.promptTokenCeiling + input.outputTokenCeiling,
+    callCount: 1,
+    emptyResponses: 0,
+  };
+  const totalCost = input.serviceTier === "flex"
+    ? estimateTierAwareOpenAICost({ flex: usage }, model)?.totalCost
+    : estimateCostForKnownModel(usage, model)?.totalCost;
+  if (totalCost === undefined) {
+    return {
+      status: "unavailable",
+      pricingSourceId: null,
+      rateCardVersion: null,
+    };
+  }
+
+  return {
+    status: "estimated",
+    estimatedCostUsd: totalCost,
+    estimatedCostMicrousd: Math.max(0, Math.round(totalCost * 1_000_000)),
+    pricingSourceId: input.serviceTier === "flex"
+      ? FLEX_PRICING_SOURCE_ID
+      : PRICING_SOURCE_ID,
+    rateCardVersion: RATE_CARD_VERSION,
+  };
+}
+
+export function estimateProviderUsageForSnapshot(input: {
+  modelSnapshot: string;
+  serviceTier: "flex";
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+}): ProviderUsageCeilingQuote {
+  return quoteProviderUsageCeiling({
+    modelSnapshot: input.modelSnapshot,
+    promptTokenCeiling: input.inputTokens,
+    cachedPromptTokenCeiling: input.cachedInputTokens,
+    outputTokenCeiling: input.outputTokens,
+    serviceTier: input.serviceTier,
+  });
 }
 
 function sha256(value: unknown): string {

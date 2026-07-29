@@ -1384,6 +1384,14 @@ export interface InfluenceAgentOptions {
   strategyInstructions?: string;
   /** Sampling temperature used only by providers that support it. */
   temperature?: number;
+  /** Opaque evaluation lineage; production retains its game+actor cache lineage. */
+  promptCacheLineage?: string;
+  /** Evaluation requires the Responses API rather than silently selecting Chat Completions. */
+  requireOpenAIResponses?: boolean;
+  /** Fail rather than producing game fallback dialogue after a provider/tool error. */
+  evaluationFailFast?: boolean;
+  /** Maximum structured provider attempts. Production retains the existing retry behavior. */
+  structuredCallMaxAttempts?: number;
 }
 
 type LlmCallOptions = {
@@ -1419,6 +1427,10 @@ export class InfluenceAgent implements IAgent {
   private readonly personalityPrompt?: string;
   private readonly strategyInstructions?: string;
   private readonly temperature: number;
+  private readonly promptCacheLineage?: string;
+  private readonly requireOpenAIResponses: boolean;
+  private readonly evaluationFailFast: boolean;
+  private readonly structuredCallMaxAttempts?: number;
   private tokenTracker: TokenTracker | null = null;
   /** Most recent private-decision id minted while emitting a private decision trace. */
   private lastPrivateDecisionId: string | undefined;
@@ -1463,6 +1475,10 @@ export class InfluenceAgent implements IAgent {
     this.reasoningPolicy = options.reasoningPolicy ?? "action-policy";
     this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.privateTraceSink = options.privateTraceSink;
+    this.promptCacheLineage = options.promptCacheLineage;
+    this.requireOpenAIResponses = options.requireOpenAIResponses ?? false;
+    this.evaluationFailFast = options.evaluationFailFast ?? false;
+    this.structuredCallMaxAttempts = options.structuredCallMaxAttempts;
     this.openAIReasoningSummary = options.openAIReasoningSummary;
     this.personalityPrompt = options.personalityPrompt?.trim() || undefined;
     this.strategyInstructions = options.strategyInstructions?.trim() || undefined;
@@ -2711,7 +2727,8 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         reasoningContext: result.reasoningContext,
         ...metadata,
       };
-    } catch {
+    } catch (error) {
+      if (this.evaluationFailFast) throw error;
       if (otherRoomMates.length > 0 && history.length === 0) {
         return {
           thinking: "",
@@ -4949,6 +4966,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
   }
 
   private shouldUseOpenAIResponsesForSummary(options?: LlmCallOptions): boolean {
+    if (this.requireOpenAIResponses) return true;
     return Boolean(
       this.resolvedReasoningSummaryMode(options) &&
         this.modelCapabilities.supportsOpenAIResponses &&
@@ -4990,8 +5008,9 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
   }
 
   private responsePromptCacheKey(): string {
+    const lineage = this.promptCacheLineage ?? this.gameId ?? "unbound";
     return `influence:${createHash("sha256")
-      .update(`${this.gameId ?? "unbound"}:${this.id}`)
+      .update(`${lineage}:${this.id}`)
       .digest("hex")
       .slice(0, 24)}`;
   }
@@ -5686,7 +5705,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     let effectiveMaxTokens = this.applyStructuredTokenFloor(
       reasoning ? maxTokens + overhead : maxTokens,
     );
-    const maxAttempts = 2; // 1 initial + 1 retry
+    const maxAttempts = this.structuredCallMaxAttempts ?? 2; // 1 initial + 1 retry
     const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
     const requestTool = this.toolForStructuredMode(tool);
 

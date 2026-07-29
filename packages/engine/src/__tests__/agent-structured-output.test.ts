@@ -1160,6 +1160,39 @@ describe("InfluenceAgent structured output mode", () => {
     expect(traces[0]!.response.finishReason).toBe("completed");
   });
 
+  it("uses the evaluation Responses lane with a stable opaque lineage and no 5.4 cache options", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const outputText = JSON.stringify({
+      thinking: "Mira is safer to empower and Vera is the pressure target.",
+      empower: "Mira",
+      decisionLog: "Use vote pressure to test Vera while rewarding Mira.",
+    });
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeResponsesOpenAIStub(requests, outputText, ""),
+      "gpt-5.4-nano-2026-03-17",
+      undefined,
+      undefined,
+      {
+        promptCacheLineage: "opaque-run-arm-repetition",
+        requireOpenAIResponses: true,
+        structuredCallMaxAttempts: 1,
+        evaluationFailFast: true,
+      },
+    );
+    agent.onGameStart("source-game-id-must-not-leak", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+    await agent.getVotes(makeContext(Phase.VOTE));
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]?.prompt_cache_key).toBe(requests[1]?.prompt_cache_key);
+    expect(requests[0]?.prompt_cache_key).toMatch(/^influence:[a-f0-9]{24}$/);
+    expect(requests[0]).not.toHaveProperty("prompt_cache_options");
+  });
+
   it("uses OpenAI Responses reasoning summaries for message prompts when enabled", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const traces: PrivateDecisionTrace[] = [];

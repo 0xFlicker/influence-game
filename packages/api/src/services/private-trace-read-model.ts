@@ -3,7 +3,11 @@ import { createHash } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { acceptedActionDecisionRefs } from "./accepted-action-correlation.js";
-import { readEvidenceManifest, type EvidenceAccessor } from "./evidence-access.js";
+import {
+  readEvidenceManifest,
+  readEvidenceManifestForExperiment,
+  type EvidenceAccessor,
+} from "./evidence-access.js";
 import { getDurableRunInspection, type DurableRunInspectionResponse } from "./game-durable-run.js";
 import { getTrustedCanonicalEventPrefix } from "./game-event-read-model.js";
 import {
@@ -327,12 +331,52 @@ export class PrivateTraceReadModel {
       maxBytes?: number;
     } = {},
   ): Promise<PrivateTraceContentReadResult> {
-    const read = await readEvidenceManifest(this.db, {
-      manifestId,
+    return this.readContentInternal(manifestId, params, false);
+  }
+
+  /**
+   * Full-object producer read for immutable experiment materialization.
+   * The source database is not mutated; the caller must retain the returned
+   * structural receipt in its external private workspace.
+   */
+  async readCompleteContentForExperiment(
+    manifestId: string,
+    params: { gameId: string },
+  ): Promise<PrivateTraceContentReadResult> {
+    const result = await this.readContentInternal(manifestId, {
       gameId: params.gameId,
-      accessor: params.accessor ?? LOCAL_PRODUCER_ACCESSOR,
-      purpose: params.purpose ?? "local_trace_mcp_read_content",
-    });
+    }, true);
+    if (result.ok && result.response.truncated) {
+      return {
+        ok: false,
+        status: "integrity_mismatch",
+        error: "Experiment trace object read was truncated",
+      };
+    }
+    return result;
+  }
+
+  private async readContentInternal(
+    manifestId: string,
+    params: {
+      gameId?: string;
+      purpose?: string;
+      accessor?: EvidenceAccessor;
+      maxBytes?: number;
+    },
+    experimentNoAudit: boolean,
+  ): Promise<PrivateTraceContentReadResult> {
+    const read = experimentNoAudit
+      ? await readEvidenceManifestForExperiment(this.db, {
+          manifestId,
+          gameId: params.gameId,
+        })
+      : await readEvidenceManifest(this.db, {
+          manifestId,
+          gameId: params.gameId,
+          accessor: params.accessor ?? LOCAL_PRODUCER_ACCESSOR,
+          purpose: params.purpose ?? "local_trace_mcp_read_content",
+        });
     if (!read.ok) {
       if (read.status === "expired" || read.status === "redacted") {
         return { ok: false, status: read.status, error: `Evidence manifest is ${read.status}` };

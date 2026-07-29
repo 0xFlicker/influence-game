@@ -20,6 +20,7 @@ import {
   compileRecallPlan,
   compileRecallSeedTerms,
   estimateTokensFromChars,
+  explainRecallPlanSelectionForPlan,
   isActorAuthorizedDialogueCandidate,
   measureStructuredChars,
   projectProtectedHuddleOutcomes,
@@ -27,6 +28,7 @@ import {
   serializeRecallPlan,
   tokenizeRecallText,
 } from "../context-recall-plan";
+import { VAST_AZURE_SURGE_R4_RECALL } from "./fixtures/recall-baseline/vast-azure-surge-round-4";
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -181,6 +183,55 @@ describe("context-recall-plan helpers", () => {
     expect(tokenizeRecallText("The commitment with Bob is locked")).not.toContain("with");
   });
 
+  it("explains rank, lexical score, and serialized cost without dialogue content", () => {
+    const phaseContext = basePhaseContext();
+    const continuity = makeContinuity();
+    const transcript = [
+      publicEntry({
+        text: "Bob commitment keeps the chooser seat aligned",
+        entrySequence: 10,
+      }),
+      publicEntry({
+        text: "Zebra xylophone quasar",
+        entrySequence: 11,
+      }),
+    ];
+    const params = {
+      actorId: ALICE,
+      promptClass: "strategic_decision" as const,
+      continuity,
+      phaseContext,
+      transcript,
+    };
+    const plan = compileRecallPlan(params);
+    const explanation = explainRecallPlanSelectionForPlan(params, plan);
+
+    expect(explanation).toEqual([
+      expect.objectContaining({
+        sourceId: "transcript:10",
+        terminalReason: "selected_history",
+        rankSlot: 0,
+        overlapCount: expect.any(Number),
+        relevanceScore: expect.any(Number),
+        serializedChars: expect.any(Number),
+      }),
+      expect.objectContaining({
+        sourceId: "transcript:11",
+        terminalReason: "seed_miss",
+        rankSlot: null,
+        overlapCount: 0,
+        relevanceScore: 0,
+        serializedChars: expect.any(Number),
+      }),
+    ]);
+    expect(explanation[0]!.overlapCount).toBeGreaterThan(0);
+    expect(explanation[0]!.relevanceScore).toBeGreaterThan(0);
+    expect(explanation[0]!.serializedChars).toBeGreaterThan(
+      transcript[0]!.text.length,
+    );
+    expect(JSON.stringify(explanation)).not.toContain(transcript[0]!.text);
+  });
+
   it("authorizes public dialogue for any actor", () => {
     const entry = publicEntry({ text: "Hello lobby", entrySequence: 1 });
     expect(isActorAuthorizedDialogueCandidate(entry, ALICE)).toBe(true);
@@ -277,6 +328,9 @@ describe("compileRecallPlan", () => {
     expect(serializeRecallPlan(a)).toBe(serializeRecallPlan(b));
     expect(a.history.dialogueEvidence.map((e) => e.entrySequence)).toEqual(
       b.history.dialogueEvidence.map((e) => e.entrySequence),
+    );
+    expect(a.budget.historyChars).toBeLessThanOrEqual(
+      a.budget.historyBudgetChars,
     );
     expect(a.budget).toEqual(b.budget);
     expect(a.receipt).toEqual(b.receipt);
@@ -559,12 +613,110 @@ describe("compileRecallPlan", () => {
       "Alice commitment is the public evidence to carry into the vote",
     ]);
     expect(plan.budget.historyBudgetChars).toBeGreaterThan(0);
+    expect(plan.budget.historyChars).toBeLessThanOrEqual(
+      plan.budget.historyBudgetChars,
+    );
     // Protected content remains complete
     expect(plan.protected.huddleOutcomes).toHaveLength(1);
     expect(plan.protected.huddleOutcomes[0]!.promises.length).toBe(hugePromises.length);
     expect(plan.protected.strategyThread?.objective).toBe(`Alice commitment ${"x".repeat(8_000)}`);
     expect(plan.receipt.protectedOverflow).toBe(true);
     expect(plan.receipt.selectedLaneCounts.history).toBe(1);
+  });
+
+  it("prioritizes the current strategic target's latest required evidence under overflow", () => {
+    const phaseContext = basePhaseContext({
+      round: 4,
+      phase: Phase.MINGLE,
+      alivePlayers: [
+        { id: VAST_AZURE_SURGE_R4_RECALL.actorIds.finn, name: "Finn" },
+        { id: VAST_AZURE_SURGE_R4_RECALL.actorIds.lyra, name: "Lyra" },
+        { id: VAST_AZURE_SURGE_R4_RECALL.actorIds.zara, name: "Zara" },
+      ],
+      selfId: VAST_AZURE_SURGE_R4_RECALL.actorIds.finn,
+      selfName: "Finn",
+      latestEliminatedPlayerName: "Jace",
+      jury: [{
+        playerId: VAST_AZURE_SURGE_R4_RECALL.actorIds.jace,
+        playerName: "Jace",
+        eliminatedRound: 3,
+      }],
+      allianceContext: {
+        activeAlliances: [],
+        openProposals: [],
+        proposalHistory: [],
+      },
+      recentDecisions: [],
+    });
+    const continuity = makeContinuity({
+      strategyPacket: makeStrategyPacket({
+        objective: "Verify the mechanism anchor before the menu",
+        targetPosture: "Zara is the primary credibility-debt target",
+        coalitionPosture: "Keep Finn and Lyra aligned",
+        nextSocialProbe:
+          "Ask Zara for the exact snap-back and one concrete pre-lock observable moment",
+        uncertainty: "Whether Zara can anchor the claim without interpretation",
+        reviseTrigger: "If Zara redirects or gives only a generic anchor",
+        changedSincePrevious: "Jace was eliminated after Round 3",
+      }),
+      recentStrategicDecisions: [],
+    });
+    const overflowContinuity = makeContinuity({
+      ...continuity,
+      strategyPacket: makeStrategyPacket({
+        ...continuity.strategyPacket,
+        objective:
+          `${continuity.strategyPacket!.objective} ${"protected ".repeat(16_000)}`,
+      }),
+    });
+
+    const params = {
+      actorId: VAST_AZURE_SURGE_R4_RECALL.actorIds.finn,
+      promptClass: "strategic_decision" as const,
+      continuity: overflowContinuity,
+      phaseContext,
+      transcript: VAST_AZURE_SURGE_R4_RECALL.entries,
+    };
+    const plan = compileRecallPlan(params);
+
+    expect(plan.budget.protectedOverflow).toBe(true);
+    expect(plan.budget.historyBudgetChars).toBe(
+      VAST_AZURE_SURGE_R4_RECALL.reserveChars,
+    );
+    expect(plan.budget.historyChars).toBeLessThanOrEqual(
+      plan.budget.historyBudgetChars,
+    );
+    expect(plan.history.dialogueEvidence[0]?.entrySequence).toBe(
+      VAST_AZURE_SURGE_R4_RECALL.requiredFirstSequence,
+    );
+    expect(plan.history.dialogueEvidence.map((entry) => entry.entrySequence))
+      .not.toEqual(VAST_AZURE_SURGE_R4_RECALL.previousSelectionSequences);
+    const explanation = explainRecallPlanSelectionForPlan(params, plan);
+    expect(explanation.find(({ entrySequence }) => (
+      entrySequence === VAST_AZURE_SURGE_R4_RECALL.requiredFirstSequence
+    ))).toMatchObject({
+      rankSlot: 0,
+      prioritySpeakerMatch: true,
+      currentRoundMatch: true,
+      terminalReason: "selected_history",
+    });
+    expect(explanation.find(({ entrySequence }) => entrySequence === 255))
+      .toMatchObject({
+        prioritySpeakerMatch: false,
+        currentRoundMatch: false,
+      });
+    const preferredPairChars = explanation
+      .filter(({ entrySequence }) => (
+        entrySequence === VAST_AZURE_SURGE_R4_RECALL.requiredFirstSequence
+        || entrySequence === VAST_AZURE_SURGE_R4_RECALL.preferredNextSequence
+      ))
+      .reduce((sum, item) => sum + item.serializedChars, 0);
+    expect(preferredPairChars).toBe(
+      VAST_AZURE_SURGE_R4_RECALL.serializedPairChars,
+    );
+    expect(preferredPairChars).toBeGreaterThan(
+      VAST_AZURE_SURGE_R4_RECALL.reserveChars,
+    );
   });
 
   it("hot-room saturation does not borrow the protected-overflow history reserve", () => {

@@ -17,6 +17,7 @@
     "db:seed": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/db/seed.ts",
     "backfill:watch-summaries": "bun run src/scripts/backfill-game-watch-state-summaries.ts",
     "auth:identity-inventory": "bun run src/scripts/preflight-auth-identities.ts",
+    "prompt-thread:lab": "bun run src/scripts/prompt-thread-lab.ts",
     "mcp:trace": "bun run src/trace-mcp/server.ts"
   },
   "dependencies": {
@@ -24,6 +25,7 @@
     "@aws-sdk/s3-request-presigner": "3.1078.0",
     "@clerk/backend": "3.11.7",
     "@influence/engine": "workspace:*",
+    "@influence/prompt-lab-protocol": "workspace:*",
     "@msgpack/msgpack": "^3.1.2",
     "@privy-io/server-auth": "^1.32.5",
     "drizzle-orm": "^0.45.1",

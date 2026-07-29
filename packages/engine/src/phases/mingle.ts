@@ -5,37 +5,39 @@ import type {
   MingleRoomAssignmentRecord,
   MingleRoomAssignmentSource,
   MingleRoomPlayerRef,
-  MingleRoomChoiceStatus,
   MingleRoomCount,
   MingleIntentSummary,
   MingleSessionDiagnostics,
 } from "../types";
 import { Phase } from "../types";
-import { createUUID } from "../game-state";
-import type { MingleIntentAction, MingleTurnAction } from "../game-runner.types";
+import type { MingleIntentAction } from "../game-runner.types";
 import {
   formatMingleIntentOperatorText,
   formatMingleRoomAssignmentOperatorText,
-  formatMingleTurnOperatorText,
 } from "../operator-turn-text";
 import type { HouseMingleAssignmentResult } from "../house-interviewer";
 import {
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
   strategicDecisionResponse,
-  transcriptThinkingFor,
   type PhaseActor,
   type PhaseRunnerContext,
 } from "./phase-runner-context";
-import { PlayerStatus } from "../types";
+import {
+  commitMingleTurnMovements,
+  computeMingleRoomCount,
+  DEFAULT_MINGLE_BEATS,
+  executeMingleTurn,
+  initializeMingleExecution,
+  type CollectedMingleTurn,
+} from "../mingle-turn-execution";
 
 /**
  * Neutral open rooms replace pair matching. Rooms are available only while the
  * normal social game has at least five alive players.
  */
 export function computeRoomCount(aliveCount: number): number {
-  if (aliveCount < 5) return 0;
-  return Math.ceil(aliveCount / 3) + 1;
+  return computeMingleRoomCount(aliveCount);
 }
 
 function buildPlayerRef(
@@ -452,121 +454,6 @@ function createAssignmentRecordsFromAssignments(
   });
 }
 
-function normalizeGotoRoomId(
-  gotoRoomId: number | null | undefined,
-  currentRoomId: number,
-  roomCount: number,
-): { roomId: number; status: MingleRoomChoiceStatus; requestedRoomId: number | null } {
-  if (gotoRoomId == null) {
-    return { roomId: currentRoomId, status: "missing", requestedRoomId: null };
-  }
-  if (!Number.isInteger(gotoRoomId) || gotoRoomId < 1 || gotoRoomId > roomCount) {
-    return { roomId: currentRoomId, status: "invalid", requestedRoomId: gotoRoomId };
-  }
-  return { roomId: gotoRoomId, status: "valid", requestedRoomId: gotoRoomId };
-}
-
-function normalizePlayerName(value: string | null | undefined): string | null {
-  const normalized = value?.trim();
-  return normalized ? normalized : null;
-}
-
-interface CollectedMingleTurn {
-  playerId: UUID;
-  fromName: string;
-  recipientNames: string[];
-  roomId: number;
-  turn: number;
-  action: MingleTurnAction;
-  message: string | null;
-  messageSent: boolean;
-  turnAction: "talk" | "no_reply";
-}
-
-interface MingleMovementResolution {
-  toRoomId: number;
-  gotoRoomId: number | null;
-  gotoPlayerName: string | null;
-  gotoRoomIgnored: boolean;
-  gotoStatus: MingleRoomChoiceStatus;
-}
-
-function resolveMingleMovements(
-  turns: readonly CollectedMingleTurn[],
-  gameState: PhaseRunnerContext["gameState"],
-  roomByPlayerId: ReadonlyMap<UUID, number>,
-  roomCount: number,
-): Map<UUID, MingleMovementResolution> {
-  const turnByPlayerId = new Map(turns.map((turn) => [turn.playerId, turn]));
-  const playerByName = new Map(gameState.getAllPlayers().map((player) => [player.name.toLowerCase(), player]));
-  const alivePlayerIds = new Set(gameState.getAlivePlayers().map((player) => player.id));
-  const resolved = new Map<UUID, MingleMovementResolution>();
-
-  const resolvePlayer = (playerId: UUID, stack: Set<UUID>): MingleMovementResolution => {
-    const cached = resolved.get(playerId);
-    if (cached) return cached;
-
-    const turn = turnByPlayerId.get(playerId);
-    const currentRoomId = roomByPlayerId.get(playerId) ?? 1;
-    const gotoPlayerName = normalizePlayerName(turn?.action.gotoPlayerName);
-    const gotoRoomIgnored = gotoPlayerName !== null && turn?.action.gotoRoomId != null;
-
-    if (gotoPlayerName) {
-      const target = playerByName.get(gotoPlayerName.toLowerCase());
-      if (!target) {
-        const resolution = { toRoomId: currentRoomId, gotoRoomId: null, gotoPlayerName, gotoRoomIgnored, gotoStatus: "player_unknown" as const };
-        resolved.set(playerId, resolution);
-        return resolution;
-      }
-      if (target.id === playerId) {
-        const resolution = { toRoomId: currentRoomId, gotoRoomId: null, gotoPlayerName, gotoRoomIgnored, gotoStatus: "player_self" as const };
-        resolved.set(playerId, resolution);
-        return resolution;
-      }
-      if (target.status !== PlayerStatus.ALIVE || !alivePlayerIds.has(target.id)) {
-        const resolution = { toRoomId: currentRoomId, gotoRoomId: null, gotoPlayerName, gotoRoomIgnored, gotoStatus: "player_dead" as const };
-        resolved.set(playerId, resolution);
-        return resolution;
-      }
-      if (stack.has(target.id)) {
-        const resolution = { toRoomId: currentRoomId, gotoRoomId: null, gotoPlayerName, gotoRoomIgnored, gotoStatus: "player_cycle" as const };
-        resolved.set(playerId, resolution);
-        return resolution;
-      }
-
-      stack.add(playerId);
-      const targetResolution = resolvePlayer(target.id, stack);
-      stack.delete(playerId);
-      const resolution = {
-        toRoomId: targetResolution.toRoomId,
-        gotoRoomId: null,
-        gotoPlayerName,
-        gotoRoomIgnored,
-        gotoStatus: gotoRoomIgnored ? "player_valid_room_ignored" as const : "player_valid" as const,
-      };
-      resolved.set(playerId, resolution);
-      return resolution;
-    }
-
-    const normalizedGoto = normalizeGotoRoomId(turn?.action.gotoRoomId, currentRoomId, roomCount);
-    const resolution = {
-      toRoomId: normalizedGoto.roomId,
-      gotoRoomId: normalizedGoto.requestedRoomId,
-      gotoPlayerName: null,
-      gotoRoomIgnored: false,
-      gotoStatus: normalizedGoto.status,
-    };
-    resolved.set(playerId, resolution);
-    return resolution;
-  };
-
-  for (const turn of turns) {
-    resolvePlayer(turn.playerId, new Set());
-  }
-
-  return resolved;
-}
-
 async function runMingleTurn(
   ctx: PhaseRunnerContext,
   localRooms: RoomAllocation[],
@@ -577,182 +464,35 @@ async function runMingleTurn(
   totalBeats: number,
   phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE,
 ): Promise<MingleTurnActionRecord[]> {
-  const { agents, logger, gameState } = ctx;
   const collectedTurns: CollectedMingleTurn[] = [];
 
   for (const room of localRooms) {
     if (room.playerIds.length === 0) continue;
 
-    const roomMates = room.playerIds.map((id) => gameState.getPlayerName(id));
     const conversationHistory: Array<{ from: string; text: string }> = [];
 
     for (const playerId of room.playerIds) {
-      const agent = agents.get(playerId)!;
-      const fromName = gameState.getPlayerName(playerId);
-      const recipientIds = room.playerIds.filter((id) => id !== playerId);
-      const recipientNames = recipientIds.map((id) => gameState.getPlayerName(id));
-      const phaseCtx = prepareAgentPhaseContext(
+      collectedTurns.push(await executeMingleTurn({
         ctx,
-        agent,
-        playerId,
         phase,
-        "ordinary_speech",
-        undefined,
-        undefined,
-        {
-          roomCount,
-          roomCounts,
-          currentRoomId: room.roomId,
-          roomMates,
-          mingleIntent: summarizeMingleIntent(mingleIntents.get(playerId) ?? null),
-        },
-      );
-      phaseCtx.mingleBeat = room.beat;
-      phaseCtx.mingleTotalBeats = totalBeats;
-
-      let resolvedAction: MingleTurnAction;
-      if (agent.takeMingleTurn) {
-        resolvedAction = await agent.takeMingleTurn(phaseCtx, roomMates, conversationHistory);
-      } else {
-        const response = await agent.sendRoomMessage(phaseCtx, roomMates, conversationHistory);
-        resolvedAction = response
-          ? { ...response, noReply: false, gotoRoomId: null, gotoPlayerName: null }
-          : { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null };
-      }
-
-      await assertCanAcceptCommit(ctx);
-
-      const receipt = resolvedAction.coordinationReceipt;
-      if (receipt && (receipt.proposedTarget || receipt.proposedAction || receipt.commitment || receipt.noProposalReason)) {
-        gameState.recordMingleCoordinationReceipt({
-          id: createUUID(),
-          round: gameState.round,
-          phase,
-          actorId: playerId,
-          audiencePlayerIds: [...room.playerIds],
-          roomId: room.roomId,
-          proposedTargetName: receipt.proposedTarget,
-          proposedAction: receipt.proposedAction,
-          commitment: receipt.commitment,
-          noProposalReason: receipt.noProposalReason,
-          createdAt: new Date().toISOString(),
-        });
-      }
-
-      const message = resolvedAction.noReply ? null : resolvedAction.message?.trim();
-      const messageSent = Boolean(message && recipientIds.length > 0);
-      const turnAction = message ? "talk" : "no_reply";
-      if (messageSent && message) {
-        for (const recipientId of recipientIds) {
-          const inbox = ctx.mingleInbox.get(recipientId) ?? [];
-          inbox.push({ from: fromName, text: message });
-          ctx.mingleInbox.set(recipientId, inbox);
-        }
-
-        conversationHistory.push({ from: fromName, text: message });
-        const transcriptThinking = transcriptThinkingFor(agent, resolvedAction.thinking, resolvedAction.reasoningContext);
-        logger.logMingleMessage(
-          playerId,
-          recipientIds,
-          message,
-          room.roomId,
-          transcriptThinking.thinking,
-          transcriptThinking.reasoningContext,
-          phase,
-          transcriptThinking.decisionId,
-        );
-      }
-
-      collectedTurns.push({
+        room,
         playerId,
-        fromName,
-        recipientNames,
-        roomId: room.roomId,
-        turn: room.beat,
-        action: resolvedAction,
-        message: message ?? null,
-        messageSent,
-        turnAction,
-      });
+        roomCount,
+        roomCounts,
+        mingleIntent: summarizeMingleIntent(mingleIntents.get(playerId) ?? null),
+        totalBeats,
+        conversationHistory,
+      }));
     }
   }
-
-  const movementResolutions = resolveMingleMovements(collectedTurns, gameState, roomByPlayerId, roomCount);
-  const nextRoomByPlayerId = new Map(roomByPlayerId);
-  const actionRecords: MingleTurnActionRecord[] = [];
-
-  for (const turn of collectedTurns) {
-    const movement = movementResolutions.get(turn.playerId) ?? {
-      toRoomId: turn.roomId,
-      gotoRoomId: null,
-      gotoPlayerName: null,
-      gotoRoomIgnored: false,
-      gotoStatus: "missing" as const,
-    };
-    nextRoomByPlayerId.set(turn.playerId, movement.toRoomId);
-
-    const moved = movement.toRoomId !== turn.roomId;
-    const operatorText = formatMingleTurnOperatorText({
-      playerName: turn.fromName,
-      roomId: turn.roomId,
-      message: turn.message,
-      messageSent: turn.messageSent,
-      toRoomId: movement.toRoomId,
-      moved,
-      gotoRoomId: movement.gotoRoomId,
-      gotoPlayerName: movement.gotoPlayerName,
-      gotoStatus: movement.gotoStatus,
-    });
-    logger.emitAgentTurn({
-      phase,
-      action: "mingle-turn",
-      actor: { id: turn.playerId, name: turn.fromName, role: "player" },
-      visibility: "private",
-      response: {
-        action: turn.turnAction,
-        message: turn.message,
-        noReply: turn.action.noReply ?? !turn.message,
-        messageDelivered: turn.messageSent,
-        fromRoomId: turn.roomId,
-        roomId: turn.roomId,
-        toRoomId: movement.toRoomId,
-        moved,
-        gotoRoomId: movement.gotoRoomId,
-        gotoPlayerName: movement.gotoPlayerName,
-        gotoRoomIgnored: movement.gotoRoomIgnored,
-        gotoStatus: movement.gotoStatus,
-        coordinationReceipt: turn.action.coordinationReceipt,
-        ...strategicDecisionResponse(turn.action),
-      },
-      thinking: turn.action.thinking,
-      reasoningContext: turn.action.reasoningContext,
-      scope: "mingle",
-      // Operator summary always includes room + movement; public message still on transcript when delivered.
-      text: operatorText,
-      to: turn.recipientNames,
-      roomId: turn.roomId,
-    });
-
-    actionRecords.push({
-      player: { id: turn.playerId, name: turn.fromName },
-      turn: turn.turn,
-      fromRoomId: turn.roomId,
-      toRoomId: movement.toRoomId,
-      moved: movement.toRoomId !== turn.roomId,
-      action: turn.messageSent ? "talk" : "no_reply",
-      gotoRoomId: movement.gotoRoomId,
-      gotoPlayerName: movement.gotoPlayerName,
-      gotoRoomIgnored: movement.gotoRoomIgnored,
-      gotoStatus: movement.gotoStatus,
-    });
-  }
-
-  roomByPlayerId.clear();
-  for (const [playerId, localRoomId] of nextRoomByPlayerId) {
-    roomByPlayerId.set(playerId, localRoomId);
-  }
-
-  return actionRecords;
+  return commitMingleTurnMovements({
+    ctx,
+    turns: collectedTurns,
+    roomByPlayerId,
+    roomCount,
+    phase,
+    mode: "live",
+  });
 }
 
 export async function runMinglePhase(
@@ -767,28 +507,11 @@ export async function runMinglePhase(
   const phase = options.phase ?? Phase.MINGLE;
   const completePhase = options.completePhase ?? true;
 
-  logger.emitPhaseChange(phase);
-  logger.logSystem(
-    phase === Phase.POST_VOTE_MINGLE
-      ? "=== POST-VOTE MINGLE PHASE ==="
-      : phase === Phase.FORMAT_MINGLE
-        ? "=== FORMAT MINGLE PHASE ==="
-      : phase === Phase.MINGLE_I
-        ? "=== MINGLE I: PRIVATE ROOMS ==="
-        : "=== MINGLE PHASE ===",
-    phase,
-  );
-  const alivePlayers = gameState.getAlivePlayers();
-
-  ctx.mingleInbox.clear();
-  for (const player of alivePlayers) {
-    ctx.mingleInbox.set(player.id, []);
-  }
-  contextBuilder.currentRoomAllocations = [];
-  contextBuilder.currentExcludedPlayerIds = [];
-  contextBuilder.currentRoomCounts = [];
-
-  const roomCount = computeRoomCount(alivePlayers.length);
+  const {
+    alivePlayers,
+    roomCount,
+    initialRoomCounts,
+  } = initializeMingleExecution(ctx, phase);
   if (roomCount === 0) {
     logger.logSystem("Open rooms are skipped with fewer than five players alive.", phase);
     await assertCanAcceptCommit(ctx);
@@ -800,14 +523,8 @@ export async function runMinglePhase(
     return;
   }
 
-  const beats = config.mingleSessionsPerRound ?? 3;
+  const beats = config.mingleSessionsPerRound ?? DEFAULT_MINGLE_BEATS;
   const allRooms: RoomAllocation[] = [];
-  const initialRoomCounts: MingleRoomCount[] = Array.from({ length: roomCount }, (_, index) => ({
-    roomId: index + 1,
-    count: 0,
-  }));
-  contextBuilder.currentRoomCounts = initialRoomCounts;
-
   const mingleIntents = new Map<UUID, MingleIntentAction | null>();
   await Promise.all(
     alivePlayers.map(async (player) => {
