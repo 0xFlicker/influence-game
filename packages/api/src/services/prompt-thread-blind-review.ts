@@ -710,6 +710,9 @@ function evidenceForCell(
   const applicable = citations
     .filter((citation) => citation.applicableTurns.includes(turn));
   if (applicable.length === 0) return [];
+  const applicableSourceIds = new Set(
+    applicable.map((citation) => citation.sourceId),
+  );
   const reasonBySourceId = new Map<string, PromptThreadSelectionReason>();
   for (const item of selectionItems) {
     const sequence = requiredNumber(
@@ -717,7 +720,10 @@ function evidenceForCell(
       "selection entry sequence",
     );
     const sourceId = sourceIds.get(String(sequence));
-    if (!sourceId) throw new Error("Selection explanation source is unavailable in the case");
+    // Continuation turns add branch-local transcript entries after the frozen
+    // case boundary. They can appear in selection diagnostics, but they cannot
+    // correspond to evidence-card citations from the frozen case.
+    if (!sourceId || !applicableSourceIds.has(sourceId)) continue;
     reasonBySourceId.set(
       sourceId,
       promptThreadSelectionReason(

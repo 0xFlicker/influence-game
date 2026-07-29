@@ -286,7 +286,14 @@ const reportCase = {
   caseId: `sha256:${"1".repeat(64)}`,
   sourceReceiptHash: `sha256:${"2".repeat(64)}`,
   privateData: {
-    startingState: { historyCatalog: [] },
+    startingState: {
+      historyCatalog: [{
+        sequence: 1,
+        sourceId: "transcript:1:stable",
+        eligibleActorIds: ["finn", "lyra"],
+        lane: "history",
+      }],
+    },
     traces: [
       { action: "mingle-turn", actorId: "finn" },
       { action: "mingle-turn", actorId: "lyra" },
@@ -303,7 +310,12 @@ const reportEvidence = {
   createdAt: "2026-01-01T00:00:00.000Z",
   caseHash: hashCanonicalJson(reportCase),
   provenance: "manual",
-  items: [],
+  items: [{
+    sourceId: "transcript:1:stable",
+    classification: "required",
+    applicableTurns: [1, 2],
+    rationale: "Frozen evidence used to exercise report mapping.",
+  }],
 } satisfies PromptThreadEvidenceCard;
 
 const reportEvidenceApproval = {
@@ -434,7 +446,32 @@ function reportRunner(
                 hotChars: 1_000,
                 historyChars: 0,
               },
-              items: [],
+              items: [
+                {
+                  sourceId: "transcript:1",
+                  entrySequence: 1,
+                  rankSlot: null,
+                  overlapCount: 0,
+                  relevanceScore: 0,
+                  prioritySpeakerMatch: false,
+                  currentRoundMatch: false,
+                  rankingScore: 0,
+                  serializedChars: 10,
+                  terminalReason: "history_disabled",
+                },
+                {
+                  sourceId: "transcript:999",
+                  entrySequence: 999,
+                  rankSlot: null,
+                  overlapCount: 0,
+                  relevanceScore: 0,
+                  prioritySpeakerMatch: false,
+                  currentRoundMatch: false,
+                  rankingScore: 0,
+                  serializedChars: 10,
+                  terminalReason: "history_disabled",
+                },
+              ],
             }],
           },
           checkpoint: {
