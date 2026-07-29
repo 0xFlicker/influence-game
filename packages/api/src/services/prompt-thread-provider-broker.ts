@@ -134,9 +134,11 @@ export class PromptThreadProviderBroker {
     }
     const envelope = applyApprovedEnvelope(request.request, cell);
     const injected = this.requestKind === "panel"
-      ? injectCacheMarker(envelope)
+      ? injectCacheMarker(envelope, cell.lineage)
       : envelope;
-    const transformed = cell.controlReturnTurn ? applyCacheControl(injected) : injected;
+    const transformed = cell.controlReturnTurn
+      ? applyCacheControl(injected, cell.lineage)
+      : injected;
     return {
       cell,
       request: transformed,
@@ -243,22 +245,38 @@ export class PromptThreadProviderBroker {
   }
 }
 
-const CACHE_CONTROL_MARKER = "[influence-cache-prefix:v1]";
-const CACHE_CONTROL_REPLACEMENT = "[influence-cache-prefix:x1]";
+function cacheControlMarker(
+  lineage: string,
+  variant: "v1" | "x1",
+): string {
+  return `[influence-cache-prefix:${variant}:${digest(lineage).slice("sha256:".length, 31)}]`;
+}
 
-function applyCacheControl(request: Record<string, unknown>): Record<string, unknown> {
+function applyCacheControl(
+  request: Record<string, unknown>,
+  lineage: string,
+): Record<string, unknown> {
   const copy = structuredClone(request);
   const instructions = typeof copy.instructions === "string" ? copy.instructions : null;
-  if (!instructions || !instructions.includes(CACHE_CONTROL_MARKER)) {
+  const marker = cacheControlMarker(lineage, "v1");
+  if (!instructions || !instructions.includes(marker)) {
     throw new PromptThreadBrokerError("invalid_response");
   }
-  copy.instructions = instructions.replace(CACHE_CONTROL_MARKER, CACHE_CONTROL_REPLACEMENT);
+  copy.instructions = instructions.replace(
+    marker,
+    cacheControlMarker(lineage, "x1"),
+  );
   return copy;
 }
 
-function injectCacheMarker(request: Record<string, unknown>): Record<string, unknown> {
+function injectCacheMarker(
+  request: Record<string, unknown>,
+  lineage: string,
+): Record<string, unknown> {
   const copy = structuredClone(request);
-  copy.instructions = `${CACHE_CONTROL_MARKER}\n${typeof copy.instructions === "string" ? copy.instructions : ""}`;
+  copy.instructions = `${cacheControlMarker(lineage, "v1")}\n${
+    typeof copy.instructions === "string" ? copy.instructions : ""
+  }`;
   return copy;
 }
 

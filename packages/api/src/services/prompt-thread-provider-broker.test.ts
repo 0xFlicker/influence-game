@@ -48,8 +48,39 @@ describe("PromptThreadProviderBroker", () => {
       model: PROMPT_THREAD_PANEL_MODEL,
       request: { input: "same remainder" },
     });
-    expect(control.request.instructions).toBe("[influence-cache-prefix:x1]\n");
+    expect(control.request.instructions).toMatch(
+      /^\[influence-cache-prefix:x1:[a-f0-9]{24}\]\n$/u,
+    );
     expect(control.controlPrefixBeforeDigest).not.toBe(control.controlPrefixAfterDigest);
+  });
+
+  it("salts the first provider prefix by approved actor lineage", () => {
+    const broker = new PromptThreadProviderBroker([
+      { cellId: "one", ordinal: 1, actorId: "finn", lineage: "lineage-a" },
+      { cellId: "two", ordinal: 2, actorId: "finn", lineage: "lineage-b" },
+    ]);
+    const first = broker.prepare({
+      cellId: "one",
+      model: PROMPT_THREAD_PANEL_MODEL,
+      request: { input: "same", instructions: "same" },
+    });
+    broker.recordComplete(first, {
+      status: "completed",
+      usage: { input_tokens_details: { cached_tokens: 0 } },
+    }, 1);
+    const second = broker.prepare({
+      cellId: "two",
+      model: PROMPT_THREAD_PANEL_MODEL,
+      request: { input: "same", instructions: "same" },
+    });
+
+    expect(first.request.instructions).toMatch(
+      /^\[influence-cache-prefix:v1:[a-f0-9]{24}\]\nsame$/u,
+    );
+    expect(second.request.instructions).toMatch(
+      /^\[influence-cache-prefix:v1:[a-f0-9]{24}\]\nsame$/u,
+    );
+    expect(second.request.instructions).not.toBe(first.request.instructions);
   });
 
   it("rejects contaminated first calls, tier drift, and over-reservation", () => {
