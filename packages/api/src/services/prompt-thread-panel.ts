@@ -11,6 +11,7 @@ import {
   createApproval,
   hashCanonicalJson,
   parseArtifact,
+  parseStructuralRunSummary,
   validateHandshake,
   type ArtifactEnvelope,
   type ContinuationCheckpointArtifact,
@@ -626,6 +627,11 @@ export async function runPromptThreadPanel(
         if (dependencies.stopAfterCell?.()) break;
       }
     } catch (error) {
+      const terminalSummary = await readTerminalRunSummaryIfExists(
+        workspace,
+        manifest.runId,
+      );
+      if (terminalSummary) return terminalSummary;
       return invalidateRunUnderLock(
         lock,
         error instanceof Error ? `panel_failure_${error.name}` : "panel_failure_unknown",
@@ -645,6 +651,29 @@ export async function runPromptThreadPanel(
       settledSpendUsd,
     );
   });
+}
+
+async function readTerminalRunSummaryIfExists(
+  workspace: PrivateWorkspace,
+  runId: string,
+): Promise<StructuralRunSummary | null> {
+  const relativePath = `summaries/${runId}.json`;
+  try {
+    await access(join(workspace.root, relativePath));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+    throw error;
+  }
+  const summary = parseStructuralRunSummary(
+    await readPrivateJson(workspace, relativePath),
+  );
+  if (
+    summary.runId !== runId
+    || !["invalidated", "aborted", "failed"].includes(summary.lifecycle)
+  ) {
+    throw new Error("Terminal panel summary is invalid");
+  }
+  return summary;
 }
 
 async function readTrustedWorkerHandshake(

@@ -1074,6 +1074,7 @@ describe("prompt thread panel", () => {
         }),
       );
       expect(result.lifecycle).toBe("invalidated");
+      expect(result.reasonCode).toBe("provider_no_complete_response");
       expect(result.outstandingCells).toBe(0);
       await expect(
         initializePromptThreadPanelRun(workspace, value, approval),
