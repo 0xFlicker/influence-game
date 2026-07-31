@@ -443,6 +443,28 @@ describe("Game REST API", () => {
       expect(config.serviceTier).toBeUndefined();
     });
 
+    test("accepts GPT-5.6 Luna for an operator-created public game", async () => {
+      const res = await app.request(
+        "/api/games",
+        json(
+          {
+            playerCount: 6,
+            modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+            visibility: "public",
+          },
+          adminToken,
+        ),
+      );
+
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string };
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, body.id)))[0]!;
+      expect(JSON.parse(game.config).modelSelection).toEqual({
+        catalogId: "openai:gpt-5.6-luna",
+        reasoningPolicy: "action-policy",
+      });
+    });
+
     test("persists explicit auto opt-out only for hosted OpenAI", async () => {
       const res = await app.request(
         "/api/games",

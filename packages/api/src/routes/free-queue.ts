@@ -34,7 +34,6 @@ import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   pickAgentNames,
   pickArchetypes,
-  resolveModelForTier,
 } from "@influence/engine";
 import { startGame, validateGameStartReadiness } from "../services/game-lifecycle.js";
 import {
@@ -58,6 +57,12 @@ import {
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
+
+const DAILY_FREE_MODEL = "gpt-5.6-luna";
+const DAILY_FREE_MODEL_SELECTION = {
+  catalogId: `openai:${DAILY_FREE_MODEL}`,
+  reasoningPolicy: "action-policy",
+} as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -279,6 +284,7 @@ export function createFreeQueueRoutes(
       minPlayers,
       maxPlayers,
       modelTier: "budget",
+      modelSelection: DAILY_FREE_MODEL_SELECTION,
       personaPool: [],
       fillStrategy: "balanced",
       visibility: "public",
@@ -380,7 +386,7 @@ export function createFreeQueueRoutes(
                 strategyHints: null,
                 personaKey: archetype,
               }),
-              agentConfig: JSON.stringify({ model: resolveModelForTier("budget"), temperature: 0.9 }),
+              agentConfig: JSON.stringify({ model: DAILY_FREE_MODEL, temperature: 0.9 }),
             });
         }
       }

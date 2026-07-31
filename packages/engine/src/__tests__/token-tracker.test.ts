@@ -46,8 +46,10 @@ describe("token cost estimation", () => {
 
     expect(estimates.map((estimate) => estimate.model)).toContain("gpt-4o-mini");
     expect(estimates.map((estimate) => estimate.model)).toContain("gpt-5-mini");
+    expect(estimates.map((estimate) => estimate.model)).toContain("gpt-5.6-luna");
     expect(estimates.map((estimate) => estimate.model)).toContain("grok-4-3");
     expect(estimates.find((estimate) => estimate.model === "gpt-5-mini")?.totalCost).toBeCloseTo(0.000625, 10);
+    expect(estimates.find((estimate) => estimate.model === "gpt-5.6-luna")?.totalCost).toBeCloseTo(0.0004, 10);
     expect(estimates.find((estimate) => estimate.model === "grok-4-3")?.totalCost).toBeCloseTo(0.00275, 10);
   });
 

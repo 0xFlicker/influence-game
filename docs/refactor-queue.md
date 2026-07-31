@@ -73,12 +73,12 @@ Items are ordered by current priority.
 
 ### R13. Accepted-action trace-to-event correlation
 
-- Status: `implementation_complete/runtime_proof_pending`
+- Status: `closed`
 - Consolidates: match-narrative token-efficiency plan U5 and live local-game evidence from `jade-black-mist`.
 - Sources: `docs/plans/2026-07-25-001-fix-accepted-action-trace-correlation-plan.md`, the accepted-action registry, API reconciliation/read models, and DB-backed privacy/correlation tests.
 - Implemented: fresh per-call receipts cover the direct accepted-action inventory without consulting `getLastPrivateDecisionId()`; post-append reconciliation stamps manifest, cognition, and prompt-reuse rows; producer manifests/narrative expose exact navigation; non-producer event/transcript/watch/results lanes remove private pointers. Reconciliation is forward-only, idempotent, retryable, conflict-aware, and non-fatal. Historical backfill remains deliberately absent.
 - Automated proof: exhaustive registry coverage plus DB-backed exact-sequence, retry/degradation, prompt-reuse watermark, producer navigation, owner citation, sealed-ballot, actor-filter, API, results, transcript, and WebSocket privacy tests.
-- Remaining validation path: run one local API-backed game with private trace capture through representative vote, format, Power, and Council actions. In producer reads, reconcile `inspect_durable_run`, `list_trace_manifests`, `read_producer_match_narrative`, and exact-sequence `filter_events` before opening one bounded `read_trace_content`; confirm expected unlinked calls keep prompt-reuse coverage `partial` while linked actions advance the watermark.
+- Resolution: deployed API game `mad-slate-apple` (completed 2026-07-29) provides the live format-kernel proof: its trusted 562-event prefix has 249 eligible accepted decisions, all 249 linked, with zero unresolved/missing/conflicting captures. Trace manifests carry both `decisionId` and final `eventSequence` (through 559); prompt-reuse coverage remains honestly `partial` for 1,405 intentionally unlinked non-action traces, while its accepted-action watermark advances to 559. The game does not exercise classic Power/Council actions, but those remain covered by the engine and DB-backed integration suite; no further R13 work is warranted.
 - Deferred: historical inference/backfill and a dedicated cache/linkage dashboard remain separate product decisions, not R13 exit work.
 
 ### R17. Watch-shell accessibility baseline

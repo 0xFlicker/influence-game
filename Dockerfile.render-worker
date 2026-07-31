@@ -6,6 +6,7 @@ WORKDIR /app
 COPY package.json bun.lock bunfig.toml ./
 COPY packages/api/package.json packages/api/
 COPY packages/engine/package.json packages/engine/
+COPY packages/prompt-lab-protocol/package.json packages/prompt-lab-protocol/
 COPY packages/web/package.json packages/web/
 RUN --mount=type=cache,target=/root/.bun/install/cache \
   bun install --frozen-lockfile
@@ -31,6 +32,7 @@ COPY --chown=bun:bun --from=deps /app/packages/engine/node_modules ./packages/en
 COPY --chown=bun:bun --from=deps /app/packages/web/node_modules ./packages/web/node_modules
 COPY --chown=bun:bun package.json bun.lock bunfig.toml tsconfig.json ./
 COPY --chown=bun:bun packages/engine/ packages/engine/
+COPY --chown=bun:bun packages/prompt-lab-protocol/ packages/prompt-lab-protocol/
 COPY --chown=bun:bun packages/web/ packages/web/
 COPY --chown=bun:bun music/house-highlights-variants/ ./music/house-highlights-variants/
 
