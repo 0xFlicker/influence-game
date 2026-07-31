@@ -7,6 +7,7 @@ COPY package.json bun.lock bunfig.toml ./
 COPY packages/web/package.json packages/web/
 COPY packages/api/package.json packages/api/
 COPY packages/engine/package.json packages/engine/
+COPY packages/prompt-lab-protocol/package.json packages/prompt-lab-protocol/
 RUN bun install --frozen-lockfile
 
 # Build Next.js
@@ -15,6 +16,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock bunfig.toml tsconfig.json ./
 COPY packages/web/ packages/web/
 COPY packages/engine/ packages/engine/
+COPY packages/prompt-lab-protocol/ packages/prompt-lab-protocol/
 # Workspace resolution
 COPY packages/api/package.json packages/api/
 

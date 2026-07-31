@@ -6,6 +6,7 @@ FROM base AS deps
 COPY package.json bun.lock bunfig.toml ./
 COPY packages/api/package.json packages/api/
 COPY packages/engine/package.json packages/engine/
+COPY packages/prompt-lab-protocol/package.json packages/prompt-lab-protocol/
 COPY packages/web/package.json packages/web/
 RUN bun install --frozen-lockfile
 
@@ -15,6 +16,7 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock bunfig.toml tsconfig.json ./
 COPY packages/api/ packages/api/
 COPY packages/engine/ packages/engine/
+COPY packages/prompt-lab-protocol/ packages/prompt-lab-protocol/
 COPY packages/web/package.json packages/web/
 
 # Restore workspace-specific node_modules (bun creates symlinks into root .bun cache)
