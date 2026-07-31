@@ -102,6 +102,12 @@ describe("free queue season admission", () => {
     const seats = await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, body.gameId));
     expect(game?.seasonId).toBe(season.id);
+    expect(JSON.parse(game!.config).modelSelection).toEqual({
+      catalogId: "openai:gpt-5.6-luna",
+      reasoningPolicy: "action-policy",
+    });
+    expect(seats.filter((seat) => seat.userId === null).map((seat) => JSON.parse(seat.agentConfig).model))
+      .toEqual(Array(10).fill("gpt-5.6-luna"));
     const statusResponse = await app.request("/api/free-queue", {
       headers: { Authorization: `Bearer ${token}` },
     });

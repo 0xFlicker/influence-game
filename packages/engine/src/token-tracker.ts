@@ -101,7 +101,7 @@ export const OPENAI_FLEX_MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5-mini": { inputPer1M: 0.125, cachedInputPer1M: 0.0125, outputPer1M: 1.00 },
   "gpt-5.4-nano": { inputPer1M: 0.10, cachedInputPer1M: 0.01, outputPer1M: 0.625 },
   "gpt-5.4-mini": { inputPer1M: 0.375, cachedInputPer1M: 0.0375, outputPer1M: 2.25 },
-  "gpt-5.6-luna": { inputPer1M: 0.50, cachedInputPer1M: 0.05, outputPer1M: 3.00 },
+  "gpt-5.6-luna": { inputPer1M: 0.10, cachedInputPer1M: 0.01, outputPer1M: 0.60 },
 };
 
 // ---------------------------------------------------------------------------
