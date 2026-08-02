@@ -1373,6 +1373,85 @@ describe("Agent Profile API", () => {
       }
     });
 
+    test("sends GPT-5.6 Luna for new and refined profiles", async () => {
+      const envKeys = [
+        "OPENAI_API_KEY",
+        "OPENAI_BASE_URL",
+        "INFLUENCE_LLM_BASE_URL",
+        "INFLUENCE_LLM_API_KEY",
+      ] as const;
+      const savedEnv = new Map<string, string | undefined>(
+        envKeys.map((key) => [key, process.env[key]]),
+      );
+      const originalFetch = globalThis.fetch;
+      const requestBodies: Array<Record<string, unknown>> = [];
+
+      process.env.OPENAI_API_KEY = "test-openai-key";
+      delete process.env.OPENAI_BASE_URL;
+      delete process.env.INFLUENCE_LLM_BASE_URL;
+      delete process.env.INFLUENCE_LLM_API_KEY;
+      globalThis.fetch = Object.assign(
+        async (input: string | URL | Request, init?: RequestInit) => {
+          const request = input instanceof Request ? input : new Request(input.toString(), init);
+          requestBodies.push(await request.clone().json() as Record<string, unknown>);
+          return new Response(JSON.stringify({
+            id: "chatcmpl-test",
+            object: "chat.completion",
+            created: 1,
+            model: "gpt-5.6-luna",
+            choices: [{
+              index: 0,
+              message: {
+                role: "assistant",
+                content: JSON.stringify({
+                  name: "Nova Vale",
+                  backstory: "Nova learned patience in crowded rooms.",
+                  personality: "Nova listens before making a move.",
+                  strategyStyle: "Nova builds a coalition and waits for leverage.",
+                  personaKey: "strategic",
+                  gender: "female",
+                }),
+              },
+              finish_reason: "stop",
+            }],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          });
+        },
+        { preconnect: originalFetch.preconnect },
+      );
+
+      try {
+        const generated = await app.request(
+          "/api/agent-profiles/generate",
+          jsonReq({ traits: "patient and observant" }, tokenA),
+        );
+        const refined = await app.request(
+          "/api/agent-profiles/generate",
+          jsonReq({
+            existingProfile: {
+              name: "Nova Vale",
+              personality: "Quiet and patient",
+            },
+            traits: "add a sharper edge",
+          }, tokenA),
+        );
+
+        expect(generated.status).toBe(200);
+        expect(refined.status).toBe(200);
+        expect(requestBodies).toHaveLength(2);
+        expect(requestBodies.map((body) => body.model)).toEqual([
+          "gpt-5.6-luna",
+          "gpt-5.6-luna",
+        ]);
+      } finally {
+        globalThis.fetch = originalFetch;
+        for (const [key, value] of savedEnv) restoreEnv(key, value);
+      }
+    });
+
     // LLM integration test — only runs when hosted OpenAI is configured.
     const llmTest = resolveAgentProfileGenerationLlm() ? test : test.skip;
 

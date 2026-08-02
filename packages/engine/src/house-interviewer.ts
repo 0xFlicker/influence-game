@@ -16,6 +16,7 @@ import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import { PromptReuseCollector } from "./prompt-reuse";
 import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleWindow } from "./types";
 import {
+  DEFAULT_MODEL_ID,
   inferModelCapabilities,
   type ModelReasoningEffort,
   type ModelReasoningPolicy,
@@ -546,7 +547,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly structuredOutputTimeoutMs: number;
   private tokenTracker: TokenTracker | null = null;
 
-  constructor(openaiClient: OpenAI, model = "gpt-5-nano", options: LLMHouseInterviewerOptions = {}) {
+  constructor(openaiClient: OpenAI, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
     this.openai = openaiClient;
     this.model = model;
     this.providerProfileId = options.providerProfileId ?? "openai";

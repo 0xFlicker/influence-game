@@ -324,12 +324,12 @@ describe("LLM structured output mode config", () => {
 
 describe("legacy model tier mapping", () => {
   it("maps tiers to fixed catalog defaults", () => {
-    expect(resolveModelForTier("budget")).toBe("gpt-5-nano");
+    expect(resolveModelForTier("budget")).toBe("gpt-5.6-luna");
     expect(resolveModelForTier("standard")).toBe("gpt-5-mini");
     expect(resolveModelForTier("premium")).toBe("gpt-5.4-mini");
   });
 
   it("falls back to budget for unknown tiers", () => {
-    expect(resolveModelForTier("unknown")).toBe("gpt-5-nano");
+    expect(resolveModelForTier("unknown")).toBe("gpt-5.6-luna");
   });
 });

@@ -193,6 +193,7 @@ import {
 import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
 import {
+  DEFAULT_MODEL_ID,
   inferModelCapabilities,
   normalizeReasoningPolicy,
   resolveCatalogIdForModel,
@@ -281,7 +282,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     players: 6,
     maxRounds: 10,
     personas: null,
-    model: "gpt-5-nano",
+    model: DEFAULT_MODEL_ID,
     ...(process.env.INFLUENCE_SIM_MODEL_CATALOG_ID && { modelCatalogId: process.env.INFLUENCE_SIM_MODEL_CATALOG_ID }),
     ...(normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY) && {
       reasoningPolicy: normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY)!,

@@ -7,7 +7,11 @@
  */
 
 import { loadStoredMcpAccessToken } from "./game-mcp/oauth-token-store";
-import { normalizeReasoningPolicy, type ModelReasoningPolicy } from "./model-catalog";
+import {
+  DEFAULT_MODEL_CATALOG_ID,
+  normalizeReasoningPolicy,
+  type ModelReasoningPolicy,
+} from "./model-catalog";
 import type { OpenAIRequestServiceTier } from "./llm-client";
 
 interface ApiSimArgs {
@@ -295,7 +299,7 @@ function authHeaders(token: string): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
-function catalogIdFromProviderAndModel(
+export function catalogIdFromProviderAndModel(
   provider: ApiSimArgs["provider"],
   model: string | undefined,
 ): string {
@@ -307,7 +311,7 @@ function catalogIdFromProviderAndModel(
   if (provider === "custom-openai-compatible") {
     throw new Error("--model is required for --provider custom-openai-compatible");
   }
-  return "openai:gpt-5-nano";
+  return DEFAULT_MODEL_CATALOG_ID;
 }
 
 function readPositiveInt(value: string | undefined, fallback: number): number {

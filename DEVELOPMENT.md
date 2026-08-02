@@ -449,7 +449,7 @@ The fuller checklist and triage live in `docs/local-model-evaluation.md`.
 
 ```bash
 # Simulator validation uses repo scripts, which inject Doppler dev secrets explicitly:
-bun run simulate -- --games 1 --players 4 --model gpt-5-nano
+bun run simulate -- --games 1 --players 4 --model gpt-5.6-luna
 
 # Local LM Studio validation bypasses Doppler:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
@@ -517,7 +517,7 @@ For production-style diagnosis, use `inspect_durable_run` first, then `list_trac
 
 `InfluenceAgent` uses provider profiles selected from the per-game model catalog. Hosted OpenAI uses `OPENAI_API_KEY`; local OpenAI-compatible servers use `INFLUENCE_LLM_BASE_URL` with LM Studio; Katana / IMGNAI uses `API_KAT_IMGNAI_KEY` plus `API_KAT_IMGNAI_SECRET` only when a game or simulator run explicitly selects a Katana catalog entry. API game start preflights the selected provider/model before claiming the durable run owner; set `INFLUENCE_LLM_PREFLIGHT=off` only for local OpenAI-compatible servers that can generate normally but do not implement model metadata retrieval. Hosted OpenAI agent prompts request Responses API reasoning summaries by default with `INFLUENCE_OPENAI_REASONING_SUMMARY=auto`; accepted values are `auto`, `concise`, `detailed`, and `off`, with `INFLUENCE_LLM_REASONING_SUMMARY` accepted as an alias. Local base URLs stay on Chat Completions compatibility paths and do not request hosted OpenAI reasoning summaries.
 
-New games should choose explicit `modelSelection.catalogId` plus `reasoningPolicy` (`low`, `medium`, `high`, or engine `action-policy`). Current game-ready catalog entries are `openai:gpt-5-nano`, `openai:gpt-5-mini`, `openai:gpt-5.4-nano`, `openai:gpt-5.4-mini`, `openai:gpt-5.6-luna`, and `katana:grok-4-3`. Back-burner Katana records exist for `katana:grok-4-20-multi-agent` and `katana:glm-5-2` but are not active-game selectable. `katana:q-naifu-a3b` is explicitly disabled after local API-backed evaluation showed repeated semantic decision failures despite JSON Schema transport working. Legacy budget/standard/premium tiers remain only as fixed catalog mappings for old games/callers.
+New games should choose explicit `modelSelection.catalogId` plus `reasoningPolicy` (`low`, `medium`, `high`, or engine `action-policy`). GPT-5.6 Luna (`openai:gpt-5.6-luna`) is the product baseline: it is the default for the legacy budget path, character generation/refinement, and the public-game creation form. Current game-ready catalog entries are `openai:gpt-5-nano`, `openai:gpt-5-mini`, `openai:gpt-5.4-nano`, `openai:gpt-5.4-mini`, `openai:gpt-5.6-luna`, and `katana:grok-4-3`. Back-burner Katana records exist for `katana:grok-4-20-multi-agent` and `katana:glm-5-2` but are not active-game selectable. `katana:q-naifu-a3b` is explicitly disabled after local API-backed evaluation showed repeated semantic decision failures despite JSON Schema transport working. Legacy standard/premium tiers remain fixed catalog mappings; existing explicit model selections are preserved.
 
 Structured decision calls use Responses API JSON Schema output for hosted OpenAI when reasoning summaries are enabled; otherwise hosted OpenAI defaults to named tool forcing. Local base URLs default to `INFLUENCE_LLM_TOOL_CHOICE_MODE=required`, which sends the LM Studio-compatible string `tool_choice` and keeps emitted `thinking` in decision schemas. Structured decisions use a global 8192-token completion floor so reasoning models have enough room to produce tool arguments. House Mingle room assignment also uses strict JSON Schema output with that structured token floor before deterministic intent-aware placement fallback. Public messages use a global 4096-token completion floor and retry once with a doubled budget when visible content is empty. They request visible speech in `message.content` and preserve native local reasoning metadata such as `reasoning_content` separately as `reasoningContext`. If a local server supports JSON schema better than tools, set `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema`.
 
@@ -536,7 +536,7 @@ Three Doppler configs exist under the `social-strategy-agent` project:
 The root `simulate` and `test:engine:full` scripts pass `--project social-strategy-agent --config dev` to Doppler so hosted-provider validation does not depend on a per-checkout Doppler setup file. Run hosted simulator batches from the repo root with:
 
 ```bash
-bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-5-nano
+bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-5.6-luna
 ```
 
 Run the Katana Grok smoke through the catalog/provider path with:

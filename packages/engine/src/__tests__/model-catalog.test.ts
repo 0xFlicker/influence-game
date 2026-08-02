@@ -13,10 +13,10 @@ import {
 
 describe("model catalog", () => {
   it("maps legacy tiers to explicit OpenAI catalog entries", () => {
-    expect(tierToCatalogId("budget")).toBe("openai:gpt-5-nano");
+    expect(tierToCatalogId("budget")).toBe("openai:gpt-5.6-luna");
     expect(tierToCatalogId("standard")).toBe("openai:gpt-5-mini");
     expect(tierToCatalogId("premium")).toBe("openai:gpt-5.4-mini");
-    expect(tierToCatalogId("unknown")).toBe("openai:gpt-5-nano");
+    expect(tierToCatalogId("unknown")).toBe("openai:gpt-5.6-luna");
   });
 
   it("marks grok-4-3 as the active Katana game-ready model", () => {

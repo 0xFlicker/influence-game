@@ -438,6 +438,8 @@ export {
 export type { LlmClientConfig, LlmToolChoiceMode, ModelTier, OpenAIReasoningSummaryMode, OpenAIRequestServiceTier } from "./llm-client";
 export {
   MODEL_CATALOG,
+  DEFAULT_MODEL_CATALOG_ID,
+  DEFAULT_MODEL_ID,
   MODEL_REASONING_EFFORTS,
   MODEL_REASONING_POLICIES,
   PROVIDER_PROFILES,

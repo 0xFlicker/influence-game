@@ -6,6 +6,7 @@
  */
 
 import { randomUUID } from "crypto";
+import { DEFAULT_MODEL_ID } from "@influence/engine";
 import { runMigrations } from "./migrate.js";
 import { schema } from "./index.js";
 
@@ -136,7 +137,7 @@ for (let i = 0; i < 6; i++) {
       userId: playerUsers[i]!,
       persona: JSON.stringify(personas[i]),
       agentConfig: JSON.stringify({
-        model: "gpt-5-nano",
+        model: DEFAULT_MODEL_ID,
         temperature: 0.9,
       }),
     });
@@ -246,7 +247,7 @@ for (let i = 0; i < 2; i++) {
       userId: playerUsers[i]!,
       persona: JSON.stringify(personas[i]),
       agentConfig: JSON.stringify({
-        model: "gpt-5-nano",
+        model: DEFAULT_MODEL_ID,
         temperature: 0.9,
       }),
     });

@@ -668,7 +668,7 @@ export function createGameRoutes(
     await tryRefreshGameWatchStateSummary(db, gameId, "players_filled");
 
     // Fill progress stays on the authenticated HTTP operation path, not the product watch stream.
-    // House-fill blurbs always use catalog-paired openai:gpt-5-nano — never env local base URL.
+    // House-fill blurbs always use catalog-paired GPT-5.6 Luna — never env local base URL.
     // Game-runtime models still come from the game's modelSelection at start.
     const generationLlm = resolveOpenAIBudgetGenerationLlm();
 

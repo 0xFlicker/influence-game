@@ -53,9 +53,12 @@ export interface GameModelSelection {
 
 export const MODEL_REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export const MODEL_REASONING_POLICIES = ["action-policy", ...MODEL_REASONING_EFFORTS] as const;
+/** Product-wide hosted OpenAI baseline for new games and generation helpers. */
+export const DEFAULT_MODEL_ID = "gpt-5.6-luna";
+export const DEFAULT_MODEL_CATALOG_ID = `openai:${DEFAULT_MODEL_ID}`;
 
 export const DEFAULT_TIER_MODELS: Record<ModelTier, string> = {
-  budget: "gpt-5-nano",
+  budget: DEFAULT_MODEL_ID,
   standard: "gpt-5-mini",
   premium: "gpt-5.4-mini",
 };

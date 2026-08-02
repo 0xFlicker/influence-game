@@ -6,11 +6,11 @@ import {
 import { resolveAgentProfileGenerationLlm } from "../routes/agent-profiles.js";
 
 describe("openai budget generation LLM selection", () => {
-  test("uses catalog id openai:gpt-5-nano", () => {
-    expect(OPENAI_BUDGET_GENERATION_CATALOG_ID).toBe("openai:gpt-5-nano");
+  test("uses catalog id openai:gpt-5.6-luna", () => {
+    expect(OPENAI_BUDGET_GENERATION_CATALOG_ID).toBe("openai:gpt-5.6-luna");
   });
 
-  test("pins hosted OpenAI and gpt-5-nano when a local LLM base URL is configured", () => {
+  test("pins hosted OpenAI and gpt-5.6-luna when a local LLM base URL is configured", () => {
     const generationLlm = resolveOpenAIBudgetGenerationLlm({
       OPENAI_API_KEY: "openai-key",
       INFLUENCE_LLM_API_KEY: "local-key",
@@ -21,7 +21,7 @@ describe("openai budget generation LLM selection", () => {
     expect(generationLlm?.providerProfileId).toBe("openai");
     expect(generationLlm?.baseURL).toBeUndefined();
     expect(generationLlm?.apiKeySource).toBe("OPENAI_API_KEY");
-    expect(generationLlm?.modelId).toBe("gpt-5-nano");
+    expect(generationLlm?.modelId).toBe("gpt-5.6-luna");
   });
 
   test("returns null when only a local base URL is configured (no OpenAI key)", () => {

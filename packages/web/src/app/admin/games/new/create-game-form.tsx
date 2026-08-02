@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine";
 import {
   createGame,
   estimateCost,
@@ -77,8 +78,8 @@ const GAME_MODELS: Array<{
   {
     catalogId: "openai:gpt-5.6-luna",
     label: "OpenAI gpt-5.6-luna",
-    sublabel: "GPT-5.6 cost-sensitive tier",
-    tier: "premium",
+    sublabel: "GPT-5.6 baseline play",
+    tier: "budget",
     hasCostEstimate: true,
   },
   {
@@ -122,7 +123,7 @@ const DEFAULT_STATE: FormState = {
   playerCount: 6,
   slotType: "all_ai",
   modelTier: "budget",
-  modelCatalogId: "openai:gpt-5-nano",
+  modelCatalogId: DEFAULT_MODEL_CATALOG_ID,
   reasoningPolicy: "medium",
   personaPool: [...ALL_PERSONA_KEYS],
   fillStrategy: "balanced",

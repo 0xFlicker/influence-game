@@ -6,6 +6,8 @@
  * for OpenAI gpt-5 family models.
  */
 
+import { DEFAULT_MODEL_ID } from "./model-catalog";
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -112,7 +114,7 @@ export function estimateCost(usage: TokenUsage, pricing: ModelPricing): CostEsti
 export function estimateCost(usage: TokenUsage, model: string): CostEstimate;
 export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | string): CostEstimate {
   const basePricing = typeof pricingOrModel === "string"
-    ? MODEL_PRICING[pricingOrModel] ?? MODEL_PRICING["gpt-5-nano"]!
+    ? MODEL_PRICING[pricingOrModel] ?? MODEL_PRICING[DEFAULT_MODEL_ID]!
     : pricingOrModel;
   const pricing = pricingForUsage(basePricing, usage.totalTokens);
   const model = typeof pricingOrModel === "string" ? pricingOrModel : "custom";

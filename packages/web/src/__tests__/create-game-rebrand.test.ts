@@ -25,6 +25,12 @@ describe("create game Influence selection", () => {
     expect(adminCreatePageSource).toContain("Create {ACTIVE_GAME.name} Game");
   });
 
+  it("defaults new public games to GPT-5.6 Luna", () => {
+    expect(createFormSource).toContain("modelCatalogId: DEFAULT_MODEL_CATALOG_ID");
+    expect(createFormSource).toContain('DEFAULT_MODEL_CATALOG_ID');
+    expect(createFormSource).toContain('visibility: "public"');
+  });
+
   it("does not add a fake multi-game selector", () => {
     expect(combinedSource).not.toContain("Werewolf");
     expect(combinedSource).not.toContain("Mafia");

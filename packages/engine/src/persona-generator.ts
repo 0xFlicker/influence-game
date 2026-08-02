@@ -7,6 +7,7 @@
 
 import OpenAI from "openai";
 import type { Personality } from "./agent";
+import { DEFAULT_MODEL_ID } from "./model-catalog";
 
 // ---------------------------------------------------------------------------
 // Agent name pool — diverse names for AI players
@@ -126,7 +127,7 @@ export async function generatePersona(
   openai: OpenAI,
   name: string,
   archetype: Personality,
-  model = "gpt-5-nano",
+  model = DEFAULT_MODEL_ID,
 ): Promise<GeneratedPersona> {
   try {
     const isGpt5 = model.startsWith("gpt-5");

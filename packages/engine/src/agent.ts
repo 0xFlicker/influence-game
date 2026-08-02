@@ -62,6 +62,7 @@ import { displayNameForFormat, isLaunchFormatId, pickFormatFromMenu, type Launch
 import { ruleSheetForFormat } from "./format-pressure";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
 import {
+  DEFAULT_MODEL_ID,
   inferModelCapabilities,
   type ModelReasoningEffort,
   type ModelReasoningPolicy,
@@ -1459,7 +1460,7 @@ export class InfluenceAgent implements IAgent {
     name: string,
     personality: Personality,
     openaiClient: OpenAI,
-    model = "gpt-5-nano",
+    model = DEFAULT_MODEL_ID,
     backstory?: string,
     memoryStore?: MemoryStore,
     options: InfluenceAgentOptions = {},
@@ -4897,7 +4898,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
 
   /**
    * Default reasoning overhead added to max_completion_tokens for reasoning models.
-   * gpt-5-nano/mini consume completion tokens for internal chain-of-thought before
+   * GPT-5 reasoning models consume completion tokens for internal reasoning before
    * producing visible output. Without sufficient headroom the entire budget is
    * consumed by reasoning, the API returns an empty response or throws a length error,
    * and the caller falls back to "[No response]".
@@ -6044,7 +6045,7 @@ For strategyPacket.targetPosture, choose a standing target posture:
 
 export function createAgentCast(
   openaiClient: OpenAI,
-  model = "gpt-5-nano",
+  model = DEFAULT_MODEL_ID,
   memoryStore?: MemoryStore,
   options: InfluenceAgentOptions = {},
 ): InfluenceAgent[] {

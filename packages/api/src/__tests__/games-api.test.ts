@@ -405,7 +405,7 @@ describe("Game REST API", () => {
       const config = JSON.parse(game.config);
       expect(config.modelTier).toBe("budget");
       expect(config.modelSelection).toEqual({
-        catalogId: "openai:gpt-5-nano",
+        catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
       });
       expect(config.serviceTier).toBe("flex");
@@ -1568,7 +1568,7 @@ describe("Game REST API", () => {
           .from(schema.gamePlayers)
           .where(eq(schema.gamePlayers.gameId, id));
         expect(filledPlayers.map((player) => JSON.parse(player.agentConfig).model))
-          .toEqual(["gpt-5-nano", "gpt-5-nano", "gpt-5-nano", "gpt-5-nano"]);
+          .toEqual(["gpt-5.6-luna", "gpt-5.6-luna", "gpt-5.6-luna", "gpt-5.6-luna"]);
       } finally {
         setServer({ publish() {} });
         for (const [key, value] of savedEnv) {

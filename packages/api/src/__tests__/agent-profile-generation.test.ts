@@ -7,7 +7,7 @@ import {
 } from "../routes/agent-profiles.js";
 
 describe("agent profile generation LLM selection", () => {
-  test("pins hosted OpenAI and gpt-5-nano when a local LLM base URL is configured", () => {
+  test("pins hosted OpenAI and gpt-5.6-luna when a local LLM base URL is configured", () => {
     const generationLlm = resolveAgentProfileGenerationLlm({
       OPENAI_API_KEY: "openai-key",
       INFLUENCE_LLM_API_KEY: "local-key",
@@ -18,7 +18,7 @@ describe("agent profile generation LLM selection", () => {
     expect(generationLlm?.providerProfileId).toBe("openai");
     expect(generationLlm?.baseURL).toBeUndefined();
     expect(generationLlm?.apiKeySource).toBe("OPENAI_API_KEY");
-    expect(generationLlm?.modelId).toBe("gpt-5-nano");
+    expect(generationLlm?.modelId).toBe("gpt-5.6-luna");
   });
 });
 
