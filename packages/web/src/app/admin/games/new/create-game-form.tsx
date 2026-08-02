@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine";
+import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import {
   createGame,
   estimateCost,

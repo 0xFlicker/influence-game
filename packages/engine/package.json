@@ -12,6 +12,7 @@
     "./prompt-thread-lab": "./src/prompt-thread-lab.ts",
     "./prompt-thread-report": "./src/prompt-thread-report.ts",
     "./prompt-thread-worker": "./src/prompt-thread-worker.ts",
+    "./model-defaults": "./src/model-defaults.ts",
     "./viewer-presentation": "./src/viewer-decision-events.ts",
     "./fixtures/format-kernel-viewer": "./src/fixtures/format-kernel-viewer.ts"
   },
