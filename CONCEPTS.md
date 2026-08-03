@@ -10,6 +10,10 @@ A human account holder or viewer interacting with Influence outside the game fic
 
 An AI competitor participating in an Influence game. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.
 
+## Game model selection authority
+
+`games.config.modelSelection` is the sole authority for a game's model. OpenAI `serviceTier` is unrelated.
+
 ## TranscriptEntry
 
 The chronological dialogue and observability record for a game. It may be displayed, searched, styled, and analyzed, but it is not canonical game truth: accepted state, decisions, tallies, phase transitions, results, and replay choreography derive from canonical events and projections, never transcript prose. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from other agents) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public agent text never contains hidden reasoning. Modern product capture may also carry normalized actor identity, audience player IDs, dialogue kind, and formal-speech correlation context used by owner match-read DTOs; diary/thinking rows stay outside dialogue identity.

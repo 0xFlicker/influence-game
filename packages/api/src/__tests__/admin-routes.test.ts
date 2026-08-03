@@ -642,6 +642,45 @@ describe("admin route RBAC", () => {
     });
   });
 
+  test("canonicalizes an imported game model selection", async () => {
+    const response = await app.request("/api/admin/import-game", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 1,
+        game: {
+          id: "source-canonical-config-game",
+          slug: "source-canonical-config-game",
+          config: JSON.stringify({
+            modelTier: "budget",
+            modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+            maxRounds: 5,
+          }),
+          status: "completed",
+          trackType: "custom",
+          minPlayers: 1,
+          maxPlayers: 1,
+        },
+        players: [],
+        transcripts: [],
+      }),
+    });
+
+    expect(response.status).toBe(201);
+    const { gameId } = await response.json() as { gameId: string };
+    const [game] = await db.select().from(schema.games).where(eq(schema.games.id, gameId));
+    expect(JSON.parse(game!.config)).toEqual({
+      modelSelection: {
+        catalogId: "openai:gpt-5.6-luna",
+        reasoningPolicy: "action-policy",
+      },
+      maxRounds: 5,
+    });
+  });
+
   test("keeps role-management routes locked to manage_roles", async () => {
     const res = await app.request("/api/admin/roles", {
       headers: { Authorization: `Bearer ${adminToken}` },

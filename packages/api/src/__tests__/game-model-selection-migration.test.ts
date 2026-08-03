@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
+import { normalizeGameModelSelection } from "@influence/engine";
 import { sql } from "drizzle-orm";
 import { type DrizzleDB } from "../db/index.js";
 import { setupTestDB } from "./test-utils.js";
@@ -19,7 +20,7 @@ describe("explicit game model selection migration", () => {
         ('budget', 'waiting', '{"modelTier":"budget","maxRounds":5}'),
         ('standard', 'in_progress', '{"modelTier":"standard"}'),
         ('premium', 'completed', '{"modelTier":"premium"}'),
-        ('explicit', 'suspended', '{"modelTier":"budget","modelSelection":{"catalogId":"anthropic:claude-haiku-4.5","reasoningPolicy":{"type":"fixed","effort":"low"}}}');
+        ('explicit', 'suspended', '{"modelTier":"budget","modelSelection":{"catalogId":"anthropic:claude-haiku-4.5","reasoningPolicy":"low"}}');
     `));
 
     try {
@@ -31,28 +32,32 @@ describe("explicit game model selection migration", () => {
           maxRounds: 5,
           modelSelection: {
             catalogId: "openai:gpt-5-nano",
-            reasoningPolicy: { type: "action-policy" },
+            reasoningPolicy: "action-policy",
           },
         },
         explicit: {
           modelSelection: {
             catalogId: "anthropic:claude-haiku-4.5",
-            reasoningPolicy: { type: "fixed", effort: "low" },
+            reasoningPolicy: "low",
           },
         },
         premium: {
           modelSelection: {
             catalogId: "openai:gpt-5.4-mini",
-            reasoningPolicy: { type: "action-policy" },
+            reasoningPolicy: "action-policy",
           },
         },
         standard: {
           modelSelection: {
             catalogId: "openai:gpt-5-mini",
-            reasoningPolicy: { type: "action-policy" },
+            reasoningPolicy: "action-policy",
           },
         },
       });
+      for (const config of Object.values(once)) {
+        const selection = (config as { modelSelection: unknown }).modelSelection;
+        expect(normalizeGameModelSelection(selection)).not.toBeNull();
+      }
 
       await applyMigration(db, testSchema);
       expect(await readConfigs(db, testSchema)).toEqual(once);
@@ -79,6 +84,34 @@ describe("explicit game model selection migration", () => {
       await expect(applyMigration(db, testSchema)).rejects.toThrow();
       const configs = await readConfigsAsText(db, testSchema);
       expect(configs).toEqual({ invalid: invalidConfig, valid: '{"modelTier":"budget"}' });
+    } finally {
+      await db.execute(sql.raw(`DROP SCHEMA "${testSchema}" CASCADE`));
+    }
+  });
+
+  test.each([
+    ["null", "null"],
+    ["a scalar", '"openai:gpt-5-nano"'],
+    ["an array", '[{"catalogId":"openai:gpt-5-nano"}]'],
+    ["an object without catalogId", '{"reasoningPolicy":"action-policy"}'],
+    ["an object with a non-string catalogId", '{"catalogId":42}'],
+    ["an object with an empty catalogId", '{"catalogId":""}'],
+  ])("rejects modelSelection containing %s and rolls back", async (_label, selection) => {
+    const db = await setupTestDB();
+    const testSchema = uniqueSchema("model_selection_shape");
+    await createFixture(db, testSchema);
+    await db.execute(sql.raw(`
+      INSERT INTO "${testSchema}"."games" ("id", "status", "config") VALUES
+        ('valid', 'waiting', '{"modelTier":"budget"}'),
+        ('invalid', 'cancelled', '{"modelSelection":${selection}}');
+    `));
+
+    try {
+      await expect(applyMigration(db, testSchema)).rejects.toThrow();
+      expect(await readConfigsAsText(db, testSchema)).toEqual({
+        invalid: `{"modelSelection":${selection}}`,
+        valid: '{"modelTier":"budget"}',
+      });
     } finally {
       await db.execute(sql.raw(`DROP SCHEMA "${testSchema}" CASCADE`));
     }

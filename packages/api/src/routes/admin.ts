@@ -1147,6 +1147,11 @@ export function createAdminRoutes(
       if (resolved.model.evaluationStatus !== "game-ready") {
         return c.json({ error: "Imported game model is not game-ready" }, 400);
       }
+      delete importedConfig.modelTier;
+      importedConfig.modelSelection = {
+        catalogId: resolved.catalogId,
+        reasoningPolicy: resolved.reasoningPolicy,
+      };
     } catch {
       return c.json({ error: "Imported game requires a valid modelSelection" }, 400);
     }

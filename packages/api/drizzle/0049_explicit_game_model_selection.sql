@@ -23,6 +23,14 @@ BEGIN
   ) parsed
   WHERE jsonb_typeof(parsed.parsed_config) IS DISTINCT FROM 'object'
      OR (
+       parsed.parsed_config ? 'modelSelection'
+       AND (
+         jsonb_typeof(parsed.parsed_config->'modelSelection') IS DISTINCT FROM 'object'
+         OR jsonb_typeof(parsed.parsed_config->'modelSelection'->'catalogId') IS DISTINCT FROM 'string'
+         OR parsed.parsed_config->'modelSelection'->>'catalogId' = ''
+       )
+     )
+     OR (
        NOT parsed.parsed_config ? 'modelSelection'
        AND coalesce(parsed.parsed_config->>'modelTier', '') NOT IN ('budget', 'standard', 'premium')
      )
@@ -47,7 +55,7 @@ SET "config" = (
           WHEN 'standard' THEN 'openai:gpt-5-mini'
           WHEN 'premium' THEN 'openai:gpt-5.4-mini'
         END,
-        'reasoningPolicy', jsonb_build_object('type', 'action-policy')
+        'reasoningPolicy', 'action-policy'
       )
     )
   END
@@ -63,6 +71,9 @@ BEGIN
     ) parsed
     WHERE jsonb_typeof(parsed.parsed_config) IS DISTINCT FROM 'object'
        OR NOT parsed.parsed_config ? 'modelSelection'
+       OR jsonb_typeof(parsed.parsed_config->'modelSelection') IS DISTINCT FROM 'object'
+       OR jsonb_typeof(parsed.parsed_config->'modelSelection'->'catalogId') IS DISTINCT FROM 'string'
+       OR parsed.parsed_config->'modelSelection'->>'catalogId' = ''
        OR parsed.parsed_config ? 'modelTier'
   ) THEN
     RAISE EXCEPTION 'Game model selection migration did not converge';
