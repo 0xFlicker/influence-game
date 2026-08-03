@@ -14,10 +14,6 @@ interface DashboardRecentResultProps {
   error: string | null;
 }
 
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
 function resultHref(result: PlayerGameResult): string {
   return `/games/${result.gameSlug}`;
 }
@@ -53,7 +49,7 @@ export function DashboardRecentResult({ result, loading, error }: DashboardRecen
           <p className="influence-copy mt-1 text-sm">
             {result.agentName} finished {placementText(result)} after {result.rounds} rounds.
           </p>
-          <p className="influence-copy-muted mt-1 text-xs">{capitalize(result.modelTier)} tier</p>
+          <p className="influence-copy-muted mt-1 text-xs">{result.modelLabel}</p>
           <Link href={resultHref(result)} className="influence-button-secondary mt-4 inline-flex rounded-lg px-4 py-2 text-xs font-medium">
             Replay
           </Link>

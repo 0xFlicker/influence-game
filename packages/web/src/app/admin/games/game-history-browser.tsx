@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef, type FormEvent } from "react"
 import { useRouter } from "next/navigation";
 import {
   ApiError,
-  formatGameModelLabel,
   hideGame,
   listAdminGames,
   retryGameSettlement,
@@ -150,7 +149,7 @@ function GameRow({
       <td className="py-3 px-4 text-white/50 text-sm">
         {game.currentRound > 0 ? game.currentRound : "—"}
       </td>
-      <td className="py-3 px-4 text-white/50 text-sm">{formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}</td>
+      <td className="py-3 px-4 text-white/50 text-sm">{game.modelLabel}</td>
       <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
       <td className="py-3 px-4">
         <StatusBadge game={game} />
@@ -461,7 +460,7 @@ export function GameHistoryBrowser() {
     if (settlementFilter !== "all" && g.completionSettlement.state !== settlementFilter) return false;
     if (search) {
       const q = search.toLowerCase();
-      const modelLabel = formatGameModelLabel(g.modelSelection, g.modelTier, g.modelLabel).toLowerCase();
+      const modelLabel = g.modelLabel.toLowerCase();
       if (
         !g.winner?.toLowerCase().includes(q) &&
         !modelLabel.includes(q) &&

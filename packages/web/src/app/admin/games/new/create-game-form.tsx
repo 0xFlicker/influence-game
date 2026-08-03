@@ -5,10 +5,8 @@ import { useRouter } from "next/navigation";
 import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import {
   createGame,
-  estimateCost,
   type CreateGameParams,
   type ModelReasoningPolicy,
-  type ModelTier,
   type PersonaKey,
 } from "@/lib/api";
 import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
@@ -51,43 +49,31 @@ const GAME_MODELS: Array<{
   catalogId: ModelCatalogId;
   label: string;
   sublabel: string;
-  tier: ModelTier;
-  hasCostEstimate: boolean;
 }> = [
   {
     catalogId: "openai:gpt-5-nano",
     label: "OpenAI gpt-5-nano",
     sublabel: "Fast baseline play",
-    tier: "budget",
-    hasCostEstimate: true,
   },
   {
     catalogId: "openai:gpt-5-mini",
     label: "OpenAI gpt-5-mini",
     sublabel: "Stronger strategy",
-    tier: "standard",
-    hasCostEstimate: true,
   },
   {
     catalogId: "openai:gpt-5.4-mini",
     label: "OpenAI gpt-5.4-mini",
     sublabel: "Most capable OpenAI 5.4 option",
-    tier: "premium",
-    hasCostEstimate: true,
   },
   {
     catalogId: "openai:gpt-5.6-luna",
     label: "OpenAI gpt-5.6-luna",
     sublabel: "GPT-5.6 baseline play",
-    tier: "budget",
-    hasCostEstimate: true,
   },
   {
     catalogId: "katana:grok-4-3",
     label: "xAI Grok 4.3",
     sublabel: "Reasoning-heavy strategy test",
-    tier: "budget",
-    hasCostEstimate: false,
   },
 ];
 
@@ -108,7 +94,6 @@ const THINKING_DEPTHS: Array<{
 interface FormState {
   playerCount: 4 | 6 | 8 | 10 | 12;
   slotType: "all_ai" | "mixed";
-  modelTier: "budget" | "standard" | "premium";
   modelCatalogId: ModelCatalogId;
   reasoningPolicy: Exclude<ModelReasoningPolicy, "action-policy">;
   personaPool: PersonaKey[];
@@ -122,7 +107,6 @@ interface FormState {
 const DEFAULT_STATE: FormState = {
   playerCount: 6,
   slotType: "all_ai",
-  modelTier: "budget",
   modelCatalogId: DEFAULT_MODEL_CATALOG_ID,
   reasoningPolicy: "medium",
   personaPool: [...ALL_PERSONA_KEYS],
@@ -227,13 +211,13 @@ export function CreateGameForm() {
     setError(null);
     setSubmitting(true);
     try {
+      const { modelCatalogId, reasoningPolicy, ...gameParams } = form;
       const params: CreateGameParams = {
-        ...form,
+        ...gameParams,
         modelSelection: {
-          catalogId: form.modelCatalogId,
-          reasoningPolicy: form.reasoningPolicy,
+          catalogId: modelCatalogId,
+          reasoningPolicy,
         },
-        playerCount: form.playerCount,
       };
       const { slug } = await createGame(params);
       router.push(`/games/${slug}`);
@@ -242,11 +226,6 @@ export function CreateGameForm() {
       setSubmitting(false);
     }
   }
-
-  const selectedModel = GAME_MODELS.find((model) => model.catalogId === form.modelCatalogId) ?? GAME_MODELS[0]!;
-  const costEstimate = selectedModel.hasCostEstimate
-    ? `${estimateCost(form.playerCount, selectedModel.tier)}/game`
-    : "Unavailable";
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -300,14 +279,7 @@ export function CreateGameForm() {
             label: model.label,
             sublabel: model.sublabel,
           }))}
-          onChange={(v) => {
-            const nextModel = GAME_MODELS.find((model) => model.catalogId === v);
-            setForm((prev) => ({
-              ...prev,
-              modelCatalogId: v,
-              modelTier: nextModel?.tier ?? prev.modelTier,
-            }));
-          }}
+          onChange={(v) => set("modelCatalogId", v)}
         />
         <RadioGroup
           label="Thinking depth"
@@ -462,11 +434,7 @@ export function CreateGameForm() {
       </SectionCard>
 
       {/* Submit */}
-      <div className="flex items-center justify-between pt-2">
-        <p className="text-sm text-white/40">
-          Cost estimate:{" "}
-          <span className="text-white/70 font-medium">{costEstimate}</span>
-        </p>
+      <div className="flex items-center justify-end pt-2">
         <div className="flex items-center gap-3">
           {error && <p className="text-red-400 text-sm">{error}</p>}
           <button

@@ -29,6 +29,10 @@ describe("create game Influence selection", () => {
     expect(createFormSource).toContain("modelCatalogId: DEFAULT_MODEL_CATALOG_ID");
     expect(createFormSource).toContain('DEFAULT_MODEL_CATALOG_ID');
     expect(createFormSource).toContain('visibility: "public"');
+    expect(createFormSource).toContain('reasoningPolicy: "medium"');
+    expect(createFormSource).not.toContain("modelTier");
+    expect(createFormSource).not.toContain("estimateCost");
+    expect(createFormSource).not.toContain("Cost estimate");
   });
 
   it("does not add a fake multi-game selector", () => {

@@ -54,7 +54,7 @@ function game(): GameDetail {
         shielded: false,
       },
     ],
-    modelTier: "standard",
+    modelLabel: "OpenAI gpt-5-mini · Adaptive",
     visibility: "public",
     viewerMode: "replay",
     createdAt: "2026-06-20T00:00:00.000Z",

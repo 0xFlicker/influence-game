@@ -274,7 +274,6 @@ export type PublicPlayerProfileEnvelope =
       status: "not_found";
     };
 
-export type ModelTier = "budget" | "standard" | "premium";
 export type FillStrategy = "random" | "balanced";
 export type TimingPreset = "fast" | "standard" | "slow" | "custom";
 export type GameVisibility = "public" | "unlisted" | "private";
@@ -421,8 +420,7 @@ export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 export interface CreateGameParams {
   playerCount: 4 | 6 | 8 | 10 | 12;
   slotType: "all_ai" | "mixed";
-  modelTier: ModelTier;
-  modelSelection?: GameModelSelection;
+  modelSelection: GameModelSelection;
   personaPool: PersonaKey[];
   fillStrategy: FillStrategy;
   timingPreset: TimingPreset;
@@ -438,27 +436,6 @@ export interface GameModelSelection {
   reasoningPolicy: ModelReasoningPolicy;
 }
 
-const REASONING_LABELS: Record<ModelReasoningPolicy, string> = {
-  "action-policy": "Adaptive",
-  low: "Low",
-  medium: "Medium",
-  high: "High",
-};
-
-export function formatGameModelLabel(
-  modelSelection: GameModelSelection | undefined,
-  modelTier: ModelTier,
-  modelLabel?: string,
-): string {
-  if (modelLabel) return modelLabel;
-  if (modelSelection) {
-    const reasoningLabel = REASONING_LABELS[modelSelection.reasoningPolicy];
-    return reasoningLabel ? `Selected model · ${reasoningLabel}` : "Selected model";
-  }
-
-  return `${modelTier.charAt(0).toUpperCase()}${modelTier.slice(1)} tier`;
-}
-
 export interface GameSummary {
   id: string;
   slug: string;
@@ -470,9 +447,7 @@ export interface GameSummary {
   phaseTimeRemaining: number | null;
   alivePlayers: number;
   eliminatedPlayers: number;
-  modelTier: ModelTier;
-  modelSelection?: GameModelSelection;
-  modelLabel?: string;
+  modelLabel: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
   trackType?: TrackType;
@@ -1732,7 +1707,7 @@ export interface PlayerGameResult {
   winner: boolean;
   rounds: number;
   completedAt: string;
-  modelTier: ModelTier;
+  modelLabel: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -2068,8 +2043,7 @@ export interface GameDetail {
   maxRounds: number;
   currentPhase: PhaseKey;
   players: GamePlayer[];
-  modelTier: ModelTier;
-  modelLabel?: string;
+  modelLabel: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
   seasonId?: string;
@@ -2188,28 +2162,6 @@ export async function getGameReplayWatchFrames(
   return apiFetch(`/api/games/${id}/replay-watch-frames${query}`, {
     signal: options.signal,
   });
-}
-
-// ---------------------------------------------------------------------------
-// Cost estimation (client-side, informational only)
-// Rates per 1k tokens: budget $0.00015, standard $0.0025, premium $0.015
-// Est tokens/game: ~15k budget, ~22k standard, ~30k premium (scaled by player count)
-// ---------------------------------------------------------------------------
-
-const BASE_COST_USD: Record<ModelTier, number> = {
-  budget: 0.05,
-  standard: 0.79,
-  premium: 2.1,
-};
-
-export function estimateCost(
-  playerCount: number,
-  modelTier: ModelTier,
-): string {
-  const base = BASE_COST_USD[modelTier];
-  const scaled = base * (playerCount / 6);
-  if (scaled < 0.01) return "<$0.01";
-  return `~$${scaled.toFixed(2)}`;
 }
 
 // ---------------------------------------------------------------------------

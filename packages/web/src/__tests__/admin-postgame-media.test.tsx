@@ -203,7 +203,7 @@ function adminGame(overrides: Partial<AdminGameSummary> = {}): AdminGameSummary 
     phaseTimeRemaining: null,
     alivePlayers: 2,
     eliminatedPlayers: 10,
-    modelTier: "standard",
+    modelLabel: "OpenAI gpt-5-mini · Adaptive",
     visibility: "public",
     viewerMode: "replay",
     trackType: "custom",

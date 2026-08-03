@@ -20,7 +20,7 @@ function game(): GameDetail {
       { id: "p3", name: "Echo", persona: "observer", status: "alive", shielded: false },
       { id: "p4", name: "Sol", persona: "diplomat", status: "alive", shielded: false },
     ],
-    modelTier: "standard",
+    modelLabel: "OpenAI gpt-5-mini · Adaptive",
     visibility: "public",
     viewerMode: "live",
     createdAt: "2026-07-03T00:00:00.000Z",

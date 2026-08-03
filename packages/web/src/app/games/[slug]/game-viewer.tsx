@@ -1171,7 +1171,7 @@ export function GameViewer({
     alivePlayers: game.players.filter((p) => p.status === "alive").length,
     eliminatedPlayers: game.players.filter((p) => p.status === "eliminated")
       .length,
-    modelTier: game.modelTier,
+    modelLabel: game.modelLabel,
     visibility: game.visibility,
     viewerMode: game.viewerMode,
     createdAt: game.createdAt,

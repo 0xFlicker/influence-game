@@ -19,7 +19,7 @@ function game(overrides: Partial<GameSummary> = {}): GameSummary {
     phaseTimeRemaining: null,
     alivePlayers: 3,
     eliminatedPlayers: 0,
-    modelTier: "standard",
+    modelLabel: "OpenAI gpt-5-mini · Adaptive",
     visibility: "public",
     viewerMode: "live",
     createdAt: "2026-06-21T12:00:00.000Z",
@@ -56,7 +56,7 @@ function result(overrides: Partial<PlayerGameResult> = {}): PlayerGameResult {
     winner: false,
     rounds: 6,
     completedAt: "2026-06-20T14:00:00.000Z",
-    modelTier: "standard",
+    modelLabel: "OpenAI gpt-5-mini · Adaptive",
     ...overrides,
   };
 }

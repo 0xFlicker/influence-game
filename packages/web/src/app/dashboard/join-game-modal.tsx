@@ -5,7 +5,6 @@ import {
   joinGame,
   listAgents,
   createAgent,
-  formatGameModelLabel,
   getAuthToken,
   type GameSummary,
   type PersonaKey,
@@ -222,7 +221,7 @@ export function JoinGameModal({ game, onClose, onSuccess }: JoinGameModalProps) 
             <div>
               <h2 className="text-xl font-bold text-text-primary">Join {game.slug}</h2>
               <p className="influence-copy text-sm mt-1">
-                {game.playerCount}-player · {formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}
+                {game.playerCount}-player · {game.modelLabel}
               </p>
             </div>
             <button

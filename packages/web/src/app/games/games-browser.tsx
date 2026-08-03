@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   fillGame,
-  formatGameModelLabel,
   hideGame,
   isFillAccepted,
   listGames,
@@ -209,7 +208,7 @@ function GameCard({
 
             <div className="flex items-center gap-4 text-xs influence-copy mb-3 flex-wrap">
               <span>{game.playerCount} players</span>
-              <span>{formatGameModelLabel(game.modelSelection, game.modelTier, game.modelLabel)}</span>
+              <span>{game.modelLabel}</span>
               {slotsInfo && (
                 <span className={isReadyToStart ? "text-green-300/80" : "text-indigo-400/70"}>
                   {slotsInfo}
@@ -450,8 +449,7 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
       if (filters.status !== "all" && g.status !== filters.status) return false;
       if (filters.category !== "all" && gameCategoryValue(g) !== filters.category) return false;
       if (searchQuery) {
-        const modelLabel = formatGameModelLabel(g.modelSelection, g.modelTier, g.modelLabel);
-        const haystack = `${g.slug} ${g.season?.name ?? ""} ${ACTIVE_GAME.name} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${modelLabel} ${g.trackType ?? ""}`.toLowerCase();
+        const haystack = `${g.slug} ${g.season?.name ?? ""} ${ACTIVE_GAME.name} ${g.winner ?? ""} ${g.winnerPersona ?? ""} ${g.modelLabel} ${g.trackType ?? ""}`.toLowerCase();
         if (!haystack.includes(searchQuery)) return false;
       }
       return true;
