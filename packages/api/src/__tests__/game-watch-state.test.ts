@@ -713,7 +713,7 @@ describe("GameWatchState", () => {
 function gameConfig(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     maxRounds: 10,
-    modelTier: "budget",
+    modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
     visibility: "public",
     viewerMode: "speedrun",
     ...overrides,

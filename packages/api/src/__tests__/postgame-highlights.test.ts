@@ -554,7 +554,7 @@ async function insertEdgeSmokeDusk(
     status: "completed",
     config: {
       maxRounds: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
-      modelTier: "budget",
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
       visibility: "public",
       viewerMode: "speedrun",
     },

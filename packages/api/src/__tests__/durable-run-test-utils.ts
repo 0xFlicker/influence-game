@@ -123,7 +123,7 @@ export async function insertGame(
     slug: params.slug ?? `test-${gameId}`,
     config: JSON.stringify(params.config ?? {
       maxRounds: 5,
-      modelTier: "budget",
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
       visibility: "private",
       viewerMode: "speedrun",
     }),

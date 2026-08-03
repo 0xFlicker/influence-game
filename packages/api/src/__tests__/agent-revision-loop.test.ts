@@ -239,10 +239,10 @@ describe("agent revision update loop", () => {
 
   test("reconciles every waiting follower and leaves frozen execution byte-for-byte unchanged", async () => {
     const profile = await createAgent("Many Games Agent");
-    await insertGame("waiting-a", "waiting-a", { modelTier: "budget" });
-    await insertGame("waiting-b", "waiting-b", { modelTier: "premium" });
-    await insertGame("frozen-game", "frozen-game", { modelTier: "budget" });
-    await insertGame("suspended-game", "suspended-game", { modelTier: "premium" });
+    await insertGame("waiting-a", "waiting-a", { catalogId: "openai:gpt-5.6-luna" });
+    await insertGame("waiting-b", "waiting-b", { catalogId: "openai:gpt-5.4-mini" });
+    await insertGame("frozen-game", "frozen-game", { catalogId: "openai:gpt-5.6-luna" });
+    await insertGame("suspended-game", "suspended-game", { catalogId: "openai:gpt-5.4-mini" });
     await admit(profile.id, "waiting-a");
     await admit(profile.id, "waiting-b");
     await admit(profile.id, "frozen-game");
@@ -485,12 +485,17 @@ describe("agent revision update loop", () => {
   async function insertGame(
     id: string,
     slug: string,
-    config: { modelTier?: string } = {},
+    config: { catalogId?: string } = {},
   ): Promise<void> {
     await db.insert(schema.games).values({
       id,
       slug,
-      config: JSON.stringify({ modelTier: config.modelTier ?? "budget" }),
+      config: JSON.stringify({
+        modelSelection: {
+          catalogId: config.catalogId ?? "openai:gpt-5.6-luna",
+          reasoningPolicy: "action-policy",
+        },
+      }),
       status: "waiting",
       trackType: "custom",
       minPlayers: 2,

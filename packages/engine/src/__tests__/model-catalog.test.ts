@@ -8,17 +8,9 @@ import {
   normalizeGameModelSelection,
   normalizeReasoningPolicy,
   resolveModelSelection,
-  tierToCatalogId,
 } from "../model-catalog";
 
 describe("model catalog", () => {
-  it("maps legacy tiers to explicit OpenAI catalog entries", () => {
-    expect(tierToCatalogId("budget")).toBe("openai:gpt-5.6-luna");
-    expect(tierToCatalogId("standard")).toBe("openai:gpt-5-mini");
-    expect(tierToCatalogId("premium")).toBe("openai:gpt-5.4-mini");
-    expect(tierToCatalogId("unknown")).toBe("openai:gpt-5.6-luna");
-  });
-
   it("marks grok-4-3 as the active Katana game-ready model", () => {
     const entry = modelCatalogEntryById("katana:grok-4-3");
 
@@ -64,8 +56,11 @@ describe("model catalog", () => {
     expect(formatGameModelSelectionLabel({
       catalogId: "katana:grok-4-3",
       reasoningPolicy: "medium",
-    }, "budget")).toBe("xAI Grok 4.3 · Medium");
-    expect(formatGameModelSelectionLabel(undefined, "premium")).toBe("OpenAI gpt-5.4-mini · Adaptive");
+    })).toBe("xAI Grok 4.3 · Medium");
+  });
+
+  it("rejects a missing game model selection", () => {
+    expect(() => resolveModelSelection(undefined)).toThrow("Game model selection is required");
   });
 
   it("marks q-naifu-a3b disabled after failed API-backed Katana evaluation", () => {
@@ -96,10 +91,9 @@ describe("model catalog", () => {
     });
   });
 
-  it("resolves explicit selection before tier fallback", () => {
+  it("resolves an explicit selection", () => {
     const resolved = resolveModelSelection(
       { catalogId: "katana:grok-4-3", reasoningPolicy: "low" },
-      "premium",
     );
 
     expect(resolved.catalogId).toBe("katana:grok-4-3");
@@ -111,7 +105,6 @@ describe("model catalog", () => {
   it("supports dynamic OpenAI-compatible text model catalog entries", () => {
     const katana = resolveModelSelection(
       { catalogId: "katana:grok-4-33", reasoningPolicy: "high" },
-      "budget",
     );
     expect(katana.providerProfile.id).toBe("katana");
     expect(katana.modelId).toBe("grok-4-33");
@@ -119,7 +112,6 @@ describe("model catalog", () => {
 
     const lmStudio = resolveModelSelection(
       { catalogId: "lm-studio:google/gemma-4-26b-a4b-qat" },
-      "budget",
     );
     expect(lmStudio.providerProfile.id).toBe("lm-studio");
     expect(lmStudio.modelId).toBe("google/gemma-4-26b-a4b-qat");

@@ -283,7 +283,6 @@ export function createFreeQueueRoutes(
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
-      modelTier: "budget",
       modelSelection: DAILY_FREE_MODEL_SELECTION,
       personaPool: [],
       fillStrategy: "balanced",

@@ -432,10 +432,9 @@ export {
   describeLlmProvider,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
-  resolveModelForTier,
   resolveToolChoiceMode,
 } from "./llm-client";
-export type { LlmClientConfig, LlmToolChoiceMode, ModelTier, OpenAIReasoningSummaryMode, OpenAIRequestServiceTier } from "./llm-client";
+export type { LlmClientConfig, LlmToolChoiceMode, OpenAIReasoningSummaryMode, OpenAIRequestServiceTier } from "./llm-client";
 export {
   MODEL_CATALOG,
   DEFAULT_MODEL_CATALOG_ID,
@@ -454,7 +453,6 @@ export {
   providerProfileById,
   resolveCatalogIdForModel,
   resolveModelSelection,
-  tierToCatalogId,
 } from "./model-catalog";
 export type {
   GameModelSelection,

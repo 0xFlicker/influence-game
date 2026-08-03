@@ -1611,7 +1611,6 @@ function resolveCatalogBackedSimulationModel(args: SimArgs): SimulationModelRunt
       catalogId: args.modelCatalogId,
       ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
     },
-    undefined,
   );
   return {
     modelId: resolved.modelId,

@@ -72,7 +72,7 @@ async function seedCase(db: DrizzleDB): Promise<SeededCase> {
     status: "completed",
     config: {
       maxRounds: 5,
-      modelTier: "budget",
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
       visibility: "private",
       viewerMode: "speedrun",
     },

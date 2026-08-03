@@ -139,10 +139,9 @@ export async function projectOwnedSeatInTransaction(
   const gameConfig = parseGameConfig(input.game.config);
   const temperature = normalizeTemperature(input.overrides?.temperature);
   const modelSelection = normalizeGameModelSelection(gameConfig.modelSelection);
-  const resolvedModelSelection = resolveModelSelection(modelSelection, gameConfig.modelTier);
+  const resolvedModelSelection = resolveModelSelection(modelSelection);
   const effectiveRuntimeSnapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
     modelSelection,
-    modelTier: gameConfig.modelTier,
     temperature,
     toolChoiceMode: resolveToolChoiceMode(
       process.env,
@@ -557,12 +556,11 @@ function personaName(persona: string): string {
   );
 }
 
-function parseGameConfig(value: string): { modelSelection?: unknown; modelTier?: string } {
+function parseGameConfig(value: string): { modelSelection?: unknown } {
   try {
     const parsed = JSON.parse(value) as Record<string, unknown>;
     return {
       modelSelection: parsed.modelSelection,
-      modelTier: typeof parsed.modelTier === "string" ? parsed.modelTier : undefined,
     };
   } catch {
     throw projectionError(

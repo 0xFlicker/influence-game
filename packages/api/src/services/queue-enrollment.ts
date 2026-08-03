@@ -126,7 +126,6 @@ export interface OpenGameSummary {
   maxPlayers: number;
   ruleset: {
     trackType: TrackType;
-    modelTier: string;
     modelLabel: string;
     maxRounds: number;
     visibility: string;
@@ -707,7 +706,6 @@ function openGameSummary(game: GameRow, playerCount: number): OpenGameSummary {
     maxPlayers: game.maxPlayers,
     ruleset: {
       trackType: game.trackType,
-      modelTier: typeof config.modelTier === "string" ? config.modelTier : "budget",
       modelLabel: modelLabelFromConfig(config),
       maxRounds: typeof config.maxRounds === "number" ? config.maxRounds : 10,
       visibility: typeof config.visibility === "string" ? config.visibility : "public",

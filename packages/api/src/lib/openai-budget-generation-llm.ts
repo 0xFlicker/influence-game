@@ -32,7 +32,6 @@ export function resolveOpenAIBudgetGenerationLlm(
 ): OpenAIBudgetGenerationLlm | null {
   const selection = resolveModelSelection(
     { catalogId: OPENAI_BUDGET_GENERATION_CATALOG_ID },
-    null,
   );
   const llmConfig = createLlmClientFromEnv(env, {
     providerProfileId: selection.providerProfile.id,

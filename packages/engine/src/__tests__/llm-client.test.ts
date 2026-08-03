@@ -5,7 +5,6 @@ import {
   describeLlmProvider,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
-  resolveModelForTier,
   resolveToolChoiceMode,
 } from "../llm-client";
 
@@ -319,17 +318,5 @@ describe("LLM structured output mode config", () => {
         "http://127.0.0.1:1234/v1",
       ),
     ).toBe("json_schema");
-  });
-});
-
-describe("legacy model tier mapping", () => {
-  it("maps tiers to fixed catalog defaults", () => {
-    expect(resolveModelForTier("budget")).toBe("gpt-5.6-luna");
-    expect(resolveModelForTier("standard")).toBe("gpt-5-mini");
-    expect(resolveModelForTier("premium")).toBe("gpt-5.4-mini");
-  });
-
-  it("falls back to budget for unknown tiers", () => {
-    expect(resolveModelForTier("unknown")).toBe("gpt-5.6-luna");
   });
 });

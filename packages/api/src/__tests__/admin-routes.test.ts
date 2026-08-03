@@ -157,7 +157,10 @@ async function createPendingSettlementFixture(
     },
     resolvedModel: "test-model",
     calculatedCost: null,
-    completionConfig: { modelTier: "budget", maxRounds: 1 },
+    completionConfig: {
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+      maxRounds: 1,
+    },
     finishedAt: "2026-07-15T12:00:00.000Z",
   });
   await db.update(schema.games).set({ status: "suspended" })
@@ -579,7 +582,9 @@ describe("admin route RBAC", () => {
         game: {
           id: "source-import-game",
           slug: "source-import-game",
-          config: JSON.stringify({ modelTier: "budget" }),
+          config: JSON.stringify({
+            modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+          }),
           status: "completed",
           trackType: "custom",
           minPlayers: 1,
@@ -614,6 +619,27 @@ describe("admin route RBAC", () => {
     const [seat] = await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.agentProfileId, "source-import-profile"));
     expect(seat?.persona).toBe(persona);
+  });
+
+  test("rejects a tier-only imported game", async () => {
+    const response = await app.request("/api/admin/import-game", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        version: 1,
+        game: { config: JSON.stringify({ modelTier: "budget" }) },
+        players: [],
+        transcripts: [],
+      }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: "Imported game requires a valid modelSelection",
+    });
   });
 
   test("keeps role-management routes locked to manage_roles", async () => {

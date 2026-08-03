@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, desc, eq, ne, sql } from "drizzle-orm";
 import {
+  DEFAULT_MODEL_CATALOG_ID,
   resolveModelSelection,
   type GameModelSelection,
   type LlmToolChoiceMode,
@@ -50,14 +51,12 @@ export function resolveFreeTrackEffectiveRuntimeSnapshot(
   profile: AgentProfileRevisionSource,
   options: {
     modelSelection?: GameModelSelection | null;
-    modelTier?: string | null;
     temperature?: number;
     toolChoiceMode?: LlmToolChoiceMode;
   } = {},
 ): EffectiveAgentRuntimeSnapshot {
   const resolved = resolveModelSelection(
-    options.modelSelection ?? null,
-    options.modelTier ?? "budget",
+    options.modelSelection ?? { catalogId: DEFAULT_MODEL_CATALOG_ID },
   );
   return {
     name: profile.name,

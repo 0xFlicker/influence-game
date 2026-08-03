@@ -462,7 +462,6 @@ async function captureCompletedGame(
 ): Promise<void> {
   const resolvedModelSelection = resolveModelSelection(
     normalizeGameModelSelection(params.gameConfig.modelSelection),
-    params.gameConfig.modelTier as string | undefined,
   );
   const model = resolvedModelSelection.modelId;
   const usage = params.tokenTracker.getTotalUsage();
@@ -612,7 +611,6 @@ export async function validateGameStartReadiness(
   try {
     resolvedModelSelection = resolveModelSelection(
       normalizeGameModelSelection(gameConfig.modelSelection),
-      gameConfig.modelTier as string | undefined,
     );
   } catch (error) {
     return { error: publicProviderStartupError(error) };
@@ -692,7 +690,6 @@ export async function startGame(
   const useTestMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true";
   const resolvedModelSelection = resolveModelSelection(
     normalizeGameModelSelection(gameConfig.modelSelection),
-    gameConfig.modelTier as string | undefined,
   );
 
   const llmConfig = useTestMockRunner

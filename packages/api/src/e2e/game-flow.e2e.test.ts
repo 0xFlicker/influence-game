@@ -107,7 +107,7 @@ describe("E2E: Full Game Flow", () => {
       },
       body: JSON.stringify({
         playerCount: 6,
-        modelTier: "budget",
+        modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
         timingPreset: "fast",
         viewerMode: "live",
         visibility: "public",
@@ -134,13 +134,13 @@ describe("E2E: Full Game Flow", () => {
 
     const detail = (await detailRes.json()) as {
       status: string;
-      modelTier: string;
+      modelLabel: string;
       visibility: string;
       viewerMode: string;
       players: unknown[];
     };
     expect(detail.status).toBe("waiting");
-    expect(detail.modelTier).toBe("budget");
+    expect(detail.modelLabel).toBe("OpenAI gpt-5.6-luna · Adaptive");
     expect(detail.viewerMode).toBe("live");
     expect(detail.visibility).toBe("public");
 

@@ -464,7 +464,9 @@ async function insertGame(
   await db.insert(schema.games).values({
     id,
     slug: `freeze-game-${id}`,
-    config: JSON.stringify({ modelTier: "budget" }),
+    config: JSON.stringify({
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+    }),
     status: "waiting",
     minPlayers: 2,
     maxPlayers: 12,

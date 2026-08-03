@@ -1,11 +1,9 @@
 import OpenAI from "openai";
 import {
-  DEFAULT_TIER_MODELS,
   PROVIDER_PROFILES,
   type ProviderProfileId,
 } from "./model-catalog";
 
-export type ModelTier = "budget" | "standard" | "premium";
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
 export type OpenAIRequestServiceTier = "flex" | "auto";
@@ -236,15 +234,6 @@ export function normalizeOpenAIRequestServiceTier(value: unknown): OpenAIRequest
   if (normalized === "flex") return "flex";
   if (normalized === "auto" || normalized === "standard" || normalized === "default") return "auto";
   return null;
-}
-
-export function resolveModelForTier(
-  tier: string | null | undefined,
-): string {
-  const normalized = tier === "premium" || tier === "standard" || tier === "budget"
-    ? tier
-    : "budget";
-  return DEFAULT_TIER_MODELS[normalized];
 }
 
 export function createLlmClientFromEnv(

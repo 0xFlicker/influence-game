@@ -235,7 +235,7 @@ describe("durable run inspection read model", () => {
       status: "waiting",
       config: {
         maxRounds: 5,
-        modelTier: "budget",
+        modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
         visibility: "private",
         viewerMode: "speedrun",
         timers: {

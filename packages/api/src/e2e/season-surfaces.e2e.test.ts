@@ -70,7 +70,9 @@ beforeAll(async () => {
   await testDb.db.insert(schema.games).values({
     id: gameId,
     slug: gameSlug,
-    config: JSON.stringify({ modelTier: "budget" }),
+    config: JSON.stringify({
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+    }),
     status: "completed",
     trackType: "free",
     seasonId: season.id,

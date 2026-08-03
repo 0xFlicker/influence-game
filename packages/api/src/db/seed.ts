@@ -6,7 +6,7 @@
  */
 
 import { randomUUID } from "crypto";
-import { DEFAULT_MODEL_ID } from "@influence/engine";
+import { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "@influence/engine";
 import { runMigrations } from "./migrate.js";
 import { schema } from "./index.js";
 
@@ -85,6 +85,10 @@ const defaultConfig = {
   maxRounds: 10,
   minPlayers: 5,
   maxPlayers: 12,
+  modelSelection: {
+    catalogId: DEFAULT_MODEL_CATALOG_ID,
+    reasoningPolicy: "action-policy",
+  },
 };
 
 await db.insert(schema.games)

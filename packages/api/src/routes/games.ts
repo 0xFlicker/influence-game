@@ -127,10 +127,7 @@ export function createGameRoutes(
 
     const {
       playerCount,
-      modelTier,
       modelSelection,
-      modelCatalogId,
-      reasoningPolicy,
       personaPool,
       fillStrategy,
       timingPreset,
@@ -187,32 +184,23 @@ export function createGameRoutes(
       ? viewerMode
       : "speedrun"; // Default for admin-created games
 
-    const resolvedModelTier = modelTier ?? "budget";
     const normalizedServiceTier = serviceTier == null
       ? "flex"
       : normalizeOpenAIRequestServiceTier(serviceTier);
     if (!normalizedServiceTier) {
       return c.json({ error: "Invalid service tier" }, 400);
     }
-    const rawModelSelection = modelSelection ?? (
-      typeof modelCatalogId === "string"
-        ? {
-            catalogId: modelCatalogId,
-            ...(reasoningPolicy !== undefined && { reasoningPolicy }),
-          }
-        : undefined
-    );
-    const normalizedModelSelection = normalizeGameModelSelection(rawModelSelection);
-    if (rawModelSelection && !normalizedModelSelection) {
+    const normalizedModelSelection = normalizeGameModelSelection(modelSelection);
+    if (!normalizedModelSelection) {
       return c.json({ error: "Invalid model selection" }, 400);
     }
     let resolvedModelSelection;
     try {
-      resolvedModelSelection = resolveModelSelection(normalizedModelSelection, resolvedModelTier);
+      resolvedModelSelection = resolveModelSelection(normalizedModelSelection);
     } catch {
       return c.json({ error: "Unknown model selection" }, 400);
     }
-    if (normalizedModelSelection && resolvedModelSelection.model.evaluationStatus !== "game-ready") {
+    if (resolvedModelSelection.model.evaluationStatus !== "game-ready") {
       return c.json({ error: "Model is not game-ready" }, 400);
     }
 
@@ -221,7 +209,6 @@ export function createGameRoutes(
       maxRounds: computedMaxRounds,
       minPlayers,
       maxPlayers,
-      modelTier: resolvedModelTier,
       modelSelection: {
         catalogId: resolvedModelSelection.catalogId,
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
@@ -309,7 +296,6 @@ export function createGameRoutes(
         phaseTimeRemaining: null,
         alivePlayers: watchState.counts.alivePlayers,
         eliminatedPlayers: watchState.counts.eliminatedPlayers,
-        modelTier: config.modelTier ?? "budget",
         modelLabel: modelLabelFromConfig(config),
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
@@ -383,7 +369,6 @@ export function createGameRoutes(
         ...(player.avatarUrl && { avatarUrl: player.avatarUrl }),
         currentAgent: player.currentAgent,
       })),
-      modelTier: config.modelTier ?? "budget",
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
@@ -508,7 +493,6 @@ export function createGameRoutes(
     const gameConfig = JSON.parse(game.config);
     const resolvedModelSelection = resolveModelSelection(
       normalizeGameModelSelection(gameConfig.modelSelection),
-      gameConfig.modelTier,
     );
     const agentModel = resolvedModelSelection.modelId;
 
@@ -593,7 +577,6 @@ export function createGameRoutes(
     const config = JSON.parse(game.config);
     const resolvedModelSelection = resolveModelSelection(
       normalizeGameModelSelection(config.modelSelection),
-      config.modelTier,
     );
     const agentModel = resolvedModelSelection.modelId;
 
@@ -975,7 +958,7 @@ export function createGameRoutes(
           winner: isWinner,
           rounds: result?.roundsPlayed ?? 0,
           completedAt: game.endedAt ?? game.createdAt,
-          modelTier: config.modelTier ?? "budget",
+          modelLabel: modelLabelFromConfig(config),
         };
       })))
       .filter(Boolean);

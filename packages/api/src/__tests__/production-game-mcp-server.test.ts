@@ -1715,7 +1715,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     await db.insert(schema.games).values({
       id: "mcp-revision-waiting",
       slug: "mcp-revision-waiting",
-      config: JSON.stringify({ modelTier: "budget" }),
+      config: JSON.stringify({
+        modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+      }),
       status: "waiting",
       trackType: "custom",
       minPlayers: 1,

@@ -166,7 +166,7 @@ describe("queue enrollment service", () => {
     expect(read.openGames.map((game) => game.id)).toEqual(["open-1"]);
     expect(read.openGames[0]!.slotsRemaining).toBe(3);
     expect(read.openGames[0]!.queueType).toBe("open-game");
-    expect(read.openGames[0]!.ruleset.modelTier).toBe("budget");
+    expect(read.openGames[0]!.ruleset).not.toHaveProperty("modelTier");
     expect(read.openGames[0]!.ruleset.modelLabel.length).toBeGreaterThan(0);
   });
 
@@ -221,7 +221,10 @@ describe("queue enrollment service", () => {
     });
     expect(revision.fingerprint).toBe(fingerprintEffectiveRuntimeSnapshot(
       resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
-        modelTier: "budget",
+        modelSelection: {
+          catalogId: "openai:gpt-5.6-luna",
+          reasoningPolicy: "action-policy",
+        },
         temperature: persistedConfig.temperature,
       }),
     ));
@@ -504,7 +507,7 @@ async function insertGame(
     id: input.id,
     slug: input.slug,
     config: JSON.stringify({
-      modelTier: "budget",
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
       maxRounds: 10,
       visibility: "public",
       viewerMode: "speedrun",

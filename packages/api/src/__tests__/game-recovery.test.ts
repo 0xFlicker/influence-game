@@ -57,7 +57,7 @@ const recoveryConfig: GameConfig & Record<string, unknown> = {
   maxRounds: 1,
   minPlayers: 4,
   maxPlayers: 4,
-  modelTier: "budget",
+  modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
   visibility: "private",
   viewerMode: "speedrun",
   enableHouseStrategyBible: false,

@@ -535,7 +535,7 @@ describe("Game lifecycle integration", () => {
       status: "in_progress",
       config: {
         maxRounds: 6,
-        modelTier: "budget",
+        modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
         visibility: "public",
         viewerMode: "speedrun",
       },

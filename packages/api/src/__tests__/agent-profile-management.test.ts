@@ -117,7 +117,10 @@ describe("agent profile management service", () => {
     await db.insert(schema.games).values({
       id: "open-game-1",
       slug: "open-green-rune",
-      config: JSON.stringify({ modelTier: "budget", maxPlayers: 4 }),
+      config: JSON.stringify({
+        modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+        maxPlayers: 4,
+      }),
       status: "in_progress",
       trackType: "custom",
       minPlayers: 4,

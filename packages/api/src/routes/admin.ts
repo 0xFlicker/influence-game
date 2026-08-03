@@ -72,6 +72,10 @@ import {
   userEmailAccessProjection,
   userEmailProjection,
 } from "../services/user-email-policy.js";
+import {
+  normalizeGameModelSelection,
+  resolveModelSelection,
+} from "@influence/engine";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -741,7 +745,6 @@ export function createAdminRoutes(
         phaseTimeRemaining: null,
         alivePlayers: players.length,
         eliminatedPlayers: 0,
-        modelTier: config.modelTier ?? "budget",
         modelSelection: config.modelSelection,
         modelLabel: modelLabelFromConfig(config),
         visibility: config.visibility ?? "public",
@@ -1136,6 +1139,18 @@ export function createAdminRoutes(
     const importedResult = exportData.result as Record<string, unknown> | null;
     const importedMemories = (exportData.agentMemories ?? []) as Array<Record<string, unknown>>;
 
+    let importedConfig: Record<string, unknown>;
+    try {
+      importedConfig = JSON.parse(importedGame.config as string) as Record<string, unknown>;
+      const selection = normalizeGameModelSelection(importedConfig.modelSelection);
+      const resolved = resolveModelSelection(selection);
+      if (resolved.model.evaluationStatus !== "game-ready") {
+        return c.json({ error: "Imported game model is not game-ready" }, 400);
+      }
+    } catch {
+      return c.json({ error: "Imported game requires a valid modelSelection" }, 400);
+    }
+
     // Resolve slug collision
     let slug = importedGame.slug as string | null;
     if (slug) {
@@ -1243,7 +1258,7 @@ export function createAdminRoutes(
         await tx.insert(schema.games).values({
           id: newGameId,
           slug,
-          config: importedGame.config as string,
+          config: JSON.stringify(importedConfig),
           status: importedGame.status as "waiting" | "in_progress" | "completed" | "cancelled",
           trackType: importedGame.trackType as "custom" | "free",
           minPlayers: importedGame.minPlayers as number,

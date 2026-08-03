@@ -336,7 +336,9 @@ async function createRatedFixture(options: {
   await db.insert(schema.games).values({
     id: gameId,
     slug: `rated-${gameId}`,
-    config: JSON.stringify({ modelTier: "budget" }),
+    config: JSON.stringify({
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+    }),
     status: "in_progress",
     trackType: "free",
     seasonId: season.id,

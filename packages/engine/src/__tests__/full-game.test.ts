@@ -20,7 +20,8 @@ import { DEFAULT_CONFIG } from "../types";
 import { Phase } from "../types";
 import type { GameConfig } from "../types";
 import { createUUID } from "../game-state";
-import { createLlmClientFromEnv, resolveModelForTier } from "../llm-client";
+import { createLlmClientFromEnv } from "../llm-client";
+import { DEFAULT_MODEL_ID } from "../model-defaults";
 
 // ---------------------------------------------------------------------------
 // Test configuration
@@ -90,7 +91,7 @@ describe("Full Influence Game", () => {
       }
 
       const openai = llmConfig.client;
-      const model = process.env.INFLUENCE_TEST_MODEL ?? resolveModelForTier("budget");
+      const model = process.env.INFLUENCE_TEST_MODEL ?? DEFAULT_MODEL_ID;
 
       // Create 4 agents with distinct personalities
       const agents = [
@@ -155,7 +156,7 @@ describe("Full Influence Game", () => {
       }
 
       const openai = llmConfig.client;
-      const model = process.env.INFLUENCE_TEST_MODEL ?? resolveModelForTier("budget");
+      const model = process.env.INFLUENCE_TEST_MODEL ?? DEFAULT_MODEL_ID;
       const agents = createAgentCast(openai, model);
       const houseInterviewer = new LLMHouseInterviewer(openai, model);
 

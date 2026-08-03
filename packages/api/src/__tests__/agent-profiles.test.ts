@@ -1189,7 +1189,11 @@ describe("Agent Profile API", () => {
 
       const gameRes = await app.request(
         "/api/games",
-        jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
+        jsonReq({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+          timingPreset: "fast",
+        }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
 
@@ -1226,7 +1230,11 @@ describe("Agent Profile API", () => {
       const { id: profileId } = await createRes.json() as { id: string };
       const gameRes = await app.request(
         "/api/games",
-        jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
+        jsonReq({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+          timingPreset: "fast",
+        }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
       expect((await app.request(
@@ -1269,7 +1277,11 @@ describe("Agent Profile API", () => {
 
       const gameRes = await app.request(
         "/api/games",
-        jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
+        jsonReq({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+          timingPreset: "fast",
+        }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
 
@@ -1293,7 +1305,11 @@ describe("Agent Profile API", () => {
     test("rejects join with non-existent profile", async () => {
       const gameRes = await app.request(
         "/api/games",
-        jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
+        jsonReq({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+          timingPreset: "fast",
+        }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
 
@@ -1313,7 +1329,11 @@ describe("Agent Profile API", () => {
 
       const gameRes = await app.request(
         "/api/games",
-        jsonReq({ playerCount: 6, modelTier: "budget", timingPreset: "fast" }, tokenA),
+        jsonReq({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+          timingPreset: "fast",
+        }, tokenA),
       );
       const { id: gameId } = await gameRes.json() as { id: string };
 

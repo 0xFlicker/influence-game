@@ -297,7 +297,9 @@ async function insertWaitingFreeGame(db: DrizzleDB): Promise<string> {
   await db.insert(schema.games).values({
     id,
     slug: `game-${id}`,
-    config: JSON.stringify({ modelTier: "budget" }),
+    config: JSON.stringify({
+      modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+    }),
     status: "waiting",
     trackType: "free",
     minPlayers: 2,

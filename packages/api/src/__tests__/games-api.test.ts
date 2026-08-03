@@ -128,7 +128,10 @@ async function createTestGame(
     json(
       {
         playerCount: 6,
-        modelTier: "budget",
+        modelSelection: {
+          catalogId: "openai:gpt-5.6-luna",
+          reasoningPolicy: "action-policy",
+        },
         personaPool: ["honest", "strategic", "deceptive"],
         fillStrategy: "balanced",
         timingPreset: "fast",
@@ -371,7 +374,10 @@ describe("Game REST API", () => {
         json(
           {
             playerCount: 6,
-            modelTier: "budget",
+            modelSelection: {
+              catalogId: "openai:gpt-5.6-luna",
+              reasoningPolicy: "action-policy",
+            },
             timingPreset: "standard",
             maxRounds: 10,
             visibility: "public",
@@ -403,12 +409,28 @@ describe("Game REST API", () => {
       expect(transcriptState.terminalState).toBe("unset");
       expect(transcriptState.prefixDigest).toMatch(/^sha256:[0-9a-f]{64}$/);
       const config = JSON.parse(game.config);
-      expect(config.modelTier).toBe("budget");
+      expect(config).not.toHaveProperty("modelTier");
       expect(config.modelSelection).toEqual({
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
       });
       expect(config.serviceTier).toBe("flex");
+    });
+
+    test("rejects tier-only and flat model aliases", async () => {
+      const tierOnly = await app.request(
+        "/api/games",
+        json({ playerCount: 6, modelTier: "budget" }, adminToken),
+      );
+      expect(tierOnly.status).toBe(400);
+      expect(await tierOnly.json()).toEqual({ error: "Invalid model selection" });
+
+      const flatAlias = await app.request(
+        "/api/games",
+        json({ playerCount: 6, modelCatalogId: "openai:gpt-5.6-luna" }, adminToken),
+      );
+      expect(flatAlias.status).toBe(400);
+      expect(await flatAlias.json()).toEqual({ error: "Invalid model selection" });
     });
 
     test("accepts game-ready Katana model selection", async () => {
@@ -468,7 +490,11 @@ describe("Game REST API", () => {
     test("persists explicit auto opt-out only for hosted OpenAI", async () => {
       const res = await app.request(
         "/api/games",
-        json({ playerCount: 6, serviceTier: "auto" }, adminToken),
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          serviceTier: "auto",
+        }, adminToken),
       );
       expect(res.status).toBe(201);
       const body = (await res.json()) as { id: string };
@@ -498,7 +524,11 @@ describe("Game REST API", () => {
     test("persists a valid standard-tier opt-out and rejects invalid service tiers", async () => {
       const accepted = await app.request(
         "/api/games",
-        json({ playerCount: 6, serviceTier: "auto" }, adminToken),
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          serviceTier: "auto",
+        }, adminToken),
       );
       expect(accepted.status).toBe(201);
       const acceptedBody = (await accepted.json()) as { id: string };
@@ -510,7 +540,11 @@ describe("Game REST API", () => {
 
       const rejected = await app.request(
         "/api/games",
-        json({ playerCount: 6, serviceTier: "priority" }, adminToken),
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          serviceTier: "priority",
+        }, adminToken),
       );
       expect(rejected.status).toBe(400);
       expect(await rejected.json()).toEqual({ error: "Invalid service tier" });
@@ -522,7 +556,7 @@ describe("Game REST API", () => {
         json(
           {
             playerCount: 6,
-            modelCatalogId: "katana:q-naifu-a3b",
+            modelSelection: { catalogId: "katana:q-naifu-a3b" },
           },
           adminToken,
         ),
@@ -562,7 +596,11 @@ describe("Game REST API", () => {
     test("creates game with auto maxRounds", async () => {
       const res = await app.request(
         "/api/games",
-        json({ playerCount: 8, maxRounds: "auto" }, adminToken),
+        json({
+          playerCount: 8,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          maxRounds: "auto",
+        }, adminToken),
       );
 
       expect(res.status).toBe(201);
@@ -844,7 +882,13 @@ describe("Game REST API", () => {
       for (const fixture of [pending, repair, legacy]) {
         await db.update(schema.games).set({
           status: "suspended",
-          config: JSON.stringify({ errorInfo: "private runner failure detail" }),
+          config: JSON.stringify({
+            errorInfo: "private runner failure detail",
+            modelSelection: {
+              catalogId: "openai:gpt-5.6-luna",
+              reasoningPolicy: "action-policy",
+            },
+          }),
         }).where(eq(schema.games.id, fixture.id));
       }
       for (const [fixture, state] of [

@@ -1,5 +1,4 @@
-import type { OpenAIReasoningSummaryMode, LlmToolChoiceMode, ModelTier } from "./llm-client";
-import { DEFAULT_MODEL_ID } from "./model-defaults";
+import type { OpenAIReasoningSummaryMode, LlmToolChoiceMode } from "./llm-client";
 
 export { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "./model-defaults";
 
@@ -38,7 +37,6 @@ export interface ModelCatalogEntry {
   capabilities: ModelRequestCapabilities;
   preferredToolChoiceMode?: LlmToolChoiceMode;
   notes?: string;
-  legacyTier?: ModelTier;
 }
 
 export interface ResolvedModelSelection {
@@ -56,12 +54,6 @@ export interface GameModelSelection {
 
 export const MODEL_REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export const MODEL_REASONING_POLICIES = ["action-policy", ...MODEL_REASONING_EFFORTS] as const;
-
-export const DEFAULT_TIER_MODELS: Record<ModelTier, string> = {
-  budget: DEFAULT_MODEL_ID,
-  standard: "gpt-5-mini",
-  premium: "gpt-5.4-mini",
-};
 
 export const PROVIDER_PROFILES: Record<ProviderProfileId, ProviderProfile> = {
   openai: {
@@ -148,7 +140,6 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
     capabilities: OPENAI_GPT5_CAPABILITIES,
-    legacyTier: "budget",
   },
   {
     id: "openai:gpt-5-mini",
@@ -159,7 +150,6 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
     capabilities: OPENAI_GPT5_CAPABILITIES,
-    legacyTier: "standard",
   },
   {
     id: "openai:gpt-5.4-nano",
@@ -180,7 +170,6 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
     capabilities: OPENAI_GPT54_CAPABILITIES,
-    legacyTier: "premium",
   },
   {
     id: "openai:gpt-5.6-luna",
@@ -288,11 +277,7 @@ export function normalizeReasoningPolicy(value: unknown): ModelReasoningPolicy |
 export function normalizeGameModelSelection(value: unknown): GameModelSelection | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const catalogId = typeof record.catalogId === "string"
-    ? record.catalogId
-    : typeof record.modelCatalogId === "string"
-      ? record.modelCatalogId
-      : undefined;
+  const catalogId = typeof record.catalogId === "string" ? record.catalogId : undefined;
   if (!catalogId) return null;
   const hasReasoningPolicy = Object.prototype.hasOwnProperty.call(record, "reasoningPolicy");
   const reasoningPolicy = hasReasoningPolicy
@@ -311,13 +296,6 @@ export function modelCatalogEntryById(catalogId: string): ModelCatalogEntry | un
 
 export function providerProfileById(profileId: ProviderProfileId): ProviderProfile {
   return PROVIDER_PROFILES[profileId];
-}
-
-export function tierToCatalogId(tier: string | null | undefined): string {
-  const normalized: ModelTier = tier === "premium" || tier === "standard" || tier === "budget"
-    ? tier
-    : "budget";
-  return `openai:${DEFAULT_TIER_MODELS[normalized]}`;
 }
 
 export function resolveCatalogIdForModel(
@@ -362,19 +340,18 @@ export function formatResolvedModelSelectionLabel(selection: ResolvedModelSelect
 
 export function formatGameModelSelectionLabel(
   selection: GameModelSelection | null | undefined,
-  legacyTier: string | null | undefined,
 ): string {
-  return formatResolvedModelSelectionLabel(resolveModelSelection(selection, legacyTier));
+  return formatResolvedModelSelectionLabel(resolveModelSelection(selection));
 }
 
 export function resolveModelSelection(
   selection: GameModelSelection | null | undefined,
-  legacyTier: string | null | undefined,
 ): ResolvedModelSelection {
-  const catalogId = selection?.catalogId ?? tierToCatalogId(legacyTier);
-  const entry = selection?.catalogId
-    ? modelCatalogEntryById(selection.catalogId)
-    : modelCatalogEntryById(catalogId);
+  if (!selection) {
+    throw new Error("Game model selection is required");
+  }
+  const catalogId = selection.catalogId;
+  const entry = modelCatalogEntryById(catalogId);
   if (!entry) {
     throw new Error(`Unknown model catalog entry: ${catalogId}`);
   }
