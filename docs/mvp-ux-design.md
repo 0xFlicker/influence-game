@@ -92,7 +92,7 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 |:------|:-----|:-----------|:--------|
 | `playerCount` | `4 \| 6 \| 8 \| 10 \| 12` | required | 6 |
 | `slotType` | `all_ai \| mixed` | required | `all_ai` |
-| `modelTier` | `budget \| standard \| premium` | required | `budget` |
+| `modelSelection` | `{ catalogId: string; reasoningPolicy: "action-policy" \| "low" \| "medium" \| "high" }` | required | `{ catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "medium" }` |
 | `personaPool` | `string[]` | ≥ 2 selected | all 10 |
 | `fillStrategy` | `random \| balanced` | required | `balanced` |
 | `timingPreset` | `fast \| standard \| slow \| custom` | required | `standard` |
@@ -164,7 +164,7 @@ interface GameSummary {
   phaseTimeRemaining: number | null; // ms
   alivePlayers: number;
   eliminatedPlayers: number;
-  modelTier: "budget" | "standard" | "premium";
+  modelLabel: string;
   finalists?: [string, string]; // names, endgame only
 }
 ```
@@ -437,9 +437,9 @@ Players choose the archetype that matches how they *want* their agent to play. T
 
 ```
 Admin clicks "Create Game"
-  → POST /api/games { playerCount, modelTier, personaPool, timing, visibility }
+  → POST /api/games { playerCount, modelSelection: { catalogId, reasoningPolicy }, personaPool, timing, visibility }
   → Server: validate config, generate player slots, persist game (status: waiting)
-  → Response: { gameId, gameNumber }
+  → Response: { id, slug }
   → Admin redirect → /admin/games/:id
   → If all_ai: Server immediately assigns AI agents to all slots
   → Admin clicks "Start" → POST /api/games/:id/start
