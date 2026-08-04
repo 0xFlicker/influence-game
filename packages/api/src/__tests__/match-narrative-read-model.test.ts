@@ -248,6 +248,72 @@ describe("match-narrative-read-model dual surface", () => {
     expect(empty.pageSize).toBe(0);
   });
 
+  test("owner learning narrows cognition to one owned Profile without erasing room dialogue", async () => {
+    const fixture = await seedNarrativeGame(db);
+    const reviewed = await insertOwnedProfile(db, fixture.ownerUserId, "Reviewed learner");
+    const otherOwned = await insertOwnedProfile(db, fixture.ownerUserId, "Other owned learner");
+    await db.update(schema.gamePlayers).set({
+      agentProfileId: reviewed.agentProfileId,
+      agentRevisionId: reviewed.revisionId,
+    }).where(eq(schema.gamePlayers.id, fixture.playerA));
+    const otherOwnedPlayerId = randomUUID();
+    await db.insert(schema.gamePlayers).values({
+      id: otherOwnedPlayerId,
+      gameId: fixture.gameId,
+      userId: fixture.ownerUserId,
+      agentProfileId: otherOwned.agentProfileId,
+      agentRevisionId: otherOwned.revisionId,
+      persona: JSON.stringify({ name: "Carol", personality: "careful" }),
+      agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
+    });
+    await insertDialogue(db, {
+      gameId: fixture.gameId,
+      sequence: 1,
+      speakerPlayerId: fixture.playerB,
+      text: "public room response remains visible",
+      timestamp: 1000,
+    });
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: fixture.playerA,
+      actorUserId: fixture.ownerUserId,
+      actorAgentProfileId: reviewed.agentProfileId,
+      artifactType: "thinking",
+      payload: { thinking: "reviewed profile cognition" },
+      createdAt: "2026-07-21T10:00:01.000Z",
+    });
+    await insertCognition(db, {
+      id: randomUUID(),
+      gameId: fixture.gameId,
+      actorPlayerId: otherOwnedPlayerId,
+      actorUserId: fixture.ownerUserId,
+      actorAgentProfileId: otherOwned.agentProfileId,
+      artifactType: "thinking",
+      payload: { thinking: "other owned profile cognition" },
+      createdAt: "2026-07-21T10:00:02.000Z",
+    });
+
+    const page = await readMatchNarrativePage(db, {
+      gameIdOrSlug: fixture.gameId,
+      preset: "full_cognition",
+      schemaVersion: 2,
+      includeUnpaired: true,
+      limit: 50,
+    }, {
+      subjectUserId: fixture.ownerUserId,
+      surface: "subject_owner",
+      reviewedAgentProfileId: reviewed.agentProfileId,
+      cursorSecret: CURSOR_SECRET,
+    });
+    expect(page.ok).toBe(true);
+    if (!page.ok) return;
+    const serialized = JSON.stringify(page);
+    expect(serialized).toContain("public room response remains visible");
+    expect(serialized).toContain("reviewed profile cognition");
+    expect(serialized).not.toContain("other owned profile cognition");
+  });
+
   test("creator-only is denied on owner surface", async () => {
     const creatorId = randomUUID();
     await db.insert(schema.users).values({
@@ -1306,6 +1372,7 @@ async function insertCognition(
     gameId: string;
     actorPlayerId: string;
     actorUserId?: string;
+    actorAgentProfileId?: string;
     artifactType: "thinking" | "strategy";
     payload: Record<string, unknown>;
     createdAt: string;
@@ -1322,6 +1389,7 @@ async function insertCognition(
     actorRole: "player",
     actorPlayerId: params.actorPlayerId,
     actorUserId: params.actorUserId,
+    actorAgentProfileId: params.actorAgentProfileId,
     action: params.action ?? "mingle-turn",
     phase: params.phase ?? "LOBBY",
     round: params.round ?? 1,
@@ -1331,6 +1399,35 @@ async function insertCognition(
     visibilityStatus: "active",
     createdAt: params.createdAt,
   });
+}
+
+async function insertOwnedProfile(
+  db: DrizzleDB,
+  ownerUserId: string,
+  name: string,
+): Promise<{ agentProfileId: string; revisionId: string }> {
+  const agentProfileId = randomUUID();
+  const revisionId = randomUUID();
+  await db.insert(schema.agentProfiles).values({
+    id: agentProfileId,
+    userId: ownerUserId,
+    name: `${name} ${agentProfileId.slice(0, 8)}`,
+    personality: "careful",
+  });
+  await db.insert(schema.agentRevisions).values({
+    id: revisionId,
+    agentProfileId,
+    ordinal: 1,
+    trigger: "profile_create",
+    magnitude: "initial",
+    fingerprint: `sha256:${revisionId}`,
+    behaviorSnapshot: {},
+    effectiveRuntimeSnapshot: {},
+    revisionPolicyVersion: "agent-revision-v2",
+  });
+  await db.update(schema.agentProfiles).set({ currentRevisionId: revisionId })
+    .where(eq(schema.agentProfiles.id, agentProfileId));
+  return { agentProfileId, revisionId };
 }
 
 function makeVoteCastEvent(params: {
