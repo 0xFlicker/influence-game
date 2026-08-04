@@ -98,14 +98,13 @@ Later performance is observational. Competition receipts stamp the exact `agentR
 
 ## Deployment and operations runbook
 
-Live model generation is off unless the deployment explicitly sets:
+Live model generation is on by default when the deployment configures:
 
 ```text
-INFLUENCE_OWNER_LEARNING_GENERATION_ENABLED=true
 OPENAI_API_KEY=<configured secret>
 ```
 
-Both are required for paid admission and worker startup. There is no per-review live operator allowance, staged operator approval, or intermediate production deployment. Before enabling the flag in the one intended deployment, run the complete automated/browser/cross-surface gates and one explicitly approved frozen paid quality case. Evaluate evidence faithfulness, recommendation usefulness and restraint, non-causal framing, latency, token/cache behavior, capacity path, and sourced cost. Do not run a paid case without explicit approval.
+The provider credential is required for paid admission and worker startup. Set `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true` to disable live generation. There is no per-review live operator allowance, staged operator approval, or intermediate production deployment. Before deploying with live generation available, run the complete automated/browser/cross-surface gates and one explicitly approved frozen paid quality case. Evaluate evidence faithfulness, recommendation usefulness and restraint, non-causal framing, latency, token/cache behavior, capacity path, and sourced cost. Do not run a paid case without explicit approval.
 
 Predeployment integrity checks should prove:
 
@@ -120,10 +119,10 @@ Predeployment integrity checks should prove:
 
 Operational diagnosis order:
 
-1. Confirm the deployment flag and provider credential; disabled generation should leave deterministic input/evidence reads healthy and reject new paid admission before row creation.
+1. Confirm the disable flag and provider credential; disabled generation should leave deterministic input/evidence reads healthy and reject new paid admission before row creation.
 2. Inspect the admin review lifecycle, stage, safe failure, call ordinals, tier path, Flex 429 count, token receipt, and cost provenance.
 3. Retry only when the review reports retryable and has lifetime budget remaining. Never delete ambiguous call rows or reset counters to force a replay.
 4. For content quality, compare the validated result with the server-minted evidence refs and established producer/admin source tools. Do not search analytics or cost rows for prompt/provider bodies; they intentionally are not there.
-5. During an incident, redeploy with `INFLUENCE_OWNER_LEARNING_GENERATION_ENABLED` absent or false. Keep deterministic reads, existing review reads, applications, resolutions, and admin diagnosis available. Do not down-migrate populated review tables or delete purchased reviews.
+5. During an incident, redeploy with `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true`. Keep deterministic reads, existing review reads, applications, resolutions, and admin diagnosis available. Do not down-migrate populated review tables or delete purchased reviews.
 
 The initial worker is globally single-concurrency. Before enabling multiple workers or replicas, preserve the existing lease-loss requirement: a failed active-lease compare-and-swap must abort that worker's local provider request/backoff controller and prevent later transmissions or checkpoint writes.

@@ -8,7 +8,7 @@ export function ownerLearningGenerationEnabled(): boolean {
 }
 
 export function ownerLearningDeploymentEnabled(): boolean {
-  return process.env.INFLUENCE_OWNER_LEARNING_GENERATION_ENABLED?.trim().toLowerCase() === "true";
+  return process.env.INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED?.trim().toLowerCase() !== "true";
 }
 
 export function publicOwnerLearningPreflight(

@@ -283,7 +283,7 @@ Observability remains deliberately split:
 - the authorized admin detail reads the already-validated review result directly so administrators can inspect recommendation quality and exact-proposal acceptance, but it explicitly excludes checkpoints, transport bodies, raw provider output, prompts, and bulk source evidence;
 - later Daily Free results are joined by the exact `agentRevisionId` stamped on each competition receipt and labeled as correlation, never causal proof.
 
-Live generation is a deployment decision. `INFLUENCE_OWNER_LEARNING_GENERATION_ENABLED=true` and a configured `OPENAI_API_KEY` are both required before paid admission or the worker can run. When disabled, input listing, credit derivation, deterministic facts, preflight, existing-review reads, resolutions, applications, and admin diagnosis remain available; new paid starts return a typed unavailable result without creating a review row or consuming credit.
+Live generation is on by default when `OPENAI_API_KEY` is configured. Set `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true` to disable paid admission and worker startup. When disabled, input listing, credit derivation, deterministic facts, preflight, existing-review reads, resolutions, applications, and admin diagnosis remain available; new paid starts return a typed unavailable result without creating a review row or consuming credit.
 
 ## API-Backed Cognitive Artifacts
 
