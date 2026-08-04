@@ -1,0 +1,438 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ideation: Influence Next Product Slice</title>
+  <style>
+    :root {
+      --void: #080c11;
+      --surface: #101720;
+      --raised: #17212c;
+      --overlay: #1d2935;
+      --text: #eef3f7;
+      --secondary: #c5ced7;
+      --muted: #94a1af;
+      --border: #2b3947;
+      --border-strong: #46596d;
+      --gold: #efbd67;
+      --gold-soft: #382b16;
+      --gold-text: #f7dfb7;
+      --cyan: #80d4e5;
+      --cyan-soft: #14343b;
+      --cyan-text: #c9f3fa;
+      --green: #79d7a6;
+      --green-soft: #15372a;
+      --green-text: #c8f3db;
+      --violet: #bda8f4;
+      --violet-soft: #2b2540;
+      --violet-text: #e6ddff;
+      --red: #f0a49e;
+      --red-soft: #3a2122;
+      --red-text: #ffd8d4;
+      --shadow: 0 22px 60px rgba(0, 0, 0, .30);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background:
+        radial-gradient(circle at 84% 0%, rgba(60, 130, 149, .13), transparent 30rem),
+        var(--void);
+      font: 15px/1.65 Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    a { color: var(--cyan); }
+    code, pre { font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+    strong { color: inherit; }
+    .page { width: min(940px, calc(100% - 2rem)); margin: 0 auto; padding: 4rem 0 3rem; }
+    .hero h1 {
+      max-width: 12ch;
+      margin: .45rem 0 1rem;
+      font-size: clamp(2.55rem, 7vw, 5.2rem);
+      line-height: .96;
+      letter-spacing: -.055em;
+      font-weight: 720;
+    }
+    .eyebrow {
+      color: var(--gold);
+      font-size: .72rem;
+      font-weight: 800;
+      letter-spacing: .15em;
+      text-transform: uppercase;
+    }
+    .dek { max-width: 72ch; color: #d3dbe2; font-size: 1.12rem; }
+    .meta, .stats { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: 1.25rem; }
+    .pill {
+      display: inline-flex;
+      gap: .35rem;
+      align-items: center;
+      padding: .38rem .72rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: #cbd4dd;
+      font-size: .79rem;
+    }
+    .pill b { color: var(--text); }
+    .recommendation {
+      max-width: 76ch;
+      margin-top: 1.5rem;
+      padding: 1rem 1.1rem;
+      border: 1px solid #675129;
+      border-radius: 15px;
+      background: var(--gold-soft);
+      color: var(--gold-text);
+    }
+    nav {
+      margin: 2rem 0;
+      padding: 1rem 1.15rem;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: var(--surface);
+    }
+    nav ul, .jump-list { display: flex; flex-wrap: wrap; gap: .55rem 1rem; margin: .45rem 0 0; padding: 0; list-style: none; }
+    section { margin-top: 3.6rem; }
+    h2 { margin: 0 0 1rem; font-size: 1.72rem; letter-spacing: -.027em; }
+    h3 { margin: .2rem 0; font-size: 1.3rem; line-height: 1.25; letter-spacing: -.02em; }
+    .prose { max-width: 74ch; color: var(--secondary); }
+    .ground-grid, .axis-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .85rem; }
+    .panel, .axis {
+      padding: 1.05rem;
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      background: var(--surface);
+    }
+    .panel h3 { color: var(--gold); font-size: 1rem; }
+    .panel p { margin: .45rem 0 0; color: var(--secondary); }
+    .axis .n { display: block; margin-bottom: .2rem; color: var(--gold); font-size: .72rem; font-weight: 800; letter-spacing: .1em; }
+    .jump-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .55rem; }
+    .jump-list a {
+      display: block;
+      padding: .72rem .84rem;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+      text-decoration: none;
+    }
+    .idea {
+      margin-top: 1rem;
+      padding: 1.25rem;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: var(--shadow);
+    }
+    .idea-head { display: flex; gap: .85rem; align-items: flex-start; }
+    .rank {
+      display: grid;
+      flex: 0 0 auto;
+      width: 2.2rem;
+      height: 2.2rem;
+      place-items: center;
+      border: 1px solid #725929;
+      border-radius: 50%;
+      background: var(--gold-soft);
+      color: var(--gold);
+      font-weight: 900;
+    }
+    .idea > p { max-width: 76ch; color: #ccd5dd; }
+    .idea dl { display: grid; grid-template-columns: 8rem 1fr; gap: .55rem 1rem; margin: 1.1rem 0 0; }
+    .idea dt { color: var(--muted); font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+    .idea dd { margin: 0; color: var(--secondary); }
+    .idea .confidence { color: var(--green); }
+    .diagram {
+      margin: 1rem 0;
+      padding: .75rem;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      background: #0c131a;
+    }
+    .diagram svg { display: block; width: 100%; height: auto; min-width: 700px; }
+    .diagram text { fill: var(--text); font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    .diagram .small { fill: #afbac5; font-size: 12px; }
+    .diagram .label { font-size: 13px; font-weight: 760; }
+    .diagram .box { fill: var(--raised); stroke: #4b5d70; stroke-width: 1.5; }
+    .diagram .gold { fill: var(--gold-soft); stroke: var(--gold); stroke-width: 1.5; }
+    .diagram .cyan { fill: var(--cyan-soft); stroke: var(--cyan); stroke-width: 1.5; }
+    .diagram .green { fill: var(--green-soft); stroke: var(--green); stroke-width: 1.5; }
+    .diagram .violet { fill: var(--violet-soft); stroke: var(--violet); stroke-width: 1.5; }
+    .diagram .line { fill: none; stroke: #8292a1; stroke-width: 2; }
+    .diagram .dashed { stroke-dasharray: 7 6; }
+    .caption { margin: .55rem 0 0; color: var(--muted); font-size: .78rem; }
+    .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; }
+    table { width: 100%; border-collapse: collapse; background: var(--surface); }
+    th, td { padding: .72rem .82rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+    th { color: var(--gold); font-size: .71rem; letter-spacing: .08em; text-transform: uppercase; }
+    td { color: var(--secondary); }
+    tr:last-child td { border-bottom: 0; }
+    .composition-signal { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border); color: var(--muted); font-size: .78rem; }
+    @media (max-width: 720px) {
+      .page { padding-top: 2rem; }
+      .ground-grid, .axis-grid, .jump-list { grid-template-columns: 1fr; }
+      .idea dl { grid-template-columns: 1fr; }
+      .idea dt { margin-top: .35rem; }
+      .hero h1 { font-size: 3rem; }
+    }
+  </style>
+</head>
+<body>
+<main class="page">
+  <header class="hero">
+    <div class="eyebrow">Influence · Product ideation</div>
+    <h1>What to work on next</h1>
+    <p class="dek">Five grounded directions across the agent improvement loop, product analytics, consent, and format development. The set favors completing Influence’s promised owner loop before adding more rules.</p>
+    <div class="meta" aria-label="Document metadata">
+      <span class="pill"><b>Date</b> <time datetime="2026-08-03">2026-08-03</time></span>
+      <span class="pill"><b>Topic</b> influence-next-product-slice</span>
+      <span class="pill"><b>Focus</b> agent improvement, vote formats, analytics, and real cookie consent</span>
+      <span class="pill"><b>Mode</b> repo-grounded</span>
+    </div>
+    <div class="stats" aria-label="Idea counts">
+      <span class="pill"><b>45</b> generated directions</span>
+      <span class="pill"><b>20</b> consolidated candidates</span>
+      <span class="pill"><b>5</b> ranked survivors</span>
+      <span class="pill"><b>4</b> topic axes</span>
+    </div>
+    <div class="recommendation"><strong>Top recommendation:</strong> build the Owner Learning Loop v1. It is the closest thing to finishing the product thesis already encoded in <code>STRATEGY.md</code>: watch an agent, understand one meaningful moment, make a deliberate change, and see what that revision does next.</div>
+  </header>
+
+  <nav aria-label="Document sections">
+    <div class="eyebrow">Navigate</div>
+    <ul>
+      <li><a href="#grounding-context">Grounding Context</a></li>
+      <li><a href="#topic-axes">Topic Axes</a></li>
+      <li><a href="#ranked-ideas">Ranked Ideas</a></li>
+      <li><a href="#rejection-summary">Rejection Summary</a></li>
+    </ul>
+  </nav>
+
+  <section id="grounding-context">
+    <div class="eyebrow">What current main supports</div>
+    <h2>Grounding Context</h2>
+    <div class="ground-grid">
+      <article class="panel">
+        <h3>The product thesis is an owner loop</h3>
+        <p>Influence is positioned as persistent agent development plus spectating. The primary user first watches a personalized agent compete, then improves it; postgame edits and repeat participation are named product signals.</p>
+      </article>
+      <article class="panel">
+        <h3>The format kernel already has breadth</h3>
+        <p>Save-or-Eliminate, Vote Bomb, and Safety Bounce have canonical events, agent rules, Mingle context, simulation hooks, viewer choreography, and result presentation. The documented bar for more formats is distinct strategic behavior, not catalog size.</p>
+      </article>
+      <article class="panel">
+        <h3>The improvement foundation is mature</h3>
+        <p>Stable Agent Profiles, immutable Analytical Revisions, update receipts, waiting-seat propagation, roster freeze, owner reasoning access, and revision-separated season analysis exist. The missing product bridge is from one postgame insight to one deliberate edit and a visible next-revision learning state.</p>
+      </article>
+      <article class="panel">
+        <h3>Analytics and consent are absent together</h3>
+        <p>The web app has no general analytics SDK, consent preference store, or cookie banner. The privacy page mentions necessary cookies, analytics providers, and withdrawal, so optional browser tracking should arrive behind a runtime gate—not before it.</p>
+      </article>
+      <article class="panel">
+        <h3>Useful metrics already exist server-side</h3>
+        <p>Agents, joins, completions, eligible receipts, revisions, placements, and return participation can be derived from authoritative application data. Browser events are needed only for meaningful postgame inspection and viewer choices the server cannot see.</p>
+      </article>
+      <article class="panel">
+        <h3>Privacy and authority boundaries are firm</h3>
+        <p>Canonical events and projections remain the authority for game facts. Optional product telemetry must exclude prompts, reasoning, private dialogue, decision envelopes, provider payloads, and secrets; owner-private cognition can support a debrief without becoming analytics data.</p>
+      </article>
+    </div>
+  </section>
+
+  <section id="topic-axes">
+    <div class="eyebrow">Surface coverage</div>
+    <h2>Topic Axes</h2>
+    <div class="axis-grid">
+      <div class="axis"><span class="n">AXIS 1</span>Owner improvement loop</div>
+      <div class="axis"><span class="n">AXIS 2</span>Format portfolio and watchability</div>
+      <div class="axis"><span class="n">AXIS 3</span>Product engagement analytics</div>
+      <div class="axis"><span class="n">AXIS 4</span>Consent, preferences, and data boundaries</div>
+    </div>
+  </section>
+
+  <section id="ranked-ideas">
+    <div class="eyebrow">Ranked survivors</div>
+    <h2>Ranked Ideas</h2>
+    <ol class="jump-list">
+      <li><a href="#idea-1">1. Owner Learning Loop v1</a></li>
+      <li><a href="#idea-2">2. Aha-Loop Ledger</a></li>
+      <li><a href="#idea-3">3. Consent Firewall and Telemetry Customs Gate</a></li>
+      <li><a href="#idea-4">4. Format Admission Gate</a></li>
+      <li><a href="#idea-5">5. Format Film Room</a></li>
+    </ol>
+
+    <article class="idea" id="idea-1">
+      <div class="idea-head"><span class="rank">1</span><div><div class="eyebrow">Owner improvement loop</div><h3>1. Owner Learning Loop v1</h3></div></div>
+      <p><strong>Description:</strong> After a completed game, surface one canonically grounded pivotal moment, invite the owner to record one intended behavioral change, deep-link into the relevant agent edit field, and issue a receipt for the resulting immutable revision. Show “current revision, awaiting evidence” beside “last measured revision,” then turn that state into a before/after view when eligible results arrive.</p>
+      <div class="diagram">
+        <svg viewBox="0 0 860 230" role="img" aria-label="Completed game evidence flows through one owner hypothesis and edit into a new revision that later gains measured results">
+          <defs><marker id="arrow-loop" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8292a1"/></marker></defs>
+          <rect class="cyan" x="20" y="52" width="145" height="72" rx="13"/>
+          <text class="label" x="92" y="80" text-anchor="middle">Completed game</text><text class="small" x="92" y="101" text-anchor="middle">canonical evidence</text>
+          <path class="line" d="M165 88H201" marker-end="url(#arrow-loop)"/>
+          <rect class="gold" x="210" y="52" width="145" height="72" rx="13"/>
+          <text class="label" x="282" y="80" text-anchor="middle">One moment</text><text class="small" x="282" y="101" text-anchor="middle">one hypothesis</text>
+          <path class="line" d="M355 88H391" marker-end="url(#arrow-loop)"/>
+          <rect class="violet" x="400" y="52" width="145" height="72" rx="13"/>
+          <text class="label" x="472" y="80" text-anchor="middle">Owner edit</text><text class="small" x="472" y="101" text-anchor="middle">new revision receipt</text>
+          <path class="line" d="M545 88H581" marker-end="url(#arrow-loop)"/>
+          <rect class="box" x="590" y="52" width="115" height="72" rx="13"/>
+          <text class="label" x="647" y="80" text-anchor="middle">Awaiting</text><text class="small" x="647" y="101" text-anchor="middle">eligible games</text>
+          <path class="line" d="M705 88H741" marker-end="url(#arrow-loop)"/>
+          <rect class="green" x="750" y="52" width="90" height="72" rx="13"/>
+          <text class="label" x="795" y="80" text-anchor="middle">Compare</text><text class="small" x="795" y="101" text-anchor="middle">measured</text>
+          <path class="line dashed" d="M795 124V184H92V124" marker-end="url(#arrow-loop)"/>
+          <text class="small" x="444" y="207" text-anchor="middle">The next completed game re-enters the same learning loop</text>
+        </svg>
+        <p class="caption">Illustrative loop: evidence becomes one owner decision, then a revision whose status stays visible until it has real results.</p>
+      </div>
+      <dl>
+        <dt>Axis</dt><dd>Owner improvement loop</dd>
+        <dt>Basis</dt><dd><code>direct:</code> completed results, owner-authorized cognition links, agent edit forms, immutable revisions, and revision-separated season receipts already exist; the zero-game current-revision gap is explicitly documented.</dd>
+        <dt>Rationale</dt><dd>This completes the core watch → understand → improve → watch-again promise using foundations already built. It gives every edit a reason and every new revision a visible learning state.</dd>
+        <dt>Downsides</dt><dd>Selecting one defensible pivotal moment is non-trivial. The card must not auto-rewrite prompts, reveal foreign private data, or present one game as causal proof.</dd>
+        <dt>Confidence</dt><dd class="confidence">92%</dd>
+        <dt>Complexity</dt><dd>Medium</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-2">
+      <div class="idea-head"><span class="rank">2</span><div><div class="eyebrow">Product engagement analytics</div><h3>2. Aha-Loop Ledger</h3></div></div>
+      <p><strong>Description:</strong> Measure the one journey that matters: completed game, meaningful postgame inspection, agent edit, and revised agent returned to play. Begin with authoritative server-derived agents, joins, completions, revisions, and receipts; add only the consent-gated browser events needed to observe postgame inspection.</p>
+      <div class="diagram">
+        <svg viewBox="0 0 860 230" role="img" aria-label="Authoritative server facts and consent-gated browser observations combine into one product-loop ledger">
+          <defs><marker id="arrow-ledger" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8292a1"/></marker></defs>
+          <rect class="green" x="30" y="35" width="255" height="70" rx="13"/>
+          <text class="label" x="157" y="64" text-anchor="middle">Authoritative lifecycle facts</text><text class="small" x="157" y="85" text-anchor="middle">joins · completions · revisions · return</text>
+          <rect class="cyan" x="30" y="135" width="255" height="70" rx="13"/>
+          <text class="label" x="157" y="164" text-anchor="middle">Allowed browser observations</text><text class="small" x="157" y="185" text-anchor="middle">meaningful postgame inspection</text>
+          <path class="line" d="M285 70H421" marker-end="url(#arrow-ledger)"/>
+          <path class="line" d="M285 170H356V130H421" marker-end="url(#arrow-ledger)"/>
+          <rect class="gold" x="430" y="72" width="175" height="86" rx="13"/>
+          <text class="label" x="517" y="105" text-anchor="middle">Aha-Loop Ledger</text><text class="small" x="517" y="127" text-anchor="middle">where does the loop stop?</text>
+          <path class="line" d="M605 115H711" marker-end="url(#arrow-ledger)"/>
+          <rect class="violet" x="720" y="72" width="110" height="86" rx="13"/>
+          <text class="label" x="775" y="105" text-anchor="middle">Next bet</text><text class="small" x="775" y="127" text-anchor="middle">one decision</text>
+        </svg>
+        <p class="caption">Illustrative provenance split: application facts and optional browser observations stay visibly different even when they answer one product question.</p>
+      </div>
+      <dl>
+        <dt>Axis</dt><dd>Product engagement analytics</dd>
+        <dt>Basis</dt><dd><code>direct:</code> strategy names completed watching, repeat participation, and postgame edits; server read models already contain most lifecycle facts; no general browser analytics provider exists.</dd>
+        <dt>Rationale</dt><dd>This tells the team whether the promised product loop happens and where it breaks before broad instrumentation or additional mechanics. Server-first measurement also creates value before consent-gated tracking is ready.</dd>
+        <dt>Downsides</dt><dd>“Meaningful inspection” needs a narrow product definition. The friends-and-owner audience is too small for overconfident statistical conclusions.</dd>
+        <dt>Confidence</dt><dd class="confidence">90%</dd>
+        <dt>Complexity</dt><dd>Medium</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-3">
+      <div class="idea-head"><span class="rank">3</span><div><div class="eyebrow">Consent and data boundaries</div><h3>3. Consent Firewall and Telemetry Customs Gate</h3></div></div>
+      <p><strong>Description:</strong> Build the requested real banner as an enforceable preference system: Necessary remains distinct from optional Analytics, Accept and Reject are equally usable, withdrawal is persistent and reachable, and optional code cannot initialize before permission. Put every allowed event and property behind a typed registry that rejects prompts, reasoning, private dialogue, provider payloads, secrets, and unregistered identifiers.</p>
+      <div class="diagram">
+        <svg viewBox="0 0 860 250" role="img" aria-label="Necessary storage stays available while optional analytics must pass consent and a payload allowlist">
+          <defs><marker id="arrow-consent" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8292a1"/></marker></defs>
+          <rect class="box" x="25" y="86" width="145" height="72" rx="13"/>
+          <text class="label" x="97" y="114" text-anchor="middle">Browser runtime</text><text class="small" x="97" y="136" text-anchor="middle">storage or event request</text>
+          <path class="line" d="M170 110H248" marker-end="url(#arrow-consent)"/>
+          <path class="line" d="M170 136H218V202H248" marker-end="url(#arrow-consent)"/>
+          <rect class="green" x="257" y="73" width="150" height="72" rx="13"/>
+          <text class="label" x="332" y="101" text-anchor="middle">Necessary</text><text class="small" x="332" y="123" text-anchor="middle">auth · security · settings</text>
+          <rect class="gold" x="257" y="172" width="150" height="62" rx="13"/>
+          <text class="label" x="332" y="198" text-anchor="middle">Optional Analytics</text><text class="small" x="332" y="218" text-anchor="middle">purpose granted?</text>
+          <path class="line" d="M407 109H730" marker-end="url(#arrow-consent)"/>
+          <path class="line" d="M407 203H484" marker-end="url(#arrow-consent)"/>
+          <rect class="violet" x="493" y="167" width="155" height="72" rx="13"/>
+          <text class="label" x="570" y="195" text-anchor="middle">Typed allowlist</text><text class="small" x="570" y="217" text-anchor="middle">forbidden fields rejected</text>
+          <path class="line" d="M648 203H690V145H730" marker-end="url(#arrow-consent)"/>
+          <rect class="cyan" x="739" y="88" width="96" height="72" rx="13"/>
+          <text class="label" x="787" y="116" text-anchor="middle">Dispatch</text><text class="small" x="787" y="138" text-anchor="middle">permitted only</text>
+        </svg>
+        <p class="caption">Illustrative enforcement: the preference screen controls runtime behavior, while the payload registry controls what may cross the analytics boundary.</p>
+      </div>
+      <dl>
+        <dt>Axis</dt><dd>Consent, preferences, and data boundaries</dd>
+        <dt>Basis</dt><dd><code>direct:</code> the privacy policy mentions necessary cookies, analytics providers, and withdrawal; the root layout has no consent layer or analytics SDK; existing private-trace and spend boundaries already define prohibited payload classes.</dd>
+        <dt>Rationale</dt><dd>This safely unlocks the few browser observations the Aha-Loop Ledger needs. It also makes the banner a trust feature with enforceable behavior rather than a dismissible legal ornament.</dd>
+        <dt>Downsides</dt><dd>Purpose copy and jurisdictional behavior need counsel. Any analytics provider must honor the initialization gate rather than merely read a stored preference.</dd>
+        <dt>Confidence</dt><dd class="confidence">89%</dd>
+        <dt>Complexity</dt><dd>Medium</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-4">
+      <div class="idea-head"><span class="rank">4</span><div><div class="eyebrow">Format portfolio and watchability</div><h3>4. Format Admission Gate</h3></div></div>
+      <p><strong>Description:</strong> Before a fourth format is built, require a short warrant naming an observed strategic or watchability failure, the canonical event signature expected to change, and a human watchability rubric for admission.</p>
+      <div class="diagram">
+        <svg viewBox="0 0 860 190" role="img" aria-label="An observed portfolio gap leads to a format hypothesis, evidence criteria, and then either admission or rejection">
+          <defs><marker id="arrow-format" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10Z" fill="#8292a1"/></marker></defs>
+          <rect class="cyan" x="25" y="52" width="155" height="72" rx="13"/>
+          <text class="label" x="102" y="80" text-anchor="middle">Observed gap</text><text class="small" x="102" y="102" text-anchor="middle">strategy or watchability</text>
+          <path class="line" d="M180 88H236" marker-end="url(#arrow-format)"/>
+          <rect class="gold" x="245" y="52" width="155" height="72" rx="13"/>
+          <text class="label" x="322" y="80" text-anchor="middle">Format warrant</text><text class="small" x="322" y="102" text-anchor="middle">predicted behavior change</text>
+          <path class="line" d="M400 88H456" marker-end="url(#arrow-format)"/>
+          <rect class="violet" x="465" y="52" width="155" height="72" rx="13"/>
+          <text class="label" x="542" y="80" text-anchor="middle">Admission evidence</text><text class="small" x="542" y="102" text-anchor="middle">events plus human rubric</text>
+          <path class="line" d="M620 88H676" marker-end="url(#arrow-format)"/>
+          <rect class="green" x="685" y="52" width="150" height="72" rx="13"/>
+          <text class="label" x="760" y="80" text-anchor="middle">Admit or reject</text><text class="small" x="760" y="102" text-anchor="middle">not catalog growth</text>
+        </svg>
+        <p class="caption">Illustrative gate: format work begins with a diagnosed deficiency and a predicted observable change.</p>
+      </div>
+      <dl>
+        <dt>Axis</dt><dd>Format portfolio and watchability</dd>
+        <dt>Basis</dt><dd><code>direct:</code> the launch portfolio already has three anti-repeated formats, and the format plan defines validation as distinct coalition behavior rather than mere completion.</dd>
+        <dt>Rationale</dt><dd>This turns “more formats” into a falsifiable product decision and prevents mechanically different but strategically identical growth.</dd>
+        <dt>Downsides</dt><dd>The rubric needs consistent human review and enough comparable games. A strict gate can delay a mechanic that is plainly fun but hard to quantify.</dd>
+        <dt>Confidence</dt><dd class="confidence">88%</dd>
+        <dt>Complexity</dt><dd>Low</dd>
+      </dl>
+    </article>
+
+    <article class="idea" id="idea-5">
+      <div class="idea-head"><span class="rank">5</span><div><div class="eyebrow">Format portfolio and watchability</div><h3>5. Format Film Room</h3></div></div>
+      <p><strong>Description:</strong> Generate short comparative cuts from existing games showing each format’s offer and choice, decisive social pivot, canonical reveal, and coalition consequence side by side. Use the cuts first as producer evidence, not as another public media product.</p>
+      <dl>
+        <dt>Axis</dt><dd>Format portfolio and watchability</dd>
+        <dt>Basis</dt><dd><code>direct:</code> completed results, replay, House Highlights, turning points, canonical format events, and vote history already provide the source material for comparative cuts.</dd>
+        <dt>Rationale</dt><dd>A few comparable moments can show whether the formats create genuinely different stories or whether agent behavior and presentation are the real constraint.</dd>
+        <dt>Downsides</dt><dd>Media selection can become editorially subjective. Reusable extraction may be more work than a manual first review warrants.</dd>
+        <dt>Confidence</dt><dd class="confidence">78%</dd>
+        <dt>Complexity</dt><dd>Medium</dd>
+      </dl>
+    </article>
+  </section>
+
+  <section id="rejection-summary">
+    <div class="eyebrow">What did not survive</div>
+    <h2>Rejection Summary</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>Idea</th><th>Reason rejected</th></tr></thead>
+        <tbody>
+          <tr><td>1</td><td>Change One Thing Debrief</td><td>Merged into Owner Learning Loop v1 as its deliberately narrow first interaction.</td></tr>
+          <tr><td>2</td><td>Two-Clock Revision Contract</td><td>Strong component merged into Owner Learning Loop v1; duplicate as a standalone direction.</td></tr>
+          <tr><td>3</td><td>Frozen Game Evaluation Pack</td><td>No cited completed game proves the required owner-authorized trajectory exists end to end; stronger as internal evaluation practice.</td></tr>
+          <tr><td>4</td><td>Format-Specific Owner Coaching</td><td>Premature and confounded; current receipts do not yet support a complete format-analysis dimension and samples would be sparse.</td></tr>
+          <tr><td>5</td><td>Format Episode Cards</td><td>Basis refuted as a distinct gap: completed results already render offers, selection, resolution, scoring, and vote history.</td></tr>
+          <tr><td>6</td><td>Three-Slot Format Budget</td><td>Unsupported permanent cap; three is a launch set and future versioning is expected.</td></tr>
+          <tr><td>7</td><td>Conditional Alibi Format</td><td>Interesting brainstorm variant, but no observed commitment-follow-through failure earns it admission yet.</td></tr>
+          <tr><td>8</td><td>Server-First Product Loop Baseline</td><td>Merged into Aha-Loop Ledger as its first implementation stage.</td></tr>
+          <tr><td>9</td><td>Watchability Beat Map</td><td>Useful event catalog inside Aha-Loop Ledger, but several interactions lack validated definitions.</td></tr>
+          <tr><td>10</td><td>High-Intent Review Signals</td><td>Invented self-report actions cannot yet stand in for observed watching or improvement.</td></tr>
+          <tr><td>11</td><td>Instrument Decisions, Not Pages</td><td>Useful discipline, but event expiry is unsupported and belongs within the analytics contract.</td></tr>
+          <tr><td>12</td><td>Data-Lineage Badges</td><td>Premature independent UX; provenance belongs inside the owner-learning and telemetry contracts.</td></tr>
+          <tr><td>13</td><td>Privacy-Safe Measurement Spine</td><td>Duplicate architecture bundle; sound parts were merged into Aha-Loop Ledger and Consent Firewall.</td></tr>
+          <tr><td>14</td><td>Improvement-Driven Format Roadmap</td><td>Duplicate sequencing principle captured by Owner Learning Loop v1 and Format Admission Gate.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="prose">All four topic axes retain at least one survivor. No axis-coverage recovery was needed.</p>
+  </section>
+
+  <footer class="composition-signal">Composed 2026-08-03T17:40:33Z by ce-ideate from the user prompt “what to work on next?”</footer>
+</main>
+</body>
+</html>
