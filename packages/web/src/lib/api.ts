@@ -1888,13 +1888,7 @@ export interface OwnerLearningRecommendation {
   confidence: "low" | "medium" | "high";
   rationale: string;
   keepGuidance?: string;
-  evidenceRefs: Array<{
-    kind: "canonical_event" | "decision" | "dialogue" | "cognition" | "game_summary";
-    gameId: string;
-    coordinate: string;
-    sourceHash: string;
-    sourceVersion: string;
-  }>;
+  evidenceRefs: OwnerLearningEvidenceRef[];
   proof?: {
     kind: "observed_pattern" | "prompt_guidance_defect" | "combined";
     rubricCategory?: string;
@@ -1903,6 +1897,14 @@ export interface OwnerLearningRecommendation {
     proposedGuidance: string;
     exactGuidanceTarget: string;
   };
+}
+
+export interface OwnerLearningEvidenceRef {
+  kind: "canonical_event" | "decision" | "dialogue" | "cognition" | "game_summary";
+  gameId: string;
+  coordinate: string;
+  sourceHash: string;
+  sourceVersion: string;
 }
 
 export interface OwnerLearningReview {
@@ -2149,6 +2151,14 @@ export async function recordOwnerLearningRecommendationsViewed(
   reviewId: string,
 ): Promise<{ recorded: boolean }> {
   return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/viewed`, {
+    method: "POST",
+  });
+}
+
+export async function recordOwnerLearningMcpOfferViewed(
+  reviewId: string,
+): Promise<{ recorded: boolean }> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/mcp-offer-viewed`, {
     method: "POST",
   });
 }

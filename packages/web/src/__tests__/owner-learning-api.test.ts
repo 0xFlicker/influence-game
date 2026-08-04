@@ -6,6 +6,7 @@ import {
   getOwnerLearningReview,
   listOpenOwnerLearningReviews,
   preflightOwnerLearningReview,
+  recordOwnerLearningMcpOfferViewed,
   recordOwnerLearningPromptImpression,
   recordOwnerLearningRecommendationsViewed,
   resolveOwnerLearningReview,
@@ -76,6 +77,7 @@ describe("owner learning web API", () => {
     await recordOwnerLearningPromptImpression(3);
     await dismissOwnerLearningPrompt();
     await recordOwnerLearningRecommendationsViewed("review-1");
+    await recordOwnerLearningMcpOfferViewed("review-1");
     await retryOwnerLearningReview("review-1");
 
     expect(requests.map((request) => [request.init?.method ?? "GET", request.url])).toEqual([
@@ -84,12 +86,14 @@ describe("owner learning web API", () => {
       ["POST", "https://api.example.test/api/agent-learning/prompts/impression"],
       ["POST", "https://api.example.test/api/agent-learning/prompts/dismiss"],
       ["POST", "https://api.example.test/api/agent-learning/reviews/review-1/viewed"],
+      ["POST", "https://api.example.test/api/agent-learning/reviews/review-1/mcp-offer-viewed"],
       ["POST", "https://api.example.test/api/agent-learning/reviews/review-1/retry"],
     ]);
     expect(JSON.parse(String(requests[2]!.init?.body))).toEqual({ threshold: 3 });
     expect(requests[3]!.init?.body).toBeUndefined();
     expect(requests[4]!.init?.body).toBeUndefined();
     expect(requests[5]!.init?.body).toBeUndefined();
+    expect(requests[6]!.init?.body).toBeUndefined();
   });
 });
 

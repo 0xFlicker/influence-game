@@ -29,19 +29,18 @@ The implementation must extend the same visual language to these states:
 - **No change:** retain the diagnosis and evidence hierarchy, explain why no update is warranted, and omit proposal/apply controls.
 - **Awaiting evidence:** preserve deterministic facts and explain that the selected one or two early exits are not enough to diagnose a strategy. Do not create a review, occupy the singleton slot, or dispatch the model.
 - **Strategy Health Check:** when exactly three selected current-revision games ended in round one or two, clearly label the serious strategy audit. Keep observed evidence, strategic interpretation, and proposed guidance visually distinct, and label recommendation support as `Seen across N games`, `Found in your strategy guidance`, or `Seen in play and guidance`.
-- **Failure:** preserve deterministic evidence, name the safe failure, and show Retry only when lifetime budget remains plus Cancel to close the singleton review.
+- **Failure:** preserve deterministic evidence, name the safe failure, and show Retry only when lifetime budget remains plus Resolve failed review. Starting purchases the review; resolving failure closes the singleton without refunding its credit or rolling allowance.
 - **Declined:** preserve the completed review and proposal, show that the owner chose Keep current strategy, and do not imply that the generated proposal was accepted.
-- **Cancelled:** use only for unfinished queued, running, or failed work. Do not show Cancel on a ready recommendation.
 - **Superseded:** preserve the review and proposal by ID, explain that an unrelated update to the reviewed agent won, and show no cleanup action.
-- **Resolved:** distinguish exact apply, linked manual update, decline, automatic no-change, unfinished cancel, and unrelated-update supersede; retain immutable evidence and receipt context.
+- **Resolved:** distinguish exact apply, linked manual update, decline, automatic no-change, resolved failure, and unrelated-update supersede; retain immutable evidence and receipt context.
 - **Existing open review:** when the owner attempts another review, lead them to the current singleton review instead of creating a second workspace.
 
 ## Interaction contract
 
 - Every evidence reference is a control. Activating it selects the referenced game, focuses and temporarily highlights the exact timeline moment, and preserves a return target to the originating recommendation.
 - On mobile, evidence navigation stays in the same document. It scrolls to the referenced moment and exposes a clear Back to recommendation action rather than opening a detached modal.
-- Start, Retry, Apply, Keep current strategy, Cancel, and manual-update actions disable duplicate submission while pending.
-- Every unfinished Cancel action must reveal its admission consequence: before first provider dispatch it preserves credit and the rolling allowance; after dispatch both are already used and Cancel only stops unfinished work.
+- Start, Retry, Apply, Keep current strategy, Resolve failed review, and manual-update actions disable duplicate submission while pending.
+- Before Start, state that the action purchases the review using the owner credit and rolling allowance and cannot be cancelled. Failure resolution closes the purchased review without a refund.
 - Viewing a ready recommendation does not resolve it. The owner must apply, complete a linked manual update, or choose Keep current strategy before another review can start.
 - A lost poll keeps the last deterministic evidence and stage visible. A lost mutation response reconciles from the persisted review before showing another action.
 - Semantic status and focus move only on meaningful persisted state changes; polling must not repeatedly announce the same state.

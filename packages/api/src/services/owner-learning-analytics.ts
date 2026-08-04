@@ -87,6 +87,33 @@ export async function recordOwnerLearningRecommendationsViewed(
   db: DrizzleDB,
   input: { ownerUserId: string; reviewId: string; now?: Date },
 ): Promise<{ recorded: boolean }> {
+  return recordOwnedReviewEvent(db, input, "recommendations_viewed", (review) => {
+    if (review.analysisStatus !== "ready") {
+      throw new OwnerLearningAnalyticsError("recommendations_unavailable");
+    }
+  });
+}
+
+export async function recordOwnerLearningMcpOfferViewed(
+  db: DrizzleDB,
+  input: { ownerUserId: string; reviewId: string; now?: Date },
+): Promise<{ recorded: boolean }> {
+  return recordOwnedReviewEvent(db, input, "mcp_offer_viewed", (review) => {
+    if (
+      review.resolvedAt != null
+      || !["queued", "running", "ready"].includes(review.analysisStatus)
+    ) {
+      throw new OwnerLearningAnalyticsError("recommendations_unavailable");
+    }
+  });
+}
+
+async function recordOwnedReviewEvent(
+  db: DrizzleDB,
+  input: { ownerUserId: string; reviewId: string; now?: Date },
+  kind: "recommendations_viewed" | "mcp_offer_viewed",
+  assertAvailable: (review: typeof schema.agentLearningReviews.$inferSelect) => void,
+): Promise<{ recorded: boolean }> {
   return db.transaction(async (tx) => {
     await tx.execute(sql`
       SELECT id
@@ -99,17 +126,15 @@ export async function recordOwnerLearningRecommendationsViewed(
       eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
     )).limit(1))[0];
     if (!review) throw new OwnerLearningAnalyticsError("review_unavailable");
-    if (review.analysisStatus !== "ready") {
-      throw new OwnerLearningAnalyticsError("recommendations_unavailable");
-    }
+    assertAvailable(review);
     const existing = await tx.select({ id: schema.agentLearningEvents.id })
       .from(schema.agentLearningEvents).where(and(
         eq(schema.agentLearningEvents.ownerUserId, input.ownerUserId),
         eq(schema.agentLearningEvents.reviewId, input.reviewId),
-        eq(schema.agentLearningEvents.kind, "recommendations_viewed"),
+        eq(schema.agentLearningEvents.kind, kind),
       )).limit(1);
     if (existing.length > 0) return { recorded: false };
-    const event = createOwnerLearningEvent("recommendations_viewed", {
+    const event = createOwnerLearningEvent(kind, {
       ownerUserId: input.ownerUserId,
       reviewId: input.reviewId,
       agentProfileId: review.agentProfileId,

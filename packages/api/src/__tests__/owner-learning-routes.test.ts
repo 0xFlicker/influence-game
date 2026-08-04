@@ -140,6 +140,17 @@ describe("owner learning REST routes", () => {
       expect(serialized).not.toContain(forbidden);
     }
 
+    const firstMcpOffer = await app.request(
+      `/api/agent-learning/reviews/${startedBody.reviewId}/mcp-offer-viewed`,
+      authPost(token),
+    );
+    const secondMcpOffer = await app.request(
+      `/api/agent-learning/reviews/${startedBody.reviewId}/mcp-offer-viewed`,
+      authPost(token),
+    );
+    expect(await firstMcpOffer.json()).toEqual({ recorded: true });
+    expect(await secondMcpOffer.json()).toEqual({ recorded: false });
+
     await db.update(schema.agentLearningReviews).set({
       analysisStatus: "ready",
       stage: "complete",

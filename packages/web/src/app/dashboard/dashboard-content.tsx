@@ -15,10 +15,7 @@ import {
   type PlayerGameResult,
   type SavedAgent,
 } from "@/lib/api";
-import {
-  ACTIVE_GAME,
-  HOUSE_VENUE,
-} from "@/lib/product-identity";
+import { HOUSE_VENUE } from "@/lib/product-identity";
 import {
   buildDashboardMissionControl,
   type DashboardPrimaryAction,
@@ -27,6 +24,7 @@ import { DashboardAgentBench, DashboardRecentResult } from "./dashboard-agent-be
 import { DashboardGamePreview } from "./dashboard-game-preview";
 import { JoinGameModal } from "./join-game-modal";
 import { MissionControlOverview } from "./mission-control-overview";
+import { OwnerLearningActivation } from "./agents/[id]/review/owner-learning-activation";
 
 export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
   return (
@@ -220,6 +218,7 @@ export function DashboardContent() {
       )}
 
       <div className="space-y-5">
+        <OwnerLearningActivation enabled={authenticated} />
         <McpSetupCard hasHistory={control.stats.gamesPlayed > 0} />
 
         <MissionControlOverview

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildMcpSetupClients } from "../lib/mcp-setup";
+import { safeMcpReturnTo } from "../app/get-mcp/page";
 
 const getMcpClientSource = readFileSync(
   join(import.meta.dir, "../app/get-mcp/get-mcp-client.tsx"),
@@ -14,6 +15,15 @@ const pageSource = readFileSync(
 const combinedSource = `${getMcpClientSource}\n${pageSource}`;
 
 describe("/get-mcp setup page", () => {
+  it("accepts only local agent-context return paths", () => {
+    expect(safeMcpReturnTo("/dashboard/agents/agent-1/review/review-1")).toBe(
+      "/dashboard/agents/agent-1/review/review-1",
+    );
+    expect(safeMcpReturnTo("https://example.com/review")).toBe("/dashboard");
+    expect(safeMcpReturnTo("//example.com/review")).toBe("/dashboard");
+    expect(safeMcpReturnTo(["/dashboard/agents/agent-1/review/review-1"])).toBe("/dashboard");
+  });
+
   it("defines player-facing command snippets for Codex, Claude Code, and Grok Build CLI", () => {
     const clients = buildMcpSetupClients("https://api.influence.example/mcp");
     const commands = clients.flatMap((client) => client.commands);
