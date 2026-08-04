@@ -43,11 +43,11 @@ describe("owner learning apply and resolution", () => {
       ownerUserId: fixture.ownerUserId,
       reviewId,
       proposalFingerprint: ready.proposalFingerprint,
-      recommendationIds: ready.recommendationIds,
       now: new Date("2026-08-04T04:00:00.000Z"),
     });
 
     expect(applied.replayed).toBe(false);
+    expect(applied.sourceRecommendationIds).toEqual(ready.recommendationIds);
     expect(applied.priorRevisionId).toBe(fixture.revisionId);
     expect(applied.resultingRevisionId).not.toBe(fixture.revisionId);
     expect(applied.receipt.waitingSeats).toMatchObject({ total: 1, reconciled: 1 });
@@ -73,13 +73,12 @@ describe("owner learning apply and resolution", () => {
       ownerUserId: fixture.ownerUserId,
       reviewId,
       proposalFingerprint: ready.proposalFingerprint,
-      recommendationIds: ready.recommendationIds,
     });
     expect(replayed).toEqual({ ...applied, replayed: true });
     expect(await db.select().from(schema.agentLearningReviewApplications)).toHaveLength(1);
   });
 
-  test("rejects wrong ownership, fingerprint, and recommendation subsets without writes", async () => {
+  test("rejects wrong ownership and fingerprints without writes", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
     const reviewId = await startFixtureOwnerLearningReview(db, fixture);
@@ -91,20 +90,12 @@ describe("owner learning apply and resolution", () => {
       ownerUserId: "another-owner",
       reviewId,
       proposalFingerprint: ready.proposalFingerprint,
-      recommendationIds: ready.recommendationIds,
     })).rejects.toMatchObject({ code: "review_not_found" });
     await expect(applyOwnedOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
       reviewId,
       proposalFingerprint: "sha256:wrong",
-      recommendationIds: ready.recommendationIds,
     })).rejects.toMatchObject({ code: "proposal_mismatch" });
-    await expect(applyOwnedOwnerLearningReview(db, {
-      ownerUserId: fixture.ownerUserId,
-      reviewId,
-      proposalFingerprint: ready.proposalFingerprint,
-      recommendationIds: ready.recommendationIds.slice(0, 1),
-    })).rejects.toMatchObject({ code: "recommendation_mismatch" });
 
     expect((await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]).toEqual(before);
@@ -171,7 +162,6 @@ describe("owner learning apply and resolution", () => {
         ownerUserId: fixture.ownerUserId,
         reviewId,
         proposalFingerprint: ready.proposalFingerprint,
-        recommendationIds: ready.recommendationIds,
       }),
       updateOwnedAgentProfile(db, { userId: fixture.ownerUserId }, fixture.agentProfileId, {
         strategyStyle: "Manual winner: verify reciprocity before naming the bloc.",

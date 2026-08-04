@@ -194,11 +194,31 @@ export interface OwnerLearningReviewDTO {
   capacitySubstatus: OwnerLearningCapacitySubstatus | null;
   resolution: OwnerLearningResolution | null;
   result: OwnerLearningReviewResult | null;
+  proposalFingerprint: string | null;
   safeFailureCode: OwnerLearningSafeFailureCode | null;
   retryable: boolean;
   logicalCallCount: number;
   diveCount: number;
   applyDisposition: OwnerLearningApplyDisposition;
+  evidence: {
+    games: Array<{
+      gameId: string;
+      position: number;
+      canonicalFacts: unknown;
+      candidateMoments: Array<Record<string, unknown>>;
+      sourceCaptureVersion: string;
+      sourceHash: string;
+    }>;
+  };
+  application: {
+    sourceRecommendationIds: string[];
+    priorRevisionId: string;
+    resultingRevisionId: string;
+    priorStrategyStyle: string;
+    resultingStrategyStyle: string;
+    mutationReceipt: Record<string, unknown>;
+    appliedAt: string;
+  } | null;
   createdAt: string;
   updatedAt: string;
   resolvedAt: string | null;

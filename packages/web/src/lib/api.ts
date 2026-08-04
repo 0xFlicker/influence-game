@@ -1800,7 +1800,196 @@ export const AGENT_GENDER_OPTIONS = [
 
 export type AgentGender = typeof AGENT_GENDER_OPTIONS[number]["value"];
 
-export type UpdateAgentParams = Partial<Omit<CreateAgentParams, "avatarGenerationRequestId">>;
+export type UpdateAgentParams = Partial<Omit<CreateAgentParams, "avatarGenerationRequestId">> & {
+  sourceReviewId?: string;
+};
+
+export type OwnerLearningAnalysisTrack =
+  | "awaiting_evidence"
+  | "evidence_rich"
+  | "strategy_health_check";
+
+export type OwnerLearningAnalysisStatus = "queued" | "running" | "ready" | "no_change" | "failed";
+export type OwnerLearningStage =
+  | "evidence_ready"
+  | "scanning_narratives"
+  | "investigating_moments"
+  | "drafting_recommendations"
+  | "complete";
+export type OwnerLearningResolution =
+  | "applied"
+  | "manual_update"
+  | "declined"
+  | "no_change"
+  | "failed"
+  | "superseded";
+export type OwnerLearningApplyDisposition =
+  | "not_ready"
+  | "awaiting_owner"
+  | "available"
+  | "applied"
+  | "manual_update"
+  | "declined"
+  | "no_change"
+  | "failed"
+  | "superseded"
+  | "unavailable";
+
+export interface OwnerLearningEligibleInputs {
+  eligibilityPolicyVersion: string;
+  credit: {
+    balance: 0 | 1;
+    latestEligibleCompletion: { gameId: string; completionAt: string } | null;
+    refillCompletion: { gameId: string; completionAt: string } | null;
+    qualifyingCompletionCount: number;
+  };
+  rollingAllowance: { available: boolean; nextEligibleAt: string | null };
+  profiles: Array<{
+    agentProfileId: string;
+    name: string;
+    currentRevisionId: string;
+    strategyStyle: string | null;
+    qualifyingGameCount: number;
+    games: Array<{
+      gameId: string;
+      slug: string;
+      playerId: string;
+      completionAt: string;
+      analyticalRevisionId: string;
+      transcriptCaptureVersion: number;
+      cognitiveArtifactCaptureVersion: number;
+      previouslyAnalyzed: boolean;
+    }>;
+    recommendedGameIds: string[];
+  }>;
+  recommendedAgentProfileId: string | null;
+  prompt: {
+    threshold: 1 | 3 | null;
+    prominent: boolean;
+    suppressedByDismissal: boolean;
+  };
+  openReview: null | {
+    id: string;
+    agentProfileId: string;
+    analysisStatus: OwnerLearningAnalysisStatus;
+    stage: OwnerLearningStage;
+    analysisTrack: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
+  };
+  mcp: {
+    connectionState: "connected" | "not_connected";
+    requiredScopesVersion: string;
+  };
+}
+
+export interface OwnerLearningRecommendation {
+  id?: string;
+  title: string;
+  disposition: "change" | "keep" | "gather_more_evidence";
+  confidence: "low" | "medium" | "high";
+  rationale: string;
+  keepGuidance?: string;
+  evidenceRefs: Array<{
+    kind: "canonical_event" | "decision" | "dialogue" | "cognition" | "game_summary";
+    gameId: string;
+    coordinate: string;
+    sourceHash: string;
+    sourceVersion: string;
+  }>;
+  proof?: {
+    kind: "observed_pattern" | "prompt_guidance_defect" | "combined";
+    rubricCategory?: string;
+    observedEvidence: string;
+    strategicInterpretation: string;
+    proposedGuidance: string;
+    exactGuidanceTarget: string;
+  };
+}
+
+export interface OwnerLearningReview {
+  id: string;
+  agentProfileId: string;
+  reviewedRevisionId: string;
+  selectedGameIds: string[];
+  analysisTrack: OwnerLearningAnalysisTrack;
+  analysisStatus: OwnerLearningAnalysisStatus;
+  stage: OwnerLearningStage;
+  capacitySubstatus: "waiting_for_capacity" | "using_standard_capacity" | null;
+  resolution: OwnerLearningResolution | null;
+  result: null | {
+    diagnosis: string;
+    analysisTrack: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
+    strategyHealthClassification?: "guidance_gap" | "execution_gap" | "no_clear_strategy_defect";
+    recommendations: OwnerLearningRecommendation[];
+    proposal?: { field: "strategyStyle"; before: string; after: string };
+    noChange?: { rationale: string };
+  };
+  proposalFingerprint: string | null;
+  safeFailureCode: string | null;
+  retryable: boolean;
+  logicalCallCount: number;
+  diveCount: number;
+  applyDisposition: OwnerLearningApplyDisposition;
+  evidence: {
+    games: Array<{
+      gameId: string;
+      position: number;
+      canonicalFacts: unknown;
+      candidateMoments: Array<Record<string, unknown>>;
+      sourceCaptureVersion: string;
+      sourceHash: string;
+    }>;
+  };
+  application: null | {
+    sourceRecommendationIds: string[];
+    priorRevisionId: string;
+    resultingRevisionId: string;
+    priorStrategyStyle: string;
+    resultingStrategyStyle: string;
+    mutationReceipt: Record<string, unknown>;
+    appliedAt: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+export interface OwnerLearningPreflight {
+  status: "awaiting_evidence" | "ready" | "generation_unavailable";
+  selection: {
+    agentProfileId: string;
+    agentProfileName: string;
+    reviewedRevisionId: string;
+    gameIds: string[];
+  };
+  evidence: unknown;
+}
+
+export interface OwnerLearningStartResult {
+  status:
+    | "started"
+    | "existing_review"
+    | "existing_open_review"
+    | "awaiting_evidence"
+    | "generation_unavailable"
+    | "no_credit"
+    | "rolling_limited";
+  reviewId: string | null;
+  nextEligibleAt: string | null;
+  preflight: OwnerLearningPreflight | null;
+}
+
+export interface OwnerLearningApplyResult {
+  reviewId: string;
+  proposalFingerprint: string;
+  sourceRecommendationIds: string[];
+  priorRevisionId: string;
+  resultingRevisionId: string;
+  priorStrategyStyle: string;
+  resultingStrategyStyle: string;
+  receipt: AgentMutationReceipt;
+  appliedAt: string;
+  replayed: boolean;
+}
 
 export interface AvatarCompletion {
   status: "already_provided" | "accepted" | "queued" | "processing" | "completed" | "skipped" | "failed";
@@ -1877,6 +2066,92 @@ export async function updateAgent(
   return apiFetch(`/api/agent-profiles/${id}`, {
     method: "PATCH",
     body: JSON.stringify(params),
+  });
+}
+
+export async function getOwnerLearningEligibleInputs(): Promise<OwnerLearningEligibleInputs> {
+  return apiFetch("/api/agent-learning/eligible-inputs");
+}
+
+export async function recordOwnerLearningPromptImpression(
+  threshold: 1 | 3,
+): Promise<{ recorded: boolean }> {
+  return apiFetch("/api/agent-learning/prompts/impression", {
+    method: "POST",
+    body: JSON.stringify({ threshold }),
+  });
+}
+
+export async function dismissOwnerLearningPrompt(): Promise<{ recorded: boolean }> {
+  return apiFetch("/api/agent-learning/prompts/dismiss", { method: "POST" });
+}
+
+export async function preflightOwnerLearningReview(input: {
+  agentProfileId: string;
+  gameIds: string[];
+}): Promise<OwnerLearningPreflight> {
+  return apiFetch("/api/agent-learning/reviews/preflight", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listOpenOwnerLearningReviews(): Promise<OwnerLearningReview[]> {
+  return apiFetch("/api/agent-learning/reviews/open");
+}
+
+export async function startOwnerLearningReview(input: {
+  agentProfileId: string;
+  gameIds: string[];
+  idempotencyKey: string;
+}): Promise<OwnerLearningStartResult> {
+  return apiFetch("/api/agent-learning/reviews", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getOwnerLearningReview(
+  reviewId: string,
+  agentProfileId?: string,
+): Promise<OwnerLearningReview> {
+  const query = agentProfileId
+    ? `?agentProfileId=${encodeURIComponent(agentProfileId)}`
+    : "";
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}${query}`);
+}
+
+export async function retryOwnerLearningReview(reviewId: string): Promise<OwnerLearningReview> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/retry`, {
+    method: "POST",
+  });
+}
+
+export async function recordOwnerLearningRecommendationsViewed(
+  reviewId: string,
+): Promise<{ recorded: boolean }> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/viewed`, {
+    method: "POST",
+  });
+}
+
+export async function applyOwnerLearningReview(
+  reviewId: string,
+  proposalFingerprint: string,
+): Promise<OwnerLearningApplyResult> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/apply`, {
+    method: "POST",
+    body: JSON.stringify({ proposalFingerprint }),
+  });
+}
+
+export async function resolveOwnerLearningReview(
+  reviewId: string,
+  resolution: "declined" | "failed",
+): Promise<OwnerLearningReview> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ resolution }),
   });
 }
 

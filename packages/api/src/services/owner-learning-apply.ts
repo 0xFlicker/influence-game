@@ -23,7 +23,6 @@ export type OwnerLearningApplyErrorCode =
   | "review_not_found"
   | "review_not_ready"
   | "proposal_mismatch"
-  | "recommendation_mismatch"
   | "review_revision_conflict"
   | "profile_update_conflict";
 
@@ -57,7 +56,6 @@ export async function applyOwnedOwnerLearningReview(
     ownerUserId: string;
     reviewId: unknown;
     proposalFingerprint: unknown;
-    recommendationIds: unknown;
     now?: Date;
   },
 ): Promise<OwnerLearningApplyRead> {
@@ -68,7 +66,6 @@ export async function applyOwnedOwnerLearningReview(
     200,
     "proposal_mismatch",
   );
-  const recommendationIds = parseRecommendationIds(input.recommendationIds);
   const preview = (await db.select({ agentProfileId: schema.agentLearningReviews.agentProfileId })
     .from(schema.agentLearningReviews).where(and(
       eq(schema.agentLearningReviews.id, reviewId),
@@ -100,7 +97,7 @@ export async function applyOwnedOwnerLearningReview(
           .from(schema.agentLearningReviewApplications)
           .where(eq(schema.agentLearningReviewApplications.reviewId, reviewId)).limit(1))[0];
         if (existingApplication) {
-          assertApplyIdentity(existingApplication, proposalFingerprint, recommendationIds);
+          assertApplyIdentity(existingApplication, proposalFingerprint);
           return applicationRead(existingApplication, true);
         }
         if (
@@ -115,9 +112,6 @@ export async function applyOwnedOwnerLearningReview(
           throw new OwnerLearningApplyError("proposal_mismatch", 409);
         }
         const expectedRecommendationIds = changeRecommendationIds(review.result.recommendations);
-        if (!sameOrderedValues(recommendationIds, expectedRecommendationIds)) {
-          throw new OwnerLearningApplyError("recommendation_mismatch", 409);
-        }
         const currentStrategyStyle = lockedProfile.existing.strategyStyle ?? "";
         if (
           lockedProfile.existing.currentRevisionId !== review.reviewedRevisionId
@@ -192,13 +186,9 @@ export async function applyOwnedOwnerLearningReview(
 function assertApplyIdentity(
   application: typeof schema.agentLearningReviewApplications.$inferSelect,
   proposalFingerprint: string,
-  recommendationIds: readonly string[],
 ): void {
   if (application.proposalFingerprint !== proposalFingerprint) {
     throw new OwnerLearningApplyError("proposal_mismatch", 409);
-  }
-  if (!sameOrderedValues(application.sourceRecommendationIds, recommendationIds)) {
-    throw new OwnerLearningApplyError("recommendation_mismatch", 409);
   }
 }
 
@@ -209,7 +199,7 @@ function changeRecommendationIds(
     .filter((recommendation) => recommendation.disposition === "change")
     .map((recommendation) => recommendation.id);
   if (ids.length === 0 || ids.some((id) => typeof id !== "string" || id.length === 0)) {
-    throw new OwnerLearningApplyError("recommendation_mismatch", 409);
+    throw new OwnerLearningApplyError("review_not_ready", 409);
   }
   return ids as string[];
 }
@@ -232,27 +222,11 @@ function applicationRead(
   };
 }
 
-function parseRecommendationIds(value: unknown): string[] {
-  if (!Array.isArray(value) || value.length < 1 || value.length > 3) {
-    throw new OwnerLearningApplyError("recommendation_mismatch", 409);
-  }
-  const ids = value.map((entry) => requiredString(
-    entry,
-    "recommendationId",
-    200,
-    "recommendation_mismatch",
-  ));
-  if (new Set(ids).size !== ids.length) {
-    throw new OwnerLearningApplyError("recommendation_mismatch", 409);
-  }
-  return ids;
-}
-
 function requiredString(
   value: unknown,
   _label: string,
   maxLength: number,
-  code: "review_not_found" | "proposal_mismatch" | "recommendation_mismatch",
+  code: "review_not_found" | "proposal_mismatch",
 ): string {
   if (typeof value !== "string") {
     throw new OwnerLearningApplyError(code, code === "review_not_found" ? 404 : 409);
@@ -265,10 +239,6 @@ function requiredString(
     );
   }
   return normalized;
-}
-
-function sameOrderedValues(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 async function insertProposalAppliedEvent(

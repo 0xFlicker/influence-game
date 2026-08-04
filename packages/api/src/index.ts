@@ -28,6 +28,7 @@ import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
 import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
 import { createWatchIntelligenceRoutes } from "./routes/watch-intelligence.js";
+import { createOwnerLearningRoutes } from "./routes/owner-learning.js";
 import { createPostgameMediaWorkerRoutes } from "./routes/postgame-media-worker.js";
 import { createSeasonRoutes } from "./routes/seasons.js";
 import { createPublicPlayerRoutes } from "./routes/public-players.js";
@@ -306,6 +307,9 @@ app.route("/", cognitiveArtifactRoutes);
 // Agent profile routes
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
+
+const ownerLearningRoutes = createOwnerLearningRoutes(db);
+app.route("/", ownerLearningRoutes);
 
 // Admin RBAC routes
 const adminRoutes = createAdminRoutes(db);
