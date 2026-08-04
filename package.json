@@ -13,6 +13,7 @@
     "mcp:trace:local": "./scripts/run-trace-mcp-local.sh",
     "trace:local:smoke": "./scripts/test-private-trace-local.sh",
     "prompt-thread:lab": "cd packages/api && bun run prompt-thread:lab",
+    "avatar-storage:rotate": "cd packages/api && bun run avatar-storage:rotate",
     "test:db": "cd packages/api && DRIZZLE_MIGRATIONS_DIR=./drizzle bun test src/__tests__/",
     "test:engine": "cd packages/engine && bun test src/__tests__/game-engine.test.ts",
     "test:engine:full": "cd packages/engine && doppler run --project social-strategy-agent --config dev -- bun test",

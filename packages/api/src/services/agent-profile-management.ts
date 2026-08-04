@@ -5,8 +5,9 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { AvatarChangeSource, AvatarGenerationTriggerSource } from "../db/schema.js";
 import { isAgentGender, type AgentGender } from "../lib/agent-gender.js";
+import { isLegacyIdentityBearingAvatarStorageKey } from "../lib/avatar-storage-keys.js";
 import { isPostgresCheckViolation, isPostgresUniqueViolation } from "../lib/postgres-errors.js";
-import { normalizeUploadedAvatarUrl } from "../lib/storage.js";
+import { normalizeUploadedAvatarUrl, ownedPublicAvatarStorageKey } from "../lib/storage.js";
 import {
   consumeOwnedDraftAvatarCompletion,
   recordAvatarChange,
@@ -273,6 +274,7 @@ interface EnrollmentRow {
 export function normalizeAgentAvatarUrlInput(
   value: unknown,
   publicBaseUrl?: string,
+  currentAvatarUrl?: string | null,
 ): ParsedAgentAvatarUrl {
   if (value === undefined) return { ok: true, value: undefined };
   if (value === null) return { ok: true, value: null };
@@ -283,9 +285,23 @@ export function normalizeAgentAvatarUrlInput(
   const trimmed = value.trim();
   if (!trimmed) return { ok: true, value: null };
 
+  const normalized = normalizeUploadedAvatarUrl(trimmed, publicBaseUrl);
+  const ownedStorageKey = ownedPublicAvatarStorageKey(normalized, publicBaseUrl);
+  const normalizedCurrentAvatarUrl = currentAvatarUrl
+    ? normalizeUploadedAvatarUrl(currentAvatarUrl, publicBaseUrl)
+    : currentAvatarUrl;
+  if (ownedStorageKey
+    && isLegacyIdentityBearingAvatarStorageKey(ownedStorageKey)
+    && normalized !== normalizedCurrentAvatarUrl) {
+    return {
+      ok: false,
+      error: "avatarUrl must not use a legacy identity-bearing storage key",
+    };
+  }
+
   return {
     ok: true,
-    value: normalizeUploadedAvatarUrl(trimmed, publicBaseUrl),
+    value: normalized,
   };
 }
 
@@ -540,7 +556,7 @@ async function updateAgentProfileInTransaction(
     FOR UPDATE
   `);
   const existing = await requireOwnedAgentProfile(tx, input.context.userId, input.agentId);
-  const updates = prepareAgentProfileUpdates(input.context, input.input);
+  const updates = prepareAgentProfileUpdates(input.context, input.input, existing.avatarUrl);
   const profile = (await tx.update(schema.agentProfiles)
     .set(updates)
     .where(and(
@@ -649,6 +665,7 @@ async function updateAgentProfileInTransaction(
 function prepareAgentProfileUpdates(
   context: AgentProfileManagementContext,
   input: UpdateAgentProfileMutationInput,
+  currentAvatarUrl: string | null,
 ): Partial<typeof schema.agentProfiles.$inferInsert> {
   const updates: Partial<typeof schema.agentProfiles.$inferInsert> = {
     updatedAt: new Date().toISOString(),
@@ -678,7 +695,11 @@ function prepareAgentProfileUpdates(
     updates.gender = optionalAgentGender(input.gender);
   }
   if (input.avatarUrl !== undefined) {
-    const avatarUrl = normalizeAgentAvatarUrlInput(input.avatarUrl, context.publicBaseUrl);
+    const avatarUrl = normalizeAgentAvatarUrlInput(
+      input.avatarUrl,
+      context.publicBaseUrl,
+      currentAvatarUrl,
+    );
     if (!avatarUrl.ok) {
       throw new AgentProfileManagementError("invalid_agent_input", avatarUrl.error, 400);
     }
@@ -871,7 +892,7 @@ export async function updateOwnedAgent(
   rejectUnsupportedFields(input, UPDATE_AGENT_FIELDS);
 
   const agentId = requiredStringField(input.agentId, "agentId", 200);
-  await requireOwnedAgentProfile(db, context.userId, agentId);
+  const existing = await requireOwnedAgentProfile(db, context.userId, agentId);
   const updates: UpdateAgentProfileMutationInput = {};
 
   if (input.displayName !== undefined) {
@@ -897,7 +918,11 @@ export async function updateOwnedAgent(
     updates.gender = optionalAgentGender(input.gender);
   }
   if (input.avatarUrl !== undefined) {
-    const avatarUrl = normalizeAgentAvatarUrlInput(input.avatarUrl, context.publicBaseUrl);
+    const avatarUrl = normalizeAgentAvatarUrlInput(
+      input.avatarUrl,
+      context.publicBaseUrl,
+      existing.avatarUrl,
+    );
     if (!avatarUrl.ok) {
       throw new AgentProfileManagementError("invalid_agent_input", avatarUrl.error, 400);
     }

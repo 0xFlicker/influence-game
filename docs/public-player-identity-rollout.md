@@ -8,6 +8,11 @@ Public player facts are limited to the immutable public UUID, optional mutable u
 
 Wallet and email addresses, Privy or other authentication subjects, internal `users.id`, agent prompts and backstory, strategy configuration, revision history, reasoning and cognitive artifacts, provider data, administrator artifacts, and private dashboard, account, and agent-editing controls remain private. This rollout adds no persisted metric, summary, analytics record, or identity state beyond the public UUID and handle.
 
+Public avatar bytes do not weaken this boundary: owned profile-picture object
+keys must be random asset identifiers and must not contain any internal account
+or authentication-provider identifier. Legacy objects are rotated and removed
+under [`docs/deployment/avatar-storage-privacy-rotation.md`](deployment/avatar-storage-privacy-rotation.md).
+
 ### Authenticated Email API Boundary
 
 A user's email address may be serialized only to that same authenticated user or to an authenticated caller whose wallet currently carries the named `sysop`, `admin`, or `producer` role. Permissions such as `view_admin` and `manage_roles` do not independently grant email access, and stale role claims in an existing session do not preserve email access after revocation.

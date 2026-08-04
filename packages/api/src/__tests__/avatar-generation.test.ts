@@ -12,7 +12,7 @@ import {
 } from "../services/avatar-generation.js";
 import { setupTestDB } from "./test-utils.js";
 
-const USER_ID = "avatar-user";
+const USER_ID = "did:privy:must-stay-private";
 const AGENT_ID = "avatar-agent";
 
 const ENV_KEYS = [
@@ -143,11 +143,13 @@ describe("avatar generation service", () => {
       .where(eq(schema.agentProfiles.id, AGENT_ID));
     expect(agent!.avatarUrl).toBe(completion.avatarUrl ?? null);
     expect(agent!.avatarUrl).not.toContain("assets.example");
+    expect(agent!.avatarUrl).not.toContain("must-stay-private");
 
     const [generation] = await db.select().from(schema.avatarGenerationRequests);
     expect(generation!.status).toBe("completed");
     expect(generation!.providerRequestId).toBe("katana-request-1");
     expect(JSON.stringify(generation!.safeMetadata)).not.toContain("assets.example");
+    expect(JSON.stringify(generation!.safeMetadata)).not.toContain("must-stay-private");
 
     const [change] = await db.select().from(schema.avatarChangeEvents);
     expect(change!.source).toBe("web_generated_completion");
