@@ -30,21 +30,28 @@ import {
   OwnerLearningReadError,
 } from "../services/owner-learning-read.js";
 import {
+  OwnerLearningRetryError,
+  retryOwnedOwnerLearningReview,
+} from "../services/owner-learning-retry.js";
+import {
   preflightOwnerLearningReview,
   startOwnerLearningReview,
   type OwnerLearningEvidenceProjector,
-  type OwnerLearningReviewPreflight,
-  type OwnerLearningStartResult,
 } from "../services/owner-learning-review.js";
+import {
+  ownerLearningGenerationEnabled,
+  publicOwnerLearningPreflight,
+  publicOwnerLearningStart,
+} from "../services/owner-learning-public.js";
 import {
   OwnerLearningResolutionError,
   resolveOwnedOwnerLearningReview,
 } from "../services/owner-learning-resolution.js";
-import { retryOwnerLearningReview } from "../services/owner-learning-worker.js";
 import { parseMcpOAuthScopeSet } from "../services/mcp-scope-policy.js";
-
-const REQUIRED_MCP_SCOPES = ["agents:read", "games:read"] as const;
-const REQUIRED_MCP_SCOPES_VERSION = "owner-learning-mcp-scopes-v1";
+import {
+  OWNER_LEARNING_MCP_READ_SCOPES,
+  OWNER_LEARNING_MCP_REQUIRED_SCOPES_VERSION,
+} from "../services/owner-learning-mcp-policy.js";
 
 export function createOwnerLearningRoutes(
   db: DrizzleDB,
@@ -56,8 +63,7 @@ export function createOwnerLearningRoutes(
 ) {
   const app = new Hono<AuthEnv>();
   const generationEnabled = dependencies.generationEnabled
-    ?? (Boolean(process.env.OPENAI_API_KEY?.trim())
-      && process.env.INFLUENCE_OWNER_LEARNING_WORKER_DISABLED?.toLowerCase() !== "true");
+    ?? ownerLearningGenerationEnabled();
   const now = dependencies.now ?? (() => new Date());
 
   app.get("/api/agent-learning/eligible-inputs", requireAuth(db), async (c) => {
@@ -67,7 +73,7 @@ export function createOwnerLearningRoutes(
       ...eligible,
       mcp: {
         connectionState: await ownerMcpConnectionState(db, ownerUserId, now()),
-        requiredScopesVersion: REQUIRED_MCP_SCOPES_VERSION,
+        requiredScopesVersion: OWNER_LEARNING_MCP_REQUIRED_SCOPES_VERSION,
       },
     });
   });
@@ -109,7 +115,7 @@ export function createOwnerLearningRoutes(
         agentProfileId: requiredIdentifier(body.value.agentProfileId, "agentProfileId"),
         gameIds: requiredGameIds(body.value.gameIds),
       }, { projector: dependencies.projector });
-      return c.json(publicPreflightResult(preflight, generationEnabled));
+      return c.json(publicOwnerLearningPreflight(preflight, generationEnabled));
     } catch (error) {
       return mapOwnerLearningError(c, error);
     }
@@ -141,7 +147,7 @@ export function createOwnerLearningRoutes(
         generationEnabled,
         now: now(),
       });
-      return c.json(publicStartResult(result));
+      return c.json(publicOwnerLearningStart(result));
     } catch (error) {
       return mapOwnerLearningError(c, error);
     }
@@ -164,26 +170,11 @@ export function createOwnerLearningRoutes(
   app.post("/api/agent-learning/reviews/:reviewId/retry", requireAuth(db), async (c) => {
     const ownerUserId = c.get("user").id;
     try {
-      const review = await getOwnedOwnerLearningReview(db, {
+      return c.json(await retryOwnedOwnerLearningReview(db, {
         ownerUserId,
         reviewId: c.req.param("reviewId"),
-      });
-      if (review.analysisStatus !== "failed") {
-        return errorResponse(c, 409, "invalid_review_state", "Review is not failed");
-      }
-      if (review.logicalCallCount >= 4) {
-        return errorResponse(c, 409, "logical_call_budget_exhausted", "Review call budget is exhausted");
-      }
-      if (!review.retryable) {
-        return errorResponse(c, 409, "review_not_retryable", "Review cannot be retried");
-      }
-      const retried = await retryOwnerLearningReview(db, {
-        ownerUserId,
-        reviewId: review.id,
         now: now(),
-      });
-      if (!retried) return errorResponse(c, 409, "review_state_conflict", "Review state changed");
-      return c.json(await getOwnedOwnerLearningReview(db, { ownerUserId, reviewId: review.id }));
+      }));
     } catch (error) {
       return mapOwnerLearningError(c, error);
     }
@@ -206,6 +197,11 @@ export function createOwnerLearningRoutes(
       return c.json(await recordOwnerLearningMcpOfferViewed(db, {
         ownerUserId: c.get("user").id,
         reviewId: c.req.param("reviewId"),
+        connectionState: await ownerMcpConnectionState(
+          db,
+          c.get("user").id,
+          now(),
+        ),
         now: now(),
       }));
     } catch (error) {
@@ -253,44 +249,6 @@ export function createOwnerLearningRoutes(
   return app;
 }
 
-function publicPreflightResult(preflight: OwnerLearningReviewPreflight, generationEnabled: boolean) {
-  return {
-    status: preflight.evidence.analysisTrack === "awaiting_evidence"
-      ? "awaiting_evidence" as const
-      : generationEnabled
-        ? "ready" as const
-        : "generation_unavailable" as const,
-    selection: {
-      agentProfileId: preflight.selection.agentProfileId,
-      agentProfileName: preflight.selection.agentProfileName,
-      reviewedRevisionId: preflight.selection.currentRevisionId,
-      gameIds: preflight.selection.games.map((game) => game.gameId),
-    },
-    evidence: {
-      analysisTrack: preflight.evidence.analysisTrack,
-      games: preflight.evidence.games.map((game) => ({
-        gameId: game.gameId,
-        canonicalFacts: game.canonicalFacts,
-        candidateMoments: game.candidateMoments,
-        narrativeCoverage: game.narrativeCoverage,
-        sourceHash: game.sourceHash,
-        sourceCaptureVersion: game.sourceCaptureVersion,
-      })),
-    },
-  };
-}
-
-function publicStartResult(result: OwnerLearningStartResult) {
-  return {
-    status: result.status,
-    reviewId: result.reviewId,
-    nextEligibleAt: result.nextEligibleAt,
-    preflight: result.preflight
-      ? publicPreflightResult(result.preflight, result.status !== "generation_unavailable")
-      : null,
-  };
-}
-
 async function ownerMcpConnectionState(
   db: DrizzleDB,
   ownerUserId: string,
@@ -304,7 +262,8 @@ async function ownerMcpConnectionState(
     ));
   return tokens.some((token) => {
     const scopes = parseMcpOAuthScopeSet(token.scope);
-    return scopes != null && REQUIRED_MCP_SCOPES.every((scope) => scopes.has(scope));
+    return scopes != null
+      && OWNER_LEARNING_MCP_READ_SCOPES.every((scope) => scopes.has(scope));
   }) ? "connected" : "not_connected";
 }
 
@@ -379,6 +338,15 @@ function mapOwnerLearningError(c: Context<AuthEnv>, error: unknown): Response {
       error.statusCode,
       error.code === "review_not_found" ? "unavailable" : "invalid_resolution",
       error.code === "review_not_found" ? "Review unavailable" : "Review cannot be resolved",
+    );
+  }
+  if (error instanceof OwnerLearningRetryError) {
+    const unavailable = error.code === "review_unavailable";
+    return errorResponse(
+      c,
+      unavailable ? 404 : 409,
+      error.code,
+      unavailable ? "Review unavailable" : "Review cannot be retried",
     );
   }
   console.error("[owner-learning] Unexpected route failure", error);

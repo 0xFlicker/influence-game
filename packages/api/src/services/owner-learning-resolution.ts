@@ -161,6 +161,7 @@ export async function resolveOwnedOwnerLearningReview(
   await db.transaction(async (tx) => {
     const review = await lockOwnedOwnerLearningReview(tx, input);
     const expectedStatus = input.resolution === "declined" ? "ready" : "failed";
+    if (review.resolvedAt != null && review.resolution === input.resolution) return;
     if (review.resolvedAt != null || review.analysisStatus !== expectedStatus) {
       throw new OwnerLearningResolutionError("review_state_conflict", 409);
     }

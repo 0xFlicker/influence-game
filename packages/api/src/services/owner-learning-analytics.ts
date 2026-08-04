@@ -4,6 +4,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getOwnerLearningEligibleInputs } from "./owner-learning-eligibility.js";
 import { createOwnerLearningEvent } from "./owner-learning-events.js";
+import type { OwnerLearningEvent } from "./owner-learning-events.js";
 
 type AnalyticsTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
@@ -87,31 +88,99 @@ export async function recordOwnerLearningRecommendationsViewed(
   db: DrizzleDB,
   input: { ownerUserId: string; reviewId: string; now?: Date },
 ): Promise<{ recorded: boolean }> {
-  return recordOwnedReviewEvent(db, input, "recommendations_viewed", (review) => {
-    if (review.analysisStatus !== "ready") {
-      throw new OwnerLearningAnalyticsError("recommendations_unavailable");
-    }
-  });
+  return recordOwnedReviewEvent(
+    db,
+    input,
+    (identity) => createOwnerLearningEvent("recommendations_viewed", identity, {}),
+    (review) => {
+      if (review.analysisStatus !== "ready") {
+        throw new OwnerLearningAnalyticsError("recommendations_unavailable");
+      }
+    },
+  );
 }
 
 export async function recordOwnerLearningMcpOfferViewed(
   db: DrizzleDB,
-  input: { ownerUserId: string; reviewId: string; now?: Date },
+  input: {
+    ownerUserId: string;
+    reviewId: string;
+    connectionState: "connected" | "not_connected";
+    now?: Date;
+  },
 ): Promise<{ recorded: boolean }> {
-  return recordOwnedReviewEvent(db, input, "mcp_offer_viewed", (review) => {
-    if (
-      review.resolvedAt != null
-      || !["queued", "running", "ready"].includes(review.analysisStatus)
-    ) {
-      throw new OwnerLearningAnalyticsError("recommendations_unavailable");
-    }
+  return recordOwnedReviewEvent(
+    db,
+    input,
+    (identity) => createOwnerLearningEvent("mcp_offer_viewed", identity, {
+      connectionState: input.connectionState,
+    }),
+    (review) => {
+      if (
+        review.resolvedAt != null
+        || !["queued", "running", "ready"].includes(review.analysisStatus)
+      ) {
+        throw new OwnerLearningAnalyticsError("recommendations_unavailable");
+      }
+    },
+  );
+}
+
+export async function recordOwnerLearningMcpConnected(
+  db: DrizzleDB,
+  input: {
+    ownerUserId: string;
+    requiredScopesVersion: string;
+    now?: Date;
+  },
+): Promise<{ recorded: boolean; reviewId: string | null }> {
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT pg_advisory_xact_lock(hashtextextended(${`owner-learning-mcp:${input.ownerUserId}`}, 0))
+    `);
+    const offered = (await tx.select({
+      reviewId: schema.agentLearningEvents.reviewId,
+    }).from(schema.agentLearningEvents).where(and(
+      eq(schema.agentLearningEvents.ownerUserId, input.ownerUserId),
+      eq(schema.agentLearningEvents.kind, "mcp_offer_viewed"),
+      sql`${schema.agentLearningEvents.payload}->>'connectionState' = 'not_connected'`,
+      sql`NOT EXISTS (
+        SELECT 1
+        FROM agent_learning_events connected
+        WHERE connected.owner_user_id = ${input.ownerUserId}
+          AND connected.review_id = ${schema.agentLearningEvents.reviewId}
+          AND connected.kind = 'mcp_connected'
+      )`,
+    )).orderBy(sql`${schema.agentLearningEvents.occurredAt} DESC`).limit(1))[0];
+    if (!offered?.reviewId) return { recorded: false, reviewId: null };
+
+    const review = (await tx.select({
+      agentProfileId: schema.agentLearningReviews.agentProfileId,
+    }).from(schema.agentLearningReviews).where(and(
+      eq(schema.agentLearningReviews.id, offered.reviewId),
+      eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
+    )).limit(1))[0];
+    if (!review) return { recorded: false, reviewId: null };
+
+    await insertEvent(tx, createOwnerLearningEvent("mcp_connected", {
+      ownerUserId: input.ownerUserId,
+      reviewId: offered.reviewId,
+      agentProfileId: review.agentProfileId,
+      occurredAt: (input.now ?? new Date()).toISOString(),
+    }, { requiredScopesVersion: input.requiredScopesVersion }));
+    return { recorded: true, reviewId: offered.reviewId };
   });
 }
 
 async function recordOwnedReviewEvent(
   db: DrizzleDB,
   input: { ownerUserId: string; reviewId: string; now?: Date },
-  kind: "recommendations_viewed" | "mcp_offer_viewed",
+  createEvent: (identity: {
+    ownerUserId: string;
+    reviewId: string;
+    agentProfileId: string;
+    occurredAt: string;
+  }) => OwnerLearningEvent<"recommendations_viewed" | "mcp_offer_viewed">,
   assertAvailable: (review: typeof schema.agentLearningReviews.$inferSelect) => void,
 ): Promise<{ recorded: boolean }> {
   return db.transaction(async (tx) => {
@@ -127,19 +196,19 @@ async function recordOwnedReviewEvent(
     )).limit(1))[0];
     if (!review) throw new OwnerLearningAnalyticsError("review_unavailable");
     assertAvailable(review);
-    const existing = await tx.select({ id: schema.agentLearningEvents.id })
-      .from(schema.agentLearningEvents).where(and(
-        eq(schema.agentLearningEvents.ownerUserId, input.ownerUserId),
-        eq(schema.agentLearningEvents.reviewId, input.reviewId),
-        eq(schema.agentLearningEvents.kind, kind),
-      )).limit(1);
-    if (existing.length > 0) return { recorded: false };
-    const event = createOwnerLearningEvent(kind, {
+    const event = createEvent({
       ownerUserId: input.ownerUserId,
       reviewId: input.reviewId,
       agentProfileId: review.agentProfileId,
       occurredAt: (input.now ?? new Date()).toISOString(),
-    }, {});
+    });
+    const existing = await tx.select({ id: schema.agentLearningEvents.id })
+      .from(schema.agentLearningEvents).where(and(
+        eq(schema.agentLearningEvents.ownerUserId, input.ownerUserId),
+        eq(schema.agentLearningEvents.reviewId, input.reviewId),
+        eq(schema.agentLearningEvents.kind, event.kind),
+      )).limit(1);
+    if (existing.length > 0) return { recorded: false };
     await insertEvent(tx, event);
     return { recorded: true };
   });

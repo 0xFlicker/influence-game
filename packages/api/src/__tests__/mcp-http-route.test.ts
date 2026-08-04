@@ -858,6 +858,7 @@ function createTestApp(
     auditLogger?: (event: GameMcpAuditEvent) => void;
     maxPostBytes?: number;
     tokenValidator?: () => Promise<GameMcpAuthResult>;
+    ownerLearningConnectionRecorder?: () => Promise<void>;
   } = {},
 ) {
   return createMcpRoutes({} as DrizzleDB, {
@@ -882,6 +883,8 @@ function createTestApp(
       },
     })),
     auditLogger: options.auditLogger ?? (() => undefined),
+    ownerLearningConnectionRecorder:
+      options.ownerLearningConnectionRecorder ?? (async () => undefined),
     maxPostBytes: options.maxPostBytes,
   });
 }

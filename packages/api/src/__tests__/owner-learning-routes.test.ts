@@ -113,7 +113,7 @@ describe("owner learning REST routes", () => {
     expect(startedBody.status).toBe("started");
     const resumed = await app.request("/api/agent-learning/reviews", jsonPost(token, startBody));
     expect(await resumed.json()).toMatchObject({
-      status: "existing_open_review",
+      status: "existing_review",
       reviewId: startedBody.reviewId,
     });
 

@@ -33,6 +33,34 @@ export function agentCommandOutputSchema(): Record<string, unknown> {
       additionalProperties: false,
     }, { type: "null" }],
   };
+  const receiptSchema = agentMutationReceiptOutputSchema();
+  return {
+    type: "object",
+    required: ["schemaVersion", "accountRating", "agent", "message", "receipt"],
+    properties: {
+      schemaVersion: { type: "number", const: 1 },
+      accountRating: { type: "object", additionalProperties: true },
+      agent: {
+        type: "object",
+        required: ["id", "displayName", "currentRevision", "queueState", "activeEnrollment"],
+        properties: {
+          id: { type: "string" },
+          displayName: { type: "string" },
+          currentRevision: currentRevisionSchema,
+          queueState: { type: "object", additionalProperties: true },
+          activeEnrollment: enrollmentSchema,
+        },
+        additionalProperties: true,
+      },
+      message: { type: "string" },
+      receipt: receiptSchema,
+      avatarCompletion: { type: "object", additionalProperties: true },
+    },
+    additionalProperties: true,
+  };
+}
+
+export function agentMutationReceiptOutputSchema(): Record<string, unknown> {
   const waitingSeatReferenceSchema = {
     type: "object",
     required: ["gameId", "slug", "disposition", "effectiveRevisionId"],
@@ -44,7 +72,7 @@ export function agentCommandOutputSchema(): Record<string, unknown> {
     },
     additionalProperties: false,
   };
-  const receiptSchema = {
+  return {
     type: "object",
     required: ["schemaVersion", "operation", "agent", "profileRevision", "dailyFree", "waitingSeats", "frozenSeats", "warnings"],
     properties: {
@@ -94,30 +122,6 @@ export function agentCommandOutputSchema(): Record<string, unknown> {
       warnings: { type: "array", items: { type: "string", enum: ["avatar_generation_failed"] } },
     },
     additionalProperties: false,
-  };
-  return {
-    type: "object",
-    required: ["schemaVersion", "accountRating", "agent", "message", "receipt"],
-    properties: {
-      schemaVersion: { type: "number", const: 1 },
-      accountRating: { type: "object", additionalProperties: true },
-      agent: {
-        type: "object",
-        required: ["id", "displayName", "currentRevision", "queueState", "activeEnrollment"],
-        properties: {
-          id: { type: "string" },
-          displayName: { type: "string" },
-          currentRevision: currentRevisionSchema,
-          queueState: { type: "object", additionalProperties: true },
-          activeEnrollment: enrollmentSchema,
-        },
-        additionalProperties: true,
-      },
-      message: { type: "string" },
-      receipt: receiptSchema,
-      avatarCompletion: { type: "object", additionalProperties: true },
-    },
-    additionalProperties: true,
   };
 }
 

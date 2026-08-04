@@ -113,9 +113,9 @@ export async function startOwnerLearningReview(
   const idempotencyKey = parseOwnerLearningStartIdempotencyKey(input.idempotencyKey);
   const gameIds = parseOwnerLearningGameIds(input.gameIds);
   const existingBeforePreflight = await findExistingReview(db, input.ownerUserId, idempotencyKey);
-  if (existingBeforePreflight) return existingResult(existingBeforePreflight);
+  if (existingBeforePreflight) return existingResult(existingBeforePreflight, "idempotent");
   const openBeforePreflight = await findOpenReview(db, input.ownerUserId);
-  if (openBeforePreflight) return existingResult(openBeforePreflight);
+  if (openBeforePreflight) return existingResult(openBeforePreflight, "open");
 
   const preflight = await preflightOwnerLearningReview(db, {
     ownerUserId: input.ownerUserId,
@@ -151,9 +151,9 @@ export async function startOwnerLearningReview(
       )
     `);
     const idempotent = await findExistingReview(tx, input.ownerUserId, idempotencyKey);
-    if (idempotent) return existingResult(idempotent);
+    if (idempotent) return existingResult(idempotent, "idempotent");
     const open = await findOpenReview(tx, input.ownerUserId);
-    if (open) return existingResult(open);
+    if (open) return existingResult(open, "open");
 
     await tx.insert(schema.agentLearningReviewEntitlements).values({
       ownerUserId: input.ownerUserId,
@@ -298,9 +298,12 @@ async function findOpenReview(
   )).limit(1))[0] ?? null;
 }
 
-function existingResult(review: ReviewLookupRow): OwnerLearningStartResult {
+function existingResult(
+  review: ReviewLookupRow,
+  match: "idempotent" | "open",
+): OwnerLearningStartResult {
   return {
-    status: review.resolvedAt == null ? "existing_open_review" : "existing_review",
+    status: match === "idempotent" ? "existing_review" : "existing_open_review",
     reviewId: review.id,
     preflight: null,
     nextEligibleAt: null,

@@ -9,7 +9,10 @@ import {
   type GameMcpAuthContext,
   type GameMcpAuthResult,
 } from "../game-mcp/auth.js";
-import { getMcpOAuthResourceUri } from "../services/mcp-oauth.js";
+import {
+  getMcpOAuthResourceUri,
+  resolveMcpOAuthClientScopeEnvelope,
+} from "../services/mcp-oauth.js";
 import {
   createProductionGameMcpServer,
   type JsonRpcRequest,
@@ -24,7 +27,15 @@ import {
   type McpAppAuditStage,
   type McpAppProviderId,
 } from "../game-mcp/provider-profiles.js";
-import { MCP_OAUTH_SCOPE_VALUES } from "../services/mcp-scope-policy.js";
+import {
+  MCP_OAUTH_SCOPE_VALUES,
+  mcpOAuthScopeSetIncludesAll,
+} from "../services/mcp-scope-policy.js";
+import { recordOwnerLearningMcpConnected } from "../services/owner-learning-analytics.js";
+import {
+  OWNER_LEARNING_MCP_READ_SCOPES,
+  OWNER_LEARNING_MCP_REQUIRED_SCOPES_VERSION,
+} from "../services/owner-learning-mcp-policy.js";
 import {
   GAME_MCP_TOOL_ACCESS,
   isGameMcpToolName,
@@ -73,11 +84,15 @@ export type GameMcpAuditLogger = (event: GameMcpAuditEvent) => void;
 export type GameMcpTokenValidator = (
   token: string,
 ) => Promise<GameMcpAuthResult>;
+export type OwnerLearningMcpConnectionRecorder = (
+  auth: GameMcpAuthContext,
+) => Promise<void>;
 
 export interface CreateMcpRoutesOptions {
   server?: ProductionGameMcpJsonRpcServer;
   auditLogger?: GameMcpAuditLogger;
   tokenValidator?: GameMcpTokenValidator;
+  ownerLearningConnectionRecorder?: OwnerLearningMcpConnectionRecorder;
   maxPostBytes?: number;
 }
 
@@ -91,6 +106,8 @@ export function createMcpRoutes(
   const tokenValidator = options.tokenValidator ?? ((token) =>
     validateGameMcpBearerToken(db, token)
   );
+  const ownerLearningConnectionRecorder = options.ownerLearningConnectionRecorder
+    ?? ((auth: GameMcpAuthContext) => recordMcpConnectionAfterOffer(db, auth));
   const maxPostBytes = options.maxPostBytes ?? DEFAULT_MAX_POST_BYTES;
 
   registerMcpResource(app, {
@@ -98,6 +115,7 @@ export function createMcpRoutes(
     server,
     auditLogger,
     tokenValidator,
+    ownerLearningConnectionRecorder,
     maxPostBytes,
   });
 
@@ -111,6 +129,7 @@ function registerMcpResource(
     server: ProductionGameMcpJsonRpcServer;
     auditLogger: GameMcpAuditLogger;
     tokenValidator: GameMcpTokenValidator;
+    ownerLearningConnectionRecorder: OwnerLearningMcpConnectionRecorder;
     maxPostBytes: number;
   },
 ): void {
@@ -246,8 +265,43 @@ function registerMcpResource(
       denialReason: auditOutcome.denialReason,
     });
 
+    if (auditOutcome.result === "success") {
+      try {
+        await params.ownerLearningConnectionRecorder(auth.context);
+      } catch (error) {
+        console.warn(
+          "[game-mcp-audit] owner-learning connection event failed:",
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+
     if (!response) return c.body(null, 202);
     return c.json(response);
+  });
+}
+
+async function recordMcpConnectionAfterOffer(
+  db: DrizzleDB,
+  auth: GameMcpAuthContext,
+): Promise<void> {
+  const grantedScopes = new Set(auth.scopes);
+  if (!mcpOAuthScopeSetIncludesAll(grantedScopes, OWNER_LEARNING_MCP_READ_SCOPES)) {
+    return;
+  }
+  const clientScopes = await resolveMcpOAuthClientScopeEnvelope(db, auth.clientId);
+  if (
+    !clientScopes
+    || !mcpOAuthScopeSetIncludesAll(
+      new Set(clientScopes),
+      OWNER_LEARNING_MCP_READ_SCOPES,
+    )
+  ) {
+    return;
+  }
+  await recordOwnerLearningMcpConnected(db, {
+    ownerUserId: auth.userId,
+    requiredScopesVersion: OWNER_LEARNING_MCP_REQUIRED_SCOPES_VERSION,
   });
 }
 

@@ -128,6 +128,9 @@ function validateJsonSchema(value: unknown, rawSchema: unknown, path: string): s
 
 interface ListedToolDescriptor {
   name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+  outputSchema?: Record<string, unknown>;
   securitySchemes: Array<{ type: string; scopes: string[] }>;
   annotations: {
     readOnlyHint: boolean;
@@ -227,6 +230,9 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_open_games",
       "read_agent_season",
       "export_agent_season_data",
+      "list_learning_review_inputs",
+      "list_open_learning_reviews",
+      "read_learning_review",
       "create_agent",
       "update_agent",
       "join_queue",
@@ -245,6 +251,123 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(readOnlyNames).not.toContain("update_agent");
     expect(readOnlyNames).not.toContain("join_queue");
     expect(readOnlyNames).not.toContain("leave_queue");
+  });
+
+  test("uses exact owner-learning baselines, envelopes, step-up scopes, and annotations", async () => {
+    const readBaseline = {
+      ...GAMES_AUTH,
+      scope: "agents:read",
+      scopes: ["agents:read"] as GameMcpAuthContext["scopes"],
+    };
+    expect(resolveGameMcpToolAccess(
+      "list_learning_review_inputs",
+      readBaseline,
+      FULL_ELIGIBILITY,
+    )).toEqual({
+      known: true,
+      catalogEligible: true,
+      grantSatisfied: false,
+      invocationAllowed: false,
+    });
+    expect(resolveGameMcpToolInvocation(
+      "list_learning_review_inputs",
+      readBaseline,
+      FULL_ELIGIBILITY,
+    )).toEqual({ outcome: "step_up", challengeScopes: ["agents:read", "games:read"] });
+    expect(resolveGameMcpToolAccess(
+      "start_or_resume_learning_review",
+      { ...readBaseline, scope: "agents:read games:read", scopes: ["agents:read", "games:read"] },
+      FULL_ELIGIBILITY,
+    )).toMatchObject({ catalogEligible: true, grantSatisfied: false, invocationAllowed: false });
+    expect(resolveGameMcpToolInvocation(
+      "start_or_resume_learning_review",
+      { ...readBaseline, scope: "agents:read games:read", scopes: ["agents:read", "games:read"] },
+      FULL_ELIGIBILITY,
+    )).toEqual({
+      outcome: "step_up",
+      challengeScopes: ["agents:read", "agents:write", "games:read"],
+    });
+    expect(resolveGameMcpToolAccess(
+      "list_learning_review_inputs",
+      PRODUCER_AUTH,
+      { clientScopes: ["producer"], hasProducerRole: true },
+    )).toMatchObject({ catalogEligible: false, grantSatisfied: false, invocationAllowed: false });
+    expect(resolveGameMcpToolInvocation(
+      "read_learning_review",
+      { ...GAMES_AUTH, scope: "agents:read games:read", scopes: ["agents:read", "games:read"] },
+      { clientScopes: ["agents:read"], hasProducerRole: false },
+    )).toEqual({ outcome: "unavailable" });
+    expect(resolveGameMcpToolAccess(
+      "start_or_resume_learning_review",
+      { ...readBaseline, scope: "agents:read games:read", scopes: ["agents:read", "games:read"] },
+      { clientScopes: ["agents:read", "games:read"], hasProducerRole: false },
+    )).toMatchObject({ catalogEligible: false, grantSatisfied: false, invocationAllowed: false });
+    expect(resolveGameMcpToolInvocation(
+      "apply_learning_review",
+      {
+        ...GAMES_AUTH,
+        scope: "agents:read agents:write games:read producer",
+        scopes: ["agents:read", "agents:write", "games:read", "producer"],
+      },
+      { clientScopes: FULL_ELIGIBILITY.clientScopes, hasProducerRole: true },
+    )).toEqual({ outcome: "allowed" });
+
+    const producerOnlyNames = (await listToolDescriptors(
+      new ProductionGameMcpJsonRpcServer(fakeReadModel()),
+      PRODUCER_AUTH,
+    )).map((tool) => tool.name);
+    for (const name of [
+      "list_learning_review_inputs",
+      "list_open_learning_reviews",
+      "start_or_resume_learning_review",
+      "read_learning_review",
+      "retry_learning_review",
+      "apply_learning_review",
+      "resolve_learning_review",
+    ]) {
+      expect(producerOnlyNames).not.toContain(name);
+    }
+
+    const tools = new Map(
+      (await listToolDescriptors(
+        new ProductionGameMcpJsonRpcServer(fakeReadModel()),
+        GAMES_AUTH,
+      )).map((tool) => [tool.name, tool]),
+    );
+    for (const name of [
+      "list_learning_review_inputs",
+      "list_open_learning_reviews",
+      "read_learning_review",
+    ]) {
+      expect(tools.get(name)?.annotations).toEqual({
+        readOnlyHint: true,
+        openWorldHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    }
+    for (const name of ["start_or_resume_learning_review", "retry_learning_review"]) {
+      expect(tools.get(name)?.annotations).toEqual({
+        readOnlyHint: false,
+        openWorldHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+      });
+    }
+    for (const name of ["apply_learning_review", "resolve_learning_review"]) {
+      expect(tools.get(name)?.annotations).toEqual({
+        readOnlyHint: false,
+        openWorldHint: false,
+        destructiveHint: true,
+        idempotentHint: true,
+      });
+    }
+    expect(JSON.stringify(tools.get("apply_learning_review")?.inputSchema)).not.toContain("approved");
+    expect(JSON.stringify(tools.get("apply_learning_review")?.inputSchema)).not.toContain("strategyStyle");
+    expect(JSON.stringify(tools.get("resolve_learning_review")?.inputSchema)).not.toContain("cancel");
+    expect(JSON.stringify(tools.get("read_learning_review")?.outputSchema)).toContain(
+      "untrusted_model_generated",
+    );
   });
 
   test("advertises producer-eligible tools before producer scope is granted", async () => {
@@ -947,6 +1070,13 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_open_games",
       "read_agent_season",
       "export_agent_season_data",
+      "list_learning_review_inputs",
+      "list_open_learning_reviews",
+      "read_learning_review",
+      "start_or_resume_learning_review",
+      "retry_learning_review",
+      "apply_learning_review",
+      "resolve_learning_review",
       "create_agent",
       "update_agent",
       "join_queue",
@@ -1025,7 +1155,17 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       expect(typeof tool.annotations.readOnlyHint).toBe("boolean");
       expect(typeof tool.annotations.destructiveHint).toBe("boolean");
 
-      const expectedScopes = ["create_agent", "update_agent", "join_queue", "leave_queue"]
+      const expectedScopes = [
+        "start_or_resume_learning_review",
+        "retry_learning_review",
+        "apply_learning_review",
+        "resolve_learning_review",
+      ].includes(tool.name)
+        ? ["agents:read", "games:read", "agents:write"]
+        : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review"]
+            .includes(tool.name)
+          ? ["agents:read", "games:read"]
+          : ["create_agent", "update_agent", "join_queue", "leave_queue"]
           .includes(tool.name)
         ? ["agents:read", "agents:write"]
         : [
@@ -1085,6 +1225,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(byName.get("create_agent")?.outputSchema)).toContain("profileRevision");
     expect(JSON.stringify(byName.get("update_agent")?.outputSchema)).toContain("waitingSeats");
     expect(byName.get("join_queue")?.description).toContain("Side effect");
+    expect(byName.get("apply_learning_review")?.description).toContain("exact persisted before/after diff");
+    expect(byName.get("apply_learning_review")?.description).toContain("fresh affirmative user message");
+    expect(byName.get("update_agent")?.description).toContain("sourceReviewId");
+    expect(byName.get("update_agent")?.description).toContain("fresh affirmative user message");
+    expect(JSON.stringify(byName.get("update_agent")?.inputSchema)).toContain("sourceReviewId");
   });
 
   test("uses complete metadata for producer inventory without active-match tools", async () => {
