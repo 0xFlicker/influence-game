@@ -1,13 +1,11 @@
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
-  parseOwnerLearningReviewResult,
   type OwnerLearningAnalysisStatus,
   type OwnerLearningAnalysisTrack,
   type OwnerLearningCostSource,
   type OwnerLearningResolution,
-  type OwnerLearningReviewResult,
 } from "./owner-learning-contracts.js";
 import type { OwnerLearningEventKind } from "./owner-learning-events.js";
 
@@ -23,7 +21,6 @@ export interface AdminOwnerLearningReviewFilters {
   dateFrom?: string;
   dateTo?: string;
   track?: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
-  diagnosis?: string;
   status?: OwnerLearningAnalysisStatus;
   model?: string;
   resolution?: OwnerLearningResolution | "open";
@@ -106,12 +103,6 @@ export interface AdminOwnerLearningReviewDetail {
     id: string;
     ordinal: number;
   };
-  selectedGames: Array<{
-    gameId: string;
-    slug: string;
-    position: number;
-    previouslyAnalyzed: boolean;
-  }>;
   policy: {
     eligibility: string;
     evidence: string;
@@ -139,57 +130,12 @@ export interface AdminOwnerLearningReviewDetail {
   };
   disposition: AdminOwnerLearningDisposition;
   acceptance: AdminOwnerLearningAcceptance;
-  result: OwnerLearningReviewResult | null;
-  recommendationAcceptance: Array<{
-    recommendationId: string | null;
-    state: "accepted" | "not_accepted" | "not_applicable";
-  }>;
-  proposalFingerprint: string | null;
   calls: AdminOwnerLearningCall[];
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   application: {
-    proposalFingerprint: string;
-    sourceRecommendationIds: string[];
-    priorRevisionId: string;
-    resultingRevisionId: string;
-    priorStrategyStyle: string;
-    resultingStrategyStyle: string;
     appliedAt: string;
-    mutationReceipt: AdminOwnerLearningMutationReceiptSummary;
   } | null;
-  subsequentDailyFree: {
-    label: string;
-    revisionId: string;
-    games: Array<{
-      gameId: string;
-      slug: string;
-      placement: number;
-      lobbySize: number;
-      totalPoints: number;
-      earnedAt: string;
-    }>;
-  } | null;
-}
-
-export interface AdminOwnerLearningMutationReceiptSummary {
-  schemaVersion: number | null;
-  operation: string | null;
-  profileRevision: {
-    revisionId: string | null;
-    ordinal: number | null;
-    outcome: string | null;
-  } | null;
-  dailyFree: string | null;
-  waitingSeats: {
-    total: number | null;
-    reconciled: number | null;
-    alreadyCurrent: number | null;
-    crossedFreeze: number | null;
-    truncatedCount: number | null;
-  } | null;
-  frozenSeats: { unchanged: number | null } | null;
-  warnings: string[];
 }
 
 export interface AdminOwnerLearningReviewSummary {
@@ -197,16 +143,13 @@ export interface AdminOwnerLearningReviewSummary {
   owner: AdminOwnerLearningReviewDetail["owner"];
   agent: AdminOwnerLearningReviewDetail["agent"];
   reviewedRevision: AdminOwnerLearningReviewDetail["reviewedRevision"];
-  selectedGameCount: number;
   track: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
   status: OwnerLearningAnalysisStatus;
   stage: string;
   resolution: OwnerLearningResolution | null;
-  diagnosis: string | null;
   model: string;
   disposition: AdminOwnerLearningDisposition;
   acceptance: AdminOwnerLearningAcceptance;
-  recommendationCount: number;
   logicalCallCount: number;
   diveCount: number;
   tokens: AdminOwnerLearningTokenTotals;
@@ -237,7 +180,6 @@ export function parseAdminOwnerLearningReviewFilters(
     dateFrom: parseDateFilter(input.dateFrom, "dateFrom", false),
     dateTo: parseDateFilter(input.dateTo, "dateTo", true),
     track: parseEnumFilter(input.track, "track", ["evidence_rich", "strategy_health_check"]),
-    diagnosis: parseTextFilter(input.diagnosis, "diagnosis"),
     status: parseEnumFilter(input.status, "status", ["queued", "running", "ready", "no_change", "failed"]),
     model: parseTextFilter(input.model, "model"),
     resolution: parseEnumFilter(input.resolution, "resolution", [
@@ -252,9 +194,6 @@ export function parseAdminOwnerLearningReviewFilters(
 type BaseReviewRow = Awaited<ReturnType<typeof loadBaseReviews>>[number];
 type CallRow = Awaited<ReturnType<typeof loadCalls>>[number];
 type ApplicationRow = Awaited<ReturnType<typeof loadApplications>>[number];
-type SelectedGameRow = Awaited<ReturnType<typeof loadSelectedGames>>[number];
-type DailyFreeReceiptRow = Awaited<ReturnType<typeof loadDailyFreeReceipts>>[number];
-type AnalysisHistoryRow = Awaited<ReturnType<typeof loadAnalysisHistory>>[number];
 type EventRow = Awaited<ReturnType<typeof loadEvents>>[number];
 
 export async function listAdminOwnerLearningReviews(
@@ -287,13 +226,10 @@ export async function getAdminOwnerLearningReview(
 
 async function loadAdminOwnerLearningRecords(db: DrizzleDB, reviewId?: string) {
   if (reviewId) return loadAdminOwnerLearningDetailRecords(db, reviewId);
-  const [reviews, calls, applications, selectedGames, receipts, analysisHistory, events] = await Promise.all([
+  const [reviews, calls, applications, events] = await Promise.all([
     loadBaseReviews(db),
     loadCalls(db),
     loadApplications(db),
-    loadSelectedGames(db),
-    loadDailyFreeReceipts(db),
-    loadAnalysisHistory(db),
     loadEvents(db),
   ]);
 
@@ -301,43 +237,22 @@ async function loadAdminOwnerLearningRecords(db: DrizzleDB, reviewId?: string) {
     reviews,
     calls,
     applications,
-    selectedGames,
-    receipts,
-    analysisHistory,
     events,
   });
 }
 
 async function loadAdminOwnerLearningDetailRecords(db: DrizzleDB, reviewId: string) {
-  const [reviews, calls, applications, selectedGames] = await Promise.all([
+  const [reviews, calls, applications] = await Promise.all([
     loadBaseReviews(db, reviewId),
     loadCalls(db, reviewId),
     loadApplications(db, reviewId),
-    loadSelectedGames(db, reviewId),
   ]);
   if (reviews.length === 0) return { details: [], events: [] };
-
-  const applicationByReview = new Map(applications.map((row) => [row.reviewId, row]));
-  const correlationRevisionIds = reviews.flatMap((review) => {
-    const application = applicationByReview.get(review.id);
-    if (application) return [application.resultingRevisionId];
-    return ["manual_update", "superseded"].includes(review.resolution ?? "")
-      ? []
-      : [review.reviewedRevisionId];
-  });
-  const selectedGameIds = [...new Set(selectedGames.map((row) => row.gameId))];
-  const [receipts, analysisHistory] = await Promise.all([
-    loadDailyFreeReceipts(db, [...new Set(correlationRevisionIds)]),
-    loadAnalysisHistory(db, selectedGameIds),
-  ]);
 
   return assembleAdminOwnerLearningRecords({
     reviews,
     calls,
     applications,
-    selectedGames,
-    receipts,
-    analysisHistory,
     events: [],
   });
 }
@@ -346,25 +261,17 @@ function assembleAdminOwnerLearningRecords(input: {
   reviews: BaseReviewRow[];
   calls: CallRow[];
   applications: ApplicationRow[];
-  selectedGames: SelectedGameRow[];
-  receipts: DailyFreeReceiptRow[];
-  analysisHistory: AnalysisHistoryRow[];
   events: EventRow[];
 }) {
-  const { reviews, calls, applications, selectedGames, receipts, analysisHistory, events } = input;
+  const { reviews, calls, applications, events } = input;
 
   const callsByReview = Map.groupBy(calls, (row) => row.reviewId);
   const applicationsByReview = new Map(applications.map((row) => [row.reviewId, row]));
-  const gamesByReview = Map.groupBy(selectedGames, (row) => row.reviewId);
-  const receiptsByRevision = Map.groupBy(receipts, (row) => row.agentRevisionId);
 
   const details = reviews.map((review) => toDetail({
     review,
     calls: callsByReview.get(review.id) ?? [],
     application: applicationsByReview.get(review.id) ?? null,
-    selectedGames: gamesByReview.get(review.id) ?? [],
-    analysisHistory,
-    receiptsByRevision,
   }));
   return { details, events };
 }
@@ -396,7 +303,6 @@ async function loadBaseReviews(db: DrizzleDB, reviewId?: string) {
     logicalCallCount: schema.agentLearningReviews.logicalCallCount,
     diveCount: schema.agentLearningReviews.diveCount,
     result: schema.agentLearningReviews.result,
-    proposalFingerprint: schema.agentLearningReviews.proposalFingerprint,
     createdAt: schema.agentLearningReviews.createdAt,
     startedAt: schema.agentLearningReviews.startedAt,
     completedAt: schema.agentLearningReviews.completedAt,
@@ -443,69 +349,10 @@ async function loadCalls(db: DrizzleDB, reviewId?: string) {
 async function loadApplications(db: DrizzleDB, reviewId?: string) {
   const query = db.select({
     reviewId: schema.agentLearningReviewApplications.reviewId,
-    proposalFingerprint: schema.agentLearningReviewApplications.proposalFingerprint,
-    sourceRecommendationIds: schema.agentLearningReviewApplications.sourceRecommendationIds,
-    priorRevisionId: schema.agentLearningReviewApplications.priorRevisionId,
-    resultingRevisionId: schema.agentLearningReviewApplications.resultingRevisionId,
-    priorStrategyStyle: schema.agentLearningReviewApplications.priorStrategyStyle,
-    resultingStrategyStyle: schema.agentLearningReviewApplications.resultingStrategyStyle,
-    mutationReceipt: schema.agentLearningReviewApplications.mutationReceipt,
     appliedAt: schema.agentLearningReviewApplications.appliedAt,
   }).from(schema.agentLearningReviewApplications);
   return reviewId
     ? query.where(eq(schema.agentLearningReviewApplications.reviewId, reviewId))
-    : query;
-}
-
-async function loadSelectedGames(db: DrizzleDB, reviewId?: string) {
-  const query = db.select({
-    reviewId: schema.agentLearningReviewGames.reviewId,
-    gameId: schema.agentLearningReviewGames.gameId,
-    position: schema.agentLearningReviewGames.position,
-    slug: schema.games.slug,
-  }).from(schema.agentLearningReviewGames)
-    .innerJoin(schema.games, eq(schema.agentLearningReviewGames.gameId, schema.games.id));
-  return reviewId
-    ? query.where(eq(schema.agentLearningReviewGames.reviewId, reviewId))
-    : query;
-}
-
-async function loadDailyFreeReceipts(db: DrizzleDB, agentRevisionIds?: string[]) {
-  if (agentRevisionIds?.length === 0) return [];
-  const query = db.select({
-    agentRevisionId: schema.competitionReceipts.agentRevisionId,
-    gameId: schema.competitionReceipts.gameId,
-    slug: schema.games.slug,
-    placement: schema.competitionReceipts.placement,
-    lobbySize: schema.competitionReceipts.lobbySize,
-    totalPoints: schema.competitionReceipts.totalPoints,
-    earnedAt: schema.competitionReceipts.earnedAt,
-  }).from(schema.competitionReceipts)
-    .innerJoin(schema.games, eq(schema.competitionReceipts.gameId, schema.games.id));
-  return query.where(and(
-      eq(schema.games.trackType, "free"),
-      eq(schema.competitionReceipts.eligibilityStatus, "eligible"),
-      ...(agentRevisionIds
-        ? [inArray(schema.competitionReceipts.agentRevisionId, agentRevisionIds)]
-        : []),
-    ));
-}
-
-async function loadAnalysisHistory(db: DrizzleDB, gameIds?: string[]) {
-  if (gameIds?.length === 0) return [];
-  const query = db.select({
-    reviewId: schema.agentLearningReviewGames.reviewId,
-    gameId: schema.agentLearningReviewGames.gameId,
-    reviewCreatedAt: schema.agentLearningReviews.createdAt,
-    reviewCompletedAt: schema.agentLearningReviews.completedAt,
-    analysisStatus: schema.agentLearningReviews.analysisStatus,
-  }).from(schema.agentLearningReviewGames)
-    .innerJoin(
-      schema.agentLearningReviews,
-      eq(schema.agentLearningReviewGames.reviewId, schema.agentLearningReviews.id),
-    );
-  return gameIds
-    ? query.where(inArray(schema.agentLearningReviewGames.gameId, gameIds))
     : query;
 }
 
@@ -521,52 +368,12 @@ function toDetail(input: {
   review: BaseReviewRow;
   calls: CallRow[];
   application: ApplicationRow | null;
-  selectedGames: SelectedGameRow[];
-  analysisHistory: AnalysisHistoryRow[];
-  receiptsByRevision: Map<string, DailyFreeReceiptRow[]>;
 }): AdminOwnerLearningReviewDetail {
-  const result = input.review.result == null
-    ? null
-    : parseOwnerLearningReviewResult(input.review.result);
   const calls = input.calls.sort((left, right) => left.ordinal - right.ordinal).map(toCall);
   const tokens = aggregateTokens(calls);
   const cost = aggregateCost(calls);
   const disposition = deriveAdminDisposition(input.review, input.application);
   const acceptance = deriveAcceptance(disposition);
-  const acceptedRecommendationIds = new Set(input.application?.sourceRecommendationIds ?? []);
-  const selectedGames = input.selectedGames
-    .sort((left, right) => left.position - right.position)
-    .map((game) => ({
-      gameId: game.gameId,
-      slug: game.slug,
-      position: game.position,
-      previouslyAnalyzed: input.analysisHistory.some((prior) => {
-        if (prior.gameId !== game.gameId || prior.reviewId === input.review.id) return false;
-        return prior.reviewCompletedAt != null
-          && prior.reviewCreatedAt < input.review.createdAt
-          && ["ready", "no_change"].includes(prior.analysisStatus);
-      }),
-    }));
-  const anchor = input.application?.appliedAt
-    ?? input.review.resolvedAt
-    ?? input.review.completedAt;
-  const correlationRevisionId = input.application?.resultingRevisionId
-    ?? (["manual_update", "superseded"].includes(input.review.resolution ?? "")
-      ? null
-      : input.review.reviewedRevisionId);
-  const subsequentGames = correlationRevisionId && anchor
-    ? (input.receiptsByRevision.get(correlationRevisionId) ?? [])
-      .filter((receipt) => receipt.earnedAt > anchor && receipt.placement != null)
-      .sort((left, right) => left.earnedAt.localeCompare(right.earnedAt))
-      .map((receipt) => ({
-        gameId: receipt.gameId,
-        slug: receipt.slug,
-        placement: receipt.placement!,
-        lobbySize: receipt.lobbySize,
-        totalPoints: receipt.totalPoints,
-        earnedAt: receipt.earnedAt,
-      }))
-    : [];
 
   return {
     id: input.review.id,
@@ -580,7 +387,6 @@ function toDetail(input: {
       id: input.review.reviewedRevisionId,
       ordinal: input.review.reviewedRevisionOrdinal,
     },
-    selectedGames,
     policy: {
       eligibility: input.review.eligibilityPolicyVersion,
       evidence: input.review.evidenceVersion,
@@ -608,36 +414,12 @@ function toDetail(input: {
     },
     disposition,
     acceptance,
-    result,
-    recommendationAcceptance: (result?.recommendations ?? []).map((recommendation) => ({
-      recommendationId: recommendation.id ?? null,
-      state: disposition === "no_change"
-        ? "not_applicable"
-        : recommendation.id && acceptedRecommendationIds.has(recommendation.id)
-          ? "accepted"
-          : "not_accepted",
-    })),
-    proposalFingerprint: input.review.proposalFingerprint,
     calls,
     tokens,
     cost,
     application: input.application
       ? {
-          proposalFingerprint: input.application.proposalFingerprint,
-          sourceRecommendationIds: [...input.application.sourceRecommendationIds],
-          priorRevisionId: input.application.priorRevisionId,
-          resultingRevisionId: input.application.resultingRevisionId,
-          priorStrategyStyle: input.application.priorStrategyStyle,
-          resultingStrategyStyle: input.application.resultingStrategyStyle,
           appliedAt: input.application.appliedAt,
-          mutationReceipt: summarizeMutationReceipt(input.application.mutationReceipt),
-        }
-      : null,
-    subsequentDailyFree: correlationRevisionId && anchor
-      ? {
-          label: "Later Daily Free games on this executed revision — correlation, not causal proof",
-          revisionId: correlationRevisionId,
-          games: subsequentGames,
         }
       : null,
   };
@@ -723,16 +505,13 @@ function toSummary(detail: AdminOwnerLearningReviewDetail): AdminOwnerLearningRe
     owner: detail.owner,
     agent: detail.agent,
     reviewedRevision: detail.reviewedRevision,
-    selectedGameCount: detail.selectedGames.length,
     track: detail.lifecycle.track,
     status: detail.lifecycle.status,
     stage: detail.lifecycle.stage,
     resolution: detail.lifecycle.resolution,
-    diagnosis: detail.result?.diagnosis ?? null,
     model: detail.policy.model,
     disposition: detail.disposition,
     acceptance: detail.acceptance,
-    recommendationCount: detail.result?.recommendations.length ?? 0,
     logicalCallCount: detail.lifecycle.logicalCallCount,
     diveCount: detail.lifecycle.diveCount,
     tokens: detail.tokens,
@@ -792,7 +571,7 @@ function aggregateEventCounts(
 ): Partial<Record<OwnerLearningEventKind, number>> {
   const reviewIds = new Set(details.map((detail) => detail.id));
   const hasReviewFilters = Boolean(
-    filters.track || filters.diagnosis || filters.status || filters.model
+    filters.track || filters.status || filters.model
     || filters.resolution || filters.application,
   );
   const counts: Partial<Record<OwnerLearningEventKind, number>> = {};
@@ -825,10 +604,6 @@ function matchesFilters(
   if (filters.resolution && filters.resolution !== "open"
     && detail.lifecycle.resolution !== filters.resolution) return false;
   if (filters.application && detail.acceptance !== filters.application) return false;
-  if (filters.diagnosis
-    && !detail.result?.diagnosis.toLocaleLowerCase().includes(filters.diagnosis.toLocaleLowerCase())) {
-    return false;
-  }
   return true;
 }
 
@@ -869,37 +644,6 @@ function parseEnumFilter<const T extends string>(
   return normalized as T;
 }
 
-function summarizeMutationReceipt(value: Record<string, unknown>): AdminOwnerLearningMutationReceiptSummary {
-  const profileRevision = recordValue(value.profileRevision);
-  const waitingSeats = recordValue(value.waitingSeats);
-  const frozenSeats = recordValue(value.frozenSeats);
-  return {
-    schemaVersion: finiteNumber(value.schemaVersion),
-    operation: stringValue(value.operation),
-    profileRevision: profileRevision
-      ? {
-          revisionId: stringValue(profileRevision.revisionId),
-          ordinal: finiteNumber(profileRevision.ordinal),
-          outcome: stringValue(profileRevision.outcome),
-        }
-      : null,
-    dailyFree: stringValue(value.dailyFree),
-    waitingSeats: waitingSeats
-      ? {
-          total: finiteNumber(waitingSeats.total),
-          reconciled: finiteNumber(waitingSeats.reconciled),
-          alreadyCurrent: finiteNumber(waitingSeats.alreadyCurrent),
-          crossedFreeze: finiteNumber(waitingSeats.crossedFreeze),
-          truncatedCount: finiteNumber(waitingSeats.truncatedCount),
-        }
-      : null,
-    frozenSeats: frozenSeats ? { unchanged: finiteNumber(frozenSeats.unchanged) } : null,
-    warnings: Array.isArray(value.warnings)
-      ? value.warnings.filter((warning): warning is string => typeof warning === "string")
-      : [],
-  };
-}
-
 function emptyTokenTotals(): AdminOwnerLearningTokenTotals {
   return { input: 0, cachedInput: 0, totalOutput: 0, reasoning: 0, visibleOutput: 0, unavailableCallCount: 0 };
 }
@@ -930,14 +674,4 @@ function finiteToken(value: unknown): number | null {
 
 function finiteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function stringValue(value: unknown): string | null {
-  return typeof value === "string" ? value : null;
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }

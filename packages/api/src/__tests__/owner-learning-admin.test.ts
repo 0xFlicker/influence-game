@@ -25,7 +25,7 @@ beforeAll(() => {
 });
 
 describe("owner learning admin ledger", () => {
-  test("aggregates immutable calls, exact acceptance, and revision-correct later play", async () => {
+  test("aggregates operational calls, provider diagnostics, and user action", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
     await db.update(schema.users).set({
@@ -94,7 +94,7 @@ describe("owner learning admin ledger", () => {
       },
     }).where(eq(schema.agentLearningReviews.id, reviewId));
 
-    const applied = await applyOwnedOwnerLearningReview(db, {
+    await applyOwnedOwnerLearningReview(db, {
       ownerUserId: fixture.ownerUserId,
       reviewId,
       proposalFingerprint: ready.proposalFingerprint,
@@ -109,50 +109,10 @@ describe("owner learning admin ledger", () => {
       },
     }).where(eq(schema.agentLearningReviewApplications.reviewId, reviewId));
 
-    const seasonId = randomUUID();
-    const laterGameId = randomUUID();
-    await db.insert(schema.seasons).values({
-      id: seasonId,
-      slug: `learning-season-${seasonId}`,
-      name: "Learning season",
-      status: "final",
-    });
-    await db.insert(schema.games).values({
-      id: laterGameId,
-      slug: `learning-later-${laterGameId}`,
-      config: "{}",
-      status: "completed",
-      trackType: "free",
-      seasonId,
-      minPlayers: 2,
-      maxPlayers: 8,
-      endedAt: "2026-08-04T05:00:00.000Z",
-    });
-    await db.insert(schema.competitionReceipts).values({
-      id: randomUUID(),
-      seasonId,
-      gameId: laterGameId,
-      ownerId: fixture.ownerUserId,
-      agentProfileId: fixture.agentProfileId,
-      agentRevisionId: applied.resultingRevisionId,
-      agentNameSnapshot: "Learning agent",
-      eligibilityStatus: "eligible",
-      lobbySize: 8,
-      placement: 2,
-      basePoints: 4,
-      fieldBonus: 1,
-      totalPoints: 5,
-      scoringPolicyVersion: "test-v1",
-      earnedAt: "2026-08-04T05:00:00.000Z",
-      createdAt: "2026-08-04T05:00:00.000Z",
-    });
-
     const detail = await getAdminOwnerLearningReview(db, reviewId);
     expect(detail).not.toBeNull();
     expect(detail!.acceptance).toBe("accepted");
-    expect(detail!.recommendationAcceptance).toEqual([
-      { recommendationId: "olrec_admin_1", state: "accepted" },
-    ]);
+    expect(detail!.application).toEqual({ appliedAt: "2026-08-04T04:00:00.000Z" });
     expect(detail!.tokens).toEqual({
       input: 1_000,
       cachedInput: 600,
@@ -177,14 +137,14 @@ describe("owner learning admin ledger", () => {
       providerRequestId: "req-admin-diagnostic",
       latencyMs: 359,
     });
-    expect(detail!.subsequentDailyFree).toMatchObject({
-      revisionId: applied.resultingRevisionId,
-      games: [{ gameId: laterGameId, placement: 2, lobbySize: 8 }],
-    });
-    expect(detail!.subsequentDailyFree!.label).toContain("correlation, not causal proof");
-
     const serialized = JSON.stringify(detail);
-    expect(serialized).toContain("GENERATED_RECOMMENDATION_SENTINEL");
+    for (const sentinel of [
+      "GENERATED_RECOMMENDATION_SENTINEL",
+      "Make the commitment testable",
+      "testable vote plan",
+    ]) {
+      expect(serialized).not.toContain(sentinel);
+    }
     for (const sentinel of [
       "TRANSCRIPT_SENTINEL",
       "COGNITION_SENTINEL",
@@ -199,7 +159,6 @@ describe("owner learning admin ledger", () => {
       dateFrom: "2026-08-04T00:00:00.000Z",
       dateTo: "2026-08-04T23:59:59.999Z",
       track: "evidence_rich",
-      diagnosis: "testable vote",
       status: "ready",
       model: "openai:gpt-5.6-luna",
       resolution: "applied",

@@ -2537,16 +2537,13 @@ export interface AdminOwnerLearningReviewSummary {
   owner: { userId: string; displayName: string | null; handle: string | null };
   agent: { profileId: string; name: string };
   reviewedRevision: { id: string; ordinal: number };
-  selectedGameCount: number;
   track: "evidence_rich" | "strategy_health_check";
   status: OwnerLearningAnalysisStatus;
   stage: OwnerLearningStage;
   resolution: OwnerLearningResolution | null;
-  diagnosis: string | null;
   model: string;
   disposition: AdminOwnerLearningDisposition;
   acceptance: AdminOwnerLearningAcceptance;
-  recommendationCount: number;
   logicalCallCount: number;
   diveCount: number;
   tokens: AdminOwnerLearningTokenTotals;
@@ -2575,12 +2572,6 @@ export interface AdminOwnerLearningReviewDetail {
   owner: AdminOwnerLearningReviewSummary["owner"];
   agent: AdminOwnerLearningReviewSummary["agent"];
   reviewedRevision: AdminOwnerLearningReviewSummary["reviewedRevision"];
-  selectedGames: Array<{
-    gameId: string;
-    slug: string;
-    position: number;
-    previouslyAnalyzed: boolean;
-  }>;
   policy: {
     eligibility: string;
     evidence: string;
@@ -2608,12 +2599,6 @@ export interface AdminOwnerLearningReviewDetail {
   };
   disposition: AdminOwnerLearningDisposition;
   acceptance: AdminOwnerLearningAcceptance;
-  result: OwnerLearningReview["result"];
-  recommendationAcceptance: Array<{
-    recommendationId: string | null;
-    state: "accepted" | "not_accepted" | "not_applicable";
-  }>;
-  proposalFingerprint: string | null;
   calls: Array<{
     ordinal: number;
     state: string;
@@ -2646,40 +2631,7 @@ export interface AdminOwnerLearningReviewDetail {
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   application: null | {
-    proposalFingerprint: string;
-    sourceRecommendationIds: string[];
-    priorRevisionId: string;
-    resultingRevisionId: string;
-    priorStrategyStyle: string;
-    resultingStrategyStyle: string;
     appliedAt: string;
-    mutationReceipt: {
-      schemaVersion: number | null;
-      operation: string | null;
-      profileRevision: { revisionId: string | null; ordinal: number | null; outcome: string | null } | null;
-      dailyFree: string | null;
-      waitingSeats: {
-        total: number | null;
-        reconciled: number | null;
-        alreadyCurrent: number | null;
-        crossedFreeze: number | null;
-        truncatedCount: number | null;
-      } | null;
-      frozenSeats: { unchanged: number | null } | null;
-      warnings: string[];
-    };
-  };
-  subsequentDailyFree: null | {
-    label: string;
-    revisionId: string;
-    games: Array<{
-      gameId: string;
-      slug: string;
-      placement: number;
-      lobbySize: number;
-      totalPoints: number;
-      earnedAt: string;
-    }>;
   };
 }
 
@@ -2687,7 +2639,6 @@ export interface AdminOwnerLearningReviewFilters {
   dateFrom?: string;
   dateTo?: string;
   track?: "evidence_rich" | "strategy_health_check";
-  diagnosis?: string;
   status?: OwnerLearningAnalysisStatus;
   model?: string;
   resolution?: OwnerLearningResolution | "open";

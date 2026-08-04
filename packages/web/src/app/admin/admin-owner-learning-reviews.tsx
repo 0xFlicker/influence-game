@@ -77,12 +77,9 @@ export function AdminOwnerLearningReviews() {
           <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.28em] text-indigo-300/70">Owner Learning Loop</p>
           <h2 id="owner-learning-ledger-title" className="text-2xl font-semibold tracking-tight text-text-primary">Review ledger</h2>
           <p className="influence-copy mt-2 text-sm leading-6">
-            Inspect what the reviewer recommended, what it cost, and whether the owner accepted the exact proposal.
+            Monitor review lifecycle, provider errors, usage receipts, cost, and user action.
           </p>
         </div>
-        <p className="max-w-md rounded-xl border border-amber-300/20 bg-amber-300/[0.06] px-4 py-3 text-xs leading-5 text-amber-100/70">
-          Later game results are grouped by the revision that actually played. They are correlation, never causal proof of an update.
-        </p>
       </div>
 
       {error && <p role="alert" className="mb-4 rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">{error}</p>}
@@ -132,7 +129,7 @@ export function AdminOwnerLearningReviewsContent({
       ) : (
         <div className="overflow-hidden rounded-2xl border border-border-active/70 bg-surface-raised/60 shadow-[0_24px_80px_rgba(0,0,0,0.22)]">
           <div className="hidden grid-cols-[minmax(14rem,1.4fr)_8rem_8rem_9rem_8rem_2rem] gap-4 border-b border-border-active/70 px-5 py-3 font-mono text-[10px] uppercase tracking-[0.18em] text-text-muted lg:grid">
-            <span>Owner / agent</span><span>Track</span><span>State</span><span>Cost</span><span>Accepted</span><span />
+            <span>Owner / agent</span><span>Track</span><span>State</span><span>Cost</span><span>Action</span><span />
           </div>
           {data.reviews.map((review) => (
             <ReviewLedgerRow
@@ -170,14 +167,13 @@ function ReviewFilters({
       className="influence-panel rounded-2xl p-4"
       onSubmit={(event) => { event.preventDefault(); onApply(); }}
     >
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
         <FilterLabel label="From"><input type="date" className={fieldClass} value={value.dateFrom ?? ""} onChange={(event) => onChange({ ...value, dateFrom: event.target.value || undefined })} /></FilterLabel>
         <FilterLabel label="To"><input type="date" className={fieldClass} value={value.dateTo ?? ""} onChange={(event) => onChange({ ...value, dateTo: event.target.value || undefined })} /></FilterLabel>
         <FilterLabel label="Track"><select className={fieldClass} value={value.track ?? ""} onChange={(event) => onChange({ ...value, track: optionalTrack(event.target.value) })}><option value="">All tracks</option><option value="evidence_rich">Evidence-rich</option><option value="strategy_health_check">Health check</option></select></FilterLabel>
         <FilterLabel label="Status"><select className={fieldClass} value={value.status ?? ""} onChange={(event) => onChange({ ...value, status: optionalStatus(event.target.value) })}><option value="">All states</option><option value="queued">Queued</option><option value="running">Running</option><option value="ready">Ready</option><option value="no_change">No change</option><option value="failed">Failed</option></select></FilterLabel>
         <FilterLabel label="Resolution"><select className={fieldClass} value={value.resolution ?? ""} onChange={(event) => onChange({ ...value, resolution: optionalResolution(event.target.value) })}><option value="">All outcomes</option><option value="open">Open</option><option value="applied">Applied</option><option value="manual_update">Manual update</option><option value="declined">Declined</option><option value="no_change">No change</option><option value="failed">Failed</option><option value="superseded">Superseded</option></select></FilterLabel>
-        <FilterLabel label="Accepted"><select className={fieldClass} value={value.application ?? ""} onChange={(event) => onChange({ ...value, application: optionalAcceptance(event.target.value) })}><option value="">Any</option><option value="accepted">Yes</option><option value="not_accepted">No</option><option value="not_applicable">N/A</option><option value="pending">Pending</option></select></FilterLabel>
-        <FilterLabel label="Diagnosis"><input type="search" maxLength={200} placeholder="contains…" className={fieldClass} value={value.diagnosis ?? ""} onChange={(event) => onChange({ ...value, diagnosis: event.target.value || undefined })} /></FilterLabel>
+        <FilterLabel label="Action"><select className={fieldClass} value={value.application ?? ""} onChange={(event) => onChange({ ...value, application: optionalAcceptance(event.target.value) })}><option value="">Any</option><option value="accepted">Applied</option><option value="not_accepted">Other / none</option><option value="not_applicable">No change</option><option value="pending">Pending</option></select></FilterLabel>
         <FilterLabel label="Model"><input type="search" maxLength={200} placeholder="exact model" className={fieldClass} value={value.model ?? ""} onChange={(event) => onChange({ ...value, model: event.target.value || undefined })} /></FilterLabel>
       </div>
       <div className="mt-4 flex justify-end gap-2">
@@ -191,19 +187,18 @@ function ReviewFilters({
 function AnalyticsStrip({ data }: { data: AdminOwnerLearningReviewList }) {
   const { analytics } = data;
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
       <Metric eyebrow="Reviews" value={analytics.reviewCount.toLocaleString()} detail={`${analytics.eventCounts.review_started ?? 0} purchased starts`} />
-      <Metric eyebrow="Completed" value={String((analytics.eventCounts.recommendations_viewed ?? 0) + (analytics.eventCounts.review_resolved ?? 0))} detail="view or resolution signals" />
-      <Metric eyebrow="Output" value={analytics.tokens.totalOutput.toLocaleString()} detail={`${analytics.tokens.reasoning.toLocaleString()} reasoning · ${analytics.tokens.visibleOutput.toLocaleString()} visible`} />
-      <Metric eyebrow="Recorded cost" value={formatMicrousd(analytics.cost.actualMicrousd + analytics.cost.estimatedMicrousd)} detail={`${formatMicrousd(analytics.cost.actualMicrousd)} actual · ${formatMicrousd(analytics.cost.estimatedMicrousd)} estimated`} />
-      <Metric eyebrow="Unpriced" value={analytics.cost.unavailableCallCount.toLocaleString()} detail="calls remain unknown, never $0" warning={analytics.cost.unavailableCallCount > 0} />
+      <Metric eyebrow="User activity" value={String((analytics.eventCounts.recommendations_viewed ?? 0) + (analytics.eventCounts.review_resolved ?? 0))} detail="views + resolutions" />
+      <Metric eyebrow="Tokens" value={analytics.tokens.totalOutput.toLocaleString()} detail={`${analytics.tokens.reasoning.toLocaleString()} reasoning · ${analytics.tokens.visibleOutput.toLocaleString()} visible`} />
+      <Metric eyebrow="Recorded cost" value={formatRecordedCost(analytics.cost)} detail={formatRecordedCostDetail(analytics.cost)} />
     </div>
   );
 }
 
-function Metric({ eyebrow, value, detail, warning = false }: { eyebrow: string; value: string; detail: string; warning?: boolean }) {
+function Metric({ eyebrow, value, detail }: { eyebrow: string; value: string; detail: string }) {
   return (
-    <div className={`rounded-2xl border p-4 ${warning ? "border-amber-300/20 bg-amber-300/[0.05]" : "border-border-active/70 bg-surface-raised/60"}`}>
+    <div className="rounded-2xl border border-border-active/70 bg-surface-raised/60 p-4">
       <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-text-muted">{eyebrow}</p>
       <p className="mt-2 font-mono text-xl font-semibold tabular-nums text-text-primary">{value}</p>
       <p className="mt-1 text-[11px] text-text-muted">{detail}</p>
@@ -239,17 +234,17 @@ function ReviewLedgerRow({
             <span className="rounded-full border border-white/10 px-2 py-0.5 font-mono text-[9px] text-text-muted">r{review.reviewedRevision.ordinal}</span>
           </div>
           <p className="mt-1 truncate text-xs text-text-muted">{review.owner.displayName ?? review.owner.handle ?? review.owner.userId}</p>
-          <p className="mt-2 line-clamp-1 text-xs leading-5 text-text-secondary lg:hidden">{review.diagnosis ?? "Analysis is still cooking."}</p>
+          <p className="mt-2 line-clamp-1 text-xs leading-5 text-text-secondary lg:hidden">{humanize(review.resolution ?? review.status)}</p>
         </div>
         <LedgerCell label="Track"><TrackBadge track={review.track} /></LedgerCell>
         <LedgerCell label="State"><StateBadge value={review.resolution ?? review.status} /></LedgerCell>
         <LedgerCell label="Cost"><CostSummary cost={review.cost} /></LedgerCell>
-        <LedgerCell label="Accepted"><AcceptanceBadge value={review.acceptance} /></LedgerCell>
+        <LedgerCell label="Action"><ActionBadge value={review.disposition} /></LedgerCell>
         <span aria-hidden="true" className={`text-lg text-text-muted transition-transform ${expanded ? "rotate-180" : ""}`}>⌄</span>
       </button>
       {expanded && (
         <div className="border-t border-border-active/50 bg-black/[0.08] px-5 py-6">
-          {loading && <p role="status" className="text-xs text-text-muted">Loading validated review artifact…</p>}
+          {loading && <p role="status" className="text-xs text-text-muted">Loading review diagnostics…</p>}
           {detail && <ReviewDetail detail={detail} />}
         </div>
       )}
@@ -261,11 +256,7 @@ function ReviewDetail({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
   return (
     <div className="space-y-6">
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.75fr)]">
-        <div className="rounded-2xl border border-indigo-300/15 bg-indigo-300/[0.04] p-5">
-          <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-indigo-200/60">Validated diagnosis</p>
-          <p className="mt-3 whitespace-pre-wrap text-base leading-7 text-text-primary">{detail.result?.diagnosis ?? "No validated diagnosis yet."}</p>
-          {detail.result?.strategyHealthClassification && <p className="mt-3 text-xs text-text-muted">Health classification · {humanize(detail.result.strategyHealthClassification)}</p>}
-        </div>
+        <ReceiptPanel detail={detail} />
         <div className="rounded-2xl border border-border-active/70 p-5">
           <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-text-muted">Identity & policy</p>
           <dl className="mt-3 space-y-2 text-xs">
@@ -285,72 +276,6 @@ function ReviewDetail({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
           </dl>
         </div>
       </div>
-
-      <div>
-        <SectionHeading eyebrow="Evidence set" title={`${detail.selectedGames.length} selected Daily Free game${detail.selectedGames.length === 1 ? "" : "s"}`} />
-        <div className="mt-3 flex flex-wrap gap-2">
-          {detail.selectedGames.map((game) => (
-            <span key={game.gameId} className="rounded-xl border border-border-active/70 bg-white/[0.02] px-3 py-2 text-xs text-text-secondary">
-              <span className="font-mono text-[9px] text-text-muted">#{game.position}</span> {game.slug}
-              {game.previouslyAnalyzed && <span className="ml-2 text-indigo-200/60">Previously analyzed</span>}
-            </span>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <SectionHeading eyebrow="Recommendation set" title={`${detail.result?.recommendations.length ?? 0} recommendation${detail.result?.recommendations.length === 1 ? "" : "s"}`} />
-        <div className="mt-3 grid gap-3 xl:grid-cols-3">
-          {(detail.result?.recommendations ?? []).map((recommendation, index) => {
-            const acceptance = detail.recommendationAcceptance[index]?.state ?? "not_accepted";
-            return (
-              <div key={recommendation.id ?? `${detail.id}-${index}`} className="rounded-2xl border border-border-active/70 bg-surface-raised/40 p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-mono text-[10px] uppercase tracking-[0.17em] text-text-muted">{humanize(recommendation.disposition)} · {recommendation.confidence}</p>
-                    <h4 className="mt-2 text-sm font-semibold leading-5 text-text-primary">{recommendation.title}</h4>
-                  </div>
-                  <RecommendationAcceptance value={acceptance} />
-                </div>
-                <p className="mt-4 whitespace-pre-wrap text-xs leading-6 text-text-secondary">{recommendation.rationale}</p>
-                {recommendation.keepGuidance && <PlainTextBlock label="Keep guidance" text={recommendation.keepGuidance} />}
-                {recommendation.proof && (
-                  <div className="mt-4 space-y-3 border-t border-border-active/60 pt-4">
-                    <ProofFact label="Observed" value={recommendation.proof.observedEvidence} />
-                    <ProofFact label="Interpretation" value={recommendation.proof.strategicInterpretation} />
-                    <ProofFact label="Guidance" value={recommendation.proof.proposedGuidance} />
-                    <p className="font-mono text-[10px] text-text-muted">{humanize(recommendation.proof.kind)}{recommendation.proof.rubricCategory ? ` · ${humanize(recommendation.proof.rubricCategory)}` : ""}</p>
-                  </div>
-                )}
-                {recommendation.evidenceRefs.length > 0 && (
-                  <div className="mt-4 flex flex-wrap gap-1.5" aria-label="Server-minted evidence references">
-                    {recommendation.evidenceRefs.map((ref) => (
-                      <span key={`${ref.gameId}:${ref.coordinate}`} className="rounded-md border border-cyan-300/15 bg-cyan-300/[0.04] px-2 py-1 font-mono text-[9px] text-cyan-100/60">
-                        {humanize(ref.kind)} · {ref.coordinate}
-                      </span>
-                    ))}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {detail.result?.proposal && (
-        <div>
-          <SectionHeading eyebrow="Exact proposal" title="Strategy diff" />
-          <div className="mt-3 grid overflow-hidden rounded-2xl border border-border-active/70 lg:grid-cols-2">
-            <DiffBlock label="Before" text={detail.result.proposal.before} tone="before" />
-            <DiffBlock label="After" text={detail.result.proposal.after} tone="after" />
-          </div>
-        </div>
-      )}
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <ReceiptPanel detail={detail} />
-        <GameCorrelation detail={detail} />
-      </div>
       <CallLedger detail={detail} />
     </div>
   );
@@ -359,45 +284,16 @@ function ReviewDetail({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
 function ReceiptPanel({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
   return (
     <div className="rounded-2xl border border-border-active/70 p-5">
-      <SectionHeading eyebrow="Owner outcome" title={humanize(detail.disposition)} />
+      <SectionHeading eyebrow="User action" title={userActionLabel(detail)} />
       <div className="mt-4 flex flex-wrap gap-2">
-        <AcceptanceBadge value={detail.acceptance} />
+        <ActionBadge value={detail.disposition} />
         <StateBadge value={detail.lifecycle.resolution ?? detail.lifecycle.status} />
       </div>
       {detail.application ? (
         <dl className="mt-5 space-y-2 text-xs">
           <InlineFact label="Applied" value={formatDateTime(detail.application.appliedAt)} />
-          <InlineFact label="Prior revision" value={detail.application.priorRevisionId} mono />
-          <InlineFact label="Resulting revision" value={detail.application.resultingRevisionId} mono />
-          <InlineFact label="Receipt" value={`${detail.application.mutationReceipt.operation ?? "unknown"} · ${detail.application.mutationReceipt.profileRevision?.outcome ?? "unknown"}`} />
-          <InlineFact label="Waiting seats" value={String(detail.application.mutationReceipt.waitingSeats?.reconciled ?? 0)} />
         </dl>
-      ) : (
-        <p className="mt-4 text-xs leading-5 text-text-muted">No exact-proposal application receipt. Manual updates remain review-driven but do not count as acceptance.</p>
-      )}
-    </div>
-  );
-}
-
-function GameCorrelation({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
-  return (
-    <div className="rounded-2xl border border-border-active/70 p-5">
-      <SectionHeading eyebrow="Return to play" title="Daily Free on the executed revision" />
-      {detail.subsequentDailyFree ? (
-        <>
-          <p className="mt-3 text-xs leading-5 text-amber-100/60">{detail.subsequentDailyFree.label}</p>
-          <div className="mt-4 space-y-2">
-            {detail.subsequentDailyFree.games.length === 0 ? (
-              <p className="text-xs text-text-muted">No later Daily Free game has executed this revision yet.</p>
-            ) : detail.subsequentDailyFree.games.map((game) => (
-              <div key={game.gameId} className="flex items-center justify-between rounded-lg bg-white/[0.025] px-3 py-2 text-xs">
-                <span className="text-text-secondary">{game.slug}</span>
-                <span className="font-mono text-text-muted">#{game.placement}/{game.lobbySize} · {game.totalPoints} pts</span>
-              </div>
-            ))}
-          </div>
-        </>
-      ) : <p className="mt-3 text-xs leading-5 text-text-muted">This resolution does not persist a trustworthy resulting revision, so no later-game attribution is shown.</p>}
+      ) : null}
     </div>
   );
 }
@@ -422,7 +318,7 @@ function CallLedger({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
               <td className="px-4 py-3 text-right font-mono text-text-secondary">{formatOptionalInt(call.tokens.input)} / {formatOptionalInt(call.tokens.cachedInput)}</td>
               <td className="px-4 py-3 text-right font-mono text-text-secondary">{formatOptionalInt(call.tokens.totalOutput)} / {formatOptionalInt(call.tokens.reasoning)}</td>
               <td className="px-4 py-3 text-right font-mono text-text-muted">{call.latencyMs == null ? "unknown" : `${call.latencyMs.toLocaleString()} ms`}</td>
-              <td className="px-4 py-3 text-right"><span className="font-mono text-text-primary">{call.cost.microusd == null ? "unknown" : formatMicrousd(call.cost.microusd)}</span><span className="block text-[10px] text-text-muted">{call.cost.source}{call.cost.rateCardVersion ? ` · ${call.cost.rateCardVersion}` : ""}</span></td>
+              <td className="px-4 py-3 text-right"><span className="font-mono text-text-primary">{call.cost.microusd == null ? "N/A" : formatMicrousd(call.cost.microusd)}</span><span className="block text-[10px] text-text-muted">{call.cost.source === "unavailable" ? "no usage receipt" : call.cost.source}{call.cost.rateCardVersion ? ` · ${call.cost.rateCardVersion}` : ""}</span></td>
             </tr>
           ))}</tbody>
         </table>
@@ -448,22 +344,27 @@ function StateBadge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[9px] uppercase tracking-wider ${warm ? "border-amber-300/20 bg-amber-300/[0.06] text-amber-100/70" : "border-white/10 bg-white/[0.03] text-text-secondary"}`}>{humanize(value)}</span>;
 }
 
-function AcceptanceBadge({ value }: { value: AdminOwnerLearningAcceptance }) {
-  const style = value === "accepted"
+function ActionBadge({ value }: { value: AdminOwnerLearningReviewSummary["disposition"] }) {
+  const label = value === "applied"
+    ? "Applied"
+    : value === "manual_update"
+      ? "Manual edit"
+      : value === "awaiting_owner"
+        ? "Pending user"
+        : value === "not_ready"
+          ? "No action"
+          : humanize(value);
+  const style = value === "applied"
     ? "border-emerald-300/20 bg-emerald-300/[0.07] text-emerald-100/80"
-    : value === "pending"
+    : value === "manual_update"
       ? "border-indigo-300/20 bg-indigo-300/[0.07] text-indigo-100/70"
       : "border-white/10 bg-white/[0.03] text-text-muted";
-  return <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[9px] uppercase tracking-wider ${style}`}>{value === "accepted" ? "Yes" : value === "not_accepted" ? "No" : value === "not_applicable" ? "N/A" : "Pending"}</span>;
-}
-
-function RecommendationAcceptance({ value }: { value: "accepted" | "not_accepted" | "not_applicable" }) {
-  return <span className={`shrink-0 rounded-full px-2 py-1 font-mono text-[9px] uppercase tracking-wider ${value === "accepted" ? "bg-emerald-300/10 text-emerald-100/80" : "bg-white/[0.04] text-text-muted"}`}>{humanize(value)}</span>;
+  return <span className={`inline-flex rounded-full border px-2 py-1 font-mono text-[9px] uppercase tracking-wider ${style}`}>{label}</span>;
 }
 
 function CostSummary({ cost }: { cost: AdminOwnerLearningReviewSummary["cost"] }) {
   const recorded = cost.actualMicrousd + cost.estimatedMicrousd;
-  return <div><span className="font-mono text-xs text-text-primary">{recorded > 0 ? formatMicrousd(recorded) : cost.unavailableCallCount > 0 ? "unknown" : "$0.00"}</span><span className="mt-1 block text-[10px] text-text-muted">{cost.actualMicrousd > 0 ? "actual" : cost.estimatedMicrousd > 0 ? "estimated" : cost.unavailableCallCount > 0 ? `${cost.unavailableCallCount} unpriced` : "no spend"}</span></div>;
+  return <div><span className="font-mono text-xs text-text-primary">{recorded > 0 ? formatMicrousd(recorded) : cost.unavailableCallCount > 0 ? "N/A" : "$0.00"}</span><span className="mt-1 block text-[10px] text-text-muted">{cost.actualMicrousd > 0 ? "actual" : cost.estimatedMicrousd > 0 ? "estimated" : cost.unavailableCallCount > 0 ? `${cost.unavailableCallCount} without usage receipt` : "no spend"}</span></div>;
 }
 
 function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
@@ -472,18 +373,6 @@ function SectionHeading({ eyebrow, title }: { eyebrow: string; title: string }) 
 
 function InlineFact({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
   return <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3"><dt className="text-text-muted">{label}</dt><dd className={`break-all text-text-secondary ${mono ? "font-mono text-[10px]" : ""}`}>{value}</dd></div>;
-}
-
-function PlainTextBlock({ label, text }: { label: string; text: string }) {
-  return <div className="mt-4"><p className="font-mono text-[9px] uppercase tracking-wider text-text-muted">{label}</p><p className="mt-1 whitespace-pre-wrap text-xs leading-5 text-text-secondary">{text}</p></div>;
-}
-
-function ProofFact({ label, value }: { label: string; value: string }) {
-  return <div><p className="font-mono text-[9px] uppercase tracking-wider text-text-muted">{label}</p><p className="mt-1 whitespace-pre-wrap text-[11px] leading-5 text-text-secondary">{value}</p></div>;
-}
-
-function DiffBlock({ label, text, tone }: { label: string; text: string; tone: "before" | "after" }) {
-  return <div className={`p-5 lg:first:border-r lg:first:border-border-active/70 ${tone === "after" ? "bg-emerald-300/[0.035]" : "bg-red-300/[0.025]"}`}><p className={`font-mono text-[10px] uppercase tracking-[0.18em] ${tone === "after" ? "text-emerald-200/60" : "text-red-200/50"}`}>{label}</p><p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-text-secondary">{text}</p></div>;
 }
 
 function optionalTrack(value: string): AdminOwnerLearningReviewFilters["track"] {
@@ -510,6 +399,33 @@ function optionalAcceptance(value: string): AdminOwnerLearningAcceptance | undef
 
 function formatMicrousd(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: value < 10_000 ? 4 : 2, maximumFractionDigits: 4 }).format(value / 1_000_000);
+}
+
+function formatRecordedCost(cost: AdminOwnerLearningReviewList["analytics"]["cost"]): string {
+  const recorded = cost.actualMicrousd + cost.estimatedMicrousd;
+  return recorded > 0 ? formatMicrousd(recorded) : cost.unavailableCallCount > 0 ? "N/A" : formatMicrousd(0);
+}
+
+function formatRecordedCostDetail(cost: AdminOwnerLearningReviewList["analytics"]["cost"]): string {
+  const parts = [
+    cost.actualMicrousd > 0 ? `${formatMicrousd(cost.actualMicrousd)} actual` : null,
+    cost.estimatedMicrousd > 0 ? `${formatMicrousd(cost.estimatedMicrousd)} estimated` : null,
+    cost.unavailableCallCount > 0
+      ? `${cost.unavailableCallCount} call${cost.unavailableCallCount === 1 ? "" : "s"} without usage receipt`
+      : null,
+  ].filter((part): part is string => part != null);
+  return parts.length > 0 ? parts.join(" · ") : "No provider spend recorded";
+}
+
+function userActionLabel(detail: AdminOwnerLearningReviewDetail): string {
+  if (detail.application) return "User applied the reviewed change";
+  switch (detail.lifecycle.resolution) {
+    case "manual_update": return "User manually edited";
+    case "declined": return "User declined";
+    case "no_change": return "User chose no change";
+    case "superseded": return "Superseded";
+    default: return "No user action recorded";
+  }
 }
 
 function formatOptionalInt(value: number | null): string {

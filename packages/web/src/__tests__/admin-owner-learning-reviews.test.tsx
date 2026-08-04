@@ -31,7 +31,7 @@ afterEach(() => {
 });
 
 describe("admin owner learning reviews", () => {
-  test("renders generated prose as inert text and links acceptance to the exact application", () => {
+  test("renders operational review telemetry without exposing review prose", () => {
     const detail = detailFixture();
     const html = renderToString(
       <AdminOwnerLearningReviewsContent
@@ -44,14 +44,14 @@ describe("admin owner learning reviews", () => {
     );
 
     expect(html).toContain("Review Owner");
-    expect(html).toContain("Make commitments testable");
-    expect(html).toContain("&lt;script&gt;window.stolen=true&lt;/script&gt;");
-    expect(html).toContain("[bad](https://evil.example)");
-    expect(html).toContain("round:3:vote:learner");
-    expect(html).toContain("Later Daily Free games on this executed revision");
-    expect(html).toContain("correlation, not causal proof");
-    expect(html).toContain("Yes");
-    expect(html).toContain("accepted");
+    expect(html).toContain("User applied the reviewed change");
+    expect(html).toContain("Immutable accounting");
+    expect(html).toContain("Applied");
+    expect(html).not.toContain("Make commitments testable");
+    expect(html).not.toContain("Later Daily Free games");
+    expect(html).not.toContain("correlation");
+    expect(html).not.toContain("Validated diagnosis");
+    expect(html).not.toContain("Exact proposal");
     expect(html).not.toContain("<script>");
     expect(html).not.toContain("<a ");
     expect(html).not.toContain("href=");
@@ -67,7 +67,15 @@ describe("admin owner learning reviews", () => {
       latencyMs: 359,
       terminalHttpStatus: 400,
       providerRequestId: "req-admin-diagnostic",
+      cost: {
+        source: "unavailable",
+        microusd: null,
+        pricingSourceId: null,
+        rateCardVersion: null,
+        pricedAt: null,
+      },
     }];
+    detail.cost = { actualMicrousd: 0, estimatedMicrousd: 0, unavailableCallCount: 1 };
     const html = renderToString(
       <AdminOwnerLearningReviewsContent
         data={listFixture(detail)}
@@ -81,6 +89,27 @@ describe("admin owner learning reviews", () => {
     expect(html).toContain("HTTP 400");
     expect(html).toContain("req-admin-diagnostic");
     expect(html).toContain("359 ms");
+    expect(html).toContain("N/A");
+    expect(html).toContain("no usage receipt");
+  });
+
+  test("reports a manual user edit as a neutral action metric", () => {
+    const detail = detailFixture();
+    detail.application = null;
+    detail.lifecycle.resolution = "manual_update";
+    detail.acceptance = "not_accepted";
+    const html = renderToString(
+      <AdminOwnerLearningReviewsContent
+        data={listFixture(detail)}
+        expandedId={detail.id}
+        details={{ [detail.id]: detail }}
+        loadingDetailId={null}
+        onToggle={() => {}}
+      />,
+    );
+
+    expect(html).toContain("User manually edited");
+    expect(html).not.toContain("No exact-proposal application receipt");
   });
 
   test("uses list/detail admin endpoints and encodes filters and review IDs", async () => {
@@ -96,13 +125,12 @@ describe("admin owner learning reviews", () => {
 
     await listAdminOwnerLearningReviews({
       track: "strategy_health_check",
-      diagnosis: "vote plan",
       application: "not_accepted",
     });
     await getAdminOwnerLearningReview("review/one");
 
     expect(requests).toEqual([
-      "https://api.example.test/api/admin/owner-learning-reviews?track=strategy_health_check&diagnosis=vote+plan&application=not_accepted",
+      "https://api.example.test/api/admin/owner-learning-reviews?track=strategy_health_check&application=not_accepted",
       "https://api.example.test/api/admin/owner-learning-reviews/review%2Fone",
     ]);
   });
@@ -165,9 +193,11 @@ describe("admin owner learning reviews", () => {
       configurable: true,
       value: domWindow.localStorage,
     });
-    const listDetail = detailFixture("review-a", "Agent A", "List diagnosis");
-    const olderDetail = detailFixture("review-a", "Agent A", "Older response");
-    const newerDetail = detailFixture("review-a", "Agent A", "Newer response");
+    const listDetail = detailFixture("review-a", "Agent A");
+    const olderDetail = detailFixture("review-a", "Agent A");
+    const newerDetail = detailFixture("review-a", "Agent A");
+    olderDetail.policy.reviewer = "older-reviewer";
+    newerDetail.policy.reviewer = "newer-reviewer";
     let resolveOlder!: (response: Response) => void;
     let resolveNewer!: (response: Response) => void;
     const olderResponse = new Promise<Response>((resolve) => { resolveOlder = resolve; });
@@ -197,15 +227,15 @@ describe("admin owner learning reviews", () => {
       resolveNewer(jsonResponse(newerDetail));
       await settlePromises();
     });
-    expect(mounted.getByText("Newer response")).not.toBeNull();
+    expect(mounted.getByText("newer-reviewer")).not.toBeNull();
 
     await act(async () => {
       resolveOlder(jsonResponse(olderDetail));
       await settlePromises();
     });
     expect(rowA.getAttribute("aria-expanded")).toBe("true");
-    expect(mounted.getByText("Newer response")).not.toBeNull();
-    expect(mounted.queryByText("Older response")).toBeNull();
+    expect(mounted.getByText("newer-reviewer")).not.toBeNull();
+    expect(mounted.queryByText("older-reviewer")).toBeNull();
     domWindow.close();
   });
 });
@@ -229,16 +259,13 @@ function listFixture(detail: AdminOwnerLearningReviewDetail): AdminOwnerLearning
       owner: detail.owner,
       agent: detail.agent,
       reviewedRevision: detail.reviewedRevision,
-      selectedGameCount: 1,
       track: detail.lifecycle.track,
       status: detail.lifecycle.status,
       stage: detail.lifecycle.stage,
       resolution: detail.lifecycle.resolution,
-      diagnosis: detail.result?.diagnosis ?? null,
       model: detail.policy.model,
       disposition: detail.disposition,
       acceptance: detail.acceptance,
-      recommendationCount: detail.result?.recommendations.length ?? 0,
       logicalCallCount: detail.lifecycle.logicalCallCount,
       diveCount: detail.lifecycle.diveCount,
       tokens: detail.tokens,
@@ -261,14 +288,12 @@ function listFixture(detail: AdminOwnerLearningReviewDetail): AdminOwnerLearning
 function detailFixture(
   id = "review-admin-1",
   agentName = "Marlowe",
-  diagnosis = "The agent makes promises without a reciprocal vote checkpoint.",
 ): AdminOwnerLearningReviewDetail {
   return {
     id,
     owner: { userId: "owner-1", displayName: "Review Owner", handle: "review-owner" },
     agent: { profileId: `agent-${id}`, name: agentName },
     reviewedRevision: { id: "revision-1", ordinal: 2 },
-    selectedGames: [{ gameId: "game-1", slug: "quiet-violet", position: 1, previouslyAnalyzed: false }],
     policy: {
       eligibility: "owner-learning-eligibility-v1",
       evidence: "owner-learning-evidence-v1",
@@ -296,31 +321,6 @@ function detailFixture(
     },
     disposition: "applied",
     acceptance: "accepted",
-    result: {
-      diagnosis,
-      analysisTrack: "evidence_rich",
-      recommendations: [{
-        id: "olrec-1",
-        title: "Make commitments testable",
-        disposition: "change",
-        confidence: "high",
-        rationale: "<script>window.stolen=true</script> [bad](https://evil.example)",
-        evidenceRefs: [{
-          kind: "canonical_event",
-          gameId: "game-1",
-          coordinate: "round:3:vote:learner",
-          sourceHash: "sha256:evidence",
-          sourceVersion: "postgame-v1",
-        }],
-      }],
-      proposal: {
-        field: "strategyStyle",
-        before: "Build trust.",
-        after: "Require a reciprocal commitment before coordinating the vote.",
-      },
-    },
-    recommendationAcceptance: [{ recommendationId: "olrec-1", state: "accepted" }],
-    proposalFingerprint: "sha256:proposal",
     calls: [{
       ordinal: 1,
       state: "succeeded",
@@ -340,28 +340,6 @@ function detailFixture(
     }],
     tokens: { input: 1_000, cachedInput: 600, totalOutput: 350, reasoning: 150, visibleOutput: 200, unavailableCallCount: 0 },
     cost: { actualMicrousd: 0, estimatedMicrousd: 725, unavailableCallCount: 0 },
-    application: {
-      proposalFingerprint: "sha256:proposal",
-      sourceRecommendationIds: ["olrec-1"],
-      priorRevisionId: "revision-1",
-      resultingRevisionId: "revision-2",
-      priorStrategyStyle: "Build trust.",
-      resultingStrategyStyle: "Require a reciprocal commitment before coordinating the vote.",
-      appliedAt: "2026-08-04T04:00:00.000Z",
-      mutationReceipt: {
-        schemaVersion: 1,
-        operation: "updated",
-        profileRevision: { revisionId: "revision-2", ordinal: 3, outcome: "created" },
-        dailyFree: "preserved_follows_profile",
-        waitingSeats: { total: 0, reconciled: 0, alreadyCurrent: 0, crossedFreeze: 0, truncatedCount: 0 },
-        frozenSeats: { unchanged: 0 },
-        warnings: [],
-      },
-    },
-    subsequentDailyFree: {
-      label: "Later Daily Free games on this executed revision — correlation, not causal proof",
-      revisionId: "revision-2",
-      games: [{ gameId: "game-2", slug: "later-game", placement: 2, lobbySize: 8, totalPoints: 5, earnedAt: "2026-08-05T01:00:00.000Z" }],
-    },
+    application: { appliedAt: "2026-08-04T04:00:00.000Z" },
   };
 }
