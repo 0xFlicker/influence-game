@@ -2,19 +2,12 @@
 
 import Link from "next/link";
 import { AgentAvatar } from "@/components/agent-avatar";
-import type {
-  OwnerLearningEvidenceRef,
-  OwnerLearningReview,
-  SavedAgent,
-} from "@/lib/api";
+import type { OwnerLearningReview, SavedAgent } from "@/lib/api";
 import { recordOwnerLearningManualEditorOpened } from "@/lib/api";
 import {
   OWNER_LEARNING_STAGES,
   activityRows,
   canonicalFacts,
-  domCoordinate,
-  humanize,
-  momentTargetId,
   recommendationSupportLabel,
   stageIndex,
 } from "./owner-learning-model";
@@ -23,14 +16,10 @@ interface OwnerLearningReviewViewProps {
   review: OwnerLearningReview;
   agent: SavedAgent | null;
   activeGameId: string;
-  highlightedTargetId: string | null;
-  backTargetId: string | null;
   pendingAction: "retry" | "apply" | "resolve" | null;
   notice: string | null;
   mcpConnectionState: "connected" | "not_connected";
   onSelectGame: (gameId: string) => void;
-  onEvidence: (ref: OwnerLearningEvidenceRef, recommendationId: string) => void;
-  onBackToRecommendation: () => void;
   onRetry: () => void;
   onApply: () => void;
   onResolve: (resolution: "declined" | "failed") => void;
@@ -40,14 +29,10 @@ export function OwnerLearningReviewView({
   review,
   agent,
   activeGameId,
-  highlightedTargetId,
-  backTargetId,
   pendingAction,
   notice,
   mcpConnectionState,
   onSelectGame,
-  onEvidence,
-  onBackToRecommendation,
   onRetry,
   onApply,
   onResolve,
@@ -57,7 +42,6 @@ export function OwnerLearningReviewView({
     ?? null;
   const activeFacts = canonicalFacts(activeEvidence?.canonicalFacts);
   const rows = activityRows(activeFacts);
-  const moments = candidateMoments(activeEvidence?.candidateMoments ?? []);
   const running = review.resolution == null
     && (review.analysisStatus === "queued" || review.analysisStatus === "running");
   const ready = review.analysisStatus === "ready" && review.result != null;
@@ -122,12 +106,7 @@ export function OwnerLearningReviewView({
           </div>
 
           {activeEvidence ? (
-            <section
-              id={`olm-game-summary-${domCoordinate(activeEvidence.gameId)}`}
-              className="olm-fact-callout"
-              data-highlight={highlightedTargetId === `olm-game-summary-${domCoordinate(activeEvidence.gameId)}`}
-              tabIndex={-1}
-            >
+            <section className="olm-fact-callout">
               <div className="olm-fact-number">
                 {placement(activeFacts.reviewedPlayer.placement)}
                 <span>{activeFacts.reviewedPlayer.status ?? "recorded result"}</span>
@@ -153,35 +132,6 @@ export function OwnerLearningReviewView({
             ))}
           </div>
 
-          {activeEvidence && moments.length > 0 && (
-            <section className="olm-moments" aria-labelledby="olm-moments-title">
-              <div className="olm-section-head">
-                <h2 id="olm-moments-title">Review moments</h2>
-                <span>Stable coordinates for evidence links</span>
-              </div>
-              {moments.map((moment) => {
-                const id = momentTargetId(moment.gameId, moment.id);
-                return (
-                  <article
-                    id={id}
-                    key={moment.id}
-                    className="olm-moment"
-                    data-highlight={highlightedTargetId === id}
-                    tabIndex={-1}
-                  >
-                    <div>
-                      <span>{moment.round == null ? "Game" : `Round ${moment.round}`}{moment.phase ? ` · ${humanize(moment.phase)}` : ""}</span>
-                      <strong>{momentLabel(moment.anchorKind)}</strong>
-                      <code>{moment.sourceCoordinate}</code>
-                    </div>
-                    {highlightedTargetId === id && backTargetId && (
-                      <button type="button" onClick={onBackToRecommendation}>← Back to recommendation</button>
-                    )}
-                  </article>
-                );
-              })}
-            </section>
-          )}
         </div>
 
         {running && (
@@ -198,7 +148,6 @@ export function OwnerLearningReviewView({
               <p>{diagnosisSupport(review)}</p>
               <div className="olm-confidence">
                 <span><i aria-hidden="true" />{isHealthCheck ? "Three-game remedial review" : `${review.selectedGameIds.length}-game evidence set`}</span>
-                <span>{review.result.recommendations.reduce((total, item) => total + item.evidenceRefs.length, 0)} linked moments</span>
               </div>
             </div>
           </section>
@@ -206,44 +155,31 @@ export function OwnerLearningReviewView({
           {review.result.recommendations.length > 0 && (
             <section className="olm-recommendations" aria-labelledby="olm-recommendations-title">
               <h2 id="olm-recommendations-title">Recommended changes</h2>
-              {review.result.recommendations.map((recommendation, index) => {
-                const recommendationId = `olm-recommendation-${recommendation.id ?? index}`;
-                return (
-                  <article
-                    id={recommendationId}
-                    className="olm-recommendation"
-                    data-disposition={recommendation.disposition}
-                    key={recommendation.id ?? recommendation.title}
-                    tabIndex={-1}
-                  >
-                    <div className="olm-rec-index">{String(index + 1).padStart(2, "0")}</div>
-                    <div>
-                      <h3>{recommendation.title}</h3>
-                      <p>{recommendation.rationale}</p>
-                      {recommendation.keepGuidance && <p className="olm-keep-guidance"><strong>Keep:</strong> {recommendation.keepGuidance}</p>}
-                      {isHealthCheck && recommendation.proof && (
-                        <div className="olm-proof">
-                          <div><span>Observed evidence</span><p>{recommendation.proof.observedEvidence}</p></div>
-                          <div><span>Strategic interpretation</span><p>{recommendation.proof.strategicInterpretation}</p></div>
-                          <div><span>Proposed guidance</span><p>{recommendation.proof.proposedGuidance}</p></div>
-                        </div>
-                      )}
-                    </div>
-                    <aside className="olm-rec-evidence">
-                      <span>{recommendationSupportLabel(recommendation)}</span>
-                      {recommendation.evidenceRefs.map((ref, refIndex) => (
-                        <button
-                          type="button"
-                          key={`${ref.gameId}:${ref.coordinate}:${refIndex}`}
-                          onClick={() => onEvidence(ref, recommendationId)}
-                        >
-                          {gameLabel(review, ref.gameId)} · {evidenceLabel(ref)} <b aria-hidden="true">→</b>
-                        </button>
-                      ))}
-                    </aside>
-                  </article>
-                );
-              })}
+              {review.result.recommendations.map((recommendation, index) => (
+                <article
+                  className="olm-recommendation"
+                  data-disposition={recommendation.disposition}
+                  key={recommendation.id ?? recommendation.title}
+                  tabIndex={-1}
+                >
+                  <div className="olm-rec-index">{String(index + 1).padStart(2, "0")}</div>
+                  <div>
+                    <h3>{recommendation.title}</h3>
+                    <p>{recommendation.rationale}</p>
+                    {recommendation.keepGuidance && <p className="olm-keep-guidance"><strong>Keep:</strong> {recommendation.keepGuidance}</p>}
+                    {isHealthCheck && recommendation.proof && (
+                      <div className="olm-proof">
+                        <div><span>Observed evidence</span><p>{recommendation.proof.observedEvidence}</p></div>
+                        <div><span>Strategic interpretation</span><p>{recommendation.proof.strategicInterpretation}</p></div>
+                        <div><span>Proposed guidance</span><p>{recommendation.proof.proposedGuidance}</p></div>
+                      </div>
+                    )}
+                  </div>
+                  <aside className="olm-rec-evidence">
+                    <span>{recommendationSupportLabel(recommendation)}</span>
+                  </aside>
+                </article>
+              ))}
             </section>
           )}
 
@@ -398,18 +334,7 @@ function diagnosisSupport(review: OwnerLearningReview): string {
     if (classification === "execution_gap") return "The current guidance is usable, but the selected games show the agent did not execute it consistently.";
     return "The selected games show a serious pattern without enough proof to blame one strategy instruction.";
   }
-  return "The diagnosis is generated from the bounded selected-game evidence shown above. Use the linked moments to inspect its support.";
-}
-
-function gameLabel(review: OwnerLearningReview, gameId: string): string {
-  const game = review.evidence.games.find((entry) => entry.gameId === gameId);
-  return canonicalFacts(game?.canonicalFacts).game.slug ?? shortGame(gameId);
-}
-
-function evidenceLabel(ref: OwnerLearningEvidenceRef): string {
-  if (ref.kind === "game_summary") return "Game summary";
-  const coordinate = ref.coordinate.replace(/^[^:]+:/, "");
-  return `${humanize(ref.kind)} · ${coordinate}`;
+  return "The diagnosis is generated from bounded selected-game evidence and the accepted facts shown above.";
 }
 
 function stageTitle(stage: OwnerLearningReview["stage"]): string {
@@ -453,54 +378,10 @@ function placement(value: number | null | undefined): string {
   return value == null ? "—" : `#${value}`;
 }
 
-function momentLabel(kind: string): string {
-  const labels: Record<string, string> = {
-    canonical_event: "Canonical game event",
-    decision: "Agent decision",
-    dialogue: "Room dialogue",
-    cognition: "Owned-agent cognition",
-  };
-  return labels[kind] ?? humanize(kind);
-}
-
 function shortGame(value: string): string {
   return value.length > 12 ? value.slice(0, 8) : value;
 }
 
 function shortRevision(value: string): string {
   return value.length > 12 ? `Revision ${value.slice(0, 8)}` : `Revision ${value}`;
-}
-
-interface CandidateMoment {
-  id: string;
-  gameId: string;
-  anchorKind: "canonical_event" | "decision" | "dialogue" | "cognition";
-  sourceCoordinate: string;
-  round: number | null;
-  phase: string | null;
-}
-
-function candidateMoments(rows: Array<Record<string, unknown>>): CandidateMoment[] {
-  return rows.flatMap((row) => {
-    const anchorKind = row.anchorKind;
-    if (
-      typeof row.id !== "string" ||
-      typeof row.gameId !== "string" ||
-      typeof row.sourceCoordinate !== "string" ||
-      (anchorKind !== "canonical_event" &&
-        anchorKind !== "decision" &&
-        anchorKind !== "dialogue" &&
-        anchorKind !== "cognition")
-    ) {
-      return [];
-    }
-    return [{
-      id: row.id,
-      gameId: row.gameId,
-      anchorKind,
-      sourceCoordinate: row.sourceCoordinate,
-      round: typeof row.round === "number" && Number.isFinite(row.round) ? row.round : null,
-      phase: typeof row.phase === "string" ? row.phase : null,
-    }];
-  });
 }

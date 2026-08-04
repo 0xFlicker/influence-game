@@ -3,7 +3,6 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { OwnerLearningReview, OwnerLearningResolution } from "../lib/api";
-import { evidenceTargetId } from "../app/dashboard/agents/[id]/review/owner-learning-model";
 import { OwnerLearningReviewView } from "../app/dashboard/agents/[id]/review/owner-learning-review";
 
 describe("owner learning review", () => {
@@ -20,12 +19,15 @@ describe("owner learning review", () => {
     expect(html).toContain("Repeated patterns compared");
     expect(html).toContain("Focused update drafted");
     expect(html).toContain("Progress is saved");
+    expect(html).not.toContain("Review moments");
+    expect(html).not.toContain("dialogue:line-7");
+    expect(html).not.toContain("moment-1");
     expect(visibleText).not.toContain("%");
     expect(visibleText).not.toMatch(/\bETA\b/i);
     expect(visibleText).not.toMatch(/\bminutes?\b/i);
   });
 
-  test("renders generated text as escaped prose and creates links only from evidence refs", () => {
+  test("renders generated text as escaped prose without exposing evidence coordinates", () => {
     const html = renderReview(readyReview({
       diagnosis: '<img src=x onerror="alert(1)"> Hold longer.',
       recommendations: [{
@@ -54,7 +56,9 @@ describe("owner learning review", () => {
     expect(html).toContain("Delay &lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).toContain("Keep naming a concrete ally");
-    expect(html).toContain("dialogue · moment-1");
+    expect(html).toContain("Seen across 1 game");
+    expect(html).not.toContain("dialogue · moment-1");
+    expect(html).not.toContain("moment-1");
     expect(html).toContain("− Commit early.");
     expect(html).toContain("+ Wait for reciprocal support before committing.");
     expect(html).toContain("Edit changes myself");
@@ -62,19 +66,13 @@ describe("owner learning review", () => {
     expect(html).toContain("Apply strategy update");
   });
 
-  test("uses stable evidence targets and exposes the in-page return control", () => {
-    const target = evidenceTargetId({
-      kind: "dialogue",
-      gameId: "game-1",
-      coordinate: "moment-1",
-      sourceHash: "hash-1",
-      sourceVersion: "capture-v1",
-    });
-    const html = renderReview(readyReview(), { highlightedTargetId: target, backTargetId: "olm-recommendation-rec-1" });
+  test("keeps internal evidence coordinates out of owner-facing recommendations", () => {
+    const html = renderReview(readyReview());
 
-    expect(html).toContain(`id="${target}"`);
-    expect(html).toContain('data-highlight="true"');
-    expect(html).toContain("← Back to recommendation");
+    expect(html).toContain("Seen across 1 game");
+    expect(html).not.toContain("Stable coordinates for evidence links");
+    expect(html).not.toContain("dialogue:line-7");
+    expect(html).not.toContain("moment-1");
   });
 
   test("labels all health-check proof forms without collapsing observation into guidance", () => {
@@ -184,14 +182,10 @@ function renderReview(
       review={review}
       agent={null}
       activeGameId="game-1"
-      highlightedTargetId={null}
-      backTargetId={null}
       pendingAction={null}
       notice={null}
       mcpConnectionState="not_connected"
       onSelectGame={() => undefined}
-      onEvidence={() => undefined}
-      onBackToRecommendation={() => undefined}
       onRetry={() => undefined}
       onApply={() => undefined}
       onResolve={() => undefined}

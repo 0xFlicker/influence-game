@@ -71,7 +71,10 @@ describe("owner learning admin ledger", () => {
           ordinal: 1,
           dispatchIntentAt: "2026-08-04T03:02:01.000Z",
           attemptedTier: "flex",
-          providerRequestId: "PROVIDER_SENTINEL",
+          terminalHttpStatus: 400,
+          terminalOutcomeAt: "2026-08-04T03:02:01.359Z",
+          latencyMs: 359,
+          providerRequestId: "req-admin-diagnostic",
         }],
         costSource: "unavailable",
         dispatchedAt: "2026-08-04T03:02:01.000Z",
@@ -169,6 +172,11 @@ describe("owner learning admin ledger", () => {
       rateCardVersion: "2026-08-04",
     });
     expect(detail!.calls[1]!.cost).toMatchObject({ source: "unavailable", microusd: null });
+    expect(detail!.calls[1]).toMatchObject({
+      terminalHttpStatus: 400,
+      providerRequestId: "req-admin-diagnostic",
+      latencyMs: 359,
+    });
     expect(detail!.subsequentDailyFree).toMatchObject({
       revisionId: applied.resultingRevisionId,
       games: [{ gameId: laterGameId, placement: 2, lobbySize: 8 }],
@@ -181,7 +189,7 @@ describe("owner learning admin ledger", () => {
       "TRANSCRIPT_SENTINEL",
       "COGNITION_SENTINEL",
       "PROMPT_SENTINEL",
-      "PROVIDER_SENTINEL",
+      "PROVIDER_RESPONSE_SENTINEL",
       "PRODUCER_TRACE_SENTINEL",
     ]) {
       expect(serialized).not.toContain(sentinel);

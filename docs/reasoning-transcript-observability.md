@@ -279,8 +279,9 @@ The persisted checkpoint stores only the bounded local investigation state and v
 Observability remains deliberately split:
 
 - review call rows retain numeric usage, requested/effective tier, capacity path, latency, safe failure state, and the price receipt that existed when the call completed; missing or ambiguous cost stays unavailable rather than becoming zero;
+- OpenAI request rejections emit one sanitized console diagnostic containing review/call identity, model/tier, HTTP status, provider request ID, error type/code/parameter, and a bounded single-line message; prompts, evidence, request/response bodies, headers, and credentials are never logged;
 - content-free review events record lifecycle and owner actions, never dialogue, cognition, prompts, provider responses, recommendations, or arbitrary error bodies;
-- the authorized admin detail reads the already-validated review result directly so administrators can inspect recommendation quality and exact-proposal acceptance, but it explicitly excludes checkpoints, transport bodies, raw provider output, prompts, and bulk source evidence;
+- the authorized admin detail reads the already-validated review result directly so administrators can inspect recommendation quality, exact-proposal acceptance, and terminal HTTP/latency/request-ID receipts, but it explicitly excludes checkpoints, transport bodies, raw provider output, prompts, and bulk source evidence;
 - later Daily Free results are joined by the exact `agentRevisionId` stamped on each competition receipt and labeled as correlation, never causal proof.
 
 Live generation is on by default when `OPENAI_API_KEY` is configured. Set `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true` to disable paid admission and worker startup. When disabled, input listing, credit derivation, deterministic facts, preflight, existing-review reads, resolutions, applications, and admin diagnosis remain available; new paid starts return a typed unavailable result without creating a review row or consuming credit.

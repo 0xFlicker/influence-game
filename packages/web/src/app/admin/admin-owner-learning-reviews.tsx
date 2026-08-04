@@ -414,7 +414,11 @@ function CallLedger({ detail }: { detail: AdminOwnerLearningReviewDetail }) {
           <tbody>{detail.calls.map((call) => (
             <tr key={call.ordinal} className="border-t border-border-active/50">
               <td className="px-4 py-3"><span className="text-text-primary">#{call.ordinal}</span><span className="ml-2 text-text-muted">{call.state}</span></td>
-              <td className="px-4 py-3 text-text-secondary">{call.requestedTier} → {call.effectiveTier ?? "unknown"}<span className="block text-[10px] text-text-muted">{call.capacityPath ?? "not recorded"} · {call.flex429Count} Flex 429</span></td>
+              <td className="px-4 py-3 text-text-secondary">
+                {call.requestedTier} → {call.effectiveTier ?? (call.terminalHttpStatus == null ? "unknown" : `HTTP ${call.terminalHttpStatus}`)}
+                <span className="block text-[10px] text-text-muted">{call.capacityPath ?? "not recorded"} · {call.flex429Count} Flex 429</span>
+                {call.providerRequestId && <span className="block font-mono text-[9px] text-text-muted">{call.providerRequestId}</span>}
+              </td>
               <td className="px-4 py-3 text-right font-mono text-text-secondary">{formatOptionalInt(call.tokens.input)} / {formatOptionalInt(call.tokens.cachedInput)}</td>
               <td className="px-4 py-3 text-right font-mono text-text-secondary">{formatOptionalInt(call.tokens.totalOutput)} / {formatOptionalInt(call.tokens.reasoning)}</td>
               <td className="px-4 py-3 text-right font-mono text-text-muted">{call.latencyMs == null ? "unknown" : `${call.latencyMs.toLocaleString()} ms`}</td>

@@ -70,6 +70,8 @@ export interface AdminOwnerLearningCall {
   requestedReasoningEffort: string;
   capacityPath: string | null;
   flex429Count: number;
+  terminalHttpStatus: number | null;
+  providerRequestId: string | null;
   latencyMs: number | null;
   tokens: {
     input: number | null;
@@ -419,6 +421,8 @@ async function loadCalls(db: DrizzleDB, reviewId?: string) {
     effectiveTier: schema.agentLearningReviewCalls.effectiveTier,
     requestedReasoningEffort: schema.agentLearningReviewCalls.requestedReasoningEffort,
     tokenReceipt: schema.agentLearningReviewCalls.tokenReceipt,
+    transportReceipts: schema.agentLearningReviewCalls.transportReceipts,
+    finalProviderRequestId: schema.agentLearningReviewCalls.finalProviderRequestId,
     flex429Count: schema.agentLearningReviewCalls.flex429Count,
     capacityPath: schema.agentLearningReviewCalls.capacityPath,
     latencyMs: schema.agentLearningReviewCalls.latencyMs,
@@ -644,6 +648,14 @@ function toCall(row: CallRow): AdminOwnerLearningCall {
   const cachedInput = finiteToken(row.tokenReceipt?.cachedInputTokens);
   const totalOutput = finiteToken(row.tokenReceipt?.totalOutputTokens);
   const reasoning = finiteToken(row.tokenReceipt?.reasoningTokens);
+  const terminalReceipts = row.transportReceipts.filter((receipt) =>
+    receipt.terminalOutcomeAt != null
+  );
+  const latestTerminalReceipt = terminalReceipts.at(-1);
+  const transportLatencyMs = terminalReceipts.length > 0
+    && terminalReceipts.every((receipt) => receipt.latencyMs != null)
+    ? terminalReceipts.reduce((total, receipt) => total + receipt.latencyMs!, 0)
+    : null;
   return {
     ordinal: row.ordinal,
     state: row.state,
@@ -653,7 +665,9 @@ function toCall(row: CallRow): AdminOwnerLearningCall {
     requestedReasoningEffort: row.requestedReasoningEffort,
     capacityPath: row.capacityPath,
     flex429Count: row.flex429Count,
-    latencyMs: row.latencyMs,
+    terminalHttpStatus: latestTerminalReceipt?.terminalHttpStatus ?? null,
+    providerRequestId: latestTerminalReceipt?.providerRequestId ?? row.finalProviderRequestId,
+    latencyMs: row.latencyMs ?? transportLatencyMs,
     tokens: {
       input,
       cachedInput,

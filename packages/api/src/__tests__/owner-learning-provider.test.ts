@@ -18,6 +18,56 @@ const observer: FlexProcessingObserver = {
 };
 
 describe("owner learning provider", () => {
+  test("logs sanitized OpenAI rejection diagnostics without request content", async () => {
+    const diagnostics: unknown[] = [];
+    const provider = createOwnerLearningOpenAIProvider({
+      apiKey: "sk-test",
+      onProviderError: (diagnostic) => diagnostics.push(diagnostic),
+      fetch: async () => new Response(JSON.stringify({
+        error: {
+          message: "Invalid schema for response_format owner_learning_turn.",
+          type: "invalid_request_error",
+          code: "invalid_json_schema",
+          param: "text.format.schema",
+        },
+      }), {
+        status: 400,
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": "req-safe-diagnostic",
+        },
+      }),
+      wait: async () => undefined,
+    });
+
+    await expect(provider.invoke({
+      input: { privateEvidence: "PRIVATE_EVIDENCE_SENTINEL" },
+      responseSchema: { type: "object" },
+      diagnosticContext: { reviewId: "review-1", callOrdinal: 2 },
+      observer,
+      resumeTransport: {
+        flex429Count: 0,
+        nextTransportOrdinal: 1,
+        nextTier: "flex",
+        initialBackoffMs: 0,
+      },
+    })).rejects.toMatchObject({ code: "provider_error", retryable: true });
+
+    expect(diagnostics).toEqual([{
+      reviewId: "review-1",
+      callOrdinal: 2,
+      model: "gpt-5.6-luna",
+      requestedTier: "flex",
+      status: 400,
+      requestId: "req-safe-diagnostic",
+      type: "invalid_request_error",
+      code: "invalid_json_schema",
+      param: "text.format.schema",
+      message: "Invalid schema for response_format owner_learning_turn.",
+    }]);
+    expect(JSON.stringify(diagnostics)).not.toContain("PRIVATE_EVIDENCE_SENTINEL");
+  });
+
   test("pins Luna, low reasoning, no storage, strict output, and the inclusive output ceiling", async () => {
     let requestBody: Record<string, unknown> | null = null;
     const provider = createOwnerLearningOpenAIProvider({
@@ -131,6 +181,7 @@ describe("owner learning provider", () => {
   test("maps the OpenAI SDK timeout to provider_timeout", async () => {
     const provider = createOwnerLearningOpenAIProvider({
       apiKey: "sk-test",
+      onProviderError: () => undefined,
       fetch: async () => {
         throw new OpenAI.APIConnectionTimeoutError();
       },

@@ -18,7 +18,6 @@ import {
   retryOwnerLearningReview,
   startOwnerLearningReview,
   type OwnerLearningEligibleInputs,
-  type OwnerLearningEvidenceRef,
   type OwnerLearningPreflight,
   type OwnerLearningReview,
   type OwnerLearningReviewStatus,
@@ -26,11 +25,7 @@ import {
 } from "@/lib/api";
 import { OwnerLearningEntryView } from "./owner-learning-entry";
 import { OwnerLearningReviewView } from "./owner-learning-review";
-import {
-  evidenceTargetId,
-  isReviewPolling,
-  reviewPath,
-} from "./owner-learning-model";
+import { isReviewPolling, reviewPath } from "./owner-learning-model";
 
 export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
   const router = useRouter();
@@ -218,8 +213,6 @@ export function OwnerLearningReviewWorkspace({
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [mcpConnectionState, setMcpConnectionState] = useState<"connected" | "not_connected">("not_connected");
   const [activeGameId, setActiveGameId] = useState("");
-  const [highlightedTargetId, setHighlightedTargetId] = useState<string | null>(null);
-  const [backTargetId, setBackTargetId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<"retry" | "apply" | "resolve" | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -228,7 +221,6 @@ export function OwnerLearningReviewWorkspace({
   const offeredReviewId = useRef<string | null>(null);
   const previousState = useRef<string | null>(null);
   const terminalFocus = useRef<HTMLDivElement | null>(null);
-  const highlightTimer = useRef<number | null>(null);
   const polling = review ? isReviewPolling(review) : false;
 
   const loadReview = useCallback(async (announceErrors = true) => {
@@ -334,32 +326,6 @@ export function OwnerLearningReviewWorkspace({
     void recordOwnerLearningMcpOfferViewed(review.id).catch(() => undefined);
   }, [review]);
 
-  useEffect(() => () => {
-    if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
-  }, []);
-
-  function navigateToEvidence(ref: OwnerLearningEvidenceRef, recommendationId: string) {
-    const targetId = evidenceTargetId(ref);
-    setActiveGameId(ref.gameId);
-    setBackTargetId(recommendationId);
-    setHighlightedTargetId(targetId);
-    window.requestAnimationFrame(() => window.requestAnimationFrame(() => {
-      const target = document.getElementById(targetId);
-      target?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "center" });
-      target?.focus({ preventScroll: true });
-    }));
-    if (highlightTimer.current) window.clearTimeout(highlightTimer.current);
-    highlightTimer.current = window.setTimeout(() => setHighlightedTargetId(null), 6_000);
-  }
-
-  function backToRecommendation() {
-    if (!backTargetId) return;
-    const target = document.getElementById(backTargetId);
-    target?.scrollIntoView({ behavior: prefersReducedMotion() ? "auto" : "smooth", block: "center" });
-    target?.focus({ preventScroll: true });
-    setHighlightedTargetId(null);
-  }
-
   async function mutate(
     action: "retry" | "apply" | "resolve",
     request: () => Promise<unknown>,
@@ -398,14 +364,10 @@ export function OwnerLearningReviewWorkspace({
         review={review}
         agent={agent}
         activeGameId={activeGameId}
-        highlightedTargetId={highlightedTargetId}
-        backTargetId={backTargetId}
         pendingAction={pendingAction}
         notice={notice}
         mcpConnectionState={mcpConnectionState}
         onSelectGame={setActiveGameId}
-        onEvidence={navigateToEvidence}
-        onBackToRecommendation={backToRecommendation}
         onRetry={() => void mutate("retry", () => retryOwnerLearningReview(review.id))}
         onApply={() => {
           const fingerprint = review.proposalFingerprint;
@@ -470,8 +432,4 @@ function reviewStatusAnnouncement(review: OwnerLearningReview): string {
   if (review.analysisStatus === "no_change") return "Review complete. No strategy change is recommended.";
   if (review.analysisStatus === "failed") return "Review analysis was interrupted.";
   return `Review stage: ${review.stage.replaceAll("_", " ")}.`;
-}
-
-function prefersReducedMotion(): boolean {
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }

@@ -90,7 +90,7 @@ Owning transactions emit narrow typed events for prompt impressions/dismissals, 
 
 The existing `view_admin` area exposes a Reviews ledger with filters for date, track, diagnosis, status, model, resolution, and acceptance. List/detail responses use an explicit column allowlist. They include owner/Profile/revision identity, selected games, policies, lifecycle, immutable call receipts, tokens, sourced cost, the validated generated result, proof metadata, exact proposal, acceptance, a bounded mutation-receipt summary, and later Daily Free receipts grouped by the exact revision that executed.
 
-Generated review prose is intentionally visible to authorized administrators for recommendation-quality and support work. It is rendered as escaped plain text; Markdown, HTML, and model-authored URLs never become links. Checkpoints, transport receipt bodies, provider request IDs, prompts, raw provider output, bulk source evidence, event payloads, and arbitrary mutation-receipt fields are not returned. Producers and administrators can use existing source-detail surfaces when deeper evidence is actually needed.
+Generated review prose is intentionally visible to authorized administrators for recommendation-quality and support work. It is rendered as escaped plain text; Markdown, HTML, and model-authored URLs never become links. Immutable call receipts may expose terminal HTTP status, bounded latency, and the provider request ID needed to correlate a rejection with provider support. Checkpoints, transport receipt bodies, prompts, raw provider output, bulk source evidence, event payloads, and arbitrary mutation-receipt fields are not returned. Producers and administrators can use existing source-detail surfaces when deeper evidence is actually needed.
 
 `manual_update` means review-driven action but not generated-proposal acceptance. `declined`, `failed`, and `superseded` are not accepted. `no_change` is not applicable. Only a unique application row marks the exact proposal and its immutable recommendation IDs accepted.
 
@@ -103,6 +103,8 @@ Live model generation is on by default when the deployment configures:
 ```text
 OPENAI_API_KEY=<configured secret>
 ```
+
+When OpenAI rejects a review request, the worker emits one sanitized console diagnostic with review and call identity, model and requested tier, HTTP status, provider request ID, error type/code/parameter, and a bounded single-line message. It never logs the prompt, evidence, request or response body, headers, or credentials.
 
 The provider credential is required for paid admission and worker startup. Set `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true` to disable live generation. There is no per-review live operator allowance, staged operator approval, or intermediate production deployment. Before deploying with live generation available, run the complete automated/browser/cross-surface gates and one explicitly approved frozen paid quality case. Evaluate evidence faithfulness, recommendation usefulness and restraint, non-causal framing, latency, token/cache behavior, capacity path, and sourced cost. Do not run a paid case without explicit approval.
 

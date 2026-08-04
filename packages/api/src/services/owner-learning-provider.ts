@@ -27,6 +27,10 @@ type ProviderWait = (ms: number, signal?: AbortSignal) => Promise<void>;
 export interface OwnerLearningProviderRequest {
   input: Record<string, unknown>;
   responseSchema: Record<string, unknown>;
+  diagnosticContext?: {
+    reviewId: string;
+    callOrdinal: number;
+  };
   observer: FlexProcessingObserver;
   resumeTransport: {
     flex429Count: number;
@@ -49,6 +53,19 @@ export interface OwnerLearningProvider {
   invoke(request: OwnerLearningProviderRequest): Promise<OwnerLearningProviderResponse>;
 }
 
+export interface OwnerLearningProviderDiagnostic {
+  reviewId?: string;
+  callOrdinal?: number;
+  model: string;
+  requestedTier: "flex";
+  status?: number;
+  requestId?: string;
+  type?: string;
+  code?: string;
+  param?: string;
+  message: string;
+}
+
 export class OwnerLearningProviderError extends Error {
   constructor(
     readonly code: OwnerLearningSafeFailureCode,
@@ -67,6 +84,7 @@ export function createOwnerLearningOpenAIProvider(options: {
   fetch?: ProviderFetch;
   wait?: ProviderWait;
   now?: () => Date;
+  onProviderError?: (diagnostic: OwnerLearningProviderDiagnostic) => void;
 }): OwnerLearningProvider {
   return {
     async invoke(request) {
@@ -92,11 +110,13 @@ export function createOwnerLearningOpenAIProvider(options: {
           ...(request.signal ? { signal: request.signal } : {}),
         });
       } catch (error) {
+        if (isAbortError(error)) throw error;
+        const diagnostic = ownerLearningProviderDiagnostic(error, request.diagnosticContext);
+        (options.onProviderError ?? logOwnerLearningProviderError)(diagnostic);
         const status = numberValue(asRecord(error)?.status);
         if (status === 429) {
           throw new OwnerLearningProviderError("provider_capacity_exhausted", true);
         }
-        if (isAbortError(error)) throw error;
         if (isProviderTimeoutError(error)) {
           throw new OwnerLearningProviderError("provider_timeout", true);
         }
@@ -108,6 +128,38 @@ export function createOwnerLearningOpenAIProvider(options: {
       return parseProviderResponse(response, options.now?.() ?? new Date());
     },
   };
+}
+
+function ownerLearningProviderDiagnostic(
+  error: unknown,
+  context: OwnerLearningProviderRequest["diagnosticContext"],
+): OwnerLearningProviderDiagnostic {
+  const record = asRecord(error) ?? {};
+  const errorPayload = asRecord(record.error) ?? {};
+  const nestedError = asRecord(errorPayload.error) ?? errorPayload;
+  const message = stringValue(nestedError.message)
+    ?? (error instanceof Error ? error.message : "OpenAI request failed");
+  const status = numberValue(record.status);
+  const requestId = firstString(record.requestID, record.request_id, nestedError.request_id);
+  const type = firstString(record.type, nestedError.type);
+  const code = firstString(record.code, nestedError.code);
+  const param = firstString(record.param, nestedError.param);
+  return {
+    ...(context?.reviewId ? { reviewId: context.reviewId } : {}),
+    ...(context?.callOrdinal != null ? { callOrdinal: context.callOrdinal } : {}),
+    model: OWNER_LEARNING_MODEL_ID,
+    requestedTier: "flex",
+    ...(status !== undefined ? { status } : {}),
+    ...(requestId !== undefined ? { requestId } : {}),
+    ...(type !== undefined ? { type } : {}),
+    ...(code !== undefined ? { code } : {}),
+    ...(param !== undefined ? { param } : {}),
+    message: message.replaceAll(/\s+/g, " ").trim().slice(0, 1_000),
+  };
+}
+
+function logOwnerLearningProviderError(diagnostic: OwnerLearningProviderDiagnostic): void {
+  console.error("[owner-learning] provider request rejected", JSON.stringify(diagnostic));
 }
 
 function buildProviderRequest(
@@ -257,6 +309,10 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+}
+
+function firstString(...values: unknown[]): string | undefined {
+  return values.map(stringValue).find((value) => value !== undefined);
 }
 
 function numberValue(value: unknown): number | undefined {

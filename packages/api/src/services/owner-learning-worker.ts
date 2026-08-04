@@ -752,6 +752,10 @@ export async function runClaimedOwnerLearningReview(
           const response = await options.provider.invoke({
             input: requestInput,
             responseSchema: turn.responseSchema,
+            diagnosticContext: {
+              reviewId: review.id,
+              callOrdinal: reservation.ordinal,
+            },
             observer,
             resumeTransport: reservation.resumeTransport,
             signal: controller.signal,

@@ -2623,6 +2623,8 @@ export interface AdminOwnerLearningReviewDetail {
     requestedReasoningEffort: string;
     capacityPath: string | null;
     flex429Count: number;
+    terminalHttpStatus: number | null;
+    providerRequestId: string | null;
     latencyMs: number | null;
     tokens: {
       input: number | null;

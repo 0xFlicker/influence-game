@@ -1,5 +1,4 @@
 import type {
-  OwnerLearningEvidenceRef,
   OwnerLearningPreflight,
   OwnerLearningRecommendation,
   OwnerLearningReviewStatus,
@@ -203,16 +202,6 @@ export function recommendationSupportLabel(recommendation: OwnerLearningRecommen
   return `Seen across ${Math.max(1, gameCount)} game${gameCount === 1 ? "" : "s"}`;
 }
 
-export function evidenceTargetId(ref: OwnerLearningEvidenceRef): string {
-  return ref.kind === "game_summary"
-    ? `olm-game-summary-${domCoordinate(ref.gameId)}`
-    : `olm-moment-${domCoordinate(ref.gameId)}-${domCoordinate(ref.coordinate)}`;
-}
-
-export function momentTargetId(gameId: string, coordinate: string): string {
-  return `olm-moment-${domCoordinate(gameId)}-${domCoordinate(coordinate)}`;
-}
-
 export function selectedPreflightGame(
   preflight: OwnerLearningPreflight | null,
   gameId: string,
@@ -255,13 +244,4 @@ function playerName(value: unknown): string | null {
 
 export function humanize(value: string): string {
   return value.replaceAll("_", " ").toLowerCase();
-}
-
-export function domCoordinate(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
 }

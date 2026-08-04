@@ -57,6 +57,32 @@ describe("admin owner learning reviews", () => {
     expect(html).not.toContain("href=");
   });
 
+  test("shows persisted HTTP rejection diagnostics for failed calls", () => {
+    const detail = detailFixture();
+    detail.calls = [{
+      ...detail.calls[0]!,
+      state: "failed",
+      effectiveTier: null,
+      capacityPath: null,
+      latencyMs: 359,
+      terminalHttpStatus: 400,
+      providerRequestId: "req-admin-diagnostic",
+    }];
+    const html = renderToString(
+      <AdminOwnerLearningReviewsContent
+        data={listFixture(detail)}
+        expandedId={detail.id}
+        details={{ [detail.id]: detail }}
+        loadingDetailId={null}
+        onToggle={() => {}}
+      />,
+    );
+
+    expect(html).toContain("HTTP 400");
+    expect(html).toContain("req-admin-diagnostic");
+    expect(html).toContain("359 ms");
+  });
+
   test("uses list/detail admin endpoints and encodes filters and review IDs", async () => {
     setApiBase("https://api.example.test");
     const requests: string[] = [];
@@ -305,6 +331,8 @@ function detailFixture(
       capacityPath: "flex",
       flex429Count: 0,
       latencyMs: 1_250,
+      terminalHttpStatus: 200,
+      providerRequestId: "req-admin-success",
       tokens: { input: 1_000, cachedInput: 600, totalOutput: 350, reasoning: 150, visibleOutput: 200 },
       cost: { source: "estimated", microusd: 725, pricingSourceId: "catalog", rateCardVersion: "2026-08-04", pricedAt: "2026-08-04T03:02:00.000Z" },
       dispatchedAt: "2026-08-04T03:01:58.000Z",
