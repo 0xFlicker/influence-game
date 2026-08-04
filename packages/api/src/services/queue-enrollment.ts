@@ -25,6 +25,15 @@ const SUPPORTED_LEAVE_QUEUE_TYPES = ["daily-free"] as const;
 const DEFAULT_OPEN_GAME_LIMIT = 20;
 const MAX_OPEN_GAME_LIMIT = 100;
 
+export const DAILY_FREE_BUSY_GAME_STATUSES: Array<"waiting" | "in_progress"> = [
+  "waiting",
+  "in_progress",
+];
+
+export function isDailyFreeBusyGameStatus(status: string): boolean {
+  return DAILY_FREE_BUSY_GAME_STATUSES.includes(status as "waiting" | "in_progress");
+}
+
 export type QueueEnrollmentErrorCode =
   | "unsupported_queue_type"
   | "invalid_queue_input"
@@ -208,7 +217,11 @@ export async function getQueueStatus(
       selectionMethod: "random-draw",
       estimatedDrawAt: getNextDailyFreeDrawAt(),
       entry,
-      eligibility: !entry ? "absent" : relevantGame ? "temporarily-ineligible" : "eligible",
+      eligibility: !entry
+        ? "absent"
+        : relevantGame && isDailyFreeBusyGameStatus(relevantGame.status)
+          ? "temporarily-ineligible"
+          : "eligible",
     },
     promptEligible: Boolean(activeSeason && !entry && !suppressionActive),
     relevantGame,

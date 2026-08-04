@@ -61,7 +61,10 @@ import { getGameSeasonIdentityMap } from "../lib/game-season.js";
 import { generateUniqueSlug } from "../lib/slug.js";
 import { randomUUID } from "crypto";
 import { getPublicDisplayName } from "../lib/display-name.js";
-import { removeStandingDailyAgentByAdmin } from "../services/queue-enrollment.js";
+import {
+  isDailyFreeBusyGameStatus,
+  removeStandingDailyAgentByAdmin,
+} from "../services/queue-enrollment.js";
 import {
   allocateImportedAgentProfileName,
   lockAndLoadImportedAgentProfileNameNamespace,
@@ -408,7 +411,7 @@ export function createAdminRoutes(
   });
 
   app.get("/api/admin/free-queue", requireAdminRead, async (c) => {
-    const rows = await db.select({
+    const [rows, waitingGames] = await Promise.all([db.select({
       userId: schema.freeGameQueue.userId,
       agentProfileId: schema.freeGameQueue.agentProfileId,
       agentName: schema.agentProfiles.name,
@@ -420,7 +423,15 @@ export function createAdminRoutes(
     }).from(schema.freeGameQueue)
       .innerJoin(schema.agentProfiles, eq(schema.freeGameQueue.agentProfileId, schema.agentProfiles.id))
       .innerJoin(schema.users, eq(schema.freeGameQueue.userId, schema.users.id))
-      .orderBy(asc(schema.freeGameQueue.joinedAt));
+      .orderBy(asc(schema.freeGameQueue.joinedAt)), db.select({
+        id: schema.games.id,
+        slug: schema.games.slug,
+        status: schema.games.status,
+      }).from(schema.games).where(and(
+        eq(schema.games.trackType, "free"),
+        eq(schema.games.status, "waiting"),
+      )).orderBy(desc(schema.games.createdAt)).limit(1)]);
+    const waitingGame = waitingGames[0] ?? null;
 
     const gameRows = rows.length === 0 ? [] : await db.select({
         userId: schema.gamePlayers.userId,
@@ -439,7 +450,7 @@ export function createAdminRoutes(
     for (const game of gameRows) {
       if (!game.userId) continue;
       if (!lastGameByOwner.has(game.userId)) lastGameByOwner.set(game.userId, game);
-      if (["waiting", "in_progress", "suspended"].includes(game.status)
+      if (isDailyFreeBusyGameStatus(game.status)
         && !activeGameByOwner.has(game.userId)) {
         activeGameByOwner.set(game.userId, game);
       }
@@ -473,6 +484,7 @@ export function createAdminRoutes(
       eligibleCount: eligibleEntries.length,
       availableHumanSeats: 12,
       longestWaitSince: eligibleEntries[0]?.joinedAt ?? null,
+      waitingGame,
       entries,
     });
   });

@@ -379,6 +379,35 @@ describe("queue enrollment service", () => {
     expect(status.promptEligible).toBe(false);
   });
 
+  test("standing membership remains eligible when the owner's relevant Daily Free game is suspended", async () => {
+    await insertAgent(db, { id: "agent-suspended", userId: USER_A_ID, name: "Suspended Agent" });
+    await insertGame(db, {
+      id: "suspended-game-1",
+      slug: "suspended-game",
+      status: "suspended",
+      trackType: "free",
+    });
+    await insertPlayer(db, {
+      id: "suspended-player-1",
+      gameId: "suspended-game-1",
+      userId: USER_A_ID,
+      agentProfileId: "agent-suspended",
+      name: "Suspended Agent",
+    });
+
+    await joinQueue(db, { userId: USER_A_ID }, {
+      queueType: "daily-free",
+      agentId: "agent-suspended",
+    });
+    const status = await getQueueStatus(db, { userId: USER_A_ID });
+
+    expect(status.queue.eligibility).toBe("eligible");
+    expect(status.relevantGame).toMatchObject({
+      id: "suspended-game-1",
+      status: "suspended",
+    });
+  });
+
   test("daily-free join requires an active season", async () => {
     db = await setupTestDB();
     await seedUsers(db);

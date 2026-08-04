@@ -6,8 +6,13 @@ import { schema, type DrizzleDB } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createFreeQueueRoutes } from "../routes/free-queue.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { hashCanonicalEvent } from "../services/game-events.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 import { createSeason } from "../services/seasons.js";
+import {
+  createCanonicalEventFixture,
+  insertCanonicalEventRows,
+} from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 const savedMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER;
@@ -178,6 +183,99 @@ describe("free queue season admission", () => {
     await abortAllGames();
   });
 
+  test("starts the exact waiting Daily Free game requested by the operator", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "exact-start-operator");
+    await createQueuedAgent(db, "exact-start-a", "Aster Exact");
+    await createQueuedAgent(db, "exact-start-b", "Maris Exact");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:exact-start",
+      },
+    });
+    const drawn = await draw.json() as { gameId: string };
+    const unrelatedGameId = randomUUID();
+    await db.insert(schema.games).values({
+      id: unrelatedGameId,
+      slug: "newer-unrelated-waiting-game",
+      config: "{}",
+      status: "waiting",
+      trackType: "free",
+      minPlayers: 4,
+      maxPlayers: 12,
+      createdAt: "2099-01-01T00:00:00.000Z",
+    });
+
+    const started = await app.request(`/api/free-queue/start?gameId=${drawn.gameId}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(started.status).toBe(200);
+    expect(await started.json()).toMatchObject({ started: true, gameId: drawn.gameId });
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, drawn.gameId)))[0]?.status).toBe("in_progress");
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, unrelatedGameId)))[0]?.status).toBe("waiting");
+    await abortAllGames();
+  });
+
+  test("exact Daily Free start requires permission and rejects non-waiting or custom games", async () => {
+    const db = await setupTestDB();
+    const userId = await insertUser(db, "exact-start-access");
+    const noPermissionToken = await createSessionToken(userId, {
+      roles: ["gamer"],
+      permissions: [],
+    });
+    const operatorToken = await createSessionToken(userId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    await db.insert(schema.games).values([
+      {
+        id: "custom-waiting-start-target",
+        slug: "custom-waiting-start-target",
+        config: "{}",
+        status: "waiting",
+        trackType: "custom",
+        minPlayers: 2,
+        maxPlayers: 12,
+      },
+      {
+        id: "completed-free-start-target",
+        slug: "completed-free-start-target",
+        config: "{}",
+        status: "completed",
+        trackType: "free",
+        minPlayers: 2,
+        maxPlayers: 12,
+      },
+    ]);
+
+    expect((await app.request(
+      "/api/free-queue/start?gameId=custom-waiting-start-target",
+      { method: "POST" },
+    )).status).toBe(401);
+    expect((await app.request(
+      "/api/free-queue/start?gameId=custom-waiting-start-target",
+      { method: "POST", headers: { Authorization: `Bearer ${noPermissionToken}` } },
+    )).status).toBe(403);
+    for (const gameId of ["custom-waiting-start-target", "completed-free-start-target"]) {
+      expect((await app.request(`/api/free-queue/start?gameId=${gameId}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${operatorToken}` },
+      })).status).toBe(404);
+    }
+  });
+
   test("returns typed freeze failures when a drawn Daily Free season is final", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "final-operator");
@@ -287,7 +385,7 @@ describe("free queue season admission", () => {
       },
     }));
 
-    const failed = await failingApp.request("/api/free-queue/start", {
+    const failed = await failingApp.request(`/api/free-queue/start?gameId=${drawn.gameId}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -306,7 +404,7 @@ describe("free queue season admission", () => {
       expect.objectContaining({ status: "closed", kernelHealth: "degraded" }),
     ]);
 
-    const retried = await app.request("/api/free-queue/start", {
+    const retried = await app.request(`/api/free-queue/start?gameId=${drawn.gameId}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
     });
@@ -395,7 +493,7 @@ describe("free queue season admission", () => {
     })()).rejects.toThrow();
   });
 
-  test("distinct draw requests on the same UTC date can each create a game", async () => {
+  test("distinct draw requests converge on a waiting game and allow another draw after it starts", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "operator-distinct-requests");
     await createQueuedAgent(db, "distinct-alice", "Astra Daily");
@@ -415,9 +513,26 @@ describe("free queue season admission", () => {
     });
     expect(recovery.status).toBe(201);
     const recoveredGame = await recovery.json() as { gameId: string };
+
+    const duplicateWaitingDraw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:schedule:2026-07-16T23:00:00Z",
+      },
+    });
+    expect(duplicateWaitingDraw.status).toBe(200);
+    expect(await duplicateWaitingDraw.json()).toMatchObject({
+      drawn: false,
+      gameId: recoveredGame.gameId,
+      reason: "A waiting Daily Free game already exists.",
+    });
+
     await db.update(schema.games)
-      .set({ status: "completed" })
+      .set({ status: "in_progress" })
       .where(eq(schema.games.id, recoveredGame.gameId));
+    await createQueuedAgent(db, "following-alice", "Lumen Daily");
+    await createQueuedAgent(db, "following-bob", "Vale Daily");
 
     const followingDraw = await app.request("/api/free-queue/draw", {
       method: "POST",
@@ -486,20 +601,27 @@ describe("free queue season admission", () => {
     expect(entries.filter((entry) => entry.consecutiveMisses === 0)).toHaveLength(12);
   });
 
-  test("draw excludes nonterminal owners and admits terminal owners without charging misses", async () => {
+  test("a new draw supersedes selected owners' suspended games without admin cleanup", async () => {
     const db = await setupTestDB();
     const operatorId = await insertUser(db, "operator-eligibility");
     await createSeason(db, { slug: "eligibility-season", name: "Eligibility Season" });
-    const waiting = await createQueuedAgent(db, "waiting-owner", "Waiting Agent");
     const active = await createQueuedAgent(db, "active-owner", "Active Agent");
     const suspended = await createQueuedAgent(db, "suspended-owner", "Suspended Agent");
     const completed = await createQueuedAgent(db, "completed-owner", "Completed Agent");
     const cancelled = await createQueuedAgent(db, "cancelled-owner", "Cancelled Agent");
     const eligibleA = await createQueuedAgent(db, "eligible-a", "Eligible A");
     const eligibleB = await createQueuedAgent(db, "eligible-b", "Eligible B");
-    await assignOwnerToFreeGame(db, waiting, "waiting");
     await assignOwnerToFreeGame(db, active, "in_progress");
-    await assignOwnerToFreeGame(db, suspended, "suspended");
+    const suspendedGameId = await assignOwnerToFreeGame(db, suspended, "suspended");
+    await db.insert(schema.gameRunOwners).values({
+      id: randomUUID(),
+      gameId: suspendedGameId,
+      ownerEpoch: randomUUID(),
+      status: "active",
+      expiresAt: "2026-01-01T00:00:00.000Z",
+      kernelHealth: "suspended",
+      failureReason: "provider_failure",
+    });
     await assignOwnerToFreeGame(db, completed, "completed");
     await assignOwnerToFreeGame(db, cancelled, "cancelled");
     const token = await createSessionToken(operatorId, {
@@ -522,14 +644,70 @@ describe("free queue season admission", () => {
       .where(eq(schema.gamePlayers.gameId, body.gameId));
     const seatedAgentIds = new Set(seats.flatMap((seat) => seat.agentProfileId ? [seat.agentProfileId] : []));
     expect(seatedAgentIds).toEqual(new Set([
+      suspended.profileId,
       completed.profileId,
       cancelled.profileId,
       eligibleA.profileId,
       eligibleB.profileId,
     ]));
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, suspendedGameId)))[0]).toMatchObject({
+      status: "cancelled",
+      endedAt: expect.any(String),
+    });
+    expect((await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, suspendedGameId)))[0]).toMatchObject({
+      status: "revoked",
+      kernelHealth: "suspended",
+      failureReason: "superseded_by_new_draw",
+      revokedAt: expect.any(String),
+    });
     const entries = await db.select().from(schema.freeGameQueue);
-    expect(entries).toHaveLength(7);
+    expect(entries).toHaveLength(6);
     expect(entries.every((entry) => entry.consecutiveMisses === 0)).toBe(true);
+  });
+
+  test("a new draw preserves suspended games with unresolved completion settlements", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "operator-settlement-preservation");
+    await createSeason(db, { slug: "settlement-season", name: "Settlement Season" });
+    const pending = await createQueuedAgent(db, "pending-owner", "Pending Agent");
+    const repairRequired = await createQueuedAgent(db, "repair-owner", "Repair Agent");
+    const pendingGameId = await assignOwnerToFreeGame(db, pending, "suspended");
+    const repairGameId = await assignOwnerToFreeGame(db, repairRequired, "suspended");
+    const pendingOwnerEpoch = await attachSuspendedOwner(db, pendingGameId);
+    const repairOwnerEpoch = await attachSuspendedOwner(db, repairGameId);
+    await insertCompletionSettlement(db, pendingGameId, pendingOwnerEpoch, "pending");
+    await insertCompletionSettlement(db, repairGameId, repairOwnerEpoch, "repair_required");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    const response = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:settlement-preservation",
+      },
+    });
+
+    expect(response.status).toBe(201);
+    const body = await response.json() as { gameId: string; supersededGameCount: number };
+    const seats = await db.select().from(schema.gamePlayers)
+      .where(eq(schema.gamePlayers.gameId, body.gameId));
+    expect(new Set(seats.flatMap((seat) => seat.agentProfileId ? [seat.agentProfileId] : [])))
+      .toEqual(new Set([pending.profileId, repairRequired.profileId]));
+    expect(body.supersededGameCount).toBe(0);
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, pendingGameId)))[0]?.status).toBe("suspended");
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, repairGameId)))[0]?.status).toBe("suspended");
+    expect((await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, pendingGameId)))[0]?.status).toBe("active");
+    expect((await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, repairGameId)))[0]?.status).toBe("active");
   });
 });
 
@@ -565,7 +743,7 @@ async function assignOwnerToFreeGame(
   db: DrizzleDB,
   owner: { userId: string; profileId: string },
   status: "waiting" | "in_progress" | "suspended" | "completed" | "cancelled",
-): Promise<void> {
+): Promise<string> {
   const gameId = randomUUID();
   await db.insert(schema.games).values({
     id: gameId,
@@ -584,5 +762,48 @@ async function assignOwnerToFreeGame(
     agentProfileId: owner.profileId,
     persona: JSON.stringify({ name: status, personality: status }),
     agentConfig: "{}",
+  });
+  return gameId;
+}
+
+async function attachSuspendedOwner(db: DrizzleDB, gameId: string): Promise<string> {
+  const ownerEpoch = randomUUID();
+  await db.insert(schema.gameRunOwners).values({
+    id: randomUUID(),
+    gameId,
+    ownerEpoch,
+    status: "active",
+    expiresAt: "2026-01-01T00:00:00.000Z",
+    kernelHealth: "suspended",
+    failureReason: "completion_settlement_transient_failure",
+  });
+  return ownerEpoch;
+}
+
+async function insertCompletionSettlement(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+  state: "pending" | "repair_required",
+): Promise<void> {
+  const events = createCanonicalEventFixture(gameId);
+  await insertCanonicalEventRows(db, gameId, ownerEpoch, events);
+  const finalEvent = events.at(-1);
+  if (!finalEvent) throw new Error("Expected completion event boundary");
+  await db.update(schema.gameRunOwners)
+    .set({ lastPersistedEventSequence: finalEvent.sequence })
+    .where(eq(schema.gameRunOwners.gameId, gameId));
+  await db.insert(schema.gameCompletionSettlements).values({
+    id: randomUUID(),
+    gameId,
+    ownerEpoch,
+    finalEventSequence: finalEvent.sequence,
+    finalEventHash: hashCanonicalEvent(finalEvent),
+    payload: {},
+    payloadHash: `sha256:${"a".repeat(64)}`,
+    state,
+    lastSafeFailureCode: state === "repair_required"
+      ? "competition_settlement_evidence_missing"
+      : "completion_settlement_transient_failure",
   });
 }

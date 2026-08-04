@@ -483,7 +483,7 @@ The user-facing product boundary for MCP clients that may help a player prepare 
 
 ## Standing Daily Agent
 
-An owner's one season-scoped agent entry for Daily Free. A Standing Daily Agent remains entered after selection and terminal games, becomes temporarily ineligible while the owner has a waiting, active, or suspended Daily Free assignment, and becomes eligible again when that game is terminal. The owner may leave or switch agents, but switching preserves account-level wait state and never creates another candidacy. Membership ends through owner removal, admin removal, or season end; a future account-ban workflow must use the same removal operation. There is no separate paused state.
+An owner's one season-scoped agent entry for Daily Free. A Standing Daily Agent remains entered after selection and terminal games and becomes temporarily ineligible only while the owner has a waiting or active Daily Free assignment. A suspended assignment remains eligible; selection into a new draw supersedes the old suspended game and revokes its active run owner unless the old game has a `pending` or `repair_required` completion settlement, which must remain available for retry or investigation. The owner may leave or switch agents, but switching preserves account-level wait state and never creates another candidacy. Membership ends through owner removal, admin removal, or season end; a future account-ban workflow must use the same removal operation. There is no separate paused state.
 
 ## Avatar completion
 

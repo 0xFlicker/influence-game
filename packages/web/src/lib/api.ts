@@ -2822,7 +2822,37 @@ export interface AdminFreeQueueStatus {
   eligibleCount: number;
   availableHumanSeats: 12;
   longestWaitSince: string | null;
+  waitingGame: { id: string; slug: string; status: "waiting" } | null;
   entries: AdminFreeQueueEntry[];
+}
+
+export type FreeQueueDrawResult = {
+  drawn: true;
+  gameId: string;
+  gameSlug: string;
+  playersDrawn: number;
+  aiPlayersFilled: number;
+  totalPlayers: number;
+  supersededGameCount: number;
+  rated: boolean;
+  seasonId: string | null;
+} | {
+  drawn: false;
+  reason: string;
+  gameId?: undefined;
+  gameSlug?: undefined;
+} | {
+  drawn: false;
+  reason: string;
+  gameId: string;
+  gameSlug: string;
+};
+
+export interface FreeQueueStartResult {
+  started: true;
+  gameId: string;
+  gameSlug: string;
+  players: number;
 }
 
 export interface SeasonIdentity {
@@ -3057,6 +3087,19 @@ export async function getFreeQueueLeaderboard(): Promise<LeaderboardEntry[]> {
 
 export async function getAdminFreeQueue(): Promise<AdminFreeQueueStatus> {
   return apiFetch("/api/admin/free-queue");
+}
+
+export async function drawFreeQueueGame(idempotencyKey: string): Promise<FreeQueueDrawResult> {
+  return apiFetch("/api/free-queue/draw", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}
+
+export async function startFreeQueueGame(gameId: string): Promise<FreeQueueStartResult> {
+  return apiFetch(`/api/free-queue/start?gameId=${encodeURIComponent(gameId)}`, {
+    method: "POST",
+  });
 }
 
 export async function removeAdminFreeQueueEntry(userId: string): Promise<void> {
