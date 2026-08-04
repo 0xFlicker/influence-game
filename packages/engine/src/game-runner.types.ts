@@ -495,6 +495,7 @@ export interface PrivateDecisionTrace {
     promptTokens?: number;
     completionTokens?: number;
     cachedTokens?: number;
+    cacheWriteTokens?: number;
     reasoningTokens?: number;
     totalTokens?: number;
     routerBilling?: Record<string, unknown>;

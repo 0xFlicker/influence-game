@@ -15,7 +15,7 @@ import type {
 
 const PRICING_SOURCE_ID = "engine.MODEL_PRICING";
 const FLEX_PRICING_SOURCE_ID = "engine.OPENAI_FLEX_MODEL_PRICING";
-const RATE_CARD_VERSION = "2026-07-04";
+const RATE_CARD_VERSION = "2026-07-30";
 
 const PROVIDER_SNAPSHOT_RATE_CARDS = {
   "gpt-5.4-nano-2026-03-17": "gpt-5.4-nano",
@@ -316,6 +316,9 @@ function pickUsageFromRaw(raw: unknown): NonNullable<PrivateDecisionTrace["usage
   const cachedTokens =
     integerish(promptDetails.cached_tokens) ??
     integerish(inputDetails.cached_tokens);
+  const cacheWriteTokens =
+    integerish(promptDetails.cache_write_tokens) ??
+    integerish(inputDetails.cache_write_tokens);
   const reasoningTokens =
     integerish(completionDetails.reasoning_tokens) ??
     integerish(outputDetails.reasoning_tokens);
@@ -327,6 +330,7 @@ function pickUsageFromRaw(raw: unknown): NonNullable<PrivateDecisionTrace["usage
     ...(promptTokens !== undefined && { promptTokens }),
     ...(completionTokens !== undefined && { completionTokens }),
     ...(cachedTokens !== undefined && { cachedTokens }),
+    ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
     ...(reasoningTokens !== undefined && { reasoningTokens }),
     ...(totalTokens !== undefined && { totalTokens }),
     ...(routerBilling && { routerBilling }),
@@ -342,6 +346,7 @@ function normalizedUsage(trace: PrivateDecisionTrace): NonNullable<PrivateDecisi
     promptTokens: usage.promptTokens ?? rawUsage?.promptTokens ?? 0,
     completionTokens: usage.completionTokens ?? rawUsage?.completionTokens ?? 0,
     cachedTokens: usage.cachedTokens ?? rawUsage?.cachedTokens ?? 0,
+    cacheWriteTokens: usage.cacheWriteTokens ?? rawUsage?.cacheWriteTokens ?? 0,
     reasoningTokens: usage.reasoningTokens ?? rawUsage?.reasoningTokens ?? 0,
     totalTokens: usage.totalTokens ??
       rawUsage?.totalTokens ??
@@ -358,6 +363,28 @@ function normalizedUsage(trace: PrivateDecisionTrace): NonNullable<PrivateDecisi
 function providerResponseId(trace: PrivateDecisionTrace): string | undefined {
   const raw = asRecord(trace.response.raw);
   return safeString(raw?.id, 128);
+}
+
+function effectiveOpenAIServiceTier(trace: PrivateDecisionTrace): string | undefined {
+  if (trace.model.provider !== "openai") return undefined;
+  return safeString(asRecord(trace.response.raw)?.service_tier, 40);
+}
+
+function effectiveServiceTierFromMetadata(metadata: Record<string, unknown> | undefined): string | undefined {
+  return safeString(metadata?.effectiveServiceTier, 40);
+}
+
+function pricingSourceIdFor(effectiveServiceTier: string | undefined): string {
+  return effectiveServiceTier === "flex" ? FLEX_PRICING_SOURCE_ID : PRICING_SOURCE_ID;
+}
+
+function safeSpendMetadata(
+  metadata: Record<string, unknown>,
+  cacheWriteTokens: number | undefined,
+): Record<string, unknown> {
+  const safe = sanitizeForAccounting(metadata) as Record<string, unknown>;
+  if (cacheWriteTokens !== undefined && cacheWriteTokens > 0) safe.cacheWriteTokens = cacheWriteTokens;
+  return safe;
 }
 
 function callIdForTrace(input: RecordProviderSpendForTraceInput): string {
@@ -413,9 +440,14 @@ function extractProviderNative(routerBilling: Record<string, unknown> | undefine
   return amount !== undefined && unit ? { unit, amount: String(amount) } : {};
 }
 
-function estimateMicrousd(usage: NonNullable<PrivateDecisionTrace["usage"]>, model: string): number | undefined {
+function estimateMicrousd(
+  usage: NonNullable<PrivateDecisionTrace["usage"]>,
+  model: string,
+  effectiveServiceTier?: string,
+): number | undefined {
   const promptTokens = usage.promptTokens ?? 0;
   const cachedTokens = usage.cachedTokens ?? 0;
+  const cacheWriteTokens = usage.cacheWriteTokens ?? 0;
   const completionTokens = usage.completionTokens ?? 0;
   const reasoningTokens = usage.reasoningTokens ?? 0;
   const totalTokens = usage.totalTokens ?? (promptTokens + completionTokens);
@@ -423,14 +455,17 @@ function estimateMicrousd(usage: NonNullable<PrivateDecisionTrace["usage"]>, mod
   const totalUsage: TokenUsage = {
     promptTokens: hasPricedBuckets ? promptTokens : totalTokens,
     cachedTokens: hasPricedBuckets ? cachedTokens : 0,
+    cacheWriteTokens: hasPricedBuckets ? cacheWriteTokens : 0,
     completionTokens: hasPricedBuckets ? completionTokens : 0,
     reasoningTokens,
     totalTokens,
     callCount: 1,
     emptyResponses: 0,
   };
-  const estimate = estimateCostForKnownModel(totalUsage, model);
-  return estimate ? Math.max(0, Math.round(estimate.totalCost * 1_000_000)) : undefined;
+  const totalCost = effectiveServiceTier === "flex"
+    ? estimateTierAwareOpenAICost({ flex: totalUsage }, model)?.totalCost
+    : estimateCostForKnownModel(totalUsage, model)?.totalCost;
+  return totalCost === undefined ? undefined : Math.max(0, Math.round(totalCost * 1_000_000));
 }
 
 function usesTotalOnlyPricingFallback(usage: NonNullable<PrivateDecisionTrace["usage"]>): boolean {
@@ -651,8 +686,9 @@ export async function recordProviderSpendForTrace(
   const eventSequence = positiveInteger(input.eventSequence ?? input.trace.boundary?.finalEventSequence);
   const routerBilling = asRecord(usage.routerBilling);
   const actualCostMicrousd = extractRouterActualMicrousd(routerBilling);
+  const effectiveServiceTier = effectiveOpenAIServiceTier(input.trace);
   const estimatedCostMicrousd = actualCostMicrousd === undefined
-    ? estimateMicrousd(usage, input.trace.model.name)
+    ? estimateMicrousd(usage, input.trace.model.name, effectiveServiceTier)
     : undefined;
   const providerNative = extractProviderNative(routerBilling);
   const costSource: SpendInsert["costSource"] =
@@ -706,15 +742,16 @@ export async function recordProviderSpendForTrace(
       estimatedCostMicrousd,
       providerNativeUnit: providerNative.unit,
       providerNativeAmount: providerNative.amount,
-      pricingSourceId: estimatedCostMicrousd !== undefined ? PRICING_SOURCE_ID : undefined,
+      pricingSourceId: estimatedCostMicrousd !== undefined ? pricingSourceIdFor(effectiveServiceTier) : undefined,
       rateCardVersion: estimatedCostMicrousd !== undefined ? RATE_CARD_VERSION : undefined,
       pricedAt: estimatedCostMicrousd !== undefined ? now.toISOString() : undefined,
       routerBilling: sanitizeForAccounting(routerBilling) as Record<string, unknown> | undefined,
       diagnostics: sanitizeForAccounting(diagnostics) as Record<string, unknown>,
-      safeMetadata: sanitizeForAccounting({
+      safeMetadata: safeSpendMetadata({
         finishReason: input.trace.response.finishReason,
         hasTraceManifest: Boolean(input.traceManifestId),
-      }) as Record<string, unknown>,
+        ...(effectiveServiceTier && { effectiveServiceTier }),
+      }, usage.cacheWriteTokens),
       observedAt: input.trace.createdAt || now.toISOString(),
       updatedAt: now.toISOString(),
     })
@@ -747,17 +784,20 @@ async function repriceExistingCallLevelRows(
   let staticEstimateRows = 0;
   let aggregateEstimateRows = 0;
   for (const row of rows) {
+    const safeMetadata = asRecord(row.safeMetadata);
     const usage = {
       promptTokens: row.promptTokens,
       cachedTokens: row.cachedTokens,
+      cacheWriteTokens: integerish(safeMetadata?.cacheWriteTokens) ?? 0,
       completionTokens: row.completionTokens,
       reasoningTokens: row.reasoningTokens,
       totalTokens: row.totalTokens,
     };
     const routerBilling = asRecord(row.routerBilling);
     const actualCostMicrousd = extractRouterActualMicrousd(routerBilling);
+    const effectiveServiceTier = effectiveServiceTierFromMetadata(safeMetadata);
     const estimatedCostMicrousd = actualCostMicrousd === undefined && row.modelName
-      ? estimateMicrousd(usage, row.modelName)
+      ? estimateMicrousd(usage, row.modelName, effectiveServiceTier)
       : undefined;
     if (actualCostMicrousd === undefined && (!estimatedCostMicrousd || estimatedCostMicrousd <= 0)) continue;
     const providerNative = extractProviderNative(routerBilling);
@@ -787,7 +827,7 @@ async function repriceExistingCallLevelRows(
         estimatedCostMicrousd: actualCostMicrousd !== undefined ? null : estimatedCostMicrousd,
         providerNativeUnit: row.providerNativeUnit ?? providerNative.unit,
         providerNativeAmount: row.providerNativeAmount ?? providerNative.amount,
-        pricingSourceId: actualCostMicrousd === undefined ? PRICING_SOURCE_ID : null,
+        pricingSourceId: actualCostMicrousd === undefined ? pricingSourceIdFor(effectiveServiceTier) : null,
         rateCardVersion: actualCostMicrousd === undefined ? RATE_CARD_VERSION : null,
         pricedAt: actualCostMicrousd === undefined ? pricedAt : null,
         diagnostics: sanitizeForAccounting({
@@ -859,9 +899,11 @@ export async function backfillGameCostAccounting(
       }
       const model = asRecord(metadata?.model);
       const actor = asRecord(metadata?.actor);
+      const effectiveServiceTier = effectiveServiceTierFromMetadata(metadata);
       const usageEnvelope: NonNullable<PrivateDecisionTrace["usage"]> = {
         promptTokens: integerish(usage.promptTokens) ?? 0,
         cachedTokens: integerish(usage.cachedTokens) ?? 0,
+        cacheWriteTokens: integerish(usage.cacheWriteTokens) ?? 0,
         completionTokens: integerish(usage.completionTokens) ?? 0,
         reasoningTokens: integerish(usage.reasoningTokens) ?? 0,
         totalTokens: integerish(usage.totalTokens) ?? 0,
@@ -874,7 +916,7 @@ export async function backfillGameCostAccounting(
       const actualCostMicrousd = extractRouterActualMicrousd(routerBilling);
       const modelName = safeString(metadata?.modelName) ?? safeString(model?.name);
       const estimatedCostMicrousd = actualCostMicrousd === undefined && modelName
-        ? estimateMicrousd(usageEnvelope, modelName)
+        ? estimateMicrousd(usageEnvelope, modelName, effectiveServiceTier)
         : undefined;
       const providerNative = extractProviderNative(routerBilling);
       const costSource: SpendInsert["costSource"] =
@@ -920,11 +962,14 @@ export async function backfillGameCostAccounting(
           estimatedCostMicrousd,
           providerNativeUnit: providerNative.unit,
           providerNativeAmount: providerNative.amount,
-          pricingSourceId: estimatedCostMicrousd !== undefined ? PRICING_SOURCE_ID : undefined,
+          pricingSourceId: estimatedCostMicrousd !== undefined ? pricingSourceIdFor(effectiveServiceTier) : undefined,
           rateCardVersion: estimatedCostMicrousd !== undefined ? RATE_CARD_VERSION : undefined,
           pricedAt: estimatedCostMicrousd !== undefined ? manifest.createdAt : undefined,
           routerBilling: sanitizeForAccounting(routerBilling) as Record<string, unknown> | undefined,
           diagnostics: sanitizeForAccounting({ items: diagnosticItems }) as Record<string, unknown>,
+          safeMetadata: safeSpendMetadata({
+            ...(effectiveServiceTier && { effectiveServiceTier }),
+          }, usageEnvelope.cacheWriteTokens),
           observedAt: safeString(metadata?.createdAt) ?? manifest.createdAt,
         })
         .onConflictDoNothing()

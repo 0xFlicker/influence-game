@@ -1838,6 +1838,16 @@ export class InfluenceAgent implements IAgent {
       !Array.isArray(usageRecord.prompt_tokens_details)
       ? usageRecord.prompt_tokens_details as Record<string, unknown>
       : {};
+    const inputDetails = usageRecord.input_tokens_details &&
+      typeof usageRecord.input_tokens_details === "object" &&
+      !Array.isArray(usageRecord.input_tokens_details)
+      ? usageRecord.input_tokens_details as Record<string, unknown>
+      : {};
+    const outputDetails = usageRecord.output_tokens_details &&
+      typeof usageRecord.output_tokens_details === "object" &&
+      !Array.isArray(usageRecord.output_tokens_details)
+      ? usageRecord.output_tokens_details as Record<string, unknown>
+      : {};
     const routerBilling = usageRecord.imgnai &&
       typeof usageRecord.imgnai === "object" &&
       !Array.isArray(usageRecord.imgnai)
@@ -1846,11 +1856,22 @@ export class InfluenceAgent implements IAgent {
     const diagnostics: string[] = [];
     if ("imgnai" in usageRecord && !routerBilling) diagnostics.push("malformed_router_billing");
 
+    const promptTokens = InfluenceAgent.readNumberField(usageRecord.prompt_tokens)
+      ?? InfluenceAgent.readNumberField(usageRecord.input_tokens);
+    const completionTokens = InfluenceAgent.readNumberField(usageRecord.completion_tokens)
+      ?? InfluenceAgent.readNumberField(usageRecord.output_tokens);
+    const cachedTokens = InfluenceAgent.readNumberField(promptDetails.cached_tokens)
+      ?? InfluenceAgent.readNumberField(inputDetails.cached_tokens);
+    const cacheWriteTokens = InfluenceAgent.readNumberField(promptDetails.cache_write_tokens)
+      ?? InfluenceAgent.readNumberField(inputDetails.cache_write_tokens);
+    const reasoningTokens = InfluenceAgent.readNumberField(completionDetails.reasoning_tokens)
+      ?? InfluenceAgent.readNumberField(outputDetails.reasoning_tokens);
     const metadata: NonNullable<PrivateDecisionTrace["usage"]> = {
-      ...(InfluenceAgent.readNumberField(usageRecord.prompt_tokens) !== undefined && { promptTokens: InfluenceAgent.readNumberField(usageRecord.prompt_tokens) }),
-      ...(InfluenceAgent.readNumberField(usageRecord.completion_tokens) !== undefined && { completionTokens: InfluenceAgent.readNumberField(usageRecord.completion_tokens) }),
-      ...(InfluenceAgent.readNumberField(promptDetails.cached_tokens) !== undefined && { cachedTokens: InfluenceAgent.readNumberField(promptDetails.cached_tokens) }),
-      ...(InfluenceAgent.readNumberField(completionDetails.reasoning_tokens) !== undefined && { reasoningTokens: InfluenceAgent.readNumberField(completionDetails.reasoning_tokens) }),
+      ...(promptTokens !== undefined && { promptTokens }),
+      ...(completionTokens !== undefined && { completionTokens }),
+      ...(cachedTokens !== undefined && { cachedTokens }),
+      ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
+      ...(reasoningTokens !== undefined && { reasoningTokens }),
       ...(InfluenceAgent.readNumberField(usageRecord.total_tokens) !== undefined && { totalTokens: InfluenceAgent.readNumberField(usageRecord.total_tokens) }),
       ...(routerBilling && { routerBilling }),
       ...(diagnostics.length > 0 && { diagnostics }),
@@ -4946,11 +4967,13 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
       parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
+      usage.cacheWriteTokens ?? 0,
     );
   }
 
   private recordResponseTokenUsage(response: OpenAIResponse, sourceKey: string): void {
     if (!this.tokenTracker || !response.usage) return;
+    const inputDetails = response.usage.input_tokens_details as unknown as Record<string, unknown>;
     this.tokenTracker.record(
       sourceKey,
       response.usage.input_tokens,
@@ -4958,6 +4981,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       response.usage.input_tokens_details.cached_tokens ?? 0,
       response.usage.output_tokens_details.reasoning_tokens ?? 0,
       parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
+      InfluenceAgent.readNumberField(inputDetails.cache_write_tokens) ?? 0,
     );
   }
 

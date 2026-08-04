@@ -703,6 +703,7 @@ function mergeServiceTierUsage(target: ServiceTierUsage, source: ServiceTierUsag
     const total = target[tier] ?? {
       promptTokens: 0,
       cachedTokens: 0,
+      cacheWriteTokens: 0,
       completionTokens: 0,
       reasoningTokens: 0,
       totalTokens: 0,
@@ -711,6 +712,7 @@ function mergeServiceTierUsage(target: ServiceTierUsage, source: ServiceTierUsag
     };
     total.promptTokens += usage.promptTokens;
     total.cachedTokens += usage.cachedTokens;
+    total.cacheWriteTokens = (total.cacheWriteTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
     total.completionTokens += usage.completionTokens;
     total.reasoningTokens += usage.reasoningTokens;
     total.totalTokens += usage.totalTokens;
@@ -739,6 +741,7 @@ export function computeAggregateStats(
   const batchTokens: TokenUsage = {
     promptTokens: 0,
     cachedTokens: 0,
+    cacheWriteTokens: 0,
     completionTokens: 0,
     reasoningTokens: 0,
     totalTokens: 0,
@@ -785,6 +788,7 @@ export function computeAggregateStats(
   for (const result of results) {
     batchTokens.promptTokens += result.tokenUsage.total.promptTokens;
     batchTokens.cachedTokens += result.tokenUsage.total.cachedTokens;
+    batchTokens.cacheWriteTokens = (batchTokens.cacheWriteTokens ?? 0) + (result.tokenUsage.total.cacheWriteTokens ?? 0);
     batchTokens.completionTokens += result.tokenUsage.total.completionTokens;
     batchTokens.reasoningTokens += result.tokenUsage.total.reasoningTokens;
     batchTokens.totalTokens += result.tokenUsage.total.totalTokens;
@@ -1226,6 +1230,9 @@ export function renderMarkdownSummary(stats: AggregateStats, results: GameResult
   lines.push(`| Total LLM calls | ${tu.callCount.toLocaleString()} |`);
   lines.push(`| Prompt tokens | ${tu.promptTokens.toLocaleString()} |`);
   lines.push(`| Cached input tokens | ${tu.cachedTokens.toLocaleString()} |`);
+  if ((tu.cacheWriteTokens ?? 0) > 0) {
+    lines.push(`| Cache-write input tokens | ${tu.cacheWriteTokens!.toLocaleString()} |`);
+  }
   lines.push(`| Completion tokens | ${tu.completionTokens.toLocaleString()} |`);
   if (tu.reasoningTokens > 0) {
     lines.push(`| Reasoning tokens (CoT) | ${tu.reasoningTokens.toLocaleString()} |`);

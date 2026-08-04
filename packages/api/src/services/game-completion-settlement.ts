@@ -1026,6 +1026,9 @@ export async function settleCapturedGameCompletion(
         tokenUsage: JSON.stringify({
           promptTokens: envelope.tokenUsage.total.promptTokens,
           cachedTokens: envelope.tokenUsage.total.cachedTokens,
+          ...((envelope.tokenUsage.total.cacheWriteTokens ?? 0) > 0 && {
+            cacheWriteTokens: envelope.tokenUsage.total.cacheWriteTokens,
+          }),
           completionTokens: envelope.tokenUsage.total.completionTokens,
           reasoningTokens: envelope.tokenUsage.total.reasoningTokens,
           totalTokens: envelope.tokenUsage.total.totalTokens,
@@ -1684,6 +1687,7 @@ function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
   const summed = Object.values(perAction).reduce<TokenUsage>((accumulator, usage) => ({
     promptTokens: accumulator.promptTokens + usage.promptTokens,
     cachedTokens: accumulator.cachedTokens + usage.cachedTokens,
+    cacheWriteTokens: (accumulator.cacheWriteTokens ?? 0) + (usage.cacheWriteTokens ?? 0),
     completionTokens: accumulator.completionTokens + usage.completionTokens,
     reasoningTokens: accumulator.reasoningTokens + usage.reasoningTokens,
     totalTokens: accumulator.totalTokens + usage.totalTokens,
@@ -1706,26 +1710,44 @@ function assertTokenUsageSnapshot(value: unknown): GameCompletionTokenUsageV1 {
 
 function assertTokenUsage(value: unknown): TokenUsage {
   const record = assertRecord(value, "Invalid completion token usage entry");
-  assertExactKeys(record, [
-    "promptTokens",
-    "cachedTokens",
-    "completionTokens",
-    "reasoningTokens",
-    "totalTokens",
-    "callCount",
-    "emptyResponses",
-  ], "completion token usage entry");
+  assertExactKeys(
+    record,
+    record.cacheWriteTokens === undefined
+      ? [
+          "promptTokens",
+          "cachedTokens",
+          "completionTokens",
+          "reasoningTokens",
+          "totalTokens",
+          "callCount",
+          "emptyResponses",
+        ]
+      : [
+          "promptTokens",
+          "cachedTokens",
+          "cacheWriteTokens",
+          "completionTokens",
+          "reasoningTokens",
+          "totalTokens",
+          "callCount",
+          "emptyResponses",
+        ],
+    "completion token usage entry",
+  );
   const usage: TokenUsage = {
     promptTokens: assertInteger(record.promptTokens, "Invalid prompt token count", 0),
     cachedTokens: assertInteger(record.cachedTokens, "Invalid cached token count", 0),
+    ...(record.cacheWriteTokens !== undefined && {
+      cacheWriteTokens: assertInteger(record.cacheWriteTokens, "Invalid cache-write token count", 0),
+    }),
     completionTokens: assertInteger(record.completionTokens, "Invalid completion token count", 0),
     reasoningTokens: assertInteger(record.reasoningTokens, "Invalid reasoning token count", 0),
     totalTokens: assertInteger(record.totalTokens, "Invalid total token count", 0),
     callCount: assertInteger(record.callCount, "Invalid call count", 0),
     emptyResponses: assertInteger(record.emptyResponses, "Invalid empty-response count", 0),
   };
-  if (usage.cachedTokens > usage.promptTokens) {
-    throw new Error("Cached token count exceeds prompt token count");
+  if (usage.cachedTokens + (usage.cacheWriteTokens ?? 0) > usage.promptTokens) {
+    throw new Error("Cached and cache-write token counts exceed prompt token count");
   }
   if (usage.totalTokens !== usage.promptTokens + usage.completionTokens) {
     throw new Error("Total token count does not match prompt plus completion tokens");
@@ -1737,6 +1759,7 @@ function emptyTokenUsage(): TokenUsage {
   return {
     promptTokens: 0,
     cachedTokens: 0,
+    cacheWriteTokens: 0,
     completionTokens: 0,
     reasoningTokens: 0,
     totalTokens: 0,

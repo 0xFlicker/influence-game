@@ -577,6 +577,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
       parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
+      usage.cacheWriteTokens ?? 0,
     );
   }
 
@@ -651,17 +652,38 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       !Array.isArray(usageRecord.prompt_tokens_details)
       ? usageRecord.prompt_tokens_details as Record<string, unknown>
       : {};
+    const inputDetails = usageRecord.input_tokens_details &&
+      typeof usageRecord.input_tokens_details === "object" &&
+      !Array.isArray(usageRecord.input_tokens_details)
+      ? usageRecord.input_tokens_details as Record<string, unknown>
+      : {};
+    const outputDetails = usageRecord.output_tokens_details &&
+      typeof usageRecord.output_tokens_details === "object" &&
+      !Array.isArray(usageRecord.output_tokens_details)
+      ? usageRecord.output_tokens_details as Record<string, unknown>
+      : {};
     const routerBilling = usageRecord.imgnai &&
       typeof usageRecord.imgnai === "object" &&
       !Array.isArray(usageRecord.imgnai)
       ? usageRecord.imgnai as Record<string, unknown>
       : undefined;
     const diagnostics = "imgnai" in usageRecord && !routerBilling ? ["malformed_router_billing"] : [];
+    const promptTokens = LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens)
+      ?? LLMHouseInterviewer.readNumberField(usageRecord.input_tokens);
+    const completionTokens = LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens)
+      ?? LLMHouseInterviewer.readNumberField(usageRecord.output_tokens);
+    const cachedTokens = LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens)
+      ?? LLMHouseInterviewer.readNumberField(inputDetails.cached_tokens);
+    const cacheWriteTokens = LLMHouseInterviewer.readNumberField(promptDetails.cache_write_tokens)
+      ?? LLMHouseInterviewer.readNumberField(inputDetails.cache_write_tokens);
+    const reasoningTokens = LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens)
+      ?? LLMHouseInterviewer.readNumberField(outputDetails.reasoning_tokens);
     const metadata: NonNullable<PrivateDecisionTrace["usage"]> = {
-      ...(LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens) !== undefined && { promptTokens: LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens) }),
-      ...(LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens) !== undefined && { completionTokens: LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens) }),
-      ...(LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens) !== undefined && { cachedTokens: LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens) }),
-      ...(LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens) !== undefined && { reasoningTokens: LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens) }),
+      ...(promptTokens !== undefined && { promptTokens }),
+      ...(completionTokens !== undefined && { completionTokens }),
+      ...(cachedTokens !== undefined && { cachedTokens }),
+      ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
+      ...(reasoningTokens !== undefined && { reasoningTokens }),
       ...(LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) !== undefined && { totalTokens: LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) }),
       ...(routerBilling && { routerBilling }),
       ...(diagnostics.length > 0 && { diagnostics }),

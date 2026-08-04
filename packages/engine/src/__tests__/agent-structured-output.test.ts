@@ -187,6 +187,7 @@ function makeResponsesOpenAIStub(
           id: "resp-test",
           object: "response",
           status: "completed",
+          service_tier: "flex",
           output_text: outputText,
           output: [
             {
@@ -214,7 +215,7 @@ function makeResponsesOpenAIStub(
           ],
           usage: {
             input_tokens: 10,
-            input_tokens_details: { cached_tokens: 2 },
+            input_tokens_details: { cached_tokens: 2, cache_write_tokens: 3 },
             output_tokens: 20,
             output_tokens_details: { reasoning_tokens: 7 },
             total_tokens: 30,
@@ -1158,6 +1159,14 @@ describe("InfluenceAgent structured output mode", () => {
     });
     expect(traces[0]!.reasoningContext).toBeUndefined();
     expect(traces[0]!.response.finishReason).toBe("completed");
+    expect(traces[0]!.usage).toEqual({
+      promptTokens: 10,
+      cachedTokens: 2,
+      cacheWriteTokens: 3,
+      completionTokens: 20,
+      reasoningTokens: 7,
+      totalTokens: 30,
+    });
   });
 
   it("uses the evaluation Responses lane with a stable opaque lineage and no 5.4 cache options", async () => {

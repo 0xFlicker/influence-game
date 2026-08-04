@@ -59,6 +59,7 @@ export interface PrivateTraceManifestMetadata {
     catalogId?: string;
   };
   modelName: string;
+  effectiveServiceTier?: string;
   requestedReasoningEffort?: string;
   reasoningPolicy?: string;
   promptMessageCount: number;
@@ -69,6 +70,7 @@ export interface PrivateTraceManifestMetadata {
     promptTokens?: number;
     completionTokens?: number;
     cachedTokens?: number;
+    cacheWriteTokens?: number;
     reasoningTokens?: number;
     totalTokens?: number;
     routerBilling?: Record<string, unknown>;
@@ -115,6 +117,12 @@ function traceStorageKey(gameId: string, trace: PrivateDecisionTrace, now: Date)
 }
 
 function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt: string): PrivateTraceManifestMetadata {
+  const rawResponse = trace.response.raw && typeof trace.response.raw === "object" && !Array.isArray(trace.response.raw)
+    ? trace.response.raw as Record<string, unknown>
+    : undefined;
+  const effectiveServiceTier = trace.model.provider === "openai" && typeof rawResponse?.service_tier === "string"
+    ? rawResponse.service_tier
+    : undefined;
   return {
     formatVersion: 2,
     contentType: PRIVATE_TRACE_CONTENT_TYPE,
@@ -136,6 +144,7 @@ function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt
       ...(trace.model.catalogId && { catalogId: trace.model.catalogId }),
     },
     modelName: trace.model.name,
+    ...(effectiveServiceTier && { effectiveServiceTier }),
     ...(trace.requestedReasoningEffort && { requestedReasoningEffort: trace.requestedReasoningEffort }),
     ...(trace.reasoningPolicy && { reasoningPolicy: trace.reasoningPolicy }),
     promptMessageCount: trace.prompt.messages.length,

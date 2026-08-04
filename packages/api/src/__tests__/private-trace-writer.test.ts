@@ -315,6 +315,53 @@ describe("private trace writer", () => {
     expect(JSON.stringify(index.manifests[0])).not.toContain("The vote followed the packet");
   });
 
+  test("persists effective OpenAI tier and cache-write usage for cost backfill", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const storage = new FakePrivateTraceStorage();
+    const trace = makeTrace({
+      gameId,
+      ownerEpoch,
+      model: {
+        provider: "openai",
+        providerProfileId: "openai",
+        catalogId: "openai:gpt-5.6-luna",
+        name: "gpt-5.6-luna",
+      },
+      response: {
+        raw: { id: "resp-flex", object: "response", service_tier: "flex" },
+        finishReason: "completed",
+        content: "{}",
+      },
+      usage: {
+        promptTokens: 100,
+        cachedTokens: 12,
+        cacheWriteTokens: 8,
+        completionTokens: 25,
+        reasoningTokens: 8,
+        totalTokens: 125,
+      },
+    });
+
+    const result = await writePrivateDecisionTrace(
+      db,
+      { gameId, ownerEpoch, trace },
+      { storage, now: () => new Date("2026-07-30T12:00:00.000Z") },
+    );
+
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error);
+    expect(result.metadata).toMatchObject({
+      effectiveServiceTier: "flex",
+      usage: {
+        promptTokens: 100,
+        cachedTokens: 12,
+        cacheWriteTokens: 8,
+        completionTokens: 25,
+      },
+    });
+  });
+
   test("uses ranged reads for capped private trace content", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
