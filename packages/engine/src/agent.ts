@@ -201,7 +201,7 @@ The House is offering two named round formats. No format is locked until the emp
 
     case Phase.FORMAT_MINGLE:
       return `PHASE BEHAVIOR — FORMAT MINGLE:
-The round format is locked. Play under the locked format and rule summary in Current Format Pressure. Use the private room to coordinate legal actions, name real ballot/pointer targets, test commitments, or misdirect opponents. Do not substitute the retired Power-to-Council loop or invent rules from another format.`;
+The round format is locked. Play under the locked format and rule summary in Current Format Pressure. First use the private room to coordinate legal actions and name real ballot/pointer targets. Then use structured named-alliance actions to formalize concrete vote blocs; House may grant scarce huddles for final commitments and contingencies. Do not substitute the retired Power-to-Council loop or invent rules from another format.`;
 
     case Phase.MINGLE:
     case Phase.POST_VOTE_MINGLE:
@@ -499,7 +499,7 @@ const TOOL_ALLIANCE_ACTION: ChatCompletionTool = {
   type: "function",
   function: {
     name: "take_alliance_action",
-    description: "Take one Mingle I named-alliance action: propose, accept, decline, counter, defer, trial, amend, or pass.",
+    description: "Take one post-format named-alliance action: propose, accept, decline, counter, defer, trial, amend, or pass.",
     parameters: {
       type: "object",
       properties: {
@@ -2362,7 +2362,7 @@ Use the form_mingle_intent tool.`;
       .map((player) => player.name);
     const openPrompt = `
 ## Your Task
-This is Mingle I, the official named-alliance action window before the public Vote.
+This is the official named-alliance action window after the round format was chosen.
 
 The House resolves one proposal at a time. You may take exactly one structured alliance action now:
 - propose: create a named alliance offer with explicit members, purpose, and optional timebox.
@@ -2378,7 +2378,7 @@ Rules:
 - Do not use alliance chat here; this is a structured request window.
 - If you are responding to a visible open proposal, target that lineage and accept, decline, defer, trial, or counter.
 - If there is no open proposal directed at you, either propose one concrete alliance or pass.
-- Do not recreate an active alliance with the exact same member roster; use its future huddle if The House grants one.
+- Do not recreate an active alliance with the exact same member roster; use its upcoming huddle if The House grants one.
 - Overlapping alliances are legal. Layer them when it helps: a final-two pair can sit inside a final-three voting pod, which can sit inside a final-four shield or majority bloc.
 - Do not default every proposal to you plus the same two perceived stable players. Choose 2 players for a tight promise, 3 for a voting pod, or 4 for a larger shield/majority.
 
@@ -2391,7 +2391,7 @@ Alliance name rules when proposing:
 - Bad examples: "Calm Anchor Trio", "Steady Core", "Trust Circle", "Calm Axis".
 
 Available other players: ${otherPlayers.join(", ") || "none"}
-If proposing, make the roster size intentional and name a concrete purpose tied to the empower vote plus contingent format branches. No format is locked yet, so do not promise actions that only make sense under one unselected format.`;
+If proposing, make the roster size intentional and name a concrete purpose tied to the locked format: the ballot or pointer target, expected votes, and a contingency if the bloc falls short. Use the full format name and legal actions from Current Format Pressure; do not drift into abstract format language.`;
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     try {
@@ -2514,7 +2514,7 @@ Rules:
 - Before a format is locked: name people — empower preference, threats, and likely ballot heat. Do not invent format names or speak in coded format theology ("structured/stable option") when House has not offered a pair yet. Format choice is secondary until the menu exists.
 - After a format is locked: ask for legal commitments under that format (sealed ballot placement, public bounce pointer, tiebreak, apology, reaffirmation, leak, denial, or betrayal explanation). Prefer full format names in speech (e.g. Vote Bomb), not snake_case ids.
 - Your structured commitment is the authoritative tactical record. Propose rather than presume: record dissent, alternatives, and contingencies instead of inventing consensus or another member's promise.
-- You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation only happens in Mingle I.
+- You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation happened in the structured post-format alliance window.
 - Keep it to 1-3 sentences. Be specific enough that The House can summarize the ask, plan, promises, dissent, and confidence.
 
 Use the alliance_huddle_turn tool.`;
@@ -4427,7 +4427,7 @@ Use only this locked format for the current round. Prefer the full public name i
       [Phase.VOTE]: "Cast the empower ballot. Empower chooses who picks the round format and breaks format elimination ties.",
       [Phase.FORMAT_MENU]: "Read the two House-offered formats by full public name without inventing a locked choice.",
       [Phase.FORMAT_PICK]: "Choose one offered format. The choice grants no immunity.",
-      [Phase.FORMAT_MINGLE]: "Coordinate under the locked format using its real public-versus-sealed action rules.",
+      [Phase.FORMAT_MINGLE]: "Build a concrete vote bloc under the locked format: room negotiation, official named-alliance action, then scarce huddle commitments.",
       [Phase.FORMAT_RESOLVE]: "Take the current legal action under the locked round format.",
       [Phase.MINGLE]: "Private room dealmaking after the vote. Use the room to pitch, probe, trade information, redirect targets, or decide who deserves protection.",
       [Phase.POST_VOTE_MINGLE]: "Private room dealmaking after the public vote reveal. Use receipts and pressure to repair, betray, bargain, or redirect danger.",

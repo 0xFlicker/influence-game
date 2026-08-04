@@ -848,7 +848,7 @@ export interface AllianceHuddlePromptContext {
   memberNames: string[];
   purpose: string;
   timebox?: string | null;
-  window: "pre_vote" | "pre_council";
+  window: "format" | "pre_vote" | "pre_council";
   scheduleId: UUID;
   pass: number;
 }

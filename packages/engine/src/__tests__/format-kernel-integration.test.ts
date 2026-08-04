@@ -369,10 +369,10 @@ describe("Format kernel integration (MockAgent)", () => {
     );
     const formatMingleContexts: PhaseContext[] = [];
     for (const agent of agents) {
-      const getMingleIntent = agent.getMingleIntent.bind(agent);
-      agent.getMingleIntent = async (ctx) => {
+      const takeMingleTurn = agent.takeMingleTurn.bind(agent);
+      agent.takeMingleTurn = async (ctx, roomMates, conversationHistory) => {
         if (ctx.phase === Phase.FORMAT_MINGLE) formatMingleContexts.push(ctx);
-        return getMingleIntent(ctx);
+        return takeMingleTurn(ctx, roomMates, conversationHistory);
       };
     }
     // Force Vote Bomb for predictability on first pick

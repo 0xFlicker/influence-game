@@ -33,19 +33,7 @@ Each standard pre-endgame round has eight main beats. The House guides players t
 
 All players speak in the public channel. This is a **social** space -- the unspoken rule is don't talk strategy here. Share stories, react to what happened last round, build bonds through personality. Players who talk game in the lobby look desperate and untrustworthy.
 
-### 2. Mingle I (Pre-Vote Mingle + Alliance Formation)
-
-Mingle I is the pre-vote private-room Mingle. Agents first enter House-assigned rooms, talk with current room occupants, and may move between rooms across the Mingle beats. After that conversation window, Mingle I becomes the vote-facing alliance action window. The House gives each alive player one proposer opportunity in order. A player may propose one named alliance or pass. When someone proposes, The House resolves that proposal before moving to the next proposer: invited players accept, decline, defer, trial-accept, or counter the current terms. Counters may continue for at most two counter rounds. This is the only window where the official alliance record can be formed or mutated.
-
-A named alliance is a non-binding social pact, not proof of loyalty. It records consent, members, agreed terms, status, and later huddle outcomes. Players can still lie, leak, betray, or vote against their stated plan; those choices become gameplay evidence.
-
-### 3. Pre-Format Alliance Huddles
-
-After Mingle I, The House may schedule scarce huddle sessions for active alliances before the empower vote and format pick. Not every active alliance is guaranteed a huddle. Each huddle session gives every live member of that alliance one chance to speak, then produces an official huddle outcome. Because no format is locked yet, any format-specific plan remains contingent.
-
-Huddles run pass-wise: every scheduled alliance receives its first session before any scheduled alliance receives a second. The House may schedule up to `min(4, max(2, floor(alivePlayers / 4)))` huddle sessions in a pre-format window, and no alliance can receive more than two sessions in that window.
-
-### 4. Vote (Empower Only)
+### 2. Vote (Empower Only)
 
 Every player casts **one empower vote**:
 
@@ -55,21 +43,33 @@ Elimination is resolved only by the locked round format after the format menu an
 
 After votes resolve, the named empower record is public player knowledge. Everyone can see who empowered whom, and those receipts become fuel for apologies, retaliation, and dealmaking.
 
-### 5. Two-Format Menu
+### 3. Two-Format Menu
 
 The House offers exactly two of the three launch formats. The menu is fixed for that round; agents may compare only those two formats and must not act as though either is locked before the empowered player chooses.
 
-### 6. Empowered Format Pick
+### 4. Empowered Format Pick
 
 The empowered player chooses one offered format. Empowerment grants format choice and elimination-tiebreak responsibility, **not immunity**. The empowered player participates in the selected format like every other living player: they cast ballots, can make or receive Safety Bounce pointers, and can be eliminated.
 
 The selected format and its fixed rule sheet become known before the format-aware Mingle.
 
-### 7. Format-Aware Mingle
+### 5. Format-Aware Mingle Rooms
 
-After the pick, The House opens private Mingle rooms under the known format rules. Players can coordinate legal ballots or pointers, test commitments, repair or weaponize vote receipts, misdirect opponents, or stay guarded. Format Mingle may discuss alliances, but it does not create or mutate named alliance records.
+After the pick, The House makes one room-assignment decision from the living roster and locked rule sheet. Agents do not spend a separate model call declaring hidden room intent. Players can coordinate legal ballots or pointers, test commitments, repair or weaponize vote receipts, misdirect opponents, or stay guarded.
 
 Only current room occupants hear a room's messages. Safety Bounce pointers later become public as they happen. Format ballots remain sealed to the agents playing the game: other agents do not receive the voter-to-target mapping in their game context.
+
+### 6. Named-Alliance Actions
+
+After the rooms, The House gives each alive player one structured alliance opportunity in order. A player may propose one named alliance or pass. When someone proposes, The House resolves that proposal before moving to the next proposer: invited players accept, decline, defer, trial-accept, or counter the current terms. Counters may continue for at most two counter rounds. This post-pick window is the only standard-round window where the official alliance record can be formed or mutated, so purposes should name concrete ballots, pointer targets, expected votes, and contingencies under the locked format.
+
+A named alliance is a non-binding social pact, not proof of loyalty. It records consent, members, agreed terms, status, and later huddle outcomes. Players can still lie, leak, betray, or vote against their stated plan; those choices become gameplay evidence.
+
+### 7. Post-Format Alliance Huddles
+
+The House may schedule scarce huddle sessions for active alliances after formation and before format resolution. Not every active alliance is guaranteed a huddle. If no alliance is eligible, The House makes no scheduling model call. Each scheduled session gives every live member one speaking opportunity, then produces an official huddle outcome focused on concrete legal commitments under the locked format.
+
+Huddles run pass-wise: every scheduled alliance receives its first session before any scheduled alliance receives a second. The House may schedule up to `min(4, max(2, floor(alivePlayers / 4)))` sessions, and no alliance can receive more than two sessions in the window.
 
 ### 8. Format Resolution and Elimination
 
@@ -91,27 +91,27 @@ Named alliances are official social pacts between living players. They are expli
 
 ### Formation
 
-During Mingle I, any alive player may propose a named alliance by naming the invited alive players and the pact's purpose. The proposer is part of the proposed alliance and is treated as consenting to the version they submit.
+During the post-pick named-alliance action window, any alive player may propose a named alliance by naming the invited alive players and the pact's purpose. The proposer is part of the proposed alliance and is treated as consenting to the version they submit.
 
 Invited players may accept, decline, or counter the current proposal version. A counter replaces the prior version, and old acceptances do not carry across a changed name, roster, purpose, or timebox. A proposal activates only when the proposer and all current invited alive players consent to the same version.
 
-Active alliances can also be amended during Mingle I, but amendments use the same versioned consent standard: all current living members and any newly invited alive players must consent to the same amendment before the alliance record changes. Declined or expired amendments leave the active alliance unchanged.
+Active alliances can also be amended during this window, but amendments use the same versioned consent standard: all current living members and any newly invited alive players must consent to the same amendment before the alliance record changes. Declined or expired amendments leave the active alliance unchanged.
 
-Each proposal or amendment lineage may receive at most two counter exchanges in one Mingle I. After the second counter, no further counters are legal in that formation window; the current version may still be accepted or declined, and unresolved versions expire when Mingle I ends.
+Each proposal or amendment lineage may receive at most two counter exchanges in one formation window. After the second counter, no further counters are legal; the current version may still be accepted or declined, and unresolved versions expire when the action window ends.
 
-Trial alliance terms must name a fixed phase or round boundary in the accepted terms. The timebox is part of the official alliance record, but it cannot encode conditional status changes outside Mingle I. Declined, deferred, and expired proposals are not huddle-eligible.
+Trial alliance terms must name a fixed phase or round boundary in the accepted terms. The timebox is part of the official alliance record, but it cannot encode conditional status changes outside the named-alliance action window. Declined, deferred, and expired proposals are not huddle-eligible.
 
 ### Membership and Records
 
 Players may belong to multiple active alliances. Each member is entitled to know their own active alliances, current members, agreed terms, status, huddle outcomes, and failed or closed proposals they participated in.
 
-Alliances with fewer than two live members archive automatically. An alliance whose living membership equals all alive players is a universal alliance; before Mingle I and again before huddle scheduling, a universal alliance closes and becomes historical information rather than an active huddle-eligible pact.
+Alliances with fewer than two live members archive automatically. An alliance whose living membership equals all alive players is a universal alliance; before the named-alliance action window and again before huddle scheduling, a universal alliance closes and becomes historical information rather than an active huddle-eligible pact.
 
 ### Huddle Outcomes
 
-Each huddle produces an official huddle outcome. The outcome records the current ask, agreed plan if any, promises, dissent, confidence, empower and contingent format posture before the pick, locked-format commitments after the pick, and explicit leak or betrayal claims.
+Each huddle produces an official huddle outcome. The outcome records the current ask, agreed plan if any, promises, dissent, confidence, locked-format commitments, and explicit leak or betrayal claims.
 
-The huddle outcome, not the full conversation, is the alliance memory carried forward. Huddles can update tactical posture and promise evidence, but they cannot change alliance name, roster, purpose, timebox, or status outside Mingle I.
+The huddle outcome, not the full conversation, is the alliance memory carried forward. Huddles can update tactical posture and promise evidence, but they cannot change alliance name, roster, purpose, timebox, or status outside the named-alliance action window.
 
 ### Visibility
 
@@ -129,9 +129,9 @@ Named alliances are different from House alliance hypotheses or derived vote coh
 
 For agent prompts, context builders, simulations, and future implementation work, use this compact contract:
 
-- **Legal during Mingle I:** propose, accept, decline, counter, defer, agree to a trial alliance, let a proposal expire, or propose a consented amendment to an existing named alliance.
-- **Legal outside Mingle I:** discuss alliances, reveal or deny them, claim betrayal, repair trust, coordinate inside House-scheduled huddles, choose a format when empowered, and take legal ballots or pointers under the locked format.
-- **Not legal:** new named alliances in a round after Mingle I, formal post-vote alliance-status mutation, unilateral alliance dissolution outside Mingle I, external tool mutation of active-match alliance state, private vote replacement, or House hypotheses becoming confirmed alliance facts.
+- **Legal during the post-pick alliance window:** propose, accept, decline, counter, defer, agree to a trial alliance, let a proposal expire, or propose a consented amendment to an existing named alliance.
+- **Legal outside that window:** discuss alliances, reveal or deny them, claim betrayal, repair trust, coordinate inside House-scheduled huddles, choose a format when empowered, and take legal ballots or pointers under the locked format.
+- **Not legal:** new named alliances after the post-pick action window, formal alliance-status mutation during ballots, unilateral alliance dissolution outside the action window, external tool mutation of active-match alliance state, private vote replacement, or House hypotheses becoming confirmed alliance facts.
 - **Required alliance context for a member:** active alliance roster, agreed terms, current status, huddle outcomes, and failed or closed proposals the member participated in.
 - **Required visibility boundary:** other players do not automatically know a hidden alliance's members, terms, huddle outcome, huddle conversation, or House scheduling rationale. Public web/replay inspection may show captured alliance artifacts without feeding them back into player knowledge.
 - **Required memory boundary:** carry huddle outcomes forward; do not carry the full huddle conversation as official alliance memory unless a later implementation plan deliberately designs that surface.
@@ -261,10 +261,10 @@ The named-alliance gameplay rules are settled enough for implementation planning
 Implementation planning should answer:
 
 - Where the alliance record lives and how it is rebuilt or persisted.
-- How agents propose, counter, accept, decline, and receive alliance context during Mingle I.
+- How agents propose, counter, accept, decline, and receive alliance context during post-pick Format Mingle.
 - How The House schedules huddles within the hard budget and records internal rationale.
 - How huddle outcomes become compact alliance memory without carrying full conversations as official memory.
 - How universal alliances close before huddle eligibility.
-- How bounded operator simulations prove that pre-format coordination and locked-format Mingle improve strategy without inventing default Power/Council play.
+- How bounded operator simulations prove that locked-format rooms, vote-bloc formation, and huddles improve strategy without inventing default Power/Council play.
 
 The following are future work: short-mode huddle compression, alliance membership or speaking caps, formal post-format fracture/reaffirmation windows, delayed huddle reveal/recap rules, private or alliance-aware vote reveal phases, external MCP/API read or mutation surfaces for active-match alliances, and always-on alliance chat.

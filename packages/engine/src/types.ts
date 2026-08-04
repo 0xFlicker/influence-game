@@ -365,7 +365,7 @@ export interface AllianceRecord {
   archivedReason?: AllianceArchiveReason;
 }
 
-export type AllianceHuddleWindow = "pre_vote" | "pre_council";
+export type AllianceHuddleWindow = "format" | "pre_vote" | "pre_council";
 
 export type AllianceHuddleScheduleDecision = "scheduled" | "skipped";
 
@@ -645,7 +645,7 @@ export interface GameConfig {
   diaryRoomAfterPhases?: Phase[];
   /** Enable hidden strategic reflection calls that update agent memory (default true). */
   enableStrategicReflections?: boolean;
-  /** Messages per player in the lobby phase. If unset, uses player-count scaling: fewer players get more messages. */
+  /** Messages per player in the lobby phase. Defaults to one. */
   lobbyMessagesPerPlayer?: number;
   /** Number of open-room movement beats per round (default 2). */
   mingleSessionsPerRound?: number;

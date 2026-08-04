@@ -8,16 +8,10 @@ import {
   type PhaseRunnerContext,
 } from "./phase-runner-context";
 
-/**
- * Compute messages per player for lobby phase.
- * Scaling: fewer players = more messages per player.
- * 4-5 players → 4, 6-7 → 3, 8+ → 2.
- */
-export function computeLobbyMessagesPerPlayer(aliveCount: number, configOverride?: number): number {
+/** One social pass keeps the Lobby legible without multiplying full-context calls. */
+export function computeLobbyMessagesPerPlayer(_aliveCount: number, configOverride?: number): number {
   if (configOverride != null) return configOverride;
-  if (aliveCount <= 5) return 4;
-  if (aliveCount <= 7) return 3;
-  return 2;
+  return 1;
 }
 
 async function runLobbyMessages(

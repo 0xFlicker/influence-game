@@ -276,6 +276,7 @@ export async function runFormatPickPhase(
 export async function runFormatMinglePhase(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
+  options: { completePhase?: boolean } = {},
 ): Promise<void> {
   const { logger } = ctx;
   const pressure = ctx.formatKernelState.pressure;
@@ -286,7 +287,7 @@ export async function runFormatMinglePhase(
   }
   await runMinglePhase(ctx, actor, {
     phase: Phase.FORMAT_MINGLE,
-    completePhase: true,
+    completePhase: options.completePhase ?? true,
   });
 }
 

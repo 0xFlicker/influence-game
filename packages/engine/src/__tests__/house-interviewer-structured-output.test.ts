@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
-import { LLMHouseInterviewer, type HouseAllianceHuddleOutcomeContext, type HouseAllianceHuddleScheduleContext } from "../house-interviewer";
+import { LLMHouseInterviewer, type HouseAllianceHuddleOutcomeContext, type HouseAllianceHuddleScheduleContext, type HouseMingleAssignmentContext } from "../house-interviewer";
 import type { PrivateDecisionTrace } from "../game-runner";
 import { modelCatalogEntryById } from "../model-catalog";
 import { Phase } from "../types";
@@ -11,40 +11,21 @@ type StubResponse = {
   refusal?: string;
 };
 
-function makeAssignmentContext() {
+function makeAssignmentContext(): HouseMingleAssignmentContext {
   return {
     round: 2,
+    phase: Phase.FORMAT_MINGLE,
     roomCount: 2,
+    selectedFormatName: "Vote Bomb",
+    formatRuleSummary: "Each player places a sealed bomb ballot on another living player.",
     players: [
       {
         id: "atlas-id",
         name: "Atlas",
-        intent: {
-          seekPlayers: ["Nyx"],
-          avoidPlayers: [],
-          preferredRoomSize: "pair" as const,
-          purpose: "Compare notes with Nyx.",
-          provisionalTarget: null,
-          noTargetReason: "Still reading the board.",
-          openingAsk: "Nyx, who is overplaying?",
-          strategicLens: "coalition_geometry" as const,
-          strategicLensRationale: "Atlas wants to test the social map.",
-        },
       },
       {
         id: "nyx-id",
         name: "Nyx",
-        intent: {
-          seekPlayers: ["Atlas"],
-          avoidPlayers: [],
-          preferredRoomSize: "pair" as const,
-          purpose: "Pressure-test Atlas.",
-          provisionalTarget: "Rex",
-          noTargetReason: null,
-          openingAsk: "Atlas, who benefits if Rex stays calm?",
-          strategicLens: "information_control" as const,
-          strategicLensRationale: "Nyx is mapping narrative control.",
-        },
       },
     ],
   };

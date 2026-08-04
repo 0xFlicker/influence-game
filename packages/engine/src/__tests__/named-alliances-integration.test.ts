@@ -69,8 +69,6 @@ describe("named alliance complete-round integration", () => {
     const transcriptPhases = new Set(result.transcript.map((entry) => entry.phase));
     const standardRoundPhases = [
       Phase.LOBBY,
-      Phase.MINGLE_I,
-      Phase.PRE_VOTE_HUDDLE,
       Phase.VOTE,
       Phase.FORMAT_MENU,
       Phase.FORMAT_PICK,
@@ -94,7 +92,7 @@ describe("named alliance complete-round integration", () => {
 
     const canonicalTypes = runner.getCanonicalEvents().map((event) => event.type);
     expect(
-      runner.getCanonicalEvents().some((event) => event.type === "mingle.rooms_allocated" && event.phase === Phase.MINGLE_I),
+      runner.getCanonicalEvents().some((event) => event.type === "mingle.rooms_allocated" && event.phase === Phase.FORMAT_MINGLE),
     ).toBe(true);
     expect(canonicalTypes).toContain("alliance.proposal_submitted");
     expect(canonicalTypes).toContain("alliance.activated");
@@ -102,25 +100,25 @@ describe("named alliance complete-round integration", () => {
     expect(canonicalTypes).toContain("alliance.huddle_completed");
     expect(canonicalTypes).toContain("alliance.huddle_outcome_recorded");
 
-    const mingleIRoomSpeechIndex = events.findIndex(
-      (event) => event.type === "transcript_entry" && event.entry.phase === Phase.MINGLE_I && event.entry.scope === "mingle",
+    const formatMingleRoomSpeechIndex = events.findIndex(
+      (event) => event.type === "transcript_entry" && event.entry.phase === Phase.FORMAT_MINGLE && event.entry.scope === "mingle",
     );
-    const mingleIAllianceActionIndex = events.findIndex(
-      (event) => event.type === "agent_turn" && event.phase === Phase.MINGLE_I && event.action === "alliance-action",
+    const formatMingleAllianceActionIndex = events.findIndex(
+      (event) => event.type === "agent_turn" && event.phase === Phase.FORMAT_MINGLE && event.action === "alliance-action",
     );
-    expect(mingleIRoomSpeechIndex).toBeGreaterThanOrEqual(0);
-    expect(mingleIAllianceActionIndex).toBeGreaterThan(mingleIRoomSpeechIndex);
+    expect(formatMingleRoomSpeechIndex).toBeGreaterThanOrEqual(0);
+    expect(formatMingleAllianceActionIndex).toBeGreaterThan(formatMingleRoomSpeechIndex);
 
     const huddleOutcomes = events.filter(
       (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
         event.type === "agent_turn" && event.action === "alliance-huddle-outcome" && event.round === 1,
     );
     expect(huddleOutcomes.length).toBeGreaterThanOrEqual(1);
-    expect(huddleOutcomes.every((event) => event.phase === Phase.PRE_VOTE_HUDDLE)).toBe(true);
+    expect(huddleOutcomes.every((event) => event.phase === Phase.FORMAT_MINGLE)).toBe(true);
 
     const huddleSpeech = result.transcript.filter((entry) => entry.scope === "huddle" && entry.round === 1);
     expect(huddleSpeech.length).toBeGreaterThanOrEqual(2);
-    expect(huddleSpeech.every((entry) => entry.phase === Phase.PRE_VOTE_HUDDLE)).toBe(true);
+    expect(huddleSpeech.every((entry) => entry.phase === Phase.FORMAT_MINGLE)).toBe(true);
 
     expect(result.transcript.some((entry) => entry.phase === Phase.VOTE && entry.text.includes("votes:"))).toBe(true);
     expect(result.transcript.some((entry) => entry.phase === Phase.FORMAT_MINGLE && entry.scope === "mingle")).toBe(true);
