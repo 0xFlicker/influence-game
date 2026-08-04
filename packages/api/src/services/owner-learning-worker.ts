@@ -1,0 +1,1073 @@
+import { createHash, randomBytes, randomUUID } from "node:crypto";
+import type {
+  FlexProcessingObserver,
+  FlexTransportDispatchIntent,
+  FlexTransportTerminalOutcome,
+} from "@influence/engine";
+import { and, asc, desc, eq, gt, inArray, lte, or, sql } from "drizzle-orm";
+import type { DrizzleDB } from "../db/index.js";
+import { schema } from "../db/index.js";
+import type {
+  OwnerLearningCheckpoint,
+  OwnerLearningCallCostReceipt,
+  OwnerLearningReviewResult,
+  OwnerLearningSafeFailureCode,
+  OwnerLearningStage,
+  OwnerLearningTokenReceipt,
+} from "./owner-learning-contracts.js";
+import { createOwnerLearningEvent } from "./owner-learning-events.js";
+import {
+  fingerprintOwnerLearningRequest,
+  fingerprintOwnerLearningValue,
+} from "./owner-learning-contracts.js";
+import {
+  OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+  runOwnerLearningHarness,
+} from "./owner-learning-harness.js";
+import type { OwnerLearningProvider } from "./owner-learning-provider.js";
+import { OwnerLearningProviderError } from "./owner-learning-provider.js";
+import {
+  OWNER_LEARNING_REVIEW_INSTRUCTIONS,
+  type OwnerLearningEvidenceProjector,
+} from "./owner-learning-review.js";
+import { OWNER_LEARNING_MAX_OUTPUT_TOKENS } from "./owner-learning-provider.js";
+import {
+  buildBudgetedOwnerLearningProviderInput,
+  projectOwnerLearningEvidence,
+} from "./owner-learning-evidence.js";
+import { validateOwnerLearningSelection } from "./owner-learning-eligibility.js";
+
+const OWNER_LEARNING_LEASE_DURATION_MS = 30_000;
+
+export interface OwnerLearningWorkerClaim {
+  reviewId: string;
+  leaseToken: string;
+  leaseExpiresAt: string;
+}
+
+export interface OwnerLearningCallReservation {
+  callId: string;
+  ordinal: number;
+  reused: boolean;
+  resumeTransport: {
+    flex429Count: number;
+    nextTransportOrdinal: number;
+    nextTier: "flex" | "auto";
+    initialBackoffMs: number;
+  };
+}
+
+export class OwnerLearningWorkerError extends Error {
+  constructor(
+    readonly code:
+      | "stale_or_invalid_lease"
+      | "call_state_conflict"
+      | "logical_call_budget_exhausted"
+      | "dive_budget_exhausted",
+  ) {
+    super(code);
+    this.name = "OwnerLearningWorkerError";
+  }
+}
+
+export async function claimOwnerLearningReview(
+  db: DrizzleDB,
+  options: { now?: Date; leaseDurationMs?: number } = {},
+): Promise<OwnerLearningWorkerClaim | null> {
+  const now = options.now ?? new Date();
+  const nowIso = now.toISOString();
+  const leaseDurationMs = options.leaseDurationMs ?? OWNER_LEARNING_LEASE_DURATION_MS;
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('owner-learning-global-worker'))`);
+    const active = await tx.select({ id: schema.agentLearningReviews.id })
+      .from(schema.agentLearningReviews)
+      .where(and(
+        eq(schema.agentLearningReviews.analysisStatus, "running"),
+        sql`${schema.agentLearningReviews.resolvedAt} IS NULL`,
+        gt(schema.agentLearningReviews.leaseExpiresAt, nowIso),
+      )).limit(1);
+    if (active.length > 0) return null;
+
+    const candidates = await tx.select({
+      id: schema.agentLearningReviews.id,
+      status: schema.agentLearningReviews.analysisStatus,
+      leaseExpiresAt: schema.agentLearningReviews.leaseExpiresAt,
+    }).from(schema.agentLearningReviews).where(and(
+      sql`${schema.agentLearningReviews.resolvedAt} IS NULL`,
+      or(
+        eq(schema.agentLearningReviews.analysisStatus, "queued"),
+        and(
+          eq(schema.agentLearningReviews.analysisStatus, "running"),
+          lte(schema.agentLearningReviews.leaseExpiresAt, nowIso),
+        ),
+      ),
+    )).orderBy(asc(schema.agentLearningReviews.createdAt), asc(schema.agentLearningReviews.id))
+      .limit(20);
+
+    for (const candidate of candidates) {
+      if (candidate.status === "running") {
+        const recovery = await reconcileExpiredCall(tx, candidate.id, nowIso);
+        if (recovery === "failed") continue;
+      }
+      const leaseToken = randomBytes(32).toString("base64url");
+      const leaseExpiresAt = new Date(now.getTime() + leaseDurationMs).toISOString();
+      const conditions = [
+        eq(schema.agentLearningReviews.id, candidate.id),
+        eq(schema.agentLearningReviews.analysisStatus, candidate.status),
+        sql`${schema.agentLearningReviews.resolvedAt} IS NULL`,
+      ];
+      if (candidate.status === "running") {
+        conditions.push(lte(schema.agentLearningReviews.leaseExpiresAt, nowIso));
+      }
+      const updated = await tx.update(schema.agentLearningReviews).set({
+        analysisStatus: "running",
+        leaseTokenHash: hashLeaseToken(leaseToken),
+        leaseExpiresAt,
+        claimedAt: nowIso,
+        updatedAt: nowIso,
+      }).where(and(...conditions)).returning({ id: schema.agentLearningReviews.id });
+      if (updated.length === 1) return { reviewId: candidate.id, leaseToken, leaseExpiresAt };
+    }
+    return null;
+  });
+}
+
+export async function heartbeatOwnerLearningReview(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    leaseToken: string;
+    now?: Date;
+    leaseDurationMs?: number;
+  },
+): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  const updated = await db.update(schema.agentLearningReviews).set({
+    leaseExpiresAt: new Date(
+      now.getTime() + (input.leaseDurationMs ?? OWNER_LEARNING_LEASE_DURATION_MS),
+    ).toISOString(),
+    updatedAt: nowIso,
+  }).where(activeLeaseWhere(input.reviewId, input.leaseToken, nowIso))
+    .returning({ id: schema.agentLearningReviews.id });
+  return updated.length === 1;
+}
+
+export async function reserveOwnerLearningCall(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    leaseToken: string;
+    inputPolicyHash: string;
+    stage: OwnerLearningStage;
+    isDive?: boolean;
+    now?: Date;
+    idFactory?: () => string;
+  },
+): Promise<OwnerLearningCallReservation> {
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    const latest = (await tx.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.reviewId, input.reviewId))
+      .orderBy(desc(schema.agentLearningReviewCalls.ordinal)).limit(1))[0] ?? null;
+    const resumable = resumableReservation(latest, input.inputPolicyHash, input.stage, now);
+    if (resumable) return resumable;
+    if (review.logicalCallCount >= 4) {
+      await failReviewUnderLease(tx, review, "logical_call_budget_exhausted", false, nowIso);
+      throw new OwnerLearningWorkerError("logical_call_budget_exhausted");
+    }
+    if (input.isDive && review.diveCount >= 3) {
+      throw new OwnerLearningWorkerError("dive_budget_exhausted");
+    }
+
+    const ordinal = review.logicalCallCount + 1;
+    const callId = input.idFactory?.() ?? randomUUID();
+    await tx.insert(schema.agentLearningReviewCalls).values({
+      id: callId,
+      reviewId: input.reviewId,
+      ordinal,
+      stage: input.stage,
+      inputPolicyHash: input.inputPolicyHash,
+      state: "reserved",
+      requestedTier: "flex",
+      requestedReasoningEffort: "low",
+      reservedAt: nowIso,
+    });
+    await tx.update(schema.agentLearningReviews).set({
+      logicalCallCount: ordinal,
+      diveCount: input.isDive ? review.diveCount + 1 : review.diveCount,
+      stage: input.stage,
+      capacitySubstatus: null,
+      safeFailureCode: null,
+      retryable: false,
+      updatedAt: nowIso,
+    }).where(activeLeaseWhere(input.reviewId, input.leaseToken, nowIso));
+    return {
+      callId,
+      ordinal,
+      reused: false,
+      resumeTransport: {
+        flex429Count: 0,
+        nextTransportOrdinal: 1,
+        nextTier: "flex",
+        initialBackoffMs: 0,
+      },
+    };
+  });
+}
+
+export function createOwnerLearningTransportObserver(
+  db: DrizzleDB,
+  input: { reviewId: string; callId: string; leaseToken: string },
+): FlexProcessingObserver {
+  return {
+    onDispatchIntent: (event) => persistDispatchIntent(db, input, event),
+    onTerminalOutcome: (event) => persistTerminalOutcome(db, input, event),
+  };
+}
+
+async function persistDispatchIntent(
+  db: DrizzleDB,
+  input: { reviewId: string; callId: string; leaseToken: string },
+  event: FlexTransportDispatchIntent,
+): Promise<void> {
+  const nowIso = new Date(event.dispatchedAtMs).toISOString();
+  await db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    const call = await requireCall(tx, input.reviewId, input.callId);
+    const receipts = [...call.transportReceipts];
+    if (
+      receipts.length + 1 !== event.transportOrdinal
+      || receipts.some((receipt) => receipt.terminalOutcomeAt == null)
+      || expectedNextTier(call.flex429Count) !== event.attemptedTier
+      || call.state === "succeeded" || call.state === "failed" || call.state === "ambiguous"
+    ) {
+      throw new OwnerLearningWorkerError("call_state_conflict");
+    }
+    receipts.push({
+      ordinal: event.transportOrdinal,
+      dispatchIntentAt: nowIso,
+      attemptedTier: event.attemptedTier,
+    });
+    const fallback = event.attemptedTier === "auto";
+    await tx.update(schema.agentLearningReviewCalls).set({
+      state: "dispatched",
+      transportReceipts: receipts,
+      dispatchedAt: call.dispatchedAt ?? nowIso,
+      ...(fallback
+        ? {
+            fallbackStartedAt: call.fallbackStartedAt ?? nowIso,
+            capacityPath: "standard_fallback" as const,
+          }
+        : {}),
+    }).where(eq(schema.agentLearningReviewCalls.id, call.id));
+    await tx.update(schema.agentLearningReviews).set({
+      capacitySubstatus: fallback ? "using_standard_capacity" : review.capacitySubstatus,
+      updatedAt: nowIso,
+    }).where(activeLeaseWhere(input.reviewId, input.leaseToken, nowIso));
+    if (fallback && call.fallbackStartedAt == null) {
+      const eventRow = createOwnerLearningEvent("capacity_fallback_started", {
+        ownerUserId: review.ownerUserId,
+        reviewId: review.id,
+        agentProfileId: review.agentProfileId,
+        occurredAt: nowIso,
+      }, { callOrdinal: call.ordinal, flex429Count: 3 });
+      await tx.insert(schema.agentLearningEvents).values({
+        id: randomUUID(),
+        ownerUserId: eventRow.ownerUserId,
+        reviewId: eventRow.reviewId,
+        agentProfileId: eventRow.agentProfileId,
+        kind: eventRow.kind,
+        payload: eventRow.payload,
+        occurredAt: eventRow.occurredAt,
+      });
+    }
+  });
+}
+
+async function persistTerminalOutcome(
+  db: DrizzleDB,
+  input: { reviewId: string; callId: string; leaseToken: string },
+  event: FlexTransportTerminalOutcome,
+): Promise<void> {
+  const nowIso = new Date(event.completedAtMs).toISOString();
+  await db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    const call = await requireCall(tx, input.reviewId, input.callId);
+    const receipts = [...call.transportReceipts];
+    const receipt = receipts.at(-1);
+    if (
+      !receipt
+      || receipt.ordinal !== event.transportOrdinal
+      || receipt.attemptedTier !== event.attemptedTier
+      || receipt.terminalOutcomeAt != null
+    ) {
+      throw new OwnerLearningWorkerError("call_state_conflict");
+    }
+    receipts[receipts.length - 1] = {
+      ...receipt,
+      terminalHttpStatus: event.httpStatus,
+      terminalOutcomeAt: nowIso,
+      latencyMs: event.latencyMs,
+      ...(event.providerRequestId ? { providerRequestId: event.providerRequestId } : {}),
+      ...(event.backoffMs !== undefined ? { backoffMs: event.backoffMs } : {}),
+    };
+    const flex429Count = receipts.filter((entry) =>
+      entry.attemptedTier === "flex" && entry.terminalHttpStatus === 429
+    ).length;
+    await tx.update(schema.agentLearningReviewCalls).set({
+      transportReceipts: receipts,
+      flex429Count,
+      finalProviderRequestId: event.providerRequestId ?? call.finalProviderRequestId,
+    }).where(eq(schema.agentLearningReviewCalls.id, call.id));
+    await tx.update(schema.agentLearningReviews).set({
+      capacitySubstatus: event.httpStatus === 429 && event.attemptedTier === "flex"
+        ? "waiting_for_capacity"
+        : event.attemptedTier === "auto"
+          ? "using_standard_capacity"
+          : null,
+      updatedAt: nowIso,
+    }).where(and(
+      eq(schema.agentLearningReviews.id, review.id),
+      eq(schema.agentLearningReviews.leaseTokenHash, hashLeaseToken(input.leaseToken)),
+    ));
+  });
+}
+
+export async function completeOwnerLearningCall(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    callId: string;
+    leaseToken: string;
+    effectiveTier: string;
+    tokenReceipt: OwnerLearningTokenReceipt;
+    costReceipt: OwnerLearningCallCostReceipt;
+    now?: Date;
+  },
+): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    const call = await requireCall(tx, input.reviewId, input.callId);
+    if (!validEffectiveTier(call, input.effectiveTier)) {
+      await tx.update(schema.agentLearningReviewCalls).set({
+        state: "failed",
+        safeFailureCode: "tier_mismatch",
+        completedAt: nowIso,
+      }).where(eq(schema.agentLearningReviewCalls.id, call.id));
+      await failReviewUnderLease(tx, review, "tier_mismatch", false, nowIso);
+      return false;
+    }
+    const totalLatencyMs = call.transportReceipts.reduce(
+      (total, receipt) => total + (receipt.latencyMs ?? 0),
+      0,
+    );
+    await tx.update(schema.agentLearningReviewCalls).set({
+      state: "succeeded",
+      effectiveTier: input.effectiveTier,
+      capacityPath: call.flex429Count === 3 ? "standard_fallback" : "flex",
+      tokenReceipt: input.tokenReceipt,
+      latencyMs: totalLatencyMs,
+      costSource: input.costReceipt.costSource,
+      actualCostMicrousd: input.costReceipt.actualCostMicrousd ?? null,
+      estimatedCostMicrousd: input.costReceipt.estimatedCostMicrousd ?? null,
+      pricingSourceId: input.costReceipt.pricingSourceId ?? null,
+      rateCardVersion: input.costReceipt.rateCardVersion ?? null,
+      pricedAt: input.costReceipt.pricedAt ?? null,
+      completedAt: nowIso,
+    }).where(eq(schema.agentLearningReviewCalls.id, call.id));
+    await tx.update(schema.agentLearningReviews).set({
+      capacitySubstatus: null,
+      updatedAt: nowIso,
+    }).where(activeLeaseWhere(input.reviewId, input.leaseToken, nowIso));
+    return true;
+  });
+}
+
+export async function failOwnerLearningReview(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    leaseToken: string;
+    failureCode: OwnerLearningSafeFailureCode;
+    retryable: boolean;
+    callId?: string;
+    completedCallId?: string;
+    now?: Date;
+  },
+): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    if (input.callId) {
+      await tx.update(schema.agentLearningReviewCalls).set({
+        state: "failed",
+        safeFailureCode: input.failureCode,
+        completedAt: nowIso,
+      }).where(and(
+        eq(schema.agentLearningReviewCalls.id, input.callId),
+        eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
+        inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
+      ));
+    }
+    if (input.completedCallId) {
+      const failed = await tx.update(schema.agentLearningReviewCalls).set({
+        state: "failed",
+        safeFailureCode: input.failureCode,
+        completedAt: nowIso,
+      }).where(and(
+        eq(schema.agentLearningReviewCalls.id, input.completedCallId),
+        eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
+        eq(schema.agentLearningReviewCalls.state, "succeeded"),
+      )).returning({ id: schema.agentLearningReviewCalls.id });
+      if (failed.length !== 1) throw new OwnerLearningWorkerError("call_state_conflict");
+    }
+    await failReviewUnderLease(tx, review, input.failureCode, input.retryable, nowIso);
+    return true;
+  }).catch((error) => {
+    if (error instanceof OwnerLearningWorkerError && error.code === "stale_or_invalid_lease") return false;
+    throw error;
+  });
+}
+
+export async function persistOwnerLearningCheckpoint(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    leaseToken: string;
+    expectedCheckpointHash: string | null;
+    checkpoint: OwnerLearningCheckpoint;
+    now?: Date;
+  },
+): Promise<string> {
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  const checkpointHash = fingerprintOwnerLearningValue(input.checkpoint);
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    if (review.checkpointHash !== input.expectedCheckpointHash) {
+      throw new OwnerLearningWorkerError("call_state_conflict");
+    }
+    const updated = await tx.update(schema.agentLearningReviews).set({
+      checkpoint: input.checkpoint,
+      checkpointHash,
+      stage: input.checkpoint.lastCompletedStage,
+      updatedAt: nowIso,
+    }).where(and(
+      activeLeaseWhere(input.reviewId, input.leaseToken, nowIso),
+      input.expectedCheckpointHash == null
+        ? sql`${schema.agentLearningReviews.checkpointHash} IS NULL`
+        : eq(schema.agentLearningReviews.checkpointHash, input.expectedCheckpointHash),
+    )).returning({ id: schema.agentLearningReviews.id });
+    if (updated.length !== 1) throw new OwnerLearningWorkerError("call_state_conflict");
+    const event = createOwnerLearningEvent("stage_reached", {
+      ownerUserId: review.ownerUserId,
+      reviewId: review.id,
+      agentProfileId: review.agentProfileId,
+      occurredAt: nowIso,
+    }, {
+      stage: input.checkpoint.lastCompletedStage,
+      logicalCallCount: review.logicalCallCount,
+      diveCount: review.diveCount,
+    });
+    await tx.insert(schema.agentLearningEvents).values({
+      id: randomUUID(),
+      ownerUserId: event.ownerUserId,
+      reviewId: event.reviewId,
+      agentProfileId: event.agentProfileId,
+      kind: event.kind,
+      payload: event.payload,
+      occurredAt: event.occurredAt,
+    });
+    return checkpointHash;
+  });
+}
+
+export async function finalizeOwnerLearningReview(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    leaseToken: string;
+    expectedCheckpointHash: string;
+    result: OwnerLearningReviewResult;
+    proposalFingerprint: string | null;
+    now?: Date;
+  },
+): Promise<boolean> {
+  const now = input.now ?? new Date();
+  const nowIso = now.toISOString();
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    const noChange = input.result.noChange != null;
+    const updated = await tx.update(schema.agentLearningReviews).set({
+      analysisStatus: noChange ? "no_change" : "ready",
+      stage: "complete",
+      result: input.result,
+      proposalFingerprint: input.proposalFingerprint,
+      resolution: noChange ? "no_change" : null,
+      resolvedAt: noChange ? nowIso : null,
+      completedAt: nowIso,
+      leaseTokenHash: null,
+      leaseExpiresAt: null,
+      capacitySubstatus: null,
+      safeFailureCode: null,
+      retryable: false,
+      updatedAt: nowIso,
+    }).where(and(
+      activeLeaseWhere(input.reviewId, input.leaseToken, nowIso),
+      eq(schema.agentLearningReviews.checkpointHash, input.expectedCheckpointHash),
+    )).returning({ id: schema.agentLearningReviews.id });
+    if (updated.length !== 1) return false;
+    if (noChange) {
+      const event = createOwnerLearningEvent("review_resolved", {
+        ownerUserId: review.ownerUserId,
+        reviewId: review.id,
+        agentProfileId: review.agentProfileId,
+        occurredAt: nowIso,
+      }, { resolution: "no_change" });
+      await tx.insert(schema.agentLearningEvents).values({
+        id: randomUUID(),
+        ownerUserId: event.ownerUserId,
+        reviewId: event.reviewId,
+        agentProfileId: event.agentProfileId,
+        kind: event.kind,
+        payload: event.payload,
+        occurredAt: event.occurredAt,
+      });
+    }
+    return true;
+  });
+}
+
+export async function retryOwnerLearningReview(
+  db: DrizzleDB,
+  input: { ownerUserId: string; reviewId: string; now?: Date },
+): Promise<boolean> {
+  const nowIso = (input.now ?? new Date()).toISOString();
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = (await tx.select().from(schema.agentLearningReviews).where(and(
+      eq(schema.agentLearningReviews.id, input.reviewId),
+      eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
+    )).limit(1))[0];
+    if (
+      !review
+      || review.resolvedAt != null
+      || review.analysisStatus !== "failed"
+      || !review.retryable
+      || review.logicalCallCount >= 4
+    ) return false;
+    const updated = await tx.update(schema.agentLearningReviews).set({
+      analysisStatus: "queued",
+      safeFailureCode: null,
+      retryable: false,
+      leaseTokenHash: null,
+      leaseExpiresAt: null,
+      capacitySubstatus: null,
+      updatedAt: nowIso,
+    }).where(and(
+      eq(schema.agentLearningReviews.id, input.reviewId),
+      eq(schema.agentLearningReviews.analysisStatus, "failed"),
+      eq(schema.agentLearningReviews.retryable, true),
+      sql`${schema.agentLearningReviews.resolvedAt} IS NULL`,
+    )).returning({ id: schema.agentLearningReviews.id });
+    if (updated.length !== 1) return false;
+    const event = createOwnerLearningEvent("review_retried", {
+      ownerUserId: review.ownerUserId,
+      reviewId: review.id,
+      agentProfileId: review.agentProfileId,
+      occurredAt: nowIso,
+    }, {
+      logicalCallCount: review.logicalCallCount,
+      diveCount: review.diveCount,
+    });
+    await tx.insert(schema.agentLearningEvents).values({
+      id: randomUUID(),
+      ownerUserId: event.ownerUserId,
+      reviewId: event.reviewId,
+      agentProfileId: event.agentProfileId,
+      kind: event.kind,
+      payload: event.payload,
+      occurredAt: event.occurredAt,
+    });
+    return true;
+  });
+}
+
+export async function runClaimedOwnerLearningReview(
+  db: DrizzleDB,
+  claim: OwnerLearningWorkerClaim,
+  options: {
+    provider: OwnerLearningProvider;
+    projector?: OwnerLearningEvidenceProjector;
+    cursorSecret?: string;
+    signal?: AbortSignal;
+    now?: () => Date;
+    heartbeatIntervalMs?: number;
+    leaseDurationMs?: number;
+  },
+): Promise<boolean> {
+  const now = options.now ?? (() => new Date());
+  const controller = new AbortController();
+  const abortFromCaller = () => controller.abort(options.signal?.reason);
+  if (options.signal?.aborted) abortFromCaller();
+  else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? OWNER_LEARNING_LEASE_DURATION_MS / 3;
+  let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+  const scheduleHeartbeat = () => {
+    if (controller.signal.aborted) return;
+    heartbeatTimer = setTimeout(() => {
+      void heartbeatOwnerLearningReview(db, {
+        reviewId: claim.reviewId,
+        leaseToken: claim.leaseToken,
+        now: now(),
+        leaseDurationMs: options.leaseDurationMs,
+      }).then((renewed) => {
+        if (!renewed) {
+          controller.abort(new DOMException("Owner learning lease lost", "AbortError"));
+          return;
+        }
+        scheduleHeartbeat();
+      }).catch((error) => controller.abort(error));
+    }, heartbeatIntervalMs);
+  };
+  const review = (await db.select({
+    id: schema.agentLearningReviews.id,
+    ownerUserId: schema.agentLearningReviews.ownerUserId,
+    agentProfileId: schema.agentLearningReviews.agentProfileId,
+    reviewedRevisionId: schema.agentLearningReviews.reviewedRevisionId,
+    analysisTrack: schema.agentLearningReviews.analysisTrack,
+    checkpoint: schema.agentLearningReviews.checkpoint,
+    checkpointHash: schema.agentLearningReviews.checkpointHash,
+    logicalCallCount: schema.agentLearningReviews.logicalCallCount,
+    diveCount: schema.agentLearningReviews.diveCount,
+    strategyStyle: schema.agentProfiles.strategyStyle,
+  }).from(schema.agentLearningReviews)
+    .innerJoin(schema.agentProfiles, eq(schema.agentLearningReviews.agentProfileId, schema.agentProfiles.id))
+    .where(eq(schema.agentLearningReviews.id, claim.reviewId)).limit(1))[0];
+  if (!review) {
+    options.signal?.removeEventListener("abort", abortFromCaller);
+    return false;
+  }
+
+  let expectedCheckpointHash = review.checkpointHash;
+  let latestCompletedCallId: string | null = null;
+  try {
+    scheduleHeartbeat();
+    const selectedGames = await db.select({ gameId: schema.agentLearningReviewGames.gameId })
+      .from(schema.agentLearningReviewGames)
+      .where(eq(schema.agentLearningReviewGames.reviewId, claim.reviewId))
+      .orderBy(asc(schema.agentLearningReviewGames.position));
+    const selection = await validateOwnerLearningSelection(db, {
+      ownerUserId: review.ownerUserId,
+      agentProfileId: review.agentProfileId,
+      gameIds: selectedGames.map((game) => game.gameId),
+    });
+    if (selection.currentRevisionId !== review.reviewedRevisionId) {
+      throw new Error("reviewed revision is no longer current");
+    }
+    const projector = options.projector ?? projectOwnerLearningEvidence;
+    const evidence = await projector(db, selection, {
+      instructions: OWNER_LEARNING_REVIEW_INSTRUCTIONS,
+      cursorSecret: options.cursorSecret,
+    });
+    const harness = await runOwnerLearningHarness({
+      reviewId: review.id,
+      analysisTrack: review.analysisTrack,
+      currentStrategyStyle: review.strategyStyle,
+      evidence,
+      checkpoint: review.checkpoint,
+      logicalCallCount: review.logicalCallCount,
+      diveCount: review.diveCount,
+      async invoke(turn) {
+        const requestInput = buildBudgetedOwnerLearningProviderInput(turn.stage, turn.request);
+        const inputPolicyHash = fingerprintOwnerLearningRequest({
+          model: "gpt-5.6-luna",
+          input: requestInput,
+          responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+          maxOutputTokens: OWNER_LEARNING_MAX_OUTPUT_TOKENS,
+          reasoning: { effort: "low" },
+          store: false,
+          serviceTier: "flex",
+        });
+        const reservation = await reserveOwnerLearningCall(db, {
+          reviewId: review.id,
+          leaseToken: claim.leaseToken,
+          inputPolicyHash,
+          stage: turn.stage,
+          isDive: turn.isDive,
+          now: now(),
+        });
+        const observer = createOwnerLearningTransportObserver(db, {
+          reviewId: review.id,
+          callId: reservation.callId,
+          leaseToken: claim.leaseToken,
+        });
+        try {
+          const response = await options.provider.invoke({
+            input: requestInput,
+            responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+            observer,
+            resumeTransport: reservation.resumeTransport,
+            signal: controller.signal,
+          });
+          const completed = await completeOwnerLearningCall(db, {
+            reviewId: review.id,
+            callId: reservation.callId,
+            leaseToken: claim.leaseToken,
+            effectiveTier: response.effectiveTier,
+            tokenReceipt: response.tokenReceipt,
+            costReceipt: response.costReceipt,
+            now: now(),
+          });
+          if (!completed) throw new Error("provider tier did not match durable capacity path");
+          latestCompletedCallId = reservation.callId;
+          return response.output;
+        } catch (error) {
+          if (error instanceof OwnerLearningProviderError) {
+            await failProviderCall(db, {
+              reviewId: review.id,
+              callId: reservation.callId,
+              leaseToken: claim.leaseToken,
+              error,
+              now: now(),
+            });
+          }
+          throw error;
+        }
+      },
+      async onCheckpoint(checkpoint) {
+        expectedCheckpointHash = await persistOwnerLearningCheckpoint(db, {
+          reviewId: review.id,
+          leaseToken: claim.leaseToken,
+          expectedCheckpointHash,
+          checkpoint,
+          now: now(),
+        });
+      },
+    });
+    if (!expectedCheckpointHash) throw new Error("review checkpoint was not persisted");
+    return finalizeOwnerLearningReview(db, {
+      reviewId: review.id,
+      leaseToken: claim.leaseToken,
+      expectedCheckpointHash,
+      result: harness.result,
+      proposalFingerprint: harness.proposalFingerprint,
+      now: now(),
+    });
+  } catch (error) {
+    if (error instanceof OwnerLearningProviderError || error instanceof OwnerLearningWorkerError) {
+      return false;
+    }
+    if (controller.signal.aborted) {
+      await failOwnerLearningReview(db, {
+        reviewId: review.id,
+        leaseToken: claim.leaseToken,
+        failureCode: "worker_interrupted",
+        retryable: true,
+        now: now(),
+      });
+      return false;
+    }
+    await failOwnerLearningReview(db, {
+      reviewId: review.id,
+      leaseToken: claim.leaseToken,
+      failureCode: "invalid_structured_output",
+      retryable: review.logicalCallCount < 4,
+      ...(latestCompletedCallId ? { completedCallId: latestCompletedCallId } : {}),
+      now: now(),
+    });
+    return false;
+  } finally {
+    if (heartbeatTimer) clearTimeout(heartbeatTimer);
+    options.signal?.removeEventListener("abort", abortFromCaller);
+  }
+}
+
+export interface OwnerLearningWorkerLoop {
+  stop(): void;
+  readonly stopped: boolean;
+}
+
+export function startOwnerLearningWorkerLoop(
+  db: DrizzleDB,
+  options: {
+    provider: OwnerLearningProvider;
+    projector?: OwnerLearningEvidenceProjector;
+    cursorSecret?: string;
+    pollIntervalMs?: number;
+  },
+): OwnerLearningWorkerLoop {
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  let running = false;
+  const pollIntervalMs = options.pollIntervalMs ?? 1_000;
+
+  const schedule = (delayMs: number) => {
+    if (controller.signal.aborted) return;
+    timer = setTimeout(() => { void tick(); }, delayMs);
+  };
+  const tick = async () => {
+    if (running || controller.signal.aborted) return;
+    running = true;
+    try {
+      const claim = await claimOwnerLearningReview(db);
+      if (claim) {
+        await runClaimedOwnerLearningReview(db, claim, {
+          provider: options.provider,
+          projector: options.projector,
+          cursorSecret: options.cursorSecret,
+          signal: controller.signal,
+        });
+        schedule(0);
+      } else {
+        schedule(pollIntervalMs);
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        const message = error instanceof Error ? error.message : String(error);
+        console.error("[owner-learning] Worker iteration failed:", message);
+        schedule(pollIntervalMs);
+      }
+    } finally {
+      running = false;
+    }
+  };
+  schedule(0);
+  return {
+    stop() {
+      controller.abort(new DOMException("Owner learning worker stopped", "AbortError"));
+      if (timer) clearTimeout(timer);
+      timer = null;
+    },
+    get stopped() {
+      return controller.signal.aborted;
+    },
+  };
+}
+
+async function failProviderCall(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    callId: string;
+    leaseToken: string;
+    error: OwnerLearningProviderError;
+    now: Date;
+  },
+): Promise<void> {
+  const nowIso = input.now.toISOString();
+  await db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    await tx.update(schema.agentLearningReviewCalls).set({
+      state: "failed",
+      effectiveTier: input.error.effectiveTier ?? null,
+      tokenReceipt: input.error.tokenReceipt ?? null,
+      costSource: input.error.costReceipt?.costSource ?? "unavailable",
+      actualCostMicrousd: input.error.costReceipt?.actualCostMicrousd ?? null,
+      estimatedCostMicrousd: input.error.costReceipt?.estimatedCostMicrousd ?? null,
+      pricingSourceId: input.error.costReceipt?.pricingSourceId ?? null,
+      rateCardVersion: input.error.costReceipt?.rateCardVersion ?? null,
+      pricedAt: input.error.costReceipt?.pricedAt ?? null,
+      safeFailureCode: input.error.code,
+      completedAt: nowIso,
+    }).where(and(
+      eq(schema.agentLearningReviewCalls.id, input.callId),
+      eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
+      inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
+    ));
+    await failReviewUnderLease(tx, review, input.error.code, input.error.retryable, nowIso);
+  });
+}
+
+type ReviewTx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
+type ReviewRow = typeof schema.agentLearningReviews.$inferSelect;
+type CallRow = typeof schema.agentLearningReviewCalls.$inferSelect;
+
+async function reconcileExpiredCall(
+  tx: ReviewTx,
+  reviewId: string,
+  nowIso: string,
+): Promise<"resumable" | "failed"> {
+  const latest = (await tx.select().from(schema.agentLearningReviewCalls)
+    .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId))
+    .orderBy(desc(schema.agentLearningReviewCalls.ordinal)).limit(1))[0] ?? null;
+  if (!latest || latest.state === "reserved" || latest.state === "succeeded" || latest.state === "failed") {
+    return "resumable";
+  }
+  const lastReceipt = latest.transportReceipts.at(-1);
+  if (
+    latest.state === "dispatched"
+    && lastReceipt?.attemptedTier === "flex"
+    && lastReceipt.terminalHttpStatus === 429
+  ) {
+    return "resumable";
+  }
+  const failureCode: OwnerLearningSafeFailureCode = lastReceipt?.attemptedTier === "auto"
+    && lastReceipt.terminalHttpStatus === 429
+    ? "provider_capacity_exhausted"
+    : "worker_interrupted";
+  await tx.update(schema.agentLearningReviewCalls).set({
+    state: lastReceipt?.terminalOutcomeAt == null ? "ambiguous" : "failed",
+    safeFailureCode: failureCode,
+    completedAt: nowIso,
+  }).where(eq(schema.agentLearningReviewCalls.id, latest.id));
+  const review = (await tx.select().from(schema.agentLearningReviews)
+    .where(eq(schema.agentLearningReviews.id, reviewId)).limit(1))[0];
+  if (review) await failReviewUnderLease(tx, review, failureCode, true, nowIso);
+  return "failed";
+}
+
+function resumableReservation(
+  latest: CallRow | null,
+  inputPolicyHash: string,
+  stage: OwnerLearningStage,
+  now: Date,
+): OwnerLearningCallReservation | null {
+  if (!latest || latest.inputPolicyHash !== inputPolicyHash || latest.stage !== stage) return null;
+  if (latest.state === "reserved" && latest.transportReceipts.length === 0) {
+    return reservationFromExisting(latest, now);
+  }
+  const lastReceipt = latest.transportReceipts.at(-1);
+  if (
+    latest.state === "dispatched"
+    && lastReceipt?.attemptedTier === "flex"
+    && lastReceipt.terminalHttpStatus === 429
+  ) {
+    return reservationFromExisting(latest, now);
+  }
+  return null;
+}
+
+function reservationFromExisting(call: CallRow, now: Date): OwnerLearningCallReservation {
+  const lastReceipt = call.transportReceipts.at(-1);
+  const terminalAtMs = lastReceipt?.terminalOutcomeAt
+    ? Date.parse(lastReceipt.terminalOutcomeAt)
+    : Number.NaN;
+  const initialBackoffMs = lastReceipt?.backoffMs != null && Number.isFinite(terminalAtMs)
+    ? Math.max(0, lastReceipt.backoffMs - Math.max(0, now.getTime() - terminalAtMs))
+    : 0;
+  return {
+    callId: call.id,
+    ordinal: call.ordinal,
+    reused: true,
+    resumeTransport: {
+      flex429Count: call.flex429Count,
+      nextTransportOrdinal: call.transportReceipts.length + 1,
+      nextTier: expectedNextTier(call.flex429Count),
+      initialBackoffMs,
+    },
+  };
+}
+
+function expectedNextTier(flex429Count: number): "flex" | "auto" {
+  return flex429Count >= 3 ? "auto" : "flex";
+}
+
+function validEffectiveTier(call: CallRow, effectiveTier: string): boolean {
+  const last = call.transportReceipts.at(-1);
+  if (!last || last.terminalHttpStatus == null || last.terminalHttpStatus < 200 || last.terminalHttpStatus >= 300) {
+    return false;
+  }
+  if (effectiveTier === "flex") {
+    return call.flex429Count < 3 && last.attemptedTier === "flex";
+  }
+  if (effectiveTier === "auto" || effectiveTier === "default") {
+    return call.flex429Count === 3
+      && last.attemptedTier === "auto"
+      && call.fallbackStartedAt != null;
+  }
+  return false;
+}
+
+async function requireCall(
+  db: Pick<DrizzleDB, "select">,
+  reviewId: string,
+  callId: string,
+): Promise<CallRow> {
+  const call = (await db.select().from(schema.agentLearningReviewCalls).where(and(
+    eq(schema.agentLearningReviewCalls.id, callId),
+    eq(schema.agentLearningReviewCalls.reviewId, reviewId),
+  )).limit(1))[0];
+  if (!call) throw new OwnerLearningWorkerError("call_state_conflict");
+  return call;
+}
+
+async function requireActiveLease(
+  db: Pick<DrizzleDB, "select">,
+  reviewId: string,
+  leaseToken: string,
+  nowIso: string,
+): Promise<ReviewRow> {
+  const review = (await db.select().from(schema.agentLearningReviews)
+    .where(activeLeaseWhere(reviewId, leaseToken, nowIso)).limit(1))[0];
+  if (!review) throw new OwnerLearningWorkerError("stale_or_invalid_lease");
+  return review;
+}
+
+function activeLeaseWhere(reviewId: string, leaseToken: string, nowIso: string) {
+  return and(
+    eq(schema.agentLearningReviews.id, reviewId),
+    eq(schema.agentLearningReviews.analysisStatus, "running"),
+    sql`${schema.agentLearningReviews.resolvedAt} IS NULL`,
+    eq(schema.agentLearningReviews.leaseTokenHash, hashLeaseToken(leaseToken)),
+    gt(schema.agentLearningReviews.leaseExpiresAt, nowIso),
+  );
+}
+
+async function lockReview(tx: ReviewTx, reviewId: string): Promise<void> {
+  await tx.execute(sql`SELECT id FROM agent_learning_reviews WHERE id = ${reviewId} FOR UPDATE`);
+}
+
+async function failReviewUnderLease(
+  tx: ReviewTx,
+  review: ReviewRow,
+  failureCode: OwnerLearningSafeFailureCode,
+  retryable: boolean,
+  nowIso: string,
+): Promise<void> {
+  await tx.update(schema.agentLearningReviews).set({
+    analysisStatus: "failed",
+    safeFailureCode: failureCode,
+    retryable: retryable && review.logicalCallCount < 4,
+    leaseTokenHash: null,
+    leaseExpiresAt: null,
+    capacitySubstatus: null,
+    updatedAt: nowIso,
+  }).where(eq(schema.agentLearningReviews.id, review.id));
+  const event = createOwnerLearningEvent("review_failed", {
+    ownerUserId: review.ownerUserId,
+    reviewId: review.id,
+    agentProfileId: review.agentProfileId,
+    occurredAt: nowIso,
+  }, {
+    failureCode,
+    retryable: retryable && review.logicalCallCount < 4,
+  });
+  await tx.insert(schema.agentLearningEvents).values({
+    id: randomUUID(),
+    ownerUserId: event.ownerUserId,
+    reviewId: event.reviewId,
+    agentProfileId: event.agentProfileId,
+    kind: event.kind,
+    payload: event.payload,
+    occurredAt: event.occurredAt,
+  });
+}
+
+function hashLeaseToken(token: string): string {
+  return `sha256:${createHash("sha256").update(token).digest("hex")}`;
+}

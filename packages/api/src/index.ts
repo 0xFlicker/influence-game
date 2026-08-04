@@ -44,6 +44,8 @@ import {
   sendWatchState,
   type WsConnectionData,
 } from "./services/ws-manager.js";
+import { createOwnerLearningOpenAIProvider } from "./services/owner-learning-provider.js";
+import { startOwnerLearningWorkerLoop } from "./services/owner-learning-worker.js";
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json so it stays in sync with releases
@@ -161,6 +163,17 @@ const databaseUrl = process.env.DATABASE_URL;
 await runMigrations(databaseUrl);
 const db = createDB(databaseUrl);
 await seedRBAC(db);
+const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
+const ownerLearningWorkerDisabled = process.env.INFLUENCE_OWNER_LEARNING_WORKER_DISABLED?.toLowerCase() === "true";
+const ownerLearningWorker = ownerLearningApiKey && !ownerLearningWorkerDisabled
+  ? startOwnerLearningWorkerLoop(db, {
+      provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
+      cursorSecret: process.env.JWT_SECRET,
+    })
+  : null;
+if (!ownerLearningWorker && !ownerLearningWorkerDisabled) {
+  console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
+}
 try {
   const reconciliation = await reconcileCompletedPostgameMedia(db);
   if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
@@ -389,6 +402,10 @@ const server = Bun.serve<WsConnectionData>({
 
 // Register server instance with WS manager for pub/sub broadcasting
 setServer(server);
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.once(signal, () => ownerLearningWorker?.stop());
+}
 
 console.log(`Influence API listening on http://${server.hostname}:${server.port}`);
 

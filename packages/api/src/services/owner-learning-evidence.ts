@@ -9,6 +9,8 @@ import {
   OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION,
   OWNER_LEARNING_EVIDENCE_VERSION,
   type OwnerLearningAnalysisTrack,
+  type OwnerLearningEvidenceRef,
+  type OwnerLearningStage,
 } from "./owner-learning-contracts.js";
 import {
   classifyOwnerLearningEvidence,
@@ -146,6 +148,29 @@ export function estimateOwnerLearningInputTokens(value: unknown): number {
     + OWNER_LEARNING_ENVELOPE_ALLOWANCE_TOKENS;
 }
 
+export function buildBudgetedOwnerLearningProviderInput(
+  stage: OwnerLearningStage,
+  turn: Record<string, unknown>,
+): Record<string, unknown> {
+  const input: Record<string, unknown> = {
+    protocol: "owner-learning-harness-v1",
+    stage,
+    turn: structuredClone(turn),
+  };
+  while (estimateOwnerLearningInputTokens(input) > OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
+    const games = mutableEvidenceGames(input);
+    let target: { narrativeGroups: unknown[]; omittedNarrativeGroupCount: number } | null = null;
+    for (const game of games) {
+      if (game.narrativeGroups.length === 0) continue;
+      if (!target || game.narrativeGroups.length > target.narrativeGroups.length) target = game;
+    }
+    if (!target) throw new Error("Owner learning canonical request exceeds the input budget");
+    target.narrativeGroups.pop();
+    target.omittedNarrativeGroupCount += 1;
+  }
+  return input;
+}
+
 export function buildBudgetedOwnerLearningInput(
   params: BuildBudgetedOwnerLearningInputParams,
 ): OwnerLearningBudgetedInput {
@@ -206,6 +231,66 @@ export interface OwnerLearningEvidenceProjection {
   analysisTrack: OwnerLearningAnalysisTrack;
   games: OwnerLearningProjectedGameEvidence[];
   reviewInput: OwnerLearningBudgetedInput;
+}
+
+export function ownerLearningIssuedEvidenceRefs(
+  games: readonly OwnerLearningProjectedGameEvidence[],
+): OwnerLearningEvidenceRef[] {
+  return games.flatMap((game) => [
+    {
+      kind: "game_summary" as const,
+      gameId: game.gameId,
+      coordinate: "game-summary",
+      sourceHash: game.sourceHash,
+      sourceVersion: game.sourceCaptureVersion,
+    },
+    ...game.candidateMoments.map((moment) => ({
+      kind: ownerLearningEvidenceKind(moment),
+      gameId: game.gameId,
+      coordinate: moment.id,
+      sourceHash: moment.sourceHash,
+      sourceVersion: game.sourceCaptureVersion,
+    })),
+  ]);
+}
+
+function mutableEvidenceGames(input: Record<string, unknown>): Array<{
+  narrativeGroups: unknown[];
+  omittedNarrativeGroupCount: number;
+}> {
+  const turn = recordValue(input.turn);
+  const evidence = recordValue(turn?.evidence);
+  if (!Array.isArray(evidence?.games)) return [];
+  return evidence.games.flatMap((value) => {
+    const game = recordValue(value);
+    if (!game || !Array.isArray(game.narrativeGroups)) return [];
+    const omitted = game.omittedNarrativeGroupCount;
+    if (typeof omitted !== "number" || !Number.isSafeInteger(omitted) || omitted < 0) return [];
+    return [{
+      narrativeGroups: game.narrativeGroups,
+      get omittedNarrativeGroupCount() {
+        return game.omittedNarrativeGroupCount as number;
+      },
+      set omittedNarrativeGroupCount(next: number) {
+        game.omittedNarrativeGroupCount = next;
+      },
+    }];
+  });
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function ownerLearningEvidenceKind(
+  moment: OwnerLearningCandidateMoment,
+): OwnerLearningEvidenceRef["kind"] {
+  if (moment.anchorKind === "canonical_event") return "canonical_event";
+  if (moment.anchorKind === "decision") return "decision";
+  if (moment.anchorKind === "dialogue") return "dialogue";
+  return "cognition";
 }
 
 export async function projectOwnerLearningEvidence(

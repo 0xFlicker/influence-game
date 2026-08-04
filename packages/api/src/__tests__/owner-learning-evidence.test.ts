@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   OWNER_LEARNING_INPUT_TOKEN_LIMIT,
+  buildBudgetedOwnerLearningProviderInput,
   buildBudgetedOwnerLearningInput,
   estimateOwnerLearningInputTokens,
   mintOwnerLearningMomentId,
@@ -65,5 +66,27 @@ describe("owner learning evidence", () => {
     expect(input.games.map((game) => game.gameId)).toEqual(["game-1", "game-2", "game-3"]);
     expect(input.games.every((game) => game.omittedNarrativeGroupCount > 0)).toBe(true);
     expect(input.games.every((game) => game.candidateMomentIds.length === 1)).toBe(true);
+
+    const providerInput = buildBudgetedOwnerLearningProviderInput("scanning_narratives", {
+      analysisTrack: "strategy_health_check",
+      evidence: input,
+      issuedEvidenceRefs: Array.from({ length: 60 }, (_, index) => ({
+        kind: "canonical_event",
+        gameId: `game-${index % 3 + 1}`,
+        coordinate: `olm_${"z".repeat(43)}_${index}`,
+        sourceHash: `sha256:${"a".repeat(64)}`,
+        sourceVersion: "owner-learning-evidence-v1",
+      })),
+    });
+    expect(estimateOwnerLearningInputTokens(providerInput)).toBeLessThanOrEqual(
+      OWNER_LEARNING_INPUT_TOKEN_LIMIT,
+    );
+    const providerTurn = providerInput.turn as { evidence: typeof input };
+    expect(providerTurn.evidence.games.map((game) => game.gameId)).toEqual([
+      "game-1",
+      "game-2",
+      "game-3",
+    ]);
+    expect(providerTurn.evidence.games.every((game) => game.omittedNarrativeGroupCount > 0)).toBe(true);
   });
 });

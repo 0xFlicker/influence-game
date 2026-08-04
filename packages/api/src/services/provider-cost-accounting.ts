@@ -8,6 +8,10 @@ import {
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import type {
+  OwnerLearningCallCostReceipt,
+  OwnerLearningTokenReceipt,
+} from "./owner-learning-contracts.js";
 
 const PRICING_SOURCE_ID = "engine.MODEL_PRICING";
 const FLEX_PRICING_SOURCE_ID = "engine.OPENAI_FLEX_MODEL_PRICING";
@@ -181,6 +185,57 @@ export function estimateProviderUsageForSnapshot(input: {
     outputTokenCeiling: input.outputTokens,
     serviceTier: input.serviceTier,
   });
+}
+
+export function priceOwnerLearningTokenReceipt(input: {
+  effectiveTier: string;
+  tokenReceipt: OwnerLearningTokenReceipt;
+  now?: Date;
+}): OwnerLearningCallCostReceipt {
+  if (
+    input.effectiveTier !== "flex"
+    && input.effectiveTier !== "auto"
+    && input.effectiveTier !== "default"
+  ) {
+    return { costSource: "unavailable" };
+  }
+  const promptTokens = input.tokenReceipt.inputTokens;
+  const cachedTokens = input.tokenReceipt.cachedInputTokens ?? 0;
+  const completionTokens = input.tokenReceipt.totalOutputTokens;
+  if (
+    promptTokens == null
+    || completionTokens == null
+    || !Number.isSafeInteger(promptTokens)
+    || !Number.isSafeInteger(cachedTokens)
+    || !Number.isSafeInteger(completionTokens)
+    || promptTokens < 0
+    || cachedTokens < 0
+    || cachedTokens > promptTokens
+    || completionTokens < 0
+  ) {
+    return { costSource: "unavailable" };
+  }
+  const usage: TokenUsage = {
+    promptTokens,
+    cachedTokens,
+    completionTokens,
+    reasoningTokens: input.tokenReceipt.reasoningTokens ?? 0,
+    totalTokens: promptTokens + completionTokens,
+    callCount: 1,
+    emptyResponses: 0,
+  };
+  const flex = input.effectiveTier === "flex";
+  const estimatedCostUsd = flex
+    ? estimateTierAwareOpenAICost({ flex: usage }, "gpt-5.6-luna")?.totalCost
+    : estimateCostForKnownModel(usage, "gpt-5.6-luna")?.totalCost;
+  if (estimatedCostUsd == null) return { costSource: "unavailable" };
+  return {
+    costSource: "estimated",
+    estimatedCostMicrousd: Math.max(0, Math.round(estimatedCostUsd * 1_000_000)),
+    pricingSourceId: flex ? FLEX_PRICING_SOURCE_ID : PRICING_SOURCE_ID,
+    rateCardVersion: RATE_CARD_VERSION,
+    pricedAt: (input.now ?? new Date()).toISOString(),
+  };
 }
 
 function sha256(value: unknown): string {

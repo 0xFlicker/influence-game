@@ -428,13 +428,23 @@ export type { GeneratedPersona } from "./persona-generator";
 
 // LLM provider configuration
 export {
+  createFlexProcessingFetch,
   createLlmClientFromEnv,
   describeLlmProvider,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
   resolveToolChoiceMode,
 } from "./llm-client";
-export type { LlmClientConfig, LlmToolChoiceMode, OpenAIReasoningSummaryMode, OpenAIRequestServiceTier } from "./llm-client";
+export type {
+  FlexProcessingFetchOptions,
+  FlexProcessingObserver,
+  FlexTransportDispatchIntent,
+  FlexTransportTerminalOutcome,
+  LlmClientConfig,
+  LlmToolChoiceMode,
+  OpenAIReasoningSummaryMode,
+  OpenAIRequestServiceTier,
+} from "./llm-client";
 export {
   MODEL_CATALOG,
   DEFAULT_MODEL_CATALOG_ID,

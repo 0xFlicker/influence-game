@@ -8,6 +8,7 @@ import {
   backfillGameCostAccounting,
   getGameCostDetail,
   quoteProviderUsageCeiling,
+  priceOwnerLearningTokenReceipt,
   recordProviderSpendForTrace,
 } from "./provider-cost-accounting.js";
 
@@ -54,6 +55,37 @@ function createTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDeci
 }
 
 describe("provider cost accounting", () => {
+  test("prices owner-learning Luna receipts by the proven effective tier", () => {
+    const tokenReceipt = {
+      inputTokens: 10_000,
+      cachedInputTokens: 2_000,
+      totalOutputTokens: 1_000,
+      reasoningTokens: 250,
+    };
+    expect(priceOwnerLearningTokenReceipt({
+      effectiveTier: "flex",
+      tokenReceipt,
+      now: new Date("2026-08-04T00:00:00.000Z"),
+    })).toMatchObject({
+      costSource: "estimated",
+      estimatedCostMicrousd: 1_420,
+      pricingSourceId: "engine.OPENAI_FLEX_MODEL_PRICING",
+    });
+    expect(priceOwnerLearningTokenReceipt({
+      effectiveTier: "default",
+      tokenReceipt,
+      now: new Date("2026-08-04T00:00:00.000Z"),
+    })).toMatchObject({
+      costSource: "estimated",
+      estimatedCostMicrousd: 14_200,
+      pricingSourceId: "engine.MODEL_PRICING",
+    });
+    expect(priceOwnerLearningTokenReceipt({
+      effectiveTier: "priority",
+      tokenReceipt,
+    })).toEqual({ costSource: "unavailable" });
+  });
+
   test("quotes the pinned GPT-5.4 nano snapshot with versioned provenance", () => {
     expect(quoteProviderUsageCeiling({
       modelSnapshot: "gpt-5.4-nano-2026-03-17",

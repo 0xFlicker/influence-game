@@ -11,6 +11,7 @@ import {
 } from "./owner-learning-contracts.js";
 
 const OWNER_LEARNING_ROLLING_START_MS = 24 * 60 * 60 * 1_000;
+type OwnerLearningEligibilityDB = Pick<DrizzleDB, "select">;
 
 export interface OwnerLearningGameEligibilityCandidate {
   gameId: string;
@@ -159,7 +160,7 @@ export class OwnerLearningEligibilityError extends Error {
 }
 
 export async function getOwnerLearningEligibleInputs(
-  db: DrizzleDB,
+  db: OwnerLearningEligibilityDB,
   input: { ownerUserId: string; now?: Date },
 ): Promise<OwnerLearningEligibleInputs> {
   const now = input.now ?? new Date();
@@ -292,7 +293,7 @@ export async function getOwnerLearningEligibleInputs(
 }
 
 export async function validateOwnerLearningSelection(
-  db: DrizzleDB,
+  db: OwnerLearningEligibilityDB,
   input: { ownerUserId: string; agentProfileId: string; gameIds: unknown },
 ): Promise<OwnerLearningValidatedSelection> {
   const gameIds = parseOwnerLearningGameIds(input.gameIds);
@@ -342,7 +343,7 @@ export async function validateOwnerLearningSelection(
 }
 
 async function loadOwnedEligibleSeatRows(
-  db: DrizzleDB,
+  db: OwnerLearningEligibilityDB,
   ownerUserId: string,
   gameIds?: readonly string[],
 ) {
