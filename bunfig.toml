@@ -1,3 +1,7 @@
+[install]
+# Filter newly resolved npm package versions until they are at least 7 days old.
+minimumReleaseAge = 604800
+
 [test]
 timeout = 120000
 pathIgnorePatterns = ["**/e2e/**"]

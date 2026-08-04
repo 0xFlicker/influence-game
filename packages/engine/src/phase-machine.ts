@@ -258,7 +258,7 @@ export function createPhaseMachine() {
         ],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
         on: {
-          PHASE_COMPLETE: "mingle_i",
+          PHASE_COMPLETE: "vote",
           UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
         },
       },

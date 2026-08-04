@@ -396,9 +396,9 @@ export class GameState {
   }
 
   private assertAllianceMutationPhase(options: AllianceMutationOptions): Phase {
-    const phase = options.phase ?? Phase.MINGLE_I;
-    if (phase !== Phase.MINGLE_I) {
-      throw new Error("Alliance mutations are only legal during Mingle I");
+    const phase = options.phase ?? Phase.FORMAT_MINGLE;
+    if (phase !== Phase.MINGLE_I && phase !== Phase.FORMAT_MINGLE) {
+      throw new Error("Alliance mutations are only legal during the post-format Mingle alliance window");
     }
     return phase;
   }
@@ -988,7 +988,9 @@ export class GameState {
     return cloneAllianceProposalLineage(lineage);
   }
 
-  closeUniversalAlliancesBeforeMingle(phase: Phase.MINGLE_I | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE = Phase.MINGLE_I): UUID[] {
+  closeUniversalAlliancesBeforeMingle(
+    phase: Phase.MINGLE_I | Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE = Phase.FORMAT_MINGLE,
+  ): UUID[] {
     const closedIds: UUID[] = [];
     for (const alliance of this.getAllianceRecords()) {
       if (alliance.status !== "active" || !this.isUniversalAlliance(alliance)) continue;
@@ -1060,7 +1062,11 @@ export class GameState {
       schedule.decision === "scheduled" ? "alliance.huddle_scheduled" : "alliance.huddle_skipped",
       { schedule: cloneAllianceHuddleSchedule(schedule) },
       {
-        phase: schedule.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE,
+        phase: schedule.window === "format"
+          ? Phase.FORMAT_MINGLE
+          : schedule.window === "pre_vote"
+            ? Phase.PRE_VOTE_HUDDLE
+            : Phase.PRE_COUNCIL_HUDDLE,
         visibility: "producer",
       },
     );
@@ -1069,7 +1075,11 @@ export class GameState {
 
   recordAllianceHuddleCompleted(session: AllianceHuddleSessionRecord): void {
     this.appendCanonicalEvent("alliance.huddle_completed", { session: cloneAllianceHuddleSession(session) }, {
-      phase: session.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE,
+      phase: session.window === "format"
+        ? Phase.FORMAT_MINGLE
+        : session.window === "pre_vote"
+          ? Phase.PRE_VOTE_HUDDLE
+          : Phase.PRE_COUNCIL_HUDDLE,
       visibility: "producer",
     });
     this._allianceHuddleSessions.set(session.id, cloneAllianceHuddleSession(session));
@@ -1093,7 +1103,11 @@ export class GameState {
       outcome: cloneAllianceHuddleOutcome(prepared),
       alliance: updatedAlliance,
     }, {
-      phase: prepared.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE,
+      phase: prepared.window === "format"
+        ? Phase.FORMAT_MINGLE
+        : prepared.window === "pre_vote"
+          ? Phase.PRE_VOTE_HUDDLE
+          : Phase.PRE_COUNCIL_HUDDLE,
       visibility: "producer",
     });
     this._allianceHuddleOutcomes.set(prepared.id, cloneAllianceHuddleOutcome(prepared));

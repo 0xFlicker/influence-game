@@ -187,9 +187,12 @@ describe("Mingle Rooms (current open-room phase)", () => {
     expect(allocation!.roomMetadata!.rooms[0]!.playerIds.length).toBeGreaterThan(0);
   });
 
-  it("emits hidden Mingle intent before House assignment without leaking it to transcript speech", async () => {
+  it("skips per-player Mingle intents and gives House the locked format roster", async () => {
     class IntentProbeAgent extends MockAgent {
+      intentCalls = 0;
+
       override async getMingleIntent(): Promise<MingleIntentAction> {
+        this.intentCalls += 1;
         return {
           seekPlayers: ["Beta"],
           avoidPlayers: ["Gamma"],
@@ -206,69 +209,13 @@ describe("Mingle Rooms (current open-room phase)", () => {
       }
     }
 
-    const alpha = new IntentProbeAgent(createUUID(), "Alpha");
     const agents = [
-      alpha,
+      new IntentProbeAgent(createUUID(), "Alpha"),
       new IntentProbeAgent(createUUID(), "Beta"),
       new IntentProbeAgent(createUUID(), "Gamma"),
       new IntentProbeAgent(createUUID(), "Delta"),
       new IntentProbeAgent(createUUID(), "Echo"),
     ];
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 });
-    const events: GameStreamEvent[] = [];
-    runner.setStreamListener((event) => events.push(event));
-
-    const result = await runner.run();
-
-    const roundOneTurns = events.filter((event) => event.type === "agent_turn" && event.round === 1);
-    const alphaIntent = roundOneTurns.find((event) => event.type === "agent_turn" && event.action === "mingle-intent" && event.actor.name === "Alpha");
-    const alphaAssignment = roundOneTurns.find((event) => event.type === "agent_turn" && event.action === "mingle-room-assignment" && event.actor.name === "Alpha");
-    expect(alphaIntent).toMatchObject({
-      visibility: "private",
-      response: {
-        purpose: "Alpha wants to test whether Beta will name Gamma.",
-        provisionalTarget: "Gamma",
-        openingAsk: "Ask Beta whether Gamma seems too comfortable.",
-        strategicLens: "coalition_geometry",
-      },
-      thinking: "Alpha hidden Mingle intent",
-      reasoningContext: "Alpha native intent reasoning",
-    });
-    expect(alphaAssignment).toMatchObject({
-      response: {
-        assignedRoomId: 1,
-        assignmentSource: "house",
-        intent: {
-          purpose: "Alpha wants to test whether Beta will name Gamma.",
-          provisionalTarget: "Gamma",
-          strategicLens: "coalition_geometry",
-        },
-      },
-    });
-    expect(result.transcript.some((entry) => entry.text.includes("test whether Beta will name Gamma"))).toBe(false);
-    for (const entry of result.transcript.filter((candidate) => candidate.roomMetadata?.diagnostics)) {
-      expect(entry.roomMetadata!.diagnostics!.assignments.some((assignment) => assignment.intent?.purpose === "Alpha wants to test whether Beta will name Gamma.")).toBe(true);
-    }
-  });
-
-  it("prunes non-living Mingle intent names before House assignment", async () => {
-    class StaleIntentAgent extends MockAgent {
-      override async getMingleIntent(): Promise<MingleIntentAction> {
-        return {
-          seekPlayers: ["Beta", "Rex"],
-          avoidPlayers: ["Rex"],
-          preferredRoomSize: "small_group",
-          purpose: `${this.name} wants to test whether Beta will repeat Rex's old target line.`,
-          provisionalTarget: "Rex",
-          noTargetReason: null,
-          openingAsk: "Ask Beta whether the old Rex pressure still matters.",
-          strategicLens: "coalition_geometry",
-          strategicLensRationale: `${this.name} is testing stale pressure against the living board.`,
-          thinking: `${this.name} hidden stale Mingle intent`,
-        };
-      }
-    }
-
     class RecordingMingleHouseInterviewer extends FixedMingleHouseInterviewer {
       seenContext: HouseMingleAssignmentContext | null = null;
 
@@ -278,13 +225,6 @@ describe("Mingle Rooms (current open-room phase)", () => {
       }
     }
 
-    const agents = [
-      new StaleIntentAgent(createUUID(), "Alpha"),
-      new StaleIntentAgent(createUUID(), "Beta"),
-      new StaleIntentAgent(createUUID(), "Gamma"),
-      new StaleIntentAgent(createUUID(), "Delta"),
-      new StaleIntentAgent(createUUID(), "Echo"),
-    ];
     const house = new RecordingMingleHouseInterviewer(Object.fromEntries(agents.map((agent) => [agent.name, 1])));
     const runner = new GameRunner(agents, { ...TEST_CONFIG, mingleSessionsPerRound: 1 }, house);
     const events: GameStreamEvent[] = [];
@@ -292,29 +232,14 @@ describe("Mingle Rooms (current open-room phase)", () => {
 
     await runner.run();
 
-    const alphaIntent = events.find(
-      (event): event is Extract<GameStreamEvent, { type: "agent_turn" }> =>
-        event.type === "agent_turn" && event.action === "mingle-intent" && event.actor.name === "Alpha",
-    );
-    expect(alphaIntent?.response).toMatchObject({
-      seekPlayers: ["Beta"],
-      avoidPlayers: [],
-      provisionalTarget: null,
+    expect(agents.every((agent) => agent.intentCalls === 0)).toBe(true);
+    expect(events.some((event) => event.type === "agent_turn" && event.action === "mingle-intent")).toBe(false);
+    expect(house.seenContext).toMatchObject({
+      phase: Phase.FORMAT_MINGLE,
+      selectedFormatName: expect.any(String),
+      formatRuleSummary: expect.any(String),
+      players: agents.map((agent) => ({ id: agent.id, name: agent.name })),
     });
-    expect(alphaIntent?.response.repairNotes).toEqual([
-      "Cleared stale or invalid provisionalTarget \"Rex\".",
-      "Removed stale or unknown seekPlayers name \"Rex\".",
-      "Removed stale or unknown avoidPlayers name \"Rex\".",
-    ]);
-    const alphaHouseInput = house.seenContext?.players.find((player) => player.name === "Alpha");
-    expect(alphaHouseInput?.intent?.seekPlayers).toEqual(["Beta"]);
-    expect(alphaHouseInput?.intent?.avoidPlayers).toEqual([]);
-    expect(alphaHouseInput?.intent?.provisionalTarget).toBeNull();
-    expect(JSON.stringify({
-      seekPlayers: alphaHouseInput?.intent?.seekPlayers,
-      avoidPlayers: alphaHouseInput?.intent?.avoidPlayers,
-      provisionalTarget: alphaHouseInput?.intent?.provisionalTarget,
-    })).not.toContain("Rex");
   });
 
   it("open rooms generate group room messages for rooms with multiple occupants", async () => {
@@ -841,7 +766,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const result = await runner.run();
 
     const allocations = result.transcript.filter(
-      (entry) => entry.round === 1 && entry.phase === Phase.MINGLE_I && entry.scope === "system" && entry.roomMetadata,
+      (entry) => entry.round === 1 && entry.phase === Phase.FORMAT_MINGLE && entry.scope === "system" && entry.roomMetadata,
     );
     expect(allocations).toHaveLength(2);
 
@@ -866,7 +791,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const alphaTurn = events.find(
       (event) =>
         event.type === "agent_turn" &&
-        event.phase === Phase.MINGLE_I &&
+        event.phase === Phase.FORMAT_MINGLE &&
         event.action === "mingle-turn" &&
         event.actor.name === "Alpha",
     );
@@ -883,7 +808,7 @@ describe("Mingle Rooms (current open-room phase)", () => {
     const movedRoomMsg = result.transcript.find(
       (entry) =>
         entry.round === 1 &&
-        entry.phase === Phase.MINGLE_I &&
+        entry.phase === Phase.FORMAT_MINGLE &&
         entry.scope === "mingle" &&
         entry.from === "Alpha" &&
         entry.text.includes("crossed over"),
@@ -1709,7 +1634,7 @@ describe("Phase machine - state transitions", () => {
     actor.stop();
   });
 
-  it("advances through full format-kernel round: lobby -> mingle_i -> pre_vote_huddle -> vote -> format_* -> checkGameOver", async () => {
+  it("advances through full format-kernel round: lobby -> vote -> format_* -> checkGameOver", async () => {
     const machine = createPhaseMachine();
     // Use 6 players so endgame isn't triggered after eliminating one (5 remain)
     const playerIds = [createUUID(), createUUID(), createUUID(), createUUID(), createUUID(), createUUID()];
@@ -1725,9 +1650,7 @@ describe("Phase machine - state transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // introduction -> lobby
-    await advance(); // lobby -> mingle_i
-    await advance(); // mingle_i -> pre_vote_huddle
-    await advance(); // pre_vote_huddle -> vote
+    await advance(); // lobby -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> format_menu
@@ -1769,9 +1692,7 @@ describe("Phase machine - state transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // introduction -> lobby
-    await advance(); // lobby -> mingle_i
-    await advance(); // mingle_i -> pre_vote_huddle
-    await advance(); // pre_vote_huddle -> vote
+    await advance(); // lobby -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> format_menu
@@ -1812,9 +1733,7 @@ describe("Phase machine - endgame transitions", () => {
     // Run through init -> introduction -> first round
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> mingle_i
-    await advance(); // mingle_i -> pre_vote_huddle
-    await advance(); // pre_vote_huddle -> vote
+    await advance(); // lobby -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> format_menu
@@ -1852,9 +1771,7 @@ describe("Phase machine - endgame transitions", () => {
 
     // Simulate eliminating 2 players in first round (5 -> 3)
     // Go through full round
-    await advance(); // lobby -> mingle_i
-    await advance(); // mingle_i -> pre_vote_huddle
-    await advance(); // pre_vote_huddle -> vote
+    await advance(); // lobby -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> format_menu
     await advance(); // format_menu -> format_pick
@@ -1899,9 +1816,7 @@ describe("Phase machine - endgame transitions", () => {
     // Fast-forward past intro and first round; eliminate to 2
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> mingle_i
-    await advance(); // mingle_i -> pre_vote_huddle
-    await advance(); // pre_vote_huddle -> vote
+    await advance(); // lobby -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> format_menu
     await advance(); // format_menu -> format_pick
@@ -1941,9 +1856,7 @@ describe("Phase machine - endgame transitions", () => {
     // Get to judgment
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> mingle_i
-    await advance(); // mingle_i -> pre_vote_huddle
-    await advance(); // pre_vote_huddle -> vote
+    await advance(); // lobby -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> format_menu
     await advance(); // format_menu -> format_pick
@@ -1987,9 +1900,7 @@ describe("Phase machine - endgame transitions", () => {
 
     await advance(); // init -> introduction
     await advance(); // intro -> lobby
-    await advance(); // lobby -> mingle_i
-    await advance(); // mingle_i -> pre_vote_huddle
-    await advance(); // pre_vote_huddle -> vote
+    await advance(); // lobby -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: defined(playerIds[0]) });
     await advance(); // vote -> format_menu
     await advance(); // format_menu -> format_pick

@@ -25,14 +25,12 @@ function createCadenceActor(playerIds = PLAYERS) {
 }
 
 describe("named alliance round cadence", () => {
-  it("runs alliance formation and the scarce pre-format huddle before Vote and FORMAT_MENU", async () => {
+  it("moves directly from Lobby to Vote before the format menu", async () => {
     const { actor, started } = createCadenceActor();
 
     await advance(actor); // init -> introduction
     await advance(actor); // introduction -> lobby
-    await advance(actor); // lobby -> mingle_i
-    await advance(actor); // mingle_i -> pre_vote_huddle
-    await advance(actor); // pre_vote_huddle -> vote
+    await advance(actor); // lobby -> vote
 
     actor.send({ type: "VOTES_TALLIED", empoweredId: "alice" });
     await advance(actor); // vote -> format_menu
@@ -42,8 +40,6 @@ describe("named alliance round cadence", () => {
       Phase.INIT,
       Phase.INTRODUCTION,
       Phase.LOBBY,
-      Phase.MINGLE_I,
-      Phase.PRE_VOTE_HUDDLE,
       Phase.VOTE,
       Phase.FORMAT_MENU,
     ]);
@@ -56,9 +52,7 @@ describe("named alliance round cadence", () => {
 
     await advance(actor); // init -> introduction
     await advance(actor); // introduction -> lobby
-    await advance(actor); // lobby -> mingle_i
-    await advance(actor); // mingle_i -> pre_vote_huddle
-    await advance(actor); // pre_vote_huddle -> vote
+    await advance(actor); // lobby -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: "alice" });
     await advance(actor); // vote -> format_menu
     expect(actor.getSnapshot().value).toBe("format_menu");
@@ -83,9 +77,7 @@ describe("named alliance round cadence", () => {
 
     await advance(actor); // init -> introduction
     await advance(actor); // introduction -> lobby
-    await advance(actor); // lobby -> mingle_i
-    await advance(actor); // mingle_i -> pre_vote_huddle
-    await advance(actor); // pre_vote_huddle -> vote
+    await advance(actor); // lobby -> vote
     actor.send({ type: "VOTES_TALLIED", empoweredId: "alice" });
     await advance(actor); // vote -> format_menu
     await advance(actor); // format_menu -> format_pick

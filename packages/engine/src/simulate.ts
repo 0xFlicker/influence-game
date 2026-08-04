@@ -88,13 +88,12 @@
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.
  *
- * Hidden `mingle-intent` and House `mingle-room-assignment` records are always
- * written to `game-{N}-turns.jsonl`, including strategic-lens and assignment
- * source/repair metadata. Player-target fields in hidden Mingle intent are
- * normalized to living, non-self players before House assignment; stale names
- * may remain only as historical context in prose fields or repair notes.
+ * Live standard rounds make one House `mingle-room-assignment` request from the
+ * living roster and locked format, then emit one assignment record per player
+ * with source/repair metadata. They do not request per-player `mingle-intent`;
+ * historical traces and isolated prompt-lab fixtures may still contain it.
  * Named-alliance records are inspectable through both turns and canonical
- * events: `alliance-action` turns capture Mingle I proposal/accept/decline/
+ * events: post-pick `alliance-action` turns capture proposal/accept/decline/
  * counter behavior, `alliance-huddle-schedule` turns capture private House
  * grant/skip rationale, `alliance-huddle-turn` records capture member speech
  * plus structured target/action/commitment/contingency/dissent facts, and

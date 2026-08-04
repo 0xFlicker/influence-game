@@ -10,16 +10,10 @@ import type {
   MingleSessionDiagnostics,
 } from "../types";
 import { Phase } from "../types";
-import type { MingleIntentAction } from "../game-runner.types";
-import {
-  formatMingleIntentOperatorText,
-  formatMingleRoomAssignmentOperatorText,
-} from "../operator-turn-text";
+import { formatMingleRoomAssignmentOperatorText } from "../operator-turn-text";
 import type { HouseMingleAssignmentResult } from "../house-interviewer";
 import {
   assertCanAcceptCommit,
-  prepareAgentPhaseContext,
-  strategicDecisionResponse,
   type PhaseActor,
   type PhaseRunnerContext,
 } from "./phase-runner-context";
@@ -350,72 +344,6 @@ function buildRoomCounts(localRooms: RoomAllocation[]): MingleRoomCount[] {
   return localRooms.map((room) => ({ roomId: room.roomId, count: room.playerIds.length }));
 }
 
-function summarizeMingleIntent(intent: MingleIntentAction | null | undefined): MingleIntentSummary | null {
-  if (!intent) return null;
-  const { thinking: _thinking, reasoningContext: _reasoningContext, ...summary } = intent;
-  return {
-    ...summary,
-    seekPlayers: [...summary.seekPlayers],
-    avoidPlayers: [...summary.avoidPlayers],
-  };
-}
-
-function normalizeMingleIntentForAlive(
-  intent: MingleIntentAction | null,
-  player: { id: UUID; name: string },
-  alivePlayers: Array<{ id: UUID; name: string }>,
-): { intent: MingleIntentAction | null; repairNotes: string[] } {
-  if (!intent) return { intent: null, repairNotes: [] };
-
-  const aliveByName = new Map(alivePlayers.map((alive) => [alive.name.toLowerCase(), alive]));
-  const repairNotes: string[] = [];
-  const normalizePlayerList = (names: readonly string[], fieldName: "seekPlayers" | "avoidPlayers"): string[] => {
-    const normalized: string[] = [];
-    const seen = new Set<string>();
-    for (const name of names) {
-      const candidate = aliveByName.get(name.toLowerCase());
-      if (!candidate) {
-        repairNotes.push(`Removed stale or unknown ${fieldName} name "${name}".`);
-        continue;
-      }
-      if (candidate.id === player.id) {
-        repairNotes.push(`Removed self from ${fieldName}.`);
-        continue;
-      }
-      if (seen.has(candidate.id)) continue;
-      seen.add(candidate.id);
-      normalized.push(candidate.name);
-    }
-    return normalized;
-  };
-
-  let provisionalTarget = intent.provisionalTarget;
-  let noTargetReason = intent.noTargetReason;
-  if (provisionalTarget) {
-    const target = aliveByName.get(provisionalTarget.toLowerCase());
-    if (!target || target.id === player.id) {
-      repairNotes.push(`Cleared stale or invalid provisionalTarget "${provisionalTarget}".`);
-      noTargetReason = noTargetReason
-        ? `${noTargetReason} Stale provisional target "${provisionalTarget}" was cleared because active targets must be living other players.`
-        : `Stale provisional target "${provisionalTarget}" was cleared because active targets must be living other players.`;
-      provisionalTarget = null;
-    } else {
-      provisionalTarget = target.name;
-    }
-  }
-
-  return {
-    intent: {
-      ...intent,
-      seekPlayers: normalizePlayerList(intent.seekPlayers, "seekPlayers"),
-      avoidPlayers: normalizePlayerList(intent.avoidPlayers, "avoidPlayers"),
-      provisionalTarget,
-      noTargetReason,
-    },
-    repairNotes,
-  };
-}
-
 function buildRoomsFromAssignments(
   roomByPlayerId: Map<UUID, number>,
   alivePlayers: Array<{ id: UUID; name: string }>,
@@ -441,7 +369,6 @@ function buildRoomsFromAssignments(
 function createAssignmentRecordsFromAssignments(
   alivePlayers: Array<{ id: UUID; name: string }>,
   roomByPlayerId: Map<UUID, number>,
-  mingleIntents: ReadonlyMap<UUID, MingleIntentAction | null>,
 ): MingleRoomAssignmentRecord[] {
   return alivePlayers.map((player) => {
     const assignedRoomId = roomByPlayerId.get(player.id) ?? 1;
@@ -449,7 +376,6 @@ function createAssignmentRecordsFromAssignments(
       player: { id: player.id, name: player.name },
       assignedRoomId,
       source: "movement",
-      intent: summarizeMingleIntent(mingleIntents.get(player.id) ?? null),
     };
   });
 }
@@ -460,7 +386,6 @@ async function runMingleTurn(
   roomCounts: MingleRoomCount[],
   roomByPlayerId: Map<UUID, number>,
   roomCount: number,
-  mingleIntents: ReadonlyMap<UUID, MingleIntentAction | null>,
   totalBeats: number,
   phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE,
 ): Promise<MingleTurnActionRecord[]> {
@@ -479,7 +404,7 @@ async function runMingleTurn(
         playerId,
         roomCount,
         roomCounts,
-        mingleIntent: summarizeMingleIntent(mingleIntents.get(playerId) ?? null),
+        mingleIntent: null,
         totalBeats,
         conversationHistory,
       }));
@@ -503,14 +428,13 @@ export async function runMinglePhase(
     completePhase?: boolean;
   } = {},
 ): Promise<void> {
-  const { gameState, agents, logger, contextBuilder, config } = ctx;
+  const { gameState, logger, contextBuilder, config } = ctx;
   const phase = options.phase ?? Phase.MINGLE;
   const completePhase = options.completePhase ?? true;
 
   const {
     alivePlayers,
     roomCount,
-    initialRoomCounts,
   } = initializeMingleExecution(ctx, phase);
   if (roomCount === 0) {
     logger.logSystem("Open rooms are skipped with fewer than five players alive.", phase);
@@ -525,63 +449,17 @@ export async function runMinglePhase(
 
   const beats = config.mingleSessionsPerRound ?? DEFAULT_MINGLE_BEATS;
   const allRooms: RoomAllocation[] = [];
-  const mingleIntents = new Map<UUID, MingleIntentAction | null>();
-  await Promise.all(
-    alivePlayers.map(async (player) => {
-      const agent = agents.get(player.id)!;
-      const phaseCtx = prepareAgentPhaseContext(
-        ctx,
-        agent,
-        player.id,
-        phase,
-        "strategic_decision",
-        undefined,
-        undefined,
-        {
-          roomCount,
-          roomCounts: initialRoomCounts,
-        },
-      );
-      const intent = agent.getMingleIntent ? await agent.getMingleIntent(phaseCtx) : null;
-      const normalizedIntent = normalizeMingleIntentForAlive(intent, player, alivePlayers);
-      mingleIntents.set(player.id, normalizedIntent.intent);
-      if (normalizedIntent.intent) {
-        const intentSummary = summarizeMingleIntent(normalizedIntent.intent);
-        await assertCanAcceptCommit(ctx);
-        logger.emitAgentTurn({
-          phase,
-          action: "mingle-intent",
-          actor: { id: player.id, name: player.name, role: "player" },
-          visibility: "private",
-          response: {
-            ...intentSummary,
-            ...(normalizedIntent.repairNotes.length > 0 ? { repairNotes: normalizedIntent.repairNotes } : {}),
-            ...strategicDecisionResponse(normalizedIntent.intent),
-          },
-          thinking: normalizedIntent.intent.thinking,
-          reasoningContext: normalizedIntent.intent.reasoningContext,
-          text: intentSummary
-            ? formatMingleIntentOperatorText(player.name, intentSummary)
-            : `${player.name} intent recorded`,
-        });
-      }
-    }),
-  );
-
+  const pressure = ctx.formatKernelState.pressure;
   const houseAssignment = await ctx.houseInterviewer.assignMingleRooms({
     round: gameState.round,
+    phase,
     roomCount,
-    players: alivePlayers.map((player) => ({
-      id: player.id,
-      name: player.name,
-      intent: summarizeMingleIntent(mingleIntents.get(player.id) ?? null),
-    })),
+    selectedFormatName: pressure?.selectedFormatName ?? pressure?.selectedFormat ?? null,
+    formatRuleSummary: pressure?.ruleSheetSummary ?? null,
+    players: alivePlayers.map((player) => ({ id: player.id, name: player.name })),
   });
 
-  const intentSummaries = new Map<UUID, MingleIntentSummary | null>(
-    alivePlayers.map((player) => [player.id, summarizeMingleIntent(mingleIntents.get(player.id) ?? null)]),
-  );
-  const initialAllocation = allocateRooms(houseAssignment, alivePlayers, roomCount, gameState.round, 1, intentSummaries);
+  const initialAllocation = allocateRooms(houseAssignment, alivePlayers, roomCount, gameState.round, 1);
   await assertCanAcceptCommit(ctx);
   const roommatesByPlayer = new Map<UUID, string[]>();
   for (const room of initialAllocation.rooms) {
@@ -639,7 +517,7 @@ export async function runMinglePhase(
           beat,
           roomCount,
           eligiblePlayers: alivePlayers.map((player) => ({ id: player.id, name: player.name })),
-          assignments: createAssignmentRecordsFromAssignments(alivePlayers, roomByPlayerId, mingleIntents).map((assignment) => ({
+          assignments: createAssignmentRecordsFromAssignments(alivePlayers, roomByPlayerId).map((assignment) => ({
             ...assignment,
           })),
           allocatedRooms: beatRooms.map((room) => ({
@@ -660,7 +538,7 @@ export async function runMinglePhase(
     const allocationText = `Turn ${beat}: ${beatRooms.map((room) => describeRoom(ctx, room)).join(" | ")}`;
     await assertCanAcceptCommit(ctx);
     const allocationEntry = logger.logRoomAllocation(allocationText, beatRooms, [], beatDiagnostics, phase);
-    const actions = await runMingleTurn(ctx, localRooms, roomCounts, roomByPlayerId, roomCount, mingleIntents, beats, phase);
+    const actions = await runMingleTurn(ctx, localRooms, roomCounts, roomByPlayerId, roomCount, beats, phase);
     if (allocationEntry.roomMetadata?.diagnostics) {
       allocationEntry.roomMetadata.diagnostics.actions = actions;
     }

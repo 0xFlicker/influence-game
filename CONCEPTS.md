@@ -49,9 +49,9 @@ After canonical events are durably appended, API reconciliation transactionally 
 
 Correlation is forward-only. Legacy rows without an exact decision-bearing manifest remain unlinked rather than being inferred from timing or actor/action similarity. A missing sidecar degrades diagnostics without blocking gameplay; later flushes and the final pre-settlement lifecycle pass retry the link.
 
-## Mingle I
+## Format Mingle social sequence
 
-The pre-vote Mingle window in a normal pre-endgame round. It starts with private-room conversation and movement, then closes with the official named-alliance action window. Players may propose, accept, decline, counter, defer, or agree to trial alliances during that action window; official alliance records cannot be formed or mutated outside Mingle I in v1.
+The post-pick social window in a normal pre-endgame round. The format and rule sheet are already locked. It runs private-room conversation and movement, then the official named-alliance action window, then any scarce House-scheduled alliance huddles. Players may propose, accept, decline, counter, defer, or agree to trial alliances during the structured action window; official alliance records cannot be formed or mutated outside that window in v1.
 
 ## Mingle
 
@@ -59,7 +59,7 @@ The current private-room social phase for new Influence games. Agents move throu
 
 ## Post-vote Mingle
 
-The normal standard-round Mingle window after Vote resolves and before Power fallout closes. The vote is locked, the empowered player is known, and agents can respond to pressure through private-room social play without reopening the vote. Post-vote Mingle is not a separate Power Lobby and is not the RUMOR phase.
+A legacy classic-lane Mingle window after Vote resolves and before Power. It remains readable for historical replay but is not part of the default format-kernel round. The current standard social window is Format Mingle after the empowered player locks the format.
 
 ## Post-vote pressure projection
 
@@ -141,11 +141,11 @@ A sanitized game-readable model of authoritative gameplay facts derived from can
 
 ## Mingle intent
 
-A hidden pre-room-assignment decision an agent forms at the start of Mingle. It captures whom the agent wants to seek or avoid, preferred room size, purpose, provisional target, opening ask, and the evidence lens behind that posture. Mingle intent guides House room assignment and early room speech, is inspectable in producer/debug artifacts, and is not delivered to other players as dialogue.
+A retired hidden decision artifact from the pre-format Mingle experiment. Live standard rounds do not request Mingle intent: removing that per-player call saves tokens and keeps agents focused on the locked format. Historical traces and evaluator fixtures may still contain `mingle-intent` records.
 
 ## House Mingle room assignment
 
-The producer-side placement of alive agents into initial Mingle rooms using the full set of hidden Mingle intents. The House can propose interesting strategic groupings, but deterministic validation owns final placement and repair diagnostics; later movement belongs to agents through room actions, not hidden reshuffling.
+The producer-side placement of alive agents into initial Format Mingle rooms using one House call with the living roster and locked format rule sheet. The House can propose strategically useful vote-bloc groupings, but deterministic validation owns final placement and repair diagnostics; later movement belongs to agents through room actions, not hidden reshuffling.
 
 ## Strategy signal
 
@@ -153,7 +153,7 @@ A private-room behavior during Mingle that reveals or advances game posture, suc
 
 ## Strategic lens
 
-The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across Mingle intent, rumors, reflections, and Strategy Thread packets without forcing the public message to explain itself.
+The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across rumors, reflections, and Strategy Thread packets without forcing the public message to explain itself. Historical Mingle-intent traces may also carry one.
 
 ## Agent turn record
 
@@ -341,7 +341,7 @@ The compact official memory artifact produced after a scheduled alliance huddle.
 
 ## Universal alliance
 
-A named alliance whose living membership equals all alive players. Before a vote-facing Mingle I, a universal alliance is unstable and should close so agents can react during normal Mingle and form smaller playable coalitions.
+A named alliance whose living membership equals all alive players. Before the post-pick named-alliance action window, a universal alliance is unstable and should close so agents can form smaller playable vote blocs under the locked format.
 
 ## Canonical game event
 

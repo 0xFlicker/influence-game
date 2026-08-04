@@ -53,6 +53,8 @@ type AccumulatorRecoveryValidation =
  */
 const RESUME_SUPPORTED_ACTOR_COORDINATES = new Set<string>(
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES.filter((coordinate) =>
+    coordinate !== "mingle_i" &&
+    coordinate !== "pre_vote_huddle" &&
     coordinate !== "post_vote_mingle" &&
     coordinate !== "power" &&
     coordinate !== "reveal" &&
@@ -332,7 +334,6 @@ function validateActorCoordinatePrerequisites(
     return hasRoundStarted ? "unsupported_lobby_after_round_started" : null;
   }
   if (!hasRoundStarted) return `${actorCoordinate}_missing_round_started`;
-  if (actorCoordinate === "mingle_i" || actorCoordinate === "pre_vote_huddle") return null;
   if (actorCoordinate === "vote") return null;
 
   // Endgame checkpoints are valid after either legacy Council elimination or a
