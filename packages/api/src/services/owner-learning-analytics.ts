@@ -100,6 +100,22 @@ export async function recordOwnerLearningRecommendationsViewed(
   );
 }
 
+export async function recordOwnerLearningManualEditorOpened(
+  db: DrizzleDB,
+  input: { ownerUserId: string; reviewId: string; now?: Date },
+): Promise<{ recorded: boolean }> {
+  return recordOwnedReviewEvent(
+    db,
+    input,
+    (identity) => createOwnerLearningEvent("manual_editor_opened", identity, {}),
+    (review) => {
+      if (review.analysisStatus !== "ready" || review.result?.proposal == null || review.resolvedAt != null) {
+        throw new OwnerLearningAnalyticsError("recommendations_unavailable");
+      }
+    },
+  );
+}
+
 export async function recordOwnerLearningMcpOfferViewed(
   db: DrizzleDB,
   input: {
@@ -180,7 +196,7 @@ async function recordOwnedReviewEvent(
     reviewId: string;
     agentProfileId: string;
     occurredAt: string;
-  }) => OwnerLearningEvent<"recommendations_viewed" | "mcp_offer_viewed">,
+  }) => OwnerLearningEvent<"recommendations_viewed" | "manual_editor_opened" | "mcp_offer_viewed">,
   assertAvailable: (review: typeof schema.agentLearningReviews.$inferSelect) => void,
 ): Promise<{ recorded: boolean }> {
   return db.transaction(async (tx) => {

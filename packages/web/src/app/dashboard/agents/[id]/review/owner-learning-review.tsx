@@ -7,6 +7,7 @@ import type {
   OwnerLearningReview,
   SavedAgent,
 } from "@/lib/api";
+import { recordOwnerLearningManualEditorOpened } from "@/lib/api";
 import {
   OWNER_LEARNING_STAGES,
   activityRows,
@@ -266,6 +267,7 @@ export function OwnerLearningReviewView({
                 <Link
                   href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}/edit?sourceReviewId=${encodeURIComponent(review.id)}`}
                   className="olm-button olm-button-secondary"
+                  onClick={() => { void recordOwnerLearningManualEditorOpened(review.id); }}
                 >Edit changes myself</Link>
                 <button
                   type="button"

@@ -268,6 +268,23 @@ For producer diagnosis, inspect indexes before content:
 
 Private trace content is not public transcript, not canonical board truth, and not checkpoint resume authority. It is the API durable-run sibling of `game-N-turns.jsonl`: useful for debugging one weird run, not a product/admin content portal.
 
+## Owner Learning Review Evidence
+
+The Owner Learning Loop is an owner product surface over completed Daily Free play, not a new game-state or producer-trace authority. Its deterministic layer snapshots accepted actions, counterplay, outcomes, placement, and stable source coordinates from canonical postgame projections. Its contextual layer may include authorized surrounding dialogue and cognition for the reviewed owned Agent Profile. Transcript prose and cognition can support a strategic interpretation, but they cannot establish a vote, tally, elimination, or outcome and cannot repair missing canonical evidence.
+
+The review harness sends a complete, versioned request through the Responses API with `store: false`, Luna, low reasoning effort, a 32,000 estimated-input-token admission ceiling, and at most 8,000 total output tokens inclusive of hidden reasoning plus visible output. A review has at most four logical model calls and three evidence dives. Each logical call starts on Flex; after three total Flex 429 responses, one byte-identical request may use standard `auto` capacity. The next logical call starts on Flex again. SDK retries stay disabled so durable call and transport receipts remain the replay boundary.
+
+The persisted checkpoint stores only the bounded local investigation state and validated findings needed to continue. Generated diagnosis, recommendations, proof fields, and the optional exact `strategyStyle` proposal are strict, length-bounded structured output. Server validation enforces the result shape and server-minted evidence refs; it does not pretend that syntax validation proves a free-form interpretation. Strategy Health Check recommendations must separate observed evidence, strategic interpretation, proposed guidance, and an exact guidance target, and must frame repeated early exits as a pattern rather than a cause.
+
+Observability remains deliberately split:
+
+- review call rows retain numeric usage, requested/effective tier, capacity path, latency, safe failure state, and the price receipt that existed when the call completed; missing or ambiguous cost stays unavailable rather than becoming zero;
+- content-free review events record lifecycle and owner actions, never dialogue, cognition, prompts, provider responses, recommendations, or arbitrary error bodies;
+- the authorized admin detail reads the already-validated review result directly so administrators can inspect recommendation quality and exact-proposal acceptance, but it explicitly excludes checkpoints, transport bodies, raw provider output, prompts, and bulk source evidence;
+- later Daily Free results are joined by the exact `agentRevisionId` stamped on each competition receipt and labeled as correlation, never causal proof.
+
+Live generation is a deployment decision. `INFLUENCE_OWNER_LEARNING_GENERATION_ENABLED=true` and a configured `OPENAI_API_KEY` are both required before paid admission or the worker can run. When disabled, input listing, credit derivation, deterministic facts, preflight, existing-review reads, resolutions, applications, and admin diagnosis remain available; new paid starts return a typed unavailable result without creating a review row or consuming credit.
+
 ## API-Backed Cognitive Artifacts
 
 New API-created games set `games.cognitive_artifact_capture_version = 1` and fan out first-class cognitive artifact rows beside private trace writing. Old/imported/pre-capture games remain version `0` and return `not_captured_for_game` after authorization. The product path never reads producer private trace storage to reconstruct missing split artifacts.

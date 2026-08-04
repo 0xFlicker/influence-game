@@ -2155,6 +2155,15 @@ export async function recordOwnerLearningRecommendationsViewed(
   });
 }
 
+export async function recordOwnerLearningManualEditorOpened(
+  reviewId: string,
+): Promise<{ recorded: boolean }> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/manual-editor-opened`, {
+    method: "POST",
+    keepalive: true,
+  });
+}
+
 export async function recordOwnerLearningMcpOfferViewed(
   reviewId: string,
 ): Promise<{ recorded: boolean }> {
@@ -2470,6 +2479,209 @@ export async function getGameReplayWatchFrames(
 // ---------------------------------------------------------------------------
 // Admin agent profile types
 // ---------------------------------------------------------------------------
+
+export type AdminOwnerLearningAcceptance = "accepted" | "not_accepted" | "not_applicable" | "pending";
+export type AdminOwnerLearningDisposition =
+  | "not_ready"
+  | "awaiting_owner"
+  | "applied"
+  | "manual_update"
+  | "declined"
+  | "no_change"
+  | "failed"
+  | "superseded";
+
+export interface AdminOwnerLearningTokenTotals {
+  input: number;
+  cachedInput: number;
+  totalOutput: number;
+  reasoning: number;
+  visibleOutput: number;
+  unavailableCallCount: number;
+}
+
+export interface AdminOwnerLearningCostTotals {
+  actualMicrousd: number;
+  estimatedMicrousd: number;
+  unavailableCallCount: number;
+}
+
+export interface AdminOwnerLearningReviewSummary {
+  id: string;
+  owner: { userId: string; displayName: string | null; handle: string | null };
+  agent: { profileId: string; name: string };
+  reviewedRevision: { id: string; ordinal: number };
+  selectedGameCount: number;
+  track: "evidence_rich" | "strategy_health_check";
+  status: OwnerLearningAnalysisStatus;
+  stage: OwnerLearningStage;
+  resolution: OwnerLearningResolution | null;
+  diagnosis: string | null;
+  model: string;
+  disposition: AdminOwnerLearningDisposition;
+  acceptance: AdminOwnerLearningAcceptance;
+  recommendationCount: number;
+  logicalCallCount: number;
+  diveCount: number;
+  tokens: AdminOwnerLearningTokenTotals;
+  cost: AdminOwnerLearningCostTotals;
+  createdAt: string;
+  completedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface AdminOwnerLearningAnalytics {
+  reviewCount: number;
+  eventCounts: Record<string, number | undefined>;
+  tokens: AdminOwnerLearningTokenTotals;
+  cost: AdminOwnerLearningCostTotals;
+  averageCompletionLatencyMs: number | null;
+}
+
+export interface AdminOwnerLearningReviewList {
+  reviews: AdminOwnerLearningReviewSummary[];
+  analytics: AdminOwnerLearningAnalytics;
+  truncated: boolean;
+}
+
+export interface AdminOwnerLearningReviewDetail {
+  id: string;
+  owner: AdminOwnerLearningReviewSummary["owner"];
+  agent: AdminOwnerLearningReviewSummary["agent"];
+  reviewedRevision: AdminOwnerLearningReviewSummary["reviewedRevision"];
+  selectedGames: Array<{
+    gameId: string;
+    slug: string;
+    position: number;
+    previouslyAnalyzed: boolean;
+  }>;
+  policy: {
+    eligibility: string;
+    evidence: string;
+    reviewer: string;
+    prompt: string;
+    schema: string;
+    provider: string;
+    model: string;
+  };
+  lifecycle: {
+    track: "evidence_rich" | "strategy_health_check";
+    status: OwnerLearningAnalysisStatus;
+    stage: OwnerLearningStage;
+    capacitySubstatus: string | null;
+    resolution: OwnerLearningResolution | null;
+    safeFailureCode: string | null;
+    retryable: boolean;
+    logicalCallCount: number;
+    diveCount: number;
+    createdAt: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    resolvedAt: string | null;
+    updatedAt: string;
+  };
+  disposition: AdminOwnerLearningDisposition;
+  acceptance: AdminOwnerLearningAcceptance;
+  result: OwnerLearningReview["result"];
+  recommendationAcceptance: Array<{
+    recommendationId: string | null;
+    state: "accepted" | "not_accepted" | "not_applicable";
+  }>;
+  proposalFingerprint: string | null;
+  calls: Array<{
+    ordinal: number;
+    state: string;
+    stage: string;
+    requestedTier: string;
+    effectiveTier: string | null;
+    requestedReasoningEffort: string;
+    capacityPath: string | null;
+    flex429Count: number;
+    latencyMs: number | null;
+    tokens: {
+      input: number | null;
+      cachedInput: number | null;
+      totalOutput: number | null;
+      reasoning: number | null;
+      visibleOutput: number | null;
+    };
+    cost: {
+      source: "actual" | "estimated" | "unavailable";
+      microusd: number | null;
+      pricingSourceId: string | null;
+      rateCardVersion: string | null;
+      pricedAt: string | null;
+    };
+    dispatchedAt: string | null;
+    completedAt: string | null;
+  }>;
+  tokens: AdminOwnerLearningTokenTotals;
+  cost: AdminOwnerLearningCostTotals;
+  application: null | {
+    proposalFingerprint: string;
+    sourceRecommendationIds: string[];
+    priorRevisionId: string;
+    resultingRevisionId: string;
+    priorStrategyStyle: string;
+    resultingStrategyStyle: string;
+    appliedAt: string;
+    mutationReceipt: {
+      schemaVersion: number | null;
+      operation: string | null;
+      profileRevision: { revisionId: string | null; ordinal: number | null; outcome: string | null } | null;
+      dailyFree: string | null;
+      waitingSeats: {
+        total: number | null;
+        reconciled: number | null;
+        alreadyCurrent: number | null;
+        crossedFreeze: number | null;
+        truncatedCount: number | null;
+      } | null;
+      frozenSeats: { unchanged: number | null } | null;
+      warnings: string[];
+    };
+  };
+  subsequentDailyFree: null | {
+    label: string;
+    revisionId: string;
+    games: Array<{
+      gameId: string;
+      slug: string;
+      placement: number;
+      lobbySize: number;
+      totalPoints: number;
+      earnedAt: string;
+    }>;
+  };
+}
+
+export interface AdminOwnerLearningReviewFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  track?: "evidence_rich" | "strategy_health_check";
+  diagnosis?: string;
+  status?: OwnerLearningAnalysisStatus;
+  model?: string;
+  resolution?: OwnerLearningResolution | "open";
+  application?: AdminOwnerLearningAcceptance;
+}
+
+export async function listAdminOwnerLearningReviews(
+  filters: AdminOwnerLearningReviewFilters = {},
+): Promise<AdminOwnerLearningReviewList> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return apiFetch(`/api/admin/owner-learning-reviews${query ? `?${query}` : ""}`);
+}
+
+export async function getAdminOwnerLearningReview(
+  reviewId: string,
+): Promise<AdminOwnerLearningReviewDetail> {
+  return apiFetch(`/api/admin/owner-learning-reviews/${encodeURIComponent(reviewId)}`);
+}
 
 export interface AdminAgent {
   id: string;

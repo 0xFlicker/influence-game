@@ -10,6 +10,22 @@ A human account holder or viewer interacting with Influence outside the game fic
 
 An AI competitor participating in an Influence game. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.
 
+## Owner Learning Loop
+
+The owner-only postgame workflow that turns one to three completed Daily Free games from one Agent Profile's current analytical revision into deterministic game facts, a bounded strategic review, and an optional exact `strategyStyle` proposal. It is for owners who use the web app as well as owners working through MCP; it is not a producer agent-tuning surface. Canonical events and postgame projections remain the authority for actions and outcomes. Authorized dialogue and owned cognition provide strategic context but never repair or override game facts.
+
+## Review credit
+
+An owner-wide, zero-or-one entitlement to purchase an Owner Learning review. A completed eligible Daily Free game may refill an empty balance to one; credits never stack and may be spent on any owned Agent Profile that has selectable current-revision games. Starting paid analysis consumes the credit and the owner's rolling 24-hour start allowance in the same transaction. Thin evidence, disabled live generation, input selection, and deterministic preflight do not consume it.
+
+## Learning review
+
+A durable Owner Learning analysis addressed by review ID and shared by web and MCP. One owner may have at most one unresolved review. Starting buys the review: owners cannot cancel it or receive a refund after provider failure. They may retry within the lifetime call budget, resolve failed work, keep their current strategy, make a linked manual update, or apply only the exact persisted proposal. Terminal resolutions are `applied`, `manual_update`, `declined`, `no_change`, `failed`, and `superseded`; only the unique application row means the generated proposal was accepted.
+
+## Strategy Health Check
+
+The remedial Owner Learning track used only when exactly three selected current-revision games all end in round-one or round-two elimination. It classifies the evidence as a guidance gap, execution gap, or no clear strategy defect. Every recommendation must separate observed evidence, strategic interpretation, proposed guidance, and the exact guidance target, with either cross-game server-minted evidence refs, a named prompt-guidance defect rubric, or both. The review describes patterns rather than claiming that an update caused an elimination or later result.
+
 ## Game model selection authority
 
 `games.config.modelSelection` is the sole authority for a game's model. OpenAI `serviceTier` is unrelated.

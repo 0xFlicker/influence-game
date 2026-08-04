@@ -7,6 +7,7 @@ import {
   listOpenOwnerLearningReviews,
   preflightOwnerLearningReview,
   recordOwnerLearningMcpOfferViewed,
+  recordOwnerLearningManualEditorOpened,
   recordOwnerLearningPromptImpression,
   recordOwnerLearningRecommendationsViewed,
   resolveOwnerLearningReview,
@@ -77,6 +78,7 @@ describe("owner learning web API", () => {
     await recordOwnerLearningPromptImpression(3);
     await dismissOwnerLearningPrompt();
     await recordOwnerLearningRecommendationsViewed("review-1");
+    await recordOwnerLearningManualEditorOpened("review-1");
     await recordOwnerLearningMcpOfferViewed("review-1");
     await retryOwnerLearningReview("review-1");
 
@@ -86,6 +88,7 @@ describe("owner learning web API", () => {
       ["POST", "https://api.example.test/api/agent-learning/prompts/impression"],
       ["POST", "https://api.example.test/api/agent-learning/prompts/dismiss"],
       ["POST", "https://api.example.test/api/agent-learning/reviews/review-1/viewed"],
+      ["POST", "https://api.example.test/api/agent-learning/reviews/review-1/manual-editor-opened"],
       ["POST", "https://api.example.test/api/agent-learning/reviews/review-1/mcp-offer-viewed"],
       ["POST", "https://api.example.test/api/agent-learning/reviews/review-1/retry"],
     ]);
@@ -94,6 +97,7 @@ describe("owner learning web API", () => {
     expect(requests[4]!.init?.body).toBeUndefined();
     expect(requests[5]!.init?.body).toBeUndefined();
     expect(requests[6]!.init?.body).toBeUndefined();
+    expect(requests[7]!.init?.body).toBeUndefined();
   });
 });
 

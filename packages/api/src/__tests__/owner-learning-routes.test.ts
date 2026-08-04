@@ -190,6 +190,16 @@ describe("owner learning REST routes", () => {
     );
     expect(await firstViewed.json()).toEqual({ recorded: true });
     expect(await secondViewed.json()).toEqual({ recorded: false });
+    const firstManualEditor = await app.request(
+      `/api/agent-learning/reviews/${startedBody.reviewId}/manual-editor-opened`,
+      authPost(token),
+    );
+    const secondManualEditor = await app.request(
+      `/api/agent-learning/reviews/${startedBody.reviewId}/manual-editor-opened`,
+      authPost(token),
+    );
+    expect(await firstManualEditor.json()).toEqual({ recorded: true });
+    expect(await secondManualEditor.json()).toEqual({ recorded: false });
 
     const strategyBefore = (await db.select({ strategyStyle: schema.agentProfiles.strategyStyle })
       .from(schema.agentProfiles).where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!.strategyStyle;
@@ -207,6 +217,8 @@ describe("owner learning REST routes", () => {
       .from(schema.agentProfiles).where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!.strategyStyle)
       .toBe(strategyBefore);
     expect(await db.select().from(schema.agentLearningReviewApplications)).toHaveLength(0);
+    expect((await db.select({ kind: schema.agentLearningEvents.kind })
+      .from(schema.agentLearningEvents)).map((event) => event.kind)).toContain("manual_editor_opened");
   });
 
   test("deduplicates prompt analytics by the qualifying completion watermark", async () => {

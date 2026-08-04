@@ -76,6 +76,11 @@ import {
   normalizeGameModelSelection,
   resolveModelSelection,
 } from "@influence/engine";
+import {
+  getAdminOwnerLearningReview,
+  listAdminOwnerLearningReviews,
+  parseAdminOwnerLearningReviewFilters,
+} from "../services/owner-learning-admin.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -382,6 +387,24 @@ export function createAdminRoutes(
         }),
       };
     }));
+  });
+
+  app.get("/api/admin/owner-learning-reviews", requireAdminRead, async (c) => {
+    let filters;
+    try {
+      filters = parseAdminOwnerLearningReviewFilters(c.req.query());
+    } catch (error) {
+      return c.json({
+        error: error instanceof Error ? error.message : "Invalid owner learning review filters",
+      }, 400);
+    }
+    return c.json(await listAdminOwnerLearningReviews(db, filters));
+  });
+
+  app.get("/api/admin/owner-learning-reviews/:reviewId", requireAdminRead, async (c) => {
+    const review = await getAdminOwnerLearningReview(db, c.req.param("reviewId"));
+    if (!review) return c.json({ error: "Review not found" }, 404);
+    return c.json(review);
   });
 
   app.get("/api/admin/free-queue", requireAdminRead, async (c) => {

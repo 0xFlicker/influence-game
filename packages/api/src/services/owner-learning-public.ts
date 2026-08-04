@@ -4,8 +4,11 @@ import type {
 } from "./owner-learning-review.js";
 
 export function ownerLearningGenerationEnabled(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY?.trim())
-    && process.env.INFLUENCE_OWNER_LEARNING_WORKER_DISABLED?.toLowerCase() !== "true";
+  return ownerLearningDeploymentEnabled() && Boolean(process.env.OPENAI_API_KEY?.trim());
+}
+
+export function ownerLearningDeploymentEnabled(): boolean {
+  return process.env.INFLUENCE_OWNER_LEARNING_GENERATION_ENABLED?.trim().toLowerCase() === "true";
 }
 
 export function publicOwnerLearningPreflight(

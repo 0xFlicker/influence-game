@@ -8,6 +8,7 @@ import { requireAuth, type AuthEnv } from "../middleware/auth.js";
 import {
   dismissOwnerLearningPrompt,
   OwnerLearningAnalyticsError,
+  recordOwnerLearningManualEditorOpened,
   recordOwnerLearningMcpOfferViewed,
   recordOwnerLearningPromptImpression,
   recordOwnerLearningRecommendationsViewed,
@@ -183,6 +184,18 @@ export function createOwnerLearningRoutes(
   app.post("/api/agent-learning/reviews/:reviewId/viewed", requireAuth(db), async (c) => {
     try {
       return c.json(await recordOwnerLearningRecommendationsViewed(db, {
+        ownerUserId: c.get("user").id,
+        reviewId: c.req.param("reviewId"),
+        now: now(),
+      }));
+    } catch (error) {
+      return mapOwnerLearningError(c, error);
+    }
+  });
+
+  app.post("/api/agent-learning/reviews/:reviewId/manual-editor-opened", requireAuth(db), async (c) => {
+    try {
+      return c.json(await recordOwnerLearningManualEditorOpened(db, {
         ownerUserId: c.get("user").id,
         reviewId: c.req.param("reviewId"),
         now: now(),

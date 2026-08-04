@@ -47,6 +47,10 @@ import {
 } from "./services/ws-manager.js";
 import { createOwnerLearningOpenAIProvider } from "./services/owner-learning-provider.js";
 import { startOwnerLearningWorkerLoop } from "./services/owner-learning-worker.js";
+import {
+  ownerLearningDeploymentEnabled,
+  ownerLearningGenerationEnabled,
+} from "./services/owner-learning-public.js";
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json so it stays in sync with releases
@@ -165,14 +169,15 @@ await runMigrations(databaseUrl);
 const db = createDB(databaseUrl);
 await seedRBAC(db);
 const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
-const ownerLearningWorkerDisabled = process.env.INFLUENCE_OWNER_LEARNING_WORKER_DISABLED?.toLowerCase() === "true";
-const ownerLearningWorker = ownerLearningApiKey && !ownerLearningWorkerDisabled
+const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
   ? startOwnerLearningWorkerLoop(db, {
       provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
       cursorSecret: process.env.JWT_SECRET,
     })
   : null;
-if (!ownerLearningWorker && !ownerLearningWorkerDisabled) {
+if (!ownerLearningDeploymentEnabled()) {
+  console.info("[owner-learning] Live review generation disabled by deployment configuration");
+} else if (!ownerLearningWorker) {
   console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
 }
 try {
