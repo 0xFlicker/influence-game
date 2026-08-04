@@ -38,6 +38,14 @@ import {
 import { validateOwnerLearningSelection } from "./owner-learning-eligibility.js";
 
 const OWNER_LEARNING_LEASE_DURATION_MS = 30_000;
+const activeOwnerLearningRuns = new Map<string, AbortController>();
+
+export function abortActiveOwnerLearningReview(reviewId: string): boolean {
+  const controller = activeOwnerLearningRuns.get(reviewId);
+  if (!controller) return false;
+  controller.abort(new DOMException("Owner learning review resolved", "AbortError"));
+  return true;
+}
 
 export interface OwnerLearningWorkerClaim {
   reviewId: string;
@@ -661,6 +669,10 @@ export async function runClaimedOwnerLearningReview(
     options.signal?.removeEventListener("abort", abortFromCaller);
     return false;
   }
+  activeOwnerLearningRuns.get(review.id)?.abort(
+    new DOMException("Owner learning review superseded locally", "AbortError"),
+  );
+  activeOwnerLearningRuns.set(review.id, controller);
 
   let expectedCheckpointHash = review.checkpointHash;
   let latestCompletedCallId: string | null = null;
@@ -792,6 +804,9 @@ export async function runClaimedOwnerLearningReview(
     return false;
   } finally {
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
+    if (activeOwnerLearningRuns.get(review.id) === controller) {
+      activeOwnerLearningRuns.delete(review.id);
+    }
     options.signal?.removeEventListener("abort", abortFromCaller);
   }
 }

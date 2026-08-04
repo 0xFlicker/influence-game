@@ -3,6 +3,11 @@ import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import type { OwnerLearningEvidenceProjection } from "../services/owner-learning-evidence.js";
 import type { OwnerLearningValidatedSelection } from "../services/owner-learning-eligibility.js";
+import { resolveFreeTrackEffectiveRuntimeSnapshot } from "../services/agent-revisions.js";
+import {
+  REVISION_POLICY_VERSION,
+  fingerprintEffectiveRuntimeSnapshot,
+} from "../services/revision-policy.js";
 import {
   startOwnerLearningReview,
   type OwnerLearningEvidenceProjector,
@@ -32,23 +37,33 @@ export async function insertPlayedOwnerLearningAgent(
   const playerId = randomUUID();
   const gameEvidenceId = randomUUID();
   const completedAt = input.completedAt ?? "2026-08-04T01:00:00.000Z";
-  await db.insert(schema.agentProfiles).values({
+  const profile = {
     id: agentProfileId,
     userId: ownerUserId,
     name: `${input.name ?? "Learning agent"} ${agentProfileId.slice(0, 8)}`,
+    backstory: null,
     personality: "Observant",
     strategyStyle: "Build trust before committing.",
-  });
+    personaKey: null,
+  };
+  await db.insert(schema.agentProfiles).values(profile);
+  const effectiveRuntimeSnapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile);
   await db.insert(schema.agentRevisions).values({
     id: revisionId,
     agentProfileId,
     ordinal: 1,
     trigger: "profile_create",
     magnitude: "initial",
-    fingerprint: `sha256:${revisionId}`,
-    behaviorSnapshot: { strategyStyle: "Build trust before committing." },
-    effectiveRuntimeSnapshot: { model: "openai:gpt-5.6-luna" },
-    revisionPolicyVersion: "agent-revision-v2",
+    fingerprint: fingerprintEffectiveRuntimeSnapshot(effectiveRuntimeSnapshot),
+    behaviorSnapshot: {
+      name: profile.name,
+      personality: profile.personality,
+      backstory: profile.backstory,
+      strategyStyle: profile.strategyStyle,
+      personaKey: profile.personaKey,
+    },
+    effectiveRuntimeSnapshot: effectiveRuntimeSnapshot as unknown as Record<string, unknown>,
+    revisionPolicyVersion: REVISION_POLICY_VERSION,
   });
   await db.update(schema.agentProfiles).set({ currentRevisionId: revisionId })
     .where(eq(schema.agentProfiles.id, agentProfileId));

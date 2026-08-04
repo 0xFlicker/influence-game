@@ -529,6 +529,7 @@ export function createAgentProfileRoutes(db: DrizzleDB) {
         personaKey: body.personaKey,
         gender: body.gender,
         avatarUrl: body.avatarUrl,
+        sourceReviewId: body.sourceReviewId,
       });
       return c.json({
         ...playerSafeAgentProfile(result.profile),

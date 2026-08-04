@@ -164,6 +164,12 @@ export async function startOwnerLearningReview(
       WHERE owner_user_id = ${input.ownerUserId}
       FOR UPDATE
     `);
+    await tx.execute(sql`
+      SELECT id
+      FROM agent_profiles
+      WHERE id = ${input.agentProfileId}
+      FOR UPDATE
+    `);
 
     const liveSelection = await validateOwnerLearningSelection(tx, {
       ownerUserId: input.ownerUserId,

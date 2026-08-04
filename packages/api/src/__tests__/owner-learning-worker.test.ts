@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
+import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import {
   claimOwnerLearningReview,
   completeOwnerLearningCall,
@@ -393,5 +394,53 @@ describe("owner learning worker durability", () => {
     expect(calls).toHaveLength(1);
     expect(calls[0]!.state).toBe("reserved");
     expect(calls[0]!.transportReceipts).toEqual([]);
+  });
+
+  test("aborts local provider work immediately when the reviewed Profile supersedes it", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const claim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const projector = async (_db: typeof db, selection: Parameters<typeof fakeOwnerLearningProjection>[0]) =>
+      fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+    let providerStarted!: () => void;
+    const started = new Promise<void>((resolve) => { providerStarted = resolve; });
+    let providerObservedAbort = false;
+    const provider: OwnerLearningProvider = {
+      async invoke(request) {
+        providerStarted();
+        return new Promise<never>((_resolve, reject) => {
+          const abort = () => {
+            providerObservedAbort = true;
+            reject(new DOMException("review superseded", "AbortError"));
+          };
+          if (request.signal?.aborted) abort();
+          else request.signal?.addEventListener("abort", abort, { once: true });
+        });
+      },
+    };
+    const run = runClaimedOwnerLearningReview(db, claim, {
+      provider,
+      projector,
+      now: () => new Date("2026-08-04T03:01:01.000Z"),
+      heartbeatIntervalMs: 60_000,
+    });
+    await started;
+
+    await updateOwnedAgentProfile(db, { userId: fixture.ownerUserId }, fixture.agentProfileId, {
+      personality: "This owner-authored change supersedes the in-flight review.",
+    });
+
+    expect(await run).toBe(false);
+    expect(providerObservedAbort).toBe(true);
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review.resolution).toBe("superseded");
+    expect(review.leaseTokenHash).toBeNull();
   });
 });
