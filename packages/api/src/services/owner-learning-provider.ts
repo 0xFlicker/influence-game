@@ -97,6 +97,9 @@ export function createOwnerLearningOpenAIProvider(options: {
           throw new OwnerLearningProviderError("provider_capacity_exhausted", true);
         }
         if (isAbortError(error)) throw error;
+        if (isProviderTimeoutError(error)) {
+          throw new OwnerLearningProviderError("provider_timeout", true);
+        }
         throw new OwnerLearningProviderError(
           status != null && status >= 500 ? "provider_error" : "provider_error",
           true,
@@ -121,7 +124,8 @@ function buildProviderRequest(
       "Select no more than three moments for deeper review, and select a moment only when its local context could change the diagnosis.",
       "Recommendations must improve strategyStyle guidance for this social voting game, not propose code, tooling, latency, or execution fixes.",
       "When proposing a change, return the complete replacement strategyStyle and identify the exact current guidance being corrected.",
-      "Return finalResult as null until the evidence supports a final diagnosis; prefer an explicit no-change result over a weak recommendation.",
+      "Return finalResult as null only while callBudget.finalResultRequired is false and the evidence does not yet support a diagnosis.",
+      "When callBudget.finalResultRequired is true, return a complete finalResult and prefer an explicit no-change result over a weak recommendation.",
     ].join("\n"),
     input: `<owner_learning_data>\n${stableJson(request.input)}\n</owner_learning_data>`,
     reasoning: { effort: "low" },
@@ -137,6 +141,15 @@ function buildProviderRequest(
       },
     },
   } as ResponseCreateParamsNonStreaming;
+}
+
+function isProviderTimeoutError(error: unknown): boolean {
+  if (error instanceof OpenAI.APIConnectionTimeoutError) return true;
+  const record = asRecord(error);
+  if (record?.name === "APIConnectionTimeoutError") return true;
+  const cause = record?.cause;
+  return cause instanceof OpenAI.APIConnectionTimeoutError
+    || asRecord(cause)?.name === "APIConnectionTimeoutError";
 }
 
 function parseProviderResponse(

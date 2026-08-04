@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import OpenAI from "openai";
 import type { FlexProcessingObserver } from "@influence/engine";
 import {
   createOwnerLearningOpenAIProvider,
@@ -125,6 +126,28 @@ describe("owner learning provider", () => {
         tokenReceipt: { inputTokens: 100, totalOutputTokens: 8_000 },
       });
     }
+  });
+
+  test("maps the OpenAI SDK timeout to provider_timeout", async () => {
+    const provider = createOwnerLearningOpenAIProvider({
+      apiKey: "sk-test",
+      fetch: async () => {
+        throw new OpenAI.APIConnectionTimeoutError();
+      },
+      wait: async () => undefined,
+    });
+
+    await expect(provider.invoke({
+      input: { instructions: "Review.", games: [{ gameId: "game-1" }] },
+      responseSchema: { type: "object" },
+      observer,
+      resumeTransport: {
+        flex429Count: 0,
+        nextTransportOrdinal: 1,
+        nextTier: "flex",
+        initialBackoffMs: 0,
+      },
+    })).rejects.toMatchObject({ code: "provider_timeout", retryable: true });
   });
 
   test("admits the exact input ceiling and rejects one character above it before transmission", async () => {

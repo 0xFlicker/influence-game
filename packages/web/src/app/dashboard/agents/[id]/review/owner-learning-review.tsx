@@ -160,7 +160,7 @@ export function OwnerLearningReviewView({
                 <span>Stable coordinates for evidence links</span>
               </div>
               {moments.map((moment) => {
-                const id = momentTargetId(moment.gameId, moment.sourceCoordinate);
+                const id = momentTargetId(moment.gameId, moment.id);
                 return (
                   <article
                     id={id}

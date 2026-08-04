@@ -38,7 +38,7 @@ describe("owner learning review", () => {
         evidenceRefs: [{
           kind: "dialogue",
           gameId: "game-1",
-          coordinate: "dialogue:line-7",
+          coordinate: "moment-1",
           sourceHash: "hash-1",
           sourceVersion: "capture-v1",
         }],
@@ -54,7 +54,7 @@ describe("owner learning review", () => {
     expect(html).toContain("Delay &lt;script&gt;alert(1)&lt;/script&gt;");
     expect(html).not.toContain("<script>");
     expect(html).toContain("Keep naming a concrete ally");
-    expect(html).toContain("dialogue · line-7");
+    expect(html).toContain("dialogue · moment-1");
     expect(html).toContain("− Commit early.");
     expect(html).toContain("+ Wait for reciprocal support before committing.");
     expect(html).toContain("Edit changes myself");
@@ -66,7 +66,7 @@ describe("owner learning review", () => {
     const target = evidenceTargetId({
       kind: "dialogue",
       gameId: "game-1",
-      coordinate: "dialogue:line-7",
+      coordinate: "moment-1",
       sourceHash: "hash-1",
       sourceVersion: "capture-v1",
     });
@@ -279,7 +279,7 @@ function proofRecommendation(id: string, kind: "observed_pattern" | "prompt_guid
     evidenceRefs: [{
       kind: "dialogue" as const,
       gameId: "game-1",
-      coordinate: "dialogue:line-7",
+      coordinate: "moment-1",
       sourceHash: "hash-1",
       sourceVersion: "capture-v1",
     }],

@@ -19,32 +19,37 @@ import {
   type OwnerLearningProjectedGameEvidence,
 } from "./owner-learning-evidence.js";
 
-export const OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA = {
-  type: "object",
-  additionalProperties: false,
-  required: ["provisionalThemes", "selectedMomentIds", "findings", "finalResult"],
-  properties: {
-    provisionalThemes: { type: "array", maxItems: 3, items: { type: "string", maxLength: 240 } },
-    selectedMomentIds: { type: "array", maxItems: 3, items: { type: "string", maxLength: 200 } },
-    findings: {
-      type: "array",
-      maxItems: 3,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["evidenceRefs", "observation", "interpretation"],
-        properties: {
-          evidenceRefs: { type: "array", maxItems: 6, items: evidenceRefSchema() },
-          observation: { type: "string", maxLength: 800 },
-          interpretation: { type: "string", maxLength: 800 },
+export const OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA = ownerLearningHarnessResponseSchema(false);
+export const OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA = ownerLearningHarnessResponseSchema(true);
+
+function ownerLearningHarnessResponseSchema(finalResultRequired: boolean) {
+  return {
+    type: "object",
+    additionalProperties: false,
+    required: ["provisionalThemes", "selectedMomentIds", "findings", "finalResult"],
+    properties: {
+      provisionalThemes: { type: "array", maxItems: 3, items: { type: "string", maxLength: 240 } },
+      selectedMomentIds: { type: "array", maxItems: 3, items: { type: "string", maxLength: 200 } },
+      findings: {
+        type: "array",
+        maxItems: 3,
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["evidenceRefs", "observation", "interpretation"],
+          properties: {
+            evidenceRefs: { type: "array", maxItems: 6, items: evidenceRefSchema() },
+            observation: { type: "string", maxLength: 800 },
+            interpretation: { type: "string", maxLength: 800 },
+          },
         },
       },
+      finalResult: finalResultRequired
+        ? ownerLearningFinalResultSchema()
+        : { anyOf: [ownerLearningFinalResultSchema(), { type: "null" }] },
     },
-    finalResult: {
-      anyOf: [ownerLearningFinalResultSchema(), { type: "null" }],
-    },
-  },
-} as const;
+  } as const;
+}
 
 interface OwnerLearningHarnessFinding {
   evidenceRefs: OwnerLearningEvidenceRef[];
@@ -57,6 +62,7 @@ export interface OwnerLearningHarnessInvocation {
   stage: OwnerLearningStage;
   isDive: boolean;
   request: Record<string, unknown>;
+  responseSchema: Record<string, unknown>;
 }
 
 export interface RunOwnerLearningHarnessInput {
@@ -96,10 +102,12 @@ export async function runOwnerLearningHarness(
   if (checkpoint.lastCompletedStage === "evidence_ready") {
     const turn = await invokeTurn("scanning_narratives", false, {
       analysisTrack: input.analysisTrack,
+      currentStrategyStyle: input.currentStrategyStyle ?? "",
       evidence: input.evidence.reviewInput,
       issuedEvidenceRefs: allowedEvidenceRefs,
     });
     const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
+    assertRequiredFinalResult(parsed.finalResult);
     const final = parsed.finalResult
       ? finalizeHarnessResult(parsed.finalResult)
       : null;
@@ -120,12 +128,14 @@ export async function runOwnerLearningHarness(
     const bundle = buildMomentBundle(input.evidence, momentId);
     const turn = await invokeTurn("investigating_moments", true, {
       analysisTrack: input.analysisTrack,
+      currentStrategyStyle: input.currentStrategyStyle ?? "",
       provisionalThemes: checkpoint.provisionalThemes,
       validatedFindings: checkpoint.validatedFindings,
       momentBundle: bundle,
       issuedEvidenceRefs: allowedEvidenceRefs,
     });
     const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
+    assertRequiredFinalResult(parsed.finalResult);
     const final = parsed.finalResult
       ? finalizeHarnessResult(parsed.finalResult)
       : null;
@@ -145,12 +155,14 @@ export async function runOwnerLearningHarness(
   if (logicalCallsUsed < OWNER_LEARNING_MAX_LOGICAL_CALLS) {
     const turn = await invokeTurn("drafting_recommendations", false, {
       analysisTrack: input.analysisTrack,
+      currentStrategyStyle: input.currentStrategyStyle ?? "",
       provisionalThemes: checkpoint.provisionalThemes,
       validatedFindings: checkpoint.validatedFindings,
       evidence: input.evidence.reviewInput,
       issuedEvidenceRefs: allowedEvidenceRefs,
     });
     const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
+    assertRequiredFinalResult(parsed.finalResult);
     if (!parsed.finalResult) throw new Error("Owner learning final turn did not contain a result");
     const final = finalizeHarnessResult(parsed.finalResult);
     checkpoint = {
@@ -174,7 +186,32 @@ export async function runOwnerLearningHarness(
     }
     logicalCallsUsed += 1;
     if (isDive) divesUsed += 1;
-    return input.invoke({ ordinal: logicalCallsUsed, stage, isDive, request });
+    const finalResultRequired = logicalCallsUsed === OWNER_LEARNING_MAX_LOGICAL_CALLS;
+    return input.invoke({
+      ordinal: logicalCallsUsed,
+      stage,
+      isDive,
+      request: {
+        ...request,
+        ...(finalResultRequired && request.evidence == null
+          ? { evidence: input.evidence.reviewInput }
+          : {}),
+        callBudget: {
+          ordinal: logicalCallsUsed,
+          remainingAfterThisCall: OWNER_LEARNING_MAX_LOGICAL_CALLS - logicalCallsUsed,
+          finalResultRequired,
+        },
+      },
+      responseSchema: finalResultRequired
+        ? OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA
+        : OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+    });
+  }
+
+  function assertRequiredFinalResult(finalResult: unknown): void {
+    if (logicalCallsUsed === OWNER_LEARNING_MAX_LOGICAL_CALLS && finalResult == null) {
+      throw new Error("Owner learning final logical call must contain a result");
+    }
   }
 
   function finalizeHarnessResult(value: unknown): {
@@ -229,6 +266,15 @@ export function validateOwnerLearningHarnessResult(
   }
   if (parsed.proposal && parsed.proposal.before !== input.currentStrategyStyle) {
     throw new Error("Generated strategy proposal does not start from the reviewed strategy");
+  }
+  const changeRecommendations = parsed.recommendations.filter((recommendation) =>
+    recommendation.disposition === "change"
+  );
+  if (parsed.proposal && changeRecommendations.length === 0) {
+    throw new Error("Generated strategy proposal requires a change recommendation");
+  }
+  if (parsed.noChange && changeRecommendations.length > 0) {
+    throw new Error("Generated no-change result cannot contain a change recommendation");
   }
   if (input.analysisTrack === "strategy_health_check") {
     if (!parsed.strategyHealthClassification) {

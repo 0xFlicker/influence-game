@@ -247,21 +247,35 @@ export function OwnerLearningReviewWorkspace({
     }
   }, [agentId, reviewId]);
 
-  const pollReview = useCallback(async () => {
-    if (!getAuthToken()) return null;
+  const pollReview = useCallback(async (): Promise<boolean> => {
+    if (!getAuthToken()) return false;
     try {
       const status = await getOwnerLearningReviewStatus(reviewId, agentId);
-      if (isReviewStatusTerminal(status)) return loadReview(false);
+      if (isReviewStatusTerminal(status)) {
+        try {
+          const next = await getOwnerLearningReview(reviewId, agentId);
+          setReview(next);
+          setActiveGameId((current) => current || next.selectedGameIds[0] || "");
+          setError(null);
+          return false;
+        } catch (nextError) {
+          if (isRetryableOwnerLearningPollError(nextError)) return true;
+          setError(apiMessage(nextError, "Review unavailable."));
+          return false;
+        }
+      }
       setReview((current) => {
         if (!current || reviewStatusSignature(current) === reviewStatusSignature(status)) return current;
         return { ...current, ...status };
       });
       setError(null);
-      return status;
-    } catch {
-      return null;
+      return true;
+    } catch (pollError) {
+      if (isRetryableOwnerLearningPollError(pollError)) return true;
+      setError(apiMessage(pollError, "Review unavailable."));
+      return false;
     }
-  }, [agentId, loadReview, reviewId]);
+  }, [agentId, reviewId]);
 
   useEffect(() => {
     if (!getAuthToken()) return;
@@ -282,8 +296,8 @@ export function OwnerLearningReviewWorkspace({
     let attempt = 0;
     let timer = 0;
     const poll = async () => {
-      const next = await pollReview();
-      if (cancelled || !next || !isReviewPolling(next)) return;
+      const continuePolling = await pollReview();
+      if (cancelled || !continuePolling) return;
       timer = window.setTimeout(() => void poll(), delays[Math.min(attempt++, delays.length - 1)]);
     };
     timer = window.setTimeout(() => void poll(), delays[0]);
@@ -442,6 +456,12 @@ function apiMessage(error: unknown, fallback: string): string {
     return error.message || fallback;
   }
   return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function isRetryableOwnerLearningPollError(error: unknown): boolean {
+  if (!(error instanceof ApiError)) return true;
+  if (error.status === 401 || error.status === 403 || error.status === 404) return false;
+  return error.retryable === true || error.status === 408 || error.status === 429 || error.status >= 500;
 }
 
 function reviewStatusAnnouncement(review: OwnerLearningReview): string {

@@ -35,8 +35,7 @@ export function OwnerLearningActivationView({
     ?? eligible.profiles.find((entry) => entry.agentProfileId === eligible.recommendedAgentProfileId)
     ?? eligible.profiles[0];
   if (!profile || eligible.credit.balance === 0) return null;
-  if (!contextAgentId && eligible.prompt.suppressedByDismissal) return null;
-  const prominent = eligible.prompt.prominent;
+  const prominent = eligible.prompt.prominent && !eligible.prompt.suppressedByDismissal;
   return (
     <section
       className="olm-activation"
@@ -116,7 +115,14 @@ export function OwnerLearningActivation({
     <OwnerLearningActivationView
       eligible={eligible}
       contextAgentId={contextAgentId}
-      onDismiss={!contextAgentId && eligible.prompt.threshold ? () => void dismiss() : undefined}
+      onDismiss={
+        !contextAgentId
+        && eligible.prompt.threshold
+        && !eligible.prompt.suppressedByDismissal
+        && eligible.prompt.prominent
+          ? () => void dismiss()
+          : undefined
+      }
     />
   );
 }

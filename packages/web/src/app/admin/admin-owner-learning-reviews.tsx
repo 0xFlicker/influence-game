@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getAdminOwnerLearningReview,
   listAdminOwnerLearningReviews,
@@ -22,6 +22,7 @@ export function AdminOwnerLearningReviews() {
   const [loading, setLoading] = useState(true);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const detailRequest = useRef(0);
 
   const refresh = useCallback(async (nextFilters: AdminOwnerLearningReviewFilters) => {
     setLoading(true);
@@ -39,21 +40,29 @@ export function AdminOwnerLearningReviews() {
 
   async function toggleReview(reviewId: string) {
     if (expandedId === reviewId) {
+      detailRequest.current += 1;
       setExpandedId(null);
+      setLoadingDetailId(null);
       return;
     }
+    const requestId = ++detailRequest.current;
     setExpandedId(reviewId);
-    if (details[reviewId]) return;
+    if (details[reviewId]) {
+      setLoadingDetailId(null);
+      return;
+    }
     setLoadingDetailId(reviewId);
     setError(null);
     try {
       const detail = await getAdminOwnerLearningReview(reviewId);
+      if (requestId !== detailRequest.current) return;
       setDetails((current) => ({ ...current, [reviewId]: detail }));
     } catch (cause) {
+      if (requestId !== detailRequest.current) return;
       setError(cause instanceof Error ? cause.message : "Could not load review detail.");
-      setExpandedId(null);
+      setExpandedId((current) => current === reviewId ? null : current);
     } finally {
-      setLoadingDetailId(null);
+      if (requestId === detailRequest.current) setLoadingDetailId(null);
     }
   }
 
@@ -219,6 +228,7 @@ function ReviewLedgerRow({
     <article className="border-b border-border-active/50 last:border-b-0">
       <button
         type="button"
+        data-review-id={review.id}
         aria-expanded={expanded}
         onClick={onToggle}
         className="grid w-full gap-4 px-5 py-5 text-left transition hover:bg-white/[0.025] lg:grid-cols-[minmax(14rem,1.4fr)_8rem_8rem_9rem_8rem_2rem] lg:items-center"

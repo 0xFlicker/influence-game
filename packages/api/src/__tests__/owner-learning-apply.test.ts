@@ -129,6 +129,34 @@ describe("owner learning apply and resolution", () => {
     expect(await db.select().from(schema.agentLearningReviewApplications)).toEqual([]);
   });
 
+  test("does not let linked edits resolve unfinished or analytically unchanged reviews", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const before = (await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!;
+
+    await expect(updateOwnedAgentProfile(db, { userId: fixture.ownerUserId }, fixture.agentProfileId, {
+      strategyStyle: "This queued review cannot be consumed.",
+      sourceReviewId: reviewId,
+    })).rejects.toMatchObject({ code: "source_review_conflict" });
+    expect((await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]).toEqual(before);
+
+    await markReviewReady(db, reviewId);
+    const presentation = await updateOwnedAgentProfile(
+      db,
+      { userId: fixture.ownerUserId },
+      fixture.agentProfileId,
+      { avatarUrl: "https://cdn.example/review-avatar.png", sourceReviewId: reviewId },
+    );
+    expect(presentation.profileRevision.outcome).toBe("preserved");
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review.resolution).toBeNull();
+    expect(review.resolvedAt).toBeNull();
+  });
+
   test("supersedes only on an unlinked analytical revision change", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);

@@ -61,6 +61,13 @@ export async function lockOwnerLearningReviewForProfileMutation(
     if (review.resolvedAt != null) {
       throw new OwnerLearningResolutionError("review_state_conflict", 409);
     }
+    if (
+      review.analysisStatus !== "ready"
+      || review.proposalFingerprint == null
+      || review.result?.proposal == null
+    ) {
+      throw new OwnerLearningResolutionError("review_state_conflict", 409);
+    }
     return review;
   }
 
@@ -94,7 +101,7 @@ export async function resolveOwnerLearningReviewForProfileMutation(
 ): Promise<"manual_update" | "superseded" | null> {
   if (!input.review) return null;
   const resolution = input.sourceReviewId
-    ? "manual_update" as const
+    ? input.analyticalRevisionChanged ? "manual_update" as const : null
     : input.analyticalRevisionChanged
       ? "superseded" as const
       : null;

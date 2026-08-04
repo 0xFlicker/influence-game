@@ -25,6 +25,22 @@ describe("owner learning activation", () => {
     expect(prominent).not.toContain("2 review credits");
   });
 
+  test("keeps the subtle dashboard entry after a prominent prompt is dismissed", () => {
+    const html = renderToStaticMarkup(
+      <OwnerLearningActivationView
+        eligible={eligibleFixture({
+          prompt: { threshold: 3, prominent: true, suppressedByDismissal: true },
+        })}
+        onDismiss={undefined}
+      />,
+    );
+
+    expect(html).toContain('data-variant="subtle"');
+    expect(html).toContain("One review credit ready");
+    expect(html).toContain("Open game review");
+    expect(html).not.toContain("Not now");
+  });
+
   test("resumes the owner-wide singleton even from another agent context", () => {
     const html = renderToStaticMarkup(
       <OwnerLearningActivationView

@@ -214,6 +214,84 @@ describe("owner learning bounded harness", () => {
     expect(resumed.logicalCallsUsed).toBe(4);
     expect(resumed.divesUsed).toBe(3);
   });
+
+  test("requires the fourth logical call to finish the review", async () => {
+    const evidence = harnessEvidence("evidence_rich", 3);
+    await expect(runOwnerLearningHarness({
+      reviewId: "review-final-budget",
+      analysisTrack: "evidence_rich",
+      currentStrategyStyle: "Build trust.",
+      evidence,
+      async invoke(input) {
+        expect(input.request.currentStrategyStyle).toBe("Build trust.");
+        if (input.ordinal === 1) {
+          return {
+            provisionalThemes: ["initiative"],
+            selectedMomentIds: evidence.games.map((game) => game.candidateMoments[0]!.id),
+          };
+        }
+        expect((input.request.callBudget as { finalResultRequired: boolean }).finalResultRequired)
+          .toBe(input.ordinal === 4);
+        expect(input.request.currentStrategyStyle).toBe("Build trust.");
+        if (input.ordinal === 4) {
+          expect(input.request.evidence).toEqual(evidence.reviewInput);
+        }
+        return { provisionalThemes: ["initiative"], selectedMomentIds: [], finalResult: null };
+      },
+    })).rejects.toThrow("final logical call must contain a result");
+  });
+
+  test("rejects proposal and recommendation outcomes that cannot be applied coherently", async () => {
+    const evidence = harnessEvidence("evidence_rich", 1);
+    const refs = ownerLearningIssuedEvidenceRefs(evidence.games);
+    const common = {
+      reviewId: "review-incoherent",
+      analysisTrack: "evidence_rich" as const,
+      currentStrategyStyle: "Build trust.",
+      evidence,
+    };
+    await expect(runOwnerLearningHarness({
+      ...common,
+      async invoke() {
+        return {
+          provisionalThemes: [],
+          selectedMomentIds: [],
+          finalResult: {
+            diagnosis: "A change is proposed without a change recommendation.",
+            analysisTrack: "evidence_rich",
+            recommendations: [],
+            proposal: {
+              field: "strategyStyle",
+              before: "Build trust.",
+              after: "Build trust and verify one commitment.",
+            },
+          },
+        };
+      },
+    })).rejects.toThrow("requires a change recommendation");
+
+    await expect(runOwnerLearningHarness({
+      ...common,
+      async invoke() {
+        return {
+          provisionalThemes: [],
+          selectedMomentIds: [],
+          finalResult: {
+            diagnosis: "The current guidance is sufficient.",
+            analysisTrack: "evidence_rich",
+            recommendations: [{
+              title: "Contradict the no-change outcome",
+              disposition: "change",
+              confidence: "medium",
+              rationale: "This must not survive validation.",
+              evidenceRefs: [refs[0]!],
+            }],
+            noChange: { rationale: "Keep the current guidance." },
+          },
+        };
+      },
+    })).rejects.toThrow("cannot contain a change recommendation");
+  });
 });
 
 function harnessEvidence(

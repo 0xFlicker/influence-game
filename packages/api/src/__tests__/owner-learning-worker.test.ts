@@ -10,7 +10,10 @@ import {
   reserveOwnerLearningCall,
   runClaimedOwnerLearningReview,
 } from "../services/owner-learning-worker.js";
-import type { OwnerLearningProvider } from "../services/owner-learning-provider.js";
+import {
+  OwnerLearningProviderError,
+  type OwnerLearningProvider,
+} from "../services/owner-learning-provider.js";
 import {
   fakeOwnerLearningProjection,
   insertPlayedOwnerLearningAgent,
@@ -84,6 +87,63 @@ describe("owner learning worker durability", () => {
     expect(secondReservation.ordinal).toBe(1);
     expect((await db.select().from(schema.agentLearningReviewCalls))).toHaveLength(1);
     expect((await db.select().from(schema.agentLearningReviews))[0]!.logicalCallCount).toBe(1);
+  });
+
+  test("fails a reclaimed call without transmission when its persisted request policy has drifted", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const firstClaim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const firstCall = await reserveOwnerLearningCall(db, {
+      reviewId,
+      leaseToken: firstClaim.leaseToken,
+      inputPolicyHash: "sha256:retired-policy",
+      stage: "scanning_narratives",
+      now: new Date("2026-08-04T03:01:01.000Z"),
+    });
+    await db.update(schema.agentLearningReviews).set({
+      leaseExpiresAt: "2026-08-04T03:01:02.000Z",
+    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    const reclaimed = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:02:00.000Z"),
+    }))!;
+    const projector = async (_db: typeof db, selection: Parameters<typeof fakeOwnerLearningProjection>[0]) =>
+      fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+    let providerInvocations = 0;
+    const provider: OwnerLearningProvider = {
+      async invoke() {
+        providerInvocations += 1;
+        throw new Error("provider must not receive a drifted recovery request");
+      },
+    };
+
+    expect(await runClaimedOwnerLearningReview(db, reclaimed, {
+      provider,
+      projector,
+      now: () => new Date("2026-08-04T03:02:01.000Z"),
+    })).toBe(false);
+    expect(providerInvocations).toBe(0);
+    const calls = await db.select().from(schema.agentLearningReviewCalls);
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({
+      id: firstCall.callId,
+      ordinal: 1,
+      state: "failed",
+      safeFailureCode: "worker_interrupted",
+    });
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review).toMatchObject({
+      analysisStatus: "failed",
+      safeFailureCode: "worker_interrupted",
+      logicalCallCount: 1,
+    });
+    expect(review.leaseTokenHash).toBeNull();
   });
 
   test("persists the three-Flex-429 transition and one standard success inside one ordinal", async () => {
@@ -161,6 +221,304 @@ describe("owner learning worker durability", () => {
     expect(storedCall.transportReceipts).toHaveLength(4);
     expect(storedCall.effectiveTier).toBe("default");
     expect(storedCall.estimatedCostMicrousd).toBe(1_250);
+  });
+
+  test("persists returned accounting when the effective tier is invalid for the transport path", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const claim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const call = await reserveOwnerLearningCall(db, {
+      reviewId,
+      leaseToken: claim.leaseToken,
+      inputPolicyHash: "sha256:scan",
+      stage: "scanning_narratives",
+      now: new Date("2026-08-04T03:01:01.000Z"),
+    });
+    const observer = createOwnerLearningTransportObserver(db, {
+      reviewId,
+      callId: call.callId,
+      leaseToken: claim.leaseToken,
+    });
+    await observer.onDispatchIntent({
+      transportOrdinal: 1,
+      attemptedTier: "flex",
+      dispatchedAtMs: Date.parse("2026-08-04T03:01:02.000Z"),
+    });
+    await observer.onTerminalOutcome({
+      transportOrdinal: 1,
+      attemptedTier: "flex",
+      httpStatus: 200,
+      latencyMs: 175,
+      completedAtMs: Date.parse("2026-08-04T03:01:02.175Z"),
+    });
+
+    expect(await completeOwnerLearningCall(db, {
+      reviewId,
+      callId: call.callId,
+      leaseToken: claim.leaseToken,
+      effectiveTier: "default",
+      tokenReceipt: {
+        inputTokens: 900,
+        cachedInputTokens: 300,
+        totalOutputTokens: 400,
+        reasoningTokens: 100,
+      },
+      costReceipt: {
+        costSource: "estimated",
+        estimatedCostMicrousd: 725,
+        pricingSourceId: "engine.MODEL_PRICING",
+        rateCardVersion: "2026-08-04",
+        pricedAt: "2026-08-04T03:01:02.175Z",
+      },
+      now: new Date("2026-08-04T03:01:02.175Z"),
+    })).toBe(false);
+
+    const storedCall = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    expect(storedCall).toMatchObject({
+      state: "failed",
+      safeFailureCode: "tier_mismatch",
+      effectiveTier: "default",
+      latencyMs: 175,
+      estimatedCostMicrousd: 725,
+    });
+    expect(storedCall.tokenReceipt?.totalOutputTokens).toBe(400);
+  });
+
+  test("reclaims a persisted third Flex 429 and resumes the same ordinal on standard capacity", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const firstClaim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const firstCall = await reserveOwnerLearningCall(db, {
+      reviewId,
+      leaseToken: firstClaim.leaseToken,
+      inputPolicyHash: "sha256:scan",
+      stage: "scanning_narratives",
+      now: new Date("2026-08-04T03:01:01.000Z"),
+    });
+    const observer = createOwnerLearningTransportObserver(db, {
+      reviewId,
+      callId: firstCall.callId,
+      leaseToken: firstClaim.leaseToken,
+    });
+    for (let ordinal = 1; ordinal <= 3; ordinal += 1) {
+      await observer.onDispatchIntent({
+        transportOrdinal: ordinal,
+        attemptedTier: "flex",
+        dispatchedAtMs: Date.parse(`2026-08-04T03:01:0${ordinal}.000Z`),
+      });
+      await observer.onTerminalOutcome({
+        transportOrdinal: ordinal,
+        attemptedTier: "flex",
+        httpStatus: 429,
+        latencyMs: 100,
+        backoffMs: 1_000,
+        completedAtMs: Date.parse(`2026-08-04T03:01:0${ordinal}.100Z`),
+      });
+    }
+    await db.update(schema.agentLearningReviews).set({
+      leaseExpiresAt: "2026-08-04T03:01:04.000Z",
+    }).where(eq(schema.agentLearningReviews.id, reviewId));
+
+    const reclaimed = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:02:00.000Z"),
+    }))!;
+    const resumed = await reserveOwnerLearningCall(db, {
+      reviewId,
+      leaseToken: reclaimed.leaseToken,
+      inputPolicyHash: "sha256:scan",
+      stage: "scanning_narratives",
+      now: new Date("2026-08-04T03:02:01.000Z"),
+    });
+
+    expect(resumed).toMatchObject({
+      callId: firstCall.callId,
+      ordinal: 1,
+      reused: true,
+      resumeTransport: {
+        flex429Count: 3,
+        nextTransportOrdinal: 4,
+        nextTier: "auto",
+      },
+    });
+    expect(await db.select().from(schema.agentLearningReviewCalls)).toHaveLength(1);
+  });
+
+  test("replays an interrupted fourth harness call with its original ordinal and standard fallback", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    await startFixtureOwnerLearningReview(db, fixture);
+    const firstClaim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const projector = async (_db: typeof db, selection: Parameters<typeof fakeOwnerLearningProjection>[0]) => {
+      const base = fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+      const game = base.games[0]!;
+      const candidateMoments = [1, 2, 3].map((ordinal) => ({
+        id: `olm_recovery_${ordinal}`,
+        gameId: fixture.gameId,
+        anchorKind: "canonical_event" as const,
+        sourceCoordinate: `event:${ordinal}:vote.cast`,
+        sourceHash: game.sourceHash,
+        round: ordinal,
+        phase: "VOTE",
+      }));
+      return {
+        ...base,
+        games: [{ ...game, candidateMoments }],
+        reviewInput: {
+          ...base.reviewInput,
+          games: base.reviewInput.games.map((inputGame) => ({
+            ...inputGame,
+            candidateMomentIds: candidateMoments.map((moment) => moment.id),
+          })),
+        },
+      };
+    };
+    let firstClockMs = Date.parse("2026-08-04T03:01:01.000Z");
+    let interruptedCallId: string | null = null;
+    const firstProvider: OwnerLearningProvider = {
+      async invoke(request) {
+        const turn = request.input.turn as {
+          callBudget: { ordinal: number };
+          evidence?: unknown;
+        };
+        const ordinal = turn.callBudget.ordinal;
+        if (ordinal === 4) {
+          expect(turn.evidence).toBeDefined();
+          for (let transportOrdinal = 1; transportOrdinal <= 3; transportOrdinal += 1) {
+            const dispatchedAtMs = Date.parse(`2026-08-04T03:01:1${transportOrdinal}.000Z`);
+            await request.observer.onDispatchIntent({
+              transportOrdinal,
+              attemptedTier: "flex",
+              dispatchedAtMs,
+            });
+            await request.observer.onTerminalOutcome({
+              transportOrdinal,
+              attemptedTier: "flex",
+              httpStatus: 429,
+              latencyMs: 100,
+              backoffMs: 1_000,
+              completedAtMs: dispatchedAtMs + 100,
+            });
+          }
+          firstClockMs = Date.parse("2026-08-04T03:02:00.000Z");
+          throw new Error("worker process stopped after the third Flex 429");
+        }
+        const dispatchedAtMs = Date.parse(`2026-08-04T03:01:0${ordinal}.000Z`);
+        await request.observer.onDispatchIntent({
+          transportOrdinal: 1,
+          attemptedTier: "flex",
+          dispatchedAtMs,
+        });
+        await request.observer.onTerminalOutcome({
+          transportOrdinal: 1,
+          attemptedTier: "flex",
+          httpStatus: 200,
+          latencyMs: 100,
+          completedAtMs: dispatchedAtMs + 100,
+        });
+        return successfulProviderTurn(ordinal === 1
+          ? {
+              provisionalThemes: ["initiative"],
+              selectedMomentIds: ["olm_recovery_1", "olm_recovery_2", "olm_recovery_3"],
+              findings: [],
+              finalResult: null,
+            }
+          : {
+              provisionalThemes: ["initiative"],
+              selectedMomentIds: [],
+              findings: [],
+              finalResult: null,
+            });
+      },
+    };
+
+    expect(await runClaimedOwnerLearningReview(db, firstClaim, {
+      provider: firstProvider,
+      projector,
+      now: () => new Date(firstClockMs += 10),
+    })).toBe(false);
+    const callsAfterInterruption = await db.select().from(schema.agentLearningReviewCalls);
+    expect(callsAfterInterruption).toHaveLength(4);
+    const interruptedCall = callsAfterInterruption.find((call) => call.ordinal === 4)!;
+    interruptedCallId = interruptedCall.id;
+    expect(interruptedCall).toMatchObject({ state: "dispatched", flex429Count: 3 });
+
+    const reclaimed = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:03:00.000Z"),
+    }))!;
+    let recoveredBudget: unknown = null;
+    const secondProvider: OwnerLearningProvider = {
+      async invoke(request) {
+        const turn = request.input.turn as {
+          callBudget: unknown;
+          currentStrategyStyle: string;
+          evidence?: unknown;
+        };
+        recoveredBudget = turn.callBudget;
+        expect(turn.currentStrategyStyle).toBe("Build trust before committing.");
+        expect(turn.evidence).toBeDefined();
+        expect(request.resumeTransport).toMatchObject({
+          flex429Count: 3,
+          nextTransportOrdinal: 4,
+          nextTier: "auto",
+        });
+        await request.observer.onDispatchIntent({
+          transportOrdinal: 4,
+          attemptedTier: "auto",
+          dispatchedAtMs: Date.parse("2026-08-04T03:03:01.000Z"),
+        });
+        await request.observer.onTerminalOutcome({
+          transportOrdinal: 4,
+          attemptedTier: "auto",
+          httpStatus: 200,
+          latencyMs: 100,
+          completedAtMs: Date.parse("2026-08-04T03:03:01.100Z"),
+        });
+        return successfulProviderTurn({
+          provisionalThemes: ["initiative"],
+          selectedMomentIds: [],
+          findings: [],
+          finalResult: {
+            diagnosis: "The reviewed guidance remains appropriate.",
+            analysisTrack: "evidence_rich",
+            strategyHealthClassification: null,
+            recommendations: [],
+            proposal: null,
+            noChange: { rationale: "No repeated strategic defect appears in the selected evidence." },
+          },
+        }, "auto");
+      },
+    };
+    let secondClockMs = Date.parse("2026-08-04T03:03:00.000Z");
+
+    expect(await runClaimedOwnerLearningReview(db, reclaimed, {
+      provider: secondProvider,
+      projector,
+      now: () => new Date(secondClockMs += 10),
+    })).toBe(true);
+    expect(recoveredBudget).toEqual({
+      ordinal: 4,
+      remainingAfterThisCall: 0,
+      finalResultRequired: true,
+    });
+    const recoveredCalls = await db.select().from(schema.agentLearningReviewCalls);
+    expect(recoveredCalls).toHaveLength(4);
+    expect(recoveredCalls.find((call) => call.ordinal === 4)).toMatchObject({
+      id: interruptedCallId,
+      state: "succeeded",
+      effectiveTier: "auto",
+      flex429Count: 3,
+    });
   });
 
   test("marks an unmatched dispatch intent ambiguous instead of replaying it", async () => {
@@ -349,6 +707,60 @@ describe("owner learning worker durability", () => {
     expect(call.tokenReceipt?.totalOutputTokens).toBe(300);
   });
 
+  test("normalizes an unknown provider tier while durably failing the review", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const claim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const projector = async (_db: typeof db, selection: Parameters<typeof fakeOwnerLearningProjection>[0]) =>
+      fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+    const provider: OwnerLearningProvider = {
+      async invoke() {
+        throw new OwnerLearningProviderError(
+          "provider_error",
+          true,
+          {
+            inputTokens: 100,
+            cachedInputTokens: 0,
+            totalOutputTokens: 25,
+            reasoningTokens: 5,
+          },
+          {
+            costSource: "estimated",
+            estimatedCostMicrousd: 150,
+            pricingSourceId: "engine.MODEL_PRICING",
+            rateCardVersion: "2026-08-04",
+            pricedAt: "2026-08-04T03:01:02.000Z",
+          },
+          "unknown",
+        );
+      },
+    };
+
+    expect(await runClaimedOwnerLearningReview(db, claim, {
+      provider,
+      projector,
+      now: () => new Date("2026-08-04T03:01:02.000Z"),
+    })).toBe(false);
+
+    const call = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
+    expect(call).toMatchObject({
+      state: "failed",
+      effectiveTier: null,
+      safeFailureCode: "provider_error",
+      estimatedCostMicrousd: 150,
+    });
+    expect(call.tokenReceipt?.totalOutputTokens).toBe(25);
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review.analysisStatus).toBe("failed");
+  });
+
   test("aborts local provider work when the durable lease is lost", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
@@ -444,3 +856,24 @@ describe("owner learning worker durability", () => {
     expect(review.leaseTokenHash).toBeNull();
   });
 });
+
+function successfulProviderTurn(output: unknown, effectiveTier = "flex") {
+  return {
+    output,
+    effectiveTier,
+    providerResponseId: "resp-fake",
+    tokenReceipt: {
+      inputTokens: 1_000,
+      cachedInputTokens: 200,
+      totalOutputTokens: 300,
+      reasoningTokens: 50,
+    },
+    costReceipt: {
+      costSource: "estimated" as const,
+      estimatedCostMicrousd: 500,
+      pricingSourceId: "engine.OPENAI_FLEX_MODEL_PRICING",
+      rateCardVersion: "2026-08-04",
+      pricedAt: "2026-08-04T03:01:02.100Z",
+    },
+  };
+}

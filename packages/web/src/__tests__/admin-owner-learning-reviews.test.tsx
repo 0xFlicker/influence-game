@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, test } from "bun:test";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { Window as HappyDOMWindow } from "happy-dom";
 import { renderToString } from "react-dom/server";
-import { AdminOwnerLearningReviewsContent } from "../app/admin/admin-owner-learning-reviews";
+import {
+  AdminOwnerLearningReviews,
+  AdminOwnerLearningReviewsContent,
+} from "../app/admin/admin-owner-learning-reviews";
 import {
   getAdminOwnerLearningReview,
   listAdminOwnerLearningReviews,
@@ -10,10 +15,19 @@ import {
 } from "../lib/api";
 
 const originalFetch = globalThis.fetch;
+const originalWindow = globalThis.window;
+const originalDocument = globalThis.document;
+const originalNavigator = globalThis.navigator;
+const originalLocalStorage = globalThis.localStorage;
 
 afterEach(() => {
+  cleanup();
   globalThis.fetch = originalFetch;
   setApiBase("");
+  Object.defineProperty(globalThis, "window", { configurable: true, value: originalWindow });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
+  Object.defineProperty(globalThis, "navigator", { configurable: true, value: originalNavigator });
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: originalLocalStorage });
 });
 
 describe("admin owner learning reviews", () => {
@@ -66,7 +80,121 @@ describe("admin owner learning reviews", () => {
       "https://api.example.test/api/admin/owner-learning-reviews/review%2Fone",
     ]);
   });
+
+  test("does not let an older detail failure collapse a newer expanded row", async () => {
+    const domWindow = new HappyDOMWindow({ url: "http://localhost/admin?tab=reviews" });
+    Object.defineProperty(globalThis, "window", { configurable: true, value: domWindow });
+    Object.defineProperty(globalThis, "document", { configurable: true, value: domWindow.document });
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: domWindow.navigator });
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: domWindow.localStorage,
+    });
+    const detailA = detailFixture("review-a", "Agent A");
+    const detailB = detailFixture("review-b", "Agent B");
+    let rejectDetailA!: (reason: unknown) => void;
+    const pendingDetailA = new Promise<Response>((_resolve, reject) => { rejectDetailA = reject; });
+    globalThis.fetch = (async (request) => {
+      const url = String(request);
+      if (url.endsWith("/api/admin/owner-learning-reviews")) {
+        return jsonResponse({
+          ...listFixture(detailA),
+          reviews: [listFixture(detailA).reviews[0]!, listFixture(detailB).reviews[0]!],
+        });
+      }
+      if (url.endsWith("/api/admin/owner-learning-reviews/review-a")) return pendingDetailA;
+      if (url.endsWith("/api/admin/owner-learning-reviews/review-b")) return jsonResponse(detailB);
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    const mounted = render(<AdminOwnerLearningReviews />);
+    await waitFor(() => {
+      expect(mounted.container.querySelector('[data-review-id="review-a"]')).not.toBeNull();
+    });
+    const rowA = mounted.container.querySelector<HTMLButtonElement>('[data-review-id="review-a"]')!;
+    const rowB = mounted.container.querySelector<HTMLButtonElement>('[data-review-id="review-b"]')!;
+
+    fireEvent.click(rowA);
+    fireEvent.click(rowB);
+    await waitFor(() => expect(mounted.getByText("review-b")).not.toBeNull());
+    expect(rowB.getAttribute("aria-expanded")).toBe("true");
+    expect(mounted.getByText("review-b")).not.toBeNull();
+
+    await act(async () => {
+      rejectDetailA(new Error("review A failed late"));
+      await settlePromises();
+    });
+    expect(rowB.getAttribute("aria-expanded")).toBe("true");
+    expect(mounted.queryByText("review A failed late")).toBeNull();
+    expect(mounted.getByText("review-b")).not.toBeNull();
+    domWindow.close();
+  });
+
+  test("does not let an older successful response overwrite a newer detail generation", async () => {
+    const domWindow = new HappyDOMWindow({ url: "http://localhost/admin?tab=reviews" });
+    Object.defineProperty(globalThis, "window", { configurable: true, value: domWindow });
+    Object.defineProperty(globalThis, "document", { configurable: true, value: domWindow.document });
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: domWindow.navigator });
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: domWindow.localStorage,
+    });
+    const listDetail = detailFixture("review-a", "Agent A", "List diagnosis");
+    const olderDetail = detailFixture("review-a", "Agent A", "Older response");
+    const newerDetail = detailFixture("review-a", "Agent A", "Newer response");
+    let resolveOlder!: (response: Response) => void;
+    let resolveNewer!: (response: Response) => void;
+    const olderResponse = new Promise<Response>((resolve) => { resolveOlder = resolve; });
+    const newerResponse = new Promise<Response>((resolve) => { resolveNewer = resolve; });
+    let detailRequests = 0;
+    globalThis.fetch = (async (request) => {
+      const url = String(request);
+      if (url.endsWith("/api/admin/owner-learning-reviews")) return jsonResponse(listFixture(listDetail));
+      if (url.endsWith("/api/admin/owner-learning-reviews/review-a")) {
+        detailRequests += 1;
+        return detailRequests === 1 ? olderResponse : newerResponse;
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    const mounted = render(<AdminOwnerLearningReviews />);
+    await waitFor(() => {
+      expect(mounted.container.querySelector('[data-review-id="review-a"]')).not.toBeNull();
+    });
+    const rowA = mounted.container.querySelector<HTMLButtonElement>('[data-review-id="review-a"]')!;
+
+    fireEvent.click(rowA);
+    fireEvent.click(rowA);
+    fireEvent.click(rowA);
+    expect(detailRequests).toBe(2);
+    await act(async () => {
+      resolveNewer(jsonResponse(newerDetail));
+      await settlePromises();
+    });
+    expect(mounted.getByText("Newer response")).not.toBeNull();
+
+    await act(async () => {
+      resolveOlder(jsonResponse(olderDetail));
+      await settlePromises();
+    });
+    expect(rowA.getAttribute("aria-expanded")).toBe("true");
+    expect(mounted.getByText("Newer response")).not.toBeNull();
+    expect(mounted.queryByText("Older response")).toBeNull();
+    domWindow.close();
+  });
 });
+
+function jsonResponse(value: unknown): Response {
+  return new Response(JSON.stringify(value), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
+async function settlePromises(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}
 
 function listFixture(detail: AdminOwnerLearningReviewDetail): AdminOwnerLearningReviewList {
   return {
@@ -104,11 +232,15 @@ function listFixture(detail: AdminOwnerLearningReviewDetail): AdminOwnerLearning
   };
 }
 
-function detailFixture(): AdminOwnerLearningReviewDetail {
+function detailFixture(
+  id = "review-admin-1",
+  agentName = "Marlowe",
+  diagnosis = "The agent makes promises without a reciprocal vote checkpoint.",
+): AdminOwnerLearningReviewDetail {
   return {
-    id: "review-admin-1",
+    id,
     owner: { userId: "owner-1", displayName: "Review Owner", handle: "review-owner" },
-    agent: { profileId: "agent-1", name: "Marlowe" },
+    agent: { profileId: `agent-${id}`, name: agentName },
     reviewedRevision: { id: "revision-1", ordinal: 2 },
     selectedGames: [{ gameId: "game-1", slug: "quiet-violet", position: 1, previouslyAnalyzed: false }],
     policy: {
@@ -139,7 +271,7 @@ function detailFixture(): AdminOwnerLearningReviewDetail {
     disposition: "applied",
     acceptance: "accepted",
     result: {
-      diagnosis: "The agent makes promises without a reciprocal vote checkpoint.",
+      diagnosis,
       analysisTrack: "evidence_rich",
       recommendations: [{
         id: "olrec-1",

@@ -22,10 +22,7 @@ import {
   OWNER_LEARNING_MAX_DIVES,
   OWNER_LEARNING_MAX_LOGICAL_CALLS,
 } from "./owner-learning-contracts.js";
-import {
-  OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
-  runOwnerLearningHarness,
-} from "./owner-learning-harness.js";
+import { runOwnerLearningHarness } from "./owner-learning-harness.js";
 import type { OwnerLearningProvider } from "./owner-learning-provider.js";
 import { OwnerLearningProviderError } from "./owner-learning-provider.js";
 import {
@@ -177,7 +174,7 @@ export async function reserveOwnerLearningCall(
 ): Promise<OwnerLearningCallReservation> {
   const now = input.now ?? new Date();
   const nowIso = now.toISOString();
-  return db.transaction(async (tx) => {
+  const reservation = await db.transaction(async (tx): Promise<OwnerLearningCallReservation | null> => {
     await lockReview(tx, input.reviewId);
     const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
     const latest = (await tx.select().from(schema.agentLearningReviewCalls)
@@ -185,6 +182,15 @@ export async function reserveOwnerLearningCall(
       .orderBy(desc(schema.agentLearningReviewCalls.ordinal)).limit(1))[0] ?? null;
     const resumable = resumableReservation(latest, input.inputPolicyHash, input.stage, now);
     if (resumable) return resumable;
+    if (latest && isResumableCall(latest)) {
+      await tx.update(schema.agentLearningReviewCalls).set({
+        state: "failed",
+        safeFailureCode: "worker_interrupted",
+        completedAt: nowIso,
+      }).where(eq(schema.agentLearningReviewCalls.id, latest.id));
+      await failReviewUnderLease(tx, review, "worker_interrupted", true, nowIso);
+      return null;
+    }
     if (review.logicalCallCount >= OWNER_LEARNING_MAX_LOGICAL_CALLS) {
       await failReviewUnderLease(tx, review, "logical_call_budget_exhausted", false, nowIso);
       throw new OwnerLearningWorkerError("logical_call_budget_exhausted");
@@ -227,6 +233,8 @@ export async function reserveOwnerLearningCall(
       },
     };
   });
+  if (!reservation) throw new OwnerLearningWorkerError("call_state_conflict");
+  return reservation;
 }
 
 export function createOwnerLearningTransportObserver(
@@ -367,19 +375,29 @@ export async function completeOwnerLearningCall(
     await lockReview(tx, input.reviewId);
     const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
     const call = await requireCall(tx, input.reviewId, input.callId);
+    const totalLatencyMs = call.transportReceipts.reduce(
+      (total, receipt) => total + (receipt.latencyMs ?? 0),
+      0,
+    );
     if (!validEffectiveTier(call, input.effectiveTier)) {
       await tx.update(schema.agentLearningReviewCalls).set({
         state: "failed",
+        effectiveTier: persistableEffectiveTier(input.effectiveTier),
+        capacityPath: call.flex429Count === 3 ? "standard_fallback" : "flex",
+        tokenReceipt: input.tokenReceipt,
+        latencyMs: totalLatencyMs,
+        costSource: input.costReceipt.costSource,
+        actualCostMicrousd: input.costReceipt.actualCostMicrousd ?? null,
+        estimatedCostMicrousd: input.costReceipt.estimatedCostMicrousd ?? null,
+        pricingSourceId: input.costReceipt.pricingSourceId ?? null,
+        rateCardVersion: input.costReceipt.rateCardVersion ?? null,
+        pricedAt: input.costReceipt.pricedAt ?? null,
         safeFailureCode: "tier_mismatch",
         completedAt: nowIso,
       }).where(eq(schema.agentLearningReviewCalls.id, call.id));
       await failReviewUnderLease(tx, review, "tier_mismatch", false, nowIso);
       return false;
     }
-    const totalLatencyMs = call.transportReceipts.reduce(
-      (total, receipt) => total + (receipt.latencyMs ?? 0),
-      0,
-    );
     await tx.update(schema.agentLearningReviewCalls).set({
       state: "succeeded",
       effectiveTier: input.effectiveTier,
@@ -697,20 +715,21 @@ export async function runClaimedOwnerLearningReview(
       instructions: OWNER_LEARNING_REVIEW_INSTRUCTIONS,
       cursorSecret: options.cursorSecret,
     });
+    const harnessCounters = await ownerLearningHarnessStartCounters(db, review);
     const harness = await runOwnerLearningHarness({
       reviewId: review.id,
       analysisTrack: review.analysisTrack,
       currentStrategyStyle: review.strategyStyle,
       evidence,
       checkpoint: review.checkpoint,
-      logicalCallCount: review.logicalCallCount,
-      diveCount: review.diveCount,
+      logicalCallCount: harnessCounters.logicalCallCount,
+      diveCount: harnessCounters.diveCount,
       async invoke(turn) {
         const requestInput = buildBudgetedOwnerLearningProviderInput(turn.stage, turn.request);
         const inputPolicyHash = fingerprintOwnerLearningRequest({
           model: "gpt-5.6-luna",
           input: requestInput,
-          responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+          responseSchema: turn.responseSchema,
           maxOutputTokens: OWNER_LEARNING_MAX_OUTPUT_TOKENS,
           reasoning: { effort: "low" },
           store: false,
@@ -732,7 +751,7 @@ export async function runClaimedOwnerLearningReview(
         try {
           const response = await options.provider.invoke({
             input: requestInput,
-            responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+            responseSchema: turn.responseSchema,
             observer,
             resumeTransport: reservation.resumeTransport,
             signal: controller.signal,
@@ -891,7 +910,7 @@ async function failProviderCall(
     const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
     await tx.update(schema.agentLearningReviewCalls).set({
       state: "failed",
-      effectiveTier: input.error.effectiveTier ?? null,
+      effectiveTier: persistableEffectiveTier(input.error.effectiveTier),
       tokenReceipt: input.error.tokenReceipt ?? null,
       costSource: input.error.costReceipt?.costSource ?? "unavailable",
       actualCostMicrousd: input.error.costReceipt?.actualCostMicrousd ?? null,
@@ -913,6 +932,25 @@ async function failProviderCall(
 type ReviewTx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type ReviewRow = typeof schema.agentLearningReviews.$inferSelect;
 type CallRow = typeof schema.agentLearningReviewCalls.$inferSelect;
+
+async function ownerLearningHarnessStartCounters(
+  db: DrizzleDB,
+  review: Pick<ReviewRow, "id" | "logicalCallCount" | "diveCount">,
+): Promise<{ logicalCallCount: number; diveCount: number }> {
+  const latest = (await db.select().from(schema.agentLearningReviewCalls)
+    .where(eq(schema.agentLearningReviewCalls.reviewId, review.id))
+    .orderBy(desc(schema.agentLearningReviewCalls.ordinal)).limit(1))[0] ?? null;
+  if (!latest || !isResumableCall(latest)) {
+    return { logicalCallCount: review.logicalCallCount, diveCount: review.diveCount };
+  }
+  return {
+    logicalCallCount: Math.max(0, review.logicalCallCount - 1),
+    diveCount: Math.max(
+      0,
+      review.diveCount - (latest.stage === "investigating_moments" ? 1 : 0),
+    ),
+  };
+}
 
 async function reconcileExpiredCall(
   tx: ReviewTx,
@@ -955,18 +993,15 @@ function resumableReservation(
   now: Date,
 ): OwnerLearningCallReservation | null {
   if (!latest || latest.inputPolicyHash !== inputPolicyHash || latest.stage !== stage) return null;
-  if (latest.state === "reserved" && latest.transportReceipts.length === 0) {
-    return reservationFromExisting(latest, now);
-  }
-  const lastReceipt = latest.transportReceipts.at(-1);
-  if (
-    latest.state === "dispatched"
+  return isResumableCall(latest) ? reservationFromExisting(latest, now) : null;
+}
+
+function isResumableCall(call: CallRow): boolean {
+  if (call.state === "reserved" && call.transportReceipts.length === 0) return true;
+  const lastReceipt = call.transportReceipts.at(-1);
+  return call.state === "dispatched"
     && lastReceipt?.attemptedTier === "flex"
-    && lastReceipt.terminalHttpStatus === 429
-  ) {
-    return reservationFromExisting(latest, now);
-  }
-  return null;
+    && lastReceipt.terminalHttpStatus === 429;
 }
 
 function reservationFromExisting(call: CallRow, now: Date): OwnerLearningCallReservation {
@@ -1008,6 +1043,14 @@ function validEffectiveTier(call: CallRow, effectiveTier: string): boolean {
       && call.fallbackStartedAt != null;
   }
   return false;
+}
+
+function persistableEffectiveTier(
+  effectiveTier: string | undefined,
+): "flex" | "auto" | "default" | null {
+  return effectiveTier === "flex" || effectiveTier === "auto" || effectiveTier === "default"
+    ? effectiveTier
+    : null;
 }
 
 async function requireCall(
