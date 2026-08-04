@@ -19,6 +19,8 @@ import { createOwnerLearningEvent } from "./owner-learning-events.js";
 import {
   fingerprintOwnerLearningRequest,
   fingerprintOwnerLearningValue,
+  OWNER_LEARNING_MAX_DIVES,
+  OWNER_LEARNING_MAX_LOGICAL_CALLS,
 } from "./owner-learning-contracts.js";
 import {
   OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
@@ -183,11 +185,11 @@ export async function reserveOwnerLearningCall(
       .orderBy(desc(schema.agentLearningReviewCalls.ordinal)).limit(1))[0] ?? null;
     const resumable = resumableReservation(latest, input.inputPolicyHash, input.stage, now);
     if (resumable) return resumable;
-    if (review.logicalCallCount >= 4) {
+    if (review.logicalCallCount >= OWNER_LEARNING_MAX_LOGICAL_CALLS) {
       await failReviewUnderLease(tx, review, "logical_call_budget_exhausted", false, nowIso);
       throw new OwnerLearningWorkerError("logical_call_budget_exhausted");
     }
-    if (input.isDive && review.diveCount >= 3) {
+    if (input.isDive && review.diveCount >= OWNER_LEARNING_MAX_DIVES) {
       throw new OwnerLearningWorkerError("dive_budget_exhausted");
     }
 
@@ -575,7 +577,7 @@ export async function retryOwnerLearningReview(
       || review.resolvedAt != null
       || review.analysisStatus !== "failed"
       || !review.retryable
-      || review.logicalCallCount >= 4
+      || review.logicalCallCount >= OWNER_LEARNING_MAX_LOGICAL_CALLS
     ) return false;
     const updated = await tx.update(schema.agentLearningReviews).set({
       analysisStatus: "queued",
@@ -797,7 +799,7 @@ export async function runClaimedOwnerLearningReview(
       reviewId: review.id,
       leaseToken: claim.leaseToken,
       failureCode: "invalid_structured_output",
-      retryable: review.logicalCallCount < 4,
+      retryable: review.logicalCallCount < OWNER_LEARNING_MAX_LOGICAL_CALLS,
       ...(latestCompletedCallId ? { completedCallId: latestCompletedCallId } : {}),
       now: now(),
     });
@@ -1057,7 +1059,7 @@ async function failReviewUnderLease(
   await tx.update(schema.agentLearningReviews).set({
     analysisStatus: "failed",
     safeFailureCode: failureCode,
-    retryable: retryable && review.logicalCallCount < 4,
+    retryable: retryable && review.logicalCallCount < OWNER_LEARNING_MAX_LOGICAL_CALLS,
     leaseTokenHash: null,
     leaseExpiresAt: null,
     capacitySubstatus: null,
@@ -1070,7 +1072,7 @@ async function failReviewUnderLease(
     occurredAt: nowIso,
   }, {
     failureCode,
-    retryable: retryable && review.logicalCallCount < 4,
+    retryable: retryable && review.logicalCallCount < OWNER_LEARNING_MAX_LOGICAL_CALLS,
   });
   await tx.insert(schema.agentLearningEvents).values({
     id: randomUUID(),

@@ -1,4 +1,4 @@
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -284,20 +284,77 @@ export async function getAdminOwnerLearningReview(
 }
 
 async function loadAdminOwnerLearningRecords(db: DrizzleDB, reviewId?: string) {
+  if (reviewId) return loadAdminOwnerLearningDetailRecords(db, reviewId);
   const [reviews, calls, applications, selectedGames, receipts, analysisHistory, events] = await Promise.all([
-    loadBaseReviews(db, reviewId),
-    loadCalls(db, reviewId),
-    loadApplications(db, reviewId),
-    loadSelectedGames(db, reviewId),
+    loadBaseReviews(db),
+    loadCalls(db),
+    loadApplications(db),
+    loadSelectedGames(db),
     loadDailyFreeReceipts(db),
     loadAnalysisHistory(db),
     loadEvents(db),
   ]);
 
-  const callsByReview = groupBy(calls, (row) => row.reviewId);
+  return assembleAdminOwnerLearningRecords({
+    reviews,
+    calls,
+    applications,
+    selectedGames,
+    receipts,
+    analysisHistory,
+    events,
+  });
+}
+
+async function loadAdminOwnerLearningDetailRecords(db: DrizzleDB, reviewId: string) {
+  const [reviews, calls, applications, selectedGames] = await Promise.all([
+    loadBaseReviews(db, reviewId),
+    loadCalls(db, reviewId),
+    loadApplications(db, reviewId),
+    loadSelectedGames(db, reviewId),
+  ]);
+  if (reviews.length === 0) return { details: [], events: [] };
+
+  const applicationByReview = new Map(applications.map((row) => [row.reviewId, row]));
+  const correlationRevisionIds = reviews.flatMap((review) => {
+    const application = applicationByReview.get(review.id);
+    if (application) return [application.resultingRevisionId];
+    return ["manual_update", "superseded"].includes(review.resolution ?? "")
+      ? []
+      : [review.reviewedRevisionId];
+  });
+  const selectedGameIds = [...new Set(selectedGames.map((row) => row.gameId))];
+  const [receipts, analysisHistory] = await Promise.all([
+    loadDailyFreeReceipts(db, [...new Set(correlationRevisionIds)]),
+    loadAnalysisHistory(db, selectedGameIds),
+  ]);
+
+  return assembleAdminOwnerLearningRecords({
+    reviews,
+    calls,
+    applications,
+    selectedGames,
+    receipts,
+    analysisHistory,
+    events: [],
+  });
+}
+
+function assembleAdminOwnerLearningRecords(input: {
+  reviews: BaseReviewRow[];
+  calls: CallRow[];
+  applications: ApplicationRow[];
+  selectedGames: SelectedGameRow[];
+  receipts: DailyFreeReceiptRow[];
+  analysisHistory: AnalysisHistoryRow[];
+  events: EventRow[];
+}) {
+  const { reviews, calls, applications, selectedGames, receipts, analysisHistory, events } = input;
+
+  const callsByReview = Map.groupBy(calls, (row) => row.reviewId);
   const applicationsByReview = new Map(applications.map((row) => [row.reviewId, row]));
-  const gamesByReview = groupBy(selectedGames, (row) => row.reviewId);
-  const receiptsByRevision = groupBy(receipts, (row) => row.agentRevisionId);
+  const gamesByReview = Map.groupBy(selectedGames, (row) => row.reviewId);
+  const receiptsByRevision = Map.groupBy(receipts, (row) => row.agentRevisionId);
 
   const details = reviews.map((review) => toDetail({
     review,
@@ -409,8 +466,9 @@ async function loadSelectedGames(db: DrizzleDB, reviewId?: string) {
     : query;
 }
 
-async function loadDailyFreeReceipts(db: DrizzleDB) {
-  return db.select({
+async function loadDailyFreeReceipts(db: DrizzleDB, agentRevisionIds?: string[]) {
+  if (agentRevisionIds?.length === 0) return [];
+  const query = db.select({
     agentRevisionId: schema.competitionReceipts.agentRevisionId,
     gameId: schema.competitionReceipts.gameId,
     slug: schema.games.slug,
@@ -419,15 +477,19 @@ async function loadDailyFreeReceipts(db: DrizzleDB) {
     totalPoints: schema.competitionReceipts.totalPoints,
     earnedAt: schema.competitionReceipts.earnedAt,
   }).from(schema.competitionReceipts)
-    .innerJoin(schema.games, eq(schema.competitionReceipts.gameId, schema.games.id))
-    .where(and(
+    .innerJoin(schema.games, eq(schema.competitionReceipts.gameId, schema.games.id));
+  return query.where(and(
       eq(schema.games.trackType, "free"),
       eq(schema.competitionReceipts.eligibilityStatus, "eligible"),
+      ...(agentRevisionIds
+        ? [inArray(schema.competitionReceipts.agentRevisionId, agentRevisionIds)]
+        : []),
     ));
 }
 
-async function loadAnalysisHistory(db: DrizzleDB) {
-  return db.select({
+async function loadAnalysisHistory(db: DrizzleDB, gameIds?: string[]) {
+  if (gameIds?.length === 0) return [];
+  const query = db.select({
     reviewId: schema.agentLearningReviewGames.reviewId,
     gameId: schema.agentLearningReviewGames.gameId,
     reviewCreatedAt: schema.agentLearningReviews.createdAt,
@@ -438,6 +500,9 @@ async function loadAnalysisHistory(db: DrizzleDB) {
       schema.agentLearningReviews,
       eq(schema.agentLearningReviewGames.reviewId, schema.agentLearningReviews.id),
     );
+  return gameIds
+    ? query.where(inArray(schema.agentLearningReviewGames.gameId, gameIds))
+    : query;
 }
 
 async function loadEvents(db: DrizzleDB) {
@@ -819,17 +884,6 @@ function summarizeMutationReceipt(value: Record<string, unknown>): AdminOwnerLea
       ? value.warnings.filter((warning): warning is string => typeof warning === "string")
       : [],
   };
-}
-
-function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, T[]> {
-  const groups = new Map<string, T[]>();
-  for (const row of rows) {
-    const identity = key(row);
-    const group = groups.get(identity) ?? [];
-    group.push(row);
-    groups.set(identity, group);
-  }
-  return groups;
 }
 
 function emptyTokenTotals(): AdminOwnerLearningTokenTotals {

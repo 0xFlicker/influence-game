@@ -301,12 +301,21 @@ export async function projectOwnerLearningEvidence(
     cursorSecret?: string;
   },
 ): Promise<OwnerLearningEvidenceProjection> {
-  const projectedGames: OwnerLearningProjectedGameEvidence[] = [];
-  for (const selectedGame of selection.games) {
-    const postgame = await getPostgameAnalysis(db, selectedGame.gameId, {
-      includeEvidence: true,
-      detailLevel: "full",
-    });
+  const projectedGames = await Promise.all(selection.games.map(async (
+    selectedGame,
+  ): Promise<OwnerLearningProjectedGameEvidence> => {
+    const [postgame, narrativeGroups] = await Promise.all([
+      getPostgameAnalysis(db, selectedGame.gameId, {
+        includeEvidence: true,
+        detailLevel: "full",
+      }),
+      loadReviewedProfileNarrative(db, {
+        ownerUserId: selection.ownerUserId,
+        agentProfileId: selection.agentProfileId,
+        gameId: selectedGame.gameId,
+        cursorSecret: options.cursorSecret,
+      }),
+    ]);
     if (!postgame.ok) throw new Error(`Canonical evidence unavailable: ${postgame.status}`);
     const playerSummary = postgame.analysis.playerSummaries.find((entry) =>
       entry.player.id === selectedGame.playerId
@@ -348,12 +357,6 @@ export async function projectOwnerLearningEvidence(
       },
       diagnostics: playerSummary.diagnostics,
     };
-    const narrativeGroups = await loadReviewedProfileNarrative(db, {
-      ownerUserId: selection.ownerUserId,
-      agentProfileId: selection.agentProfileId,
-      gameId: selectedGame.gameId,
-      cursorSecret: options.cursorSecret,
-    });
     const canonicalMoments = candidateMomentsFromCanonicalEvidence(
       selection.agentProfileId,
       selectedGame.gameId,
@@ -385,7 +388,7 @@ export async function projectOwnerLearningEvidence(
       sourceCaptureVersion,
       sourceHash,
     });
-    projectedGames.push({
+    return {
       gameId: selectedGame.gameId,
       gameEvidenceId,
       canonicalFacts,
@@ -394,8 +397,8 @@ export async function projectOwnerLearningEvidence(
       candidateMoments,
       sourceHash,
       sourceCaptureVersion,
-    });
-  }
+    };
+  }));
 
   const analysisTrack = classifyOwnerLearningEvidence(projectedGames.map((game) => ({
     eliminatedRound: game.canonicalFacts.reviewedPlayer.eliminatedRound,

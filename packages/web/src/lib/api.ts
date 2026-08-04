@@ -1955,6 +1955,22 @@ export interface OwnerLearningReview {
   resolvedAt: string | null;
 }
 
+export type OwnerLearningReviewStatus = Pick<
+  OwnerLearningReview,
+  | "analysisStatus"
+  | "stage"
+  | "capacitySubstatus"
+  | "resolution"
+  | "proposalFingerprint"
+  | "safeFailureCode"
+  | "retryable"
+  | "logicalCallCount"
+  | "diveCount"
+  | "applyDisposition"
+  | "updatedAt"
+  | "resolvedAt"
+>;
+
 export interface OwnerLearningPreflight {
   status: "awaiting_evidence" | "ready" | "generation_unavailable";
   selection: {
@@ -2139,6 +2155,16 @@ export async function getOwnerLearningReview(
     ? `?agentProfileId=${encodeURIComponent(agentProfileId)}`
     : "";
   return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}${query}`);
+}
+
+export async function getOwnerLearningReviewStatus(
+  reviewId: string,
+  agentProfileId?: string,
+): Promise<OwnerLearningReviewStatus> {
+  const query = agentProfileId
+    ? `?agentProfileId=${encodeURIComponent(agentProfileId)}`
+    : "";
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/status${query}`);
 }
 
 export async function retryOwnerLearningReview(reviewId: string): Promise<OwnerLearningReview> {

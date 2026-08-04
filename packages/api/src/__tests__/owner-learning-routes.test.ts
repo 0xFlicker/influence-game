@@ -27,7 +27,12 @@ describe("owner learning REST routes", () => {
     const app = new Hono().route("/", createOwnerLearningRoutes(db));
 
     expect((await app.request(`/api/agent-learning/reviews/${reviewId}`)).status).toBe(401);
+    expect((await app.request(`/api/agent-learning/reviews/${reviewId}/status`)).status).toBe(401);
     const foreign = await app.request(`/api/agent-learning/reviews/${reviewId}`, authGet(strangerToken));
+    const foreignStatus = await app.request(
+      `/api/agent-learning/reviews/${reviewId}/status`,
+      authGet(strangerToken),
+    );
     const missing = await app.request("/api/agent-learning/reviews/missing-review", authGet(ownerToken));
     const mismatchedProfile = await app.request(
       `/api/agent-learning/reviews/${reviewId}?agentProfileId=${stranger.agentProfileId}`,
@@ -35,9 +40,14 @@ describe("owner learning REST routes", () => {
     );
 
     expect(foreign.status).toBe(404);
+    expect(foreignStatus.status).toBe(404);
     expect(missing.status).toBe(404);
     expect(mismatchedProfile.status).toBe(404);
     expect(await foreign.json()).toEqual(await missing.json());
+    expect(await foreignStatus.json()).toEqual({
+      error: "Review unavailable",
+      code: "unavailable",
+    });
     expect(await mismatchedProfile.json()).toEqual({
       error: "Review unavailable",
       code: "unavailable",
@@ -139,6 +149,19 @@ describe("owner learning REST routes", () => {
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
+    const status = await app.request(
+      `/api/agent-learning/reviews/${startedBody.reviewId}/status?agentProfileId=${fixture.agentProfileId}`,
+      authGet(token),
+    );
+    expect(status.status).toBe(200);
+    const statusBody = await status.json() as Record<string, unknown>;
+    expect(statusBody).toMatchObject({
+      analysisStatus: "queued",
+      stage: "evidence_ready",
+      applyDisposition: "not_ready",
+    });
+    expect(statusBody).not.toHaveProperty("evidence");
+    expect(statusBody).not.toHaveProperty("result");
 
     const firstMcpOffer = await app.request(
       `/api/agent-learning/reviews/${startedBody.reviewId}/mcp-offer-viewed`,

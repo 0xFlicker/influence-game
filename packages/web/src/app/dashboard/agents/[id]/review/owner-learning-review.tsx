@@ -12,6 +12,8 @@ import {
   OWNER_LEARNING_STAGES,
   activityRows,
   canonicalFacts,
+  domCoordinate,
+  humanize,
   momentTargetId,
   recommendationSupportLabel,
   stageIndex,
@@ -461,25 +463,12 @@ function momentLabel(kind: string): string {
   return labels[kind] ?? humanize(kind);
 }
 
-function humanize(value: string): string {
-  return value.replaceAll("_", " ").toLowerCase();
-}
-
 function shortGame(value: string): string {
   return value.length > 12 ? value.slice(0, 8) : value;
 }
 
 function shortRevision(value: string): string {
   return value.length > 12 ? `Revision ${value.slice(0, 8)}` : `Revision ${value}`;
-}
-
-function domCoordinate(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
 }
 
 interface CandidateMoment {

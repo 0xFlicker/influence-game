@@ -224,6 +224,22 @@ export interface OwnerLearningReviewDTO {
   resolvedAt: string | null;
 }
 
+export type OwnerLearningReviewStatusDTO = Pick<
+  OwnerLearningReviewDTO,
+  | "analysisStatus"
+  | "stage"
+  | "capacitySubstatus"
+  | "resolution"
+  | "proposalFingerprint"
+  | "safeFailureCode"
+  | "retryable"
+  | "logicalCallCount"
+  | "diveCount"
+  | "applyDisposition"
+  | "updatedAt"
+  | "resolvedAt"
+>;
+
 export function parseOwnerLearningStartIdempotencyKey(value: unknown): string {
   if (typeof value !== "string") {
     throw new Error("Owner learning idempotency key must be a string");

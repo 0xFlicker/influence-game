@@ -10,6 +10,7 @@ import {
   getAuthToken,
   getOwnerLearningEligibleInputs,
   getOwnerLearningReview,
+  getOwnerLearningReviewStatus,
   preflightOwnerLearningReview,
   recordOwnerLearningMcpOfferViewed,
   recordOwnerLearningRecommendationsViewed,
@@ -20,6 +21,7 @@ import {
   type OwnerLearningEvidenceRef,
   type OwnerLearningPreflight,
   type OwnerLearningReview,
+  type OwnerLearningReviewStatus,
   type SavedAgent,
 } from "@/lib/api";
 import { OwnerLearningEntryView } from "./owner-learning-entry";
@@ -245,6 +247,22 @@ export function OwnerLearningReviewWorkspace({
     }
   }, [agentId, reviewId]);
 
+  const pollReview = useCallback(async () => {
+    if (!getAuthToken()) return null;
+    try {
+      const status = await getOwnerLearningReviewStatus(reviewId, agentId);
+      if (isReviewStatusTerminal(status)) return loadReview(false);
+      setReview((current) => {
+        if (!current || reviewStatusSignature(current) === reviewStatusSignature(status)) return current;
+        return { ...current, ...status };
+      });
+      setError(null);
+      return status;
+    } catch {
+      return null;
+    }
+  }, [agentId, loadReview, reviewId]);
+
   useEffect(() => {
     if (!getAuthToken()) return;
     void loadReview();
@@ -264,7 +282,7 @@ export function OwnerLearningReviewWorkspace({
     let attempt = 0;
     let timer = 0;
     const poll = async () => {
-      const next = await loadReview(false);
+      const next = await pollReview();
       if (cancelled || !next || !isReviewPolling(next)) return;
       timer = window.setTimeout(() => void poll(), delays[Math.min(attempt++, delays.length - 1)]);
     };
@@ -273,7 +291,7 @@ export function OwnerLearningReviewWorkspace({
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [loadReview, polling]);
+  }, [pollReview, polling]);
 
   useEffect(() => {
     if (!review) return;
@@ -384,6 +402,26 @@ export function OwnerLearningReviewWorkspace({
       />
     </div>
   );
+}
+
+function reviewStatusSignature(review: OwnerLearningReviewStatus): string {
+  return [
+    review.analysisStatus,
+    review.stage,
+    review.capacitySubstatus ?? "",
+    review.resolution ?? "",
+    review.proposalFingerprint ?? "",
+    review.safeFailureCode ?? "",
+    review.retryable ? "1" : "0",
+    review.logicalCallCount,
+    review.diveCount,
+    review.applyDisposition,
+    review.resolvedAt ?? "",
+  ].join(":");
+}
+
+function isReviewStatusTerminal(review: OwnerLearningReviewStatus): boolean {
+  return review.resolution != null || ["ready", "no_change", "failed"].includes(review.analysisStatus);
 }
 
 function startResultMessage(status: string, nextEligibleAt: string | null): string {

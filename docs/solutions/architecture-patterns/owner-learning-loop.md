@@ -49,6 +49,8 @@ One or two thin round-one/two eliminations return awaiting evidence with no paid
 
 One owner may have at most one unresolved review, regardless of Agent Profile or whether web or MCP started it. The review has a stable ID and canonical web URL. Web and MCP list/read the same persisted DTO, so closing one client never strands the work.
 
+The web waiting state loads the full owner-authorized evidence DTO once, then polls a lean owner-authorized lifecycle status. Unchanged heartbeats retain the existing React state, while terminal status triggers one full refetch for the validated result. This keeps the deterministic facts visible while avoiding repeated evidence reads and transfers during model work.
+
 Starting buys the review. Owners cannot cancel and a provider failure does not refund the credit or rolling allowance. Retry preserves the checkpoint and lifetime budgets. A ready owner may:
 
 - apply only the exact persisted `strategyStyle` proposal and proposal fingerprint;

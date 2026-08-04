@@ -2,7 +2,7 @@ import type {
   OwnerLearningEvidenceRef,
   OwnerLearningPreflight,
   OwnerLearningRecommendation,
-  OwnerLearningReview,
+  OwnerLearningReviewStatus,
   OwnerLearningStage,
 } from "@/lib/api";
 
@@ -85,7 +85,7 @@ export function stageIndex(stage: OwnerLearningStage): number {
   return Math.max(0, OWNER_LEARNING_STAGES.findIndex((entry) => entry.stage === stage));
 }
 
-export function isReviewPolling(review: OwnerLearningReview): boolean {
+export function isReviewPolling(review: OwnerLearningReviewStatus): boolean {
   return review.resolution == null
     && (review.analysisStatus === "queued" || review.analysisStatus === "running");
 }
@@ -253,11 +253,11 @@ function playerName(value: unknown): string | null {
   return typeof player.name === "string" && player.name.trim() ? player.name : null;
 }
 
-function humanize(value: string): string {
+export function humanize(value: string): string {
   return value.replaceAll("_", " ").toLowerCase();
 }
 
-function domCoordinate(value: string): string {
+export function domCoordinate(value: string): string {
   let hash = 2166136261;
   for (let index = 0; index < value.length; index += 1) {
     hash ^= value.charCodeAt(index);

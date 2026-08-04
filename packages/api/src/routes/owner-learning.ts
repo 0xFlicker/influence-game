@@ -27,6 +27,7 @@ import {
 } from "../services/owner-learning-eligibility.js";
 import {
   getOwnedOwnerLearningReview,
+  getOwnedOwnerLearningReviewStatus,
   listOpenOwnedOwnerLearningReviews,
   OwnerLearningReadError,
 } from "../services/owner-learning-read.js";
@@ -157,6 +158,20 @@ export function createOwnerLearningRoutes(
   app.get("/api/agent-learning/reviews/:reviewId", requireAuth(db), async (c) => {
     try {
       return c.json(await getOwnedOwnerLearningReview(db, {
+        ownerUserId: c.get("user").id,
+        reviewId: c.req.param("reviewId"),
+        ...(c.req.query("agentProfileId")
+          ? { agentProfileId: c.req.query("agentProfileId") }
+          : {}),
+      }));
+    } catch (error) {
+      return mapOwnerLearningError(c, error);
+    }
+  });
+
+  app.get("/api/agent-learning/reviews/:reviewId/status", requireAuth(db), async (c) => {
+    try {
+      return c.json(await getOwnedOwnerLearningReviewStatus(db, {
         ownerUserId: c.get("user").id,
         reviewId: c.req.param("reviewId"),
         ...(c.req.query("agentProfileId")

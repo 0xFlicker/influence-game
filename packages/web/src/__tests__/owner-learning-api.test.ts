@@ -4,6 +4,7 @@ import {
   dismissOwnerLearningPrompt,
   getOwnerLearningEligibleInputs,
   getOwnerLearningReview,
+  getOwnerLearningReviewStatus,
   listOpenOwnerLearningReviews,
   preflightOwnerLearningReview,
   recordOwnerLearningMcpOfferViewed,
@@ -40,6 +41,7 @@ describe("owner learning web API", () => {
       idempotencyKey: "browser-review-1",
     });
     await getOwnerLearningReview("review/one", "agent/one");
+    await getOwnerLearningReviewStatus("review/one", "agent/one");
     await applyOwnerLearningReview("review/one", "sha256:proposal");
     await resolveOwnerLearningReview("review/one", "declined");
     await updateAgent("agent/one", {
@@ -51,15 +53,16 @@ describe("owner learning web API", () => {
       "https://api.example.test/api/agent-learning/reviews/preflight",
       "https://api.example.test/api/agent-learning/reviews",
       "https://api.example.test/api/agent-learning/reviews/review%2Fone?agentProfileId=agent%2Fone",
+      "https://api.example.test/api/agent-learning/reviews/review%2Fone/status?agentProfileId=agent%2Fone",
       "https://api.example.test/api/agent-learning/reviews/review%2Fone/apply",
       "https://api.example.test/api/agent-learning/reviews/review%2Fone/resolve",
       "https://api.example.test/api/agent-profiles/agent/one",
     ]);
-    expect(JSON.parse(String(requests[3]!.init?.body))).toEqual({
+    expect(JSON.parse(String(requests[4]!.init?.body))).toEqual({
       proposalFingerprint: "sha256:proposal",
     });
-    expect(JSON.parse(String(requests[4]!.init?.body))).toEqual({ resolution: "declined" });
-    expect(JSON.parse(String(requests[5]!.init?.body))).toEqual({
+    expect(JSON.parse(String(requests[5]!.init?.body))).toEqual({ resolution: "declined" });
+    expect(JSON.parse(String(requests[6]!.init?.body))).toEqual({
       strategyStyle: "Adapt after the first vote.",
       sourceReviewId: "review/one",
     });
