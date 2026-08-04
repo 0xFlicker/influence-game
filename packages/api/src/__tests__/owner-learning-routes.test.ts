@@ -60,10 +60,15 @@ describe("owner learning REST routes", () => {
       gameIds: [fixture.gameId],
     }));
     expect(preflight.status).toBe(200);
-    expect(await preflight.json()).toMatchObject({
+    const preflightBody = await preflight.json();
+    expect(preflightBody).toMatchObject({
       status: "generation_unavailable",
       selection: { agentProfileId: fixture.agentProfileId, gameIds: [fixture.gameId] },
     });
+    const preflightSerialized = JSON.stringify(preflightBody);
+    expect(preflightSerialized).not.toContain("reviewInput");
+    expect(preflightSerialized).not.toContain("narrativeGroups");
+    expect(preflightSerialized).not.toContain("gameEvidenceId");
 
     const start = await app.request("/api/agent-learning/reviews", jsonPost(token, {
       agentProfileId: fixture.agentProfileId,

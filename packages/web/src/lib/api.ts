@@ -1961,7 +1961,25 @@ export interface OwnerLearningPreflight {
     reviewedRevisionId: string;
     gameIds: string[];
   };
-  evidence: unknown;
+  evidence: {
+    analysisTrack: OwnerLearningAnalysisTrack;
+    games: Array<{
+      gameId: string;
+      canonicalFacts: unknown;
+      candidateMoments: Array<{
+        id: string;
+        gameId: string;
+        anchorKind: "canonical_event" | "decision" | "dialogue" | "cognition";
+        sourceCoordinate: string;
+        sourceHash: string;
+        round: number | null;
+        phase: string | null;
+      }>;
+      narrativeCoverage: "rich" | "thin";
+      sourceHash: string;
+      sourceCaptureVersion: string;
+    }>;
+  };
 }
 
 export interface OwnerLearningStartResult {

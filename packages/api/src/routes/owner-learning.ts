@@ -253,7 +253,17 @@ function publicPreflightResult(preflight: OwnerLearningReviewPreflight, generati
       reviewedRevisionId: preflight.selection.currentRevisionId,
       gameIds: preflight.selection.games.map((game) => game.gameId),
     },
-    evidence: preflight.evidence,
+    evidence: {
+      analysisTrack: preflight.evidence.analysisTrack,
+      games: preflight.evidence.games.map((game) => ({
+        gameId: game.gameId,
+        canonicalFacts: game.canonicalFacts,
+        candidateMoments: game.candidateMoments,
+        narrativeCoverage: game.narrativeCoverage,
+        sourceHash: game.sourceHash,
+        sourceCaptureVersion: game.sourceCaptureVersion,
+      })),
+    },
   };
 }
 
