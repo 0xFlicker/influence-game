@@ -2,8 +2,10 @@ import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
+  activateClerkExistingSession,
   AUTHENTICATION_METHOD_MATRIX,
-  updatedClerkResource,
+  runClerkPasswordAttempt,
+  runClerkProtectAttempt,
 } from "../components/clerk-password-flow";
 import {
   ApiError,
@@ -116,56 +118,160 @@ describe("unified authentication wrapper", () => {
     expect(authenticationRouteSource).toContain('href="/sign-up"');
   });
 
-  it("reacts to Clerk sign-in resource changes instead of polling", () => {
+  it("continues from Clerk's settled password resource without polling or identity gates", () => {
     const signInSubmit = passwordFlowSource.slice(
       passwordFlowSource.indexOf('if (intent === "sign_in")'),
       passwordFlowSource.indexOf("currentSignupOwnsCompletionRef.current = true"),
     );
 
     expect(signInSubmit).not.toContain("updatedClerkResource");
-    expect(passwordFlowSource).toContain("useEffectEvent");
-    expect(passwordFlowSource).toContain(
-      "[localBusy, providerBusy, signIn, signInTransition]",
-    );
-    expect(passwordFlowSource).toContain(
-      'localBusy || providerBusy || signInTransition !== "idle"',
-    );
-    expect(passwordFlowSource).toContain(
-      'signInTransition === "awaiting_password_result"',
-    );
-    expect(passwordFlowSource).toContain(
-      "signIn === signInTransitionSourceRef.current",
-    );
-    expect(passwordFlowSource).toContain(
-      "signInTransitionSourceRef.current = signIn",
-    );
-    expect(passwordFlowSource).toContain(
-      "signInTransitionProtectTokenRef.current",
-    );
-    expect(passwordFlowSource).toContain(
-      "currentSignIn.protectCheck?.token",
-    );
-    expect(passwordFlowSource).toContain("window.setTimeout");
-    expect(passwordFlowSource).toContain(
-      "Sign-in did not finish. Try again or continue with Privy.",
-    );
+    expect(signInSubmit).toContain("await attemptPasswordSignIn()");
+    expect(passwordFlowSource).toContain("await runClerkPasswordAttempt({");
+    expect(passwordFlowSource).not.toContain("SignInTransition");
+    expect(passwordFlowSource).not.toContain("signInTransitionSourceRef");
+    expect(passwordFlowSource).not.toContain("window.setTimeout");
   });
 
-  it("waits past an identity-only update for a settled provider status", async () => {
-    const previous = { status: "needs_first_factor" };
-    let reads = 0;
-    const current = await updatedClerkResource(
-      () => {
-        reads += 1;
-        if (reads === 1) return { status: "needs_first_factor" };
-        return { status: "complete" };
+  it("password-verifies before activating Clerk's structured existing session", async () => {
+    const calls: string[] = [];
+    const signIn: {
+      existingSession?: { sessionId: string };
+      password: (params: {
+        emailAddress: string;
+        password: string;
+      }) => Promise<{
+        error: { code: string; message: string } | null;
+      }>;
+    } = {
+      async password({ emailAddress }) {
+        calls.push(`password:${emailAddress}`);
+        signIn.existingSession = { sessionId: "session-for-submitted-email" };
+        return {
+          error: {
+            code: "identifier_already_signed_in",
+            message: "You're already signed in.",
+          },
+        };
       },
-      previous,
-      (resource) => resource.status === "complete",
-    );
+    };
 
-    expect(reads).toBe(2);
-    expect(current.status).toBe("complete");
+    await runClerkPasswordAttempt({
+      signIn,
+      emailAddress: "submitted@example.test",
+      password: "secret",
+      continueSignIn: async (currentSignIn) => {
+        await activateClerkExistingSession({
+          signIn: currentSignIn,
+          setActive: async (sessionId) => {
+            calls.push(`activate:${sessionId}`);
+          },
+          exchange: async () => {
+            calls.push("exchange");
+          },
+        });
+      },
+    });
+
+    expect(calls).toEqual([
+      "password:submitted@example.test",
+      "activate:session-for-submitted-email",
+      "exchange",
+    ]);
+  });
+
+  it("does not let a stale existing session mask a password failure", async () => {
+    let continued = false;
+    const signIn = {
+      existingSession: { sessionId: "stale-session" },
+      async password() {
+        return {
+          error: {
+            code: "form_password_incorrect",
+            message: "Password is incorrect.",
+          },
+        };
+      },
+    };
+
+    await expect(runClerkPasswordAttempt({
+      signIn,
+      emailAddress: "submitted@example.test",
+      password: "wrong",
+      continueSignIn: async () => {
+        continued = true;
+      },
+    })).rejects.toThrow("Password is incorrect.");
+    expect(continued).toBeFalse();
+  });
+
+  it("never exposes Clerk's already-signed-in error without a usable session", async () => {
+    const signIn = {
+      async password() {
+        return {
+          error: {
+            code: "identifier_already_signed_in",
+            message: "You're already signed in.",
+          },
+        };
+      },
+    };
+
+    await expect(runClerkPasswordAttempt({
+      signIn,
+      emailAddress: "submitted@example.test",
+      password: "secret",
+      continueSignIn: async () => {},
+    })).rejects.toThrow("Sign-in could not finish. Reload and try again.");
+  });
+
+  it("re-runs password verification after an Influence exchange failure", async () => {
+    const passwordEmails: string[] = [];
+    const activatedSessions: string[] = [];
+    let exchangeAttempts = 0;
+    const signIn: {
+      existingSession?: { sessionId: string };
+      password: (params: {
+        emailAddress: string;
+        password: string;
+      }) => Promise<{ error: null }>;
+    } = {
+      async password({ emailAddress }) {
+        passwordEmails.push(emailAddress);
+        signIn.existingSession = { sessionId: `session:${emailAddress}` };
+        return { error: null };
+      },
+    };
+    const attempt = (emailAddress: string) => runClerkPasswordAttempt({
+      signIn,
+      emailAddress,
+      password: "secret",
+      continueSignIn: async (currentSignIn) => {
+        await activateClerkExistingSession({
+          signIn: currentSignIn,
+          setActive: async (sessionId) => {
+            activatedSessions.push(sessionId);
+          },
+          exchange: async () => {
+            exchangeAttempts += 1;
+            if (exchangeAttempts === 1) throw new Error("network unavailable");
+          },
+        });
+      },
+    });
+
+    await expect(attempt("first@example.test")).rejects.toThrow(
+      "network unavailable",
+    );
+    await attempt("second@example.test");
+
+    expect(passwordEmails).toEqual([
+      "first@example.test",
+      "second@example.test",
+    ]);
+    expect(activatedSessions).toEqual([
+      "session:first@example.test",
+      "session:second@example.test",
+    ]);
   });
 
   it("runs and submits Clerk Protect checks instead of dead-ending sign-in", () => {
@@ -178,18 +284,57 @@ describe("unified authentication wrapper", () => {
   });
 
   it("retries the gated password operation after a Protect proof", () => {
+    expect(passwordFlowSource).toContain("await runClerkProtectAttempt({");
     expect(passwordFlowSource).toContain(
-      'signInTransition === "retry_after_protect"',
+      "await attemptPasswordSignIn()",
     );
-    expect(passwordFlowSource).toContain(
-      'setSignInTransition("awaiting_password_result")',
-    );
-    expect(passwordFlowSource).toContain(
-      "await submitCredentials()",
-    );
-    expect(passwordFlowSource).toContain(
-      'setStep("credentials");\n      await submitCredentials()',
-    );
+  });
+
+  it("does not let an existing session mask a failed Protect proof", async () => {
+    let continued = false;
+    const signIn = {
+      existingSession: { sessionId: "ambient-session" },
+      status: "needs_protect_check",
+      async submitProtectCheck() {
+        return { error: { message: "Protect proof rejected" } };
+      },
+    };
+
+    await expect(runClerkProtectAttempt({
+      signIn,
+      proofToken: "bad-proof",
+      retryPassword: async () => {},
+      continueSignIn: async () => {
+        continued = true;
+      },
+    })).rejects.toThrow("Protect proof rejected");
+    expect(continued).toBeFalse();
+  });
+
+  it("retries password when Protect returns to the first-factor step", async () => {
+    let passwordRetries = 0;
+    let continuations = 0;
+    const signIn = {
+      status: "needs_protect_check",
+      async submitProtectCheck() {
+        signIn.status = "needs_first_factor";
+        return { error: null };
+      },
+    };
+
+    await runClerkProtectAttempt({
+      signIn,
+      proofToken: "valid-proof",
+      retryPassword: async () => {
+        passwordRetries += 1;
+      },
+      continueSignIn: async () => {
+        continuations += 1;
+      },
+    });
+
+    expect(passwordRetries).toBe(1);
+    expect(continuations).toBe(0);
   });
 
   it("restores a fresh inline password attempt after Privy cancellation", () => {
