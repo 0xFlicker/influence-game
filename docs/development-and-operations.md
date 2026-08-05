@@ -361,6 +361,12 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `LINODE_PRIVATE_CONTENT_SECRET_KEY` | Required for private traces | -- | Secret key scoped to the private content bucket |
 | `LINODE_PRIVATE_CONTENT_BUCKET` | Required for private traces | -- | Private content bucket for raw prompt/response/reasoning trace content |
 
+Public profile-picture objects use identity-independent random asset keys under
+`pfp/`; internal account, authentication-provider, agent, and request IDs must
+never appear in their paths. Use
+[`docs/deployment/avatar-storage-privacy-rotation.md`](deployment/avatar-storage-privacy-rotation.md)
+to inventory, repoint, verify, and remove older identity-bearing objects.
+
 For local API development and DB-backed tests, start the shared Postgres container and ensure both local databases exist. Local Postgres runs in Docker on `127.0.0.1:54320`; sandboxed agents usually need elevated sandbox access for these DB-backed commands.
 
 ```bash

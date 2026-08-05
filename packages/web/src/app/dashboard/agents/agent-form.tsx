@@ -193,7 +193,7 @@ export function AgentForm({ initial, onSubmit, onCancel, submitLabel = "Save Age
         strategyStyle: strategyStyle.trim() || undefined,
         personaKey,
         gender,
-        avatarUrl: explicitAvatarUrl,
+        avatarUrl: explicitAvatarUrl === initial?.avatarUrl ? undefined : explicitAvatarUrl,
         avatarGenerationRequestId: isEditing || explicitAvatarUrl || draftIsStale
           ? undefined
           : draftAvatarCompletion?.generationRequestId,

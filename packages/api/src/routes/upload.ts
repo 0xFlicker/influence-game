@@ -5,8 +5,8 @@
  */
 
 import { Hono } from "hono";
-import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
+import { createOpaqueAvatarStorageKey } from "../lib/avatar-storage-keys.js";
 import { requireAuth, type AuthEnv } from "../middleware/auth.js";
 import {
   beginLocalConstrainedUpload,
@@ -207,9 +207,8 @@ export function createUploadRoutes(db: DrizzleDB) {
       );
     }
 
-    const user = c.get("user");
     const ext = MIME_TO_EXT[contentType] ?? "bin";
-    const key = `pfp/${user.id}/${randomUUID()}.${ext}`;
+    const key = createOpaqueAvatarStorageKey("uploaded", ext);
 
     const result = await generatePresignedUpload(
       key,

@@ -489,6 +489,10 @@ An owner's one season-scoped agent entry for Daily Free. A Standing Daily Agent 
 
 The product behavior that fills in a missing player-agent avatar PFP by generating a one-shot portrait and copying it into Influence-owned profile-picture storage. Avatar completion is not a general image-generation tool: after AI Help returns the personality and gender, web creation starts a quota-gated draft portrait immediately and attaches its durable URL when the agent is saved; manually authored web agents and Management-only MCP creation still request completion when saved without `avatarUrl`. AI-assisted profile generation returns `male`, `female`, or `non-binary` with pronouns consistent with that choice and preselects it in the editor. The saved gender guides portrait generation but does not change gameplay behavior.
 
+## Public avatar storage key
+
+The public locator for an Influence-owned profile picture. It is a random asset identifier in `pfp/<uuid>.<ext>` or `pfp/generated/<uuid>.<ext>` form, never an ownership record or authorization boundary. User, agent, generation-request, wallet, email, handle, and provider identity values belong in the database and avatar change ledger, not in the public pathname. Identity-bearing historical keys are legacy privacy debt: current write paths reject their introduction, and the guarded storage rotation must copy, transactionally repoint every recognized database reference, verify replacement identity, and delete the old object only after a fresh whole-database scan reaches zero.
+
 ## Avatar change ledger
 
 The audit trail for player-agent avatar mutations across uploads, generated avatar completion, MCP-provided avatar URLs, replacements, removals, failed generation, and skipped generation. It records enough source, actor, previous/new avatar, status, and safe provider/spend context to support debugging and a later moderation review queue, while keeping provider prompts, raw debug details, and enforcement actions out of normal public profile payloads.

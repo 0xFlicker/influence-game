@@ -8,6 +8,7 @@ import type {
   AvatarGenerationTriggerSource,
 } from "../db/schema.js";
 import { AGENT_GENDER_LABELS, isAgentGender, type AgentGender } from "../lib/agent-gender.js";
+import { createOpaqueAvatarStorageKey } from "../lib/avatar-storage-keys.js";
 import { storePublicAvatarImage } from "../lib/storage.js";
 
 const AVATAR_GENERATION_PURPOSE = "agent_profile_completion";
@@ -511,7 +512,7 @@ export async function completeAvatarGenerationRequest(
     const image = await downloadImage(fetchImpl, assetUrl);
     stage = "avatar_store";
     const stored = await storePublicAvatarImage(
-      generatedAvatarKey(request.userId, request.agentProfileId, request.id, image.contentType),
+      generatedAvatarKey(image.contentType),
       image.contentType,
       image.body,
       options.publicBaseUrl,
@@ -1153,14 +1154,9 @@ async function readBoundedImageBody(response: Response): Promise<ArrayBuffer> {
   return body.buffer as ArrayBuffer;
 }
 
-function generatedAvatarKey(
-  userId: string,
-  agentProfileId: string,
-  generationRequestId: string,
-  contentType: string,
-): string {
+function generatedAvatarKey(contentType: string): string {
   const ext = contentType === "image/webp" ? "webp" : contentType === "image/jpeg" ? "jpg" : "png";
-  return `pfp/generated/${safeKeySegment(userId)}/${safeKeySegment(agentProfileId)}/${safeKeySegment(generationRequestId)}.${ext}`;
+  return createOpaqueAvatarStorageKey("generated", ext);
 }
 
 function normalizeImageContentType(value: string | null): string | null {
@@ -1248,10 +1244,6 @@ function hashPrompt(prompt: string): string {
 
 function scrubPromptField(value: string): string {
   return value.replace(/\s+/g, " ").trim().slice(0, 800);
-}
-
-function safeKeySegment(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
 }
 
 function sanitizeFailureCode(value: string): string {

@@ -27,6 +27,7 @@ WORKDIR /app/packages/api
 RUN bun build src/index.ts --target=bun --outdir=dist --sourcemap=external \
   && bun build src/scripts/backfill-game-watch-state-summaries.ts --target=bun --outdir=dist --entry-naming=backfill-game-watch-state-summaries.js --sourcemap=external \
   && bun build src/scripts/backfill-agent-revisions.ts --target=bun --outdir=dist --entry-naming=backfill-agent-revisions.js --sourcemap=external \
+  && bun build src/scripts/rotate-private-avatar-storage-keys.ts --target=bun --outdir=dist --entry-naming=rotate-private-avatar-storage-keys.js --sourcemap=external \
   && bun build src/scripts/preflight-auth-identities.ts --target=bun --outdir=dist --entry-naming=preflight-auth-identities.js --sourcemap=external
 
 # Slim runtime — no node_modules needed
