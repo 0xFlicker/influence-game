@@ -229,6 +229,10 @@
   line-height: 1.58;
 }
 
+.olm-decision-status {
+  min-height: 3.16em;
+}
+
 .olm-button-row {
   display: flex;
   flex-wrap: wrap;
@@ -277,6 +281,22 @@
 
 .olm-button-primary:not(:disabled):hover {
   background: rgb(var(--accent-rgb));
+}
+
+.olm-button-icon {
+  display: inline-flex;
+  width: 13px;
+  height: 13px;
+  flex: 0 0 13px;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.olm-button-spinner {
+  border: 2px solid rgb(255 255 255 / 0.3);
+  border-top-color: currentColor;
+  border-radius: 999px;
 }
 
 .olm-button-secondary {
@@ -1192,6 +1212,10 @@
   .olm-entry-hero {
     gap: 24px;
     margin-top: 30px;
+  }
+
+  .olm-decision-status {
+    min-height: 4.74em;
   }
 
   .olm-hero-copy h2 {

@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { OwnerLearningEligibleInputs, OwnerLearningPreflight } from "../lib/api";
 import { OwnerLearningActivationView } from "../app/dashboard/agents/[id]/review/owner-learning-activation";
@@ -73,6 +75,7 @@ describe("owner learning activation", () => {
         selectedGameIds={["game-1", "game-3"]}
         preflight={preflightFixture("evidence_rich")}
         preflightPending={false}
+        preflightFailed={false}
         startPending={false}
         notice={null}
         onChangeProfile={() => undefined}
@@ -92,6 +95,99 @@ describe("owner learning activation", () => {
     expect(html).not.toContain("custom-game");
   });
 
+  test("shows evidence-loading activity with stable geometry reservations", () => {
+    const loading = renderToStaticMarkup(
+      <OwnerLearningEntryView
+        eligible={eligibleFixture()}
+        agent={null}
+        selectedProfileId="agent-1"
+        selectedGameIds={["game-1", "game-3"]}
+        preflight={null}
+        preflightPending
+        preflightFailed={false}
+        startPending={false}
+        notice={null}
+        onChangeProfile={() => undefined}
+        onToggleGame={() => undefined}
+        onStart={() => undefined}
+      />,
+    );
+    const refreshing = renderToStaticMarkup(
+      <OwnerLearningEntryView
+        eligible={eligibleFixture()}
+        agent={null}
+        selectedProfileId="agent-1"
+        selectedGameIds={["game-1", "game-3"]}
+        preflight={preflightFixture("evidence_rich")}
+        preflightPending
+        preflightFailed={false}
+        startPending={false}
+        notice={null}
+        onChangeProfile={() => undefined}
+        onToggleGame={() => undefined}
+        onStart={() => undefined}
+      />,
+    );
+    const failed = renderToStaticMarkup(
+      <OwnerLearningEntryView
+        eligible={eligibleFixture()}
+        agent={null}
+        selectedProfileId="agent-1"
+        selectedGameIds={["game-1", "game-3"]}
+        preflight={null}
+        preflightPending={false}
+        preflightFailed
+        startPending={false}
+        notice="The selected facts could not be loaded."
+        onChangeProfile={() => undefined}
+        onToggleGame={() => undefined}
+        onStart={() => undefined}
+      />,
+    );
+    const ready = renderToStaticMarkup(
+      <OwnerLearningEntryView
+        eligible={eligibleFixture()}
+        agent={null}
+        selectedProfileId="agent-1"
+        selectedGameIds={["game-1", "game-3"]}
+        preflight={preflightFixture("evidence_rich")}
+        preflightPending={false}
+        preflightFailed={false}
+        startPending={false}
+        notice={null}
+        onChangeProfile={() => undefined}
+        onToggleGame={() => undefined}
+        onStart={() => undefined}
+      />,
+    );
+    const css = readFileSync(
+      join(import.meta.dir, "../app/dashboard/agents/[id]/review/owner-learning-review.css"),
+      "utf8",
+    );
+
+    expect(loading).toContain('class="olm-decision-status"');
+    expect(ready).toContain('class="olm-decision-status"');
+    expect(loading).toContain('aria-busy="true"');
+    expect(loading).toContain("olm-button-icon olm-button-spinner animate-spin motion-reduce:animate-none");
+    expect(loading).toContain("Loading the accepted actions and counterplay first");
+    expect(refreshing).toContain('aria-busy="true"');
+    expect(refreshing).toContain("olm-button-spinner");
+    expect(refreshing).toContain('class="olm-button olm-button-primary" disabled=""');
+    expect(refreshing).not.toContain("Placed 1 after four rounds.");
+    expect(failed).toContain('aria-busy="false"');
+    expect(failed).toContain("Evidence loading stopped. Change the selected games to try again.");
+    expect(failed).not.toContain("olm-button-spinner");
+    expect(ready).toContain('aria-busy="false"');
+    expect(ready).not.toContain("olm-button-spinner");
+    expect(ready).toContain('class="olm-button-icon"');
+    expect(css).toContain(".olm-decision-status");
+    expect(css).toContain("min-height: 3.16em");
+    expect(css).toContain("width: 13px");
+    expect(css).toContain("height: 13px");
+    expect(css).toContain("flex: 0 0 13px");
+    expect(css).toMatch(/@media \(max-width: 620px\)[\s\S]*?\.olm-decision-status \{\s*min-height: 4\.74em;/);
+  });
+
   test("keeps thin evidence free and gives three early exits a health-check frame", () => {
     const awaiting = renderToStaticMarkup(
       <OwnerLearningEntryView
@@ -101,6 +197,7 @@ describe("owner learning activation", () => {
         selectedGameIds={["game-1"]}
         preflight={preflightFixture("awaiting_evidence")}
         preflightPending={false}
+        preflightFailed={false}
         startPending={false}
         notice={null}
         onChangeProfile={() => undefined}
@@ -116,6 +213,7 @@ describe("owner learning activation", () => {
         selectedGameIds={["game-1", "game-2", "game-3"]}
         preflight={preflightFixture("strategy_health_check")}
         preflightPending={false}
+        preflightFailed={false}
         startPending={false}
         notice={null}
         onChangeProfile={() => undefined}
@@ -194,6 +292,7 @@ function renderEntry(eligible: OwnerLearningEligibleInputs, preflight: OwnerLear
       selectedGameIds={["game-1"]}
       preflight={preflight}
       preflightPending={false}
+      preflightFailed={false}
       startPending={false}
       notice={null}
       onChangeProfile={() => undefined}

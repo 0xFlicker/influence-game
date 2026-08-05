@@ -36,6 +36,7 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
   const [preflight, setPreflight] = useState<OwnerLearningPreflight | null>(null);
   const [loading, setLoading] = useState(true);
   const [preflightPending, setPreflightPending] = useState(false);
+  const [preflightFailed, setPreflightFailed] = useState(false);
   const [startPending, setStartPending] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const preflightRequest = useRef(0);
@@ -58,6 +59,7 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
         setSelectedProfileId(profile.agentProfileId);
         setSelectedGameIds(profile.recommendedGameIds);
       }
+      setPreflightFailed(false);
       setNotice(null);
     } catch (error) {
       setNotice(apiMessage(error, "Could not load eligible review inputs."));
@@ -81,19 +83,23 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
   useEffect(() => {
     if (!eligible || selectedGameIds.length === 0) {
       setPreflight(null);
+      setPreflightFailed(false);
       return;
     }
     const requestId = ++preflightRequest.current;
     setPreflightPending(true);
+    setPreflightFailed(false);
     preflightOwnerLearningReview({ agentProfileId: selectedProfileId, gameIds: selectedGameIds })
       .then((next) => {
         if (requestId !== preflightRequest.current) return;
         setPreflight(next);
+        setPreflightFailed(false);
         setNotice(null);
       })
       .catch((error) => {
         if (requestId !== preflightRequest.current) return;
         setPreflight(null);
+        setPreflightFailed(true);
         setNotice(apiMessage(error, "The selected facts could not be loaded."));
       })
       .finally(() => {
@@ -107,6 +113,7 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
     setSelectedProfileId(profile.agentProfileId);
     setSelectedGameIds(profile.recommendedGameIds);
     setPreflight(null);
+    setPreflightFailed(false);
     setNotice(null);
     startIdentity.current = null;
   }
@@ -118,6 +125,7 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
       }
       return current.length >= 3 ? current : [...current, gameId];
     });
+    setPreflightFailed(false);
     setNotice(null);
     startIdentity.current = null;
   }
@@ -190,6 +198,7 @@ export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
       selectedGameIds={selectedGameIds}
       preflight={preflight}
       preflightPending={preflightPending}
+      preflightFailed={preflightFailed}
       startPending={startPending}
       notice={notice}
       onChangeProfile={changeProfile}
