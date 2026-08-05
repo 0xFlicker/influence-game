@@ -2,7 +2,13 @@
 
 import { useClerk, useSession, useSignIn, useSignUp } from "@clerk/nextjs";
 import { executeProtectCheck } from "@clerk/shared/internal/clerk-js/protectCheck";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 import Link from "next/link";
 import {
   ApiError,
@@ -41,6 +47,11 @@ type FlowStep =
   | "setup_incomplete"
   | "support_blocked"
   | "success";
+
+type SignInTransition =
+  | "idle"
+  | "awaiting_password_result"
+  | "retry_after_protect";
 
 type ClerkOperationResult = {
   error: { message?: string; longMessage?: string } | null;
@@ -167,6 +178,8 @@ export function ClerkPasswordFlow({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [localBusy, setLocalBusy] = useState(false);
+  const [signInTransition, setSignInTransition] =
+    useState<SignInTransition>("idle");
   const [managedToken, setManagedToken] = useState<string | null>(null);
   const [supportId, setSupportId] = useState<string | null>(null);
   const [correlationId] = useState(supportReference);
@@ -175,9 +188,14 @@ export function ClerkPasswordFlow({
   const resumedCompletionRef = useRef(false);
   const currentSignupOwnsCompletionRef = useRef(false);
   const busyRef = useRef(false);
+  const signInTransitionSourceRef = useRef(signIn);
+  const signInTransitionProtectTokenRef = useRef<string | null>(null);
+  const signInTransitionTimeoutRef = useRef<number | null>(null);
+  const signInTransitionGenerationRef = useRef(0);
   const providerBusy =
     signInFetchStatus === "fetching" || signUpFetchStatus === "fetching";
-  const busy = localBusy || providerBusy;
+  const busy =
+    localBusy || providerBusy || signInTransition !== "idle";
   const getActiveClerkToken = useCallback(async (): Promise<string> => {
     await Promise.resolve();
     const token = await clerk.session?.getToken();
@@ -195,12 +213,15 @@ export function ClerkPasswordFlow({
   }, [error, presentation, step]);
 
   useEffect(() => {
+    clearSignInTransitionTimeout();
+    signInTransitionProtectTokenRef.current = null;
     setEmail(initialEmail);
     setPassword("");
     setCode("");
     setNewPassword("");
     setError(null);
     setStatus("");
+    setSignInTransition("idle");
     setManagedToken(null);
     setSupportId(null);
     setStep("credentials");
@@ -338,7 +359,7 @@ export function ClerkPasswordFlow({
   }
 
   async function run(action: () => Promise<void>, progress: string): Promise<void> {
-    if (busy || busyRef.current) return;
+    if (localBusy || providerBusy || busyRef.current) return;
     busyRef.current = true;
     setLocalBusy(true);
     setError(null);
@@ -355,6 +376,116 @@ export function ClerkPasswordFlow({
       setLocalBusy(false);
     }
   }
+
+  function clearSignInTransitionTimeout(): void {
+    signInTransitionGenerationRef.current += 1;
+    if (signInTransitionTimeoutRef.current === null) return;
+    window.clearTimeout(signInTransitionTimeoutRef.current);
+    signInTransitionTimeoutRef.current = null;
+  }
+
+  function finishSignInTransition(): void {
+    clearSignInTransitionTimeout();
+    signInTransitionProtectTokenRef.current = null;
+    setSignInTransition("idle");
+  }
+
+  function armSignInTransitionTimeout(): void {
+    clearSignInTransitionTimeout();
+    const generation = signInTransitionGenerationRef.current;
+    signInTransitionTimeoutRef.current = window.setTimeout(() => {
+      if (generation !== signInTransitionGenerationRef.current) return;
+      signInTransitionTimeoutRef.current = null;
+      signInTransitionGenerationRef.current += 1;
+      signInTransitionProtectTokenRef.current = null;
+      setSignInTransition("idle");
+      setError("Sign-in did not finish. Try again or continue with Privy.");
+      setStatus("");
+    }, 10_000);
+  }
+
+  useEffect(() => () => {
+    signInTransitionGenerationRef.current += 1;
+    if (signInTransitionTimeoutRef.current !== null) {
+      window.clearTimeout(signInTransitionTimeoutRef.current);
+    }
+  }, []);
+
+  const onSignInTransition = useEffectEvent(async (
+    currentSignIn: typeof signIn,
+  ) => {
+    if (
+      signInTransition === "retry_after_protect"
+      && (currentSignIn.status === "needs_identifier"
+        || currentSignIn.status === "needs_first_factor")
+    ) {
+      finishSignInTransition();
+      setStep("credentials");
+      await submitCredentials();
+      return;
+    }
+
+    if (
+      signInTransition === "awaiting_password_result"
+      && (currentSignIn.status === "needs_identifier"
+        || currentSignIn.status === "needs_first_factor")
+    ) {
+      return;
+    }
+
+    if (
+      signInTransition === "retry_after_protect"
+      && currentSignIn.status === "needs_protect_check"
+      && signInTransitionProtectTokenRef.current !== null
+      && currentSignIn.protectCheck?.token
+        === signInTransitionProtectTokenRef.current
+    ) {
+      return;
+    }
+
+    if (currentSignIn.status === "needs_protect_check") {
+      if (!currentSignIn.protectCheck) {
+        finishSignInTransition();
+        setError("The security check is unavailable. Try again.");
+        setStatus("");
+        return;
+      }
+      finishSignInTransition();
+      setStep("protect_check");
+      setStatus("Complete the security check to continue.");
+      return;
+    }
+
+    if (currentSignIn.status === "needs_new_password") {
+      finishSignInTransition();
+      setStep("new_password");
+      return;
+    }
+
+    if (currentSignIn.status === "complete") {
+      finishSignInTransition();
+      await run(async () => {
+        await exchangeAfterVerification(await finalizeSignIn());
+      }, "Signing in…");
+      return;
+    }
+
+    if (
+      currentSignIn.status === "needs_second_factor"
+      || currentSignIn.status === "needs_client_trust"
+    ) {
+      finishSignInTransition();
+      setError("This account requires an unsupported additional sign-in step.");
+      setStatus("");
+    }
+  });
+
+  useEffect(() => {
+    if (signInTransition === "idle" || localBusy || providerBusy) return;
+    if (signIn === signInTransitionSourceRef.current) return;
+    signInTransitionSourceRef.current = signIn;
+    void onSignInTransition(signIn);
+  }, [localBusy, providerBusy, signIn, signInTransition]);
 
   async function submitCredentials(): Promise<void> {
     if (intent === "reset_password") {
@@ -376,21 +507,16 @@ export function ClerkPasswordFlow({
 
     if (intent === "sign_in") {
       await run(async () => {
-        const previousSignIn = signIn;
+        signInTransitionSourceRef.current = signIn;
+        signInTransitionProtectTokenRef.current = null;
         const result = await signIn.password({
           emailAddress: email.trim(),
           password,
         });
         const message = clerkErrorMessage(result, "Could not sign in.");
         if (message) throw new Error(message);
-        const currentSignIn = await updatedClerkResource(
-          () => signInRef.current,
-          previousSignIn,
-          (current) =>
-            current.status !== "needs_identifier"
-            && current.status !== "needs_first_factor",
-        );
-        await continueSignIn(currentSignIn);
+        setSignInTransition("awaiting_password_result");
+        armSignInTransitionTimeout();
       }, "Signing in…");
       return;
     }
@@ -423,45 +549,19 @@ export function ClerkPasswordFlow({
     }, "Creating your secure sign-in…");
   }
 
-  async function continueSignIn(
-    currentSignIn: typeof signIn,
-  ): Promise<void> {
-    if (currentSignIn.status === "needs_protect_check") {
-      if (!currentSignIn.protectCheck) {
-        throw new Error("The security check is unavailable. Try again.");
-      }
-      setStep("protect_check");
-      setStatus("Complete the security check to continue.");
-      return;
-    }
-    if (currentSignIn.status === "needs_new_password") {
-      setStep("new_password");
-      return;
-    }
-    if (currentSignIn.status !== "complete") {
-      throw new Error("Sign-in did not finish. Try again or continue with Privy.");
-    }
-    await exchangeAfterVerification(await finalizeSignIn());
-  }
-
   async function submitProtectProof(proofToken: string): Promise<void> {
     await run(async () => {
-      const previousSignIn = signInRef.current;
-      const previousProtectToken = previousSignIn.protectCheck?.token;
-      const result = await previousSignIn.submitProtectCheck({ proofToken });
+      signInTransitionSourceRef.current = signIn;
+      signInTransitionProtectTokenRef.current =
+        signIn.protectCheck?.token ?? null;
+      const result = await signIn.submitProtectCheck({ proofToken });
       const message = clerkErrorMessage(
         result,
         "Could not complete the security check.",
       );
       if (message) throw new Error(message);
-      const currentSignIn = await updatedClerkResource(
-        () => signInRef.current,
-        previousSignIn,
-        (current) =>
-          current.status !== "needs_protect_check"
-          || current.protectCheck?.token !== previousProtectToken,
-      );
-      await continueSignIn(currentSignIn);
+      setSignInTransition("retry_after_protect");
+      armSignInTransitionTimeout();
     }, "Finishing security check…");
   }
 
@@ -650,7 +750,14 @@ export function ClerkPasswordFlow({
             The security check could not be loaded. Return to sign in and try
             again.
           </p>
-          <button type="button" className="influence-button-secondary rounded-lg px-4 py-2 text-sm" onClick={() => setStep("credentials")}>
+          <button
+            type="button"
+            className="influence-button-secondary rounded-lg px-4 py-2 text-sm"
+            onClick={() => {
+              setSignInTransition("idle");
+              setStep("credentials");
+            }}
+          >
             Back to sign in
           </button>
         </FlowPanel>
@@ -665,6 +772,7 @@ export function ClerkPasswordFlow({
           protectCheck={protectCheck}
           onProof={(proofToken) => void submitProtectProof(proofToken)}
           onError={() => {
+            setSignInTransition("idle");
             setStep("credentials");
             setError("The security check could not be completed. Try again.");
             setStatus("");
