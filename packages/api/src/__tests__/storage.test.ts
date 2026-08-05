@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { Hono } from "hono";
 import type { DrizzleDB } from "../db/index.js";
+import { createSessionToken } from "../middleware/auth.js";
 import {
   generatePresignedUpload,
   getStorageBackend,
@@ -11,6 +12,7 @@ import {
   storePublicAvatarImage,
 } from "../lib/storage.js";
 import { createUploadRoutes } from "../routes/upload.js";
+import { normalizeAgentAvatarUrlInput } from "../services/agent-profile-management.js";
 import { assertPrivateContentStoragePointer } from "../services/game-evidence.js";
 import { getPrivateTraceStorageConfig } from "../services/private-trace-storage.js";
 
@@ -101,6 +103,45 @@ describe("local filesystem upload storage", () => {
     );
   });
 
+  test("does not expose the authenticated user's private identifier in upload targets", async () => {
+    const privateUserId = "did:privy:must-stay-private";
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: async () => [{
+            id: privateUserId,
+            publicId: "c5266e60-c6d8-449d-8961-eba0780e5d61",
+            handle: null,
+            walletAddress: null,
+            email: null,
+            displayName: "Private Identifier Test",
+            createdAt: "2026-08-04T00:00:00.000Z",
+          }],
+        }),
+      }),
+    } as unknown as DrizzleDB;
+    const authenticatedApp = new Hono().route("/", createUploadRoutes(db));
+    const token = await createSessionToken(privateUserId);
+
+    const response = await authenticatedApp.request("/api/upload/pfp", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ contentType: "image/png" }),
+    });
+
+    expect(response.status).toBe(200);
+    const target = await response.json() as {
+      uploadUrl: string;
+      publicUrl: string;
+      key: string;
+    };
+    expect(JSON.stringify(target)).not.toContain("must-stay-private");
+    expect(target.key).toMatch(/^pfp\/[0-9a-f-]{36}\.png$/);
+  });
+
   test("stores generated public avatar images through local storage", async () => {
     const stored = await storePublicAvatarImage(
       "pfp/generated/user-1/agent-1/avatar.png",
@@ -128,14 +169,41 @@ describe("local filesystem upload storage", () => {
     );
   });
 
+  test("rejects reintroducing a legacy identity-bearing owned avatar URL", () => {
+    const legacyUrl =
+      "http://127.0.0.1:3000/api/uploads/local?key=pfp%2Fdid%3Aprivy%3Amust-stay-private%2Favatar.png";
+    expect(normalizeAgentAvatarUrlInput(
+      legacyUrl,
+      "http://127.0.0.1:3000",
+    )).toEqual({
+      ok: false,
+      error: "avatarUrl must not use a legacy identity-bearing storage key",
+    });
+    expect(normalizeAgentAvatarUrlInput(
+      legacyUrl,
+      "http://127.0.0.1:3000",
+      legacyUrl,
+    )).toEqual({
+      ok: true,
+      value: legacyUrl,
+    });
+    expect(normalizeAgentAvatarUrlInput(
+      "/api/uploads/local?key=pfp%2F11111111-1111-4111-8111-111111111111.png",
+      "http://127.0.0.1:3000",
+    )).toEqual({
+      ok: true,
+      value: "http://127.0.0.1:3000/api/uploads/local?key=pfp%2F11111111-1111-4111-8111-111111111111.png",
+    });
+  });
+
   test("normalizes expiring S3 signed avatar URLs to stable public URLs", () => {
     process.env.LINODE_OBJ_ENDPOINT = "https://us-iad-1.linodeobjects.com";
     process.env.LINODE_OBJ_BUCKET = "influence-pfp";
     const signedUrl =
-      "https://us-iad-1.linodeobjects.com/influence-pfp/pfp/user-1/avatar.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=300&X-Amz-Signature=abc123";
+      "https://us-iad-1.linodeobjects.com/influence-pfp/pfp/did%3Aprivy%3Auser-1/avatar.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Expires=300&X-Amz-Signature=abc123";
 
     expect(normalizeUploadedAvatarUrl(signedUrl)).toBe(
-      "https://influence-pfp.us-iad-1.linodeobjects.com/pfp/user-1/avatar.png",
+      "https://influence-pfp.us-iad-1.linodeobjects.com/pfp/did:privy:user-1/avatar.png",
     );
   });
 

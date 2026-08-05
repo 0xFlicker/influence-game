@@ -364,6 +364,31 @@ describe("agent profile management service", () => {
     expect("statsReset" in read.agent).toBe(false);
   });
 
+  test("allows other profile edits while an unchanged legacy avatar awaits rotation", async () => {
+    const legacyAvatarUrl =
+      "https://influence.test/api/uploads/local?key=pfp%2Fdid%3Aprivy%3Alegacy-owner%2Favatar.png";
+    await insertAgent(db, {
+      id: "agent-legacy-avatar",
+      userId: USER_A_ID,
+      name: "Legacy Portrait",
+      personality: "Patient and observant.",
+      personaKey: "observer",
+      avatarUrl: legacyAvatarUrl,
+    });
+
+    const read = await updateOwnedAgent(db, {
+      userId: USER_A_ID,
+      publicBaseUrl: "https://influence.test",
+    }, {
+      agentId: "agent-legacy-avatar",
+      personalityPrompt: "Patient, observant, and newly decisive.",
+      avatarUrl: legacyAvatarUrl,
+    });
+
+    expect(read.agent.avatarUrl).toBe(legacyAvatarUrl);
+    expect(read.agent.personalityPrompt).toBe("Patient, observant, and newly decisive.");
+  });
+
   test("rejects immutable and unsupported mutation fields explicitly", async () => {
     await expect(createOwnedAgent(db, {
       userId: USER_A_ID,
@@ -452,6 +477,7 @@ async function insertAgent(
     backstory?: string | null;
     strategyStyle?: string | null;
     personaKey?: string | null;
+    avatarUrl?: string | null;
     gamesPlayed?: number;
     gamesWon?: number;
   },
@@ -464,7 +490,7 @@ async function insertAgent(
     personality: input.personality,
     strategyStyle: input.strategyStyle ?? null,
     personaKey: input.personaKey ?? null,
-    avatarUrl: null,
+    avatarUrl: input.avatarUrl ?? null,
     gamesPlayed: input.gamesPlayed ?? 0,
     gamesWon: input.gamesWon ?? 0,
     createdAt: "2026-06-30T00:00:00.000Z",

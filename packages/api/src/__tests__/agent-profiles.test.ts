@@ -681,13 +681,13 @@ describe("Agent Profile API", () => {
         jsonReq({
           name: "Atlas Avatar",
           personality: "Strategic",
-          avatarUrl: "/api/uploads/local?key=pfp%2Fuser-a%2Fatlas.png",
+          avatarUrl: "/api/uploads/local?key=pfp%2F11111111-1111-4111-8111-111111111111.png",
         }, tokenA),
       );
 
       expect(res.status).toBe(201);
       const body = await res.json() as { id: string; avatarUrl: string };
-      expect(body.avatarUrl).toContain("/api/uploads/local?key=pfp%2Fuser-a%2Fatlas.png");
+      expect(body.avatarUrl).toContain("/api/uploads/local?key=pfp%2F11111111-1111-4111-8111-111111111111.png");
 
       const changes = await db.select().from(schema.avatarChangeEvents);
       expect(changes).toHaveLength(1);
@@ -790,7 +790,7 @@ describe("Agent Profile API", () => {
         jsonReq({
           name: "No Request",
           personality: "Quiet",
-          avatarUrl: "/api/uploads/local?key=pfp%2Fuser-a%2Fno-request.png",
+          avatarUrl: "/api/uploads/local?key=pfp%2F22222222-2222-4222-8222-222222222222.png",
         }, tokenA),
       );
       const { id: withRequestId } = await withRequestRes.json() as { id: string };

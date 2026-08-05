@@ -331,6 +331,18 @@ export function publicObjectUrlForKey(key: string, publicBaseUrl?: string): stri
     : publicS3UrlForKey(key);
 }
 
+export function ownedPublicAvatarStorageKey(
+  avatarUrl: string,
+  publicBaseUrl?: string,
+): string | null {
+  const parsed = parseUrl(avatarUrl, publicBaseUrl);
+  if (!parsed) return null;
+  if (parsed.pathname === "/api/upload/local" || parsed.pathname === "/api/uploads/local") {
+    return parsed.searchParams.get("key");
+  }
+  return publicObjectKeyFromConfiguredS3(parsed);
+}
+
 /**
  * Check whether the required storage env vars are configured.
  */
@@ -583,6 +595,11 @@ function hasExpiringSignatureParams(url: URL): boolean {
 }
 
 function publicObjectUrlFromConfiguredS3(url: URL): string | null {
+  const key = publicObjectKeyFromConfiguredS3(url);
+  return key ? publicS3UrlForKey(key) : null;
+}
+
+function publicObjectKeyFromConfiguredS3(url: URL): string | null {
   const endpoint = process.env.LINODE_OBJ_ENDPOINT;
   const bucket = process.env.LINODE_OBJ_BUCKET;
   if (!endpoint || !bucket) return null;
@@ -596,8 +613,7 @@ function publicObjectUrlFromConfiguredS3(url: URL): string | null {
 
   const bucketHost = `${bucket}.${endpointHost}`;
   if (url.host === bucketHost) {
-    const key = url.pathname.replace(/^\/+/, "");
-    return key ? `https://${bucketHost}/${key}` : null;
+    return decodeObjectKey(url.pathname.replace(/^\/+/, ""));
   }
 
   if (url.host !== endpointHost) return null;
@@ -605,8 +621,16 @@ function publicObjectUrlFromConfiguredS3(url: URL): string | null {
   const pathPrefix = `/${bucket}/`;
   if (!url.pathname.startsWith(pathPrefix)) return null;
 
-  const key = url.pathname.slice(pathPrefix.length);
-  return key ? `https://${bucketHost}/${key}` : null;
+  return decodeObjectKey(url.pathname.slice(pathPrefix.length));
+}
+
+function decodeObjectKey(value: string): string | null {
+  if (!value) return null;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
 }
 
 function validateLocalKey(key: string): void {
