@@ -178,7 +178,10 @@ export async function startOwnerLearningReview(
     });
     if (
       liveSelection.currentRevisionId !== preflight.selection.currentRevisionId
-      || liveSelection.games.some((game, index) => game.gameId !== preflight.selection.games[index]?.gameId)
+      || liveSelection.games.some((game, index) =>
+        game.gameId !== preflight.selection.games[index]?.gameId
+        || game.analyticalRevisionId !== preflight.selection.games[index]?.analyticalRevisionId
+      )
     ) {
       throw new Error("Owner learning selection changed after preflight");
     }
@@ -188,20 +191,12 @@ export async function startOwnerLearningReview(
       ownerUserId: input.ownerUserId,
       now,
     });
-    if (eligibleInputs.credit.balance !== 1 || eligibleInputs.credit.latestEligibleCompletion == null) {
+    if (eligibleInputs.credit.mode === "metered" && eligibleInputs.credit.balance === 0) {
       return {
-        status: "no_credit" as const,
+        status: eligibleInputs.credit.nextAvailableAt ? "rolling_limited" as const : "no_credit" as const,
         reviewId: null,
         preflight,
-        nextEligibleAt: null,
-      };
-    }
-    if (!eligibleInputs.rollingAllowance.available) {
-      return {
-        status: "rolling_limited" as const,
-        reviewId: null,
-        preflight,
-        nextEligibleAt: eligibleInputs.rollingAllowance.nextEligibleAt,
+        nextEligibleAt: eligibleInputs.credit.nextAvailableAt,
       };
     }
 
@@ -241,13 +236,16 @@ export async function startOwnerLearningReview(
         createdAt: nowIso,
       })),
     );
-    const watermark = eligibleInputs.credit.latestEligibleCompletion;
-    await tx.update(schema.agentLearningReviewEntitlements).set({
-      consumedCompletionAt: watermark.completionAt,
-      consumedGameId: watermark.gameId,
-      lastPaidReviewStartedAt: nowIso,
-      updatedAt: nowIso,
-    }).where(eq(schema.agentLearningReviewEntitlements.ownerUserId, input.ownerUserId));
+    if (eligibleInputs.credit.mode === "metered") {
+      const watermark = eligibleInputs.credit.latestEligibleCompletion;
+      if (!watermark) throw new Error("Owner learning credit is missing its completion watermark");
+      await tx.update(schema.agentLearningReviewEntitlements).set({
+        consumedCompletionAt: watermark.completionAt,
+        consumedGameId: watermark.gameId,
+        lastPaidReviewStartedAt: nowIso,
+        updatedAt: nowIso,
+      }).where(eq(schema.agentLearningReviewEntitlements.ownerUserId, input.ownerUserId));
+    }
     await insertStartEvents(tx, {
       idFactory,
       nowIso,
@@ -255,6 +253,7 @@ export async function startOwnerLearningReview(
       agentProfileId: input.agentProfileId,
       reviewId,
       analysisTrack: paidAnalysisTrack,
+      creditConsumed: eligibleInputs.credit.mode === "metered",
     });
     return {
       status: "started" as const,
@@ -318,14 +317,20 @@ async function reauthorizeMaterializedEvidence(
   const rows = await db.select({
     id: schema.agentLearningGameEvidence.id,
     gameId: schema.agentLearningGameEvidence.gameId,
+    analyticalRevisionId: schema.agentLearningGameEvidence.analyticalRevisionId,
   }).from(schema.agentLearningGameEvidence).where(and(
     eq(schema.agentLearningGameEvidence.ownerUserId, preflight.selection.ownerUserId),
     eq(schema.agentLearningGameEvidence.agentProfileId, preflight.selection.agentProfileId),
-    eq(schema.agentLearningGameEvidence.analyticalRevisionId, preflight.selection.currentRevisionId),
     inArray(schema.agentLearningGameEvidence.id, evidenceIds),
   ));
-  const gameByEvidenceId = new Map(rows.map((row) => [row.id, row.gameId]));
-  if (preflight.evidence.games.some((game) => gameByEvidenceId.get(game.gameEvidenceId) !== game.gameId)) {
+  const evidenceById = new Map(rows.map((row) => [row.id, row]));
+  const selectionByGameId = new Map(preflight.selection.games.map((game) => [game.gameId, game]));
+  if (preflight.evidence.games.some((game) => {
+    const row = evidenceById.get(game.gameEvidenceId);
+    const selectedGame = selectionByGameId.get(game.gameId);
+    return row?.gameId !== game.gameId
+      || row.analyticalRevisionId !== selectedGame?.analyticalRevisionId;
+  })) {
     throw new Error("Owner learning evidence changed after preflight");
   }
 }
@@ -339,6 +344,7 @@ async function insertStartEvents(
     agentProfileId: string;
     reviewId: string;
     analysisTrack: "evidence_rich" | "strategy_health_check";
+    creditConsumed: boolean;
   },
 ): Promise<void> {
   const identity = {
@@ -355,7 +361,9 @@ async function insertStartEvents(
     createOwnerLearningEvent("analysis_track_selected", identity, {
       analysisTrack: input.analysisTrack,
     }),
-    createOwnerLearningEvent("credit_consumed", identity, {}),
+    ...(input.creditConsumed
+      ? [createOwnerLearningEvent("credit_consumed", identity, {})]
+      : []),
   ];
   await db.insert(schema.agentLearningEvents).values(events.map((event) => ({
     id: input.idFactory(),

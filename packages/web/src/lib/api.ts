@@ -1835,15 +1835,21 @@ export type OwnerLearningApplyDisposition =
   | "superseded"
   | "unavailable";
 
+interface OwnerLearningCreditDetails {
+  latestEligibleCompletion: { gameId: string; completionAt: string } | null;
+  refillCompletion: { gameId: string; completionAt: string } | null;
+  qualifyingCompletionCount: number;
+}
+
+export type OwnerLearningCredit = OwnerLearningCreditDetails & (
+  | { mode: "metered"; balance: 1; nextAvailableAt: null }
+  | { mode: "metered"; balance: 0; nextAvailableAt: string | null }
+  | { mode: "unlimited"; balance: null; nextAvailableAt: null }
+);
+
 export interface OwnerLearningEligibleInputs {
   eligibilityPolicyVersion: string;
-  credit: {
-    balance: 0 | 1;
-    latestEligibleCompletion: { gameId: string; completionAt: string } | null;
-    refillCompletion: { gameId: string; completionAt: string } | null;
-    qualifyingCompletionCount: number;
-  };
-  rollingAllowance: { available: boolean; nextEligibleAt: string | null };
+  credit: OwnerLearningCredit;
   profiles: Array<{
     agentProfileId: string;
     name: string;

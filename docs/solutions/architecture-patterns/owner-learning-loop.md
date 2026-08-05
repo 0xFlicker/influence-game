@@ -37,9 +37,9 @@ The approved visual acceptance authority is [Owner Learning Loop Visual Acceptan
 
 ## Product and authority contract
 
-V1 admits completed Daily Free games only. The pure `ownerLearningGameEligibilityPolicy` is the change seam for later widening; custom, experimental, imported, incomplete, and old-revision games do not enter by accident.
+V2 admits completed Daily Free games from the active strategy family. The pure `ownerLearningGameEligibilityPolicy` is the change seam for later widening; custom, experimental, imported, incomplete, and unrelated historical revisions do not enter by accident.
 
-An owner has a maximum balance of one review credit. A qualifying Daily Free completion refills an empty balance, several completions cannot stack it, and the owner may spend it on any owned Agent Profile with selectable games. One review selects one to three distinct games from that Profile's current analytical revision. Reusing a previously analyzed game is allowed and labeled. Starting paid analysis atomically consumes the credit through the latest then-visible qualifying completion, starts the rolling 24-hour allowance, and creates the owner-wide singleton. Model-free preflight, deterministic facts, awaiting-evidence, and generation-disabled results consume nothing.
+An owner has a maximum metered balance of one review credit. The published balance is actionable: `1` means a review can start now, while `0` carries `nextAvailableAt` when time is the only remaining condition. A qualifying Daily Free completion can earn an empty credit, several completions cannot stack it, and the owner may spend it on any owned Agent Profile with selectable games. Persisted sysops receive explicit unlimited mode with no numeric balance and do not consume credit. One review selects one to three distinct games from that Profile's current strategy family: the active analytical revision or a game-effective `runtime_policy_change` revision derived directly from it. Reusing a previously analyzed game is allowed and labeled. Starting metered analysis atomically consumes the credit through the latest then-visible qualifying completion, establishes the next purchase time, and creates the owner-wide singleton. Model-free preflight, deterministic facts, awaiting-evidence, and generation-disabled results consume nothing.
 
 Canonical events and postgame projections answer what happened. The evidence snapshot includes accepted actions by and against the reviewed Agent, outcomes, placement, stable moment coordinates, availability diagnostics, and source hashes. Authorized dialogue and the reviewed owned Agent's cognition add strategic context. They remain untrusted prose and never become board-state authority. Another owned Agent's cognition and every opponent's cognition stay outside the owner-learning subject lane.
 
@@ -51,7 +51,7 @@ One owner may have at most one unresolved review, regardless of Agent Profile or
 
 The web waiting state loads the full owner-authorized evidence DTO once, then polls a lean owner-authorized lifecycle status. Unchanged heartbeats retain the existing React state, while terminal status triggers one full refetch for the validated result. This keeps the deterministic facts visible while avoiding repeated evidence reads and transfers during model work.
 
-Starting buys the review. Owners cannot cancel and a provider failure does not refund the credit or rolling allowance. Retry preserves the checkpoint and lifetime budgets. A ready owner may:
+Starting buys the review. Owners cannot cancel, and a provider failure does not refund a metered credit or rolling interval. Retry preserves the checkpoint and lifetime budgets. A ready owner may:
 
 - apply only the exact persisted `strategyStyle` proposal and proposal fingerprint;
 - open the ordinary editor with a same-Profile `sourceReviewId`, producing a normal Agent mutation and the `manual_update` resolution without accepting the generated proposal;

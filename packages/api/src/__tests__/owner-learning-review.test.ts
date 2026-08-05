@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { schema } from "../db/index.js";
+import { randomUUID } from "node:crypto";
+import { eq } from "drizzle-orm";
+import { schema, type DrizzleDB } from "../db/index.js";
 import {
   startOwnerLearningReview,
   type OwnerLearningEvidenceProjector,
@@ -104,4 +106,93 @@ describe("owner learning review start", () => {
       expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(0);
     }
   });
+
+  test("starts a review from a game-effective runtime variant while reviewing the active strategy", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const runtimeRevisionId = randomUUID();
+    await db.insert(schema.agentRevisions).values({
+      id: runtimeRevisionId,
+      agentProfileId: fixture.agentProfileId,
+      ordinal: 2,
+      priorRevisionId: fixture.revisionId,
+      trigger: "runtime_policy_change",
+      magnitude: "execution",
+      fingerprint: `sha256:${runtimeRevisionId}`,
+      behaviorSnapshot: {},
+      effectiveRuntimeSnapshot: {},
+      revisionPolicyVersion: "agent-revision-v2",
+    });
+    await db.update(schema.gamePlayers).set({ agentRevisionId: runtimeRevisionId })
+      .where(eq(schema.gamePlayers.id, fixture.playerId));
+    await db.update(schema.agentLearningGameEvidence).set({ analyticalRevisionId: runtimeRevisionId })
+      .where(eq(schema.agentLearningGameEvidence.id, fixture.gameEvidenceId));
+    const projector: OwnerLearningEvidenceProjector = async (_db, selection) =>
+      fakeOwnerLearningProjection(selection, new Map([[fixture.gameId, fixture.gameEvidenceId]]));
+
+    const result = await startOwnerLearningReview(db, {
+      ownerUserId: fixture.ownerUserId,
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.gameId],
+      idempotencyKey: "runtime-variant-start",
+    }, { projector, now: new Date("2026-08-04T03:00:00.000Z") });
+
+    expect(result.status).toBe("started");
+    expect(result.preflight?.selection.currentRevisionId).toBe(fixture.revisionId);
+    expect(result.preflight?.selection.games[0]!.analyticalRevisionId).toBe(runtimeRevisionId);
+    const review = (await db.select().from(schema.agentLearningReviews))[0]!;
+    expect(review.reviewedRevisionId).toBe(fixture.revisionId);
+  });
+
+  test("lets a persisted sysop start unlimited reviews without consuming credits or rolling allowance", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    await grantSysop(db, fixture.ownerUserId);
+    const projector: OwnerLearningEvidenceProjector = async (_db, selection) =>
+      fakeOwnerLearningProjection(selection, new Map([[fixture.gameId, fixture.gameEvidenceId]]));
+    const now = new Date("2026-08-04T03:00:00.000Z");
+
+    const first = await startOwnerLearningReview(db, {
+      ownerUserId: fixture.ownerUserId,
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.gameId],
+      idempotencyKey: "sysop-first",
+    }, { projector, now });
+    expect(first.status).toBe("started");
+    await db.update(schema.agentLearningReviews).set({
+      analysisStatus: "failed",
+      stage: "complete",
+      resolution: "failed",
+      resolvedAt: now.toISOString(),
+    }).where(eq(schema.agentLearningReviews.id, first.reviewId!));
+
+    const second = await startOwnerLearningReview(db, {
+      ownerUserId: fixture.ownerUserId,
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.gameId],
+      idempotencyKey: "sysop-second",
+    }, { projector, now });
+
+    expect(second.status).toBe("started");
+    const entitlement = (await db.select().from(schema.agentLearningReviewEntitlements))[0]!;
+    expect(entitlement.consumedCompletionAt).toBeNull();
+    expect(entitlement.consumedGameId).toBeNull();
+    expect(entitlement.lastPaidReviewStartedAt).toBeNull();
+    const events = await db.select().from(schema.agentLearningEvents);
+    expect(events.filter((event) => event.kind === "credit_consumed")).toHaveLength(0);
+  });
 });
+
+async function grantSysop(db: DrizzleDB, ownerUserId: string): Promise<void> {
+  const walletAddress = `0x${ownerUserId.replaceAll("-", "").slice(0, 40)}`.toLowerCase();
+  await db.update(schema.users).set({ walletAddress }).where(eq(schema.users.id, ownerUserId));
+  let role = (await db.select().from(schema.roles).where(eq(schema.roles.name, "sysop")))[0];
+  if (!role) {
+    role = (await db.insert(schema.roles).values({
+      id: randomUUID(),
+      name: "sysop",
+      description: "System operator",
+    }).returning())[0]!;
+  }
+  await db.insert(schema.addressRoles).values({ walletAddress, roleId: role.id });
+}

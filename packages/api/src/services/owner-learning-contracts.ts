@@ -1,6 +1,6 @@
 import { sha256StableJson } from "./stable-hash.js";
 
-export const OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION = "owner-learning-eligibility-v1";
+export const OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION = "owner-learning-eligibility-v2";
 export const OWNER_LEARNING_EVIDENCE_VERSION = "owner-learning-evidence-v1";
 export const OWNER_LEARNING_REVIEWER_VERSION = "owner-learning-reviewer-v1";
 export const OWNER_LEARNING_PROMPT_VERSION = "owner-learning-prompt-v1";

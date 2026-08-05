@@ -10,6 +10,7 @@ import type {
 import {
   activityRows,
   canonicalFacts,
+  formatAvailabilityTimestamp,
   selectedPreflightGame,
 } from "./owner-learning-model";
 
@@ -97,7 +98,7 @@ export function OwnerLearningEntryView({
             <p>Current analytical revision · {shortRevision(profile.currentRevisionId)}</p>
           </div>
         </div>
-        <span className="olm-credit"><i aria-hidden="true" />{eligible.credit.balance} review credit ready</span>
+        <span className="olm-credit"><i aria-hidden="true" />{reviewCreditLabel(eligible)}</span>
       </header>
 
       <div className="olm-entry-hero">
@@ -128,19 +129,23 @@ export function OwnerLearningEntryView({
               disabled={!startState.available || startPending}
               onClick={onStart}
             >
-              {startPending ? "Purchasing review…" : `Start ${selectedGameIds.length}-game review`}
+              {startPending
+                ? eligible.credit.mode === "unlimited" ? "Starting review…" : "Purchasing review…"
+                : `Start ${selectedGameIds.length}-game review`}
               <span aria-hidden="true">→</span>
             </button>
             {onDismiss && (
               <button type="button" className="olm-button olm-button-quiet" onClick={onDismiss}>Not now</button>
             )}
           </div>
-          <p className="olm-purchase-copy">Starting uses your one review credit and today&apos;s review allowance. Once started, it cannot be cancelled. Nothing changes until you approve an update.</p>
+          <p className="olm-purchase-copy">{eligible.credit.mode === "unlimited"
+            ? "Sysop testing is unlimited. Once started, the review remains open until it is resolved. Nothing changes until you approve an update."
+            : "Starting uses your one review credit. Once started, it cannot be cancelled. Nothing changes until you approve an update."}</p>
         </aside>
       </div>
 
       <section className="olm-fact-strip" aria-label="Selected game facts">
-        <Fact value={String(profile.qualifyingGameCount)} label="Eligible games on this revision" />
+        <Fact value={String(profile.qualifyingGameCount)} label="Eligible games in this strategy family" />
         <Fact value={preflightPending ? "…" : String(finals)} label="Final appearances selected" />
         <Fact value={preflightPending ? "…" : String(pressure)} label="Recorded votes received" />
         <Fact value={preflightPending ? "…" : String(decisions)} label="Action and counterplay rows" />
@@ -223,11 +228,13 @@ function startAvailability(
   pending: boolean,
 ): { available: boolean; detail: string } {
   if (selectedGameIds.length === 0) return { available: false, detail: "Choose at least one Daily Free game." };
-  if (eligible.credit.balance === 0) return { available: false, detail: "Your next review credit arrives after another Daily Free game." };
-  if (!eligible.rollingAllowance.available) {
+  if (eligible.credit.mode === "metered" && eligible.credit.balance === 0 && !eligible.credit.nextAvailableAt) {
+    return { available: false, detail: "Your next review credit arrives after another Daily Free game." };
+  }
+  if (eligible.credit.mode === "metered" && eligible.credit.balance === 0 && eligible.credit.nextAvailableAt) {
     return {
       available: false,
-      detail: `Your next review can start ${formatTimestamp(eligible.rollingAllowance.nextEligibleAt)}. Your selected facts stay here.`,
+      detail: `Your next review can start ${formatAvailabilityTimestamp(eligible.credit.nextAvailableAt)}. Your selected facts stay here.`,
     };
   }
   if (pending || !preflight) return { available: false, detail: "Loading the accepted actions and counterplay first." };
@@ -237,7 +244,18 @@ function startAvailability(
   if (preflight.status === "awaiting_evidence") {
     return { available: false, detail: "The selected early exits do not yet contain enough evidence for paid analysis." };
   }
-  return { available: true, detail: "Recorded actions and counterplay are ready. Purchasing starts the private analysis." };
+  return eligible.credit.mode === "unlimited"
+    ? { available: true, detail: "Recorded actions and counterplay are ready. Starting opens the private sysop analysis." }
+    : { available: true, detail: "Recorded actions and counterplay are ready. Purchasing starts the private analysis." };
+}
+
+function reviewCreditLabel(eligible: OwnerLearningEligibleInputs): string {
+  if (eligible.credit.mode === "unlimited") return "Unlimited sysop reviews";
+  if (eligible.credit.balance === 1) return "1 review credit available";
+  if (eligible.credit.nextAvailableAt) {
+    return `0 review credits · next ${formatAvailabilityTimestamp(eligible.credit.nextAvailableAt)}`;
+  }
+  return "0 review credits";
 }
 
 function placement(value: number | null | undefined): string {
@@ -262,9 +280,4 @@ function shortRevision(revisionId: string): string {
 
 function formatGameDate(value: string): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
-}
-
-function formatTimestamp(value: string | null): string {
-  if (!value) return "after the rolling window resets";
-  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }

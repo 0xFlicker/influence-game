@@ -26,7 +26,11 @@ export async function recordOwnerLearningPromptImpression(
       now: input.now,
     });
     const completion = eligible.credit.latestEligibleCompletion;
-    if (eligible.credit.balance !== 1 || eligible.prompt.threshold !== input.threshold || !completion) {
+    if (
+      (eligible.credit.mode !== "unlimited" && eligible.credit.balance !== 1)
+      || eligible.prompt.threshold !== input.threshold
+      || !completion
+    ) {
       throw new OwnerLearningAnalyticsError("prompt_unavailable");
     }
     const completionWatermark = watermark(completion);
@@ -62,7 +66,11 @@ export async function dismissOwnerLearningPrompt(
       now: input.now,
     });
     const completion = eligible.credit.latestEligibleCompletion;
-    if (eligible.credit.balance !== 1 || eligible.prompt.threshold == null || !completion) {
+    if (
+      (eligible.credit.mode !== "unlimited" && eligible.credit.balance !== 1)
+      || eligible.prompt.threshold == null
+      || !completion
+    ) {
       throw new OwnerLearningAnalyticsError("prompt_unavailable");
     }
     if (

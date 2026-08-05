@@ -553,11 +553,14 @@ async function materializeOwnerLearningGameEvidence(
     sourceHash: string;
   },
 ): Promise<string> {
+  const analyticalRevisionId = input.selection.games.find((game) => game.gameId === input.gameId)
+    ?.analyticalRevisionId;
+  if (!analyticalRevisionId) throw new Error("Owner learning selection is missing the projected game");
   await db.insert(schema.agentLearningGameEvidence).values({
     id: randomUUID(),
     ownerUserId: input.selection.ownerUserId,
     agentProfileId: input.selection.agentProfileId,
-    analyticalRevisionId: input.selection.currentRevisionId,
+    analyticalRevisionId,
     gameId: input.gameId,
     evidenceVersion: OWNER_LEARNING_EVIDENCE_VERSION,
     eligibilityPolicyVersion: OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION,
@@ -572,7 +575,7 @@ async function materializeOwnerLearningGameEvidence(
     .where(and(
       eq(schema.agentLearningGameEvidence.ownerUserId, input.selection.ownerUserId),
       eq(schema.agentLearningGameEvidence.agentProfileId, input.selection.agentProfileId),
-      eq(schema.agentLearningGameEvidence.analyticalRevisionId, input.selection.currentRevisionId),
+      eq(schema.agentLearningGameEvidence.analyticalRevisionId, analyticalRevisionId),
       eq(schema.agentLearningGameEvidence.gameId, input.gameId),
       eq(schema.agentLearningGameEvidence.evidenceVersion, OWNER_LEARNING_EVIDENCE_VERSION),
     )).limit(1))[0];

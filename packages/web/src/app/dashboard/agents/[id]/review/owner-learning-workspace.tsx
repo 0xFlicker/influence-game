@@ -25,7 +25,7 @@ import {
 } from "@/lib/api";
 import { OwnerLearningEntryView } from "./owner-learning-entry";
 import { OwnerLearningReviewView } from "./owner-learning-review";
-import { isReviewPolling, reviewPath } from "./owner-learning-model";
+import { formatAvailabilityTimestamp, isReviewPolling, reviewPath } from "./owner-learning-model";
 
 export function OwnerLearningEntryWorkspace({ agentId }: { agentId: string }) {
   const router = useRouter();
@@ -406,8 +406,8 @@ function startResultMessage(status: string, nextEligibleAt: string | null): stri
   if (status === "no_credit") return "Another completed Daily Free game is required for the next credit.";
   if (status === "rolling_limited") {
     return nextEligibleAt
-      ? `The next review can start ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(nextEligibleAt))}.`
-      : "The rolling review allowance is not ready yet.";
+      ? `The next review can start ${formatAvailabilityTimestamp(nextEligibleAt)}.`
+      : "No review credit is currently available.";
   }
   return "The review state changed. The latest persisted state is shown.";
 }

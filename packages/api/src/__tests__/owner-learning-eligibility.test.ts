@@ -12,7 +12,7 @@ import {
 import { setupTestDB } from "./test-utils.js";
 
 describe("owner learning eligibility", () => {
-  test("V1 admits only completed Daily Free games with durable completion coordinates", () => {
+  test("V2 admits only completed Daily Free games with durable completion coordinates", () => {
     const base = {
       gameId: "game-1",
       agentProfileId: "profile-1",
@@ -91,7 +91,7 @@ describe("owner learning eligibility", () => {
     ])).toBe("evidence_rich");
   });
 
-  test("lists and reauthorizes only owned current-revision Daily Free games", async () => {
+  test("lists and reauthorizes owned Daily Free games from the current strategy family", async () => {
     const db = await setupTestDB();
     const fixture = await insertEligibilityFixture(db);
     const inputs = await getOwnerLearningEligibleInputs(db, {
@@ -100,12 +100,15 @@ describe("owner learning eligibility", () => {
     });
 
     expect(inputs.credit.balance).toBe(1);
-    expect(inputs.credit.qualifyingCompletionCount).toBe(2);
+    expect(inputs.credit.qualifyingCompletionCount).toBe(3);
+    expect(inputs.credit).toMatchObject({ mode: "metered", balance: 1, nextAvailableAt: null });
     expect(inputs.profiles).toHaveLength(1);
     expect(inputs.profiles[0]!.games.map((game) => game.gameId)).toEqual([
+      fixture.runtimeVariantGameId,
       fixture.currentFreeGameId,
     ]);
-    expect(inputs.profiles[0]!.games[0]!.previouslyAnalyzed).toBe(true);
+    expect(inputs.profiles[0]!.games[0]!.analyticalRevisionId).toBe(fixture.runtimeVariantRevisionId);
+    expect(inputs.profiles[0]!.games[1]!.previouslyAnalyzed).toBe(true);
 
     const selection = await validateOwnerLearningSelection(db, {
       ownerUserId: fixture.ownerUserId,
@@ -114,6 +117,14 @@ describe("owner learning eligibility", () => {
     });
     expect(selection.currentRevisionId).toBe(fixture.currentRevisionId);
     expect(selection.games[0]!.playerId).toBe(fixture.currentFreePlayerId);
+
+    const runtimeSelection = await validateOwnerLearningSelection(db, {
+      ownerUserId: fixture.ownerUserId,
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.runtimeVariantGameId],
+    });
+    expect(runtimeSelection.currentRevisionId).toBe(fixture.currentRevisionId);
+    expect(runtimeSelection.games[0]!.analyticalRevisionId).toBe(fixture.runtimeVariantRevisionId);
 
     for (const unavailableGameId of [fixture.oldRevisionGameId, fixture.customGameId]) {
       await expect(validateOwnerLearningSelection(db, {
@@ -131,6 +142,8 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
   currentRevisionId: string;
   currentFreeGameId: string;
   currentFreePlayerId: string;
+  runtimeVariantRevisionId: string;
+  runtimeVariantGameId: string;
   oldRevisionGameId: string;
   customGameId: string;
 }> {
@@ -138,6 +151,7 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
   const agentProfileId = randomUUID();
   const oldRevisionId = randomUUID();
   const currentRevisionId = randomUUID();
+  const runtimeVariantRevisionId = randomUUID();
   await db.insert(schema.users).values({ id: ownerUserId });
   await db.insert(schema.agentProfiles).values({
     id: agentProfileId,
@@ -170,6 +184,18 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
       effectiveRuntimeSnapshot: {},
       revisionPolicyVersion: "agent-revision-v2",
     },
+    {
+      id: runtimeVariantRevisionId,
+      agentProfileId,
+      ordinal: 3,
+      priorRevisionId: currentRevisionId,
+      trigger: "runtime_policy_change",
+      magnitude: "execution",
+      fingerprint: `sha256:${runtimeVariantRevisionId}`,
+      behaviorSnapshot: {},
+      effectiveRuntimeSnapshot: {},
+      revisionPolicyVersion: "agent-revision-v2",
+    },
   ]);
   await db.update(schema.agentProfiles).set({ currentRevisionId })
     .where(eq(schema.agentProfiles.id, agentProfileId));
@@ -187,6 +213,13 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
     revisionId: oldRevisionId,
     trackType: "free",
     completedAt: "2026-08-04T03:00:00.000Z",
+  });
+  const runtimeVariant = await insertCompletedSeat(db, {
+    ownerUserId,
+    agentProfileId,
+    revisionId: runtimeVariantRevisionId,
+    trackType: "free",
+    completedAt: "2026-08-05T03:30:00.000Z",
   });
   const custom = await insertCompletedSeat(db, {
     ownerUserId,
@@ -251,6 +284,8 @@ async function insertEligibilityFixture(db: DrizzleDB): Promise<{
     currentRevisionId,
     currentFreeGameId: currentFree.gameId,
     currentFreePlayerId: currentFree.playerId,
+    runtimeVariantRevisionId,
+    runtimeVariantGameId: runtimeVariant.gameId,
     oldRevisionGameId: oldFree.gameId,
     customGameId: custom.gameId,
   };

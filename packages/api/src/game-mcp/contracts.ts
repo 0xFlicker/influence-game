@@ -559,23 +559,46 @@ const ownerLearningOpenSummarySchema = closedObject(
     analysisTrack: { type: "string", enum: ["evidence_rich", "strategy_health_check"] },
   },
 );
+const ownerLearningCreditRequired = [
+  "mode",
+  "balance",
+  "nextAvailableAt",
+  "latestEligibleCompletion",
+  "refillCompletion",
+  "qualifyingCompletionCount",
+] as const;
+const ownerLearningCreditDetailsSchema = {
+  latestEligibleCompletion: nullableSchema(ownerLearningCompletionSchema),
+  refillCompletion: nullableSchema(ownerLearningCompletionSchema),
+  qualifyingCompletionCount: { type: "number" },
+};
+const ownerLearningCreditSchema = {
+  anyOf: [
+    closedObject(ownerLearningCreditRequired, {
+      ...ownerLearningCreditDetailsSchema,
+      mode: { type: "string", const: "metered" },
+      balance: { type: "number", const: 1 },
+      nextAvailableAt: { type: "null" },
+    }),
+    closedObject(ownerLearningCreditRequired, {
+      ...ownerLearningCreditDetailsSchema,
+      mode: { type: "string", const: "metered" },
+      balance: { type: "number", const: 0 },
+      nextAvailableAt: nullableSchema({ type: "string" }),
+    }),
+    closedObject(ownerLearningCreditRequired, {
+      ...ownerLearningCreditDetailsSchema,
+      mode: { type: "string", const: "unlimited" },
+      balance: { type: "null" },
+      nextAvailableAt: { type: "null" },
+    }),
+  ],
+};
 const ownerLearningEligibilitySchema = closedObject(
-  ["eligibilityPolicyVersion", "credit", "rollingAllowance", "profiles", "recommendedAgentProfileId", "prompt", "openReview"],
+  ["eligibilityPolicyVersion", "credit", "profiles", "recommendedAgentProfileId", "prompt", "openReview"],
   {
     eligibilityPolicyVersion: { type: "string" },
-    credit: closedObject(
-      ["balance", "latestEligibleCompletion", "refillCompletion", "qualifyingCompletionCount"],
-      {
-        balance: { type: "number", enum: [0, 1] },
-        latestEligibleCompletion: nullableSchema(ownerLearningCompletionSchema),
-        refillCompletion: nullableSchema(ownerLearningCompletionSchema),
-        qualifyingCompletionCount: { type: "number" },
-      },
-    ),
-    rollingAllowance: closedObject(
-      ["available", "nextEligibleAt"],
-      { available: { type: "boolean" }, nextEligibleAt: nullableSchema({ type: "string" }) },
-    ),
+    credit: ownerLearningCreditSchema,
     profiles: {
       type: "array",
       items: closedObject(
@@ -685,7 +708,7 @@ export const RESOLVE_LEARNING_REVIEW_INPUT_SCHEMA = closedObject(
 
 export const LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA = closedObject(
   ["schemaVersion", "eligibility"],
-  { schemaVersion: { type: "number", const: 1 }, eligibility: ownerLearningEligibilitySchema },
+  { schemaVersion: { type: "number", const: 2 }, eligibility: ownerLearningEligibilitySchema },
 );
 export const LIST_OPEN_LEARNING_REVIEWS_OUTPUT_SCHEMA = closedObject(
   ["schemaVersion", "reviews"],
@@ -697,9 +720,9 @@ export const LIST_OPEN_LEARNING_REVIEWS_OUTPUT_SCHEMA = closedObject(
 export const START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(
   ["schemaVersion", "status", "unavailableReason", "paidWorkEnqueued", "review", "preflight", "nextEligibleAt", "remainingLogicalCalls", "remainingDives"],
   {
-    schemaVersion: { type: "number", const: 1 },
+    schemaVersion: { type: "number", const: 2 },
     status: { type: "string", enum: ["created", "resumed", "existing_open_review", "awaiting_evidence", "unavailable"] },
-    unavailableReason: nullableSchema({ type: "string", enum: ["generation_unavailable", "no_credit", "rolling_limited"] }),
+    unavailableReason: nullableSchema({ type: "string", enum: ["generation_unavailable", "no_credit"] }),
     paidWorkEnqueued: { type: "boolean" },
     review: nullableSchema(ownerLearningReviewSchema),
     preflight: nullableSchema(ownerLearningPreflightSchema),

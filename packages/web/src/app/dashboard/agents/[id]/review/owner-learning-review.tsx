@@ -229,7 +229,7 @@ export function OwnerLearningReviewView({
         <section className="olm-failure" role="status">
           <p className="olm-kicker">Review interrupted</p>
           <h2>The game facts are safe. Strategic analysis did not finish.</h2>
-          <p>{failureMessage(review.safeFailureCode)} Starting purchased this review; resolving the failure closes it without refunding the credit or rolling allowance.</p>
+          <p>{failureMessage(review.safeFailureCode)} Resolving the failure closes this review. Any credit used to start a metered review is not refunded.</p>
           <div className="olm-button-row">
             {review.retryable && review.logicalCallCount < 4 && (
               <button type="button" className="olm-button olm-button-primary" onClick={onRetry} disabled={pendingAction != null}>

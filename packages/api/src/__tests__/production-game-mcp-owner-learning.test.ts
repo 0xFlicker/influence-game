@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import type { GameMcpAuthContext } from "../game-mcp/auth.js";
@@ -43,13 +44,46 @@ describe("production MCP owner-learning parity", () => {
 
     const inputs = await callTool(disabled, auth, "list_learning_review_inputs", {});
     expect(inputs).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       eligibility: {
-        credit: { balance: 1 },
+        credit: { mode: "metered", balance: 1, nextAvailableAt: null },
         recommendedAgentProfileId: fixture.agentProfileId,
       },
     });
     expectMatchesJsonSchema(inputs, LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA);
+
+    await db.insert(schema.agentLearningReviewEntitlements).values({
+      ownerUserId: fixture.ownerUserId,
+      lastPaidReviewStartedAt: "2026-08-04T02:00:00.000Z",
+    });
+    const rollingLimitedInputs = await callTool(disabled, auth, "list_learning_review_inputs", {});
+    expect(rollingLimitedInputs).toMatchObject({
+      eligibility: {
+        credit: { mode: "metered", balance: 0, nextAvailableAt: "2026-08-05T02:00:00.000Z" },
+      },
+    });
+    expectMatchesJsonSchema(rollingLimitedInputs, LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA);
+    const cooldown = createProductionGameMcpServer(db, {
+      generationEnabled: true,
+      projector,
+      now: () => NOW,
+    });
+    const cooldownStart = await callTool(cooldown, auth, "start_or_resume_learning_review", {
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.gameId],
+      idempotencyKey: "mcp-cooldown",
+    });
+    expect(cooldownStart).toMatchObject({
+      schemaVersion: 2,
+      status: "unavailable",
+      unavailableReason: "no_credit",
+      nextEligibleAt: "2026-08-05T02:00:00.000Z",
+      paidWorkEnqueued: false,
+      review: null,
+    });
+    expectMatchesJsonSchema(cooldownStart, START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    await db.delete(schema.agentLearningReviewEntitlements)
+      .where(eq(schema.agentLearningReviewEntitlements.ownerUserId, fixture.ownerUserId));
 
     for (const idempotencyKey of ["", "   ", "x".repeat(201)]) {
       const invalid = await rawToolCall(disabled, auth, "start_or_resume_learning_review", {
@@ -95,7 +129,7 @@ describe("production MCP owner-learning parity", () => {
       idempotencyKey: "mcp-disabled",
     });
     expect(unavailable).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       status: "unavailable",
       unavailableReason: "generation_unavailable",
       paidWorkEnqueued: false,
@@ -181,6 +215,26 @@ describe("production MCP owner-learning parity", () => {
     );
     expect(foreign.error?.message).toBe(missing.error?.message);
     expect(foreign.error?.message).toBe("review_unavailable");
+  });
+
+  test("publishes persisted sysop access as unlimited instead of a numeric credit", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    await grantSysop(db, fixture.ownerUserId);
+    const server = createProductionGameMcpServer(db, {
+      generationEnabled: false,
+      projector: fixtureProjector(fixture),
+      now: () => NOW,
+    });
+
+    const inputs = await callTool(server, ownerAuth(fixture.ownerUserId), "list_learning_review_inputs", {});
+    expect(inputs).toMatchObject({
+      schemaVersion: 2,
+      eligibility: {
+        credit: { mode: "unlimited", balance: null, nextAvailableAt: null },
+      },
+    });
+    expectMatchesJsonSchema(inputs, LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA);
   });
 
   test("marks generated fields untrusted, emits only typed follow-ups, and applies exact proposals idempotently", async () => {
@@ -513,6 +567,20 @@ describe("production MCP owner-learning parity", () => {
     ))).map((event) => event.kind)).not.toContain("mcp_connected");
   });
 });
+
+async function grantSysop(db: DrizzleDB, ownerUserId: string): Promise<void> {
+  const walletAddress = `0x${ownerUserId.replaceAll("-", "").slice(0, 40)}`.toLowerCase();
+  await db.update(schema.users).set({ walletAddress }).where(eq(schema.users.id, ownerUserId));
+  let role = (await db.select().from(schema.roles).where(eq(schema.roles.name, "sysop")))[0];
+  if (!role) {
+    role = (await db.insert(schema.roles).values({
+      id: randomUUID(),
+      name: "sysop",
+      description: "System operator",
+    }).returning())[0]!;
+  }
+  await db.insert(schema.addressRoles).values({ walletAddress, roleId: role.id });
+}
 
 function ownerAuth(ownerUserId: string): GameMcpAuthContext {
   return {

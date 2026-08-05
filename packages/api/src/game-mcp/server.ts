@@ -1240,7 +1240,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
   return [
     tool({
       name: LIST_LEARNING_REVIEW_INPUTS_TOOL,
-      description: "List the authenticated owner's eligible Agent Profiles and one to three selectable Daily Free ranked games, current owner-wide review credit, rolling allowance, deterministic prompt state, and any open review summary. Requires agents:read and games:read. No side effects.",
+      description: "List the authenticated owner's eligible Agent Profiles and one to three selectable Daily Free ranked games, deterministic prompt state, and any open review summary. The credit object is the complete purchase allowance: metered balance 1 can start now, metered balance 0 includes nextAvailableAt when time alone will restore it, and sysop access is mode unlimited with no numeric balance. Requires agents:read and games:read. No side effects.",
       inputSchema: LIST_LEARNING_REVIEW_INPUTS_INPUT_SCHEMA,
       outputSchema: LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_READ_SCOPES,
@@ -1267,7 +1267,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: START_OR_RESUME_LEARNING_REVIEW_TOOL,
-      description: "Start or resume the owner's durable singleton learning review for one owned Agent Profile and one to three selected Daily Free ranked games. A new paid review consumes the available owner credit and rolling allowance without refund; an existing idempotency key or open review resumes instead. Requires agents:read, games:read, and agents:write. Side effect only when newly enqueued.",
+      description: "Start or resume the owner's durable singleton learning review for one owned Agent Profile and one to three selected Daily Free ranked games. A new metered review consumes the available balance without refund; persisted sysop access is unlimited and consumes no credit. An existing idempotency key or open review resumes instead. Requires agents:read, games:read, and agents:write. Side effect only when newly enqueued.",
       inputSchema: START_OR_RESUME_LEARNING_REVIEW_INPUT_SCHEMA,
       outputSchema: START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_WRITE_SCOPES,

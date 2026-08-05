@@ -79,6 +79,13 @@ export function reviewEntryPath(agentProfileId: string): string {
   return `/dashboard/agents/${encodeURIComponent(agentProfileId)}/review`;
 }
 
+export function formatAvailabilityTimestamp(value: string): string {
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
 export function stageIndex(stage: OwnerLearningStage): number {
   if (stage === "complete") return OWNER_LEARNING_STAGES.length;
   return Math.max(0, OWNER_LEARNING_STAGES.findIndex((entry) => entry.stage === stage));

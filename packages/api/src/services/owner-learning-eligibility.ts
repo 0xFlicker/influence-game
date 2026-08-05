@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { userHasRole } from "../db/rbac.js";
 import type { GameStatus } from "../db/schema.js";
 import {
   OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION,
@@ -38,7 +39,7 @@ export interface OwnerLearningCompletionCoordinate {
   completionAt: string;
 }
 
-export interface OwnerLearningCredit {
+export interface OwnerLearningEarnedCredit {
   balance: 0 | 1;
   latestEligibleCompletion: OwnerLearningCompletionCoordinate | null;
   refillCompletion: OwnerLearningCompletionCoordinate | null;
@@ -56,7 +57,7 @@ export function compareOwnerLearningCompletion(
 export function deriveOwnerLearningCredit(
   completions: readonly OwnerLearningCompletionCoordinate[],
   consumedWatermark: OwnerLearningCompletionCoordinate | null,
-): OwnerLearningCredit {
+): OwnerLearningEarnedCredit {
   const ordered = dedupeCompletionCoordinates(completions)
     .sort(compareOwnerLearningCompletion);
   const latestEligibleCompletion = ordered.at(-1) ?? null;
@@ -125,11 +126,7 @@ export interface OwnerLearningOpenReviewSummary {
 
 export interface OwnerLearningEligibleInputs {
   eligibilityPolicyVersion: typeof OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION;
-  credit: OwnerLearningCredit;
-  rollingAllowance: {
-    available: boolean;
-    nextEligibleAt: string | null;
-  };
+  credit: OwnerLearningPublishedCredit;
   profiles: OwnerLearningEligibleProfile[];
   recommendedAgentProfileId: string | null;
   prompt: {
@@ -139,6 +136,14 @@ export interface OwnerLearningEligibleInputs {
   };
   openReview: OwnerLearningOpenReviewSummary | null;
 }
+
+type OwnerLearningCreditDetails = Omit<OwnerLearningEarnedCredit, "balance">;
+
+export type OwnerLearningPublishedCredit = OwnerLearningCreditDetails & (
+  | { mode: "metered"; balance: 1; nextAvailableAt: null }
+  | { mode: "metered"; balance: 0; nextAvailableAt: string | null }
+  | { mode: "unlimited"; balance: null; nextAvailableAt: null }
+);
 
 export interface OwnerLearningValidatedSelection {
   ownerUserId: string;
@@ -164,7 +169,7 @@ export async function getOwnerLearningEligibleInputs(
   input: { ownerUserId: string; now?: Date },
 ): Promise<OwnerLearningEligibleInputs> {
   const now = input.now ?? new Date();
-  const [profileRows, seatRows, entitlementRows, openReviewRows, successfulReviewGameRows] = await Promise.all([
+  const [profileRows, seatRows, entitlementRows, openReviewRows, successfulReviewGameRows, unlimited] = await Promise.all([
     db.select({
       agentProfileId: schema.agentProfiles.id,
       name: schema.agentProfiles.name,
@@ -198,6 +203,7 @@ export async function getOwnerLearningEligibleInputs(
         eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
         inArray(schema.agentLearningReviews.analysisStatus, ["ready", "no_change"]),
       )),
+    userHasRole(db, input.ownerUserId, "sysop"),
   ]);
 
   const admittedRows = seatRows.filter(ownerLearningGameEligibilityPolicy.admits);
@@ -209,7 +215,7 @@ export async function getOwnerLearningEligibleInputs(
   const consumedWatermark = entitlement?.consumedCompletionAt && entitlement.consumedGameId
     ? { completionAt: entitlement.consumedCompletionAt, gameId: entitlement.consumedGameId }
     : null;
-  const credit = deriveOwnerLearningCredit(uniqueCompletions, consumedWatermark);
+  const earnedCredit = deriveOwnerLearningCredit(uniqueCompletions, consumedWatermark);
   const analyzedGameIds = new Set(successfulReviewGameRows.map((row) => row.gameId));
   const currentProfileRows = new Map(profileRows.flatMap((profile) =>
     profile.currentRevisionId == null ? [] : [[profile.agentProfileId, profile] as const]
@@ -218,7 +224,7 @@ export async function getOwnerLearningEligibleInputs(
 
   for (const row of admittedRows) {
     const profile = currentProfileRows.get(row.agentProfileId!);
-    if (!profile || row.analyticalRevisionId !== profile.currentRevisionId) continue;
+    if (!profile || !belongsToCurrentStrategyFamily(row, profile.currentRevisionId!)) continue;
     const games = gamesByProfile.get(row.agentProfileId!) ?? [];
     if (games.some((game) => game.gameId === row.gameId)) continue;
     games.push({
@@ -261,31 +267,39 @@ export async function getOwnerLearningEligibleInputs(
   const dismissalWatermark = entitlement?.dismissedCompletionAt && entitlement.dismissedGameId
     ? { completionAt: entitlement.dismissedCompletionAt, gameId: entitlement.dismissedGameId }
     : null;
-  const suppressedByDismissal = credit.latestEligibleCompletion != null
+  const suppressedByDismissal = earnedCredit.latestEligibleCompletion != null
     && dismissalWatermark != null
-    && compareOwnerLearningCompletion(credit.latestEligibleCompletion, dismissalWatermark) <= 0;
+    && compareOwnerLearningCompletion(earnedCredit.latestEligibleCompletion, dismissalWatermark) <= 0;
   const lastStartMs = entitlement?.lastPaidReviewStartedAt
     ? Date.parse(entitlement.lastPaidReviewStartedAt)
     : Number.NaN;
   const nextEligibleMs = Number.isFinite(lastStartMs)
     ? lastStartMs + OWNER_LEARNING_ROLLING_START_MS
     : null;
-  const rollingAvailable = nextEligibleMs == null || now.getTime() >= nextEligibleMs;
+  const nextAvailableAt = nextEligibleMs != null && now.getTime() < nextEligibleMs
+    ? new Date(nextEligibleMs).toISOString()
+    : null;
+  let credit: OwnerLearningPublishedCredit;
+  if (unlimited) {
+    credit = { ...earnedCredit, mode: "unlimited", balance: null, nextAvailableAt: null };
+  } else if (earnedCredit.balance === 0) {
+    credit = { ...earnedCredit, mode: "metered", balance: 0, nextAvailableAt: null };
+  } else if (nextAvailableAt) {
+    credit = { ...earnedCredit, mode: "metered", balance: 0, nextAvailableAt };
+  } else {
+    credit = { ...earnedCredit, mode: "metered", balance: 1, nextAvailableAt: null };
+  }
 
   return {
     eligibilityPolicyVersion: OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION,
     credit,
-    rollingAllowance: {
-      available: rollingAvailable,
-      nextEligibleAt: rollingAvailable || nextEligibleMs == null
-        ? null
-        : new Date(nextEligibleMs).toISOString(),
-    },
     profiles,
     recommendedAgentProfileId: profiles[0]?.agentProfileId ?? null,
     prompt: {
       threshold,
-      prominent: threshold === 3 && credit.balance === 1 && !suppressedByDismissal,
+      prominent: threshold === 3
+        && (credit.mode === "unlimited" || credit.balance === 1)
+        && !suppressedByDismissal,
       suppressedByDismissal,
     },
     openReview: openReviewRows[0] ?? null,
@@ -307,12 +321,13 @@ export async function validateOwnerLearningSelection(
     eq(schema.agentProfiles.userId, input.ownerUserId),
   )).limit(1))[0];
   if (!profile?.currentRevisionId) throw new OwnerLearningEligibilityError("profile_unavailable");
+  const currentRevisionId = profile.currentRevisionId;
 
   const rows = (await loadOwnedEligibleSeatRows(db, input.ownerUserId, gameIds))
     .filter(ownerLearningGameEligibilityPolicy.admits)
     .filter((row) =>
       row.agentProfileId === profile.agentProfileId
-      && row.analyticalRevisionId === profile.currentRevisionId
+      && belongsToCurrentStrategyFamily(row, currentRevisionId)
     );
   const rowByGameId = new Map(rows.map((row) => [row.gameId, row]));
   if (rowByGameId.size !== gameIds.length) {
@@ -323,7 +338,7 @@ export async function validateOwnerLearningSelection(
     ownerUserId: input.ownerUserId,
     agentProfileId: profile.agentProfileId,
     agentProfileName: profile.name,
-    currentRevisionId: profile.currentRevisionId,
+    currentRevisionId,
     strategyStyle: profile.strategyStyle,
     games: gameIds.map((gameId) => {
       const row = rowByGameId.get(gameId);
@@ -358,15 +373,33 @@ async function loadOwnedEligibleSeatRows(
     playerId: schema.gamePlayers.id,
     agentProfileId: schema.gamePlayers.agentProfileId,
     analyticalRevisionId: schema.gamePlayers.agentRevisionId,
+    analyticalRevisionTrigger: schema.agentRevisions.trigger,
+    analyticalRevisionPriorRevisionId: schema.agentRevisions.priorRevisionId,
   }).from(schema.gamePlayers)
     .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
     .innerJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
+    .innerJoin(schema.agentRevisions, eq(schema.gamePlayers.agentRevisionId, schema.agentRevisions.id))
     .leftJoin(schema.gameResults, eq(schema.gameResults.gameId, schema.games.id))
     .where(and(
       eq(schema.agentProfiles.userId, ownerUserId),
       ...(gameIds ? [inArray(schema.games.id, [...gameIds])] : []),
     ))
     .orderBy(desc(schema.games.endedAt), desc(schema.gameResults.finishedAt), desc(schema.games.id));
+}
+
+function belongsToCurrentStrategyFamily(
+  row: {
+    analyticalRevisionId: string | null;
+    analyticalRevisionTrigger: string;
+    analyticalRevisionPriorRevisionId: string | null;
+  },
+  currentRevisionId: string,
+): boolean {
+  return row.analyticalRevisionId === currentRevisionId
+    || (
+      row.analyticalRevisionTrigger === "runtime_policy_change"
+      && row.analyticalRevisionPriorRevisionId === currentRevisionId
+    );
 }
 
 function dedupeCompletionCoordinates(

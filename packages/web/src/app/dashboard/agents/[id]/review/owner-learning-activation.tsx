@@ -9,7 +9,7 @@ import {
   recordOwnerLearningPromptImpression,
   type OwnerLearningEligibleInputs,
 } from "@/lib/api";
-import { reviewEntryPath, reviewPath } from "./owner-learning-model";
+import { formatAvailabilityTimestamp, reviewEntryPath, reviewPath } from "./owner-learning-model";
 
 export function OwnerLearningActivationView({
   eligible,
@@ -34,8 +34,11 @@ export function OwnerLearningActivationView({
   const profile = eligible.profiles.find((entry) => entry.agentProfileId === contextAgentId)
     ?? eligible.profiles.find((entry) => entry.agentProfileId === eligible.recommendedAgentProfileId)
     ?? eligible.profiles[0];
-  if (!profile || eligible.credit.balance === 0) return null;
+  if (!profile || (eligible.credit.mode === "metered"
+    && eligible.credit.balance === 0
+    && !eligible.credit.nextAvailableAt)) return null;
   const prominent = eligible.prompt.prominent && !eligible.prompt.suppressedByDismissal;
+  const availability = activationAvailability(eligible);
   return (
     <section
       className="olm-activation"
@@ -43,11 +46,11 @@ export function OwnerLearningActivationView({
       data-testid="owner-learning-activation"
     >
       <div>
-        <p>{prominent ? "Three-game pattern ready" : "One review credit ready"}</p>
+        <p>{prominent ? "Three-game pattern ready" : availability.label}</p>
         <h2>{prominent ? `The room has more to say about ${profile.name}.` : `Review ${profile.name}'s latest game.`}</h2>
         <span>{prominent
           ? "Compare accepted actions and counterplay across the latest eligible Daily Free games."
-          : "Open the recorded facts first, then decide whether to purchase strategic analysis."}</span>
+          : availability.detail}</span>
       </div>
       <div className="olm-activation-actions">
         {onDismiss && <button type="button" onClick={onDismiss}>Not now</button>}
@@ -92,7 +95,8 @@ export function OwnerLearningActivation({
     if (
       !threshold
       || !completion
-      || eligible?.credit.balance !== 1
+      || !eligible
+      || (eligible.credit.mode === "metered" && eligible.credit.balance !== 1)
       || eligible.prompt.suppressedByDismissal
       || eligible.openReview
     ) return;
@@ -125,4 +129,26 @@ export function OwnerLearningActivation({
       }
     />
   );
+}
+
+function activationAvailability(eligible: OwnerLearningEligibleInputs): { label: string; detail: string } {
+  if (eligible.credit.mode === "unlimited") {
+    return {
+      label: "Unlimited sysop reviews",
+      detail: "Open the recorded facts first, then start a private test review with unlimited sysop access.",
+    };
+  }
+  if (eligible.credit.balance === 1) {
+    return {
+      label: "1 review credit available",
+      detail: "Open the recorded facts first, then decide whether to purchase strategic analysis.",
+    };
+  }
+  if (eligible.credit.nextAvailableAt) {
+    return {
+      label: "0 review credits",
+      detail: `Next review available ${formatAvailabilityTimestamp(eligible.credit.nextAvailableAt)}. You can inspect the recorded facts now.`,
+    };
+  }
+  return { label: "0 review credits", detail: "Complete another Daily Free game to earn one." };
 }

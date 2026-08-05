@@ -17,7 +17,7 @@ describe("owner learning activation", () => {
     );
 
     expect(subtle).toContain('data-variant="subtle"');
-    expect(subtle).toContain("One review credit ready");
+    expect(subtle).toContain("1 review credit available");
     expect(subtle).toContain("Open the recorded facts first");
     expect(prominent).toContain('data-variant="prominent"');
     expect(prominent).toContain("Three-game pattern ready");
@@ -36,7 +36,7 @@ describe("owner learning activation", () => {
     );
 
     expect(html).toContain('data-variant="subtle"');
-    expect(html).toContain("One review credit ready");
+    expect(html).toContain("1 review credit available");
     expect(html).toContain("Open game review");
     expect(html).not.toContain("Not now");
   });
@@ -85,7 +85,8 @@ describe("owner learning activation", () => {
     expect(html).toContain("Choose 1–3 games");
     expect(html).toContain("Start 2-game review");
     expect(html).toContain("Previously analyzed");
-    expect(html).toContain("Starting uses your one review credit and today&#x27;s review allowance");
+    expect(html).toContain("Starting uses your one review credit");
+    expect(html).not.toContain("review allowance");
     expect(html).toContain("cannot be cancelled");
     expect(html).toContain("Nothing changes until you approve an update");
     expect(html).not.toContain("custom-game");
@@ -136,7 +137,16 @@ describe("owner learning activation", () => {
       preflightFixture("evidence_rich", "generation_unavailable"),
     );
     const rollingLimited = renderEntry(
-      eligibleFixture({ rollingAllowance: { available: false, nextEligibleAt: "2026-08-05T14:30:00.000Z" } }),
+      eligibleFixture({
+        credit: {
+          mode: "metered",
+          balance: 0,
+          nextAvailableAt: "2026-08-05T14:30:00.000Z",
+          latestEligibleCompletion: { gameId: "game-3", completionAt: "2026-08-04T12:00:00.000Z" },
+          refillCompletion: { gameId: "game-3", completionAt: "2026-08-04T12:00:00.000Z" },
+          qualifyingCompletionCount: 3,
+        },
+      }),
       preflightFixture("evidence_rich"),
     );
 
@@ -144,8 +154,34 @@ describe("owner learning activation", () => {
     expect(generationUnavailable).toContain("Your credit has not been used");
     expect(generationUnavailable).toContain("game-01");
     expect(rollingLimited).toContain("Your next review can start");
+    expect(rollingLimited).toContain("0 review credits");
+    expect(rollingLimited).not.toContain("review credit ready");
     expect(rollingLimited).toContain("Your selected facts stay here");
     expect(rollingLimited).toContain("game-01");
+  });
+
+  test("presents sysop access as unlimited instead of inventing a ready credit", () => {
+    const eligible = eligibleFixture({
+      credit: {
+        mode: "unlimited",
+        balance: null,
+        nextAvailableAt: null,
+        latestEligibleCompletion: { gameId: "game-3", completionAt: "2026-08-04T12:00:00.000Z" },
+        refillCompletion: null,
+        qualifyingCompletionCount: 3,
+      },
+    });
+    const activation = renderToStaticMarkup(
+      <OwnerLearningActivationView eligible={eligible} />,
+    );
+    const entry = renderEntry(eligible, preflightFixture("evidence_rich"));
+
+    expect(activation).toContain("Unlimited sysop reviews");
+    expect(activation).not.toContain("credit ready");
+    expect(entry).toContain("Unlimited sysop reviews");
+    expect(entry).toContain("Sysop testing is unlimited");
+    expect(entry).not.toContain("rolling allowance");
+    expect(entry).not.toContain("disabled");
   });
 });
 
@@ -171,12 +207,13 @@ function eligibleFixture(overrides: Partial<OwnerLearningEligibleInputs> = {}): 
   return {
     eligibilityPolicyVersion: "daily-free-v1",
     credit: {
+      mode: "metered",
       balance: 1,
+      nextAvailableAt: null,
       latestEligibleCompletion: { gameId: "game-3", completionAt: "2026-08-04T12:00:00.000Z" },
       refillCompletion: { gameId: "game-3", completionAt: "2026-08-04T12:00:00.000Z" },
       qualifyingCompletionCount: 3,
     },
-    rollingAllowance: { available: true, nextEligibleAt: null },
     profiles: [
       {
         agentProfileId: "agent-1",

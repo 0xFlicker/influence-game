@@ -53,7 +53,7 @@ export class OwnerLearningMcpAdapter {
   async listInputs(ownerUserId: string, rawArgs: unknown) {
     strictArgs(rawArgs, []);
     return {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       eligibility: await getOwnerLearningEligibleInputs(this.db, {
         ownerUserId,
         now: this.now(),
@@ -89,7 +89,7 @@ export class OwnerLearningMcpAdapter {
       ? await getOwnedOwnerLearningReview(this.db, { ownerUserId, reviewId: result.reviewId })
       : null;
     return {
-      schemaVersion: 1 as const,
+      schemaVersion: 2 as const,
       status: mcpStartStatus(result.status),
       unavailableReason: mcpUnavailableReason(result.status),
       paidWorkEnqueued: result.status === "started",
@@ -288,9 +288,7 @@ function mcpStartStatus(status: string):
 function mcpUnavailableReason(status: string):
   | "generation_unavailable"
   | "no_credit"
-  | "rolling_limited"
   | null {
-  return status === "generation_unavailable" || status === "no_credit" || status === "rolling_limited"
-    ? status
-    : null;
+  if (status === "rolling_limited") return "no_credit";
+  return status === "generation_unavailable" || status === "no_credit" ? status : null;
 }

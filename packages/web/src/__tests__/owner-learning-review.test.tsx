@@ -128,7 +128,8 @@ describe("owner learning review", () => {
     expect(retryable).toContain("The game facts are safe");
     expect(retryable).toContain("Retry analysis");
     expect(retryable).toContain("Resolve failed review");
-    expect(retryable).toContain("without refunding the credit or rolling allowance");
+    expect(retryable).toContain("Any credit used to start a metered review is not refunded");
+    expect(retryable).not.toContain("rolling allowance");
     expect(retryable).not.toContain("Cancel");
     expect(exhausted).not.toContain("Retry analysis");
     expect(exhausted).toContain("Resolve failed review");
