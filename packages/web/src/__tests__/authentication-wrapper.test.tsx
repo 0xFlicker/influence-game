@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AUTHENTICATION_METHOD_MATRIX } from "../components/clerk-password-flow";
+import {
+  AUTHENTICATION_METHOD_MATRIX,
+  updatedClerkResource,
+} from "../components/clerk-password-flow";
 import {
   ApiError,
   AUTH_TOKEN_KEY,
@@ -113,15 +116,79 @@ describe("unified authentication wrapper", () => {
     expect(authenticationRouteSource).toContain('href="/sign-up"');
   });
 
-  it("reads Clerk status from the post-operation resource", () => {
-    expect(passwordFlowSource).toContain("updatedClerkResource");
-    expect(passwordFlowSource).toContain("signInRef.current");
-    expect(passwordFlowSource).toContain("signUpRef.current");
-    expect(passwordFlowSource).not.toContain(
-      'if (signIn.status === "needs_new_password")',
+  it("reacts to Clerk sign-in resource changes instead of polling", () => {
+    const signInSubmit = passwordFlowSource.slice(
+      passwordFlowSource.indexOf('if (intent === "sign_in")'),
+      passwordFlowSource.indexOf("currentSignupOwnsCompletionRef.current = true"),
     );
+
+    expect(signInSubmit).not.toContain("updatedClerkResource");
+    expect(passwordFlowSource).toContain("useEffectEvent");
+    expect(passwordFlowSource).toContain(
+      "[localBusy, providerBusy, signIn, signInTransition]",
+    );
+    expect(passwordFlowSource).toContain(
+      'localBusy || providerBusy || signInTransition !== "idle"',
+    );
+    expect(passwordFlowSource).toContain(
+      'signInTransition === "awaiting_password_result"',
+    );
+    expect(passwordFlowSource).toContain(
+      "signIn === signInTransitionSourceRef.current",
+    );
+    expect(passwordFlowSource).toContain(
+      "signInTransitionSourceRef.current = signIn",
+    );
+    expect(passwordFlowSource).toContain(
+      "signInTransitionProtectTokenRef.current",
+    );
+    expect(passwordFlowSource).toContain(
+      "currentSignIn.protectCheck?.token",
+    );
+    expect(passwordFlowSource).toContain("window.setTimeout");
+    expect(passwordFlowSource).toContain(
+      "Sign-in did not finish. Try again or continue with Privy.",
+    );
+  });
+
+  it("waits past an identity-only update for a settled provider status", async () => {
+    const previous = { status: "needs_first_factor" };
+    let reads = 0;
+    const current = await updatedClerkResource(
+      () => {
+        reads += 1;
+        if (reads === 1) return { status: "needs_first_factor" };
+        return { status: "complete" };
+      },
+      previous,
+      (resource) => resource.status === "complete",
+    );
+
+    expect(reads).toBe(2);
+    expect(current.status).toBe("complete");
+  });
+
+  it("runs and submits Clerk Protect checks instead of dead-ending sign-in", () => {
+    expect(passwordFlowSource).toContain("executeProtectCheck");
+    expect(passwordFlowSource).toContain('status === "needs_protect_check"');
+    expect(passwordFlowSource).toContain("submitProtectCheck({ proofToken })");
     expect(passwordFlowSource).not.toContain(
-      'if (signIn.status !== "complete")',
+      "This account needs another provider step before it can sign in.",
+    );
+  });
+
+  it("retries the gated password operation after a Protect proof", () => {
+    expect(passwordFlowSource).toContain(
+      'signInTransition === "retry_after_protect"',
+    );
+    expect(passwordFlowSource).toContain(
+      'setSignInTransition("awaiting_password_result")',
+    );
+    expect(passwordFlowSource).toContain(
+      "await submitCredentials()",
+    );
+    expect(passwordFlowSource).toContain(
+      'setStep("credentials");\n      await submitCredentials()',
     );
   });
 
