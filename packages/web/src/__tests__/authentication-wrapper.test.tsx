@@ -1,7 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { AUTHENTICATION_METHOD_MATRIX } from "../components/clerk-password-flow";
+import {
+  AUTHENTICATION_METHOD_MATRIX,
+  updatedClerkResource,
+} from "../components/clerk-password-flow";
 import {
   ApiError,
   AUTH_TOKEN_KEY,
@@ -122,6 +125,32 @@ describe("unified authentication wrapper", () => {
     );
     expect(passwordFlowSource).not.toContain(
       'if (signIn.status !== "complete")',
+    );
+  });
+
+  it("waits past an identity-only update for a settled provider status", async () => {
+    const previous = { status: "needs_first_factor" };
+    let reads = 0;
+    const current = await updatedClerkResource(
+      () => {
+        reads += 1;
+        if (reads === 1) return { status: "needs_first_factor" };
+        return { status: "complete" };
+      },
+      previous,
+      (resource) => resource.status === "complete",
+    );
+
+    expect(reads).toBe(2);
+    expect(current.status).toBe("complete");
+  });
+
+  it("runs and submits Clerk Protect checks instead of dead-ending sign-in", () => {
+    expect(passwordFlowSource).toContain("executeProtectCheck");
+    expect(passwordFlowSource).toContain('status === "needs_protect_check"');
+    expect(passwordFlowSource).toContain("submitProtectCheck({ proofToken })");
+    expect(passwordFlowSource).not.toContain(
+      "This account needs another provider step before it can sign in.",
     );
   });
 

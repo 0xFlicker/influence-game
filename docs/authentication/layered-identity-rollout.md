@@ -62,7 +62,11 @@ Clerk setup and environment variables are documented in
    ```
 
 7. Manually confirm direct Privy email and wallet login still work.
-8. Switch both services to `existing-only` and confirm existing password users
+8. If Clerk Protect is enabled, sign in from a clean mobile browser and confirm
+   its security check completes inside the Influence password flow. The custom
+   flow must wait for Clerk's post-password status and submit every chained
+   Protect challenge before it finalizes the provider session.
+9. Switch both services to `existing-only` and confirm existing password users
    can sign in while password signup and linking are blocked. Switch back to
    `disabled` and confirm Clerk disappears while Privy remains available.
 
@@ -238,7 +242,9 @@ Do this during a window when you can immediately test and roll back:
     on and investigate before enabling Clerk.
 13. Set `MANAGED_AUTH_MODE=full` on both services and redeploy them together.
 14. From a clean browser, verify password signup, email verification,
-    logout/login, password reset, existing-Privy linking, and OAuth return.
+    logout/login, password reset, existing-Privy linking, OAuth return, and any
+    enabled Clerk Protect check. Repeat password login from a clean mobile
+    browser so the provider's mobile protection path is exercised.
 15. Verify direct Privy email and wallet login again.
 16. Keep the encrypted inventory checkpoint and its two inventory secrets only
     through the rollback observation window. Then delete the checkpoint and
