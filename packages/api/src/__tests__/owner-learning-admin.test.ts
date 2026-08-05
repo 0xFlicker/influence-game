@@ -76,6 +76,7 @@ describe("owner learning admin ledger", () => {
           latencyMs: 359,
           providerRequestId: "req-admin-diagnostic",
         }],
+        safeFailureCode: "provider_error",
         costSource: "unavailable",
         dispatchedAt: "2026-08-04T03:02:01.000Z",
       },
@@ -136,6 +137,7 @@ describe("owner learning admin ledger", () => {
       terminalHttpStatus: 400,
       providerRequestId: "req-admin-diagnostic",
       latencyMs: 359,
+      safeFailureCode: "provider_error",
     });
     const serialized = JSON.stringify(detail);
     for (const sentinel of [

@@ -4,6 +4,7 @@ import { schema } from "../db/index.js";
 import {
   type OwnerLearningAnalysisStatus,
   type OwnerLearningAnalysisTrack,
+  type OwnerLearningCallFailureCode,
   type OwnerLearningCostSource,
   type OwnerLearningResolution,
 } from "./owner-learning-contracts.js";
@@ -69,6 +70,7 @@ export interface AdminOwnerLearningCall {
   flex429Count: number;
   terminalHttpStatus: number | null;
   providerRequestId: string | null;
+  safeFailureCode: OwnerLearningCallFailureCode | null;
   latencyMs: number | null;
   tokens: {
     input: number | null;
@@ -329,6 +331,7 @@ async function loadCalls(db: DrizzleDB, reviewId?: string) {
     tokenReceipt: schema.agentLearningReviewCalls.tokenReceipt,
     transportReceipts: schema.agentLearningReviewCalls.transportReceipts,
     finalProviderRequestId: schema.agentLearningReviewCalls.finalProviderRequestId,
+    safeFailureCode: schema.agentLearningReviewCalls.safeFailureCode,
     flex429Count: schema.agentLearningReviewCalls.flex429Count,
     capacityPath: schema.agentLearningReviewCalls.capacityPath,
     latencyMs: schema.agentLearningReviewCalls.latencyMs,
@@ -449,6 +452,7 @@ function toCall(row: CallRow): AdminOwnerLearningCall {
     flex429Count: row.flex429Count,
     terminalHttpStatus: latestTerminalReceipt?.terminalHttpStatus ?? null,
     providerRequestId: latestTerminalReceipt?.providerRequestId ?? row.finalProviderRequestId,
+    safeFailureCode: row.safeFailureCode,
     latencyMs: row.latencyMs ?? transportLatencyMs,
     tokens: {
       input,

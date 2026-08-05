@@ -472,9 +472,12 @@ function ownerLearningFinalResultSchema(): Record<string, unknown> {
     ],
     properties: {
       diagnosis: { type: "string", maxLength: 1_200 },
-      analysisTrack: { enum: ["evidence_rich", "strategy_health_check"] },
+      analysisTrack: { type: "string", enum: ["evidence_rich", "strategy_health_check"] },
       strategyHealthClassification: {
-        anyOf: [{ enum: ["guidance_gap", "execution_gap", "no_clear_strategy_defect"] }, { type: "null" }],
+        anyOf: [{
+          type: "string",
+          enum: ["guidance_gap", "execution_gap", "no_clear_strategy_defect"],
+        }, { type: "null" }],
       },
       recommendations: {
         type: "array",
@@ -485,8 +488,8 @@ function ownerLearningFinalResultSchema(): Record<string, unknown> {
             required: ["title", "disposition", "confidence", "rationale", "keepGuidance", "evidenceHandles", "proof"],
           properties: {
             title: { type: "string", maxLength: 160 },
-            disposition: { enum: ["change", "keep", "gather_more_evidence"] },
-            confidence: { enum: ["low", "medium", "high"] },
+            disposition: { type: "string", enum: ["change", "keep", "gather_more_evidence"] },
+            confidence: { type: "string", enum: ["low", "medium", "high"] },
             rationale: { type: "string", maxLength: 1_200 },
             keepGuidance: { anyOf: [{ type: "string", maxLength: 800 }, { type: "null" }] },
               evidenceHandles: { type: "array", maxItems: 8, items: evidenceHandleSchema() },
@@ -503,9 +506,13 @@ function ownerLearningFinalResultSchema(): Record<string, unknown> {
                   "exactGuidanceTarget",
                 ],
                 properties: {
-                  kind: { enum: ["observed_pattern", "prompt_guidance_defect", "combined"] },
+                  kind: {
+                    type: "string",
+                    enum: ["observed_pattern", "prompt_guidance_defect", "combined"],
+                  },
                   rubricCategory: {
                     anyOf: [{
+                      type: "string",
                       enum: [
                         "ambiguous_priority",
                         "conflicting_instructions",
@@ -532,7 +539,7 @@ function ownerLearningFinalResultSchema(): Record<string, unknown> {
           additionalProperties: false,
           required: ["field", "before", "after"],
           properties: {
-            field: { const: "strategyStyle" },
+            field: { type: "string", const: "strategyStyle" },
             before: { type: "string", maxLength: 2_000 },
             after: { type: "string", maxLength: 2_000 },
           },

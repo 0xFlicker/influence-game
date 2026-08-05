@@ -4,9 +4,18 @@ import {
   type OwnerLearningEvidenceProjection,
 } from "../services/owner-learning-evidence.js";
 import type { OwnerLearningCheckpoint } from "../services/owner-learning-contracts.js";
-import { runOwnerLearningHarness } from "../services/owner-learning-harness.js";
+import {
+  OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA,
+  OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+  runOwnerLearningHarness,
+} from "../services/owner-learning-harness.js";
 
 describe("owner learning bounded harness", () => {
+  test("emits explicitly typed enum and const leaves for strict provider schemas", () => {
+    expect(untypedChoiceSchemaPaths(OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA)).toEqual([]);
+    expect(untypedChoiceSchemaPaths(OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA)).toEqual([]);
+  });
+
   test("completes a scan plus three targeted dives inside four logical calls", async () => {
     const evidence = harnessEvidence("evidence_rich", 3);
     const invocations: Array<{ stage: string; isDive: boolean }> = [];
@@ -385,6 +394,18 @@ describe("owner learning bounded harness", () => {
     })).rejects.toThrow("cannot contain a change recommendation");
   });
 });
+
+function untypedChoiceSchemaPaths(value: unknown, path: string[] = []): string[] {
+  if (value === null || typeof value !== "object") return [];
+  const record = value as Record<string, unknown>;
+  const ownPaths = ("enum" in record || "const" in record) && !("type" in record)
+    ? [path.join(".")]
+    : [];
+  return Object.entries(record).reduce<string[]>(
+    (paths, [key, child]) => [...paths, ...untypedChoiceSchemaPaths(child, [...path, key])],
+    ownPaths,
+  );
+}
 
 function providerTurn(request: Record<string, unknown>): Record<string, unknown> {
   return request.turn as Record<string, unknown>;

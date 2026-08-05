@@ -664,7 +664,7 @@ describe("owner learning worker durability", () => {
         });
         return {
           output: {
-            provisionalThemes: ["unsupported"],
+            provisionalThemes: ["PRIVATE_GENERATED_OUTPUT_SENTINEL"],
             selectedMomentHandles: ["g1:m999"],
             findings: [],
             finalResult: null,
@@ -688,11 +688,13 @@ describe("owner learning worker durability", () => {
       },
     };
     let clockMs = Date.parse("2026-08-04T03:01:01.000Z");
+    const diagnostics: unknown[] = [];
 
     expect(await runClaimedOwnerLearningReview(db, claim, {
       provider,
       projector,
       now: () => new Date(clockMs += 100),
+      onOutputFailure: (diagnostic) => diagnostics.push(diagnostic),
     })).toBe(false);
 
     const review = (await db.select().from(schema.agentLearningReviews)
@@ -702,9 +704,16 @@ describe("owner learning worker durability", () => {
     expect(review.retryable).toBe(true);
     const call = (await db.select().from(schema.agentLearningReviewCalls))[0]!;
     expect(call.state).toBe("failed");
-    expect(call.safeFailureCode).toBe("invalid_structured_output");
+    expect(call.safeFailureCode).toBe("unknown_moment_handle");
     expect(call.estimatedCostMicrousd).toBe(500);
     expect(call.tokenReceipt?.totalOutputTokens).toBe(300);
+    expect(diagnostics).toEqual([{
+      reviewId,
+      callOrdinal: 1,
+      stage: "scanning_narratives",
+      code: "unknown_moment_handle",
+    }]);
+    expect(JSON.stringify(diagnostics)).not.toContain("PRIVATE_GENERATED_OUTPUT_SENTINEL");
   });
 
   test("normalizes an unknown provider tier while durably failing the review", async () => {

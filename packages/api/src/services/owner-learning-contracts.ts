@@ -55,6 +55,24 @@ export type OwnerLearningSafeFailureCode =
   | "evidence_unavailable"
   | "worker_interrupted";
 
+export type OwnerLearningOutputFailureCode =
+  | "obsolete_output_protocol"
+  | "invalid_handle_list"
+  | "unknown_moment_handle"
+  | "unknown_evidence_handle"
+  | "invalid_turn_contract"
+  | "missing_final_result"
+  | "invalid_result_contract"
+  | "analysis_track_mismatch"
+  | "unknown_evidence_ref"
+  | "proposal_contract"
+  | "strategy_health_contract"
+  | "unclassified_output_failure";
+
+export type OwnerLearningCallFailureCode =
+  | OwnerLearningSafeFailureCode
+  | OwnerLearningOutputFailureCode;
+
 export type OwnerLearningCallState =
   | "reserved"
   | "dispatched"

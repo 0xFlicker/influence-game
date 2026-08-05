@@ -2616,6 +2616,7 @@ export interface AdminOwnerLearningReviewDetail {
     flex429Count: number;
     terminalHttpStatus: number | null;
     providerRequestId: string | null;
+    safeFailureCode: string | null;
     latencyMs: number | null;
     tokens: {
       input: number | null;

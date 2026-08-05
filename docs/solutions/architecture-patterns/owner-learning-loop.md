@@ -72,6 +72,8 @@ Later turns retain all accumulated validated findings that can exist within the 
 
 Every logical call is reserved before provider I/O. It begins on Flex and may make at most three total Flex transmissions when each terminal response is HTTP 429. Only then may the identical request make one `auto` transmission. A later logical call begins on Flex again. The SDK has no automatic retry. Dispatch intent, each terminal transport outcome, tier transition, backoff, usage, and safe failure state are durable so restart recovery never guesses whether an unmatched dispatch spent money. When the latest call is safely resumable, the worker reconstructs the harness from the completed-call counters so it reproduces that reserved ordinal, request schema, and input-policy hash rather than consuming another slot. If a deployment changed that identity, recovery fails the persisted call before provider transmission; an explicit retry may use the next lifetime slot when one remains.
 
+An HTTP-successful response that fails server-side hydration or structured-output validation keeps its accounting receipt and changes that completed call to failed with an allowlisted output-failure code. The review itself retains the broad owner-safe `invalid_structured_output` code. The worker logs only review ID, call ordinal, stage, and that safe code; it does not retain or log the generated output or arbitrary exception text. The same code appears in the authorized admin call ledger so operators can distinguish an unknown handle, missing final result, proposal-contract failure, and other bounded validation classes without opening a private-content channel.
+
 Call cost is captured once from its effective tier as actual, estimated, or unavailable. Admin totals sum those immutable receipts and never reprice history. Cached input, input, total output, reasoning, and derived visible output remain separate. An ambiguous or missing receipt remains unknown rather than becoming a zero-cost call.
 
 ## MCP parity
@@ -110,7 +112,7 @@ Live model generation is on by default when the deployment configures:
 OPENAI_API_KEY=<configured secret>
 ```
 
-When OpenAI rejects a review request, the worker emits one sanitized console diagnostic with review and call identity, model and requested tier, HTTP status, provider request ID, error type/code/parameter, and a bounded single-line message. It never logs the prompt, evidence, request or response body, headers, or credentials.
+When OpenAI rejects a review request, the worker emits one sanitized console diagnostic with review and call identity, model and requested tier, HTTP status, provider request ID, error type/code/parameter, and a bounded single-line message. When a completed response fails local review processing, it emits one separate content-free diagnostic with review ID, call ordinal, stage, and an allowlisted failure code. Neither path logs the prompt, evidence, request or response body, generated content, headers, or credentials.
 
 The provider credential is required for paid admission and worker startup. Set `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true` to disable live generation. There is no per-review live operator allowance, staged operator approval, or intermediate production deployment. Before deploying with live generation available, run the complete automated/browser/cross-surface gates and one explicitly approved frozen paid quality case. Evaluate evidence faithfulness, recommendation usefulness and restraint, non-causal framing, latency, token/cache behavior, capacity path, and sourced cost. Do not run a paid case without explicit approval.
 
@@ -128,7 +130,7 @@ Predeployment integrity checks should prove:
 Operational diagnosis order:
 
 1. Confirm the disable flag and provider credential; disabled generation should leave deterministic input/evidence reads healthy and reject new paid admission before row creation.
-2. Inspect the admin review lifecycle, stage, safe failure, call ordinals, tier path, Flex 429 count, token receipt, and cost provenance.
+2. Inspect the admin review lifecycle, stage, broad review failure, per-call safe failure, call ordinals, tier path, Flex 429 count, token receipt, and cost provenance.
 3. Retry only when the review reports retryable and has lifetime budget remaining. Never delete ambiguous call rows or reset counters to force a replay.
 4. For content quality, compare the validated result with the server-minted evidence refs and established producer/admin source tools. Do not search analytics or cost rows for prompt/provider bodies; they intentionally are not there.
 5. During an incident, redeploy with `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true`. Keep deterministic reads, existing review reads, applications, resolutions, and admin diagnosis available. Do not down-migrate populated review tables or delete purchased reviews.

@@ -10,6 +10,8 @@ import { schema } from "../db/index.js";
 import type {
   OwnerLearningCheckpoint,
   OwnerLearningCallCostReceipt,
+  OwnerLearningCallFailureCode,
+  OwnerLearningOutputFailureCode,
   OwnerLearningReviewResult,
   OwnerLearningSafeFailureCode,
   OwnerLearningStage,
@@ -35,6 +37,13 @@ import { validateOwnerLearningSelection } from "./owner-learning-eligibility.js"
 
 const OWNER_LEARNING_LEASE_DURATION_MS = 30_000;
 const activeOwnerLearningRuns = new Map<string, AbortController>();
+
+export interface OwnerLearningOutputFailureDiagnostic {
+  reviewId: string;
+  callOrdinal: number;
+  stage: OwnerLearningStage;
+  code: OwnerLearningOutputFailureCode;
+}
 
 export function abortActiveOwnerLearningReview(reviewId: string): boolean {
   const controller = activeOwnerLearningRuns.get(reviewId);
@@ -426,6 +435,7 @@ export async function failOwnerLearningReview(
     retryable: boolean;
     callId?: string;
     completedCallId?: string;
+    completedCallFailureCode?: OwnerLearningCallFailureCode;
     now?: Date;
   },
 ): Promise<boolean> {
@@ -448,7 +458,7 @@ export async function failOwnerLearningReview(
     if (input.completedCallId) {
       const failed = await tx.update(schema.agentLearningReviewCalls).set({
         state: "failed",
-        safeFailureCode: input.failureCode,
+        safeFailureCode: input.completedCallFailureCode ?? input.failureCode,
         completedAt: nowIso,
       }).where(and(
         eq(schema.agentLearningReviewCalls.id, input.completedCallId),
@@ -642,6 +652,7 @@ export async function runClaimedOwnerLearningReview(
     now?: () => Date;
     heartbeatIntervalMs?: number;
     leaseDurationMs?: number;
+    onOutputFailure?: (diagnostic: OwnerLearningOutputFailureDiagnostic) => void;
   },
 ): Promise<boolean> {
   const now = options.now ?? (() => new Date());
@@ -692,7 +703,13 @@ export async function runClaimedOwnerLearningReview(
   activeOwnerLearningRuns.set(review.id, controller);
 
   let expectedCheckpointHash = review.checkpointHash;
-  let latestCompletedCallId: string | null = null;
+  const outputValidationCall: {
+    current: {
+      id: string;
+      ordinal: number;
+      stage: OwnerLearningStage;
+    } | null;
+  } = { current: null };
   try {
     scheduleHeartbeat();
     const selectedGames = await db.select({ gameId: schema.agentLearningReviewGames.gameId })
@@ -722,6 +739,7 @@ export async function runClaimedOwnerLearningReview(
       logicalCallCount: harnessCounters.logicalCallCount,
       diveCount: harnessCounters.diveCount,
       async invoke(turn) {
+        outputValidationCall.current = null;
         const requestInput = turn.request;
         const inputPolicyHash = fingerprintOwnerLearningRequest({
           model: "gpt-5.6-luna",
@@ -767,7 +785,11 @@ export async function runClaimedOwnerLearningReview(
             now: now(),
           });
           if (!completed) throw new Error("provider tier did not match durable capacity path");
-          latestCompletedCallId = reservation.callId;
+          outputValidationCall.current = {
+            id: reservation.callId,
+            ordinal: reservation.ordinal,
+            stage: turn.stage,
+          };
           return response.output;
         } catch (error) {
           if (error instanceof OwnerLearningProviderError) {
@@ -783,6 +805,7 @@ export async function runClaimedOwnerLearningReview(
         }
       },
       async onCheckpoint(checkpoint) {
+        outputValidationCall.current = null;
         expectedCheckpointHash = await persistOwnerLearningCheckpoint(db, {
           reviewId: review.id,
           leaseToken: claim.leaseToken,
@@ -815,12 +838,30 @@ export async function runClaimedOwnerLearningReview(
       });
       return false;
     }
+    const completedCall = outputValidationCall.current;
+    const outputFailureCode = completedCall
+      ? classifyOwnerLearningOutputFailure(error)
+      : null;
+    if (completedCall && outputFailureCode) {
+      const diagnostic: OwnerLearningOutputFailureDiagnostic = {
+        reviewId: review.id,
+        callOrdinal: completedCall.ordinal,
+        stage: completedCall.stage,
+        code: outputFailureCode,
+      };
+      (options.onOutputFailure ?? logOwnerLearningOutputFailure)(diagnostic);
+    }
     await failOwnerLearningReview(db, {
       reviewId: review.id,
       leaseToken: claim.leaseToken,
       failureCode: "invalid_structured_output",
       retryable: review.logicalCallCount < OWNER_LEARNING_MAX_LOGICAL_CALLS,
-      ...(latestCompletedCallId ? { completedCallId: latestCompletedCallId } : {}),
+      ...(completedCall
+        ? {
+            completedCallId: completedCall.id,
+            completedCallFailureCode: outputFailureCode ?? "unclassified_output_failure",
+          }
+        : {}),
       now: now(),
     });
     return false;
@@ -831,6 +872,71 @@ export async function runClaimedOwnerLearningReview(
     }
     options.signal?.removeEventListener("abort", abortFromCaller);
   }
+}
+
+function classifyOwnerLearningOutputFailure(error: unknown): OwnerLearningOutputFailureCode {
+  const message = error instanceof Error ? error.message : "";
+  if (
+    message === "Owner learning provider returned the obsolete moment ID protocol"
+    || message === "Owner learning provider returned the obsolete evidence-ref protocol"
+  ) return "obsolete_output_protocol";
+  if (message === "selectedMomentHandles must be an array" || message === "evidenceHandles must be an array") {
+    return "invalid_handle_list";
+  }
+  if (
+    message === "Generated turn selected an unknown moment handle"
+    || message === "Generated turn selected a non-moment evidence handle"
+    || message === "Generated turn selected an unknown moment ID"
+  ) return "unknown_moment_handle";
+  if (message === "Generated turn cited an unknown evidence handle") return "unknown_evidence_handle";
+  if (
+    message === "Owner learning final turn did not contain a result"
+    || message === "Owner learning final logical call must contain a result"
+  ) return "missing_final_result";
+  if (message === "Generated result changed the purchased analysis track") {
+    return "analysis_track_mismatch";
+  }
+  if (
+    message === "Generated result contains an unknown evidence ref"
+    || message === "Generated finding contains an unknown evidence ref"
+  ) return "unknown_evidence_ref";
+  if (
+    message === "Generated strategy proposal does not start from the reviewed strategy"
+    || message === "Generated strategy proposal requires a change recommendation"
+    || message === "Generated no-change result cannot contain a change recommendation"
+  ) return "proposal_contract";
+  if (
+    message === "strategyHealthClassification is required for Strategy Health Check"
+    || message === "Strategy Health Check no-change must specifically defend the current guidance"
+    || message.includes(".proof is required for Strategy Health Check")
+    || message.includes(".proof.rubricCategory is required")
+    || message.includes(".proof observed pattern requires two games")
+  ) return "strategy_health_contract";
+  if (
+    message === "selectedMomentIds must be distinct"
+    || message.startsWith("harness turn ")
+    || message.startsWith("provisionalThemes ")
+    || message.startsWith("selectedMomentIds ")
+    || message.startsWith("findings[")
+  ) return "invalid_turn_contract";
+  if (
+    message.startsWith("review result ")
+    || message.startsWith("recommendations ")
+    || message.startsWith("recommendations[")
+    || message.startsWith("diagnosis ")
+    || message.startsWith("analysisTrack ")
+    || message.startsWith("proposal ")
+    || message.startsWith("noChange ")
+    || message.startsWith("strategyHealthClassification ")
+    || message.startsWith("owner learning proposal ")
+  ) return "invalid_result_contract";
+  return "unclassified_output_failure";
+}
+
+function logOwnerLearningOutputFailure(diagnostic: OwnerLearningOutputFailureDiagnostic): void {
+  console.error(
+    `[owner-learning] post-response review failure ${JSON.stringify(diagnostic)}`,
+  );
 }
 
 export interface OwnerLearningWorkerLoop {

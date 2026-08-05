@@ -93,6 +93,27 @@ describe("admin owner learning reviews", () => {
     expect(html).toContain("no usage receipt");
   });
 
+  test("shows the content-free structured-output reason retained on a failed call", () => {
+    const detail = detailFixture();
+    detail.calls[0] = {
+      ...detail.calls[0]!,
+      state: "failed",
+      safeFailureCode: "unknown_moment_handle",
+    };
+    const html = renderToString(
+      <AdminOwnerLearningReviewsContent
+        data={listFixture(detail)}
+        expandedId={detail.id}
+        details={{ [detail.id]: detail }}
+        loadingDetailId={null}
+        onToggle={() => {}}
+      />,
+    );
+
+    expect(html).toContain("unknown moment handle");
+    expect(html).not.toContain("PRIVATE_GENERATED_OUTPUT_SENTINEL");
+  });
+
   test("reports a manual user edit as a neutral action metric", () => {
     const detail = detailFixture();
     detail.application = null;
@@ -333,6 +354,7 @@ function detailFixture(
       latencyMs: 1_250,
       terminalHttpStatus: 200,
       providerRequestId: "req-admin-success",
+      safeFailureCode: null,
       tokens: { input: 1_000, cachedInput: 600, totalOutput: 350, reasoning: 150, visibleOutput: 200 },
       cost: { source: "estimated", microusd: 725, pricingSourceId: "catalog", rateCardVersion: "2026-08-04", pricedAt: "2026-08-04T03:02:00.000Z" },
       dispatchedAt: "2026-08-04T03:01:58.000Z",

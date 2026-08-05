@@ -257,7 +257,7 @@ function AnalysisRail({ review, mcpConnectionState }: {
     <aside className="olm-analysis-rail" aria-label="Analysis progress">
       <p className="olm-rail-kicker">AI review in progress</p>
       <h2>Finding the change worth making</h2>
-      <p>The reviewer is comparing repeated choices, room responses, and outcomes. It stops at three evidence-backed recommendations.</p>
+      <p>The reviewer is comparing repeated choices, room responses, and outcomes.</p>
       <div className="olm-progress-track" data-progress={active} aria-hidden="true"><div /></div>
       <div className="olm-progress-meta"><span>{stageTitle(review.stage)}</span><span>Progress is saved</span></div>
       <ol className="olm-steps">
