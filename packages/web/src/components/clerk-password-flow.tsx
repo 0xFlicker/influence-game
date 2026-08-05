@@ -38,6 +38,7 @@ export const AUTHENTICATION_METHOD_MATRIX = {
 type FlowStep =
   | "credentials"
   | "verify_email"
+  | "verify_client_trust"
   | "reset_code"
   | "new_password"
   | "protect_check"
@@ -67,6 +68,15 @@ type ClerkProtectResource = ClerkExistingSessionResource & {
   submitProtectCheck: (params: {
     proofToken: string;
   }) => Promise<ClerkOperationResult>;
+};
+
+type ClerkClientTrustResource = {
+  status: string;
+  supportedSecondFactors?: readonly { strategy: string }[] | null;
+  mfa: {
+    sendEmailCode: () => Promise<ClerkOperationResult>;
+    verifyEmailCode: (params: { code: string }) => Promise<ClerkOperationResult>;
+  };
 };
 
 type ProtectCheckResource = Parameters<typeof executeProtectCheck>[0];
@@ -146,6 +156,71 @@ export async function runClerkProtectAttempt<T extends ClerkProtectResource>({
   ) {
     await retryPassword();
     return;
+  }
+  await continueSignIn(signIn);
+}
+
+function assertClerkClientTrustEmailCodeSupported(
+  signIn: ClerkClientTrustResource,
+): void {
+  const supportsEmailCode = signIn.supportedSecondFactors?.some(
+    (factor) => factor.strategy === "email_code",
+  );
+  if (!supportsEmailCode) {
+    throw new Error(
+      "This device cannot be verified by email. Try another sign-in method.",
+    );
+  }
+}
+
+export async function sendClerkClientTrustEmailCode<
+  T extends ClerkClientTrustResource,
+>(signIn: T): Promise<void> {
+  assertClerkClientTrustEmailCodeSupported(signIn);
+
+  const result = await signIn.mfa.sendEmailCode();
+  const message = clerkErrorMessage(
+    result,
+    "Could not send a device verification code.",
+  );
+  if (message) throw new Error(message);
+}
+
+export async function beginClerkClientTrustEmailCode<
+  T extends ClerkClientTrustResource,
+>({
+  signIn,
+  enterVerification,
+}: {
+  signIn: T;
+  enterVerification: () => void;
+}): Promise<void> {
+  assertClerkClientTrustEmailCodeSupported(signIn);
+  enterVerification();
+  await sendClerkClientTrustEmailCode(signIn);
+}
+
+export async function verifyClerkClientTrustEmailCode<
+  T extends ClerkClientTrustResource,
+>({
+  signIn,
+  code,
+  continueSignIn,
+}: {
+  signIn: T;
+  code: string;
+  continueSignIn: (signIn: T) => Promise<void>;
+}): Promise<void> {
+  const result = await signIn.mfa.verifyEmailCode({ code });
+  const message = clerkErrorMessage(
+    result,
+    "That device verification code is invalid or expired.",
+  );
+  if (message) throw new Error(message);
+  if (signIn.status === "needs_client_trust") {
+    throw new Error(
+      "Device verification is incomplete. Request a new code.",
+    );
   }
   await continueSignIn(signIn);
 }
@@ -472,10 +547,16 @@ export function ClerkPasswordFlow({
       return;
     }
 
-    if (
-      currentSignIn.status === "needs_second_factor"
-      || currentSignIn.status === "needs_client_trust"
-    ) {
+    if (currentSignIn.status === "needs_client_trust") {
+      await beginClerkClientTrustEmailCode({
+        signIn: currentSignIn,
+        enterVerification: () => setStep("verify_client_trust"),
+      });
+      setStatus("Device verification code sent.");
+      return;
+    }
+
+    if (currentSignIn.status === "needs_second_factor") {
       throw new Error(
         "This account requires an unsupported additional sign-in step.",
       );
@@ -585,6 +666,54 @@ export function ClerkPasswordFlow({
       );
       if (message) throw new Error(message);
       setStatus("A new verification code was sent.");
+    }, "Sending another code…");
+  }
+
+  async function verifyClientTrust(): Promise<void> {
+    await run(async () => {
+      await verifyClerkClientTrustEmailCode({
+        signIn: signInRef.current,
+        code: code.trim(),
+        continueSignIn,
+      });
+    }, "Verifying device…");
+  }
+
+  async function resendClientTrustCode(): Promise<void> {
+    await run(async () => {
+      await sendClerkClientTrustEmailCode(signInRef.current);
+      setStatus("A new device verification code was sent.");
+    }, "Sending another code…");
+  }
+
+  async function returnToCredentials(resetSignIn: boolean): Promise<void> {
+    if (!resetSignIn) {
+      setCode("");
+      setError(null);
+      setStatus("");
+      setStep("credentials");
+      return;
+    }
+
+    await run(async () => {
+      const result = await signInRef.current.reset();
+      const message = clerkErrorMessage(result, "Could not restart sign in.");
+      if (message) throw new Error(message);
+      setCode("");
+      setStatus("");
+      setStep("credentials");
+    }, "Restarting sign in…");
+  }
+
+  async function resendResetCode(): Promise<void> {
+    await run(async () => {
+      const result = await signIn.resetPasswordEmailCode.sendCode();
+      const message = clerkErrorMessage(
+        result,
+        "A new code could not be sent yet.",
+      );
+      if (message) throw new Error(message);
+      setStatus("A new reset code was sent.");
     }, "Sending another code…");
   }
 
@@ -835,22 +964,49 @@ export function ClerkPasswordFlow({
     );
   }
 
-  if (step === "verify_email" || step === "reset_code") {
-    const verification = step === "verify_email";
+  if (
+    step === "verify_email"
+    || step === "verify_client_trust"
+    || step === "reset_code"
+  ) {
+    const recipient = email || "your verified email address";
+    const verificationByStep = {
+      verify_email: {
+        heading: "Verify your email",
+        description: `Enter the one-time code sent to ${recipient}. Invalid or expired codes do not create or link an Influence account.`,
+        verify: verifyEmail,
+        resend: resendVerification,
+        resetSignInOnExit: false,
+      },
+      verify_client_trust: {
+        heading: "Verify this device",
+        description: `Enter the one-time code sent to ${recipient}. This confirms that this browser can sign in to your account.`,
+        verify: verifyClientTrust,
+        resend: resendClientTrustCode,
+        resetSignInOnExit: true,
+      },
+      reset_code: {
+        heading: "Enter your reset code",
+        description: `Enter the one-time code sent to ${recipient}. Invalid or expired codes do not create or link an Influence account.`,
+        verify: verifyResetCode,
+        resend: resendResetCode,
+        resetSignInOnExit: false,
+      },
+    };
+    const verification = verificationByStep[step];
     return (
       <FlowPanel
-        heading={verification ? "Verify your email" : "Enter your reset code"}
+        heading={verification.heading}
         headingRef={headingRef}
       >
         <p className="influence-copy text-sm">
-          Enter the one-time code sent to {email}. Invalid or expired codes do
-          not create or link an Influence account.
+          {verification.description}
         </p>
         <form
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
-            void (verification ? verifyEmail() : verifyResetCode());
+            void verification.verify();
           }}
           aria-busy={busy}
         >
@@ -873,20 +1029,18 @@ export function ClerkPasswordFlow({
             type="button"
             disabled={busy}
             className="influence-link text-sm"
-            onClick={() => void (
-              verification
-                ? resendVerification()
-                : run(async () => {
-                  const result = await signIn.resetPasswordEmailCode.sendCode();
-                  const message = clerkErrorMessage(result, "A new code could not be sent yet.");
-                  if (message) throw new Error(message);
-                  setStatus("A new reset code was sent.");
-                }, "Sending another code…")
-            )}
+            onClick={() => void verification.resend()}
           >
             Send another code
           </button>
-          <button type="button" disabled={busy} className="influence-link text-sm" onClick={() => setStep("credentials")}>
+          <button
+            type="button"
+            disabled={busy}
+            className="influence-link text-sm"
+            onClick={() => void returnToCredentials(
+              verification.resetSignInOnExit,
+            )}
+          >
             Use a different email
           </button>
         </div>
