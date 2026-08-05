@@ -36,20 +36,28 @@ Rehearse the complete sequence against `social-strategy-agent/stg` before
 production. Production also requires a current database backup and confirmation
 that the object-storage recovery policy is understood.
 
-Use a private persistent absolute path outside the repository. The tool creates
-and checkpoints the manifest with mode `0600` after every object so interrupted
-phases can safely resume.
+Run the following commands as `root` from `/opt/influence` on the target host.
+The Compose service supplies the environment already fetched from that host's
+scoped Doppler service token, so the staging host uses
+`social-strategy-agent/stg` and the production host uses
+`social-strategy-agent/prd`. Do not substitute a laptop or another host's
+Doppler configuration.
+
+### Read-only database preflight
+
+Before creating a manifest, use a disposable PostgreSQL client to run the
+read-only audit. Doppler injects `DATABASE_URL` into the Docker client, and
+`-e DATABASE_URL` forwards only that secret to the disposable container.
+Retain counts only; do not copy matching URLs or keys into shared logs. Repeat
+the legacy-reference query after repoint and after deletion, when every value
+must be zero.
 
 ```sh
-export AVATAR_ROTATION_MANIFEST=/secure/path/avatar-storage-rotation-prd.json
-```
-
-Before inventory, run the following through the approved read-only production
-connection. Retain counts only; do not copy matching URLs or keys into shared
-logs. Repeat the legacy-reference query after repoint and after deletion, when
-every value must be zero.
-
-```sql
+doppler run --token "$(cat /opt/influence/.doppler-token)" -- \
+  docker run --rm -i \
+  -e DATABASE_URL \
+  postgres:16-alpine \
+  sh -c 'psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1' <<'SQL'
 SELECT
   (SELECT count(*) FROM agent_profiles
    WHERE regexp_replace(avatar_url, '%2[fF]', '/', 'g')
@@ -68,11 +76,40 @@ SELECT
 SELECT game_id, media_type, status, lease_expires_at
 FROM game_postgame_media
 WHERE status IN ('claimed', 'rendering', 'composing', 'uploading');
+SQL
 ```
 
 Treat the SQL as an independent safety net, not as the rotation authority. Any
 hit not reconciled by the private manifest is a hard stop. The active-worker
 query must return no rows before repointing.
+
+### Rotation command setup
+
+After the database preflight, choose a private persistent manifest path outside
+the repository. Use `stg` in the filename on staging and `prd` in production.
+Keep the same path for every phase. The tool creates and checkpoints the file
+with mode `0600` after every object so interrupted phases can safely resume.
+
+```sh
+cd /opt/influence
+export AVATAR_ROTATION_MANIFEST=/var/lib/influence/avatar-rotation/avatar-storage-rotation-stg.json
+install -d -m 0700 "$(dirname "$AVATAR_ROTATION_MANIFEST")"
+```
+
+Define this shell function in the same session. It runs the CLI bundled into
+the deployed, SHA-selected API image and bind-mounts only the private manifest
+directory at the same absolute path inside the one-off container.
+
+```sh
+avatar_rotation() {
+  docker compose --env-file /opt/influence/.env run --rm --no-deps \
+    --volume "$(dirname "$AVATAR_ROTATION_MANIFEST"):$(dirname "$AVATAR_ROTATION_MANIFEST")" \
+    api bun run dist/rotate-private-avatar-storage-keys.js "$@"
+}
+```
+
+If the SSH session ends, re-export the exact existing manifest path and redefine
+the function before resuming. Never print or transmit the manifest contents.
 
 ## 1. Inventory
 
@@ -85,17 +122,16 @@ to referenced objects. A database reference whose source object is absent is a
 hard stop; it cannot fall outside the manifest and later pass verification.
 
 ```sh
-doppler run --project social-strategy-agent --config prd -- \
-  bun run avatar-storage:rotate inventory \
+avatar_rotation inventory \
   --manifest "$AVATAR_ROTATION_MANIFEST"
 ```
 
-Review the summary counts and privately classify every non-opaque object in the
-complete `pfp/` listing; any path outside the recognized historical shapes is a
-hard stop until its provenance and disposition are known. Do not print or
-transmit the manifest contents. If a
-legacy object appears after inventory, stop and repeat the deployment/drain gate
-with a new manifest path.
+The SQL preflight reports counts only. Inventory creates the private per-object
+old-key to replacement-key mapping in the manifest. Review the summary counts
+and privately classify every non-opaque object in the complete `pfp/` listing;
+any path outside the recognized historical shapes is a hard stop until its
+provenance and disposition are known. If a legacy object appears after
+inventory, stop and repeat the deployment/drain gate with a new manifest path.
 
 ## 2. Copy and verify replacement bytes
 
@@ -106,8 +142,7 @@ copied. Rerunning the command
 re-verifies an existing replacement rather than blindly overwriting it.
 
 ```sh
-doppler run --project social-strategy-agent --config prd -- \
-  bun run avatar-storage:rotate copy \
+avatar_rotation copy \
   --manifest "$AVATAR_ROTATION_MANIFEST" \
   --apply
 ```
@@ -127,8 +162,7 @@ This phase transactionally replaces the old key and URL in:
 - `game_postgame_media.render_input_snapshot`, with its manifest hash recomputed.
 
 ```sh
-doppler run --project social-strategy-agent --config prd -- \
-  bun run avatar-storage:rotate repoint \
+avatar_rotation repoint \
   --manifest "$AVATAR_ROTATION_MANIFEST" \
   --apply
 ```
@@ -139,8 +173,7 @@ reference scan returns zero old references.
 ## 4. Pre-deletion verification
 
 ```sh
-doppler run --project social-strategy-agent --config prd -- \
-  bun run avatar-storage:rotate verify \
+avatar_rotation verify \
   --manifest "$AVATAR_ROTATION_MANIFEST"
 ```
 
@@ -167,8 +200,7 @@ the entire phase if the bucket contains any legacy object absent from the
 manifest.
 
 ```sh
-doppler run --project social-strategy-agent --config prd -- \
-  bun run avatar-storage:rotate delete \
+avatar_rotation delete \
   --manifest "$AVATAR_ROTATION_MANIFEST" \
   --apply \
   --confirm-delete-old-objects
