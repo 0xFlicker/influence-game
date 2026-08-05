@@ -1,6 +1,7 @@
 "use client";
 
 import { useClerk, useSession, useSignIn, useSignUp } from "@clerk/nextjs";
+import { executeProtectCheck } from "@clerk/shared/internal/clerk-js/protectCheck";
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
@@ -34,6 +35,7 @@ type FlowStep =
   | "verify_email"
   | "reset_code"
   | "new_password"
+  | "protect_check"
   | "link_confirmation"
   | "wallet_reauth"
   | "setup_incomplete"
@@ -44,6 +46,8 @@ type ClerkOperationResult = {
   error: { message?: string; longMessage?: string } | null;
 };
 
+type ProtectCheckResource = Parameters<typeof executeProtectCheck>[0];
+
 function clerkErrorMessage(
   result: ClerkOperationResult,
   fallback: string,
@@ -52,16 +56,62 @@ function clerkErrorMessage(
   return result.error.longMessage ?? result.error.message ?? fallback;
 }
 
-async function updatedClerkResource<T extends object>(
+export async function updatedClerkResource<T extends object>(
   readCurrent: () => T,
   previous: T,
+  isReady: (current: T) => boolean = (current) => current !== previous,
 ): Promise<T> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 20));
     const current = readCurrent();
-    if (current !== previous) return current;
+    if (isReady(current)) return current;
   }
   return readCurrent();
+}
+
+function ClerkProtectChallenge({
+  protectCheck,
+  onProof,
+  onError,
+}: {
+  protectCheck: ProtectCheckResource;
+  onProof: (proofToken: string) => void;
+  onError: () => void;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const onProofRef = useRef(onProof);
+  const onErrorRef = useRef(onError);
+  const uiHintsRef = useRef(protectCheck.uiHints);
+
+  useEffect(() => {
+    onProofRef.current = onProof;
+    onErrorRef.current = onError;
+    uiHintsRef.current = protectCheck.uiHints;
+  }, [onError, onProof, protectCheck.uiHints]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const controller = new AbortController();
+    void executeProtectCheck(
+      {
+        sdkUrl: protectCheck.sdkUrl,
+        token: protectCheck.token,
+        uiHints: uiHintsRef.current,
+      },
+      container,
+      { signal: controller.signal },
+    )
+      .then((proofToken) => {
+        if (!controller.signal.aborted) onProofRef.current(proofToken);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) onErrorRef.current();
+      });
+    return () => controller.abort();
+  }, [protectCheck.sdkUrl, protectCheck.token]);
+
+  return <div ref={containerRef} className="min-h-24" />;
 }
 
 function supportReference(): string {
@@ -336,17 +386,11 @@ export function ClerkPasswordFlow({
         const currentSignIn = await updatedClerkResource(
           () => signInRef.current,
           previousSignIn,
+          (current) =>
+            current.status !== "needs_identifier"
+            && current.status !== "needs_first_factor",
         );
-        if (currentSignIn.status === "needs_new_password") {
-          setStep("new_password");
-          return;
-        }
-        if (currentSignIn.status !== "complete") {
-          throw new Error(
-            "This account needs another provider step before it can sign in.",
-          );
-        }
-        await exchangeAfterVerification(await finalizeSignIn());
+        await continueSignIn(currentSignIn);
       }, "Signing in…");
       return;
     }
@@ -377,6 +421,48 @@ export function ClerkPasswordFlow({
       setStep("verify_email");
       setStatus("Verification code sent.");
     }, "Creating your secure sign-in…");
+  }
+
+  async function continueSignIn(
+    currentSignIn: typeof signIn,
+  ): Promise<void> {
+    if (currentSignIn.status === "needs_protect_check") {
+      if (!currentSignIn.protectCheck) {
+        throw new Error("The security check is unavailable. Try again.");
+      }
+      setStep("protect_check");
+      setStatus("Complete the security check to continue.");
+      return;
+    }
+    if (currentSignIn.status === "needs_new_password") {
+      setStep("new_password");
+      return;
+    }
+    if (currentSignIn.status !== "complete") {
+      throw new Error("Sign-in did not finish. Try again or continue with Privy.");
+    }
+    await exchangeAfterVerification(await finalizeSignIn());
+  }
+
+  async function submitProtectProof(proofToken: string): Promise<void> {
+    await run(async () => {
+      const previousSignIn = signInRef.current;
+      const previousProtectToken = previousSignIn.protectCheck?.token;
+      const result = await previousSignIn.submitProtectCheck({ proofToken });
+      const message = clerkErrorMessage(
+        result,
+        "Could not complete the security check.",
+      );
+      if (message) throw new Error(message);
+      const currentSignIn = await updatedClerkResource(
+        () => signInRef.current,
+        previousSignIn,
+        (current) =>
+          current.status !== "needs_protect_check"
+          || current.protectCheck?.token !== previousProtectToken,
+      );
+      await continueSignIn(currentSignIn);
+    }, "Finishing security check…");
   }
 
   async function verifyEmail(): Promise<void> {
@@ -551,6 +637,40 @@ export function ClerkPasswordFlow({
             Back to sign in
           </button>
         </div>
+      </FlowPanel>
+    );
+  }
+
+  if (step === "protect_check") {
+    const protectCheck = signIn.protectCheck;
+    if (!protectCheck) {
+      return (
+        <FlowPanel heading="Security check unavailable" headingRef={headingRef}>
+          <p role="alert" className="text-sm text-red-300">
+            The security check could not be loaded. Return to sign in and try
+            again.
+          </p>
+          <button type="button" className="influence-button-secondary rounded-lg px-4 py-2 text-sm" onClick={() => setStep("credentials")}>
+            Back to sign in
+          </button>
+        </FlowPanel>
+      );
+    }
+    return (
+      <FlowPanel heading="Security check" headingRef={headingRef}>
+        <p className="influence-copy text-sm">
+          Complete this check to finish signing in.
+        </p>
+        <ClerkProtectChallenge
+          protectCheck={protectCheck}
+          onProof={(proofToken) => void submitProtectProof(proofToken)}
+          onError={() => {
+            setStep("credentials");
+            setError("The security check could not be completed. Try again.");
+            setStatus("");
+          }}
+        />
+        <FlowMessages error={error} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
