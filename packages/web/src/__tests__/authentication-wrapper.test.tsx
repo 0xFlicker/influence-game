@@ -116,15 +116,38 @@ describe("unified authentication wrapper", () => {
     expect(authenticationRouteSource).toContain('href="/sign-up"');
   });
 
-  it("reads Clerk status from the post-operation resource", () => {
-    expect(passwordFlowSource).toContain("updatedClerkResource");
-    expect(passwordFlowSource).toContain("signInRef.current");
-    expect(passwordFlowSource).toContain("signUpRef.current");
-    expect(passwordFlowSource).not.toContain(
-      'if (signIn.status === "needs_new_password")',
+  it("reacts to Clerk sign-in resource changes instead of polling", () => {
+    const signInSubmit = passwordFlowSource.slice(
+      passwordFlowSource.indexOf('if (intent === "sign_in")'),
+      passwordFlowSource.indexOf("currentSignupOwnsCompletionRef.current = true"),
     );
-    expect(passwordFlowSource).not.toContain(
-      'if (signIn.status !== "complete")',
+
+    expect(signInSubmit).not.toContain("updatedClerkResource");
+    expect(passwordFlowSource).toContain("useEffectEvent");
+    expect(passwordFlowSource).toContain(
+      "[localBusy, providerBusy, signIn, signInTransition]",
+    );
+    expect(passwordFlowSource).toContain(
+      'localBusy || providerBusy || signInTransition !== "idle"',
+    );
+    expect(passwordFlowSource).toContain(
+      'signInTransition === "awaiting_password_result"',
+    );
+    expect(passwordFlowSource).toContain(
+      "signIn === signInTransitionSourceRef.current",
+    );
+    expect(passwordFlowSource).toContain(
+      "signInTransitionSourceRef.current = signIn",
+    );
+    expect(passwordFlowSource).toContain(
+      "signInTransitionProtectTokenRef.current",
+    );
+    expect(passwordFlowSource).toContain(
+      "currentSignIn.protectCheck?.token",
+    );
+    expect(passwordFlowSource).toContain("window.setTimeout");
+    expect(passwordFlowSource).toContain(
+      "Sign-in did not finish. Try again or continue with Privy.",
     );
   });
 
@@ -151,6 +174,21 @@ describe("unified authentication wrapper", () => {
     expect(passwordFlowSource).toContain("submitProtectCheck({ proofToken })");
     expect(passwordFlowSource).not.toContain(
       "This account needs another provider step before it can sign in.",
+    );
+  });
+
+  it("retries the gated password operation after a Protect proof", () => {
+    expect(passwordFlowSource).toContain(
+      'signInTransition === "retry_after_protect"',
+    );
+    expect(passwordFlowSource).toContain(
+      'setSignInTransition("awaiting_password_result")',
+    );
+    expect(passwordFlowSource).toContain(
+      "await submitCredentials()",
+    );
+    expect(passwordFlowSource).toContain(
+      'setStep("credentials");\n      await submitCredentials()',
     );
   });
 

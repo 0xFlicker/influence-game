@@ -64,8 +64,9 @@ Clerk setup and environment variables are documented in
 7. Manually confirm direct Privy email and wallet login still work.
 8. If Clerk Protect is enabled, sign in from a clean mobile browser and confirm
    its security check completes inside the Influence password flow. The custom
-   flow must wait for Clerk's post-password status and submit every chained
-   Protect challenge before it finalizes the provider session.
+   flow must react to Clerk's post-password resource updates, submit every
+   chained Protect challenge, and retry the gated password operation after the
+   challenge clears before it finalizes the provider session.
 9. Switch both services to `existing-only` and confirm existing password users
    can sign in while password signup and linking are blocked. Switch back to
    `disabled` and confirm Clerk disappears while Privy remains available.
