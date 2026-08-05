@@ -10,7 +10,6 @@ import {
   OWNER_LEARNING_EVIDENCE_VERSION,
   type OwnerLearningAnalysisTrack,
   type OwnerLearningEvidenceRef,
-  type OwnerLearningStage,
 } from "./owner-learning-contracts.js";
 import {
   classifyOwnerLearningEvidence,
@@ -142,35 +141,6 @@ export interface BuildBudgetedOwnerLearningInputParams {
   }>;
 }
 
-export function estimateOwnerLearningInputTokens(value: unknown): number {
-  const serializedChars = stableJson(value).length;
-  return Math.ceil(serializedChars / OWNER_LEARNING_TOKEN_ESTIMATOR_CHARS_PER_TOKEN)
-    + OWNER_LEARNING_ENVELOPE_ALLOWANCE_TOKENS;
-}
-
-export function buildBudgetedOwnerLearningProviderInput(
-  stage: OwnerLearningStage,
-  turn: Record<string, unknown>,
-): Record<string, unknown> {
-  const input: Record<string, unknown> = {
-    protocol: "owner-learning-harness-v1",
-    stage,
-    turn: structuredClone(turn),
-  };
-  while (estimateOwnerLearningInputTokens(input) > OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
-    const games = mutableEvidenceGames(input);
-    let target: { narrativeGroups: unknown[]; omittedNarrativeGroupCount: number } | null = null;
-    for (const game of games) {
-      if (game.narrativeGroups.length === 0) continue;
-      if (!target || game.narrativeGroups.length > target.narrativeGroups.length) target = game;
-    }
-    if (!target) throw new Error("Owner learning canonical request exceeds the input budget");
-    target.narrativeGroups.pop();
-    target.omittedNarrativeGroupCount += 1;
-  }
-  return input;
-}
-
 export function buildBudgetedOwnerLearningInput(
   params: BuildBudgetedOwnerLearningInputParams,
 ): OwnerLearningBudgetedInput {
@@ -186,44 +156,10 @@ export function buildBudgetedOwnerLearningInput(
       gameId: game.gameId,
       canonicalFacts: game.canonicalFacts,
       candidateMomentIds: [...game.candidateMomentIds],
-      narrativeGroups: [],
-      omittedNarrativeGroupCount: game.narrativeGroups.length,
+      narrativeGroups: [...game.narrativeGroups],
+      omittedNarrativeGroupCount: 0,
     })),
   };
-  if (estimateOwnerLearningInputTokens(input) > OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
-    throw new Error("Owner learning canonical evidence exceeds the input budget");
-  }
-
-  const serializedBudgetChars = (
-    OWNER_LEARNING_INPUT_TOKEN_LIMIT - OWNER_LEARNING_ENVELOPE_ALLOWANCE_TOKENS
-  ) * OWNER_LEARNING_TOKEN_ESTIMATOR_CHARS_PER_TOKEN;
-  const fixedChars = stableJson(input).length;
-  const perGameShareChars = Math.max(
-    0,
-    Math.floor((serializedBudgetChars - fixedChars) / params.games.length),
-  );
-
-  for (let gameIndex = 0; gameIndex < params.games.length; gameIndex += 1) {
-    const source = params.games[gameIndex]!;
-    const target = input.games[gameIndex]!;
-    let usedChars = 0;
-    for (const group of source.narrativeGroups) {
-      const groupChars = stableJson(group).length + 1;
-      if (usedChars + groupChars > perGameShareChars) break;
-      target.narrativeGroups.push(group);
-      usedChars += groupChars;
-    }
-    target.omittedNarrativeGroupCount = source.narrativeGroups.length - target.narrativeGroups.length;
-  }
-
-  while (estimateOwnerLearningInputTokens(input) > OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
-    const target = [...input.games]
-      .sort((left, right) => right.narrativeGroups.length - left.narrativeGroups.length)
-      .find((game) => game.narrativeGroups.length > 0);
-    if (!target) throw new Error("Owner learning evidence exceeds the input budget");
-    target.narrativeGroups.pop();
-    target.omittedNarrativeGroupCount += 1;
-  }
   return input;
 }
 
@@ -252,36 +188,6 @@ export function ownerLearningIssuedEvidenceRefs(
       sourceVersion: game.sourceCaptureVersion,
     })),
   ]);
-}
-
-function mutableEvidenceGames(input: Record<string, unknown>): Array<{
-  narrativeGroups: unknown[];
-  omittedNarrativeGroupCount: number;
-}> {
-  const turn = recordValue(input.turn);
-  const evidence = recordValue(turn?.evidence);
-  if (!Array.isArray(evidence?.games)) return [];
-  return evidence.games.flatMap((value) => {
-    const game = recordValue(value);
-    if (!game || !Array.isArray(game.narrativeGroups)) return [];
-    const omitted = game.omittedNarrativeGroupCount;
-    if (typeof omitted !== "number" || !Number.isSafeInteger(omitted) || omitted < 0) return [];
-    return [{
-      narrativeGroups: game.narrativeGroups,
-      get omittedNarrativeGroupCount() {
-        return game.omittedNarrativeGroupCount as number;
-      },
-      set omittedNarrativeGroupCount(next: number) {
-        game.omittedNarrativeGroupCount = next;
-      },
-    }];
-  });
-}
-
-function recordValue(value: unknown): Record<string, unknown> | null {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
 }
 
 function ownerLearningEvidenceKind(

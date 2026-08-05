@@ -365,7 +365,6 @@ function failureMessage(code: string | null): string {
     provider_error: "The reviewer returned a provider error.",
     invalid_structured_output: "The reviewer did not return a valid evidence-backed result.",
     tier_mismatch: "The requested processing tier could not be verified.",
-    input_budget_exceeded: "The selected evidence exceeded the bounded request budget.",
     output_budget_exhausted: "The review reached its output budget before a valid result.",
     logical_call_budget_exhausted: "The review used its four logical calls without a valid result.",
     evidence_unavailable: "The selected evidence could not be reauthorized.",

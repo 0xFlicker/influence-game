@@ -30,10 +30,7 @@ import {
   type OwnerLearningEvidenceProjector,
 } from "./owner-learning-review.js";
 import { OWNER_LEARNING_MAX_OUTPUT_TOKENS } from "./owner-learning-provider.js";
-import {
-  buildBudgetedOwnerLearningProviderInput,
-  projectOwnerLearningEvidence,
-} from "./owner-learning-evidence.js";
+import { projectOwnerLearningEvidence } from "./owner-learning-evidence.js";
 import { validateOwnerLearningSelection } from "./owner-learning-eligibility.js";
 
 const OWNER_LEARNING_LEASE_DURATION_MS = 30_000;
@@ -725,7 +722,7 @@ export async function runClaimedOwnerLearningReview(
       logicalCallCount: harnessCounters.logicalCallCount,
       diveCount: harnessCounters.diveCount,
       async invoke(turn) {
-        const requestInput = buildBudgetedOwnerLearningProviderInput(turn.stage, turn.request);
+        const requestInput = turn.request;
         const inputPolicyHash = fingerprintOwnerLearningRequest({
           model: "gpt-5.6-luna",
           input: requestInput,

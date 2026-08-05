@@ -6,11 +6,9 @@ import {
   OwnerLearningProviderError,
 } from "../services/owner-learning-provider.js";
 import {
-  OWNER_LEARNING_ENVELOPE_ALLOWANCE_TOKENS,
   OWNER_LEARNING_INPUT_TOKEN_LIMIT,
-  OWNER_LEARNING_TOKEN_ESTIMATOR_CHARS_PER_TOKEN,
-  estimateOwnerLearningInputTokens,
 } from "../services/owner-learning-evidence.js";
+import { estimateOwnerLearningProviderCallTokens } from "../services/owner-learning-provider-context.js";
 
 const observer: FlexProcessingObserver = {
   async onDispatchIntent() {},
@@ -89,7 +87,7 @@ describe("owner learning provider", () => {
             content: [{
               type: "output_text",
               annotations: [],
-              text: JSON.stringify({ provisionalThemes: [], selectedMomentIds: [] }),
+              text: JSON.stringify({ provisionalThemes: [], selectedMomentHandles: [] }),
             }],
           }],
           usage: {
@@ -127,7 +125,7 @@ describe("owner learning provider", () => {
       reasoning: { effort: "low" },
       text: { format: { type: "json_schema", strict: true } },
     });
-    expect(response.output).toEqual({ provisionalThemes: [], selectedMomentIds: [] });
+    expect(response.output).toEqual({ provisionalThemes: [], selectedMomentHandles: [] });
     expect(response.effectiveTier).toBe("flex");
     expect(response.tokenReceipt).toEqual({
       inputTokens: 1_000,
@@ -201,7 +199,7 @@ describe("owner learning provider", () => {
     })).rejects.toMatchObject({ code: "provider_timeout", retryable: true });
   });
 
-  test("admits the exact input ceiling and rejects one character above it before transmission", async () => {
+  test("admits the exact complete-request ceiling and guards one token above it before transmission", async () => {
     let transmissionCount = 0;
     const provider = createOwnerLearningOpenAIProvider({
       apiKey: "sk-test",
@@ -230,16 +228,24 @@ describe("owner learning provider", () => {
       },
       wait: async () => undefined,
     });
-    const serializedLimit = (
-      OWNER_LEARNING_INPUT_TOKEN_LIMIT - OWNER_LEARNING_ENVELOPE_ALLOWANCE_TOKENS
-    ) * OWNER_LEARNING_TOKEN_ESTIMATOR_CHARS_PER_TOKEN;
-    const emptySerializedLength = JSON.stringify({ padding: "" }).length;
-    const atCeiling = { padding: "x".repeat(serializedLimit - emptySerializedLength) };
-    expect(estimateOwnerLearningInputTokens(atCeiling)).toBe(OWNER_LEARNING_INPUT_TOKEN_LIMIT);
+    const responseSchema = { type: "object", additionalProperties: false };
+    const emptyEstimate = estimateOwnerLearningProviderCallTokens({ padding: "" }, responseSchema);
+    let paddingLength = (OWNER_LEARNING_INPUT_TOKEN_LIMIT - emptyEstimate) * 4;
+    let atCeiling = { padding: "x".repeat(paddingLength) };
+    while (estimateOwnerLearningProviderCallTokens(atCeiling, responseSchema) < OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
+      paddingLength += 1;
+      atCeiling = { padding: "x".repeat(paddingLength) };
+    }
+    while (estimateOwnerLearningProviderCallTokens(atCeiling, responseSchema) > OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
+      paddingLength -= 1;
+      atCeiling = { padding: "x".repeat(paddingLength) };
+    }
+    expect(estimateOwnerLearningProviderCallTokens(atCeiling, responseSchema))
+      .toBe(OWNER_LEARNING_INPUT_TOKEN_LIMIT);
 
     await provider.invoke({
       input: atCeiling,
-      responseSchema: { type: "object", additionalProperties: false },
+      responseSchema,
       observer,
       resumeTransport: {
         flex429Count: 0,
@@ -250,13 +256,15 @@ describe("owner learning provider", () => {
     });
     expect(transmissionCount).toBe(1);
 
-    const aboveCeiling = { padding: `${atCeiling.padding}x` };
-    expect(estimateOwnerLearningInputTokens(aboveCeiling)).toBe(
-      OWNER_LEARNING_INPUT_TOKEN_LIMIT + 1,
-    );
+    let aboveCeiling = { padding: `${atCeiling.padding}x` };
+    while (estimateOwnerLearningProviderCallTokens(aboveCeiling, responseSchema) <= OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
+      aboveCeiling = { padding: `${aboveCeiling.padding}x` };
+    }
+    expect(estimateOwnerLearningProviderCallTokens(aboveCeiling, responseSchema))
+      .toBeGreaterThan(OWNER_LEARNING_INPUT_TOKEN_LIMIT);
     await expect(provider.invoke({
       input: aboveCeiling,
-      responseSchema: { type: "object", additionalProperties: false },
+      responseSchema,
       observer,
       resumeTransport: {
         flex429Count: 0,
@@ -264,7 +272,7 @@ describe("owner learning provider", () => {
         nextTier: "flex",
         initialBackoffMs: 0,
       },
-    })).rejects.toMatchObject({ code: "input_budget_exceeded" });
+    })).rejects.toThrow("internal input budget invariant");
     expect(transmissionCount).toBe(1);
   });
 });

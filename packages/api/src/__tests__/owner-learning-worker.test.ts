@@ -429,13 +429,13 @@ describe("owner learning worker durability", () => {
         return successfulProviderTurn(ordinal === 1
           ? {
               provisionalThemes: ["initiative"],
-              selectedMomentIds: ["olm_recovery_1", "olm_recovery_2", "olm_recovery_3"],
+              selectedMomentHandles: ["g1:m1", "g1:m2", "g1:m3"],
               findings: [],
               finalResult: null,
             }
           : {
               provisionalThemes: ["initiative"],
-              selectedMomentIds: [],
+              selectedMomentHandles: [],
               findings: [],
               finalResult: null,
             });
@@ -486,7 +486,7 @@ describe("owner learning worker durability", () => {
         });
         return successfulProviderTurn({
           provisionalThemes: ["initiative"],
-          selectedMomentIds: [],
+          selectedMomentHandles: [],
           findings: [],
           finalResult: {
             diagnosis: "The reviewed guidance remains appropriate.",
@@ -588,7 +588,7 @@ describe("owner learning worker durability", () => {
         return {
           output: {
             provisionalThemes: [],
-            selectedMomentIds: [],
+            selectedMomentHandles: [],
             findings: [],
             finalResult: {
               diagnosis: "The current guidance remains appropriate.",
@@ -665,7 +665,7 @@ describe("owner learning worker durability", () => {
         return {
           output: {
             provisionalThemes: ["unsupported"],
-            selectedMomentIds: ["olm_invented"],
+            selectedMomentHandles: ["g1:m999"],
             findings: [],
             finalResult: null,
           },

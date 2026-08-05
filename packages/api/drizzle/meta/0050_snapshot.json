@@ -1743,7 +1743,7 @@
         },
         "agent_learning_reviews_failure_check": {
           "name": "agent_learning_reviews_failure_check",
-          "value": "\n    \"agent_learning_reviews\".\"safe_failure_code\" IS NULL OR \"agent_learning_reviews\".\"safe_failure_code\" IN (\n      'provider_capacity_exhausted', 'provider_timeout', 'provider_error',\n      'invalid_structured_output', 'tier_mismatch', 'input_budget_exceeded',\n      'output_budget_exhausted', 'logical_call_budget_exhausted',\n      'evidence_unavailable', 'worker_interrupted'\n    )\n  "
+          "value": "\n    \"agent_learning_reviews\".\"safe_failure_code\" IS NULL OR \"agent_learning_reviews\".\"safe_failure_code\" IN (\n      'provider_capacity_exhausted', 'provider_timeout', 'provider_error',\n      'invalid_structured_output', 'tier_mismatch',\n      'output_budget_exhausted', 'logical_call_budget_exhausted',\n      'evidence_unavailable', 'worker_interrupted'\n    )\n  "
         },
         "agent_learning_reviews_result_state_check": {
           "name": "agent_learning_reviews_result_state_check",

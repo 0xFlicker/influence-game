@@ -9,7 +9,6 @@ import { runOwnerLearningHarness } from "../services/owner-learning-harness.js";
 describe("owner learning bounded harness", () => {
   test("completes a scan plus three targeted dives inside four logical calls", async () => {
     const evidence = harnessEvidence("evidence_rich", 3);
-    const refs = ownerLearningIssuedEvidenceRefs(evidence.games);
     const invocations: Array<{ stage: string; isDive: boolean }> = [];
     const result = await runOwnerLearningHarness({
       reviewId: "review-1",
@@ -21,15 +20,15 @@ describe("owner learning bounded harness", () => {
         if (input.ordinal === 1) {
           return {
             provisionalThemes: ["agenda control"],
-            selectedMomentIds: evidence.games.map((game) => game.candidateMoments[0]!.id),
+            selectedMomentHandles: providerMomentHandles(input.request),
           };
         }
         if (input.ordinal < 4) {
           return {
             provisionalThemes: ["agenda control"],
-            selectedMomentIds: [],
+            selectedMomentHandles: [],
             findings: [{
-              evidenceRefs: [refs[input.ordinal - 1]!],
+              evidenceHandles: [providerMomentBundleHandle(input.request)],
               observation: `Observed moment ${input.ordinal - 1}`,
               interpretation: "The agent waited for another player to set the target.",
             }],
@@ -37,7 +36,7 @@ describe("owner learning bounded harness", () => {
         }
         return {
           provisionalThemes: ["agenda control"],
-          selectedMomentIds: [],
+          selectedMomentHandles: [],
           finalResult: {
             diagnosis: "The agent gives away voting initiative.",
             analysisTrack: "evidence_rich",
@@ -46,7 +45,7 @@ describe("owner learning bounded harness", () => {
               disposition: "change",
               confidence: "medium",
               rationale: "The cited moments show repeated hesitation.",
-              evidenceRefs: refs.slice(0, 2),
+              evidenceHandles: providerSummaryHandles(input.request).slice(0, 2),
             }],
             proposal: {
               field: "strategyStyle",
@@ -67,7 +66,69 @@ describe("owner learning bounded harness", () => {
     expect(result.logicalCallsUsed).toBe(4);
     expect(result.divesUsed).toBe(3);
     expect(result.result.recommendations[0]!.id).toMatch(/^olrec_/);
+    expect(result.result.recommendations[0]!.evidenceRefs).toEqual(
+      ownerLearningIssuedEvidenceRefs(evidence.games)
+        .filter((ref) => ref.coordinate === "game-summary")
+        .slice(0, 2),
+    );
+    expect(result.checkpoint.selectedMomentIds).toEqual(
+      evidence.games.map((game) => game.candidateMoments[0]!.id),
+    );
+    expect(JSON.stringify(result)).not.toContain("g1:m");
     expect(result.proposalFingerprint).toMatch(/^sha256:/);
+  });
+
+  test("carries all accumulated findings into the fourth logical call", async () => {
+    const evidence = harnessEvidence("evidence_rich", 3);
+    let finalTurnFindings: Array<{ observation: string }> = [];
+    const result = await runOwnerLearningHarness({
+      reviewId: "review-all-findings",
+      analysisTrack: "evidence_rich",
+      currentStrategyStyle: "Build trust.",
+      evidence,
+      async invoke(input) {
+        const findingHandles = input.ordinal === 1
+          ? providerSummaryHandles(input.request)
+          : [providerMomentBundleHandle(input.request)];
+        if (input.ordinal === 4) {
+          finalTurnFindings = providerTurn(input.request).validatedFindings as Array<{ observation: string }>;
+          return {
+            provisionalThemes: ["initiative"],
+            selectedMomentHandles: [],
+            findings: [],
+            finalResult: {
+              diagnosis: "The current guidance remains sound.",
+              analysisTrack: "evidence_rich",
+              recommendations: [],
+              noChange: { rationale: "The accumulated evidence does not justify a strategy change." },
+            },
+          };
+        }
+        return {
+          provisionalThemes: ["initiative"],
+          selectedMomentHandles: input.ordinal === 1 ? providerMomentHandles(input.request) : [],
+          findings: Array.from({ length: 3 }, (_, findingIndex) => ({
+            evidenceHandles: [findingHandles[findingIndex % findingHandles.length]!],
+            observation: `call-${input.ordinal}-finding-${findingIndex}`,
+            interpretation: `interpretation-${input.ordinal}-${findingIndex}`,
+          })),
+          finalResult: null,
+        };
+      },
+    });
+
+    expect(result.logicalCallsUsed).toBe(4);
+    expect(finalTurnFindings.map((finding) => finding.observation)).toEqual([
+      "call-1-finding-0",
+      "call-1-finding-1",
+      "call-1-finding-2",
+      "call-2-finding-0",
+      "call-2-finding-1",
+      "call-2-finding-2",
+      "call-3-finding-0",
+      "call-3-finding-1",
+      "call-3-finding-2",
+    ]);
   });
 
   test("allows an honest no-change result on the first call", async () => {
@@ -80,7 +141,7 @@ describe("owner learning bounded harness", () => {
       async invoke() {
         return {
           provisionalThemes: [],
-          selectedMomentIds: [],
+          selectedMomentHandles: [],
           finalResult: {
             diagnosis: "The current guidance fits the observed play.",
             analysisTrack: "evidence_rich",
@@ -103,23 +164,54 @@ describe("owner learning bounded harness", () => {
       currentStrategyStyle: "Stay flexible.",
       evidence,
       async invoke() {
-        return { provisionalThemes: [], selectedMomentIds: ["olm_invented"] };
+        return { provisionalThemes: [], selectedMomentHandles: ["g1:m999"] };
       },
-    })).rejects.toThrow("unknown moment ID");
+    })).rejects.toThrow("unknown moment handle");
+
+    await expect(runOwnerLearningHarness({
+      reviewId: "review-invented-ref",
+      analysisTrack: "evidence_rich",
+      currentStrategyStyle: "Stay flexible.",
+      evidence,
+      async invoke() {
+        return {
+          provisionalThemes: [],
+          selectedMomentHandles: [],
+          findings: [{
+            evidenceHandles: ["g1:m999"],
+            observation: "Invented citation.",
+            interpretation: "Must be rejected.",
+          }],
+          finalResult: null,
+        };
+      },
+    })).rejects.toThrow("unknown evidence handle");
+
+    await expect(runOwnerLearningHarness({
+      reviewId: "review-summary-as-moment",
+      analysisTrack: "evidence_rich",
+      currentStrategyStyle: "Stay flexible.",
+      evidence,
+      async invoke(input) {
+        return {
+          provisionalThemes: [],
+          selectedMomentHandles: [providerSummaryHandles(input.request)[0]!],
+        };
+      },
+    })).rejects.toThrow("non-moment evidence handle");
   });
 
   test("enforces the Strategy Health Check proof contract", async () => {
     const evidence = harnessEvidence("strategy_health_check", 3);
-    const refs = ownerLearningIssuedEvidenceRefs(evidence.games);
     await expect(runOwnerLearningHarness({
       reviewId: "review-health",
       analysisTrack: "strategy_health_check",
       currentStrategyStyle: "Build trust.",
       evidence,
-      async invoke() {
+      async invoke(input) {
         return {
           provisionalThemes: [],
-          selectedMomentIds: [],
+          selectedMomentHandles: [],
           finalResult: {
             diagnosis: "The agent exited early in all selected games.",
             analysisTrack: "strategy_health_check",
@@ -129,7 +221,7 @@ describe("owner learning bounded harness", () => {
               disposition: "change",
               confidence: "medium",
               rationale: "The guidance lacks a contingency.",
-              evidenceRefs: refs.slice(0, 2),
+              evidenceHandles: providerSummaryHandles(input.request).slice(0, 2),
               proof: {
                 kind: "prompt_guidance_defect",
                 observedEvidence: "The selected games show early vulnerability.",
@@ -151,7 +243,6 @@ describe("owner learning bounded harness", () => {
 
   test("resumes from the last validated dive without reprocessing it", async () => {
     const evidence = harnessEvidence("evidence_rich", 3);
-    const refs = ownerLearningIssuedEvidenceRefs(evidence.games);
     const checkpointHolder: { value: OwnerLearningCheckpoint | null } = { value: null };
     let invocations = 0;
     await expect(runOwnerLearningHarness({
@@ -164,15 +255,15 @@ describe("owner learning bounded harness", () => {
         if (input.ordinal === 1) {
           return {
             provisionalThemes: ["voting initiative"],
-            selectedMomentIds: evidence.games.map((game) => game.candidateMoments[0]!.id),
+            selectedMomentHandles: providerMomentHandles(input.request),
           };
         }
         if (input.ordinal === 2) {
           return {
             provisionalThemes: ["voting initiative"],
-            selectedMomentIds: [],
+            selectedMomentHandles: [],
             findings: [{
-              evidenceRefs: [refs[1]!],
+              evidenceHandles: [providerMomentBundleHandle(input.request)],
               observation: "The agent waited for a target.",
               interpretation: "The agent ceded initiative.",
             }],
@@ -187,7 +278,7 @@ describe("owner learning bounded harness", () => {
     const savedCheckpoint = checkpointHolder.value;
     if (!savedCheckpoint) throw new Error("expected a persisted checkpoint");
 
-    const resumedMoment: { id: string | null } = { id: null };
+    const resumedMoment: { handle: string | null } = { handle: null };
     const resumed = await runOwnerLearningHarness({
       reviewId: "review-resume",
       analysisTrack: "evidence_rich",
@@ -197,10 +288,10 @@ describe("owner learning bounded harness", () => {
       logicalCallCount: 3,
       diveCount: 2,
       async invoke(input) {
-        resumedMoment.id = (input.request.momentBundle as { moment: { id: string } }).moment.id;
+        resumedMoment.handle = providerMomentBundleHandle(input.request);
         return {
           provisionalThemes: ["voting initiative"],
-          selectedMomentIds: [],
+          selectedMomentHandles: [],
           finalResult: {
             diagnosis: "The agent cedes voting initiative.",
             analysisTrack: "evidence_rich",
@@ -210,7 +301,7 @@ describe("owner learning bounded harness", () => {
         };
       },
     });
-    expect(resumedMoment.id).toBe(evidence.games[1]!.candidateMoments[0]!.id);
+    expect(resumedMoment.handle).toBe("g2:m1");
     expect(resumed.logicalCallsUsed).toBe(4);
     expect(resumed.divesUsed).toBe(3);
   });
@@ -223,27 +314,28 @@ describe("owner learning bounded harness", () => {
       currentStrategyStyle: "Build trust.",
       evidence,
       async invoke(input) {
-        expect(input.request.currentStrategyStyle).toBe("Build trust.");
+        const turn = providerTurn(input.request);
+        expect(turn.currentStrategyStyle).toBe("Build trust.");
         if (input.ordinal === 1) {
           return {
             provisionalThemes: ["initiative"],
-            selectedMomentIds: evidence.games.map((game) => game.candidateMoments[0]!.id),
+            selectedMomentHandles: providerMomentHandles(input.request),
           };
         }
-        expect((input.request.callBudget as { finalResultRequired: boolean }).finalResultRequired)
+        expect((turn.callBudget as { finalResultRequired: boolean }).finalResultRequired)
           .toBe(input.ordinal === 4);
-        expect(input.request.currentStrategyStyle).toBe("Build trust.");
+        expect(turn.currentStrategyStyle).toBe("Build trust.");
         if (input.ordinal === 4) {
-          expect(input.request.evidence).toEqual(evidence.reviewInput);
+          expect((turn.evidence as { games: Array<{ game: string }> }).games.map((game) => game.game))
+            .toEqual(["g1", "g2", "g3"]);
         }
-        return { provisionalThemes: ["initiative"], selectedMomentIds: [], finalResult: null };
+        return { provisionalThemes: ["initiative"], selectedMomentHandles: [], finalResult: null };
       },
     })).rejects.toThrow("final logical call must contain a result");
   });
 
   test("rejects proposal and recommendation outcomes that cannot be applied coherently", async () => {
     const evidence = harnessEvidence("evidence_rich", 1);
-    const refs = ownerLearningIssuedEvidenceRefs(evidence.games);
     const common = {
       reviewId: "review-incoherent",
       analysisTrack: "evidence_rich" as const,
@@ -255,7 +347,7 @@ describe("owner learning bounded harness", () => {
       async invoke() {
         return {
           provisionalThemes: [],
-          selectedMomentIds: [],
+          selectedMomentHandles: [],
           finalResult: {
             diagnosis: "A change is proposed without a change recommendation.",
             analysisTrack: "evidence_rich",
@@ -272,10 +364,10 @@ describe("owner learning bounded harness", () => {
 
     await expect(runOwnerLearningHarness({
       ...common,
-      async invoke() {
+      async invoke(input) {
         return {
           provisionalThemes: [],
-          selectedMomentIds: [],
+          selectedMomentHandles: [],
           finalResult: {
             diagnosis: "The current guidance is sufficient.",
             analysisTrack: "evidence_rich",
@@ -284,7 +376,7 @@ describe("owner learning bounded harness", () => {
               disposition: "change",
               confidence: "medium",
               rationale: "This must not survive validation.",
-              evidenceRefs: [refs[0]!],
+              evidenceHandles: [providerSummaryHandles(input.request)[0]!],
             }],
             noChange: { rationale: "Keep the current guidance." },
           },
@@ -293,6 +385,29 @@ describe("owner learning bounded harness", () => {
     })).rejects.toThrow("cannot contain a change recommendation");
   });
 });
+
+function providerTurn(request: Record<string, unknown>): Record<string, unknown> {
+  return request.turn as Record<string, unknown>;
+}
+
+function providerMomentHandles(request: Record<string, unknown>): string[] {
+  const evidence = providerTurn(request).evidence as {
+    games: Array<{ moments: Array<{ handle: string }> }>;
+  };
+  return evidence.games.map((game) => game.moments[0]!.handle);
+}
+
+function providerSummaryHandles(request: Record<string, unknown>): string[] {
+  const evidence = providerTurn(request).evidence as {
+    games: Array<{ summaryHandle: string }>;
+  };
+  return evidence.games.map((game) => game.summaryHandle);
+}
+
+function providerMomentBundleHandle(request: Record<string, unknown>): string {
+  const bundle = providerTurn(request).momentBundle as { moment: { handle: string } };
+  return bundle.moment.handle;
+}
 
 function harnessEvidence(
   analysisTrack: OwnerLearningEvidenceProjection["analysisTrack"],

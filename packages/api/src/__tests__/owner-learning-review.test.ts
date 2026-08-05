@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
 import {
+  preflightOwnerLearningReview,
   startOwnerLearningReview,
   type OwnerLearningEvidenceProjector,
 } from "../services/owner-learning-review.js";
@@ -25,6 +26,92 @@ describe("owner learning review start", () => {
       gameIds: ["game-1"],
       idempotencyKey: "   ",
     })).rejects.toThrow("idempotency key");
+  });
+
+  test("preflights and starts three narrative-heavy games without a request-size failure", async () => {
+    const db = await setupTestDB();
+    const first = await insertPlayedOwnerLearningAgent(db, {
+      completedAt: "2026-08-01T01:00:00.000Z",
+    });
+    const second = await insertAdditionalPlayedGame(db, first, "2026-08-02T01:00:00.000Z");
+    const third = await insertAdditionalPlayedGame(db, first, "2026-08-03T01:00:00.000Z");
+    const evidenceIds = new Map([
+      [first.gameId, first.gameEvidenceId],
+      [second.gameId, second.gameEvidenceId],
+      [third.gameId, third.gameEvidenceId],
+    ]);
+    const projector: OwnerLearningEvidenceProjector = async (_db, selection) => {
+      const projection = fakeOwnerLearningProjection(selection, evidenceIds);
+      const games = projection.games.map((game) => {
+        const narrativeGroups = Array.from({ length: 240 }, (_, index) => ({
+          corr: "exact" as const,
+          decisionId: `${game.gameId}:decision:${index}`,
+          round: index % 13 + 1,
+          phase: "MINGLE",
+          text: "public dialogue ".repeat(60),
+          thinking: "reviewed cognition ".repeat(60),
+          strategy: "strategy reflection ".repeat(60),
+        }));
+        const candidateMoments = narrativeGroups.map((group, index) => ({
+          id: `olm_${game.gameId}_${index}`,
+          gameId: game.gameId,
+          anchorKind: "decision" as const,
+          sourceCoordinate: `decision:${group.decisionId}`,
+          sourceHash: `sha256:${game.gameId}:${index}`,
+          round: group.round,
+          phase: group.phase,
+        }));
+        return {
+          ...game,
+          canonicalFacts: {
+            ...game.canonicalFacts,
+            game: { ...game.canonicalFacts.game, roundCount: 13, playerCount: 12 },
+            reviewedPlayer: {
+              ...game.canonicalFacts.reviewedPlayer,
+              placement: 2,
+              status: "finalist" as const,
+              eliminatedRound: null,
+              readableSummary: "Reached the final council. ".repeat(80),
+            },
+          },
+          narrativeGroups,
+          candidateMoments,
+        };
+      });
+      return {
+        ...projection,
+        games,
+        reviewInput: {
+          ...projection.reviewInput,
+          games: games.map((game) => ({
+            gameId: game.gameId,
+            canonicalFacts: game.canonicalFacts,
+            candidateMomentIds: game.candidateMoments.map((moment) => moment.id),
+            narrativeGroups: game.narrativeGroups,
+            omittedNarrativeGroupCount: 0,
+          })),
+        },
+      };
+    };
+    const gameIds = [first.gameId, second.gameId, third.gameId];
+
+    const preflight = await preflightOwnerLearningReview(db, {
+      ownerUserId: first.ownerUserId,
+      agentProfileId: first.agentProfileId,
+      gameIds,
+    }, { projector });
+    expect(preflight.evidence.games).toHaveLength(3);
+    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(0);
+    expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(0);
+
+    const started = await startOwnerLearningReview(db, {
+      ownerUserId: first.ownerUserId,
+      agentProfileId: first.agentProfileId,
+      gameIds,
+      idempotencyKey: "three-full-games",
+    }, { projector, now: new Date("2026-08-04T03:00:00.000Z") });
+    expect(started.status).toBe("started");
+    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(1);
   });
 
   test("atomically buys one owner-wide singleton and advances the latest completion watermark", async () => {
@@ -182,6 +269,57 @@ describe("owner learning review start", () => {
     expect(events.filter((event) => event.kind === "credit_consumed")).toHaveLength(0);
   });
 });
+
+async function insertAdditionalPlayedGame(
+  db: DrizzleDB,
+  fixture: Awaited<ReturnType<typeof insertPlayedOwnerLearningAgent>>,
+  completedAt: string,
+): Promise<{ gameId: string; gameEvidenceId: string }> {
+  const gameId = randomUUID();
+  const playerId = randomUUID();
+  const gameEvidenceId = randomUUID();
+  await db.insert(schema.games).values({
+    id: gameId,
+    slug: `learning-${gameId}`,
+    config: "{}",
+    status: "completed",
+    trackType: "free",
+    endedAt: completedAt,
+    minPlayers: 2,
+    maxPlayers: 12,
+  });
+  await db.insert(schema.gamePlayers).values({
+    id: playerId,
+    gameId,
+    userId: fixture.ownerUserId,
+    agentProfileId: fixture.agentProfileId,
+    agentRevisionId: fixture.revisionId,
+    persona: JSON.stringify({ name: "Learner", personality: "Observant" }),
+    agentConfig: "{}",
+  });
+  await db.insert(schema.gameResults).values({
+    id: randomUUID(),
+    gameId,
+    roundsPlayed: 13,
+    tokenUsage: "{}",
+    finishedAt: completedAt,
+  });
+  await db.insert(schema.agentLearningGameEvidence).values({
+    id: gameEvidenceId,
+    ownerUserId: fixture.ownerUserId,
+    agentProfileId: fixture.agentProfileId,
+    analyticalRevisionId: fixture.revisionId,
+    gameId,
+    evidenceVersion: "owner-learning-evidence-v1",
+    eligibilityPolicyVersion: "owner-learning-eligibility-v1",
+    completionAt: completedAt,
+    canonicalSnapshot: { reviewedPlayer: { eliminatedRound: null } },
+    candidateMoments: [],
+    sourceCaptureVersion: "postgame-v1:transcript-v1:cognition-v1",
+    sourceHash: `sha256:${gameId}`,
+  });
+  return { gameId, gameEvidenceId };
+}
 
 async function grantSysop(db: DrizzleDB, ownerUserId: string): Promise<void> {
   const walletAddress = `0x${ownerUserId.replaceAll("-", "").slice(0, 40)}`.toLowerCase();

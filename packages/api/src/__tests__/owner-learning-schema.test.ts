@@ -228,9 +228,9 @@ async function insertReview(
     eligibilityPolicyVersion: "owner-learning-eligibility-v1",
     evidenceVersion: "owner-learning-evidence-v1",
     reviewerVersion: "owner-learning-reviewer-v1",
-    promptVersion: "owner-learning-prompt-v1",
-    schemaVersion: "owner-learning-result-v1",
-    providerPolicyVersion: "owner-learning-luna-flex-v1",
+    promptVersion: "owner-learning-prompt-v2",
+    schemaVersion: "owner-learning-result-v2",
+    providerPolicyVersion: "owner-learning-luna-flex-v2",
     selectedModel: "openai:gpt-5.6-luna",
     analysisTrack: "evidence_rich",
   });

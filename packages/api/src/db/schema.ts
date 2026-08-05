@@ -2228,7 +2228,7 @@ export const agentLearningReviews = pgTable("agent_learning_reviews", {
   check("agent_learning_reviews_failure_check", sql`
     ${table.safeFailureCode} IS NULL OR ${table.safeFailureCode} IN (
       'provider_capacity_exhausted', 'provider_timeout', 'provider_error',
-      'invalid_structured_output', 'tier_mismatch', 'input_budget_exceeded',
+      'invalid_structured_output', 'tier_mismatch',
       'output_budget_exhausted', 'logical_call_budget_exhausted',
       'evidence_unavailable', 'worker_interrupted'
     )

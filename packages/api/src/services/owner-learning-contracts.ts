@@ -3,9 +3,9 @@ import { sha256StableJson } from "./stable-hash.js";
 export const OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION = "owner-learning-eligibility-v2";
 export const OWNER_LEARNING_EVIDENCE_VERSION = "owner-learning-evidence-v1";
 export const OWNER_LEARNING_REVIEWER_VERSION = "owner-learning-reviewer-v1";
-export const OWNER_LEARNING_PROMPT_VERSION = "owner-learning-prompt-v1";
-export const OWNER_LEARNING_SCHEMA_VERSION = "owner-learning-result-v1";
-export const OWNER_LEARNING_PROVIDER_POLICY_VERSION = "owner-learning-luna-flex-v1";
+export const OWNER_LEARNING_PROMPT_VERSION = "owner-learning-prompt-v2";
+export const OWNER_LEARNING_SCHEMA_VERSION = "owner-learning-result-v2";
+export const OWNER_LEARNING_PROVIDER_POLICY_VERSION = "owner-learning-luna-flex-v2";
 
 export const OWNER_LEARNING_MAX_GAMES = 3;
 export const OWNER_LEARNING_MAX_RECOMMENDATIONS = 3;
@@ -50,7 +50,6 @@ export type OwnerLearningSafeFailureCode =
   | "provider_error"
   | "invalid_structured_output"
   | "tier_mismatch"
-  | "input_budget_exceeded"
   | "output_budget_exhausted"
   | "logical_call_budget_exhausted"
   | "evidence_unavailable"

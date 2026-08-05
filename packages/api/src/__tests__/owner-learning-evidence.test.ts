@@ -10,14 +10,22 @@ import {
 import { schema, type DrizzleDB } from "../db/index.js";
 import { appendGameEvents } from "../services/game-events.js";
 import {
-  OWNER_LEARNING_INPUT_TOKEN_LIMIT,
-  buildBudgetedOwnerLearningProviderInput,
   buildBudgetedOwnerLearningInput,
-  estimateOwnerLearningInputTokens,
   mintOwnerLearningMomentId,
+  ownerLearningIssuedEvidenceRefs,
   projectOwnerLearningEvidence,
   resolveOwnerLearningMoment,
+  type OwnerLearningEvidenceProjection,
 } from "../services/owner-learning-evidence.js";
+import { OWNER_LEARNING_INPUT_TOKEN_LIMIT } from "../services/owner-learning-evidence.js";
+import {
+  OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA,
+  OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+} from "../services/owner-learning-harness.js";
+import {
+  buildBudgetedOwnerLearningProviderInput,
+  estimateOwnerLearningProviderCallTokens,
+} from "../services/owner-learning-provider-context.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { insertOwner } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
@@ -57,51 +65,135 @@ describe("owner learning evidence", () => {
     );
   });
 
-  test("uses one estimator and retains every game when narratives need truncation", () => {
+  test("compacts three full endgame games under the complete provider budget", () => {
     const input = buildBudgetedOwnerLearningInput({
       instructions: "Analyze only the supplied evidence.",
       currentStrategyStyle: "Build trust before committing.",
       games: ["game-1", "game-2", "game-3"].map((gameId) => ({
         gameId,
         canonicalFacts: { placement: 4, eliminatedRound: 2 },
-        candidateMomentIds: [`${gameId}:moment`],
-        narrativeGroups: Array.from({ length: 120 }, (_, index) => ({
+        candidateMomentIds: Array.from({ length: 240 }, (_, index) => `olm_${gameId}_${index}`),
+        narrativeGroups: Array.from({ length: 240 }, (_, index) => ({
           corr: "exact" as const,
           decisionId: `${gameId}:decision:${index}`,
+          round: index % 13 + 1,
           text: "x".repeat(600),
           thinking: "y".repeat(600),
+          strategy: "z".repeat(600),
         })),
       })),
     });
-
-    expect(estimateOwnerLearningInputTokens(input)).toBeLessThanOrEqual(
-      OWNER_LEARNING_INPUT_TOKEN_LIMIT,
-    );
     expect(input.games.map((game) => game.gameId)).toEqual(["game-1", "game-2", "game-3"]);
-    expect(input.games.every((game) => game.omittedNarrativeGroupCount > 0)).toBe(true);
-    expect(input.games.every((game) => game.candidateMomentIds.length === 1)).toBe(true);
+    expect(input.games.every((game) => game.narrativeGroups.length === 240)).toBe(true);
 
-    const providerInput = buildBudgetedOwnerLearningProviderInput("scanning_narratives", {
-      analysisTrack: "strategy_health_check",
-      evidence: input,
-      issuedEvidenceRefs: Array.from({ length: 60 }, (_, index) => ({
-        kind: "canonical_event",
-        gameId: `game-${index % 3 + 1}`,
-        coordinate: `olm_${"z".repeat(43)}_${index}`,
-        sourceHash: `sha256:${"a".repeat(64)}`,
-        sourceVersion: "owner-learning-evidence-v1",
-      })),
+    const evidence = stressEvidenceProjection(input);
+    const first = buildBudgetedOwnerLearningProviderInput({
+      stage: "scanning_narratives",
+      turn: {
+        analysisTrack: "strategy_health_check",
+        currentStrategyStyle: input.currentStrategyStyle,
+        evidence: input,
+        callBudget: { ordinal: 1, remainingAfterThisCall: 3, finalResultRequired: false },
+      },
+      evidence,
+      responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
     });
-    expect(estimateOwnerLearningInputTokens(providerInput)).toBeLessThanOrEqual(
-      OWNER_LEARNING_INPUT_TOKEN_LIMIT,
-    );
-    const providerTurn = providerInput.turn as { evidence: typeof input };
-    expect(providerTurn.evidence.games.map((game) => game.gameId)).toEqual([
-      "game-1",
-      "game-2",
-      "game-3",
-    ]);
-    expect(providerTurn.evidence.games.every((game) => game.omittedNarrativeGroupCount > 0)).toBe(true);
+    const second = buildBudgetedOwnerLearningProviderInput({
+      stage: "scanning_narratives",
+      turn: {
+        analysisTrack: "strategy_health_check",
+        currentStrategyStyle: input.currentStrategyStyle,
+        evidence: input,
+        callBudget: { ordinal: 1, remainingAfterThisCall: 3, finalResultRequired: false },
+      },
+      evidence,
+      responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+    });
+    expect(first.estimatedTokens).toBeLessThanOrEqual(OWNER_LEARNING_INPUT_TOKEN_LIMIT);
+    expect(estimateOwnerLearningProviderCallTokens(first.input, OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA))
+      .toBe(first.estimatedTokens);
+    expect(first.input).toEqual(second.input);
+    const serialized = JSON.stringify(first.input);
+    expect(serialized).not.toContain("olm_");
+    expect(serialized).not.toContain("sha256:");
+    expect(serialized).not.toContain("owner-learning-evidence-v1");
+    expect(serialized).not.toContain("candidateMomentIds");
+    expect(serialized).not.toContain("issuedEvidenceRefs");
+    const providerTurn = first.input.turn as {
+      evidence: {
+        games: Array<{
+          game: string;
+          summaryHandle: string;
+          moments: Array<{ round?: number; text?: string; thinking?: string }>;
+          omittedMomentCount: number;
+        }>;
+      };
+    };
+    expect(providerTurn.evidence.games.map((game) => game.game)).toEqual(["g1", "g2", "g3"]);
+    expect(providerTurn.evidence.games.every((game) => game.summaryHandle.endsWith(":s"))).toBe(true);
+    expect(providerTurn.evidence.games.every((game) => game.moments.length > 0)).toBe(true);
+    expect(providerTurn.evidence.games.every((game) => game.omittedMomentCount > 0)).toBe(true);
+    expect(providerTurn.evidence.games.every((game) =>
+      game.moments.some((moment) => (moment.round ?? 0) <= 4)
+      && game.moments.some((moment) => (moment.round ?? 0) >= 5 && (moment.round ?? 0) <= 8)
+      && game.moments.some((moment) => (moment.round ?? 0) >= 9)
+      && game.moments.some((moment) => moment.text && moment.thinking)
+    )).toBe(true);
+    for (const game of providerTurn.evidence.games) {
+      const bucketCounts = game.moments.reduce((counts, moment) => {
+        const round = moment.round ?? 1;
+        const bucket = round <= 4 ? 0 : round <= 8 ? 1 : 2;
+        counts[bucket] = (counts[bucket] ?? 0) + 1;
+        return counts;
+      }, [0, 0, 0]);
+      expect(Math.max(...bucketCounts) - Math.min(...bucketCounts)).toBeLessThanOrEqual(1);
+    }
+
+    const selectedGame = evidence.games[0]!;
+    const selectedMoment = selectedGame.candidateMoments[0]!;
+    const citedRef = ownerLearningIssuedEvidenceRefs(evidence.games).find((ref) =>
+      ref.coordinate === selectedMoment.id
+    )!;
+    const finalDive = buildBudgetedOwnerLearningProviderInput({
+      stage: "investigating_moments",
+      turn: {
+        analysisTrack: "strategy_health_check",
+        currentStrategyStyle: input.currentStrategyStyle,
+        provisionalThemes: ["initiative"],
+        validatedFindings: [{
+          evidenceRefs: [citedRef],
+          observation: "The agent repeatedly yielded initiative. ".repeat(30),
+          interpretation: "The current guidance lacks a concrete fallback. ".repeat(30),
+        }],
+        momentBundle: {
+          moment: selectedMoment,
+          canonicalFacts: selectedGame.canonicalFacts,
+          surroundingDialogue: selectedGame.narrativeGroups.slice(0, 3),
+        },
+        evidence: input,
+        callBudget: { ordinal: 4, remainingAfterThisCall: 0, finalResultRequired: true },
+      },
+      evidence,
+      responseSchema: OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA,
+    });
+    expect(finalDive.estimatedTokens).toBeLessThanOrEqual(OWNER_LEARNING_INPUT_TOKEN_LIMIT);
+    expect(JSON.stringify(finalDive.input)).not.toContain(selectedMoment.id);
+    expect(JSON.stringify(finalDive.input)).not.toContain(citedRef.sourceHash);
+    const compactDiveCanonical = ((finalDive.input.turn as {
+      momentBundle: {
+        canonical: {
+          focusRound: number | null;
+          actionsByAgent: Record<string, Array<{ round: number }>>;
+          actionsAgainstAgent: Record<string, Array<{ round: number }>>;
+        };
+      };
+    }).momentBundle.canonical);
+    expect(compactDiveCanonical.focusRound).toBe(selectedMoment.round);
+    const compactDiveRounds = [
+      ...Object.values(compactDiveCanonical.actionsByAgent),
+      ...Object.values(compactDiveCanonical.actionsAgainstAgent),
+    ].flat().map((entry) => entry.round);
+    expect(new Set(compactDiveRounds)).toEqual(new Set([selectedMoment.round!]));
   });
 
   test("projects canonical facts, paginated dialogue, and only the reviewed Profile's cognition", async () => {
@@ -159,6 +251,88 @@ describe("owner learning evidence", () => {
     );
   });
 });
+
+function stressEvidenceProjection(
+  reviewInput: OwnerLearningEvidenceProjection["reviewInput"],
+): OwnerLearningEvidenceProjection {
+  const games = reviewInput.games.map((inputGame, gameIndex) => {
+    const gameId = inputGame.gameId;
+    const player = (suffix: string) => ({ id: `${gameId}-${suffix}`, name: `${suffix} ${gameIndex + 1}` });
+    const rounds = Array.from({ length: 13 }, (_, index) => index + 1);
+    return {
+      gameId,
+      gameEvidenceId: `evidence-${gameId}`,
+      canonicalFacts: {
+        game: {
+          id: gameId,
+          slug: `full-endgame-${gameIndex + 1}`,
+          completionAt: `2026-08-0${gameIndex + 1}T00:00:00.000Z`,
+          roundCount: 13,
+          playerCount: 12,
+        },
+        reviewedPlayer: {
+          id: `${gameId}-reviewed-player`,
+          placement: 2,
+          status: "finalist" as const,
+          won: false,
+          eliminatedRound: null,
+          readableSummary: "Reached the final council after thirteen rounds. ".repeat(20),
+        },
+        actionsByAgent: {
+          votesCastByRound: rounds.map((round) => ({
+            round,
+            empowerTarget: player(`ally-${round}`),
+            exposeTarget: player(`rival-${round}`),
+            revoteEmpowerTarget: null,
+          })),
+          councilVotesCast: rounds.map((round) => ({ round, target: player(`target-${round}`) })),
+          powersUsed: rounds.map((round) => ({ round, action: "protect" as const, target: player(`ally-${round}`) })),
+        },
+        actionsAgainstAgent: {
+          empowerVotesReceivedByRound: rounds.map((round) => ({ round, votes: round % 4 })),
+          exposeVotesReceivedByRound: rounds.map((round) => ({ round, votes: round % 3 })),
+          councilVotesReceived: rounds.map((round) => ({ round, votes: round % 2 })),
+          timesNominated: rounds.map((round) => ({
+            round,
+            candidates: Array.from({ length: 12 }, (_, candidateIndex) =>
+              player(`candidate-${round}-${candidateIndex}-${"n".repeat(60)}`)
+            ),
+            eliminated: false,
+          })),
+          shieldsReceived: rounds.map((round) => ({ round, from: player(`ally-${round}`) })),
+        },
+        factAvailability: {
+          overall: "available" as const,
+          actionsByAgent: "available" as const,
+          actionsAgainstAgent: "available" as const,
+        },
+        diagnostics: Array.from({ length: 40 }, (_, index) => ({
+          code: `diagnostic-${index}`,
+          severity: "warning" as const,
+          message: "diagnostic detail ".repeat(30),
+        })),
+      },
+      narrativeGroups: inputGame.narrativeGroups,
+      narrativeCoverage: "rich" as const,
+      candidateMoments: inputGame.narrativeGroups.map((group, index) => ({
+        id: `olm_${gameId}_${index}`,
+        gameId,
+        anchorKind: index % 3 === 0
+          ? "decision" as const
+          : index % 3 === 1
+            ? "dialogue" as const
+            : "cognition" as const,
+        sourceCoordinate: `decision:${gameId}:decision:${index}`,
+        sourceHash: `sha256:${gameId}:${index}`,
+        round: group.round ?? null,
+        phase: "MINGLE",
+      })),
+      sourceHash: `sha256:${gameId}`,
+      sourceCaptureVersion: "owner-learning-evidence-v1",
+    };
+  });
+  return { analysisTrack: "strategy_health_check", games, reviewInput };
+}
 
 async function insertProjectionFixture(db: DrizzleDB): Promise<{
   ownerUserId: string;

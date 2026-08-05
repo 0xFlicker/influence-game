@@ -503,7 +503,6 @@ const ownerLearningReviewSchema = closedObject(
         "provider_error",
         "invalid_structured_output",
         "tier_mismatch",
-        "input_budget_exceeded",
         "output_budget_exhausted",
         "logical_call_budget_exhausted",
         "evidence_unavailable",

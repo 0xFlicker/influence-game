@@ -18,6 +18,10 @@ import {
   type OwnerLearningEvidenceProjection,
   type OwnerLearningProjectedGameEvidence,
 } from "./owner-learning-evidence.js";
+import {
+  buildBudgetedOwnerLearningProviderInput,
+  hydrateOwnerLearningProviderOutput,
+} from "./owner-learning-provider-context.js";
 
 export const OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA = ownerLearningHarnessResponseSchema(false);
 export const OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA = ownerLearningHarnessResponseSchema(true);
@@ -26,19 +30,19 @@ function ownerLearningHarnessResponseSchema(finalResultRequired: boolean) {
   return {
     type: "object",
     additionalProperties: false,
-    required: ["provisionalThemes", "selectedMomentIds", "findings", "finalResult"],
+    required: ["provisionalThemes", "selectedMomentHandles", "findings", "finalResult"],
     properties: {
       provisionalThemes: { type: "array", maxItems: 3, items: { type: "string", maxLength: 240 } },
-      selectedMomentIds: { type: "array", maxItems: 3, items: { type: "string", maxLength: 200 } },
+      selectedMomentHandles: { type: "array", maxItems: 3, items: { type: "string", maxLength: 24 } },
       findings: {
         type: "array",
         maxItems: 3,
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["evidenceRefs", "observation", "interpretation"],
+            required: ["evidenceHandles", "observation", "interpretation"],
           properties: {
-            evidenceRefs: { type: "array", maxItems: 6, items: evidenceRefSchema() },
+              evidenceHandles: { type: "array", maxItems: 6, items: evidenceHandleSchema() },
             observation: { type: "string", maxLength: 800 },
             interpretation: { type: "string", maxLength: 800 },
           },
@@ -104,7 +108,6 @@ export async function runOwnerLearningHarness(
       analysisTrack: input.analysisTrack,
       currentStrategyStyle: input.currentStrategyStyle ?? "",
       evidence: input.evidence.reviewInput,
-      issuedEvidenceRefs: allowedEvidenceRefs,
     });
     const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
     assertRequiredFinalResult(parsed.finalResult);
@@ -132,7 +135,6 @@ export async function runOwnerLearningHarness(
       provisionalThemes: checkpoint.provisionalThemes,
       validatedFindings: checkpoint.validatedFindings,
       momentBundle: bundle,
-      issuedEvidenceRefs: allowedEvidenceRefs,
     });
     const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
     assertRequiredFinalResult(parsed.finalResult);
@@ -159,7 +161,6 @@ export async function runOwnerLearningHarness(
       provisionalThemes: checkpoint.provisionalThemes,
       validatedFindings: checkpoint.validatedFindings,
       evidence: input.evidence.reviewInput,
-      issuedEvidenceRefs: allowedEvidenceRefs,
     });
     const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
     assertRequiredFinalResult(parsed.finalResult);
@@ -187,11 +188,12 @@ export async function runOwnerLearningHarness(
     logicalCallsUsed += 1;
     if (isDive) divesUsed += 1;
     const finalResultRequired = logicalCallsUsed === OWNER_LEARNING_MAX_LOGICAL_CALLS;
-    return input.invoke({
-      ordinal: logicalCallsUsed,
+    const responseSchema = finalResultRequired
+      ? OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA
+      : OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA;
+    const context = buildBudgetedOwnerLearningProviderInput({
       stage,
-      isDive,
-      request: {
+      turn: {
         ...request,
         ...(finalResultRequired && request.evidence == null
           ? { evidence: input.evidence.reviewInput }
@@ -202,10 +204,17 @@ export async function runOwnerLearningHarness(
           finalResultRequired,
         },
       },
-      responseSchema: finalResultRequired
-        ? OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA
-        : OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+      evidence: input.evidence,
+      responseSchema,
     });
+    const output = await input.invoke({
+      ordinal: logicalCallsUsed,
+      stage,
+      isDive,
+      request: context.input,
+      responseSchema,
+    });
+    return hydrateOwnerLearningProviderOutput(output, context);
   }
 
   function assertRequiredFinalResult(finalResult: unknown): void {
@@ -445,19 +454,8 @@ function boundedStringArray(value: unknown, label: string, maxItems: number, max
   );
 }
 
-function evidenceRefSchema(): Record<string, unknown> {
-  return {
-    type: "object",
-    additionalProperties: false,
-    required: ["kind", "gameId", "coordinate", "sourceHash", "sourceVersion"],
-    properties: {
-      kind: { enum: ["canonical_event", "decision", "dialogue", "cognition", "game_summary"] },
-      gameId: { type: "string", maxLength: 200 },
-      coordinate: { type: "string", maxLength: 240 },
-      sourceHash: { type: "string", maxLength: 200 },
-      sourceVersion: { type: "string", maxLength: 200 },
-    },
-  };
+function evidenceHandleSchema(): Record<string, unknown> {
+  return { type: "string", maxLength: 24 };
 }
 
 function ownerLearningFinalResultSchema(): Record<string, unknown> {
@@ -484,14 +482,14 @@ function ownerLearningFinalResultSchema(): Record<string, unknown> {
         items: {
           type: "object",
           additionalProperties: false,
-          required: ["title", "disposition", "confidence", "rationale", "keepGuidance", "evidenceRefs", "proof"],
+            required: ["title", "disposition", "confidence", "rationale", "keepGuidance", "evidenceHandles", "proof"],
           properties: {
             title: { type: "string", maxLength: 160 },
             disposition: { enum: ["change", "keep", "gather_more_evidence"] },
             confidence: { enum: ["low", "medium", "high"] },
             rationale: { type: "string", maxLength: 1_200 },
             keepGuidance: { anyOf: [{ type: "string", maxLength: 800 }, { type: "null" }] },
-            evidenceRefs: { type: "array", maxItems: 8, items: evidenceRefSchema() },
+              evidenceHandles: { type: "array", maxItems: 8, items: evidenceHandleSchema() },
             proof: {
               anyOf: [{
                 type: "object",

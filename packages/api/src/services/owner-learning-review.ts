@@ -15,10 +15,10 @@ import {
 } from "./owner-learning-contracts.js";
 import type { OwnerLearningEvidenceProjection } from "./owner-learning-evidence.js";
 import {
-  buildBudgetedOwnerLearningProviderInput,
-  ownerLearningIssuedEvidenceRefs,
   projectOwnerLearningEvidence,
 } from "./owner-learning-evidence.js";
+import { OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA } from "./owner-learning-harness.js";
+import { buildBudgetedOwnerLearningProviderInput } from "./owner-learning-provider-context.js";
 import {
   getOwnerLearningEligibleInputs,
   validateOwnerLearningSelection,
@@ -96,10 +96,20 @@ export async function preflightOwnerLearningReview(
     instructions: OWNER_LEARNING_REVIEW_INSTRUCTIONS,
     cursorSecret: options.cursorSecret,
   });
-  buildBudgetedOwnerLearningProviderInput("scanning_narratives", {
-    analysisTrack: evidence.analysisTrack,
-    evidence: evidence.reviewInput,
-    issuedEvidenceRefs: ownerLearningIssuedEvidenceRefs(evidence.games),
+  buildBudgetedOwnerLearningProviderInput({
+    stage: "scanning_narratives",
+    turn: {
+      analysisTrack: evidence.analysisTrack,
+      currentStrategyStyle: evidence.reviewInput.currentStrategyStyle ?? "",
+      evidence: evidence.reviewInput,
+      callBudget: {
+        ordinal: 1,
+        remainingAfterThisCall: 3,
+        finalResultRequired: false,
+      },
+    },
+    evidence,
+    responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
   });
   return { selection, evidence };
 }
