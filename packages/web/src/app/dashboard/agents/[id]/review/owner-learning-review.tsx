@@ -121,7 +121,7 @@ export function OwnerLearningReviewView({
             ) : rows.map((row) => (
               <div className="olm-activity-row" key={row.id}>
                 <div className="olm-round">{row.round == null ? "Game" : `Round ${row.round}`}</div>
-                <div><strong>{row.action}</strong><span>{row.actionDetail}</span></div>
+                <div><strong>{row.action}</strong>{row.actionDetail && <span>{row.actionDetail}</span>}</div>
                 <div className="olm-arrow" aria-hidden="true">→</div>
                 <div className="olm-response"><strong>{row.counterplay}</strong><span>{row.counterplayDetail}</span></div>
                 <span className="olm-result-tag">{row.result}</span>

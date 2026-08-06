@@ -676,7 +676,7 @@ function evidenceRef(
     gameId,
     coordinate,
     sourceHash: `sha256:${gameId}`,
-    sourceVersion: "owner-learning-evidence-v1",
+    sourceVersion: "owner-learning-evidence-v2",
   };
 }
 

@@ -87,6 +87,7 @@ export interface OwnerLearningCanonicalGameFacts {
   };
   actionsByAgent: {
     votesCastByRound: PostgamePlayerGameSummary["votesCastByRound"];
+    formatBallotsCastByRound: PostgamePlayerGameSummary["formatBallotsCastByRound"];
     councilVotesCast: PostgamePlayerGameSummary["councilVotesCast"];
     powersUsed: PostgamePlayerGameSummary["powersUsed"];
   };
@@ -246,6 +247,7 @@ export async function projectOwnerLearningEvidence(
       },
       actionsByAgent: {
         votesCastByRound: playerSummary.votesCastByRound,
+        formatBallotsCastByRound: playerSummary.formatBallotsCastByRound,
         councilVotesCast: playerSummary.councilVotesCast,
         powersUsed: playerSummary.powersUsed,
       },
@@ -275,7 +277,7 @@ export async function projectOwnerLearningEvidence(
     );
     const candidateMoments = dedupeCandidateMoments([...canonicalMoments, ...narrativeMoments]);
     const sourceCaptureVersion = [
-      "postgame-v1",
+      "postgame-v2",
       `transcript-v${selectedGame.transcriptCaptureVersion}`,
       `cognition-v${selectedGame.cognitiveArtifactCaptureVersion}`,
     ].join(":");

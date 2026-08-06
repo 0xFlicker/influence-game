@@ -99,12 +99,12 @@ export async function insertPlayedOwnerLearningAgent(
     agentProfileId,
     analyticalRevisionId: revisionId,
     gameId,
-    evidenceVersion: "owner-learning-evidence-v1",
+    evidenceVersion: "owner-learning-evidence-v2",
     eligibilityPolicyVersion: "owner-learning-eligibility-v1",
     completionAt: completedAt,
     canonicalSnapshot: { reviewedPlayer: { eliminatedRound: 4 } },
     candidateMoments: [],
-    sourceCaptureVersion: "postgame-v1:transcript-v0:cognition-v0",
+    sourceCaptureVersion: "postgame-v2:transcript-v0:cognition-v0",
     sourceHash: `sha256:${gameId}`,
   });
   return { ownerUserId, agentProfileId, revisionId, gameId, playerId, gameEvidenceId };
@@ -136,7 +136,12 @@ export function fakeOwnerLearningProjection(
           eliminatedRound: 4,
           readableSummary: "The agent reached round four.",
         },
-        actionsByAgent: { votesCastByRound: [], councilVotesCast: [], powersUsed: [] },
+        actionsByAgent: {
+          votesCastByRound: [],
+          formatBallotsCastByRound: [],
+          councilVotesCast: [],
+          powersUsed: [],
+        },
         actionsAgainstAgent: {
           empowerVotesReceivedByRound: [],
           exposeVotesReceivedByRound: [],
@@ -155,7 +160,7 @@ export function fakeOwnerLearningProjection(
       narrativeCoverage: "rich",
       candidateMoments: [],
       sourceHash: `sha256:${game.gameId}`,
-      sourceCaptureVersion: "postgame-v1:transcript-v0:cognition-v0",
+      sourceCaptureVersion: "postgame-v2:transcript-v0:cognition-v0",
     })),
     reviewInput: {
       instructions: "Review the supplied evidence.",

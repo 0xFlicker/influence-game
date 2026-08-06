@@ -1020,6 +1020,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       outputSchema: unknown;
     };
     expect(playerSummaryTool.inputSchema.properties).not.toHaveProperty("detailLevel");
+    expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("formatBallotsCastByRound");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("majorityAlignmentByRound");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("overallGameShape");
     const turningPointsTool = tools.find((tool) => (tool as { name: string }).name === "read_game_turning_points") as {

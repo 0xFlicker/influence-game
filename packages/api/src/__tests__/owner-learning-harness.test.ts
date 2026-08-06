@@ -489,7 +489,12 @@ function harnessEvidence(
       canonicalFacts: {
         game: { id: gameId, slug: gameId, completionAt: "2026-08-04T00:00:00.000Z", roundCount: 2, playerCount: 8 },
         reviewedPlayer: { id: `player-${index}`, placement: 8, status: "eliminated" as const, won: false, eliminatedRound: 2, readableSummary: "Eliminated in round two." },
-        actionsByAgent: { votesCastByRound: [], councilVotesCast: [], powersUsed: [] },
+        actionsByAgent: {
+          votesCastByRound: [],
+          formatBallotsCastByRound: [],
+          councilVotesCast: [],
+          powersUsed: [],
+        },
         actionsAgainstAgent: { empowerVotesReceivedByRound: [], exposeVotesReceivedByRound: [], councilVotesReceived: [], timesNominated: [], shieldsReceived: [] },
         factAvailability: { overall: "available" as const, actionsByAgent: "available" as const, actionsAgainstAgent: "available" as const },
         diagnostics: [],
@@ -506,7 +511,7 @@ function harnessEvidence(
         phase: "VOTE",
       }],
       sourceHash,
-      sourceCaptureVersion: "postgame-v1:transcript-v1:cognition-v1",
+      sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v1",
     };
   });
   return {

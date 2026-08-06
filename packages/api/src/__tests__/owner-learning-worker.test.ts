@@ -87,6 +87,46 @@ describe("owner learning worker durability", () => {
     })).toBe(false);
   });
 
+  test("fails an obsolete queued review before projecting evidence or invoking the provider", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    await db.update(schema.agentLearningReviews).set({
+      evidenceVersion: "owner-learning-evidence-v1",
+      providerPolicyVersion: "owner-learning-luna-flex-v2",
+    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    const claim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    let projectorInvocations = 0;
+    let providerInvocations = 0;
+
+    expect(await runClaimedOwnerLearningReview(db, claim, {
+      provider: {
+        async invoke() {
+          providerInvocations += 1;
+          throw new Error("obsolete review must not reach the provider");
+        },
+      },
+      projector: async () => {
+        projectorInvocations += 1;
+        throw new Error("obsolete review must not be reprojected");
+      },
+      now: () => new Date("2026-08-04T03:01:01.000Z"),
+    })).toBe(false);
+    expect(projectorInvocations).toBe(0);
+    expect(providerInvocations).toBe(0);
+
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review).toMatchObject({
+      analysisStatus: "failed",
+      safeFailureCode: "evidence_unavailable",
+      retryable: false,
+    });
+    expect(review.leaseTokenHash).toBeNull();
+  });
+
   test("reuses an undispatched reserved ordinal after lease expiry", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);

@@ -183,6 +183,7 @@ export type {
   PostgameJuryBreakdown,
   PostgameJuryVoteEntry,
   PostgameMomentumSegment,
+  PostgamePlayerFormatBallotByRound,
   PostgamePlayerGameSummary,
   PostgamePlayerMajorityAlignment,
   PostgamePlayerShape,

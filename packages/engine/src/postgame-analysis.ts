@@ -12,6 +12,7 @@ import type {
   RevealedPlayerRef,
   RevealedVoteLedgerEntry,
 } from "./revealed-round-facts";
+import type { LaunchFormatId } from "./formats";
 import type { PowerActionType, UUID } from "./types";
 
 export type PostgameAnalysisDetailLevel = "brief" | "standard" | "full";
@@ -194,6 +195,13 @@ export interface PostgamePlayerVoteByRound {
   revoteEmpowerTarget: RevealedPlayerRef | null;
 }
 
+export interface PostgamePlayerFormatBallotByRound {
+  round: number;
+  formatId: LaunchFormatId;
+  target: RevealedPlayerRef;
+  polarity: "save" | "eliminate" | null;
+}
+
 export interface PostgamePlayerMajorityAlignment {
   round: number;
   empowerAligned: boolean | null;
@@ -225,6 +233,7 @@ export interface PostgamePlayerGameSummary {
   eliminatedRound: number | null;
   won: boolean;
   votesCastByRound: PostgamePlayerVoteByRound[];
+  formatBallotsCastByRound: PostgamePlayerFormatBallotByRound[];
   empowerVotesReceivedByRound: Array<{ round: number; votes: number }>;
   exposeVotesReceivedByRound: Array<{ round: number; votes: number }>;
   councilVotesCast: Array<{ round: number; target: RevealedPlayerRef }>;
@@ -873,6 +882,7 @@ function buildPlayerSummary(input: {
   const { player, completed, roundSummaries, finalVote, allianceArc, eventRefs } = input;
   const eliminated = completed.eliminationOrder.find((entry) => entry.player.id === player.id);
   const votesCastByRound: PostgamePlayerVoteByRound[] = [];
+  const formatBallotsCastByRound: PostgamePlayerFormatBallotByRound[] = [];
   const empowerVotesReceivedByRound: Array<{ round: number; votes: number }> = [];
   const exposeVotesReceivedByRound: Array<{ round: number; votes: number }> = [];
   const councilVotesCast: Array<{ round: number; target: RevealedPlayerRef }> = [];
@@ -894,6 +904,15 @@ function buildPlayerSummary(input: {
         empowerTarget: standardVote.empowerTarget,
         exposeTarget: standardVote.exposeTarget ?? null,
         revoteEmpowerTarget: standardVote.revoteEmpowerTarget,
+      });
+    }
+    const formatBallot = facts.format.acceptedBallots.find((entry) => entry.voter.id === player.id);
+    if (formatBallot && facts.format.selectedFormatId) {
+      formatBallotsCastByRound.push({
+        round: round.round,
+        formatId: facts.format.selectedFormatId,
+        target: formatBallot.target,
+        polarity: formatBallot.polarity,
       });
     }
     empowerVotesReceivedByRound.push({
@@ -965,6 +984,7 @@ function buildPlayerSummary(input: {
   const finalist = completed.summary.finalists.some((finalistPlayer) => finalistPlayer.id === player.id);
   const evidence = eventRefs?.forPlayer(player, [
     "vote.cast",
+    "format.ballot_cast",
     "council.vote_cast",
     "endgame.elimination_vote_cast",
     "jury.vote_cast",
@@ -994,6 +1014,7 @@ function buildPlayerSummary(input: {
     eliminatedRound: eliminated?.round ?? null,
     won: player.status === "winner",
     votesCastByRound,
+    formatBallotsCastByRound,
     empowerVotesReceivedByRound,
     exposeVotesReceivedByRound,
     councilVotesCast,

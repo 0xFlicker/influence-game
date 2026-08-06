@@ -310,12 +310,12 @@ async function insertAdditionalPlayedGame(
     agentProfileId: fixture.agentProfileId,
     analyticalRevisionId: fixture.revisionId,
     gameId,
-    evidenceVersion: "owner-learning-evidence-v1",
+    evidenceVersion: "owner-learning-evidence-v2",
     eligibilityPolicyVersion: "owner-learning-eligibility-v1",
     completionAt: completedAt,
     canonicalSnapshot: { reviewedPlayer: { eliminatedRound: null } },
     candidateMoments: [],
-    sourceCaptureVersion: "postgame-v1:transcript-v1:cognition-v1",
+    sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v1",
     sourceHash: `sha256:${gameId}`,
   });
   return { gameId, gameEvidenceId };

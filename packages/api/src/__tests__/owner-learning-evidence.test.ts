@@ -35,7 +35,7 @@ describe("owner learning evidence", () => {
     const coordinate = {
       gameId: "game-1",
       reviewedAgentProfileId: "profile-1",
-      evidenceVersion: "owner-learning-evidence-v1",
+      evidenceVersion: "owner-learning-evidence-v2",
       anchorKind: "decision" as const,
       sourceCoordinate: "decision:3c6a",
       windowVersion: "owner-learning-window-v1",
@@ -116,14 +116,25 @@ describe("owner learning evidence", () => {
     const serialized = JSON.stringify(first.input);
     expect(serialized).not.toContain("olm_");
     expect(serialized).not.toContain("sha256:");
-    expect(serialized).not.toContain("owner-learning-evidence-v1");
+    expect(serialized).not.toContain("owner-learning-evidence-v2");
     expect(serialized).not.toContain("candidateMomentIds");
     expect(serialized).not.toContain("issuedEvidenceRefs");
+    expect(serialized).toContain('"formatBallots"');
     const providerTurn = first.input.turn as {
       evidence: {
         games: Array<{
           game: string;
           summaryHandle: string;
+          canonical: {
+            actionsByAgent: {
+              formatBallots: Array<{
+                round: number;
+                format: string;
+                target: string | null;
+                polarity: string | null;
+              }>;
+            };
+          };
           moments: Array<{ round?: number; text?: string; thinking?: string }>;
           omittedMomentCount: number;
         }>;
@@ -131,6 +142,12 @@ describe("owner learning evidence", () => {
     };
     expect(providerTurn.evidence.games.map((game) => game.game)).toEqual(["g1", "g2", "g3"]);
     expect(providerTurn.evidence.games.every((game) => game.summaryHandle.endsWith(":s"))).toBe(true);
+    expect(providerTurn.evidence.games[0]!.canonical.actionsByAgent.formatBallots[0]).toEqual({
+      round: 1,
+      format: "vote_bomb",
+      target: "format-target-1 1",
+      polarity: null,
+    });
     expect(providerTurn.evidence.games.every((game) => game.moments.length > 0)).toBe(true);
     expect(providerTurn.evidence.games.every((game) => game.omittedMomentCount > 0)).toBe(true);
     expect(providerTurn.evidence.games.every((game) =>
@@ -285,6 +302,12 @@ function stressEvidenceProjection(
             exposeTarget: player(`rival-${round}`),
             revoteEmpowerTarget: null,
           })),
+          formatBallotsCastByRound: rounds.map((round) => ({
+            round,
+            formatId: "vote_bomb" as const,
+            target: player(`format-target-${round}`),
+            polarity: null,
+          })),
           councilVotesCast: rounds.map((round) => ({ round, target: player(`target-${round}`) })),
           powersUsed: rounds.map((round) => ({ round, action: "protect" as const, target: player(`ally-${round}`) })),
         },
@@ -328,7 +351,7 @@ function stressEvidenceProjection(
         phase: "MINGLE",
       })),
       sourceHash: `sha256:${gameId}`,
-      sourceCaptureVersion: "owner-learning-evidence-v1",
+      sourceCaptureVersion: "owner-learning-evidence-v2",
     };
   });
   return { analysisTrack: "strategy_health_check", games, reviewInput };

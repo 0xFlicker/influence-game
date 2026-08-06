@@ -27,14 +27,20 @@ describe("buildPostgameAnalysisProjection", () => {
     );
     // Three empowerments for Alice so executive summary emits a control line.
     for (let round = 1; round <= 3; round++) {
+      const eliminatedId = round === 1 ? "eve" : round === 2 ? "dave" : "charlie";
       state.startRound();
       state.setEmpowered("alice", "initial");
       state.recordFormatMenu("alice", ["vote_bomb", "save_or_eliminate"]);
       state.recordFormatSelected("alice", "vote_bomb");
+      state.recordFormatBallot({
+        formatId: "vote_bomb",
+        voterId: "alice",
+        targetId: eliminatedId,
+      });
       state.recordFormatResolution({
         formatId: "vote_bomb",
         empoweredId: "alice",
-        eliminatedId: round === 1 ? "eve" : round === 2 ? "dave" : "charlie",
+        eliminatedId,
         resolutionKind: "clear",
         tiedPlayerIds: [],
         tiebreakerId: null,
@@ -45,7 +51,7 @@ describe("buildPostgameAnalysisProjection", () => {
         },
         safetyBounce: null,
       });
-      state.eliminatePlayer(round === 1 ? "eve" : round === 2 ? "dave" : "charlie");
+      state.eliminatePlayer(eliminatedId);
     }
 
     const completed = buildCompletedGameResults({ events: state.getCanonicalEvents() });
@@ -62,6 +68,12 @@ describe("buildPostgameAnalysisProjection", () => {
     )).toBe(true);
     expect(projection.executiveSummary.some((line) => line.text.includes("controlled power"))).toBe(false);
     expect(JSON.stringify(projection.roundSummaries)).not.toContain("controlled power");
+    expect(projection.playerSummaries.find((entry) => entry.player.id === "alice")
+      ?.formatBallotsCastByRound).toEqual([
+        { round: 1, formatId: "vote_bomb", target: { id: "eve", name: "Eve" }, polarity: null },
+        { round: 2, formatId: "vote_bomb", target: { id: "dave", name: "Dave" }, polarity: null },
+        { round: 3, formatId: "vote_bomb", target: { id: "charlie", name: "Charlie" }, polarity: null },
+      ]);
   });
 
   it("summarizes edge-smoke-dusk without raw event reconstruction", () => {

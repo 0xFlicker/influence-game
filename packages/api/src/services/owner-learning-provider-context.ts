@@ -543,6 +543,14 @@ function compactCanonicalFacts(facts: OwnerLearningCanonicalGameFacts): Record<s
         expose: compactPlayerName(entry.exposeTarget),
         revoteEmpower: compactPlayerName(entry.revoteEmpowerTarget),
       })),
+      formatBallots: facts.actionsByAgent.formatBallotsCastByRound
+        .slice(0, MAX_ACTION_ENTRIES)
+        .map((entry) => ({
+          round: entry.round,
+          format: entry.formatId,
+          target: compactPlayerName(entry.target),
+          polarity: entry.polarity,
+        })),
       councilVotes: facts.actionsByAgent.councilVotesCast.slice(0, MAX_ACTION_ENTRIES).map((entry) => ({
         round: entry.round,
         target: compactPlayerName(entry.target),
@@ -597,6 +605,7 @@ function compactCanonicalSummary(facts: OwnerLearningCanonicalGameFacts): Record
 function canonicalActionArrays(facts: OwnerLearningCanonicalGameFacts): unknown[][] {
   return [
     facts.actionsByAgent.votesCastByRound,
+    facts.actionsByAgent.formatBallotsCastByRound,
     facts.actionsByAgent.councilVotesCast,
     facts.actionsByAgent.powersUsed,
     facts.actionsAgainstAgent.empowerVotesReceivedByRound,

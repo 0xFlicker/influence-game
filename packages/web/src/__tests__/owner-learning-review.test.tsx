@@ -27,6 +27,83 @@ describe("owner learning review", () => {
     expect(visibleText).not.toMatch(/\bminutes?\b/i);
   });
 
+  test("shows accepted format ballots instead of a missing expose placeholder", () => {
+    const review = reviewFixture();
+    const canonicalFacts = review.evidence.games[0]!.canonicalFacts as {
+      actionsByAgent: Record<string, unknown>;
+    };
+    canonicalFacts.actionsByAgent = {
+      votesCastByRound: [{
+        round: 1,
+        empowerTarget: { name: "Mira" },
+        exposeTarget: null,
+      }],
+      formatBallotsCastByRound: [{
+        round: 1,
+        formatId: "save_or_eliminate",
+        target: { name: "Rune" },
+        polarity: "save",
+      }],
+      councilVotesCast: [],
+      powersUsed: [],
+    };
+
+    const html = renderReview(review);
+
+    expect(html).toContain("Voted to save Rune");
+    expect(html).not.toContain("No expose target recorded");
+  });
+
+  test("renders format-only ballots and every useful format action label", () => {
+    const cases = [
+      ["save_or_eliminate", "save", "Voted to save Rune"],
+      ["save_or_eliminate", "eliminate", "Voted to eliminate Rune"],
+      ["vote_bomb", null, "Vote Bomb vote against Rune"],
+      ["safety_bounce", null, "Safety Bounce vote against Rune"],
+    ] as const;
+
+    for (const [formatId, polarity, label] of cases) {
+      const review = reviewFixture();
+      const canonicalFacts = review.evidence.games[0]!.canonicalFacts as {
+        actionsByAgent: Record<string, unknown>;
+      };
+      canonicalFacts.actionsByAgent = {
+        votesCastByRound: [],
+        formatBallotsCastByRound: [{
+          round: 1,
+          formatId,
+          target: { name: "Rune" },
+          polarity,
+        }],
+        councilVotesCast: [],
+        powersUsed: [],
+      };
+
+      expect(renderReview(review)).toContain(label);
+    }
+  });
+
+  test("leaves old frozen evidence blank instead of inventing an expose or format action", () => {
+    const review = reviewFixture();
+    const canonicalFacts = review.evidence.games[0]!.canonicalFacts as {
+      actionsByAgent: Record<string, unknown>;
+    };
+    canonicalFacts.actionsByAgent = {
+      votesCastByRound: [{
+        round: 1,
+        empowerTarget: { name: "Mira" },
+        exposeTarget: null,
+      }],
+      councilVotesCast: [],
+      powersUsed: [],
+    };
+
+    const html = renderReview(review);
+    expect(html).toContain("Backed Mira");
+    expect(html).not.toContain("No expose target recorded");
+    expect(html).not.toContain("Empower-only ballot");
+  });
+
   test("renders generated text as escaped prose without exposing evidence coordinates", () => {
     const html = renderReview(readyReview({
       diagnosis: '<img src=x onerror="alert(1)"> Hold longer.',

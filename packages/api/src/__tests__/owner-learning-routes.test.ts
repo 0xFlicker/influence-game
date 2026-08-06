@@ -191,7 +191,7 @@ describe("owner learning REST routes", () => {
             gameId: fixture.gameId,
             coordinate: "summary:reviewed-player",
             sourceHash: `sha256:${fixture.gameId}`,
-            sourceVersion: "owner-learning-evidence-v1",
+            sourceVersion: "owner-learning-evidence-v2",
           }],
         }],
         proposal: {

@@ -21,13 +21,20 @@ import { createOwnerLearningEvent } from "./owner-learning-events.js";
 import {
   fingerprintOwnerLearningRequest,
   fingerprintOwnerLearningValue,
+  OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION,
+  OWNER_LEARNING_EVIDENCE_VERSION,
   OWNER_LEARNING_MAX_DIVES,
   OWNER_LEARNING_MAX_LOGICAL_CALLS,
+  OWNER_LEARNING_PROMPT_VERSION,
+  OWNER_LEARNING_PROVIDER_POLICY_VERSION,
+  OWNER_LEARNING_REVIEWER_VERSION,
+  OWNER_LEARNING_SCHEMA_VERSION,
 } from "./owner-learning-contracts.js";
 import { runOwnerLearningHarness } from "./owner-learning-harness.js";
 import type { OwnerLearningProvider } from "./owner-learning-provider.js";
 import { OwnerLearningProviderError } from "./owner-learning-provider.js";
 import {
+  OWNER_LEARNING_MODEL,
   OWNER_LEARNING_REVIEW_INSTRUCTIONS,
   type OwnerLearningEvidenceProjector,
 } from "./owner-learning-review.js";
@@ -689,11 +696,29 @@ export async function runClaimedOwnerLearningReview(
     checkpointHash: schema.agentLearningReviews.checkpointHash,
     logicalCallCount: schema.agentLearningReviews.logicalCallCount,
     diveCount: schema.agentLearningReviews.diveCount,
+    eligibilityPolicyVersion: schema.agentLearningReviews.eligibilityPolicyVersion,
+    evidenceVersion: schema.agentLearningReviews.evidenceVersion,
+    reviewerVersion: schema.agentLearningReviews.reviewerVersion,
+    promptVersion: schema.agentLearningReviews.promptVersion,
+    schemaVersion: schema.agentLearningReviews.schemaVersion,
+    providerPolicyVersion: schema.agentLearningReviews.providerPolicyVersion,
+    selectedModel: schema.agentLearningReviews.selectedModel,
     strategyStyle: schema.agentProfiles.strategyStyle,
   }).from(schema.agentLearningReviews)
     .innerJoin(schema.agentProfiles, eq(schema.agentLearningReviews.agentProfileId, schema.agentProfiles.id))
     .where(eq(schema.agentLearningReviews.id, claim.reviewId)).limit(1))[0];
   if (!review) {
+    options.signal?.removeEventListener("abort", abortFromCaller);
+    return false;
+  }
+  if (!isCurrentOwnerLearningReviewProtocol(review)) {
+    await failOwnerLearningReview(db, {
+      reviewId: review.id,
+      leaseToken: claim.leaseToken,
+      failureCode: "evidence_unavailable",
+      retryable: false,
+      now: now(),
+    });
     options.signal?.removeEventListener("abort", abortFromCaller);
     return false;
   }
@@ -872,6 +897,24 @@ export async function runClaimedOwnerLearningReview(
     }
     options.signal?.removeEventListener("abort", abortFromCaller);
   }
+}
+
+function isCurrentOwnerLearningReviewProtocol(review: {
+  eligibilityPolicyVersion: string;
+  evidenceVersion: string;
+  reviewerVersion: string;
+  promptVersion: string;
+  schemaVersion: string;
+  providerPolicyVersion: string;
+  selectedModel: string;
+}): boolean {
+  return review.eligibilityPolicyVersion === OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION
+    && review.evidenceVersion === OWNER_LEARNING_EVIDENCE_VERSION
+    && review.reviewerVersion === OWNER_LEARNING_REVIEWER_VERSION
+    && review.promptVersion === OWNER_LEARNING_PROMPT_VERSION
+    && review.schemaVersion === OWNER_LEARNING_SCHEMA_VERSION
+    && review.providerPolicyVersion === OWNER_LEARNING_PROVIDER_POLICY_VERSION
+    && review.selectedModel === OWNER_LEARNING_MODEL;
 }
 
 export function classifyOwnerLearningOutputFailure(error: unknown): OwnerLearningOutputFailureCode {
