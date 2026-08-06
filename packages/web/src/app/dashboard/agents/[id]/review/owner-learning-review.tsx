@@ -305,7 +305,7 @@ function ReviewStatus({ review }: { review: OwnerLearningReview }) {
 
 function ResolutionBanner({ review }: { review: OwnerLearningReview }) {
   const copy: Record<NonNullable<OwnerLearningReview["resolution"]>, string> = {
-    applied: "The exact proposed strategy was applied as a new agent revision.",
+    applied: "The proposed strategy was applied.",
     manual_update: "You completed a linked manual update. The generated proposal was not marked accepted.",
     declined: "You chose to keep the current strategy. The proposal remains here as review history.",
     no_change: "The review found no focused strategy update to make.",
