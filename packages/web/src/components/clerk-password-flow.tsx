@@ -5,7 +5,6 @@ import { executeProtectCheck } from "@clerk/shared/internal/clerk-js/protectChec
 import {
   useCallback,
   useEffect,
-  useEffectEvent,
   useRef,
   useState,
 } from "react";
@@ -48,13 +47,26 @@ type FlowStep =
   | "support_blocked"
   | "success";
 
-type SignInTransition =
-  | "idle"
-  | "awaiting_password_result"
-  | "retry_after_protect";
-
 type ClerkOperationResult = {
-  error: { message?: string; longMessage?: string } | null;
+  error: { code?: string; message?: string; longMessage?: string } | null;
+};
+
+type ClerkExistingSessionResource = {
+  existingSession?: { sessionId: string } | null;
+};
+
+type ClerkPasswordResource = ClerkExistingSessionResource & {
+  password: (params: {
+    emailAddress: string;
+    password: string;
+  }) => Promise<ClerkOperationResult>;
+};
+
+type ClerkProtectResource = ClerkExistingSessionResource & {
+  status: string;
+  submitProtectCheck: (params: {
+    proofToken: string;
+  }) => Promise<ClerkOperationResult>;
 };
 
 type ProtectCheckResource = Parameters<typeof executeProtectCheck>[0];
@@ -67,17 +79,75 @@ function clerkErrorMessage(
   return result.error.longMessage ?? result.error.message ?? fallback;
 }
 
-export async function updatedClerkResource<T extends object>(
-  readCurrent: () => T,
-  previous: T,
-  isReady: (current: T) => boolean = (current) => current !== previous,
-): Promise<T> {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
-    await new Promise<void>((resolve) => setTimeout(resolve, 20));
-    const current = readCurrent();
-    if (isReady(current)) return current;
+export async function activateClerkExistingSession<
+  T extends ClerkExistingSessionResource,
+>({
+  signIn,
+  setActive,
+  exchange,
+}: {
+  signIn: T;
+  setActive: (sessionId: string) => Promise<void>;
+  exchange: () => Promise<void>;
+}): Promise<boolean> {
+  const sessionId = signIn.existingSession?.sessionId;
+  if (!sessionId) return false;
+  await setActive(sessionId);
+  await exchange();
+  return true;
+}
+
+export async function runClerkPasswordAttempt<T extends ClerkPasswordResource>({
+  signIn,
+  emailAddress,
+  password,
+  continueSignIn,
+}: {
+  signIn: T;
+  emailAddress: string;
+  password: string;
+  continueSignIn: (signIn: T) => Promise<void>;
+}): Promise<void> {
+  const result = await signIn.password({ emailAddress, password });
+  const message = clerkErrorMessage(result, "Could not sign in.");
+  const submittedAccountAlreadyHasSession =
+    result.error?.code === "identifier_already_signed_in"
+    && Boolean(signIn.existingSession?.sessionId);
+  if (message && !submittedAccountAlreadyHasSession) {
+    throw new Error(
+      result.error?.code === "identifier_already_signed_in"
+        ? "Sign-in could not finish. Reload and try again."
+        : message,
+    );
   }
-  return readCurrent();
+  await continueSignIn(signIn);
+}
+
+export async function runClerkProtectAttempt<T extends ClerkProtectResource>({
+  signIn,
+  proofToken,
+  retryPassword,
+  continueSignIn,
+}: {
+  signIn: T;
+  proofToken: string;
+  retryPassword: () => Promise<void>;
+  continueSignIn: (signIn: T) => Promise<void>;
+}): Promise<void> {
+  const result = await signIn.submitProtectCheck({ proofToken });
+  const message = clerkErrorMessage(
+    result,
+    "Could not complete the security check.",
+  );
+  if (message) throw new Error(message);
+  if (
+    signIn.status === "needs_identifier"
+    || signIn.status === "needs_first_factor"
+  ) {
+    await retryPassword();
+    return;
+  }
+  await continueSignIn(signIn);
 }
 
 function ClerkProtectChallenge({
@@ -178,8 +248,6 @@ export function ClerkPasswordFlow({
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [localBusy, setLocalBusy] = useState(false);
-  const [signInTransition, setSignInTransition] =
-    useState<SignInTransition>("idle");
   const [managedToken, setManagedToken] = useState<string | null>(null);
   const [supportId, setSupportId] = useState<string | null>(null);
   const [correlationId] = useState(supportReference);
@@ -188,14 +256,9 @@ export function ClerkPasswordFlow({
   const resumedCompletionRef = useRef(false);
   const currentSignupOwnsCompletionRef = useRef(false);
   const busyRef = useRef(false);
-  const signInTransitionSourceRef = useRef(signIn);
-  const signInTransitionProtectTokenRef = useRef<string | null>(null);
-  const signInTransitionTimeoutRef = useRef<number | null>(null);
-  const signInTransitionGenerationRef = useRef(0);
   const providerBusy =
     signInFetchStatus === "fetching" || signUpFetchStatus === "fetching";
-  const busy =
-    localBusy || providerBusy || signInTransition !== "idle";
+  const busy = localBusy || providerBusy;
   const getActiveClerkToken = useCallback(async (): Promise<string> => {
     await Promise.resolve();
     const token = await clerk.session?.getToken();
@@ -213,15 +276,12 @@ export function ClerkPasswordFlow({
   }, [error, presentation, step]);
 
   useEffect(() => {
-    clearSignInTransitionTimeout();
-    signInTransitionProtectTokenRef.current = null;
     setEmail(initialEmail);
     setPassword("");
     setCode("");
     setNewPassword("");
     setError(null);
     setStatus("");
-    setSignInTransition("idle");
     setManagedToken(null);
     setSupportId(null);
     setStep("credentials");
@@ -377,96 +437,38 @@ export function ClerkPasswordFlow({
     }
   }
 
-  function clearSignInTransitionTimeout(): void {
-    signInTransitionGenerationRef.current += 1;
-    if (signInTransitionTimeoutRef.current === null) return;
-    window.clearTimeout(signInTransitionTimeoutRef.current);
-    signInTransitionTimeoutRef.current = null;
-  }
-
-  function finishSignInTransition(): void {
-    clearSignInTransitionTimeout();
-    signInTransitionProtectTokenRef.current = null;
-    setSignInTransition("idle");
-  }
-
-  function armSignInTransitionTimeout(): void {
-    clearSignInTransitionTimeout();
-    const generation = signInTransitionGenerationRef.current;
-    signInTransitionTimeoutRef.current = window.setTimeout(() => {
-      if (generation !== signInTransitionGenerationRef.current) return;
-      signInTransitionTimeoutRef.current = null;
-      signInTransitionGenerationRef.current += 1;
-      signInTransitionProtectTokenRef.current = null;
-      setSignInTransition("idle");
-      setError("Sign-in did not finish. Try again or continue with Privy.");
-      setStatus("");
-    }, 10_000);
-  }
-
-  useEffect(() => () => {
-    signInTransitionGenerationRef.current += 1;
-    if (signInTransitionTimeoutRef.current !== null) {
-      window.clearTimeout(signInTransitionTimeoutRef.current);
-    }
-  }, []);
-
-  const onSignInTransition = useEffectEvent(async (
+  async function resumeExistingClerkSession(
     currentSignIn: typeof signIn,
-  ) => {
-    if (
-      signInTransition === "retry_after_protect"
-      && (currentSignIn.status === "needs_identifier"
-        || currentSignIn.status === "needs_first_factor")
-    ) {
-      finishSignInTransition();
-      setStep("credentials");
-      await submitCredentials();
-      return;
-    }
+  ): Promise<boolean> {
+    return activateClerkExistingSession({
+      signIn: currentSignIn,
+      setActive: async (sessionId) => {
+        await clerk.setActive({ session: sessionId });
+      },
+      exchange: async () => {
+        await exchangeAfterVerification(await getActiveClerkToken());
+      },
+    });
+  }
 
-    if (
-      signInTransition === "awaiting_password_result"
-      && (currentSignIn.status === "needs_identifier"
-        || currentSignIn.status === "needs_first_factor")
-    ) {
-      return;
-    }
-
-    if (
-      signInTransition === "retry_after_protect"
-      && currentSignIn.status === "needs_protect_check"
-      && signInTransitionProtectTokenRef.current !== null
-      && currentSignIn.protectCheck?.token
-        === signInTransitionProtectTokenRef.current
-    ) {
-      return;
-    }
-
+  async function continueSignIn(currentSignIn: typeof signIn): Promise<void> {
+    if (await resumeExistingClerkSession(currentSignIn)) return;
     if (currentSignIn.status === "needs_protect_check") {
       if (!currentSignIn.protectCheck) {
-        finishSignInTransition();
-        setError("The security check is unavailable. Try again.");
-        setStatus("");
-        return;
+        throw new Error("The security check is unavailable. Try again.");
       }
-      finishSignInTransition();
       setStep("protect_check");
       setStatus("Complete the security check to continue.");
       return;
     }
 
     if (currentSignIn.status === "needs_new_password") {
-      finishSignInTransition();
       setStep("new_password");
       return;
     }
 
     if (currentSignIn.status === "complete") {
-      finishSignInTransition();
-      await run(async () => {
-        await exchangeAfterVerification(await finalizeSignIn());
-      }, "Signing in…");
+      await exchangeAfterVerification(await finalizeSignIn());
       return;
     }
 
@@ -474,18 +476,23 @@ export function ClerkPasswordFlow({
       currentSignIn.status === "needs_second_factor"
       || currentSignIn.status === "needs_client_trust"
     ) {
-      finishSignInTransition();
-      setError("This account requires an unsupported additional sign-in step.");
-      setStatus("");
+      throw new Error(
+        "This account requires an unsupported additional sign-in step.",
+      );
     }
-  });
 
-  useEffect(() => {
-    if (signInTransition === "idle" || localBusy || providerBusy) return;
-    if (signIn === signInTransitionSourceRef.current) return;
-    signInTransitionSourceRef.current = signIn;
-    void onSignInTransition(signIn);
-  }, [localBusy, providerBusy, signIn, signInTransition]);
+    throw new Error("Sign-in could not continue. Try again.");
+  }
+
+  async function attemptPasswordSignIn(): Promise<void> {
+    const currentSignIn = signInRef.current;
+    await runClerkPasswordAttempt({
+      signIn: currentSignIn,
+      emailAddress: email.trim(),
+      password,
+      continueSignIn,
+    });
+  }
 
   async function submitCredentials(): Promise<void> {
     if (intent === "reset_password") {
@@ -507,33 +514,20 @@ export function ClerkPasswordFlow({
 
     if (intent === "sign_in") {
       await run(async () => {
-        signInTransitionSourceRef.current = signIn;
-        signInTransitionProtectTokenRef.current = null;
-        const result = await signIn.password({
-          emailAddress: email.trim(),
-          password,
-        });
-        const message = clerkErrorMessage(result, "Could not sign in.");
-        if (message) throw new Error(message);
-        setSignInTransition("awaiting_password_result");
-        armSignInTransitionTimeout();
+        await attemptPasswordSignIn();
       }, "Signing in…");
       return;
     }
 
     await run(async () => {
       currentSignupOwnsCompletionRef.current = true;
-      const previousSignUp = signUp;
       const result = await signUp.password({
         emailAddress: email.trim(),
         password,
       });
       const message = clerkErrorMessage(result, "Could not create the account.");
       if (message) throw new Error(message);
-      const currentSignUp = await updatedClerkResource(
-        () => signUpRef.current,
-        previousSignUp,
-      );
+      const currentSignUp = signUpRef.current;
       if (currentSignUp.status === "complete") {
         await exchangeAfterVerification(await finalizeSignUp());
         return;
@@ -551,24 +545,23 @@ export function ClerkPasswordFlow({
 
   async function submitProtectProof(proofToken: string): Promise<void> {
     await run(async () => {
-      signInTransitionSourceRef.current = signIn;
-      signInTransitionProtectTokenRef.current =
-        signIn.protectCheck?.token ?? null;
-      const result = await signIn.submitProtectCheck({ proofToken });
-      const message = clerkErrorMessage(
-        result,
-        "Could not complete the security check.",
-      );
-      if (message) throw new Error(message);
-      setSignInTransition("retry_after_protect");
-      armSignInTransitionTimeout();
+      const currentSignIn = signInRef.current;
+      await runClerkProtectAttempt({
+        signIn: currentSignIn,
+        proofToken,
+        retryPassword: async () => {
+          setStep("credentials");
+          await attemptPasswordSignIn();
+        },
+        continueSignIn,
+      });
     }, "Finishing security check…");
   }
 
   async function verifyEmail(): Promise<void> {
     await run(async () => {
-      const previousSignUp = signUp;
-      const result = await signUp.verifications.verifyEmailCode({
+      const currentSignUp = signUpRef.current;
+      const result = await currentSignUp.verifications.verifyEmailCode({
         code: code.trim(),
       });
       const message = clerkErrorMessage(
@@ -576,10 +569,6 @@ export function ClerkPasswordFlow({
         "That verification code is invalid or expired.",
       );
       if (message) throw new Error(message);
-      const currentSignUp = await updatedClerkResource(
-        () => signUpRef.current,
-        previousSignUp,
-      );
       if (currentSignUp.status !== "complete") {
         throw new Error("Email verification is incomplete. Request a new code.");
       }
@@ -601,8 +590,8 @@ export function ClerkPasswordFlow({
 
   async function verifyResetCode(): Promise<void> {
     await run(async () => {
-      const previousSignIn = signIn;
-      const result = await signIn.resetPasswordEmailCode.verifyCode({
+      const currentSignIn = signInRef.current;
+      const result = await currentSignIn.resetPasswordEmailCode.verifyCode({
         code: code.trim(),
       });
       const message = clerkErrorMessage(
@@ -610,10 +599,6 @@ export function ClerkPasswordFlow({
         "That reset code is invalid or expired.",
       );
       if (message) throw new Error(message);
-      const currentSignIn = await updatedClerkResource(
-        () => signInRef.current,
-        previousSignIn,
-      );
       if (currentSignIn.status !== "needs_new_password") {
         throw new Error("Password reset is not ready. Request a new code.");
       }
@@ -624,16 +609,12 @@ export function ClerkPasswordFlow({
 
   async function submitNewPassword(): Promise<void> {
     await run(async () => {
-      const previousSignIn = signIn;
-      const result = await signIn.resetPasswordEmailCode.submitPassword({
+      const currentSignIn = signInRef.current;
+      const result = await currentSignIn.resetPasswordEmailCode.submitPassword({
         password: newPassword,
       });
       const message = clerkErrorMessage(result, "Could not reset the password.");
       if (message) throw new Error(message);
-      const currentSignIn = await updatedClerkResource(
-        () => signInRef.current,
-        previousSignIn,
-      );
       if (currentSignIn.status !== "complete") {
         throw new Error("Password reset is incomplete.");
       }
@@ -754,7 +735,6 @@ export function ClerkPasswordFlow({
             type="button"
             className="influence-button-secondary rounded-lg px-4 py-2 text-sm"
             onClick={() => {
-              setSignInTransition("idle");
               setStep("credentials");
             }}
           >
@@ -772,7 +752,6 @@ export function ClerkPasswordFlow({
           protectCheck={protectCheck}
           onProof={(proofToken) => void submitProtectProof(proofToken)}
           onError={() => {
-            setSignInTransition("idle");
             setStep("credentials");
             setError("The security check could not be completed. Try again.");
             setStatus("");
