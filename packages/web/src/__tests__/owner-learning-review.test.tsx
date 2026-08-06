@@ -11,7 +11,6 @@ describe("owner learning review", () => {
     const visibleText = html.replace(/<[^>]*>/g, " ");
 
     expect(html).toContain("Action and counterplay");
-    expect(html).toContain("Deterministic from accepted game records");
     expect(html).toContain("Backed Mira");
     expect(html).toContain("The council eliminated the agent");
     expect(html).toContain("Game records loaded");

@@ -83,10 +83,6 @@ export function OwnerLearningReviewView({
 
       <div className={running ? "olm-review-grid" : "olm-review-grid olm-review-grid-wide"}>
         <div className="olm-evidence-workspace">
-          <div className="olm-section-head">
-            <h2>Action and counterplay</h2>
-            <span>Deterministic from accepted game records</span>
-          </div>
           <div className="olm-game-tabs" role="tablist" aria-label="Selected games">
             {review.evidence.games.map((game, index) => {
               const facts = canonicalFacts(game.canonicalFacts);
