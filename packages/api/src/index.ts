@@ -51,6 +51,10 @@ import {
   ownerLearningDeploymentEnabled,
   ownerLearningGenerationEnabled,
 } from "./services/owner-learning-public.js";
+import {
+  createServerShutdownController,
+  installServerShutdownSignalHandlers,
+} from "./server-shutdown.js";
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json so it stays in sync with releases
@@ -346,11 +350,19 @@ app.route("/", profileRoutes);
 
 const port = parseInt(process.env.PORT ?? "3000", 10);
 const hostname = process.env.HOST ?? "127.0.0.1";
+let acceptingRequests = true;
 
 const server = Bun.serve<WsConnectionData>({
   port,
   hostname,
   async fetch(req, server) {
+    if (!acceptingRequests) {
+      return new Response("Server shutting down", {
+        status: 503,
+        headers: { Connection: "close" },
+      });
+    }
+
     const url = new URL(req.url);
 
     // WebSocket upgrade for /ws/games/:id (accepts UUID or slug)
@@ -412,9 +424,15 @@ const server = Bun.serve<WsConnectionData>({
 // Register server instance with WS manager for pub/sub broadcasting
 setServer(server);
 
-for (const signal of ["SIGTERM", "SIGINT"] as const) {
-  process.once(signal, () => ownerLearningWorker?.stop());
-}
+const shutdown = createServerShutdownController({
+  server,
+  worker: ownerLearningWorker,
+  stopAcceptingRequests: () => {
+    acceptingRequests = false;
+  },
+  exit: (code) => process.exit(code),
+});
+installServerShutdownSignalHandlers(process, shutdown);
 
 console.log(`Influence API listening on http://${server.hostname}:${server.port}`);
 

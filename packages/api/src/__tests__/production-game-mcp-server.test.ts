@@ -233,6 +233,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_learning_review_inputs",
       "list_open_learning_reviews",
       "read_learning_review",
+      "preflight_learning_review",
       "create_agent",
       "update_agent",
       "join_queue",
@@ -319,6 +320,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     for (const name of [
       "list_learning_review_inputs",
       "list_open_learning_reviews",
+      "preflight_learning_review",
       "start_or_resume_learning_review",
       "read_learning_review",
       "retry_learning_review",
@@ -338,6 +340,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_learning_review_inputs",
       "list_open_learning_reviews",
       "read_learning_review",
+      "preflight_learning_review",
     ]) {
       expect(tools.get(name)?.annotations).toEqual({
         readOnlyHint: true,
@@ -1074,6 +1077,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "list_learning_review_inputs",
       "list_open_learning_reviews",
       "read_learning_review",
+      "preflight_learning_review",
       "start_or_resume_learning_review",
       "retry_learning_review",
       "apply_learning_review",
@@ -1163,7 +1167,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         "resolve_learning_review",
       ].includes(tool.name)
         ? ["agents:read", "games:read", "agents:write"]
-        : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review"]
+        : ["list_learning_review_inputs", "list_open_learning_reviews", "read_learning_review", "preflight_learning_review"]
             .includes(tool.name)
           ? ["agents:read", "games:read"]
           : ["create_agent", "update_agent", "join_queue", "leave_queue"]

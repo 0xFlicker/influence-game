@@ -43,6 +43,19 @@ describe("owner learning admin ledger", () => {
         state: "succeeded",
         stage: "scanning_narratives",
         inputPolicyHash: "sha256:call-1",
+        validatedCheckpoint: {
+          version: 1,
+          logicalCallCount: 1,
+          diveCount: 0,
+          selectedMomentIds: [],
+          nextMomentCursor: 0,
+          provisionalThemes: [],
+          validatedFindings: [],
+          lastCompletedStage: "scanning_narratives",
+          promptHash: "sha256:prompt",
+          schemaHash: "sha256:schema",
+          completion: null,
+        },
         effectiveTier: "flex",
         tokenReceipt: {
           inputTokens: 1_000,
@@ -85,6 +98,8 @@ describe("owner learning admin ledger", () => {
       logicalCallCount: 2,
       checkpoint: {
         version: 1,
+        logicalCallCount: 2,
+        diveCount: 1,
         selectedMomentIds: [],
         nextMomentCursor: 0,
         provisionalThemes: ["TRANSCRIPT_SENTINEL", "COGNITION_SENTINEL", "PROMPT_SENTINEL"],
@@ -92,6 +107,10 @@ describe("owner learning admin ledger", () => {
         lastCompletedStage: "complete",
         promptHash: "sha256:prompt",
         schemaHash: "sha256:schema",
+        completion: {
+          result: ready.result,
+          proposalFingerprint: ready.proposalFingerprint,
+        },
       },
     }).where(eq(schema.agentLearningReviews.id, reviewId));
 
@@ -217,7 +236,7 @@ describe("owner learning admin ledger", () => {
 async function markReady(
   db: Awaited<ReturnType<typeof setupTestDB>>,
   reviewId: string,
-): Promise<{ proposalFingerprint: string }> {
+): Promise<{ proposalFingerprint: string; result: OwnerLearningReviewResult }> {
   const proposal = {
     field: "strategyStyle" as const,
     before: "Build trust before committing.",
@@ -252,5 +271,5 @@ async function markReady(
     completedAt: "2026-08-04T03:03:00.000Z",
     updatedAt: "2026-08-04T03:03:00.000Z",
   }).where(eq(schema.agentLearningReviews.id, reviewId));
-  return { proposalFingerprint };
+  return { proposalFingerprint, result };
 }

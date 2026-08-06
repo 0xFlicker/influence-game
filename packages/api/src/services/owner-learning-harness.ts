@@ -78,6 +78,13 @@ export interface RunOwnerLearningHarnessInput {
   logicalCallCount?: number;
   diveCount?: number;
   invoke(input: OwnerLearningHarnessInvocation): Promise<unknown>;
+  resumeValidatedTurn?(
+    input: OwnerLearningHarnessInvocation,
+  ): Promise<OwnerLearningCheckpoint | null>;
+  onTurnValidated?(
+    input: OwnerLearningHarnessInvocation,
+    checkpoint: OwnerLearningCheckpoint,
+  ): Promise<void>;
   onCheckpoint?(checkpoint: OwnerLearningCheckpoint): Promise<void>;
 }
 
@@ -100,8 +107,15 @@ export async function runOwnerLearningHarness(
   );
   const allowedEvidenceRefs = ownerLearningIssuedEvidenceRefs(input.evidence.games);
   let checkpoint = input.checkpoint ?? initialCheckpoint();
-  let logicalCallsUsed = input.logicalCallCount ?? 0;
-  let divesUsed = input.diveCount ?? 0;
+  let logicalCallsUsed = input.logicalCallCount ?? checkpoint.logicalCallCount;
+  let divesUsed = input.diveCount ?? checkpoint.diveCount;
+
+  if (checkpoint.lastCompletedStage === "complete") {
+    if (!checkpoint.completion) {
+      throw new Error("Owner learning complete checkpoint is missing its result");
+    }
+    return completed(checkpoint.completion);
+  }
 
   if (checkpoint.lastCompletedStage === "evidence_ready") {
     const turn = await invokeTurn("scanning_narratives", false, {
@@ -109,19 +123,13 @@ export async function runOwnerLearningHarness(
       currentStrategyStyle: input.currentStrategyStyle ?? "",
       evidence: input.evidence.reviewInput,
     });
-    const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
-    assertRequiredFinalResult(parsed.finalResult);
-    const final = parsed.finalResult
-      ? finalizeHarnessResult(parsed.finalResult)
-      : null;
-    checkpoint = {
+    const final = await advanceCheckpoint(turn, (parsed, completion) => ({
       ...checkpoint,
       selectedMomentIds: parsed.selectedMomentIds,
       provisionalThemes: parsed.provisionalThemes,
       validatedFindings: parsed.findings,
-      lastCompletedStage: final ? "complete" : "scanning_narratives",
-    };
-    await input.onCheckpoint?.(checkpoint);
+      lastCompletedStage: completion ? "complete" : "scanning_narratives",
+    }));
     if (final) return completed(final);
   }
 
@@ -136,21 +144,15 @@ export async function runOwnerLearningHarness(
       validatedFindings: checkpoint.validatedFindings,
       momentBundle: bundle,
     });
-    const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
-    assertRequiredFinalResult(parsed.finalResult);
-    const final = parsed.finalResult
-      ? finalizeHarnessResult(parsed.finalResult)
-      : null;
-    checkpoint = {
+    const final = await advanceCheckpoint(turn, (parsed, completion) => ({
       ...checkpoint,
       nextMomentCursor: checkpoint.nextMomentCursor + 1,
       provisionalThemes: parsed.provisionalThemes.length > 0
         ? parsed.provisionalThemes
         : checkpoint.provisionalThemes,
       validatedFindings: [...checkpoint.validatedFindings, ...parsed.findings],
-      lastCompletedStage: final ? "complete" : "investigating_moments",
-    };
-    await input.onCheckpoint?.(checkpoint);
+      lastCompletedStage: completion ? "complete" : "investigating_moments",
+    }));
     if (final) return completed(final);
   }
 
@@ -162,26 +164,57 @@ export async function runOwnerLearningHarness(
       validatedFindings: checkpoint.validatedFindings,
       evidence: input.evidence.reviewInput,
     });
-    const parsed = parseHarnessTurn(turn, allowedMomentIds, allowedEvidenceRefs);
-    assertRequiredFinalResult(parsed.finalResult);
-    if (!parsed.finalResult) throw new Error("Owner learning final turn did not contain a result");
-    const final = finalizeHarnessResult(parsed.finalResult);
-    checkpoint = {
-      ...checkpoint,
-      provisionalThemes: parsed.provisionalThemes,
-      validatedFindings: [...checkpoint.validatedFindings, ...parsed.findings],
-      lastCompletedStage: "complete",
-    };
-    await input.onCheckpoint?.(checkpoint);
+    const final = await advanceCheckpoint(turn, (parsed, completion) => {
+      if (!completion) throw new Error("Owner learning final turn did not contain a result");
+      return {
+        ...checkpoint,
+        provisionalThemes: parsed.provisionalThemes,
+        validatedFindings: [...checkpoint.validatedFindings, ...parsed.findings],
+        lastCompletedStage: "complete",
+      };
+    });
+    if (!final) throw new Error("Owner learning final turn did not contain a result");
     return completed(final);
   }
   throw new Error("Owner learning logical call budget exhausted before a final result");
+
+  async function advanceCheckpoint(
+    turn: Awaited<ReturnType<typeof invokeTurn>>,
+    build: (
+      parsed: ReturnType<typeof parseHarnessTurn>,
+      completion: OwnerLearningCheckpoint["completion"],
+    ) => Omit<OwnerLearningCheckpoint, "logicalCallCount" | "diveCount" | "completion">,
+  ): Promise<OwnerLearningCheckpoint["completion"]> {
+    if (turn.resumedCheckpoint) {
+      assertResumedCheckpoint(turn.invocation, turn.resumedCheckpoint);
+      checkpoint = turn.resumedCheckpoint;
+    } else {
+      const parsed = parseHarnessTurn(turn.output, allowedMomentIds, allowedEvidenceRefs);
+      assertRequiredFinalResult(parsed.finalResult);
+      const completion = parsed.finalResult
+        ? finalizeHarnessResult(parsed.finalResult)
+        : null;
+      checkpoint = {
+        ...build(parsed, completion),
+        logicalCallCount: logicalCallsUsed,
+        diveCount: divesUsed,
+        completion,
+      };
+      await input.onTurnValidated?.(turn.invocation, checkpoint);
+    }
+    await input.onCheckpoint?.(checkpoint);
+    return checkpoint.completion;
+  }
 
   async function invokeTurn(
     stage: OwnerLearningStage,
     isDive: boolean,
     request: Record<string, unknown>,
-  ): Promise<unknown> {
+  ): Promise<{
+    invocation: OwnerLearningHarnessInvocation;
+    output: unknown;
+    resumedCheckpoint: OwnerLearningCheckpoint | null;
+  }> {
     if (logicalCallsUsed >= OWNER_LEARNING_MAX_LOGICAL_CALLS) {
       throw new Error("Owner learning logical call budget exhausted");
     }
@@ -207,14 +240,45 @@ export async function runOwnerLearningHarness(
       evidence: input.evidence,
       responseSchema,
     });
-    const output = await input.invoke({
+    const invocation: OwnerLearningHarnessInvocation = {
       ordinal: logicalCallsUsed,
       stage,
       isDive,
       request: context.input,
       responseSchema,
-    });
-    return hydrateOwnerLearningProviderOutput(output, context);
+    };
+    const resumedCheckpoint = await input.resumeValidatedTurn?.(invocation) ?? null;
+    if (resumedCheckpoint) {
+      return { invocation, output: null, resumedCheckpoint };
+    }
+    const output = await input.invoke(invocation);
+    return {
+      invocation,
+      output: hydrateOwnerLearningProviderOutput(output, context),
+      resumedCheckpoint: null,
+    };
+  }
+
+  function assertResumedCheckpoint(
+    invocation: OwnerLearningHarnessInvocation,
+    resumed: OwnerLearningCheckpoint,
+  ): void {
+    if (
+      resumed.version !== 1
+      || resumed.logicalCallCount !== invocation.ordinal
+      || resumed.diveCount !== divesUsed
+      || resumed.promptHash !== fingerprintOwnerLearningValue(OWNER_LEARNING_PROMPT_VERSION)
+      || resumed.schemaHash !== fingerprintOwnerLearningValue(OWNER_LEARNING_SCHEMA_VERSION)
+      || (resumed.lastCompletedStage === "complete") !== (resumed.completion != null)
+    ) {
+      throw new Error("Owner learning validated turn receipt is inconsistent");
+    }
+    const expectedStages: OwnerLearningStage[] = invocation.stage === "drafting_recommendations"
+      ? ["complete"]
+      : [invocation.stage, "complete"];
+    if (!expectedStages.includes(resumed.lastCompletedStage)) {
+      throw new Error("Owner learning validated turn receipt changed stage");
+    }
   }
 
   function assertRequiredFinalResult(finalResult: unknown): void {
@@ -310,6 +374,8 @@ export function validateOwnerLearningHarnessResult(
 function initialCheckpoint(): OwnerLearningCheckpoint {
   return {
     version: 1,
+    logicalCallCount: 0,
+    diveCount: 0,
     selectedMomentIds: [],
     nextMomentCursor: 0,
     provisionalThemes: [],
@@ -317,6 +383,7 @@ function initialCheckpoint(): OwnerLearningCheckpoint {
     lastCompletedStage: "evidence_ready",
     promptHash: fingerprintOwnerLearningValue(OWNER_LEARNING_PROMPT_VERSION),
     schemaHash: fingerprintOwnerLearningValue(OWNER_LEARNING_SCHEMA_VERSION),
+    completion: null,
   };
 }
 

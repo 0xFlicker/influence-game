@@ -156,6 +156,58 @@ describe("admin owner learning reviews", () => {
     ]);
   });
 
+  test("keeps the newest ledger when filter responses resolve out of order", async () => {
+    const domWindow = new HappyDOMWindow({ url: "http://localhost/admin?tab=reviews" });
+    Object.defineProperty(globalThis, "window", { configurable: true, value: domWindow });
+    Object.defineProperty(globalThis, "document", { configurable: true, value: domWindow.document });
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: domWindow.navigator });
+    Object.defineProperty(globalThis, "localStorage", {
+      configurable: true,
+      value: domWindow.localStorage,
+    });
+    const initialDetail = detailFixture("review-initial", "Agent Initial");
+    const olderDetail = detailFixture("review-older", "Agent Older");
+    const newerDetail = detailFixture("review-newer", "Agent Newer");
+    let resolveOlder!: (response: Response) => void;
+    let resolveNewer!: (response: Response) => void;
+    const olderResponse = new Promise<Response>((resolve) => { resolveOlder = resolve; });
+    const newerResponse = new Promise<Response>((resolve) => { resolveNewer = resolve; });
+    let listRequests = 0;
+    globalThis.fetch = (async (request) => {
+      const url = String(request);
+      if (url.endsWith("/api/admin/owner-learning-reviews")) {
+        listRequests += 1;
+        if (listRequests === 1) return jsonResponse(listFixture(initialDetail));
+        return listRequests === 2 ? olderResponse : newerResponse;
+      }
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch;
+
+    const mounted = render(<AdminOwnerLearningReviews />);
+    await waitFor(() => expect(mounted.getByText("Agent Initial")).not.toBeNull());
+    const filterForm = mounted.getByPlaceholderText("exact model").closest("form")!;
+
+    fireEvent.submit(filterForm);
+    await settlePromises();
+    fireEvent.submit(filterForm);
+    await settlePromises();
+    expect(listRequests).toBe(3);
+
+    await act(async () => {
+      resolveNewer(jsonResponse(listFixture(newerDetail)));
+      await settlePromises();
+    });
+    expect(mounted.getByText("Agent Newer")).not.toBeNull();
+
+    await act(async () => {
+      resolveOlder(jsonResponse(listFixture(olderDetail)));
+      await settlePromises();
+    });
+    expect(mounted.getByText("Agent Newer")).not.toBeNull();
+    expect(mounted.queryByText("Agent Older")).toBeNull();
+    domWindow.close();
+  });
+
   test("does not let an older detail failure collapse a newer expanded row", async () => {
     const domWindow = new HappyDOMWindow({ url: "http://localhost/admin?tab=reviews" });
     Object.defineProperty(globalThis, "window", { configurable: true, value: domWindow });

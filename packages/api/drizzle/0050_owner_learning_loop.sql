@@ -74,6 +74,7 @@ CREATE TABLE "agent_learning_review_calls" (
 	"state" text DEFAULT 'reserved' NOT NULL,
 	"stage" text NOT NULL,
 	"input_policy_hash" text NOT NULL,
+	"validated_checkpoint" jsonb,
 	"final_provider_request_id" text,
 	"requested_tier" text DEFAULT 'flex' NOT NULL,
 	"effective_tier" text,
@@ -97,6 +98,10 @@ CREATE TABLE "agent_learning_review_calls" (
 	CONSTRAINT "agent_learning_review_calls_ordinal_check" CHECK ("agent_learning_review_calls"."ordinal" BETWEEN 1 AND 4),
 	CONSTRAINT "agent_learning_review_calls_state_check" CHECK (
     "agent_learning_review_calls"."state" IN ('reserved', 'dispatched', 'succeeded', 'failed', 'ambiguous')
+  ),
+	CONSTRAINT "agent_learning_review_calls_validated_checkpoint_check" CHECK (
+    ("agent_learning_review_calls"."state" = 'succeeded' AND "agent_learning_review_calls"."validated_checkpoint" IS NOT NULL)
+    OR ("agent_learning_review_calls"."state" <> 'succeeded' AND "agent_learning_review_calls"."validated_checkpoint" IS NULL)
   ),
 	CONSTRAINT "agent_learning_review_calls_tier_check" CHECK (
     "agent_learning_review_calls"."requested_tier" = 'flex'

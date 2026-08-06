@@ -4,7 +4,10 @@ import { schema } from "../db/index.js";
 import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { applyOwnedOwnerLearningReview } from "../services/owner-learning-apply.js";
-import { fingerprintOwnerLearningValue } from "../services/owner-learning-contracts.js";
+import {
+  fingerprintOwnerLearningValue,
+  parseOwnerLearningReviewResult,
+} from "../services/owner-learning-contracts.js";
 import {
   resolveOwnedOwnerLearningReview,
 } from "../services/owner-learning-resolution.js";
@@ -76,6 +79,67 @@ describe("owner learning apply and resolution", () => {
     });
     expect(replayed).toEqual({ ...applied, replayed: true });
     expect(await db.select().from(schema.agentLearningReviewApplications)).toHaveLength(1);
+  });
+
+  test("applies and receipts the exact canonical proposal produced from padded provider strings", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const result = parseOwnerLearningReviewResult({
+      diagnosis: "Trust did not become a testable voting commitment.",
+      analysisTrack: "evidence_rich",
+      recommendations: [{
+        id: "olrec_canonical_proposal",
+        title: "Make commitment testable",
+        disposition: "change",
+        confidence: "high",
+        rationale: "The selected game shows trust without a voting checkpoint.",
+        evidenceRefs: [{
+          kind: "canonical_event",
+          gameId: fixture.gameId,
+          coordinate: "round:1:vote.cast:1",
+          sourceHash: `sha256:${fixture.gameId}`,
+          sourceVersion: "v1",
+        }],
+      }],
+      proposal: {
+        field: "strategyStyle",
+        before: " \n Build trust before committing.\t",
+        after: "\tBuild explicit commitments before coordinating the vote. \n",
+      },
+    });
+    const proposalFingerprint = fingerprintOwnerLearningValue({ reviewId, proposal: result.proposal });
+    await db.update(schema.agentLearningReviews).set({
+      analysisStatus: "ready",
+      stage: "complete",
+      result,
+      proposalFingerprint,
+      completedAt: "2026-08-04T03:30:00.000Z",
+      updatedAt: "2026-08-04T03:30:00.000Z",
+    }).where(eq(schema.agentLearningReviews.id, reviewId));
+
+    const applied = await applyOwnedOwnerLearningReview(db, {
+      ownerUserId: fixture.ownerUserId,
+      reviewId,
+      proposalFingerprint,
+      now: new Date("2026-08-04T04:00:00.000Z"),
+    });
+
+    expect(applied).toMatchObject({
+      proposalFingerprint,
+      priorStrategyStyle: "Build trust before committing.",
+      resultingStrategyStyle: "Build explicit commitments before coordinating the vote.",
+    });
+    expect((await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!.strategyStyle)
+      .toBe("Build explicit commitments before coordinating the vote.");
+    expect((await db.select().from(schema.agentLearningReviewApplications)
+      .where(eq(schema.agentLearningReviewApplications.reviewId, reviewId)))[0])
+      .toMatchObject({
+        proposalFingerprint,
+        priorStrategyStyle: "Build trust before committing.",
+        resultingStrategyStyle: "Build explicit commitments before coordinating the vote.",
+      });
   });
 
   test("rejects wrong ownership and fingerprints without writes", async () => {

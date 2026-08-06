@@ -94,6 +94,7 @@ describe("owner learning review start", () => {
       };
     };
     const gameIds = [first.gameId, second.gameId, third.gameId];
+    await db.delete(schema.agentLearningGameEvidence);
 
     const preflight = await preflightOwnerLearningReview(db, {
       ownerUserId: first.ownerUserId,
@@ -101,6 +102,7 @@ describe("owner learning review start", () => {
       gameIds,
     }, { projector });
     expect(preflight.evidence.games).toHaveLength(3);
+    expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual([]);
     expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(0);
     expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(0);
 
@@ -111,6 +113,8 @@ describe("owner learning review start", () => {
       idempotencyKey: "three-full-games",
     }, { projector, now: new Date("2026-08-04T03:00:00.000Z") });
     expect(started.status).toBe("started");
+    expect(await db.select().from(schema.agentLearningGameEvidence)).toHaveLength(3);
+    expect(await db.select().from(schema.agentLearningReviewGames)).toHaveLength(3);
     expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(1);
   });
 
@@ -171,6 +175,7 @@ describe("owner learning review start", () => {
     for (const mode of ["awaiting", "disabled"] as const) {
       const db = await setupTestDB();
       const fixture = await insertPlayedOwnerLearningAgent(db);
+      const evidenceBefore = await db.select().from(schema.agentLearningGameEvidence);
       const projector: OwnerLearningEvidenceProjector = async (_db, selection) =>
         fakeOwnerLearningProjection(
           selection,
@@ -189,9 +194,125 @@ describe("owner learning review start", () => {
       });
 
       expect(result.status).toBe(mode === "awaiting" ? "awaiting_evidence" : "generation_unavailable");
+      expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual(evidenceBefore);
       expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(0);
       expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(0);
     }
+  });
+
+  test("does not materialize projected evidence when rolling admission rejects the start", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    await db.insert(schema.agentLearningReviewEntitlements).values({
+      ownerUserId: fixture.ownerUserId,
+      lastPaidReviewStartedAt: "2026-08-04T02:00:00.000Z",
+    });
+    const evidenceBefore = await db.select().from(schema.agentLearningGameEvidence);
+    const projector: OwnerLearningEvidenceProjector = async (_db, selection) => {
+      const projection = fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+      return {
+        ...projection,
+        games: projection.games.map((game) => ({
+          ...game,
+          sourceHash: `sha256:unmaterialized:${game.gameId}`,
+        })),
+      };
+    };
+
+    const result = await startOwnerLearningReview(db, {
+      ownerUserId: fixture.ownerUserId,
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.gameId],
+      idempotencyKey: "rolling-rejected",
+    }, {
+      projector,
+      now: new Date("2026-08-04T03:00:00.000Z"),
+    });
+
+    expect(result.status).toBe("rolling_limited");
+    expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual(evidenceBefore);
+    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await db.select().from(schema.agentLearningReviewGames)).toEqual([]);
+  });
+
+  test("versions a changed durable source without overwriting the earlier snapshot", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const evidenceBefore = await db.select().from(schema.agentLearningGameEvidence);
+    const projector: OwnerLearningEvidenceProjector = async (_db, selection) => {
+      const projection = fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+      return {
+        ...projection,
+        games: projection.games.map((game) => ({
+          ...game,
+          sourceHash: `sha256:changed:${game.gameId}`,
+        })),
+      };
+    };
+
+    const result = await startOwnerLearningReview(db, {
+      ownerUserId: fixture.ownerUserId,
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.gameId],
+      idempotencyKey: "stale-source",
+    }, {
+      projector,
+      now: new Date("2026-08-04T03:00:00.000Z"),
+    });
+
+    expect(result.status).toBe("started");
+    const evidenceAfter = await db.select().from(schema.agentLearningGameEvidence);
+    expect(evidenceAfter).toHaveLength(evidenceBefore.length + 1);
+    expect(evidenceAfter.find((row) => row.id === fixture.gameEvidenceId)?.sourceHash)
+      .toBe(evidenceBefore[0]!.sourceHash);
+    expect(evidenceAfter.some((row) => row.sourceHash === `sha256:changed:${fixture.gameId}`))
+      .toBe(true);
+    expect(await db.select().from(schema.agentLearningReviewEntitlements)).toHaveLength(1);
+    expect(await db.select().from(schema.agentLearningReviews)).toHaveLength(1);
+    expect(await db.select().from(schema.agentLearningReviewGames)).toHaveLength(1);
+  });
+
+  test("rolls back admission when evidence changes after the read-only preflight", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    await db.delete(schema.agentLearningGameEvidence);
+    let projectionCount = 0;
+    const projector: OwnerLearningEvidenceProjector = async (_db, selection) => {
+      projectionCount += 1;
+      const projection = fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+      return {
+        ...projection,
+        games: projection.games.map((game) => ({
+          ...game,
+          sourceHash: `sha256:source-${projectionCount}:${game.gameId}`,
+        })),
+      };
+    };
+
+    await expect(startOwnerLearningReview(db, {
+      ownerUserId: fixture.ownerUserId,
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.gameId],
+      idempotencyKey: "source-race",
+    }, {
+      projector,
+      now: new Date("2026-08-04T03:00:00.000Z"),
+    })).rejects.toThrow("Owner learning evidence changed after preflight");
+
+    expect(projectionCount).toBe(2);
+    expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual([]);
+    expect(await db.select().from(schema.agentLearningReviewEntitlements)).toEqual([]);
+    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await db.select().from(schema.agentLearningReviewGames)).toEqual([]);
   });
 
   test("starts a review from a game-effective runtime variant while reviewing the active strategy", async () => {

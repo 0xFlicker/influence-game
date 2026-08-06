@@ -39,7 +39,9 @@ The approved visual acceptance authority is [Owner Learning Loop Visual Acceptan
 
 V2 admits completed Daily Free games from the active strategy family. The pure `ownerLearningGameEligibilityPolicy` is the change seam for later widening; custom, experimental, imported, incomplete, and unrelated historical revisions do not enter by accident.
 
-An owner has a maximum metered balance of one review credit. The published balance is actionable: `1` means a review can start now, while `0` carries `nextAvailableAt` when time is the only remaining condition. A qualifying Daily Free completion can earn an empty credit, several completions cannot stack it, and the owner may spend it on any owned Agent Profile with selectable games. Persisted sysops receive explicit unlimited mode with no numeric balance and do not consume credit. One review selects one to three distinct games from that Profile's current strategy family: the active analytical revision or a game-effective `runtime_policy_change` revision derived directly from it. Reusing a previously analyzed game is allowed and labeled. Starting metered analysis atomically consumes the credit through the latest then-visible qualifying completion, establishes the next purchase time, and creates the owner-wide singleton. Model-free preflight, deterministic facts, awaiting-evidence, and generation-disabled results consume nothing.
+An owner has a maximum metered balance of one review credit. The published balance is actionable: `1` means a review can start now, while `0` carries `nextAvailableAt` when time is the only remaining condition. A qualifying Daily Free completion can earn an empty credit, several completions cannot stack it, and the owner may spend it on any owned Agent Profile with selectable games. Persisted sysops receive explicit unlimited mode with no numeric balance and do not consume credit. One review selects one to three distinct games from that Profile's current strategy family: the active analytical revision or a game-effective `runtime_policy_change` revision derived directly from it. Reusing a previously analyzed game is allowed and labeled. Starting metered analysis reprojects under the locked transaction, requires the analysis track and ordered source hash/capture identity to match the read-only preflight, then atomically consumes the credit through the latest then-visible qualifying completion, materializes that verified live projection, establishes the next purchase time, and creates the owner-wide singleton plus evidence joins. Model-free preflight, deterministic facts, awaiting-evidence, generation-disabled results, rejected admission, and a source mismatch during admission never commit materialized evidence.
+
+Deterministic game-evidence rows are versioned by source capture version and source hash, so a later authorized source snapshot coexists with the earlier immutable row. The worker reprojects before model work. If the source changed after admission but no logical call or checkpoint progress exists, it atomically rebinds the review-game joins to the newly materialized version under the active lease. If the purchased analysis track changed, or any logical-call work already exists, it fails the review closed and non-retryably with `evidence_unavailable` before another provider call instead of combining checkpoints produced from different source snapshots. Any reclaimed reserved or safely resumable dispatched call is terminalized in that same failure transaction; already succeeded receipts remain immutable.
 
 Canonical events and postgame projections answer what happened. The evidence snapshot includes accepted actions by and against the reviewed Agent, outcomes, placement, stable moment coordinates, availability diagnostics, and source hashes. Authorized dialogue and the reviewed owned Agent's cognition add strategic context. They remain untrusted prose and never become board-state authority. Another owned Agent's cognition and every opponent's cognition stay outside the owner-learning subject lane.
 
@@ -51,7 +53,7 @@ One owner may have at most one unresolved review, regardless of Agent Profile or
 
 The web waiting state loads the full owner-authorized evidence DTO once, then polls a lean owner-authorized lifecycle status. Unchanged heartbeats retain the existing React state, while terminal status triggers one full refetch for the validated result. This keeps the deterministic facts visible while avoiding repeated evidence reads and transfers during model work.
 
-Starting buys the review. Owners cannot cancel, and a provider failure does not refund a metered credit or rolling interval. Retry preserves the checkpoint and lifetime budgets. A ready owner may:
+Starting buys the review. Owners cannot cancel, and a provider failure does not refund a metered credit or rolling interval. Retry preserves the checkpoint and lifetime budgets. Every successful logical-call row atomically stores the fully validated checkpoint that consumed its receipt. A complete checkpoint includes the exact final result and proposal fingerprint, so recovery after the fourth response can replay finalization without another provider transmission. A ready owner may:
 
 - apply only the exact persisted `strategyStyle` proposal and proposal fingerprint;
 - open the ordinary editor with a same-Profile `sourceReviewId`, producing a normal Agent mutation and the `manual_update` resolution without accepting the generated proposal;
@@ -84,17 +86,18 @@ Call cost is captured once from its effective tier as actual, estimated, or unav
 
 ## MCP parity
 
-There are seven Owner Learning tools on the production `/mcp` resource:
+There are eight Owner Learning tools on the production `/mcp` resource:
 
 1. `list_learning_review_inputs`
 2. `list_open_learning_reviews`
-3. `start_or_resume_learning_review`
-4. `read_learning_review`
-5. `retry_learning_review`
-6. `apply_learning_review`
-7. `resolve_learning_review`
+3. `preflight_learning_review`
+4. `start_or_resume_learning_review`
+5. `read_learning_review`
+6. `retry_learning_review`
+7. `apply_learning_review`
+8. `resolve_learning_review`
 
-Reads require `agents:read` plus `games:read`. Paid/mutating tools additionally require `agents:write`; their catalog baseline remains the two reads so clients can perform a narrow step-up. A producer role alone grants none of these owner-subject tools. Generated strings are marked `untrusted_model_generated`, and executable follow-ups come only from validated server-minted refs. MCP does not need a web URL: review IDs and the shared singleton model provide continuity in either direction.
+Reads require `agents:read` plus `games:read`. The exact-selection preflight is read-only, does not materialize evidence or write any owner-learning table, and returns the same model-free evidence preview as web before purchase. Paid/mutating tools additionally require `agents:write`; their catalog baseline remains the two reads so clients can perform a narrow step-up. A producer role alone grants none of these owner-subject tools. Generated strings are marked `untrusted_model_generated`, and executable follow-ups come only from validated server-minted refs. MCP does not need a web URL: review IDs and the shared singleton model provide continuity in either direction.
 
 Exact apply and review-linked custom `update_agent` both require the assistant to present the exact before/after change and obtain a fresh affirmative user message immediately before mutation. The server enforces ownership, fingerprint, Profile identity, and revision freshness; it does not accept a client boolean pretending to prove conversational consent.
 
@@ -118,7 +121,7 @@ Live model generation is on by default when the deployment configures:
 OPENAI_API_KEY=<configured secret>
 ```
 
-When OpenAI rejects a review request, the worker emits one sanitized console diagnostic with review and call identity, model and requested tier, HTTP status, provider request ID, error type/code/parameter, and a bounded single-line message. When a completed response fails local review processing, it emits one separate content-free diagnostic with review ID, call ordinal, stage, and an allowlisted failure code. Neither path logs the prompt, evidence, request or response body, generated content, headers, or credentials.
+When OpenAI rejects a review request, the worker emits one content-free console diagnostic with review and call identity, model and requested tier, and a validated HTTP status. No provider-controlled string is copied into the callback or console diagnostic because any such field may echo private request content. When a completed response fails local review processing, it emits one separate content-free diagnostic with review ID, call ordinal, stage, and an allowlisted local failure code. Neither path logs the prompt, evidence, request or response body, generated content, headers, or credentials.
 
 The provider credential is required for paid admission and worker startup. Set `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true` to disable live generation. There is no per-review live operator allowance, staged operator approval, or intermediate production deployment. Before deploying with live generation available, run the complete automated/browser/cross-surface gates and one explicitly approved frozen paid quality case. Evaluate evidence faithfulness, recommendation usefulness and restraint, non-causal framing, latency, token/cache behavior, capacity path, and sourced cost. Do not run a paid case without explicit approval.
 
@@ -141,4 +144,4 @@ Operational diagnosis order:
 4. For content quality, compare the validated result with the server-minted evidence refs and established producer/admin source tools. Do not search analytics or cost rows for prompt/provider bodies; they intentionally are not there.
 5. During an incident, redeploy with `INFLUENCE_OWNER_LEARNING_GENERATION_DISABLED=true`. Keep deterministic reads, existing review reads, applications, resolutions, and admin diagnosis available. Do not down-migrate populated review tables or delete purchased reviews.
 
-The initial worker is globally single-concurrency. Before enabling multiple workers or replicas, preserve the existing lease-loss requirement: a failed active-lease compare-and-swap must abort that worker's local provider request/backoff controller and prevent later transmissions or checkpoint writes.
+The worker is globally single-concurrency across enabled replicas. A resolved running review retains its exact lease as a lane fence while the owning worker unwinds; other replicas count that unexpired fence as active. Each worker polls authoritative lease state during provider work and aborts its local request/backoff controller when superseded or when its lease is lost. The exact worker clears its fence in `finally`; a crashed worker releases the global lane through normal lease expiry. Shutdown first stops accepting requests and new claims, then waits for the active worker and graceful server close together. A repeated signal or the 10-second deadline force-closes remaining connections.

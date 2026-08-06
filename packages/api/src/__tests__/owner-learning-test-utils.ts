@@ -1,7 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
-import type { OwnerLearningEvidenceProjection } from "../services/owner-learning-evidence.js";
+import type {
+  OwnerLearningEvidenceProjection,
+  OwnerLearningMaterializedEvidenceProjection,
+} from "../services/owner-learning-evidence.js";
 import type { OwnerLearningValidatedSelection } from "../services/owner-learning-eligibility.js";
 import { resolveFreeTrackEffectiveRuntimeSnapshot } from "../services/agent-revisions.js";
 import {
@@ -114,7 +117,7 @@ export function fakeOwnerLearningProjection(
   selection: OwnerLearningValidatedSelection,
   gameEvidenceIds: ReadonlyMap<string, string>,
   analysisTrack: OwnerLearningEvidenceProjection["analysisTrack"] = "evidence_rich",
-): OwnerLearningEvidenceProjection {
+): OwnerLearningMaterializedEvidenceProjection {
   return {
     analysisTrack,
     games: selection.games.map((game) => ({

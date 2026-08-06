@@ -60,11 +60,6 @@ export interface OwnerLearningProviderDiagnostic {
   model: string;
   requestedTier: "flex";
   status?: number;
-  requestId?: string;
-  type?: string;
-  code?: string;
-  param?: string;
-  message: string;
 }
 
 export class OwnerLearningProviderError extends Error {
@@ -139,26 +134,15 @@ function ownerLearningProviderDiagnostic(
   context: OwnerLearningProviderRequest["diagnosticContext"],
 ): OwnerLearningProviderDiagnostic {
   const record = asRecord(error) ?? {};
-  const errorPayload = asRecord(record.error) ?? {};
-  const nestedError = asRecord(errorPayload.error) ?? errorPayload;
-  const message = stringValue(nestedError.message)
-    ?? (error instanceof Error ? error.message : "OpenAI request failed");
-  const status = numberValue(record.status);
-  const requestId = firstString(record.requestID, record.request_id, nestedError.request_id);
-  const type = firstString(record.type, nestedError.type);
-  const code = firstString(record.code, nestedError.code);
-  const param = firstString(record.param, nestedError.param);
+  const reviewId = stringValue(context?.reviewId);
+  const callOrdinal = integerValue(context?.callOrdinal);
+  const status = httpStatusValue(record.status);
   return {
-    ...(context?.reviewId ? { reviewId: context.reviewId } : {}),
-    ...(context?.callOrdinal != null ? { callOrdinal: context.callOrdinal } : {}),
+    ...(reviewId !== undefined ? { reviewId } : {}),
+    ...(callOrdinal !== undefined ? { callOrdinal } : {}),
     model: OWNER_LEARNING_MODEL_ID,
     requestedTier: "flex",
     ...(status !== undefined ? { status } : {}),
-    ...(requestId !== undefined ? { requestId } : {}),
-    ...(type !== undefined ? { type } : {}),
-    ...(code !== undefined ? { code } : {}),
-    ...(param !== undefined ? { param } : {}),
-    message: message.replaceAll(/\s+/g, " ").trim().slice(0, 1_000),
   };
 }
 
@@ -304,12 +288,15 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-function firstString(...values: unknown[]): string | undefined {
-  return values.map(stringValue).find((value) => value !== undefined);
-}
-
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function httpStatusValue(value: unknown): number | undefined {
+  const number = numberValue(value);
+  return number != null && Number.isSafeInteger(number) && number >= 100 && number <= 599
+    ? number
+    : undefined;
 }
 
 function integerValue(value: unknown): number | undefined {

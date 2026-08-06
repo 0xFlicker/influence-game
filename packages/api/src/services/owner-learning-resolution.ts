@@ -135,8 +135,12 @@ export async function persistOwnerLearningResolution(
   const updated = await tx.update(schema.agentLearningReviews).set({
     resolution: input.resolution,
     resolvedAt: input.nowIso,
-    leaseTokenHash: null,
-    leaseExpiresAt: null,
+    ...(input.review.analysisStatus === "running"
+      ? {}
+      : {
+          leaseTokenHash: null,
+          leaseExpiresAt: null,
+        }),
     capacitySubstatus: null,
     updatedAt: input.nowIso,
   }).where(and(

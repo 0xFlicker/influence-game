@@ -191,6 +191,8 @@ export interface OwnerLearningCallCostReceipt {
 
 export interface OwnerLearningCheckpoint {
   version: 1;
+  logicalCallCount: number;
+  diveCount: number;
   selectedMomentIds: string[];
   nextMomentCursor: number;
   provisionalThemes: string[];
@@ -202,6 +204,10 @@ export interface OwnerLearningCheckpoint {
   lastCompletedStage: OwnerLearningStage;
   promptHash: string;
   schemaHash: string;
+  completion: {
+    result: OwnerLearningReviewResult;
+    proposalFingerprint: string | null;
+  } | null;
 }
 
 export interface OwnerLearningReviewDTO {
@@ -470,9 +476,12 @@ function parseProposal(value: unknown): OwnerLearningStrategyProposal {
   if (input.field !== "strategyStyle") {
     throw new Error("owner learning proposal may target only strategyStyle");
   }
-  const before = boundedString(input.before, "proposal.before", 2_000, true);
-  const after = boundedString(input.after, "proposal.after", 2_000, true);
-  if (before.trim() === after.trim()) {
+  if (typeof input.before !== "string" || typeof input.after !== "string") {
+    throw new Error("owner learning proposal values must be strings");
+  }
+  const before = boundedString(input.before.trim(), "proposal.before", 2_000, true);
+  const after = boundedString(input.after.trim(), "proposal.after", 2_000, true);
+  if (before === after) {
     throw new Error("owner learning proposal must change strategyStyle");
   }
   return { field: "strategyStyle", before, after };

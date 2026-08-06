@@ -1,12 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
+import {
+  fingerprintOwnerLearningValue,
+  OWNER_LEARNING_PROMPT_VERSION,
+  OWNER_LEARNING_SCHEMA_VERSION,
+  type OwnerLearningCheckpoint,
+  type OwnerLearningReviewResult,
+} from "../services/owner-learning-contracts.js";
 import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import {
   classifyOwnerLearningOutputFailure,
   claimOwnerLearningReview,
   completeOwnerLearningCall,
   createOwnerLearningTransportObserver,
+  finalizeOwnerLearningReview,
   heartbeatOwnerLearningReview,
   reserveOwnerLearningCall,
   runClaimedOwnerLearningReview,
@@ -15,6 +23,10 @@ import {
   OwnerLearningProviderError,
   type OwnerLearningProvider,
 } from "../services/owner-learning-provider.js";
+import {
+  lockOwnerLearningReviewForProfileMutation,
+  resolveOwnerLearningReviewForProfileMutation,
+} from "../services/owner-learning-resolution.js";
 import {
   fakeOwnerLearningProjection,
   insertPlayedOwnerLearningAgent,
@@ -283,6 +295,7 @@ describe("owner learning worker durability", () => {
         rateCardVersion: "2026-08-04",
         pricedAt: "2026-08-04T03:01:05.200Z",
       },
+      validatedCheckpoint: validatedCheckpoint(),
       now: new Date("2026-08-04T03:01:05.200Z"),
     })).toBe(true);
 
@@ -345,6 +358,7 @@ describe("owner learning worker durability", () => {
         rateCardVersion: "2026-08-04",
         pricedAt: "2026-08-04T03:01:02.175Z",
       },
+      validatedCheckpoint: validatedCheckpoint(),
       now: new Date("2026-08-04T03:01:02.175Z"),
     })).toBe(false);
 
@@ -593,6 +607,160 @@ describe("owner learning worker durability", () => {
     });
   });
 
+  test("recovers the validated fourth-call result across both final durability barriers", async () => {
+    for (const crashPoint of ["validated_call", "checkpoint"] as const) {
+      const db = await setupTestDB();
+      const fixture = await insertPlayedOwnerLearningAgent(db);
+      const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+      const firstClaim = (await claimOwnerLearningReview(db, {
+        now: new Date("2026-08-04T03:01:00.000Z"),
+      }))!;
+      const projector = async (
+        _db: typeof db,
+        selection: Parameters<typeof fakeOwnerLearningProjection>[0],
+      ) => {
+        const base = fakeOwnerLearningProjection(
+          selection,
+          new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+        );
+        const game = base.games[0]!;
+        const candidateMoments = [1, 2, 3].map((ordinal) => ({
+          id: `olm_final_barrier_${ordinal}`,
+          gameId: fixture.gameId,
+          anchorKind: "canonical_event" as const,
+          sourceCoordinate: `event:${ordinal}:vote.cast`,
+          sourceHash: game.sourceHash,
+          round: ordinal,
+          phase: "VOTE",
+        }));
+        return {
+          ...base,
+          games: [{ ...game, candidateMoments }],
+          reviewInput: {
+            ...base.reviewInput,
+            games: base.reviewInput.games.map((inputGame) => ({
+              ...inputGame,
+              candidateMomentIds: candidateMoments.map((moment) => moment.id),
+            })),
+          },
+        };
+      };
+      let firstProviderInvocations = 0;
+      const finalResult: OwnerLearningReviewResult = {
+        diagnosis: "The reviewed guidance remains appropriate.",
+        analysisTrack: "evidence_rich",
+        recommendations: [],
+        noChange: { rationale: "No repeated strategic defect appears in the selected evidence." },
+      };
+      const firstProvider: OwnerLearningProvider = {
+        async invoke(request) {
+          firstProviderInvocations += 1;
+          const turn = request.input.turn as { callBudget: { ordinal: number } };
+          const ordinal = turn.callBudget.ordinal;
+          const dispatchedAtMs = Date.parse(`2026-08-04T03:01:0${ordinal}.000Z`);
+          await request.observer.onDispatchIntent({
+            transportOrdinal: 1,
+            attemptedTier: "flex",
+            dispatchedAtMs,
+          });
+          await request.observer.onTerminalOutcome({
+            transportOrdinal: 1,
+            attemptedTier: "flex",
+            httpStatus: 200,
+            latencyMs: 100,
+            providerRequestId: `req-final-barrier-${ordinal}`,
+            completedAtMs: dispatchedAtMs + 100,
+          });
+          return successfulProviderTurn(ordinal === 1
+            ? {
+                provisionalThemes: ["initiative"],
+                selectedMomentHandles: ["g1:m1", "g1:m2", "g1:m3"],
+                findings: [],
+                finalResult: null,
+              }
+            : {
+                provisionalThemes: ["initiative"],
+                selectedMomentHandles: [],
+                findings: [],
+                finalResult: ordinal === 4 ? finalResult : null,
+              });
+        },
+      };
+      let validatedCalls = 0;
+      let checkpoints = 0;
+      let firstClockMs = Date.parse("2026-08-04T03:01:01.000Z");
+
+      await expect(runClaimedOwnerLearningReview(db, firstClaim, {
+        provider: firstProvider,
+        projector,
+        now: () => new Date(firstClockMs += 10),
+        faultInjector(point) {
+          if (point === "validated_call") validatedCalls += 1;
+          if (point === "checkpoint") checkpoints += 1;
+          if (
+            (crashPoint === "validated_call" && validatedCalls === 4)
+            || (crashPoint === "checkpoint" && checkpoints === 4)
+          ) {
+            throw new Error(`simulated crash after ${crashPoint}`);
+          }
+        },
+      })).rejects.toThrow(`simulated crash after ${crashPoint}`);
+      expect(firstProviderInvocations).toBe(4);
+
+      const callsAtCrash = await db.select().from(schema.agentLearningReviewCalls)
+        .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId));
+      const finalCallAtCrash = callsAtCrash.find((call) => call.ordinal === 4)!;
+      expect(finalCallAtCrash.state).toBe("succeeded");
+      expect(finalCallAtCrash.validatedCheckpoint?.completion?.result).toEqual(finalResult);
+      const reviewAtCrash = (await db.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+      expect(reviewAtCrash.result).toBeNull();
+      expect(reviewAtCrash.checkpoint?.logicalCallCount).toBe(
+        crashPoint === "validated_call" ? 3 : 4,
+      );
+      expect(reviewAtCrash.checkpoint?.completion != null).toBe(crashPoint === "checkpoint");
+
+      await db.update(schema.agentLearningReviews).set({
+        leaseExpiresAt: "2026-08-04T03:01:59.000Z",
+      }).where(eq(schema.agentLearningReviews.id, reviewId));
+      const reclaimed = (await claimOwnerLearningReview(db, {
+        now: new Date("2026-08-04T03:02:00.000Z"),
+      }))!;
+      let recoveryProviderInvocations = 0;
+      let recoveryClockMs = Date.parse("2026-08-04T03:02:01.000Z");
+      expect(await runClaimedOwnerLearningReview(db, reclaimed, {
+        provider: {
+          async invoke() {
+            recoveryProviderInvocations += 1;
+            throw new Error("recovery must not issue another paid provider call");
+          },
+        },
+        projector,
+        now: () => new Date(recoveryClockMs += 10),
+      })).toBe(true);
+      expect(recoveryProviderInvocations).toBe(0);
+
+      const recovered = (await db.select().from(schema.agentLearningReviews)
+        .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+      expect(recovered.analysisStatus).toBe("no_change");
+      expect(recovered.result).toEqual(finalResult);
+      expect(finalCallAtCrash.validatedCheckpoint?.completion?.result ?? null).toEqual(recovered.result);
+      expect(await db.select().from(schema.agentLearningReviewCalls)
+        .where(eq(schema.agentLearningReviewCalls.reviewId, reviewId))).toHaveLength(4);
+      expect(await finalizeOwnerLearningReview(db, {
+        reviewId,
+        leaseToken: reclaimed.leaseToken,
+        expectedCheckpointHash: recovered.checkpointHash!,
+        result: recovered.result!,
+        proposalFingerprint: recovered.proposalFingerprint,
+        now: new Date("2026-08-04T03:03:00.000Z"),
+      })).toBe(true);
+      const resolvedEvents = await db.select().from(schema.agentLearningEvents)
+        .where(eq(schema.agentLearningEvents.reviewId, reviewId));
+      expect(resolvedEvents.filter((event) => event.kind === "review_resolved")).toHaveLength(1);
+    }
+  });
+
   test("marks an unmatched dispatch intent ambiguous instead of replaying it", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
@@ -706,6 +874,316 @@ describe("owner learning worker durability", () => {
     const calls = await db.select().from(schema.agentLearningReviewCalls);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.state).toBe("succeeded");
+  });
+
+  test("rebinds a changed source snapshot before the first provider call", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const claim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const changedSourceHash = fingerprintOwnerLearningValue({
+      gameId: fixture.gameId,
+      sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v0",
+    });
+    const projector = async (
+      _db: typeof db,
+      selection: Parameters<typeof fakeOwnerLearningProjection>[0],
+    ) => {
+      const projection = fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+      return {
+        ...projection,
+        games: projection.games.map((game) => ({
+          ...game,
+          sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v0",
+          sourceHash: changedSourceHash,
+        })),
+      };
+    };
+    let providerInvocations = 0;
+    const provider: OwnerLearningProvider = {
+      async invoke(request) {
+        providerInvocations += 1;
+        await request.observer.onDispatchIntent({
+          transportOrdinal: 1,
+          attemptedTier: "flex",
+          dispatchedAtMs: Date.parse("2026-08-04T03:01:02.000Z"),
+        });
+        await request.observer.onTerminalOutcome({
+          transportOrdinal: 1,
+          attemptedTier: "flex",
+          httpStatus: 200,
+          latencyMs: 100,
+          completedAtMs: Date.parse("2026-08-04T03:01:02.100Z"),
+        });
+        return successfulProviderTurn({
+          provisionalThemes: [],
+          selectedMomentHandles: [],
+          findings: [],
+          finalResult: {
+            diagnosis: "The current guidance remains appropriate.",
+            analysisTrack: "evidence_rich",
+            strategyHealthClassification: null,
+            recommendations: [],
+            proposal: null,
+            noChange: { rationale: "No repeated strategic defect appears in the selected evidence." },
+          },
+        });
+      },
+    };
+    let clockMs = Date.parse("2026-08-04T03:01:01.000Z");
+
+    expect(await runClaimedOwnerLearningReview(db, claim, {
+      provider,
+      projector,
+      now: () => new Date(clockMs += 100),
+    })).toBe(true);
+    expect(providerInvocations).toBe(1);
+
+    const evidenceRows = await db.select().from(schema.agentLearningGameEvidence)
+      .where(eq(schema.agentLearningGameEvidence.gameId, fixture.gameId));
+    expect(evidenceRows).toHaveLength(2);
+    const changedEvidence = evidenceRows.find((row) => row.sourceHash === changedSourceHash);
+    expect(changedEvidence).toBeDefined();
+    const binding = (await db.select().from(schema.agentLearningReviewGames)
+      .where(eq(schema.agentLearningReviewGames.reviewId, reviewId)))[0]!;
+    expect(binding.gameEvidenceId).toBe(changedEvidence!.id);
+    expect(binding.gameEvidenceId).not.toBe(fixture.gameEvidenceId);
+  });
+
+  test("fails closed when the source changes after validated model work", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const firstClaim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const call = await reserveOwnerLearningCall(db, {
+      reviewId,
+      leaseToken: firstClaim.leaseToken,
+      inputPolicyHash: "sha256:first-source",
+      stage: "scanning_narratives",
+      now: new Date("2026-08-04T03:01:01.000Z"),
+    });
+    const observer = createOwnerLearningTransportObserver(db, {
+      reviewId,
+      callId: call.callId,
+      leaseToken: firstClaim.leaseToken,
+    });
+    await observer.onDispatchIntent({
+      transportOrdinal: 1,
+      attemptedTier: "flex",
+      dispatchedAtMs: Date.parse("2026-08-04T03:01:02.000Z"),
+    });
+    await observer.onTerminalOutcome({
+      transportOrdinal: 1,
+      attemptedTier: "flex",
+      httpStatus: 200,
+      latencyMs: 100,
+      completedAtMs: Date.parse("2026-08-04T03:01:02.100Z"),
+    });
+    expect(await completeOwnerLearningCall(db, {
+      reviewId,
+      callId: call.callId,
+      leaseToken: firstClaim.leaseToken,
+      effectiveTier: "flex",
+      tokenReceipt: {
+        inputTokens: 1_000,
+        cachedInputTokens: 200,
+        totalOutputTokens: 300,
+        reasoningTokens: 50,
+      },
+      costReceipt: {
+        costSource: "estimated",
+        estimatedCostMicrousd: 500,
+        pricingSourceId: "engine.MODEL_PRICING",
+        rateCardVersion: "2026-08-04",
+        pricedAt: "2026-08-04T03:01:02.100Z",
+      },
+      validatedCheckpoint: validatedCheckpoint(),
+      now: new Date("2026-08-04T03:01:02.100Z"),
+    })).toBe(true);
+    await db.update(schema.agentLearningReviews).set({
+      leaseExpiresAt: "2026-08-04T03:01:03.000Z",
+    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    const reclaimed = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:02:00.000Z"),
+    }))!;
+    const changedSourceHash = fingerprintOwnerLearningValue({
+      gameId: fixture.gameId,
+      sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v0",
+    });
+    const projector = async (
+      _db: typeof db,
+      selection: Parameters<typeof fakeOwnerLearningProjection>[0],
+    ) => {
+      const projection = fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+      );
+      return {
+        ...projection,
+        games: projection.games.map((game) => ({
+          ...game,
+          sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v0",
+          sourceHash: changedSourceHash,
+        })),
+      };
+    };
+    let providerInvocations = 0;
+
+    expect(await runClaimedOwnerLearningReview(db, reclaimed, {
+      provider: {
+        async invoke() {
+          providerInvocations += 1;
+          throw new Error("source drift must stop before another provider call");
+        },
+      },
+      projector,
+      now: () => new Date("2026-08-04T03:02:01.000Z"),
+    })).toBe(false);
+    expect(providerInvocations).toBe(0);
+
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review).toMatchObject({
+      analysisStatus: "failed",
+      safeFailureCode: "evidence_unavailable",
+      retryable: false,
+      logicalCallCount: 1,
+    });
+    const binding = (await db.select().from(schema.agentLearningReviewGames)
+      .where(eq(schema.agentLearningReviewGames.reviewId, reviewId)))[0]!;
+    expect(binding.gameEvidenceId).toBe(fixture.gameEvidenceId);
+  });
+
+  test("terminalizes a reclaimed reservation when the analysis track changes", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const firstClaim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const reserved = await reserveOwnerLearningCall(db, {
+      reviewId,
+      leaseToken: firstClaim.leaseToken,
+      inputPolicyHash: "sha256:first-track",
+      stage: "scanning_narratives",
+      now: new Date("2026-08-04T03:01:01.000Z"),
+    });
+    await db.update(schema.agentLearningReviews).set({
+      leaseExpiresAt: "2026-08-04T03:01:02.000Z",
+    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    const reclaimed = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:02:00.000Z"),
+    }))!;
+    let providerInvocations = 0;
+
+    expect(await runClaimedOwnerLearningReview(db, reclaimed, {
+      provider: {
+        async invoke() {
+          providerInvocations += 1;
+          throw new Error("analysis-track drift must stop before provider work");
+        },
+      },
+      projector: async (
+        _db,
+        selection,
+      ) => fakeOwnerLearningProjection(
+        selection,
+        new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+        "strategy_health_check",
+      ),
+      now: () => new Date("2026-08-04T03:02:01.000Z"),
+    })).toBe(false);
+    expect(providerInvocations).toBe(0);
+    const call = (await db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, reserved.callId)))[0]!;
+    expect(call).toMatchObject({
+      state: "failed",
+      safeFailureCode: "evidence_unavailable",
+    });
+    expect(call.completedAt).not.toBeNull();
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review).toMatchObject({
+      analysisStatus: "failed",
+      safeFailureCode: "evidence_unavailable",
+      retryable: false,
+      logicalCallCount: 1,
+    });
+  });
+
+  test("terminalizes a reserved call when its source changes before recovery", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    const firstClaim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    const reserved = await reserveOwnerLearningCall(db, {
+      reviewId,
+      leaseToken: firstClaim.leaseToken,
+      inputPolicyHash: "sha256:first-source",
+      stage: "scanning_narratives",
+      now: new Date("2026-08-04T03:01:01.000Z"),
+    });
+    await db.update(schema.agentLearningReviews).set({
+      leaseExpiresAt: "2026-08-04T03:01:02.000Z",
+    }).where(eq(schema.agentLearningReviews.id, reviewId));
+    const reclaimed = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:02:00.000Z"),
+    }))!;
+    const changedSourceHash = fingerprintOwnerLearningValue({
+      gameId: fixture.gameId,
+      sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v0",
+    });
+    let providerInvocations = 0;
+
+    expect(await runClaimedOwnerLearningReview(db, reclaimed, {
+      provider: {
+        async invoke() {
+          providerInvocations += 1;
+          throw new Error("source drift must terminalize the reservation before dispatch");
+        },
+      },
+      projector: async (_db, selection) => {
+        const projection = fakeOwnerLearningProjection(
+          selection,
+          new Map([[fixture.gameId, fixture.gameEvidenceId]]),
+        );
+        return {
+          ...projection,
+          games: projection.games.map((game) => ({
+            ...game,
+            sourceCaptureVersion: "postgame-v2:transcript-v1:cognition-v0",
+            sourceHash: changedSourceHash,
+          })),
+        };
+      },
+      now: () => new Date("2026-08-04T03:02:01.000Z"),
+    })).toBe(false);
+    expect(providerInvocations).toBe(0);
+
+    const call = (await db.select().from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.id, reserved.callId)))[0]!;
+    expect(call).toMatchObject({
+      state: "failed",
+      safeFailureCode: "evidence_unavailable",
+    });
+    expect(call.completedAt).not.toBeNull();
+    const review = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
+    expect(review).toMatchObject({
+      analysisStatus: "failed",
+      safeFailureCode: "evidence_unavailable",
+      retryable: false,
+      logicalCallCount: 1,
+    });
   });
 
   test("retains cost while atomically rejecting invalid structured evidence", async () => {
@@ -889,6 +1367,92 @@ describe("owner learning worker durability", () => {
     expect(calls[0]!.transportReceipts).toEqual([]);
   });
 
+  test("aborts provider work after a remote supersede and releases the global lane", async () => {
+    const db = await setupTestDB();
+    const activeFixture = await insertPlayedOwnerLearningAgent(db);
+    const queuedFixture = await insertPlayedOwnerLearningAgent(db, {
+      completedAt: "2026-08-04T02:00:00.000Z",
+    });
+    const activeReviewId = await startFixtureOwnerLearningReview(db, activeFixture);
+    const queuedReviewId = await startFixtureOwnerLearningReview(db, queuedFixture);
+    await db.update(schema.agentLearningReviews).set({
+      createdAt: "2026-08-04T03:00:00.000Z",
+    }).where(eq(schema.agentLearningReviews.id, activeReviewId));
+    await db.update(schema.agentLearningReviews).set({
+      createdAt: "2026-08-04T03:00:01.000Z",
+    }).where(eq(schema.agentLearningReviews.id, queuedReviewId));
+    const claim = (await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:00.000Z"),
+    }))!;
+    expect(claim.reviewId).toBe(activeReviewId);
+    const projector = async (_db: typeof db, selection: Parameters<typeof fakeOwnerLearningProjection>[0]) =>
+      fakeOwnerLearningProjection(
+        selection,
+        new Map([[activeFixture.gameId, activeFixture.gameEvidenceId]]),
+      );
+    let providerStarted!: () => void;
+    const started = new Promise<void>((resolve) => { providerStarted = resolve; });
+    let providerObservedAbort = false;
+    const provider: OwnerLearningProvider = {
+      async invoke(request) {
+        providerStarted();
+        return new Promise<never>((_resolve, reject) => {
+          const abort = () => {
+            providerObservedAbort = true;
+            reject(new DOMException("remote review supersede", "AbortError"));
+          };
+          if (request.signal?.aborted) abort();
+          else request.signal?.addEventListener("abort", abort, { once: true });
+        });
+      },
+    };
+    const run = runClaimedOwnerLearningReview(db, claim, {
+      provider,
+      projector,
+      now: () => new Date("2026-08-04T03:01:01.000Z"),
+      heartbeatIntervalMs: 60_000,
+      leaseMonitorIntervalMs: 5,
+    });
+    await started;
+
+    await db.transaction(async (tx) => {
+      const review = await lockOwnerLearningReviewForProfileMutation(tx, {
+        ownerUserId: activeFixture.ownerUserId,
+        agentProfileId: activeFixture.agentProfileId,
+      });
+      expect(review?.id).toBe(activeReviewId);
+      expect(await resolveOwnerLearningReviewForProfileMutation(tx, {
+        review,
+        analyticalRevisionChanged: true,
+        nowIso: "2026-08-04T03:01:02.000Z",
+      })).toBe("superseded");
+    });
+
+    const fenced = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, activeReviewId)))[0]!;
+    expect(fenced.resolution).toBe("superseded");
+    expect(fenced.leaseTokenHash).not.toBeNull();
+    expect(await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:02.001Z"),
+    })).toBeNull();
+
+    expect(await run).toBe(false);
+    expect(providerObservedAbort).toBe(true);
+    const superseded = (await db.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, activeReviewId)))[0]!;
+    expect(superseded).toMatchObject({
+      resolution: "superseded",
+      resolvedAt: "2026-08-04T03:01:02.000Z",
+      safeFailureCode: null,
+      leaseTokenHash: null,
+      leaseExpiresAt: null,
+    });
+    const nextClaim = await claimOwnerLearningReview(db, {
+      now: new Date("2026-08-04T03:01:03.000Z"),
+    });
+    expect(nextClaim?.reviewId).toBe(queuedReviewId);
+  });
+
   test("aborts local provider work immediately when the reviewed Profile supersedes it", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
@@ -956,5 +1520,21 @@ function successfulProviderTurn(output: unknown, effectiveTier = "flex") {
       rateCardVersion: "2026-08-04",
       pricedAt: "2026-08-04T03:01:02.100Z",
     },
+  };
+}
+
+function validatedCheckpoint(): OwnerLearningCheckpoint {
+  return {
+    version: 1,
+    logicalCallCount: 1,
+    diveCount: 0,
+    selectedMomentIds: [],
+    nextMomentCursor: 0,
+    provisionalThemes: [],
+    validatedFindings: [],
+    lastCompletedStage: "scanning_narratives",
+    promptHash: fingerprintOwnerLearningValue(OWNER_LEARNING_PROMPT_VERSION),
+    schemaHash: fingerprintOwnerLearningValue(OWNER_LEARNING_SCHEMA_VERSION),
+    completion: null,
   };
 }

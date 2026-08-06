@@ -38,6 +38,7 @@ const MAX_LABEL_CHARS = 120;
 const MAX_ACTION_ENTRIES = 16;
 const MAX_ACCUMULATED_FINDINGS = 9;
 const ROUND_BUCKET_COUNT = 3;
+type RoundBucket = 0 | 1 | 2;
 
 export interface OwnerLearningProviderHandleCatalog {
   gameAliasById: ReadonlyMap<string, string>;
@@ -57,7 +58,7 @@ export interface OwnerLearningProviderContext {
 interface CompactMomentCandidate {
   handle: string;
   sourceIndex: number;
-  bucket: number;
+  bucket: RoundBucket;
   laneKeys: string[];
   priority: number;
   value: Record<string, unknown>;
@@ -70,7 +71,13 @@ interface CompactGameState {
   summaryHandle: string;
   candidates: CompactMomentCandidate[];
   included: Set<number>;
+  includedBucketCounts: [number, number, number];
   minimal: boolean;
+}
+
+interface ProviderRequestBudget {
+  serializedChars: number;
+  gameJsonByState: Map<CompactGameState, string>;
 }
 
 export function buildOwnerLearningProviderHandleCatalog(
@@ -138,11 +145,11 @@ export function buildBudgetedOwnerLearningProviderInput(input: {
     turn,
   };
 
-  if (turn.evidence != null) {
-    packOptionalMoments(providerInput, input.responseSchema, gameStates, visibleHandles);
-  }
+  const packedEstimatedTokens = turn.evidence != null
+    ? packOptionalMoments(providerInput, input.responseSchema, gameStates, visibleHandles)
+    : undefined;
 
-  let estimatedTokens = estimateOwnerLearningProviderCallTokens(
+  let estimatedTokens = packedEstimatedTokens ?? estimateOwnerLearningProviderCallTokens(
     providerInput,
     input.responseSchema,
   );
@@ -150,7 +157,7 @@ export function buildBudgetedOwnerLearningProviderInput(input: {
     minimizeTurnForBudget(turn);
     for (const state of gameStates) {
       state.minimal = true;
-      state.included.clear();
+      clearIncludedCandidates(state);
     }
     refreshCompactGames(providerInput, gameStates);
     estimatedTokens = estimateOwnerLearningProviderCallTokens(
@@ -206,7 +213,17 @@ export function estimateOwnerLearningProviderCallTokens(
   input: Record<string, unknown>,
   responseSchema: Record<string, unknown>,
 ): number {
-  const serializedChars = stableJson({
+  return estimatedTokensFromSerializedChars(ownerLearningProviderRequestSerializedChars(
+    input,
+    responseSchema,
+  ));
+}
+
+function ownerLearningProviderRequestSerializedChars(
+  input: Record<string, unknown>,
+  responseSchema: Record<string, unknown>,
+): number {
+  return stableJson({
     model: "gpt-5.6-luna",
     instructions: OWNER_LEARNING_PROVIDER_INSTRUCTIONS,
     input: `<owner_learning_data>\n${stableJson(input)}\n</owner_learning_data>`,
@@ -223,6 +240,9 @@ export function estimateOwnerLearningProviderCallTokens(
       },
     },
   }).length;
+}
+
+function estimatedTokensFromSerializedChars(serializedChars: number): number {
   return Math.ceil(serializedChars / OWNER_LEARNING_TOKEN_ESTIMATOR_CHARS_PER_TOKEN)
     + OWNER_LEARNING_ENVELOPE_ALLOWANCE_TOKENS;
 }
@@ -257,7 +277,9 @@ function compactEvidence(
     instructions: truncateString(evidence.reviewInput.instructions, MAX_INSTRUCTION_CHARS),
     games: states.map((state) => {
       visibleHandles.add(state.summaryHandle);
-      for (const index of mandatoryMomentIndexes(state.candidates)) state.included.add(index);
+      for (const index of mandatoryMomentIndexes(state.candidates)) {
+        includeCandidate(state, state.candidates[index]!);
+      }
       return compactGameValue(state);
     }),
   };
@@ -269,10 +291,11 @@ function compactGameState(
 ): CompactGameState {
   const alias = catalog.gameAliasById.get(game.gameId);
   if (!alias) throw new Error("Owner learning game alias is missing");
+  const narrativeGroupsByCoordinate = indexNarrativeGroupsByCoordinate(game.narrativeGroups);
   const candidates = game.candidateMoments.map((moment, sourceIndex) => {
     const handle = catalog.momentHandleById.get(moment.id);
     if (!handle) throw new Error("Owner learning moment handle is missing");
-    const group = narrativeGroupForMoment(game.narrativeGroups, moment);
+    const group = narrativeGroupsByCoordinate.get(moment.sourceCoordinate);
     const compacted = compactMoment(handle, moment, group);
     return {
       handle,
@@ -290,6 +313,7 @@ function compactGameState(
     summaryHandle: `${alias}:s`,
     candidates,
     included: new Set<number>(),
+    includedBucketCounts: [0, 0, 0],
     minimal: false,
   };
 }
@@ -328,28 +352,29 @@ function packOptionalMoments(
   responseSchema: Record<string, unknown>,
   states: CompactGameState[],
   visibleHandles: Set<string>,
-): void {
+): number | undefined {
   refreshCompactGames(providerInput, states);
   const fullCoreFits = fitMandatoryCore(providerInput, responseSchema, states);
   for (const state of states) {
     for (const index of state.included) visibleHandles.add(state.candidates[index]!.handle);
   }
-  if (!fullCoreFits) return;
+  if (!fullCoreFits) return undefined;
 
   const priorities = [...new Set(states.flatMap((state) => state.candidates.map((candidate) => candidate.priority)))]
     .sort((left, right) => left - right);
+  const budget = createProviderRequestBudget(providerInput, responseSchema, states);
   for (const priority of priorities) {
     const queues: Array<{
       state: CompactGameState;
       gameIndex: number;
-      bucket: number;
+      bucket: RoundBucket;
       rank: number;
       candidates: CompactMomentCandidate[];
     }> = [];
     for (let diagonal = 0; diagonal < ROUND_BUCKET_COUNT; diagonal += 1) {
       for (let gameIndex = 0; gameIndex < states.length; gameIndex += 1) {
         const state = states[gameIndex]!;
-        const bucket = (diagonal + gameIndex) % ROUND_BUCKET_COUNT;
+        const bucket = ((diagonal + gameIndex) % ROUND_BUCKET_COUNT) as RoundBucket;
         queues.push({
           state,
           gameIndex,
@@ -363,8 +388,10 @@ function packOptionalMoments(
         });
       }
     }
-    packCandidateQueues(providerInput, responseSchema, states, queues, visibleHandles);
+    packCandidateQueues(queues, visibleHandles, budget);
   }
+  refreshCompactGames(providerInput, states);
+  return estimatedTokensFromSerializedChars(budget.serializedChars);
 }
 
 function fitMandatoryCore(
@@ -389,7 +416,7 @@ function fitMandatoryCore(
       || right.candidate.sourceIndex - left.candidate.sourceIndex
   );
   for (const entry of removable) {
-    entry.state.included.delete(entry.candidate.sourceIndex);
+    excludeCandidate(entry.state, entry.candidate);
     refreshCompactGames(providerInput, states);
     if (estimateOwnerLearningProviderCallTokens(providerInput, responseSchema) <= OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
       return false;
@@ -401,42 +428,83 @@ function fitMandatoryCore(
 }
 
 function packCandidateQueues(
-  providerInput: Record<string, unknown>,
-  responseSchema: Record<string, unknown>,
-  states: CompactGameState[],
   queues: Array<{
     state: CompactGameState;
     gameIndex: number;
-    bucket: number;
+    bucket: RoundBucket;
     rank: number;
     candidates: CompactMomentCandidate[];
   }>,
   visibleHandles: Set<string>,
+  budget: ProviderRequestBudget,
 ): void {
   while (true) {
     const queue = queues.filter((candidate) => candidate.candidates.length > 0)
       .sort((left, right) =>
         left.state.included.size - right.state.included.size
-          || includedBucketCount(left.state, left.bucket) - includedBucketCount(right.state, right.bucket)
+          || left.state.includedBucketCounts[left.bucket] - right.state.includedBucketCounts[right.bucket]
           || left.rank - right.rank
       )[0];
     if (!queue) return;
     const next = queue.candidates.shift()!;
-    queue.state.included.add(next.sourceIndex);
-    refreshCompactGames(providerInput, states);
-    if (estimateOwnerLearningProviderCallTokens(providerInput, responseSchema) <= OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
+    if (tryIncludeCandidateWithinBudget(queue.state, next, budget)) {
       visibleHandles.add(next.handle);
-    } else {
-      queue.state.included.delete(next.sourceIndex);
-      refreshCompactGames(providerInput, states);
     }
   }
 }
 
-function includedBucketCount(state: CompactGameState, bucket: number): number {
-  return state.candidates.reduce((count, candidate) =>
-    count + Number(candidate.bucket === bucket && state.included.has(candidate.sourceIndex))
-  , 0);
+function createProviderRequestBudget(
+  providerInput: Record<string, unknown>,
+  responseSchema: Record<string, unknown>,
+  states: CompactGameState[],
+): ProviderRequestBudget {
+  return {
+    serializedChars: ownerLearningProviderRequestSerializedChars(providerInput, responseSchema),
+    gameJsonByState: new Map(states.map((state) => [state, stableJson(compactGameValue(state))])),
+  };
+}
+
+function tryIncludeCandidateWithinBudget(
+  state: CompactGameState,
+  candidate: CompactMomentCandidate,
+  budget: ProviderRequestBudget,
+): boolean {
+  const previousGameJson = budget.gameJsonByState.get(state);
+  if (previousGameJson == null) throw new Error("Owner learning provider budget is missing a game");
+
+  includeCandidate(state, candidate);
+  const nextGameJson = stableJson(compactGameValue(state));
+  const nextSerializedChars = budget.serializedChars
+    - jsonStringContentLength(previousGameJson)
+    + jsonStringContentLength(nextGameJson);
+  if (estimatedTokensFromSerializedChars(nextSerializedChars) > OWNER_LEARNING_INPUT_TOKEN_LIMIT) {
+    excludeCandidate(state, candidate);
+    return false;
+  }
+
+  budget.serializedChars = nextSerializedChars;
+  budget.gameJsonByState.set(state, nextGameJson);
+  return true;
+}
+
+function jsonStringContentLength(value: string): number {
+  return JSON.stringify(value).length - 2;
+}
+
+function includeCandidate(state: CompactGameState, candidate: CompactMomentCandidate): void {
+  if (state.included.has(candidate.sourceIndex)) return;
+  state.included.add(candidate.sourceIndex);
+  state.includedBucketCounts[candidate.bucket] += 1;
+}
+
+function excludeCandidate(state: CompactGameState, candidate: CompactMomentCandidate): void {
+  if (!state.included.delete(candidate.sourceIndex)) return;
+  state.includedBucketCounts[candidate.bucket] -= 1;
+}
+
+function clearIncludedCandidates(state: CompactGameState): void {
+  state.included.clear();
+  state.includedBucketCounts = [0, 0, 0];
 }
 
 function refreshCompactGames(input: Record<string, unknown>, states: CompactGameState[]): void {
@@ -829,6 +897,25 @@ function narrativeGroupForMoment(
   return groups.find((group) => narrativeGroupMatchesMoment(group, moment));
 }
 
+function indexNarrativeGroupsByCoordinate(
+  groups: readonly CompactV2Group[],
+): ReadonlyMap<string, CompactV2Group> {
+  const groupsByCoordinate = new Map<string, CompactV2Group>();
+  for (const group of groups) {
+    const coordinates = [
+      ...(group.decisionId ? [`decision:${group.decisionId}`] : []),
+      ...(group.seq != null ? [`dialogue-sequence:${group.seq}`] : []),
+      ...(group.refs?.dialogueRowId ? [`dialogue:${group.refs.dialogueRowId}`] : []),
+      ...(group.refs?.thinkingId ? [`cognition:${group.refs.thinkingId}`] : []),
+      ...(group.refs?.strategyId ? [`cognition:${group.refs.strategyId}`] : []),
+    ];
+    for (const coordinate of coordinates) {
+      if (!groupsByCoordinate.has(coordinate)) groupsByCoordinate.set(coordinate, group);
+    }
+  }
+  return groupsByCoordinate;
+}
+
 function narrativeGroupMatchesMoment(
   group: CompactV2Group,
   moment: OwnerLearningCandidateMoment,
@@ -862,7 +949,7 @@ function momentPriority(moment: OwnerLearningCandidateMoment, group: CompactV2Gr
   return 4;
 }
 
-function roundBucket(round: number | null, roundCount: number): number {
+function roundBucket(round: number | null, roundCount: number): RoundBucket {
   if (round == null || roundCount <= 1) return 0;
   const ratio = (round - 1) / Math.max(1, roundCount - 1);
   return ratio < 1 / 3 ? 0 : ratio < 2 / 3 ? 1 : 2;

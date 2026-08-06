@@ -1,6 +1,6 @@
 {
-  "id": "c0eba7a7-38b1-42c1-8264-7d04cbb72876",
-  "prevId": "cd057de5-aa28-4315-972d-74d6278cce21",
+  "id": "180292ec-2201-4896-bed9-5fe10551fa05",
+  "prevId": "c0eba7a7-38b1-42c1-8264-7d04cbb72876",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -39,15 +39,15 @@
         "address_roles_role_id_roles_id_fk": {
           "name": "address_roles_role_id_roles_id_fk",
           "tableFrom": "address_roles",
-          "tableTo": "roles",
           "columnsFrom": [
             "role_id"
           ],
+          "tableTo": "roles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -125,37 +125,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_competition_ratings_agent_profile_id_agent_profiles_id_fk": {
           "name": "agent_competition_ratings_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "agent_competition_ratings",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_competition_ratings_effective_revision_id_agent_revisions_id_fk": {
           "name": "agent_competition_ratings_effective_revision_id_agent_revisions_id_fk",
           "tableFrom": "agent_competition_ratings",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "effective_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -243,9 +243,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_learning_events_review_time_idx": {
           "name": "agent_learning_events_review_time_idx",
@@ -264,50 +264,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_learning_events_owner_user_id_users_id_fk": {
           "name": "agent_learning_events_owner_user_id_users_id_fk",
           "tableFrom": "agent_learning_events",
-          "tableTo": "users",
           "columnsFrom": [
             "owner_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_events_review_id_agent_learning_reviews_id_fk": {
           "name": "agent_learning_events_review_id_agent_learning_reviews_id_fk",
           "tableFrom": "agent_learning_events",
-          "tableTo": "agent_learning_reviews",
           "columnsFrom": [
             "review_id"
           ],
+          "tableTo": "agent_learning_reviews",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "agent_learning_events_agent_profile_id_agent_profiles_id_fk": {
           "name": "agent_learning_events_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "agent_learning_events",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -442,12 +442,24 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
+            },
+            {
+              "expression": "source_capture_version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "source_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_learning_game_evidence_owner_profile_idx": {
           "name": "agent_learning_game_evidence_owner_profile_idx",
@@ -472,63 +484,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_learning_game_evidence_owner_user_id_users_id_fk": {
           "name": "agent_learning_game_evidence_owner_user_id_users_id_fk",
           "tableFrom": "agent_learning_game_evidence",
-          "tableTo": "users",
           "columnsFrom": [
             "owner_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_game_evidence_agent_profile_id_agent_profiles_id_fk": {
           "name": "agent_learning_game_evidence_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "agent_learning_game_evidence",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_game_evidence_analytical_revision_id_agent_revisions_id_fk": {
           "name": "agent_learning_game_evidence_analytical_revision_id_agent_revisions_id_fk",
           "tableFrom": "agent_learning_game_evidence",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "analytical_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_game_evidence_game_id_games_id_fk": {
           "name": "agent_learning_game_evidence_game_id_games_id_fk",
           "tableFrom": "agent_learning_game_evidence",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -663,50 +675,50 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_learning_moment_evidence_game_evidence_id_agent_learning_game_evidence_id_fk": {
           "name": "agent_learning_moment_evidence_game_evidence_id_agent_learning_game_evidence_id_fk",
           "tableFrom": "agent_learning_moment_evidence",
-          "tableTo": "agent_learning_game_evidence",
           "columnsFrom": [
             "game_evidence_id"
           ],
+          "tableTo": "agent_learning_game_evidence",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_moment_evidence_agent_profile_id_agent_profiles_id_fk": {
           "name": "agent_learning_moment_evidence_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "agent_learning_moment_evidence",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_moment_evidence_reviewed_player_id_game_players_id_fk": {
           "name": "agent_learning_moment_evidence_reviewed_player_id_game_players_id_fk",
           "tableFrom": "agent_learning_moment_evidence",
-          "tableTo": "game_players",
           "columnsFrom": [
             "reviewed_player_id"
           ],
+          "tableTo": "game_players",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -780,56 +792,56 @@
         "agent_learning_review_applications_review_id_agent_learning_reviews_id_fk": {
           "name": "agent_learning_review_applications_review_id_agent_learning_reviews_id_fk",
           "tableFrom": "agent_learning_review_applications",
-          "tableTo": "agent_learning_reviews",
           "columnsFrom": [
             "review_id"
           ],
+          "tableTo": "agent_learning_reviews",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "agent_learning_review_applications_prior_revision_id_agent_revisions_id_fk": {
           "name": "agent_learning_review_applications_prior_revision_id_agent_revisions_id_fk",
           "tableFrom": "agent_learning_review_applications",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "prior_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_review_applications_resulting_revision_id_agent_revisions_id_fk": {
           "name": "agent_learning_review_applications_resulting_revision_id_agent_revisions_id_fk",
           "tableFrom": "agent_learning_review_applications",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "resulting_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_review_applications_proposal_fk": {
           "name": "agent_learning_review_applications_proposal_fk",
           "tableFrom": "agent_learning_review_applications",
-          "tableTo": "agent_learning_reviews",
           "columnsFrom": [
             "review_id",
             "proposal_fingerprint"
           ],
+          "tableTo": "agent_learning_reviews",
           "columnsTo": [
             "id",
             "proposal_fingerprint"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1035,24 +1047,24 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_learning_review_calls_review_id_agent_learning_reviews_id_fk": {
           "name": "agent_learning_review_calls_review_id_agent_learning_reviews_id_fk",
           "tableFrom": "agent_learning_review_calls",
-          "tableTo": "agent_learning_reviews",
           "columnsFrom": [
             "review_id"
           ],
+          "tableTo": "agent_learning_reviews",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -1164,41 +1176,41 @@
         "agent_learning_review_entitlements_owner_user_id_users_id_fk": {
           "name": "agent_learning_review_entitlements_owner_user_id_users_id_fk",
           "tableFrom": "agent_learning_review_entitlements",
-          "tableTo": "users",
           "columnsFrom": [
             "owner_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_review_entitlements_consumed_game_id_games_id_fk": {
           "name": "agent_learning_review_entitlements_consumed_game_id_games_id_fk",
           "tableFrom": "agent_learning_review_entitlements",
-          "tableTo": "games",
           "columnsFrom": [
             "consumed_game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_review_entitlements_dismissed_game_id_games_id_fk": {
           "name": "agent_learning_review_entitlements_dismissed_game_id_games_id_fk",
           "tableFrom": "agent_learning_review_entitlements",
-          "tableTo": "games",
           "columnsFrom": [
             "dismissed_game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -1274,50 +1286,50 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_learning_review_games_review_id_agent_learning_reviews_id_fk": {
           "name": "agent_learning_review_games_review_id_agent_learning_reviews_id_fk",
           "tableFrom": "agent_learning_review_games",
-          "tableTo": "agent_learning_reviews",
           "columnsFrom": [
             "review_id"
           ],
+          "tableTo": "agent_learning_reviews",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "agent_learning_review_games_game_evidence_id_agent_learning_game_evidence_id_fk": {
           "name": "agent_learning_review_games_game_evidence_id_agent_learning_game_evidence_id_fk",
           "tableFrom": "agent_learning_review_games",
-          "tableTo": "agent_learning_game_evidence",
           "columnsFrom": [
             "game_evidence_id"
           ],
+          "tableTo": "agent_learning_game_evidence",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_review_games_game_id_games_id_fk": {
           "name": "agent_learning_review_games_game_id_games_id_fk",
           "tableFrom": "agent_learning_review_games",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {
@@ -1573,9 +1585,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_learning_reviews_owner_open_unique": {
           "name": "agent_learning_reviews_owner_open_unique",
@@ -1588,10 +1600,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"agent_learning_reviews\".\"resolved_at\" IS NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"agent_learning_reviews\".\"resolved_at\" IS NULL",
+          "concurrently": false
         },
         "agent_learning_reviews_worker_claim_idx": {
           "name": "agent_learning_reviews_worker_claim_idx",
@@ -1616,9 +1628,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_learning_reviews_admin_chronology_idx": {
           "name": "agent_learning_reviews_admin_chronology_idx",
@@ -1637,9 +1649,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_learning_reviews_revision_resolution_idx": {
           "name": "agent_learning_reviews_revision_resolution_idx",
@@ -1664,68 +1676,68 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_learning_reviews_owner_user_id_users_id_fk": {
           "name": "agent_learning_reviews_owner_user_id_users_id_fk",
           "tableFrom": "agent_learning_reviews",
-          "tableTo": "users",
           "columnsFrom": [
             "owner_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_reviews_agent_profile_id_agent_profiles_id_fk": {
           "name": "agent_learning_reviews_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "agent_learning_reviews",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_learning_reviews_reviewed_revision_id_agent_revisions_id_fk": {
           "name": "agent_learning_reviews_reviewed_revision_id_agent_revisions_id_fk",
           "tableFrom": "agent_learning_reviews",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "reviewed_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "agent_learning_reviews_id_proposal_unique": {
           "name": "agent_learning_reviews_id_proposal_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "id",
             "proposal_fingerprint"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
       "checkConstraints": {
         "agent_learning_reviews_analysis_track_check": {
           "name": "agent_learning_reviews_analysis_track_check",
-              "value": "\n    \"agent_learning_reviews\".\"analysis_track\" IN ('evidence_rich', 'strategy_health_check')\n  "
+          "value": "\n    \"agent_learning_reviews\".\"analysis_track\" IN ('evidence_rich', 'strategy_health_check')\n  "
         },
         "agent_learning_reviews_analysis_status_check": {
           "name": "agent_learning_reviews_analysis_status_check",
@@ -1821,15 +1833,15 @@
         "agent_memories_game_id_games_id_fk": {
           "name": "agent_memories_game_id_games_id_fk",
           "tableFrom": "agent_memories",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -1943,9 +1955,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_profiles_name_idx": {
           "name": "agent_profiles_name_idx",
@@ -1958,9 +1970,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_profiles_name_id_idx": {
           "name": "agent_profiles_name_id_idx",
@@ -1979,24 +1991,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_profiles_normalized_name_unique": {
           "name": "agent_profiles_normalized_name_unique",
           "columns": [
             {
               "expression": "lower(btrim(\"name\"))",
-              "asc": true,
               "isExpression": true,
+              "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_profiles_current_revision_idx": {
           "name": "agent_profiles_current_revision_idx",
@@ -2009,37 +2021,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_profiles_user_id_users_id_fk": {
           "name": "agent_profiles_user_id_users_id_fk",
           "tableFrom": "agent_profiles",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "agent_profiles_current_revision_id_agent_revisions_id_fk": {
           "name": "agent_profiles_current_revision_id_agent_revisions_id_fk",
           "tableFrom": "agent_profiles",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "current_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -2147,9 +2159,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_revisions_profile_fingerprint_idx": {
           "name": "agent_revisions_profile_fingerprint_idx",
@@ -2168,9 +2180,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "agent_revisions_profile_created_idx": {
           "name": "agent_revisions_profile_created_idx",
@@ -2189,37 +2201,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "agent_revisions_agent_profile_id_agent_profiles_id_fk": {
           "name": "agent_revisions_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "agent_revisions",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "agent_revisions_prior_revision_id_agent_revisions_id_fk": {
           "name": "agent_revisions_prior_revision_id_agent_revisions_id_fk",
           "tableFrom": "agent_revisions",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "prior_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -2334,9 +2346,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "authentication_credentials_active_user_id_idx": {
           "name": "authentication_credentials_active_user_id_idx",
@@ -2349,25 +2361,25 @@
             }
           ],
           "isUnique": false,
-          "where": "\"authentication_credentials\".\"retired_at\" IS NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"authentication_credentials\".\"retired_at\" IS NULL",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "authentication_credentials_user_id_users_id_fk": {
           "name": "authentication_credentials_user_id_users_id_fk",
           "tableFrom": "authentication_credentials",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -2471,9 +2483,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "avatar_change_events_agent_idx": {
           "name": "avatar_change_events_agent_idx",
@@ -2492,9 +2504,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "avatar_change_events_source_idx": {
           "name": "avatar_change_events_source_idx",
@@ -2513,50 +2525,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "avatar_change_events_user_id_users_id_fk": {
           "name": "avatar_change_events_user_id_users_id_fk",
           "tableFrom": "avatar_change_events",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "avatar_change_events_generation_request_id_avatar_generation_requests_id_fk": {
           "name": "avatar_change_events_generation_request_id_avatar_generation_requests_id_fk",
           "tableFrom": "avatar_change_events",
-          "tableTo": "avatar_generation_requests",
           "columnsFrom": [
             "generation_request_id"
           ],
+          "tableTo": "avatar_generation_requests",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "avatar_change_events_actor_user_id_users_id_fk": {
           "name": "avatar_change_events_actor_user_id_users_id_fk",
           "tableFrom": "avatar_change_events",
-          "tableTo": "users",
           "columnsFrom": [
             "actor_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2703,9 +2715,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "avatar_generation_requests_agent_idx": {
           "name": "avatar_generation_requests_agent_idx",
@@ -2724,9 +2736,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "avatar_generation_requests_status_idx": {
           "name": "avatar_generation_requests_status_idx",
@@ -2745,9 +2757,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "avatar_generation_requests_completion_active_unique": {
           "name": "avatar_generation_requests_completion_active_unique",
@@ -2772,25 +2784,25 @@
             }
           ],
           "isUnique": true,
-          "where": "\"avatar_generation_requests\".\"status\" IN ('queued', 'processing', 'completed')",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"avatar_generation_requests\".\"status\" IN ('queued', 'processing', 'completed')",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "avatar_generation_requests_user_id_users_id_fk": {
           "name": "avatar_generation_requests_user_id_users_id_fk",
           "tableFrom": "avatar_generation_requests",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -2926,9 +2938,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "competition_rating_events_game_idx": {
           "name": "competition_rating_events_game_idx",
@@ -2941,73 +2953,73 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "competition_rating_events_agent_profile_id_agent_profiles_id_fk": {
           "name": "competition_rating_events_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "competition_rating_events",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_rating_events_agent_revision_id_agent_revisions_id_fk": {
           "name": "competition_rating_events_agent_revision_id_agent_revisions_id_fk",
           "tableFrom": "competition_rating_events",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "agent_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_rating_events_season_id_seasons_id_fk": {
           "name": "competition_rating_events_season_id_seasons_id_fk",
           "tableFrom": "competition_rating_events",
-          "tableTo": "seasons",
           "columnsFrom": [
             "season_id"
           ],
+          "tableTo": "seasons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_rating_events_game_id_games_id_fk": {
           "name": "competition_rating_events_game_id_games_id_fk",
           "tableFrom": "competition_rating_events",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "competition_rating_events_idempotency_key_unique": {
           "name": "competition_rating_events_idempotency_key_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "idempotency_key"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -3103,9 +3115,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "competition_rating_snapshots_game_idx": {
           "name": "competition_rating_snapshots_game_idx",
@@ -3118,50 +3130,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "competition_rating_snapshots_game_id_games_id_fk": {
           "name": "competition_rating_snapshots_game_id_games_id_fk",
           "tableFrom": "competition_rating_snapshots",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_rating_snapshots_agent_profile_id_agent_profiles_id_fk": {
           "name": "competition_rating_snapshots_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "competition_rating_snapshots",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_rating_snapshots_agent_revision_id_agent_revisions_id_fk": {
           "name": "competition_rating_snapshots_agent_revision_id_agent_revisions_id_fk",
           "tableFrom": "competition_rating_snapshots",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "agent_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -3232,15 +3244,15 @@
         "competition_receipt_evidence_receipt_id_competition_receipts_id_fk": {
           "name": "competition_receipt_evidence_receipt_id_competition_receipts_id_fk",
           "tableFrom": "competition_receipt_evidence",
-          "tableTo": "competition_receipts",
           "columnsFrom": [
             "receipt_id"
           ],
+          "tableTo": "competition_receipts",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -3396,9 +3408,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "competition_receipts_season_agent_idx": {
           "name": "competition_receipts_season_agent_idx",
@@ -3423,9 +3435,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "competition_receipts_season_owner_idx": {
           "name": "competition_receipts_season_owner_idx",
@@ -3450,9 +3462,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "competition_receipts_game_idx": {
           "name": "competition_receipts_game_idx",
@@ -3465,76 +3477,76 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "competition_receipts_season_id_seasons_id_fk": {
           "name": "competition_receipts_season_id_seasons_id_fk",
           "tableFrom": "competition_receipts",
-          "tableTo": "seasons",
           "columnsFrom": [
             "season_id"
           ],
+          "tableTo": "seasons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_receipts_game_id_games_id_fk": {
           "name": "competition_receipts_game_id_games_id_fk",
           "tableFrom": "competition_receipts",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_receipts_owner_id_users_id_fk": {
           "name": "competition_receipts_owner_id_users_id_fk",
           "tableFrom": "competition_receipts",
-          "tableTo": "users",
           "columnsFrom": [
             "owner_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_receipts_agent_profile_id_agent_profiles_id_fk": {
           "name": "competition_receipts_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "competition_receipts",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "competition_receipts_agent_revision_id_agent_revisions_id_fk": {
           "name": "competition_receipts_agent_revision_id_agent_revisions_id_fk",
           "tableFrom": "competition_receipts",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "agent_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -3602,38 +3614,38 @@
         "free_game_queue_user_id_users_id_fk": {
           "name": "free_game_queue_user_id_users_id_fk",
           "tableFrom": "free_game_queue",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "free_game_queue_agent_profile_id_agent_profiles_id_fk": {
           "name": "free_game_queue_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "free_game_queue",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "free_game_queue_user_id_unique": {
           "name": "free_game_queue_user_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "user_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -3687,38 +3699,38 @@
         "free_queue_prompt_suppressions_user_id_users_id_fk": {
           "name": "free_queue_prompt_suppressions_user_id_users_id_fk",
           "tableFrom": "free_queue_prompt_suppressions",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "free_queue_prompt_suppressions_season_id_seasons_id_fk": {
           "name": "free_queue_prompt_suppressions_season_id_seasons_id_fk",
           "tableFrom": "free_queue_prompt_suppressions",
-          "tableTo": "seasons",
           "columnsFrom": [
             "season_id"
           ],
+          "tableTo": "seasons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "free_queue_prompt_suppressions_user_id_unique": {
           "name": "free_queue_prompt_suppressions_user_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "user_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -3799,38 +3811,38 @@
         "free_track_ratings_agent_profile_id_agent_profiles_id_fk": {
           "name": "free_track_ratings_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "free_track_ratings",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "free_track_ratings_user_id_users_id_fk": {
           "name": "free_track_ratings_user_id_users_id_fk",
           "tableFrom": "free_track_ratings",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "free_track_ratings_agent_profile_id_unique": {
           "name": "free_track_ratings_agent_profile_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "agent_profile_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -3959,9 +3971,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_checkpoints_game_id_idx": {
           "name": "game_checkpoints_game_id_idx",
@@ -3974,67 +3986,67 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_checkpoints_game_id_games_id_fk": {
           "name": "game_checkpoints_game_id_games_id_fk",
           "tableFrom": "game_checkpoints",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_checkpoints_owner_epoch_game_run_owners_owner_epoch_fk": {
           "name": "game_checkpoints_owner_epoch_game_run_owners_owner_epoch_fk",
           "tableFrom": "game_checkpoints",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_checkpoints_game_owner_fk": {
           "name": "game_checkpoints_game_owner_fk",
           "tableFrom": "game_checkpoints",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "game_id",
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "game_id",
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_checkpoints_event_boundary_fk": {
           "name": "game_checkpoints_event_boundary_fk",
           "tableFrom": "game_checkpoints",
-          "tableTo": "game_events",
           "columnsFrom": [
             "game_id",
             "last_event_sequence"
           ],
+          "tableTo": "game_events",
           "columnsTo": [
             "game_id",
             "sequence"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4136,9 +4148,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cognitive_artifact_reads_game_id_idx": {
           "name": "game_cognitive_artifact_reads_game_id_idx",
@@ -4151,9 +4163,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cognitive_artifact_reads_accessor_user_id_idx": {
           "name": "game_cognitive_artifact_reads_accessor_user_id_idx",
@@ -4166,63 +4178,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_cognitive_artifact_reads_game_id_games_id_fk": {
           "name": "game_cognitive_artifact_reads_game_id_games_id_fk",
           "tableFrom": "game_cognitive_artifact_reads",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cognitive_artifact_reads_actor_player_id_game_players_id_fk": {
           "name": "game_cognitive_artifact_reads_actor_player_id_game_players_id_fk",
           "tableFrom": "game_cognitive_artifact_reads",
-          "tableTo": "game_players",
           "columnsFrom": [
             "actor_player_id"
           ],
+          "tableTo": "game_players",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cognitive_artifact_reads_accessor_user_id_users_id_fk": {
           "name": "game_cognitive_artifact_reads_accessor_user_id_users_id_fk",
           "tableFrom": "game_cognitive_artifact_reads",
-          "tableTo": "users",
           "columnsFrom": [
             "accessor_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "cognitive_artifact_reads_artifact_fk": {
           "name": "cognitive_artifact_reads_artifact_fk",
           "tableFrom": "game_cognitive_artifact_reads",
-          "tableTo": "game_cognitive_artifacts",
           "columnsFrom": [
             "artifact_id"
           ],
+          "tableTo": "game_cognitive_artifacts",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4406,9 +4418,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cognitive_artifacts_game_phase_round_idx": {
           "name": "game_cognitive_artifacts_game_phase_round_idx",
@@ -4433,9 +4445,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cognitive_artifacts_game_action_idx": {
           "name": "game_cognitive_artifacts_game_action_idx",
@@ -4454,9 +4466,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cognitive_artifacts_event_sequence_idx": {
           "name": "game_cognitive_artifacts_event_sequence_idx",
@@ -4475,9 +4487,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cognitive_artifacts_game_decision_id_idx": {
           "name": "game_cognitive_artifacts_game_decision_id_idx",
@@ -4496,78 +4508,78 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_cognitive_artifacts_game_id_games_id_fk": {
           "name": "game_cognitive_artifacts_game_id_games_id_fk",
           "tableFrom": "game_cognitive_artifacts",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cognitive_artifacts_actor_player_id_game_players_id_fk": {
           "name": "game_cognitive_artifacts_actor_player_id_game_players_id_fk",
           "tableFrom": "game_cognitive_artifacts",
-          "tableTo": "game_players",
           "columnsFrom": [
             "actor_player_id"
           ],
+          "tableTo": "game_players",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cognitive_artifacts_actor_user_id_users_id_fk": {
           "name": "game_cognitive_artifacts_actor_user_id_users_id_fk",
           "tableFrom": "game_cognitive_artifacts",
-          "tableTo": "users",
           "columnsFrom": [
             "actor_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cognitive_artifacts_actor_agent_profile_id_agent_profiles_id_fk": {
           "name": "game_cognitive_artifacts_actor_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "game_cognitive_artifacts",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "actor_agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cognitive_artifacts_event_boundary_fk": {
           "name": "game_cognitive_artifacts_event_boundary_fk",
           "tableFrom": "game_cognitive_artifacts",
-          "tableTo": "game_events",
           "columnsFrom": [
             "game_id",
             "event_sequence"
           ],
+          "tableTo": "game_events",
           "columnsTo": [
             "game_id",
             "sequence"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -4721,9 +4733,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_completion_settlement_attempts_settlement_id_idx": {
           "name": "game_completion_settlement_attempts_settlement_id_idx",
@@ -4736,9 +4748,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_completion_settlement_attempts_request_attempt_id_unique": {
           "name": "game_completion_settlement_attempts_request_attempt_id_unique",
@@ -4751,65 +4763,65 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_completion_settlement_attempts_game_id_games_id_fk": {
           "name": "game_completion_settlement_attempts_game_id_games_id_fk",
           "tableFrom": "game_completion_settlement_attempts",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "game_completion_settlement_attempts_actor_user_id_users_id_fk": {
           "name": "game_completion_settlement_attempts_actor_user_id_users_id_fk",
           "tableFrom": "game_completion_settlement_attempts",
-          "tableTo": "users",
           "columnsFrom": [
             "actor_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_completion_settlement_attempts_request_attempt_fk": {
           "name": "game_completion_settlement_attempts_request_attempt_fk",
           "tableFrom": "game_completion_settlement_attempts",
-          "tableTo": "game_completion_settlement_attempts",
           "columnsFrom": [
             "request_attempt_id"
           ],
+          "tableTo": "game_completion_settlement_attempts",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "set null"
         },
         "game_completion_settlement_attempts_game_settlement_fk": {
           "name": "game_completion_settlement_attempts_game_settlement_fk",
           "tableFrom": "game_completion_settlement_attempts",
-          "tableTo": "game_completion_settlements",
           "columnsFrom": [
             "game_id",
             "settlement_id"
           ],
+          "tableTo": "game_completion_settlements",
           "columnsTo": [
             "game_id",
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
@@ -4957,9 +4969,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_completion_settlements_state_idx": {
           "name": "game_completion_settlements_state_idx",
@@ -4978,65 +4990,65 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_completion_settlements_game_id_games_id_fk": {
           "name": "game_completion_settlements_game_id_games_id_fk",
           "tableFrom": "game_completion_settlements",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "game_completion_settlements_game_owner_fk": {
           "name": "game_completion_settlements_game_owner_fk",
           "tableFrom": "game_completion_settlements",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "game_id",
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "game_id",
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_completion_settlements_event_boundary_fk": {
           "name": "game_completion_settlements_event_boundary_fk",
           "tableFrom": "game_completion_settlements",
-          "tableTo": "game_events",
           "columnsFrom": [
             "game_id",
             "final_event_sequence"
           ],
+          "tableTo": "game_events",
           "columnsTo": [
             "game_id",
             "sequence"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "game_completion_settlements_game_id_id_unique": {
           "name": "game_completion_settlements_game_id_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "game_id",
             "id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -5142,9 +5154,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cost_accounting_audit_actor_idx": {
           "name": "game_cost_accounting_audit_actor_idx",
@@ -5163,37 +5175,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_cost_accounting_audit_events_game_id_games_id_fk": {
           "name": "game_cost_accounting_audit_events_game_id_games_id_fk",
           "tableFrom": "game_cost_accounting_audit_events",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cost_accounting_audit_events_actor_user_id_users_id_fk": {
           "name": "game_cost_accounting_audit_events_actor_user_id_users_id_fk",
           "tableFrom": "game_cost_accounting_audit_events",
-          "tableTo": "users",
           "columnsFrom": [
             "actor_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5336,37 +5348,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_cost_reconciliations_game_id_games_id_fk": {
           "name": "game_cost_reconciliations_game_id_games_id_fk",
           "tableFrom": "game_cost_reconciliations",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cost_reconciliations_created_by_user_id_users_id_fk": {
           "name": "game_cost_reconciliations_created_by_user_id_users_id_fk",
           "tableFrom": "game_cost_reconciliations",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5568,9 +5580,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cost_rollups_game_total_unique": {
           "name": "game_cost_rollups_game_total_unique",
@@ -5583,10 +5595,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"game_cost_rollups\".\"rollup_scope\" = 'game'",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"game_cost_rollups\".\"rollup_scope\" = 'game'",
+          "concurrently": false
         },
         "game_cost_rollups_game_id_idx": {
           "name": "game_cost_rollups_game_id_idx",
@@ -5599,9 +5611,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_cost_rollups_owner_epoch_idx": {
           "name": "game_cost_rollups_owner_epoch_idx",
@@ -5614,52 +5626,52 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_cost_rollups_game_id_games_id_fk": {
           "name": "game_cost_rollups_game_id_games_id_fk",
           "tableFrom": "game_cost_rollups",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cost_rollups_owner_epoch_game_run_owners_owner_epoch_fk": {
           "name": "game_cost_rollups_owner_epoch_game_run_owners_owner_epoch_fk",
           "tableFrom": "game_cost_rollups",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_cost_rollups_game_owner_fk": {
           "name": "game_cost_rollups_game_owner_fk",
           "tableFrom": "game_cost_rollups",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "game_id",
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "game_id",
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5779,9 +5791,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_events_game_id_idx": {
           "name": "game_events_game_id_idx",
@@ -5794,9 +5806,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_events_event_type_idx": {
           "name": "game_events_event_type_idx",
@@ -5809,52 +5821,52 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_events_game_id_games_id_fk": {
           "name": "game_events_game_id_games_id_fk",
           "tableFrom": "game_events",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_events_owner_epoch_game_run_owners_owner_epoch_fk": {
           "name": "game_events_owner_epoch_game_run_owners_owner_epoch_fk",
           "tableFrom": "game_events",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_events_game_owner_fk": {
           "name": "game_events_game_owner_fk",
           "tableFrom": "game_events",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "game_id",
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "game_id",
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -5958,9 +5970,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_evidence_manifest_reads_game_id_idx": {
           "name": "game_evidence_manifest_reads_game_id_idx",
@@ -5973,50 +5985,50 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_evidence_manifest_reads_game_id_games_id_fk": {
           "name": "game_evidence_manifest_reads_game_id_games_id_fk",
           "tableFrom": "game_evidence_manifest_reads",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_evidence_manifest_reads_accessor_user_id_users_id_fk": {
           "name": "game_evidence_manifest_reads_accessor_user_id_users_id_fk",
           "tableFrom": "game_evidence_manifest_reads",
-          "tableTo": "users",
           "columnsFrom": [
             "accessor_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "evidence_reads_manifest_fk": {
           "name": "evidence_reads_manifest_fk",
           "tableFrom": "game_evidence_manifest_reads",
-          "tableTo": "game_evidence_manifests",
           "columnsFrom": [
             "manifest_id"
           ],
+          "tableTo": "game_evidence_manifests",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6153,9 +6165,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_evidence_manifests_event_sequence_idx": {
           "name": "game_evidence_manifests_event_sequence_idx",
@@ -6174,9 +6186,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_evidence_manifests_game_owner_decision_id_idx": {
           "name": "game_evidence_manifests_game_owner_decision_id_idx",
@@ -6201,67 +6213,67 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_evidence_manifests_game_id_games_id_fk": {
           "name": "game_evidence_manifests_game_id_games_id_fk",
           "tableFrom": "game_evidence_manifests",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_evidence_owner_epoch_fk": {
           "name": "game_evidence_owner_epoch_fk",
           "tableFrom": "game_evidence_manifests",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_evidence_manifests_game_owner_fk": {
           "name": "game_evidence_manifests_game_owner_fk",
           "tableFrom": "game_evidence_manifests",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "game_id",
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "game_id",
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_evidence_manifests_event_boundary_fk": {
           "name": "game_evidence_manifests_event_boundary_fk",
           "tableFrom": "game_evidence_manifests",
-          "tableTo": "game_events",
           "columnsFrom": [
             "game_id",
             "event_sequence"
           ],
+          "tableTo": "game_events",
           "columnsTo": [
             "game_id",
             "sequence"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -6353,9 +6365,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_players_user_id_idx": {
           "name": "game_players_user_id_idx",
@@ -6368,9 +6380,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_players_agent_profile_id_idx": {
           "name": "game_players_agent_profile_id_idx",
@@ -6383,9 +6395,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_players_agent_revision_id_idx": {
           "name": "game_players_agent_revision_id_idx",
@@ -6398,9 +6410,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_players_agent_profile_game_id_idx": {
           "name": "game_players_agent_profile_game_id_idx",
@@ -6419,9 +6431,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_players_user_game_id_idx": {
           "name": "game_players_user_game_id_idx",
@@ -6440,63 +6452,63 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_players_game_id_games_id_fk": {
           "name": "game_players_game_id_games_id_fk",
           "tableFrom": "game_players",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_players_user_id_users_id_fk": {
           "name": "game_players_user_id_users_id_fk",
           "tableFrom": "game_players",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_players_agent_profile_id_agent_profiles_id_fk": {
           "name": "game_players_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "game_players",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_players_agent_revision_id_agent_revisions_id_fk": {
           "name": "game_players_agent_revision_id_agent_revisions_id_fk",
           "tableFrom": "game_players",
-          "tableTo": "agent_revisions",
           "columnsFrom": [
             "agent_revision_id"
           ],
+          "tableTo": "agent_revisions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -6719,24 +6731,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_postgame_media_game_id_games_id_fk": {
           "name": "game_postgame_media_game_id_games_id_fk",
           "tableFrom": "game_postgame_media",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -6868,9 +6880,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_postgame_media_audit_actor_idx": {
           "name": "game_postgame_media_audit_actor_idx",
@@ -6889,37 +6901,37 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_postgame_media_audit_events_game_id_games_id_fk": {
           "name": "game_postgame_media_audit_events_game_id_games_id_fk",
           "tableFrom": "game_postgame_media_audit_events",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_postgame_media_audit_events_actor_user_id_users_id_fk": {
           "name": "game_postgame_media_audit_events_actor_user_id_users_id_fk",
           "tableFrom": "game_postgame_media_audit_events",
-          "tableTo": "users",
           "columnsFrom": [
             "actor_user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7031,37 +7043,37 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_prompt_reuse_applied_sources_game_id_games_id_fk": {
           "name": "game_prompt_reuse_applied_sources_game_id_games_id_fk",
           "tableFrom": "game_prompt_reuse_applied_sources",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_prompt_reuse_applied_sources_owner_epoch_game_run_owners_owner_epoch_fk": {
           "name": "game_prompt_reuse_applied_sources_owner_epoch_game_run_owners_owner_epoch_fk",
           "tableFrom": "game_prompt_reuse_applied_sources",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7174,37 +7186,37 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_prompt_reuse_rollups_game_id_games_id_fk": {
           "name": "game_prompt_reuse_rollups_game_id_games_id_fk",
           "tableFrom": "game_prompt_reuse_rollups",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_prompt_reuse_rollups_owner_epoch_game_run_owners_owner_epoch_fk": {
           "name": "game_prompt_reuse_rollups_owner_epoch_game_run_owners_owner_epoch_fk",
           "tableFrom": "game_prompt_reuse_rollups",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7518,9 +7530,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_provider_spend_entries_trace_manifest_unique": {
           "name": "game_provider_spend_entries_trace_manifest_unique",
@@ -7533,10 +7545,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"game_provider_spend_entries\".\"trace_manifest_id\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"game_provider_spend_entries\".\"trace_manifest_id\" IS NOT NULL",
+          "concurrently": false
         },
         "game_provider_spend_entries_game_id_idx": {
           "name": "game_provider_spend_entries_game_id_idx",
@@ -7555,9 +7567,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_provider_spend_entries_owner_epoch_idx": {
           "name": "game_provider_spend_entries_owner_epoch_idx",
@@ -7570,9 +7582,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_provider_spend_entries_trace_manifest_idx": {
           "name": "game_provider_spend_entries_trace_manifest_idx",
@@ -7585,9 +7597,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_provider_spend_entries_cost_source_idx": {
           "name": "game_provider_spend_entries_cost_source_idx",
@@ -7600,9 +7612,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_provider_spend_entries_capture_source_idx": {
           "name": "game_provider_spend_entries_capture_source_idx",
@@ -7615,80 +7627,80 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_provider_spend_entries_game_id_games_id_fk": {
           "name": "game_provider_spend_entries_game_id_games_id_fk",
           "tableFrom": "game_provider_spend_entries",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_provider_spend_entries_owner_epoch_game_run_owners_owner_epoch_fk": {
           "name": "game_provider_spend_entries_owner_epoch_game_run_owners_owner_epoch_fk",
           "tableFrom": "game_provider_spend_entries",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_provider_spend_entries_trace_manifest_id_game_evidence_manifests_id_fk": {
           "name": "game_provider_spend_entries_trace_manifest_id_game_evidence_manifests_id_fk",
           "tableFrom": "game_provider_spend_entries",
-          "tableTo": "game_evidence_manifests",
           "columnsFrom": [
             "trace_manifest_id"
           ],
+          "tableTo": "game_evidence_manifests",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_provider_spend_entries_game_owner_fk": {
           "name": "game_provider_spend_entries_game_owner_fk",
           "tableFrom": "game_provider_spend_entries",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "game_id",
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "game_id",
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "game_provider_spend_entries_event_boundary_fk": {
           "name": "game_provider_spend_entries_event_boundary_fk",
           "tableFrom": "game_provider_spend_entries",
-          "tableTo": "game_events",
           "columnsFrom": [
             "game_id",
             "event_sequence"
           ],
+          "tableTo": "game_events",
           "columnsTo": [
             "game_id",
             "sequence"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -7777,25 +7789,25 @@
         "game_results_game_id_games_id_fk": {
           "name": "game_results_game_id_games_id_fk",
           "tableFrom": "game_results",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "game_results_game_id_unique": {
           "name": "game_results_game_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "game_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -7922,9 +7934,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_run_owners_game_owner_epoch_unique": {
           "name": "game_run_owners_game_owner_epoch_unique",
@@ -7943,9 +7955,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_run_owners_one_active_per_game": {
           "name": "game_run_owners_one_active_per_game",
@@ -7958,10 +7970,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"game_run_owners\".\"status\" = 'active'",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"game_run_owners\".\"status\" = 'active'",
+          "concurrently": false
         },
         "game_run_owners_game_id_idx": {
           "name": "game_run_owners_game_id_idx",
@@ -7974,24 +7986,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_run_owners_game_id_games_id_fk": {
           "name": "game_run_owners_game_id_games_id_fk",
           "tableFrom": "game_run_owners",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8118,30 +8130,30 @@
         "game_transcript_states_game_id_games_id_fk": {
           "name": "game_transcript_states_game_id_games_id_fk",
           "tableFrom": "game_transcript_states",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "game_transcript_states_game_owner_fk": {
           "name": "game_transcript_states_game_owner_fk",
           "tableFrom": "game_transcript_states",
-          "tableTo": "game_run_owners",
           "columnsFrom": [
             "game_id",
             "owner_epoch"
           ],
+          "tableTo": "game_run_owners",
           "columnsTo": [
             "game_id",
             "owner_epoch"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8442,9 +8454,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "game_watch_state_summaries_source_idx": {
           "name": "game_watch_state_summaries_source_idx",
@@ -8457,24 +8469,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "game_watch_state_summaries_game_id_games_id_fk": {
           "name": "game_watch_state_summaries_game_id_games_id_fk",
           "tableFrom": "game_watch_state_summaries",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -8677,9 +8689,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "games_season_id_status_idx": {
           "name": "games_season_id_status_idx",
@@ -8698,9 +8710,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "games_status_ended_at_idx": {
           "name": "games_status_ended_at_idx",
@@ -8719,9 +8731,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "games_status_ended_created_idx": {
           "name": "games_status_ended_created_idx",
@@ -8746,9 +8758,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "games_free_draw_request_key_unique": {
           "name": "games_free_draw_request_key_unique",
@@ -8761,48 +8773,48 @@
             }
           ],
           "isUnique": true,
-          "where": "\"games\".\"track_type\" = 'free' AND \"games\".\"free_draw_request_key\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"games\".\"track_type\" = 'free' AND \"games\".\"free_draw_request_key\" IS NOT NULL",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "games_season_id_seasons_id_fk": {
           "name": "games_season_id_seasons_id_fk",
           "tableFrom": "games",
-          "tableTo": "seasons",
           "columnsFrom": [
             "season_id"
           ],
+          "tableTo": "seasons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "games_created_by_id_users_id_fk": {
           "name": "games_created_by_id_users_id_fk",
           "tableFrom": "games",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "games_slug_unique": {
           "name": "games_slug_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "slug"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -8865,38 +8877,38 @@
         "invite_codes_owner_id_users_id_fk": {
           "name": "invite_codes_owner_id_users_id_fk",
           "tableFrom": "invite_codes",
-          "tableTo": "users",
           "columnsFrom": [
             "owner_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         },
         "invite_codes_used_by_id_users_id_fk": {
           "name": "invite_codes_used_by_id_users_id_fk",
           "tableFrom": "invite_codes",
-          "tableTo": "users",
           "columnsFrom": [
             "used_by_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "invite_codes_code_unique": {
           "name": "invite_codes_code_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "code"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -9011,9 +9023,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_access_tokens_user_id_idx": {
           "name": "mcp_oauth_access_tokens_user_id_idx",
@@ -9026,9 +9038,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_access_tokens_resource_uri_idx": {
           "name": "mcp_oauth_access_tokens_resource_uri_idx",
@@ -9041,9 +9053,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_access_tokens_refresh_token_family_id_idx": {
           "name": "mcp_oauth_access_tokens_refresh_token_family_id_idx",
@@ -9056,9 +9068,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_access_tokens_expires_at_idx": {
           "name": "mcp_oauth_access_tokens_expires_at_idx",
@@ -9071,34 +9083,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "mcp_oauth_access_tokens_user_id_users_id_fk": {
           "name": "mcp_oauth_access_tokens_user_id_users_id_fk",
           "tableFrom": "mcp_oauth_access_tokens",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "mcp_oauth_access_tokens_token_hash_unique": {
           "name": "mcp_oauth_access_tokens_token_hash_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "token_hash"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -9214,9 +9226,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_authorization_codes_user_id_idx": {
           "name": "mcp_oauth_authorization_codes_user_id_idx",
@@ -9229,9 +9241,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_authorization_codes_resource_uri_idx": {
           "name": "mcp_oauth_authorization_codes_resource_uri_idx",
@@ -9244,9 +9256,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_authorization_codes_expires_at_idx": {
           "name": "mcp_oauth_authorization_codes_expires_at_idx",
@@ -9259,34 +9271,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "mcp_oauth_authorization_codes_user_id_users_id_fk": {
           "name": "mcp_oauth_authorization_codes_user_id_users_id_fk",
           "tableFrom": "mcp_oauth_authorization_codes",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "mcp_oauth_authorization_codes_code_hash_unique": {
           "name": "mcp_oauth_authorization_codes_code_hash_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "code_hash"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -9393,9 +9405,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -9528,9 +9540,9 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_refresh_tokens_token_family_id_idx": {
           "name": "mcp_oauth_refresh_tokens_token_family_id_idx",
@@ -9543,9 +9555,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_refresh_tokens_user_id_idx": {
           "name": "mcp_oauth_refresh_tokens_user_id_idx",
@@ -9558,9 +9570,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_refresh_tokens_resource_uri_idx": {
           "name": "mcp_oauth_refresh_tokens_resource_uri_idx",
@@ -9573,9 +9585,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "mcp_oauth_refresh_tokens_expires_at_idx": {
           "name": "mcp_oauth_refresh_tokens_expires_at_idx",
@@ -9588,34 +9600,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "mcp_oauth_refresh_tokens_user_id_users_id_fk": {
           "name": "mcp_oauth_refresh_tokens_user_id_users_id_fk",
           "tableFrom": "mcp_oauth_refresh_tokens",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "mcp_oauth_refresh_tokens_token_hash_unique": {
           "name": "mcp_oauth_refresh_tokens_token_hash_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "token_hash"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -9671,10 +9683,10 @@
       "uniqueConstraints": {
         "permissions_name_unique": {
           "name": "permissions_name_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "name"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -9703,28 +9715,28 @@
         "role_permissions_role_id_roles_id_fk": {
           "name": "role_permissions_role_id_roles_id_fk",
           "tableFrom": "role_permissions",
-          "tableTo": "roles",
           "columnsFrom": [
             "role_id"
           ],
+          "tableTo": "roles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         },
         "role_permissions_permission_id_permissions_id_fk": {
           "name": "role_permissions_permission_id_permissions_id_fk",
           "tableFrom": "role_permissions",
-          "tableTo": "permissions",
           "columnsFrom": [
             "permission_id"
           ],
+          "tableTo": "permissions",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {
@@ -9784,10 +9796,10 @@
       "uniqueConstraints": {
         "roles_name_unique": {
           "name": "roles_name_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "name"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -9877,64 +9889,64 @@
         "season_honors_season_id_seasons_id_fk": {
           "name": "season_honors_season_id_seasons_id_fk",
           "tableFrom": "season_honors",
-          "tableTo": "seasons",
           "columnsFrom": [
             "season_id"
           ],
+          "tableTo": "seasons",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "season_honors_agent_champion_agent_profile_id_agent_profiles_id_fk": {
           "name": "season_honors_agent_champion_agent_profile_id_agent_profiles_id_fk",
           "tableFrom": "season_honors",
-          "tableTo": "agent_profiles",
           "columnsFrom": [
             "agent_champion_agent_profile_id"
           ],
+          "tableTo": "agent_profiles",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "season_honors_agent_champion_owner_id_users_id_fk": {
           "name": "season_honors_agent_champion_owner_id_users_id_fk",
           "tableFrom": "season_honors",
-          "tableTo": "users",
           "columnsFrom": [
             "agent_champion_owner_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         },
         "season_honors_architect_champion_owner_id_users_id_fk": {
           "name": "season_honors_architect_champion_owner_id_users_id_fk",
           "tableFrom": "season_honors",
-          "tableTo": "users",
           "columnsFrom": [
             "architect_champion_owner_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "season_honors_season_id_unique": {
           "name": "season_honors_season_id_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "season_id"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -10033,10 +10045,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"seasons\".\"status\" = 'active'",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"seasons\".\"status\" = 'active'",
+          "concurrently": false
         },
         "seasons_status_created_idx": {
           "name": "seasons_status_created_idx",
@@ -10055,34 +10067,34 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "seasons_created_by_id_users_id_fk": {
           "name": "seasons_created_by_id_users_id_fk",
           "tableFrom": "seasons",
-          "tableTo": "users",
           "columnsFrom": [
             "created_by_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "seasons_slug_unique": {
           "name": "seasons_slug_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "slug"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -10243,10 +10255,10 @@
             }
           ],
           "isUnique": true,
-          "where": "\"transcripts\".\"entry_sequence\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"transcripts\".\"entry_sequence\" IS NOT NULL",
+          "concurrently": false
         },
         "transcripts_game_id_entry_sequence_idx": {
           "name": "transcripts_game_id_entry_sequence_idx",
@@ -10265,10 +10277,10 @@
             }
           ],
           "isUnique": false,
-          "where": "\"transcripts\".\"entry_sequence\" IS NOT NULL",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"transcripts\".\"entry_sequence\" IS NOT NULL",
+          "concurrently": false
         },
         "transcripts_game_id_timestamp_id_idx": {
           "name": "transcripts_game_id_timestamp_id_idx",
@@ -10293,9 +10305,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "transcripts_audience_player_ids_gin_idx": {
           "name": "transcripts_audience_player_ids_gin_idx",
@@ -10308,9 +10320,9 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "gin",
-          "with": {}
+          "concurrently": false
         },
         "transcripts_speaker_player_id_idx": {
           "name": "transcripts_speaker_player_id_idx",
@@ -10329,24 +10341,24 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "transcripts_game_id_games_id_fk": {
           "name": "transcripts_game_id_games_id_fk",
           "tableFrom": "transcripts",
-          "tableTo": "games",
           "columnsFrom": [
             "game_id"
           ],
+          "tableTo": "games",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "no action"
         }
       },
       "compositePrimaryKeys": {},
@@ -10471,24 +10483,24 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         },
         "users_handle_lower_unique": {
           "name": "users_handle_lower_unique",
           "columns": [
             {
               "expression": "lower(\"handle\")",
-              "asc": true,
               "isExpression": true,
+              "asc": true,
               "nulls": "last"
             }
           ],
           "isUnique": true,
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "concurrently": false
         }
       },
       "foreignKeys": {},
@@ -10496,10 +10508,10 @@
       "uniqueConstraints": {
         "users_wallet_address_unique": {
           "name": "users_wallet_address_unique",
-          "nullsNotDistinct": false,
           "columns": [
             "wallet_address"
-          ]
+          ],
+          "nullsNotDistinct": false
         }
       },
       "policies": {},
@@ -10580,25 +10592,25 @@
             }
           ],
           "isUnique": true,
-          "where": "\"verified_email_claims\".\"state\" = 'active'",
-          "concurrently": false,
+          "with": {},
           "method": "btree",
-          "with": {}
+          "where": "\"verified_email_claims\".\"state\" = 'active'",
+          "concurrently": false
         }
       },
       "foreignKeys": {
         "verified_email_claims_user_id_users_id_fk": {
           "name": "verified_email_claims_user_id_users_id_fk",
           "tableFrom": "verified_email_claims",
-          "tableTo": "users",
           "columnsFrom": [
             "user_id"
           ],
+          "tableTo": "users",
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
+          "onUpdate": "no action",
+          "onDelete": "restrict"
         }
       },
       "compositePrimaryKeys": {},
@@ -10623,10 +10635,10 @@
   },
   "enums": {},
   "schemas": {},
+  "views": {},
   "sequences": {},
   "roles": {},
   "policies": {},
-  "views": {},
   "_meta": {
     "columns": {},
     "schemas": {},

@@ -47,6 +47,101 @@ describe("owner learning contracts", () => {
     expect(result.recommendations).toHaveLength(1);
   });
 
+  test("canonicalizes proposal provenance before persisting or fingerprinting it", () => {
+    const result = parseOwnerLearningReviewResult({
+      diagnosis: "The agent waits too long to convert trust into a voting plan.",
+      analysisTrack: "evidence_rich",
+      recommendations: [{
+        title: "Make the voting plan explicit",
+        disposition: "change",
+        confidence: "high",
+        rationale: "The selected game shows trust without a concrete commitment.",
+        evidenceRefs: [{
+          kind: "canonical_event",
+          gameId: "game-1",
+          coordinate: "round:1:vote.cast:1",
+          sourceHash: "sha256:a",
+          sourceVersion: "v1",
+        }],
+      }],
+      proposal: {
+        field: "strategyStyle",
+        before: " \n Build trust before committing.\t",
+        after: "\tBuild trust, then name a preferred target and fallback. \n",
+      },
+    });
+
+    expect(result.proposal).toEqual({
+      field: "strategyStyle",
+      before: "Build trust before committing.",
+      after: "Build trust, then name a preferred target and fallback.",
+    });
+    expect(fingerprintOwnerLearningValue({ reviewId: "review-1", proposal: result.proposal })).toBe(
+      fingerprintOwnerLearningValue({
+        reviewId: "review-1",
+        proposal: {
+          field: "strategyStyle",
+          before: "Build trust before committing.",
+          after: "Build trust, then name a preferred target and fallback.",
+        },
+      }),
+    );
+  });
+
+  test("applies the proposal length limit after trimming transport whitespace", () => {
+    const before = "b".repeat(2_000);
+    const after = "a".repeat(2_000);
+    const result = parseOwnerLearningReviewResult({
+      diagnosis: "Diagnosis",
+      analysisTrack: "evidence_rich",
+      recommendations: [{
+        title: "Recommendation",
+        disposition: "change",
+        confidence: "medium",
+        rationale: "Rationale",
+        evidenceRefs: [{
+          kind: "canonical_event",
+          gameId: "game-1",
+          coordinate: "event:1",
+          sourceHash: "sha256:a",
+          sourceVersion: "v1",
+        }],
+      }],
+      proposal: {
+        field: "strategyStyle",
+        before: ` \n${before}\t`,
+        after: `\t${after}\n `,
+      },
+    });
+
+    expect(result.proposal).toEqual({ field: "strategyStyle", before, after });
+  });
+
+  test("rejects a proposal whose only change is whitespace", () => {
+    expect(() => parseOwnerLearningReviewResult({
+      diagnosis: "Diagnosis",
+      analysisTrack: "evidence_rich",
+      recommendations: [{
+        title: "Recommendation",
+        disposition: "change",
+        confidence: "medium",
+        rationale: "Rationale",
+        evidenceRefs: [{
+          kind: "canonical_event",
+          gameId: "game-1",
+          coordinate: "event:1",
+          sourceHash: "sha256:a",
+          sourceVersion: "v1",
+        }],
+      }],
+      proposal: {
+        field: "strategyStyle",
+        before: "  Build trust before committing.\n",
+        after: "\tBuild trust before committing.  ",
+      },
+    })).toThrow("must change strategyStyle");
+  });
+
   test("rejects generated field overflow and arbitrary proposal fields", () => {
     const base = {
       diagnosis: "Diagnosis",

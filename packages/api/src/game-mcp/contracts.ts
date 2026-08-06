@@ -307,6 +307,7 @@ const laneCompletenessEnum = [
 
 export const LIST_LEARNING_REVIEW_INPUTS_TOOL = "list_learning_review_inputs" as const;
 export const LIST_OPEN_LEARNING_REVIEWS_TOOL = "list_open_learning_reviews" as const;
+export const PREFLIGHT_LEARNING_REVIEW_TOOL = "preflight_learning_review" as const;
 export const START_OR_RESUME_LEARNING_REVIEW_TOOL = "start_or_resume_learning_review" as const;
 export const READ_LEARNING_REVIEW_TOOL = "read_learning_review" as const;
 export const RETRY_LEARNING_REVIEW_TOOL = "retry_learning_review" as const;
@@ -316,6 +317,7 @@ export const RESOLVE_LEARNING_REVIEW_TOOL = "resolve_learning_review" as const;
 export const OWNER_LEARNING_TOOL_NAMES = [
   LIST_LEARNING_REVIEW_INPUTS_TOOL,
   LIST_OPEN_LEARNING_REVIEWS_TOOL,
+  PREFLIGHT_LEARNING_REVIEW_TOOL,
   START_OR_RESUME_LEARNING_REVIEW_TOOL,
   READ_LEARNING_REVIEW_TOOL,
   RETRY_LEARNING_REVIEW_TOOL,
@@ -680,6 +682,13 @@ const ownerLearningPreflightSchema = closedObject(
 
 export const LIST_LEARNING_REVIEW_INPUTS_INPUT_SCHEMA = closedObject([], {});
 export const LIST_OPEN_LEARNING_REVIEWS_INPUT_SCHEMA = closedObject([], {});
+export const PREFLIGHT_LEARNING_REVIEW_INPUT_SCHEMA = closedObject(
+  ["agentProfileId", "gameIds"],
+  {
+    agentProfileId: ownerLearningIdSchema,
+    gameIds: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: ownerLearningIdSchema },
+  },
+);
 export const START_OR_RESUME_LEARNING_REVIEW_INPUT_SCHEMA = closedObject(
   ["agentProfileId", "gameIds", "idempotencyKey"],
   {
@@ -714,6 +723,13 @@ export const LIST_OPEN_LEARNING_REVIEWS_OUTPUT_SCHEMA = closedObject(
   {
     schemaVersion: { type: "number", const: 1 },
     reviews: { type: "array", maxItems: 1, items: ownerLearningReviewSchema },
+  },
+);
+export const PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(
+  ["schemaVersion", "preflight"],
+  {
+    schemaVersion: { type: "number", const: 1 },
+    preflight: ownerLearningPreflightSchema,
   },
 );
 export const START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(

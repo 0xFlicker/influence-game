@@ -22,17 +22,22 @@ export function AdminOwnerLearningReviews() {
   const [loading, setLoading] = useState(true);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const listRequest = useRef(0);
   const detailRequest = useRef(0);
 
   const refresh = useCallback(async (nextFilters: AdminOwnerLearningReviewFilters) => {
+    const requestId = ++listRequest.current;
     setLoading(true);
     setError(null);
     try {
-      setData(await listAdminOwnerLearningReviews(nextFilters));
+      const next = await listAdminOwnerLearningReviews(nextFilters);
+      if (requestId !== listRequest.current) return;
+      setData(next);
     } catch (cause) {
+      if (requestId !== listRequest.current) return;
       setError(cause instanceof Error ? cause.message : "Could not load the review ledger.");
     } finally {
-      setLoading(false);
+      if (requestId === listRequest.current) setLoading(false);
     }
   }, []);
 

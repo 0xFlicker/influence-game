@@ -101,6 +101,14 @@ describe("owner learning schema", () => {
       id: randomUUID(),
       reviewId,
       ordinal: 2,
+      state: "succeeded",
+      stage: "investigating_moments",
+      inputPolicyHash: "sha256:missing-validated-checkpoint",
+    }));
+    await expectDatabaseRejection(() => db.insert(schema.agentLearningReviewCalls).values({
+      id: randomUUID(),
+      reviewId,
+      ordinal: 2,
       stage: "investigating_moments",
       inputPolicyHash: "sha256:request-2",
       costSource: "actual",

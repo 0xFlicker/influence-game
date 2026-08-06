@@ -25,6 +25,7 @@ import {
   retryOwnedOwnerLearningReview,
 } from "../services/owner-learning-retry.js";
 import {
+  preflightOwnerLearningReview,
   startOwnerLearningReview,
   type OwnerLearningEvidenceProjector,
 } from "../services/owner-learning-review.js";
@@ -67,6 +68,24 @@ export class OwnerLearningMcpAdapter {
     return {
       schemaVersion: 1 as const,
       reviews: reviews.map(toOwnerLearningMcpReview),
+    };
+  }
+
+  async preflight(ownerUserId: string, rawArgs: unknown) {
+    const args = strictArgs(rawArgs, ["agentProfileId", "gameIds"]);
+    const preflight = await preflightOwnerLearningReview(this.db, {
+      ownerUserId,
+      agentProfileId: requiredIdentifier(args.agentProfileId, "agentProfileId"),
+      gameIds: parseOwnerLearningGameIds(args.gameIds),
+    }, {
+      projector: this.dependencies.projector,
+    });
+    return {
+      schemaVersion: 1 as const,
+      preflight: publicOwnerLearningPreflight(
+        preflight,
+        this.dependencies.generationEnabled,
+      ),
     };
   }
 

@@ -30,8 +30,14 @@ import {
   OWNER_LEARNING_REVIEWER_VERSION,
   OWNER_LEARNING_SCHEMA_VERSION,
 } from "./owner-learning-contracts.js";
-import { runOwnerLearningHarness } from "./owner-learning-harness.js";
-import type { OwnerLearningProvider } from "./owner-learning-provider.js";
+import {
+  runOwnerLearningHarness,
+  type OwnerLearningHarnessInvocation,
+} from "./owner-learning-harness.js";
+import type {
+  OwnerLearningProvider,
+  OwnerLearningProviderResponse,
+} from "./owner-learning-provider.js";
 import { OwnerLearningProviderError } from "./owner-learning-provider.js";
 import {
   OWNER_LEARNING_MODEL,
@@ -39,11 +45,24 @@ import {
   type OwnerLearningEvidenceProjector,
 } from "./owner-learning-review.js";
 import { OWNER_LEARNING_MAX_OUTPUT_TOKENS } from "./owner-learning-provider.js";
-import { projectOwnerLearningEvidence } from "./owner-learning-evidence.js";
+import {
+  materializeOwnerLearningEvidenceProjection,
+  projectOwnerLearningEvidence,
+  type OwnerLearningMaterializedEvidenceProjection,
+} from "./owner-learning-evidence.js";
 import { validateOwnerLearningSelection } from "./owner-learning-eligibility.js";
 
 const OWNER_LEARNING_LEASE_DURATION_MS = 30_000;
+const OWNER_LEARNING_LEASE_MONITOR_INTERVAL_MS = 250;
 const activeOwnerLearningRuns = new Map<string, AbortController>();
+
+export type OwnerLearningDurabilityPoint = "validated_call" | "checkpoint";
+
+class OwnerLearningInjectedFault extends Error {
+  constructor(readonly injectedCause: unknown) {
+    super("owner_learning_injected_fault");
+  }
+}
 
 export interface OwnerLearningOutputFailureDiagnostic {
   reviewId: string;
@@ -103,7 +122,6 @@ export async function claimOwnerLearningReview(
       .from(schema.agentLearningReviews)
       .where(and(
         eq(schema.agentLearningReviews.analysisStatus, "running"),
-        sql`${schema.agentLearningReviews.resolvedAt} IS NULL`,
         gt(schema.agentLearningReviews.leaseExpiresAt, nowIso),
       )).limit(1);
     if (active.length > 0) return null;
@@ -171,6 +189,17 @@ export async function heartbeatOwnerLearningReview(
   }).where(activeLeaseWhere(input.reviewId, input.leaseToken, nowIso))
     .returning({ id: schema.agentLearningReviews.id });
   return updated.length === 1;
+}
+
+async function ownsActiveOwnerLearningLease(
+  db: DrizzleDB,
+  input: { reviewId: string; leaseToken: string; now: Date },
+): Promise<boolean> {
+  const active = await db.select({ id: schema.agentLearningReviews.id })
+    .from(schema.agentLearningReviews)
+    .where(activeLeaseWhere(input.reviewId, input.leaseToken, input.now.toISOString()))
+    .limit(1);
+  return active.length === 1;
 }
 
 export async function reserveOwnerLearningCall(
@@ -379,6 +408,7 @@ export async function completeOwnerLearningCall(
     effectiveTier: string;
     tokenReceipt: OwnerLearningTokenReceipt;
     costReceipt: OwnerLearningCallCostReceipt;
+    validatedCheckpoint: OwnerLearningCheckpoint;
     now?: Date;
   },
 ): Promise<boolean> {
@@ -388,12 +418,27 @@ export async function completeOwnerLearningCall(
     await lockReview(tx, input.reviewId);
     const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
     const call = await requireCall(tx, input.reviewId, input.callId);
+    if (
+      input.validatedCheckpoint.logicalCallCount !== call.ordinal
+      || (input.validatedCheckpoint.lastCompletedStage === "complete")
+        !== (input.validatedCheckpoint.completion != null)
+      || (
+        input.validatedCheckpoint.lastCompletedStage !== "complete"
+        && input.validatedCheckpoint.lastCompletedStage !== call.stage
+      )
+      || input.validatedCheckpoint.promptHash
+        !== fingerprintOwnerLearningValue(OWNER_LEARNING_PROMPT_VERSION)
+      || input.validatedCheckpoint.schemaHash
+        !== fingerprintOwnerLearningValue(OWNER_LEARNING_SCHEMA_VERSION)
+    ) {
+      throw new OwnerLearningWorkerError("call_state_conflict");
+    }
     const totalLatencyMs = call.transportReceipts.reduce(
       (total, receipt) => total + (receipt.latencyMs ?? 0),
       0,
     );
     if (!validEffectiveTier(call, input.effectiveTier)) {
-      await tx.update(schema.agentLearningReviewCalls).set({
+      const failed = await tx.update(schema.agentLearningReviewCalls).set({
         state: "failed",
         effectiveTier: persistableEffectiveTier(input.effectiveTier),
         capacityPath: call.flex429Count === 3 ? "standard_fallback" : "flex",
@@ -407,12 +452,18 @@ export async function completeOwnerLearningCall(
         pricedAt: input.costReceipt.pricedAt ?? null,
         safeFailureCode: "tier_mismatch",
         completedAt: nowIso,
-      }).where(eq(schema.agentLearningReviewCalls.id, call.id));
+      }).where(and(
+        eq(schema.agentLearningReviewCalls.id, call.id),
+        eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
+        inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
+      )).returning({ id: schema.agentLearningReviewCalls.id });
+      if (failed.length !== 1) throw new OwnerLearningWorkerError("call_state_conflict");
       await failReviewUnderLease(tx, review, "tier_mismatch", false, nowIso);
       return false;
     }
-    await tx.update(schema.agentLearningReviewCalls).set({
+    const succeeded = await tx.update(schema.agentLearningReviewCalls).set({
       state: "succeeded",
+      validatedCheckpoint: input.validatedCheckpoint,
       effectiveTier: input.effectiveTier,
       capacityPath: call.flex429Count === 3 ? "standard_fallback" : "flex",
       tokenReceipt: input.tokenReceipt,
@@ -424,7 +475,12 @@ export async function completeOwnerLearningCall(
       rateCardVersion: input.costReceipt.rateCardVersion ?? null,
       pricedAt: input.costReceipt.pricedAt ?? null,
       completedAt: nowIso,
-    }).where(eq(schema.agentLearningReviewCalls.id, call.id));
+    }).where(and(
+      eq(schema.agentLearningReviewCalls.id, call.id),
+      eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
+      inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
+    )).returning({ id: schema.agentLearningReviewCalls.id });
+    if (succeeded.length !== 1) throw new OwnerLearningWorkerError("call_state_conflict");
     await tx.update(schema.agentLearningReviews).set({
       capacitySubstatus: null,
       updatedAt: nowIso,
@@ -441,8 +497,6 @@ export async function failOwnerLearningReview(
     failureCode: OwnerLearningSafeFailureCode;
     retryable: boolean;
     callId?: string;
-    completedCallId?: string;
-    completedCallFailureCode?: OwnerLearningCallFailureCode;
     now?: Date;
   },
 ): Promise<boolean> {
@@ -462,19 +516,62 @@ export async function failOwnerLearningReview(
         inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
       ));
     }
-    if (input.completedCallId) {
-      const failed = await tx.update(schema.agentLearningReviewCalls).set({
-        state: "failed",
-        safeFailureCode: input.completedCallFailureCode ?? input.failureCode,
-        completedAt: nowIso,
-      }).where(and(
-        eq(schema.agentLearningReviewCalls.id, input.completedCallId),
-        eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
-        eq(schema.agentLearningReviewCalls.state, "succeeded"),
-      )).returning({ id: schema.agentLearningReviewCalls.id });
-      if (failed.length !== 1) throw new OwnerLearningWorkerError("call_state_conflict");
-    }
     await failReviewUnderLease(tx, review, input.failureCode, input.retryable, nowIso);
+    return true;
+  }).catch((error) => {
+    if (error instanceof OwnerLearningWorkerError && error.code === "stale_or_invalid_lease") return false;
+    throw error;
+  });
+}
+
+async function failOwnerLearningOutputCall(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    callId: string;
+    leaseToken: string;
+    response: OwnerLearningProviderResponse;
+    failureCode: OwnerLearningCallFailureCode;
+    now: Date;
+  },
+): Promise<boolean> {
+  const nowIso = input.now.toISOString();
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    const call = await requireCall(tx, input.reviewId, input.callId);
+    const effectiveTierValid = validEffectiveTier(call, input.response.effectiveTier);
+    const totalLatencyMs = call.transportReceipts.reduce(
+      (total, receipt) => total + (receipt.latencyMs ?? 0),
+      0,
+    );
+    const failed = await tx.update(schema.agentLearningReviewCalls).set({
+      state: "failed",
+      effectiveTier: persistableEffectiveTier(input.response.effectiveTier),
+      capacityPath: call.flex429Count === 3 ? "standard_fallback" : "flex",
+      tokenReceipt: input.response.tokenReceipt,
+      latencyMs: totalLatencyMs,
+      costSource: input.response.costReceipt.costSource,
+      actualCostMicrousd: input.response.costReceipt.actualCostMicrousd ?? null,
+      estimatedCostMicrousd: input.response.costReceipt.estimatedCostMicrousd ?? null,
+      pricingSourceId: input.response.costReceipt.pricingSourceId ?? null,
+      rateCardVersion: input.response.costReceipt.rateCardVersion ?? null,
+      pricedAt: input.response.costReceipt.pricedAt ?? null,
+      safeFailureCode: effectiveTierValid ? input.failureCode : "tier_mismatch",
+      completedAt: nowIso,
+    }).where(and(
+      eq(schema.agentLearningReviewCalls.id, input.callId),
+      eq(schema.agentLearningReviewCalls.reviewId, input.reviewId),
+      inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
+    )).returning({ id: schema.agentLearningReviewCalls.id });
+    if (failed.length !== 1) throw new OwnerLearningWorkerError("call_state_conflict");
+    await failReviewUnderLease(
+      tx,
+      review,
+      effectiveTierValid ? "invalid_structured_output" : "tier_mismatch",
+      effectiveTierValid,
+      nowIso,
+    );
     return true;
   }).catch((error) => {
     if (error instanceof OwnerLearningWorkerError && error.code === "stale_or_invalid_lease") return false;
@@ -551,8 +648,24 @@ export async function finalizeOwnerLearningReview(
   const nowIso = now.toISOString();
   return db.transaction(async (tx) => {
     await lockReview(tx, input.reviewId);
-    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
     const noChange = input.result.noChange != null;
+    const review = (await tx.select().from(schema.agentLearningReviews)
+      .where(eq(schema.agentLearningReviews.id, input.reviewId)).limit(1))[0];
+    if (!review) throw new OwnerLearningWorkerError("stale_or_invalid_lease");
+    if (review.analysisStatus === (noChange ? "no_change" : "ready")) {
+      return review.checkpointHash === input.expectedCheckpointHash
+        && review.proposalFingerprint === input.proposalFingerprint
+        && fingerprintOwnerLearningValue(review.result) === fingerprintOwnerLearningValue(input.result);
+    }
+    if (
+      review.analysisStatus !== "running"
+      || review.resolvedAt != null
+      || review.leaseTokenHash !== hashLeaseToken(input.leaseToken)
+      || review.leaseExpiresAt == null
+      || review.leaseExpiresAt <= nowIso
+    ) {
+      throw new OwnerLearningWorkerError("stale_or_invalid_lease");
+    }
     const updated = await tx.update(schema.agentLearningReviews).set({
       analysisStatus: noChange ? "no_change" : "ready",
       stage: "complete",
@@ -658,8 +771,10 @@ export async function runClaimedOwnerLearningReview(
     signal?: AbortSignal;
     now?: () => Date;
     heartbeatIntervalMs?: number;
+    leaseMonitorIntervalMs?: number;
     leaseDurationMs?: number;
     onOutputFailure?: (diagnostic: OwnerLearningOutputFailureDiagnostic) => void;
+    faultInjector?: (point: OwnerLearningDurabilityPoint) => void;
   },
 ): Promise<boolean> {
   const now = options.now ?? (() => new Date());
@@ -668,7 +783,11 @@ export async function runClaimedOwnerLearningReview(
   if (options.signal?.aborted) abortFromCaller();
   else options.signal?.addEventListener("abort", abortFromCaller, { once: true });
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? OWNER_LEARNING_LEASE_DURATION_MS / 3;
+  const leaseMonitorIntervalMs = options.leaseMonitorIntervalMs
+    ?? OWNER_LEARNING_LEASE_MONITOR_INTERVAL_MS;
   let heartbeatTimer: ReturnType<typeof setTimeout> | null = null;
+  let leaseMonitorTimer: ReturnType<typeof setTimeout> | null = null;
+  let leaseMonitorStopped = false;
   const scheduleHeartbeat = () => {
     if (controller.signal.aborted) return;
     heartbeatTimer = setTimeout(() => {
@@ -685,6 +804,23 @@ export async function runClaimedOwnerLearningReview(
         scheduleHeartbeat();
       }).catch((error) => controller.abort(error));
     }, heartbeatIntervalMs);
+  };
+  const scheduleLeaseMonitor = () => {
+    if (leaseMonitorStopped || controller.signal.aborted) return;
+    leaseMonitorTimer = setTimeout(() => {
+      void ownsActiveOwnerLearningLease(db, {
+        reviewId: claim.reviewId,
+        leaseToken: claim.leaseToken,
+        now: now(),
+      }).then((active) => {
+        if (leaseMonitorStopped) return;
+        if (!active) {
+          controller.abort(new DOMException("Owner learning lease lost", "AbortError"));
+          return;
+        }
+        scheduleLeaseMonitor();
+      }).catch((error) => controller.abort(error));
+    }, leaseMonitorIntervalMs);
   };
   const review = (await db.select({
     id: schema.agentLearningReviews.id,
@@ -733,11 +869,24 @@ export async function runClaimedOwnerLearningReview(
       id: string;
       ordinal: number;
       stage: OwnerLearningStage;
+      response: OwnerLearningProviderResponse;
     } | null;
   } = { current: null };
+  let recoverableValidatedProgress = false;
+  const injectFault = (point: OwnerLearningDurabilityPoint) => {
+    try {
+      options.faultInjector?.(point);
+    } catch (error) {
+      throw new OwnerLearningInjectedFault(error);
+    }
+  };
   try {
     scheduleHeartbeat();
-    const selectedGames = await db.select({ gameId: schema.agentLearningReviewGames.gameId })
+    scheduleLeaseMonitor();
+    const selectedGames = await db.select({
+      gameId: schema.agentLearningReviewGames.gameId,
+      gameEvidenceId: schema.agentLearningReviewGames.gameEvidenceId,
+    })
       .from(schema.agentLearningReviewGames)
       .where(eq(schema.agentLearningReviewGames.reviewId, claim.reviewId))
       .orderBy(asc(schema.agentLearningReviewGames.position));
@@ -750,10 +899,33 @@ export async function runClaimedOwnerLearningReview(
       throw new Error("reviewed revision is no longer current");
     }
     const projector = options.projector ?? projectOwnerLearningEvidence;
-    const evidence = await projector(db, selection, {
+    const projection = await projector(db, selection, {
       instructions: OWNER_LEARNING_REVIEW_INSTRUCTIONS,
       cursorSecret: options.cursorSecret,
     });
+    if (projection.analysisTrack !== review.analysisTrack) {
+      await failOwnerLearningEvidenceDrift(db, {
+        reviewId: review.id,
+        leaseToken: claim.leaseToken,
+        now: now(),
+      });
+      return false;
+    }
+    const evidence = await materializeOwnerLearningEvidenceProjection(db, selection, projection);
+    const selectedEvidenceIds = new Map(
+      selectedGames.map((game) => [game.gameId, game.gameEvidenceId]),
+    );
+    if (evidence.games.some((game) =>
+      game.gameEvidenceId !== selectedEvidenceIds.get(game.gameId)
+    )) {
+      const rebound = await rebindOwnerLearningEvidenceBeforeFirstCall(db, {
+        reviewId: review.id,
+        leaseToken: claim.leaseToken,
+        evidence,
+        now: now(),
+      });
+      if (!rebound) return false;
+    }
     const harnessCounters = await ownerLearningHarnessStartCounters(db, review);
     const harness = await runOwnerLearningHarness({
       reviewId: review.id,
@@ -763,18 +935,28 @@ export async function runClaimedOwnerLearningReview(
       checkpoint: review.checkpoint,
       logicalCallCount: harnessCounters.logicalCallCount,
       diveCount: harnessCounters.diveCount,
+      async resumeValidatedTurn(turn) {
+        const inputPolicyHash = ownerLearningInputPolicyHash(turn);
+        const call = (await db.select().from(schema.agentLearningReviewCalls).where(and(
+          eq(schema.agentLearningReviewCalls.reviewId, review.id),
+          eq(schema.agentLearningReviewCalls.ordinal, turn.ordinal),
+        )).limit(1))[0] ?? null;
+        if (!call || call.state !== "succeeded") return null;
+        if (
+          call.stage !== turn.stage
+          || call.inputPolicyHash !== inputPolicyHash
+          || call.validatedCheckpoint == null
+        ) {
+          throw new OwnerLearningWorkerError("call_state_conflict");
+        }
+        recoverableValidatedProgress = true;
+        return call.validatedCheckpoint;
+      },
       async invoke(turn) {
+        recoverableValidatedProgress = false;
         outputValidationCall.current = null;
         const requestInput = turn.request;
-        const inputPolicyHash = fingerprintOwnerLearningRequest({
-          model: "gpt-5.6-luna",
-          input: requestInput,
-          responseSchema: turn.responseSchema,
-          maxOutputTokens: OWNER_LEARNING_MAX_OUTPUT_TOKENS,
-          reasoning: { effort: "low" },
-          store: false,
-          serviceTier: "flex",
-        });
+        const inputPolicyHash = ownerLearningInputPolicyHash(turn);
         const reservation = await reserveOwnerLearningCall(db, {
           reviewId: review.id,
           leaseToken: claim.leaseToken,
@@ -800,20 +982,11 @@ export async function runClaimedOwnerLearningReview(
             resumeTransport: reservation.resumeTransport,
             signal: controller.signal,
           });
-          const completed = await completeOwnerLearningCall(db, {
-            reviewId: review.id,
-            callId: reservation.callId,
-            leaseToken: claim.leaseToken,
-            effectiveTier: response.effectiveTier,
-            tokenReceipt: response.tokenReceipt,
-            costReceipt: response.costReceipt,
-            now: now(),
-          });
-          if (!completed) throw new Error("provider tier did not match durable capacity path");
           outputValidationCall.current = {
             id: reservation.callId,
             ordinal: reservation.ordinal,
             stage: turn.stage,
+            response,
           };
           return response.output;
         } catch (error) {
@@ -829,8 +1002,31 @@ export async function runClaimedOwnerLearningReview(
           throw error;
         }
       },
-      async onCheckpoint(checkpoint) {
+      async onTurnValidated(turn, checkpoint) {
+        const completedCall = outputValidationCall.current;
+        if (
+          !completedCall
+          || completedCall.ordinal !== turn.ordinal
+          || completedCall.stage !== turn.stage
+        ) {
+          throw new OwnerLearningWorkerError("call_state_conflict");
+        }
+        const completed = await completeOwnerLearningCall(db, {
+          reviewId: review.id,
+          callId: completedCall.id,
+          leaseToken: claim.leaseToken,
+          effectiveTier: completedCall.response.effectiveTier,
+          tokenReceipt: completedCall.response.tokenReceipt,
+          costReceipt: completedCall.response.costReceipt,
+          validatedCheckpoint: checkpoint,
+          now: now(),
+        });
+        if (!completed) throw new OwnerLearningWorkerError("call_state_conflict");
         outputValidationCall.current = null;
+        recoverableValidatedProgress = true;
+        injectFault("validated_call");
+      },
+      async onCheckpoint(checkpoint) {
         expectedCheckpointHash = await persistOwnerLearningCheckpoint(db, {
           reviewId: review.id,
           leaseToken: claim.leaseToken,
@@ -838,6 +1034,7 @@ export async function runClaimedOwnerLearningReview(
           checkpoint,
           now: now(),
         });
+        injectFault("checkpoint");
       },
     });
     if (!expectedCheckpointHash) throw new Error("review checkpoint was not persisted");
@@ -850,9 +1047,11 @@ export async function runClaimedOwnerLearningReview(
       now: now(),
     });
   } catch (error) {
+    if (error instanceof OwnerLearningInjectedFault) throw error.injectedCause;
     if (error instanceof OwnerLearningProviderError || error instanceof OwnerLearningWorkerError) {
       return false;
     }
+    if (recoverableValidatedProgress) return false;
     if (controller.signal.aborted) {
       await failOwnerLearningReview(db, {
         reviewId: review.id,
@@ -876,22 +1075,34 @@ export async function runClaimedOwnerLearningReview(
       };
       (options.onOutputFailure ?? logOwnerLearningOutputFailure)(diagnostic);
     }
-    await failOwnerLearningReview(db, {
-      reviewId: review.id,
-      leaseToken: claim.leaseToken,
-      failureCode: "invalid_structured_output",
-      retryable: review.logicalCallCount < OWNER_LEARNING_MAX_LOGICAL_CALLS,
-      ...(completedCall
-        ? {
-            completedCallId: completedCall.id,
-            completedCallFailureCode: outputFailureCode ?? "unclassified_output_failure",
-          }
-        : {}),
-      now: now(),
-    });
+    if (completedCall) {
+      await failOwnerLearningOutputCall(db, {
+        reviewId: review.id,
+        callId: completedCall.id,
+        leaseToken: claim.leaseToken,
+        response: completedCall.response,
+        failureCode: outputFailureCode ?? "unclassified_output_failure",
+        now: now(),
+      });
+    } else {
+      await failOwnerLearningReview(db, {
+        reviewId: review.id,
+        leaseToken: claim.leaseToken,
+        failureCode: "invalid_structured_output",
+        retryable: review.logicalCallCount < OWNER_LEARNING_MAX_LOGICAL_CALLS,
+        now: now(),
+      });
+    }
     return false;
   } finally {
     if (heartbeatTimer) clearTimeout(heartbeatTimer);
+    leaseMonitorStopped = true;
+    if (leaseMonitorTimer) clearTimeout(leaseMonitorTimer);
+    await releaseResolvedOwnerLearningLease(db, {
+      reviewId: review.id,
+      leaseToken: claim.leaseToken,
+      now: now(),
+    });
     if (activeOwnerLearningRuns.get(review.id) === controller) {
       activeOwnerLearningRuns.delete(review.id);
     }
@@ -915,6 +1126,18 @@ function isCurrentOwnerLearningReviewProtocol(review: {
     && review.schemaVersion === OWNER_LEARNING_SCHEMA_VERSION
     && review.providerPolicyVersion === OWNER_LEARNING_PROVIDER_POLICY_VERSION
     && review.selectedModel === OWNER_LEARNING_MODEL;
+}
+
+function ownerLearningInputPolicyHash(turn: OwnerLearningHarnessInvocation): string {
+  return fingerprintOwnerLearningRequest({
+    model: "gpt-5.6-luna",
+    input: turn.request,
+    responseSchema: turn.responseSchema,
+    maxOutputTokens: OWNER_LEARNING_MAX_OUTPUT_TOKENS,
+    reasoning: { effort: "low" },
+    store: false,
+    serviceTier: "flex",
+  });
 }
 
 export function classifyOwnerLearningOutputFailure(error: unknown): OwnerLearningOutputFailureCode {
@@ -989,7 +1212,7 @@ function logOwnerLearningOutputFailure(diagnostic: OwnerLearningOutputFailureDia
 }
 
 export interface OwnerLearningWorkerLoop {
-  stop(): void;
+  stop(): Promise<void>;
   readonly stopped: boolean;
 }
 
@@ -1005,6 +1228,8 @@ export function startOwnerLearningWorkerLoop(
   const controller = new AbortController();
   let timer: ReturnType<typeof setTimeout> | null = null;
   let running = false;
+  let idlePromise = Promise.resolve();
+  let resolveIdle: (() => void) | null = null;
   const pollIntervalMs = options.pollIntervalMs ?? 1_000;
 
   const schedule = (delayMs: number) => {
@@ -1014,6 +1239,9 @@ export function startOwnerLearningWorkerLoop(
   const tick = async () => {
     if (running || controller.signal.aborted) return;
     running = true;
+    idlePromise = new Promise<void>((resolve) => {
+      resolveIdle = resolve;
+    });
     try {
       const claim = await claimOwnerLearningReview(db);
       if (claim) {
@@ -1035,6 +1263,8 @@ export function startOwnerLearningWorkerLoop(
       }
     } finally {
       running = false;
+      resolveIdle?.();
+      resolveIdle = null;
     }
   };
   schedule(0);
@@ -1043,6 +1273,7 @@ export function startOwnerLearningWorkerLoop(
       controller.abort(new DOMException("Owner learning worker stopped", "AbortError"));
       if (timer) clearTimeout(timer);
       timer = null;
+      return idlePromise;
     },
     get stopped() {
       return controller.signal.aborted;
@@ -1085,20 +1316,167 @@ async function failProviderCall(
   });
 }
 
+async function releaseResolvedOwnerLearningLease(
+  db: DrizzleDB,
+  input: { reviewId: string; leaseToken: string; now: Date },
+): Promise<void> {
+  const nowIso = input.now.toISOString();
+  await db.update(schema.agentLearningReviews).set({
+    leaseTokenHash: null,
+    leaseExpiresAt: null,
+    capacitySubstatus: null,
+    updatedAt: nowIso,
+  }).where(and(
+    eq(schema.agentLearningReviews.id, input.reviewId),
+    sql`${schema.agentLearningReviews.resolvedAt} IS NOT NULL`,
+    eq(schema.agentLearningReviews.leaseTokenHash, hashLeaseToken(input.leaseToken)),
+  ));
+}
+
 type ReviewTx = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type ReviewRow = typeof schema.agentLearningReviews.$inferSelect;
 type CallRow = typeof schema.agentLearningReviewCalls.$inferSelect;
 
+async function failOwnerLearningEvidenceDrift(
+  db: DrizzleDB,
+  input: { reviewId: string; leaseToken: string; now: Date },
+): Promise<boolean> {
+  const nowIso = input.now.toISOString();
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    await failOwnerLearningEvidenceDriftUnderLease(tx, review, nowIso);
+    return true;
+  }).catch((error) => {
+    if (error instanceof OwnerLearningWorkerError && error.code === "stale_or_invalid_lease") {
+      return false;
+    }
+    throw error;
+  });
+}
+
+async function failOwnerLearningEvidenceDriftUnderLease(
+  tx: ReviewTx,
+  review: ReviewRow,
+  nowIso: string,
+): Promise<void> {
+  const call = (await tx.select({
+    id: schema.agentLearningReviewCalls.id,
+    state: schema.agentLearningReviewCalls.state,
+  }).from(schema.agentLearningReviewCalls)
+    .where(eq(schema.agentLearningReviewCalls.reviewId, review.id))
+    .orderBy(desc(schema.agentLearningReviewCalls.ordinal))
+    .limit(1))[0] ?? null;
+  if (call && (call.state === "reserved" || call.state === "dispatched")) {
+    await tx.update(schema.agentLearningReviewCalls).set({
+      state: "failed",
+      safeFailureCode: "evidence_unavailable",
+      completedAt: nowIso,
+    }).where(and(
+      eq(schema.agentLearningReviewCalls.id, call.id),
+      inArray(schema.agentLearningReviewCalls.state, ["reserved", "dispatched"]),
+    ));
+  }
+  await failReviewUnderLease(tx, review, "evidence_unavailable", false, nowIso);
+}
+
+async function rebindOwnerLearningEvidenceBeforeFirstCall(
+  db: DrizzleDB,
+  input: {
+    reviewId: string;
+    leaseToken: string;
+    evidence: OwnerLearningMaterializedEvidenceProjection;
+    now: Date;
+  },
+): Promise<boolean> {
+  const nowIso = input.now.toISOString();
+  return db.transaction(async (tx) => {
+    await lockReview(tx, input.reviewId);
+    const review = await requireActiveLease(tx, input.reviewId, input.leaseToken, nowIso);
+    const call = (await tx.select({
+      id: schema.agentLearningReviewCalls.id,
+      state: schema.agentLearningReviewCalls.state,
+    })
+      .from(schema.agentLearningReviewCalls)
+      .where(eq(schema.agentLearningReviewCalls.reviewId, input.reviewId))
+      .orderBy(desc(schema.agentLearningReviewCalls.ordinal))
+      .limit(1))[0] ?? null;
+    const checkpoint = review.checkpoint;
+    if (
+      call
+      || review.stage !== "evidence_ready"
+      || review.logicalCallCount !== 0
+      || review.diveCount !== 0
+      || (checkpoint != null && (
+        checkpoint.logicalCallCount !== 0
+        || checkpoint.diveCount !== 0
+        || checkpoint.selectedMomentIds.length !== 0
+        || checkpoint.nextMomentCursor !== 0
+        || checkpoint.provisionalThemes.length !== 0
+        || checkpoint.validatedFindings.length !== 0
+        || checkpoint.lastCompletedStage !== "evidence_ready"
+        || checkpoint.promptHash !== fingerprintOwnerLearningValue(OWNER_LEARNING_PROMPT_VERSION)
+        || checkpoint.schemaHash !== fingerprintOwnerLearningValue(OWNER_LEARNING_SCHEMA_VERSION)
+        || checkpoint.completion != null
+      ))
+    ) {
+      await failOwnerLearningEvidenceDriftUnderLease(tx, review, nowIso);
+      return false;
+    }
+
+    const boundGames = await tx.select({
+      gameId: schema.agentLearningReviewGames.gameId,
+    }).from(schema.agentLearningReviewGames)
+      .where(eq(schema.agentLearningReviewGames.reviewId, input.reviewId));
+    if (
+      boundGames.length !== input.evidence.games.length
+      || input.evidence.games.some((game) =>
+        !boundGames.some((bound) => bound.gameId === game.gameId)
+      )
+    ) {
+      await failOwnerLearningEvidenceDriftUnderLease(tx, review, nowIso);
+      return false;
+    }
+
+    for (const game of input.evidence.games) {
+      const updated = await tx.update(schema.agentLearningReviewGames).set({
+        gameEvidenceId: game.gameEvidenceId,
+      }).where(and(
+        eq(schema.agentLearningReviewGames.reviewId, input.reviewId),
+        eq(schema.agentLearningReviewGames.gameId, game.gameId),
+      )).returning({ gameId: schema.agentLearningReviewGames.gameId });
+      if (updated.length !== 1) throw new OwnerLearningWorkerError("call_state_conflict");
+    }
+    return true;
+  });
+}
+
 async function ownerLearningHarnessStartCounters(
   db: DrizzleDB,
-  review: Pick<ReviewRow, "id" | "logicalCallCount" | "diveCount">,
+  review: Pick<ReviewRow, "id" | "logicalCallCount" | "diveCount" | "checkpoint">,
 ): Promise<{ logicalCallCount: number; diveCount: number }> {
   const latest = (await db.select().from(schema.agentLearningReviewCalls)
     .where(eq(schema.agentLearningReviewCalls.reviewId, review.id))
     .orderBy(desc(schema.agentLearningReviewCalls.ordinal)).limit(1))[0] ?? null;
-  if (!latest || !isResumableCall(latest)) {
+  const checkpointCounters = review.checkpoint
+    ? {
+        logicalCallCount: review.checkpoint.logicalCallCount,
+        diveCount: review.checkpoint.diveCount,
+      }
+    : null;
+  if (
+    checkpointCounters
+    && (!latest || latest.ordinal <= checkpointCounters.logicalCallCount)
+  ) {
+    return checkpointCounters;
+  }
+  if (
+    !latest
+    || (!isResumableCall(latest) && !(latest.state === "succeeded" && latest.validatedCheckpoint != null))
+  ) {
     return { logicalCallCount: review.logicalCallCount, diveCount: review.diveCount };
   }
+  if (checkpointCounters) return checkpointCounters;
   return {
     logicalCallCount: Math.max(0, review.logicalCallCount - 1),
     diveCount: Math.max(

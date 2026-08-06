@@ -2135,6 +2135,8 @@ export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence",
     table.analyticalRevisionId,
     table.gameId,
     table.evidenceVersion,
+    table.sourceCaptureVersion,
+    table.sourceHash,
   ),
   index("agent_learning_game_evidence_owner_profile_idx").on(
     table.ownerUserId,
@@ -2267,6 +2269,7 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
   state: text("state").notNull().$type<OwnerLearningCallState>().default("reserved"),
   stage: text("stage").notNull().$type<OwnerLearningStage>(),
   inputPolicyHash: text("input_policy_hash").notNull(),
+  validatedCheckpoint: jsonb("validated_checkpoint").$type<OwnerLearningCheckpoint>(),
   finalProviderRequestId: text("final_provider_request_id"),
   requestedTier: text("requested_tier").notNull().default("flex"),
   effectiveTier: text("effective_tier"),
@@ -2292,6 +2295,10 @@ export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
   check("agent_learning_review_calls_ordinal_check", sql`${table.ordinal} BETWEEN 1 AND 4`),
   check("agent_learning_review_calls_state_check", sql`
     ${table.state} IN ('reserved', 'dispatched', 'succeeded', 'failed', 'ambiguous')
+  `),
+  check("agent_learning_review_calls_validated_checkpoint_check", sql`
+    (${table.state} = 'succeeded' AND ${table.validatedCheckpoint} IS NOT NULL)
+    OR (${table.state} <> 'succeeded' AND ${table.validatedCheckpoint} IS NULL)
   `),
   check("agent_learning_review_calls_tier_check", sql`
     ${table.requestedTier} = 'flex'

@@ -16,17 +16,17 @@ const observer: FlexProcessingObserver = {
 };
 
 describe("owner learning provider", () => {
-  test("logs sanitized OpenAI rejection diagnostics without request content", async () => {
+  test("logs only local OpenAI rejection diagnostics without provider-controlled strings", async () => {
     const diagnostics: unknown[] = [];
     const provider = createOwnerLearningOpenAIProvider({
       apiKey: "sk-test",
       onProviderError: (diagnostic) => diagnostics.push(diagnostic),
       fetch: async () => new Response(JSON.stringify({
         error: {
-          message: "Invalid schema for response_format owner_learning_turn.",
+          message: "PRIVATE_PROVIDER_MESSAGE_SENTINEL",
           type: "invalid_request_error",
           code: "invalid_json_schema",
-          param: "text.format.schema",
+          param: "PRIVATE_PROVIDER_PARAM_SENTINEL",
         },
       }), {
         status: 400,
@@ -57,13 +57,120 @@ describe("owner learning provider", () => {
       model: "gpt-5.6-luna",
       requestedTier: "flex",
       status: 400,
-      requestId: "req-safe-diagnostic",
-      type: "invalid_request_error",
-      code: "invalid_json_schema",
-      param: "text.format.schema",
-      message: "Invalid schema for response_format owner_learning_turn.",
     }]);
-    expect(JSON.stringify(diagnostics)).not.toContain("PRIVATE_EVIDENCE_SENTINEL");
+    const serializedDiagnostics = JSON.stringify(diagnostics);
+    expect(serializedDiagnostics).not.toContain("PRIVATE_EVIDENCE_SENTINEL");
+    expect(serializedDiagnostics).not.toContain("PRIVATE_PROVIDER_MESSAGE_SENTINEL");
+    expect(serializedDiagnostics).not.toContain("PRIVATE_PROVIDER_PARAM_SENTINEL");
+    expect(serializedDiagnostics).not.toContain("req-safe-diagnostic");
+    expect(serializedDiagnostics).not.toContain("invalid_request_error");
+    expect(serializedDiagnostics).not.toContain("invalid_json_schema");
+  });
+
+  test("omits provider free text from the default console diagnostic", async () => {
+    const logs: unknown[][] = [];
+    const originalError = console.error;
+    console.error = (...values: unknown[]) => {
+      logs.push(values);
+    };
+    try {
+      const provider = createOwnerLearningOpenAIProvider({
+        apiKey: "sk-test",
+        fetch: async () => new Response(JSON.stringify({
+          error: {
+            message: "PRIVATE_DEFAULT_LOG_MESSAGE_SENTINEL",
+            type: "invalid_request_error",
+            code: "invalid_json_schema",
+            param: "PRIVATE_DEFAULT_LOG_PARAM_SENTINEL",
+          },
+        }), {
+          status: 400,
+          headers: {
+            "content-type": "application/json",
+            "x-request-id": "req-default-log",
+          },
+        }),
+        wait: async () => undefined,
+      });
+
+      await expect(provider.invoke({
+        input: { privateEvidence: "PRIVATE_DEFAULT_LOG_EVIDENCE_SENTINEL" },
+        responseSchema: { type: "object" },
+        diagnosticContext: { reviewId: "review-default-log", callOrdinal: 3 },
+        observer,
+        resumeTransport: {
+          flex429Count: 0,
+          nextTransportOrdinal: 1,
+          nextTier: "flex",
+          initialBackoffMs: 0,
+        },
+      })).rejects.toMatchObject({ code: "provider_error", retryable: true });
+    } finally {
+      console.error = originalError;
+    }
+
+    expect(logs).toEqual([[
+      "[owner-learning] provider request rejected",
+      JSON.stringify({
+        reviewId: "review-default-log",
+        callOrdinal: 3,
+        model: "gpt-5.6-luna",
+        requestedTier: "flex",
+        status: 400,
+      }),
+    ]]);
+    const serializedLogs = JSON.stringify(logs);
+    expect(serializedLogs).not.toContain("PRIVATE_DEFAULT_LOG_EVIDENCE_SENTINEL");
+    expect(serializedLogs).not.toContain("PRIVATE_DEFAULT_LOG_MESSAGE_SENTINEL");
+    expect(serializedLogs).not.toContain("PRIVATE_DEFAULT_LOG_PARAM_SENTINEL");
+    expect(serializedLogs).not.toContain("req-default-log");
+    expect(serializedLogs).not.toContain("invalid_request_error");
+    expect(serializedLogs).not.toContain("invalid_json_schema");
+  });
+
+  test("drops structurally safe-shaped private provider identifiers", async () => {
+    const diagnostics: unknown[] = [];
+    const provider = createOwnerLearningOpenAIProvider({
+      apiKey: "sk-test",
+      onProviderError: (diagnostic) => diagnostics.push(diagnostic),
+      fetch: async () => new Response(JSON.stringify({
+        error: {
+          message: "PRIVATE_SAFE_SHAPED_MESSAGE_SENTINEL",
+          type: "PRIVATE_SAFE_SHAPED_TYPE_SENTINEL",
+          code: "PRIVATE_SAFE_SHAPED_CODE_SENTINEL",
+          param: "PRIVATE_SAFE_SHAPED_PARAM_SENTINEL",
+        },
+      }), {
+        status: 400,
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": "PRIVATE_SAFE_SHAPED_REQUEST_ID_SENTINEL",
+        },
+      }),
+      wait: async () => undefined,
+    });
+
+    await expect(provider.invoke({
+      input: { privateEvidence: "PRIVATE_SAFE_SHAPED_EVIDENCE_SENTINEL" },
+      responseSchema: { type: "object" },
+      diagnosticContext: { reviewId: "review-safe", callOrdinal: 4 },
+      observer,
+      resumeTransport: {
+        flex429Count: 0,
+        nextTransportOrdinal: 1,
+        nextTier: "flex",
+        initialBackoffMs: 0,
+      },
+    })).rejects.toMatchObject({ code: "provider_error", retryable: true });
+
+    expect(diagnostics).toEqual([{
+      reviewId: "review-safe",
+      callOrdinal: 4,
+      model: "gpt-5.6-luna",
+      requestedTier: "flex",
+      status: 400,
+    }]);
+    expect(JSON.stringify(diagnostics)).not.toContain("PRIVATE_SAFE_SHAPED_");
   });
 
   test("pins Luna, low reasoning, no storage, strict output, and the inclusive output ceiling", async () => {

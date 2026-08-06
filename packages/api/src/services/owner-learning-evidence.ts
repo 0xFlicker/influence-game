@@ -4,7 +4,10 @@ import type { PostgamePlayerGameSummary } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type { CompactV2Group } from "./match-narrative-compact-v2.js";
-import { readMatchNarrativePage } from "./match-narrative-read-model.js";
+import {
+  MATCH_NARRATIVE_MAX_LIMIT,
+  readMatchNarrativePage,
+} from "./match-narrative-read-model.js";
 import {
   OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION,
   OWNER_LEARNING_EVIDENCE_VERSION,
@@ -24,6 +27,7 @@ export const OWNER_LEARNING_ENVELOPE_ALLOWANCE_TOKENS = 2_048;
 export const OWNER_LEARNING_TOKEN_ESTIMATOR_CHARS_PER_TOKEN = 4;
 export const OWNER_LEARNING_MOMENT_WINDOW_VERSION = "owner-learning-window-v1";
 export const OWNER_LEARNING_MOMENT_NORMALIZATION_VERSION = "owner-learning-moment-v1";
+export const OWNER_LEARNING_NARRATIVE_PAGE_LIMIT = MATCH_NARRATIVE_MAX_LIMIT;
 
 export type OwnerLearningMomentAnchorKind =
   | "canonical_event"
@@ -108,13 +112,17 @@ export interface OwnerLearningCanonicalGameFacts {
 
 export interface OwnerLearningProjectedGameEvidence {
   gameId: string;
-  gameEvidenceId: string;
   canonicalFacts: OwnerLearningCanonicalGameFacts;
   narrativeGroups: CompactV2Group[];
   narrativeCoverage: OwnerLearningNarrativeCoverage;
   candidateMoments: OwnerLearningCandidateMoment[];
   sourceHash: string;
   sourceCaptureVersion: string;
+}
+
+export interface OwnerLearningMaterializedGameEvidence
+  extends OwnerLearningProjectedGameEvidence {
+  gameEvidenceId: string;
 }
 
 export interface OwnerLearningReviewInputGame {
@@ -169,6 +177,13 @@ export interface OwnerLearningEvidenceProjection {
   games: OwnerLearningProjectedGameEvidence[];
   reviewInput: OwnerLearningBudgetedInput;
 }
+
+export interface OwnerLearningMaterializedEvidenceProjection
+  extends Omit<OwnerLearningEvidenceProjection, "games"> {
+  games: OwnerLearningMaterializedGameEvidence[];
+}
+
+type OwnerLearningEvidenceMaterializationDB = Pick<DrizzleDB, "insert" | "select">;
 
 export function ownerLearningIssuedEvidenceRefs(
   games: readonly OwnerLearningProjectedGameEvidence[],
@@ -287,18 +302,8 @@ export async function projectOwnerLearningEvidence(
       narrativeSourceHash: sha256StableJson(narrativeGroups),
       sourceCaptureVersion,
     });
-    const gameEvidenceId = await materializeOwnerLearningGameEvidence(db, {
-      selection,
-      gameId: selectedGame.gameId,
-      completionAt: selectedGame.completionAt,
-      canonicalFacts,
-      candidateMoments,
-      sourceCaptureVersion,
-      sourceHash,
-    });
     return {
       gameId: selectedGame.gameId,
-      gameEvidenceId,
       canonicalFacts,
       narrativeGroups,
       narrativeCoverage: narrativeGroups.length > 0 ? "rich" : "thin",
@@ -327,6 +332,30 @@ export async function projectOwnerLearningEvidence(
   return { analysisTrack, games: projectedGames, reviewInput };
 }
 
+export async function materializeOwnerLearningEvidenceProjection(
+  db: OwnerLearningEvidenceMaterializationDB,
+  selection: OwnerLearningValidatedSelection,
+  projection: OwnerLearningEvidenceProjection,
+): Promise<OwnerLearningMaterializedEvidenceProjection> {
+  if (
+    projection.games.length !== selection.games.length
+    || projection.games.some((game, index) => game.gameId !== selection.games[index]?.gameId)
+  ) {
+    throw new Error("Owner learning projection does not match the selected games");
+  }
+  const games: OwnerLearningMaterializedGameEvidence[] = [];
+  for (const game of projection.games) {
+    games.push({
+      ...game,
+      gameEvidenceId: await materializeOwnerLearningGameEvidence(db, {
+        selection,
+        game,
+      }),
+    });
+  }
+  return { ...projection, games };
+}
+
 async function loadReviewedProfileNarrative(
   db: DrizzleDB,
   input: {
@@ -345,7 +374,9 @@ async function loadReviewedProfileNarrative(
       detail: "full",
       schemaVersion: 2,
       includeUnpaired: true,
-      limit: 50,
+      // Traverse the frozen read-through at the read model's largest bounded page
+      // size. Later pages remain part of evidence identity and moment selection.
+      limit: OWNER_LEARNING_NARRATIVE_PAGE_LIMIT,
       ...(cursor ? { cursor } : {}),
     }, {
       subjectUserId: input.ownerUserId,
@@ -450,18 +481,13 @@ function dedupeCandidateMoments(
 }
 
 async function materializeOwnerLearningGameEvidence(
-  db: DrizzleDB,
+  db: OwnerLearningEvidenceMaterializationDB,
   input: {
     selection: OwnerLearningValidatedSelection;
-    gameId: string;
-    completionAt: string;
-    canonicalFacts: OwnerLearningCanonicalGameFacts;
-    candidateMoments: OwnerLearningCandidateMoment[];
-    sourceCaptureVersion: string;
-    sourceHash: string;
+    game: OwnerLearningProjectedGameEvidence;
   },
 ): Promise<string> {
-  const analyticalRevisionId = input.selection.games.find((game) => game.gameId === input.gameId)
+  const analyticalRevisionId = input.selection.games.find((game) => game.gameId === input.game.gameId)
     ?.analyticalRevisionId;
   if (!analyticalRevisionId) throw new Error("Owner learning selection is missing the projected game");
   await db.insert(schema.agentLearningGameEvidence).values({
@@ -469,24 +495,36 @@ async function materializeOwnerLearningGameEvidence(
     ownerUserId: input.selection.ownerUserId,
     agentProfileId: input.selection.agentProfileId,
     analyticalRevisionId,
-    gameId: input.gameId,
+    gameId: input.game.gameId,
     evidenceVersion: OWNER_LEARNING_EVIDENCE_VERSION,
     eligibilityPolicyVersion: OWNER_LEARNING_ELIGIBILITY_POLICY_VERSION,
-    completionAt: input.completionAt,
-    canonicalSnapshot: input.canonicalFacts as unknown as Record<string, unknown>,
-    candidateMoments: input.candidateMoments as unknown as Array<Record<string, unknown>>,
-    sourceCaptureVersion: input.sourceCaptureVersion,
-    sourceHash: input.sourceHash,
+    completionAt: input.game.canonicalFacts.game.completionAt,
+    canonicalSnapshot: input.game.canonicalFacts as unknown as Record<string, unknown>,
+    candidateMoments: input.game.candidateMoments as unknown as Array<Record<string, unknown>>,
+    sourceCaptureVersion: input.game.sourceCaptureVersion,
+    sourceHash: input.game.sourceHash,
   }).onConflictDoNothing();
-  const row = (await db.select({ id: schema.agentLearningGameEvidence.id })
+  const row = (await db.select({
+    id: schema.agentLearningGameEvidence.id,
+    sourceCaptureVersion: schema.agentLearningGameEvidence.sourceCaptureVersion,
+    sourceHash: schema.agentLearningGameEvidence.sourceHash,
+  })
     .from(schema.agentLearningGameEvidence)
     .where(and(
       eq(schema.agentLearningGameEvidence.ownerUserId, input.selection.ownerUserId),
       eq(schema.agentLearningGameEvidence.agentProfileId, input.selection.agentProfileId),
       eq(schema.agentLearningGameEvidence.analyticalRevisionId, analyticalRevisionId),
-      eq(schema.agentLearningGameEvidence.gameId, input.gameId),
+      eq(schema.agentLearningGameEvidence.gameId, input.game.gameId),
       eq(schema.agentLearningGameEvidence.evidenceVersion, OWNER_LEARNING_EVIDENCE_VERSION),
+      eq(schema.agentLearningGameEvidence.sourceCaptureVersion, input.game.sourceCaptureVersion),
+      eq(schema.agentLearningGameEvidence.sourceHash, input.game.sourceHash),
     )).limit(1))[0];
   if (!row) throw new Error("Owner learning game evidence was not materialized");
+  if (
+    row.sourceCaptureVersion !== input.game.sourceCaptureVersion
+    || row.sourceHash !== input.game.sourceHash
+  ) {
+    throw new Error("Owner learning evidence source changed after materialization");
+  }
   return row.id;
 }

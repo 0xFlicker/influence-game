@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -15,6 +15,7 @@ import {
 } from "./owner-learning-contracts.js";
 import type { OwnerLearningEvidenceProjection } from "./owner-learning-evidence.js";
 import {
+  materializeOwnerLearningEvidenceProjection,
   projectOwnerLearningEvidence,
 } from "./owner-learning-evidence.js";
 import { OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA } from "./owner-learning-harness.js";
@@ -76,6 +77,11 @@ export interface StartOwnerLearningReviewOptions {
   idFactory?: () => string;
 }
 
+export interface PreflightOwnerLearningReviewOptions {
+  projector?: OwnerLearningEvidenceProjector;
+  cursorSecret?: string;
+}
+
 export async function preflightOwnerLearningReview(
   db: DrizzleDB,
   input: {
@@ -83,35 +89,14 @@ export async function preflightOwnerLearningReview(
     agentProfileId: string;
     gameIds: unknown;
   },
-  options: Pick<StartOwnerLearningReviewOptions, "projector" | "cursorSecret"> = {},
+  options: PreflightOwnerLearningReviewOptions = {},
 ): Promise<OwnerLearningReviewPreflight> {
   const gameIds = parseOwnerLearningGameIds(input.gameIds);
-  const selection = await validateOwnerLearningSelection(db, {
+  return buildOwnerLearningReviewPreflight(db, {
     ownerUserId: input.ownerUserId,
     agentProfileId: input.agentProfileId,
     gameIds,
-  });
-  const projector = options.projector ?? projectOwnerLearningEvidence;
-  const evidence = await projector(db, selection, {
-    instructions: OWNER_LEARNING_REVIEW_INSTRUCTIONS,
-    cursorSecret: options.cursorSecret,
-  });
-  buildBudgetedOwnerLearningProviderInput({
-    stage: "scanning_narratives",
-    turn: {
-      analysisTrack: evidence.analysisTrack,
-      currentStrategyStyle: evidence.reviewInput.currentStrategyStyle ?? "",
-      evidence: evidence.reviewInput,
-      callBudget: {
-        ordinal: 1,
-        remainingAfterThisCall: 3,
-        finalResultRequired: false,
-      },
-    },
-    evidence,
-    responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
-  });
-  return { selection, evidence };
+  }, options.projector ?? projectOwnerLearningEvidence, options.cursorSecret);
 }
 
 export async function startOwnerLearningReview(
@@ -127,11 +112,12 @@ export async function startOwnerLearningReview(
   const openBeforePreflight = await findOpenReview(db, input.ownerUserId);
   if (openBeforePreflight) return existingResult(openBeforePreflight, "open");
 
-  const preflight = await preflightOwnerLearningReview(db, {
+  const projector = options.projector ?? projectOwnerLearningEvidence;
+  const preflight = await buildOwnerLearningReviewPreflight(db, {
     ownerUserId: input.ownerUserId,
     agentProfileId: input.agentProfileId,
     gameIds,
-  }, options);
+  }, projector, options.cursorSecret);
   const paidAnalysisTrack = preflight.evidence.analysisTrack;
   if (paidAnalysisTrack === "awaiting_evidence") {
     return {
@@ -186,16 +172,9 @@ export async function startOwnerLearningReview(
       agentProfileId: input.agentProfileId,
       gameIds,
     });
-    if (
-      liveSelection.currentRevisionId !== preflight.selection.currentRevisionId
-      || liveSelection.games.some((game, index) =>
-        game.gameId !== preflight.selection.games[index]?.gameId
-        || game.analyticalRevisionId !== preflight.selection.games[index]?.analyticalRevisionId
-      )
-    ) {
+    if (!ownerLearningSelectionsMatch(liveSelection, preflight.selection)) {
       throw new Error("Owner learning selection changed after preflight");
     }
-    await reauthorizeMaterializedEvidence(tx, preflight);
 
     const eligibleInputs = await getOwnerLearningEligibleInputs(tx, {
       ownerUserId: input.ownerUserId,
@@ -209,6 +188,23 @@ export async function startOwnerLearningReview(
         nextEligibleAt: eligibleInputs.credit.nextAvailableAt,
       };
     }
+    const liveEvidence = await projectOwnerLearningEvidenceForSelection(
+      // Drizzle's transaction executor supports the same read and nested
+      // transaction surface used by the projector, but intentionally omits
+      // the root connection's client-only type members.
+      tx as unknown as DrizzleDB,
+      liveSelection,
+      projector,
+      options.cursorSecret,
+    );
+    if (!ownerLearningEvidenceProjectionsMatch(liveEvidence, preflight.evidence)) {
+      throw new Error("Owner learning evidence changed after preflight");
+    }
+    const materializedEvidence = await materializeOwnerLearningEvidenceProjection(
+      tx,
+      liveSelection,
+      liveEvidence,
+    );
 
     const reviewId = idFactory();
     const selectedGameFingerprint = fingerprintOwnerLearningValue({
@@ -238,7 +234,7 @@ export async function startOwnerLearningReview(
       updatedAt: nowIso,
     });
     await tx.insert(schema.agentLearningReviewGames).values(
-      preflight.evidence.games.map((game, index) => ({
+      materializedEvidence.games.map((game, index) => ({
         reviewId,
         gameEvidenceId: game.gameEvidenceId,
         gameId: game.gameId,
@@ -319,30 +315,97 @@ function existingResult(
   };
 }
 
-async function reauthorizeMaterializedEvidence(
-  db: ReviewLookupDB,
-  preflight: OwnerLearningReviewPreflight,
-): Promise<void> {
-  const evidenceIds = preflight.evidence.games.map((game) => game.gameEvidenceId);
-  const rows = await db.select({
-    id: schema.agentLearningGameEvidence.id,
-    gameId: schema.agentLearningGameEvidence.gameId,
-    analyticalRevisionId: schema.agentLearningGameEvidence.analyticalRevisionId,
-  }).from(schema.agentLearningGameEvidence).where(and(
-    eq(schema.agentLearningGameEvidence.ownerUserId, preflight.selection.ownerUserId),
-    eq(schema.agentLearningGameEvidence.agentProfileId, preflight.selection.agentProfileId),
-    inArray(schema.agentLearningGameEvidence.id, evidenceIds),
-  ));
-  const evidenceById = new Map(rows.map((row) => [row.id, row]));
-  const selectionByGameId = new Map(preflight.selection.games.map((game) => [game.gameId, game]));
-  if (preflight.evidence.games.some((game) => {
-    const row = evidenceById.get(game.gameEvidenceId);
-    const selectedGame = selectionByGameId.get(game.gameId);
-    return row?.gameId !== game.gameId
-      || row.analyticalRevisionId !== selectedGame?.analyticalRevisionId;
-  })) {
-    throw new Error("Owner learning evidence changed after preflight");
-  }
+function ownerLearningSelectionsMatch(
+  live: OwnerLearningValidatedSelection,
+  preflight: OwnerLearningValidatedSelection,
+): boolean {
+  return live.ownerUserId === preflight.ownerUserId
+    && live.agentProfileId === preflight.agentProfileId
+    && live.currentRevisionId === preflight.currentRevisionId
+    && live.games.length === preflight.games.length
+    && live.games.every((game, index) => {
+      const expected = preflight.games[index];
+      if (!expected) return false;
+      return game.gameId === expected.gameId
+        && game.playerId === expected.playerId
+        && game.completionAt === expected.completionAt
+        && game.analyticalRevisionId === expected.analyticalRevisionId
+        && game.transcriptCaptureVersion === expected.transcriptCaptureVersion
+        && game.cognitiveArtifactCaptureVersion === expected.cognitiveArtifactCaptureVersion;
+    });
+}
+
+function ownerLearningEvidenceProjectionsMatch(
+  live: OwnerLearningEvidenceProjection,
+  preflight: OwnerLearningEvidenceProjection,
+): boolean {
+  return live.analysisTrack === preflight.analysisTrack
+    && live.games.length === preflight.games.length
+    && live.games.every((game, index) => {
+      const expected = preflight.games[index];
+      if (!expected) return false;
+      return game.gameId === expected.gameId
+        && game.sourceHash === expected.sourceHash
+        && game.sourceCaptureVersion === expected.sourceCaptureVersion;
+    });
+}
+
+async function buildOwnerLearningReviewPreflight<TProjection extends OwnerLearningEvidenceProjection>(
+  db: DrizzleDB,
+  input: {
+    ownerUserId: string;
+    agentProfileId: string;
+    gameIds: string[];
+  },
+  projector: (
+    db: DrizzleDB,
+    selection: OwnerLearningValidatedSelection,
+    options: { instructions: string; cursorSecret?: string },
+  ) => Promise<TProjection>,
+  cursorSecret?: string,
+): Promise<{ selection: OwnerLearningValidatedSelection; evidence: TProjection }> {
+  const selection = await validateOwnerLearningSelection(db, input);
+  const evidence = await projectOwnerLearningEvidenceForSelection(
+    db,
+    selection,
+    projector,
+    cursorSecret,
+  );
+  return { selection, evidence };
+}
+
+async function projectOwnerLearningEvidenceForSelection<
+  TProjection extends OwnerLearningEvidenceProjection,
+>(
+  db: DrizzleDB,
+  selection: OwnerLearningValidatedSelection,
+  projector: (
+    db: DrizzleDB,
+    selection: OwnerLearningValidatedSelection,
+    options: { instructions: string; cursorSecret?: string },
+  ) => Promise<TProjection>,
+  cursorSecret?: string,
+): Promise<TProjection> {
+  const evidence = await projector(db, selection, {
+    instructions: OWNER_LEARNING_REVIEW_INSTRUCTIONS,
+    cursorSecret,
+  });
+  buildBudgetedOwnerLearningProviderInput({
+    stage: "scanning_narratives",
+    turn: {
+      analysisTrack: evidence.analysisTrack,
+      currentStrategyStyle: evidence.reviewInput.currentStrategyStyle ?? "",
+      evidence: evidence.reviewInput,
+      callBudget: {
+        ordinal: 1,
+        remainingAfterThisCall: 3,
+        finalResultRequired: false,
+      },
+    },
+    evidence,
+    responseSchema: OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA,
+  });
+  return evidence;
 }
 
 async function insertStartEvents(

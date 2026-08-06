@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import {
@@ -8,15 +8,21 @@ import {
   createEdgeSmokeDuskEvents,
 } from "@influence/engine";
 import { schema, type DrizzleDB } from "../db/index.js";
+import type { GameMcpAuthContext } from "../game-mcp/auth.js";
+import {
+  createProductionGameMcpServer,
+} from "../game-mcp/server.js";
 import { appendGameEvents } from "../services/game-events.js";
 import {
   buildBudgetedOwnerLearningInput,
+  materializeOwnerLearningEvidenceProjection,
   mintOwnerLearningMomentId,
   ownerLearningIssuedEvidenceRefs,
   projectOwnerLearningEvidence,
   resolveOwnerLearningMoment,
   type OwnerLearningEvidenceProjection,
 } from "../services/owner-learning-evidence.js";
+import type { OwnerLearningValidatedSelection } from "../services/owner-learning-eligibility.js";
 import { OWNER_LEARNING_INPUT_TOKEN_LIMIT } from "../services/owner-learning-evidence.js";
 import {
   OWNER_LEARNING_FINAL_HARNESS_RESPONSE_SCHEMA,
@@ -26,9 +32,23 @@ import {
   buildBudgetedOwnerLearningProviderInput,
   estimateOwnerLearningProviderCallTokens,
 } from "../services/owner-learning-provider-context.js";
+import { MCP_OAUTH_CLIENT_ID } from "../services/mcp-oauth.js";
+import { sha256StableJson } from "../services/stable-hash.js";
 import { initialGameTranscriptStateValues } from "../services/transcript-capture.js";
 import { insertOwner } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
+
+let savedJwtSecret: string | undefined;
+
+beforeAll(() => {
+  savedJwtSecret = process.env.JWT_SECRET;
+  process.env.JWT_SECRET = "owner-learning-evidence-test-secret-aaaaaaaa";
+});
+
+afterAll(() => {
+  if (savedJwtSecret === undefined) delete process.env.JWT_SECRET;
+  else process.env.JWT_SECRET = savedJwtSecret;
+});
 
 describe("owner learning evidence", () => {
   test("mints stable opaque moment IDs from durable coordinates", () => {
@@ -113,6 +133,11 @@ describe("owner learning evidence", () => {
     expect(estimateOwnerLearningProviderCallTokens(first.input, OWNER_LEARNING_HARNESS_RESPONSE_SCHEMA))
       .toBe(first.estimatedTokens);
     expect(first.input).toEqual(second.input);
+    // Locks the optimized incremental packer to the exact retained output of
+    // the original full-request estimator for this three-game stress case.
+    expect(sha256StableJson(first.input)).toBe(
+      "sha256:99683609d7470c1fb035e7cac2a2f8d9aafa6d0ab9d9d8361b9364a9af4b3c4a",
+    );
     const serialized = JSON.stringify(first.input);
     expect(serialized).not.toContain("olm_");
     expect(serialized).not.toContain("sha256:");
@@ -216,8 +241,7 @@ describe("owner learning evidence", () => {
   test("projects canonical facts, paginated dialogue, and only the reviewed Profile's cognition", async () => {
     const db = await setupTestDB();
     const fixture = await insertProjectionFixture(db);
-
-    const projection = await projectOwnerLearningEvidence(db, {
+    const selection: OwnerLearningValidatedSelection = {
       ownerUserId: fixture.ownerUserId,
       agentProfileId: fixture.agentProfileId,
       agentProfileName: EDGE_SMOKE_DUSK_PLAYERS.lilith.name,
@@ -233,7 +257,8 @@ describe("owner learning evidence", () => {
         cognitiveArtifactCaptureVersion: 1,
         previouslyAnalyzed: false,
       }],
-    }, {
+    };
+    const projection = await projectOwnerLearningEvidence(db, selection, {
       instructions: "Review only the supplied evidence.",
       cursorSecret: "owner-learning-evidence-test-secret-aaaaaaaa",
     });
@@ -254,7 +279,9 @@ describe("owner learning evidence", () => {
       .toBe(game.candidateMoments.length);
     expect(JSON.stringify(projection.reviewInput)).toContain("REVIEWED_PROFILE_COGNITION_SENTINEL");
     expect(JSON.stringify(projection.reviewInput)).not.toContain("OPPONENT_COGNITION_SENTINEL");
+    expect(await db.select().from(schema.agentLearningGameEvidence)).toEqual([]);
 
+    await materializeOwnerLearningEvidenceProjection(db, selection, projection);
     const stored = (await db.select().from(schema.agentLearningGameEvidence))[0]!;
     expect(stored).toMatchObject({
       ownerUserId: fixture.ownerUserId,
@@ -266,8 +293,100 @@ describe("owner learning evidence", () => {
     expect(stored.candidateMoments).toEqual(
       game.candidateMoments as unknown as Array<Record<string, unknown>>,
     );
+
+    await db.update(schema.transcripts).set({ text: "SOURCE_CHANGED_AFTER_MATERIALIZATION" })
+      .where(eq(schema.transcripts.gameId, EDGE_SMOKE_DUSK_GAME_ID));
+    const changedProjection = await projectOwnerLearningEvidence(db, selection, {
+      instructions: "Review only the supplied evidence.",
+      cursorSecret: "owner-learning-evidence-test-secret-aaaaaaaa",
+    });
+    const changed = await materializeOwnerLearningEvidenceProjection(
+      db,
+      selection,
+      changedProjection,
+    );
+    expect(changed.games[0]!.gameEvidenceId).not.toBe(stored.id);
+    expect(await db.select().from(schema.agentLearningGameEvidence)).toHaveLength(2);
+  });
+
+  test("keeps production MCP preflight read-only with the real evidence projector", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertProjectionFixture(db);
+    const before = await durableOwnerLearningState(db);
+    const server = createProductionGameMcpServer(db, { generationEnabled: true });
+
+    const response = await server.handle({
+      jsonrpc: "2.0",
+      id: "real-default-preflight",
+      method: "tools/call",
+      params: {
+        name: "preflight_learning_review",
+        arguments: {
+          agentProfileId: fixture.agentProfileId,
+          gameIds: [EDGE_SMOKE_DUSK_GAME_ID],
+        },
+      },
+    }, ownerLearningMcpAuth(fixture.ownerUserId));
+
+    expect(response?.error).toBeUndefined();
+    const output = (response?.result as {
+      structuredContent?: {
+        schemaVersion?: number;
+        preflight?: {
+          status?: string;
+          selection?: { agentProfileId?: string; gameIds?: string[] };
+          evidence?: {
+            analysisTrack?: string;
+            games?: Array<{ gameId?: string; sourceHash?: string }>;
+          };
+        };
+      };
+    } | undefined)?.structuredContent;
+    expect(output).toMatchObject({
+      schemaVersion: 1,
+      preflight: {
+        status: "ready",
+        selection: {
+          agentProfileId: fixture.agentProfileId,
+          gameIds: [EDGE_SMOKE_DUSK_GAME_ID],
+        },
+        evidence: {
+          analysisTrack: "evidence_rich",
+          games: [{ gameId: EDGE_SMOKE_DUSK_GAME_ID }],
+        },
+      },
+    });
+    expect(output?.preflight?.evidence?.games?.[0]?.sourceHash).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(JSON.stringify(output)).not.toContain("gameEvidenceId");
+    expect(JSON.stringify(output)).not.toContain("reviewInput");
+    expect(await durableOwnerLearningState(db)).toEqual(before);
   });
 });
+
+async function durableOwnerLearningState(db: DrizzleDB) {
+  return {
+    entitlements: await db.select().from(schema.agentLearningReviewEntitlements),
+    gameEvidence: await db.select().from(schema.agentLearningGameEvidence),
+    reviews: await db.select().from(schema.agentLearningReviews),
+    reviewGames: await db.select().from(schema.agentLearningReviewGames),
+    reviewCalls: await db.select().from(schema.agentLearningReviewCalls),
+    momentEvidence: await db.select().from(schema.agentLearningMomentEvidence),
+    applications: await db.select().from(schema.agentLearningReviewApplications),
+    events: await db.select().from(schema.agentLearningEvents),
+  };
+}
+
+function ownerLearningMcpAuth(ownerUserId: string): GameMcpAuthContext {
+  return {
+    userId: ownerUserId,
+    clientId: MCP_OAUTH_CLIENT_ID,
+    resource: "http://127.0.0.1:3000/mcp",
+    scope: "agents:read games:read",
+    scopes: ["agents:read", "games:read"],
+    authProfile: "subject",
+    expiresAt: 1_800_000_000,
+  };
+}
 
 function stressEvidenceProjection(
   reviewInput: OwnerLearningEvidenceProjection["reviewInput"],
@@ -278,7 +397,6 @@ function stressEvidenceProjection(
     const rounds = Array.from({ length: 13 }, (_, index) => index + 1);
     return {
       gameId,
-      gameEvidenceId: `evidence-${gameId}`,
       canonicalFacts: {
         game: {
           id: gameId,

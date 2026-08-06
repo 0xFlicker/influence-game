@@ -7,6 +7,7 @@ import {
   APPLY_LEARNING_REVIEW_OUTPUT_SCHEMA,
   LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA,
   LIST_OPEN_LEARNING_REVIEWS_OUTPUT_SCHEMA,
+  PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA,
   READ_LEARNING_REVIEW_OUTPUT_SCHEMA,
   START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA,
 } from "../game-mcp/contracts.js";
@@ -34,6 +35,7 @@ describe("production MCP owner-learning parity", () => {
   test("keeps disabled admission deterministic, then resumes one owner-wide review across surfaces", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
+    const evidenceBeforeRejectedStarts = await db.select().from(schema.agentLearningGameEvidence);
     const auth = ownerAuth(fixture.ownerUserId);
     const projector = fixtureProjector(fixture);
     const disabled = createProductionGameMcpServer(db, {
@@ -51,6 +53,27 @@ describe("production MCP owner-learning parity", () => {
       },
     });
     expectMatchesJsonSchema(inputs, LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA);
+
+    const disabledPreflight = await callTool(disabled, auth, "preflight_learning_review", {
+      agentProfileId: fixture.agentProfileId,
+      gameIds: [fixture.gameId],
+    });
+    expect(disabledPreflight).toMatchObject({
+      schemaVersion: 1,
+      preflight: {
+        status: "generation_unavailable",
+        selection: {
+          agentProfileId: fixture.agentProfileId,
+          gameIds: [fixture.gameId],
+        },
+        evidence: { analysisTrack: "evidence_rich" },
+      },
+    });
+    expectMatchesJsonSchema(disabledPreflight, PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await db.select().from(schema.agentLearningReviewEntitlements)).toEqual([]);
+    expect(await db.select().from(schema.agentLearningGameEvidence))
+      .toEqual(evidenceBeforeRejectedStarts);
 
     await db.insert(schema.agentLearningReviewEntitlements).values({
       ownerUserId: fixture.ownerUserId,
@@ -82,6 +105,8 @@ describe("production MCP owner-learning parity", () => {
       review: null,
     });
     expectMatchesJsonSchema(cooldownStart, START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    expect(await db.select().from(schema.agentLearningGameEvidence))
+      .toEqual(evidenceBeforeRejectedStarts);
     await db.delete(schema.agentLearningReviewEntitlements)
       .where(eq(schema.agentLearningReviewEntitlements.ownerUserId, fixture.ownerUserId));
 
@@ -94,6 +119,8 @@ describe("production MCP owner-learning parity", () => {
       expect(invalid.error?.message).toContain("idempotency key");
     }
     expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+    expect(await db.select().from(schema.agentLearningGameEvidence))
+      .toEqual(evidenceBeforeRejectedStarts);
 
     const awaiting = createProductionGameMcpServer(db, {
       generationEnabled: true,
@@ -123,6 +150,22 @@ describe("production MCP owner-learning parity", () => {
     );
     expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
 
+    const awaitingPreflight = await callTool(
+      awaiting,
+      auth,
+      "preflight_learning_review",
+      {
+        agentProfileId: fixture.agentProfileId,
+        gameIds: [fixture.gameId],
+      },
+    );
+    expect(awaitingPreflight).toMatchObject({
+      schemaVersion: 1,
+      preflight: { status: "awaiting_evidence" },
+    });
+    expectMatchesJsonSchema(awaitingPreflight, PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA);
+    expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
+
     const unavailable = await callTool(disabled, auth, "start_or_resume_learning_review", {
       agentProfileId: fixture.agentProfileId,
       gameIds: [fixture.gameId],
@@ -139,6 +182,8 @@ describe("production MCP owner-learning parity", () => {
     expectMatchesJsonSchema(unavailable, START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA);
     expect(await db.select().from(schema.agentLearningReviews)).toEqual([]);
     expect(await db.select().from(schema.agentLearningReviewEntitlements)).toEqual([]);
+    expect(await db.select().from(schema.agentLearningGameEvidence))
+      .toEqual(evidenceBeforeRejectedStarts);
 
     const enabled = createProductionGameMcpServer(db, {
       generationEnabled: true,
