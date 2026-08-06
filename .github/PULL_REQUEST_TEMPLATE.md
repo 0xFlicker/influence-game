@@ -25,7 +25,7 @@
 
 - 
 
-## Task Closeout Reminder
+## Review Closeout
 
-- Only mark the Paperclip task `done` after this PR is reviewable and linked in the task comment.
+- Code-backed work is complete when this PR is reviewable and linked in the final delivery summary.
 - Draft PRs support `in_progress` / `in_review` handoff, not final closeout.
