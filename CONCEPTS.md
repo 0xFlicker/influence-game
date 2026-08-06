@@ -10,6 +10,22 @@ A human account holder or viewer interacting with Influence outside the game fic
 
 An AI competitor participating in an Influence game. Agents make in-game decisions and receive only the game knowledge allowed by their seat and the active rules. Agent must not be used as a synonym for the human operator who owns, configures, or watches it.
 
+## Owner Learning Loop
+
+The owner-only postgame workflow that turns one to three completed Daily Free games from one Agent Profile's current strategy family into deterministic game facts, a bounded strategic review, and an optional exact `strategyStyle` proposal. The family contains the active analytical revision plus game-effective `runtime_policy_change` variants derived directly from it, so a runtime policy override cannot make otherwise relevant play disappear from review. It is for owners who use the web app as well as owners working through MCP; it is not a producer agent-tuning surface. Canonical events and postgame projections remain the authority for actions and outcomes. Authorized dialogue and owned cognition provide strategic context but never repair or override game facts.
+
+## Review credit
+
+An owner-wide, zero-or-one metered entitlement to purchase an Owner Learning review. The published balance is spendable truth: `1` means a review can start now; `0` with `nextAvailableAt` means time alone will make the earned credit spendable; and `0` without a timestamp means another eligible Daily Free completion is required. Credits never stack and may be spent on any owned Agent Profile that has selectable current-strategy-family games. Starting metered analysis consumes the credit and begins the rolling 24-hour start interval in the same transaction. Persisted sysops use explicit `unlimited` mode with no numeric balance and consume neither credits nor the rolling interval. Thin evidence, disabled live generation, input selection, and deterministic preflight consume nothing.
+
+## Learning review
+
+A durable Owner Learning analysis addressed by review ID and shared by web and MCP. One owner may have at most one unresolved review. Starting buys the review: owners cannot cancel it or receive a refund after provider failure. They may retry within the lifetime call budget, resolve failed work, keep their current strategy, make a linked manual update, or apply only the exact persisted proposal. Terminal resolutions are `applied`, `manual_update`, `declined`, `no_change`, `failed`, and `superseded`; only the unique application row means the generated proposal was accepted.
+
+## Strategy Health Check
+
+The remedial Owner Learning track used only when exactly three selected current-strategy-family games all end in round-one or round-two elimination. It classifies the evidence as a guidance gap, execution gap, or no clear strategy defect. Every recommendation must separate observed evidence, strategic interpretation, proposed guidance, and the exact guidance target, with either cross-game server-minted evidence refs, a named prompt-guidance defect rubric, or both. The review describes patterns rather than claiming that an update caused an elimination or later result.
+
 ## Game model selection authority
 
 `games.config.modelSelection` is the sole authority for a game's model. OpenAI `serviceTier` is unrelated.
@@ -49,9 +65,9 @@ After canonical events are durably appended, API reconciliation transactionally 
 
 Correlation is forward-only. Legacy rows without an exact decision-bearing manifest remain unlinked rather than being inferred from timing or actor/action similarity. A missing sidecar degrades diagnostics without blocking gameplay; later flushes and the final pre-settlement lifecycle pass retry the link.
 
-## Mingle I
+## Format Mingle social sequence
 
-The pre-vote Mingle window in a normal pre-endgame round. It starts with private-room conversation and movement, then closes with the official named-alliance action window. Players may propose, accept, decline, counter, defer, or agree to trial alliances during that action window; official alliance records cannot be formed or mutated outside Mingle I in v1.
+The post-pick social window in a normal pre-endgame round. The format and rule sheet are already locked. It runs private-room conversation and movement, then the official named-alliance action window, then any scarce House-scheduled alliance huddles. Players may propose, accept, decline, counter, defer, or agree to trial alliances during the structured action window; official alliance records cannot be formed or mutated outside that window in v1.
 
 ## Mingle
 
@@ -59,7 +75,7 @@ The current private-room social phase for new Influence games. Agents move throu
 
 ## Post-vote Mingle
 
-The normal standard-round Mingle window after Vote resolves and before Power fallout closes. The vote is locked, the empowered player is known, and agents can respond to pressure through private-room social play without reopening the vote. Post-vote Mingle is not a separate Power Lobby and is not the RUMOR phase.
+A legacy classic-lane Mingle window after Vote resolves and before Power. It remains readable for historical replay but is not part of the default format-kernel round. The current standard social window is Format Mingle after the empowered player locks the format.
 
 ## Post-vote pressure projection
 
@@ -141,11 +157,11 @@ A sanitized game-readable model of authoritative gameplay facts derived from can
 
 ## Mingle intent
 
-A hidden pre-room-assignment decision an agent forms at the start of Mingle. It captures whom the agent wants to seek or avoid, preferred room size, purpose, provisional target, opening ask, and the evidence lens behind that posture. Mingle intent guides House room assignment and early room speech, is inspectable in producer/debug artifacts, and is not delivered to other players as dialogue.
+A retired hidden decision artifact from the pre-format Mingle experiment. Live standard rounds do not request Mingle intent: removing that per-player call saves tokens and keeps agents focused on the locked format. Historical traces and evaluator fixtures may still contain `mingle-intent` records.
 
 ## House Mingle room assignment
 
-The producer-side placement of alive agents into initial Mingle rooms using the full set of hidden Mingle intents. The House can propose interesting strategic groupings, but deterministic validation owns final placement and repair diagnostics; later movement belongs to agents through room actions, not hidden reshuffling.
+The producer-side placement of alive agents into initial Format Mingle rooms using one House call with the living roster and locked format rule sheet. The House can propose strategically useful vote-bloc groupings, but deterministic validation owns final placement and repair diagnostics; later movement belongs to agents through room actions, not hidden reshuffling.
 
 ## Strategy signal
 
@@ -153,7 +169,7 @@ A private-room behavior during Mingle that reveals or advances game posture, suc
 
 ## Strategic lens
 
-The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across Mingle intent, rumors, reflections, and Strategy Thread packets without forcing the public message to explain itself.
+The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across rumors, reflections, and Strategy Thread packets without forcing the public message to explain itself. Historical Mingle-intent traces may also carry one.
 
 ## Agent turn record
 
@@ -283,6 +299,12 @@ The player-safe hover, keyboard-focus, and touch popup used wherever an agent po
 
 An automatic comparison boundary in a persistent Agent Profile's history created when an owner edit changes any effective input that can affect in-game decisions, dialogue, or model execution. Presentation-only edits stay within the current revision; revision creation does not interrupt normal editing. The profile's current revision is the active behavior future play should inherit; normal updates are active immediately and have no draft or publish step.
 
+## Owner Learning Loop
+
+The owner-facing process for reviewing one to three selected Daily Free ranked games played by an owned Agent Profile's current strategy family, investigating moments through canonical facts, authorized dialogue, and owned cognition, and deciding whether to change the profile's owner-authored strategy guidance. Eligibility is a versioned server policy—V2 accepts completed games whose canonical track is `free` when the seat used either the active revision or a `runtime_policy_change` revision derived directly from it—so custom/experimental games and unrelated historical revisions remain outside the loop. Each admitted completion may earn an empty owner-wide metered credit; credits never stack, may be spent on any owned Profile with current-family evidence, and become publicly visible as balance `1` only when the rolling interval permits an immediate start. Previously analyzed games remain selectable and their marker derives from successfully completed review-game history; a new active analytical revision requires fresh Daily Free play in its strategy family before another review of that Profile.
+
+One owner may have only one unresolved review across all owned Profiles. Web and MCP list eligible inputs, list the zero-or-one open review, and start, read, retry, apply, or resolve the same review by ID. Model-free preflight creates no open review when one or two thin early exits are insufficient. Selecting exactly three current-strategy-family games with round-one/two eliminations activates Strategy Health Check, whose recommendations require cross-game observed evidence, an exact fixed-rubric strategy-guidance defect, or both; it may not claim that a behavior caused elimination. The canonical action ledger is kernel-aware: classic reviews retain empower/expose, Power, and Council actions, while format reviews retain accepted format ballots with their format, target, and polarity for both the owner UI and model input. A review resolves truthfully as `applied`, `manual_update`, `declined`, `no_change`, `failed`, or `superseded`. Only exact apply accepts the generated proposal; starting metered analysis spends the credit and owners cannot cancel unfinished work. Keep current strategy declines ready work, no-change resolves automatically, a terminal failure can be resolved without a refund, and an unrelated update to the reviewed Profile supersedes the review. The loop never treats dialogue or cognition as board truth, never exposes opponent cognition or producer private traces to the owner, and never mutates the Profile without an owner update action. Later games remain attributed to the analytical revision they executed so subsequent results can be compared without claiming the update caused the outcome.
+
 ## Game-effective revision
 
 The analytical revision that records the exact behavior and runtime policy projected into one owned game seat. It may be the Agent Profile's current revision or a non-active matching revision for that game's runtime configuration. Resolving a game-effective revision does not move the profile's current-revision pointer or create another competitive identity.
@@ -341,7 +363,7 @@ The compact official memory artifact produced after a scheduled alliance huddle.
 
 ## Universal alliance
 
-A named alliance whose living membership equals all alive players. Before a vote-facing Mingle I, a universal alliance is unstable and should close so agents can react during normal Mingle and form smaller playable coalitions.
+A named alliance whose living membership equals all alive players. Before the post-pick named-alliance action window, a universal alliance is unstable and should close so agents can form smaller playable vote blocs under the locked format.
 
 ## Canonical game event
 
@@ -461,7 +483,7 @@ The user-facing product boundary for MCP clients that may help a player prepare 
 
 ## Standing Daily Agent
 
-An owner's one season-scoped agent entry for Daily Free. A Standing Daily Agent remains entered after selection and terminal games, becomes temporarily ineligible while the owner has a waiting, active, or suspended Daily Free assignment, and becomes eligible again when that game is terminal. The owner may leave or switch agents, but switching preserves account-level wait state and never creates another candidacy. Membership ends through owner removal, admin removal, or season end; a future account-ban workflow must use the same removal operation. There is no separate paused state.
+An owner's one season-scoped agent entry for Daily Free. A Standing Daily Agent remains entered after selection and terminal games and becomes temporarily ineligible only while the owner has a waiting or active Daily Free assignment. A suspended assignment remains eligible; selection into a new draw supersedes the old suspended game and revokes its active run owner unless the old game has a `pending` or `repair_required` completion settlement, which must remain available for retry or investigation. The owner may leave or switch agents, but switching preserves account-level wait state and never creates another candidacy. Membership ends through owner removal, admin removal, or season end; a future account-ban workflow must use the same removal operation. There is no separate paused state.
 
 ## Avatar completion
 

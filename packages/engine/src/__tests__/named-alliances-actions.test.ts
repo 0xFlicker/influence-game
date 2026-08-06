@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { ContextBuilder } from "../context-builder";
 import { GameState } from "../game-state";
-import { runMingleIAlliancePhase } from "../phases/alliances";
-import type { PhaseActor, PhaseRunnerContext } from "../phases/phase-runner-context";
+import { runAllianceFormationPhase } from "../phases/alliances";
+import type { PhaseRunnerContext } from "../phases/phase-runner-context";
 import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG } from "../types";
 import { MockAgent } from "./mock-agent";
@@ -25,12 +25,6 @@ function createActionHarness() {
   const agents = new Map(
     PLAYERS.map((player) => [player.id, new MockAgent(player.id, player.name)]),
   );
-  const phaseCompleteEvents: unknown[] = [];
-  const actor = {
-    send(event: unknown) {
-      phaseCompleteEvents.push(event);
-    },
-  } as unknown as PhaseActor;
   const ctx = {
     gameState,
     agents,
@@ -43,12 +37,12 @@ function createActionHarness() {
     houseInterviewer: {},
   } as unknown as PhaseRunnerContext;
 
-  return { gameState, logger, agents, actor, ctx, phaseCompleteEvents };
+  return { gameState, logger, agents, ctx };
 }
 
-describe("Mingle I alliance action runner", () => {
+describe("Format Mingle alliance action runner", () => {
   it("forms an official alliance from a proposal and same-version acceptance", async () => {
-    const { gameState, agents, actor, ctx, phaseCompleteEvents } = createActionHarness();
+    const { gameState, agents, ctx } = createActionHarness();
     agents.get("alice")!.allianceActions.push({
       action: "propose",
       allianceId: "alliance-ab",
@@ -69,14 +63,13 @@ describe("Mingle I alliance action runner", () => {
       decisionId: "decision-accept-ab",
     });
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     expect(gameState.getAlliance("alliance-ab")).toMatchObject({
       id: "alliance-ab",
       status: "active",
       memberIds: ["alice", "bob"],
     });
-    expect(phaseCompleteEvents).toContainEqual({ type: "PHASE_COMPLETE" });
     expect(gameState.getCanonicalEvents().map((event) => event.type)).toContain("alliance.activated");
     const proposal = gameState.getCanonicalEvents().find(
       (event) => event.type === "alliance.proposal_submitted",
@@ -93,7 +86,7 @@ describe("Mingle I alliance action runner", () => {
   });
 
   it("resolves invited responses before the next proposer and rejects exact duplicate rosters", async () => {
-    const { gameState, logger, agents, actor, ctx } = createActionHarness();
+    const { gameState, logger, agents, ctx } = createActionHarness();
     const rejectedNotes: string[][] = [];
     logger.setStreamListener((event) => {
       if (
@@ -133,7 +126,7 @@ describe("Mingle I alliance action runner", () => {
       },
     );
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     expect(gameState.getAlliance("alliance-ab")).toMatchObject({ status: "active" });
     expect(gameState.getAlliance("alliance-ab-duplicate")).toBeUndefined();
@@ -144,7 +137,7 @@ describe("Mingle I alliance action runner", () => {
   });
 
   it("closes declined proposals and still lets later proposers act", async () => {
-    const { gameState, agents, actor, ctx } = createActionHarness();
+    const { gameState, agents, ctx } = createActionHarness();
     agents.get("alice")!.allianceActions.push(
       {
         action: "propose",
@@ -178,7 +171,7 @@ describe("Mingle I alliance action runner", () => {
       timebox: null,
     });
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     expect(gameState.getAllianceProposalLineage("lineage-ab-declined")).toMatchObject({ status: "declined" });
     expect(gameState.getAlliance("alliance-ab-declined")).toBeUndefined();
@@ -186,7 +179,7 @@ describe("Mingle I alliance action runner", () => {
   });
 
   it("expires deferred proposals and still lets the deferring player use their proposer turn", async () => {
-    const { gameState, agents, actor, ctx } = createActionHarness();
+    const { gameState, agents, ctx } = createActionHarness();
     agents.get("alice")!.allianceActions.push({
       action: "propose",
       allianceId: "alliance-ab-deferred",
@@ -220,7 +213,7 @@ describe("Mingle I alliance action runner", () => {
       versionId: "version-bc-after-defer",
     });
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     expect(gameState.getAllianceProposalLineage("lineage-ab-deferred")).toMatchObject({ status: "expired" });
     expect(gameState.getAlliance("alliance-ab-deferred")).toBeUndefined();
@@ -228,7 +221,7 @@ describe("Mingle I alliance action runner", () => {
   });
 
   it("treats trial responses as consent for the current proposal version", async () => {
-    const { gameState, agents, actor, ctx } = createActionHarness();
+    const { gameState, agents, ctx } = createActionHarness();
     agents.get("alice")!.allianceActions.push({
       action: "propose",
       allianceId: "alliance-ab-trial",
@@ -245,7 +238,7 @@ describe("Mingle I alliance action runner", () => {
       versionId: "version-ab-trial",
     });
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     expect(gameState.getAllianceProposalLineage("lineage-ab-trial")).toMatchObject({ status: "activated" });
     expect(gameState.getAlliance("alliance-ab-trial")).toMatchObject({
@@ -255,7 +248,7 @@ describe("Mingle I alliance action runner", () => {
   });
 
   it("allows two counters, rejects a third, and expires unresolved lineages at window end", async () => {
-    const { gameState, agents, actor, ctx } = createActionHarness();
+    const { gameState, agents, ctx } = createActionHarness();
     agents.get("alice")!.allianceActions.push(
       {
         action: "propose",
@@ -298,7 +291,7 @@ describe("Mingle I alliance action runner", () => {
       },
     );
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     const lineage = gameState.getAllianceProposalLineage("lineage-cap");
     expect(lineage?.status).toBe("expired");
@@ -311,7 +304,7 @@ describe("Mingle I alliance action runner", () => {
   });
 
   it("rejects invalid or self-only rosters deterministically", async () => {
-    const { gameState, logger, agents, actor, ctx } = createActionHarness();
+    const { gameState, logger, agents, ctx } = createActionHarness();
     const repairNotes: string[][] = [];
     logger.setStreamListener((event) => {
       if (event.type === "agent_turn" && event.action === "alliance-action") {
@@ -329,7 +322,7 @@ describe("Mingle I alliance action runner", () => {
       timebox: null,
     });
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     expect(gameState.getAllianceProposalLineage("lineage-invalid")).toBeUndefined();
     expect(
@@ -339,7 +332,7 @@ describe("Mingle I alliance action runner", () => {
   });
 
   it("records materially repaired membership without crediting the model receipt", async () => {
-    const { gameState, agents, actor, ctx } = createActionHarness();
+    const { gameState, agents, ctx } = createActionHarness();
     agents.get("alice")!.allianceActions.push({
       action: "propose",
       allianceId: "alliance-repaired",
@@ -357,7 +350,7 @@ describe("Mingle I alliance action runner", () => {
       versionId: "version-repaired",
     });
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     const proposal = gameState.getCanonicalEvents().find(
       (event) => event.type === "alliance.proposal_submitted",
@@ -367,7 +360,7 @@ describe("Mingle I alliance action runner", () => {
   });
 
   it("falls back to private pass actions when agents have no queued alliance move", async () => {
-    const { logger, actor, ctx } = createActionHarness();
+    const { logger, ctx } = createActionHarness();
     const turns: string[] = [];
     logger.setStreamListener((event) => {
       if (event.type === "agent_turn" && event.action === "alliance-action") {
@@ -375,7 +368,7 @@ describe("Mingle I alliance action runner", () => {
       }
     });
 
-    await runMingleIAlliancePhase(ctx, actor);
+    await runAllianceFormationPhase(ctx);
 
     expect(turns).toEqual(["pass", "pass", "pass"]);
   });

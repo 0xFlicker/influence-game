@@ -16,6 +16,8 @@ export interface TokenUsage {
   promptTokens: number;
   /** Number of prompt tokens served from OpenAI's prefix cache. */
   cachedTokens: number;
+  /** Number of prompt tokens written to OpenAI's explicit or implicit cache. */
+  cacheWriteTokens?: number;
   completionTokens: number;
   /** Number of completion tokens consumed by internal reasoning (CoT). */
   reasoningTokens: number;
@@ -30,6 +32,8 @@ export interface ModelPricing {
   inputPer1M: number;
   /** Cost per 1M cached input tokens in USD */
   cachedInputPer1M: number;
+  /** Cost per 1M cache-write input tokens in USD. Defaults to the uncached input rate. */
+  cacheWriteInputPer1M?: number;
   /** Cost per 1M output tokens in USD */
   outputPer1M: number;
   /** Optional total-token request tiers. When matched, the tier rate applies to the whole request. */
@@ -41,6 +45,7 @@ export interface ModelPricingTier {
   maxTotalTokens?: number;
   inputPer1M: number;
   cachedInputPer1M: number;
+  cacheWriteInputPer1M?: number;
   outputPer1M: number;
 }
 
@@ -81,8 +86,13 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5": { inputPer1M: 1.25, cachedInputPer1M: 0.125, outputPer1M: 10.00 },
   "gpt-5.4-nano": { inputPer1M: 0.20, cachedInputPer1M: 0.02, outputPer1M: 1.25 },
   "gpt-5.4-mini": { inputPer1M: 0.75, cachedInputPer1M: 0.075, outputPer1M: 4.50 },
-  // gpt-5.6 family (90% cache discount; Luna is the cost-sensitive tier)
-  "gpt-5.6-luna": { inputPer1M: 1.00, cachedInputPer1M: 0.10, outputPer1M: 6.00 },
+  // GPT-5.6 Luna rates published after the July 30, 2026 price reduction.
+  "gpt-5.6-luna": {
+    inputPer1M: 0.20,
+    cachedInputPer1M: 0.02,
+    cacheWriteInputPer1M: 0.25,
+    outputPer1M: 1.20,
+  },
   // Grok 4.3 family. Katana uses hyphenated model IDs and includes router markup.
   "grok-4-3": {
     inputPer1M: 1.375,
@@ -103,7 +113,12 @@ export const OPENAI_FLEX_MODEL_PRICING: Record<string, ModelPricing> = {
   "gpt-5-mini": { inputPer1M: 0.125, cachedInputPer1M: 0.0125, outputPer1M: 1.00 },
   "gpt-5.4-nano": { inputPer1M: 0.10, cachedInputPer1M: 0.01, outputPer1M: 0.625 },
   "gpt-5.4-mini": { inputPer1M: 0.375, cachedInputPer1M: 0.0375, outputPer1M: 2.25 },
-  "gpt-5.6-luna": { inputPer1M: 0.10, cachedInputPer1M: 0.01, outputPer1M: 0.60 },
+  "gpt-5.6-luna": {
+    inputPer1M: 0.10,
+    cachedInputPer1M: 0.01,
+    cacheWriteInputPer1M: 0.125,
+    outputPer1M: 0.60,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -120,10 +135,12 @@ export function estimateCost(usage: TokenUsage, pricingOrModel: ModelPricing | s
   const model = typeof pricingOrModel === "string" ? pricingOrModel : "custom";
 
   const cached = usage.cachedTokens ?? 0;
-  const uncached = usage.promptTokens - cached;
+  const cacheWrites = usage.cacheWriteTokens ?? 0;
+  const uncached = Math.max(0, usage.promptTokens - cached - cacheWrites);
   const inputCost =
     (uncached / 1_000_000) * pricing.inputPer1M +
-    (cached / 1_000_000) * pricing.cachedInputPer1M;
+    (cached / 1_000_000) * pricing.cachedInputPer1M +
+    (cacheWrites / 1_000_000) * (pricing.cacheWriteInputPer1M ?? pricing.inputPer1M);
   const outputCost = (usage.completionTokens / 1_000_000) * pricing.outputPer1M;
 
   return {
@@ -205,6 +222,7 @@ export function estimateTierAwareOpenAICost(
 const EMPTY_USAGE: TokenUsage = {
   promptTokens: 0,
   cachedTokens: 0,
+  cacheWriteTokens: 0,
   completionTokens: 0,
   reasoningTokens: 0,
   totalTokens: 0,
@@ -215,6 +233,7 @@ const EMPTY_USAGE: TokenUsage = {
 function addUsage(target: TokenUsage, usage: TokenUsage): TokenUsage {
   target.promptTokens += usage.promptTokens;
   target.cachedTokens += usage.cachedTokens;
+  target.cacheWriteTokens = (target.cacheWriteTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
   target.completionTokens += usage.completionTokens;
   target.reasoningTokens += usage.reasoningTokens;
   target.totalTokens += usage.totalTokens;
@@ -241,10 +260,12 @@ export class TokenTracker {
     cachedTokens = 0,
     reasoningTokens = 0,
     serviceTier?: OpenAIServiceTier,
+    cacheWriteTokens = 0,
   ): void {
     const existing = this.perSource.get(source) ?? { ...EMPTY_USAGE };
     existing.promptTokens += promptTokens;
     existing.cachedTokens += cachedTokens;
+    existing.cacheWriteTokens = (existing.cacheWriteTokens ?? 0) + cacheWriteTokens;
     existing.completionTokens += completionTokens;
     existing.reasoningTokens += reasoningTokens;
     existing.totalTokens += promptTokens + completionTokens;
@@ -255,6 +276,7 @@ export class TokenTracker {
       const tierUsage = this.perServiceTier.get(serviceTier) ?? { ...EMPTY_USAGE };
       tierUsage.promptTokens += promptTokens;
       tierUsage.cachedTokens += cachedTokens;
+      tierUsage.cacheWriteTokens = (tierUsage.cacheWriteTokens ?? 0) + cacheWriteTokens;
       tierUsage.completionTokens += completionTokens;
       tierUsage.reasoningTokens += reasoningTokens;
       tierUsage.totalTokens += promptTokens + completionTokens;
@@ -281,6 +303,7 @@ export class TokenTracker {
     for (const usage of this.perSource.values()) {
       total.promptTokens += usage.promptTokens;
       total.cachedTokens += usage.cachedTokens;
+      total.cacheWriteTokens = (total.cacheWriteTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
       total.completionTokens += usage.completionTokens;
       total.reasoningTokens += usage.reasoningTokens;
       total.totalTokens += usage.totalTokens;
@@ -312,6 +335,7 @@ export class TokenTracker {
       const existing = this.perSource.get(source) ?? { ...EMPTY_USAGE };
       existing.promptTokens += usage.promptTokens;
       existing.cachedTokens += usage.cachedTokens;
+      existing.cacheWriteTokens = (existing.cacheWriteTokens ?? 0) + (usage.cacheWriteTokens ?? 0);
       existing.completionTokens += usage.completionTokens;
       existing.reasoningTokens += usage.reasoningTokens;
       existing.totalTokens += usage.totalTokens;

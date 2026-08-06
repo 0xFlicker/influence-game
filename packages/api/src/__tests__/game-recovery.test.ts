@@ -478,8 +478,6 @@ describe("game startup recovery", () => {
   // (format_menu/pick/mingle/resolve) are startup-resume supported with event prerequisites.
   const supportedRecoveryCases = [
     { actorCoordinate: "lobby", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
-    { actorCoordinate: "mingle_i", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
-    { actorCoordinate: "pre_vote_huddle", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "vote", config: recoveryConfig, playerCount: 4, expectedIntroductionCount: 4, timeoutMs: 30000 },
     { actorCoordinate: "format_menu", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "format_pick", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
@@ -793,9 +791,9 @@ describe("game startup recovery", () => {
     });
   }, 60000);
 
-  test("startup recovery fails closed for retired classic Power→Council coordinates", async () => {
+  test("startup recovery fails closed for retired pre-format social and classic Power→Council coordinates", async () => {
     // Coordinates remain listed on PHASE_BOUNDARY for type/hydration forensics, but resume is fail-closed.
-    for (const actorCoordinate of ["post_vote_mingle", "power", "reveal", "pre_council_huddle", "council"] as const) {
+    for (const actorCoordinate of ["mingle_i", "pre_vote_huddle", "post_vote_mingle", "power", "reveal", "pre_council_huddle", "council"] as const) {
       const gameId = await insertGame(db, {
         id: `startup-recovery-retired-classic-${actorCoordinate}`,
         status: "suspended",

@@ -57,7 +57,7 @@ describe("agent revision persistence", () => {
     expect(revision?.effectiveRuntimeSnapshot).toMatchObject({
       backstory: "A retired negotiator.",
       strategyInstructions: "Build trust before acting.",
-      model: "gpt-5-nano",
+      model: "gpt-5.6-luna",
       providerProfileId: "openai",
       reasoningPolicy: "action-policy",
     });
@@ -124,40 +124,6 @@ describe("agent revision persistence", () => {
       sigma: 2,
     });
     expect(await db.select().from(schema.competitionRatingEvents)).toHaveLength(0);
-  });
-
-  test("reuses a legacy revision for a game-effective snapshot that only renames the agent", async () => {
-    const { profile, profileRevision } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
-      name: "Legacy Runtime Name",
-      personality: "Patient and exact.",
-      personaKey: "observer",
-    });
-    await db.update(schema.agentRevisions).set({
-      fingerprint: `sha256:${"1".repeat(64)}`,
-      revisionPolicyVersion: "agent-revision-v1",
-    }).where(eq(schema.agentRevisions.id, profileRevision.revisionId));
-    const activeEdit = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
-      personality: "Forceful and exact.",
-    });
-
-    const result = await resolveGameEffectiveAgentRevision(db, {
-      profile: { ...profile, name: "Current Runtime Name" },
-      effectiveRuntimeSnapshot: {
-        ...resolveFreeTrackEffectiveRuntimeSnapshot(profile),
-        name: "Current Runtime Name",
-      },
-    });
-
-    expect(result).toMatchObject({
-      created: false,
-      ratingRecalibrated: false,
-      revision: { id: profileRevision.revisionId, ordinal: 1 },
-    });
-    expect(await db.select().from(schema.agentRevisions)
-      .where(eq(schema.agentRevisions.agentProfileId, profile.id))).toHaveLength(2);
-    expect((await db.select().from(schema.agentProfiles)
-      .where(eq(schema.agentProfiles.id, profile.id)))[0]?.currentRevisionId)
-      .toBe(activeEdit.profileRevision.revisionId);
   });
 
   test("creates one small revision for a name and personality edit while ignoring the name", async () => {
@@ -260,6 +226,58 @@ describe("agent revision persistence", () => {
     )!;
     expect(revertedRevision.fingerprint).toBe(initialRevision.fingerprint);
     expect(revertedRevision.priorRevisionId).toBe(changed.profileRevision.revisionId);
+  });
+
+  test("does not reuse a game-effective runtime revision from an older strategy lineage", async () => {
+    const { profile } = await createOwnedAgentProfile(db, { userId: USER_ID }, {
+      name: "Lineage Thread",
+      personality: "Patient and observant.",
+      strategyStyle: "Build trust before acting.",
+      personaKey: "observer",
+    });
+    const runtimeOverride = {
+      ...resolveFreeTrackEffectiveRuntimeSnapshot(profile),
+      model: "gpt-5-mini",
+      catalogId: "openai:gpt-5-mini",
+    };
+    const historicalRuntime = await resolveGameEffectiveAgentRevision(db, {
+      profile,
+      effectiveRuntimeSnapshot: runtimeOverride,
+    });
+
+    await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
+      strategyStyle: "Exploit uncertainty quickly.",
+    });
+    const reverted = await updateOwnedAgentProfile(db, { userId: USER_ID }, profile.id, {
+      strategyStyle: "Build trust before acting.",
+    });
+    const currentRuntime = {
+      ...resolveFreeTrackEffectiveRuntimeSnapshot(reverted.profile),
+      model: "gpt-5-mini",
+      catalogId: "openai:gpt-5-mini",
+    };
+    const resolved = await resolveGameEffectiveAgentRevision(db, {
+      profile: reverted.profile,
+      effectiveRuntimeSnapshot: currentRuntime,
+    });
+
+    expect(resolved).toMatchObject({
+      created: true,
+      revision: {
+        priorRevisionId: reverted.profileRevision.revisionId,
+        trigger: "runtime_policy_change",
+      },
+    });
+    expect(resolved.revision.id).not.toBe(historicalRuntime.revision.id);
+
+    const reused = await resolveGameEffectiveAgentRevision(db, {
+      profile: reverted.profile,
+      effectiveRuntimeSnapshot: currentRuntime,
+    });
+    expect(reused).toMatchObject({
+      created: false,
+      revision: { id: resolved.revision.id },
+    });
   });
 
   test("reuses game-effective revisions without moving the active pointer or rating", async () => {

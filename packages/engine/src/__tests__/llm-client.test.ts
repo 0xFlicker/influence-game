@@ -238,6 +238,117 @@ describe("OpenAI Flex processing", () => {
     expect(attempts).toBe(1);
   });
 
+  it("awaits content-free transport receipts around every physical transmission", async () => {
+    const events: string[] = [];
+    const responses = [
+      new Response(null, { status: 429, headers: { "x-request-id": "req-flex-1" } }),
+      new Response(null, { status: 429, headers: { "x-request-id": "req-flex-2" } }),
+      new Response(null, { status: 429, headers: { "x-request-id": "req-flex-3" } }),
+      new Response(null, { status: 200, headers: { "x-request-id": "req-auto" } }),
+    ];
+    const flexFetch = createFlexProcessingFetch(
+      async () => {
+        events.push("network");
+        return responses.shift()!;
+      },
+      async () => undefined,
+      {
+        observer: {
+          async onDispatchIntent(event) {
+            events.push(`dispatch:${event.transportOrdinal}:${event.attemptedTier}`);
+          },
+          async onTerminalOutcome(event) {
+            events.push(
+              `terminal:${event.transportOrdinal}:${event.attemptedTier}:${event.httpStatus}:${event.providerRequestId ?? "none"}`,
+            );
+          },
+        },
+        nowMs: (() => {
+          let value = 1_000;
+          return () => value += 10;
+        })(),
+      },
+    );
+
+    expect((await flexFetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      body: "{}",
+    })).status).toBe(200);
+    expect(events).toEqual([
+      "dispatch:1:flex", "network", "terminal:1:flex:429:req-flex-1",
+      "dispatch:2:flex", "network", "terminal:2:flex:429:req-flex-2",
+      "dispatch:3:flex", "network", "terminal:3:flex:429:req-flex-3",
+      "dispatch:4:auto", "network", "terminal:4:auto:200:req-auto",
+    ]);
+  });
+
+  it("does not transmit when the durable dispatch observer fails", async () => {
+    let transmissions = 0;
+    const observerFailure = new Error("receipt store unavailable");
+    const flexFetch = createFlexProcessingFetch(
+      async () => {
+        transmissions += 1;
+        return new Response(null, { status: 200 });
+      },
+      async () => undefined,
+      {
+        observer: {
+          async onDispatchIntent() {
+            throw observerFailure;
+          },
+          async onTerminalOutcome() {},
+        },
+      },
+    );
+
+    await expect(flexFetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      body: "{}",
+    })).rejects.toBe(observerFailure);
+    expect(transmissions).toBe(0);
+  });
+
+  it("resumes after persisted Flex 429s without replaying earlier transports", async () => {
+    const transports: string[] = [];
+    const delays: number[] = [];
+    let responses = 0;
+    const flexFetch = createFlexProcessingFetch(
+      async (request) => {
+        responses += 1;
+        const tier = (await (request as Request).json() as { service_tier: string }).service_tier;
+        transports.push(`network:${tier}`);
+        return new Response(null, { status: responses === 1 ? 429 : 200 });
+      },
+      async (delay) => { delays.push(delay); },
+      {
+        resume: {
+          flex429Count: 2,
+          nextTransportOrdinal: 3,
+          nextTier: "flex",
+          initialBackoffMs: 750,
+        },
+        observer: {
+          async onDispatchIntent(event) {
+            transports.push(`dispatch:${event.transportOrdinal}:${event.attemptedTier}`);
+          },
+          async onTerminalOutcome() {},
+        },
+      },
+    );
+
+    expect((await flexFetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      body: "{}",
+    })).status).toBe(200);
+    expect(transports).toEqual([
+      "dispatch:3:flex",
+      "network:flex",
+      "dispatch:4:auto",
+      "network:auto",
+    ]);
+    expect(delays).toEqual([750, 4_000]);
+  });
+
   it("only enables Flex processing for hosted OpenAI", () => {
     const hosted = createLlmClientFromEnv(
       { OPENAI_API_KEY: "openai-key" },

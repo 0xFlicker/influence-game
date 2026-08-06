@@ -935,6 +935,32 @@ describe("admin route RBAC", () => {
       agentProfileId: "admin-queue-agent",
       consecutiveMisses: 2,
     });
+    await db.insert(schema.games).values({
+      id: "admin-queue-waiting-game",
+      slug: "admin-queue-waiting",
+      config: "{}",
+      status: "waiting",
+      trackType: "free",
+      minPlayers: 4,
+      maxPlayers: 12,
+    });
+    await db.insert(schema.games).values({
+      id: "admin-queue-suspended-game",
+      slug: "admin-queue-suspended",
+      config: "{}",
+      status: "suspended",
+      trackType: "free",
+      minPlayers: 4,
+      maxPlayers: 12,
+    });
+    await db.insert(schema.gamePlayers).values({
+      id: "admin-queue-suspended-player",
+      gameId: "admin-queue-suspended-game",
+      userId: ownerId,
+      agentProfileId: "admin-queue-agent",
+      persona: JSON.stringify({ name: "Queue Atlas", personality: "Patient" }),
+      agentConfig: "{}",
+    });
 
     const read = await app.request("/api/admin/free-queue", {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -949,6 +975,11 @@ describe("admin route RBAC", () => {
       agentName: "Queue Atlas",
       status: "eligible",
       consecutiveMisses: 2,
+    });
+    expect(body.waitingGame).toEqual({
+      id: "admin-queue-waiting-game",
+      slug: "admin-queue-waiting",
+      status: "waiting",
     });
     expect(JSON.stringify(body)).not.toContain("walletAddress");
     expect(JSON.stringify(body)).not.toContain("email");

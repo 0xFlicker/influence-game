@@ -217,6 +217,12 @@ export interface ReadMatchNarrativeOptions {
   /** Principal user id (owner subject or producer principal). */
   subjectUserId: string;
   surface: MatchNarrativeSurfaceCapability;
+  /**
+   * Internal owner-learning restriction. When present, surrounding authorized
+   * dialogue remains unchanged while cognition is narrowed to this owned
+   * Profile's exact seat. This is not a client-supplied narrative filter.
+   */
+  reviewedAgentProfileId?: string;
   cursorSecret?: string;
   nowMs?: number;
 }
@@ -240,6 +246,13 @@ export async function readMatchNarrativePage(
   const input = parsed.value;
   const nowMs = options.nowMs ?? Date.now();
   const surface = options.surface;
+  if (options.reviewedAgentProfileId != null && surface !== "subject_owner") {
+    return {
+      ok: false,
+      status: "invalid_input",
+      error: "reviewed Profile cognition is available only on the owner surface",
+    };
+  }
 
   let decodedCursor: MatchNarrativeCursorClaims | null = null;
   if (input.cursor != null) {
@@ -471,6 +484,20 @@ async function readOwnerNarrativePage(
         };
       }
 
+      const reviewedAgentProfileId = options.reviewedAgentProfileId ?? null;
+      const reviewedPlayerIds = reviewedAgentProfileId == null
+        ? null
+        : new Set(context.ownedSeats
+          .filter((seat) => seat.agentProfileId === reviewedAgentProfileId)
+          .map((seat) => seat.playerId));
+      if (reviewedPlayerIds != null && reviewedPlayerIds.size === 0) {
+        return {
+          ok: false as const,
+          status: "denied" as const,
+          error: "Match narrative is not available for this subject",
+        };
+      }
+
       const cognitiveCaptureVersion = await loadCognitiveCaptureVersion(tx, context.gameId);
       if (cognitiveCaptureVersion === null) {
         return {
@@ -597,6 +624,8 @@ async function readOwnerNarrativePage(
         ownedPlayerIds: context.ownedPlayerIds,
         ownedAgentProfileIds: context.ownedAgentProfileIds,
         subjectUserId: options.subjectUserId,
+        reviewedAgentProfileId,
+        reviewedPlayerIds,
       });
 
       const members = mapMembers({
@@ -1253,6 +1282,8 @@ async function loadCognitionRows(
     ownedPlayerIds: ReadonlySet<string> | null;
     ownedAgentProfileIds: ReadonlySet<string> | null;
     subjectUserId: string;
+    reviewedAgentProfileId?: string | null;
+    reviewedPlayerIds?: ReadonlySet<string> | null;
   },
 ): Promise<CognitionCandidateRow[]> {
   if (params.filters.preset === "dialogue_only") {
@@ -1296,6 +1327,22 @@ async function loadCognitionRows(
     }
     const ownershipOr = or(...ownershipClauses);
     if (ownershipOr) conditions.push(ownershipOr);
+    if (params.reviewedAgentProfileId != null) {
+      const reviewedClauses: SQL[] = [
+        eq(
+          schema.gameCognitiveArtifacts.actorAgentProfileId,
+          params.reviewedAgentProfileId,
+        ),
+      ];
+      const reviewedPlayerIds = [...(params.reviewedPlayerIds ?? [])];
+      if (reviewedPlayerIds.length > 0) {
+        reviewedClauses.push(
+          inArray(schema.gameCognitiveArtifacts.actorPlayerId, reviewedPlayerIds),
+        );
+      }
+      const reviewedOr = or(...reviewedClauses);
+      if (reviewedOr) conditions.push(reviewedOr);
+    }
   }
 
   // Upper pin

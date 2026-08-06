@@ -5,13 +5,32 @@
  * address_roles, role_permissions, and permissions tables.
  */
 
-import { sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { DrizzleDB } from "./index.js";
 import { schema } from "./index.js";
 
 export interface ResolvedPermissions {
   roles: string[];
   permissions: string[];
+}
+
+export async function userHasRole(
+  db: Pick<DrizzleDB, "select">,
+  userId: string,
+  roleName: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: schema.users.id })
+    .from(schema.users)
+    .innerJoin(schema.addressRoles, sql`lower(${schema.users.walletAddress}) = ${schema.addressRoles.walletAddress}`)
+    .innerJoin(schema.roles, eq(schema.addressRoles.roleId, schema.roles.id))
+    .where(and(
+      eq(schema.users.id, userId),
+      eq(schema.roles.name, roleName),
+    ))
+    .limit(1);
+
+  return Boolean(row);
 }
 
 /**

@@ -16,11 +16,13 @@ import { CopyCommandButton } from "./copy-command-button";
 interface GetMcpSetupContentProps {
   mcpUrl: string;
   clients?: McpSetupClient[];
+  returnHref?: string;
 }
 
 export function GetMcpSetupContent({
   mcpUrl,
   clients = buildMcpSetupClients(mcpUrl),
+  returnHref = "/dashboard",
 }: GetMcpSetupContentProps) {
   return (
     <main className="relative flex-1 overflow-x-hidden bg-[rgb(var(--void))] px-4 py-8 text-[rgb(var(--text-primary))] sm:px-6 sm:py-10 lg:px-8">
@@ -96,8 +98,8 @@ export function GetMcpSetupContent({
             ))}
           </div>
 
-          <Link href="/dashboard" className="influence-link mt-6 inline-block text-sm">
-            Back to dashboard
+          <Link href={returnHref} className="influence-link mt-6 inline-block text-sm">
+            {returnHref === "/dashboard" ? "Back to dashboard" : "Back to agent review"}
           </Link>
         </div>
       </section>
@@ -105,7 +107,7 @@ export function GetMcpSetupContent({
   );
 }
 
-export function GetMcpClient() {
+export function GetMcpClient({ returnHref = "/dashboard" }: { returnHref?: string }) {
   const runtimeConfig = useRuntimeConfig();
   const browserOrigin =
     typeof window === "undefined" ? undefined : window.location.origin;
@@ -113,10 +115,10 @@ export function GetMcpClient() {
     runtimeConfig.MCP_OAUTH_RESOURCE_URI,
     browserOrigin,
   );
-
   return (
     <GetMcpSetupContent
       mcpUrl={mcpUrl}
+      returnHref={returnHref}
     />
   );
 }

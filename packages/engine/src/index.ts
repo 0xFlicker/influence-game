@@ -183,6 +183,7 @@ export type {
   PostgameJuryBreakdown,
   PostgameJuryVoteEntry,
   PostgameMomentumSegment,
+  PostgamePlayerFormatBallotByRound,
   PostgamePlayerGameSummary,
   PostgamePlayerMajorityAlignment,
   PostgamePlayerShape,
@@ -428,13 +429,23 @@ export type { GeneratedPersona } from "./persona-generator";
 
 // LLM provider configuration
 export {
+  createFlexProcessingFetch,
   createLlmClientFromEnv,
   describeLlmProvider,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
   resolveToolChoiceMode,
 } from "./llm-client";
-export type { LlmClientConfig, LlmToolChoiceMode, OpenAIReasoningSummaryMode, OpenAIRequestServiceTier } from "./llm-client";
+export type {
+  FlexProcessingFetchOptions,
+  FlexProcessingObserver,
+  FlexTransportDispatchIntent,
+  FlexTransportTerminalOutcome,
+  LlmClientConfig,
+  LlmToolChoiceMode,
+  OpenAIReasoningSummaryMode,
+  OpenAIRequestServiceTier,
+} from "./llm-client";
 export {
   MODEL_CATALOG,
   DEFAULT_MODEL_CATALOG_ID,
@@ -483,3 +494,10 @@ export {
   OPENAI_FLEX_MODEL_PRICING,
 } from "./token-tracker";
 export type { TokenUsage, ModelPricing, CostEstimate, OpenAIServiceTier, ServiceTierUsage, TierAwareCostEstimate } from "./token-tracker";
+export {
+  GPT_5_6_LUNA_FLEX_RATE_CARD,
+  GPT_5_6_LUNA_STANDARD_RATE_CARD,
+  projectTokenCost,
+  projectedSavingsFraction,
+} from "./token-cost-projection";
+export type { CostedTokenRequest, TokenCostProjection, TokenCostRateCard } from "./token-cost-projection";

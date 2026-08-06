@@ -1800,7 +1800,238 @@ export const AGENT_GENDER_OPTIONS = [
 
 export type AgentGender = typeof AGENT_GENDER_OPTIONS[number]["value"];
 
-export type UpdateAgentParams = Partial<Omit<CreateAgentParams, "avatarGenerationRequestId">>;
+export type UpdateAgentParams = Partial<Omit<CreateAgentParams, "avatarGenerationRequestId">> & {
+  sourceReviewId?: string;
+};
+
+export type OwnerLearningAnalysisTrack =
+  | "awaiting_evidence"
+  | "evidence_rich"
+  | "strategy_health_check";
+
+export type OwnerLearningAnalysisStatus = "queued" | "running" | "ready" | "no_change" | "failed";
+export type OwnerLearningStage =
+  | "evidence_ready"
+  | "scanning_narratives"
+  | "investigating_moments"
+  | "drafting_recommendations"
+  | "complete";
+export type OwnerLearningResolution =
+  | "applied"
+  | "manual_update"
+  | "declined"
+  | "no_change"
+  | "failed"
+  | "superseded";
+export type OwnerLearningApplyDisposition =
+  | "not_ready"
+  | "awaiting_owner"
+  | "available"
+  | "applied"
+  | "manual_update"
+  | "declined"
+  | "no_change"
+  | "failed"
+  | "superseded"
+  | "unavailable";
+
+interface OwnerLearningCreditDetails {
+  latestEligibleCompletion: { gameId: string; completionAt: string } | null;
+  refillCompletion: { gameId: string; completionAt: string } | null;
+  qualifyingCompletionCount: number;
+}
+
+export type OwnerLearningCredit = OwnerLearningCreditDetails & (
+  | { mode: "metered"; balance: 1; nextAvailableAt: null }
+  | { mode: "metered"; balance: 0; nextAvailableAt: string | null }
+  | { mode: "unlimited"; balance: null; nextAvailableAt: null }
+);
+
+export interface OwnerLearningEligibleInputs {
+  eligibilityPolicyVersion: string;
+  credit: OwnerLearningCredit;
+  profiles: Array<{
+    agentProfileId: string;
+    name: string;
+    currentRevisionId: string;
+    strategyStyle: string | null;
+    qualifyingGameCount: number;
+    games: Array<{
+      gameId: string;
+      slug: string;
+      playerId: string;
+      completionAt: string;
+      analyticalRevisionId: string;
+      transcriptCaptureVersion: number;
+      cognitiveArtifactCaptureVersion: number;
+      previouslyAnalyzed: boolean;
+    }>;
+    recommendedGameIds: string[];
+  }>;
+  recommendedAgentProfileId: string | null;
+  prompt: {
+    threshold: 1 | 3 | null;
+    prominent: boolean;
+    suppressedByDismissal: boolean;
+  };
+  openReview: null | {
+    id: string;
+    agentProfileId: string;
+    analysisStatus: OwnerLearningAnalysisStatus;
+    stage: OwnerLearningStage;
+    analysisTrack: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
+  };
+  mcp: {
+    connectionState: "connected" | "not_connected";
+    requiredScopesVersion: string;
+  };
+}
+
+export interface OwnerLearningRecommendation {
+  id?: string;
+  title: string;
+  disposition: "change" | "keep" | "gather_more_evidence";
+  confidence: "low" | "medium" | "high";
+  rationale: string;
+  keepGuidance?: string;
+  evidenceRefs: OwnerLearningEvidenceRef[];
+  proof?: {
+    kind: "observed_pattern" | "prompt_guidance_defect" | "combined";
+    rubricCategory?: string;
+    observedEvidence: string;
+    strategicInterpretation: string;
+    proposedGuidance: string;
+    exactGuidanceTarget: string;
+  };
+}
+
+export interface OwnerLearningEvidenceRef {
+  kind: "canonical_event" | "decision" | "dialogue" | "cognition" | "game_summary";
+  gameId: string;
+  coordinate: string;
+  sourceHash: string;
+  sourceVersion: string;
+}
+
+export interface OwnerLearningReview {
+  id: string;
+  agentProfileId: string;
+  reviewedRevisionId: string;
+  selectedGameIds: string[];
+  analysisTrack: OwnerLearningAnalysisTrack;
+  analysisStatus: OwnerLearningAnalysisStatus;
+  stage: OwnerLearningStage;
+  capacitySubstatus: "waiting_for_capacity" | "using_standard_capacity" | null;
+  resolution: OwnerLearningResolution | null;
+  result: null | {
+    diagnosis: string;
+    analysisTrack: Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">;
+    strategyHealthClassification?: "guidance_gap" | "execution_gap" | "no_clear_strategy_defect";
+    recommendations: OwnerLearningRecommendation[];
+    proposal?: { field: "strategyStyle"; before: string; after: string };
+    noChange?: { rationale: string };
+  };
+  proposalFingerprint: string | null;
+  safeFailureCode: string | null;
+  retryable: boolean;
+  logicalCallCount: number;
+  diveCount: number;
+  applyDisposition: OwnerLearningApplyDisposition;
+  evidence: {
+    games: Array<{
+      gameId: string;
+      position: number;
+      canonicalFacts: unknown;
+      candidateMoments: Array<Record<string, unknown>>;
+      sourceCaptureVersion: string;
+      sourceHash: string;
+    }>;
+  };
+  application: null | {
+    sourceRecommendationIds: string[];
+    priorRevisionId: string;
+    resultingRevisionId: string;
+    priorStrategyStyle: string;
+    resultingStrategyStyle: string;
+    mutationReceipt: Record<string, unknown>;
+    appliedAt: string;
+  };
+  createdAt: string;
+  updatedAt: string;
+  resolvedAt: string | null;
+}
+
+export type OwnerLearningReviewStatus = Pick<
+  OwnerLearningReview,
+  | "analysisStatus"
+  | "stage"
+  | "capacitySubstatus"
+  | "resolution"
+  | "proposalFingerprint"
+  | "safeFailureCode"
+  | "retryable"
+  | "logicalCallCount"
+  | "diveCount"
+  | "applyDisposition"
+  | "updatedAt"
+  | "resolvedAt"
+>;
+
+export interface OwnerLearningPreflight {
+  status: "awaiting_evidence" | "ready" | "generation_unavailable";
+  selection: {
+    agentProfileId: string;
+    agentProfileName: string;
+    reviewedRevisionId: string;
+    gameIds: string[];
+  };
+  evidence: {
+    analysisTrack: OwnerLearningAnalysisTrack;
+    games: Array<{
+      gameId: string;
+      canonicalFacts: unknown;
+      candidateMoments: Array<{
+        id: string;
+        gameId: string;
+        anchorKind: "canonical_event" | "decision" | "dialogue" | "cognition";
+        sourceCoordinate: string;
+        sourceHash: string;
+        round: number | null;
+        phase: string | null;
+      }>;
+      narrativeCoverage: "rich" | "thin";
+      sourceHash: string;
+      sourceCaptureVersion: string;
+    }>;
+  };
+}
+
+export interface OwnerLearningStartResult {
+  status:
+    | "started"
+    | "existing_review"
+    | "existing_open_review"
+    | "awaiting_evidence"
+    | "generation_unavailable"
+    | "no_credit"
+    | "rolling_limited";
+  reviewId: string | null;
+  nextEligibleAt: string | null;
+  preflight: OwnerLearningPreflight | null;
+}
+
+export interface OwnerLearningApplyResult {
+  reviewId: string;
+  proposalFingerprint: string;
+  sourceRecommendationIds: string[];
+  priorRevisionId: string;
+  resultingRevisionId: string;
+  priorStrategyStyle: string;
+  resultingStrategyStyle: string;
+  receipt: AgentMutationReceipt;
+  appliedAt: string;
+  replayed: boolean;
+}
 
 export interface AvatarCompletion {
   status: "already_provided" | "accepted" | "queued" | "processing" | "completed" | "skipped" | "failed";
@@ -1877,6 +2108,119 @@ export async function updateAgent(
   return apiFetch(`/api/agent-profiles/${id}`, {
     method: "PATCH",
     body: JSON.stringify(params),
+  });
+}
+
+export async function getOwnerLearningEligibleInputs(): Promise<OwnerLearningEligibleInputs> {
+  return apiFetch("/api/agent-learning/eligible-inputs");
+}
+
+export async function recordOwnerLearningPromptImpression(
+  threshold: 1 | 3,
+): Promise<{ recorded: boolean }> {
+  return apiFetch("/api/agent-learning/prompts/impression", {
+    method: "POST",
+    body: JSON.stringify({ threshold }),
+  });
+}
+
+export async function dismissOwnerLearningPrompt(): Promise<{ recorded: boolean }> {
+  return apiFetch("/api/agent-learning/prompts/dismiss", { method: "POST" });
+}
+
+export async function preflightOwnerLearningReview(input: {
+  agentProfileId: string;
+  gameIds: string[];
+}): Promise<OwnerLearningPreflight> {
+  return apiFetch("/api/agent-learning/reviews/preflight", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function listOpenOwnerLearningReviews(): Promise<OwnerLearningReview[]> {
+  return apiFetch("/api/agent-learning/reviews/open");
+}
+
+export async function startOwnerLearningReview(input: {
+  agentProfileId: string;
+  gameIds: string[];
+  idempotencyKey: string;
+}): Promise<OwnerLearningStartResult> {
+  return apiFetch("/api/agent-learning/reviews", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getOwnerLearningReview(
+  reviewId: string,
+  agentProfileId?: string,
+): Promise<OwnerLearningReview> {
+  const query = agentProfileId
+    ? `?agentProfileId=${encodeURIComponent(agentProfileId)}`
+    : "";
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}${query}`);
+}
+
+export async function getOwnerLearningReviewStatus(
+  reviewId: string,
+  agentProfileId?: string,
+): Promise<OwnerLearningReviewStatus> {
+  const query = agentProfileId
+    ? `?agentProfileId=${encodeURIComponent(agentProfileId)}`
+    : "";
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/status${query}`);
+}
+
+export async function retryOwnerLearningReview(reviewId: string): Promise<OwnerLearningReview> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/retry`, {
+    method: "POST",
+  });
+}
+
+export async function recordOwnerLearningRecommendationsViewed(
+  reviewId: string,
+): Promise<{ recorded: boolean }> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/viewed`, {
+    method: "POST",
+  });
+}
+
+export async function recordOwnerLearningManualEditorOpened(
+  reviewId: string,
+): Promise<{ recorded: boolean }> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/manual-editor-opened`, {
+    method: "POST",
+    keepalive: true,
+  });
+}
+
+export async function recordOwnerLearningMcpOfferViewed(
+  reviewId: string,
+): Promise<{ recorded: boolean }> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/mcp-offer-viewed`, {
+    method: "POST",
+  });
+}
+
+export async function applyOwnerLearningReview(
+  reviewId: string,
+  proposalFingerprint: string,
+): Promise<OwnerLearningApplyResult> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/apply`, {
+    method: "POST",
+    body: JSON.stringify({ proposalFingerprint }),
+  });
+}
+
+export async function resolveOwnerLearningReview(
+  reviewId: string,
+  resolution: "declined" | "failed",
+): Promise<OwnerLearningReview> {
+  return apiFetch(`/api/agent-learning/reviews/${encodeURIComponent(reviewId)}/resolve`, {
+    method: "POST",
+    body: JSON.stringify({ resolution }),
   });
 }
 
@@ -2168,6 +2512,163 @@ export async function getGameReplayWatchFrames(
 // Admin agent profile types
 // ---------------------------------------------------------------------------
 
+export type AdminOwnerLearningAcceptance = "accepted" | "not_accepted" | "not_applicable" | "pending";
+export type AdminOwnerLearningDisposition =
+  | "not_ready"
+  | "awaiting_owner"
+  | "applied"
+  | "manual_update"
+  | "declined"
+  | "no_change"
+  | "failed"
+  | "superseded";
+
+export interface AdminOwnerLearningTokenTotals {
+  input: number;
+  cachedInput: number;
+  totalOutput: number;
+  reasoning: number;
+  visibleOutput: number;
+  unavailableCallCount: number;
+}
+
+export interface AdminOwnerLearningCostTotals {
+  actualMicrousd: number;
+  estimatedMicrousd: number;
+  unavailableCallCount: number;
+}
+
+export interface AdminOwnerLearningReviewSummary {
+  id: string;
+  owner: { userId: string; displayName: string | null; handle: string | null };
+  agent: { profileId: string; name: string };
+  reviewedRevision: { id: string; ordinal: number };
+  track: "evidence_rich" | "strategy_health_check";
+  status: OwnerLearningAnalysisStatus;
+  stage: OwnerLearningStage;
+  resolution: OwnerLearningResolution | null;
+  model: string;
+  disposition: AdminOwnerLearningDisposition;
+  acceptance: AdminOwnerLearningAcceptance;
+  logicalCallCount: number;
+  diveCount: number;
+  tokens: AdminOwnerLearningTokenTotals;
+  cost: AdminOwnerLearningCostTotals;
+  createdAt: string;
+  completedAt: string | null;
+  resolvedAt: string | null;
+}
+
+export interface AdminOwnerLearningAnalytics {
+  reviewCount: number;
+  eventCounts: Record<string, number | undefined>;
+  tokens: AdminOwnerLearningTokenTotals;
+  cost: AdminOwnerLearningCostTotals;
+  averageCompletionLatencyMs: number | null;
+}
+
+export interface AdminOwnerLearningReviewList {
+  reviews: AdminOwnerLearningReviewSummary[];
+  analytics: AdminOwnerLearningAnalytics;
+  truncated: boolean;
+}
+
+export interface AdminOwnerLearningReviewDetail {
+  id: string;
+  owner: AdminOwnerLearningReviewSummary["owner"];
+  agent: AdminOwnerLearningReviewSummary["agent"];
+  reviewedRevision: AdminOwnerLearningReviewSummary["reviewedRevision"];
+  policy: {
+    eligibility: string;
+    evidence: string;
+    reviewer: string;
+    prompt: string;
+    schema: string;
+    provider: string;
+    model: string;
+  };
+  lifecycle: {
+    track: "evidence_rich" | "strategy_health_check";
+    status: OwnerLearningAnalysisStatus;
+    stage: OwnerLearningStage;
+    capacitySubstatus: string | null;
+    resolution: OwnerLearningResolution | null;
+    safeFailureCode: string | null;
+    retryable: boolean;
+    logicalCallCount: number;
+    diveCount: number;
+    createdAt: string;
+    startedAt: string | null;
+    completedAt: string | null;
+    resolvedAt: string | null;
+    updatedAt: string;
+  };
+  disposition: AdminOwnerLearningDisposition;
+  acceptance: AdminOwnerLearningAcceptance;
+  calls: Array<{
+    ordinal: number;
+    state: string;
+    stage: string;
+    requestedTier: string;
+    effectiveTier: string | null;
+    requestedReasoningEffort: string;
+    capacityPath: string | null;
+    flex429Count: number;
+    terminalHttpStatus: number | null;
+    providerRequestId: string | null;
+    safeFailureCode: string | null;
+    latencyMs: number | null;
+    tokens: {
+      input: number | null;
+      cachedInput: number | null;
+      totalOutput: number | null;
+      reasoning: number | null;
+      visibleOutput: number | null;
+    };
+    cost: {
+      source: "actual" | "estimated" | "unavailable";
+      microusd: number | null;
+      pricingSourceId: string | null;
+      rateCardVersion: string | null;
+      pricedAt: string | null;
+    };
+    dispatchedAt: string | null;
+    completedAt: string | null;
+  }>;
+  tokens: AdminOwnerLearningTokenTotals;
+  cost: AdminOwnerLearningCostTotals;
+  application: null | {
+    appliedAt: string;
+  };
+}
+
+export interface AdminOwnerLearningReviewFilters {
+  dateFrom?: string;
+  dateTo?: string;
+  track?: "evidence_rich" | "strategy_health_check";
+  status?: OwnerLearningAnalysisStatus;
+  model?: string;
+  resolution?: OwnerLearningResolution | "open";
+  application?: AdminOwnerLearningAcceptance;
+}
+
+export async function listAdminOwnerLearningReviews(
+  filters: AdminOwnerLearningReviewFilters = {},
+): Promise<AdminOwnerLearningReviewList> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value);
+  }
+  const query = params.toString();
+  return apiFetch(`/api/admin/owner-learning-reviews${query ? `?${query}` : ""}`);
+}
+
+export async function getAdminOwnerLearningReview(
+  reviewId: string,
+): Promise<AdminOwnerLearningReviewDetail> {
+  return apiFetch(`/api/admin/owner-learning-reviews/${encodeURIComponent(reviewId)}`);
+}
+
 export interface AdminAgent {
   id: string;
   userId: string;
@@ -2328,7 +2829,37 @@ export interface AdminFreeQueueStatus {
   eligibleCount: number;
   availableHumanSeats: 12;
   longestWaitSince: string | null;
+  waitingGame: { id: string; slug: string; status: "waiting" } | null;
   entries: AdminFreeQueueEntry[];
+}
+
+export type FreeQueueDrawResult = {
+  drawn: true;
+  gameId: string;
+  gameSlug: string;
+  playersDrawn: number;
+  aiPlayersFilled: number;
+  totalPlayers: number;
+  supersededGameCount: number;
+  rated: boolean;
+  seasonId: string | null;
+} | {
+  drawn: false;
+  reason: string;
+  gameId?: undefined;
+  gameSlug?: undefined;
+} | {
+  drawn: false;
+  reason: string;
+  gameId: string;
+  gameSlug: string;
+};
+
+export interface FreeQueueStartResult {
+  started: true;
+  gameId: string;
+  gameSlug: string;
+  players: number;
 }
 
 export interface SeasonIdentity {
@@ -2563,6 +3094,19 @@ export async function getFreeQueueLeaderboard(): Promise<LeaderboardEntry[]> {
 
 export async function getAdminFreeQueue(): Promise<AdminFreeQueueStatus> {
   return apiFetch("/api/admin/free-queue");
+}
+
+export async function drawFreeQueueGame(idempotencyKey: string): Promise<FreeQueueDrawResult> {
+  return apiFetch("/api/free-queue/draw", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+  });
+}
+
+export async function startFreeQueueGame(gameId: string): Promise<FreeQueueStartResult> {
+  return apiFetch(`/api/free-queue/start?gameId=${encodeURIComponent(gameId)}`, {
+    method: "POST",
+  });
 }
 
 export async function removeAdminFreeQueueEntry(userId: string): Promise<void> {

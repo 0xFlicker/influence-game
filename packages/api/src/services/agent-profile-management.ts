@@ -39,6 +39,12 @@ import {
   OwnedSeatProjectionError,
   reconcileOwnedProfileSeatsInLockedGame,
 } from "./owned-seat-projection.js";
+import {
+  lockOwnerLearningReviewForProfileMutation,
+  OwnerLearningResolutionError,
+  resolveOwnerLearningReviewForProfileMutation,
+} from "./owner-learning-resolution.js";
+import { abortActiveOwnerLearningReview } from "./owner-learning-worker.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 type DatabaseExecutor = DrizzleDB | DrizzleTransaction;
@@ -71,6 +77,7 @@ const UPDATE_AGENT_FIELDS = new Set([
   "strategyStyle",
   "gender",
   "avatarUrl",
+  "sourceReviewId",
 ]);
 
 const IMMUTABLE_AGENT_FIELDS = new Set([
@@ -97,6 +104,8 @@ export type AgentProfileManagementErrorCode =
   | "waiting_roster_name_conflict"
   | "agent_update_reconciliation_failed"
   | "agent_update_conflict"
+  | "source_review_not_found"
+  | "source_review_conflict"
   | "account_limit_reached";
 
 export class AgentProfileManagementError extends Error {
@@ -163,6 +172,7 @@ export interface UpdateAgentProfileMutationInput {
   personaKey?: unknown;
   gender?: unknown;
   avatarUrl?: unknown;
+  sourceReviewId?: unknown;
 }
 
 export interface AgentProfileMutationRead {
@@ -506,6 +516,9 @@ export async function updateOwnedAgentProfile(
   agentId: string,
   input: UpdateAgentProfileMutationInput,
 ): Promise<AgentProfileMutationRead> {
+  const sourceReviewId = input.sourceReviewId === undefined
+    ? undefined
+    : requiredStringField(input.sourceReviewId, "sourceReviewId", 200);
   // Keep foreign roster rows out of the candidate lock set. Ownership remains
   // authoritative under the profile lock inside each transaction attempt.
   await requireOwnedAgentProfile(db, context.userId, agentId);
@@ -513,12 +526,36 @@ export async function updateOwnedAgentProfile(
   for (let attempt = 1; attempt <= MAX_UPDATE_ATTEMPTS; attempt += 1) {
     const candidateGames = await findWaitingFollowerGames(db, agentId);
     try {
-      return await db.transaction(async (tx) => updateAgentProfileInTransaction(tx, {
-        context,
-        agentId,
-        input,
-        candidateGames,
-      }));
+      const outcome = await db.transaction(async (tx) => {
+        const locked = await lockOwnedAgentProfileMutationInTransaction(tx, {
+          context,
+          agentId,
+          candidateGames,
+        });
+        const learningReview = await lockOwnerLearningReviewForProfileMutation(tx, {
+          ownerUserId: context.userId,
+          agentProfileId: agentId,
+          ...(sourceReviewId ? { sourceReviewId } : {}),
+        });
+        const mutation = await updateOwnedAgentProfileInLockedTransaction(tx, {
+          context,
+          agentId,
+          input,
+          locked,
+        });
+        const resolution = await resolveOwnerLearningReviewForProfileMutation(tx, {
+          review: learningReview,
+          ...(sourceReviewId ? { sourceReviewId } : {}),
+          analyticalRevisionChanged: mutation.profileRevision.outcome === "created",
+          nowIso: mutation.profile.updatedAt,
+        });
+        return {
+          mutation,
+          resolvedReviewId: resolution ? learningReview?.id ?? null : null,
+        };
+      });
+      if (outcome.resolvedReviewId) abortActiveOwnerLearningReview(outcome.resolvedReviewId);
+      return outcome.mutation;
     } catch (error) {
       if (error instanceof ExpandedWaitingGameSetError) {
         if (attempt < MAX_UPDATE_ATTEMPTS) continue;
@@ -530,21 +567,35 @@ export async function updateOwnedAgentProfile(
           true,
         );
       }
+      if (error instanceof OwnerLearningResolutionError) {
+        throw mapOwnerLearningResolutionError(error);
+      }
       throw mapAgentNameConstraintError(error);
     }
   }
   throw new Error("Agent profile update attempts exhausted unexpectedly");
 }
 
-async function updateAgentProfileInTransaction(
+export interface WaitingFollowerGame {
+  id: string;
+  slug: string;
+}
+
+export type LockedOwnedAgentProfileMutation = {
+  existing: AgentProfileRow;
+  candidateGames: WaitingFollowerGame[];
+  lockedGames: Awaited<ReturnType<typeof lockRosterGamesInTransaction>>;
+};
+
+export async function lockOwnedAgentProfileMutationInTransaction(
   tx: DrizzleTransaction,
   input: {
     context: AgentProfileManagementContext;
     agentId: string;
-    input: UpdateAgentProfileMutationInput;
     candidateGames: WaitingFollowerGame[];
+    expectedRevisionId?: string;
   },
-): Promise<AgentProfileMutationRead> {
+): Promise<LockedOwnedAgentProfileMutation> {
   const lockedGames = await lockRosterGamesInTransaction(
     tx,
     input.candidateGames.map((game) => game.id),
@@ -556,6 +607,30 @@ async function updateAgentProfileInTransaction(
     FOR UPDATE
   `);
   const existing = await requireOwnedAgentProfile(tx, input.context.userId, input.agentId);
+  if (input.expectedRevisionId && existing.currentRevisionId !== input.expectedRevisionId) {
+    throw new AgentProfileManagementError(
+      "agent_update_conflict",
+      "The agent changed after this review was created.",
+      409,
+      {
+        expectedRevisionId: input.expectedRevisionId,
+        currentRevisionId: existing.currentRevisionId,
+      },
+    );
+  }
+  return { existing, candidateGames: input.candidateGames, lockedGames };
+}
+
+export async function updateOwnedAgentProfileInLockedTransaction(
+  tx: DrizzleTransaction,
+  input: {
+    context: AgentProfileManagementContext;
+    agentId: string;
+    input: UpdateAgentProfileMutationInput;
+    locked: LockedOwnedAgentProfileMutation;
+  },
+): Promise<AgentProfileMutationRead> {
+  const { existing, lockedGames, candidateGames } = input.locked;
   const updates = prepareAgentProfileUpdates(input.context, input.input, existing.avatarUrl);
   const profile = (await tx.update(schema.agentProfiles)
     .set(updates)
@@ -609,7 +684,7 @@ async function updateAgentProfileInTransaction(
   }
 
   const currentWaitingGames = await findWaitingFollowerGames(tx, input.agentId);
-  const lockedGameIds = new Set(input.candidateGames.map((game) => game.id));
+  const lockedGameIds = new Set(candidateGames.map((game) => game.id));
   if (currentWaitingGames.some((game) => !lockedGameIds.has(game.id))) {
     throw new ExpandedWaitingGameSetError();
   }
@@ -726,19 +801,14 @@ function profileMutationRead(
   };
 }
 
-interface WaitingFollowerGame {
-  id: string;
-  slug: string;
-}
-
-class ExpandedWaitingGameSetError extends Error {
+export class ExpandedWaitingGameSetError extends Error {
   constructor() {
     super("Waiting follower game set expanded during update");
     this.name = "ExpandedWaitingGameSetError";
   }
 }
 
-async function findWaitingFollowerGames(
+export async function findWaitingFollowerGames(
   db: DatabaseExecutor,
   agentProfileId: string,
 ): Promise<WaitingFollowerGame[]> {
@@ -928,6 +998,9 @@ export async function updateOwnedAgent(
     }
     updates.avatarUrl = avatarUrl.value ?? null;
   }
+  if (input.sourceReviewId !== undefined) {
+    updates.sourceReviewId = requiredStringField(input.sourceReviewId, "sourceReviewId", 200);
+  }
   const mutation = await updateOwnedAgentProfile(db, context, agentId, updates);
   let receipt = mutation.receipt;
   let avatarCompletion: AvatarCompletionRead | undefined;
@@ -959,6 +1032,25 @@ function addMutationWarning(
   return receipt.warnings.includes(warning)
     ? receipt
     : { ...receipt, warnings: [...receipt.warnings, warning] };
+}
+
+function mapOwnerLearningResolutionError(
+  error: OwnerLearningResolutionError,
+): AgentProfileManagementError {
+  if (error.code === "review_not_found") {
+    return new AgentProfileManagementError(
+      "source_review_not_found",
+      "Learning review not found.",
+      404,
+    );
+  }
+  return new AgentProfileManagementError(
+    "source_review_conflict",
+    error.code === "review_profile_mismatch"
+      ? "That learning review belongs to a different agent."
+      : "That learning review has already been resolved.",
+    409,
+  );
 }
 
 async function maybeRequestAvatarCompletion(

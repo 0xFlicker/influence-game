@@ -10,6 +10,8 @@ Last continuity audit added: 2026-07-26
 
 Last watch-shell accessibility audit added: 2026-07-26
 
+Last live recovery regression added: 2026-08-04
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -41,10 +43,13 @@ Items are ordered by current priority.
 
 ### R15. Format-kernel phase-boundary startup recovery
 
-- Status: `closed`
-- Priority: **high** (resolved 2026-07-26)
-- Sources: `packages/api/src/services/game-recovery-support.ts`, `packages/engine/src/format-recovery.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/mingle-inbox-replay.ts`, `packages/api/src/__tests__/game-recovery.test.ts`, plan `docs/plans/2026-07-26-001-fix-format-phase-boundary-recovery-plan.md`.
-- Resolution: the four format phase-entry coordinates are startup-recoverable when current-round canonical prerequisites pass. Hydration rebuilds menu/selection/pressure from events only; actor walk uses non-effectful transitions; Mingle inbox replay is session-scoped; DB-backed matrix and corrupt-prefix cases prove same-game continuation and fail-closed behavior. Mid-action format recovery remains out of scope. Player/House private continuity is tracked separately as R12/R16.
+- Status: `ready`
+- Priority: **high** (reopened 2026-08-04 after a live local failure)
+- Sources: local game `free-blue-wire`; `packages/api/src/services/game-recovery-support.ts`, `packages/engine/src/format-recovery.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/mingle-inbox-replay.ts`, `packages/api/src/__tests__/game-recovery.test.ts`, plan `docs/plans/2026-07-26-001-fix-format-phase-boundary-recovery-plan.md`.
+- Signal: `free-blue-wire` failed to reach stable continuation after a local restart from its event-62 `FORMAT_RESOLVE` checkpoint. The recovery attempt appended canonical format-resolution and elimination events through event 78 and sealed a new `LOBBY` checkpoint, but the game still ended `suspended` with an expired owner whose failure reason is `startup_orphaned`. The existing checkpoint-admission and same-game event-prefix tests therefore do not justify treating format recovery as closed.
+- Concrete seam: startup recovery coordination, recovered-run ownership/heartbeat lifetime, the `FORMAT_RESOLVE` actor walk, and lifecycle handoff after the first post-recovery checkpoint.
+- Validation path: reproduce from the durable `free-blue-wire` event/checkpoint shape; restart at `FORMAT_RESOLVE`; verify the same game advances beyond the next `LOBBY` boundary under a healthy owner and reaches normal completion without duplicate resolution/elimination events or a second orphan suspension.
+- Suggested slice: identify why the recovered runner became orphaned after committing event 78, fix the smallest ownership or lifecycle defect, and add a DB-backed restart-to-completion regression. Preserve event-only hydration and fail-closed admission for corrupt prerequisites.
 
 ### R12. Player Strategy Thread checkpoint hydration
 

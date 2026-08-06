@@ -11,12 +11,14 @@ import {
   type SavedAgent,
 } from "@/lib/api";
 import { AgentForm } from "./agent-form";
+import { reviewPath } from "./[id]/review/owner-learning-model";
 
 interface AgentEditContentProps {
   agentId: string;
+  sourceReviewId?: string;
 }
 
-export function AgentEditContent({ agentId }: AgentEditContentProps) {
+export function AgentEditContent({ agentId, sourceReviewId }: AgentEditContentProps) {
   const router = useRouter();
   const [agent, setAgent] = useState<SavedAgent | null>(null);
   const [loading, setLoading] = useState(true);
@@ -46,8 +48,8 @@ export function AgentEditContent({ agentId }: AgentEditContentProps) {
   }, [fetchAgent]);
 
   async function handleUpdate(params: CreateAgentParams) {
-    await updateAgent(agentId, params);
-    router.replace("/dashboard/agents");
+    await updateAgent(agentId, { ...params, ...(sourceReviewId ? { sourceReviewId } : {}) });
+    router.replace(sourceReviewId ? reviewPath(agentId, sourceReviewId) : "/dashboard/agents");
   }
 
   return (
@@ -65,7 +67,9 @@ export function AgentEditContent({ agentId }: AgentEditContentProps) {
           <h1 className="text-2xl font-bold text-text-primary">Edit Agent</h1>
         </div>
         <p className="influence-copy text-sm">
-          Update this saved competitor&apos;s profile and avatar.
+          {sourceReviewId
+            ? "Make your own review-guided update. Saving closes the open review as a manual update."
+            : "Update this saved competitor's profile and avatar."}
         </p>
       </div>
 
@@ -88,7 +92,7 @@ export function AgentEditContent({ agentId }: AgentEditContentProps) {
           <AgentForm
             initial={agent}
             onSubmit={handleUpdate}
-            onCancel={() => router.replace("/dashboard/agents")}
+            onCancel={() => router.replace(sourceReviewId ? reviewPath(agentId, sourceReviewId) : "/dashboard/agents")}
             submitLabel="Save Changes"
           />
         </div>

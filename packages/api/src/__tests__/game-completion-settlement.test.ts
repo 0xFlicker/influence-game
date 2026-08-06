@@ -83,6 +83,7 @@ describe("game completion settlement capture", () => {
           total: {
             promptTokens: 100,
             cachedTokens: 20,
+            cacheWriteTokens: 5,
             completionTokens: 30,
             reasoningTokens: 10,
             totalTokens: 130,
@@ -93,6 +94,7 @@ describe("game completion settlement capture", () => {
             "atlas:vote": {
               promptTokens: 100,
               cachedTokens: 20,
+              cacheWriteTokens: 5,
               completionTokens: 30,
               reasoningTokens: 10,
               totalTokens: 130,
@@ -471,6 +473,7 @@ describe("game completion settlement capture", () => {
     expect(JSON.parse(result.tokenUsage)).toEqual({
       promptTokens: 100,
       cachedTokens: 20,
+      cacheWriteTokens: 5,
       completionTokens: 30,
       reasoningTokens: 10,
       totalTokens: 130,

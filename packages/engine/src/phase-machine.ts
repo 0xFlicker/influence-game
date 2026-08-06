@@ -258,24 +258,8 @@ export function createPhaseMachine() {
         ],
         exit: [{ type: "emitPhaseEnded", params: { phase: Phase.LOBBY } }],
         on: {
-          PHASE_COMPLETE: "mingle_i",
-          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
-        },
-      },
-
-      mingle_i: {
-        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.MINGLE_I } }],
-        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.MINGLE_I } }],
-        on: {
-          PHASE_COMPLETE: "pre_vote_huddle",
-        },
-      },
-
-      pre_vote_huddle: {
-        entry: [{ type: "emitPhaseStarted", params: { phase: Phase.PRE_VOTE_HUDDLE } }],
-        exit: [{ type: "emitPhaseEnded", params: { phase: Phase.PRE_VOTE_HUDDLE } }],
-        on: {
           PHASE_COMPLETE: "vote",
+          UPDATE_ALIVE_PLAYERS: { actions: ["updateAlivePlayers"] },
         },
       },
 

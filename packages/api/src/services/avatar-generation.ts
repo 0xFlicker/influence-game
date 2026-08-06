@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
+import { userHasRole } from "../db/rbac.js";
 import type {
   AvatarChangeSource,
   AvatarGenerationStatus,
@@ -823,21 +824,6 @@ async function checkAvatarGenerationQuota(
   }
 
   return { ok: true };
-}
-
-async function userHasRole(db: DatabaseExecutor, userId: string, roleName: string): Promise<boolean> {
-  const [row] = await db
-    .select({ id: schema.users.id })
-    .from(schema.users)
-    .innerJoin(schema.addressRoles, sql`lower(${schema.users.walletAddress}) = ${schema.addressRoles.walletAddress}`)
-    .innerJoin(schema.roles, eq(schema.addressRoles.roleId, schema.roles.id))
-    .where(and(
-      eq(schema.users.id, userId),
-      eq(schema.roles.name, roleName),
-    ))
-    .limit(1);
-
-  return Boolean(row);
 }
 
 async function claimGenerationProviderWork(

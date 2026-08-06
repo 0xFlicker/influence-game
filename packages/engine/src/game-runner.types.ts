@@ -495,6 +495,7 @@ export interface PrivateDecisionTrace {
     promptTokens?: number;
     completionTokens?: number;
     cachedTokens?: number;
+    cacheWriteTokens?: number;
     reasoningTokens?: number;
     totalTokens?: number;
     routerBilling?: Record<string, unknown>;
@@ -847,7 +848,7 @@ export interface AllianceHuddlePromptContext {
   memberNames: string[];
   purpose: string;
   timebox?: string | null;
-  window: "pre_vote" | "pre_council";
+  window: "format" | "pre_vote" | "pre_council";
   scheduleId: UUID;
   pass: number;
 }

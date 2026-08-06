@@ -11,7 +11,7 @@ import type OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
-import type { MingleIntentSummary, UUID } from "./types";
+import type { UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import { PromptReuseCollector } from "./prompt-reuse";
 import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleWindow } from "./types";
@@ -86,12 +86,14 @@ export interface DiaryRoomContext {
 export interface HouseMingleAssignmentPlayer {
   id: UUID;
   name: string;
-  intent: MingleIntentSummary | null;
 }
 
 export interface HouseMingleAssignmentContext {
   round: number;
+  phase: Phase.MINGLE | Phase.MINGLE_I | Phase.POST_VOTE_MINGLE | Phase.FORMAT_MINGLE;
   roomCount: number;
+  selectedFormatName: string | null;
+  formatRuleSummary: string | null;
   players: HouseMingleAssignmentPlayer[];
 }
 
@@ -118,7 +120,7 @@ export interface HouseAllianceHuddleCandidate {
 
 export interface HouseAllianceHuddleScheduleContext {
   round: number;
-  phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
+  phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
   window: AllianceHuddleWindow;
   budget: number;
   alivePlayers: string[];
@@ -140,7 +142,7 @@ export interface HouseAllianceHuddleScheduleResult {
 
 export interface HouseAllianceHuddleOutcomeContext {
   round: number;
-  phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
+  phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
   window: AllianceHuddleWindow;
   alliance: {
     id: UUID;
@@ -176,7 +178,7 @@ export type FollowUpResult =
   | { type: "close"; message: string };
 
 export interface IHouseInterviewer {
-  /** Assign initial Mingle rooms from all hidden Mingle intents. The phase validator repairs/finalizes output. */
+  /** Assign initial Mingle rooms from the roster and locked format. The phase validator repairs/finalizes output. */
   assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult>;
   /** Recommend scarce named-alliance huddles from active eligible alliances. The engine validates and repairs output. */
   planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult>;
@@ -488,17 +490,27 @@ function parseHouseSummary(
   };
 }
 
+function huddleCoordinationLabel(window: AllianceHuddleWindow): string {
+  if (window === "format") return "locked-format";
+  return window === "pre_vote" ? "public Vote" : "Council";
+}
+
+function defaultHuddleAsk(window: AllianceHuddleWindow): string {
+  if (window === "format") return "Align under the locked format.";
+  return window === "pre_vote" ? "Align before the public Vote." : "Align before Council.";
+}
+
 function parseHouseAllianceHuddleOutcome(
   parsed: Record<string, unknown>,
   context: HouseAllianceHuddleOutcomeContext,
 ): HouseAllianceHuddleOutcomeResult {
   const transcriptFallback = context.transcript.length > 0
-    ? `Members discussed ${context.window === "pre_vote" ? "Vote" : "Council"} coordination.`
+    ? `Members discussed ${huddleCoordinationLabel(context.window)} coordination.`
     : `No explicit member messages were recorded for ${context.alliance.name}.`;
   return {
     ask: readString(
       parsed.ask,
-      context.window === "pre_vote" ? "Align before the public Vote." : "Align before Council.",
+      defaultHuddleAsk(context.window),
     ),
     plan: readString(parsed.plan, transcriptFallback),
     promises: readStringArray(parsed.promises),
@@ -577,6 +589,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
       parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
+      usage.cacheWriteTokens ?? 0,
     );
   }
 
@@ -651,17 +664,38 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       !Array.isArray(usageRecord.prompt_tokens_details)
       ? usageRecord.prompt_tokens_details as Record<string, unknown>
       : {};
+    const inputDetails = usageRecord.input_tokens_details &&
+      typeof usageRecord.input_tokens_details === "object" &&
+      !Array.isArray(usageRecord.input_tokens_details)
+      ? usageRecord.input_tokens_details as Record<string, unknown>
+      : {};
+    const outputDetails = usageRecord.output_tokens_details &&
+      typeof usageRecord.output_tokens_details === "object" &&
+      !Array.isArray(usageRecord.output_tokens_details)
+      ? usageRecord.output_tokens_details as Record<string, unknown>
+      : {};
     const routerBilling = usageRecord.imgnai &&
       typeof usageRecord.imgnai === "object" &&
       !Array.isArray(usageRecord.imgnai)
       ? usageRecord.imgnai as Record<string, unknown>
       : undefined;
     const diagnostics = "imgnai" in usageRecord && !routerBilling ? ["malformed_router_billing"] : [];
+    const promptTokens = LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens)
+      ?? LLMHouseInterviewer.readNumberField(usageRecord.input_tokens);
+    const completionTokens = LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens)
+      ?? LLMHouseInterviewer.readNumberField(usageRecord.output_tokens);
+    const cachedTokens = LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens)
+      ?? LLMHouseInterviewer.readNumberField(inputDetails.cached_tokens);
+    const cacheWriteTokens = LLMHouseInterviewer.readNumberField(promptDetails.cache_write_tokens)
+      ?? LLMHouseInterviewer.readNumberField(inputDetails.cache_write_tokens);
+    const reasoningTokens = LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens)
+      ?? LLMHouseInterviewer.readNumberField(outputDetails.reasoning_tokens);
     const metadata: NonNullable<PrivateDecisionTrace["usage"]> = {
-      ...(LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens) !== undefined && { promptTokens: LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens) }),
-      ...(LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens) !== undefined && { completionTokens: LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens) }),
-      ...(LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens) !== undefined && { cachedTokens: LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens) }),
-      ...(LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens) !== undefined && { reasoningTokens: LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens) }),
+      ...(promptTokens !== undefined && { promptTokens }),
+      ...(completionTokens !== undefined && { completionTokens }),
+      ...(cachedTokens !== undefined && { cachedTokens }),
+      ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
+      ...(reasoningTokens !== undefined && { reasoningTokens }),
       ...(LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) !== undefined && { totalTokens: LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) }),
       ...(routerBilling && { routerBilling }),
       ...(diagnostics.length > 0 && { diagnostics }),
@@ -890,36 +924,23 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
 
   async assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult> {
     const playerLines = context.players
-      .map((player) => {
-        const intent = player.intent;
-        const intentText = intent
-          ? [
-              `seek=${intent.seekPlayers.length > 0 ? intent.seekPlayers.join(", ") : "none"}`,
-              `avoid=${intent.avoidPlayers.length > 0 ? intent.avoidPlayers.join(", ") : "none"}`,
-              `preferredSize=${intent.preferredRoomSize}`,
-              `purpose=${intent.purpose || "not stated"}`,
-              `provisionalTarget=${intent.provisionalTarget ?? "none"}`,
-              `noTargetReason=${intent.noTargetReason ?? "n/a"}`,
-              `openingAsk=${intent.openingAsk || "not stated"}`,
-              `strategicLens=${intent.strategicLens}`,
-              `lensRationale=${intent.strategicLensRationale || "not stated"}`,
-            ].join("; ")
-          : "no intent available";
-        return `- ${player.name} (${player.id}): ${intentText}`;
-      })
+      .map((player) => `- ${player.name} (${player.id})`)
       .join("\n");
 
     const roomList = Array.from({ length: context.roomCount }, (_, index) => index + 1).join(", ");
     const prompt = `Assign initial Mingle rooms for Round ${context.round}.
 
+Phase: ${context.phase}
+Locked format: ${context.selectedFormatName ?? "none"}
+Locked rules: ${context.formatRuleSummary ?? "No locked format rules are available."}
 Rooms available: ${roomList}
-Alive players and hidden Mingle intents:
+Alive players:
 ${playerLines}
 
 Your job:
-- Form interesting, strategic, roughly balanced rooms from seek/avoid/preferred-size/purpose signals.
-- Prefer rooms that create useful conversations: tests, coalition repair, pressure checks, information trades, and unresolved tensions.
-- Do not hide everyone in Room 1. Room numbers are neutral containers; assign people based on the full set of intents.
+- Form interesting, strategic, roughly balanced rooms under the locked format.
+- Prefer rooms that can build concrete vote blocs, negotiate named targets, test commitments, and plan contingencies permitted by the locked rules.
+- Do not hide everyone in Room 1. Room numbers are neutral containers; use the full roster and locked rules.
 - Assign every listed player exactly once.
 - Use only the exact player IDs above and room IDs from the available room list.
 
@@ -940,7 +961,7 @@ Respond with JSON only:
         action: "house-mingle-assignment",
         source: "House/mingle-assignment",
         round: context.round,
-        phase: Phase.MINGLE,
+        phase: context.phase,
         messages,
         schemaName: "house_mingle_assignment",
         schema: {
@@ -976,7 +997,7 @@ Respond with JSON only:
         reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
       });
       await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-mingle-assignment", context.round, Phase.MINGLE),
+        context: this.privateTraceContext("house-mingle-assignment", context.round, context.phase),
         messages,
         response,
         output,
@@ -1015,7 +1036,7 @@ ${candidates || "(none)"}
 Your job:
 - Choose which active alliances earn huddle time in this window.
 - You may schedule fewer than the budget, including zero, when the room does not need more private coordination.
-- Prefer huddles that create decision-relevant drama: vote leverage, Council danger, betrayal risk, underdog flips, dominance interruption, fresh tension, or unresolved promises.
+- Prefer huddles that create decision-relevant drama: concrete format ballots or targets, Council danger, betrayal risk, underdog flips, dominance interruption, fresh tension, or unresolved promises.
 - Skip stale, redundant, or low-relevance alliances.
 - Use only alliance IDs listed above.
 - Do not invent alliances or expose this rationale to players.
@@ -1928,11 +1949,11 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
       `${commitment.speakerName}: ${commitment.proposedAction}${commitment.proposedTargetName ? ` -> ${commitment.proposedTargetName}` : ""}`,
     );
     return {
-      ask: context.window === "pre_vote" ? "Align before the public Vote." : "Align before Council.",
+      ask: defaultHuddleAsk(context.window),
       plan: proposals.length > 0
         ? `${context.alliance.name} proposals: ${proposals.join("; ")}.`
         : context.transcript.length > 0
-          ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate around the alliance purpose.`
+          ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate ${huddleCoordinationLabel(context.window)} commitments.`
           : `No explicit member messages were recorded for ${context.alliance.name}.`,
       promises: context.commitments.flatMap((commitment) => commitment.memberCommitments.map(({ memberName, commitment: promise }) => `${memberName}: ${promise}`)),
       dissent: context.commitments.flatMap((commitment) => commitment.dissent),

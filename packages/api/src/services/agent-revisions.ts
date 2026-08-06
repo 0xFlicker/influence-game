@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import {
   DEFAULT_MODEL_CATALOG_ID,
   resolveModelSelection,
@@ -199,29 +199,13 @@ export async function resolveGameEffectiveAgentRevisionInTransaction(
     .where(and(
       eq(schema.agentRevisions.agentProfileId, input.profile.id),
       eq(schema.agentRevisions.fingerprint, nextFingerprint),
+      eq(schema.agentRevisions.trigger, "runtime_policy_change"),
+      eq(schema.agentRevisions.priorRevisionId, current.id),
     ))
     .orderBy(desc(schema.agentRevisions.ordinal))
     .limit(1))[0];
   if (matching) {
     return { revision: matching, created: false, ratingRecalibrated: false };
-  }
-
-  // v1 fingerprints included the display name. Re-evaluate legacy snapshots
-  // through the current analytical policy so cosmetic renames do not fork the
-  // lineage or prevent a game from reusing an otherwise identical revision.
-  const legacyMatching = (await tx.select().from(schema.agentRevisions)
-    .where(and(
-      eq(schema.agentRevisions.agentProfileId, input.profile.id),
-      ne(schema.agentRevisions.revisionPolicyVersion, REVISION_POLICY_VERSION),
-    ))
-    .orderBy(desc(schema.agentRevisions.ordinal)))
-    .find((revision) => revisionMatchesCurrentPolicy(
-      revision,
-      input.effectiveRuntimeSnapshot,
-      nextFingerprint,
-    ));
-  if (legacyMatching) {
-    return { revision: legacyMatching, created: false, ratingRecalibrated: false };
   }
 
   const { revision } = await insertRevision(tx, {

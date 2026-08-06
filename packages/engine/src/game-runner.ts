@@ -67,7 +67,7 @@ import type { FormatKernelState, PhaseRunnerContext, PhaseActor } from "./phases
 import {
   runIntroductionPhase,
   runLobbyPhase, runReckoningLobby, runTribunalLobby,
-  runMingleIAlliancePhase, runAllianceHuddleWindow,
+  runAllianceFormationPhase, runAllianceHuddleWindow,
   runMinglePhase,
   runVotePhase, runReckoningVote, runTribunalVote,
   runFormatMenuPhase, runFormatPickPhase, runFormatMinglePhase, runFormatResolvePhase,
@@ -811,11 +811,6 @@ export class GameRunner {
         await this.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
-      } else if (state === "mingle_i") {
-        await runMinglePhase(prc, actor, { phase: Phase.MINGLE_I, completePhase: false });
-        await runMingleIAlliancePhase(prc, actor);
-      } else if (state === "pre_vote_huddle") {
-        await runAllianceHuddleWindow(prc, actor, Phase.PRE_VOTE_HUDDLE);
       } else if (state === "vote") {
         if (this.gameState.round > 1) {
           await this.diaryRoom.runStrategicReflections(Phase.VOTE, { timing: "pre_vote" });
@@ -829,7 +824,9 @@ export class GameRunner {
       } else if (state === "format_pick") {
         await runFormatPickPhase(prc, actor);
       } else if (state === "format_mingle") {
-        await runFormatMinglePhase(prc, actor);
+        await runFormatMinglePhase(prc, actor, { completePhase: false });
+        await runAllianceFormationPhase(prc);
+        await runAllianceHuddleWindow(prc, actor, Phase.FORMAT_MINGLE);
       } else if (state === "format_resolve") {
         await runFormatResolvePhase(prc, actor);
         await this.emitHouseRoundInterstitial(Phase.FORMAT_RESOLVE);
@@ -992,9 +989,7 @@ export class GameRunner {
     actor: PhaseActor,
     round: number,
   ): Promise<void> {
-    await this.completeResumePhase(actor); // lobby → mingle_i
-    await this.completeResumePhase(actor); // mingle_i → pre_vote_huddle
-    await this.completeResumePhase(actor); // pre_vote_huddle → vote
+    await this.completeResumePhase(actor); // lobby → vote
     const empoweredId = this.resumeEmpoweredId(round);
     actor.send({ type: "VOTES_TALLIED", empoweredId });
     await this.completeResumePhase(actor); // vote → format_menu
@@ -1018,6 +1013,9 @@ export class GameRunner {
     actor: PhaseActor,
     target: GameRunnerResumeActorCoordinate,
   ): Promise<void> {
+    if (target === "mingle_i" || target === "pre_vote_huddle") {
+      throw new Error(`Phase-boundary resume coordinate "${target}" retired with the pre-format social window`);
+    }
     await this.completeResumePhase(actor);
     this.updateResumeAlivePlayers(actor);
     await this.completeResumePhase(actor);
@@ -1029,18 +1027,6 @@ export class GameRunner {
     if (!this.hasCanonicalEvent("round.started")) {
       throw new Error(`Phase-boundary resume to "${target}" missing round.started event`);
     }
-    await this.completeResumePhase(actor);
-    if (target === "mingle_i") {
-      this.assertResumeActorState(actor, target);
-      return;
-    }
-
-    await this.completeResumePhase(actor);
-    if (target === "pre_vote_huddle") {
-      this.assertResumeActorState(actor, target);
-      return;
-    }
-
     await this.completeResumePhase(actor);
     if (target === "vote") {
       this.assertResumeActorState(actor, target);

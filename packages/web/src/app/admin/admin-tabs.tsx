@@ -10,10 +10,11 @@ import { ImportGamePanel } from "./import-game-panel";
 import { PermissionGate } from "@/components/admin-gate";
 import { SeasonAdminPanel } from "./season-admin-panel";
 import { FreeQueuePanel } from "./free-queue-panel";
+import { AdminOwnerLearningReviews } from "./admin-owner-learning-reviews";
 
-type Tab = "games" | "seasons" | "free-queue" | "agents" | "users" | "invites" | "import";
+type Tab = "games" | "reviews" | "seasons" | "free-queue" | "agents" | "users" | "invites" | "import";
 
-const VALID_TABS: Tab[] = ["games", "seasons", "free-queue", "agents", "users", "invites", "import"];
+const VALID_TABS: Tab[] = ["games", "reviews", "seasons", "free-queue", "agents", "users", "invites", "import"];
 
 export function AdminTabs() {
   const searchParams = useSearchParams();
@@ -54,6 +55,12 @@ export function AdminTabs() {
           Games
         </TabButton>
         <TabButton
+          active={activeTab === "reviews"}
+          onClick={() => setActiveTab("reviews")}
+        >
+          Reviews
+        </TabButton>
+        <TabButton
           active={activeTab === "free-queue"}
           onClick={() => setActiveTab("free-queue")}
         >
@@ -89,6 +96,7 @@ export function AdminTabs() {
 
       {/* Tab content */}
       {activeTab === "games" && <AdminPanel />}
+      {activeTab === "reviews" && <AdminOwnerLearningReviews />}
       {activeTab === "seasons" && <SeasonAdminPanel />}
       {activeTab === "free-queue" && <FreeQueuePanel />}
       {activeTab === "agents" && <AgentsAdminPanel />}

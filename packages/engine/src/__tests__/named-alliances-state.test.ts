@@ -510,7 +510,7 @@ describe("named alliance state", () => {
     expect(restored.getDomainProjection().alliances).toEqual(gs.getDomainProjection().alliances);
   });
 
-  it("rejects alliance mutation outside the Mingle I action window", () => {
+  it("rejects alliance mutation outside the post-format Mingle action window", () => {
     const gs = createStartedGame();
 
     const illegalPhases = [
@@ -533,12 +533,12 @@ describe("named alliance state", () => {
             proposerId: "alice",
             name: "Too Late",
             memberIds: ["alice", "bob"],
-            purpose: "Mutate outside Mingle I.",
+            purpose: "Mutate outside the post-format action window.",
             timebox: null,
           },
           { phase },
         ),
-      ).toThrow("Alliance mutations are only legal during Mingle I");
+      ).toThrow("Alliance mutations are only legal during the post-format Mingle alliance window");
     }
   });
 

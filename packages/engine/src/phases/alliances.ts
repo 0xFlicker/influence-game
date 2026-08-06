@@ -74,6 +74,7 @@ function hasActiveAllianceWithSameRoster(ctx: PhaseRunnerContext, memberIds: rea
 async function collectAllianceAction(
   ctx: PhaseRunnerContext,
   playerId: UUID,
+  phase: Phase.FORMAT_MINGLE,
 ): Promise<AllianceAction> {
   const agent = ctx.agents.get(playerId)!;
   if (!agent.getAllianceAction) {
@@ -84,7 +85,7 @@ async function collectAllianceAction(
     };
   }
 
-  const phaseCtx = prepareAgentPhaseContext(ctx, agent, playerId, Phase.MINGLE_I, "strategic_decision");
+  const phaseCtx = prepareAgentPhaseContext(ctx, agent, playerId, phase, "strategic_decision");
   try {
     return await agent.getAllianceAction(phaseCtx);
   } catch (error) {
@@ -102,6 +103,7 @@ async function applyAllianceAction(
   playerId: UUID,
   action: AllianceAction,
   pass: number,
+  phase: Phase.FORMAT_MINGLE,
 ): Promise<{ result: string; repairNotes: string[]; changed: boolean }> {
   const beforeCount = ctx.gameState.getCanonicalEvents().length;
   const repairNotes: string[] = [];
@@ -110,7 +112,7 @@ async function applyAllianceAction(
       playerId,
       "alliance-action",
       ctx.gameState.round,
-      Phase.MINGLE_I,
+      phase,
       pass,
       decisionId,
     ),
@@ -141,7 +143,7 @@ async function applyAllianceAction(
           purpose: action.purpose,
           timebox: action.timebox ?? null,
         }, {
-          phase: Phase.MINGLE_I,
+          phase,
           sourcePointers: sourcePointers(repairNotes.length === 0 ? action.decisionId : undefined),
         });
         break;
@@ -168,7 +170,7 @@ async function applyAllianceAction(
           playerId,
           response,
         }, {
-          phase: Phase.MINGLE_I,
+          phase,
           sourcePointers: sourcePointers(action.decisionId),
         });
         break;
@@ -189,7 +191,7 @@ async function applyAllianceAction(
           purpose: action.purpose,
           timebox: action.timebox ?? null,
         }, {
-          phase: Phase.MINGLE_I,
+          phase,
           sourcePointers: sourcePointers(repairNotes.length === 0 ? action.decisionId : undefined),
         });
         if (!version) repairNotes.push("Alliance counter rejected because the lineage is closed or the counter cap was reached.");
@@ -216,7 +218,7 @@ async function applyAllianceAction(
           purpose: action.purpose,
           timebox: action.timebox ?? null,
         }, {
-          phase: Phase.MINGLE_I,
+          phase,
           sourcePointers: sourcePointers(repairNotes.length === 0 ? action.decisionId : undefined),
         });
         break;
@@ -294,12 +296,13 @@ function emitAllianceActionTurn(
   pass: number,
   result: string,
   repairNotes: string[],
+  phase: Phase.FORMAT_MINGLE,
 ): void {
   const player = ctx.gameState.getPlayer(playerId);
   const playerName = player?.name ?? playerId;
   const operatorContext = resolveAllianceActionOperatorContext(ctx, action);
   ctx.logger.emitAgentTurn({
-    phase: Phase.MINGLE_I,
+    phase,
     action: "alliance-action",
     actor: { id: playerId, name: playerName, role: "player" },
     visibility: "private",
@@ -371,6 +374,7 @@ async function resolveAllianceProposalTransaction(
   ctx: PhaseRunnerContext,
   lineageId: UUID,
   step: { value: number },
+  phase: Phase.FORMAT_MINGLE,
 ): Promise<void> {
   const askedByVersion = new Map<UUID, Set<UUID>>();
 
@@ -380,7 +384,7 @@ async function resolveAllianceProposalTransaction(
 
     const version = currentLineageVersion(lineage);
     if (!version) {
-      ctx.gameState.expireAllianceProposal(lineageId, { phase: Phase.MINGLE_I });
+      ctx.gameState.expireAllianceProposal(lineageId, { phase });
       return;
     }
 
@@ -397,26 +401,29 @@ async function resolveAllianceProposalTransaction(
 
     if (!responder) {
       await assertCanAcceptCommit(ctx);
-      ctx.gameState.expireAllianceProposal(lineageId, { phase: Phase.MINGLE_I });
+      ctx.gameState.expireAllianceProposal(lineageId, { phase });
       return;
     }
 
-    const action = await collectAllianceAction(ctx, responder.id);
+    const action = await collectAllianceAction(ctx, responder.id, phase);
     askedIds.add(responder.id);
     const modeError = validateProposalResponseAction(action, lineageId);
     if (modeError) {
-      emitAllianceActionTurn(ctx, responder.id, action, step.value, "rejected", [modeError]);
+      emitAllianceActionTurn(ctx, responder.id, action, step.value, "rejected", [modeError], phase);
       step.value += 1;
       continue;
     }
 
-    const result = await applyAllianceAction(ctx, responder.id, action, step.value);
-    emitAllianceActionTurn(ctx, responder.id, action, step.value, result.result, result.repairNotes);
+    const result = await applyAllianceAction(ctx, responder.id, action, step.value, phase);
+    emitAllianceActionTurn(ctx, responder.id, action, step.value, result.result, result.repairNotes, phase);
     step.value += 1;
   }
 }
 
-function huddleWindowForPhase(phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE): AllianceHuddleWindow {
+type AllianceHuddlePhase = Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE;
+
+function huddleWindowForPhase(phase: AllianceHuddlePhase): AllianceHuddleWindow {
+  if (phase === Phase.FORMAT_MINGLE) return "format";
   return phase === Phase.PRE_VOTE_HUDDLE ? "pre_vote" : "pre_council";
 }
 
@@ -469,7 +476,7 @@ function huddleScheduleRecord(params: {
 
 function emitHuddleScheduleTurn(
   ctx: PhaseRunnerContext,
-  phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE,
+  phase: AllianceHuddlePhase,
   schedule: AllianceHuddleScheduleRecord,
 ): void {
   const alliance = ctx.gameState.getAlliance(schedule.allianceId);
@@ -515,7 +522,11 @@ async function collectAllianceHuddleTurn(
     };
   }
 
-  const phase = huddle.window === "pre_vote" ? Phase.PRE_VOTE_HUDDLE : Phase.PRE_COUNCIL_HUDDLE;
+  const phase = huddle.window === "format"
+    ? Phase.FORMAT_MINGLE
+    : huddle.window === "pre_vote"
+      ? Phase.PRE_VOTE_HUDDLE
+      : Phase.PRE_COUNCIL_HUDDLE;
   const phaseCtx = prepareAgentPhaseContext(ctx, agent, speakerId, phase, "ordinary_speech");
   try {
     return await agent.getAllianceHuddleTurn(phaseCtx, huddle, conversationHistory);
@@ -532,7 +543,7 @@ async function collectAllianceHuddleTurn(
 
 async function completeHuddleSession(
   ctx: PhaseRunnerContext,
-  phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE,
+  phase: AllianceHuddlePhase,
   alliance: AllianceRecord,
   schedule: AllianceHuddleScheduleRecord,
 ): Promise<void> {
@@ -679,57 +690,56 @@ async function completeHuddleSession(
   });
 }
 
-export async function runMingleIAlliancePhase(
+export async function runAllianceFormationPhase(
   ctx: PhaseRunnerContext,
-  actor: PhaseActor,
 ): Promise<void> {
+  const phase = Phase.FORMAT_MINGLE;
   const { gameState, logger } = ctx;
-  logger.emitPhaseChange(Phase.MINGLE_I);
-  logger.logSystem("=== MINGLE I: ALLIANCE ACTIONS ===", Phase.MINGLE_I);
+  logger.emitPhaseChange(phase);
+  logger.logSystem("=== NAMED ALLIANCE ACTIONS ===", phase);
 
   await assertCanAcceptCommit(ctx);
-  gameState.closeUniversalAlliancesBeforeMingle(Phase.MINGLE_I);
+  gameState.closeUniversalAlliancesBeforeMingle(phase);
 
   const step = { value: 1 };
   for (const player of gameState.getAlivePlayers()) {
-    const action = await collectAllianceAction(ctx, player.id);
+    const action = await collectAllianceAction(ctx, player.id, phase);
     const modeError = validateProposerAction(action);
     if (modeError) {
-      emitAllianceActionTurn(ctx, player.id, action, step.value, "rejected", [modeError]);
+      emitAllianceActionTurn(ctx, player.id, action, step.value, "rejected", [modeError], phase);
       step.value += 1;
       continue;
     }
 
     const beforeLineageIds = new Set(gameState.getAllianceProposalLineages().map((lineage) => lineage.id));
-    const result = await applyAllianceAction(ctx, player.id, action, step.value);
-    emitAllianceActionTurn(ctx, player.id, action, step.value, result.result, result.repairNotes);
+    const result = await applyAllianceAction(ctx, player.id, action, step.value, phase);
+    emitAllianceActionTurn(ctx, player.id, action, step.value, result.result, result.repairNotes, phase);
     step.value += 1;
 
     if (action.action !== "propose" || !result.changed) continue;
     const lineageId = action.lineageId
       ?? newestLineageId(beforeLineageIds, gameState.getAllianceProposalLineages());
-    if (lineageId) await resolveAllianceProposalTransaction(ctx, lineageId, step);
+    if (lineageId) await resolveAllianceProposalTransaction(ctx, lineageId, step, phase);
   }
 
   for (const lineage of gameState.getAllianceProposalLineages()) {
     if (lineage.status === "open") {
       await assertCanAcceptCommit(ctx);
-      gameState.expireAllianceProposal(lineage.id, { phase: Phase.MINGLE_I });
+      gameState.expireAllianceProposal(lineage.id, { phase });
     }
   }
-
-  actor.send({ type: "PHASE_COMPLETE" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 export async function runAllianceHuddleWindow(
   ctx: PhaseRunnerContext,
   actor: PhaseActor,
-  phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE,
+  phase: AllianceHuddlePhase,
 ): Promise<void> {
-  const label = phase === Phase.PRE_VOTE_HUDDLE
-    ? "PRE-VOTE ALLIANCE HUDDLES"
-    : "PRE-COUNCIL ALLIANCE HUDDLES";
+  const label = phase === Phase.FORMAT_MINGLE
+    ? "POST-FORMAT ALLIANCE HUDDLES"
+    : phase === Phase.PRE_VOTE_HUDDLE
+      ? "PRE-VOTE ALLIANCE HUDDLES"
+      : "PRE-COUNCIL ALLIANCE HUDDLES";
   ctx.logger.emitPhaseChange(phase);
   ctx.logger.logSystem(`=== ${label} ===`, phase);
 
@@ -737,6 +747,11 @@ export async function runAllianceHuddleWindow(
   const eligible = ctx.gameState.getHuddleEligibleAlliances();
   const budget = huddleBudget(ctx.gameState.getAlivePlayers().length);
   const window = huddleWindowForPhase(phase);
+  if (eligible.length === 0) {
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return;
+  }
   const eligibleById = new Map(eligible.map((alliance) => [alliance.id, alliance]));
   const housePlan = await ctx.houseInterviewer.planAllianceHuddles({
     round: ctx.gameState.round,

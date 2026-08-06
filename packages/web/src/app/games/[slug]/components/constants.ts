@@ -7,6 +7,10 @@ export const PHASE_TRANSITION_LABELS: Partial<Record<PhaseKey, string>> = {
   LOBBY: "LOBBY PHASE",
   MINGLE_I: "MINGLE I",
   PRE_VOTE_HUDDLE: "ALLIANCE HUDDLES",
+  FORMAT_MENU: "FORMAT MENU",
+  FORMAT_PICK: "FORMAT SELECTION",
+  FORMAT_MINGLE: "FORMAT MINGLE",
+  FORMAT_RESOLVE: "FORMAT RESOLUTION",
   MINGLE: "MINGLE",
   POST_VOTE_MINGLE: "POST-VOTE MINGLE",
   RUMOR: "RUMOR PHASE",
@@ -49,6 +53,11 @@ export const PHASE_FLAVORS: Partial<Record<PhaseKey, string[]>> = {
     "The House opens scarce alliance huddle time.",
     "Active alliances get one last beat before the Vote.",
     "The deals move behind closed doors.",
+  ],
+  FORMAT_MINGLE: [
+    "The format is locked. Now the alliances have something concrete to build.",
+    "The rules are known. Every promise now has a price.",
+    "The rooms reopen under the chosen format.",
   ],
   MINGLE: [
     "The Mingle rooms open. Secrets are currency.",
@@ -228,6 +237,7 @@ export const ROOM_TYPE_BORDERS: Record<RoomType, string> = {
 export const HOUSE_INTROS: Partial<Record<PhaseKey, string>> = {
   MINGLE_I: "The pre-vote Mingle rooms are open, then named alliances can become official by explicit consent.",
   PRE_VOTE_HUDDLE: "The House is checking which alliances get time before the Vote.",
+  FORMAT_MINGLE: "The format is locked. Rooms, named alliances, and scarce huddles now shape the resolution.",
   MINGLE: "The Mingle rooms are open. These are the conversations they didn't want you to hear.",
   POST_VOTE_MINGLE: "The votes are public. The private rooms reopen under pressure.",
   REVEAL: "The votes are in. Every operative must now face the truth.",
@@ -279,7 +289,7 @@ export const DIARY_WHISPER_SCENE_END_HOLD_MS = 4000;
 
 // Phases that get an extra digestion pause at the end before transitioning
 export const PACED_PHASES: ReadonlySet<PhaseKey> = new Set([
-  "INTRODUCTION", "LOBBY", "MINGLE_I", "PRE_VOTE_HUDDLE", "MINGLE", "POST_VOTE_MINGLE", "PRE_COUNCIL_HUDDLE",
+  "INTRODUCTION", "LOBBY", "MINGLE_I", "PRE_VOTE_HUDDLE", "MINGLE", "POST_VOTE_MINGLE", "FORMAT_MINGLE", "PRE_COUNCIL_HUDDLE",
 ]);
 
 // Extra pause at the end of paced phases (ms at 1x speed)

@@ -26,6 +26,26 @@ import {
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import type { AgentGender } from "../lib/agent-gender.js";
+import type {
+  OwnerLearningAnalysisStatus,
+  OwnerLearningAnalysisTrack,
+  OwnerLearningCallCostReceipt,
+  OwnerLearningCallFailureCode,
+  OwnerLearningCallState,
+  OwnerLearningCapacityPath,
+  OwnerLearningCapacitySubstatus,
+  OwnerLearningCheckpoint,
+  OwnerLearningResolution,
+  OwnerLearningReviewResult,
+  OwnerLearningSafeFailureCode,
+  OwnerLearningStage,
+  OwnerLearningTokenReceipt,
+  OwnerLearningTransportReceiptEntry,
+} from "../services/owner-learning-contracts.js";
+import type {
+  OwnerLearningEventKind,
+  OwnerLearningEventPayloads,
+} from "../services/owner-learning-events.js";
 import { MCP_OAUTH_SCOPE_CHECK_VALUES } from "../services/mcp-scope-policy.js";
 
 export type PostgameMediaType = "house_highlights_trailer";
@@ -2053,3 +2073,342 @@ export const freeTrackRatings = pgTable("free_track_ratings", {
     .notNull()
     .default(sql`now()::text`),
 });
+
+// ---------------------------------------------------------------------------
+// Owner Learning Loop (owner-facing review and strategy provenance)
+// ---------------------------------------------------------------------------
+
+export const agentLearningReviewEntitlements = pgTable("agent_learning_review_entitlements", {
+  ownerUserId: text("owner_user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "restrict" }),
+  consumedCompletionAt: text("consumed_completion_at"),
+  consumedGameId: text("consumed_game_id")
+    .references(() => games.id, { onDelete: "restrict" }),
+  lastPaidReviewStartedAt: text("last_paid_review_started_at"),
+  lastSurfacedThreshold: integer("last_surfaced_threshold"),
+  dismissedCompletionAt: text("dismissed_completion_at"),
+  dismissedGameId: text("dismissed_game_id")
+    .references(() => games.id, { onDelete: "restrict" }),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  check("agent_learning_review_entitlements_watermark_check", sql`
+    (${table.consumedCompletionAt} IS NULL AND ${table.consumedGameId} IS NULL)
+    OR (${table.consumedCompletionAt} IS NOT NULL AND ${table.consumedGameId} IS NOT NULL)
+  `),
+  check("agent_learning_review_entitlements_dismissal_check", sql`
+    (${table.dismissedCompletionAt} IS NULL AND ${table.dismissedGameId} IS NULL)
+    OR (${table.dismissedCompletionAt} IS NOT NULL AND ${table.dismissedGameId} IS NOT NULL)
+  `),
+  check("agent_learning_review_entitlements_threshold_check", sql`
+    ${table.lastSurfacedThreshold} IS NULL OR ${table.lastSurfacedThreshold} IN (1, 3)
+  `),
+]);
+
+export const agentLearningGameEvidence = pgTable("agent_learning_game_evidence", {
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  agentProfileId: text("agent_profile_id")
+    .notNull()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  analyticalRevisionId: text("analytical_revision_id")
+    .notNull()
+    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "restrict" }),
+  evidenceVersion: text("evidence_version").notNull(),
+  eligibilityPolicyVersion: text("eligibility_policy_version").notNull(),
+  completionAt: text("completion_at").notNull(),
+  canonicalSnapshot: jsonb("canonical_snapshot").notNull().$type<Record<string, unknown>>(),
+  candidateMoments: jsonb("candidate_moments").notNull().$type<Array<Record<string, unknown>>>(),
+  sourceCaptureVersion: text("source_capture_version").notNull(),
+  sourceHash: text("source_hash").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_learning_game_evidence_identity_unique").on(
+    table.ownerUserId,
+    table.agentProfileId,
+    table.analyticalRevisionId,
+    table.gameId,
+    table.evidenceVersion,
+    table.sourceCaptureVersion,
+    table.sourceHash,
+  ),
+  index("agent_learning_game_evidence_owner_profile_idx").on(
+    table.ownerUserId,
+    table.agentProfileId,
+    table.completionAt,
+  ),
+]);
+
+export const agentLearningReviews = pgTable("agent_learning_reviews", {
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  agentProfileId: text("agent_profile_id")
+    .notNull()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  reviewedRevisionId: text("reviewed_revision_id")
+    .notNull()
+    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  selectedGameFingerprint: text("selected_game_fingerprint").notNull(),
+  startIdempotencyKey: text("start_idempotency_key").notNull(),
+  eligibilityPolicyVersion: text("eligibility_policy_version").notNull(),
+  evidenceVersion: text("evidence_version").notNull(),
+  reviewerVersion: text("reviewer_version").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  schemaVersion: text("schema_version").notNull(),
+  providerPolicyVersion: text("provider_policy_version").notNull(),
+  selectedModel: text("selected_model").notNull(),
+  analysisTrack: text("analysis_track").notNull().$type<Exclude<OwnerLearningAnalysisTrack, "awaiting_evidence">>(),
+  analysisStatus: text("analysis_status").notNull().$type<OwnerLearningAnalysisStatus>().default("queued"),
+  stage: text("stage").notNull().$type<OwnerLearningStage>().default("evidence_ready"),
+  resolution: text("resolution").$type<OwnerLearningResolution>(),
+  resolvedAt: text("resolved_at"),
+  logicalCallCount: integer("logical_call_count").notNull().default(0),
+  diveCount: integer("dive_count").notNull().default(0),
+  leaseTokenHash: text("lease_token_hash"),
+  leaseExpiresAt: text("lease_expires_at"),
+  claimedAt: text("claimed_at"),
+  capacitySubstatus: text("capacity_substatus").$type<OwnerLearningCapacitySubstatus>(),
+  safeFailureCode: text("safe_failure_code").$type<OwnerLearningSafeFailureCode>(),
+  retryable: boolean("retryable").notNull().default(false),
+  checkpoint: jsonb("checkpoint").$type<OwnerLearningCheckpoint>(),
+  checkpointHash: text("checkpoint_hash"),
+  result: jsonb("result").$type<OwnerLearningReviewResult>(),
+  proposalFingerprint: text("proposal_fingerprint"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  startedAt: text("started_at"),
+  completedAt: text("completed_at"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_learning_reviews_owner_idempotency_unique").on(
+    table.ownerUserId,
+    table.startIdempotencyKey,
+  ),
+  unique("agent_learning_reviews_id_proposal_unique").on(table.id, table.proposalFingerprint),
+  uniqueIndex("agent_learning_reviews_owner_open_unique")
+    .on(table.ownerUserId)
+    .where(sql`${table.resolvedAt} IS NULL`),
+  index("agent_learning_reviews_worker_claim_idx").on(
+    table.analysisStatus,
+    table.leaseExpiresAt,
+    table.createdAt,
+  ),
+  index("agent_learning_reviews_admin_chronology_idx").on(table.createdAt, table.id),
+  index("agent_learning_reviews_revision_resolution_idx").on(
+    table.agentProfileId,
+    table.reviewedRevisionId,
+    table.resolution,
+  ),
+  check("agent_learning_reviews_analysis_track_check", sql`
+    ${table.analysisTrack} IN ('evidence_rich', 'strategy_health_check')
+  `),
+  check("agent_learning_reviews_analysis_status_check", sql`
+    ${table.analysisStatus} IN ('queued', 'running', 'ready', 'no_change', 'failed')
+  `),
+  check("agent_learning_reviews_stage_check", sql`
+    ${table.stage} IN ('evidence_ready', 'scanning_narratives', 'investigating_moments', 'drafting_recommendations', 'complete')
+  `),
+  check("agent_learning_reviews_resolution_check", sql`
+    ${table.resolution} IS NULL OR ${table.resolution} IN ('applied', 'manual_update', 'declined', 'no_change', 'failed', 'superseded')
+  `),
+  check("agent_learning_reviews_resolution_timestamp_check", sql`
+    (${table.resolution} IS NULL AND ${table.resolvedAt} IS NULL)
+    OR (${table.resolution} IS NOT NULL AND ${table.resolvedAt} IS NOT NULL)
+  `),
+  check("agent_learning_reviews_budget_check", sql`
+    ${table.logicalCallCount} BETWEEN 0 AND 4 AND ${table.diveCount} BETWEEN 0 AND 3
+  `),
+  check("agent_learning_reviews_capacity_check", sql`
+    ${table.capacitySubstatus} IS NULL OR ${table.capacitySubstatus} IN ('waiting_for_capacity', 'using_standard_capacity')
+  `),
+  check("agent_learning_reviews_failure_check", sql`
+    ${table.safeFailureCode} IS NULL OR ${table.safeFailureCode} IN (
+      'provider_capacity_exhausted', 'provider_timeout', 'provider_error',
+      'invalid_structured_output', 'tier_mismatch',
+      'output_budget_exhausted', 'logical_call_budget_exhausted',
+      'evidence_unavailable', 'worker_interrupted'
+    )
+  `),
+  check("agent_learning_reviews_result_state_check", sql`
+    (${table.analysisStatus} IN ('ready', 'no_change') AND ${table.result} IS NOT NULL AND ${table.stage} = 'complete')
+    OR (${table.analysisStatus} NOT IN ('ready', 'no_change') AND ${table.result} IS NULL)
+  `),
+]);
+
+export const agentLearningReviewGames = pgTable("agent_learning_review_games", {
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "cascade" }),
+  gameEvidenceId: text("game_evidence_id")
+    .notNull()
+    .references(() => agentLearningGameEvidence.id, { onDelete: "restrict" }),
+  gameId: text("game_id")
+    .notNull()
+    .references(() => games.id, { onDelete: "restrict" }),
+  position: integer("position").notNull(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  primaryKey({ columns: [table.reviewId, table.position] }),
+  uniqueIndex("agent_learning_review_games_review_game_unique").on(table.reviewId, table.gameId),
+  check("agent_learning_review_games_position_check", sql`${table.position} BETWEEN 1 AND 3`),
+]);
+
+export const agentLearningReviewCalls = pgTable("agent_learning_review_calls", {
+  id: text("id").primaryKey(),
+  reviewId: text("review_id")
+    .notNull()
+    .references(() => agentLearningReviews.id, { onDelete: "cascade" }),
+  ordinal: integer("ordinal").notNull(),
+  state: text("state").notNull().$type<OwnerLearningCallState>().default("reserved"),
+  stage: text("stage").notNull().$type<OwnerLearningStage>(),
+  inputPolicyHash: text("input_policy_hash").notNull(),
+  validatedCheckpoint: jsonb("validated_checkpoint").$type<OwnerLearningCheckpoint>(),
+  finalProviderRequestId: text("final_provider_request_id"),
+  requestedTier: text("requested_tier").notNull().default("flex"),
+  effectiveTier: text("effective_tier"),
+  requestedReasoningEffort: text("requested_reasoning_effort").notNull().default("low"),
+  tokenReceipt: jsonb("token_receipt").$type<OwnerLearningTokenReceipt>(),
+  transportReceipts: jsonb("transport_receipts").notNull().default(sql`'[]'::jsonb`).$type<OwnerLearningTransportReceiptEntry[]>(),
+  flex429Count: integer("flex_429_count").notNull().default(0),
+  fallbackStartedAt: text("fallback_started_at"),
+  capacityPath: text("capacity_path").$type<OwnerLearningCapacityPath>(),
+  latencyMs: integer("latency_ms"),
+  safeFailureCode: text("safe_failure_code").$type<OwnerLearningCallFailureCode>(),
+  costSource: text("cost_source").notNull().$type<OwnerLearningCallCostReceipt["costSource"]>().default("unavailable"),
+  actualCostMicrousd: bigint("actual_cost_microusd", { mode: "number" }),
+  estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }),
+  pricingSourceId: text("pricing_source_id"),
+  rateCardVersion: text("rate_card_version"),
+  pricedAt: text("priced_at"),
+  reservedAt: text("reserved_at").notNull().default(sql`now()::text`),
+  dispatchedAt: text("dispatched_at"),
+  completedAt: text("completed_at"),
+}, (table) => [
+  uniqueIndex("agent_learning_review_calls_ordinal_unique").on(table.reviewId, table.ordinal),
+  check("agent_learning_review_calls_ordinal_check", sql`${table.ordinal} BETWEEN 1 AND 4`),
+  check("agent_learning_review_calls_state_check", sql`
+    ${table.state} IN ('reserved', 'dispatched', 'succeeded', 'failed', 'ambiguous')
+  `),
+  check("agent_learning_review_calls_validated_checkpoint_check", sql`
+    (${table.state} = 'succeeded' AND ${table.validatedCheckpoint} IS NOT NULL)
+    OR (${table.state} <> 'succeeded' AND ${table.validatedCheckpoint} IS NULL)
+  `),
+  check("agent_learning_review_calls_tier_check", sql`
+    ${table.requestedTier} = 'flex'
+    AND (${table.effectiveTier} IS NULL OR ${table.effectiveTier} IN ('flex', 'auto', 'default'))
+  `),
+  check("agent_learning_review_calls_reasoning_check", sql`${table.requestedReasoningEffort} = 'low'`),
+  check("agent_learning_review_calls_transport_check", sql`
+    jsonb_typeof(${table.transportReceipts}) = 'array'
+    AND jsonb_array_length(${table.transportReceipts}) <= 4
+    AND ${table.flex429Count} BETWEEN 0 AND 3
+  `),
+  check("agent_learning_review_calls_capacity_path_check", sql`
+    ${table.capacityPath} IS NULL OR ${table.capacityPath} IN ('flex', 'standard_fallback')
+  `),
+  check("agent_learning_review_calls_nonnegative_check", sql`
+    (${table.latencyMs} IS NULL OR ${table.latencyMs} >= 0)
+    AND (${table.actualCostMicrousd} IS NULL OR ${table.actualCostMicrousd} >= 0)
+    AND (${table.estimatedCostMicrousd} IS NULL OR ${table.estimatedCostMicrousd} >= 0)
+  `),
+  check("agent_learning_review_calls_cost_check", sql`
+    (${table.costSource} = 'actual' AND ${table.actualCostMicrousd} IS NOT NULL AND ${table.estimatedCostMicrousd} IS NULL)
+    OR (${table.costSource} = 'estimated' AND ${table.actualCostMicrousd} IS NULL AND ${table.estimatedCostMicrousd} IS NOT NULL)
+    OR (${table.costSource} = 'unavailable' AND ${table.actualCostMicrousd} IS NULL AND ${table.estimatedCostMicrousd} IS NULL)
+  `),
+]);
+
+export const agentLearningMomentEvidence = pgTable("agent_learning_moment_evidence", {
+  id: text("id").primaryKey(),
+  gameEvidenceId: text("game_evidence_id")
+    .notNull()
+    .references(() => agentLearningGameEvidence.id, { onDelete: "restrict" }),
+  agentProfileId: text("agent_profile_id")
+    .notNull()
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  reviewedPlayerId: text("reviewed_player_id")
+    .notNull()
+    .references(() => gamePlayers.id, { onDelete: "restrict" }),
+  sourceBundleHash: text("source_bundle_hash").notNull(),
+  visibilityPolicyVersion: text("visibility_policy_version").notNull(),
+  evidenceVersion: text("evidence_version").notNull(),
+  windowVersion: text("window_version").notNull(),
+  normalizationVersion: text("normalization_version").notNull(),
+  sourceRefs: jsonb("source_refs").notNull().$type<Array<Record<string, unknown>>>(),
+  bundleMetadata: jsonb("bundle_metadata").notNull().$type<Record<string, unknown>>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("agent_learning_moment_evidence_cache_unique").on(
+    table.sourceBundleHash,
+    table.agentProfileId,
+    table.reviewedPlayerId,
+    table.visibilityPolicyVersion,
+    table.evidenceVersion,
+    table.windowVersion,
+    table.normalizationVersion,
+  ),
+]);
+
+export const agentLearningReviewApplications = pgTable("agent_learning_review_applications", {
+  reviewId: text("review_id")
+    .primaryKey()
+    .references(() => agentLearningReviews.id, { onDelete: "cascade" }),
+  proposalFingerprint: text("proposal_fingerprint").notNull(),
+  sourceRecommendationIds: jsonb("source_recommendation_ids").notNull().$type<string[]>(),
+  priorRevisionId: text("prior_revision_id")
+    .notNull()
+    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  resultingRevisionId: text("resulting_revision_id")
+    .notNull()
+    .references(() => agentRevisions.id, { onDelete: "restrict" }),
+  priorStrategyStyle: text("prior_strategy_style").notNull(),
+  resultingStrategyStyle: text("resulting_strategy_style").notNull(),
+  mutationReceipt: jsonb("mutation_receipt").notNull().$type<Record<string, unknown>>(),
+  appliedAt: text("applied_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  foreignKey({
+    columns: [table.reviewId, table.proposalFingerprint],
+    foreignColumns: [agentLearningReviews.id, agentLearningReviews.proposalFingerprint],
+    name: "agent_learning_review_applications_proposal_fk",
+  }).onDelete("cascade"),
+  check("agent_learning_review_applications_strategy_check", sql`
+    length(${table.priorStrategyStyle}) <= 2000
+    AND length(${table.resultingStrategyStyle}) <= 2000
+    AND ${table.priorStrategyStyle} <> ${table.resultingStrategyStyle}
+  `),
+]);
+
+export const agentLearningEvents = pgTable("agent_learning_events", {
+  id: text("id").primaryKey(),
+  ownerUserId: text("owner_user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  reviewId: text("review_id")
+    .references(() => agentLearningReviews.id, { onDelete: "cascade" }),
+  agentProfileId: text("agent_profile_id")
+    .references(() => agentProfiles.id, { onDelete: "restrict" }),
+  kind: text("kind").notNull().$type<OwnerLearningEventKind>(),
+  payload: jsonb("payload").notNull().$type<OwnerLearningEventPayloads[OwnerLearningEventKind]>(),
+  occurredAt: text("occurred_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("agent_learning_events_owner_time_idx").on(table.ownerUserId, table.occurredAt),
+  index("agent_learning_events_review_time_idx").on(table.reviewId, table.occurredAt),
+  check("agent_learning_events_kind_check", sql`
+    ${table.kind} IN (
+      'prompt_impression', 'prompt_dismissed', 'review_started',
+      'analysis_track_selected', 'credit_consumed', 'stage_reached',
+      'capacity_fallback_started', 'review_failed', 'review_retried',
+      'review_declined', 'review_superseded', 'review_resolved',
+      'recommendations_viewed', 'manual_editor_opened', 'proposal_applied',
+      'mcp_offer_viewed', 'mcp_connected'
+    )
+  `),
+  check("agent_learning_events_payload_check", sql`jsonb_typeof(${table.payload}) = 'object'`),
+]);

@@ -13,7 +13,7 @@
  */
 
 import { Hono } from "hono";
-import { eq, desc, and, inArray, sql } from "drizzle-orm";
+import { eq, desc, and, inArray, isNull, or, sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -54,6 +54,7 @@ import {
   joinQueue,
   leaveQueue,
   QueueEnrollmentError,
+  DAILY_FREE_BUSY_GAME_STATUSES,
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
@@ -295,6 +296,7 @@ export function createFreeQueueRoutes(
 
     const addedPlayers: Array<{ playerId: string; userId: string; agentProfileId: string; agentName: string }> = [];
     let slotsToFill = maxPlayers;
+    let supersededGameCount = 0;
     const admission = await db.transaction(async (tx) => {
       await acquireDailyFreeLocks(tx);
       const existingDraw = (await tx.select({ id: schema.games.id, slug: schema.games.slug })
@@ -312,13 +314,29 @@ export function createFreeQueueRoutes(
           gameSlug: existingDraw.slug,
         };
       }
+      const waitingGame = (await tx.select({ id: schema.games.id, slug: schema.games.slug })
+        .from(schema.games)
+        .where(and(
+          eq(schema.games.trackType, "free"),
+          eq(schema.games.status, "waiting"),
+        ))
+        .orderBy(desc(schema.games.createdAt), desc(schema.games.id))
+        .limit(1))[0];
+      if (waitingGame) {
+        return {
+          drawn: false as const,
+          reason: "A waiting Daily Free game already exists.",
+          gameId: waitingGame.id,
+          gameSlug: waitingGame.slug,
+        };
+      }
       const entries = await tx.select().from(schema.freeGameQueue);
       const busyOwners = await tx.select({ userId: schema.gamePlayers.userId })
         .from(schema.gamePlayers)
         .innerJoin(schema.games, eq(schema.gamePlayers.gameId, schema.games.id))
         .where(and(
           eq(schema.games.trackType, "free"),
-          inArray(schema.games.status, ["waiting", "in_progress", "suspended"]),
+          inArray(schema.games.status, DAILY_FREE_BUSY_GAME_STATUSES),
         ));
       const busyOwnerIds = new Set(busyOwners.flatMap((row) => row.userId ? [row.userId] : []));
       const eligibleEntries = entries.filter((entry) => !busyOwnerIds.has(entry.userId));
@@ -330,6 +348,46 @@ export function createFreeQueueRoutes(
       }
       const shuffled = [...eligibleEntries].sort(() => Math.random() - 0.5);
       const picked = shuffled.slice(0, Math.min(entries.length, 12));
+      const pickedOwnerIds = picked.map((entry) => entry.userId);
+      const suspendedGames = pickedOwnerIds.length === 0 ? [] : await tx
+        .selectDistinct({ id: schema.games.id })
+        .from(schema.games)
+        .innerJoin(schema.gamePlayers, eq(schema.gamePlayers.gameId, schema.games.id))
+        .leftJoin(
+          schema.gameCompletionSettlements,
+          eq(schema.gameCompletionSettlements.gameId, schema.games.id),
+        )
+        .where(and(
+          eq(schema.games.trackType, "free"),
+          eq(schema.games.status, "suspended"),
+          inArray(schema.gamePlayers.userId, pickedOwnerIds),
+          or(
+            isNull(schema.gameCompletionSettlements.id),
+            eq(schema.gameCompletionSettlements.state, "completed"),
+          ),
+        ));
+      const supersededGameIds = suspendedGames.map((game) => game.id);
+      if (supersededGameIds.length > 0) {
+        const supersededAt = new Date().toISOString();
+        await tx.update(schema.gameRunOwners)
+          .set({
+            status: "revoked",
+            revokedAt: supersededAt,
+            kernelHealth: "suspended",
+            failureReason: "superseded_by_new_draw",
+          })
+          .where(and(
+            inArray(schema.gameRunOwners.gameId, supersededGameIds),
+            eq(schema.gameRunOwners.status, "active"),
+          ));
+        await tx.update(schema.games)
+          .set({ status: "cancelled", endedAt: supersededAt })
+          .where(and(
+            inArray(schema.games.id, supersededGameIds),
+            eq(schema.games.status, "suspended"),
+          ));
+        supersededGameCount = supersededGameIds.length;
+      }
       await tx.insert(schema.games).values({
           id: gameId,
           slug,
@@ -420,6 +478,7 @@ export function createFreeQueueRoutes(
       playersDrawn: addedPlayers.length,
       aiPlayersFilled: slotsToFill,
       totalPlayers: maxPlayers,
+      supersededGameCount,
       rated: admission.rated,
       seasonId: admission.seasonId,
     }, 201);
@@ -430,11 +489,18 @@ export function createFreeQueueRoutes(
   // -------------------------------------------------------------------------
 
   app.post("/api/free-queue/start", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
-    // Find any waiting free game (most recent first)
+    const requestedGameId = c.req.query("gameId")?.trim();
+    const gameConditions = [
+      eq(schema.games.trackType, "free"),
+      eq(schema.games.status, "waiting"),
+      ...(requestedGameId ? [eq(schema.games.id, requestedGameId)] : []),
+    ];
+    // The scheduler starts the newest waiting game. Interactive operators target
+    // the exact game returned by their draw so another waiting game cannot win a race.
     const freeGames = await db
       .select()
       .from(schema.games)
-      .where(and(eq(schema.games.trackType, "free"), eq(schema.games.status, "waiting")))
+      .where(and(...gameConditions))
       .orderBy(desc(schema.games.createdAt))
       .limit(1);
 

@@ -28,6 +28,7 @@ import { createUploadRoutes } from "./routes/upload.js";
 import { createProfileRoutes } from "./routes/profile.js";
 import { createCognitiveArtifactRoutes } from "./routes/cognitive-artifacts.js";
 import { createWatchIntelligenceRoutes } from "./routes/watch-intelligence.js";
+import { createOwnerLearningRoutes } from "./routes/owner-learning.js";
 import { createPostgameMediaWorkerRoutes } from "./routes/postgame-media-worker.js";
 import { createSeasonRoutes } from "./routes/seasons.js";
 import { createPublicPlayerRoutes } from "./routes/public-players.js";
@@ -44,6 +45,16 @@ import {
   sendWatchState,
   type WsConnectionData,
 } from "./services/ws-manager.js";
+import { createOwnerLearningOpenAIProvider } from "./services/owner-learning-provider.js";
+import { startOwnerLearningWorkerLoop } from "./services/owner-learning-worker.js";
+import {
+  ownerLearningDeploymentEnabled,
+  ownerLearningGenerationEnabled,
+} from "./services/owner-learning-public.js";
+import {
+  createServerShutdownController,
+  installServerShutdownSignalHandlers,
+} from "./server-shutdown.js";
 
 // ---------------------------------------------------------------------------
 // Version — read from package.json so it stays in sync with releases
@@ -161,6 +172,18 @@ const databaseUrl = process.env.DATABASE_URL;
 await runMigrations(databaseUrl);
 const db = createDB(databaseUrl);
 await seedRBAC(db);
+const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
+const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
+  ? startOwnerLearningWorkerLoop(db, {
+      provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
+      cursorSecret: process.env.JWT_SECRET,
+    })
+  : null;
+if (!ownerLearningDeploymentEnabled()) {
+  console.info("[owner-learning] Live review generation disabled by deployment configuration");
+} else if (!ownerLearningWorker) {
+  console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
+}
 try {
   const reconciliation = await reconcileCompletedPostgameMedia(db);
   if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
@@ -294,6 +317,9 @@ app.route("/", cognitiveArtifactRoutes);
 const agentProfileRoutes = createAgentProfileRoutes(db);
 app.route("/", agentProfileRoutes);
 
+const ownerLearningRoutes = createOwnerLearningRoutes(db);
+app.route("/", ownerLearningRoutes);
+
 // Admin RBAC routes
 const adminRoutes = createAdminRoutes(db);
 app.route("/", adminRoutes);
@@ -324,11 +350,19 @@ app.route("/", profileRoutes);
 
 const port = parseInt(process.env.PORT ?? "3000", 10);
 const hostname = process.env.HOST ?? "127.0.0.1";
+let acceptingRequests = true;
 
 const server = Bun.serve<WsConnectionData>({
   port,
   hostname,
   async fetch(req, server) {
+    if (!acceptingRequests) {
+      return new Response("Server shutting down", {
+        status: 503,
+        headers: { Connection: "close" },
+      });
+    }
+
     const url = new URL(req.url);
 
     // WebSocket upgrade for /ws/games/:id (accepts UUID or slug)
@@ -389,6 +423,16 @@ const server = Bun.serve<WsConnectionData>({
 
 // Register server instance with WS manager for pub/sub broadcasting
 setServer(server);
+
+const shutdown = createServerShutdownController({
+  server,
+  worker: ownerLearningWorker,
+  stopAcceptingRequests: () => {
+    acceptingRequests = false;
+  },
+  exit: (code) => process.exit(code),
+});
+installServerShutdownSignalHandlers(process, shutdown);
 
 console.log(`Influence API listening on http://${server.hostname}:${server.port}`);
 

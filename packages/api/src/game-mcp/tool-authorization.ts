@@ -12,6 +12,20 @@ import {
   resolveMcpOAuthClientScopeEnvelope,
 } from "../services/mcp-oauth.js";
 import type { GameMcpAuthContext } from "./auth.js";
+import {
+  APPLY_LEARNING_REVIEW_TOOL,
+  LIST_LEARNING_REVIEW_INPUTS_TOOL,
+  LIST_OPEN_LEARNING_REVIEWS_TOOL,
+  PREFLIGHT_LEARNING_REVIEW_TOOL,
+  READ_LEARNING_REVIEW_TOOL,
+  RESOLVE_LEARNING_REVIEW_TOOL,
+  RETRY_LEARNING_REVIEW_TOOL,
+  START_OR_RESUME_LEARNING_REVIEW_TOOL,
+} from "./contracts.js";
+import {
+  OWNER_LEARNING_MCP_READ_SCOPES,
+  OWNER_LEARNING_MCP_WRITE_SCOPES,
+} from "../services/owner-learning-mcp-policy.js";
 
 export type GameMcpEligibilityIdentity = Pick<
   GameMcpAuthContext,
@@ -114,6 +128,20 @@ const AGENT_WRITE_TOOLS = [
   "leave_queue",
 ] as const;
 
+const OWNER_LEARNING_READ_TOOLS = [
+  LIST_LEARNING_REVIEW_INPUTS_TOOL,
+  LIST_OPEN_LEARNING_REVIEWS_TOOL,
+  READ_LEARNING_REVIEW_TOOL,
+  PREFLIGHT_LEARNING_REVIEW_TOOL,
+] as const;
+
+const OWNER_LEARNING_WRITE_TOOLS = [
+  START_OR_RESUME_LEARNING_REVIEW_TOOL,
+  RETRY_LEARNING_REVIEW_TOOL,
+  APPLY_LEARNING_REVIEW_TOOL,
+  RESOLVE_LEARNING_REVIEW_TOOL,
+] as const;
+
 const PRODUCER_TOOLS = [
   "read_producer_season_diagnostics",
   "inspect_durable_run",
@@ -129,6 +157,8 @@ export type GameMcpToolName =
   | typeof GAME_READ_TOOLS[number]
   | typeof AGENT_READ_TOOLS[number]
   | typeof AGENT_WRITE_TOOLS[number]
+  | typeof OWNER_LEARNING_READ_TOOLS[number]
+  | typeof OWNER_LEARNING_WRITE_TOOLS[number]
   | typeof PRODUCER_TOOLS[number];
 
 const PRODUCER_ALTERNATIVE: GameMcpToolScopeAlternative = {
@@ -156,11 +186,25 @@ const AGENT_WRITE_ALTERNATIVE: GameMcpToolScopeAlternative = {
   clientEnvelopeScopes: ["agents:read", "agents:write"],
 };
 
+const OWNER_LEARNING_READ_ALTERNATIVE: GameMcpToolScopeAlternative = {
+  requiredScopes: OWNER_LEARNING_MCP_READ_SCOPES,
+  catalogBaselineScopes: ["agents:read"],
+  clientEnvelopeScopes: OWNER_LEARNING_MCP_READ_SCOPES,
+};
+
+const OWNER_LEARNING_WRITE_ALTERNATIVE: GameMcpToolScopeAlternative = {
+  requiredScopes: OWNER_LEARNING_MCP_WRITE_SCOPES,
+  catalogBaselineScopes: OWNER_LEARNING_MCP_READ_SCOPES,
+  clientEnvelopeScopes: OWNER_LEARNING_MCP_WRITE_SCOPES,
+};
+
 export const GAME_MCP_TOOL_ACCESS = {
   ...specsFor(SHARED_GAME_READ_TOOLS, [PRODUCER_ALTERNATIVE, GAME_READ_ALTERNATIVE]),
   ...specsFor(GAME_READ_TOOLS, [GAME_READ_ALTERNATIVE]),
   ...specsFor(AGENT_READ_TOOLS, [AGENT_READ_ALTERNATIVE]),
   ...specsFor(AGENT_WRITE_TOOLS, [AGENT_WRITE_ALTERNATIVE]),
+  ...specsFor(OWNER_LEARNING_READ_TOOLS, [OWNER_LEARNING_READ_ALTERNATIVE]),
+  ...specsFor(OWNER_LEARNING_WRITE_TOOLS, [OWNER_LEARNING_WRITE_ALTERNATIVE]),
   ...specsFor(PRODUCER_TOOLS, [PRODUCER_ALTERNATIVE]),
 } satisfies Record<GameMcpToolName, GameMcpToolAccessSpec>;
 

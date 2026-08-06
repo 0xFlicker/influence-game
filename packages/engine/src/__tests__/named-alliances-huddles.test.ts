@@ -101,7 +101,7 @@ describe("named alliance huddle windows", () => {
       }
     });
 
-    await runAllianceHuddleWindow(ctx, actor, Phase.PRE_VOTE_HUDDLE);
+    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
 
     expect(gameState.getAllianceHuddleSchedules().map((schedule) => schedule.decision)).toEqual([
       "scheduled",
@@ -142,7 +142,7 @@ describe("named alliance huddle windows", () => {
     expect(gameState.getAllianceHuddleOutcomes()[0]?.commitments).toEqual(expect.arrayContaining([
       expect.objectContaining({
         speakerName: "Alice",
-        proposedAction: "Coordinate the empower vote.",
+        proposedAction: "Coordinate locked-format ballots.",
         memberCommitments: [{ memberName: "Alice", commitment: "Compare the vote before committing." }],
         contingency: "Reassess if new vote information arrives.",
       }),
@@ -201,7 +201,7 @@ describe("named alliance huddle windows", () => {
       }
     });
 
-    await runAllianceHuddleWindow(ctx, actor, Phase.PRE_VOTE_HUDDLE);
+    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
 
     expect(gameState.getAllianceHuddleSchedules().map((schedule) => ({
       allianceId: schedule.allianceId,
@@ -237,7 +237,7 @@ describe("named alliance huddle windows", () => {
       });
     }
 
-    await runAllianceHuddleWindow(ctx, actor, Phase.PRE_VOTE_HUDDLE);
+    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
 
     expect(gameState.getAlliance("alliance-everyone")).toMatchObject({
       status: "closed",

@@ -36,6 +36,7 @@ import {
   MATCH_NARRATIVE_MAX_LIMIT,
 } from "../services/match-narrative-read-model.js";
 import { UNTRUSTED_GAME_AUTHORED } from "../services/transcript-serialization.js";
+import { agentMutationReceiptOutputSchema } from "./agent-tool-schemas.js";
 
 // ---------------------------------------------------------------------------
 // Tool-name constants (closed catalog surface)
@@ -299,6 +300,493 @@ const laneCompletenessEnum = [
   "denied",
   "not_applicable",
 ] as const;
+
+// ---------------------------------------------------------------------------
+// Owner-learning tool contract
+// ---------------------------------------------------------------------------
+
+export const LIST_LEARNING_REVIEW_INPUTS_TOOL = "list_learning_review_inputs" as const;
+export const LIST_OPEN_LEARNING_REVIEWS_TOOL = "list_open_learning_reviews" as const;
+export const PREFLIGHT_LEARNING_REVIEW_TOOL = "preflight_learning_review" as const;
+export const START_OR_RESUME_LEARNING_REVIEW_TOOL = "start_or_resume_learning_review" as const;
+export const READ_LEARNING_REVIEW_TOOL = "read_learning_review" as const;
+export const RETRY_LEARNING_REVIEW_TOOL = "retry_learning_review" as const;
+export const APPLY_LEARNING_REVIEW_TOOL = "apply_learning_review" as const;
+export const RESOLVE_LEARNING_REVIEW_TOOL = "resolve_learning_review" as const;
+
+export const OWNER_LEARNING_TOOL_NAMES = [
+  LIST_LEARNING_REVIEW_INPUTS_TOOL,
+  LIST_OPEN_LEARNING_REVIEWS_TOOL,
+  PREFLIGHT_LEARNING_REVIEW_TOOL,
+  START_OR_RESUME_LEARNING_REVIEW_TOOL,
+  READ_LEARNING_REVIEW_TOOL,
+  RETRY_LEARNING_REVIEW_TOOL,
+  APPLY_LEARNING_REVIEW_TOOL,
+  RESOLVE_LEARNING_REVIEW_TOOL,
+] as const;
+
+const ownerLearningIdSchema = { type: "string", minLength: 1, maxLength: 200 };
+const ownerLearningGeneratedTextSchema = closedObject(
+  ["text", "contentTrust"],
+  {
+    text: { type: "string" },
+    contentTrust: { type: "string", const: "untrusted_model_generated" },
+  },
+);
+const ownerLearningEvidenceRefSchema = closedObject(
+  ["kind", "gameId", "coordinate", "sourceHash", "sourceVersion"],
+  {
+    kind: {
+      type: "string",
+      enum: ["canonical_event", "decision", "dialogue", "cognition", "game_summary"],
+    },
+    gameId: { type: "string" },
+    coordinate: { type: "string" },
+    sourceHash: { type: "string" },
+    sourceVersion: { type: "string" },
+  },
+);
+const ownerLearningFollowUpSchema = {
+  anyOf: [
+    ownerLearningFollowUpVariant("read_match_transcript", {
+      gameIdOrSlug: { type: "string" },
+    }),
+    ownerLearningFollowUpVariant("read_owned_match_narrative", {
+      gameIdOrSlug: { type: "string" },
+      preset: { type: "string", const: "strategic" },
+      detail: { type: "string", const: "full" },
+    }),
+    ownerLearningFollowUpVariant("filter_events", {
+      gameIdOrSlug: { type: "string" },
+    }),
+    ownerLearningFollowUpVariant("read_game_brief", {
+      gameIdOrSlug: { type: "string" },
+      detailLevel: { type: "string", const: "standard" },
+      includeEvidence: { type: "boolean", const: true },
+    }),
+  ],
+};
+const ownerLearningProofSchema = closedObject(
+  [
+    "kind",
+    "rubricCategory",
+    "observedEvidence",
+    "strategicInterpretation",
+    "proposedGuidance",
+    "exactGuidanceTarget",
+  ],
+  {
+    kind: { type: "string", enum: ["observed_pattern", "prompt_guidance_defect", "combined"] },
+    rubricCategory: nullableSchema({
+      type: "string",
+      enum: [
+        "ambiguous_priority",
+        "conflicting_instructions",
+        "missing_contingency",
+        "non_actionable_guidance",
+        "missing_social_plan",
+        "missing_vote_plan",
+      ],
+    }),
+    observedEvidence: ownerLearningGeneratedTextSchema,
+    strategicInterpretation: ownerLearningGeneratedTextSchema,
+    proposedGuidance: ownerLearningGeneratedTextSchema,
+    exactGuidanceTarget: ownerLearningGeneratedTextSchema,
+  },
+);
+const ownerLearningRecommendationSchema = closedObject(
+  ["id", "title", "disposition", "confidence", "rationale", "keepGuidance", "evidenceRefs", "proof"],
+  {
+    id: nullableSchema({ type: "string" }),
+    title: ownerLearningGeneratedTextSchema,
+    disposition: { type: "string", enum: ["change", "keep", "gather_more_evidence"] },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+    rationale: ownerLearningGeneratedTextSchema,
+    keepGuidance: nullableSchema(ownerLearningGeneratedTextSchema),
+    evidenceRefs: { type: "array", items: ownerLearningEvidenceRefSchema },
+    proof: nullableSchema(ownerLearningProofSchema),
+  },
+);
+const ownerLearningResultSchema = closedObject(
+  ["diagnosis", "analysisTrack", "strategyHealthClassification", "recommendations", "proposal", "noChange"],
+  {
+    diagnosis: ownerLearningGeneratedTextSchema,
+    analysisTrack: { type: "string", enum: ["evidence_rich", "strategy_health_check"] },
+    strategyHealthClassification: nullableSchema({
+      type: "string",
+      enum: ["guidance_gap", "execution_gap", "no_clear_strategy_defect"],
+    }),
+    recommendations: { type: "array", maxItems: 3, items: ownerLearningRecommendationSchema },
+    proposal: nullableSchema(closedObject(
+      ["field", "before", "after"],
+      {
+        field: { type: "string", const: "strategyStyle" },
+        before: { type: "string" },
+        after: ownerLearningGeneratedTextSchema,
+      },
+    )),
+    noChange: nullableSchema(closedObject(
+      ["rationale"],
+      { rationale: ownerLearningGeneratedTextSchema },
+    )),
+  },
+);
+const ownerLearningReviewApplicationSchema = closedObject(
+  [
+    "sourceRecommendationIds",
+    "priorRevisionId",
+    "resultingRevisionId",
+    "priorStrategyStyle",
+    "resultingStrategyStyle",
+    "mutationReceipt",
+    "appliedAt",
+  ],
+  {
+    sourceRecommendationIds: { type: "array", items: { type: "string" } },
+    priorRevisionId: { type: "string" },
+    resultingRevisionId: { type: "string" },
+    priorStrategyStyle: { type: "string" },
+    resultingStrategyStyle: { type: "string" },
+    mutationReceipt: agentMutationReceiptOutputSchema(),
+    appliedAt: { type: "string" },
+  },
+);
+const ownerLearningReviewSchema = closedObject(
+  [
+    "id",
+    "agentProfileId",
+    "reviewedRevisionId",
+    "selectedGameIds",
+    "analysisTrack",
+    "analysisStatus",
+    "stage",
+    "capacitySubstatus",
+    "resolution",
+    "result",
+    "proposalFingerprint",
+    "safeFailureCode",
+    "retryable",
+    "logicalCallCount",
+    "diveCount",
+    "applyDisposition",
+    "evidence",
+    "application",
+    "createdAt",
+    "updatedAt",
+    "resolvedAt",
+    "followUps",
+  ],
+  {
+    id: { type: "string" },
+    agentProfileId: { type: "string" },
+    reviewedRevisionId: { type: "string" },
+    selectedGameIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
+    analysisTrack: { type: "string", enum: ["awaiting_evidence", "evidence_rich", "strategy_health_check"] },
+    analysisStatus: { type: "string", enum: ["queued", "running", "ready", "no_change", "failed"] },
+    stage: {
+      type: "string",
+      enum: ["evidence_ready", "scanning_narratives", "investigating_moments", "drafting_recommendations", "complete"],
+    },
+    capacitySubstatus: nullableSchema({
+      type: "string",
+      enum: ["waiting_for_capacity", "using_standard_capacity"],
+    }),
+    resolution: nullableSchema({
+      type: "string",
+      enum: ["applied", "manual_update", "declined", "no_change", "failed", "superseded"],
+    }),
+    result: nullableSchema(ownerLearningResultSchema),
+    proposalFingerprint: nullableSchema({ type: "string" }),
+    safeFailureCode: nullableSchema({
+      type: "string",
+      enum: [
+        "provider_capacity_exhausted",
+        "provider_timeout",
+        "provider_error",
+        "invalid_structured_output",
+        "tier_mismatch",
+        "output_budget_exhausted",
+        "logical_call_budget_exhausted",
+        "evidence_unavailable",
+        "worker_interrupted",
+      ],
+    }),
+    retryable: { type: "boolean" },
+    logicalCallCount: { type: "number" },
+    diveCount: { type: "number" },
+    applyDisposition: {
+      type: "string",
+      enum: ["not_ready", "awaiting_owner", "available", "applied", "manual_update", "declined", "no_change", "failed", "superseded", "unavailable"],
+    },
+    evidence: closedObject(["games"], {
+      games: {
+        type: "array",
+        maxItems: 3,
+        items: closedObject(
+          ["gameId", "position", "canonicalFacts", "candidateMoments", "sourceCaptureVersion", "sourceHash"],
+          {
+            gameId: { type: "string" },
+            position: { type: "number" },
+            canonicalFacts: {},
+            candidateMoments: { type: "array", items: { type: "object", additionalProperties: true } },
+            sourceCaptureVersion: { type: "string" },
+            sourceHash: { type: "string" },
+          },
+        ),
+      },
+    }),
+    application: nullableSchema(ownerLearningReviewApplicationSchema),
+    createdAt: { type: "string" },
+    updatedAt: { type: "string" },
+    resolvedAt: nullableSchema({ type: "string" }),
+    followUps: { type: "array", items: ownerLearningFollowUpSchema },
+  },
+);
+
+const ownerLearningCompletionSchema = closedObject(
+  ["gameId", "completionAt"],
+  { gameId: { type: "string" }, completionAt: { type: "string" } },
+);
+const ownerLearningOpenSummarySchema = closedObject(
+  ["id", "agentProfileId", "analysisStatus", "stage", "analysisTrack"],
+  {
+    id: { type: "string" },
+    agentProfileId: { type: "string" },
+    analysisStatus: { type: "string", enum: ["queued", "running", "ready", "no_change", "failed"] },
+    stage: {
+      type: "string",
+      enum: ["evidence_ready", "scanning_narratives", "investigating_moments", "drafting_recommendations", "complete"],
+    },
+    analysisTrack: { type: "string", enum: ["evidence_rich", "strategy_health_check"] },
+  },
+);
+const ownerLearningCreditRequired = [
+  "mode",
+  "balance",
+  "nextAvailableAt",
+  "latestEligibleCompletion",
+  "refillCompletion",
+  "qualifyingCompletionCount",
+] as const;
+const ownerLearningCreditDetailsSchema = {
+  latestEligibleCompletion: nullableSchema(ownerLearningCompletionSchema),
+  refillCompletion: nullableSchema(ownerLearningCompletionSchema),
+  qualifyingCompletionCount: { type: "number" },
+};
+const ownerLearningCreditSchema = {
+  anyOf: [
+    closedObject(ownerLearningCreditRequired, {
+      ...ownerLearningCreditDetailsSchema,
+      mode: { type: "string", const: "metered" },
+      balance: { type: "number", const: 1 },
+      nextAvailableAt: { type: "null" },
+    }),
+    closedObject(ownerLearningCreditRequired, {
+      ...ownerLearningCreditDetailsSchema,
+      mode: { type: "string", const: "metered" },
+      balance: { type: "number", const: 0 },
+      nextAvailableAt: nullableSchema({ type: "string" }),
+    }),
+    closedObject(ownerLearningCreditRequired, {
+      ...ownerLearningCreditDetailsSchema,
+      mode: { type: "string", const: "unlimited" },
+      balance: { type: "null" },
+      nextAvailableAt: { type: "null" },
+    }),
+  ],
+};
+const ownerLearningEligibilitySchema = closedObject(
+  ["eligibilityPolicyVersion", "credit", "profiles", "recommendedAgentProfileId", "prompt", "openReview"],
+  {
+    eligibilityPolicyVersion: { type: "string" },
+    credit: ownerLearningCreditSchema,
+    profiles: {
+      type: "array",
+      items: closedObject(
+        ["agentProfileId", "name", "currentRevisionId", "strategyStyle", "qualifyingGameCount", "games", "recommendedGameIds"],
+        {
+          agentProfileId: { type: "string" },
+          name: { type: "string" },
+          currentRevisionId: { type: "string" },
+          strategyStyle: nullableSchema({ type: "string" }),
+          qualifyingGameCount: { type: "number" },
+          games: {
+            type: "array",
+            items: closedObject(
+              ["gameId", "slug", "playerId", "completionAt", "analyticalRevisionId", "transcriptCaptureVersion", "cognitiveArtifactCaptureVersion", "previouslyAnalyzed"],
+              {
+                gameId: { type: "string" },
+                slug: { type: "string" },
+                playerId: { type: "string" },
+                completionAt: { type: "string" },
+                analyticalRevisionId: { type: "string" },
+                transcriptCaptureVersion: { type: "number" },
+                cognitiveArtifactCaptureVersion: { type: "number" },
+                previouslyAnalyzed: { type: "boolean" },
+              },
+            ),
+          },
+          recommendedGameIds: { type: "array", maxItems: 3, items: { type: "string" } },
+        },
+      ),
+    },
+    recommendedAgentProfileId: nullableSchema({ type: "string" }),
+    prompt: closedObject(
+      ["threshold", "prominent", "suppressedByDismissal"],
+      {
+        threshold: nullableSchema({ type: "number", enum: [1, 3] }),
+        prominent: { type: "boolean" },
+        suppressedByDismissal: { type: "boolean" },
+      },
+    ),
+    openReview: nullableSchema(ownerLearningOpenSummarySchema),
+  },
+);
+const ownerLearningPreflightSchema = closedObject(
+  ["status", "selection", "evidence"],
+  {
+    status: { type: "string", enum: ["awaiting_evidence", "ready", "generation_unavailable"] },
+    selection: closedObject(
+      ["agentProfileId", "agentProfileName", "reviewedRevisionId", "gameIds"],
+      {
+        agentProfileId: { type: "string" },
+        agentProfileName: { type: "string" },
+        reviewedRevisionId: { type: "string" },
+        gameIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
+      },
+    ),
+    evidence: closedObject(
+      ["analysisTrack", "games"],
+      {
+        analysisTrack: { type: "string", enum: ["awaiting_evidence", "evidence_rich", "strategy_health_check"] },
+        games: {
+          type: "array",
+          minItems: 1,
+          maxItems: 3,
+          items: closedObject(
+            ["gameId", "canonicalFacts", "candidateMoments", "narrativeCoverage", "sourceHash", "sourceCaptureVersion"],
+            {
+              gameId: { type: "string" },
+              canonicalFacts: {},
+              candidateMoments: { type: "array", items: { type: "object", additionalProperties: true } },
+              narrativeCoverage: { type: "string", enum: ["rich", "thin"] },
+              sourceHash: { type: "string" },
+              sourceCaptureVersion: { type: "string" },
+            },
+          ),
+        },
+      },
+    ),
+  },
+);
+
+export const LIST_LEARNING_REVIEW_INPUTS_INPUT_SCHEMA = closedObject([], {});
+export const LIST_OPEN_LEARNING_REVIEWS_INPUT_SCHEMA = closedObject([], {});
+export const PREFLIGHT_LEARNING_REVIEW_INPUT_SCHEMA = closedObject(
+  ["agentProfileId", "gameIds"],
+  {
+    agentProfileId: ownerLearningIdSchema,
+    gameIds: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: ownerLearningIdSchema },
+  },
+);
+export const START_OR_RESUME_LEARNING_REVIEW_INPUT_SCHEMA = closedObject(
+  ["agentProfileId", "gameIds", "idempotencyKey"],
+  {
+    agentProfileId: ownerLearningIdSchema,
+    gameIds: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: ownerLearningIdSchema },
+    idempotencyKey: ownerLearningIdSchema,
+  },
+);
+export const READ_LEARNING_REVIEW_INPUT_SCHEMA = closedObject(
+  ["reviewId"],
+  { reviewId: ownerLearningIdSchema },
+);
+export const RETRY_LEARNING_REVIEW_INPUT_SCHEMA = READ_LEARNING_REVIEW_INPUT_SCHEMA;
+export const APPLY_LEARNING_REVIEW_INPUT_SCHEMA = closedObject(
+  ["reviewId", "proposalFingerprint"],
+  { reviewId: ownerLearningIdSchema, proposalFingerprint: ownerLearningIdSchema },
+);
+export const RESOLVE_LEARNING_REVIEW_INPUT_SCHEMA = closedObject(
+  ["reviewId", "resolution"],
+  {
+    reviewId: ownerLearningIdSchema,
+    resolution: { type: "string", enum: ["declined", "failed"] },
+  },
+);
+
+export const LIST_LEARNING_REVIEW_INPUTS_OUTPUT_SCHEMA = closedObject(
+  ["schemaVersion", "eligibility"],
+  { schemaVersion: { type: "number", const: 2 }, eligibility: ownerLearningEligibilitySchema },
+);
+export const LIST_OPEN_LEARNING_REVIEWS_OUTPUT_SCHEMA = closedObject(
+  ["schemaVersion", "reviews"],
+  {
+    schemaVersion: { type: "number", const: 1 },
+    reviews: { type: "array", maxItems: 1, items: ownerLearningReviewSchema },
+  },
+);
+export const PREFLIGHT_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(
+  ["schemaVersion", "preflight"],
+  {
+    schemaVersion: { type: "number", const: 1 },
+    preflight: ownerLearningPreflightSchema,
+  },
+);
+export const START_OR_RESUME_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(
+  ["schemaVersion", "status", "unavailableReason", "paidWorkEnqueued", "review", "preflight", "nextEligibleAt", "remainingLogicalCalls", "remainingDives"],
+  {
+    schemaVersion: { type: "number", const: 2 },
+    status: { type: "string", enum: ["created", "resumed", "existing_open_review", "awaiting_evidence", "unavailable"] },
+    unavailableReason: nullableSchema({ type: "string", enum: ["generation_unavailable", "no_credit"] }),
+    paidWorkEnqueued: { type: "boolean" },
+    review: nullableSchema(ownerLearningReviewSchema),
+    preflight: nullableSchema(ownerLearningPreflightSchema),
+    nextEligibleAt: nullableSchema({ type: "string" }),
+    remainingLogicalCalls: { type: "number" },
+    remainingDives: { type: "number" },
+  },
+);
+export const READ_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(
+  ["schemaVersion", "review"],
+  { schemaVersion: { type: "number", const: 1 }, review: ownerLearningReviewSchema },
+);
+export const RETRY_LEARNING_REVIEW_OUTPUT_SCHEMA = READ_LEARNING_REVIEW_OUTPUT_SCHEMA;
+export const RESOLVE_LEARNING_REVIEW_OUTPUT_SCHEMA = READ_LEARNING_REVIEW_OUTPUT_SCHEMA;
+export const APPLY_LEARNING_REVIEW_OUTPUT_SCHEMA = closedObject(
+  ["schemaVersion", "application"],
+  {
+    schemaVersion: { type: "number", const: 1 },
+    application: closedObject(
+      ["reviewId", "proposalFingerprint", "sourceRecommendationIds", "priorRevisionId", "resultingRevisionId", "priorStrategyStyle", "resultingStrategyStyle", "receipt", "appliedAt", "replayed"],
+      {
+        reviewId: { type: "string" },
+        proposalFingerprint: { type: "string" },
+        sourceRecommendationIds: { type: "array", items: { type: "string" } },
+        priorRevisionId: { type: "string" },
+        resultingRevisionId: { type: "string" },
+        priorStrategyStyle: { type: "string" },
+        resultingStrategyStyle: { type: "string" },
+        receipt: agentMutationReceiptOutputSchema(),
+        appliedAt: { type: "string" },
+        replayed: { type: "boolean" },
+      },
+    ),
+  },
+);
+
+function ownerLearningFollowUpVariant(
+  toolName: "read_match_transcript" | "read_owned_match_narrative" | "filter_events" | "read_game_brief",
+  argumentProperties: Record<string, unknown>,
+): Record<string, unknown> {
+  return closedObject(
+    ["evidenceRef", "toolName", "arguments"],
+    {
+      evidenceRef: ownerLearningEvidenceRefSchema,
+      toolName: { type: "string", const: toolName },
+      arguments: closedObject(Object.keys(argumentProperties), argumentProperties),
+    },
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Input schemas

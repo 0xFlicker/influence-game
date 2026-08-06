@@ -212,6 +212,7 @@ export interface BatchInstrumentation {
 const EMPTY_USAGE: TokenUsage = {
   promptTokens: 0,
   cachedTokens: 0,
+  cacheWriteTokens: 0,
   completionTokens: 0,
   reasoningTokens: 0,
   totalTokens: 0,
@@ -368,6 +369,7 @@ function mergeUsage(left: TokenUsage, right: TokenUsage): TokenUsage {
   return {
     promptTokens: left.promptTokens + right.promptTokens,
     cachedTokens: left.cachedTokens + right.cachedTokens,
+    cacheWriteTokens: (left.cacheWriteTokens ?? 0) + (right.cacheWriteTokens ?? 0),
     completionTokens: left.completionTokens + right.completionTokens,
     reasoningTokens: left.reasoningTokens + right.reasoningTokens,
     totalTokens: left.totalTokens + right.totalTokens,

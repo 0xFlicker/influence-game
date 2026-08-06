@@ -12,6 +12,7 @@ import {
   type SavedAgent,
   type SeasonIdentity,
 } from "@/lib/api";
+import { OwnerLearningActivation } from "./review/owner-learning-activation";
 
 export function AgentSeasonAnalysisView({ agentId }: { agentId: string }) {
   const [agent, setAgent] = useState<SavedAgent | null>(null);
@@ -112,6 +113,10 @@ export function AgentSeasonAnalysisView({ agentId }: { agentId: string }) {
           </label>
         )}
       </header>
+
+      <div className="mt-6">
+        <OwnerLearningActivation enabled contextAgentId={agentId} />
+      </div>
 
       {error && <p className="mt-5 rounded-lg border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-300">{error}</p>}
       {loading ? (

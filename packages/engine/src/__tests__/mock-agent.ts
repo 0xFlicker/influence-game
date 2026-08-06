@@ -134,7 +134,11 @@ export class MockAgent implements IAgent {
       commitment: {
         proposedTargetName: null,
         noTargetReason: "The mock has no legal target preference yet.",
-        proposedAction: huddle.window === "pre_vote" ? "Coordinate the empower vote." : "Coordinate the Council vote.",
+        proposedAction: huddle.window === "format"
+          ? "Coordinate locked-format ballots."
+          : huddle.window === "pre_vote"
+            ? "Coordinate the empower vote."
+            : "Coordinate the Council vote.",
         memberCommitments: [{ memberName: this.name, commitment: "Compare the vote before committing." }],
         contingency: "Reassess if new vote information arrives.",
         confidence: "medium",

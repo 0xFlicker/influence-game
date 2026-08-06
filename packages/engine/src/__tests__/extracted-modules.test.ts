@@ -328,19 +328,11 @@ describe("ContextBuilder", () => {
 // ---------------------------------------------------------------------------
 
 describe("computeLobbyMessagesPerPlayer", () => {
-  it("returns 4 for 4-5 players", () => {
-    expect(computeLobbyMessagesPerPlayer(4)).toBe(4);
-    expect(computeLobbyMessagesPerPlayer(5)).toBe(4);
-  });
-
-  it("returns 3 for 6-7 players", () => {
-    expect(computeLobbyMessagesPerPlayer(6)).toBe(3);
-    expect(computeLobbyMessagesPerPlayer(7)).toBe(3);
-  });
-
-  it("returns 2 for 8+ players", () => {
-    expect(computeLobbyMessagesPerPlayer(8)).toBe(2);
-    expect(computeLobbyMessagesPerPlayer(12)).toBe(2);
+  it("defaults to one pass at every player count", () => {
+    expect(computeLobbyMessagesPerPlayer(4)).toBe(1);
+    expect(computeLobbyMessagesPerPlayer(6)).toBe(1);
+    expect(computeLobbyMessagesPerPlayer(8)).toBe(1);
+    expect(computeLobbyMessagesPerPlayer(12)).toBe(1);
   });
 
   it("respects config override", () => {

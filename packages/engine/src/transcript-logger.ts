@@ -234,7 +234,7 @@ export class TranscriptLogger {
     fromId: string,
     toIds: string[],
     text: string,
-    phase: Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE,
+    phase: Phase.FORMAT_MINGLE | Phase.PRE_VOTE_HUDDLE | Phase.PRE_COUNCIL_HUDDLE,
     thinking?: string,
     reasoningContext?: string,
     huddleContext?: {

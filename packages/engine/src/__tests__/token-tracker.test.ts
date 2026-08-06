@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   estimateCostForKnownModel,
   estimateCostAllModelsForFlexRun,
+  estimateTierAwareOpenAICost,
   TokenTracker,
   type TokenUsage,
 } from "../token-tracker";
@@ -23,6 +24,20 @@ describe("token cost estimation", () => {
 
   it("estimates known OpenAI models", () => {
     expect(estimateCostForKnownModel(usage, "gpt-5-nano")?.totalCost).toBeGreaterThan(0);
+  });
+
+  it("prices current Luna standard and Flex cache writes at their published rates", () => {
+    const lunaUsage = {
+      ...usage,
+      promptTokens: 10_000,
+      cachedTokens: 2_000,
+      cacheWriteTokens: 3_000,
+      completionTokens: 1_000,
+      totalTokens: 11_000,
+    } as TokenUsage;
+
+    expect(estimateCostForKnownModel(lunaUsage, "gpt-5.6-luna")?.totalCost).toBeCloseTo(0.00299, 10);
+    expect(estimateTierAwareOpenAICost({ flex: lunaUsage }, "gpt-5.6-luna")?.totalCost).toBeCloseTo(0.001495, 10);
   });
 
   it("estimates Grok models without falling back to OpenAI pricing", () => {

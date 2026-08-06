@@ -40,6 +40,39 @@ const FLEX_RETRY_MAX_DELAY_MS = 30_000;
 type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
 type FlexFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+export interface FlexTransportDispatchIntent {
+  transportOrdinal: number;
+  attemptedTier: "flex" | "auto";
+  dispatchedAtMs: number;
+}
+
+export interface FlexTransportTerminalOutcome {
+  transportOrdinal: number;
+  attemptedTier: "flex" | "auto";
+  httpStatus: number;
+  latencyMs: number;
+  providerRequestId?: string;
+  backoffMs?: number;
+  completedAtMs: number;
+}
+
+export interface FlexProcessingObserver {
+  onDispatchIntent(event: FlexTransportDispatchIntent): Promise<void>;
+  onTerminalOutcome(event: FlexTransportTerminalOutcome): Promise<void>;
+}
+
+export interface FlexProcessingFetchOptions {
+  observer?: FlexProcessingObserver;
+  nowMs?: () => number;
+  /** Durable recovery state after persisted terminal Flex 429 outcomes. */
+  resume?: {
+    flex429Count: number;
+    nextTransportOrdinal: number;
+    nextTier: "flex" | "auto";
+    initialBackoffMs?: number;
+  };
+}
+
 function abortError(signal: AbortSignal): Error {
   return signal.reason instanceof Error ? signal.reason : new DOMException("The request was aborted.", "AbortError");
 }
@@ -113,6 +146,7 @@ function retryDelayMs(response: Response, attempt: number): number {
 export function createFlexProcessingFetch(
   baseFetch: FlexFetch = fetch,
   wait: Sleep = sleep,
+  options: FlexProcessingFetchOptions = {},
 ): FlexFetch {
   return async (input, init) => {
     const originalRequest = typeof input === "string"
@@ -124,26 +158,63 @@ export function createFlexProcessingFetch(
       return await baseFetch(originalRequest);
     }
 
-    let serviceTier: "flex" | "auto" = "flex";
-    let flex429s = 0;
+    const resume = options.resume;
+    let serviceTier: "flex" | "auto" = resume?.nextTier ?? "flex";
+    let flex429s = resume?.flex429Count ?? 0;
+    let transportOrdinal = (resume?.nextTransportOrdinal ?? 1) - 1;
+    const nowMs = options.nowMs ?? Date.now;
+    if (resume?.initialBackoffMs && resume.initialBackoffMs > 0) {
+      await wait(resume.initialBackoffMs, originalRequest.signal);
+    }
     while (true) {
       const request = await requestWithServiceTier(originalRequest, serviceTier);
       if (!request) return await baseFetch(originalRequest);
 
+      transportOrdinal += 1;
+      const dispatchedAtMs = nowMs();
+      await options.observer?.onDispatchIntent({
+        transportOrdinal,
+        attemptedTier: serviceTier,
+        dispatchedAtMs,
+      });
       const response = await baseFetch(request);
+      const completedAtMs = nowMs();
+      const backoffMs = response.status === 429 && serviceTier === "flex"
+        ? retryDelayMs(response, flex429s + 1)
+        : undefined;
+      try {
+        await options.observer?.onTerminalOutcome({
+          transportOrdinal,
+          attemptedTier: serviceTier,
+          httpStatus: response.status,
+          latencyMs: Math.max(0, Math.round(completedAtMs - dispatchedAtMs)),
+          ...(providerRequestId(response) ? { providerRequestId: providerRequestId(response) } : {}),
+          ...(backoffMs !== undefined ? { backoffMs } : {}),
+          completedAtMs,
+        });
+      } catch (error) {
+        await response.body?.cancel().catch(() => undefined);
+        throw error;
+      }
       if (response.status !== 429) return response;
 
       if (serviceTier === "auto") return response;
 
       flex429s++;
       await response.body?.cancel().catch(() => undefined);
-      await wait(retryDelayMs(response, flex429s), originalRequest.signal);
+      await wait(backoffMs!, originalRequest.signal);
       if (flex429s === FLEX_429_RETRY_LIMIT) {
         console.warn("[openai-flex] received 3 Flex 429 responses; retrying on the auto tier.");
         serviceTier = "auto";
       }
     }
   };
+}
+
+function providerRequestId(response: Response): string | undefined {
+  return response.headers.get("x-request-id")
+    ?? response.headers.get("request-id")
+    ?? undefined;
 }
 
 function firstEnv(
