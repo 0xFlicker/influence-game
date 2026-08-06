@@ -165,6 +165,52 @@ describe("owner learning bounded harness", () => {
     expect(result.proposalFingerprint).toBeNull();
   });
 
+  test("ignores Strategy Health proof metadata on evidence-rich recommendations", async () => {
+    const evidence = harnessEvidence("evidence_rich", 2);
+    const result = await runOwnerLearningHarness({
+      reviewId: "review-evidence-rich-proof",
+      analysisTrack: "evidence_rich",
+      currentStrategyStyle: "Build trust.",
+      evidence,
+      async invoke(input) {
+        return {
+          provisionalThemes: [],
+          selectedMomentHandles: [],
+          finalResult: {
+            diagnosis: "The agent needs a clearer contingency.",
+            analysisTrack: "evidence_rich",
+            strategyHealthClassification: null,
+            recommendations: [{
+              title: "Name the fallback",
+              disposition: "change",
+              confidence: "medium",
+              rationale: "The cited game shows the plan becoming reactive.",
+              keepGuidance: null,
+              evidenceHandles: [providerSummaryHandles(input.request)[0]!],
+              proof: {
+                kind: "combined",
+                rubricCategory: null,
+                observedEvidence: "One game showed reactive voting.",
+                strategicInterpretation: "The guidance needs a contingency.",
+                proposedGuidance: "Name a fallback target.",
+                exactGuidanceTarget: "Voting contingency",
+              },
+            }],
+            proposal: {
+              field: "strategyStyle",
+              before: "Build trust.",
+              after: "Build trust and name a fallback target.",
+            },
+            noChange: null,
+          },
+        };
+      },
+    });
+
+    expect(result.result.recommendations[0]!.proof).toBeUndefined();
+    expect(result.result.proposal?.after).toBe("Build trust and name a fallback target.");
+  });
+
   test("rejects invented moments and evidence refs", async () => {
     const evidence = harnessEvidence("evidence_rich", 1);
     await expect(runOwnerLearningHarness({

@@ -874,7 +874,7 @@ export async function runClaimedOwnerLearningReview(
   }
 }
 
-function classifyOwnerLearningOutputFailure(error: unknown): OwnerLearningOutputFailureCode {
+export function classifyOwnerLearningOutputFailure(error: unknown): OwnerLearningOutputFailureCode {
   const message = error instanceof Error ? error.message : "";
   if (
     message === "Owner learning provider returned the obsolete moment ID protocol"
@@ -905,13 +905,19 @@ function classifyOwnerLearningOutputFailure(error: unknown): OwnerLearningOutput
     || message === "Generated strategy proposal requires a change recommendation"
     || message === "Generated no-change result cannot contain a change recommendation"
   ) return "proposal_contract";
-  if (
-    message === "strategyHealthClassification is required for Strategy Health Check"
-    || message === "Strategy Health Check no-change must specifically defend the current guidance"
-    || message.includes(".proof is required for Strategy Health Check")
-    || message.includes(".proof.rubricCategory is required")
-    || message.includes(".proof observed pattern requires two games")
-  ) return "strategy_health_contract";
+  if (message === "strategyHealthClassification is required for Strategy Health Check") {
+    return "strategy_health_classification_missing";
+  }
+  if (message === "Strategy Health Check no-change must specifically defend the current guidance") {
+    return "strategy_health_no_change_unsupported";
+  }
+  if (message.includes(".proof is required for Strategy Health Check")) {
+    return "strategy_health_proof_missing";
+  }
+  if (message.includes(".proof.rubricCategory is required")) return "proof_rubric_missing";
+  if (message.includes(".proof observed pattern requires two games")) {
+    return "cross_game_proof_missing";
+  }
   if (
     message === "selectedMomentIds must be distinct"
     || message.startsWith("harness turn ")

@@ -66,7 +66,11 @@ export type OwnerLearningOutputFailureCode =
   | "analysis_track_mismatch"
   | "unknown_evidence_ref"
   | "proposal_contract"
-  | "strategy_health_contract"
+  | "strategy_health_classification_missing"
+  | "strategy_health_no_change_unsupported"
+  | "strategy_health_proof_missing"
+  | "proof_rubric_missing"
+  | "cross_game_proof_missing"
   | "unclassified_output_failure";
 
 export type OwnerLearningCallFailureCode =
@@ -369,7 +373,9 @@ function parseRecommendation(
 ): OwnerLearningRecommendation {
   const input = objectValue(value, `recommendations[${index}]`);
   const evidenceRefs = parseEvidenceRefs(input.evidenceRefs, `recommendations[${index}].evidenceRefs`);
-  const proof = input.proof === undefined ? undefined : parseProof(input.proof, index, evidenceRefs);
+  const proof = analysisTrack === "strategy_health_check" && input.proof !== undefined
+    ? parseProof(input.proof, index, evidenceRefs)
+    : undefined;
   if (analysisTrack === "strategy_health_check" && proof === undefined) {
     throw new Error(`recommendations[${index}].proof is required for Strategy Health Check`);
   }

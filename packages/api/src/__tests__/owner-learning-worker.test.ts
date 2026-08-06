@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { updateOwnedAgentProfile } from "../services/agent-profile-management.js";
 import {
+  classifyOwnerLearningOutputFailure,
   claimOwnerLearningReview,
   completeOwnerLearningCall,
   createOwnerLearningTransportObserver,
@@ -22,6 +23,37 @@ import {
 import { setupTestDB } from "./test-utils.js";
 
 describe("owner learning worker durability", () => {
+  test("distinguishes Strategy Health semantic failures without retaining generated content", () => {
+    const cases = [
+      [
+        "strategyHealthClassification is required for Strategy Health Check",
+        "strategy_health_classification_missing",
+      ],
+      [
+        "Strategy Health Check no-change must specifically defend the current guidance",
+        "strategy_health_no_change_unsupported",
+      ],
+      [
+        "recommendations[0].proof is required for Strategy Health Check",
+        "strategy_health_proof_missing",
+      ],
+      [
+        "recommendations[0].proof.rubricCategory is required",
+        "proof_rubric_missing",
+      ],
+      [
+        "recommendations[0].proof observed pattern requires two games",
+        "cross_game_proof_missing",
+      ],
+    ] as const;
+
+    for (const [message, expectedCode] of cases) {
+      const code = classifyOwnerLearningOutputFailure(new Error(message));
+      expect(code).toBe(expectedCode);
+      expect(code).not.toContain("recommendations[0]");
+    }
+  });
+
   test("allows only one active lease globally and rejects a stale token", async () => {
     const db = await setupTestDB();
     const firstFixture = await insertPlayedOwnerLearningAgent(db);
