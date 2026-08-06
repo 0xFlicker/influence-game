@@ -10,7 +10,8 @@ describe("owner learning review", () => {
     const html = renderReview(reviewFixture());
     const visibleText = html.replace(/<[^>]*>/g, " ");
 
-    expect(html).toContain("Action and counterplay");
+    expect(html).toContain('aria-label="Accepted action timeline"');
+    expect(html).toContain("Accepted actions, votes, powers, and results—not generated analysis.");
     expect(html).toContain("Backed Mira");
     expect(html).toContain("The council eliminated the agent");
     expect(html).toContain("Game records loaded");
@@ -72,6 +73,14 @@ describe("owner learning review", () => {
     expect(html).not.toContain("Stable coordinates for evidence links");
     expect(html).not.toContain("dialogue:line-7");
     expect(html).not.toContain("moment-1");
+  });
+
+  test("presents a long diagnosis as report copy instead of a page heading", () => {
+    const html = renderReview(readyReview());
+
+    expect(html).toContain('<h2 id="olm-verdict-title">What changed in the room</h2>');
+    expect(html).toContain('<p class="olm-verdict-copy">Atlas committed before support became reciprocal.</p>');
+    expect(html).not.toContain('<h2 id="olm-verdict-title">Atlas committed');
   });
 
   test("labels all health-check proof forms without collapsing observation into guidance", () => {

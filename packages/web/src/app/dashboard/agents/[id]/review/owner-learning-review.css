@@ -875,37 +875,45 @@
 
 .olm-verdict {
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  gap: 34px;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: 40px;
   align-items: start;
   margin-top: 44px;
   padding-top: 34px;
   border-top: 1px solid rgb(var(--border-active) / 0.55);
 }
 
-.olm-verdict > p {
+.olm-verdict > h2 {
+  margin: 0;
   color: rgb(var(--text-muted));
   font-size: 10px;
   font-weight: 710;
+  line-height: 1.45;
   letter-spacing: 0.17em;
   text-transform: uppercase;
 }
 
-.olm-verdict h2 {
-  max-width: 790px;
-  margin: -5px 0 12px;
-  font-size: clamp(34px, 4.2vw, 52px);
-  font-weight: 670;
-  line-height: 1.05;
-  letter-spacing: -0.05em;
+.olm-verdict-body {
+  min-width: 0;
 }
 
-.olm-verdict div > p {
-  max-width: 710px;
-  margin: 0;
+.olm-verdict-copy {
+  max-width: 900px;
+  margin: -6px 0 0;
+  color: rgb(var(--text-primary));
+  font-size: clamp(24px, 2vw, 30px);
+  font-weight: 580;
+  line-height: 1.24;
+  letter-spacing: -0.03em;
+  text-wrap: pretty;
+}
+
+.olm-verdict-support {
+  max-width: 720px;
+  margin: 18px 0 0;
   color: rgb(var(--text-secondary));
-  font-size: 15px;
-  line-height: 1.65;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 .olm-confidence {
@@ -1183,7 +1191,11 @@
 
   .olm-verdict {
     grid-template-columns: 1fr;
-    gap: 13px;
+    gap: 18px;
+  }
+
+  .olm-verdict-copy {
+    margin-top: 0;
   }
 
   .olm-proof {
@@ -1306,6 +1318,11 @@
   .olm-confidence {
     flex-direction: column;
     gap: 5px;
+  }
+
+  .olm-verdict-copy {
+    font-size: 22px;
+    line-height: 1.28;
   }
 }
 

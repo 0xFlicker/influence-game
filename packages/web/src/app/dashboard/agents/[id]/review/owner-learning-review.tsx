@@ -138,10 +138,10 @@ export function OwnerLearningReviewView({
       {(ready || noChange) && review.result && (
         <>
           <section className="olm-verdict" aria-labelledby="olm-verdict-title">
-            <p>{isHealthCheck ? "Strategy health check" : "What changed in the room"}</p>
-            <div>
-              <h2 id="olm-verdict-title">{review.result.diagnosis}</h2>
-              <p>{diagnosisSupport(review)}</p>
+            <h2 id="olm-verdict-title">{isHealthCheck ? "Strategy health check" : "What changed in the room"}</h2>
+            <div className="olm-verdict-body">
+              <p className="olm-verdict-copy">{review.result.diagnosis}</p>
+              <p className="olm-verdict-support">{diagnosisSupport(review)}</p>
               <div className="olm-confidence">
                 <span><i aria-hidden="true" />{isHealthCheck ? "Three-game remedial review" : `${review.selectedGameIds.length}-game evidence set`}</span>
               </div>
@@ -330,7 +330,7 @@ function diagnosisSupport(review: OwnerLearningReview): string {
     if (classification === "execution_gap") return "The current guidance is usable, but the selected games show the agent did not execute it consistently.";
     return "The selected games show a serious pattern without enough proof to blame one strategy instruction.";
   }
-  return "The diagnosis is generated from bounded selected-game evidence and the accepted facts shown above.";
+  return "The diagnosis is generated from the selected games shown above.";
 }
 
 function stageTitle(stage: OwnerLearningReview["stage"]): string {
