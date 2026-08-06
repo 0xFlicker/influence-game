@@ -4,8 +4,11 @@ import { join } from "node:path";
 import {
   activateClerkExistingSession,
   AUTHENTICATION_METHOD_MATRIX,
+  beginClerkClientTrustEmailCode,
   runClerkPasswordAttempt,
   runClerkProtectAttempt,
+  sendClerkClientTrustEmailCode,
+  verifyClerkClientTrustEmailCode,
 } from "../components/clerk-password-flow";
 import {
   ApiError,
@@ -127,9 +130,170 @@ describe("unified authentication wrapper", () => {
     expect(signInSubmit).not.toContain("updatedClerkResource");
     expect(signInSubmit).toContain("await attemptPasswordSignIn()");
     expect(passwordFlowSource).toContain("await runClerkPasswordAttempt({");
+    expect(passwordFlowSource).toContain(
+      "await beginClerkClientTrustEmailCode({",
+    );
+    expect(passwordFlowSource).toContain(
+      "await verifyClerkClientTrustEmailCode({",
+    );
     expect(passwordFlowSource).not.toContain("SignInTransition");
     expect(passwordFlowSource).not.toContain("signInTransitionSourceRef");
     expect(passwordFlowSource).not.toContain("window.setTimeout");
+  });
+
+  it("sends Clerk's supported email code when a new client needs trust", async () => {
+    const calls: string[] = [];
+    const signIn = {
+      status: "needs_client_trust",
+      supportedSecondFactors: [{ strategy: "email_code" }],
+      mfa: {
+        async sendEmailCode() {
+          calls.push("send-email-code");
+          return { error: null };
+        },
+        async verifyEmailCode() {
+          return { error: null };
+        },
+      },
+    };
+
+    await sendClerkClientTrustEmailCode(signIn);
+
+    expect(calls).toEqual(["send-email-code"]);
+  });
+
+  it("enters Client Trust verification before sending and keeps it recoverable after a provider error", async () => {
+    const calls: string[] = [];
+    let step = "credentials";
+    const signIn = {
+      status: "needs_client_trust",
+      supportedSecondFactors: [{ strategy: "email_code" }],
+      mfa: {
+        async sendEmailCode() {
+          calls.push(`send:${step}`);
+          return { error: { message: "Email delivery failed." } };
+        },
+        async verifyEmailCode() {
+          return { error: null };
+        },
+      },
+    };
+
+    await expect(beginClerkClientTrustEmailCode({
+      signIn,
+      enterVerification: () => {
+        step = "verify_client_trust";
+        calls.push(`enter:${step}`);
+      },
+    })).rejects.toThrow("Email delivery failed.");
+
+    expect(step).toBe("verify_client_trust");
+    expect(calls).toEqual([
+      "enter:verify_client_trust",
+      "send:verify_client_trust",
+    ]);
+  });
+
+  it("fails clearly when Client Trust has no email-code strategy", async () => {
+    const signIn = {
+      status: "needs_client_trust",
+      supportedSecondFactors: [{ strategy: "phone_code" }],
+      mfa: {
+        async sendEmailCode() {
+          return { error: null };
+        },
+        async verifyEmailCode() {
+          return { error: null };
+        },
+      },
+    };
+
+    await expect(sendClerkClientTrustEmailCode(signIn)).rejects.toThrow(
+      "This device cannot be verified by email. Try another sign-in method.",
+    );
+  });
+
+  it("continues sign-in after the Client Trust email code is verified", async () => {
+    const calls: string[] = [];
+    const signIn = {
+      status: "needs_client_trust",
+      supportedSecondFactors: [{ strategy: "email_code" }],
+      mfa: {
+        async sendEmailCode() {
+          return { error: null };
+        },
+        async verifyEmailCode({ code }: { code: string }) {
+          calls.push(`verify:${code}`);
+          signIn.status = "complete";
+          return { error: null };
+        },
+      },
+    };
+
+    await verifyClerkClientTrustEmailCode({
+      signIn,
+      code: "123456",
+      continueSignIn: async (currentSignIn) => {
+        calls.push(`continue:${currentSignIn.status}`);
+      },
+    });
+
+    expect(calls).toEqual(["verify:123456", "continue:complete"]);
+  });
+
+  it("keeps the Client Trust code step recoverable after an invalid code", async () => {
+    let continued = false;
+    const signIn = {
+      status: "needs_client_trust",
+      supportedSecondFactors: [{ strategy: "email_code" }],
+      mfa: {
+        async sendEmailCode() {
+          return { error: null };
+        },
+        async verifyEmailCode() {
+          return {
+            error: {
+              code: "form_code_incorrect",
+              message: "That code is incorrect.",
+            },
+          };
+        },
+      },
+    };
+
+    await expect(verifyClerkClientTrustEmailCode({
+      signIn,
+      code: "000000",
+      continueSignIn: async () => {
+        continued = true;
+      },
+    })).rejects.toThrow("That code is incorrect.");
+    expect(continued).toBeFalse();
+  });
+
+  it("does not continue when Client Trust verification does not advance", async () => {
+    let continued = false;
+    const signIn = {
+      status: "needs_client_trust",
+      supportedSecondFactors: [{ strategy: "email_code" }],
+      mfa: {
+        async sendEmailCode() {
+          return { error: null };
+        },
+        async verifyEmailCode() {
+          return { error: null };
+        },
+      },
+    };
+
+    await expect(verifyClerkClientTrustEmailCode({
+      signIn,
+      code: "123456",
+      continueSignIn: async () => {
+        continued = true;
+      },
+    })).rejects.toThrow("Device verification is incomplete. Request a new code.");
+    expect(continued).toBeFalse();
   });
 
   it("password-verifies before activating Clerk's structured existing session", async () => {

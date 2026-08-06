@@ -17,7 +17,9 @@ an email or verification flag supplied by the browser.
 
 The web app uses Clerk custom-flow hooks from `@clerk/nextjs` so the existing
 OAuth authorization request stays mounted during login. Clerk's hosted sign-in
-pages and Account Portal are not used.
+pages and Account Portal are not used. The custom flow also completes Clerk's
+email-code Client Trust challenge if an environment enables it, so a clean
+browser does not dead-end on provider configuration drift.
 
 Pinned packages:
 
@@ -109,6 +111,10 @@ Before changing an environment to `full`:
 5. Confirm Account Portal, email changes, Client Trust, MFA, passkeys, and
    every other sign-in method are unavailable.
 6. Confirm direct Privy email login and direct Privy wallet login still work.
+
+If step 4 unexpectedly requests a device verification code, complete it to
+prove the custom flow and then correct the environment's Client Trust setting
+before promotion.
 
 Use only disposable users in development and staging.
 
