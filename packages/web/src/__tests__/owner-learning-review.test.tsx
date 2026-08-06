@@ -66,6 +66,35 @@ describe("owner learning review", () => {
     expect(html).toContain("Apply strategy update");
   });
 
+  test("keeps the exact diff anchored after apply and replaces mutation controls with next actions", () => {
+    const html = renderReview({
+      ...readyReview(),
+      resolution: "applied",
+      application: {
+        sourceRecommendationIds: ["rec-1"],
+        priorRevisionId: "prior-rev-1",
+        resultingRevisionId: "next-rev-2",
+        priorStrategyStyle: "Commit early.",
+        resultingStrategyStyle: "Wait for reciprocal support.",
+        mutationReceipt: {},
+        appliedAt: "2026-08-04T12:02:00.000Z",
+      },
+    });
+
+    expect(html).toContain('data-state="applied"');
+    expect(html).toContain("Strategy update applied");
+    expect(html).toContain("− Commit early.");
+    expect(html).toContain("+ Wait for reciprocal support.");
+    expect(html).toContain("Revision next-rev-2 is active. Future games use it.");
+    expect(html).toContain('href="/games/free"');
+    expect(html).toContain("Enter Influence Queue");
+    expect(html).toContain('href="/dashboard/agents/agent-1"');
+    expect(html).toContain("View agent");
+    expect(html).not.toContain("Apply strategy update");
+    expect(html).not.toContain("Edit changes myself");
+    expect(html).not.toContain("Keep current strategy");
+  });
+
   test("keeps internal evidence coordinates out of owner-facing recommendations", () => {
     const html = renderReview(readyReview());
 

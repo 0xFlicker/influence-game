@@ -48,6 +48,7 @@ export function OwnerLearningReviewView({
   const noChange = review.analysisStatus === "no_change" && review.result != null;
   const failed = review.analysisStatus === "failed" && review.resolution == null;
   const isHealthCheck = review.analysisTrack === "strategy_health_check";
+  const proposalDock = proposalDockPresentation(review);
 
   return (
     <div className="olm-enter" data-testid="owner-learning-review" data-review-status={review.analysisStatus}>
@@ -186,35 +187,51 @@ export function OwnerLearningReviewView({
             </section>
           )}
 
-          {ready && review.result.proposal && !review.resolution && (
-            <section className="olm-update-dock" aria-labelledby="olm-update-title">
+          {ready && review.result.proposal && (
+            <section
+              className="olm-update-dock"
+              data-state={review.resolution ?? "open"}
+              aria-labelledby="olm-update-title"
+            >
               <header><div>
-                <h2 id="olm-update-title">Proposed strategy update</h2>
-                <p>A focused change to strategy guidance. Persona, model, and backstory stay untouched.</p>
-              </div><span>Not applied</span></header>
+                <h2 id="olm-update-title">{proposalDock.title}</h2>
+                <p>{proposalDock.description}</p>
+              </div><span>{proposalDock.badge}</span></header>
               <div className="olm-diff" aria-label="Proposed strategy changes">
                 <div className="olm-minus">− {review.result.proposal.before}</div>
                 <div className="olm-plus">+ {review.result.proposal.after}</div>
               </div>
               <footer>
-                <p>Applying creates a new revision. Future games use it immediately.</p>
-                <Link
-                  href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}/edit?sourceReviewId=${encodeURIComponent(review.id)}`}
-                  className="olm-button olm-button-secondary"
-                  onClick={() => { void recordOwnerLearningManualEditorOpened(review.id); }}
-                >Edit changes myself</Link>
-                <button
-                  type="button"
-                  className="olm-button olm-button-quiet"
-                  disabled={pendingAction != null}
-                  onClick={() => onResolve("declined")}
-                >{pendingAction === "resolve" ? "Keeping…" : "Keep current strategy"}</button>
-                <button
-                  type="button"
-                  className="olm-button olm-button-primary"
-                  disabled={pendingAction != null || !review.proposalFingerprint}
-                  onClick={onApply}
-                >{pendingAction === "apply" ? "Applying…" : "Apply strategy update"}</button>
+                <p>{proposalDock.footer}</p>
+                {review.resolution ? (
+                  <>
+                    <Link
+                      href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}`}
+                      className="olm-button olm-button-secondary"
+                    >View {agent?.name ?? "agent"}</Link>
+                    <Link href="/games/free" className="olm-button olm-button-primary">Enter Influence Queue</Link>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}/edit?sourceReviewId=${encodeURIComponent(review.id)}`}
+                      className="olm-button olm-button-secondary"
+                      onClick={() => { void recordOwnerLearningManualEditorOpened(review.id); }}
+                    >Edit changes myself</Link>
+                    <button
+                      type="button"
+                      className="olm-button olm-button-quiet"
+                      disabled={pendingAction != null}
+                      onClick={() => onResolve("declined")}
+                    >{pendingAction === "resolve" ? "Keeping…" : "Keep current strategy"}</button>
+                    <button
+                      type="button"
+                      className="olm-button olm-button-primary"
+                      disabled={pendingAction != null || !review.proposalFingerprint}
+                      onClick={onApply}
+                    >{pendingAction === "apply" ? "Applying…" : "Apply strategy update"}</button>
+                  </>
+                )}
               </footer>
             </section>
           )}
@@ -313,6 +330,55 @@ function ResolutionBanner({ review }: { review: OwnerLearningReview }) {
     superseded: "A newer update to this agent won. This proposal is preserved but can no longer be applied.",
   };
   return <section className="olm-resolution-banner" data-resolution={review.resolution}><strong>{resolutionTitle(review.resolution!)}</strong><p>{copy[review.resolution!]}</p></section>;
+}
+
+function proposalDockPresentation(review: OwnerLearningReview): {
+  title: string;
+  description: string;
+  badge: string;
+  footer: string;
+} {
+  if (review.resolution === "applied") {
+    const revision = review.application?.resultingRevisionId;
+    return {
+      title: "Strategy update applied",
+      description: "The exact strategy change is preserved here as review history.",
+      badge: "Applied",
+      footer: revision
+        ? `${shortRevision(revision)} is active. Future games use it.`
+        : "The new strategy revision is active. Future games use it.",
+    };
+  }
+  if (review.resolution === "manual_update") {
+    return {
+      title: "Manual strategy update completed",
+      description: "The generated proposal remains here for comparison with your manual update.",
+      badge: "Not applied",
+      footer: "Your manual strategy revision is active. Future games use it.",
+    };
+  }
+  if (review.resolution === "declined") {
+    return {
+      title: "Proposed strategy update",
+      description: "The proposal remains here as review history.",
+      badge: "Not applied",
+      footer: "No changes were made to this agent's strategy.",
+    };
+  }
+  if (review.resolution === "superseded") {
+    return {
+      title: "Proposed strategy update",
+      description: "A newer agent revision won, so this proposal is preserved for reference only.",
+      badge: "Superseded",
+      footer: "The newer agent revision is active. This proposal was not applied.",
+    };
+  }
+  return {
+    title: "Proposed strategy update",
+    description: "A focused change to strategy guidance. Persona, model, and backstory stay untouched.",
+    badge: "Not applied",
+    footer: "Applying creates a new revision. Future games use it immediately.",
+  };
 }
 
 function reviewHeading(review: OwnerLearningReview, name: string): string {

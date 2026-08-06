@@ -1040,6 +1040,11 @@
   box-shadow: var(--shadow-panel);
 }
 
+.olm-update-dock[data-state="applied"] {
+  border-color: rgb(var(--olm-success) / 0.38);
+  box-shadow: var(--shadow-panel), inset 0 1px rgb(var(--olm-success) / 0.08);
+}
+
 .olm-update-dock > header {
   display: flex;
   justify-content: space-between;
@@ -1068,6 +1073,10 @@
   white-space: nowrap;
 }
 
+.olm-update-dock[data-state="applied"] header > span {
+  color: rgb(var(--olm-success));
+}
+
 .olm-diff {
   padding: 19px 22px;
   background: rgb(0 0 0 / 0.18);
@@ -1093,6 +1102,7 @@
 
 .olm-update-dock > footer {
   display: flex;
+  min-height: 78px;
   align-items: center;
   justify-content: flex-end;
   gap: 10px;

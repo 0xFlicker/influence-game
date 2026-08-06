@@ -315,7 +315,7 @@ export function OwnerLearningReviewWorkspace({
       && state !== previousState.current
       && (review.resolution != null || ["ready", "no_change", "failed"].includes(review.analysisStatus));
     previousState.current = state;
-    if (becameTerminal) terminalFocus.current?.focus();
+    if (becameTerminal) terminalFocus.current?.focus({ preventScroll: true });
   }, [review]);
 
   useEffect(() => {
