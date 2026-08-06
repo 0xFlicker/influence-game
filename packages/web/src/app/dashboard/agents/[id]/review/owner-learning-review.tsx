@@ -309,7 +309,7 @@ function ResolutionBanner({ review }: { review: OwnerLearningReview }) {
     manual_update: "You completed a linked manual update. The generated proposal was not marked accepted.",
     declined: "You chose to keep the current strategy. The proposal remains here as review history.",
     no_change: "The review found no focused strategy update to make.",
-    failed: "You resolved an unfinished failed review. Its purchase was not refunded.",
+    failed: "You resolved an unfinished failed review.",
     superseded: "A newer update to this agent won. This proposal is preserved but can no longer be applied.",
   };
   return <section className="olm-resolution-banner" data-resolution={review.resolution}><strong>{resolutionTitle(review.resolution!)}</strong><p>{copy[review.resolution!]}</p></section>;
