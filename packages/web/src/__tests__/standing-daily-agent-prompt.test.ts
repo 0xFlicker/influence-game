@@ -32,7 +32,7 @@ let activeDomWindow: HappyDOMWindow | null = null;
 
 afterEach(() => {
   cleanup();
-  activeDomWindow?.close();
+  const domWindow = activeDomWindow;
   activeDomWindow = null;
   globalThis.fetch = originalFetch;
   setApiBase("");
@@ -40,6 +40,7 @@ afterEach(() => {
   Object.defineProperty(globalThis, "document", { configurable: true, value: originalDocument });
   Object.defineProperty(globalThis, "navigator", { configurable: true, value: originalNavigator });
   Object.defineProperty(globalThis, "localStorage", { configurable: true, value: originalLocalStorage });
+  domWindow?.close();
 });
 
 const freePage = readFileSync(
