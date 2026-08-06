@@ -43,6 +43,8 @@ describe("named alliance round cadence", () => {
       Phase.VOTE,
       Phase.FORMAT_MENU,
     ]);
+    expect(actor.logic.config.states).not.toHaveProperty("mingle_i");
+    expect(actor.logic.config.states).not.toHaveProperty("pre_vote_huddle");
 
     actor.stop();
   });

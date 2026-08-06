@@ -67,7 +67,7 @@ import type { FormatKernelState, PhaseRunnerContext, PhaseActor } from "./phases
 import {
   runIntroductionPhase,
   runLobbyPhase, runReckoningLobby, runTribunalLobby,
-  runAllianceFormationPhase, runMingleIAlliancePhase, runAllianceHuddleWindow,
+  runAllianceFormationPhase, runAllianceHuddleWindow,
   runMinglePhase,
   runVotePhase, runReckoningVote, runTribunalVote,
   runFormatMenuPhase, runFormatPickPhase, runFormatMinglePhase, runFormatResolvePhase,
@@ -811,11 +811,6 @@ export class GameRunner {
         await this.diaryRoom.runDiaryRoom(Phase.INTRODUCTION);
       } else if (state === "lobby") {
         await runLobbyPhase(prc, actor);
-      } else if (state === "mingle_i") {
-        await runMinglePhase(prc, actor, { phase: Phase.MINGLE_I, completePhase: false });
-        await runMingleIAlliancePhase(prc, actor);
-      } else if (state === "pre_vote_huddle") {
-        await runAllianceHuddleWindow(prc, actor, Phase.PRE_VOTE_HUDDLE);
       } else if (state === "vote") {
         if (this.gameState.round > 1) {
           await this.diaryRoom.runStrategicReflections(Phase.VOTE, { timing: "pre_vote" });
@@ -830,7 +825,7 @@ export class GameRunner {
         await runFormatPickPhase(prc, actor);
       } else if (state === "format_mingle") {
         await runFormatMinglePhase(prc, actor, { completePhase: false });
-        await runAllianceFormationPhase(prc, Phase.FORMAT_MINGLE);
+        await runAllianceFormationPhase(prc);
         await runAllianceHuddleWindow(prc, actor, Phase.FORMAT_MINGLE);
       } else if (state === "format_resolve") {
         await runFormatResolvePhase(prc, actor);

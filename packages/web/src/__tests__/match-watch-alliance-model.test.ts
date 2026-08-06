@@ -236,6 +236,46 @@ function alliances(): PublicGameAlliancesResponse {
 }
 
 describe("match watch alliance model", () => {
+  it("keeps format alliances hidden until Format Mingle begins", () => {
+    const facts = structuredClone(alliances());
+    for (const proposal of facts.allianceFacts.proposals) {
+      proposal.proposedPhase = "FORMAT_MINGLE";
+      proposal.resolvedPhase = "FORMAT_MINGLE";
+    }
+    for (const alliance of facts.allianceFacts.alliances) {
+      alliance.createdPhase = "FORMAT_MINGLE";
+      alliance.updatedPhase = "FORMAT_MINGLE";
+    }
+    for (const huddle of facts.allianceFacts.huddles) {
+      huddle.phase = "FORMAT_MINGLE";
+      huddle.window = "format";
+    }
+
+    const selectedBeforeSocial = buildMatchWatchModel({
+      game: { ...game(), currentRound: 1, currentPhase: "FORMAT_PICK", gameKernel: "format", gameKernelSource: "stored" },
+      messages: [],
+      live: true,
+      connStatus: "live",
+      selectedPlayerId: "p1",
+    });
+    const selectedDuringSocial = buildMatchWatchModel({
+      game: { ...game(), currentRound: 1, currentPhase: "FORMAT_MINGLE", gameKernel: "format", gameKernelSource: "stored" },
+      messages: [],
+      live: true,
+      connStatus: "live",
+      selectedPlayerId: "p1",
+    });
+
+    expect(buildMatchWatchAlliancePanelModel({
+      model: selectedBeforeSocial,
+      allianceState: { loadState: "ready", facts },
+    }).status).toBe("empty");
+    expect(buildMatchWatchAlliancePanelModel({
+      model: selectedDuringSocial,
+      allianceState: { loadState: "ready", facts },
+    }).status).toBe("ready");
+  });
+
   it("builds a selected-player alliance panel with layered alliances and huddle transcripts", () => {
     const watchModel = buildMatchWatchModel({
       game: game(),

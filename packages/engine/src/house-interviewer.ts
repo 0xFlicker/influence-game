@@ -490,17 +490,27 @@ function parseHouseSummary(
   };
 }
 
+function huddleCoordinationLabel(window: AllianceHuddleWindow): string {
+  if (window === "format") return "locked-format";
+  return window === "pre_vote" ? "public Vote" : "Council";
+}
+
+function defaultHuddleAsk(window: AllianceHuddleWindow): string {
+  if (window === "format") return "Align under the locked format.";
+  return window === "pre_vote" ? "Align before the public Vote." : "Align before Council.";
+}
+
 function parseHouseAllianceHuddleOutcome(
   parsed: Record<string, unknown>,
   context: HouseAllianceHuddleOutcomeContext,
 ): HouseAllianceHuddleOutcomeResult {
   const transcriptFallback = context.transcript.length > 0
-    ? `Members discussed ${context.window === "pre_vote" ? "Vote" : "Council"} coordination.`
+    ? `Members discussed ${huddleCoordinationLabel(context.window)} coordination.`
     : `No explicit member messages were recorded for ${context.alliance.name}.`;
   return {
     ask: readString(
       parsed.ask,
-      context.window === "pre_vote" ? "Align before the public Vote." : "Align before Council.",
+      defaultHuddleAsk(context.window),
     ),
     plan: readString(parsed.plan, transcriptFallback),
     promises: readStringArray(parsed.promises),
@@ -1939,11 +1949,11 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
       `${commitment.speakerName}: ${commitment.proposedAction}${commitment.proposedTargetName ? ` -> ${commitment.proposedTargetName}` : ""}`,
     );
     return {
-      ask: context.window === "pre_vote" ? "Align before the public Vote." : "Align before Council.",
+      ask: defaultHuddleAsk(context.window),
       plan: proposals.length > 0
         ? `${context.alliance.name} proposals: ${proposals.join("; ")}.`
         : context.transcript.length > 0
-          ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate around the alliance purpose.`
+          ? `${context.alliance.name} heard ${speakerNames.join(", ")} coordinate ${huddleCoordinationLabel(context.window)} commitments.`
           : `No explicit member messages were recorded for ${context.alliance.name}.`,
       promises: context.commitments.flatMap((commitment) => commitment.memberCommitments.map(({ memberName, commitment: promise }) => `${memberName}: ${promise}`)),
       dissent: context.commitments.flatMap((commitment) => commitment.dissent),

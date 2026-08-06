@@ -188,6 +188,10 @@ const ALLIANCE_REPLAY_PHASE_ORDER: readonly PhaseKey[] = [
   "MINGLE_I",
   "PRE_VOTE_HUDDLE",
   "VOTE",
+  "FORMAT_MENU",
+  "FORMAT_PICK",
+  "FORMAT_MINGLE",
+  "FORMAT_RESOLVE",
   "WHISPER",
   "MINGLE",
   "POST_VOTE_MINGLE",
@@ -221,14 +225,14 @@ function sliceAllianceFactsThroughCursor(
   const proposals = facts.allianceFacts.proposals
     .filter((proposal) => isAllianceFactAtOrBeforeCursor({
       round: proposal.proposedRound,
-      phase: proposal.proposedPhase ?? "MINGLE_I",
+      phase: proposal.proposedPhase ?? "FORMAT_MINGLE",
       cursor,
     }))
     .map((proposal) => sliceProposalThroughCursor(proposal, cursor));
   const alliances = facts.allianceFacts.alliances
     .filter((record) => isAllianceFactAtOrBeforeCursor({
       round: record.createdRound,
-      phase: record.createdPhase ?? "MINGLE_I",
+      phase: record.createdPhase ?? "FORMAT_MINGLE",
       cursor,
     }))
     .map((record) => sliceAllianceRecordThroughCursor(record, huddles, cursor));
@@ -260,7 +264,7 @@ function sliceProposalThroughCursor(
     proposal.resolvedRound === undefined
     || isAllianceFactAtOrBeforeCursor({
       round: proposal.resolvedRound,
-      phase: proposal.resolvedPhase ?? "PRE_VOTE_HUDDLE",
+      phase: proposal.resolvedPhase ?? "FORMAT_MINGLE",
       cursor,
     })
   ) {
@@ -289,7 +293,7 @@ function sliceAllianceRecordThroughCursor(
   const latestOutcome = visibleOutcomes[0];
   const futureStatusUpdate = !isAllianceFactAtOrBeforeCursor({
     round: record.updatedRound,
-    phase: record.updatedPhase ?? "PRE_VOTE_HUDDLE",
+    phase: record.updatedPhase ?? "FORMAT_MINGLE",
     cursor,
   });
   const status = futureStatusUpdate && record.status !== "active"
@@ -316,6 +320,7 @@ function sliceAllianceRecordThroughCursor(
 }
 
 function phaseForHuddleWindow(window: string): PhaseKey {
+  if (window === "format") return "FORMAT_MINGLE";
   return window === "pre_council" ? "PRE_COUNCIL_HUDDLE" : "PRE_VOTE_HUDDLE";
 }
 

@@ -779,6 +779,16 @@ describe("match watch model", () => {
       ["Empowered"],
       [],
     ]);
+    expect(format.phaseSegments.map((segment) => segment.key)).toEqual([
+      "INTRODUCTION",
+      "LOBBY",
+      "VOTE",
+      "FORMAT_MENU",
+      "FORMAT_PICK",
+      "FORMAT_MINGLE",
+      "FORMAT_RESOLVE",
+      "END",
+    ]);
     expect(format.phaseSegments.some((segment) => segment.key === "COUNCIL")).toBe(false);
   });
 

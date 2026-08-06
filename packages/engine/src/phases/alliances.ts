@@ -74,7 +74,7 @@ function hasActiveAllianceWithSameRoster(ctx: PhaseRunnerContext, memberIds: rea
 async function collectAllianceAction(
   ctx: PhaseRunnerContext,
   playerId: UUID,
-  phase: Phase.MINGLE_I | Phase.FORMAT_MINGLE,
+  phase: Phase.FORMAT_MINGLE,
 ): Promise<AllianceAction> {
   const agent = ctx.agents.get(playerId)!;
   if (!agent.getAllianceAction) {
@@ -103,7 +103,7 @@ async function applyAllianceAction(
   playerId: UUID,
   action: AllianceAction,
   pass: number,
-  phase: Phase.MINGLE_I | Phase.FORMAT_MINGLE,
+  phase: Phase.FORMAT_MINGLE,
 ): Promise<{ result: string; repairNotes: string[]; changed: boolean }> {
   const beforeCount = ctx.gameState.getCanonicalEvents().length;
   const repairNotes: string[] = [];
@@ -296,7 +296,7 @@ function emitAllianceActionTurn(
   pass: number,
   result: string,
   repairNotes: string[],
-  phase: Phase.MINGLE_I | Phase.FORMAT_MINGLE,
+  phase: Phase.FORMAT_MINGLE,
 ): void {
   const player = ctx.gameState.getPlayer(playerId);
   const playerName = player?.name ?? playerId;
@@ -374,7 +374,7 @@ async function resolveAllianceProposalTransaction(
   ctx: PhaseRunnerContext,
   lineageId: UUID,
   step: { value: number },
-  phase: Phase.MINGLE_I | Phase.FORMAT_MINGLE,
+  phase: Phase.FORMAT_MINGLE,
 ): Promise<void> {
   const askedByVersion = new Map<UUID, Set<UUID>>();
 
@@ -692,8 +692,8 @@ async function completeHuddleSession(
 
 export async function runAllianceFormationPhase(
   ctx: PhaseRunnerContext,
-  phase: Phase.MINGLE_I | Phase.FORMAT_MINGLE,
 ): Promise<void> {
+  const phase = Phase.FORMAT_MINGLE;
   const { gameState, logger } = ctx;
   logger.emitPhaseChange(phase);
   logger.logSystem("=== NAMED ALLIANCE ACTIONS ===", phase);
@@ -728,15 +728,6 @@ export async function runAllianceFormationPhase(
       gameState.expireAllianceProposal(lineage.id, { phase });
     }
   }
-}
-
-export async function runMingleIAlliancePhase(
-  ctx: PhaseRunnerContext,
-  actor: PhaseActor,
-): Promise<void> {
-  await runAllianceFormationPhase(ctx, Phase.MINGLE_I);
-  actor.send({ type: "PHASE_COMPLETE" });
-  await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 export async function runAllianceHuddleWindow(

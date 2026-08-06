@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
-import { LLMHouseInterviewer, type HouseAllianceHuddleOutcomeContext, type HouseAllianceHuddleScheduleContext, type HouseMingleAssignmentContext } from "../house-interviewer";
+import { LLMHouseInterviewer, TemplateHouseInterviewer, type HouseAllianceHuddleOutcomeContext, type HouseAllianceHuddleScheduleContext, type HouseMingleAssignmentContext } from "../house-interviewer";
 import type { PrivateDecisionTrace } from "../game-runner";
 import { modelCatalogEntryById } from "../model-catalog";
 import { Phase } from "../types";
@@ -101,8 +101,8 @@ function assignmentContent(overrides: Record<string, unknown> = {}): string {
 function makeHuddleScheduleContext(): HouseAllianceHuddleScheduleContext {
   return {
     round: 2,
-    phase: Phase.PRE_VOTE_HUDDLE,
-    window: "pre_vote" as const,
+    phase: Phase.FORMAT_MINGLE,
+    window: "format" as const,
     budget: 2,
     alivePlayers: ["Atlas", "Mira", "Vera"],
     candidates: [
@@ -110,7 +110,7 @@ function makeHuddleScheduleContext(): HouseAllianceHuddleScheduleContext {
         allianceId: "alliance-glass",
         name: "Glass Table",
         memberNames: ["Atlas", "Mira"],
-        purpose: "Coordinate the public Vote.",
+        purpose: "Coordinate Vote Bomb ballots.",
         timebox: "through council",
         priorOutcomeCount: 0,
       },
@@ -134,7 +134,7 @@ function huddleScheduleContent(overrides: Record<string, unknown> = {}): string 
     skipped: [
       { allianceId: "alliance-veil", rationale: "Recent huddle outcome already covers this window." },
     ],
-    rationale: "Spend scarce time where the Vote is most decision-relevant.",
+    rationale: "Spend scarce time where the locked-format decision is most relevant.",
     thinking: "Glass Table has the sharper immediate choice.",
     ...overrides,
   });
@@ -143,18 +143,18 @@ function huddleScheduleContent(overrides: Record<string, unknown> = {}): string 
 function makeHuddleOutcomeContext(): HouseAllianceHuddleOutcomeContext {
   return {
     round: 2,
-    phase: Phase.PRE_VOTE_HUDDLE,
-    window: "pre_vote" as const,
+    phase: Phase.FORMAT_MINGLE,
+    window: "format" as const,
     alliance: {
       id: "alliance-glass",
       name: "Glass Table",
       memberNames: ["Atlas", "Mira"],
-      purpose: "Coordinate the public Vote.",
+      purpose: "Coordinate Vote Bomb ballots.",
       timebox: "through council",
     },
     transcript: [
-      { from: "Atlas", text: "Mira, hold the empower vote on me and I will keep expose pressure on Vera." },
-      { from: "Mira", text: "I can do that if you do not undercut me after Council." },
+      { from: "Atlas", text: "Mira, place your Vote Bomb ballot on Vera and I will do the same." },
+      { from: "Mira", text: "I can do that if we do not split our ballots." },
     ],
     commitments: [],
   };
@@ -162,9 +162,9 @@ function makeHuddleOutcomeContext(): HouseAllianceHuddleOutcomeContext {
 
 function huddleOutcomeContent(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
-    ask: "Atlas asked Mira to hold an empower vote on him.",
-    plan: "Atlas and Mira align on exposing Vera while preserving Council flexibility.",
-    promises: ["Atlas promised not to undercut Mira after Council."],
+    ask: "Atlas asked Mira to place her Vote Bomb ballot on Vera.",
+    plan: "Atlas and Mira align their Vote Bomb ballots on Vera.",
+    promises: ["Atlas promised not to split the ballot."],
     dissent: [],
     confidence: "medium",
     posture: "coordinating",
@@ -175,6 +175,15 @@ function huddleOutcomeContent(overrides: Record<string, unknown> = {}): string {
 }
 
 describe("LLMHouseInterviewer structured alliance huddles", () => {
+  it("uses locked-format language for deterministic huddle fallbacks", async () => {
+    const house = new TemplateHouseInterviewer();
+
+    const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
+
+    expect(result.ask).toBe("Align under the locked format.");
+    expect(result.plan).toContain("locked-format commitments");
+  });
+
   it("requests strict JSON schema output for huddle scheduling", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(
@@ -190,7 +199,7 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
     expect(result.skipped).toEqual([
       { allianceId: "alliance-veil", rationale: "Recent huddle outcome already covers this window." },
     ]);
-    expect(result.rationale).toBe("Spend scarce time where the Vote is most decision-relevant.");
+    expect(result.rationale).toBe("Spend scarce time where the locked-format decision is most relevant.");
     expect(result.thinking).toBe("Glass Table has the sharper immediate choice.");
     expect(requests[0]?.response_format).toMatchObject({
       type: "json_schema",
@@ -225,9 +234,9 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
     const result = await house.summarizeAllianceHuddle(makeHuddleOutcomeContext());
 
     expect(result).toMatchObject({
-      ask: "Atlas asked Mira to hold an empower vote on him.",
-      plan: "Atlas and Mira align on exposing Vera while preserving Council flexibility.",
-      promises: ["Atlas promised not to undercut Mira after Council."],
+      ask: "Atlas asked Mira to place her Vote Bomb ballot on Vera.",
+      plan: "Atlas and Mira align their Vote Bomb ballots on Vera.",
+      promises: ["Atlas promised not to split the ballot."],
       confidence: "medium",
       posture: "coordinating",
       thinking: "The plan is concrete but still conditional.",
