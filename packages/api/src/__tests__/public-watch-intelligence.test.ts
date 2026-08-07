@@ -183,9 +183,19 @@ describe("getPublicWatchIntelligence", () => {
       },
     ];
     await appendGameEvents(db, { gameId, ownerEpoch, events: [...base, ...formatEvents] });
+    await insertArtifact(db, {
+      id: "majority-ballot-thinking-artifact",
+      gameId,
+      actorPlayerId: "atlas",
+      artifactType: "thinking",
+      action: "format-majority-elimination-ballot",
+      phase: "FORMAT_RESOLVE",
+      payload: { thinking: "MAJORITY_BALLOT_PRIVATE_SENTINEL" },
+    });
 
     const result = await getPublicWatchIntelligence(db, {
       gameIdOrSlug: "watch-intelligence-format-ballots",
+      actorPlayerId: "atlas",
       round: 1,
     });
 
@@ -208,6 +218,7 @@ describe("getPublicWatchIntelligence", () => {
     const serialized = JSON.stringify(result);
     expect(serialized).not.toContain("sourcePointers");
     expect(serialized).not.toContain("WATCH_PRIVATE_DECISION_SENTINEL");
+    expect(serialized).not.toContain("MAJORITY_BALLOT_PRIVATE_SENTINEL");
   });
 
   test("omits hidden alliance action and huddle cards from public intelligence", async () => {

@@ -253,6 +253,7 @@ describe("CognitiveArtifactReadModel", () => {
     const participantPlayerId = randomUUID();
     const formatBallotThinkingId = randomUUID();
     const formatBallotStrategyId = randomUUID();
+    const majorityBallotThinkingId = randomUUID();
     const formatPickThinkingId = randomUUID();
     const publicThinkingId = randomUUID();
 
@@ -279,6 +280,16 @@ describe("CognitiveArtifactReadModel", () => {
       action: "format-vote-bomb-ballot",
       phase: "FORMAT_RESOLVE",
       payload: { decisionLog: "sealed vote-bomb intent" },
+    });
+    await insertArtifact({
+      id: majorityBallotThinkingId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      action: "format-majority-elimination-ballot",
+      phase: "FORMAT_RESOLVE",
+      payload: { thinking: "sealed majority-elimination intent" },
     });
     await insertArtifact({
       id: formatPickThinkingId,
@@ -326,6 +337,14 @@ describe("CognitiveArtifactReadModel", () => {
       actorPlayerId: ownerPlayerId,
     }, participantAccess);
     expect(deniedBallotStrategy).toMatchObject({ ok: false, status: "denied" });
+
+    const deniedMajorityBallotThinking = await readModel.readArtifact({
+      gameIdOrSlug: gameId,
+      artifactId: majorityBallotThinkingId,
+      artifactType: "thinking",
+      actorPlayerId: ownerPlayerId,
+    }, participantAccess);
+    expect(deniedMajorityBallotThinking).toMatchObject({ ok: false, status: "denied" });
 
     const ownerBallotThinking = await readModel.readArtifact({
       gameIdOrSlug: gameId,

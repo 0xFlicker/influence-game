@@ -42,6 +42,19 @@ export interface SealedElimDecisionContract<
   handler: "sealed_elim";
   formatId: TId;
   targetPolicy: "alive_non_self";
+  publicName: string;
+  ballotHeading: string;
+  toolName: "vote_bomb_ballot" | "majority_elimination_ballot";
+  toolDescription: string;
+  traceAction:
+    | "format-vote-bomb-ballot"
+    | "format-majority-elimination-ballot";
+  decisionLabel: string;
+  strategyGuidance: string;
+  invalidTargetReason:
+    | "invalid_vote_bomb_target"
+    | "invalid_majority_elimination_target";
+  fallbackThinking: string;
 }
 
 export interface SealedElimAggregateAdapter {
@@ -162,6 +175,16 @@ export const FORMAT_CATALOG: FormatCatalog = {
       handler: "sealed_elim",
       formatId: "vote_bomb",
       targetPolicy: "alive_non_self",
+      publicName: "Vote Bomb",
+      ballotHeading: "Vote Bomb Ballot",
+      toolName: "vote_bomb_ballot",
+      toolDescription: "Cast one sealed Vote Bomb ballot against a legal non-self target.",
+      traceAction: "format-vote-bomb-ballot",
+      decisionLabel: "Vote Bomb Ballot",
+      strategyGuidance:
+        "Vote Bomb rewards deliberate placement: loading several votes onto one player can leave a different player holding the lethal fewest-positive total, while a single stray vote can put someone on the fewest-positive ledge. Zero votes is safe. Coordinate when useful, but do not assume the room kept its promises.",
+      invalidTargetReason: "invalid_vote_bomb_target",
+      fallbackThinking: "fallback sealed Vote Bomb ballot after tool failure",
     },
     aggregate: sealedElimAggregateAdapter,
     presentation: {
@@ -189,6 +212,16 @@ export const FORMAT_CATALOG: FormatCatalog = {
       handler: "sealed_elim",
       formatId: "majority_elimination",
       targetPolicy: "alive_non_self",
+      publicName: "Majority Elimination",
+      ballotHeading: "Majority Elimination Ballot",
+      toolName: "majority_elimination_ballot",
+      toolDescription: "Cast one sealed Majority Elimination ballot against a legal non-self target.",
+      traceAction: "format-majority-elimination-ballot",
+      decisionLabel: "Majority Elimination Ballot",
+      strategyGuidance:
+        "Majority Elimination removes the player with the most votes. This is not Vote Bomb: zero votes is not a special safe class, and the fewest-positive rule does not apply. This is not Safety Bounce: every living non-self target is legal, not only a vulnerable pool. All living players, including the empowered player, can receive ballots and be eliminated.",
+      invalidTargetReason: "invalid_majority_elimination_target",
+      fallbackThinking: "fallback sealed Majority Elimination ballot after tool failure",
     },
     aggregate: sealedElimAggregateAdapter,
     presentation: {

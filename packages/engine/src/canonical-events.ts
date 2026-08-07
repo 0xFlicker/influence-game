@@ -139,11 +139,13 @@ export const ACCEPTED_ACTION_REGISTRY = {
     sourceActions: [
       "format-save-or-eliminate-ballot",
       "format-vote-bomb-ballot",
+      "format-majority-elimination-ballot",
       "format-safety-bounce-vote",
     ],
     traceActions: [
       "format-save-or-eliminate-ballot",
       "format-vote-bomb-ballot",
+      "format-majority-elimination-ballot",
       "format-safety-bounce-vote",
     ],
     actorPayloadPath: "voterId",

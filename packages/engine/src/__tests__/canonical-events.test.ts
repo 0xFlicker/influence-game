@@ -418,6 +418,11 @@ describe("accepted action registry", () => {
       traceActions: ["power"],
       cardinality: "one_to_one",
     });
+    expect(acceptedActionRegistryEntry("format.ballot_cast")).toMatchObject({
+      sourceActions: expect.arrayContaining(["format-majority-elimination-ballot"]),
+      traceActions: expect.arrayContaining(["format-majority-elimination-ballot"]),
+      cardinality: "one_to_one",
+    });
     expect(acceptedActionRegistryEntry("endgame.elimination_resolved")).toMatchObject({
       traceActions: ["tribunal-jury-tiebreaker-vote"],
       cardinality: "many_to_one",

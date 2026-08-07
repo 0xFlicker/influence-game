@@ -58,7 +58,19 @@ import type {
 } from "./game-runner.types";
 import { Phase } from "./types";
 import type { AllianceHuddleCommitmentFact, UUID, PowerAction } from "./types";
-import { displayNameForFormat, isLaunchFormatId, pickFormatFromMenu, type LaunchFormatId } from "./formats";
+import {
+  displayNameForFormat,
+  isLaunchFormatId,
+  pickFormatFromMenu,
+  type LaunchFormatId,
+  type SealedElimFormatId,
+} from "./formats";
+import {
+  runSealedElimTargetDecision,
+  STRATEGIC_DECISION_REQUIRED,
+  STRATEGIC_DECISION_TOOL_PROPERTIES,
+  type SealedElimModelOutput,
+} from "./formats/agent-surface";
 import { ruleSheetForFormat } from "./format-pressure";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
 import {
@@ -354,15 +366,6 @@ const TOOL_SEND_WHISPERS: ChatCompletionTool = {
     strict: true,
   },
 };
-
-const STRATEGIC_DECISION_TOOL_PROPERTIES = {
-  decisionLog: {
-    type: ["string", "null"],
-    description: "Compact private producer/debug receipt for what this action means strategically. Use null when there is no meaningful strategic note.",
-  },
-};
-
-const STRATEGIC_DECISION_REQUIRED = ["decisionLog"];
 
 const STRATEGIC_LENSES: readonly StrategicLens[] = [
   "vote_math",
@@ -3326,7 +3329,7 @@ Use the council_vote tool to cast your vote.`;
     const prompt = this.buildUserPrompt(ctx) + `
 ## Pick This Round's Format
 You are empowered. Choose exactly one of the two House-offered formats below.
-In speech and thinking, use the full public names (Save-or-Eliminate, Vote Bomb, Safety Bounce). The tool still requires the matching tool id.
+In speech and thinking, use the full public names (Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority Elimination). The tool still requires the matching tool id.
 
 ${offeredRules}
 
@@ -3446,68 +3449,54 @@ Use the save_or_eliminate_ballot tool.`;
     }
   }
 
+  private async getSealedElimBallot(
+    ctx: PhaseContext,
+    aliveIds: UUID[],
+    formatId: SealedElimFormatId,
+  ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
+    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    return runSealedElimTargetDecision({
+      formatId,
+      selfId: ctx.selfId,
+      aliveIds,
+      alivePlayers: ctx.alivePlayers,
+      basePrompt: this.buildUserPrompt(ctx),
+      ruleSheet: activeFormatRule(ctx, formatId),
+      callTool: ({ prompt, tool, traceAction }) => this.callTool<SealedElimModelOutput>(
+        prompt,
+        tool,
+        120,
+        sys,
+        this.traceOptions(ctx, {
+          action: traceAction,
+          reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
+          reasoningEffort: "low",
+        }),
+      ),
+      recordDecision: (action, label, metadata) => {
+        this.recordStrategicDecision(ctx, action, label, metadata);
+      },
+      onToolFailure: (error, fallbackTarget) => {
+        const method = formatId === "vote_bomb"
+          ? "getVoteBombBallot"
+          : "getMajorityEliminationBallot";
+        console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=${method} error="${error instanceof Error ? error.message : error}" fallback="${fallbackTarget.name}"`);
+      },
+    });
+  }
+
   async getVoteBombBallot(
     ctx: PhaseContext,
     aliveIds: UUID[],
   ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
-    const legalTargets = formatPlayersForIds(ctx, aliveIds, { excludeSelf: true });
-    const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
-    const prompt = this.buildUserPrompt(ctx) + `
-## Vote Bomb Ballot
-${supplementalActiveFormatRule(ctx, "vote_bomb")}
+    return this.getSealedElimBallot(ctx, aliveIds, "vote_bomb");
+  }
 
-Your ballot is sealed until the House reveal. Cast one sealed vote for exactly one living non-self target.
-Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
-
-Vote Bomb rewards deliberate placement: loading several votes onto one player can leave a different player holding the lethal fewest-positive total, while a single stray vote can put someone on the fewest-positive ledge. Zero votes is safe. Coordinate when useful, but do not assume the room kept its promises.
-
-Use the vote_bomb_ballot tool.`;
-    const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
-
-    try {
-      const result = await this.callTool<{
-        thinking?: string;
-        target?: unknown;
-        decisionLog?: unknown;
-        reasoningContext?: string;
-      }>(
-        prompt,
-        buildFormatTargetTool({
-          name: "vote_bomb_ballot",
-          description: "Cast one sealed Vote Bomb ballot against a legal non-self target.",
-          targetDescription: "One legal living non-self target name.",
-          legalTargetNames: legalTargets.map((player) => player.name),
-        }),
-        120,
-        sys,
-        this.traceOptions(ctx, {
-          action: "format-vote-bomb-ballot",
-          reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
-          reasoningEffort: "low",
-        }),
-      );
-      const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "format-vote-bomb-ballot", "Vote Bomb Ballot", metadata);
-      const target = findByName(
-        legalTargets,
-        typeof result.target === "string" ? result.target : undefined,
-      );
-      return {
-        targetId: target?.id ?? fallbackTarget.id,
-        thinking: result.thinking,
-        reasoningContext: result.reasoningContext,
-        ...metadata,
-        ...formatDecisionProvenance(Boolean(target), "invalid_vote_bomb_target"),
-      };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVoteBombBallot error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
-      return {
-        targetId: fallbackTarget.id,
-        thinking: "fallback sealed Vote Bomb ballot after tool failure",
-        decisionSource: "fallback",
-        fallbackReason: "tool_call_failed",
-      };
-    }
+  async getMajorityEliminationBallot(
+    ctx: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
+    return this.getSealedElimBallot(ctx, aliveIds, "majority_elimination");
   }
 
   async getBouncePointer(

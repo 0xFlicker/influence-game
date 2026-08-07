@@ -381,11 +381,16 @@ describe("format catalog", () => {
 
     expect(registration.isLegalBallot("a", "b", alive)).toBe(true);
     expect(registration.resolve(alive, ballots).eliminatedId).toBe("a");
-    expect(registration.decision).toEqual({
+    expect(registration.decision).toMatchObject({
       handler: "sealed_elim",
       formatId: "majority_elimination",
       targetPolicy: "alive_non_self",
+      publicName: "Majority Elimination",
+      toolName: "majority_elimination_ballot",
+      traceAction: "format-majority-elimination-ballot",
+      invalidTargetReason: "invalid_majority_elimination_target",
     });
+    expect(registration.decision.strategyGuidance).toContain("most votes");
     expect(
       registration.aggregate.toAggregate(registration.score(alive, ballots)),
     ).toEqual({
