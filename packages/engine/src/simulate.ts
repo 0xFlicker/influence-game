@@ -35,11 +35,13 @@
  *
  * Inspect the new batch summary.md, game-1.txt, and game-1-turns.jsonl. Flex
  * summaries include tier-aware run spend plus one all-model cost comparison.
- * Require
- * FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE, model-authored format actions
- * (`decisionSource: "llm"` with useful thinking), no fallback, and no default
- * Power/Council elimination. Repeat only the same bounded recipe until all three
- * launch formats have appeared across retained batches. See
+ * Require FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE on two-card rounds,
+ * model-authored format actions (`decisionSource: "llm"` with useful thinking),
+ * no fallback, and no default Power/Council elimination. Omission uses the
+ * frozen four-format default. For proof of one specific card, append
+ * `--formats <id>` and require FORMAT LOCKED -> FORMAT RESOLVE with no
+ * format.menu_offered event, format-pick turn, or empowered pick model call.
+ * Do not use extra production rounds as a catalog-coverage gate. See
  * docs/local-model-evaluation.md for the complete pass/fail and triage checklist.
  *   # Whole-game timeout is off by default; only set when you want a hard wall clock:
  *   #   --game-timeout-sec 7200
@@ -105,15 +107,16 @@
  * durable API match-read surfaces; local `--chatty` formatting and simulation
  * artifacts remain first-class and continue to surface thinking / reasoningContext
  * for human review without treating them as public speech.
- * Format-kernel turns record `format-pick`, `format-ballot`, `bounce-pointer`,
- * `format-tiebreak`, and one post-commit `elimination-message` action. The
+ * Format-kernel turns record `format-pick` when a two-card menu exists,
+ * `format-ballot`, `bounce-pointer`, `format-tiebreak`, and one post-commit
+ * `elimination-message` action. The
  * elimination message receives named voters only for public votes; sealed
  * formats pass received counts without voter identities. This participating-agent
  * context is intentionally narrower than operator transport: sanitized accepted
  * ballot mappings are readable there immediately after durable record, while
  * viewer named Roll Call presentation remains resolution-gated. Together the format
- * records expose the six typed agent
- * decisions: pickRoundFormat, getSaveOrEliminateBallot, getVoteBombBallot,
+ * records expose seven typed agent decisions: pickRoundFormat,
+ * getSaveOrEliminateBallot, getVoteBombBallot, getMajorityEliminationBallot,
  * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their
  * responses include `decisionSource` and nullable `fallbackReason`; reasoning
  * is diagnostic evidence, never canonical game fact. Safety Bounce pointer

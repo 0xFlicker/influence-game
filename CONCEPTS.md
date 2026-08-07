@@ -101,9 +101,13 @@ The active elimination (and optional social) ruleset for one standard round afte
 
 The registered set of round formats The House may offer under the format kernel. Catalog membership is code-registered, not invented from free-form config. Sealed single-elim formats that differ only in tally math are expected to share one sealed-ballot resolve path; public-chain, preselection/split-field, and multi-elim formats are separate capability classes. See also round format, format menu, Majority Elimination.
 
+## Format manifest
+
+The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the four-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game. A one-format manifest auto-selects its only card without a menu or empowered pick call; a manifest with two or more formats uses the normal two-card menu. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
+
 ## Format menu
 
-The two distinct legal round formats The House offers after empower resolves. The empowered agent must pick exactly one. Menu construction uses the format catalog with cast-size fitness and soft anti-repeat pressure (do not re-offer last round’s selected format when other legal options remain) so games show format variety; it is not a post-pick parameter twist inside a format.
+The two distinct legal round formats The House offers after empower resolves when the frozen manifest contains at least two cards. The empowered agent must pick exactly one. Menu construction uses the frozen manifest with soft anti-repeat pressure: exclude last round’s format when at least two other manifest cards remain, otherwise sample two from the manifest. A one-format manifest skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
 
 ## Save-or-eliminate
 

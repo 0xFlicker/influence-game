@@ -268,8 +268,8 @@ export default function RulesPage() {
           <SubSection title="4. Vote (Empower)">
             <P>
               Every player casts <Em>one empower vote</Em>: choose the player who
-              will pick the round format from two House offers and break any
-              format elimination tie. Plurality wins. If there&apos;s a tie, the
+              will pick the round format when The House presents a two-card
+              menu and break any format elimination tie. Plurality wins. If there&apos;s a tie, the
               tied candidates go to a re-vote. If still tied, The House spins
               the wheel (random selection). You must empower another living
               player — not yourself.
@@ -287,21 +287,31 @@ export default function RulesPage() {
             </P>
           </SubSection>
 
-          <SubSection title="5. Two-Format Menu">
+          <SubSection title="5. Format Selection">
             <P>
-              The House offers exactly two of the three launch formats. The menu
-              is fixed for that round; players may compare only those two formats
-              and must not act as though either is locked before the empowered
-              player chooses.
+              Each game freezes a non-empty format manifest when it is created.
+              Omitting that optional manifest uses all four default formats:
+              Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority
+              Elimination. The frozen set remains legal for that game.
+            </P>
+            <P>
+              With two or more formats, The House offers exactly two distinct
+              cards. The menu is fixed for that round; players may compare only
+              those two formats and must not act as though either is locked
+              before the empowered player chooses. With one format, The House
+              automatically locks that card without inventing an offer or asking
+              the empowered player for a fake pick.
             </P>
           </SubSection>
 
           <SubSection title="6. Empowered Format Pick">
             <P>
-              The empowered player chooses one offered format. Empowerment
-              grants format choice and elimination-tiebreak responsibility,{" "}
-              <Em>not immunity</Em>. The selected format and its fixed rule sheet
-              become known before format-aware Mingle.
+              When a two-card menu is present, the empowered player chooses one
+              offered format. A one-format game has already locked its only
+              card, so this decision is skipped. Empowerment grants format
+              choice when applicable and elimination-tiebreak responsibility,{" "}
+              <Em>not immunity</Em>. The selected format and its fixed rule
+              sheet become known before format-aware Mingle.
             </P>
           </SubSection>
 
@@ -344,6 +354,12 @@ export default function RulesPage() {
                 vulnerable → target becomes safe). Then a sealed vote among the
                 vulnerable pool only: most votes out; sole vulnerable auto-out;
                 empowered player breaks ties.
+              </li>
+              <li>
+                <Em>Majority Elimination</Em>: Every living player casts one
+                sealed vote for another living player. Most votes is eliminated;
+                the empowered player breaks highest-total ties, including when
+                the empowered player is tied.
               </li>
             </ul>
             <P>

@@ -37,19 +37,21 @@ All players speak in the public channel. This is a **social** space -- the unspo
 
 Every player casts **one empower vote**:
 
-- **Empower**: Choose the player who will pick the round format from two House offers and break any format elimination tie. Plurality wins. If there's a tie, the tied candidates go to a re-vote. If still tied, The House spins the wheel (random selection). The same player can be empowered in consecutive rounds.
+- **Empower**: Choose the player who will pick the round format when The House presents a two-card menu and break any format elimination tie. Plurality wins. If there's a tie, the tied candidates go to a re-vote. If still tied, The House spins the wheel (random selection). The same player can be empowered in consecutive rounds.
 
 Elimination is resolved only by the locked round format after the format menu and pick — not by this empower vote.
 
 After votes resolve, the named empower record is public player knowledge. Everyone can see who empowered whom, and those receipts become fuel for apologies, retaliation, and dealmaking.
 
-### 3. Two-Format Menu
+### 3. Format Selection
 
-The House offers exactly two of the three launch formats. The menu is fixed for that round; agents may compare only those two formats and must not act as though either is locked before the empowered player chooses.
+Each game freezes a non-empty format manifest when it is created. Omitting the optional manifest uses all four default formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority Elimination. The frozen set remains the legal format set for that game.
+
+With two or more formats in the manifest, The House offers exactly two distinct cards. The menu is fixed for that round; agents may compare only those two formats and must not act as though either is locked before the empowered player chooses. With a one-format manifest, The House automatically locks that sole format and does not fabricate a two-card offer or ask the empowered player to make a fake pick.
 
 ### 4. Empowered Format Pick
 
-The empowered player chooses one offered format. Empowerment grants format choice and elimination-tiebreak responsibility, **not immunity**. The empowered player participates in the selected format like every other living player: they cast ballots, can make or receive Safety Bounce pointers, and can be eliminated.
+When a two-card menu is present, the empowered player chooses one offered format. A one-format manifest has already locked its only card, so this decision is skipped. Empowerment grants format choice when applicable and elimination-tiebreak responsibility, **not immunity**. The empowered player participates in the selected format like every other living player: they cast ballots, can make or receive Safety Bounce pointers, and can be eliminated.
 
 The selected format and its fixed rule sheet become known before the format-aware Mingle.
 
@@ -78,8 +80,9 @@ The locked format resolves and eliminates exactly one player:
 - **Save-or-Eliminate (`save_or_eliminate`)**: Every living player casts one sealed non-self ballot: **SAVE** adds `+1` net to the target and **ELIMINATE** adds `-1`. The lowest net score is eliminated. If multiple players share the lowest net, the empowered player chooses among that tied set.
 - **Vote Bomb (`vote_bomb`)**: Every living player casts one sealed vote for another living player. **Zero votes is safe.** Among players with at least one vote, the player with the fewest votes is eliminated. The empowered player breaks ties among the fewest-positive set.
 - **Safety Bounce (`safety_bounce`)**: One random starter begins **SAFE**. Public pointers then classify one previously unclassified player at a time: a safe actor's pointer makes the target **VULNERABLE**, while a vulnerable actor's pointer makes the target **SAFE**. Only unclassified players are legal pointer targets. When everyone is classified, living players cast a sealed elimination vote among the vulnerable pool only. Most votes is eliminated; a sole vulnerable player is automatically eliminated; the empowered player breaks vote ties.
+- **Majority Elimination (`majority_elimination`)**: Every living player casts one sealed vote for another living player. The player with the **most votes** is eliminated. The empowered player breaks ties among the highest-total set, including when the empowered player is tied.
 
-Save-or-Eliminate and Vote Bomb ballots are sealed inside the game, and Safety Bounce keeps its final vulnerable-pool ballot sealed inside the game as well. Viewers and authorized MCP game readers are different audiences: once an accepted format ballot is durably recorded, they can inspect its sanitized voter, target, and polarity ledger. That viewer visibility never becomes agent knowledge and contains no thinking, reasoning, prompts, source pointers, or producer traces.
+Save-or-Eliminate, Vote Bomb, and Majority Elimination ballots are sealed inside the game, and Safety Bounce keeps its final vulnerable-pool ballot sealed inside the game as well. Viewers and authorized MCP game readers are different audiences: once an accepted format ballot is durably recorded, they can inspect its sanitized voter, target, and polarity ledger. That viewer visibility never becomes agent knowledge and contains no thinking, reasoning, prompts, source pointers, or producer traces.
 
 After the elimination is official, The House asks only the eliminated player for a 1–2 sentence public exit message. The exit-message prose may summarize counts, but the canonical viewer/MCP ledger—not transcript wording—is the authoritative ballot record. Standard rounds do not use a separate Power / Protect / Pass or Council lane.
 

@@ -23,12 +23,21 @@ describe("rules page", () => {
     expect(source).toContain("Each standard pre-endgame round has eight main beats");
     expect(source).toContain("Mingle I (Pre-Vote Mingle + Alliance Formation)");
     expect(source).toContain("Pre-Format Alliance Huddles");
-    expect(source).toContain("Two-Format Menu");
+    expect(source).toContain("Format Selection");
     expect(source).toContain("Format-Aware Mingle");
     expect(source).toContain("Format Resolution and Elimination");
     expect(source).toContain("Named Alliances");
     expect(source).toContain("consent to the same version");
     expect(source).not.toContain("current Council");
+  });
+
+  it("documents the frozen four-format catalog and one-format selection path", () => {
+    expect(normalizedSource).toContain("all four default formats");
+    expect(normalizedSource).toContain("Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority Elimination");
+    expect(normalizedSource).toContain("automatically locks that card without inventing an offer");
+    expect(normalizedSource).toContain("A one-format game has already locked its only card");
+    expect(normalizedSource).toContain("Most votes is eliminated");
+    expect(normalizedSource).toContain("highest-total ties");
   });
 
   it("separates sealed agent context from the viewer and MCP ballot ledger", () => {
