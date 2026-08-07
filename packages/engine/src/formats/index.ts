@@ -76,3 +76,20 @@ export {
   buildHouseFormatResolutionFacts,
   type PlayerNameResolver,
 } from "./house-resolution-facts";
+
+export {
+  resolveSealedElimRound,
+  scoreSealedElimBallots,
+  type AcceptedSealedElimDecision,
+  type CollectedSealedElimDecision,
+  type ResolveSealedElimOptions,
+  type ResolvedSealedElimRound,
+  type SealedElimParticipant,
+  type SealedElimTieResolution,
+} from "./sealed-elim-resolve";
+
+export {
+  formatResolutionAggregate,
+  toFormatResolutionPayloadV2,
+  type FormatResolvedEvent,
+} from "./resolution-access";

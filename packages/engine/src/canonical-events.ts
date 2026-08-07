@@ -18,6 +18,10 @@ import type {
   UUID,
 } from "./types";
 import type { LaunchFormatId } from "./formats";
+import {
+  getFormatRegistration,
+  isRegisteredFormatId,
+} from "./formats/catalog";
 
 export type CanonicalEventVisibility = "public" | "player" | "producer" | "system";
 
@@ -370,6 +374,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
 export interface CanonicalEventEnvelope<
   TType extends CanonicalGameEventType = CanonicalGameEventType,
   TPayload extends object = Record<string, unknown>,
+  TPayloadVersion extends 1 | 2 = 1,
 > {
   sequence: number;
   gameId: UUID;
@@ -379,7 +384,7 @@ export interface CanonicalEventEnvelope<
   timestamp: string;
   source: CanonicalEventSource;
   visibility: CanonicalEventVisibility;
-  payloadVersion: 1;
+  payloadVersion: TPayloadVersion;
   sourcePointers: CanonicalSourcePointer[];
   payload: TPayload;
 }
@@ -389,13 +394,17 @@ export interface CanonicalEventEnvelope<
  * `format.ballot_cast` carries the per-voter facts and viewer read paths expose
  * only its sanitized projection, never the raw producer envelope.
  */
-export type FormatResolutionPayload = {
+export type FormatResolutionCommon = {
   formatId: LaunchFormatId;
   empoweredId: UUID;
   eliminatedId: UUID;
   resolutionKind: "clear" | "auto";
   tiedPlayerIds: UUID[];
   tiebreakerId: UUID | null;
+};
+
+/** Historical version-1 format resolution with mutually-exclusive format bags. */
+export type FormatResolutionPayloadV1 = FormatResolutionCommon & {
   saveOrEliminate: {
     nets: Record<UUID, number>;
     savesReceived: Record<UUID, number>;
@@ -411,7 +420,43 @@ export type FormatResolutionPayload = {
     vulnerablePlayerIds: UUID[];
     voteTotals: Record<UUID, number>;
   } | null;
+  aggregate?: never;
 };
+
+export type FormatResolutionAggregate =
+  | {
+      capability: "sealed_elim";
+      totals: Record<UUID, number>;
+      eligiblePlayerIds: UUID[];
+    }
+  | {
+      capability: "sealed_polarity";
+      nets: Record<UUID, number>;
+      savesReceived: Record<UUID, number>;
+      eliminateReceived: Record<UUID, number>;
+    }
+  | {
+      capability: "public_chain";
+      starterId: UUID;
+      safePlayerIds: UUID[];
+      vulnerablePlayerIds: UUID[];
+      voteTotals: Record<UUID, number>;
+    };
+
+/** Version-2 format resolution. Aggregate shape is selected by catalog capability. */
+export type FormatResolutionPayloadV2 = FormatResolutionCommon & {
+  aggregate: FormatResolutionAggregate;
+  saveOrEliminate?: never;
+  voteBomb?: never;
+  safetyBounce?: never;
+};
+
+/** New-writer format resolution contract. */
+export type FormatResolutionPayload = FormatResolutionPayloadV2;
+
+export type AnyFormatResolutionPayload =
+  | FormatResolutionPayloadV1
+  | FormatResolutionPayloadV2;
 
 /** Producer-only sealed format ballot (owner reads filtered through round-facts scope). */
 export type FormatBallotPayload = {
@@ -478,7 +523,8 @@ export type CanonicalGameEvent =
       "format.safety_bounce_pointer",
       { actorId: UUID; targetId: UUID; classification: "safe" | "vulnerable" }
     >
-  | CanonicalEventEnvelope<"format.resolved", FormatResolutionPayload>
+  | CanonicalEventEnvelope<"format.resolved", FormatResolutionPayloadV1, 1>
+  | CanonicalEventEnvelope<"format.resolved", FormatResolutionPayloadV2, 2>
   | CanonicalEventEnvelope<"power.action_set", { action: PowerAction }>
   | CanonicalEventEnvelope<
       "power.candidates_resolved",
@@ -645,6 +691,71 @@ function isSourcePointer(value: unknown): value is CanonicalSourcePointer {
   );
 }
 
+export function isSupportedCanonicalPayloadVersion(
+  eventType: unknown,
+  payloadVersion: unknown,
+): payloadVersion is 1 | 2 {
+  return eventType === "format.resolved"
+    ? payloadVersion === 1 || payloadVersion === 2
+    : payloadVersion === 1;
+}
+
+function expectedFormatCapability(formatId: unknown): FormatResolutionAggregate["capability"] | null {
+  return typeof formatId === "string" && isRegisteredFormatId(formatId)
+    ? getFormatRegistration(formatId).capability
+    : null;
+}
+
+function validateFormatResolutionV2(payload: unknown): string[] {
+  if (!isRecord(payload)) return ["format.resolved v2 payload must be an object"];
+  if (!isRecord(payload.aggregate)) {
+    return ["format.resolved v2 payload.aggregate must be an object"];
+  }
+  for (const legacyBag of ["saveOrEliminate", "voteBomb", "safetyBounce"] as const) {
+    if (Object.hasOwn(payload, legacyBag)) {
+      return [`format.resolved v2 payload must not contain legacy bag ${legacyBag}`];
+    }
+  }
+  const expected = expectedFormatCapability(payload.formatId);
+  if (!expected) {
+    return [`format.resolved v2 formatId is unsupported: ${String(payload.formatId)}`];
+  }
+  if (payload.aggregate.capability !== expected) {
+    return [
+      `format.resolved v2 capability mismatch for ${String(payload.formatId)}: expected ${expected}, got ${String(payload.aggregate.capability)}`,
+    ];
+  }
+  const aggregate = payload.aggregate;
+  if (
+    aggregate.capability === "sealed_elim"
+    && (!isRecord(aggregate.totals) || !Array.isArray(aggregate.eligiblePlayerIds))
+  ) {
+    return ["format.resolved v2 sealed_elim aggregate requires totals and eligiblePlayerIds"];
+  }
+  if (
+    aggregate.capability === "sealed_polarity"
+    && (
+      !isRecord(aggregate.nets)
+      || !isRecord(aggregate.savesReceived)
+      || !isRecord(aggregate.eliminateReceived)
+    )
+  ) {
+    return ["format.resolved v2 sealed_polarity aggregate requires nets, savesReceived, and eliminateReceived"];
+  }
+  if (
+    aggregate.capability === "public_chain"
+    && (
+      typeof aggregate.starterId !== "string"
+      || !Array.isArray(aggregate.safePlayerIds)
+      || !Array.isArray(aggregate.vulnerablePlayerIds)
+      || !isRecord(aggregate.voteTotals)
+    )
+  ) {
+    return ["format.resolved v2 public_chain aggregate requires starterId, classifications, and voteTotals"];
+  }
+  return [];
+}
+
 export function validateCanonicalGameEvent(value: unknown): CanonicalEventValidationResult {
   const errors: string[] = [];
   if (!isRecord(value)) {
@@ -685,8 +796,14 @@ export function validateCanonicalGameEvent(value: unknown): CanonicalEventValida
   ) {
     errors.push("visibility is invalid");
   }
-  if (value.payloadVersion !== 1) {
-    errors.push("payloadVersion must be 1");
+  if (!isSupportedCanonicalPayloadVersion(value.type, value.payloadVersion)) {
+    errors.push(
+      value.type === "format.resolved"
+        ? `payloadVersion for format.resolved must be 1 or 2, got ${String(value.payloadVersion)}`
+        : `payloadVersion for ${String(value.type)} must be 1, got ${String(value.payloadVersion)}`,
+    );
+  } else if (value.type === "format.resolved" && value.payloadVersion === 2) {
+    errors.push(...validateFormatResolutionV2(value.payload));
   }
   if (!Array.isArray(value.sourcePointers) || !value.sourcePointers.every(isSourcePointer)) {
     errors.push("sourcePointers must be an array of source pointer records");

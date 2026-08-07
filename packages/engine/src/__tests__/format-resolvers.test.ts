@@ -21,6 +21,7 @@ import {
   resolveMajorityElimination,
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
+  scoreSealedElimBallots,
   resolveVoteBomb,
   type LaunchFormatId,
   type SaveOrEliminateBallot,
@@ -198,6 +199,30 @@ describe("vote bomb", () => {
     const resolution = resolveVoteBomb(alive, ballots);
     expect(resolution.kind).toBe("auto");
     expect(resolution.eliminatedId).toBe("b");
+  });
+
+  it("limits an empowered tiebreak to the tied fewest-positive set", () => {
+    const alive = ids("A", "B", "C", "D", "E");
+    const ballots: VoteBombBallot[] = [
+      { voterId: "b", targetId: "a" },
+      { voterId: "c", targetId: "a" },
+      { voterId: "d", targetId: "a" },
+      { voterId: "e", targetId: "b" },
+      { voterId: "a", targetId: "c" },
+    ];
+
+    const tied = resolveVoteBomb(alive, ballots);
+    expect(tied).toEqual({
+      kind: "tie",
+      eliminatedId: null,
+      tiedSet: ["b", "c"],
+    });
+    expect(applyFormatTiebreak(tied.tiedSet, "c")).toEqual({
+      kind: "clear",
+      eliminatedId: "c",
+      tiedSet: ["b", "c"],
+    });
+    expect(applyFormatTiebreak(tied.tiedSet, "d")).toBeNull();
   });
 
   it("rejects self-votes", () => {
@@ -391,5 +416,16 @@ describe("format catalog", () => {
     expect(() => requireSealedElimRegistration("safety_bounce")).toThrow(
       "not sealed_elim",
     );
+  });
+
+  it("fails closed on incomplete sealed-elim ballot sets", () => {
+    expect(() => scoreSealedElimBallots(
+      FORMAT_CATALOG.vote_bomb,
+      ids("A", "B", "C"),
+      [
+        { voterId: "a", targetId: "b" },
+        { voterId: "b", targetId: "c" },
+      ],
+    )).toThrow("vote_bomb incomplete sealed ballots: 2/3");
   });
 });

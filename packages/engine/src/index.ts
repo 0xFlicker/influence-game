@@ -69,6 +69,7 @@ export {
   acceptedActionSourcePointerMatches,
   assertCanonicalGameEvent,
   canonicalEventIsVisibleTo,
+  isSupportedCanonicalPayloadVersion,
   validateCanonicalGameEvent,
 } from "./canonical-events";
 export type {
@@ -85,6 +86,11 @@ export type {
   FormalSpeechProvenance,
   JudgmentSpeechKind,
   JudgmentSpeechProvenance,
+  AnyFormatResolutionPayload,
+  FormatResolutionAggregate,
+  FormatResolutionPayload,
+  FormatResolutionPayloadV1,
+  FormatResolutionPayloadV2,
 } from "./canonical-events";
 export {
   projectFormatBallotPresentation,

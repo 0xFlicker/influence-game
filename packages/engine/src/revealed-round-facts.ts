@@ -1,5 +1,5 @@
 import type { CanonicalGameEvent } from "./canonical-events";
-import type { LaunchFormatId } from "./formats";
+import { formatResolutionAggregate, type LaunchFormatId } from "./formats";
 import { resolveGameKernel, type GameKernel } from "./game-kernel";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
 import { PlayerStatus, type Phase, type PowerActionType, type UUID } from "./types";
@@ -481,20 +481,24 @@ function buildFormatFacts(
     bounceStarted,
     hasBouncePointers,
   );
-  const saveOrEliminate = resolved?.payload.saveOrEliminate
+  const aggregate = resolved ? formatResolutionAggregate(resolved) : null;
+  const saveOrEliminate = aggregate?.capability === "sealed_polarity"
     ? {
-        nets: countsToVoteCounts(resolved.payload.saveOrEliminate.nets, projection),
-        savesReceived: countsToVoteCounts(resolved.payload.saveOrEliminate.savesReceived, projection),
+        nets: countsToVoteCounts(aggregate.nets, projection),
+        savesReceived: countsToVoteCounts(aggregate.savesReceived, projection),
         eliminateReceived: countsToVoteCounts(
-          resolved.payload.saveOrEliminate.eliminateReceived,
+          aggregate.eliminateReceived,
           projection,
         ),
       }
     : null;
-  const voteBomb = resolved?.payload.voteBomb
+  const voteBomb = resolved?.payload.formatId === "vote_bomb"
+    && aggregate?.capability === "sealed_elim"
     ? {
-        totals: countsToVoteCounts(resolved.payload.voteBomb.totals, projection),
-        zeroSafe: resolved.payload.voteBomb.zeroSafePlayerIds.map((id) => playerRef(projection, id)),
+        totals: countsToVoteCounts(aggregate.totals, projection),
+        zeroSafe: Object.keys(aggregate.totals)
+          .filter((id) => !aggregate.eligiblePlayerIds.includes(id))
+          .map((id) => playerRef(projection, id)),
       }
     : null;
 
@@ -557,7 +561,10 @@ function buildSafetyBounceFacts(
   bounceStarted: EventOf<"format.safety_bounce_started"> | null,
   hasBouncePointers: boolean,
 ): RevealedSafetyBounceFacts | null {
-  const resolvedBounce = resolved?.payload.safetyBounce ?? null;
+  const resolvedAggregate = resolved ? formatResolutionAggregate(resolved) : null;
+  const resolvedBounce = resolvedAggregate?.capability === "public_chain"
+    ? resolvedAggregate
+    : null;
   if (!bounceStarted && !resolvedBounce && !hasBouncePointers) {
     return null;
   }

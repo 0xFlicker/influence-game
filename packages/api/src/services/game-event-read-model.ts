@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import {
+  isSupportedCanonicalPayloadVersion,
   validateCanonicalGameEvent,
   type CanonicalGameEvent,
 } from "@influence/engine";
@@ -47,7 +48,7 @@ export interface TrustedPersistedGameEvent {
   eventHash: string;
   ownerEpoch: string;
   visibility: string;
-  payloadVersion: 1;
+  payloadVersion: 1 | 2;
   envelope: CanonicalGameEvent;
   createdAt: string;
 }
@@ -144,19 +145,25 @@ export function validatePersistedGameEventRows(
       break;
     }
 
-    if (row.payloadVersion !== 1) {
+    if (!isSupportedCanonicalPayloadVersion(row.eventType, row.payloadVersion)) {
       diagnostics.push(buildDiagnostic(row, {
         code: "unsupported_payload_version",
-        message: `Unsupported persisted canonical event payload version ${row.payloadVersion}`,
+        message: `Unsupported persisted canonical event payload version ${row.payloadVersion} for ${row.eventType}`,
       }));
       break;
     }
 
     const envelopeRecord = isRecord(row.envelope) ? row.envelope : null;
-    if (envelopeRecord?.payloadVersion !== undefined && envelopeRecord.payloadVersion !== 1) {
+    if (
+      envelopeRecord?.payloadVersion !== undefined
+      && !isSupportedCanonicalPayloadVersion(
+        envelopeRecord.type,
+        envelopeRecord.payloadVersion,
+      )
+    ) {
       diagnostics.push(buildDiagnostic(row, {
         code: "unsupported_payload_version",
-        message: `Unsupported canonical event payload version ${String(envelopeRecord.payloadVersion)}`,
+        message: `Unsupported canonical event payload version ${String(envelopeRecord.payloadVersion)} for ${String(envelopeRecord.type)}`,
       }));
       break;
     }
@@ -209,7 +216,7 @@ export function validatePersistedGameEventRows(
       eventHash: row.eventHash,
       ownerEpoch: row.ownerEpoch,
       visibility: row.visibility,
-      payloadVersion: 1,
+      payloadVersion: event.payloadVersion,
       envelope: event,
       createdAt: row.createdAt,
     });

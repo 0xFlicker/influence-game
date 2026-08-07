@@ -13,6 +13,7 @@ import type {
 import type { UUID } from "../types";
 import { projectFormatBallotPresentation } from "../viewer-decision-events";
 import { isLaunchFormatId } from "./menu";
+import { formatResolutionAggregate } from "./resolution-access";
 import { displayNameForFormat, type LaunchFormatId } from "./types";
 
 export type PlayerNameResolver = (playerId: UUID) => string;
@@ -31,6 +32,7 @@ export function buildHouseFormatResolutionFacts(
   if (!resolved) return null;
 
   const payload = resolved.payload;
+  const aggregate = formatResolutionAggregate(resolved);
   const formatId = payload.formatId;
   if (!isLaunchFormatId(formatId)) return null;
 
@@ -82,10 +84,18 @@ export function buildHouseFormatResolutionFacts(
       classification: event.payload.classification === "vulnerable" ? "VULNERABLE" : "SAFE",
     }));
 
-  const scores = buildScores(formatId, payload, playerName);
-  const zeroSafeNames = (payload.voteBomb?.zeroSafePlayerIds ?? []).map(playerName);
-  const safeNames = (payload.safetyBounce?.safePlayerIds ?? []).map(playerName);
-  const vulnerableNames = (payload.safetyBounce?.vulnerablePlayerIds ?? []).map(playerName);
+  const scores = buildScores(formatId, aggregate, playerName);
+  const zeroSafeNames = formatId === "vote_bomb" && aggregate.capability === "sealed_elim"
+    ? Object.keys(aggregate.totals)
+        .filter((id) => !aggregate.eligiblePlayerIds.includes(id))
+        .map(playerName)
+    : [];
+  const safeNames = aggregate.capability === "public_chain"
+    ? aggregate.safePlayerIds.map(playerName)
+    : [];
+  const vulnerableNames = aggregate.capability === "public_chain"
+    ? aggregate.vulnerablePlayerIds.map(playerName)
+    : [];
 
   const eliminatedName = playerName(payload.eliminatedId);
   const tiedNames = payload.tiedPlayerIds.map(playerName);
@@ -97,7 +107,8 @@ export function buildHouseFormatResolutionFacts(
     soleVulnerable:
       formatId === "safety_bounce"
       && payload.resolutionKind === "auto"
-      && Object.keys(payload.safetyBounce?.voteTotals ?? {}).length === 0
+      && aggregate.capability === "public_chain"
+      && Object.keys(aggregate.voteTotals).length === 0
       && ballots.length === 0,
   });
 
@@ -127,26 +138,26 @@ export function buildHouseFormatResolutionFacts(
 
 function buildScores(
   formatId: LaunchFormatId,
-  payload: Extract<CanonicalGameEvent, { type: "format.resolved" }>["payload"],
+  aggregate: ReturnType<typeof formatResolutionAggregate>,
   playerName: PlayerNameResolver,
 ): HouseFormatScoreLine[] {
-  if (formatId === "save_or_eliminate" && payload.saveOrEliminate) {
-    return Object.entries(payload.saveOrEliminate.nets).map(([id, value]) => ({
+  if (formatId === "save_or_eliminate" && aggregate.capability === "sealed_polarity") {
+    return Object.entries(aggregate.nets).map(([id, value]) => ({
       playerName: playerName(id as UUID),
       value,
       bucket: "net",
     }));
   }
-  if (formatId === "vote_bomb" && payload.voteBomb) {
-    return Object.entries(payload.voteBomb.totals).map(([id, value]) => ({
+  if (formatId === "vote_bomb" && aggregate.capability === "sealed_elim") {
+    return Object.entries(aggregate.totals).map(([id, value]) => ({
       playerName: playerName(id as UUID),
       value,
       bucket: value === 0 ? "zero_safe" : "positive",
     }));
   }
-  if (formatId === "safety_bounce" && payload.safetyBounce) {
-    const totals = payload.safetyBounce.voteTotals;
-    const vulnerable = payload.safetyBounce.vulnerablePlayerIds;
+  if (formatId === "safety_bounce" && aggregate.capability === "public_chain") {
+    const totals = aggregate.voteTotals;
+    const vulnerable = aggregate.vulnerablePlayerIds;
     if (Object.keys(totals).length === 0) return [];
     return vulnerable.map((id) => ({
       playerName: playerName(id),

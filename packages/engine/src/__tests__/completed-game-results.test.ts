@@ -561,6 +561,7 @@ describe("buildCompletedGameResults", () => {
       ...first,
       sequence: 3,
       type: "round.started",
+      payloadVersion: 1,
       round: 1,
       phase: Phase.LOBBY,
       payload: { round: 1 },

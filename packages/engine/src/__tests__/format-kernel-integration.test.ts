@@ -59,6 +59,21 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(canonical.filter((event) => event.type === "format.selected")).toHaveLength(1);
     expect(canonical.find((event) => event.type === "format.selected")?.payload.formatId)
       .toBe("vote_bomb");
+    const resolution = canonical.find((event) => event.type === "format.resolved");
+    expect(resolution).toBeDefined();
+    expect(resolution?.payloadVersion).toBe(2);
+    expect(resolution?.payload).toMatchObject({
+      formatId: "vote_bomb",
+      aggregate: {
+        capability: "sealed_elim",
+        eligiblePlayerIds: expect.any(Array),
+        totals: expect.any(Object),
+      },
+    });
+    const eliminated = canonical.filter((event) => event.type === "player.eliminated");
+    expect(canonical.filter((event) => event.type === "format.resolved")).toHaveLength(1);
+    expect(eliminated).toHaveLength(1);
+    expect(eliminated[0]?.payload.playerId).toBe(resolution?.payload.eliminatedId);
     expect(pickCalls).toBe(0);
     expect(runner.transcriptLog.some(
       (entry) => entry.scope === "system" && entry.text.includes("selected it automatically"),
@@ -66,6 +81,22 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(runner.transcriptLog.some(
       (entry) => entry.scope === "system" && entry.text.startsWith("FORMAT LOCKED:"),
     )).toBe(true);
+  });
+
+  it("fails clearly instead of aliasing an unwired sealed-elim decision surface", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, maxRounds: 1, formatManifest: ["majority_elimination"] },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+
+    await expect(runner.run()).rejects.toThrow(
+      "Sealed-elim format majority_elimination is registered but its agent decision surface is not implemented",
+    );
   });
 
   it("retains only an agent's own ballot receipt before resolution and reveals peers afterward", () => {
@@ -148,7 +179,11 @@ describe("Format kernel integration (MockAgent)", () => {
 
     const directRunner = new GameRunner(
       agents,
-      { ...TEST_CONFIG, maxRounds: 1 },
+      {
+        ...TEST_CONFIG,
+        maxRounds: 1,
+        formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+      },
       undefined,
       { maxRoundsMode: "exact" },
     );
@@ -178,7 +213,11 @@ describe("Format kernel integration (MockAgent)", () => {
     }
     const fallbackRunner = new GameRunner(
       staleAgents,
-      { ...TEST_CONFIG, maxRounds: 1 },
+      {
+        ...TEST_CONFIG,
+        maxRounds: 1,
+        formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+      },
       undefined,
       { maxRoundsMode: "exact" },
     );
@@ -198,7 +237,11 @@ describe("Format kernel integration (MockAgent)", () => {
     );
     const runner = new GameRunner(
       agents,
-      { ...TEST_CONFIG, maxRounds: 2 },
+      {
+        ...TEST_CONFIG,
+        maxRounds: 2,
+        formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+      },
       undefined,
       { maxRoundsMode: "exact" },
     );
@@ -431,7 +474,10 @@ describe("Format kernel integration (MockAgent)", () => {
       fallbackReason: null,
     });
 
-    const runner = new GameRunner(agents, TEST_CONFIG);
+    const runner = new GameRunner(agents, {
+      ...TEST_CONFIG,
+      formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+    });
     const events: GameStreamEvent[] = [];
     runner.setStreamListener((event) => events.push(event));
     const result = await runner.run();
@@ -533,7 +579,11 @@ describe("Format kernel integration (MockAgent)", () => {
       };
     }
 
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, maxRounds: 4 });
+    const runner = new GameRunner(agents, {
+      ...TEST_CONFIG,
+      maxRounds: 4,
+      formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+    });
     await runner.run();
 
     // At least two format picks should have occurred before endgame (6 -> 4 after 2 elims)
@@ -588,7 +638,10 @@ describe("Format kernel integration (MockAgent)", () => {
       });
     }
 
-    const runner = new GameRunner(agents, TEST_CONFIG);
+    const runner = new GameRunner(agents, {
+      ...TEST_CONFIG,
+      formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+    });
     const events: GameStreamEvent[] = [];
     runner.setStreamListener((event) => events.push(event));
     await runner.run();

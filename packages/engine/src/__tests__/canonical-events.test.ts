@@ -72,7 +72,9 @@ describe("canonical event envelope", () => {
     expect(result.errors).toContain("sequence must be a positive integer");
     expect(result.errors).toContain("gameId is required");
     expect(result.errors).toContain("visibility is invalid");
-    expect(result.errors).toContain("payloadVersion must be 1");
+    expect(result.errors).toContain(
+      "payloadVersion for game.roster_initialized must be 1, got 2",
+    );
   });
 
   it("rejects unknown event types before replay can silently ignore them", () => {
@@ -80,6 +82,49 @@ describe("canonical event envelope", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("type is unsupported: future.event");
+  });
+
+  it("accepts v2 only for aggregate-shaped format resolutions", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "format-v2-validation" },
+    );
+    state.recordFormatResolution({
+      formatId: "vote_bomb",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["bob"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { alice: 0, bob: 1 },
+        eligiblePlayerIds: ["bob"],
+      },
+    });
+    const resolution = state.getCanonicalEvents().at(-1)!;
+    expect(validateCanonicalGameEvent(resolution)).toEqual({ ok: true, errors: [] });
+    expect(validateCanonicalGameEvent({
+      ...resolution,
+      payload: { ...resolution.payload, voteBomb: null },
+    }).errors).toContain(
+      "format.resolved v2 payload must not contain legacy bag voteBomb",
+    );
+    expect(validateCanonicalGameEvent({
+      ...resolution,
+      payloadVersion: 3,
+    }).errors).toContain(
+      "payloadVersion for format.resolved must be 1 or 2, got 3",
+    );
+    expect(validateCanonicalGameEvent({
+      ...sampleEvent(),
+      payloadVersion: 2,
+    }).errors).toContain(
+      "payloadVersion for game.roster_initialized must be 1, got 2",
+    );
   });
 
   it("filters producer-only events out of player-visible query modes", () => {

@@ -544,14 +544,15 @@ describe("buildRevealedRoundFacts", () => {
       {
         name: "aggregate-mismatch",
         events: validVoteBombEvents().map((event) =>
-          event.type === "format.resolved"
+          event.type === "format.resolved" && event.payloadVersion === 2
             ? {
                 ...event,
                 payload: {
                   ...event.payload,
-                  voteBomb: {
+                  aggregate: {
+                    capability: "sealed_elim" as const,
                     totals: { alice: 0, bob: 2, charlie: 2, dave: 0 },
-                    zeroSafePlayerIds: ["alice", "dave"],
+                    eligiblePlayerIds: ["bob", "charlie"],
                   },
                 },
               }

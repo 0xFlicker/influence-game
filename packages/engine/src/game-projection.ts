@@ -1,5 +1,5 @@
 import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
-import type { CanonicalGameEvent } from "./canonical-events";
+import { isSupportedCanonicalPayloadVersion, type CanonicalGameEvent } from "./canonical-events";
 import {
   LEGACY_FORMAT_MANIFEST,
   resolveFormatManifest,
@@ -204,7 +204,7 @@ export function applyCanonicalEvent(
   projection: CanonicalGameProjection,
   event: CanonicalGameEvent,
 ): CanonicalGameProjection {
-  if (event.payloadVersion !== 1) {
+  if (!isSupportedCanonicalPayloadVersion(event.type, event.payloadVersion)) {
     throw new Error(`Unsupported canonical event payload version ${event.payloadVersion} for ${event.type}`);
   }
   if (projection.gameId !== event.gameId) {

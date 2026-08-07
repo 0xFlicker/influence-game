@@ -1,10 +1,11 @@
 import type {
   CanonicalGameEvent,
-  FormatResolutionPayload,
 } from "./canonical-events";
 import {
   computeSaveOrEliminateNets,
   computeVoteBombTallies,
+  formatResolutionAggregate,
+  getFormatRegistration,
   type LaunchFormatId,
 } from "./formats";
 import type { Phase, PowerAction, UUID } from "./types";
@@ -260,7 +261,7 @@ export function projectViewerDecisionEvent(
         },
       };
     case "format.resolved":
-      return { ...base, type: event.type, payload: projectFormatResolution(event.payload) };
+      return { ...base, type: event.type, payload: projectFormatResolution(event) };
     case "power.action_set":
       return {
         ...base,
@@ -316,7 +317,11 @@ function viewerEventBase(event: CanonicalGameEvent): Omit<ViewerDecisionEvent, "
   };
 }
 
-function projectFormatResolution(payload: FormatResolutionPayload): ViewerFormatResolutionPayload {
+function projectFormatResolution(
+  event: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
+): ViewerFormatResolutionPayload {
+  const payload = event.payload;
+  const aggregate = formatResolutionAggregate(event);
   return {
     formatId: payload.formatId,
     empoweredId: payload.empoweredId,
@@ -324,25 +329,27 @@ function projectFormatResolution(payload: FormatResolutionPayload): ViewerFormat
     resolutionKind: payload.resolutionKind,
     tiedPlayerIds: [...payload.tiedPlayerIds],
     tiebreakerId: payload.tiebreakerId,
-    saveOrEliminate: payload.saveOrEliminate
+    saveOrEliminate: aggregate.capability === "sealed_polarity"
       ? {
-          nets: copyRecord(payload.saveOrEliminate.nets),
-          savesReceived: copyRecord(payload.saveOrEliminate.savesReceived),
-          eliminateReceived: copyRecord(payload.saveOrEliminate.eliminateReceived),
+          nets: copyRecord(aggregate.nets),
+          savesReceived: copyRecord(aggregate.savesReceived),
+          eliminateReceived: copyRecord(aggregate.eliminateReceived),
         }
       : null,
-    voteBomb: payload.voteBomb
+    voteBomb: payload.formatId === "vote_bomb" && aggregate.capability === "sealed_elim"
       ? {
-          totals: copyRecord(payload.voteBomb.totals),
-          zeroSafePlayerIds: [...payload.voteBomb.zeroSafePlayerIds],
+          totals: copyRecord(aggregate.totals),
+          zeroSafePlayerIds: Object.keys(aggregate.totals).filter(
+            (id) => !aggregate.eligiblePlayerIds.includes(id),
+          ),
         }
       : null,
-    safetyBounce: payload.safetyBounce
+    safetyBounce: aggregate.capability === "public_chain"
       ? {
-          starterId: payload.safetyBounce.starterId,
-          safePlayerIds: [...payload.safetyBounce.safePlayerIds],
-          vulnerablePlayerIds: [...payload.safetyBounce.vulnerablePlayerIds],
-          voteTotals: copyRecord(payload.safetyBounce.voteTotals),
+          starterId: aggregate.starterId,
+          safePlayerIds: [...aggregate.safePlayerIds],
+          vulnerablePlayerIds: [...aggregate.vulnerablePlayerIds],
+          voteTotals: copyRecord(aggregate.voteTotals),
         }
       : null,
   };
@@ -473,32 +480,21 @@ function validAcceptedBallots(
 function validResolutionShape(
   resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
 ): boolean {
-  const payload = resolved.payload;
-  if (payload.formatId === "save_or_eliminate") {
-    return payload.saveOrEliminate !== null
-      && payload.voteBomb === null
-      && payload.safetyBounce === null;
-  }
-  if (payload.formatId === "vote_bomb") {
-    return payload.saveOrEliminate === null
-      && payload.voteBomb !== null
-      && payload.safetyBounce === null;
-  }
-  return payload.saveOrEliminate === null
-    && payload.voteBomb === null
-    && payload.safetyBounce !== null;
+  return getFormatRegistration(resolved.payload.formatId).capability
+    === formatResolutionAggregate(resolved).capability;
 }
 
 function soleVulnerableSafetyBounce(
   resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
   ballots: readonly Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>[],
 ): boolean {
-  const bounce = resolved.payload.safetyBounce;
+  const aggregate = formatResolutionAggregate(resolved);
   return resolved.payload.formatId === "safety_bounce"
+    && aggregate.capability === "public_chain"
     && resolved.payload.resolutionKind === "auto"
-    && bounce?.vulnerablePlayerIds.length === 1
-    && bounce.vulnerablePlayerIds[0] === resolved.payload.eliminatedId
-    && Object.keys(bounce.voteTotals).length === 0
+    && aggregate.vulnerablePlayerIds.length === 1
+    && aggregate.vulnerablePlayerIds[0] === resolved.payload.eliminatedId
+    && Object.keys(aggregate.voteTotals).length === 0
     && ballots.length === 0;
 }
 
@@ -508,8 +504,9 @@ function aggregateMatchesBallots(
   eligibleVoterIds: readonly UUID[],
 ): boolean {
   const eligible = new Set(eligibleVoterIds);
+  const aggregate = formatResolutionAggregate(resolved);
   if (resolved.payload.formatId === "save_or_eliminate") {
-    const aggregate = resolved.payload.saveOrEliminate!;
+    if (aggregate.capability !== "sealed_polarity") return false;
     const computed = computeSaveOrEliminateNets(
       eligibleVoterIds,
       ballots.map((ballot) => ({
@@ -527,6 +524,7 @@ function aggregateMatchesBallots(
       && countRecordMatches(aggregate.nets, computed.nets, eligible);
   }
   if (resolved.payload.formatId === "vote_bomb") {
+    if (aggregate.capability !== "sealed_elim") return false;
     const computed = computeVoteBombTallies(
       eligibleVoterIds,
       ballots.map((ballot) => ({
@@ -534,14 +532,15 @@ function aggregateMatchesBallots(
         targetId: ballot.payload.targetId,
       })),
     );
-    return countRecordMatches(resolved.payload.voteBomb!.totals, computed.totals, eligible)
+    return countRecordMatches(aggregate.totals, computed.totals, eligible)
       && samePlayerSet(
-        resolved.payload.voteBomb!.zeroSafePlayerIds,
-        computed.zeroSafeIds,
+        aggregate.eligiblePlayerIds,
+        computed.positiveIds,
       );
   }
 
-  const bounce = resolved.payload.safetyBounce!;
+  if (aggregate.capability !== "public_chain") return false;
+  const bounce = aggregate;
   const vulnerable = new Set(bounce.vulnerablePlayerIds);
   if (
     bounce.vulnerablePlayerIds.some((id) => !eligible.has(id))
@@ -761,8 +760,10 @@ export function reconstructSafetyBouncePrefix(
       continue;
     }
 
-    if (event.type === "format.resolved" && event.payload.safetyBounce) {
-      resolved = event;
+    if (event.type === "format.resolved" && event.payload.formatId === "safety_bounce") {
+      if (formatResolutionAggregate(event).capability === "public_chain") {
+        resolved = event;
+      }
     }
   }
 
@@ -868,8 +869,8 @@ function validateSafetyBounceResolution(input: {
   benchPlayerIds: readonly UUID[];
   diagnostics: SafetyBouncePrefixDiagnostic[];
 }): void {
-  const payload = input.resolved.payload.safetyBounce;
-  if (!payload) return;
+  const payload = formatResolutionAggregate(input.resolved);
+  if (payload.capability !== "public_chain") return;
 
   if (input.benchPlayerIds.length > 0) {
     input.diagnostics.push({
