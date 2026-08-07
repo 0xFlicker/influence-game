@@ -159,6 +159,20 @@ describe("validateFormatResumePrerequisites", () => {
     ).toBe("format_pick_unexpected_format_selected");
   });
 
+  test("rejects a registered offered format outside the frozen manifest", () => {
+    const state = new GameState(PLAYERS, {
+      gameId: "format-recovery-menu-outside-manifest",
+      formatManifest: ["vote_bomb", "save_or_eliminate"],
+    });
+    state.startRound();
+    state.setEmpowered("atlas");
+    state.recordFormatMenu("atlas", ["vote_bomb", "majority_elimination"]);
+
+    expect(
+      validateFormatResumePrerequisites("format_pick", state.getCanonicalEvents()),
+    ).toBe("format_pick_offered_format_outside_manifest");
+  });
+
   test("format_mingle and format_resolve require coherent selection and reject later facts", () => {
     const mingleOk = buildState({
       menu: ["vote_bomb", "safety_bounce"],

@@ -708,6 +708,74 @@ function expectedFormatCapability(formatId: unknown): FormatResolutionAggregate[
     : null;
 }
 
+const FORMAT_RESOLUTION_V1_BAGS = [
+  "saveOrEliminate",
+  "voteBomb",
+  "safetyBounce",
+] as const;
+
+type FormatResolutionV1Bag = (typeof FORMAT_RESOLUTION_V1_BAGS)[number];
+
+function expectedFormatResolutionV1Bag(formatId: unknown): FormatResolutionV1Bag | null {
+  if (formatId === "save_or_eliminate") return "saveOrEliminate";
+  if (formatId === "vote_bomb") return "voteBomb";
+  if (formatId === "safety_bounce") return "safetyBounce";
+  return null;
+}
+
+function validateFormatResolutionV1(payload: unknown): string[] {
+  if (!isRecord(payload)) return ["format.resolved v1 payload must be an object"];
+
+  const expectedBag = expectedFormatResolutionV1Bag(payload.formatId);
+  if (!expectedBag) {
+    return [`format.resolved v1 formatId is unsupported: ${String(payload.formatId)}`];
+  }
+  if (
+    !isRecord(payload[expectedBag])
+    || FORMAT_RESOLUTION_V1_BAGS.some(
+      (bag) => bag !== expectedBag && payload[bag] !== null,
+    )
+  ) {
+    return [
+      `format.resolved v1 ${String(payload.formatId)} requires the ${expectedBag} bag exclusively`,
+    ];
+  }
+
+  const bag = payload[expectedBag];
+  if (
+    expectedBag === "saveOrEliminate"
+    && (
+      !isRecord(bag.nets)
+      || !isRecord(bag.savesReceived)
+      || !isRecord(bag.eliminateReceived)
+    )
+  ) {
+    return [
+      "format.resolved v1 saveOrEliminate bag requires nets, savesReceived, and eliminateReceived",
+    ];
+  }
+  if (
+    expectedBag === "voteBomb"
+    && (!isRecord(bag.totals) || !Array.isArray(bag.zeroSafePlayerIds))
+  ) {
+    return ["format.resolved v1 voteBomb bag requires totals and zeroSafePlayerIds"];
+  }
+  if (
+    expectedBag === "safetyBounce"
+    && (
+      typeof bag.starterId !== "string"
+      || !Array.isArray(bag.safePlayerIds)
+      || !Array.isArray(bag.vulnerablePlayerIds)
+      || !isRecord(bag.voteTotals)
+    )
+  ) {
+    return [
+      "format.resolved v1 safetyBounce bag requires starterId, classifications, and voteTotals",
+    ];
+  }
+  return [];
+}
+
 function validateFormatResolutionV2(payload: unknown): string[] {
   if (!isRecord(payload)) return ["format.resolved v2 payload must be an object"];
   if (!isRecord(payload.aggregate)) {
@@ -804,8 +872,12 @@ export function validateCanonicalGameEvent(value: unknown): CanonicalEventValida
         ? `payloadVersion for format.resolved must be 1 or 2, got ${String(value.payloadVersion)}`
         : `payloadVersion for ${String(value.type)} must be 1, got ${String(value.payloadVersion)}`,
     );
-  } else if (value.type === "format.resolved" && value.payloadVersion === 2) {
-    errors.push(...validateFormatResolutionV2(value.payload));
+  } else if (value.type === "format.resolved") {
+    errors.push(
+      ...(value.payloadVersion === 1
+        ? validateFormatResolutionV1(value.payload)
+        : validateFormatResolutionV2(value.payload)),
+    );
   }
   if (!Array.isArray(value.sourcePointers) || !value.sourcePointers.every(isSourcePointer)) {
     errors.push("sourcePointers must be an array of source pointer records");

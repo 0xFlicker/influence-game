@@ -760,6 +760,25 @@ describe("Game REST API", () => {
       expect(body).toHaveLength(2);
     });
 
+    test("omits a game with a corrupt stored format manifest", async () => {
+      const valid = await createTestGame(app, adminToken);
+      const corrupt = await createTestGame(app, adminToken);
+      const corruptGame = (await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, corrupt.id)))[0]!;
+      const corruptConfig = JSON.parse(corruptGame.config);
+      corruptConfig.formatManifest = ["unknown_format"];
+      await db.update(schema.games)
+        .set({ config: JSON.stringify(corruptConfig) })
+        .where(eq(schema.games.id, corrupt.id));
+
+      const res = await app.request("/api/games");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Array<{ id: string }>;
+      expect(body.map((game) => game.id)).toEqual([valid.id]);
+    });
+
     test("returns sanitized model labels instead of raw model selections", async () => {
       await createTestGame(app, adminToken, {
         modelSelection: {

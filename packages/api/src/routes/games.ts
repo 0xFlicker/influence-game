@@ -291,44 +291,52 @@ export function createGameRoutes(
       getGameCompletionSettlementStateMap(db, gameIds),
     ]);
 
-    const summaries = rows.map((game) => {
-      const config = JSON.parse(game.config);
-      const formatManifest = resolveFormatManifest(
-        config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
-      );
-      const summaryRead = watchSummaryReadsByGameId.get(game.id) ?? { status: "missing" as const };
-      const watchState = summaryRead.status === "current"
-        ? summaryRead.summary
-        : buildFallbackGameWatchStateSummary(game, config);
+    const summaries = rows.flatMap((game) => {
+      try {
+        const config = JSON.parse(game.config);
+        const formatManifest = resolveFormatManifest(
+          config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
+        );
+        const summaryRead = watchSummaryReadsByGameId.get(game.id) ?? { status: "missing" as const };
+        const watchState = summaryRead.status === "current"
+          ? summaryRead.summary
+          : buildFallbackGameWatchStateSummary(game, config);
 
-      return {
-        id: game.id,
-        slug: game.slug,
-        status: game.status,
-        playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
-        currentRound: watchState.currentRound,
-        maxRounds: config.maxRounds ?? 10,
-        currentPhase: watchState.currentPhase,
-        phaseTimeRemaining: null,
-        alivePlayers: watchState.counts.alivePlayers,
-        eliminatedPlayers: watchState.counts.eliminatedPlayers,
-        modelLabel: modelLabelFromConfig(config),
-        visibility: config.visibility ?? "public",
-        viewerMode: config.viewerMode ?? "speedrun",
-        formatManifest,
-        trackType: game.trackType,
-        seasonId: game.seasonId ?? undefined,
-        season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
-        rated: Boolean(game.seasonId),
-        winner: watchState.winner?.name,
-        errorInfo: publicErrorInfo(game.status, config, settlementStateByGameId.get(game.id)),
-        kernelHealth: kernelHealthByGameId.get(game.id),
-        watchState,
-        watchStateSummaryStatus: summaryRead.status,
-        createdAt: game.createdAt,
-        startedAt: game.startedAt ?? undefined,
-        completedAt: game.endedAt ?? undefined,
-      };
+        return [{
+          id: game.id,
+          slug: game.slug,
+          status: game.status,
+          playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
+          currentRound: watchState.currentRound,
+          maxRounds: config.maxRounds ?? 10,
+          currentPhase: watchState.currentPhase,
+          phaseTimeRemaining: null,
+          alivePlayers: watchState.counts.alivePlayers,
+          eliminatedPlayers: watchState.counts.eliminatedPlayers,
+          modelLabel: modelLabelFromConfig(config),
+          visibility: config.visibility ?? "public",
+          viewerMode: config.viewerMode ?? "speedrun",
+          formatManifest,
+          trackType: game.trackType,
+          seasonId: game.seasonId ?? undefined,
+          season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
+          rated: Boolean(game.seasonId),
+          winner: watchState.winner?.name,
+          errorInfo: publicErrorInfo(game.status, config, settlementStateByGameId.get(game.id)),
+          kernelHealth: kernelHealthByGameId.get(game.id),
+          watchState,
+          watchStateSummaryStatus: summaryRead.status,
+          createdAt: game.createdAt,
+          startedAt: game.startedAt ?? undefined,
+          completedAt: game.endedAt ?? undefined,
+        }];
+      } catch (error) {
+        console.warn(
+          `[games] Skipping corrupt list row for game ${game.id}:`,
+          error instanceof Error ? error.message : error,
+        );
+        return [];
+      }
     });
 
     return c.json(summaries);

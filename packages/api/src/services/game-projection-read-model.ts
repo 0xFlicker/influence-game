@@ -52,6 +52,7 @@ export interface DurableProjectionSummary {
   lastSequence: number;
   round: number;
   phase: CanonicalGameProjection["phase"];
+  selectedFormatId: CanonicalGameProjection["selectedFormatId"];
   formatMenu: CanonicalGameProjection["formatMenu"];
   players: DurablePlayerStatusSummary;
   voteState: DurableVoteStateSummary;
@@ -118,6 +119,7 @@ export function summarizeCanonicalProjection(
     lastSequence: projection.lastSequence,
     round: projection.round,
     phase: projection.phase,
+    selectedFormatId: projection.selectedFormatId,
     formatMenu: projection.formatMenu
       ? {
           empoweredId: projection.formatMenu.empoweredId,

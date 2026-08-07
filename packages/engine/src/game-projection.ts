@@ -51,6 +51,7 @@ export interface CanonicalGameProjection {
   currentVoteTally: VoteTally;
   currentCouncilTally: CouncilVoteTally;
   empoweredId: UUID | null;
+  selectedFormatId: LaunchFormatId | null;
   formatMenu: {
     empoweredId: UUID;
     offeredFormatIds: [LaunchFormatId, LaunchFormatId];
@@ -102,6 +103,7 @@ export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
     currentVoteTally: { empowerVotes: {}, exposeVotes: {} },
     currentCouncilTally: { votes: {} },
     empoweredId: null,
+    selectedFormatId: null,
     formatMenu: null,
     councilCandidates: null,
     candidateResolution: null,
@@ -192,6 +194,7 @@ function applyRoundReset(projection: CanonicalGameProjection, round: number): vo
   projection.currentVoteTally = { empowerVotes: {}, exposeVotes: {} };
   projection.currentCouncilTally = { votes: {} };
   projection.empoweredId = null;
+  projection.selectedFormatId = null;
   projection.formatMenu = null;
   projection.councilCandidates = null;
   projection.candidateResolution = null;
@@ -292,6 +295,7 @@ export function applyCanonicalEvent(
       break;
     }
     case "format.selected": {
+      projection.selectedFormatId = event.payload.formatId;
       if (projection.formatMenu) {
         projection.formatMenu = { ...projection.formatMenu, selectedFormatId: event.payload.formatId };
       }

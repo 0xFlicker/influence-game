@@ -208,6 +208,9 @@ export function validateFormatResumePrerequisites(
   }
   const offeredFormats = parseOfferedFormats(menu.payload.offeredFormatIds);
   if (!offeredFormats) return `${actorCoordinate}_invalid_offered_formats`;
+  if (!offeredFormats.every((formatId) => formatManifest.includes(formatId))) {
+    return `${actorCoordinate}_offered_format_outside_manifest`;
+  }
 
   if (actorCoordinate === "format_pick") {
     if (selections.length > 0) return "format_pick_unexpected_format_selected";
