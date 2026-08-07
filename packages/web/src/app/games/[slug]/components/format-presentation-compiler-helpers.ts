@@ -2,11 +2,10 @@ import type { PhaseKey, ViewerDecisionEvent } from "@/lib/api";
 import {
   applyFormatTiebreak,
   computeSaveOrEliminateNets,
-  computeVoteBombTallies,
+  getFormatRegistration,
   resolveSafetyBounceVote,
-  resolveSaveOrEliminate,
-  resolveVoteBomb,
 } from "@influence/engine/format-rules";
+import type { FormatEliminationResolution } from "@influence/engine/format-rules";
 import type { FormatPresentationCompilation } from "./format-presentation-model";
 import {
   cloneResolution,
@@ -65,15 +64,15 @@ export function applyResolution(input: {
     );
   }
   if (
-    payload.safetyBounce
+    payload.aggregate.capability === "public_chain"
     && (
-      payload.safetyBounce.starterId !== snapshot.safetyBounce?.starterId
+      payload.aggregate.starterId !== snapshot.safetyBounce?.starterId
       || !sameMembers(
-        payload.safetyBounce.safePlayerIds,
+        payload.aggregate.safePlayerIds,
         snapshot.safetyBounce?.safePlayerIds ?? [],
       )
       || !sameMembers(
-        payload.safetyBounce.vulnerablePlayerIds,
+        payload.aggregate.vulnerablePlayerIds,
         snapshot.safetyBounce?.vulnerablePlayerIds ?? [],
       )
       || (snapshot.safetyBounce?.benchPlayerIds.length ?? 1) !== 0
@@ -91,7 +90,8 @@ export function applyResolution(input: {
   const automaticSoleVulnerable =
     payload.formatId === "safety_bounce"
     && payload.resolutionKind === "auto"
-    && payload.safetyBounce?.vulnerablePlayerIds.length === 1;
+    && payload.aggregate.capability === "public_chain"
+    && payload.aggregate.vulnerablePlayerIds.length === 1;
   if (
     automaticSoleVulnerable
     && !validSoleVulnerableResolution(payload, ballots)
@@ -413,16 +413,15 @@ function validSoleVulnerableResolution(
 function validSoleVulnerableResolutionShape(
   resolution: FormatResolutionPresentation,
 ): boolean {
-  const vulnerable = resolution.safetyBounce?.vulnerablePlayerIds ?? [];
+  if (resolution.aggregate.capability !== "public_chain") return false;
+  const vulnerable = resolution.aggregate.vulnerablePlayerIds;
   return resolution.formatId === "safety_bounce"
     && resolution.resolutionKind === "auto"
-    && resolution.saveOrEliminate === null
-    && resolution.voteBomb === null
     && vulnerable.length === 1
     && resolution.eliminatedId === vulnerable[0]
     && resolution.tiedPlayerIds.length === 0
     && resolution.tiebreakerId === null
-    && Object.keys(resolution.safetyBounce?.voteTotals ?? {}).length === 0;
+    && Object.keys(resolution.aggregate.voteTotals).length === 0;
 }
 
 function resolutionOutcomeMatchesRules(
@@ -441,46 +440,30 @@ function resolutionOutcomeMatchesRules(
     return false;
   }
 
-  if (resolution.formatId === "save_or_eliminate") {
-    if (
-      !resolution.saveOrEliminate
-      || resolution.voteBomb
-      || resolution.safetyBounce
-    ) {
-      return false;
-    }
+  const registration = getFormatRegistration(resolution.formatId);
+
+  if (registration.capability === "sealed_polarity") {
+    if (resolution.aggregate.capability !== "sealed_polarity") return false;
     const accepted = saveOrEliminateBallots(ballots);
     if (!accepted) return false;
     return outcomeMatchesRuleResolution(
       resolution,
-      resolveSaveOrEliminate(eligiblePlayerIds, accepted),
+      registration.resolve(eligiblePlayerIds, accepted),
     );
   }
 
-  if (resolution.formatId === "vote_bomb") {
-    if (
-      resolution.saveOrEliminate
-      || !resolution.voteBomb
-      || resolution.safetyBounce
-    ) {
-      return false;
-    }
+  if (registration.capability === "sealed_elim") {
+    if (resolution.aggregate.capability !== "sealed_elim") return false;
     const accepted = unpolarizedBallots(ballots);
     if (!accepted) return false;
     return outcomeMatchesRuleResolution(
       resolution,
-      resolveVoteBomb(eligiblePlayerIds, accepted),
+      registration.resolve(eligiblePlayerIds, accepted),
     );
   }
 
-  if (
-    resolution.saveOrEliminate
-    || resolution.voteBomb
-    || !resolution.safetyBounce
-  ) {
-    return false;
-  }
-  const vulnerable = resolution.safetyBounce.vulnerablePlayerIds;
+  if (resolution.aggregate.capability !== "public_chain") return false;
+  const vulnerable = resolution.aggregate.vulnerablePlayerIds;
   if (vulnerable.length === 1) {
     return validSoleVulnerableResolutionShape(resolution);
   }
@@ -488,18 +471,14 @@ function resolutionOutcomeMatchesRules(
     resolution,
     resolveSafetyBounceVote(
       vulnerable,
-      resolution.safetyBounce.voteTotals,
+      resolution.aggregate.voteTotals,
     ),
   );
 }
 
 function outcomeMatchesRuleResolution(
   resolution: FormatResolutionPresentation,
-  expected: ReturnType<
-    | typeof resolveSaveOrEliminate
-    | typeof resolveVoteBomb
-    | typeof resolveSafetyBounceVote
-  >,
+  expected: FormatEliminationResolution,
 ): boolean {
   if (expected.kind !== "tie") {
     return resolution.resolutionKind === expected.kind
@@ -522,44 +501,58 @@ function aggregatesMatch(
   ballots: ReadonlyMap<string, FormatPresentationBallot>,
   rosterIds: readonly string[],
 ): boolean {
-  if (resolution.saveOrEliminate) {
+  const registration = getFormatRegistration(resolution.formatId);
+
+  if (registration.capability === "sealed_polarity") {
+    if (resolution.aggregate.capability !== "sealed_polarity") return false;
+    const aggregate = resolution.aggregate;
     if (
-      !hasExactKeys(resolution.saveOrEliminate.nets, rosterIds)
-      || !hasExactKeys(resolution.saveOrEliminate.savesReceived, rosterIds)
-      || !hasExactKeys(resolution.saveOrEliminate.eliminateReceived, rosterIds)
+      !hasExactKeys(aggregate.nets, rosterIds)
+      || !hasExactKeys(aggregate.savesReceived, rosterIds)
+      || !hasExactKeys(aggregate.eliminateReceived, rosterIds)
     ) {
       return false;
     }
     const accepted = saveOrEliminateBallots(ballots);
     if (!accepted) return false;
     const expected = computeSaveOrEliminateNets(rosterIds, accepted);
-    return sameCountRecord(resolution.saveOrEliminate.nets, expected.nets)
+    return sameCountRecord(aggregate.nets, expected.nets)
       && sameCountRecord(
-        resolution.saveOrEliminate.savesReceived,
+        aggregate.savesReceived,
         expected.savesReceived,
       )
       && sameCountRecord(
-        resolution.saveOrEliminate.eliminateReceived,
+        aggregate.eliminateReceived,
         expected.eliminateReceived,
       );
   }
-  const totals = resolution.voteBomb?.totals ?? resolution.safetyBounce?.voteTotals;
-  if (!totals) return false;
-  const expectedTargetIds = resolution.voteBomb
-    ? rosterIds
-    : resolution.safetyBounce?.vulnerablePlayerIds ?? [];
-  if (!hasExactKeys(totals, expectedTargetIds)) return false;
+
+  if (registration.capability === "sealed_elim") {
+    if (resolution.aggregate.capability !== "sealed_elim") return false;
+    const aggregate = resolution.aggregate;
+    if (!hasExactKeys(aggregate.totals, rosterIds)) return false;
+    const accepted = unpolarizedBallots(ballots);
+    if (!accepted) return false;
+    const expected = registration.score(rosterIds, accepted);
+    return sameCountRecord(aggregate.totals, expected.totals)
+      && sameMembers(aggregate.eligiblePlayerIds, expected.eligibleIds);
+  }
+
+  if (resolution.aggregate.capability !== "public_chain") return false;
+  const aggregate = resolution.aggregate;
+  const expectedTargetIds = aggregate.vulnerablePlayerIds;
+  if (!hasExactKeys(aggregate.voteTotals, expectedTargetIds)) return false;
   const accepted = unpolarizedBallots(ballots);
   if (!accepted) return false;
-  const expected = computeVoteBombTallies(expectedTargetIds, accepted);
-  return sameCountRecord(totals, expected.totals)
-    && (
-      !resolution.voteBomb
-      || sameMembers(
-        resolution.voteBomb.zeroSafePlayerIds,
-        expected.zeroSafeIds,
-      )
-    );
+  const expectedTotals = Object.fromEntries(
+    expectedTargetIds.map((playerId) => [playerId, 0]),
+  );
+  for (const ballot of accepted) {
+    if (ballot.targetId in expectedTotals) {
+      expectedTotals[ballot.targetId] = (expectedTotals[ballot.targetId] ?? 0) + 1;
+    }
+  }
+  return sameCountRecord(aggregate.voteTotals, expectedTotals);
 }
 
 function saveOrEliminateBallots(

@@ -3,6 +3,7 @@ import type {
   FormatPresentationRosterPlayer,
   FormatResolutionPresentation,
 } from "./types";
+import { getFormatRegistration } from "@influence/engine/format-rules";
 
 export function FormatResolutionStage({
   cue,
@@ -12,6 +13,7 @@ export function FormatResolutionStage({
   roster: readonly FormatPresentationRosterPlayer[];
 }) {
   const resolution = cue.resolution;
+  const aggregate = resolution.aggregate;
   return (
     <section
       data-format-cue="format_aggregate"
@@ -28,13 +30,13 @@ export function FormatResolutionStage({
         </h2>
       </header>
 
-      {resolution.saveOrEliminate ? (
+      {aggregate.capability === "sealed_polarity" ? (
         <SaveOrEliminateAggregate resolution={resolution} roster={roster} />
       ) : null}
-      {resolution.voteBomb ? (
-        <VoteBombAggregate resolution={resolution} roster={roster} />
+      {aggregate.capability === "sealed_elim" ? (
+        <SealedEliminationAggregate resolution={resolution} roster={roster} />
       ) : null}
-      {resolution.safetyBounce ? (
+      {aggregate.capability === "public_chain" ? (
         <SafetyBounceAggregate
           resolution={resolution}
           roster={roster}
@@ -49,8 +51,8 @@ function SaveOrEliminateAggregate({
   resolution,
   roster,
 }: AggregateProps) {
-  const facts = resolution.saveOrEliminate;
-  if (!facts) return null;
+  const facts = resolution.aggregate;
+  if (facts.capability !== "sealed_polarity") return null;
   const lowestNet = Math.min(...Object.values(facts.nets));
   const ids = orderedIds(facts.nets, roster);
   return (
@@ -72,31 +74,45 @@ function SaveOrEliminateAggregate({
   );
 }
 
-function VoteBombAggregate({ resolution, roster }: AggregateProps) {
-  const facts = resolution.voteBomb;
-  if (!facts) return null;
-  const zeroSafe = new Set(facts.zeroSafePlayerIds);
-  const positiveTotals = Object.values(facts.totals).filter((count) => count > 0);
-  const fewestPositive = Math.min(...positiveTotals);
+function SealedEliminationAggregate({ resolution, roster }: AggregateProps) {
+  const facts = resolution.aggregate;
+  if (facts.capability !== "sealed_elim") return null;
+  const registration = getFormatRegistration(resolution.formatId);
+  if (registration.capability !== "sealed_elim") return null;
+  const eligible = new Set(facts.eligiblePlayerIds);
+  const eligibleTotals = facts.eligiblePlayerIds.map((id) => facts.totals[id] ?? 0);
+  const dangerTotal = registration.presentation.scoring === "highest_total"
+    ? Math.max(...eligibleTotals)
+    : Math.min(...eligibleTotals);
   const ids = orderedIds(facts.totals, roster);
+  const isDanger = (playerId: string) => (
+    eligible.has(playerId) && facts.totals[playerId] === dangerTotal
+  );
+  const status = (playerId: string) => {
+    if (!eligible.has(playerId)) return "Zero votes · safe";
+    if (isDanger(playerId)) {
+      return registration.presentation.scoring === "highest_total"
+        ? "Highest total · elimination eligible"
+        : "Fewest positive · eligible";
+    }
+    return registration.presentation.scoring === "highest_total"
+      ? "Below the high vote"
+      : "Above the line";
+  };
   return (
     <AggregateTable
-      caption="Vote Bomb aggregate"
+      caption={`${registration.decision.publicName} aggregate`}
       columns={["Agent", "Votes", "Status"]}
       rows={ids.map((playerId) => [
         playerName(playerId, roster),
         String(facts.totals[playerId] ?? 0),
-        zeroSafe.has(playerId)
-          ? "Zero votes · safe"
-          : facts.totals[playerId] === fewestPositive
-            ? "Fewest positive · eligible"
-            : "Above the line",
+        status(playerId),
       ])}
       rowIds={ids}
       rowState={(playerId) =>
-        zeroSafe.has(playerId)
+        !eligible.has(playerId)
           ? "safe"
-          : facts.totals[playerId] === fewestPositive
+          : isDanger(playerId)
             ? "eligible"
             : "neutral"
       }
@@ -111,8 +127,8 @@ function SafetyBounceAggregate({
 }: AggregateProps & {
   ballotPresentationStatus: "revealed" | "not_applicable";
 }) {
-  const facts = resolution.safetyBounce;
-  if (!facts) return null;
+  const facts = resolution.aggregate;
+  if (facts.capability !== "public_chain") return null;
   const highest = Math.max(
     ...facts.vulnerablePlayerIds.map((id) => facts.voteTotals[id] ?? 0),
     0,

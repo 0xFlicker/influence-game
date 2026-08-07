@@ -156,7 +156,7 @@ export interface RevealedFormatFacts {
   tiebreaker: RevealedPlayerRef | null;
   saveOrEliminate: RevealedSaveOrEliminateFacts | null;
   voteBomb: RevealedVoteBombFacts | null;
-  majorityElimination?: RevealedMajorityEliminationFacts | null;
+  majorityElimination: RevealedMajorityEliminationFacts | null;
   safetyBounce: RevealedSafetyBounceFacts | null;
   /** Sanitized accepted ballots in canonical event order, readable immediately by operators. */
   acceptedBallots: RevealedFormatBallotEntry[];

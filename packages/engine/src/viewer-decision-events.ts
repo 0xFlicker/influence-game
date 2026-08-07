@@ -135,23 +135,8 @@ export type ViewerFormatResolutionPayload = {
   resolutionKind: "clear" | "auto";
   tiedPlayerIds: UUID[];
   tiebreakerId: UUID | null;
-  /** Version-2 capability aggregate; historical bags remain for v1 presentation. */
-  aggregate?: FormatResolutionAggregate;
-  saveOrEliminate: {
-    nets: Record<UUID, number>;
-    savesReceived: Record<UUID, number>;
-    eliminateReceived: Record<UUID, number>;
-  } | null;
-  voteBomb: {
-    totals: Record<UUID, number>;
-    zeroSafePlayerIds: UUID[];
-  } | null;
-  safetyBounce: {
-    starterId: UUID;
-    safePlayerIds: UUID[];
-    vulnerablePlayerIds: UUID[];
-    voteTotals: Record<UUID, number>;
-  } | null;
+  /** Capability-shaped aggregate normalized from canonical v1 or v2 exactly once. */
+  aggregate: FormatResolutionAggregate;
 };
 
 export type FormatBallotPresentationStatus =
@@ -335,29 +320,6 @@ function projectFormatResolution(
     tiedPlayerIds: [...payload.tiedPlayerIds],
     tiebreakerId: payload.tiebreakerId,
     aggregate,
-    saveOrEliminate: aggregate.capability === "sealed_polarity"
-      ? {
-          nets: copyRecord(aggregate.nets),
-          savesReceived: copyRecord(aggregate.savesReceived),
-          eliminateReceived: copyRecord(aggregate.eliminateReceived),
-        }
-      : null,
-    voteBomb: payload.formatId === "vote_bomb" && aggregate.capability === "sealed_elim"
-      ? {
-          totals: copyRecord(aggregate.totals),
-          zeroSafePlayerIds: Object.keys(aggregate.totals).filter(
-            (id) => !aggregate.eligiblePlayerIds.includes(id),
-          ),
-        }
-      : null,
-    safetyBounce: aggregate.capability === "public_chain"
-      ? {
-          starterId: aggregate.starterId,
-          safePlayerIds: [...aggregate.safePlayerIds],
-          vulnerablePlayerIds: [...aggregate.vulnerablePlayerIds],
-          voteTotals: copyRecord(aggregate.voteTotals),
-        }
-      : null,
   };
 }
 

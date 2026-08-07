@@ -27,6 +27,8 @@ const CLASSIC_VIEWER_SLUG =
 const COMPLETED_SHARED_SCENARIO_IDS = [
   "save_or_eliminate_clear",
   "vote_bomb_clear",
+  "majority_elimination_clear",
+  "majority_elimination_tie",
   "safety_bounce_tie",
 ] as const satisfies readonly FormatKernelViewerScenarioId[];
 const SHARED_FORMAT_NAMES = COMPLETED_SHARED_SCENARIO_IDS.map((scenarioId) => {
@@ -62,6 +64,16 @@ const FORMAT_BROWSER_MATRIX = [
     formatName: "Vote Bomb",
   },
   {
+    scenarioId: "majority_elimination_clear",
+    slug: "deterministic-majority-elimination-clear",
+    formatName: "Majority Elimination",
+  },
+  {
+    scenarioId: "majority_elimination_tie",
+    slug: "deterministic-majority-elimination-tie",
+    formatName: "Majority Elimination",
+  },
+  {
     scenarioId: "safety_bounce_tie",
     slug: "deterministic-safety-bounce",
     formatName: "Safety Bounce",
@@ -80,7 +92,7 @@ test.describe("format-aware game viewer", () => {
   test.describe.configure({ mode: "serial", retries: 0 });
 
   for (const entry of FORMAT_BROWSER_MATRIX) {
-    test(`${entry.formatName} hydrates live current state and retains completed replay/results`, async ({
+    test(`${entry.formatName} (${entry.scenarioId}) hydrates live current state and retains completed replay/results`, async ({
       page,
     }) => {
       test.setTimeout(90_000);

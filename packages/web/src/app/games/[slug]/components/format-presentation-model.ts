@@ -4,6 +4,7 @@ import type {
   ViewerDecisionEvent,
 } from "@/lib/api";
 import { buildSafetyBouncePresentationCycle } from "@influence/engine/viewer-presentation";
+import type { LaunchFormatId } from "@influence/engine/format-presentation-metadata";
 import type {
   FormatPresentationBallot,
   FormatPresentationCue,
@@ -69,6 +70,7 @@ export interface CompileFormatPresentationPrefixInput {
   gameKernel: GameKernel;
   roster: readonly FormatPresentationRosterPlayer[];
   decisions: readonly ViewerDecisionEvent[];
+  formatManifest?: readonly LaunchFormatId[];
   eligiblePlayerIdsByRound?: ReadonlyMap<number, readonly string[]>;
 }
 
@@ -115,6 +117,7 @@ export function compileFormatPresentationPrefix({
   gameKernel,
   roster,
   decisions,
+  formatManifest,
   eligiblePlayerIdsByRound,
 }: CompileFormatPresentationPrefixInput): FormatPresentationCompilation {
   let snapshot = emptySnapshot();
@@ -168,6 +171,7 @@ export function compileFormatPresentationPrefix({
     const failure = applyDecision({
       gameId,
       decision,
+      formatManifest,
       eligiblePlayerIds,
       eligiblePlayerSet: new Set(eligiblePlayerIds),
       ballots,
@@ -190,6 +194,7 @@ export function compileFormatPresentationPrefix({
 function applyDecision(input: {
   gameId: string;
   decision: ViewerDecisionEvent;
+  formatManifest?: readonly LaunchFormatId[];
   eligiblePlayerIds: readonly string[];
   eligiblePlayerSet: ReadonlySet<string>;
   ballots: Map<string, FormatPresentationBallot>;
@@ -200,6 +205,7 @@ function applyDecision(input: {
   const {
     gameId,
     decision,
+    formatManifest,
     eligiblePlayerIds,
     eligiblePlayerSet,
     ballots,
@@ -436,7 +442,10 @@ function applyDecision(input: {
       break;
     }
     case "format.selected": {
-      if (!snapshot.offeredFormatIds) {
+      const automaticSelection = !snapshot.offeredFormatIds
+        && formatManifest?.length === 1
+        && formatManifest[0] === decision.payload.formatId;
+      if (!snapshot.offeredFormatIds && !automaticSelection) {
         return incomplete(
           cues,
           snapshot,
@@ -445,7 +454,10 @@ function applyDecision(input: {
           "Format selection has no trusted offered pair.",
         );
       }
-      if (!snapshot.offeredFormatIds.includes(decision.payload.formatId)) {
+      if (
+        snapshot.offeredFormatIds
+        && !snapshot.offeredFormatIds.includes(decision.payload.formatId)
+      ) {
         return incomplete(
           cues,
           snapshot,
@@ -454,7 +466,13 @@ function applyDecision(input: {
           `Selected format ${decision.payload.formatId} was not in the trusted offered pair.`,
         );
       }
-      if (snapshot.empoweredId !== decision.payload.empoweredId) {
+      if (
+        !eligiblePlayerSet.has(decision.payload.empoweredId)
+        || (
+          snapshot.empoweredId !== null
+          && snapshot.empoweredId !== decision.payload.empoweredId
+        )
+      ) {
         return incomplete(
           cues,
           snapshot,
@@ -467,6 +485,7 @@ function applyDecision(input: {
         ...snapshot,
         phase,
         canonicalSequence: decision.sequence,
+        empoweredId: decision.payload.empoweredId,
         activeFormatId: decision.payload.formatId,
       };
       const selectedCueBase = {

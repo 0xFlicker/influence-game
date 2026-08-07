@@ -75,30 +75,30 @@ export function cloneSnapshot(snapshot: FormatPresentationSnapshot): FormatPrese
 export function cloneResolution(
   resolution: FormatResolutionPresentation,
 ): FormatResolutionPresentation {
+  const aggregate = resolution.aggregate;
   return {
     ...resolution,
     tiedPlayerIds: [...resolution.tiedPlayerIds],
-    saveOrEliminate: resolution.saveOrEliminate
+    aggregate: aggregate.capability === "sealed_elim"
       ? {
-          nets: { ...resolution.saveOrEliminate.nets },
-          savesReceived: { ...resolution.saveOrEliminate.savesReceived },
-          eliminateReceived: { ...resolution.saveOrEliminate.eliminateReceived },
+          capability: aggregate.capability,
+          totals: { ...aggregate.totals },
+          eligiblePlayerIds: [...aggregate.eligiblePlayerIds],
         }
-      : null,
-    voteBomb: resolution.voteBomb
-      ? {
-          totals: { ...resolution.voteBomb.totals },
-          zeroSafePlayerIds: [...resolution.voteBomb.zeroSafePlayerIds],
-        }
-      : null,
-    safetyBounce: resolution.safetyBounce
-      ? {
-          starterId: resolution.safetyBounce.starterId,
-          safePlayerIds: [...resolution.safetyBounce.safePlayerIds],
-          vulnerablePlayerIds: [...resolution.safetyBounce.vulnerablePlayerIds],
-          voteTotals: { ...resolution.safetyBounce.voteTotals },
-        }
-      : null,
+      : aggregate.capability === "sealed_polarity"
+        ? {
+            capability: aggregate.capability,
+            nets: { ...aggregate.nets },
+            savesReceived: { ...aggregate.savesReceived },
+            eliminateReceived: { ...aggregate.eliminateReceived },
+          }
+        : {
+            capability: aggregate.capability,
+            starterId: aggregate.starterId,
+            safePlayerIds: [...aggregate.safePlayerIds],
+            vulnerablePlayerIds: [...aggregate.vulnerablePlayerIds],
+            voteTotals: { ...aggregate.voteTotals },
+          },
   };
 }
 

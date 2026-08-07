@@ -66,6 +66,7 @@ function resultsFixture(): CompletedGameResultsRead {
               tiebreaker: null,
               saveOrEliminate: null,
               voteBomb: null,
+              majorityElimination: null,
               safetyBounce: null,
               acceptedBallots: [],
               ballotPresentation: { status: "not_applicable", rollCall: [] },
@@ -130,6 +131,7 @@ function resultsFixture(): CompletedGameResultsRead {
               tiebreaker: null,
               saveOrEliminate: null,
               voteBomb: null,
+              majorityElimination: null,
               safetyBounce: null,
               acceptedBallots: [],
               ballotPresentation: { status: "not_applicable", rollCall: [] },
@@ -199,6 +201,8 @@ describe("completed results model", () => {
     const fixture = resultsFixture();
     const formatRound = fixture.rounds[0]!;
     const { power: _power, council: _council, ...formatRoundFacts } = formatRound.canonicalFacts.roundFacts;
+    expect(_power).toBeDefined();
+    expect(_council).toBeDefined();
     const formatResults: CompletedGameResultsRead = {
       ...fixture,
       rounds: [
@@ -227,6 +231,7 @@ describe("completed results model", () => {
                 tiebreaker: null,
                 saveOrEliminate: null,
                 voteBomb: null,
+                majorityElimination: null,
                 safetyBounce: null,
                 acceptedBallots: [],
                 ballotPresentation: { status: "sealed", rollCall: [] },
@@ -314,6 +319,64 @@ describe("completed results model", () => {
         { voterName: "Dax", targetName: "Bob", polarity: "Save" },
       ],
     });
+  });
+
+  it("labels Majority Elimination completed scoring as highest-total plurality", () => {
+    const fixture = resultsFixture();
+    const round = fixture.rounds[0]!;
+    const majorityResults = {
+      ...fixture,
+      rounds: [{
+        ...round,
+        formatRecap: {
+          status: "available" as const,
+          offeredFormatIds: ["majority_elimination", "vote_bomb"] as const,
+          selectedFormatId: "majority_elimination" as const,
+          resolutionKind: "auto" as const,
+          eliminated: player("dax", "Dax"),
+          tied: [player("dax", "Dax")],
+          tiebreaker: null,
+          scoring: {
+            kind: "majority_elimination" as const,
+            rows: [
+              { player: player("alice", "Alice"), votes: 0 },
+              { player: player("bob", "Bob"), votes: 1 },
+              { player: player("cara", "Cara"), votes: 0 },
+              { player: player("dax", "Dax"), votes: 3 },
+            ],
+          },
+          ballotPresentation: {
+            status: "revealed" as const,
+            rollCall: [
+              { voter: player("alice", "Alice"), target: player("dax", "Dax"), polarity: null },
+              { voter: player("bob", "Bob"), target: player("dax", "Dax"), polarity: null },
+              { voter: player("cara", "Cara"), target: player("dax", "Dax"), polarity: null },
+              { voter: player("dax", "Dax"), target: player("bob", "Bob"), polarity: null },
+            ],
+          },
+          safetyBounce: null,
+        },
+      }],
+    } satisfies CompletedGameResultsRead;
+
+    const model = buildCompletedResultsReviewModel(majorityResults);
+
+    expect(model.formatRecaps[0]).toMatchObject({
+      selectedFormat: "Majority Elimination",
+      eliminatedName: "Dax",
+      scoring: {
+        columns: ["Agent", "Votes", "Plurality status"],
+        rows: [
+          { playerName: "Alice", values: ["0", "Below highest total"] },
+          { playerName: "Bob", values: ["1", "Below highest total"] },
+          { playerName: "Cara", values: ["0", "Below highest total"] },
+          { playerName: "Dax", values: ["3", "Highest total"] },
+        ],
+      },
+    });
+    expect(JSON.stringify(model.formatRecaps[0])).not.toMatch(
+      /zero.safe|Vulnerable|Power|Council/i,
+    );
   });
 
   it("builds overview, timeline, vote matrix, and agent cards", () => {

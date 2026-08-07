@@ -444,13 +444,33 @@ function formatScoringModel(
       })),
     };
   }
-  return {
-    columns: ["Vulnerable agent", "Votes"],
-    rows: scoring.rows.map((row) => ({
-      playerName: row.player.name,
-      values: [String(row.votes)],
-    })),
-  };
+  if (scoring.kind === "majority_elimination") {
+    const highestTotal = Math.max(...scoring.rows.map((row) => row.votes), 0);
+    return {
+      columns: ["Agent", "Votes", "Plurality status"],
+      rows: scoring.rows.map((row) => ({
+        playerName: row.player.name,
+        values: [
+          String(row.votes),
+          row.votes === highestTotal ? "Highest total" : "Below highest total",
+        ],
+      })),
+    };
+  }
+  if (scoring.kind === "safety_bounce") {
+    return {
+      columns: ["Vulnerable agent", "Votes"],
+      rows: scoring.rows.map((row) => ({
+        playerName: row.player.name,
+        values: [String(row.votes)],
+      })),
+    };
+  }
+  return assertNever(scoring);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unhandled completed-results format scoring: ${JSON.stringify(value)}`);
 }
 
 function formatSignedScore(score: number): string {

@@ -63,13 +63,12 @@ export function allEqualSaveOrEliminateDecisions(): ViewerDecisionEvent[] {
         resolutionKind: "clear",
         tiedPlayerIds: ["atlas", "lyra", "echo", "rex"],
         tiebreakerId: "atlas",
-        saveOrEliminate: {
+        aggregate: {
+          capability: "sealed_polarity",
           nets: { atlas: 0, lyra: 0, echo: 0, rex: 0 },
           savesReceived: { atlas: 1, lyra: 1, echo: 0, rex: 0 },
           eliminateReceived: { atlas: 1, lyra: 1, echo: 0, rex: 0 },
         },
-        voteBomb: null,
-        safetyBounce: null,
       },
     }),
   ];
@@ -121,12 +120,11 @@ export function voteBombDecisions(): ViewerDecisionEvent[] {
         resolutionKind: "auto",
         tiedPlayerIds: ["lyra"],
         tiebreakerId: null,
-        saveOrEliminate: null,
-        voteBomb: {
+        aggregate: {
+          capability: "sealed_elim",
           totals: { atlas: 0, lyra: 1, echo: 3, rex: 0 },
-          zeroSafePlayerIds: ["atlas", "rex"],
+          eligiblePlayerIds: ["lyra", "echo"],
         },
-        safetyBounce: null,
       },
     }),
   ];
