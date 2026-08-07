@@ -3,19 +3,27 @@ import {
   applyBouncePointer,
   applyFormatTiebreak,
   buildFormatMenu,
+  computeMajorityEliminationTallies,
   computeSaveOrEliminateNets,
   computeVoteBombTallies,
   createBounceBoard,
   expectedBouncePoolSizes,
+  FORMAT_CATALOG,
+  getFormatRegistration,
   isLegalBouncePointer,
+  isLegalMajorityEliminationBallot,
   isLegalSaveOrEliminateBallot,
   isLegalVoteBombBallot,
+  LAUNCH_FORMAT_IDS,
   pickFormatFromMenu,
+  requireSealedElimRegistration,
+  resolveMajorityElimination,
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
   resolveVoteBomb,
   type LaunchFormatId,
   type SaveOrEliminateBallot,
+  type SealedElimBallot,
   type VoteBombBallot,
 } from "../formats";
 import {
@@ -235,5 +243,121 @@ describe("safety bounce", () => {
     const tie = resolveSafetyBounceVote(["b", "c"], { b: 2, c: 2 });
     expect(tie.kind).toBe("tie");
     expect(tie.tiedSet.sort()).toEqual(["b", "c"]);
+  });
+});
+
+describe("majority elimination", () => {
+  it("Covers AE2: tallies A:3 B:2 C:2 D:1 -> A auto-eliminated", () => {
+    const alive = ids("A", "B", "C", "D", "E", "F", "G", "H");
+    const ballots: SealedElimBallot[] = [
+      { voterId: "b", targetId: "a" },
+      { voterId: "c", targetId: "a" },
+      { voterId: "d", targetId: "a" },
+      { voterId: "e", targetId: "b" },
+      { voterId: "f", targetId: "b" },
+      { voterId: "g", targetId: "c" },
+      { voterId: "h", targetId: "c" },
+      { voterId: "a", targetId: "d" },
+    ];
+
+    expect(computeMajorityEliminationTallies(alive, ballots)).toEqual({
+      totals: { a: 3, b: 2, c: 2, d: 1, e: 0, f: 0, g: 0, h: 0 },
+      eligibleIds: alive,
+    });
+    expect(resolveMajorityElimination(alive, ballots)).toEqual({
+      kind: "auto",
+      eliminatedId: "a",
+      tiedSet: ["a"],
+      reason: "sole_highest",
+    });
+  });
+
+  it("Covers AE3: tallies A:3 B:3 C:1 -> tiebreak set A and B only", () => {
+    const alive = ids("A", "B", "C", "D", "E", "F", "G");
+    const ballots: SealedElimBallot[] = [
+      { voterId: "c", targetId: "a" },
+      { voterId: "d", targetId: "a" },
+      { voterId: "e", targetId: "a" },
+      { voterId: "f", targetId: "b" },
+      { voterId: "g", targetId: "b" },
+      { voterId: "a", targetId: "b" },
+      { voterId: "b", targetId: "c" },
+    ];
+
+    expect(resolveMajorityElimination(alive, ballots)).toEqual({
+      kind: "tie",
+      eliminatedId: null,
+      tiedSet: ["a", "b"],
+    });
+  });
+
+  it("rejects self-targets, dead voters, and dead targets", () => {
+    const alive = ids("A", "B", "C");
+    expect(isLegalMajorityEliminationBallot("a", "a", alive)).toBe(false);
+    expect(isLegalMajorityEliminationBallot("z", "b", alive)).toBe(false);
+    expect(isLegalMajorityEliminationBallot("a", "z", alive)).toBe(false);
+    expect(isLegalMajorityEliminationBallot("a", "b", alive)).toBe(true);
+  });
+});
+
+describe("format catalog", () => {
+  it("exhaustively registers the four launch formats by capability", () => {
+    expect(Object.keys(FORMAT_CATALOG)).toEqual([...LAUNCH_FORMAT_IDS]);
+    expect(FORMAT_CATALOG.save_or_eliminate.capability).toBe(
+      "sealed_polarity",
+    );
+    expect(FORMAT_CATALOG.vote_bomb.capability).toBe("sealed_elim");
+    expect(FORMAT_CATALOG.safety_bounce.capability).toBe("public_chain");
+    expect(FORMAT_CATALOG.majority_elimination.capability).toBe(
+      "sealed_elim",
+    );
+  });
+
+  it("owns sealed-elim legality, resolution, decision, and aggregate interpretation", () => {
+    const registration = FORMAT_CATALOG.majority_elimination;
+    const alive = ids("A", "B", "C");
+    const ballots: SealedElimBallot[] = [
+      { voterId: "b", targetId: "a" },
+      { voterId: "c", targetId: "a" },
+      { voterId: "a", targetId: "b" },
+    ];
+
+    expect(registration.isLegalBallot("a", "b", alive)).toBe(true);
+    expect(registration.resolve(alive, ballots).eliminatedId).toBe("a");
+    expect(registration.decision).toEqual({
+      handler: "sealed_elim",
+      formatId: "majority_elimination",
+      targetPolicy: "alive_non_self",
+    });
+    expect(
+      registration.aggregate.toAggregate(registration.score(alive, ballots)),
+    ).toEqual({
+      totals: { a: 2, b: 1, c: 0 },
+      eligiblePlayerIds: alive,
+    });
+    expect(registration.presentation).toEqual({
+      scoring: "highest_total",
+      zeroVoteTreatment: "eligible",
+    });
+    expect(
+      registration.aggregate.fromAggregate(
+        registration.aggregate.toAggregate(registration.score(alive, ballots)),
+      ),
+    ).toEqual(registration.score(alive, ballots));
+
+    expect(FORMAT_CATALOG.vote_bomb.decision.formatId).toBe("vote_bomb");
+    expect(FORMAT_CATALOG.vote_bomb.presentation).toEqual({
+      scoring: "fewest_positive",
+      zeroVoteTreatment: "safe",
+    });
+  });
+
+  it("fails closed for unknown ids and wrong capability dispatch", () => {
+    expect(() => getFormatRegistration("unknown_format")).toThrow(
+      "Unknown format id",
+    );
+    expect(() => requireSealedElimRegistration("safety_bounce")).toThrow(
+      "not sealed_elim",
+    );
   });
 });

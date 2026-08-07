@@ -31,6 +31,14 @@ export const FORMAT_PRESENTATION_METADATA = {
     ruleSheet:
       "After mingle: one random starter is SAFE and points publicly. A SAFE player's pointer makes the target VULNERABLE; a VULNERABLE player's pointer makes the target SAFE until all are classified. Then a sealed vote among the vulnerable pool only — most votes out. Sole vulnerable auto-elims. Empowered breaks ties.",
   },
+  majority_elimination: {
+    id: "majority_elimination",
+    displayName: "Majority Elimination",
+    conciseRules:
+      "Cast one sealed vote against another agent. Most votes out. The Empowered agent breaks a highest-total tie, including when the Empowered agent is tied.",
+    ruleSheet:
+      "Each living player casts one sealed vote for another living player (no self-votes). Highest vote total is eliminated. The empowered player breaks highest-total ties and may choose among that tied set only, including themselves if tied.",
+  },
 } as const;
 
 export type LaunchFormatId = keyof typeof FORMAT_PRESENTATION_METADATA;
@@ -42,6 +50,7 @@ export const LAUNCH_FORMAT_IDS: readonly LaunchFormatId[] = [
   "save_or_eliminate",
   "vote_bomb",
   "safety_bounce",
+  "majority_elimination",
 ] as const;
 
 export const LAUNCH_FORMAT_DISPLAY_NAMES: Readonly<
@@ -50,6 +59,8 @@ export const LAUNCH_FORMAT_DISPLAY_NAMES: Readonly<
   save_or_eliminate: FORMAT_PRESENTATION_METADATA.save_or_eliminate.displayName,
   vote_bomb: FORMAT_PRESENTATION_METADATA.vote_bomb.displayName,
   safety_bounce: FORMAT_PRESENTATION_METADATA.safety_bounce.displayName,
+  majority_elimination:
+    FORMAT_PRESENTATION_METADATA.majority_elimination.displayName,
 };
 
 export function isLaunchFormatId(value: string): value is LaunchFormatId {

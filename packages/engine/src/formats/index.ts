@@ -2,10 +2,14 @@ export type {
   BounceBoard,
   BounceClassification,
   BouncePointer,
+  FormatCapabilityClass,
   FormatEliminationResolution,
   LaunchFormatId,
   SaveOrEliminateBallot,
   SaveOrEliminatePolarity,
+  SealedElimAggregate,
+  SealedElimBallot,
+  SealedElimScore,
   VoteBombBallot,
 } from "./types";
 export { displayNameForFormat, LAUNCH_FORMAT_DISPLAY_NAMES, LAUNCH_FORMAT_IDS } from "./types";
@@ -30,6 +34,30 @@ export {
   isLegalVoteBombBallot,
   resolveVoteBomb,
 } from "./vote-bomb";
+
+export {
+  computeMajorityEliminationTallies,
+  isLegalMajorityEliminationBallot,
+  resolveMajorityElimination,
+} from "./majority-elimination";
+
+export {
+  DEFAULT_FORMAT_MANIFEST,
+  FORMAT_CATALOG,
+  getFormatRegistration,
+  isRegisteredFormatId,
+  requireSealedElimRegistration,
+  type FormatCatalog,
+  type FormatRegistration,
+  type FormatRegistrationFor,
+  type PublicChainRegistration,
+  type SealedElimAggregateAdapter,
+  type SealedElimDecisionContract,
+  type SealedElimFormatId,
+  type SealedElimPresentationContract,
+  type SealedElimRegistration,
+  type SealedPolarityRegistration,
+} from "./catalog";
 
 export {
   actorClassification,
