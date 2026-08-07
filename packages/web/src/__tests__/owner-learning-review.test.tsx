@@ -59,6 +59,7 @@ describe("owner learning review", () => {
       ["save_or_eliminate", "save", "Voted to save Rune"],
       ["save_or_eliminate", "eliminate", "Voted to eliminate Rune"],
       ["vote_bomb", null, "Vote Bomb vote against Rune"],
+      ["majority_elimination", null, "Majority Elimination vote against Rune"],
       ["safety_bounce", null, "Safety Bounce vote against Rune"],
     ] as const;
 

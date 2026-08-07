@@ -582,12 +582,6 @@ async function resolveSealedElimFormatRound(
   empoweredId: UUID,
   registration: SealedElimRegistration,
 ): Promise<FormatRoundElimination> {
-  if (registration.id !== "vote_bomb") {
-    throw new Error(
-      `Sealed-elim format ${registration.id} is registered but its agent decision surface is not implemented`,
-    );
-  }
-
   const { gameState, logger } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
@@ -597,9 +591,13 @@ async function resolveSealedElimFormatRound(
   >({
     registration,
     participants: alive,
-    traceAction: "format-vote-bomb-ballot",
+    traceAction: registration.decision.traceAction,
     collectDecision: async (player, fallbackTargetId) => {
-      const agent = requireAgent(ctx, player.id, "vote-bomb ballot");
+      const agent = requireAgent(
+        ctx,
+        player.id,
+        `${registration.decision.publicName} ballot`,
+      );
       const phaseCtx = prepareAgentPhaseContext(
         ctx,
         agent,
@@ -610,27 +608,30 @@ async function resolveSealedElimFormatRound(
       );
       let targetId = fallbackTargetId;
       let decision: SealedElimDecisionRecord = {
-        thinking: "fallback vote last other",
+        thinking: registration.decision.fallbackThinking,
         provenance: fallbackFormatProvenance("agent_method_unavailable"),
       };
 
-      if (agent.getVoteBombBallot) {
-        const ballotFn = agent.getVoteBombBallot.bind(agent);
+      const ballotMethod = agent[registration.decision.agentMethod];
+      if (ballotMethod) {
+        const ballotFn = ballotMethod.bind(agent);
+        const timeoutThinking =
+          `House fallback after ${registration.decision.publicName} ballot timeout`;
         const result = await withFormatAgentTimeout(
           ctx,
           Phase.FORMAT_RESOLVE,
-          `Vote Bomb ballot (${player.name})`,
+          `${registration.decision.publicName} ballot (${player.name})`,
           () => ballotFn(phaseCtx, aliveIds),
           () => ({
             targetId: fallbackTargetId,
-            thinking: "House fallback after vote-bomb ballot timeout",
+            thinking: timeoutThinking,
             decisionSource: "fallback" as const,
             fallbackReason: "tool_call_failed" as const,
           }),
         );
         targetId = result.targetId;
         const timedOut = result.fallbackReason === "tool_call_failed"
-          && result.thinking === "House fallback after vote-bomb ballot timeout";
+          && result.thinking === timeoutThinking;
         const provenance = timedOut
           ? fallbackFormatProvenance("tool_call_failed")
           : normalizedFormatProvenance(result);
@@ -655,7 +656,7 @@ async function resolveSealedElimFormatRound(
       if (!player) throw new Error(`Missing alive player for sealed ballot: ${ballot.voterId}`);
       const targetName = gameState.getPlayerName(ballot.targetId);
       const provenance = repairedInvalidTarget
-        ? fallbackFormatProvenance("invalid_vote_bomb_target")
+        ? fallbackFormatProvenance(registration.decision.invalidTargetReason)
         : decision.provenance;
       const decisionId = repairedInvalidTarget ? undefined : decision.decisionId;
 
@@ -708,28 +709,38 @@ async function resolveSealedElimFormatRound(
   const resolutionSourcePointers = resolved.tieEvidence ?? [];
 
   logger.logSystem(
-    `Vote Bomb ballots: ${resolved.ballots
+    `${registration.decision.publicName} ballots: ${resolved.ballots
       .map((b) => `${gameState.getPlayerName(b.voterId)}→${gameState.getPlayerName(b.targetId)}`)
       .join("; ")}`,
     Phase.FORMAT_RESOLVE,
   );
-  const eligibleIds = new Set(tallies.eligibleIds);
-  const zeroSafe = aliveIds
-    .filter((id) => !eligibleIds.has(id))
-    .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
-  const positiveTotals = tallies.eligibleIds
+  const scoreSummary = tallies.eligibleIds
     .map((id) => `${gameState.getPlayerName(id)}=${tallies.totals[id] ?? 0}`)
     .sort((a, b) => a.localeCompare(b))
     .join(", ");
-  logger.logSystem(
-    `Vote Bomb tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${positiveTotals || "none"} (fewest positive is eliminated)`,
-    Phase.FORMAT_RESOLVE,
-  );
-  const resolutionSummary = formatEliminationReason(gameState, resolution, "fewest positive votes");
+  const criterion = registration.presentation.scoring === "fewest_positive"
+    ? "fewest positive votes"
+    : "highest total";
+  if (registration.presentation.zeroVoteTreatment === "safe") {
+    const eligibleIds = new Set(tallies.eligibleIds);
+    const zeroSafe = aliveIds
+      .filter((id) => !eligibleIds.has(id))
+      .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
+    logger.logSystem(
+      `${registration.decision.publicName} tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      Phase.FORMAT_RESOLVE,
+    );
+  } else {
+    logger.logSystem(
+      `${registration.decision.publicName} tally: totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      Phase.FORMAT_RESOLVE,
+    );
+  }
+  const resolutionSummary = formatEliminationReason(gameState, resolution, criterion);
   logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
-    throw new Error("Vote Bomb failed to resolve elimination");
+    throw new Error(`${registration.decision.publicName} failed to resolve elimination`);
   }
   const eliminatedId = resolution.eliminatedId;
   return {
@@ -739,7 +750,7 @@ async function resolveSealedElimFormatRound(
       votesReceived: tallies.totals[eliminatedId] ?? 0,
     },
     canonicalResolution: {
-      formatId: "vote_bomb",
+      formatId: registration.id,
       empoweredId,
       eliminatedId,
       resolutionKind: resolution.kind,

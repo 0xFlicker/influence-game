@@ -314,8 +314,8 @@ describe("buildCompletedGameResults", () => {
       formatId: "vote_bomb",
       empoweredId: "alice",
       eliminatedId: "charlie",
-      resolutionKind: "clear",
-      tiedPlayerIds: [],
+      resolutionKind: "auto",
+      tiedPlayerIds: ["charlie"],
       tiebreakerId: null,
       saveOrEliminate: null,
       voteBomb: {
@@ -414,6 +414,63 @@ describe("buildCompletedGameResults", () => {
         vulnerable: [playerResult("bob", "Bob"), playerResult("dave", "Dave")],
       },
     });
+  });
+
+  it("reports Majority Elimination plurality totals without zero-safe or Vulnerable fields", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      {
+        gameId: "completed-results-majority-elimination",
+        now: fixedClock(),
+        formatManifest: ["majority_elimination"],
+      },
+    );
+    state.startRound();
+    state.setEmpowered("alice", "initial");
+    state.recordFormatSelected("alice", "majority_elimination");
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "alice", targetId: "bob" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "bob", targetId: "charlie" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "charlie", targetId: "bob" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "dave", targetId: "bob" });
+    state.recordFormatResolution({
+      formatId: "majority_elimination",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["bob"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { alice: 0, bob: 3, charlie: 1, dave: 0 },
+        eligiblePlayerIds: ["alice", "bob", "charlie", "dave"],
+      },
+    });
+    state.eliminatePlayer("bob");
+
+    const read = buildCompletedGameResults({ events: state.getCanonicalEvents() });
+    expect(read.rounds[0]?.formatRecap).toMatchObject({
+      status: "available",
+      offeredFormatIds: null,
+      selectedFormatId: "majority_elimination",
+      eliminated: playerResult("bob", "Bob"),
+      scoring: {
+        kind: "majority_elimination",
+        rows: [
+          { player: playerResult("alice", "Alice"), votes: 0 },
+          { player: playerResult("bob", "Bob"), votes: 3 },
+          { player: playerResult("charlie", "Charlie"), votes: 1 },
+          { player: playerResult("dave", "Dave"), votes: 0 },
+        ],
+      },
+      safetyBounce: null,
+    });
+    expect(JSON.stringify(read.rounds[0]?.formatRecap)).not.toContain("zeroSafe");
+    expect(JSON.stringify(read.rounds[0]?.formatRecap)).not.toContain("vulnerable");
   });
 
   it("retains a partial format prefix without inventing scoring or elimination", () => {

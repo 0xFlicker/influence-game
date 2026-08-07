@@ -72,22 +72,26 @@ describe("format-kernel turning points", () => {
     state.recordFormatSelected("charlie", "safety_bounce");
     state.recordSafetyBounceStarted("alice");
     state.recordSafetyBouncePointer("alice", "charlie", "vulnerable");
-    state.recordSafetyBouncePointer("charlie", "bob", "vulnerable");
-    state.recordSafetyBouncePointer("bob", "dave", "safe");
+    state.recordSafetyBouncePointer("charlie", "bob", "safe");
+    state.recordSafetyBouncePointer("bob", "dave", "vulnerable");
+    state.recordFormatBallot({ formatId: "safety_bounce", voterId: "alice", targetId: "dave" });
+    state.recordFormatBallot({ formatId: "safety_bounce", voterId: "bob", targetId: "charlie" });
+    state.recordFormatBallot({ formatId: "safety_bounce", voterId: "charlie", targetId: "dave" });
+    state.recordFormatBallot({ formatId: "safety_bounce", voterId: "dave", targetId: "dave" });
     state.recordFormatResolution({
       formatId: "safety_bounce",
       empoweredId: "charlie",
-      eliminatedId: "bob",
+      eliminatedId: "dave",
       resolutionKind: "clear",
-      tiedPlayerIds: [],
+      tiedPlayerIds: ["dave"],
       tiebreakerId: null,
       saveOrEliminate: null,
       voteBomb: null,
       safetyBounce: {
         starterId: "alice",
-        safePlayerIds: ["alice", "dave"],
-        vulnerablePlayerIds: ["charlie", "bob"],
-        voteTotals: { charlie: 0, bob: 2 },
+        safePlayerIds: ["alice", "bob"],
+        vulnerablePlayerIds: ["charlie", "dave"],
+        voteTotals: { charlie: 1, dave: 3 },
       },
     });
 
@@ -101,7 +105,7 @@ describe("format-kernel turning points", () => {
     expect(survival?.description).toContain("walked");
     expect(survival?.criteria).toMatchObject({
       empoweredId: "charlie",
-      eliminatedId: "bob",
+      eliminatedId: "dave",
       vulnerablePoolSize: 2,
     });
   });
@@ -137,6 +141,57 @@ describe("format-kernel turning points", () => {
     ).toContain("was eliminated under it");
     expect(projection.turningPoints.some((point) => point.type === "format_vote_bomb_clear_stack")).toBe(true);
     expect(projection.turningPoints.some((point) => point.type === "format_vote_bomb_unanimous_target")).toBe(true);
+  });
+
+  it("preserves Majority Elimination identity in postgame turning points", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      {
+        gameId: "game-majority-elimination-turning-point",
+        now: fixedClock(),
+        formatManifest: ["majority_elimination"],
+      },
+    );
+    state.startRound();
+    state.setEmpowered("alice", "initial");
+    state.recordFormatSelected("alice", "majority_elimination");
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "alice", targetId: "bob" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "bob", targetId: "alice" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "charlie", targetId: "alice" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "dave", targetId: "alice" });
+    state.recordFormatResolution({
+      formatId: "majority_elimination",
+      empoweredId: "alice",
+      eliminatedId: "alice",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["alice"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { alice: 3, bob: 1, charlie: 0, dave: 0 },
+        eligiblePlayerIds: ["alice", "bob", "charlie", "dave"],
+      },
+    });
+
+    const events = state.getCanonicalEvents();
+    const completed = buildCompletedGameResults({ events });
+    const projection = buildPostgameAnalysisProjection({
+      completedResults: completed,
+      events,
+    });
+    const point = projection.turningPoints.find(
+      (candidate) => candidate.type === "format_chooser_eliminated",
+    );
+    expect(point?.description).toContain("Majority Elimination");
+    expect(point?.criteria.formatId).toBe("majority_elimination");
+    expect(point?.description).not.toContain("Vote Bomb");
+    expect(point?.description).not.toContain("Safety Bounce");
+    expect(point?.description).not.toContain("Council");
   });
 
   it("flags Safety Bounce alliance-vulnerable pointer that is not the last pointer", () => {

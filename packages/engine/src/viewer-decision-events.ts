@@ -1,11 +1,12 @@
 import type {
   CanonicalGameEvent,
+  FormatResolutionAggregate,
 } from "./canonical-events";
 import {
   computeSaveOrEliminateNets,
-  computeVoteBombTallies,
   formatResolutionAggregate,
   getFormatRegistration,
+  type FormatEliminationResolution,
   type LaunchFormatId,
 } from "./formats";
 import type { Phase, PowerAction, UUID } from "./types";
@@ -134,6 +135,8 @@ export type ViewerFormatResolutionPayload = {
   resolutionKind: "clear" | "auto";
   tiedPlayerIds: UUID[];
   tiebreakerId: UUID | null;
+  /** Version-2 capability aggregate; historical bags remain for v1 presentation. */
+  aggregate?: FormatResolutionAggregate;
   saveOrEliminate: {
     nets: Record<UUID, number>;
     savesReceived: Record<UUID, number>;
@@ -173,6 +176,8 @@ export interface ProjectFormatBallotPresentationOptions {
   round: number;
   /** Canonical roster order, narrowed to agents eligible to vote in this round. */
   eligibleVoterIds: readonly UUID[];
+  /** Frozen manifest when the caller projects a round-only event slice. */
+  formatManifest?: readonly LaunchFormatId[];
 }
 
 /**
@@ -329,6 +334,7 @@ function projectFormatResolution(
     resolutionKind: payload.resolutionKind,
     tiedPlayerIds: [...payload.tiedPlayerIds],
     tiebreakerId: payload.tiebreakerId,
+    aggregate: cloneResolutionAggregate(aggregate),
     saveOrEliminate: aggregate.capability === "sealed_polarity"
       ? {
           nets: copyRecord(aggregate.nets),
@@ -355,6 +361,33 @@ function projectFormatResolution(
   };
 }
 
+function cloneResolutionAggregate(
+  aggregate: FormatResolutionAggregate,
+): FormatResolutionAggregate {
+  if (aggregate.capability === "sealed_elim") {
+    return {
+      capability: "sealed_elim",
+      totals: copyRecord(aggregate.totals),
+      eligiblePlayerIds: [...aggregate.eligiblePlayerIds],
+    };
+  }
+  if (aggregate.capability === "sealed_polarity") {
+    return {
+      capability: "sealed_polarity",
+      nets: copyRecord(aggregate.nets),
+      savesReceived: copyRecord(aggregate.savesReceived),
+      eliminateReceived: copyRecord(aggregate.eliminateReceived),
+    };
+  }
+  return {
+    capability: "public_chain",
+    starterId: aggregate.starterId,
+    safePlayerIds: [...aggregate.safePlayerIds],
+    vulnerablePlayerIds: [...aggregate.vulnerablePlayerIds],
+    voteTotals: copyRecord(aggregate.voteTotals),
+  };
+}
+
 function copyRecord<T>(record: Record<UUID, T>): Record<UUID, T> {
   return { ...record };
 }
@@ -374,15 +407,22 @@ export function projectFormatBallotPresentation(
   const resolutions = eventsOfType(events, "format.resolved");
   const selected = selections.at(-1) ?? null;
   const resolved = resolutions.at(-1) ?? null;
+  const roster = options.events.find(
+    (event): event is Extract<CanonicalGameEvent, { type: "game.roster_initialized" }> =>
+      event.type === "game.roster_initialized",
+  );
 
   if (!selected && !resolved && ballots.length === 0) {
     return ballotPresentation("not_applicable");
   }
   if (
-    menus.length !== 1
-    || selections.length !== 1
+    selections.length !== 1
     || !selected
-    || !menuMatchesSelection(menus[0]!, selected)
+    || !selectionMatchesMenuOrManifest(
+      menus,
+      selected,
+      options.formatManifest ?? roster?.payload.formatManifest,
+    )
   ) {
     return ballotPresentation("unavailable");
   }
@@ -433,6 +473,17 @@ export function projectFormatBallotPresentation(
       };
     }),
   };
+}
+
+function selectionMatchesMenuOrManifest(
+  menus: readonly Extract<CanonicalGameEvent, { type: "format.menu_offered" }>[],
+  selected: Extract<CanonicalGameEvent, { type: "format.selected" }>,
+  formatManifest: readonly LaunchFormatId[] | undefined,
+): boolean {
+  if (menus.length === 1) return menuMatchesSelection(menus[0]!, selected);
+  return menus.length === 0
+    && formatManifest?.length === 1
+    && formatManifest[0] === selected.payload.formatId;
 }
 
 function ballotPresentation(
@@ -523,19 +574,19 @@ function aggregateMatchesBallots(
       )
       && countRecordMatches(aggregate.nets, computed.nets, eligible);
   }
-  if (resolved.payload.formatId === "vote_bomb") {
-    if (aggregate.capability !== "sealed_elim") return false;
-    const computed = computeVoteBombTallies(
-      eligibleVoterIds,
-      ballots.map((ballot) => ({
-        voterId: ballot.payload.voterId,
-        targetId: ballot.payload.targetId,
-      })),
-    );
+  if (aggregate.capability === "sealed_elim") {
+    const registration = getFormatRegistration(resolved.payload.formatId);
+    if (registration.capability !== "sealed_elim") return false;
+    const sealedBallots = ballots.map((ballot) => ({
+      voterId: ballot.payload.voterId,
+      targetId: ballot.payload.targetId,
+    }));
+    const computed = registration.score(eligibleVoterIds, sealedBallots);
     return countRecordMatches(aggregate.totals, computed.totals, eligible)
-      && samePlayerSet(
-        aggregate.eligiblePlayerIds,
-        computed.positiveIds,
+      && samePlayerSet(aggregate.eligiblePlayerIds, computed.eligibleIds)
+      && sealedElimOutcomeMatches(
+        resolved,
+        registration.resolve(eligibleVoterIds, sealedBallots),
       );
   }
 
@@ -553,6 +604,22 @@ function aggregateMatchesBallots(
     totals[ballot.payload.targetId] = (totals[ballot.payload.targetId] ?? 0) + 1;
   }
   return countRecordMatches(bounce.voteTotals, totals, vulnerable);
+}
+
+function sealedElimOutcomeMatches(
+  resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
+  expected: FormatEliminationResolution,
+): boolean {
+  const payload = resolved.payload;
+  if (!samePlayerSet(payload.tiedPlayerIds, expected.tiedSet)) return false;
+  if (expected.kind === "tie") {
+    return payload.resolutionKind === "clear"
+      && payload.tiebreakerId === payload.empoweredId
+      && expected.tiedSet.includes(payload.eliminatedId);
+  }
+  return payload.resolutionKind === expected.kind
+    && payload.eliminatedId === expected.eliminatedId
+    && payload.tiebreakerId === null;
 }
 
 function zeroCounts(ids: readonly UUID[]): Record<UUID, number> {

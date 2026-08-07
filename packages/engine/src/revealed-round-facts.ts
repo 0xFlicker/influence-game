@@ -132,6 +132,10 @@ export interface RevealedVoteBombFacts {
   zeroSafe: RevealedPlayerRef[];
 }
 
+export interface RevealedMajorityEliminationFacts {
+  totals: RevealedVoteCount[];
+}
+
 export interface RevealedSafetyBounceFacts {
   starter: RevealedPlayerRef | null;
   pointers: RevealedFormatBouncePointer[];
@@ -152,6 +156,7 @@ export interface RevealedFormatFacts {
   tiebreaker: RevealedPlayerRef | null;
   saveOrEliminate: RevealedSaveOrEliminateFacts | null;
   voteBomb: RevealedVoteBombFacts | null;
+  majorityElimination?: RevealedMajorityEliminationFacts | null;
   safetyBounce: RevealedSafetyBounceFacts | null;
   /** Sanitized accepted ballots in canonical event order, readable immediately by operators. */
   acceptedBallots: RevealedFormatBallotEntry[];
@@ -501,6 +506,12 @@ function buildFormatFacts(
           .map((id) => playerRef(projection, id)),
       }
     : null;
+  const majorityElimination = resolved?.payload.formatId === "majority_elimination"
+    && aggregate?.capability === "sealed_elim"
+    ? {
+        totals: countsToVoteCounts(aggregate.totals, projection),
+      }
+    : null;
 
   const eliminatedId = resolved?.payload.eliminatedId ?? null;
   const rawTiedIds = resolved?.payload.tiedPlayerIds ?? [];
@@ -525,6 +536,7 @@ function buildFormatFacts(
     events,
     round: events[0]?.round ?? 0,
     eligibleVoterIds,
+    formatManifest: projection.formatManifest,
   });
   const ballotPresentation: RevealedFormatBallotPresentation = {
     status: projectedPresentation.status,
@@ -548,6 +560,7 @@ function buildFormatFacts(
     tiebreaker: refOrNull(projection, tiebreakerId),
     saveOrEliminate,
     voteBomb,
+    majorityElimination,
     safetyBounce,
     acceptedBallots,
     ballotPresentation,
@@ -808,6 +821,7 @@ function emptyFormat(
     tiebreaker: null,
     saveOrEliminate: null,
     voteBomb: null,
+    majorityElimination: null,
     safetyBounce: null,
     acceptedBallots: [],
     ballotPresentation: {

@@ -12,7 +12,11 @@ import type {
   RevealedPlayerRef,
   RevealedVoteLedgerEntry,
 } from "./revealed-round-facts";
-import type { LaunchFormatId } from "./formats";
+import {
+  displayNameForFormat,
+  isLaunchFormatId,
+  type LaunchFormatId,
+} from "./formats";
 import type { PowerActionType, UUID } from "./types";
 
 export type PostgameAnalysisDetailLevel = "brief" | "standard" | "full";
@@ -1507,7 +1511,9 @@ function buildExecutiveSummary(input: {
 
 function formatIdLabel(formatId: string | null | undefined): string | null {
   if (!formatId) return null;
-  return formatId.split("_").join(" ");
+  return isLaunchFormatId(formatId)
+    ? displayNameForFormat(formatId)
+    : formatId.split("_").join(" ");
 }
 
 function formatIdForRound(
@@ -1720,8 +1726,8 @@ function buildFormatKernelTurningPoints(input: {
     }
 
     // Chooser survival is only special when a *small vulnerable pool* exists (Safety Bounce)
-    // and the chooser was inside that pool but did not go home. Full-field formats (SoE / Vote Bomb)
-    // where everyone is always eligible are ordinary rounds — not this beat.
+    // and the chooser was inside that pool but did not go home. Full-field formats
+    // (SoE / Vote Bomb / Majority Elimination) are ordinary rounds — not this beat.
     if (
       empowered
       && empowered.id !== eliminated.id

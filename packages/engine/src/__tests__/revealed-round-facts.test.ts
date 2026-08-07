@@ -340,7 +340,7 @@ describe("buildRevealedRoundFacts", () => {
       state.recordFormatBallot({
         formatId: "vote_bomb",
         voterId: voter,
-        targetId: voter === "dave" ? "alice" : "charlie",
+        targetId: voter === "charlie" || voter === "dave" ? "alice" : "charlie",
       });
       if (index === 0 || index === 1 || index === 3) {
         ballotPrefixes.push(
@@ -372,7 +372,7 @@ describe("buildRevealedRoundFacts", () => {
       },
       {
         voter: { id: "charlie", name: "Charlie" },
-        target: { id: "charlie", name: "Charlie" },
+        target: { id: "alice", name: "Alice" },
         polarity: null,
       },
       {
@@ -391,11 +391,11 @@ describe("buildRevealedRoundFacts", () => {
       empoweredId: "bob",
       eliminatedId: "alice",
       resolutionKind: "clear",
-      tiedPlayerIds: [],
-      tiebreakerId: null,
+      tiedPlayerIds: ["alice", "charlie"],
+      tiebreakerId: "bob",
       saveOrEliminate: null,
       voteBomb: {
-        totals: { alice: 1, bob: 0, charlie: 3, dave: 0 },
+        totals: { alice: 2, bob: 0, charlie: 2, dave: 0 },
         zeroSafePlayerIds: ["bob", "dave"],
       },
       safetyBounce: null,
@@ -404,13 +404,98 @@ describe("buildRevealedRoundFacts", () => {
     const read = buildRevealedRoundFacts({ events: state.getCanonicalEvents(), round: 1 });
     expect(read.roundFacts.format.selectedFormatId).toBe("vote_bomb");
     expect(read.roundFacts.format.voteBomb?.zeroSafe.map((p) => p.id).sort()).toEqual(["bob", "dave"]);
-    expect(read.roundFacts.format.voteBomb?.totals.find((row) => row.player.id === "charlie")?.votes).toBe(3);
+    expect(read.roundFacts.format.voteBomb?.totals.find((row) => row.player.id === "charlie")?.votes).toBe(2);
     expect(read.roundFacts.format.acceptedBallots).toEqual(
       beforeResolution.roundFacts.format.acceptedBallots,
     );
     expect(read.roundFacts.format.ballotPresentation).toEqual({
       status: "revealed",
       rollCall: beforeResolution.roundFacts.format.acceptedBallots,
+    });
+  });
+
+  it("reveals menu-less Majority Elimination totals and rejects a conflicting outcome", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      {
+        gameId: "game-round-facts-majority-elimination",
+        now: fixedClock(),
+        formatManifest: ["majority_elimination"],
+      },
+    );
+    state.startRound();
+    state.recordFormatSelected("alice", "majority_elimination");
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "alice", targetId: "bob" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "bob", targetId: "charlie" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "charlie", targetId: "bob" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "dave", targetId: "bob" });
+    state.recordFormatResolution({
+      formatId: "majority_elimination",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["bob"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { alice: 0, bob: 3, charlie: 1, dave: 0 },
+        eligiblePlayerIds: ["alice", "bob", "charlie", "dave"],
+      },
+    });
+
+    const read = buildRevealedRoundFacts({ events: state.getCanonicalEvents(), round: 1 });
+    expect(read.roundFacts.format.selectedFormatId).toBe("majority_elimination");
+    expect(read.roundFacts.format.offeredFormatIds).toBeNull();
+    expect(read.roundFacts.format.majorityElimination?.totals).toEqual([
+      { player: { id: "bob", name: "Bob" }, votes: 3 },
+      { player: { id: "charlie", name: "Charlie" }, votes: 1 },
+      { player: { id: "alice", name: "Alice" }, votes: 0 },
+      { player: { id: "dave", name: "Dave" }, votes: 0 },
+    ]);
+    expect(read.roundFacts.format.voteBomb).toBeNull();
+    expect(read.roundFacts.format.safetyBounce).toBeNull();
+    expect(read.roundFacts.format.ballotPresentation.status).toBe("revealed");
+    expect(read.roundFacts.power).toBeUndefined();
+    expect(read.roundFacts.council).toBeUndefined();
+
+    const contradicted: CanonicalGameEvent[] = state.getCanonicalEvents().map((event) =>
+      event.type === "format.resolved"
+        ? ({
+            ...event,
+            payload: { ...event.payload, eliminatedId: "charlie" },
+          } as CanonicalGameEvent)
+        : event
+    );
+    expect(buildRevealedRoundFacts({ events: contradicted, round: 1 })
+      .roundFacts.format.ballotPresentation).toEqual({
+      status: "unavailable",
+      rollCall: [],
+    });
+
+    const aggregateMismatch: CanonicalGameEvent[] = state.getCanonicalEvents().map((event) =>
+      event.type === "format.resolved" && event.payloadVersion === 2
+        ? ({
+            ...event,
+            payload: {
+              ...event.payload,
+              aggregate: {
+                capability: "sealed_elim",
+                totals: { alice: 0, bob: 2, charlie: 2, dave: 0 },
+                eligiblePlayerIds: ["alice", "bob", "charlie", "dave"],
+              },
+            },
+          } as CanonicalGameEvent)
+        : event
+    );
+    expect(buildRevealedRoundFacts({ events: aggregateMismatch, round: 1 })
+      .roundFacts.format.ballotPresentation).toEqual({
+      status: "unavailable",
+      rollCall: [],
     });
   });
 
@@ -490,8 +575,8 @@ describe("buildRevealedRoundFacts", () => {
         formatId: "vote_bomb",
         empoweredId: "alice",
         eliminatedId: "charlie",
-        resolutionKind: "clear",
-        tiedPlayerIds: [],
+        resolutionKind: "auto",
+        tiedPlayerIds: ["charlie"],
         tiebreakerId: null,
         saveOrEliminate: null,
         voteBomb: {

@@ -44,6 +44,7 @@ export interface SealedElimDecisionContract<
   targetPolicy: "alive_non_self";
   publicName: string;
   ballotHeading: string;
+  agentMethod: "getVoteBombBallot" | "getMajorityEliminationBallot";
   toolName: "vote_bomb_ballot" | "majority_elimination_ballot";
   toolDescription: string;
   traceAction:
@@ -177,6 +178,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
       targetPolicy: "alive_non_self",
       publicName: "Vote Bomb",
       ballotHeading: "Vote Bomb Ballot",
+      agentMethod: "getVoteBombBallot",
       toolName: "vote_bomb_ballot",
       toolDescription: "Cast one sealed Vote Bomb ballot against a legal non-self target.",
       traceAction: "format-vote-bomb-ballot",
@@ -214,6 +216,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
       targetPolicy: "alive_non_self",
       publicName: "Majority Elimination",
       ballotHeading: "Majority Elimination Ballot",
+      agentMethod: "getMajorityEliminationBallot",
       toolName: "majority_elimination_ballot",
       toolDescription: "Cast one sealed Majority Elimination ballot against a legal non-self target.",
       traceAction: "format-majority-elimination-ballot",
