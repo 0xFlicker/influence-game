@@ -78,6 +78,7 @@ export {
 } from "./house-resolution-facts";
 
 export {
+  isLegalSealedElimBallot,
   resolveSealedElimRound,
   scoreSealedElimBallots,
   type AcceptedSealedElimDecision,

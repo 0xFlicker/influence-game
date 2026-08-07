@@ -334,7 +334,7 @@ function projectFormatResolution(
     resolutionKind: payload.resolutionKind,
     tiedPlayerIds: [...payload.tiedPlayerIds],
     tiebreakerId: payload.tiebreakerId,
-    aggregate: cloneResolutionAggregate(aggregate),
+    aggregate,
     saveOrEliminate: aggregate.capability === "sealed_polarity"
       ? {
           nets: copyRecord(aggregate.nets),
@@ -358,33 +358,6 @@ function projectFormatResolution(
           voteTotals: copyRecord(aggregate.voteTotals),
         }
       : null,
-  };
-}
-
-function cloneResolutionAggregate(
-  aggregate: FormatResolutionAggregate,
-): FormatResolutionAggregate {
-  if (aggregate.capability === "sealed_elim") {
-    return {
-      capability: "sealed_elim",
-      totals: copyRecord(aggregate.totals),
-      eligiblePlayerIds: [...aggregate.eligiblePlayerIds],
-    };
-  }
-  if (aggregate.capability === "sealed_polarity") {
-    return {
-      capability: "sealed_polarity",
-      nets: copyRecord(aggregate.nets),
-      savesReceived: copyRecord(aggregate.savesReceived),
-      eliminateReceived: copyRecord(aggregate.eliminateReceived),
-    };
-  }
-  return {
-    capability: "public_chain",
-    starterId: aggregate.starterId,
-    safePlayerIds: [...aggregate.safePlayerIds],
-    vulnerablePlayerIds: [...aggregate.vulnerablePlayerIds],
-    voteTotals: copyRecord(aggregate.voteTotals),
   };
 }
 

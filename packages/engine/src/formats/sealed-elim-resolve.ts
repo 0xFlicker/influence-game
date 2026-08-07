@@ -54,6 +54,16 @@ export interface ResolvedSealedElimRound<TTieEvidence> {
   tieEvidence: TTieEvidence | null;
 }
 
+export function isLegalSealedElimBallot(
+  voterId: UUID,
+  targetId: UUID,
+  aliveIds: readonly UUID[],
+): boolean {
+  return voterId !== targetId
+    && aliveIds.includes(voterId)
+    && aliveIds.includes(targetId);
+}
+
 /**
  * Validate and resolve a complete sealed non-polarity ballot set. This is kept
  * pure so incomplete, duplicate, and illegal ledgers fail before resolution.

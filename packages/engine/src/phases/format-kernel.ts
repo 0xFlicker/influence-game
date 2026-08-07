@@ -1,6 +1,6 @@
 /**
  * Sequester format kernel phase handlers:
- * menu → pick → format mingle → resolve (Save-or-eliminate / Vote Bomb / Safety Bounce).
+ * menu → pick → format mingle → catalog-dispatched resolution.
  */
 
 import {

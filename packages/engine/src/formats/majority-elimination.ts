@@ -4,6 +4,7 @@ import type {
   SealedElimBallot,
   SealedElimScore,
 } from "./types";
+import { isLegalSealedElimBallot } from "./sealed-elim-resolve";
 
 /**
  * Every alive player is eligible; the highest vote total is the danger set.
@@ -60,14 +61,4 @@ export function resolveMajorityElimination(
   return { kind: "tie", eliminatedId: null, tiedSet };
 }
 
-export function isLegalMajorityEliminationBallot(
-  voterId: UUID,
-  targetId: UUID,
-  aliveIds: readonly UUID[],
-): boolean {
-  return (
-    voterId !== targetId
-    && aliveIds.includes(voterId)
-    && aliveIds.includes(targetId)
-  );
-}
+export const isLegalMajorityEliminationBallot = isLegalSealedElimBallot;

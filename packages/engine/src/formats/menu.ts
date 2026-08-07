@@ -16,9 +16,8 @@ export interface FormatMenuResult {
 }
 
 /**
- * Build a two-option format menu.
- * Round 1 (no last format): any two of three (first + second by shuffled order).
- * Later rounds: the two formats that are not last round's selection.
+ * Build a two-option menu from the frozen manifest, excluding the last format
+ * whenever at least two alternatives remain. A single-format manifest skips it.
  */
 export function buildFormatMenu(input: FormatMenuInput): FormatMenuResult {
   const random = input.random ?? Math.random;
