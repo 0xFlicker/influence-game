@@ -375,7 +375,15 @@ export type {
   PromptScenarioStructuralReport,
 } from "./prompt-scenario-lab";
 export type { LaunchFormatId } from "./formats";
-export { LAUNCH_FORMAT_IDS, isLaunchFormatId, displayNameForFormat } from "./formats";
+export {
+  DEFAULT_FORMAT_MANIFEST,
+  LEGACY_FORMAT_MANIFEST,
+  LAUNCH_FORMAT_IDS,
+  isLaunchFormatId,
+  isRegisteredFormatId,
+  resolveFormatManifest,
+  displayNameForFormat,
+} from "./formats";
 export {
   FORMAT_PRESENTATION_METADATA,
   formatPresentationMetadata,

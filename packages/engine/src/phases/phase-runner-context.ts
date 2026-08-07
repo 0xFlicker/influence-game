@@ -48,6 +48,7 @@ export interface PhaseRunnerContext {
   eliminationOrder: string[];
   eliminationOrderPlayerIds?: UUID[];
   beforeAcceptedCommit?: () => Promise<void> | void;
+  random?: () => number;
 }
 
 export function agentTurnSourcePointer(

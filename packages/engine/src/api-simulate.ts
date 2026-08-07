@@ -13,6 +13,7 @@ import {
   type ModelReasoningPolicy,
 } from "./model-catalog";
 import type { OpenAIRequestServiceTier } from "./llm-client";
+import { resolveFormatManifest, type LaunchFormatId } from "./formats";
 
 interface ApiSimArgs {
   apiBaseUrl: string;
@@ -30,6 +31,7 @@ interface ApiSimArgs {
   advanceTimeoutMs: number;
   pollIntervalMs: number;
   serviceTier: OpenAIRequestServiceTier;
+  formatManifest: LaunchFormatId[];
 }
 
 interface AuthExchangeResponse {
@@ -91,6 +93,11 @@ export function parseArgs(
     waitForAdvance: env.INFLUENCE_API_SIM_WAIT_FOR_ADVANCE !== "false",
     advanceTimeoutMs: readPositiveInt(env.INFLUENCE_API_SIM_ADVANCE_TIMEOUT_MS, 120_000),
     pollIntervalMs: readPositiveInt(env.INFLUENCE_API_SIM_POLL_INTERVAL_MS, 3_000),
+    formatManifest: resolveFormatManifest(
+      env.INFLUENCE_API_SIM_FORMAT_MANIFEST === undefined
+        ? undefined
+        : env.INFLUENCE_API_SIM_FORMAT_MANIFEST.split(",").map((value) => value.trim()).filter(Boolean),
+    ),
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -134,6 +141,11 @@ export function parseArgs(
       i++;
     } else if (arg === "--viewer-mode" && next) {
       args.viewerMode = parseViewerMode(next) ?? args.viewerMode;
+      i++;
+    } else if ((arg === "--formats" || arg === "--format-manifest") && next !== undefined) {
+      args.formatManifest = resolveFormatManifest(
+        next.split(",").map((value) => value.trim()).filter(Boolean),
+      );
       i++;
     } else if (arg === "--no-wait-for-advance") {
       args.waitForAdvance = false;
@@ -234,6 +246,7 @@ export function buildGameCreateBody(args: ApiSimArgs, catalogId: string) {
     fillStrategy: "balanced",
     viewerMode: args.viewerMode,
     serviceTier: args.serviceTier,
+    formatManifest: [...args.formatManifest],
   };
 }
 

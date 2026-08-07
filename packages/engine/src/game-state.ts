@@ -28,7 +28,7 @@ import {
 } from "./exposure-bench";
 import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
-import type { LaunchFormatId } from "./formats";
+import { resolveFormatManifest, type LaunchFormatId } from "./formats";
 import type {
   AllianceArchiveReason,
   AllianceAmendmentInput,
@@ -66,6 +66,7 @@ export function createUUID(): UUID {
 export interface GameStateOptions {
   gameId?: UUID;
   now?: () => number;
+  formatManifest?: readonly LaunchFormatId[];
 }
 
 export interface AllianceMutationOptions {
@@ -210,6 +211,7 @@ function responsesForLineageVersion(
 
 export class GameState {
   readonly gameId: UUID;
+  readonly formatManifest: readonly LaunchFormatId[];
   private readonly canonicalEvents = new CanonicalEventLog();
   private readonly now: () => number;
   private _players = new Map<UUID, Player>();
@@ -264,6 +266,7 @@ export class GameState {
 
   constructor(players: { id: UUID; name: string }[], options: GameStateOptions = {}) {
     this.gameId = options.gameId ?? createUUID();
+    this.formatManifest = resolveFormatManifest(options.formatManifest);
     this.now = options.now ?? Date.now;
     for (const p of players) {
       this._players.set(p.id, {
@@ -281,6 +284,7 @@ export class GameState {
         status: player.status,
         shielded: player.shielded,
       })),
+      formatManifest: [...this.formatManifest],
     }, { phase: Phase.INIT, visibility: "system" });
   }
 
@@ -291,7 +295,11 @@ export class GameState {
       if (!player) throw new Error(`Canonical projection missing player ${id}`);
       return { id: player.id, name: player.name };
     });
-    const state = new GameState(players, { gameId: projection.gameId, ...options });
+    const state = new GameState(players, {
+      gameId: projection.gameId,
+      formatManifest: projection.formatManifest,
+      ...options,
+    });
     state.canonicalEvents.replaceAll(events);
     state._players = new Map(
       projection.playerOrder.map((id) => {

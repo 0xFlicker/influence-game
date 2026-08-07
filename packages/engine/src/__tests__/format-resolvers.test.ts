@@ -17,6 +17,7 @@ import {
   LAUNCH_FORMAT_IDS,
   pickFormatFromMenu,
   requireSealedElimRegistration,
+  resolveFormatManifest,
   resolveMajorityElimination,
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
@@ -35,16 +36,47 @@ const ids = (...names: string[]) => names.map((n) => n.toLowerCase());
 
 describe("format menu", () => {
   it("offers two distinct formats", () => {
-    const { offered } = buildFormatMenu({ lastFormatId: null, random: () => 0 });
+    const { offered } = buildFormatMenu({
+      formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce", "majority_elimination"],
+      lastFormatId: null,
+      random: () => 0,
+    });
     expect(offered).toHaveLength(2);
+    if (!offered) throw new Error("expected offered pair");
     expect(offered[0]).not.toBe(offered[1]);
   });
 
   it("hard-bans last format when two alternatives remain", () => {
-    const { offered } = buildFormatMenu({ lastFormatId: "vote_bomb" });
-    expect(offered).toContain("save_or_eliminate");
-    expect(offered).toContain("safety_bounce");
+    const { offered } = buildFormatMenu({
+      formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce", "majority_elimination"],
+      lastFormatId: "vote_bomb",
+      random: () => 0,
+    });
     expect(offered).not.toContain("vote_bomb");
+    expect(offered).toEqual(["safety_bounce", "majority_elimination"]);
+  });
+
+  it("uses the full two-format manifest when anti-repeat cannot leave two alternatives", () => {
+    const { offered } = buildFormatMenu({
+      formatManifest: ["vote_bomb", "majority_elimination"],
+      lastFormatId: "vote_bomb",
+      random: () => 0,
+    });
+    expect(offered).toEqual(["majority_elimination", "vote_bomb"]);
+  });
+
+  it("auto-selects a one-format manifest without an offered menu", () => {
+    expect(buildFormatMenu({
+      formatManifest: ["majority_elimination"],
+      lastFormatId: null,
+      random: () => 0,
+    })).toEqual({ offered: null, autoSelected: "majority_elimination" });
+  });
+
+  it("rejects empty, duplicate, and unregistered manifests", () => {
+    expect(() => resolveFormatManifest([])).toThrow("at least one");
+    expect(() => resolveFormatManifest(["vote_bomb", "vote_bomb"])).toThrow("duplicate");
+    expect(() => resolveFormatManifest(["vote_bomb", "unknown_format"])).toThrow("registered");
   });
 
   it("pickFormatFromMenu accepts only offered ids", () => {

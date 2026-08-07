@@ -32,6 +32,7 @@ import {
 } from "../services/public-player-identity.js";
 import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
+  DEFAULT_FORMAT_MANIFEST,
   pickAgentNames,
   pickArchetypes,
 } from "@influence/engine";
@@ -290,6 +291,7 @@ export function createFreeQueueRoutes(
       visibility: "public",
       slotType: "mixed",
       viewerMode: "live",
+      formatManifest: [...DEFAULT_FORMAT_MANIFEST],
     };
 
     const user = c.get("user");

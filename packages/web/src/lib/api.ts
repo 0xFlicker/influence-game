@@ -17,6 +17,7 @@ import type {
   GameKernel as EngineGameKernel,
   GameKernelContradictionDiagnostic as EngineGameKernelContradictionDiagnostic,
   GameKernelSource as EngineGameKernelSource,
+  LaunchFormatId as EngineLaunchFormatId,
   Phase as EnginePhase,
   RevealedCanonicalFactsStatus as EngineRevealedCanonicalFactsStatus,
   RevealedFactsStatus as EngineRevealedFactsStatus,
@@ -427,6 +428,7 @@ export interface CreateGameParams {
   maxRounds: number | "auto";
   visibility: GameVisibility;
   viewerMode: "live" | "speedrun";
+  formatManifest?: EngineLaunchFormatId[];
 }
 
 export type ModelReasoningPolicy = "action-policy" | "low" | "medium" | "high";
@@ -450,6 +452,8 @@ export interface GameSummary {
   modelLabel: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
+  /** Frozen game configuration; absent only on historical/mock payloads. */
+  formatManifest?: EngineLaunchFormatId[];
   trackType?: TrackType;
   seasonId?: string;
   season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
@@ -2390,6 +2394,8 @@ export interface GameDetail {
   modelLabel: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
+  /** Frozen game configuration; absent only on historical/mock payloads. */
+  formatManifest?: EngineLaunchFormatId[];
   seasonId?: string;
   season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
   rated?: boolean;

@@ -170,6 +170,7 @@ import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";
 import { DEFAULT_CONFIG, Phase, type GameConfig, type UUID } from "./types";
+import { resolveFormatManifest, type LaunchFormatId } from "./formats";
 import {
   TokenTracker,
   estimateCostAllModels,
@@ -244,6 +245,8 @@ export interface SimArgs {
   openAIReasoningSummary?: OpenAIReasoningSummaryMode | null;
   /** Use OpenAI Flex processing, with a per-request standard-tier fallback after three Flex 429s. */
   flex: boolean;
+  /** Frozen legal format subset for every game in this batch. */
+  formatManifest: LaunchFormatId[];
 }
 
 interface SimulationModelRuntime {
@@ -299,6 +302,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     enableDiary: process.env.INFLUENCE_SIM_DIARY === "true",
     openAIReasoningSummary: undefined,
     flex: true,
+    formatManifest: resolveFormatManifest(undefined),
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -332,6 +336,11 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--variant" && next) {
       args.variant = next;
+      i++;
+    } else if ((arg === "--formats" || arg === "--format-manifest") && next !== undefined) {
+      args.formatManifest = resolveFormatManifest(
+        next.split(",").map((value) => value.trim()).filter(Boolean),
+      );
       i++;
     } else if (arg === "--game-timeout-ms" && next) {
       args.gameTimeoutMs = readPositiveInt(next, 0) || null;
@@ -501,6 +510,7 @@ export function buildSimulationConfig(
     richProducer?: boolean;
     enableDiary?: boolean;
     maxRounds?: number;
+    formatManifest?: readonly LaunchFormatId[];
   } = {},
 ): GameConfig {
   const mingle = isMingleVariant(variant);
@@ -527,6 +537,7 @@ export function buildSimulationConfig(
       juryVote: 0,
     },
     maxRounds,
+    formatManifest: resolveFormatManifest(options.formatManifest),
     // Keep release-validation sims bounded; these hidden calls are flavor/memory, not core rules.
     maxDiaryFollowUps: 0,
     diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],
@@ -1726,6 +1737,7 @@ async function main() {
     richProducer: args.richProducer ?? false,
     enableDiary: args.enableDiary ?? false,
     maxRounds: args.maxRounds,
+    formatManifest: args.formatManifest,
   });
 
   // Create output directory

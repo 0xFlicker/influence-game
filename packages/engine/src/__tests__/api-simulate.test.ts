@@ -36,6 +36,14 @@ describe("API-backed simulation config", () => {
     expect(standard.serviceTier).toBe("auto");
     expect(buildGameCreateBody(standard, "openai:gpt-5-nano").serviceTier).toBe("auto");
   });
+
+  it("forwards a validated format subset to API game creation", () => {
+    const args = parseArgs(["--formats", "vote_bomb,majority_elimination"], {});
+    expect(args.formatManifest).toEqual(["vote_bomb", "majority_elimination"]);
+    expect(buildGameCreateBody(args, "openai:gpt-5.6-luna").formatManifest)
+      .toEqual(["vote_bomb", "majority_elimination"]);
+    expect(() => parseArgs(["--formats", "vote_bomb,vote_bomb"], {})).toThrow("duplicate");
+  });
 });
 
 describe("engine max-round scaling", () => {

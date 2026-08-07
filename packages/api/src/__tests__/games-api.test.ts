@@ -613,6 +613,90 @@ describe("Game REST API", () => {
         .from(schema.games))[0]!;
       const config = JSON.parse(game.config);
       expect(config.maxRounds).toBeGreaterThanOrEqual(10);
+      expect(config.formatManifest).toEqual([
+        "save_or_eliminate",
+        "vote_bomb",
+        "safety_bounce",
+        "majority_elimination",
+      ]);
+    });
+
+    test("freezes and exposes an explicit format manifest", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          formatManifest: ["vote_bomb", "majority_elimination"],
+        }, adminToken),
+      );
+
+      expect(res.status).toBe(201);
+      const created = (await res.json()) as { id: string };
+      const detailRes = await app.request(`/api/games/${created.id}`);
+      expect(detailRes.status).toBe(200);
+      const detail = (await detailRes.json()) as { formatManifest: string[] };
+      expect(detail.formatManifest).toEqual(["vote_bomb", "majority_elimination"]);
+
+      const listRes = await app.request("/api/games");
+      const listed = (await listRes.json()) as Array<{ id: string; formatManifest: string[] }>;
+      expect(listed.find((item) => item.id === created.id)?.formatManifest)
+        .toEqual(["vote_bomb", "majority_elimination"]);
+
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, created.id)))[0]!;
+      expect(JSON.parse(game.config).formatManifest).toEqual(["vote_bomb", "majority_elimination"]);
+    });
+
+    test("exposes the original trio for legacy stored configs without a manifest", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+        }, adminToken),
+      );
+      expect(res.status).toBe(201);
+      const created = (await res.json()) as { id: string };
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, created.id)))[0]!;
+      const legacyConfig = JSON.parse(game.config);
+      delete legacyConfig.formatManifest;
+      await db.update(schema.games)
+        .set({ config: JSON.stringify(legacyConfig) })
+        .where(eq(schema.games.id, created.id));
+
+      const detailRes = await app.request(`/api/games/${created.id}`);
+      expect(detailRes.status).toBe(200);
+      const detail = (await detailRes.json()) as { formatManifest: string[] };
+      expect(detail.formatManifest).toEqual([
+        "save_or_eliminate",
+        "vote_bomb",
+        "safety_bounce",
+      ]);
+
+      const listRes = await app.request("/api/games");
+      const listed = (await listRes.json()) as Array<{ id: string; formatManifest: string[] }>;
+      expect(listed.find((item) => item.id === created.id)?.formatManifest).toEqual([
+        "save_or_eliminate",
+        "vote_bomb",
+        "safety_bounce",
+      ]);
+    });
+
+    test.each([
+      { manifest: [], label: "empty" },
+      { manifest: ["vote_bomb", "vote_bomb"], label: "duplicate" },
+      { manifest: ["unknown_format"], label: "unregistered" },
+    ])("rejects $label format manifests", async ({ manifest }) => {
+      const res = await app.request(
+        "/api/games",
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          formatManifest: manifest,
+        }, adminToken),
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()) as { error: string }).toHaveProperty("error");
     });
 
     test("returns 400 for invalid JSON", async () => {

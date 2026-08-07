@@ -87,6 +87,19 @@ describe("simulation variant config", () => {
     expect(config.maxRounds).toBe(2);
   });
 
+  it("parses and freezes an explicit local format manifest", () => {
+    const args = parseArgs(["--formats", "vote_bomb,majority_elimination"]);
+    expect(args.formatManifest).toEqual(["vote_bomb", "majority_elimination"]);
+    expect(buildSimulationConfig("mingle", { formatManifest: args.formatManifest }).formatManifest)
+      .toEqual(["vote_bomb", "majority_elimination"]);
+  });
+
+  it("rejects malformed local format manifests", () => {
+    expect(() => parseArgs(["--formats", ""])).toThrow("at least one");
+    expect(() => parseArgs(["--formats", "vote_bomb,vote_bomb"])).toThrow("duplicate");
+    expect(() => parseArgs(["--formats", "not_registered"])).toThrow("registered");
+  });
+
   it("can opt simulation runs into strategic-reflection capture", () => {
     const args = parseArgs(["--strategic-reflections"]);
     const config = buildSimulationConfig("mingle", {

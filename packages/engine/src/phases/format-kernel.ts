@@ -136,20 +136,49 @@ export async function runFormatMenuPhase(
     throw new Error("Format menu requires empowered player");
   }
 
-  const menu = buildFormatMenu({ lastFormatId: state.lastSelectedFormat });
+  const menu = buildFormatMenu({
+    formatManifest: gameState.formatManifest,
+    lastFormatId: state.lastSelectedFormat,
+    random: ctx.random,
+  });
   state.offeredFormats = menu.offered;
+
+  if (menu.autoSelected) {
+    const chosen = menu.autoSelected;
+    state.selectedFormat = chosen;
+    state.lastSelectedFormat = chosen;
+    const pressure = buildFormatPressureProjection({
+      empoweredId,
+      empoweredName: gameState.getPlayerName(empoweredId),
+      offeredFormats: [chosen],
+      selectedFormat: chosen,
+    });
+    setFormatPressure(ctx, pressure);
+    gameState.recordFormatSelected(empoweredId, chosen);
+    logger.logSystem(
+      `FORMAT LOCKED: ${displayNameForFormat(chosen)}. This game's single-format manifest selected it automatically.`,
+      Phase.FORMAT_MENU,
+    );
+    logger.logSystem(formatPressureSummary(pressure), Phase.FORMAT_MENU);
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((r) => setTimeout(r, 0));
+    return;
+  }
+
+  const offered = menu.offered;
+  if (!offered) throw new Error("Multi-format game did not produce a format menu");
   state.selectedFormat = null;
   const menuPressure = buildFormatPressureProjection({
     empoweredId,
     empoweredName: gameState.getPlayerName(empoweredId),
-    offeredFormats: menu.offered,
+    offeredFormats: offered,
     selectedFormat: null,
   });
   setFormatPressure(ctx, menuPressure);
-  gameState.recordFormatMenu(empoweredId, menu.offered);
+  gameState.recordFormatMenu(empoweredId, offered);
 
   logger.logSystem(
-    `FORMAT MENU: ${displayNameForFormat(menu.offered[0])} vs ${displayNameForFormat(menu.offered[1])}. ${gameState.getPlayerName(empoweredId)} will choose.`,
+    `FORMAT MENU: ${displayNameForFormat(offered[0])} vs ${displayNameForFormat(offered[1])}. ${gameState.getPlayerName(empoweredId)} will choose.`,
     Phase.FORMAT_MENU,
   );
   logger.logSystem(formatPressureSummary(menuPressure), Phase.FORMAT_MENU);
@@ -166,6 +195,12 @@ export async function runFormatPickPhase(
   const state = ctx.formatKernelState;
   const empoweredId = gameState.empoweredId;
   const offeredFormats = state.offeredFormats;
+  if (empoweredId && state.selectedFormat && !offeredFormats) {
+    // One-format games already emitted authoritative selection in FORMAT_MENU.
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((r) => setTimeout(r, 0));
+    return;
+  }
   if (!empoweredId || !offeredFormats) {
     throw new Error("Format pick requires empowered player and offered formats");
   }

@@ -32,6 +32,42 @@ const TEST_CONFIG: GameConfig = {
 };
 
 describe("Format kernel integration (MockAgent)", () => {
+  it("auto-selects a one-format manifest without a fake empowered pick", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map((name) => new MockAgent(createUUID(), name));
+    let pickCalls = 0;
+    for (const agent of agents) {
+      agent.pickRoundFormat = async () => {
+        pickCalls += 1;
+        throw new Error("one-format games must not request an empowered pick");
+      };
+    }
+
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, maxRounds: 1, formatManifest: ["vote_bomb"] },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await runner.run();
+
+    const canonical = runner.getCanonicalEvents();
+    const roster = canonical[0];
+    expect(roster?.type).toBe("game.roster_initialized");
+    if (!roster || roster.type !== "game.roster_initialized") throw new Error("expected roster");
+    expect(roster.payload.formatManifest).toEqual(["vote_bomb"]);
+    expect(canonical.filter((event) => event.type === "format.menu_offered")).toHaveLength(0);
+    expect(canonical.filter((event) => event.type === "format.selected")).toHaveLength(1);
+    expect(canonical.find((event) => event.type === "format.selected")?.payload.formatId)
+      .toBe("vote_bomb");
+    expect(pickCalls).toBe(0);
+    expect(runner.transcriptLog.some(
+      (entry) => entry.scope === "system" && entry.text.includes("selected it automatically"),
+    )).toBe(true);
+    expect(runner.transcriptLog.some(
+      (entry) => entry.scope === "system" && entry.text.startsWith("FORMAT LOCKED:"),
+    )).toBe(true);
+  });
+
   it("retains only an agent's own ballot receipt before resolution and reveals peers afterward", () => {
     const state = new GameState(
       [
@@ -206,7 +242,11 @@ describe("Format kernel integration (MockAgent)", () => {
 
     const runner = new GameRunner(
       agents,
-      { ...TEST_CONFIG, maxRounds: 3 },
+      {
+        ...TEST_CONFIG,
+        maxRounds: 3,
+        formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+      },
       undefined,
       { maxRoundsMode: "exact" },
     );
@@ -214,11 +254,11 @@ describe("Format kernel integration (MockAgent)", () => {
     runner.setStreamListener((event) => events.push(event));
     const result = await runner.run();
 
-    expect(new Set(selectedFormats)).toEqual(new Set(LAUNCH_FORMAT_IDS));
-    expect(selectedFormats).toHaveLength(LAUNCH_FORMAT_IDS.length);
+    expect(selectedFormats.length).toBeGreaterThan(0);
+    expect(selectedFormats.every((formatId) => LAUNCH_FORMAT_IDS.includes(formatId))).toBe(true);
 
     const agentTurns = events.filter((event) => event.type === "agent_turn");
-    for (const formatId of LAUNCH_FORMAT_IDS) {
+    for (const formatId of new Set(selectedFormats)) {
       const pick = agentTurns.find(
         (event) =>
           event.action === "format-pick" &&
@@ -286,7 +326,7 @@ describe("Format kernel integration (MockAgent)", () => {
       expect(disclosure).not.toHaveProperty("voterNames");
     }
 
-    expect(result.eliminationOrder).toHaveLength(LAUNCH_FORMAT_IDS.length);
+    expect(result.eliminationOrder).toHaveLength(selectedFormats.length);
   });
 
   it("feeds House MC omniscient sealed format ballots via roundFacts.formatResolution", async () => {
@@ -300,9 +340,16 @@ describe("Format kernel integration (MockAgent)", () => {
       });
     }
     const events: GameStreamEvent[] = [];
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, maxRounds: 1 }, undefined, {
-      maxRoundsMode: "exact",
-    });
+    const runner = new GameRunner(
+      agents,
+      {
+        ...TEST_CONFIG,
+        maxRounds: 1,
+        formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+      },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
     runner.setStreamListener((event) => events.push(event));
     await runner.run();
 
@@ -595,7 +642,11 @@ describe("Format kernel integration (MockAgent)", () => {
       });
     }
 
-    const runner = new GameRunner(agents, { ...TEST_CONFIG, maxRounds: 1 });
+    const runner = new GameRunner(agents, {
+      ...TEST_CONFIG,
+      maxRounds: 1,
+      formatManifest: ["save_or_eliminate"],
+    });
     const events: GameStreamEvent[] = [];
     runner.setStreamListener((event) => events.push(event));
     await runner.run();

@@ -8,9 +8,9 @@ import type { UUID } from "./types";
 export interface FormatPressureProjection {
   empoweredId: UUID;
   empoweredName: string;
-  offeredFormats: [LaunchFormatId, LaunchFormatId];
-  /** Human-facing labels for the offered pair (same order as offeredFormats). Filled by buildFormatPressureProjection. */
-  offeredFormatNames?: [string, string];
+  offeredFormats: [LaunchFormatId] | [LaunchFormatId, LaunchFormatId];
+  /** Human-facing labels for the legal offer/lock set. Filled by buildFormatPressureProjection. */
+  offeredFormatNames?: [string] | [string, string];
   selectedFormat: LaunchFormatId | null;
   /** Human-facing locked format name. Filled by buildFormatPressureProjection. */
   selectedFormatName?: string | null;
@@ -30,7 +30,7 @@ export function ruleSheetForFormat(formatId: LaunchFormatId): string {
 export function buildFormatPressureProjection(input: {
   empoweredId: UUID;
   empoweredName: string;
-  offeredFormats: [LaunchFormatId, LaunchFormatId];
+  offeredFormats: [LaunchFormatId] | [LaunchFormatId, LaunchFormatId];
   selectedFormat: LaunchFormatId | null;
   bounceBoard?: FormatPressureProjection["bounceBoard"];
 }): FormatPressureProjection {
@@ -38,10 +38,8 @@ export function buildFormatPressureProjection(input: {
     empoweredId: input.empoweredId,
     empoweredName: input.empoweredName,
     offeredFormats: [...input.offeredFormats],
-    offeredFormatNames: [
-      displayNameForFormat(input.offeredFormats[0]),
-      displayNameForFormat(input.offeredFormats[1]),
-    ],
+    offeredFormatNames: input.offeredFormats.map((id) => displayNameForFormat(id)) as
+      [string] | [string, string],
     selectedFormat: input.selectedFormat,
     selectedFormatName: input.selectedFormat ? displayNameForFormat(input.selectedFormat) : null,
     ruleSheetSummary: input.selectedFormat ? ruleSheetForFormat(input.selectedFormat) : null,

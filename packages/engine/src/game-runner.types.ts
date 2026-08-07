@@ -68,6 +68,8 @@ export interface GameRunnerOptions {
   beforeAcceptedCommit?: () => Promise<void> | void;
   /** Optional token tracker for checkpoint cursor evidence (API-backed games). */
   tokenTracker?: TokenTracker;
+  /** Injectable format-menu RNG for deterministic simulation and tests. */
+  random?: () => number;
 }
 
 export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [

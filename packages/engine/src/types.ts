@@ -5,6 +5,7 @@
  */
 
 export type UUID = string;
+import type { LaunchFormatId } from "./format-presentation-metadata";
 
 // ---------------------------------------------------------------------------
 // Game phases
@@ -613,6 +614,8 @@ export type AgentAction =
 export type ViewerMode = "live" | "speedrun" | "replay";
 
 export interface GameConfig {
+  /** Frozen legal formats for this game. Omission is normalized at admission. */
+  formatManifest?: readonly LaunchFormatId[];
   /** Phase durations in milliseconds (0 = wait for all players to respond) */
   timers: {
     introduction: number;

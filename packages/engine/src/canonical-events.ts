@@ -427,6 +427,8 @@ export type CanonicalGameEvent =
       "game.roster_initialized",
       {
         players: Array<{ id: UUID; name: string; status: PlayerStatus; shielded: boolean }>;
+        /** Frozen legal formats. Absent only on historical launch-trio games. */
+        formatManifest?: LaunchFormatId[];
       }
     >
   | CanonicalEventEnvelope<"round.started", { round: number }>

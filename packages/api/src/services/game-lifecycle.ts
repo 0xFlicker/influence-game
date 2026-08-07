@@ -10,6 +10,7 @@ import { and, eq } from "drizzle-orm";
 import {
   GameRunner,
   InfluenceAgent,
+  LEGACY_FORMAT_MANIFEST,
   LLMHouseInterviewer,
   Phase,
   TokenTracker,
@@ -18,6 +19,7 @@ import {
   normalizeGameModelSelection,
   normalizeOpenAIRequestServiceTier,
   resolveModelSelection,
+  resolveFormatManifest,
 } from "@influence/engine";
 import type {
   AgentResponse,
@@ -519,6 +521,9 @@ export function buildEngineConfigFromGameRecord(
     maxRounds: (gameConfig.maxRounds as number) ?? 10,
     minPlayers,
     maxPlayers,
+    formatManifest: resolveFormatManifest(
+      gameConfig.formatManifest ?? LEGACY_FORMAT_MANIFEST,
+    ),
     timers: {
       ...defaultTimers,
       ...currentTimers,

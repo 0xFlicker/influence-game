@@ -43,9 +43,11 @@ export {
 
 export {
   DEFAULT_FORMAT_MANIFEST,
+  LEGACY_FORMAT_MANIFEST,
   FORMAT_CATALOG,
   getFormatRegistration,
   isRegisteredFormatId,
+  resolveFormatManifest,
   requireSealedElimRegistration,
   type FormatCatalog,
   type FormatRegistration,

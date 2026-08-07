@@ -1,6 +1,10 @@
 import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
 import type { CanonicalGameEvent } from "./canonical-events";
-import type { LaunchFormatId } from "./formats";
+import {
+  LEGACY_FORMAT_MANIFEST,
+  resolveFormatManifest,
+  type LaunchFormatId,
+} from "./formats";
 import type {
   AllianceHuddleOutcome,
   AllianceHuddleScheduleRecord,
@@ -43,6 +47,7 @@ export interface CanonicalGameProjection {
   phase: Phase | null;
   playerOrder: UUID[];
   players: Record<UUID, ProjectedPlayer>;
+  formatManifest: LaunchFormatId[];
   currentVoteTally: VoteTally;
   currentCouncilTally: CouncilVoteTally;
   empoweredId: UUID | null;
@@ -93,6 +98,7 @@ export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
     phase: null,
     playerOrder: [],
     players: {},
+    formatManifest: [...LEGACY_FORMAT_MANIFEST],
     currentVoteTally: { empowerVotes: {}, exposeVotes: {} },
     currentCouncilTally: { votes: {} },
     empoweredId: null,
@@ -214,6 +220,9 @@ export function applyCanonicalEvent(
 
   switch (event.type) {
     case "game.roster_initialized": {
+      projection.formatManifest = event.payload.formatManifest === undefined
+        ? [...LEGACY_FORMAT_MANIFEST]
+        : resolveFormatManifest(event.payload.formatManifest);
       projection.playerOrder = event.payload.players.map((player) => player.id);
       projection.players = Object.fromEntries(
         event.payload.players.map((player) => [player.id, { ...player }]),

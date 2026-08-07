@@ -203,8 +203,37 @@ export const DEFAULT_FORMAT_MANIFEST: readonly LaunchFormatId[] = [
   ...LAUNCH_FORMAT_IDS,
 ];
 
+/** Formats available to games created before manifests were persisted. */
+export const LEGACY_FORMAT_MANIFEST: readonly LaunchFormatId[] = [
+  "save_or_eliminate",
+  "vote_bomb",
+  "safety_bounce",
+];
+
 export function isRegisteredFormatId(value: string): value is LaunchFormatId {
   return Object.hasOwn(FORMAT_CATALOG, value);
+}
+
+/** Validate and defensively copy a frozen per-game format manifest. */
+export function resolveFormatManifest(value: unknown): LaunchFormatId[] {
+  const candidate = value === undefined ? DEFAULT_FORMAT_MANIFEST : value;
+  if (!Array.isArray(candidate) || candidate.length === 0) {
+    throw new Error("Format manifest must contain at least one registered format id");
+  }
+
+  const resolved: LaunchFormatId[] = [];
+  const seen = new Set<LaunchFormatId>();
+  for (const entry of candidate) {
+    if (typeof entry !== "string" || !isRegisteredFormatId(entry)) {
+      throw new Error(`Format manifest entries must be registered format ids: ${String(entry)}`);
+    }
+    if (seen.has(entry)) {
+      throw new Error(`Format manifest contains duplicate format id: ${entry}`);
+    }
+    seen.add(entry);
+    resolved.push(entry);
+  }
+  return resolved;
 }
 
 export function getFormatRegistration<TId extends LaunchFormatId>(

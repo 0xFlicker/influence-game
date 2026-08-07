@@ -79,11 +79,13 @@ import {
   getGameCompletionSettlementStateMap,
 } from "../services/game-completion-settlement.js";
 import {
+  LEGACY_FORMAT_MANIFEST,
   generatePersona,
   normalizeGameModelSelection,
   normalizeOpenAIRequestServiceTier,
   pickAgentNames,
   pickArchetypes,
+  resolveFormatManifest,
   resolveModelSelection,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
@@ -136,6 +138,7 @@ export function createGameRoutes(
       slotType,
       viewerMode,
       serviceTier,
+      formatManifest,
     } = body;
 
     const minPlayers = 4;
@@ -204,6 +207,15 @@ export function createGameRoutes(
       return c.json({ error: "Model is not game-ready" }, 400);
     }
 
+    let frozenFormatManifest;
+    try {
+      frozenFormatManifest = resolveFormatManifest(formatManifest);
+    } catch (error) {
+      return c.json({
+        error: error instanceof Error ? error.message : "Invalid format manifest",
+      }, 400);
+    }
+
     const config = {
       timers,
       maxRounds: computedMaxRounds,
@@ -221,6 +233,7 @@ export function createGameRoutes(
       visibility: visibility ?? "public",
       slotType: slotType ?? "all_ai",
       viewerMode: resolvedViewerMode,
+      formatManifest: frozenFormatManifest,
     };
 
     const gameId = randomUUID();
@@ -280,6 +293,9 @@ export function createGameRoutes(
 
     const summaries = rows.map((game) => {
       const config = JSON.parse(game.config);
+      const formatManifest = resolveFormatManifest(
+        config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
+      );
       const summaryRead = watchSummaryReadsByGameId.get(game.id) ?? { status: "missing" as const };
       const watchState = summaryRead.status === "current"
         ? summaryRead.summary
@@ -299,6 +315,7 @@ export function createGameRoutes(
         modelLabel: modelLabelFromConfig(config),
         visibility: config.visibility ?? "public",
         viewerMode: config.viewerMode ?? "speedrun",
+        formatManifest,
         trackType: game.trackType,
         seasonId: game.seasonId ?? undefined,
         season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
@@ -335,6 +352,9 @@ export function createGameRoutes(
     }
 
     const config = JSON.parse(game.config);
+    const formatManifest = resolveFormatManifest(
+      config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
+    );
     const completionSettlementState = await getGameCompletionSettlementState(db, game.id);
 
     const result = await db
@@ -372,6 +392,7 @@ export function createGameRoutes(
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
+      formatManifest,
       seasonId: game.seasonId ?? undefined,
       season: competition
         ? {
