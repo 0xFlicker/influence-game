@@ -443,22 +443,22 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --model <lm-studio-model-id> --llm-timeout-sec 300
 ```
 
-Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`. Record provider/model, batch path, and pass/fail for: `FORMAT MENU` → `FORMAT LOCKED` → `FORMAT RESOLVE`; no standard-round Power/Council elimination; `format-pick` plus exercised `format-ballot`, `bounce-pointer`, and `format-tiebreak` records have useful thinking and `decisionSource: "llm"`; each eliminated player has exactly one post-commit `elimination-message` turn whose sealed-format disclosure contains counts without voter names; no exercised action has `decisionSource: "fallback"`; agents apply the locked rules; and at least two formats produce distinct coalition scripts. For Safety Bounce, explicitly confirm that every SAFE actor understands its target becomes VULNERABLE and every VULNERABLE actor understands its target becomes SAFE; contradictory reasoning fails the check even when `response.classification` is canonically correct. Repeat the same bounded recipe only until all three launch formats appear across retained batches. A fallback fails proof: inspect `fallbackReason` and the matching `agent_turn`. If hosted traffic reaches LM Studio, retain the explicit OpenAI catalog or clear base-URL variables for that process. Whole-game timeout is off by default.
+Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`. New games omit the optional manifest by default and freeze all four formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority Elimination. Record provider/model, batch path, and pass/fail for: `FORMAT MENU` → `FORMAT LOCKED` → `FORMAT RESOLVE` on two-card rounds; no standard-round Power/Council elimination; exercised `format-pick`, `format-ballot`, `bounce-pointer`, and `format-tiebreak` records have useful thinking and `decisionSource: "llm"`; each eliminated player has exactly one post-commit `elimination-message` turn whose sealed-format disclosure contains counts without voter names; no exercised action has `decisionSource: "fallback"`; agents apply the locked rules; and at least two formats produce distinct coalition scripts. Vote Bomb must preserve zero-safe/fewest-positive reasoning; Majority Elimination must use highest-total reasoning. For Safety Bounce, explicitly confirm that every SAFE actor understands its target becomes VULNERABLE and every VULNERABLE actor understands its target becomes SAFE; contradictory reasoning fails the check even when `response.classification` is canonically correct. Random two-card rounds do not prove catalog coverage: append `--formats <id>` for a separate bounded one-format run when a specific card needs proof. That run must emit `format.selected` without `format.menu_offered`, a `format-pick` turn, or an empowered pick model call. Two or more supplied ids retain the normal two-card menu. Do not add a production round-count gate. A fallback fails proof: inspect `fallbackReason` and the matching `agent_turn`. If hosted traffic reaches LM Studio, retain the explicit OpenAI catalog or clear base-URL variables for that process. Whole-game timeout is off by default.
 
 The fuller checklist and triage live in `docs/local-model-evaluation.md`.
 
 ```bash
 # Simulator validation uses repo scripts, which inject Doppler dev secrets explicitly:
-bun run simulate -- --games 1 --players 4 --model gpt-5.6-luna
+bun run simulate -- --games 1 --players 6 --model gpt-5.6-luna
 
 # Local LM Studio validation bypasses Doppler:
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
-  bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id>
+  bun run simulate:local -- --games 1 --players 6 --model <lm-studio-model-id>
 
 # Durable API-backed local model validation creates/fills/starts a real API game:
-bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 4
-bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 4
-# Defaults to a short player-scaled smoke cap (4 players -> 5 rounds); pass --max-rounds to override.
+bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 6
+bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 6
+# Defaults to a short player-scaled smoke cap (6 players -> 7 rounds); pass --max-rounds to override.
 
 # Chatty mode (live colored transcript with agent thinking + native reasoningContext / labeled provider summaries on Mingle turns, alliance actions, huddle turns, votes, format picks/ballots/pointers/tiebreaks, legacy classic actions, and endgame decisions):
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \

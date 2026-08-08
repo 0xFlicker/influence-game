@@ -7,7 +7,7 @@
  * Usage:
  *   bun run simulate
  *   bun run simulate -- --games 5 --players 6
- *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
+ *   bun run simulate -- --games 3 --players 6 --personas Atlas,Vera,Finn,Mira,Rex,Lyra
  *   bun run simulate -- --variant mingle
  *   bun run simulate -- --variant power-lobby-mingle
  *   bun run simulate -- --variant mingle --strategic-reflections
@@ -35,11 +35,13 @@
  *
  * Inspect the new batch summary.md, game-1.txt, and game-1-turns.jsonl. Flex
  * summaries include tier-aware run spend plus one all-model cost comparison.
- * Require
- * FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE, model-authored format actions
- * (`decisionSource: "llm"` with useful thinking), no fallback, and no default
- * Power/Council elimination. Repeat only the same bounded recipe until all three
- * launch formats have appeared across retained batches. See
+ * Require FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE on two-card rounds,
+ * model-authored format actions (`decisionSource: "llm"` with useful thinking),
+ * no fallback, and no default Power/Council elimination. Omission uses the
+ * frozen four-format default. For proof of one specific card, append
+ * `--formats <id>` and require FORMAT LOCKED -> FORMAT RESOLVE with no
+ * format.menu_offered event, format-pick turn, or empowered pick model call.
+ * Do not use extra production rounds as a catalog-coverage gate. See
  * docs/local-model-evaluation.md for the complete pass/fail and triage checklist.
  *   # Whole-game timeout is off by default; only set when you want a hard wall clock:
  *   #   --game-timeout-sec 7200
@@ -105,15 +107,16 @@
  * durable API match-read surfaces; local `--chatty` formatting and simulation
  * artifacts remain first-class and continue to surface thinking / reasoningContext
  * for human review without treating them as public speech.
- * Format-kernel turns record `format-pick`, `format-ballot`, `bounce-pointer`,
- * `format-tiebreak`, and one post-commit `elimination-message` action. The
+ * Format-kernel turns record `format-pick` when a two-card menu exists,
+ * `format-ballot`, `bounce-pointer`, `format-tiebreak`, and one post-commit
+ * `elimination-message` action. The
  * elimination message receives named voters only for public votes; sealed
  * formats pass received counts without voter identities. This participating-agent
  * context is intentionally narrower than operator transport: sanitized accepted
  * ballot mappings are readable there immediately after durable record, while
  * viewer named Roll Call presentation remains resolution-gated. Together the format
- * records expose the six typed agent
- * decisions: pickRoundFormat, getSaveOrEliminateBallot, getVoteBombBallot,
+ * records expose seven typed agent decisions: pickRoundFormat,
+ * getSaveOrEliminateBallot, getVoteBombBallot, getMajorityEliminationBallot,
  * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their
  * responses include `decisionSource` and nullable `fallbackReason`; reasoning
  * is diagnostic evidence, never canonical game fact. Safety Bounce pointer
@@ -169,7 +172,8 @@ import type { CanonicalGameEvent } from "./canonical-events";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";
-import { DEFAULT_CONFIG, Phase, type GameConfig, type UUID } from "./types";
+import { DEFAULT_CONFIG, MIN_NEW_GAME_PLAYERS, Phase, type GameConfig, type UUID } from "./types";
+import { resolveFormatManifest, type LaunchFormatId } from "./formats";
 import {
   TokenTracker,
   estimateCostAllModels,
@@ -244,6 +248,8 @@ export interface SimArgs {
   openAIReasoningSummary?: OpenAIReasoningSummaryMode | null;
   /** Use OpenAI Flex processing, with a per-request standard-tier fallback after three Flex 429s. */
   flex: boolean;
+  /** Frozen legal format subset for every game in this batch. */
+  formatManifest: LaunchFormatId[];
 }
 
 interface SimulationModelRuntime {
@@ -278,7 +284,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
   const args: SimArgs = {
     games: 3,
-    players: 6,
+    players: MIN_NEW_GAME_PLAYERS,
     maxRounds: 10,
     personas: null,
     model: DEFAULT_MODEL_ID,
@@ -299,6 +305,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     enableDiary: process.env.INFLUENCE_SIM_DIARY === "true",
     openAIReasoningSummary: undefined,
     flex: true,
+    formatManifest: resolveFormatManifest(undefined),
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -308,7 +315,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.games = parseInt(next, 10);
       i++;
     } else if (arg === "--players" && next) {
-      args.players = parseInt(next, 10);
+      args.players = Number(next);
       i++;
     } else if ((arg === "--max-rounds" || arg === "--rounds") && next) {
       args.maxRounds = parseInt(next, 10);
@@ -332,6 +339,11 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       i++;
     } else if (arg === "--variant" && next) {
       args.variant = next;
+      i++;
+    } else if ((arg === "--formats" || arg === "--format-manifest") && next !== undefined) {
+      args.formatManifest = resolveFormatManifest(
+        next.split(",").map((value) => value.trim()).filter(Boolean),
+      );
       i++;
     } else if (arg === "--game-timeout-ms" && next) {
       args.gameTimeoutMs = readPositiveInt(next, 0) || null;
@@ -392,7 +404,12 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
-  if (isNaN(args.players) || args.players < 4) args.players = 4;
+  if (!Number.isInteger(args.players) || args.players < MIN_NEW_GAME_PLAYERS) {
+    throw new Error(`--players must be an integer of at least ${MIN_NEW_GAME_PLAYERS}`);
+  }
+  if (args.personas && args.personas.length < MIN_NEW_GAME_PLAYERS) {
+    throw new Error(`--personas must include at least ${MIN_NEW_GAME_PLAYERS} names`);
+  }
   if (args.players > DEFAULT_CONFIG.maxPlayers) args.players = DEFAULT_CONFIG.maxPlayers;
   // At least 1 standard round; keep an upper bound so typos don't run forever.
   if (isNaN(args.maxRounds) || args.maxRounds < 1) args.maxRounds = 1;
@@ -501,6 +518,7 @@ export function buildSimulationConfig(
     richProducer?: boolean;
     enableDiary?: boolean;
     maxRounds?: number;
+    formatManifest?: readonly LaunchFormatId[];
   } = {},
 ): GameConfig {
   const mingle = isMingleVariant(variant);
@@ -527,6 +545,7 @@ export function buildSimulationConfig(
       juryVote: 0,
     },
     maxRounds,
+    formatManifest: resolveFormatManifest(options.formatManifest),
     // Keep release-validation sims bounded; these hidden calls are flavor/memory, not core rules.
     maxDiaryFollowUps: 0,
     diaryRoomAfterPhases: enableDiary ? [Phase.FORMAT_RESOLVE, Phase.COUNCIL] : [],
@@ -580,9 +599,9 @@ function selectCast(
       .map((name) => FULL_CAST.find((c) => c.name.toLowerCase() === name.toLowerCase()))
       .filter((c): c is { name: string; personality: Personality } => c != null);
 
-    if (selected.length < 4) {
+    if (selected.length < MIN_NEW_GAME_PLAYERS) {
       console.error(
-        `Error: Only ${selected.length} valid personas found. Need at least 4. Available: ${FULL_CAST.map((c) => c.name).join(", ")}`,
+        `Error: Only ${selected.length} valid personas found. Need at least ${MIN_NEW_GAME_PLAYERS}. Available: ${FULL_CAST.map((c) => c.name).join(", ")}`,
       );
       process.exit(1);
     }
@@ -1726,6 +1745,7 @@ async function main() {
     richProducer: args.richProducer ?? false,
     enableDiary: args.enableDiary ?? false,
     maxRounds: args.maxRounds,
+    formatManifest: args.formatManifest,
   });
 
   // Create output directory

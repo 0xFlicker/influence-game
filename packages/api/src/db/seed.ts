@@ -6,7 +6,11 @@
  */
 
 import { randomUUID } from "crypto";
-import { DEFAULT_MODEL_CATALOG_ID, DEFAULT_MODEL_ID } from "@influence/engine";
+import {
+  DEFAULT_MODEL_CATALOG_ID,
+  DEFAULT_MODEL_ID,
+  MIN_NEW_GAME_PLAYERS,
+} from "@influence/engine";
 import { runMigrations } from "./migrate.js";
 import { schema } from "./index.js";
 
@@ -83,7 +87,7 @@ const defaultConfig = {
     council: 20000,
   },
   maxRounds: 10,
-  minPlayers: 5,
+  minPlayers: MIN_NEW_GAME_PLAYERS,
   maxPlayers: 12,
   modelSelection: {
     catalogId: DEFAULT_MODEL_CATALOG_ID,
@@ -97,7 +101,7 @@ await db.insert(schema.games)
     slug: "seed-completed-game",
     config: JSON.stringify(defaultConfig),
     status: "completed",
-    minPlayers: 5,
+    minPlayers: MIN_NEW_GAME_PLAYERS,
     maxPlayers: 6,
     createdById: userIds.admin,
     startedAt: new Date(Date.now() - 3600_000).toISOString(),
@@ -237,7 +241,7 @@ await db.insert(schema.games)
     slug: "seed-waiting-game",
     config: JSON.stringify(defaultConfig),
     status: "waiting",
-    minPlayers: 5,
+    minPlayers: MIN_NEW_GAME_PLAYERS,
     maxPlayers: 8,
     createdById: userIds.admin,
   });

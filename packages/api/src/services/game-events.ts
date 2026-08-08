@@ -21,9 +21,6 @@ function validateEnvelopeMetadata(gameId: string, event: CanonicalGameEvent): vo
   if (event.gameId !== gameId) {
     throw new Error(`Canonical event gameId ${event.gameId} does not match API game ${gameId}`);
   }
-  if (event.payloadVersion !== 1) {
-    throw new Error(`Unsupported canonical event payload version ${event.payloadVersion}`);
-  }
 }
 
 export async function appendGameEvents(

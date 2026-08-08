@@ -1,5 +1,6 @@
 import type { UUID } from "../types";
 import type { FormatEliminationResolution, VoteBombBallot } from "./types";
+import { isLegalSealedElimBallot } from "./sealed-elim-resolve";
 
 export interface VoteBombTallies {
   totals: Record<UUID, number>;
@@ -57,12 +58,4 @@ export function resolveVoteBomb(
   return { kind: "tie", eliminatedId: null, tiedSet: [...tiedSet] };
 }
 
-export function isLegalVoteBombBallot(
-  voterId: UUID,
-  targetId: UUID,
-  aliveIds: readonly UUID[],
-): boolean {
-  if (!aliveIds.includes(voterId) || !aliveIds.includes(targetId)) return false;
-  if (voterId === targetId) return false;
-  return true;
-}
+export const isLegalVoteBombBallot = isLegalSealedElimBallot;

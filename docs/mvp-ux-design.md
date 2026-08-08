@@ -47,7 +47,7 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 │                                                                       │
 │  PLAYERS                                                              │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │  Player count: [ 4 ] [ 6 ] [ 8 ] [10] [12]  (radio)         │    │
+│  │  Player count: [ 6 ] [ 8 ] [10] [12]       (radio)          │    │
 │  │  Slot type:    ○ All AI   ○ Mixed (human + AI fill)           │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                       │
@@ -90,7 +90,7 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 
 | Field | Type | Validation | Default |
 |:------|:-----|:-----------|:--------|
-| `playerCount` | `4 \| 6 \| 8 \| 10 \| 12` | required | 6 |
+| `playerCount` | `6 \| 8 \| 10 \| 12` | required | 6 |
 | `slotType` | `all_ai \| mixed` | required | `all_ai` |
 | `modelSelection` | `{ catalogId: string; reasoningPolicy: "action-policy" \| "low" \| "medium" \| "high" }` | required | `{ catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "medium" }` |
 | `personaPool` | `string[]` | ≥ 2 selected | all 10 |

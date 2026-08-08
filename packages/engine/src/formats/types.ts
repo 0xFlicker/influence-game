@@ -26,6 +26,30 @@ export interface VoteBombBallot {
   targetId: UUID;
 }
 
+/** Shared sealed non-polarity ballot shape. */
+export interface SealedElimBallot {
+  voterId: UUID;
+  targetId: UUID;
+}
+
+/** Pure score output for a sealed non-polarity elimination format. */
+export interface SealedElimScore {
+  totals: Record<UUID, number>;
+  /** The only players eligible for elimination under the format's score policy. */
+  eligibleIds: UUID[];
+}
+
+/** Public version-2 aggregate shape shared by sealed-elim formats. */
+export interface SealedElimAggregate {
+  totals: Record<UUID, number>;
+  eligiblePlayerIds: UUID[];
+}
+
+export type FormatCapabilityClass =
+  | "sealed_elim"
+  | "sealed_polarity"
+  | "public_chain";
+
 export type BounceClassification = "safe" | "vulnerable";
 
 export interface BounceBoard {
@@ -59,5 +83,9 @@ export type FormatEliminationResolution =
       kind: "auto";
       eliminatedId: UUID;
       tiedSet: UUID[];
-      reason: "sole_vulnerable" | "sole_lowest_net" | "sole_fewest_positive";
+      reason:
+        | "sole_vulnerable"
+        | "sole_lowest_net"
+        | "sole_fewest_positive"
+        | "sole_highest";
     };

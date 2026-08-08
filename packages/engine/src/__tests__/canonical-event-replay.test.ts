@@ -10,6 +10,7 @@ import type { UUID } from "../types";
 import type { CanonicalGameEvent } from "../canonical-events";
 import type { GameStreamEvent } from "../game-runner.types";
 import { MockAgent } from "./mock-agent";
+import { formatResolutionAggregate } from "../formats";
 
 function fixedClock(): () => number {
   let ticks = 0;
@@ -180,6 +181,123 @@ describe("canonical event replay", () => {
     const invalid = { ...gs.getCanonicalEvents()[0]!, payloadVersion: 2 } as unknown as CanonicalGameEvent;
 
     expect(() => replayCanonicalEvents([invalid])).toThrow("Unsupported canonical event payload version");
+  });
+
+  it("replays historical version-1 resolution bags for the original format trio", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "cara", name: "Cara" },
+      ],
+      { gameId: "historical-v1-trio", now: fixedClock() },
+    );
+    const roster = state.getCanonicalEvents()[0]!;
+    if (roster.type !== "game.roster_initialized") throw new Error("expected roster");
+    const historicalRoster: CanonicalGameEvent = {
+      ...roster,
+      payload: { players: roster.payload.players },
+    };
+    const common = {
+      gameId: "historical-v1-trio",
+      phase: Phase.FORMAT_RESOLVE,
+      source: "replay" as const,
+      visibility: "public" as const,
+      payloadVersion: 1 as const,
+      sourcePointers: [],
+    };
+    const historical: CanonicalGameEvent[] = [
+      {
+        ...common,
+        sequence: 2,
+        round: 1,
+        type: "format.resolved",
+        timestamp: "2026-06-11T00:00:02.000Z",
+        payload: {
+          formatId: "save_or_eliminate",
+          empoweredId: "alice",
+          eliminatedId: "bob",
+          resolutionKind: "auto",
+          tiedPlayerIds: ["bob"],
+          tiebreakerId: null,
+          saveOrEliminate: {
+            nets: { alice: 1, bob: -2, cara: 1 },
+            savesReceived: { alice: 1, bob: 0, cara: 1 },
+            eliminateReceived: { alice: 0, bob: 2, cara: 0 },
+          },
+          voteBomb: null,
+          safetyBounce: null,
+        },
+      },
+      {
+        ...common,
+        sequence: 3,
+        round: 2,
+        type: "format.resolved",
+        timestamp: "2026-06-11T00:00:03.000Z",
+        payload: {
+          formatId: "vote_bomb",
+          empoweredId: "alice",
+          eliminatedId: "bob",
+          resolutionKind: "auto",
+          tiedPlayerIds: ["bob"],
+          tiebreakerId: null,
+          saveOrEliminate: null,
+          voteBomb: {
+            totals: { alice: 0, bob: 1, cara: 2 },
+            zeroSafePlayerIds: ["alice"],
+          },
+          safetyBounce: null,
+        },
+      },
+      {
+        ...common,
+        sequence: 4,
+        round: 3,
+        type: "format.resolved",
+        timestamp: "2026-06-11T00:00:04.000Z",
+        payload: {
+          formatId: "safety_bounce",
+          empoweredId: "alice",
+          eliminatedId: "bob",
+          resolutionKind: "auto",
+          tiedPlayerIds: [],
+          tiebreakerId: null,
+          saveOrEliminate: null,
+          voteBomb: null,
+          safetyBounce: {
+            starterId: "alice",
+            safePlayerIds: ["alice", "cara"],
+            vulnerablePlayerIds: ["bob"],
+            voteTotals: {},
+          },
+        },
+      },
+    ];
+    const events = [historicalRoster, ...historical];
+
+    expect(() => GameState.fromCanonicalEvents(events)).not.toThrow();
+    expect(replayCanonicalEvents(events).lastSequence).toBe(4);
+    expect(historical.map((event) => {
+      if (event.type !== "format.resolved") throw new Error("expected format resolution");
+      return formatResolutionAggregate(event).capability;
+    })).toEqual(["sealed_polarity", "sealed_elim", "public_chain"]);
+  });
+
+  it("rejects unsupported format.resolved payload versions", () => {
+    const state = new GameState([{ id: "alpha", name: "Alpha" }], {
+      gameId: "unsupported-format-version",
+    });
+    const invalid = {
+      ...state.getCanonicalEvents()[0]!,
+      type: "format.resolved",
+      payloadVersion: 3,
+      payload: {},
+    } as unknown as CanonicalGameEvent;
+
+    expect(() => replayCanonicalEvents([invalid])).toThrow(
+      "Unsupported canonical event payload version 3 for format.resolved",
+    );
   });
 
   it("fails when a canonical event log has sequence gaps", () => {
@@ -457,6 +575,7 @@ describe("GameRunner canonical events", () => {
       maxDiaryFollowUps: 0,
       diaryRoomAfterPhases: [],
       enableStrategicReflections: false,
+      formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
     }, undefined, {
       durableEventSink: (events) => {
         flushedSequences.push(...events.map((event) => event.sequence));

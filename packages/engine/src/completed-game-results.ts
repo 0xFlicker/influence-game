@@ -101,6 +101,11 @@ export interface CompletedGameResultsVoteBombScore {
   zeroSafe: boolean;
 }
 
+export interface CompletedGameResultsMajorityEliminationScore {
+  player: RevealedPlayerRef;
+  votes: number;
+}
+
 export interface CompletedGameResultsSafetyBounceScore {
   player: RevealedPlayerRef;
   votes: number;
@@ -114,6 +119,10 @@ export type CompletedGameResultsFormatScoring =
   | {
       kind: "vote_bomb";
       rows: CompletedGameResultsVoteBombScore[];
+    }
+  | {
+      kind: "majority_elimination";
+      rows: CompletedGameResultsMajorityEliminationScore[];
     }
   | {
       kind: "safety_bounce";
@@ -449,6 +458,21 @@ function buildFormatScoring(
               votes,
               zeroSafe: zeroSafeIds.has(playerId),
             }];
+      }),
+    };
+  }
+  if (
+    format.selectedFormatId === "majority_elimination"
+    && format.majorityElimination
+  ) {
+    const totalsByPlayer = voteCountMap(format.majorityElimination.totals);
+    return {
+      kind: "majority_elimination",
+      rows: projection.playerOrder.flatMap((playerId) => {
+        const votes = totalsByPlayer.get(playerId);
+        return votes === undefined
+          ? []
+          : [{ player: playerRef(projection, playerId), votes }];
       }),
     };
   }

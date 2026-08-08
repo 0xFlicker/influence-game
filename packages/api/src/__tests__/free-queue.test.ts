@@ -107,7 +107,11 @@ describe("free queue season admission", () => {
     const seats = await db.select().from(schema.gamePlayers)
       .where(eq(schema.gamePlayers.gameId, body.gameId));
     expect(game?.seasonId).toBe(season.id);
+    expect(game?.minPlayers).toBe(6);
+    expect(game?.maxPlayers).toBe(12);
     const gameConfig = JSON.parse(game!.config);
+    expect(gameConfig.minPlayers).toBe(6);
+    expect(gameConfig.maxPlayers).toBe(12);
     expect(gameConfig.modelSelection).toEqual({
       catalogId: "openai:gpt-5.6-luna",
       reasoningPolicy: "action-policy",
@@ -133,7 +137,8 @@ describe("free queue season admission", () => {
       expect(seat?.agentRevisionId).toBeTruthy();
     }
     const standingEntries = await db.select().from(schema.freeGameQueue);
-    expect(standingEntries).toEqual(standingBefore);
+    const byId = (left: { id: string }, right: { id: string }) => left.id.localeCompare(right.id);
+    expect(standingEntries.toSorted(byId)).toEqual(standingBefore.toSorted(byId));
     expect(standingEntries.every((entry) => entry.consecutiveMisses === 0)).toBe(true);
     expect(await db.select().from(schema.competitionRatingSnapshots)).toEqual([]);
   });

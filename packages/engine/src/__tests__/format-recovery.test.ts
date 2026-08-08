@@ -3,6 +3,7 @@ import { GameRunner } from "../game-runner";
 import { GameState } from "../game-state";
 import {
   buildFormatKernelStateForResume,
+  formatManifestFromCanonicalEvents,
   validateFormatResumePrerequisites,
 } from "../format-recovery";
 import type { GameConfig } from "../types";
@@ -75,6 +76,61 @@ function buildState(params: {
 }
 
 describe("validateFormatResumePrerequisites", () => {
+  test("accepts menu-less one-format selection and hydrates it as locked", () => {
+    const state = new GameState(PLAYERS, {
+      gameId: "one-format-recovery",
+      formatManifest: ["vote_bomb"],
+    });
+    state.startRound();
+    state.setEmpowered("atlas");
+    state.recordFormatSelected("atlas", "vote_bomb");
+
+    expect(validateFormatResumePrerequisites("format_pick", state.getCanonicalEvents())).toBeNull();
+    expect(validateFormatResumePrerequisites("format_mingle", state.getCanonicalEvents())).toBeNull();
+    const hydrated = buildFormatKernelStateForResume({
+      actorCoordinate: "format_mingle",
+      canonicalEvents: state.getCanonicalEvents(),
+      getPlayerName: (id) => state.getPlayerName(id),
+    });
+    expect(hydrated.offeredFormats).toBeNull();
+    expect(hydrated.selectedFormat).toBe("vote_bomb");
+    expect(hydrated.pressure?.offeredFormats).toEqual(["vote_bomb"]);
+  });
+
+  test("uses the original trio for historical starts and rejects corrupt persisted ids", () => {
+    const current = new GameState(PLAYERS, { gameId: "manifest-recovery" }).getCanonicalEvents();
+    const start = current[0];
+    if (!start || start.type !== "game.roster_initialized") throw new Error("expected roster");
+    const historical = [{
+      ...start,
+      payload: { players: start.payload.players },
+    }];
+    expect(formatManifestFromCanonicalEvents(historical)).toEqual([
+      "save_or_eliminate",
+      "vote_bomb",
+      "safety_bounce",
+    ]);
+
+    const corrupt = [{
+      ...start,
+      payload: { ...start.payload, formatManifest: ["unknown_format"] },
+    }] as unknown as Parameters<typeof formatManifestFromCanonicalEvents>[0];
+    expect(() => formatManifestFromCanonicalEvents(corrupt)).toThrow("registered");
+    expect(() => GameState.fromCanonicalEvents(corrupt)).toThrow("registered");
+  });
+
+  test("defensively freezes the admitted manifest from later input mutation", () => {
+    const requested = ["vote_bomb"] as Array<"vote_bomb" | "safety_bounce">;
+    const state = new GameState(PLAYERS, {
+      gameId: "frozen-manifest",
+      formatManifest: requested,
+    });
+    requested.push("safety_bounce");
+
+    expect(state.formatManifest).toEqual(["vote_bomb"]);
+    expect(formatManifestFromCanonicalEvents(state.getCanonicalEvents())).toEqual(["vote_bomb"]);
+  });
+
   test("format_menu accepts empowered-only prefix and rejects early menu facts", () => {
     const ok = buildState({});
     expect(validateFormatResumePrerequisites("format_menu", ok.getCanonicalEvents())).toBeNull();
@@ -101,6 +157,20 @@ describe("validateFormatResumePrerequisites", () => {
     expect(
       validateFormatResumePrerequisites("format_pick", selectedEarly.getCanonicalEvents()),
     ).toBe("format_pick_unexpected_format_selected");
+  });
+
+  test("rejects a registered offered format outside the frozen manifest", () => {
+    const state = new GameState(PLAYERS, {
+      gameId: "format-recovery-menu-outside-manifest",
+      formatManifest: ["vote_bomb", "save_or_eliminate"],
+    });
+    state.startRound();
+    state.setEmpowered("atlas");
+    state.recordFormatMenu("atlas", ["vote_bomb", "majority_elimination"]);
+
+    expect(
+      validateFormatResumePrerequisites("format_pick", state.getCanonicalEvents()),
+    ).toBe("format_pick_offered_format_outside_manifest");
   });
 
   test("format_mingle and format_resolve require coherent selection and reject later facts", () => {

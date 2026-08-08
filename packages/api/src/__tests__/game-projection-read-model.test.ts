@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { CanonicalGameEvent } from "@influence/engine";
+import { GameState, type CanonicalGameEvent } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import { getPersistedGameEvents } from "../services/game-event-read-model.js";
@@ -7,6 +7,7 @@ import { getPersistedGameProjection } from "../services/game-projection-read-mod
 import { setupTestDB } from "./test-utils.js";
 import {
   createCanonicalEventFixture,
+  fixedClock,
   insertCanonicalEventRows,
   insertGame,
   insertOwner,
@@ -130,6 +131,36 @@ describe("persisted game projection read model", () => {
       offeredFormatIds: ["safety_bounce", "vote_bomb"],
       selectedFormatId: "safety_bounce",
     });
+    expect(projectionRead.summary?.selectedFormatId).toBe("safety_bounce");
+  });
+
+  test("projects a one-format selection without fabricating a format menu", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const state = new GameState(
+      [
+        { id: "atlas", name: "Atlas" },
+        { id: "echo", name: "Echo" },
+      ],
+      {
+        gameId,
+        now: fixedClock(),
+        formatManifest: ["majority_elimination"],
+      },
+    );
+    state.startRound();
+    state.recordFormatSelected("atlas", "majority_elimination");
+
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch,
+      events: state.getCanonicalEvents(),
+    });
+
+    const projectionRead = getPersistedGameProjection(await getPersistedGameEvents(db, gameId));
+
+    expect(projectionRead.summary?.formatMenu).toBeNull();
+    expect(projectionRead.summary?.selectedFormatId).toBe("majority_elimination");
   });
 
   test("replays the trusted prefix of an invalid persisted log as incomplete", async () => {

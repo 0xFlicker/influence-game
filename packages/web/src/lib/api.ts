@@ -4,6 +4,7 @@
  */
 
 import { gamePathSegment } from "./game-links";
+import type { CreateGamePlayerCount } from "./game-creation";
 import type {
   CompletedGameResultsAvailabilityStatus as EngineCompletedGameResultsAvailabilityStatus,
   CompletedGameResultsElimination as EngineCompletedGameResultsElimination,
@@ -17,6 +18,7 @@ import type {
   GameKernel as EngineGameKernel,
   GameKernelContradictionDiagnostic as EngineGameKernelContradictionDiagnostic,
   GameKernelSource as EngineGameKernelSource,
+  LaunchFormatId as EngineLaunchFormatId,
   Phase as EnginePhase,
   RevealedCanonicalFactsStatus as EngineRevealedCanonicalFactsStatus,
   RevealedFactsStatus as EngineRevealedFactsStatus,
@@ -418,7 +420,7 @@ export interface GameWatchReplayFrame {
 export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
-  playerCount: 4 | 6 | 8 | 10 | 12;
+  playerCount: CreateGamePlayerCount;
   slotType: "all_ai" | "mixed";
   modelSelection: GameModelSelection;
   personaPool: PersonaKey[];
@@ -427,6 +429,7 @@ export interface CreateGameParams {
   maxRounds: number | "auto";
   visibility: GameVisibility;
   viewerMode: "live" | "speedrun";
+  formatManifest?: EngineLaunchFormatId[];
 }
 
 export type ModelReasoningPolicy = "action-policy" | "low" | "medium" | "high";
@@ -450,6 +453,8 @@ export interface GameSummary {
   modelLabel: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
+  /** Frozen game configuration; absent only on historical/mock payloads. */
+  formatManifest?: EngineLaunchFormatId[];
   trackType?: TrackType;
   seasonId?: string;
   season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
@@ -2390,6 +2395,8 @@ export interface GameDetail {
   modelLabel: string;
   visibility: GameVisibility;
   viewerMode: ViewerMode;
+  /** Frozen game configuration; absent only on historical/mock payloads. */
+  formatManifest?: EngineLaunchFormatId[];
   seasonId?: string;
   season?: Pick<SeasonIdentity, "id" | "slug" | "name">;
   rated?: boolean;

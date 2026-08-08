@@ -2,10 +2,14 @@ export type {
   BounceBoard,
   BounceClassification,
   BouncePointer,
+  FormatCapabilityClass,
   FormatEliminationResolution,
   LaunchFormatId,
   SaveOrEliminateBallot,
   SaveOrEliminatePolarity,
+  SealedElimAggregate,
+  SealedElimBallot,
+  SealedElimScore,
   VoteBombBallot,
 } from "./types";
 export { displayNameForFormat, LAUNCH_FORMAT_DISPLAY_NAMES, LAUNCH_FORMAT_IDS } from "./types";
@@ -32,6 +36,32 @@ export {
 } from "./vote-bomb";
 
 export {
+  computeMajorityEliminationTallies,
+  isLegalMajorityEliminationBallot,
+  resolveMajorityElimination,
+} from "./majority-elimination";
+
+export {
+  DEFAULT_FORMAT_MANIFEST,
+  LEGACY_FORMAT_MANIFEST,
+  FORMAT_CATALOG,
+  getFormatRegistration,
+  isRegisteredFormatId,
+  resolveFormatManifest,
+  requireSealedElimRegistration,
+  type FormatCatalog,
+  type FormatRegistration,
+  type FormatRegistrationFor,
+  type PublicChainRegistration,
+  type SealedElimAggregateAdapter,
+  type SealedElimDecisionContract,
+  type SealedElimFormatId,
+  type SealedElimPresentationContract,
+  type SealedElimRegistration,
+  type SealedPolarityRegistration,
+} from "./catalog";
+
+export {
   actorClassification,
   applyBouncePointer,
   bouncePoolSizes,
@@ -46,3 +76,21 @@ export {
   buildHouseFormatResolutionFacts,
   type PlayerNameResolver,
 } from "./house-resolution-facts";
+
+export {
+  isLegalSealedElimBallot,
+  resolveSealedElimRound,
+  scoreSealedElimBallots,
+  type AcceptedSealedElimDecision,
+  type CollectedSealedElimDecision,
+  type ResolveSealedElimOptions,
+  type ResolvedSealedElimRound,
+  type SealedElimParticipant,
+  type SealedElimTieResolution,
+} from "./sealed-elim-resolve";
+
+export {
+  formatResolutionAggregate,
+  toFormatResolutionPayloadV2,
+  type FormatResolvedEvent,
+} from "./resolution-access";

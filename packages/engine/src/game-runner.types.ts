@@ -68,6 +68,8 @@ export interface GameRunnerOptions {
   beforeAcceptedCommit?: () => Promise<void> | void;
   /** Optional token tracker for checkpoint cursor evidence (API-backed games). */
   tokenTracker?: TokenTracker;
+  /** Injectable format-menu RNG for deterministic simulation and tests. */
+  random?: () => number;
 }
 
 export const PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES = [
@@ -958,6 +960,7 @@ export type FormatDecisionFallbackReason =
   | "invalid_format_choice"
   | "invalid_save_or_eliminate_ballot"
   | "invalid_vote_bomb_target"
+  | "invalid_majority_elimination_target"
   | "invalid_bounce_pointer"
   | "invalid_safety_bounce_target"
   | "invalid_format_tiebreak_target";
@@ -1093,6 +1096,10 @@ export interface IAgent {
     reasoningContext?: string;
   }>;
   getVoteBombBallot?(
+    context: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getMajorityEliminationBallot?(
     context: PhaseContext,
     aliveIds: UUID[],
   ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;

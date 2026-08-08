@@ -107,8 +107,8 @@ describe("buildHouseFormatResolutionFacts", () => {
       formatId: "vote_bomb",
       empoweredId: "a",
       eliminatedId: "c",
-      resolutionKind: "clear",
-      tiedPlayerIds: [],
+      resolutionKind: "auto",
+      tiedPlayerIds: ["c"],
       tiebreakerId: null,
       saveOrEliminate: null,
       voteBomb: {
@@ -168,6 +168,62 @@ describe("buildHouseFormatResolutionFacts", () => {
     expect(sb?.safeNames.sort()).toEqual(["A", "C"]);
     expect(sb?.vulnerableNames.sort()).toEqual(["B", "D"]);
     expect(sb?.scores.find((s) => s.playerName === "D")?.value).toBe(3);
+  });
+
+  it("rebuilds menu-less Majority Elimination plurality facts from canonical events", () => {
+    const state = new GameState(
+      [
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+        { id: "c", name: "C" },
+        { id: "d", name: "D" },
+      ],
+      {
+        gameId: "house-majority-elimination-facts",
+        now: fixedClock(),
+        formatManifest: ["majority_elimination"],
+      },
+    );
+    state.startRound();
+    state.setEmpowered("a", "initial");
+    state.recordFormatSelected("a", "majority_elimination");
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "a", targetId: "b" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "b", targetId: "c" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "c", targetId: "b" });
+    state.recordFormatBallot({ formatId: "majority_elimination", voterId: "d", targetId: "b" });
+    state.recordFormatResolution({
+      formatId: "majority_elimination",
+      empoweredId: "a",
+      eliminatedId: "b",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["b"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { a: 0, b: 3, c: 1, d: 0 },
+        eligiblePlayerIds: ["a", "b", "c", "d"],
+      },
+    });
+
+    const facts = buildHouseFormatResolutionFacts(
+      state.getCanonicalEvents(),
+      1,
+      names(state),
+    );
+    expect(facts).not.toBeNull();
+    expect(facts?.formatId).toBe("majority_elimination");
+    expect(facts?.offeredFormatIds).toBeNull();
+    expect(facts?.ballots).toHaveLength(4);
+    expect(facts?.zeroSafeNames).toEqual([]);
+    expect(facts?.vulnerableNames).toEqual([]);
+    expect(facts?.scores).toEqual([
+      { playerName: "A", value: 0, bucket: "plurality_total" },
+      { playerName: "B", value: 3, bucket: "plurality_total" },
+      { playerName: "C", value: 1, bucket: "plurality_total" },
+      { playerName: "D", value: 0, bucket: "plurality_total" },
+    ]);
+    expect(facts?.resolutionSummary).toContain("highest total");
+    expect(facts?.eliminatedName).toBe("B");
   });
 
   it("returns null when the round has no format.resolved event", () => {

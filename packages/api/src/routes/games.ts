@@ -79,11 +79,15 @@ import {
   getGameCompletionSettlementStateMap,
 } from "../services/game-completion-settlement.js";
 import {
+  LEGACY_FORMAT_MANIFEST,
+  MAX_NEW_GAME_PLAYERS,
+  MIN_NEW_GAME_PLAYERS,
   generatePersona,
   normalizeGameModelSelection,
   normalizeOpenAIRequestServiceTier,
   pickAgentNames,
   pickArchetypes,
+  resolveFormatManifest,
   resolveModelSelection,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
@@ -136,10 +140,24 @@ export function createGameRoutes(
       slotType,
       viewerMode,
       serviceTier,
+      formatManifest,
     } = body;
 
-    const minPlayers = 4;
-    const maxPlayers = playerCount ?? 12;
+    if (
+      playerCount !== undefined
+      && (
+        !Number.isInteger(playerCount)
+        || playerCount < MIN_NEW_GAME_PLAYERS
+        || playerCount > MAX_NEW_GAME_PLAYERS
+      )
+    ) {
+      return c.json({
+        error: `playerCount must be an integer between ${MIN_NEW_GAME_PLAYERS} and ${MAX_NEW_GAME_PLAYERS}`,
+      }, 400);
+    }
+
+    const minPlayers = MIN_NEW_GAME_PLAYERS;
+    const maxPlayers = playerCount ?? MAX_NEW_GAME_PLAYERS;
 
     // Build GameConfig (engine-compatible)
     const timerPresets: Record<string, Record<string, number>> = {
@@ -204,6 +222,15 @@ export function createGameRoutes(
       return c.json({ error: "Model is not game-ready" }, 400);
     }
 
+    let frozenFormatManifest;
+    try {
+      frozenFormatManifest = resolveFormatManifest(formatManifest);
+    } catch (error) {
+      return c.json({
+        error: error instanceof Error ? error.message : "Invalid format manifest",
+      }, 400);
+    }
+
     const config = {
       timers,
       maxRounds: computedMaxRounds,
@@ -221,6 +248,7 @@ export function createGameRoutes(
       visibility: visibility ?? "public",
       slotType: slotType ?? "all_ai",
       viewerMode: resolvedViewerMode,
+      formatManifest: frozenFormatManifest,
     };
 
     const gameId = randomUUID();
@@ -278,40 +306,52 @@ export function createGameRoutes(
       getGameCompletionSettlementStateMap(db, gameIds),
     ]);
 
-    const summaries = rows.map((game) => {
-      const config = JSON.parse(game.config);
-      const summaryRead = watchSummaryReadsByGameId.get(game.id) ?? { status: "missing" as const };
-      const watchState = summaryRead.status === "current"
-        ? summaryRead.summary
-        : buildFallbackGameWatchStateSummary(game, config);
+    const summaries = rows.flatMap((game) => {
+      try {
+        const config = JSON.parse(game.config);
+        const formatManifest = resolveFormatManifest(
+          config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
+        );
+        const summaryRead = watchSummaryReadsByGameId.get(game.id) ?? { status: "missing" as const };
+        const watchState = summaryRead.status === "current"
+          ? summaryRead.summary
+          : buildFallbackGameWatchStateSummary(game, config);
 
-      return {
-        id: game.id,
-        slug: game.slug,
-        status: game.status,
-        playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
-        currentRound: watchState.currentRound,
-        maxRounds: config.maxRounds ?? 10,
-        currentPhase: watchState.currentPhase,
-        phaseTimeRemaining: null,
-        alivePlayers: watchState.counts.alivePlayers,
-        eliminatedPlayers: watchState.counts.eliminatedPlayers,
-        modelLabel: modelLabelFromConfig(config),
-        visibility: config.visibility ?? "public",
-        viewerMode: config.viewerMode ?? "speedrun",
-        trackType: game.trackType,
-        seasonId: game.seasonId ?? undefined,
-        season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
-        rated: Boolean(game.seasonId),
-        winner: watchState.winner?.name,
-        errorInfo: publicErrorInfo(game.status, config, settlementStateByGameId.get(game.id)),
-        kernelHealth: kernelHealthByGameId.get(game.id),
-        watchState,
-        watchStateSummaryStatus: summaryRead.status,
-        createdAt: game.createdAt,
-        startedAt: game.startedAt ?? undefined,
-        completedAt: game.endedAt ?? undefined,
-      };
+        return [{
+          id: game.id,
+          slug: game.slug,
+          status: game.status,
+          playerCount: game.maxPlayers ?? config.maxPlayers ?? watchState.counts.totalPlayers,
+          currentRound: watchState.currentRound,
+          maxRounds: config.maxRounds ?? 10,
+          currentPhase: watchState.currentPhase,
+          phaseTimeRemaining: null,
+          alivePlayers: watchState.counts.alivePlayers,
+          eliminatedPlayers: watchState.counts.eliminatedPlayers,
+          modelLabel: modelLabelFromConfig(config),
+          visibility: config.visibility ?? "public",
+          viewerMode: config.viewerMode ?? "speedrun",
+          formatManifest,
+          trackType: game.trackType,
+          seasonId: game.seasonId ?? undefined,
+          season: game.seasonId ? seasonById.get(game.seasonId) : undefined,
+          rated: Boolean(game.seasonId),
+          winner: watchState.winner?.name,
+          errorInfo: publicErrorInfo(game.status, config, settlementStateByGameId.get(game.id)),
+          kernelHealth: kernelHealthByGameId.get(game.id),
+          watchState,
+          watchStateSummaryStatus: summaryRead.status,
+          createdAt: game.createdAt,
+          startedAt: game.startedAt ?? undefined,
+          completedAt: game.endedAt ?? undefined,
+        }];
+      } catch (error) {
+        console.warn(
+          `[games] Skipping corrupt list row for game ${game.id}:`,
+          error instanceof Error ? error.message : error,
+        );
+        return [];
+      }
     });
 
     return c.json(summaries);
@@ -335,6 +375,9 @@ export function createGameRoutes(
     }
 
     const config = JSON.parse(game.config);
+    const formatManifest = resolveFormatManifest(
+      config.formatManifest ?? LEGACY_FORMAT_MANIFEST,
+    );
     const completionSettlementState = await getGameCompletionSettlementState(db, game.id);
 
     const result = await db
@@ -372,6 +415,7 @@ export function createGameRoutes(
       modelLabel: modelLabelFromConfig(config),
       visibility: config.visibility ?? "public",
       viewerMode: config.viewerMode ?? "speedrun",
+      formatManifest,
       seasonId: game.seasonId ?? undefined,
       season: competition
         ? {

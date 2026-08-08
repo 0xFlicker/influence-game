@@ -72,7 +72,9 @@ describe("canonical event envelope", () => {
     expect(result.errors).toContain("sequence must be a positive integer");
     expect(result.errors).toContain("gameId is required");
     expect(result.errors).toContain("visibility is invalid");
-    expect(result.errors).toContain("payloadVersion must be 1");
+    expect(result.errors).toContain(
+      "payloadVersion for game.roster_initialized must be 1, got 2",
+    );
   });
 
   it("rejects unknown event types before replay can silently ignore them", () => {
@@ -80,6 +82,74 @@ describe("canonical event envelope", () => {
 
     expect(result.ok).toBe(false);
     expect(result.errors).toContain("type is unsupported: future.event");
+  });
+
+  it("accepts v2 only for aggregate-shaped format resolutions", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "format-v2-validation" },
+    );
+    state.recordFormatResolution({
+      formatId: "vote_bomb",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["bob"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { alice: 0, bob: 1 },
+        eligiblePlayerIds: ["bob"],
+      },
+    });
+    const resolution = state.getCanonicalEvents().at(-1)!;
+    expect(validateCanonicalGameEvent(resolution)).toEqual({ ok: true, errors: [] });
+    expect(validateCanonicalGameEvent({
+      ...resolution,
+      payload: { ...resolution.payload, voteBomb: null },
+    }).errors).toContain(
+      "format.resolved v2 payload must not contain legacy bag voteBomb",
+    );
+    expect(validateCanonicalGameEvent({
+      ...resolution,
+      payloadVersion: 3,
+    }).errors).toContain(
+      "payloadVersion for format.resolved must be 1 or 2, got 3",
+    );
+    expect(validateCanonicalGameEvent({
+      ...sampleEvent(),
+      payloadVersion: 2,
+    }).errors).toContain(
+      "payloadVersion for game.roster_initialized must be 1, got 2",
+    );
+  });
+
+  it("rejects v1 format resolutions missing the selected format's exclusive bag", () => {
+    const invalid = {
+      ...sampleEvent(),
+      round: 1,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "format.resolved",
+      visibility: "public",
+      payload: {
+        formatId: "vote_bomb",
+        empoweredId: "alice",
+        eliminatedId: "bob",
+        resolutionKind: "auto",
+        tiedPlayerIds: ["bob"],
+        tiebreakerId: null,
+        saveOrEliminate: null,
+        voteBomb: null,
+        safetyBounce: null,
+      },
+    };
+
+    expect(validateCanonicalGameEvent(invalid).errors).toContain(
+      "format.resolved v1 vote_bomb requires the voteBomb bag exclusively",
+    );
   });
 
   it("filters producer-only events out of player-visible query modes", () => {
@@ -371,6 +441,11 @@ describe("accepted action registry", () => {
     expect(acceptedActionRegistryEntry("power.action_set")).toMatchObject({
       sourceActions: ["power", "power-action"],
       traceActions: ["power"],
+      cardinality: "one_to_one",
+    });
+    expect(acceptedActionRegistryEntry("format.ballot_cast")).toMatchObject({
+      sourceActions: expect.arrayContaining(["format-majority-elimination-ballot"]),
+      traceActions: expect.arrayContaining(["format-majority-elimination-ballot"]),
       cardinality: "one_to_one",
     });
     expect(acceptedActionRegistryEntry("endgame.elimination_resolved")).toMatchObject({
@@ -671,6 +746,31 @@ describe("format.menu_offered", () => {
       offeredFormatIds: ["safety_bounce", "vote_bomb"],
       selectedFormatId: "safety_bounce",
     });
+    expect(gs.getDomainProjection().selectedFormatId).toBe("safety_bounce");
+  });
+
+  it("projects a one-format selection without fabricating a menu and resets it next round", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      {
+        gameId: "game-fixed",
+        now: () => 1_700_000_000_000,
+        formatManifest: ["majority_elimination"],
+      },
+    );
+    gs.startRound();
+
+    gs.recordFormatSelected("alice", "majority_elimination");
+
+    expect(gs.getDomainProjection().formatMenu).toBeNull();
+    expect(gs.getDomainProjection().selectedFormatId).toBe("majority_elimination");
+
+    gs.startRound();
+
+    expect(gs.getDomainProjection().selectedFormatId).toBeNull();
   });
 
   it("keeps sealed format ballots producer-only while bounce pointers stay public", () => {

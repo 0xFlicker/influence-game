@@ -15,7 +15,7 @@ import type {
   CanonicalGameEventType,
   CanonicalSourcePointer,
   EndgameSpeechKind,
-  FormatResolutionPayload,
+  AnyFormatResolutionPayload,
   FormalSpeechProvenance,
   JudgmentSpeechKind,
   JudgmentSpeechProvenance,
@@ -28,7 +28,11 @@ import {
 } from "./exposure-bench";
 import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
 import { replayCanonicalEvents, type CanonicalGameProjection } from "./game-projection";
-import type { LaunchFormatId } from "./formats";
+import {
+  resolveFormatManifest,
+  toFormatResolutionPayloadV2,
+  type LaunchFormatId,
+} from "./formats";
 import type {
   AllianceArchiveReason,
   AllianceAmendmentInput,
@@ -66,6 +70,7 @@ export function createUUID(): UUID {
 export interface GameStateOptions {
   gameId?: UUID;
   now?: () => number;
+  formatManifest?: readonly LaunchFormatId[];
 }
 
 export interface AllianceMutationOptions {
@@ -210,6 +215,7 @@ function responsesForLineageVersion(
 
 export class GameState {
   readonly gameId: UUID;
+  readonly formatManifest: readonly LaunchFormatId[];
   private readonly canonicalEvents = new CanonicalEventLog();
   private readonly now: () => number;
   private _players = new Map<UUID, Player>();
@@ -264,6 +270,7 @@ export class GameState {
 
   constructor(players: { id: UUID; name: string }[], options: GameStateOptions = {}) {
     this.gameId = options.gameId ?? createUUID();
+    this.formatManifest = resolveFormatManifest(options.formatManifest);
     this.now = options.now ?? Date.now;
     for (const p of players) {
       this._players.set(p.id, {
@@ -281,6 +288,7 @@ export class GameState {
         status: player.status,
         shielded: player.shielded,
       })),
+      formatManifest: [...this.formatManifest],
     }, { phase: Phase.INIT, visibility: "system" });
   }
 
@@ -291,7 +299,11 @@ export class GameState {
       if (!player) throw new Error(`Canonical projection missing player ${id}`);
       return { id: player.id, name: player.name };
     });
-    const state = new GameState(players, { gameId: projection.gameId, ...options });
+    const state = new GameState(players, {
+      gameId: projection.gameId,
+      formatManifest: projection.formatManifest,
+      ...options,
+    });
     state.canonicalEvents.replaceAll(events);
     state._players = new Map(
       projection.playerOrder.map((id) => {
@@ -2218,9 +2230,10 @@ export class GameState {
   }
 
   recordFormatResolution(
-    resolution: FormatResolutionPayload,
+    resolutionInput: AnyFormatResolutionPayload,
     sourcePointers: CanonicalSourcePointer[] = [],
   ): void {
+    const resolution = toFormatResolutionPayloadV2(resolutionInput);
     this.appendCanonicalEvent("format.resolved", {
       formatId: resolution.formatId,
       empoweredId: resolution.empoweredId,
@@ -2228,27 +2241,26 @@ export class GameState {
       resolutionKind: resolution.resolutionKind,
       tiedPlayerIds: [...resolution.tiedPlayerIds],
       tiebreakerId: resolution.tiebreakerId,
-      saveOrEliminate: resolution.saveOrEliminate
+      aggregate: resolution.aggregate.capability === "sealed_elim"
         ? {
-            nets: { ...resolution.saveOrEliminate.nets },
-            savesReceived: { ...resolution.saveOrEliminate.savesReceived },
-            eliminateReceived: { ...resolution.saveOrEliminate.eliminateReceived },
+            capability: "sealed_elim" as const,
+            totals: { ...resolution.aggregate.totals },
+            eligiblePlayerIds: [...resolution.aggregate.eligiblePlayerIds],
           }
-        : null,
-      voteBomb: resolution.voteBomb
-        ? {
-            totals: { ...resolution.voteBomb.totals },
-            zeroSafePlayerIds: [...resolution.voteBomb.zeroSafePlayerIds],
-          }
-        : null,
-      safetyBounce: resolution.safetyBounce
-        ? {
-            starterId: resolution.safetyBounce.starterId,
-            safePlayerIds: [...resolution.safetyBounce.safePlayerIds],
-            vulnerablePlayerIds: [...resolution.safetyBounce.vulnerablePlayerIds],
-            voteTotals: { ...resolution.safetyBounce.voteTotals },
-          }
-        : null,
+        : resolution.aggregate.capability === "sealed_polarity"
+          ? {
+              capability: "sealed_polarity" as const,
+              nets: { ...resolution.aggregate.nets },
+              savesReceived: { ...resolution.aggregate.savesReceived },
+              eliminateReceived: { ...resolution.aggregate.eliminateReceived },
+            }
+          : {
+              capability: "public_chain" as const,
+              starterId: resolution.aggregate.starterId,
+              safePlayerIds: [...resolution.aggregate.safePlayerIds],
+              vulnerablePlayerIds: [...resolution.aggregate.vulnerablePlayerIds],
+              voteTotals: { ...resolution.aggregate.voteTotals },
+            },
     }, {
       phase: Phase.FORMAT_RESOLVE,
       visibility: "public",

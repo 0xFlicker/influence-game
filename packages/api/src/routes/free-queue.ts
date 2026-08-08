@@ -32,6 +32,9 @@ import {
 } from "../services/public-player-identity.js";
 import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
+  DEFAULT_FORMAT_MANIFEST,
+  MAX_NEW_GAME_PLAYERS,
+  MIN_NEW_GAME_PLAYERS,
   pickAgentNames,
   pickArchetypes,
 } from "@influence/engine";
@@ -258,8 +261,8 @@ export function createFreeQueueRoutes(
       }, 400);
     }
 
-    const maxPlayers = 12;
-    const minPlayers = 4;
+    const maxPlayers = MAX_NEW_GAME_PLAYERS;
+    const minPlayers = MIN_NEW_GAME_PLAYERS;
 
     // Create the game
     const gameId = randomUUID();
@@ -290,6 +293,7 @@ export function createFreeQueueRoutes(
       visibility: "public",
       slotType: "mixed",
       viewerMode: "live",
+      formatManifest: [...DEFAULT_FORMAT_MANIFEST],
     };
 
     const user = c.get("user");

@@ -31,6 +31,7 @@ import {
 import {
   buildHouseFormatResolutionFacts,
   displayNameForFormat,
+  resolveFormatManifest,
   type LaunchFormatId,
 } from "./formats";
 
@@ -103,6 +104,7 @@ export class GameRunner {
   private readonly beforeAcceptedCommit?: GameRunnerOptions["beforeAcceptedCommit"];
   private readonly tokenTracker?: TokenTracker;
   private readonly resumeFrom?: GameRunnerOptions["resumeFrom"];
+  private readonly random?: () => number;
   private flushedCanonicalSequence = 0;
   private terminalStreamReleased = false;
   private readonly writtenCheckpointKeys = new Set<string>();
@@ -131,14 +133,22 @@ export class GameRunner {
     const maxRounds = options.maxRoundsMode === "exact"
       ? config.maxRounds
       : Math.max(config.maxRounds, scaledMaxRounds);
-    this.config = { ...config, maxRounds };
     this.totalPlayerCount = agents.length;
     this.agents = new Map(agents.map((a) => [a.id, a]));
     const gameStateOptions = options.gameId ? { gameId: options.gameId } : {};
     this.resumeFrom = options.resumeFrom;
     this.gameState = options.resumeFrom
       ? GameState.fromCanonicalEvents(options.resumeFrom.canonicalEvents)
-      : new GameState(agents.map((a) => ({ id: a.id, name: a.name })), gameStateOptions);
+      : new GameState(agents.map((a) => ({ id: a.id, name: a.name })), {
+          ...gameStateOptions,
+          formatManifest: resolveFormatManifest(config.formatManifest),
+        });
+    this.config = {
+      ...config,
+      maxRounds,
+      formatManifest: [...this.gameState.formatManifest],
+    };
+    this.random = options.random;
     if (options.resumeFrom) {
       for (const event of options.resumeFrom.canonicalEvents) {
         if (event.type !== "player.eliminated") continue;
@@ -401,6 +411,7 @@ export class GameRunner {
       eliminationOrder: this.eliminationOrder,
       eliminationOrderPlayerIds: this.eliminationOrderPlayerIds,
       beforeAcceptedCommit: this.beforeAcceptedCommit,
+      random: this.random,
     };
   }
 

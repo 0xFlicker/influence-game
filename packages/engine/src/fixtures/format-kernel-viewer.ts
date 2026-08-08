@@ -14,6 +14,8 @@ export const FORMAT_KERNEL_VIEWER_ROSTER = [
 export const FORMAT_KERNEL_VIEWER_SCENARIO_IDS = [
   "save_or_eliminate_clear",
   "vote_bomb_clear",
+  "majority_elimination_clear",
+  "majority_elimination_tie",
   "safety_bounce_tie",
   "safety_bounce_sole_vulnerable",
   "terminal_menu",
@@ -57,6 +59,8 @@ export function createFormatKernelViewerScenario(
   const roster = FORMAT_KERNEL_VIEWER_ROSTER.map((player) => ({ ...player }));
   const saveOrEliminate = createSaveOrEliminateViewerDecisions();
   const voteBomb = createVoteBombViewerDecisions();
+  const majorityEliminationClear = createMajorityEliminationClearViewerDecisions();
+  const majorityEliminationTie = createMajorityEliminationTieViewerDecisions();
   const safetyBounce = createSafetyBounceViewerDecisions();
 
   switch (id) {
@@ -73,6 +77,24 @@ export function createFormatKernelViewerScenario(
       return scenario(id, roster, voteBomb, {
         status: "ready",
         selectedFormatId: "vote_bomb",
+        resolutionKind: "clear",
+        eliminatedId: "echo",
+        tiebreakerId: "atlas",
+        ballotPresentation: "revealed",
+      });
+    case "majority_elimination_clear":
+      return scenario(id, roster, majorityEliminationClear, {
+        status: "ready",
+        selectedFormatId: "majority_elimination",
+        resolutionKind: "auto",
+        eliminatedId: "lyra",
+        tiebreakerId: null,
+        ballotPresentation: "revealed",
+      });
+    case "majority_elimination_tie":
+      return scenario(id, roster, majorityEliminationTie, {
+        status: "ready",
+        selectedFormatId: "majority_elimination",
         resolutionKind: "clear",
         eliminatedId: "echo",
         tiebreakerId: "atlas",
@@ -253,13 +275,12 @@ export function createSaveOrEliminateViewerDecisions(): ViewerDecisionEvent[] {
       resolutionKind: "clear",
       tiedPlayerIds: ["lyra", "echo"],
       tiebreakerId: "atlas",
-      saveOrEliminate: {
+      aggregate: {
+        capability: "sealed_polarity",
         nets: { atlas: 1, lyra: -1, echo: -1, rex: 1 },
         savesReceived: { atlas: 1, lyra: 0, echo: 0, rex: 1 },
         eliminateReceived: { atlas: 0, lyra: 1, echo: 1, rex: 0 },
       },
-      voteBomb: null,
-      safetyBounce: null,
     }),
   ];
 }
@@ -305,12 +326,92 @@ export function createVoteBombViewerDecisions(): ViewerDecisionEvent[] {
       resolutionKind: "clear",
       tiedPlayerIds: ["echo", "rex"],
       tiebreakerId: "atlas",
-      saveOrEliminate: null,
-      voteBomb: {
+      aggregate: {
+        capability: "sealed_elim",
         totals: { atlas: 0, lyra: 2, echo: 1, rex: 1 },
-        zeroSafePlayerIds: ["atlas"],
+        eligiblePlayerIds: ["lyra", "echo", "rex"],
       },
-      safetyBounce: null,
+    }),
+  ];
+}
+
+export function createMajorityEliminationClearViewerDecisions(): ViewerDecisionEvent[] {
+  return createMajorityEliminationViewerDecisions({
+    sequenceStart: 60,
+    ballots: [
+      ["atlas", "lyra"],
+      ["lyra", "echo"],
+      ["echo", "lyra"],
+      ["rex", "lyra"],
+    ],
+    eliminatedId: "lyra",
+    resolutionKind: "auto",
+    tiedPlayerIds: ["lyra"],
+    tiebreakerId: null,
+    totals: { atlas: 0, lyra: 3, echo: 1, rex: 0 },
+  });
+}
+
+export function createMajorityEliminationTieViewerDecisions(): ViewerDecisionEvent[] {
+  return createMajorityEliminationViewerDecisions({
+    sequenceStart: 70,
+    ballots: [
+      ["atlas", "lyra"],
+      ["lyra", "echo"],
+      ["echo", "lyra"],
+      ["rex", "echo"],
+    ],
+    eliminatedId: "echo",
+    resolutionKind: "clear",
+    tiedPlayerIds: ["lyra", "echo"],
+    tiebreakerId: "atlas",
+    totals: { atlas: 0, lyra: 2, echo: 2, rex: 0 },
+  });
+}
+
+function createMajorityEliminationViewerDecisions(input: {
+  sequenceStart: number;
+  ballots: ReadonlyArray<readonly [string, string]>;
+  eliminatedId: string;
+  resolutionKind: "clear" | "auto";
+  tiedPlayerIds: string[];
+  tiebreakerId: string | null;
+  totals: Record<string, number>;
+}): ViewerDecisionEvent[] {
+  return [
+    viewerDecision(input.sequenceStart, Phase.FORMAT_MENU, "format.menu_offered", {
+      empoweredId: "atlas",
+      offeredFormatIds: ["majority_elimination", "save_or_eliminate"],
+    }),
+    viewerDecision(input.sequenceStart + 1, Phase.FORMAT_PICK, "format.selected", {
+      empoweredId: "atlas",
+      formatId: "majority_elimination",
+    }),
+    ...input.ballots.map(([voterId, targetId], index) =>
+      viewerDecision(
+        input.sequenceStart + 2 + index,
+        Phase.FORMAT_RESOLVE,
+        "format.ballot_cast",
+        {
+          formatId: "majority_elimination",
+          voterId,
+          targetId,
+          polarity: null,
+        },
+      )
+    ),
+    viewerDecision(input.sequenceStart + 6, Phase.FORMAT_RESOLVE, "format.resolved", {
+      formatId: "majority_elimination",
+      empoweredId: "atlas",
+      eliminatedId: input.eliminatedId,
+      resolutionKind: input.resolutionKind,
+      tiedPlayerIds: input.tiedPlayerIds,
+      tiebreakerId: input.tiebreakerId,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: input.totals,
+        eligiblePlayerIds: ["atlas", "lyra", "echo", "rex"],
+      },
     }),
   ];
 }
@@ -379,9 +480,8 @@ export function createSafetyBounceViewerDecisions(): ViewerDecisionEvent[] {
       resolutionKind: "clear",
       tiedPlayerIds: ["lyra", "rex"],
       tiebreakerId: "atlas",
-      saveOrEliminate: null,
-      voteBomb: null,
-      safetyBounce: {
+      aggregate: {
+        capability: "public_chain",
         starterId: "atlas",
         safePlayerIds: ["atlas", "echo"],
         vulnerablePlayerIds: ["lyra", "rex"],
@@ -421,9 +521,8 @@ export function createSoleVulnerableSafetyBounceViewerDecisions(): ViewerDecisio
       resolutionKind: "auto",
       tiedPlayerIds: [],
       tiebreakerId: null,
-      saveOrEliminate: null,
-      voteBomb: null,
-      safetyBounce: {
+      aggregate: {
+        capability: "public_chain",
         starterId: "atlas",
         safePlayerIds: ["atlas", "echo"],
         vulnerablePlayerIds: ["lyra"],

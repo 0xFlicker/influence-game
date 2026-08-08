@@ -30,6 +30,10 @@ The remedial Owner Learning track used only when exactly three selected current-
 
 `games.config.modelSelection` is the sole authority for a game's model. OpenAI `serviceTier` is unrelated.
 
+## New-game admission
+
+True newly created games admit 6–12 agents. This is a creation-time policy, not a universal invariant for every persisted game: historical four-player games remain readable and restorable under their existing historical contracts. Endgame progression is separate again—The Reckoning begins when exactly four agents remain, regardless of the game's original roster size.
+
 ## TranscriptEntry
 
 The chronological dialogue and observability record for a game. It may be displayed, searched, styled, and analyzed, but it is not canonical game truth: accepted state, decisions, tallies, phase transitions, results, and replay choreography derive from canonical events and projections, never transcript prose. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from other agents) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public agent text never contains hidden reasoning. Modern product capture may also carry normalized actor identity, audience player IDs, dialogue kind, and formal-speech correlation context used by owner match-read DTOs; diary/thinking rows stay outside dialogue identity.
@@ -91,15 +95,23 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format menu, Save-or-eliminate, Vote Bomb, and Safety Bounce.
+The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-eliminate, Vote Bomb, Safety Bounce, and Majority Elimination.
 
 ## Round format
 
-The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Launch formats include Save-or-eliminate, Vote Bomb, and Safety Bounce.
+The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-eliminate, Vote Bomb, Safety Bounce, and Majority Elimination.
+
+## Format catalog
+
+The registered set of round formats The House may offer under the format kernel. Catalog membership is code-registered, not invented from free-form config. Sealed single-elim formats that differ only in tally math are expected to share one sealed-ballot resolve path; public-chain, preselection/split-field, and multi-elim formats are separate capability classes. See also round format, format menu, Majority Elimination.
+
+## Format manifest
+
+The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the four-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game. A one-format manifest auto-selects its only card without a menu or empowered pick call; a manifest with two or more formats uses the normal two-card menu. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
 
 ## Format menu
 
-The two distinct legal round formats The House offers after empower resolves. The empowered agent must pick exactly one. Menu construction may use cast-size fitness and anti-repeat pressure so games show format variety; it is not a post-pick parameter twist inside a format.
+The two distinct legal round formats The House offers after empower resolves when the frozen manifest contains at least two cards. The empowered agent must pick exactly one. Menu construction uses the frozen manifest with soft anti-repeat pressure: exclude last round’s format when at least two other manifest cards remain, otherwise sample two from the manifest. A one-format manifest skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
 
 ## Save-or-eliminate
 
@@ -112,6 +124,10 @@ Also called Fewest Votes. A launch round format where each alive agent casts one
 ## Safety Bounce
 
 A launch round format where one random starter begins safe and agents alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until every agent is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with an empowered-agent tie-break. Public order under the format kernel is mingle → bounce → vote.
+
+## Majority Elimination
+
+A default catalog round format where each alive agent casts one sealed non-self elimination-direction vote. The player with the most votes is eliminated; ties for the highest total are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from Vote Bomb (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote.
 
 ## Operator
 

@@ -117,6 +117,20 @@ describe("Database Schema", () => {
       expect(rows[0]!.status).toBe("waiting");
     });
 
+    test("game admission defaults to six players with twelve seats", async () => {
+      const gameId = randomUUID();
+      await db.insert(schema.games)
+        .values({ id: gameId, slug: `test-${gameId}`, config: "{}" });
+
+      const rows = await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, gameId));
+
+      expect(rows[0]!.minPlayers).toBe(6);
+      expect(rows[0]!.maxPlayers).toBe(12);
+    });
+
     test("game slug is required by the database", async () => {
       let threw = false;
       try {

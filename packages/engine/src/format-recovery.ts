@@ -8,7 +8,12 @@
 
 import type { CanonicalGameEvent } from "./canonical-events";
 import { buildFormatPressureProjection } from "./format-pressure";
-import { isLaunchFormatId, type LaunchFormatId } from "./formats";
+import {
+  LEGACY_FORMAT_MANIFEST,
+  isLaunchFormatId,
+  resolveFormatManifest,
+  type LaunchFormatId,
+} from "./formats";
 import type { FormatKernelState } from "./phases/phase-runner-context";
 import { Phase, type UUID } from "./types";
 
@@ -86,13 +91,30 @@ export function currentRoundFromEvents(events: readonly CanonicalGameEvent[]): n
 function historicalLastSelectedFormat(
   events: readonly CanonicalGameEvent[],
 ): LaunchFormatId | null {
+  const manifest = formatManifestFromCanonicalEvents(events);
   let lastSelected: LaunchFormatId | null = null;
   for (const event of events) {
-    if (event.type === "format.selected" && isLaunchFormatId(event.payload.formatId)) {
+    if (event.type === "format.selected") {
+      if (!isLaunchFormatId(event.payload.formatId) || !manifest.includes(event.payload.formatId)) {
+        throw new Error(`Canonical format selection is outside the frozen manifest: ${event.payload.formatId}`);
+      }
       lastSelected = event.payload.formatId;
     }
   }
   return lastSelected;
+}
+
+/** Read the frozen game-start manifest, preserving the original trio for historical logs. */
+export function formatManifestFromCanonicalEvents(
+  events: readonly CanonicalGameEvent[],
+): LaunchFormatId[] {
+  const start = events.find((event) => event.type === "game.roster_initialized");
+  if (!start || start.type !== "game.roster_initialized") {
+    throw new Error("Canonical event log is missing game.roster_initialized");
+  }
+  return start.payload.formatManifest === undefined
+    ? [...LEGACY_FORMAT_MANIFEST]
+    : resolveFormatManifest(start.payload.formatManifest);
 }
 
 function parseOfferedFormats(
@@ -123,6 +145,7 @@ export function validateFormatResumePrerequisites(
   if (!empoweredId) return `${actorCoordinate}_missing_empowered`;
 
   const roundEvents = eventsInRound(canonicalEvents, round);
+  const formatManifest = formatManifestFromCanonicalEvents(canonicalEvents);
   const menus = roundEvents.filter((event) => event.type === "format.menu_offered");
   const selections = roundEvents.filter((event) => event.type === "format.selected");
   const resolutionFacts = roundEvents.filter((event) =>
@@ -143,6 +166,37 @@ export function validateFormatResumePrerequisites(
     return null;
   }
 
+
+  if (formatManifest.length === 1) {
+    const onlyFormat = formatManifest[0]!;
+    if (menus.length > 0) return `${actorCoordinate}_unexpected_menu_offered`;
+    if (selections.length === 0) return `${actorCoordinate}_missing_format_selected`;
+    if (selections.length > 1) return `${actorCoordinate}_duplicate_format_selected`;
+    const selection = selections[0];
+    if (!selection || selection.type !== "format.selected") {
+      return `${actorCoordinate}_missing_format_selected`;
+    }
+    if (selection.payload.empoweredId !== empoweredId) {
+      return `${actorCoordinate}_selection_empowered_mismatch`;
+    }
+    if (selection.payload.formatId !== onlyFormat) {
+      return `${actorCoordinate}_selection_outside_manifest`;
+    }
+    if (actorCoordinate === "format_pick") {
+      if (formatMingleAllocations.length > 0) return "format_pick_unexpected_format_mingle_allocation";
+      if (resolutionFacts.length > 0) return "format_pick_unexpected_resolution_facts";
+      return null;
+    }
+    if (actorCoordinate === "format_mingle") {
+      if (formatMingleAllocations.length > 0) return "format_mingle_unexpected_format_mingle_allocation";
+      if (resolutionFacts.length > 0) return "format_mingle_unexpected_resolution_facts";
+      return null;
+    }
+    if (formatMingleAllocations.length === 0) return "format_resolve_missing_format_mingle_allocation";
+    if (resolutionFacts.length > 0) return "format_resolve_unexpected_resolution_facts";
+    return null;
+  }
+
   if (menus.length === 0) return `${actorCoordinate}_missing_menu_offered`;
   if (menus.length > 1) return `${actorCoordinate}_duplicate_menu_offered`;
   const menu = menus[0];
@@ -154,6 +208,9 @@ export function validateFormatResumePrerequisites(
   }
   const offeredFormats = parseOfferedFormats(menu.payload.offeredFormatIds);
   if (!offeredFormats) return `${actorCoordinate}_invalid_offered_formats`;
+  if (!offeredFormats.every((formatId) => formatManifest.includes(formatId))) {
+    return `${actorCoordinate}_offered_format_outside_manifest`;
+  }
 
   if (actorCoordinate === "format_pick") {
     if (selections.length > 0) return "format_pick_unexpected_format_selected";
@@ -220,6 +277,28 @@ export function buildFormatKernelStateForResume(params: {
   if (params.actorCoordinate === "format_menu") {
     // Active menu/selection must be empty so the menu handler offers exactly once.
     return emptyActive;
+  }
+
+
+  const formatManifest = formatManifestFromCanonicalEvents(params.canonicalEvents);
+  if (formatManifest.length === 1) {
+    const round = currentRoundNumber(params.canonicalEvents);
+    const selection = eventsInRound(params.canonicalEvents, round)
+      .find((event) => event.type === "format.selected");
+    if (!selection || selection.type !== "format.selected") return emptyActive;
+    const selectedFormat = formatManifest[0]!;
+    const empoweredId = selection.payload.empoweredId;
+    return {
+      offeredFormats: null,
+      selectedFormat,
+      lastSelectedFormat: selectedFormat,
+      pressure: buildFormatPressureProjection({
+        empoweredId,
+        empoweredName: params.getPlayerName(empoweredId),
+        offeredFormats: [selectedFormat],
+        selectedFormat,
+      }),
+    };
   }
 
   const round = currentRoundNumber(params.canonicalEvents);

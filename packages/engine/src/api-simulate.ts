@@ -13,6 +13,8 @@ import {
   type ModelReasoningPolicy,
 } from "./model-catalog";
 import type { OpenAIRequestServiceTier } from "./llm-client";
+import { resolveFormatManifest, type LaunchFormatId } from "./formats";
+import { MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "./types";
 
 interface ApiSimArgs {
   apiBaseUrl: string;
@@ -30,6 +32,7 @@ interface ApiSimArgs {
   advanceTimeoutMs: number;
   pollIntervalMs: number;
   serviceTier: OpenAIRequestServiceTier;
+  formatManifest: LaunchFormatId[];
 }
 
 interface AuthExchangeResponse {
@@ -78,7 +81,9 @@ export function parseArgs(
   const args: ApiSimArgs = {
     apiBaseUrl: env.INFLUENCE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
     games: readPositiveInt(env.INFLUENCE_API_SIM_GAMES, 1),
-    players: readPositiveInt(env.INFLUENCE_API_SIM_PLAYERS, 4),
+    players: env.INFLUENCE_API_SIM_PLAYERS === undefined
+      ? MIN_NEW_GAME_PLAYERS
+      : Number(env.INFLUENCE_API_SIM_PLAYERS),
     provider: parseProvider(env.INFLUENCE_API_SIM_PROVIDER) ?? "openai",
     model: env.INFLUENCE_API_SIM_MODEL,
     modelCatalogId: env.INFLUENCE_API_SIM_MODEL_CATALOG_ID,
@@ -91,6 +96,11 @@ export function parseArgs(
     waitForAdvance: env.INFLUENCE_API_SIM_WAIT_FOR_ADVANCE !== "false",
     advanceTimeoutMs: readPositiveInt(env.INFLUENCE_API_SIM_ADVANCE_TIMEOUT_MS, 120_000),
     pollIntervalMs: readPositiveInt(env.INFLUENCE_API_SIM_POLL_INTERVAL_MS, 3_000),
+    formatManifest: resolveFormatManifest(
+      env.INFLUENCE_API_SIM_FORMAT_MANIFEST === undefined
+        ? undefined
+        : env.INFLUENCE_API_SIM_FORMAT_MANIFEST.split(",").map((value) => value.trim()).filter(Boolean),
+    ),
   };
 
   for (let i = 0; i < argv.length; i++) {
@@ -103,7 +113,7 @@ export function parseArgs(
       args.games = parseInt(next, 10);
       i++;
     } else if (arg === "--players" && next) {
-      args.players = parseInt(next, 10);
+      args.players = Number(next);
       i++;
     } else if (arg === "--provider" && next) {
       args.provider = parseProvider(next) ?? args.provider;
@@ -135,6 +145,11 @@ export function parseArgs(
     } else if (arg === "--viewer-mode" && next) {
       args.viewerMode = parseViewerMode(next) ?? args.viewerMode;
       i++;
+    } else if ((arg === "--formats" || arg === "--format-manifest") && next !== undefined) {
+      args.formatManifest = resolveFormatManifest(
+        next.split(",").map((value) => value.trim()).filter(Boolean),
+      );
+      i++;
     } else if (arg === "--no-wait-for-advance") {
       args.waitForAdvance = false;
     } else if (arg === "--advance-timeout-ms" && next) {
@@ -154,7 +169,15 @@ export function parseArgs(
   }
 
   if (!Number.isFinite(args.games) || args.games < 1) throw new Error("--games must be a positive integer");
-  if (!Number.isFinite(args.players) || args.players < 4) throw new Error("--players must be at least 4");
+  if (
+    !Number.isInteger(args.players)
+    || args.players < MIN_NEW_GAME_PLAYERS
+    || args.players > MAX_NEW_GAME_PLAYERS
+  ) {
+    throw new Error(
+      `--players must be an integer between ${MIN_NEW_GAME_PLAYERS} and ${MAX_NEW_GAME_PLAYERS}`,
+    );
+  }
   if (!hasExplicitMaxRounds) {
     args.maxRounds = defaultApiSimulationMaxRounds(args.players);
   }
@@ -234,6 +257,7 @@ export function buildGameCreateBody(args: ApiSimArgs, catalogId: string) {
     fillStrategy: "balanced",
     viewerMode: args.viewerMode,
     serviceTier: args.serviceTier,
+    formatManifest: [...args.formatManifest],
   };
 }
 
@@ -360,7 +384,7 @@ function printHelp(): void {
   bun run simulate:api -- --standard  # opt out of hosted OpenAI Flex
 
 Defaults:
-  --max-rounds scales with player count for short API smoke games (4 players -> 5)
+  --max-rounds scales with player count for short API smoke games (6 players -> 7)
 
 Auth:
   Uses INFLUENCE_API_SESSION_TOKEN when set, otherwise exchanges INFLUENCE_MCP_TOKEN

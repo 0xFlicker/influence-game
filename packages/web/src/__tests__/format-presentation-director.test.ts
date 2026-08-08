@@ -1,9 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import {
+  createMajorityEliminationTieViewerDecisions,
+  FORMAT_KERNEL_VIEWER_GAME_ID,
+  FORMAT_KERNEL_VIEWER_ROSTER,
+} from "@influence/engine/fixtures/format-kernel-viewer";
+import {
   createPresentationDirector,
   type PresentationAnimationControlAdapter,
   type PresentationClock,
 } from "../app/games/[slug]/components/format-presentation-director";
+import { compileFormatPresentationPrefix } from "../app/games/[slug]/components/format-presentation-model";
 import type { PresentationCue } from "../app/games/[slug]/components/types";
 
 class FakeClock implements PresentationClock {
@@ -331,6 +337,34 @@ describe("presentation director", () => {
     expect(director.getSnapshot().cursor).toBe(0);
     clock.tick(1);
     expect(director.getSnapshot().cursor).toBe(1);
+  });
+
+  it("preserves Majority Elimination reveal, tiebreak, and elimination semantics under reduced motion", () => {
+    const compilation = compileFormatPresentationPrefix({
+      gameId: FORMAT_KERNEL_VIEWER_GAME_ID,
+      gameKernel: "format",
+      roster: FORMAT_KERNEL_VIEWER_ROSTER,
+      decisions: createMajorityEliminationTieViewerDecisions(),
+    });
+    const director = createPresentationDirector({ reducedMotion: true });
+    director.load(compilation.cues);
+
+    expect(compilation.status).toBe("ready");
+    expect(director.getSnapshot().cueKeys).toEqual(
+      compilation.cues.map((item) => item.key),
+    );
+    expect(compilation.cues.map((item) => item.kind)).toEqual([
+      "format_menu",
+      "format_selected",
+      "format_selected",
+      "format_aggregate",
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
+      "format_tiebreak",
+      "format_elimination",
+    ]);
   });
 
   it("is idempotent across Strict Mode-style repeated loads and disposals", () => {

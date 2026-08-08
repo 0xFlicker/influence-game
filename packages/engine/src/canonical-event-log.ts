@@ -1,5 +1,4 @@
 import type {
-  CanonicalEventEnvelope,
   CanonicalEventSource,
   CanonicalEventVisibility,
   CanonicalGameEvent,
@@ -60,7 +59,8 @@ export class CanonicalEventLog {
     TType extends CanonicalGameEventType,
     TPayload extends object,
   >(draft: CanonicalEventDraft<TType, TPayload>): CanonicalGameEvent {
-    const event: CanonicalEventEnvelope<TType, TPayload> = {
+    const payloadVersion = draft.type === "format.resolved" ? 2 : 1;
+    const event = {
       sequence: this.nextSequence,
       gameId: draft.gameId,
       round: draft.round,
@@ -69,10 +69,10 @@ export class CanonicalEventLog {
       timestamp: draft.timestamp,
       source: draft.source ?? "engine",
       visibility: draft.visibility ?? "producer",
-      payloadVersion: 1,
+      payloadVersion,
       sourcePointers: draft.sourcePointers ?? [],
       payload: jsonSafe(draft.payload) as TPayload,
-    };
+    } as unknown as CanonicalGameEvent;
 
     assertCanonicalGameEvent(event);
     this.events.push(event);

@@ -1,10 +1,12 @@
 import type {
   CanonicalGameEvent,
-  FormatResolutionPayload,
+  FormatResolutionAggregate,
 } from "./canonical-events";
 import {
   computeSaveOrEliminateNets,
-  computeVoteBombTallies,
+  formatResolutionAggregate,
+  getFormatRegistration,
+  type FormatEliminationResolution,
   type LaunchFormatId,
 } from "./formats";
 import type { Phase, PowerAction, UUID } from "./types";
@@ -133,21 +135,8 @@ export type ViewerFormatResolutionPayload = {
   resolutionKind: "clear" | "auto";
   tiedPlayerIds: UUID[];
   tiebreakerId: UUID | null;
-  saveOrEliminate: {
-    nets: Record<UUID, number>;
-    savesReceived: Record<UUID, number>;
-    eliminateReceived: Record<UUID, number>;
-  } | null;
-  voteBomb: {
-    totals: Record<UUID, number>;
-    zeroSafePlayerIds: UUID[];
-  } | null;
-  safetyBounce: {
-    starterId: UUID;
-    safePlayerIds: UUID[];
-    vulnerablePlayerIds: UUID[];
-    voteTotals: Record<UUID, number>;
-  } | null;
+  /** Capability-shaped aggregate normalized from canonical v1 or v2 exactly once. */
+  aggregate: FormatResolutionAggregate;
 };
 
 export type FormatBallotPresentationStatus =
@@ -172,6 +161,8 @@ export interface ProjectFormatBallotPresentationOptions {
   round: number;
   /** Canonical roster order, narrowed to agents eligible to vote in this round. */
   eligibleVoterIds: readonly UUID[];
+  /** Frozen manifest when the caller projects a round-only event slice. */
+  formatManifest?: readonly LaunchFormatId[];
 }
 
 /**
@@ -260,7 +251,7 @@ export function projectViewerDecisionEvent(
         },
       };
     case "format.resolved":
-      return { ...base, type: event.type, payload: projectFormatResolution(event.payload) };
+      return { ...base, type: event.type, payload: projectFormatResolution(event) };
     case "power.action_set":
       return {
         ...base,
@@ -316,7 +307,11 @@ function viewerEventBase(event: CanonicalGameEvent): Omit<ViewerDecisionEvent, "
   };
 }
 
-function projectFormatResolution(payload: FormatResolutionPayload): ViewerFormatResolutionPayload {
+function projectFormatResolution(
+  event: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
+): ViewerFormatResolutionPayload {
+  const payload = event.payload;
+  const aggregate = formatResolutionAggregate(event);
   return {
     formatId: payload.formatId,
     empoweredId: payload.empoweredId,
@@ -324,27 +319,7 @@ function projectFormatResolution(payload: FormatResolutionPayload): ViewerFormat
     resolutionKind: payload.resolutionKind,
     tiedPlayerIds: [...payload.tiedPlayerIds],
     tiebreakerId: payload.tiebreakerId,
-    saveOrEliminate: payload.saveOrEliminate
-      ? {
-          nets: copyRecord(payload.saveOrEliminate.nets),
-          savesReceived: copyRecord(payload.saveOrEliminate.savesReceived),
-          eliminateReceived: copyRecord(payload.saveOrEliminate.eliminateReceived),
-        }
-      : null,
-    voteBomb: payload.voteBomb
-      ? {
-          totals: copyRecord(payload.voteBomb.totals),
-          zeroSafePlayerIds: [...payload.voteBomb.zeroSafePlayerIds],
-        }
-      : null,
-    safetyBounce: payload.safetyBounce
-      ? {
-          starterId: payload.safetyBounce.starterId,
-          safePlayerIds: [...payload.safetyBounce.safePlayerIds],
-          vulnerablePlayerIds: [...payload.safetyBounce.vulnerablePlayerIds],
-          voteTotals: copyRecord(payload.safetyBounce.voteTotals),
-        }
-      : null,
+    aggregate,
   };
 }
 
@@ -367,15 +342,22 @@ export function projectFormatBallotPresentation(
   const resolutions = eventsOfType(events, "format.resolved");
   const selected = selections.at(-1) ?? null;
   const resolved = resolutions.at(-1) ?? null;
+  const roster = options.events.find(
+    (event): event is Extract<CanonicalGameEvent, { type: "game.roster_initialized" }> =>
+      event.type === "game.roster_initialized",
+  );
 
   if (!selected && !resolved && ballots.length === 0) {
     return ballotPresentation("not_applicable");
   }
   if (
-    menus.length !== 1
-    || selections.length !== 1
+    selections.length !== 1
     || !selected
-    || !menuMatchesSelection(menus[0]!, selected)
+    || !selectionMatchesMenuOrManifest(
+      menus,
+      selected,
+      options.formatManifest ?? roster?.payload.formatManifest,
+    )
   ) {
     return ballotPresentation("unavailable");
   }
@@ -428,6 +410,17 @@ export function projectFormatBallotPresentation(
   };
 }
 
+function selectionMatchesMenuOrManifest(
+  menus: readonly Extract<CanonicalGameEvent, { type: "format.menu_offered" }>[],
+  selected: Extract<CanonicalGameEvent, { type: "format.selected" }>,
+  formatManifest: readonly LaunchFormatId[] | undefined,
+): boolean {
+  if (menus.length === 1) return menuMatchesSelection(menus[0]!, selected);
+  return menus.length === 0
+    && formatManifest?.length === 1
+    && formatManifest[0] === selected.payload.formatId;
+}
+
 function ballotPresentation(
   status: Exclude<FormatBallotPresentationStatus, "revealed">,
 ): ProjectedFormatBallotPresentation {
@@ -473,32 +466,21 @@ function validAcceptedBallots(
 function validResolutionShape(
   resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
 ): boolean {
-  const payload = resolved.payload;
-  if (payload.formatId === "save_or_eliminate") {
-    return payload.saveOrEliminate !== null
-      && payload.voteBomb === null
-      && payload.safetyBounce === null;
-  }
-  if (payload.formatId === "vote_bomb") {
-    return payload.saveOrEliminate === null
-      && payload.voteBomb !== null
-      && payload.safetyBounce === null;
-  }
-  return payload.saveOrEliminate === null
-    && payload.voteBomb === null
-    && payload.safetyBounce !== null;
+  return getFormatRegistration(resolved.payload.formatId).capability
+    === formatResolutionAggregate(resolved).capability;
 }
 
 function soleVulnerableSafetyBounce(
   resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
   ballots: readonly Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>[],
 ): boolean {
-  const bounce = resolved.payload.safetyBounce;
+  const aggregate = formatResolutionAggregate(resolved);
   return resolved.payload.formatId === "safety_bounce"
+    && aggregate.capability === "public_chain"
     && resolved.payload.resolutionKind === "auto"
-    && bounce?.vulnerablePlayerIds.length === 1
-    && bounce.vulnerablePlayerIds[0] === resolved.payload.eliminatedId
-    && Object.keys(bounce.voteTotals).length === 0
+    && aggregate.vulnerablePlayerIds.length === 1
+    && aggregate.vulnerablePlayerIds[0] === resolved.payload.eliminatedId
+    && Object.keys(aggregate.voteTotals).length === 0
     && ballots.length === 0;
 }
 
@@ -508,8 +490,9 @@ function aggregateMatchesBallots(
   eligibleVoterIds: readonly UUID[],
 ): boolean {
   const eligible = new Set(eligibleVoterIds);
+  const aggregate = formatResolutionAggregate(resolved);
   if (resolved.payload.formatId === "save_or_eliminate") {
-    const aggregate = resolved.payload.saveOrEliminate!;
+    if (aggregate.capability !== "sealed_polarity") return false;
     const computed = computeSaveOrEliminateNets(
       eligibleVoterIds,
       ballots.map((ballot) => ({
@@ -526,22 +509,24 @@ function aggregateMatchesBallots(
       )
       && countRecordMatches(aggregate.nets, computed.nets, eligible);
   }
-  if (resolved.payload.formatId === "vote_bomb") {
-    const computed = computeVoteBombTallies(
-      eligibleVoterIds,
-      ballots.map((ballot) => ({
-        voterId: ballot.payload.voterId,
-        targetId: ballot.payload.targetId,
-      })),
-    );
-    return countRecordMatches(resolved.payload.voteBomb!.totals, computed.totals, eligible)
-      && samePlayerSet(
-        resolved.payload.voteBomb!.zeroSafePlayerIds,
-        computed.zeroSafeIds,
+  if (aggregate.capability === "sealed_elim") {
+    const registration = getFormatRegistration(resolved.payload.formatId);
+    if (registration.capability !== "sealed_elim") return false;
+    const sealedBallots = ballots.map((ballot) => ({
+      voterId: ballot.payload.voterId,
+      targetId: ballot.payload.targetId,
+    }));
+    const computed = registration.score(eligibleVoterIds, sealedBallots);
+    return countRecordMatches(aggregate.totals, computed.totals, eligible)
+      && samePlayerSet(aggregate.eligiblePlayerIds, computed.eligibleIds)
+      && sealedElimOutcomeMatches(
+        resolved,
+        registration.resolve(eligibleVoterIds, sealedBallots),
       );
   }
 
-  const bounce = resolved.payload.safetyBounce!;
+  if (aggregate.capability !== "public_chain") return false;
+  const bounce = aggregate;
   const vulnerable = new Set(bounce.vulnerablePlayerIds);
   if (
     bounce.vulnerablePlayerIds.some((id) => !eligible.has(id))
@@ -554,6 +539,22 @@ function aggregateMatchesBallots(
     totals[ballot.payload.targetId] = (totals[ballot.payload.targetId] ?? 0) + 1;
   }
   return countRecordMatches(bounce.voteTotals, totals, vulnerable);
+}
+
+function sealedElimOutcomeMatches(
+  resolved: Extract<CanonicalGameEvent, { type: "format.resolved" }>,
+  expected: FormatEliminationResolution,
+): boolean {
+  const payload = resolved.payload;
+  if (!samePlayerSet(payload.tiedPlayerIds, expected.tiedSet)) return false;
+  if (expected.kind === "tie") {
+    return payload.resolutionKind === "clear"
+      && payload.tiebreakerId === payload.empoweredId
+      && expected.tiedSet.includes(payload.eliminatedId);
+  }
+  return payload.resolutionKind === expected.kind
+    && payload.eliminatedId === expected.eliminatedId
+    && payload.tiebreakerId === null;
 }
 
 function zeroCounts(ids: readonly UUID[]): Record<UUID, number> {
@@ -761,8 +762,10 @@ export function reconstructSafetyBouncePrefix(
       continue;
     }
 
-    if (event.type === "format.resolved" && event.payload.safetyBounce) {
-      resolved = event;
+    if (event.type === "format.resolved" && event.payload.formatId === "safety_bounce") {
+      if (formatResolutionAggregate(event).capability === "public_chain") {
+        resolved = event;
+      }
     }
   }
 
@@ -868,8 +871,8 @@ function validateSafetyBounceResolution(input: {
   benchPlayerIds: readonly UUID[];
   diagnostics: SafetyBouncePrefixDiagnostic[];
 }): void {
-  const payload = input.resolved.payload.safetyBounce;
-  if (!payload) return;
+  const payload = formatResolutionAggregate(input.resolved);
+  if (payload.capability !== "public_chain") return;
 
   if (input.benchPlayerIds.length > 0) {
     input.diagnostics.push({

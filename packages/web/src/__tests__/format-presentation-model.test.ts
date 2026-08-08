@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { Phase } from "@influence/engine";
 import {
+  createMajorityEliminationClearViewerDecisions,
+  createMajorityEliminationTieViewerDecisions,
   createSafetyBounceViewerDecisions,
   FORMAT_KERNEL_VIEWER_GAME_ID,
   FORMAT_KERNEL_VIEWER_ROSTER,
@@ -135,13 +137,12 @@ const decisions: ViewerDecisionEvent[] = [
       resolutionKind: "auto",
       tiedPlayerIds: ["echo"],
       tiebreakerId: null,
-      saveOrEliminate: {
+      aggregate: {
+        capability: "sealed_polarity",
         nets: { atlas: 1, lyra: 1, echo: -1 },
         savesReceived: { atlas: 1, lyra: 1, echo: 0 },
         eliminateReceived: { atlas: 0, lyra: 0, echo: 1 },
       },
-      voteBomb: null,
-      safetyBounce: null,
     },
   }),
 ];
@@ -452,7 +453,10 @@ describe("format presentation compiler", () => {
 
   it("rejects aggregates with incomplete roster key sets", () => {
     const resolution = decisions.at(-1);
-    if (resolution?.type !== "format.resolved" || !resolution.payload.saveOrEliminate) {
+    if (
+      resolution?.type !== "format.resolved"
+      || resolution.payload.aggregate.capability !== "sealed_polarity"
+    ) {
       throw new Error("Expected Save-or-Eliminate resolution fixture");
     }
     const result = compileFormatPresentationPrefix({
@@ -465,7 +469,8 @@ describe("format presentation compiler", () => {
           ...resolution,
           payload: {
             ...resolution.payload,
-            saveOrEliminate: {
+            aggregate: {
+              capability: "sealed_polarity" as const,
               nets: { atlas: 1, lyra: 1 },
               savesReceived: { atlas: 1, lyra: 1 },
               eliminateReceived: { atlas: 0, lyra: 0 },
@@ -591,6 +596,80 @@ describe("format presentation compiler", () => {
       ["lyra", "decisive"],
       ["echo", "decisive"],
       ["rex", "final"],
+    ]);
+  });
+
+  it("stages Majority Elimination sealed ballots into highest-total clear and tied resolutions", () => {
+    const clear = compileFormatPresentationPrefix({
+      gameId: FORMAT_KERNEL_VIEWER_GAME_ID,
+      gameKernel: "format",
+      roster: FORMAT_KERNEL_VIEWER_ROSTER,
+      decisions: createMajorityEliminationClearViewerDecisions(),
+    });
+    const tied = compileFormatPresentationPrefix({
+      gameId: FORMAT_KERNEL_VIEWER_GAME_ID,
+      gameKernel: "format",
+      roster: FORMAT_KERNEL_VIEWER_ROSTER,
+      decisions: createMajorityEliminationTieViewerDecisions(),
+    });
+
+    expect(clear.status).toBe("ready");
+    expect(clear.cues.map((cue) => cue.kind)).toEqual([
+      "format_menu",
+      "format_selected",
+      "format_selected",
+      "format_aggregate",
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
+      "format_roll_call",
+      "format_elimination",
+    ]);
+    expect(
+      clear.cues.find((cue) => cue.kind === "format_aggregate"),
+    ).toMatchObject({
+      ballotPresentationStatus: "revealed",
+      resolution: {
+        formatId: "majority_elimination",
+        eliminatedId: "lyra",
+        aggregate: {
+          capability: "sealed_elim",
+          totals: { atlas: 0, lyra: 3, echo: 1, rex: 0 },
+          eligiblePlayerIds: ["atlas", "lyra", "echo", "rex"],
+        },
+      },
+    });
+    expect(tied.status).toBe("ready");
+    expect(tied.cues.at(-2)).toMatchObject({
+      kind: "format_tiebreak",
+      tiebreakerId: "atlas",
+      tiedPlayerIds: ["lyra", "echo"],
+    });
+    expect(tied.cues.at(-1)).toMatchObject({
+      kind: "format_elimination",
+      eliminatedId: "echo",
+    });
+    expect(JSON.stringify({ clear, tied })).not.toMatch(
+      /zero.safe|\bVulnerable\b|\bPower\b|\bCouncil\b/i,
+    );
+  });
+
+  it("accepts a one-format manifest selection without inventing an offer", () => {
+    const selected = createMajorityEliminationClearViewerDecisions()[1]!;
+    const result = compileFormatPresentationPrefix({
+      gameId: "one-format-majority",
+      gameKernel: "format",
+      formatManifest: ["majority_elimination"],
+      roster: FORMAT_KERNEL_VIEWER_ROSTER,
+      decisions: [selected],
+    });
+
+    expect(result.status).toBe("ready");
+    expect(result.snapshot.offeredFormatIds).toBeNull();
+    expect(result.snapshot.activeFormatId).toBe("majority_elimination");
+    expect(result.cues.map((cue) => cue.kind)).toEqual([
+      "format_selected",
+      "format_selected",
     ]);
   });
 
@@ -752,9 +831,8 @@ describe("format presentation compiler", () => {
           resolutionKind: "auto",
           tiedPlayerIds: [],
           tiebreakerId: null,
-          saveOrEliminate: null,
-          voteBomb: null,
-          safetyBounce: {
+          aggregate: {
+            capability: "public_chain",
             starterId: "atlas",
             safePlayerIds: ["atlas", "echo"],
             vulnerablePlayerIds: ["lyra"],
@@ -803,8 +881,8 @@ describe("format presentation compiler", () => {
             resolutionKind: "clear" as const,
             tiedPlayerIds: ["rex"],
             tiebreakerId: null,
-            safetyBounce: {
-              ...decision.payload.safetyBounce!,
+            aggregate: {
+              ...decision.payload.aggregate,
               voteTotals: { lyra: 1, rex: 3 },
             },
           },
@@ -915,7 +993,10 @@ describe("format presentation compiler", () => {
     ).toMatchObject({
       resolution: {
         eliminatedId: "lyra",
-        voteBomb: { zeroSafePlayerIds: ["atlas", "rex"] },
+        aggregate: {
+          capability: "sealed_elim",
+          eligiblePlayerIds: ["lyra", "echo"],
+        },
       },
     });
     expect(invalid.status).toBe("incomplete");

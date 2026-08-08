@@ -6,6 +6,7 @@ import { FormatEmpowerVoteStage } from "./format-empower-vote-stage";
 import { FormatOfferStage } from "./format-offer-stage";
 import { FormatResolutionStage } from "./format-resolution-stage";
 import { SafetyBounceStage } from "./safety-bounce-stage";
+import { FORMAT_PRESENTATION_METADATA } from "@influence/engine/format-presentation-metadata";
 
 export function FormatPresentation({
   cue,
@@ -47,16 +48,21 @@ export function FormatPresentation({
       );
     }
     if (!cue.before.offeredFormatIds) {
+      const metadata = FORMAT_PRESENTATION_METADATA[cue.formatId];
       return (
         <section
           data-format-cue="format_selected"
-          data-format-presentation="incomplete"
-          role="status"
-          className="mx-auto max-w-xl rounded-xl border border-amber-200/20 bg-amber-200/[0.04] p-6 text-center"
+          data-format-auto-selected={cue.formatId}
+          className="mx-auto max-w-xl rounded-xl border border-cyan-200/20 bg-cyan-200/[0.04] p-6 text-center"
         >
-          <h2 className="text-lg font-semibold text-white">Format presentation incomplete</h2>
-          <p className="mt-2 text-sm text-white/55">
-            The trusted offered pair is unavailable for this selection.
+          <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-cyan-100/45">
+            Format locked
+          </p>
+          <h2 className="mt-2 text-xl font-semibold text-white">
+            {metadata.displayName}
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-white/65">
+            {metadata.conciseRules}
           </p>
         </section>
       );

@@ -312,6 +312,20 @@ export class MockAgent implements IAgent {
     };
   }
 
+  async getMajorityEliminationBallot(
+    _ctx: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    const targetId = aliveIds.find((id) => id !== this.id) ?? this.id;
+    return {
+      targetId,
+      thinking: `mock: majority elimination → ${targetId}`,
+      decisionLog: this.decisionLog("majority elimination ballot"),
+      decisionSource: "llm",
+      fallbackReason: null,
+    };
+  }
+
   async getBouncePointer(
     _ctx: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },

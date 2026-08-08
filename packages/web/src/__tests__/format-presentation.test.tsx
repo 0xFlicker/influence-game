@@ -97,6 +97,64 @@ describe("FormatPresentation", () => {
     expect(selectedHtml).toContain('tabindex="0"');
   });
 
+  it("offers Majority Elimination with catalog copy and renders highest-total scoring only", () => {
+    const offer = renderToString(
+      <FormatPresentation
+        cue={majorityMenuCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+    const selection = renderToString(
+      <FormatPresentation
+        cue={majoritySelectedCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+    const resolution = renderToString(
+      <FormatPresentation
+        cue={majorityAggregateCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+
+    expect(offer).toContain('data-format-card="majority_elimination"');
+    expect(offer).toContain("Majority Elimination");
+    expect(selection).toContain(
+      FORMAT_PRESENTATION_METADATA.majority_elimination.conciseRules,
+    );
+    expect(resolution).toContain("Highest total · elimination eligible");
+    expect(resolution).toContain("Below the high vote");
+    expect(resolution).toContain('data-aggregate-player="p2"');
+    expect(resolution).toContain('data-aggregate-state="eligible"');
+    expect(`${offer}${selection}${resolution}`).not.toMatch(
+      /zero votes|zero-vote|\bVulnerable\b|\bPower\b|\bCouncil\b/i,
+    );
+  });
+
+  it("renders a one-format automatic selection without a fake offered pair", () => {
+    const cue = majoritySelectedCue();
+    const html = renderToString(
+      <FormatPresentation
+        cue={{
+          ...cue,
+          before: snapshot({ empoweredId: "p1" }),
+        }}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+
+    expect(html).toContain('data-format-auto-selected="majority_elimination"');
+    expect(html).toContain("Majority Elimination");
+    expect(html).toContain(
+      FORMAT_PRESENTATION_METADATA.majority_elimination.conciseRules,
+    );
+    expect(html).not.toContain("offers two formats");
+  });
+
   it("enters directly at the offered pair before selection and active label after selection", () => {
     const beforeSelection = renderToString(
       <FormatPresentation
@@ -328,6 +386,78 @@ function menuCue(): Extract<FormatPresentationCue, { kind: "format_menu" }> {
   };
 }
 
+function majorityMenuCue(): Extract<FormatPresentationCue, { kind: "format_menu" }> {
+  const offered: [LaunchFormatId, LaunchFormatId] = [
+    "majority_elimination",
+    "save_or_eliminate",
+  ];
+  return {
+    ...baseCue(
+      5,
+      "FORMAT_MENU",
+      snapshot({ empoweredId: "p1" }),
+      snapshot({
+        phase: "FORMAT_MENU",
+        canonicalSequence: 5,
+        empoweredId: "p1",
+        offeredFormatIds: offered,
+      }),
+    ),
+    kind: "format_menu",
+    empoweredId: "p1",
+    offeredFormatIds: offered,
+  };
+}
+
+function majoritySelectedCue(): Extract<FormatPresentationCue, { kind: "format_selected" }> {
+  const menu = majorityMenuCue();
+  return {
+    ...baseCue(
+      6,
+      "FORMAT_PICK",
+      menu.after,
+      snapshot({
+        ...menu.after,
+        phase: "FORMAT_PICK",
+        canonicalSequence: 6,
+        activeFormatId: "majority_elimination",
+      }),
+    ),
+    kind: "format_selected",
+    stage: "rules_reveal",
+    empoweredId: "p1",
+    formatId: "majority_elimination",
+  };
+}
+
+function majorityAggregateCue(): Extract<FormatPresentationCue, { kind: "format_aggregate" }> {
+  const before = resolvedBefore("majority_elimination");
+  const resolution = {
+    formatId: "majority_elimination" as const,
+    empoweredId: "p1",
+    eliminatedId: "p2",
+    resolutionKind: "auto" as const,
+    tiedPlayerIds: ["p2"],
+    tiebreakerId: null,
+    aggregate: {
+      capability: "sealed_elim" as const,
+      totals: { p1: 0, p2: 2, p3: 1 },
+      eligiblePlayerIds: ["p1", "p2", "p3"],
+    },
+  };
+  return {
+    ...baseCue(
+      10,
+      "FORMAT_RESOLVE",
+      before,
+      { ...before, canonicalSequence: 10, resolution },
+    ),
+    kind: "format_aggregate",
+    resolution,
+    ballotPresentationStatus: "revealed",
+  };
+}
+
 function selectedCue(
   stage: "choice_legible" | "rules_reveal" = "rules_reveal",
 ): Extract<FormatPresentationCue, { kind: "format_selected" }> {
@@ -375,9 +505,11 @@ function aggregateCue(): Extract<FormatPresentationCue, { kind: "format_aggregat
     resolutionKind: "auto" as const,
     tiedPlayerIds: ["p3"],
     tiebreakerId: null,
-    saveOrEliminate: null,
-    voteBomb: { totals: { p1: 0, p2: 2, p3: 1 }, zeroSafePlayerIds: ["p1"] },
-    safetyBounce: null,
+    aggregate: {
+      capability: "sealed_elim" as const,
+      totals: { p1: 0, p2: 2, p3: 1 },
+      eligiblePlayerIds: ["p2", "p3"],
+    },
   };
   return {
     ...baseCue(
@@ -404,13 +536,12 @@ function saveOrEliminateAggregateCue(): Extract<
     resolutionKind: "auto" as const,
     tiedPlayerIds: ["p2"],
     tiebreakerId: null,
-    saveOrEliminate: {
+    aggregate: {
+      capability: "sealed_polarity" as const,
       nets: { p1: 1, p2: -1, p3: 0 },
       savesReceived: { p1: 1, p2: 0, p3: 0 },
       eliminateReceived: { p1: 0, p2: 1, p3: 0 },
     },
-    voteBomb: null,
-    safetyBounce: null,
   };
   return {
     ...baseCue(
@@ -446,9 +577,8 @@ function soleVulnerableAggregateCue(): Extract<
     resolutionKind: "auto" as const,
     tiedPlayerIds: [],
     tiebreakerId: null,
-    saveOrEliminate: null,
-    voteBomb: null,
-    safetyBounce: {
+    aggregate: {
+      capability: "public_chain" as const,
       starterId: "p1",
       safePlayerIds: ["p1", "p3"],
       vulnerablePlayerIds: ["p2"],

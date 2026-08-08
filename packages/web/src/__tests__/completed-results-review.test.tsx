@@ -183,9 +183,8 @@ describe("completed results review components", () => {
               resolutionKind: "auto",
               tiedPlayerIds: [],
               tiebreakerId: null,
-              saveOrEliminate: null,
-              voteBomb: null,
-              safetyBounce: {
+              aggregate: {
+                capability: "public_chain",
                 starterId: "alice",
                 safePlayerIds: ["alice"],
                 vulnerablePlayerIds: ["bob"],
@@ -348,6 +347,38 @@ describe("completed results review components", () => {
     expect(html).toContain("Ballot ledger");
     expect(html).toContain("Eliminated");
     expect(html).toContain("Dax");
+  });
+
+  it("renders Majority Elimination plurality labels without legacy aliases", () => {
+    const html = renderToString(
+      <CompletedFormatRoundRecap
+        recap={{
+          round: 2,
+          status: "available",
+          offeredFormats: ["Majority Elimination", "Vote Bomb"],
+          selectedFormat: "Majority Elimination",
+          resolution: "Auto",
+          eliminatedName: "Dax",
+          scoring: {
+            columns: ["Agent", "Votes", "Plurality status"],
+            rows: [
+              { playerName: "Alice", values: ["0", "Below highest total"] },
+              { playerName: "Dax", values: ["3", "Highest total"] },
+            ],
+          },
+          ledgerStatus: "revealed",
+          ledger: [
+            { voterName: "Alice", targetName: "Dax", polarity: null },
+          ],
+          safetyBounce: null,
+        }}
+      />,
+    );
+
+    expect(html).toContain("Majority Elimination");
+    expect(html).toContain("Plurality status");
+    expect(html).toContain("Highest total");
+    expect(html).not.toMatch(/zero.safe|Vulnerable|Power|Council/i);
   });
 
   it("labels incomplete format recaps without fabricating scoring or a ledger", () => {

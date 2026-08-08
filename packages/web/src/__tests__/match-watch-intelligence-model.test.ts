@@ -281,6 +281,7 @@ function publicIntelligence({
               tiebreaker: null,
               saveOrEliminate: null,
               voteBomb: null,
+              majorityElimination: null,
               safetyBounce: null,
               acceptedBallots: [],
               ballotPresentation: { status: "not_applicable", rollCall: [] },

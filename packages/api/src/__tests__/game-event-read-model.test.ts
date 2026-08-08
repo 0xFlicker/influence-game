@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test";
-import type { CanonicalGameEvent } from "@influence/engine";
+import { GameState, type CanonicalGameEvent } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { appendGameEvents, hashCanonicalEvent } from "../services/game-events.js";
 import {
@@ -58,6 +58,58 @@ describe("persisted game event read model", () => {
     expect(read.events.map((event) => event.envelope.type)).toEqual(
       events.map((event) => event.type),
     );
+  });
+
+  test("round-trips a real version-2 Vote Bomb resolution through the event store", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "cara", name: "Cara" },
+      ],
+      { gameId },
+    );
+    state.startRound();
+    state.recordFormatResolution({
+      formatId: "vote_bomb",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["bob"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { alice: 0, bob: 1, cara: 2 },
+        eligiblePlayerIds: ["bob", "cara"],
+      },
+    });
+
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch,
+      events: state.getCanonicalEvents(),
+    });
+    const read = await getPersistedGameEvents(db, gameId);
+    const resolution = read.events.find(
+      (event) => event.envelope.type === "format.resolved",
+    );
+
+    expect(read.status).toBe("complete");
+    expect(resolution?.payloadVersion).toBe(2);
+    expect(resolution?.envelope).toMatchObject({
+      type: "format.resolved",
+      payloadVersion: 2,
+      payload: {
+        formatId: "vote_bomb",
+        aggregate: {
+          capability: "sealed_elim",
+          eligiblePlayerIds: ["bob", "cara"],
+          totals: { alice: 0, bob: 1, cara: 2 },
+        },
+      },
+    });
   });
 
   test("reports an empty pre-kernel game without diagnostics", async () => {

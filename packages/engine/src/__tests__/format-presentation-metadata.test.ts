@@ -16,6 +16,7 @@ describe("format presentation metadata", () => {
       "save_or_eliminate",
       "vote_bomb",
       "safety_bounce",
+      "majority_elimination",
     ]);
     expect(formatPresentationMetadata("save_or_eliminate")).toMatchObject({
       id: "save_or_eliminate",
@@ -29,8 +30,28 @@ describe("format presentation metadata", () => {
     expect(formatPresentationMetadata("safety_bounce").conciseRules).toContain(
       "Sole Vulnerable is automatically eliminated",
     );
+    expect(formatPresentationMetadata("majority_elimination")).toMatchObject({
+      id: "majority_elimination",
+      displayName: "Majority Elimination",
+    });
+    expect(
+      formatPresentationMetadata("majority_elimination").conciseRules,
+    ).toContain("Most votes out");
+    expect(
+      formatPresentationMetadata("majority_elimination").ruleSheet.length,
+    ).toBeGreaterThan(0);
     expect(ruleSheetForFormat("safety_bounce")).toBe(
       "After mingle: one random starter is SAFE and points publicly. A SAFE player's pointer makes the target VULNERABLE; a VULNERABLE player's pointer makes the target SAFE until all are classified. Then a sealed vote among the vulnerable pool only — most votes out. Sole vulnerable auto-elims. Empowered breaks ties.",
+    );
+
+    expect(formatPresentationMetadata("save_or_eliminate").displayName).toBe(
+      "Save-or-Eliminate",
+    );
+    expect(formatPresentationMetadata("vote_bomb").displayName).toBe(
+      "Vote Bomb",
+    );
+    expect(formatPresentationMetadata("safety_bounce").displayName).toBe(
+      "Safety Bounce",
     );
   });
 

@@ -1,6 +1,10 @@
 import { withParticipantSnapshotFromSession } from "./alliance-huddle-outcome";
-import type { CanonicalGameEvent } from "./canonical-events";
-import type { LaunchFormatId } from "./formats";
+import { isSupportedCanonicalPayloadVersion, type CanonicalGameEvent } from "./canonical-events";
+import {
+  LEGACY_FORMAT_MANIFEST,
+  resolveFormatManifest,
+  type LaunchFormatId,
+} from "./formats";
 import type {
   AllianceHuddleOutcome,
   AllianceHuddleScheduleRecord,
@@ -43,9 +47,11 @@ export interface CanonicalGameProjection {
   phase: Phase | null;
   playerOrder: UUID[];
   players: Record<UUID, ProjectedPlayer>;
+  formatManifest: LaunchFormatId[];
   currentVoteTally: VoteTally;
   currentCouncilTally: CouncilVoteTally;
   empoweredId: UUID | null;
+  selectedFormatId: LaunchFormatId | null;
   formatMenu: {
     empoweredId: UUID;
     offeredFormatIds: [LaunchFormatId, LaunchFormatId];
@@ -93,9 +99,11 @@ export function createEmptyProjection(gameId: UUID): CanonicalGameProjection {
     phase: null,
     playerOrder: [],
     players: {},
+    formatManifest: [...LEGACY_FORMAT_MANIFEST],
     currentVoteTally: { empowerVotes: {}, exposeVotes: {} },
     currentCouncilTally: { votes: {} },
     empoweredId: null,
+    selectedFormatId: null,
     formatMenu: null,
     councilCandidates: null,
     candidateResolution: null,
@@ -186,6 +194,7 @@ function applyRoundReset(projection: CanonicalGameProjection, round: number): vo
   projection.currentVoteTally = { empowerVotes: {}, exposeVotes: {} };
   projection.currentCouncilTally = { votes: {} };
   projection.empoweredId = null;
+  projection.selectedFormatId = null;
   projection.formatMenu = null;
   projection.councilCandidates = null;
   projection.candidateResolution = null;
@@ -198,7 +207,7 @@ export function applyCanonicalEvent(
   projection: CanonicalGameProjection,
   event: CanonicalGameEvent,
 ): CanonicalGameProjection {
-  if (event.payloadVersion !== 1) {
+  if (!isSupportedCanonicalPayloadVersion(event.type, event.payloadVersion)) {
     throw new Error(`Unsupported canonical event payload version ${event.payloadVersion} for ${event.type}`);
   }
   if (projection.gameId !== event.gameId) {
@@ -214,6 +223,9 @@ export function applyCanonicalEvent(
 
   switch (event.type) {
     case "game.roster_initialized": {
+      projection.formatManifest = event.payload.formatManifest === undefined
+        ? [...LEGACY_FORMAT_MANIFEST]
+        : resolveFormatManifest(event.payload.formatManifest);
       projection.playerOrder = event.payload.players.map((player) => player.id);
       projection.players = Object.fromEntries(
         event.payload.players.map((player) => [player.id, { ...player }]),
@@ -283,6 +295,7 @@ export function applyCanonicalEvent(
       break;
     }
     case "format.selected": {
+      projection.selectedFormatId = event.payload.formatId;
       if (projection.formatMenu) {
         projection.formatMenu = { ...projection.formatMenu, selectedFormatId: event.payload.formatId };
       }

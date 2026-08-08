@@ -378,6 +378,7 @@ function DramaticReplayTheater({
     () => compileFormatPresentationPrefix({
       gameId: game.id,
       gameKernel: game.gameKernel ?? game.watchState?.gameKernel ?? "classic",
+      formatManifest: game.formatManifest,
       roster: formatRoster,
       decisions: formatPresentationDecisionsFromFrames(replayFrames),
       eligiblePlayerIdsByRound: formatPresentationEligibilityFromFrames(replayFrames),
@@ -385,6 +386,7 @@ function DramaticReplayTheater({
     [
       formatRoster,
       game.gameKernel,
+      game.formatManifest,
       game.id,
       game.watchState?.gameKernel,
       replayFrames,

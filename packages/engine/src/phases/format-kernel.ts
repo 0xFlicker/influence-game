@@ -1,6 +1,6 @@
 /**
  * Sequester format kernel phase handlers:
- * menu → pick → format mingle → resolve (Save-or-eliminate / Vote Bomb / Safety Bounce).
+ * menu → pick → format mingle → catalog-dispatched resolution.
  */
 
 import {
@@ -8,21 +8,20 @@ import {
   applyFormatTiebreak,
   buildFormatMenu,
   computeSaveOrEliminateNets,
-  computeVoteBombTallies,
   createBounceBoard,
   displayNameForFormat,
+  getFormatRegistration,
   isLegalBouncePointer,
   isLegalSafetyBounceVote,
   isLegalSaveOrEliminateBallot,
-  isLegalVoteBombBallot,
   pickFormatFromMenu,
+  resolveSealedElimRound,
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
-  resolveVoteBomb,
   type FormatEliminationResolution,
   type LaunchFormatId,
   type SaveOrEliminateBallot,
-  type VoteBombBallot,
+  type SealedElimRegistration,
 } from "../formats";
 import {
   buildFormatPressureProjection,
@@ -136,20 +135,49 @@ export async function runFormatMenuPhase(
     throw new Error("Format menu requires empowered player");
   }
 
-  const menu = buildFormatMenu({ lastFormatId: state.lastSelectedFormat });
+  const menu = buildFormatMenu({
+    formatManifest: gameState.formatManifest,
+    lastFormatId: state.lastSelectedFormat,
+    random: ctx.random,
+  });
   state.offeredFormats = menu.offered;
+
+  if (menu.autoSelected) {
+    const chosen = menu.autoSelected;
+    state.selectedFormat = chosen;
+    state.lastSelectedFormat = chosen;
+    const pressure = buildFormatPressureProjection({
+      empoweredId,
+      empoweredName: gameState.getPlayerName(empoweredId),
+      offeredFormats: [chosen],
+      selectedFormat: chosen,
+    });
+    setFormatPressure(ctx, pressure);
+    gameState.recordFormatSelected(empoweredId, chosen);
+    logger.logSystem(
+      `FORMAT LOCKED: ${displayNameForFormat(chosen)}. This game's single-format manifest selected it automatically.`,
+      Phase.FORMAT_MENU,
+    );
+    logger.logSystem(formatPressureSummary(pressure), Phase.FORMAT_MENU);
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((r) => setTimeout(r, 0));
+    return;
+  }
+
+  const offered = menu.offered;
+  if (!offered) throw new Error("Multi-format game did not produce a format menu");
   state.selectedFormat = null;
   const menuPressure = buildFormatPressureProjection({
     empoweredId,
     empoweredName: gameState.getPlayerName(empoweredId),
-    offeredFormats: menu.offered,
+    offeredFormats: offered,
     selectedFormat: null,
   });
   setFormatPressure(ctx, menuPressure);
-  gameState.recordFormatMenu(empoweredId, menu.offered);
+  gameState.recordFormatMenu(empoweredId, offered);
 
   logger.logSystem(
-    `FORMAT MENU: ${displayNameForFormat(menu.offered[0])} vs ${displayNameForFormat(menu.offered[1])}. ${gameState.getPlayerName(empoweredId)} will choose.`,
+    `FORMAT MENU: ${displayNameForFormat(offered[0])} vs ${displayNameForFormat(offered[1])}. ${gameState.getPlayerName(empoweredId)} will choose.`,
     Phase.FORMAT_MENU,
   );
   logger.logSystem(formatPressureSummary(menuPressure), Phase.FORMAT_MENU);
@@ -166,6 +194,12 @@ export async function runFormatPickPhase(
   const state = ctx.formatKernelState;
   const empoweredId = gameState.empoweredId;
   const offeredFormats = state.offeredFormats;
+  if (empoweredId && state.selectedFormat && !offeredFormats) {
+    // One-format games already emitted authoritative selection in FORMAT_MENU.
+    actor.send({ type: "PHASE_COMPLETE" });
+    await new Promise((r) => setTimeout(r, 0));
+    return;
+  }
   if (!empoweredId || !offeredFormats) {
     throw new Error("Format pick requires empowered player and offered formats");
   }
@@ -309,12 +343,16 @@ export async function runFormatResolvePhase(
   );
 
   let elimination: FormatRoundElimination;
-  if (formatId === "save_or_eliminate") {
+  const registration = getFormatRegistration(formatId);
+  if (registration.capability === "sealed_elim") {
+    elimination = await resolveSealedElimFormatRound(ctx, empoweredId, registration);
+  } else if (registration.capability === "sealed_polarity") {
     elimination = await resolveSaveOrEliminateRound(ctx, empoweredId);
-  } else if (formatId === "vote_bomb") {
-    elimination = await resolveVoteBombRound(ctx, empoweredId);
-  } else {
+  } else if (registration.capability === "public_chain") {
     elimination = await resolveSafetyBounceRound(ctx, empoweredId);
+  } else {
+    const unreachable: never = registration;
+    throw new Error(`Unsupported format capability at resolve: ${String(unreachable)}`);
   }
   const { eliminatedId } = elimination;
 
@@ -520,151 +558,189 @@ async function resolveSaveOrEliminateRound(
       resolutionKind: resolution.kind,
       tiedPlayerIds: [...resolution.tiedSet],
       tiebreakerId: resolution.kind === "clear" && resolution.tiedSet.length > 1 ? empoweredId : null,
-      saveOrEliminate: {
+      aggregate: {
+        capability: "sealed_polarity",
         nets: { ...nets.nets },
         savesReceived: { ...nets.savesReceived },
         eliminateReceived: { ...nets.eliminateReceived },
       },
-      voteBomb: null,
-      safetyBounce: null,
     },
     resolutionSourcePointers,
   };
 }
 
-async function resolveVoteBombRound(
+interface SealedElimDecisionRecord {
+  thinking: string;
+  reasoningContext?: string;
+  decisionLog?: string | null;
+  decisionId?: UUID;
+  provenance: FormatDecisionProvenance;
+}
+
+async function resolveSealedElimFormatRound(
   ctx: PhaseRunnerContext,
   empoweredId: UUID,
+  registration: SealedElimRegistration,
 ): Promise<FormatRoundElimination> {
   const { gameState, logger } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
-  const ballots: VoteBombBallot[] = [];
-
-  for (const player of alive) {
-    const agent = requireAgent(ctx, player.id, "vote-bomb ballot");
-    const phaseCtx = prepareAgentPhaseContext(
-      ctx,
-      agent,
-      player.id,
-      Phase.FORMAT_RESOLVE,
-      "strategic_decision",
-      { empoweredId },
-    );
-    const others = aliveIds.filter((id) => id !== player.id);
-    let targetId = others[others.length - 1] ?? others[0] ?? player.id;
-    let thinking = "fallback vote last other";
-    let reasoningContext: string | undefined;
-    let decisionLog: string | null | undefined;
-    let decisionId: UUID | undefined;
-    let provenance = fallbackFormatProvenance("agent_method_unavailable");
-
-    if (agent.getVoteBombBallot) {
-      const ballotFn = agent.getVoteBombBallot.bind(agent);
-      const result = await withFormatAgentTimeout(
+  const resolved = await resolveSealedElimRound<
+    SealedElimDecisionRecord,
+    CanonicalSourcePointer[]
+  >({
+    registration,
+    participants: alive,
+    traceAction: registration.decision.traceAction,
+    collectDecision: async (player, fallbackTargetId) => {
+      const agent = requireAgent(
         ctx,
-        Phase.FORMAT_RESOLVE,
-        `Vote Bomb ballot (${player.name})`,
-        () => ballotFn(phaseCtx, aliveIds),
-        () => ({
-          targetId,
-          thinking: "House fallback after vote-bomb ballot timeout",
-          decisionSource: "fallback" as const,
-          fallbackReason: "tool_call_failed" as const,
-        }),
-      );
-      if (result.fallbackReason === "tool_call_failed"
-        && result.thinking === "House fallback after vote-bomb ballot timeout") {
-        provenance = fallbackFormatProvenance("tool_call_failed");
-        thinking = result.thinking;
-      } else if (isLegalVoteBombBallot(player.id, result.targetId, aliveIds)) {
-        targetId = result.targetId;
-        provenance = normalizedFormatProvenance(result);
-        if (provenance.decisionSource === "llm") decisionId = result.decisionId;
-        thinking = result.thinking ?? thinking;
-        reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
-      } else {
-        provenance = fallbackFormatProvenance("invalid_vote_bomb_target");
-        thinking = result.thinking ?? thinking;
-        reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
-      }
-    }
-
-    ballots.push({ voterId: player.id, targetId });
-    const targetName = gameState.getPlayerName(targetId);
-    await assertCanAcceptCommit(ctx);
-    gameState.recordFormatBallot({
-      formatId: "vote_bomb",
-      voterId: player.id,
-      targetId,
-    }, [
-      agentTurnSourcePointer(
         player.id,
-        "format-vote-bomb-ballot",
-        gameState.round,
+        `${registration.decision.publicName} ballot`,
+      );
+      const phaseCtx = prepareAgentPhaseContext(
+        ctx,
+        agent,
+        player.id,
         Phase.FORMAT_RESOLVE,
-        undefined,
-        decisionId,
-      ),
-    ]);
-    logger.emitAgentTurn({
-      phase: Phase.FORMAT_RESOLVE,
-      action: "format-ballot",
-      actor: { id: player.id, name: player.name, role: "player" },
-      visibility: "private",
-      response: {
-        formatId: "vote_bomb",
-        targetId,
-        targetName,
-        sealed: true,
-        ...provenance,
-        ...strategicDecisionResponse({ decisionLog }),
-      },
-      thinking,
-      reasoningContext,
-      scope: "system",
-      // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
-      text: `${player.name} sealed ballot: eliminate → ${targetName}`,
-    });
-  }
+        "strategic_decision",
+        { empoweredId },
+      );
+      let targetId = fallbackTargetId;
+      let decision: SealedElimDecisionRecord = {
+        thinking: registration.decision.fallbackThinking,
+        provenance: fallbackFormatProvenance("agent_method_unavailable"),
+      };
 
-  if (ballots.length !== aliveIds.length) {
-    throw new Error(`Vote Bomb incomplete ballots: ${ballots.length}/${aliveIds.length}`);
-  }
+      const ballotMethod = agent[registration.decision.agentMethod];
+      if (ballotMethod) {
+        const ballotFn = ballotMethod.bind(agent);
+        const timeoutThinking =
+          `House fallback after ${registration.decision.publicName} ballot timeout`;
+        const result = await withFormatAgentTimeout(
+          ctx,
+          Phase.FORMAT_RESOLVE,
+          `${registration.decision.publicName} ballot (${player.name})`,
+          () => ballotFn(phaseCtx, aliveIds),
+          () => ({
+            targetId: fallbackTargetId,
+            thinking: timeoutThinking,
+            decisionSource: "fallback" as const,
+            fallbackReason: "tool_call_failed" as const,
+          }),
+        );
+        targetId = result.targetId;
+        const timedOut = result.fallbackReason === "tool_call_failed"
+          && result.thinking === timeoutThinking;
+        const provenance = timedOut
+          ? fallbackFormatProvenance("tool_call_failed")
+          : normalizedFormatProvenance(result);
+        decision = {
+          thinking: result.thinking ?? decision.thinking,
+          reasoningContext: result.reasoningContext,
+          decisionLog: result.decisionLog,
+          decisionId: provenance.decisionSource === "llm" ? result.decisionId : undefined,
+          provenance,
+        };
+      }
 
-  await assertCanAcceptCommit(ctx);
-  const tallies = computeVoteBombTallies(aliveIds, ballots);
-  let resolution = resolveVoteBomb(aliveIds, ballots);
-  let resolutionSourcePointers: CanonicalSourcePointer[] = [];
-  if (resolution.kind === "tie") {
-    const broken = await breakFormatTie(ctx, empoweredId, resolution.tiedSet);
-    resolutionSourcePointers = broken.sourcePointers;
-    resolution = broken;
-  }
+      return { targetId, decision };
+    },
+    recordAcceptedBallot: async ({
+      ballot,
+      decision,
+      repairedInvalidTarget,
+      traceAction,
+    }) => {
+      const player = alive.find((candidate) => candidate.id === ballot.voterId);
+      if (!player) throw new Error(`Missing alive player for sealed ballot: ${ballot.voterId}`);
+      const targetName = gameState.getPlayerName(ballot.targetId);
+      const provenance = repairedInvalidTarget
+        ? fallbackFormatProvenance(registration.decision.invalidTargetReason)
+        : decision.provenance;
+      const decisionId = repairedInvalidTarget ? undefined : decision.decisionId;
+
+      await assertCanAcceptCommit(ctx);
+      gameState.recordFormatBallot({
+        formatId: registration.id,
+        voterId: ballot.voterId,
+        targetId: ballot.targetId,
+      }, [
+        agentTurnSourcePointer(
+          ballot.voterId,
+          traceAction,
+          gameState.round,
+          Phase.FORMAT_RESOLVE,
+          undefined,
+          decisionId,
+        ),
+      ]);
+      logger.emitAgentTurn({
+        phase: Phase.FORMAT_RESOLVE,
+        action: "format-ballot",
+        actor: { id: player.id, name: player.name, role: "player" },
+        visibility: "private",
+        response: {
+          formatId: registration.id,
+          targetId: ballot.targetId,
+          targetName,
+          sealed: true,
+          ...provenance,
+          ...strategicDecisionResponse({ decisionLog: decision.decisionLog }),
+        },
+        thinking: decision.thinking,
+        reasoningContext: decision.reasoningContext,
+        scope: "system",
+        text: `${player.name} sealed ballot: eliminate → ${targetName}`,
+      });
+    },
+    beforeScore: () => assertCanAcceptCommit(ctx),
+    breakTie: async (tiedPlayerIds) => {
+      const broken = await breakFormatTie(ctx, empoweredId, tiedPlayerIds);
+      return {
+        resolution: broken,
+        evidence: broken.sourcePointers,
+      };
+    },
+  });
+
+  const tallies = resolved.score;
+  const resolution = resolved.resolution;
+  const resolutionSourcePointers = resolved.tieEvidence ?? [];
 
   logger.logSystem(
-    `Vote Bomb ballots: ${ballots
+    `${registration.decision.publicName} ballots: ${resolved.ballots
       .map((b) => `${gameState.getPlayerName(b.voterId)}→${gameState.getPlayerName(b.targetId)}`)
       .join("; ")}`,
     Phase.FORMAT_RESOLVE,
   );
-  const zeroSafe =
-    tallies.zeroSafeIds.map((id) => gameState.getPlayerName(id)).join(", ") || "none";
-  const positiveTotals = tallies.positiveIds
+  const scoreSummary = tallies.eligibleIds
     .map((id) => `${gameState.getPlayerName(id)}=${tallies.totals[id] ?? 0}`)
     .sort((a, b) => a.localeCompare(b))
     .join(", ");
-  logger.logSystem(
-    `Vote Bomb tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${positiveTotals || "none"} (fewest positive is eliminated)`,
-    Phase.FORMAT_RESOLVE,
-  );
-  const resolutionSummary = formatEliminationReason(gameState, resolution, "fewest positive votes");
+  const criterion = registration.presentation.scoring === "fewest_positive"
+    ? "fewest positive votes"
+    : "highest total";
+  if (registration.presentation.zeroVoteTreatment === "safe") {
+    const eligibleIds = new Set(tallies.eligibleIds);
+    const zeroSafe = aliveIds
+      .filter((id) => !eligibleIds.has(id))
+      .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
+    logger.logSystem(
+      `${registration.decision.publicName} tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      Phase.FORMAT_RESOLVE,
+    );
+  } else {
+    logger.logSystem(
+      `${registration.decision.publicName} tally: totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      Phase.FORMAT_RESOLVE,
+    );
+  }
+  const resolutionSummary = formatEliminationReason(gameState, resolution, criterion);
   logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
-    throw new Error("Vote Bomb failed to resolve elimination");
+    throw new Error(`${registration.decision.publicName} failed to resolve elimination`);
   }
   const eliminatedId = resolution.eliminatedId;
   return {
@@ -674,18 +750,17 @@ async function resolveVoteBombRound(
       votesReceived: tallies.totals[eliminatedId] ?? 0,
     },
     canonicalResolution: {
-      formatId: "vote_bomb",
+      formatId: registration.id,
       empoweredId,
       eliminatedId,
       resolutionKind: resolution.kind,
       tiedPlayerIds: [...resolution.tiedSet],
       tiebreakerId: resolution.kind === "clear" && resolution.tiedSet.length > 1 ? empoweredId : null,
-      saveOrEliminate: null,
-      voteBomb: {
-        totals: { ...tallies.totals },
-        zeroSafePlayerIds: [...tallies.zeroSafeIds],
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { ...resolved.aggregate.totals },
+        eligiblePlayerIds: [...resolved.aggregate.eligiblePlayerIds],
       },
-      safetyBounce: null,
     },
     resolutionSourcePointers,
   };
@@ -827,9 +902,8 @@ async function resolveSafetyBounceRound(
         resolutionKind: "auto",
         tiedPlayerIds: [],
         tiebreakerId: null,
-        saveOrEliminate: null,
-        voteBomb: null,
-        safetyBounce: {
+        aggregate: {
+          capability: "public_chain",
           starterId,
           safePlayerIds: [...board.safe],
           vulnerablePlayerIds: [...board.vulnerable],
@@ -978,9 +1052,8 @@ async function resolveSafetyBounceRound(
       resolutionKind: resolution.kind,
       tiedPlayerIds: [...resolution.tiedSet],
       tiebreakerId: resolution.kind === "clear" && resolution.tiedSet.length > 1 ? empoweredId : null,
-      saveOrEliminate: null,
-      voteBomb: null,
-      safetyBounce: {
+      aggregate: {
+        capability: "public_chain",
         starterId,
         safePlayerIds: [...board.safe],
         vulnerablePlayerIds: [...board.vulnerable],

@@ -337,7 +337,7 @@ describe("Game REST API", () => {
 
     test("POST /api/games/:id/start requires admin", async () => {
       const { id } = await createTestGame(app, adminToken);
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
       const res = await app.request(`/api/games/${id}/start`, authPost(userToken));
@@ -399,6 +399,8 @@ describe("Game REST API", () => {
       expect(game.cognitiveArtifactCaptureVersion).toBe(1);
       expect(game.transcriptCaptureVersion).toBe(1);
       expect(game.formalSpeechCaptureVersion).toBe(1);
+      expect(game.minPlayers).toBe(6);
+      expect(game.maxPlayers).toBe(6);
       const transcriptState = (await db
         .select()
         .from(schema.gameTranscriptStates)
@@ -415,6 +417,43 @@ describe("Game REST API", () => {
         reasoningPolicy: "action-policy",
       });
       expect(config.serviceTier).toBe("flex");
+      expect(config.minPlayers).toBe(6);
+      expect(config.maxPlayers).toBe(6);
+    });
+
+    test("rejects player counts outside the six-to-twelve integer boundary", async () => {
+      for (const playerCount of [5, 6.5, 13]) {
+        const res = await app.request(
+          "/api/games",
+          json({
+            playerCount,
+            modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          }, adminToken),
+        );
+
+        expect(res.status).toBe(400);
+        expect(await res.json()).toEqual({
+          error: "playerCount must be an integer between 6 and 12",
+        });
+      }
+    });
+
+    test("defaults omitted playerCount to twelve seats with a six-player minimum", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+        }, adminToken),
+      );
+
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string };
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, body.id)))[0]!;
+      const config = JSON.parse(game.config);
+      expect(game.minPlayers).toBe(6);
+      expect(game.maxPlayers).toBe(12);
+      expect(config.minPlayers).toBe(6);
+      expect(config.maxPlayers).toBe(12);
     });
 
     test("rejects tier-only and flat model aliases", async () => {
@@ -613,6 +652,90 @@ describe("Game REST API", () => {
         .from(schema.games))[0]!;
       const config = JSON.parse(game.config);
       expect(config.maxRounds).toBeGreaterThanOrEqual(10);
+      expect(config.formatManifest).toEqual([
+        "save_or_eliminate",
+        "vote_bomb",
+        "safety_bounce",
+        "majority_elimination",
+      ]);
+    });
+
+    test("freezes and exposes an explicit format manifest", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          formatManifest: ["vote_bomb", "majority_elimination"],
+        }, adminToken),
+      );
+
+      expect(res.status).toBe(201);
+      const created = (await res.json()) as { id: string };
+      const detailRes = await app.request(`/api/games/${created.id}`);
+      expect(detailRes.status).toBe(200);
+      const detail = (await detailRes.json()) as { formatManifest: string[] };
+      expect(detail.formatManifest).toEqual(["vote_bomb", "majority_elimination"]);
+
+      const listRes = await app.request("/api/games");
+      const listed = (await listRes.json()) as Array<{ id: string; formatManifest: string[] }>;
+      expect(listed.find((item) => item.id === created.id)?.formatManifest)
+        .toEqual(["vote_bomb", "majority_elimination"]);
+
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, created.id)))[0]!;
+      expect(JSON.parse(game.config).formatManifest).toEqual(["vote_bomb", "majority_elimination"]);
+    });
+
+    test("exposes the original trio for legacy stored configs without a manifest", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+        }, adminToken),
+      );
+      expect(res.status).toBe(201);
+      const created = (await res.json()) as { id: string };
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, created.id)))[0]!;
+      const legacyConfig = JSON.parse(game.config);
+      delete legacyConfig.formatManifest;
+      await db.update(schema.games)
+        .set({ config: JSON.stringify(legacyConfig) })
+        .where(eq(schema.games.id, created.id));
+
+      const detailRes = await app.request(`/api/games/${created.id}`);
+      expect(detailRes.status).toBe(200);
+      const detail = (await detailRes.json()) as { formatManifest: string[] };
+      expect(detail.formatManifest).toEqual([
+        "save_or_eliminate",
+        "vote_bomb",
+        "safety_bounce",
+      ]);
+
+      const listRes = await app.request("/api/games");
+      const listed = (await listRes.json()) as Array<{ id: string; formatManifest: string[] }>;
+      expect(listed.find((item) => item.id === created.id)?.formatManifest).toEqual([
+        "save_or_eliminate",
+        "vote_bomb",
+        "safety_bounce",
+      ]);
+    });
+
+    test.each([
+      { manifest: [], label: "empty" },
+      { manifest: ["vote_bomb", "vote_bomb"], label: "duplicate" },
+      { manifest: ["unknown_format"], label: "unregistered" },
+    ])("rejects $label format manifests", async ({ manifest }) => {
+      const res = await app.request(
+        "/api/games",
+        json({
+          playerCount: 6,
+          modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+          formatManifest: manifest,
+        }, adminToken),
+      );
+      expect(res.status).toBe(400);
+      expect((await res.json()) as { error: string }).toHaveProperty("error");
     });
 
     test("returns 400 for invalid JSON", async () => {
@@ -674,6 +797,25 @@ describe("Game REST API", () => {
       const res = await app.request("/api/games");
       const body = (await res.json()) as unknown[];
       expect(body).toHaveLength(2);
+    });
+
+    test("omits a game with a corrupt stored format manifest", async () => {
+      const valid = await createTestGame(app, adminToken);
+      const corrupt = await createTestGame(app, adminToken);
+      const corruptGame = (await db
+        .select()
+        .from(schema.games)
+        .where(eq(schema.games.id, corrupt.id)))[0]!;
+      const corruptConfig = JSON.parse(corruptGame.config);
+      corruptConfig.formatManifest = ["unknown_format"];
+      await db.update(schema.games)
+        .set({ config: JSON.stringify(corruptConfig) })
+        .where(eq(schema.games.id, corrupt.id));
+
+      const res = await app.request("/api/games");
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as Array<{ id: string }>;
+      expect(body.map((game) => game.id)).toEqual([valid.id]);
     });
 
     test("returns sanitized model labels instead of raw model selections", async () => {
@@ -758,7 +900,7 @@ describe("Game REST API", () => {
     });
 
     test("summaries use durable projection for live round, phase, and alive/out counts", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
       const ownerEpoch = await insertOwner(db, id);
@@ -796,7 +938,7 @@ describe("Game REST API", () => {
     });
 
     test("summaries do not replay event logs while detail still validates them", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
       const ownerEpoch = await insertOwner(db, id);
@@ -846,7 +988,7 @@ describe("Game REST API", () => {
     });
 
     test("missing summaries use a safe list fallback instead of replaying events", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
       const ownerEpoch = await insertOwner(db, id);
@@ -995,7 +1137,7 @@ describe("Game REST API", () => {
     });
 
     test("returns public durable watch state for in-progress games without auth", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
       const ownerEpoch = await insertOwner(db, id);
@@ -1045,7 +1187,7 @@ describe("Game REST API", () => {
     });
 
     test("returns schema v3 replay frames with the same public current-agent projection", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       const ownerEpoch = await insertOwner(db, id);
       await appendGameEvents(db, {
@@ -1070,7 +1212,7 @@ describe("Game REST API", () => {
     });
 
     test("serves trusted in-progress replay catch-up frames after a canonical sequence", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
       const ownerEpoch = await insertOwner(db, id);
@@ -1116,7 +1258,7 @@ describe("Game REST API", () => {
     });
 
     test("labels older completed games as best-available terminal watch state", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
       await markGameCompleted(db, id);
@@ -1154,7 +1296,7 @@ describe("Game REST API", () => {
     });
 
     test("returns degraded watch state for invalid durable logs without trusting invalid suffix", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
       const ownerEpoch = await insertOwner(db, id, { lastPersistedEventSequence: 3 });
@@ -1203,7 +1345,7 @@ describe("Game REST API", () => {
 
   describe("GET /api/games/:id/results", () => {
     test("returns public completed results from durable canonical events", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       const ownerEpoch = await insertOwner(db, id);
       const events = withPrivateDecisionSentinel(
@@ -1264,7 +1406,7 @@ describe("Game REST API", () => {
     });
 
     test("returns degraded terminal fallback for older completed games", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
       await markGameCompleted(db, id);
@@ -1289,7 +1431,7 @@ describe("Game REST API", () => {
     });
 
     test("returns compact postgame REST surfaces without raw event payloads", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       const ownerEpoch = await insertOwner(db, id);
       const events = createResolvedRoundCanonicalEventFixture(id);
@@ -1368,7 +1510,7 @@ describe("Game REST API", () => {
     });
 
     test("rejects non-completed games as non-entry results", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
 
       const res = await app.request(`/api/games/${id}/results`);
@@ -1379,7 +1521,7 @@ describe("Game REST API", () => {
     });
 
     test("does not expose cognitive artifact snippets in completed results", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await insertResult(db, id, { winnerId: "mira", roundsPlayed: 4 });
       await markGameCompleted(db, id);
@@ -1422,14 +1564,14 @@ describe("Game REST API", () => {
 
   describe("GET /api/player/games", () => {
     test("returns only completed game history for the authenticated player", async () => {
-      const { id: waitingGameId } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id: waitingGameId } = await createTestGame(app, adminToken, { playerCount: 6 });
       await joinTestPlayer(app, waitingGameId, "Zara Quinn", userToken);
 
-      const { id: inProgressGameId } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id: inProgressGameId } = await createTestGame(app, adminToken, { playerCount: 6 });
       await joinTestPlayer(app, inProgressGameId, "Kai Rivers", userToken);
       await markGameInProgress(db, inProgressGameId);
 
-      const { id: completedGameId } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id: completedGameId } = await createTestGame(app, adminToken, { playerCount: 6 });
       const { playerId } = await joinTestPlayer(app, completedGameId, "Atlas Vale", userToken);
       await insertResult(db, completedGameId, { winnerId: playerId, roundsPlayed: 3 });
       await markGameCompleted(db, completedGameId);
@@ -1498,7 +1640,7 @@ describe("Game REST API", () => {
     test("rejects join when game is not waiting", async () => {
       const { id } = await createTestGame(app, adminToken);
 
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
       await app.request(`/api/games/${id}/start`, authPost(adminToken));
@@ -1511,9 +1653,9 @@ describe("Game REST API", () => {
     });
 
     test("rejects join when game is full", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
 
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
 
@@ -1579,7 +1721,7 @@ describe("Game REST API", () => {
       }
 
       try {
-        const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+        const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
         await joinTestPlayer(app, id, "Atlas", userToken);
 
         const published: Array<{ topic: string; data: string }> = [];
@@ -1598,21 +1740,21 @@ describe("Game REST API", () => {
           players: Array<{ id: string; name: string; archetype: string }>;
         };
         expect(body.filling).toBe(true);
-        expect(body.filled).toBe(3);
-        expect(body.totalPlayers).toBe(4);
-        expect(body.players).toHaveLength(3);
+        expect(body.filled).toBe(5);
+        expect(body.totalPlayers).toBe(6);
+        expect(body.players).toHaveLength(5);
         expect(published).toEqual([]);
 
         const detailRes = await app.request(`/api/games/${id}`);
         const detail = (await detailRes.json()) as { players: unknown[] };
-        expect(detail.players).toHaveLength(4);
+        expect(detail.players).toHaveLength(6);
 
         const filledPlayers = await db
           .select()
           .from(schema.gamePlayers)
           .where(eq(schema.gamePlayers.gameId, id));
         expect(filledPlayers.map((player) => JSON.parse(player.agentConfig).model))
-          .toEqual(["gpt-5.6-luna", "gpt-5.6-luna", "gpt-5.6-luna", "gpt-5.6-luna"]);
+          .toEqual(Array(6).fill("gpt-5.6-luna"));
       } finally {
         setServer({ publish() {} });
         for (const [key, value] of savedEnv) {
@@ -1627,7 +1769,7 @@ describe("Game REST API", () => {
 
     test("records filled player models from game model selection", async () => {
       const { id } = await createTestGame(app, adminToken, {
-        playerCount: 4,
+        playerCount: 6,
         modelSelection: {
           catalogId: "katana:grok-4-3",
           reasoningPolicy: "low",
@@ -1644,7 +1786,7 @@ describe("Game REST API", () => {
         .from(schema.gamePlayers)
         .where(eq(schema.gamePlayers.gameId, id));
       expect(players.map((player) => JSON.parse(player.agentConfig).model))
-        .toEqual(["grok-4-3", "grok-4-3", "grok-4-3", "grok-4-3"]);
+        .toEqual(Array(6).fill("grok-4-3"));
     });
   });
 
@@ -1653,10 +1795,10 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("POST /api/games/:id/start", () => {
-    test("starts a game with enough players", async () => {
+    test("starts a game with six players", async () => {
       const { id } = await createTestGame(app, adminToken);
 
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
 
@@ -1665,7 +1807,7 @@ describe("Game REST API", () => {
 
       const body = (await res.json()) as { status: string; players: number };
       expect(body.status).toBe("in_progress");
-      expect(body.players).toBe(4);
+      expect(body.players).toBe(6);
 
       // Verify in DB
       const game = (await db
@@ -1677,7 +1819,7 @@ describe("Game REST API", () => {
 
     test("returns typed roster-freeze failures to start clients", async () => {
       const { id } = await createTestGame(app, adminToken);
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         await joinTestPlayer(app, id, `RatedPlayer${i}`, userToken);
       }
       const season = await createSeason(db, {
@@ -1703,7 +1845,7 @@ describe("Game REST API", () => {
     test("rejects provider startup before claiming the run", async () => {
       const { id } = await createTestGame(app, adminToken);
 
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
 
@@ -1747,7 +1889,7 @@ describe("Game REST API", () => {
 
     test("unwinds the exact zero-event owner when synchronous runner startup fails", async () => {
       const { id } = await createTestGame(app, adminToken);
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         await joinTestPlayer(app, id, `StartupPlayer${i}`, userToken);
       }
       const failingApp = new Hono().route("/", createGameRoutes(db, {
@@ -1779,20 +1921,22 @@ describe("Game REST API", () => {
       expect(await retried.json()).toMatchObject({ status: "in_progress" });
     });
 
-    test("rejects start with too few players", async () => {
+    test("rejects start with five players", async () => {
       const { id } = await createTestGame(app, adminToken);
-      await joinTestPlayer(app, id, "Solo", userToken);
+      for (let i = 0; i < 5; i++) {
+        await joinTestPlayer(app, id, `Player${i}`, userToken);
+      }
 
       const res = await app.request(`/api/games/${id}/start`, authPost(adminToken));
       expect(res.status).toBe(400);
 
       const body = (await res.json()) as { error: string };
-      expect(body.error).toContain("Not enough players");
+      expect(body.error).toBe("Not enough players. Need at least 6, have 5");
     });
 
     test("rejects start for non-waiting game", async () => {
       const { id } = await createTestGame(app, adminToken);
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         await joinTestPlayer(app, id, `Player${i}`, userToken);
       }
 
@@ -2128,7 +2272,7 @@ describe("Game REST API", () => {
 
   describe("GET /api/games/:id/alliances", () => {
     test("returns public game-level alliance facts and huddle speech without thinking", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
 
@@ -2275,7 +2419,7 @@ describe("Game REST API", () => {
     });
 
     test("keeps generic transcript huddle filtering while exposing huddle speech through alliances", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
       await insertFixturePlayers(db, id);
       await markGameInProgress(db, id);
 
@@ -2395,22 +2539,22 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("full game lifecycle", () => {
-    test("create → join × 4 → start → stop", async () => {
+    test("create → join × 6 → start → stop", async () => {
       // Create
       const { id, slug } = await createTestGame(app, adminToken);
       expect(slug).toBeTruthy();
 
-      // Join 4 players
+      // Join 6 players
       const playerIds: string[] = [];
-      for (const name of ["Atlas", "Vera", "Finn", "Mira"]) {
+      for (const name of ["Atlas", "Vera", "Finn", "Mira", "Echo", "Nyx"]) {
         const { playerId } = await joinTestPlayer(app, id, name, userToken, `${name} personality`);
         playerIds.push(playerId);
       }
 
-      // Verify game detail shows 4 players
+      // Verify game detail shows 6 players
       const detailRes = await app.request(`/api/games/${id}`);
       const detail = (await detailRes.json()) as { players: unknown[] };
-      expect(detail.players).toHaveLength(4);
+      expect(detail.players).toHaveLength(6);
 
       // Start
       const startRes = await app.request(`/api/games/${id}/start`, authPost(adminToken));
@@ -2630,10 +2774,10 @@ describe("Game REST API", () => {
     });
 
     test("POST /api/games/:id/start reassigns duplicate House names inside roster freeze", async () => {
-      const { id } = await createTestGame(app, adminToken, { playerCount: 4 });
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
 
       // Manually insert players with duplicate names via direct DB insert
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 6; i++) {
         const name = i < 2 ? "Atlas" : `Player${i}`;
         const playerId = randomUUID();
         await db.insert(schema.gamePlayers).values({
@@ -2664,7 +2808,7 @@ describe("Game REST API", () => {
     test("POST /api/games/:id/start does not modify names when no collisions", async () => {
       const { id } = await createTestGame(app, adminToken);
 
-      const uniqueNames = ["Atlas", "Vera", "Finn", "Mira"];
+      const uniqueNames = ["Atlas", "Vera", "Finn", "Mira", "Echo", "Nyx"];
       for (const name of uniqueNames) {
         await joinTestPlayer(app, id, name, userToken);
       }

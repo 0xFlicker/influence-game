@@ -5,6 +5,7 @@
  */
 
 export type UUID = string;
+import type { LaunchFormatId } from "./format-presentation-metadata";
 
 // ---------------------------------------------------------------------------
 // Game phases
@@ -612,7 +613,14 @@ export type AgentAction =
 
 export type ViewerMode = "live" | "speedrun" | "replay";
 
+/** Minimum roster size admitted for newly created games. */
+export const MIN_NEW_GAME_PLAYERS = 6;
+/** Maximum roster size admitted for newly created games. */
+export const MAX_NEW_GAME_PLAYERS = 12;
+
 export interface GameConfig {
+  /** Frozen legal formats for this game. Omission is normalized at admission. */
+  formatManifest?: readonly LaunchFormatId[];
   /** Phase durations in milliseconds (0 = wait for all players to respond) */
   timers: {
     introduction: number;
@@ -682,8 +690,8 @@ export const DEFAULT_CONFIG: GameConfig = {
     juryVote: 20_000,
   },
   maxRounds: 10,
-  minPlayers: 5,
-  maxPlayers: 12,
+  minPlayers: MIN_NEW_GAME_PLAYERS,
+  maxPlayers: MAX_NEW_GAME_PLAYERS,
   viewerMode: "speedrun",
 };
 

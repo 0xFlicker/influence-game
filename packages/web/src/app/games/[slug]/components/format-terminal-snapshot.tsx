@@ -5,6 +5,7 @@ import {
   compileFormatPresentationPrefix,
 } from "./format-presentation-model";
 import type { FormatPresentationRosterPlayer } from "./types";
+import type { LaunchFormatId } from "@influence/engine/format-presentation-metadata";
 
 /**
  * A terminal format game may be incomplete, but its accepted prefix is still
@@ -15,18 +16,21 @@ export function FormatTerminalSnapshot({
   gameId,
   roster,
   decisions,
+  formatManifest,
   eligiblePlayerIdsByRound,
   loading = false,
 }: {
   gameId: string;
   roster: readonly FormatPresentationRosterPlayer[];
   decisions: readonly ViewerDecisionEvent[];
+  formatManifest?: readonly LaunchFormatId[];
   eligiblePlayerIdsByRound?: ReadonlyMap<number, readonly string[]>;
   loading?: boolean;
 }) {
   const compilation = compileFormatPresentationPrefix({
     gameId,
     gameKernel: "format",
+    formatManifest,
     roster,
     decisions,
     eligiblePlayerIdsByRound,

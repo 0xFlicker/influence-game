@@ -920,6 +920,7 @@ export function GameViewer({
         {gamePresentation.route === "format" ? (
           <FormatTerminalSnapshot
             gameId={game.id}
+            formatManifest={game.formatManifest}
             roster={game.players.map((player) => ({
               id: player.id,
               name: player.name,
@@ -959,6 +960,7 @@ export function GameViewer({
         {gamePresentation.route === "format" ? (
           <FormatTerminalSnapshot
             gameId={game.id}
+            formatManifest={game.formatManifest}
             roster={game.players.map((player) => ({
               id: player.id,
               name: player.name,

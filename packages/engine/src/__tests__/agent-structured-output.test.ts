@@ -22,6 +22,7 @@ import {
   getRecallBaselineCase,
   RECALL_BASELINE_CORPUS,
 } from "./fixtures/recall-baseline/late-game-corpus";
+import { MockAgent } from "./mock-agent";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -282,6 +283,167 @@ function makeRejectingOpenAIStub(requests: Array<Record<string, unknown>>, error
     },
   } as unknown as OpenAI;
 }
+
+describe("sealed-elim agent decision surface", () => {
+  it("gives MockAgent a deterministic legal Majority Elimination ballot and menu pick", async () => {
+    const agent = new MockAgent("atlas-id", "Atlas");
+    const context = makeContext(Phase.FORMAT_RESOLVE);
+
+    const pick = await agent.pickRoundFormat(context, ["majority_elimination", "vote_bomb"]);
+    const ballot = await agent.getMajorityEliminationBallot(
+      context,
+      context.alivePlayers.map((player) => player.id),
+    );
+
+    expect(pick).toMatchObject({
+      formatId: "majority_elimination",
+      decisionSource: "llm",
+      fallbackReason: null,
+    });
+    expect(ballot).toMatchObject({
+      targetId: "mira-id",
+      decisionSource: "llm",
+      fallbackReason: null,
+    });
+    expect(ballot.targetId).not.toBe(agent.id);
+  });
+
+  it("uses a distinct strict Majority Elimination tool and most-votes rule sheet", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "majority_elimination_ballot", {
+        thinking: "Put my vote on the clearest threat.",
+        target: "Vera",
+        decisionLog: "Vote Vera because the highest total is eliminated.",
+      }),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const context: PhaseContext = {
+      ...makeContext(Phase.FORMAT_RESOLVE),
+      formatPressure: {
+        empoweredId: "mira-id",
+        empoweredName: "Mira",
+        offeredFormats: ["majority_elimination", "vote_bomb"],
+        selectedFormat: "majority_elimination",
+        ruleSheetSummary: ruleSheetForFormat("majority_elimination"),
+      },
+    };
+
+    const ballot = await agent.getMajorityEliminationBallot(
+      context,
+      context.alivePlayers.map((player) => player.id),
+    );
+
+    expect(ballot).toMatchObject({
+      targetId: "vera-id",
+      decisionSource: "llm",
+      fallbackReason: null,
+      decisionLog: "Vote Vera because the highest total is eliminated.",
+    });
+    expect(typeof ballot.decisionId).toBe("string");
+    expect(ballot.decisionId).toBe(traces[0]?.decisionId);
+    expect(traces[0]?.action).toBe("format-majority-elimination-ballot");
+    const request = requests[0]!;
+    expect((request.tool_choice as { function?: { name?: string } }).function?.name)
+      .toBe("majority_elimination_ballot");
+    const tool = (request.tools as Array<{
+      function: {
+        strict?: boolean;
+        parameters?: {
+          properties?: { target?: { enum?: string[] } };
+          required?: string[];
+          additionalProperties?: boolean;
+        };
+      };
+    }>)[0]!;
+    expect(tool.function.strict).toBe(true);
+    expect(tool.function.parameters?.additionalProperties).toBe(false);
+    expect(tool.function.parameters?.required).toEqual(
+      expect.arrayContaining(["thinking", "target", "decisionLog"]),
+    );
+    expect(tool.function.parameters?.properties?.target?.enum).toEqual(["Mira", "Vera"]);
+
+    const prompt = (request.messages as Array<{ content: string }>).at(-1)?.content ?? "";
+    expect(prompt).toContain("Majority Elimination");
+    expect(prompt).toContain(ruleSheetForFormat("majority_elimination"));
+    expect(prompt.toLowerCase()).toContain("most votes");
+    expect(prompt.toLowerCase()).toContain("all living players, including the empowered player");
+    expect(prompt).toContain("Vote Bomb");
+    expect(prompt).toContain("fewest-positive");
+    expect(prompt).toContain("Safety Bounce");
+    expect(prompt).toContain("vulnerable pool");
+    expect(prompt).not.toContain("Use the vote_bomb_ballot tool");
+  });
+
+  it("repairs illegal sealed-elim targets without claiming model-accept correlation", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "majority_elimination_ballot",
+          args: {
+            thinking: "Try an illegal target.",
+            target: "Nobody",
+            decisionLog: "Attempt a target outside the living cast.",
+          },
+        },
+        {
+          toolName: "vote_bomb_ballot",
+          args: {
+            thinking: "Try an illegal target.",
+            target: "Nobody",
+            decisionLog: "Attempt a target outside the living cast.",
+          },
+        },
+      ]),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const context = makeContext(Phase.FORMAT_RESOLVE);
+    const aliveIds = context.alivePlayers.map((player) => player.id);
+
+    const majority = await agent.getMajorityEliminationBallot(context, aliveIds);
+    const voteBomb = await agent.getVoteBombBallot(context, aliveIds);
+
+    expect(majority).toMatchObject({
+      targetId: "mira-id",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_majority_elimination_target",
+    });
+    expect(voteBomb).toMatchObject({
+      targetId: "mira-id",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_vote_bomb_target",
+    });
+    expect(majority.decisionId).toBeUndefined();
+    expect(voteBomb.decisionId).toBeUndefined();
+    expect(traces).toHaveLength(2);
+    expect(traces.every((trace) => Boolean(trace.decisionId))).toBe(true);
+  });
+});
 
 describe("InfluenceAgent structured output mode", () => {
   it("uses strict active-format tools and accepts legal decisions with LLM provenance", async () => {

@@ -25,6 +25,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
+import { MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "@influence/engine";
 import type { AgentGender } from "../lib/agent-gender.js";
 import type {
   OwnerLearningAnalysisStatus,
@@ -308,8 +309,8 @@ export const games = pgTable("games", {
    * Never default historical rows to classic — that would break inference.
    */
   gameKernel: text("game_kernel").$type<"classic" | "format">(),
-  minPlayers: integer("min_players").notNull().default(4),
-  maxPlayers: integer("max_players").notNull().default(12),
+  minPlayers: integer("min_players").notNull().default(MIN_NEW_GAME_PLAYERS),
+  maxPlayers: integer("max_players").notNull().default(MAX_NEW_GAME_PLAYERS),
   createdById: text("created_by_id").references(() => users.id),
   startedAt: text("started_at"),
   endedAt: text("ended_at"),

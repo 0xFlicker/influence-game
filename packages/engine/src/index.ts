@@ -69,6 +69,7 @@ export {
   acceptedActionSourcePointerMatches,
   assertCanonicalGameEvent,
   canonicalEventIsVisibleTo,
+  isSupportedCanonicalPayloadVersion,
   validateCanonicalGameEvent,
 } from "./canonical-events";
 export type {
@@ -85,6 +86,11 @@ export type {
   FormalSpeechProvenance,
   JudgmentSpeechKind,
   JudgmentSpeechProvenance,
+  AnyFormatResolutionPayload,
+  FormatResolutionAggregate,
+  FormatResolutionPayload,
+  FormatResolutionPayloadV1,
+  FormatResolutionPayloadV2,
 } from "./canonical-events";
 export {
   projectFormatBallotPresentation,
@@ -152,6 +158,7 @@ export type {
   CompletedGameResultsJury,
   CompletedGameResultsJuryVoteCount,
   CompletedGameResultsJuryVoteEntry,
+  CompletedGameResultsMajorityEliminationScore,
   CompletedGameResultsPlayer,
   CompletedGameResultsRead,
   CompletedGameResultsRound,
@@ -296,6 +303,7 @@ export type {
   RevealedFormatBallotPresentation,
   RevealedFormatBouncePointer,
   RevealedFormatFacts,
+  RevealedMajorityEliminationFacts,
   RevealedPlayerRef,
   RevealedPowerActionSummary,
   RevealedPowerFacts,
@@ -375,7 +383,15 @@ export type {
   PromptScenarioStructuralReport,
 } from "./prompt-scenario-lab";
 export type { LaunchFormatId } from "./formats";
-export { LAUNCH_FORMAT_IDS, isLaunchFormatId, displayNameForFormat } from "./formats";
+export {
+  DEFAULT_FORMAT_MANIFEST,
+  LEGACY_FORMAT_MANIFEST,
+  LAUNCH_FORMAT_IDS,
+  isLaunchFormatId,
+  isRegisteredFormatId,
+  resolveFormatManifest,
+  displayNameForFormat,
+} from "./formats";
 export {
   FORMAT_PRESENTATION_METADATA,
   formatPresentationMetadata,

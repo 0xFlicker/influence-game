@@ -3,6 +3,21 @@ import { Phase } from "@influence/engine";
 import { buildEngineConfigFromGameRecord } from "../services/game-lifecycle.js";
 
 describe("game lifecycle engine config", () => {
+  test("hydrates the frozen format manifest and rejects corrupt stored ids", () => {
+    expect(buildEngineConfigFromGameRecord({
+      formatManifest: ["vote_bomb", "majority_elimination"],
+    }, 4, 8).formatManifest).toEqual(["vote_bomb", "majority_elimination"]);
+
+    expect(buildEngineConfigFromGameRecord({}, 4, 8).formatManifest).toEqual([
+      "save_or_eliminate",
+      "vote_bomb",
+      "safety_bounce",
+    ]);
+    expect(() => buildEngineConfigFromGameRecord({
+      formatManifest: ["unknown_format"],
+    }, 4, 8)).toThrow("registered");
+  });
+
   test("enables format-kernel diaries while retaining the legacy Council boundary", () => {
     const config = buildEngineConfigFromGameRecord(
       {
