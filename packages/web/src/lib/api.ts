@@ -1467,6 +1467,7 @@ export interface AuthMe extends AuthenticatedPublicIdentity {
   loginMethods: {
     privy: boolean;
     emailPassword: boolean;
+    farcaster?: boolean;
   };
 }
 
@@ -1484,6 +1485,22 @@ export async function loginWithPrivyToken(
   return providerAuthFetch("/api/auth/login", {
     method: "POST",
     body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
+  });
+}
+
+export async function loginWithFarcasterToken(
+  farcasterToken: string,
+  inviteCode?: string,
+): Promise<{
+  token: string;
+  user: Omit<AuthMe, "isAdmin">;
+}> {
+  return providerAuthFetch("/api/auth/farcaster/login", {
+    method: "POST",
+    body: JSON.stringify({
+      token: farcasterToken,
+      ...(inviteCode ? { inviteCode } : {}),
+    }),
   });
 }
 

@@ -25,6 +25,7 @@
     "@aws-sdk/client-s3": "3.1078.0",
     "@aws-sdk/s3-request-presigner": "3.1078.0",
     "@clerk/backend": "3.11.7",
+    "@farcaster/quick-auth": "^0.0.8",
     "@influence/engine": "workspace:*",
     "@influence/prompt-lab-protocol": "workspace:*",
     "@msgpack/msgpack": "^3.1.2",

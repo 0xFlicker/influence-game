@@ -201,7 +201,7 @@ export const users = pgTable("users", {
   ),
 ]);
 
-export type AuthenticationProvider = "privy" | "clerk";
+export type AuthenticationProvider = "privy" | "clerk" | "farcaster";
 
 export const authenticationCredentials = pgTable("authentication_credentials", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -222,7 +222,7 @@ export const authenticationCredentials = pgTable("authentication_credentials", {
     .where(sql`${table.retiredAt} IS NULL`),
   check(
     "authentication_credentials_provider_check",
-    sql`${table.provider} IN ('privy', 'clerk')`,
+    sql`${table.provider} IN ('privy', 'clerk', 'farcaster')`,
   ),
 ]);
 

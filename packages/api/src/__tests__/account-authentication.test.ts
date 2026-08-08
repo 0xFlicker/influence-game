@@ -503,6 +503,83 @@ describe("account authentication resolver", () => {
     expect(await claims(db)).toHaveLength(0);
   });
 
+  test("farcaster creates a new account for an unknown FID without primary address", async () => {
+    const outcome = await resolveAccountAuthentication(db, {
+      provider: "farcaster",
+      subject: "6841",
+      evidence: farcasterEvidence(6841),
+    });
+
+    expect(outcome.status).toBe("authenticated");
+    if (outcome.status !== "authenticated") return;
+    expect(outcome.created).toBe(true);
+    expect(outcome.user.walletAddress).toBeNull();
+    expect((await credentials(db))[0]).toMatchObject({
+      provider: "farcaster",
+      providerSubject: "6841",
+    });
+  });
+
+  test("farcaster attaches to an existing Privy user when primary EOA matches", async () => {
+    await insertUser(db, "privy-wallet-user", EXTERNAL_WALLET, null);
+    await db.insert(schema.authenticationCredentials).values({
+      userId: "privy-wallet-user",
+      provider: "privy",
+      providerSubject: "did:privy:shared-eoa",
+    });
+
+    const outcome = await resolveAccountAuthentication(db, {
+      provider: "farcaster",
+      subject: "9001",
+      evidence: farcasterEvidence(9001, EXTERNAL_WALLET),
+    });
+
+    expect(outcome.status).toBe("authenticated");
+    if (outcome.status !== "authenticated") return;
+    expect(outcome.created).toBe(false);
+    expect(outcome.user.id).toBe("privy-wallet-user");
+    const rows = await credentials(db);
+    expect(rows).toHaveLength(2);
+    expect(rows.some((row) => row.provider === "farcaster" && row.providerSubject === "9001"))
+      .toBe(true);
+  });
+
+  test("privy wallet login attaches to a farcaster-created user with the same EOA", async () => {
+    const farcasterFirst = await resolveAccountAuthentication(db, {
+      provider: "farcaster",
+      subject: "4242",
+      evidence: farcasterEvidence(4242, EXTERNAL_WALLET),
+    });
+    expect(farcasterFirst.status).toBe("authenticated");
+    if (farcasterFirst.status !== "authenticated") return;
+
+    const privyLater = await resolveAccountAuthentication(db, {
+      provider: "privy",
+      subject: "did:privy:after-farcaster",
+      evidence: externalEvidence("did:privy:after-farcaster"),
+    });
+
+    expect(privyLater.status).toBe("authenticated");
+    if (privyLater.status !== "authenticated") return;
+    expect(privyLater.user.id).toBe(farcasterFirst.user.id);
+    expect(await credentials(db)).toHaveLength(2);
+  });
+
+  test("farcaster still attaches by wallet when the privy compatibility bridge is disabled", async () => {
+    await insertUser(db, "wallet-owner", EXTERNAL_WALLET, null);
+
+    const outcome = await resolveAccountAuthentication(db, {
+      provider: "farcaster",
+      subject: "7777",
+      evidence: farcasterEvidence(7777, EXTERNAL_WALLET),
+      compatibilityBridgeEnabled: false,
+    });
+
+    expect(outcome.status).toBe("authenticated");
+    if (outcome.status !== "authenticated") return;
+    expect(outcome.user.id).toBe("wallet-owner");
+  });
+
   test("unknown credentials fail closed during profile outage", async () => {
     const outcome = await resolveAccountAuthentication(db, {
       provider: "privy",
@@ -784,6 +861,26 @@ function managedEvidence(
       kind: "email",
       normalizedEmail: normalizeVerifiedEmail(email),
     },
+    productWalletAddress: null,
+  };
+}
+
+function farcasterEvidence(
+  fid: number,
+  primaryAddress?: string,
+): VerifiedProviderEvidence {
+  return {
+    provider: "farcaster",
+    subject: String(fid),
+    owner: primaryAddress
+      ? {
+          kind: "external_wallet",
+          address: primaryAddress.toLowerCase(),
+        }
+      : {
+          kind: "farcaster",
+          fid,
+        },
     productWalletAddress: null,
   };
 }
