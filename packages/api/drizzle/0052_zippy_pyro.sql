@@ -1,0 +1,1 @@
+ALTER TABLE "games" ALTER COLUMN "min_players" SET DEFAULT 6;

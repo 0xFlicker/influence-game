@@ -33,6 +33,7 @@ import {
 import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   DEFAULT_FORMAT_MANIFEST,
+  MIN_NEW_GAME_PLAYERS,
   pickAgentNames,
   pickArchetypes,
 } from "@influence/engine";
@@ -260,7 +261,7 @@ export function createFreeQueueRoutes(
     }
 
     const maxPlayers = 12;
-    const minPlayers = 4;
+    const minPlayers = MIN_NEW_GAME_PLAYERS;
 
     // Create the game
     const gameId = randomUUID();
