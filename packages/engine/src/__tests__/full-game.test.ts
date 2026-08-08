@@ -1,7 +1,7 @@
 /**
  * Influence Game - Full Game Integration Test
  *
- * Runs a complete game with 4-6 LLM-driven AI agents.
+ * Runs a complete game with 6 LLM-driven AI agents.
  * Uses gpt-5-nano via OPENAI_API_KEY (inject with `doppler run -- bun test`).
  *
  * Validates:
@@ -81,7 +81,7 @@ function printTranscript(
 
 describe("Full Influence Game", () => {
   it(
-    "runs a complete game with 4 LLM agents",
+    "runs a complete game with 6 LLM agents",
     async () => {
       const llmConfig = createLlmClientFromEnv();
       if (!llmConfig) {
@@ -93,15 +93,17 @@ describe("Full Influence Game", () => {
       const openai = llmConfig.client;
       const model = process.env.INFLUENCE_TEST_MODEL ?? DEFAULT_MODEL_ID;
 
-      // Create 4 agents with distinct personalities
+      // Create 6 agents with distinct personalities
       const agents = [
         new InfluenceAgent(createUUID(), "Atlas", "strategic", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
         new InfluenceAgent(createUUID(), "Vera", "deceptive", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
         new InfluenceAgent(createUUID(), "Finn", "honest", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
         new InfluenceAgent(createUUID(), "Mira", "social", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
+        new InfluenceAgent(createUUID(), "Rex", "aggressive", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
+        new InfluenceAgent(createUUID(), "Lyra", "paranoid", openai, model, undefined, undefined, { toolChoiceMode: llmConfig.toolChoiceMode }),
       ];
 
-      console.log("\n🎮 Starting Influence game with 4 agents:");
+      console.log("\n🎮 Starting Influence game with 6 agents:");
       console.log(`   Players: ${agents.map((a) => `${a.name} (${a.personality})`).join(", ")}`);
       console.log(`   Max rounds: ${TEST_CONFIG.maxRounds}\n`);
 

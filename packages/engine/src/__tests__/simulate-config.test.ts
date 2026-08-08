@@ -21,7 +21,7 @@ import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
 import { instrumentGame } from "../simulation-instrumentation";
 import { transcriptThinkingFor } from "../phases/phase-runner-context";
-import { DEFAULT_CONFIG, Phase } from "../types";
+import { DEFAULT_CONFIG, MIN_NEW_GAME_PLAYERS, Phase } from "../types";
 import type { ServiceTierUsage, TokenUsage } from "../token-tracker";
 
 const ZERO_USAGE: TokenUsage = {
@@ -63,6 +63,21 @@ function gameResult(overrides: Partial<GameResult>): GameResult {
 }
 
 describe("simulation variant config", () => {
+  it("uses the shared six-player minimum for new simulator games", () => {
+    expect(MIN_NEW_GAME_PLAYERS).toBe(6);
+    expect(DEFAULT_CONFIG.minPlayers).toBe(MIN_NEW_GAME_PLAYERS);
+    expect(parseArgs([]).players).toBe(MIN_NEW_GAME_PLAYERS);
+  });
+
+  it("rejects invalid or under-minimum simulator player counts", () => {
+    expect(() => parseArgs(["--players", "5"])).toThrow("at least 6");
+    expect(() => parseArgs(["--players", "not-a-number"])).toThrow("at least 6");
+  });
+
+  it("requires at least six explicitly requested personas", () => {
+    expect(() => parseArgs(["--personas", "Atlas,Vera,Finn,Mira,Rex"])).toThrow("at least 6");
+  });
+
   it("leaves experiment flags off for the baseline variant", () => {
     const config = buildSimulationConfig("baseline");
 

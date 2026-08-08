@@ -14,6 +14,7 @@ import {
 } from "./model-catalog";
 import type { OpenAIRequestServiceTier } from "./llm-client";
 import { resolveFormatManifest, type LaunchFormatId } from "./formats";
+import { MIN_NEW_GAME_PLAYERS } from "./types";
 
 interface ApiSimArgs {
   apiBaseUrl: string;
@@ -80,7 +81,9 @@ export function parseArgs(
   const args: ApiSimArgs = {
     apiBaseUrl: env.INFLUENCE_API_BASE_URL ?? DEFAULT_API_BASE_URL,
     games: readPositiveInt(env.INFLUENCE_API_SIM_GAMES, 1),
-    players: readPositiveInt(env.INFLUENCE_API_SIM_PLAYERS, 4),
+    players: env.INFLUENCE_API_SIM_PLAYERS === undefined
+      ? MIN_NEW_GAME_PLAYERS
+      : parseInt(env.INFLUENCE_API_SIM_PLAYERS, 10),
     provider: parseProvider(env.INFLUENCE_API_SIM_PROVIDER) ?? "openai",
     model: env.INFLUENCE_API_SIM_MODEL,
     modelCatalogId: env.INFLUENCE_API_SIM_MODEL_CATALOG_ID,
@@ -166,7 +169,9 @@ export function parseArgs(
   }
 
   if (!Number.isFinite(args.games) || args.games < 1) throw new Error("--games must be a positive integer");
-  if (!Number.isFinite(args.players) || args.players < 4) throw new Error("--players must be at least 4");
+  if (!Number.isFinite(args.players) || args.players < MIN_NEW_GAME_PLAYERS) {
+    throw new Error(`--players must be at least ${MIN_NEW_GAME_PLAYERS}`);
+  }
   if (!hasExplicitMaxRounds) {
     args.maxRounds = defaultApiSimulationMaxRounds(args.players);
   }
@@ -373,7 +378,7 @@ function printHelp(): void {
   bun run simulate:api -- --standard  # opt out of hosted OpenAI Flex
 
 Defaults:
-  --max-rounds scales with player count for short API smoke games (4 players -> 5)
+  --max-rounds scales with player count for short API smoke games (6 players -> 7)
 
 Auth:
   Uses INFLUENCE_API_SESSION_TOKEN when set, otherwise exchanges INFLUENCE_MCP_TOKEN

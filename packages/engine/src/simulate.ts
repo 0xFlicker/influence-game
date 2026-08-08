@@ -7,7 +7,7 @@
  * Usage:
  *   bun run simulate
  *   bun run simulate -- --games 5 --players 6
- *   bun run simulate -- --games 3 --players 4 --personas Atlas,Vera,Finn,Mira
+ *   bun run simulate -- --games 3 --players 6 --personas Atlas,Vera,Finn,Mira,Rex,Lyra
  *   bun run simulate -- --variant mingle
  *   bun run simulate -- --variant power-lobby-mingle
  *   bun run simulate -- --variant mingle --strategic-reflections
@@ -172,7 +172,7 @@ import type { CanonicalGameEvent } from "./canonical-events";
 import { InfluenceAgent, type Personality } from "./agent";
 import { LLMHouseInterviewer } from "./house-interviewer";
 import { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";
-import { DEFAULT_CONFIG, Phase, type GameConfig, type UUID } from "./types";
+import { DEFAULT_CONFIG, MIN_NEW_GAME_PLAYERS, Phase, type GameConfig, type UUID } from "./types";
 import { resolveFormatManifest, type LaunchFormatId } from "./formats";
 import {
   TokenTracker,
@@ -284,7 +284,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
   const args: SimArgs = {
     games: 3,
-    players: 6,
+    players: MIN_NEW_GAME_PLAYERS,
     maxRounds: 10,
     personas: null,
     model: DEFAULT_MODEL_ID,
@@ -404,7 +404,12 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
-  if (isNaN(args.players) || args.players < 4) args.players = 4;
+  if (!Number.isFinite(args.players) || args.players < MIN_NEW_GAME_PLAYERS) {
+    throw new Error(`--players must be at least ${MIN_NEW_GAME_PLAYERS}`);
+  }
+  if (args.personas && args.personas.length < MIN_NEW_GAME_PLAYERS) {
+    throw new Error(`--personas must include at least ${MIN_NEW_GAME_PLAYERS} names`);
+  }
   if (args.players > DEFAULT_CONFIG.maxPlayers) args.players = DEFAULT_CONFIG.maxPlayers;
   // At least 1 standard round; keep an upper bound so typos don't run forever.
   if (isNaN(args.maxRounds) || args.maxRounds < 1) args.maxRounds = 1;
@@ -594,9 +599,9 @@ function selectCast(
       .map((name) => FULL_CAST.find((c) => c.name.toLowerCase() === name.toLowerCase()))
       .filter((c): c is { name: string; personality: Personality } => c != null);
 
-    if (selected.length < 4) {
+    if (selected.length < MIN_NEW_GAME_PLAYERS) {
       console.error(
-        `Error: Only ${selected.length} valid personas found. Need at least 4. Available: ${FULL_CAST.map((c) => c.name).join(", ")}`,
+        `Error: Only ${selected.length} valid personas found. Need at least ${MIN_NEW_GAME_PLAYERS}. Available: ${FULL_CAST.map((c) => c.name).join(", ")}`,
       );
       process.exit(1);
     }

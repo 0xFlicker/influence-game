@@ -5,9 +5,22 @@ import {
   defaultApiSimulationMaxRounds,
   parseArgs,
 } from "../api-simulate";
-import { computeMaxRounds } from "../types";
+import { computeMaxRounds, MIN_NEW_GAME_PLAYERS } from "../types";
 
 describe("API-backed simulation config", () => {
+  it("defaults new API simulation games to the shared six-player minimum", () => {
+    const args = parseArgs([], {});
+
+    expect(args.players).toBe(MIN_NEW_GAME_PLAYERS);
+    expect(args.maxRounds).toBe(7);
+  });
+
+  it("rejects invalid or under-minimum API simulation player counts", () => {
+    expect(() => parseArgs(["--players", "5"], {})).toThrow("at least 6");
+    expect(() => parseArgs(["--players", "not-a-number"], {})).toThrow("at least 6");
+    expect(() => parseArgs([], { INFLUENCE_API_SIM_PLAYERS: "5" })).toThrow("at least 6");
+  });
+
   it("defaults short smoke games to player-scaled max rounds", () => {
     expect(defaultApiSimulationMaxRounds(4)).toBe(5);
     expect(defaultApiSimulationMaxRounds(8)).toBe(9);
@@ -15,16 +28,16 @@ describe("API-backed simulation config", () => {
   });
 
   it("derives default max rounds after CLI player args are parsed", () => {
-    const args = parseArgs(["--players", "4", "--provider", "katana", "--model", "q-naifu-a3b"], {});
+    const args = parseArgs(["--players", "6", "--provider", "katana", "--model", "q-naifu-a3b"], {});
 
-    expect(args.players).toBe(4);
-    expect(args.maxRounds).toBe(5);
+    expect(args.players).toBe(6);
+    expect(args.maxRounds).toBe(7);
   });
 
   it("preserves explicit max rounds from env or CLI args", () => {
-    expect(parseArgs(["--players", "4"], { INFLUENCE_API_SIM_MAX_ROUNDS: "7" }).maxRounds).toBe(7);
-    expect(parseArgs(["--players", "4", "--max-rounds", "auto"], {}).maxRounds).toBe("auto");
-    expect(parseArgs(["--players", "4", "--max-rounds", "6"], {}).maxRounds).toBe(6);
+    expect(parseArgs(["--players", "6"], { INFLUENCE_API_SIM_MAX_ROUNDS: "7" }).maxRounds).toBe(7);
+    expect(parseArgs(["--players", "6", "--max-rounds", "auto"], {}).maxRounds).toBe("auto");
+    expect(parseArgs(["--players", "6", "--max-rounds", "6"], {}).maxRounds).toBe(6);
   });
 
   it("defaults API-backed games to Flex and forwards the standard opt-out", () => {

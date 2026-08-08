@@ -613,6 +613,9 @@ export type AgentAction =
 
 export type ViewerMode = "live" | "speedrun" | "replay";
 
+/** Minimum roster size admitted for newly created games. */
+export const MIN_NEW_GAME_PLAYERS = 6;
+
 export interface GameConfig {
   /** Frozen legal formats for this game. Omission is normalized at admission. */
   formatManifest?: readonly LaunchFormatId[];
@@ -685,7 +688,7 @@ export const DEFAULT_CONFIG: GameConfig = {
     juryVote: 20_000,
   },
   maxRounds: 10,
-  minPlayers: 5,
+  minPlayers: MIN_NEW_GAME_PLAYERS,
   maxPlayers: 12,
   viewerMode: "speedrun",
 };
