@@ -25,7 +25,7 @@ import { SignJWT } from "jose";
 import { sql } from "drizzle-orm";
 import { parseArgs } from "util";
 import { createDB, schema } from "../packages/api/src/db/index.js";
-import { MIN_NEW_GAME_PLAYERS } from "@influence/engine";
+import { MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "@influence/engine";
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -54,8 +54,14 @@ const WAIT = args.wait!;
 const SKIP_FILL = args["no-fill"]!;
 const SKIP_START = args["no-start"]!;
 
-if (!Number.isInteger(PLAYER_COUNT) || PLAYER_COUNT < MIN_NEW_GAME_PLAYERS || PLAYER_COUNT > 12) {
-  console.error(`ERROR: --players must be an integer between ${MIN_NEW_GAME_PLAYERS} and 12`);
+if (
+  !Number.isInteger(PLAYER_COUNT)
+  || PLAYER_COUNT < MIN_NEW_GAME_PLAYERS
+  || PLAYER_COUNT > MAX_NEW_GAME_PLAYERS
+) {
+  console.error(
+    `ERROR: --players must be an integer between ${MIN_NEW_GAME_PLAYERS} and ${MAX_NEW_GAME_PLAYERS}`,
+  );
   process.exit(1);
 }
 

@@ -33,6 +33,7 @@ import {
 import { gameOwnerClaimErrorBody } from "../lib/game-owner-claim-response.js";
 import {
   DEFAULT_FORMAT_MANIFEST,
+  MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
   pickAgentNames,
   pickArchetypes,
@@ -260,7 +261,7 @@ export function createFreeQueueRoutes(
       }, 400);
     }
 
-    const maxPlayers = 12;
+    const maxPlayers = MAX_NEW_GAME_PLAYERS;
     const minPlayers = MIN_NEW_GAME_PLAYERS;
 
     // Create the game

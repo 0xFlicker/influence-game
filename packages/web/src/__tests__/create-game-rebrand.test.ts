@@ -1,13 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { CREATE_GAME_PLAYER_COUNTS } from "../lib/game-creation";
 
 const createFormSource = readFileSync(
   join(import.meta.dir, "../app/admin/games/new/create-game-form.tsx"),
-  "utf8",
-);
-const apiSource = readFileSync(
-  join(import.meta.dir, "../lib/api.ts"),
   "utf8",
 );
 const createPageSource = readFileSync(
@@ -40,11 +37,8 @@ describe("create game Influence selection", () => {
   });
 
   it("only offers supported six-player-and-up game sizes", () => {
-    expect(createFormSource).toContain("playerCount: 6 | 8 | 10 | 12;");
-    expect(createFormSource).toContain("options={[6, 8, 10, 12].map");
-    expect(apiSource).toContain("playerCount: 6 | 8 | 10 | 12;");
-    expect(createFormSource).not.toContain("playerCount: 4 | 6");
-    expect(apiSource).not.toContain("playerCount: 4 | 6");
+    expect(CREATE_GAME_PLAYER_COUNTS).toEqual([6, 8, 10, 12]);
+    expect(createFormSource).toContain("options={CREATE_GAME_PLAYER_COUNTS.map");
   });
 
   it("does not add a fake multi-game selector", () => {

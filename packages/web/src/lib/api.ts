@@ -4,6 +4,7 @@
  */
 
 import { gamePathSegment } from "./game-links";
+import type { CreateGamePlayerCount } from "./game-creation";
 import type {
   CompletedGameResultsAvailabilityStatus as EngineCompletedGameResultsAvailabilityStatus,
   CompletedGameResultsElimination as EngineCompletedGameResultsElimination,
@@ -419,7 +420,7 @@ export interface GameWatchReplayFrame {
 export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
-  playerCount: 6 | 8 | 10 | 12;
+  playerCount: CreateGamePlayerCount;
   slotType: "all_ai" | "mixed";
   modelSelection: GameModelSelection;
   personaPool: PersonaKey[];

@@ -80,6 +80,7 @@ import {
 } from "../services/game-completion-settlement.js";
 import {
   LEGACY_FORMAT_MANIFEST,
+  MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
   generatePersona,
   normalizeGameModelSelection,
@@ -144,15 +145,19 @@ export function createGameRoutes(
 
     if (
       playerCount !== undefined
-      && (!Number.isInteger(playerCount) || playerCount < MIN_NEW_GAME_PLAYERS || playerCount > 12)
+      && (
+        !Number.isInteger(playerCount)
+        || playerCount < MIN_NEW_GAME_PLAYERS
+        || playerCount > MAX_NEW_GAME_PLAYERS
+      )
     ) {
       return c.json({
-        error: `playerCount must be an integer between ${MIN_NEW_GAME_PLAYERS} and 12`,
+        error: `playerCount must be an integer between ${MIN_NEW_GAME_PLAYERS} and ${MAX_NEW_GAME_PLAYERS}`,
       }, 400);
     }
 
     const minPlayers = MIN_NEW_GAME_PLAYERS;
-    const maxPlayers = playerCount ?? 12;
+    const maxPlayers = playerCount ?? MAX_NEW_GAME_PLAYERS;
 
     // Build GameConfig (engine-compatible)
     const timerPresets: Record<string, Record<string, number>> = {

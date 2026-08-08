@@ -138,7 +138,7 @@ describe("free queue season admission", () => {
     }
     const standingEntries = await db.select().from(schema.freeGameQueue);
     const byId = (left: { id: string }, right: { id: string }) => left.id.localeCompare(right.id);
-    expect([...standingEntries].sort(byId)).toEqual([...standingBefore].sort(byId));
+    expect(standingEntries.toSorted(byId)).toEqual(standingBefore.toSorted(byId));
     expect(standingEntries.every((entry) => entry.consecutiveMisses === 0)).toBe(true);
     expect(await db.select().from(schema.competitionRatingSnapshots)).toEqual([]);
   });

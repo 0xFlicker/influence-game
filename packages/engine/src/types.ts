@@ -615,6 +615,8 @@ export type ViewerMode = "live" | "speedrun" | "replay";
 
 /** Minimum roster size admitted for newly created games. */
 export const MIN_NEW_GAME_PLAYERS = 6;
+/** Maximum roster size admitted for newly created games. */
+export const MAX_NEW_GAME_PLAYERS = 12;
 
 export interface GameConfig {
   /** Frozen legal formats for this game. Omission is normalized at admission. */
@@ -689,7 +691,7 @@ export const DEFAULT_CONFIG: GameConfig = {
   },
   maxRounds: 10,
   minPlayers: MIN_NEW_GAME_PLAYERS,
-  maxPlayers: 12,
+  maxPlayers: MAX_NEW_GAME_PLAYERS,
   viewerMode: "speedrun",
 };
 

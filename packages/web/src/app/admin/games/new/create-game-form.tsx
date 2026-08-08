@@ -9,6 +9,7 @@ import {
   type ModelReasoningPolicy,
   type PersonaKey,
 } from "@/lib/api";
+import { CREATE_GAME_PLAYER_COUNTS } from "@/lib/game-creation";
 import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
 
 // ---------------------------------------------------------------------------
@@ -92,7 +93,7 @@ const THINKING_DEPTHS: Array<{
 // ---------------------------------------------------------------------------
 
 interface FormState {
-  playerCount: 6 | 8 | 10 | 12;
+  playerCount: CreateGameParams["playerCount"];
   slotType: "all_ai" | "mixed";
   modelCatalogId: ModelCatalogId;
   reasoningPolicy: Exclude<ModelReasoningPolicy, "action-policy">;
@@ -252,7 +253,7 @@ export function CreateGameForm() {
         <RadioGroup
           label="Player count"
           value={String(form.playerCount) as never}
-          options={[6, 8, 10, 12].map((n) => ({
+          options={CREATE_GAME_PLAYER_COUNTS.map((n) => ({
             value: String(n) as never,
             label: String(n),
           }))}
