@@ -71,6 +71,7 @@ describe("simulation variant config", () => {
 
   it("rejects invalid or under-minimum simulator player counts", () => {
     expect(() => parseArgs(["--players", "5"])).toThrow("at least 6");
+    expect(() => parseArgs(["--players", "6.5"])).toThrow("integer");
     expect(() => parseArgs(["--players", "not-a-number"])).toThrow("at least 6");
   });
 

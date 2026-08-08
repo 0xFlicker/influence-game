@@ -14,7 +14,7 @@ import {
 } from "./model-catalog";
 import type { OpenAIRequestServiceTier } from "./llm-client";
 import { resolveFormatManifest, type LaunchFormatId } from "./formats";
-import { MIN_NEW_GAME_PLAYERS } from "./types";
+import { MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "./types";
 
 interface ApiSimArgs {
   apiBaseUrl: string;
@@ -83,7 +83,7 @@ export function parseArgs(
     games: readPositiveInt(env.INFLUENCE_API_SIM_GAMES, 1),
     players: env.INFLUENCE_API_SIM_PLAYERS === undefined
       ? MIN_NEW_GAME_PLAYERS
-      : parseInt(env.INFLUENCE_API_SIM_PLAYERS, 10),
+      : Number(env.INFLUENCE_API_SIM_PLAYERS),
     provider: parseProvider(env.INFLUENCE_API_SIM_PROVIDER) ?? "openai",
     model: env.INFLUENCE_API_SIM_MODEL,
     modelCatalogId: env.INFLUENCE_API_SIM_MODEL_CATALOG_ID,
@@ -113,7 +113,7 @@ export function parseArgs(
       args.games = parseInt(next, 10);
       i++;
     } else if (arg === "--players" && next) {
-      args.players = parseInt(next, 10);
+      args.players = Number(next);
       i++;
     } else if (arg === "--provider" && next) {
       args.provider = parseProvider(next) ?? args.provider;
@@ -169,8 +169,14 @@ export function parseArgs(
   }
 
   if (!Number.isFinite(args.games) || args.games < 1) throw new Error("--games must be a positive integer");
-  if (!Number.isFinite(args.players) || args.players < MIN_NEW_GAME_PLAYERS) {
-    throw new Error(`--players must be at least ${MIN_NEW_GAME_PLAYERS}`);
+  if (
+    !Number.isInteger(args.players)
+    || args.players < MIN_NEW_GAME_PLAYERS
+    || args.players > MAX_NEW_GAME_PLAYERS
+  ) {
+    throw new Error(
+      `--players must be an integer between ${MIN_NEW_GAME_PLAYERS} and ${MAX_NEW_GAME_PLAYERS}`,
+    );
   }
   if (!hasExplicitMaxRounds) {
     args.maxRounds = defaultApiSimulationMaxRounds(args.players);

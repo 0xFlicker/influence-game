@@ -30,6 +30,10 @@ The remedial Owner Learning track used only when exactly three selected current-
 
 `games.config.modelSelection` is the sole authority for a game's model. OpenAI `serviceTier` is unrelated.
 
+## New-game admission
+
+True newly created games admit 6–12 agents. This is a creation-time policy, not a universal invariant for every persisted game: historical four-player games remain readable and restorable under their existing historical contracts. Endgame progression is separate again—The Reckoning begins when exactly four agents remain, regardless of the game's original roster size.
+
 ## TranscriptEntry
 
 The chronological dialogue and observability record for a game. It may be displayed, searched, styled, and analyzed, but it is not canonical game truth: accepted state, decisions, tallies, phase transitions, results, and replay choreography derive from canonical events and projections, never transcript prose. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from other agents) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public agent text never contains hidden reasoning. Modern product capture may also carry normalized actor identity, audience player IDs, dialogue kind, and formal-speech correlation context used by owner match-read DTOs; diary/thinking rows stay outside dialogue identity.

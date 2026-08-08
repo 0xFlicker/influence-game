@@ -5,7 +5,7 @@ import {
   defaultApiSimulationMaxRounds,
   parseArgs,
 } from "../api-simulate";
-import { computeMaxRounds, MIN_NEW_GAME_PLAYERS } from "../types";
+import { computeMaxRounds, MAX_NEW_GAME_PLAYERS, MIN_NEW_GAME_PLAYERS } from "../types";
 
 describe("API-backed simulation config", () => {
   it("defaults new API simulation games to the shared six-player minimum", () => {
@@ -15,10 +15,17 @@ describe("API-backed simulation config", () => {
     expect(args.maxRounds).toBe(7);
   });
 
-  it("rejects invalid or under-minimum API simulation player counts", () => {
-    expect(() => parseArgs(["--players", "5"], {})).toThrow("at least 6");
-    expect(() => parseArgs(["--players", "not-a-number"], {})).toThrow("at least 6");
-    expect(() => parseArgs([], { INFLUENCE_API_SIM_PLAYERS: "5" })).toThrow("at least 6");
+  it("rejects non-integer or out-of-range API simulation player counts", () => {
+    const expectedError =
+      `integer between ${MIN_NEW_GAME_PLAYERS} and ${MAX_NEW_GAME_PLAYERS}`;
+
+    expect(() => parseArgs(["--players", "5"], {})).toThrow(expectedError);
+    expect(() => parseArgs(["--players", "6.5"], {})).toThrow(expectedError);
+    expect(() => parseArgs(["--players", "13"], {})).toThrow(expectedError);
+    expect(() => parseArgs(["--players", "not-a-number"], {})).toThrow(expectedError);
+    expect(() => parseArgs([], { INFLUENCE_API_SIM_PLAYERS: "5" })).toThrow(expectedError);
+    expect(() => parseArgs([], { INFLUENCE_API_SIM_PLAYERS: "6.5" })).toThrow(expectedError);
+    expect(() => parseArgs([], { INFLUENCE_API_SIM_PLAYERS: "13" })).toThrow(expectedError);
   });
 
   it("defaults short smoke games to player-scaled max rounds", () => {

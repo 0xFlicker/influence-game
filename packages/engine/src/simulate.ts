@@ -315,7 +315,7 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.games = parseInt(next, 10);
       i++;
     } else if (arg === "--players" && next) {
-      args.players = parseInt(next, 10);
+      args.players = Number(next);
       i++;
     } else if ((arg === "--max-rounds" || arg === "--rounds") && next) {
       args.maxRounds = parseInt(next, 10);
@@ -404,8 +404,8 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
-  if (!Number.isFinite(args.players) || args.players < MIN_NEW_GAME_PLAYERS) {
-    throw new Error(`--players must be at least ${MIN_NEW_GAME_PLAYERS}`);
+  if (!Number.isInteger(args.players) || args.players < MIN_NEW_GAME_PLAYERS) {
+    throw new Error(`--players must be an integer of at least ${MIN_NEW_GAME_PLAYERS}`);
   }
   if (args.personas && args.personas.length < MIN_NEW_GAME_PLAYERS) {
     throw new Error(`--personas must include at least ${MIN_NEW_GAME_PLAYERS} names`);
