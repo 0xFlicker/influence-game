@@ -92,7 +92,7 @@ const THINKING_DEPTHS: Array<{
 // ---------------------------------------------------------------------------
 
 interface FormState {
-  playerCount: 4 | 6 | 8 | 10 | 12;
+  playerCount: 6 | 8 | 10 | 12;
   slotType: "all_ai" | "mixed";
   modelCatalogId: ModelCatalogId;
   reasoningPolicy: Exclude<ModelReasoningPolicy, "action-policy">;
@@ -252,7 +252,7 @@ export function CreateGameForm() {
         <RadioGroup
           label="Player count"
           value={String(form.playerCount) as never}
-          options={[4, 6, 8, 10, 12].map((n) => ({
+          options={[6, 8, 10, 12].map((n) => ({
             value: String(n) as never,
             label: String(n),
           }))}

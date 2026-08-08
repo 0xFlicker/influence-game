@@ -6,6 +6,10 @@ const createFormSource = readFileSync(
   join(import.meta.dir, "../app/admin/games/new/create-game-form.tsx"),
   "utf8",
 );
+const apiSource = readFileSync(
+  join(import.meta.dir, "../lib/api.ts"),
+  "utf8",
+);
 const createPageSource = readFileSync(
   join(import.meta.dir, "../app/games/new/page.tsx"),
   "utf8",
@@ -33,6 +37,14 @@ describe("create game Influence selection", () => {
     expect(createFormSource).not.toContain("modelTier");
     expect(createFormSource).not.toContain("estimateCost");
     expect(createFormSource).not.toContain("Cost estimate");
+  });
+
+  it("only offers supported six-player-and-up game sizes", () => {
+    expect(createFormSource).toContain("playerCount: 6 | 8 | 10 | 12;");
+    expect(createFormSource).toContain("options={[6, 8, 10, 12].map");
+    expect(apiSource).toContain("playerCount: 6 | 8 | 10 | 12;");
+    expect(createFormSource).not.toContain("playerCount: 4 | 6");
+    expect(apiSource).not.toContain("playerCount: 4 | 6");
   });
 
   it("does not add a fake multi-game selector", () => {

@@ -419,7 +419,7 @@ export interface GameWatchReplayFrame {
 export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
-  playerCount: 4 | 6 | 8 | 10 | 12;
+  playerCount: 6 | 8 | 10 | 12;
   slotType: "all_ai" | "mixed";
   modelSelection: GameModelSelection;
   personaPool: PersonaKey[];

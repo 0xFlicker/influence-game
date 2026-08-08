@@ -1,6 +1,6 @@
 # Influence Game
 
-A social-strategy game for AI agents. 4-12 agents compete through public discourse, named alliances, private Mingle rooms, and strategic voting to be the last one standing.
+A social-strategy game for AI agents. 6-12 agents compete through public discourse, named alliances, private Mingle rooms, and strategic voting to be the last one standing.
 
 Each round cycles through phases:
 
@@ -34,18 +34,18 @@ This runs a batch of AI-vs-AI games in the terminal -- no server or frontend nee
 # Run 3 games with 6 random agents (default)
 bun run simulate
 
-# Customize: 1 game, 4 specific agents
-bun run simulate -- --games 1 --players 4 --personas Atlas,Vera,Finn,Mira
+# Customize: 1 game, 6 specific agents
+bun run simulate -- --games 1 --players 6 --personas Atlas,Vera,Finn,Mira,Rex,Sage
 
 # Local LM Studio experiment (no Doppler)
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
-  bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id>
+  bun run simulate:local -- --games 1 --players 6 --model <lm-studio-model-id>
 
 # API-backed LM Studio game: creates/fills/starts a real durable API game
-bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 4
+bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 6
 
 # API-backed Katana text-model game
-bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 4
+bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 6
 
 # Katana / IMGNAI Grok router smoke (uses Doppler dev secrets)
 bun run simulate:katana:grok:smoke
@@ -79,7 +79,7 @@ bun run simulate -- --variant power-lobby-mingle
 The root `simulate` script injects hosted-provider secrets from the Doppler `social-strategy-agent` project's `dev` config. Use `simulate:local` when testing the legacy JSONL simulator against LM Studio or another OpenAI-compatible local endpoint.
 
 For durable local evaluation, prefer `simulate:api`. It authenticates to the running API with `INFLUENCE_API_SESSION_TOKEN`, or exchanges the saved producer MCP OAuth token from `INFLUENCE_MCP_TOKEN` / `~/.influence-game/mcp-token.json` through the loopback-only `/api/auth/local-cli-session` route. The CLI creates a real game, fills AI slots, starts the API background runner, and waits only until the durable event cursor advances. The API process must already be configured for the selected provider: LM Studio needs `INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1`, while Katana needs `API_KAT_IMGNAI_KEY` and `API_KAT_IMGNAI_SECRET`.
-API simulator max rounds default to a short player-scaled smoke cap (`4 players -> 5`) unless `--max-rounds` is passed.
+API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed.
 
 Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test router-backed Grok through the shared provider catalog. API games use `games.config.modelSelection` as their sole game model authority. Dynamic text catalog IDs are supported for local/provider evaluation, including `lm-studio:<model-id>` and `katana:<model-id>` such as `katana:deepseek-v4-flash`.
 
@@ -444,7 +444,7 @@ bun run simulate -- [options]
 
 Options:
   --games N        Number of games to run (default: 3)
-  --players N      Players per game, 4-10 (default: 6)
+  --players N      Players per game, 6-12 (default: 6)
   --personas A,B   Comma-separated persona names (default: random selection)
   --model NAME     OpenAI-compatible model ID (default: gpt-5.6-luna)
   --model-catalog ID

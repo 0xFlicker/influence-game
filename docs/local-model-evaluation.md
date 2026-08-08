@@ -128,7 +128,7 @@ Initial triage:
 
 ```bash
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
-  bun run simulate:local -- --games 1 --players 4 --model <lm-studio-model-id> \
+  bun run simulate:local -- --games 1 --players 6 --model <lm-studio-model-id> \
   --game-timeout-sec 600 --llm-timeout-sec 90
 ```
 
@@ -142,7 +142,7 @@ Or choose the depth manually:
 
 ```bash
 doppler run --project social-strategy-agent --config dev -- \
-  bun run simulate -- --games 1 --players 4 --variant mingle \
+  bun run simulate -- --games 1 --players 6 --variant mingle \
   --model-catalog katana:grok-4-3 --reasoning-policy high \
   --game-timeout-sec 900 --llm-timeout-sec 120
 ```
@@ -237,17 +237,17 @@ bun run mcp:game:login
 
 # Then launch a real API-backed local-model game:
 cd ../..
-bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 4
+bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 6
 ```
 
 `simulate:api` uses `INFLUENCE_API_SESSION_TOKEN` when set. Otherwise it reads `INFLUENCE_MCP_TOKEN` or the saved `~/.influence-game/mcp-token.json` token and exchanges that producer MCP OAuth token for a normal app session through the loopback-only `/api/auth/local-cli-session` route. MCP tokens still do not authenticate normal app routes directly; the exchange is explicit local tooling and the minted session uses current RBAC permissions.
 
-API simulator max rounds default to a short player-scaled smoke cap (`4 players -> 5`) unless `--max-rounds` is passed. Passing `--max-rounds auto` delegates to the normal API-created-game default.
+API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed. Passing `--max-rounds auto` delegates to the normal API-created-game default.
 
 For Katana text-model evaluation, run the API with `API_KAT_IMGNAI_KEY` and `API_KAT_IMGNAI_SECRET` available, then choose any Katana text model ID:
 
 ```bash
-bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 4
+bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 6
 ```
 
 ## What To Record
