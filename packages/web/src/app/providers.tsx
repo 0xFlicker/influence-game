@@ -43,6 +43,8 @@ import {
   identityPromptDecision,
   identitySaveHandoffPublicId,
 } from "@/components/public-identity-onboarding-model";
+import { MiniAppProvider } from "@/components/farcaster-miniapp-provider";
+import { FarcasterMiniAppAuthBootstrap } from "@/components/farcaster-miniapp-auth-bootstrap";
 
 // ---------------------------------------------------------------------------
 // Wagmi config (Privy-managed)
@@ -378,32 +380,35 @@ function InnerProviders({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <E2EAuthContext.Provider value={e2eAuth}>
-      <PrivyProvider
-        key={privyAppId}
-        appId={privyAppId}
-        config={{
-          loginMethods: ["email", "wallet"],
-          appearance: {
-            theme: "dark",
-            accentColor: "#6366f1",
-          },
-          embeddedWallets: {
-            ethereum: { createOnLogin: "users-without-wallets" },
-          },
-        }}
-      >
-        <QueryClientProvider client={queryClient}>
-          <PrivyWagmiProvider config={wagmiConfig}>
-            <InfluenceAuthLayer
-              managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
-              clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
-            >
-              {children}
-            </InfluenceAuthLayer>
-          </PrivyWagmiProvider>
-        </QueryClientProvider>
-      </PrivyProvider>
-    </E2EAuthContext.Provider>
+    <MiniAppProvider>
+      <E2EAuthContext.Provider value={e2eAuth}>
+        <PrivyProvider
+          key={privyAppId}
+          appId={privyAppId}
+          config={{
+            loginMethods: ["email", "wallet"],
+            appearance: {
+              theme: "dark",
+              accentColor: "#6366f1",
+            },
+            embeddedWallets: {
+              ethereum: { createOnLogin: "users-without-wallets" },
+            },
+          }}
+        >
+          <QueryClientProvider client={queryClient}>
+            <PrivyWagmiProvider config={wagmiConfig}>
+              <InfluenceAuthLayer
+                managedAuthMode={runtimeConfig.MANAGED_AUTH_MODE}
+                clerkPublishableKey={runtimeConfig.CLERK_PUBLISHABLE_KEY}
+              >
+                <FarcasterMiniAppAuthBootstrap />
+                {children}
+              </InfluenceAuthLayer>
+            </PrivyWagmiProvider>
+          </QueryClientProvider>
+        </PrivyProvider>
+      </E2EAuthContext.Provider>
+    </MiniAppProvider>
   );
 }

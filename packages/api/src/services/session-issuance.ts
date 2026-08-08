@@ -18,6 +18,7 @@ export async function projectLoginMethods(db: DrizzleDB, userId: string) {
   return {
     privy: providers.has("privy"),
     emailPassword: providers.has("clerk"),
+    farcaster: providers.has("farcaster"),
   };
 }
 

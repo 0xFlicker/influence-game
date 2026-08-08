@@ -38,6 +38,7 @@ const anonymousAuthState: InfluenceAuthState = {
   beginAuthenticationAttempt: () => ({ generation: "profile-test" }),
   cancelAuthenticationAttempt: () => {},
   completeAuthenticationAttempt: async () => false,
+  runFarcasterMiniAppLogin: async () => "failed",
   logout: async () => {},
   needsInvite: false,
   dismissInvite: () => {},

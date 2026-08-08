@@ -29,6 +29,15 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  redirects() {
+    return [
+      {
+        "source": "/.well-known/farcaster.json",
+        "destination": "https://api.farcaster.xyz/miniapps/hosted-manifest/019fe25e-e9b2-ce0f-716a-f5f1995c1ff0",
+        "permanent": false
+      }
+    ]
+  },
 };
 
 export default nextConfig;

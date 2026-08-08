@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ClerkPasswordFlow, type ManagedAuthMode, type PasswordFlowIntent } from "@/components/clerk-password-flow";
 import { E2ELayeredPasswordFlow } from "@/components/e2e-layered-password-flow";
 import { useAuth } from "@/hooks/use-auth";
+import { useMiniApp } from "@/components/farcaster-miniapp-provider";
 import type { ProviderAuthenticationAttempt } from "@/lib/auth-session-coordinator";
 import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
 
@@ -39,6 +40,7 @@ export function AuthenticationWrapper({
     cancelAuthenticationAttempt,
     openPrivySignIn,
   } = useAuth();
+  const { suppressWebsiteAuthChrome } = useMiniApp();
   const [open, setOpen] = useState(presentation === "inline");
   const [intent, setIntent] = useState<PasswordFlowIntent>(initialIntent);
   const [email, setEmail] = useState(initialEmail);
@@ -77,6 +79,8 @@ export function AuthenticationWrapper({
   ]);
 
   const start = useCallback((request: AuthenticationRequestDetail) => {
+    // Mini App uses Farcaster Quick Auth only — never open Privy/Clerk chrome.
+    if (suppressWebsiteAuthChrome) return;
     cancelAuthenticationAttempt();
     invokingControlRef.current =
       document.activeElement instanceof HTMLElement
@@ -87,7 +91,11 @@ export function AuthenticationWrapper({
     setReversePrivyToken(null);
     setAttempt(beginAuthenticationAttempt());
     setOpen(true);
-  }, [beginAuthenticationAttempt, cancelAuthenticationAttempt]);
+  }, [
+    beginAuthenticationAttempt,
+    cancelAuthenticationAttempt,
+    suppressWebsiteAuthChrome,
+  ]);
 
   const selectPrimaryIntent = useCallback((
     nextIntent: "sign_in" | "create_account",
@@ -105,6 +113,8 @@ export function AuthenticationWrapper({
   ]);
 
   useEffect(() => {
+    if (suppressWebsiteAuthChrome) return;
+
     if (presentation === "inline") {
       let cancelled = false;
       let started = false;
@@ -144,6 +154,7 @@ export function AuthenticationWrapper({
     cancelAuthenticationAttempt,
     presentation,
     start,
+    suppressWebsiteAuthChrome,
   ]);
 
   useEffect(() => {

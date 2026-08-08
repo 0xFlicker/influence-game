@@ -2,6 +2,7 @@
 
 import { useAuth } from "@/hooks/use-auth";
 import { usePermissions } from "@/hooks/use-permissions";
+import { useMiniApp } from "@/components/farcaster-miniapp-provider";
 
 interface PermissionPageGateProps {
   permission: string;
@@ -20,6 +21,7 @@ export function PermissionPageGate({
 }: PermissionPageGateProps) {
   const { ready, authenticated, openSignIn } = useAuth();
   const { loading, hasPermission } = usePermissions();
+  const { suppressWebsiteAuthChrome, isMiniApp } = useMiniApp();
 
   if (!ready || loading) {
     return (
@@ -32,13 +34,19 @@ export function PermissionPageGate({
   if (!authenticated) {
     return (
       <div className="influence-panel mx-auto flex min-h-64 max-w-lg flex-col items-center justify-center gap-4 rounded-xl px-6 py-10 text-center">
-        <p className="influence-copy">{unauthenticatedMessage}</p>
-        <button
-          onClick={openSignIn}
-          className="influence-button-primary rounded-lg px-6 py-2"
-        >
-          Sign in
-        </button>
+        <p className="influence-copy">
+          {isMiniApp || suppressWebsiteAuthChrome
+            ? "Connecting with Farcaster…"
+            : unauthenticatedMessage}
+        </p>
+        {!suppressWebsiteAuthChrome && (
+          <button
+            onClick={openSignIn}
+            className="influence-button-primary rounded-lg px-6 py-2"
+          >
+            Sign in
+          </button>
+        )}
       </div>
     );
   }

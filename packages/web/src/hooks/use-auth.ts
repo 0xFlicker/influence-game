@@ -15,6 +15,7 @@ import {
   clearAuthToken,
   getAuthToken,
   getMe,
+  loginWithFarcasterToken,
   loginWithPrivyToken,
   storeAuthToken,
   type AuthMe,
@@ -73,6 +74,8 @@ export interface InfluenceAuthState {
     attempt: ProviderAuthenticationAttempt,
     exchange: () => Promise<InfluenceSessionResponse>,
   ) => Promise<boolean>;
+  /** Mini App path: Quick Auth → Influence session (invite-aware). */
+  runFarcasterMiniAppLogin: () => Promise<"authenticated" | "invite" | "failed">;
   logout: () => Promise<void>;
   needsInvite: boolean;
   dismissInvite: () => void;
@@ -230,6 +233,10 @@ export function InfluenceAuthProvider({
   const pendingPrivyProofResolution = useRef<
     ((token: string | null) => void) | null
   >(null);
+  const pendingFarcasterAttempt = useRef<ProviderAuthenticationAttempt | null>(
+    null,
+  );
+  const pendingFarcasterToken = useRef<string | null>(null);
   const [privyAuthenticationSettlement] = useState(
     () => new ProviderAuthenticationSettlement<PrivyAuthenticationOutcome>({
       kind: "cancelled",
@@ -390,12 +397,55 @@ export function InfluenceAuthProvider({
     [coordinator],
   );
 
+  const runFarcasterMiniAppLogin = useCallback(async (): Promise<
+    "authenticated" | "invite" | "failed"
+  > => {
+    const attempt = coordinator.beginProviderAttempt();
+    pendingFarcasterAttempt.current = attempt;
+    pendingFarcasterToken.current = null;
+    try {
+      const mod = await import("@farcaster/miniapp-sdk");
+      const { token } = await mod.sdk.quickAuth.getToken();
+      pendingFarcasterToken.current = token;
+      const completed = await completeAuthenticationAttempt(
+        attempt,
+        () => loginWithFarcasterToken(token),
+      );
+      if (completed) {
+        pendingFarcasterAttempt.current = null;
+        pendingFarcasterToken.current = null;
+        setNeedsInvite(false);
+        setInviteError(null);
+        return "authenticated";
+      }
+      pendingFarcasterAttempt.current = null;
+      pendingFarcasterToken.current = null;
+      return "failed";
+    } catch (error) {
+      if (
+        error instanceof ApiError
+        && error.code === "INVITE_REQUIRED"
+        && pendingFarcasterToken.current
+      ) {
+        setNeedsInvite(true);
+        return "invite";
+      }
+      pendingFarcasterAttempt.current = null;
+      pendingFarcasterToken.current = null;
+      coordinator.cancelProviderAttempt();
+      console.warn("[InfluenceAuth] Farcaster exchange failed:", error);
+      return "failed";
+    }
+  }, [completeAuthenticationAttempt, coordinator]);
+
   const cancelAuthenticationAttempt = useCallback(() => {
     pendingPrivyProofResolution.current?.(null);
     pendingPrivyProofResolution.current = null;
     pendingPrivyPurpose.current = null;
     pendingPrivyAttempt.current = null;
     pendingPrivyToken.current = null;
+    pendingFarcasterAttempt.current = null;
+    pendingFarcasterToken.current = null;
     coordinator.cancelProviderAttempt();
     privyAuthenticationSettlement.settle({ kind: "cancelled" });
   }, [coordinator, privyAuthenticationSettlement]);
@@ -558,6 +608,8 @@ export function InfluenceAuthProvider({
     pendingPrivyAttempt.current = null;
     pendingPrivyToken.current = null;
     pendingPrivyPurpose.current = null;
+    pendingFarcasterAttempt.current = null;
+    pendingFarcasterToken.current = null;
     coordinator.cancelProviderAttempt();
     privyAuthenticationSettlement.settle({ kind: "cancelled" });
     setNeedsInvite(false);
@@ -566,6 +618,39 @@ export function InfluenceAuthProvider({
   }, [coordinator, privyAuthenticationSettlement]);
 
   const submitInvite = useCallback(async (code: string) => {
+    const farcasterAttempt = pendingFarcasterAttempt.current;
+    const farcasterToken = pendingFarcasterToken.current;
+    if (farcasterAttempt && farcasterToken) {
+      const isCurrentFarcasterInvite = () => (
+        pendingFarcasterAttempt.current === farcasterAttempt
+        && pendingFarcasterToken.current === farcasterToken
+      );
+      setSubmittingInvite(true);
+      setInviteError(null);
+      try {
+        const completed = await completeAuthenticationAttempt(
+          farcasterAttempt,
+          () => loginWithFarcasterToken(farcasterToken, code),
+        );
+        if (!isCurrentFarcasterInvite()) return;
+        if (completed) {
+          setNeedsInvite(false);
+          pendingFarcasterAttempt.current = null;
+          pendingFarcasterToken.current = null;
+        }
+      } catch (error) {
+        if (!isCurrentFarcasterInvite()) return;
+        setInviteError(
+          error instanceof ApiError
+            ? error.message || "Invalid invite code"
+            : "Something went wrong. Try again.",
+        );
+      } finally {
+        if (isCurrentFarcasterInvite()) setSubmittingInvite(false);
+      }
+      return;
+    }
+
     const attempt = pendingPrivyAttempt.current;
     const providerToken = pendingPrivyToken.current;
     if (!attempt || !providerToken) return;
@@ -633,6 +718,7 @@ export function InfluenceAuthProvider({
         beginAuthenticationAttempt,
         cancelAuthenticationAttempt,
         completeAuthenticationAttempt,
+        runFarcasterMiniAppLogin,
         logout,
         needsInvite,
         dismissInvite,

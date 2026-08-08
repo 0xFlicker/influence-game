@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
+import { useMiniApp } from "@/components/farcaster-miniapp-provider";
 import { HOUSE_VENUE } from "@/lib/product-identity";
 
 function HamburgerIcon() {
@@ -29,6 +30,7 @@ export function Nav() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const { ready, authenticated, openSignIn, logout } = useAuth();
   const { isAdmin } = usePermissions();
+  const { suppressWebsiteAuthChrome, isMiniApp, contextUser } = useMiniApp();
 
   const navLinks = (
     <>
@@ -62,7 +64,13 @@ export function Nav() {
         </Link>
       )}
 
-      {ready && (
+      {isMiniApp && authenticated && contextUser?.username && (
+        <span className="influence-copy-muted" title="Farcaster identity">
+          @{contextUser.username}
+        </span>
+      )}
+
+      {ready && !suppressWebsiteAuthChrome && (
         authenticated ? (
           <button
             onClick={() => { setMobileOpen(false); logout(); }}

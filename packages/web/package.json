@@ -19,6 +19,7 @@
   "dependencies": {
     "@clerk/nextjs": "7.5.20",
     "@clerk/shared": "4.25.5",
+    "@farcaster/miniapp-sdk": "^0.3.0",
     "@floating-ui/react": "^0.26.28",
     "@influence/engine": "workspace:*",
     "@privy-io/react-auth": "^3.17.0",
