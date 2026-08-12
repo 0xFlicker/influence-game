@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { ClerkAPIResponseError } from "@clerk/nextjs/errors";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -49,6 +50,13 @@ const inviteModalSource = readFileSync(
   join(import.meta.dir, "../components/invite-code-modal.tsx"),
   "utf8",
 );
+
+function clerkApiResponseError(code: string, message: string) {
+  return new ClerkAPIResponseError(message, {
+    data: [{ code, message }],
+    status: 422,
+  });
+}
 
 describe("unified authentication wrapper", () => {
   it("matches the settled sign-in and create-account method matrix", () => {
@@ -234,7 +242,12 @@ describe("unified authentication wrapper", () => {
       mfa: {
         async sendEmailCode() {
           calls.push(`send:${step}`);
-          return { error: { message: "Email delivery failed." } };
+          return {
+            error: clerkApiResponseError(
+              "email_delivery_failed",
+              "Email delivery failed.",
+            ),
+          };
         },
         async verifyEmailCode() {
           return { error: null };
@@ -315,10 +328,10 @@ describe("unified authentication wrapper", () => {
         },
         async verifyEmailCode() {
           return {
-            error: {
-              code: "form_code_incorrect",
-              message: "That code is incorrect.",
-            },
+            error: clerkApiResponseError(
+              "form_code_incorrect",
+              "That code is incorrect.",
+            ),
           };
         },
       },
@@ -367,17 +380,17 @@ describe("unified authentication wrapper", () => {
         emailAddress: string;
         password: string;
       }) => Promise<{
-        error: { code: string; message: string } | null;
+        error: ClerkAPIResponseError | null;
       }>;
     } = {
       async password({ emailAddress }) {
         calls.push(`password:${emailAddress}`);
         signIn.existingSession = { sessionId: "session-for-submitted-email" };
         return {
-          error: {
-            code: "identifier_already_signed_in",
-            message: "You're already signed in.",
-          },
+          error: clerkApiResponseError(
+            "identifier_already_signed_in",
+            "You're already signed in.",
+          ),
         };
       },
     };
@@ -412,10 +425,10 @@ describe("unified authentication wrapper", () => {
       signIn: {
         async password() {
           return {
-            error: {
-              code: "form_identifier_not_found",
-              message: "Couldn't find your account.",
-            },
+            error: clerkApiResponseError(
+              "form_identifier_not_found",
+              "Couldn't find your account.",
+            ),
           };
         },
       },
@@ -430,28 +443,33 @@ describe("unified authentication wrapper", () => {
     expect(continued).toBeFalse();
   });
 
+  it("reserves field-error space and never repeats a field error in the flow alert", () => {
+    expect(passwordFlowSource).toContain("min-h-4");
+    expect(passwordFlowSource).toContain("fieldErrorMessages.includes(error)");
+  });
+
   it("does not let a stale existing session mask a password failure", async () => {
     let continued = false;
     const signIn = {
       existingSession: { sessionId: "stale-session" },
       async password() {
         return {
-          error: {
-            code: "form_password_incorrect",
-            message: "Password is incorrect.",
-          },
+          error: clerkApiResponseError(
+            "form_password_incorrect",
+            "Password is incorrect.",
+          ),
         };
       },
     };
 
-    await expect(runClerkPasswordAttempt({
+    expect(await runClerkPasswordAttempt({
       signIn,
       emailAddress: "submitted@example.test",
       password: "wrong",
       continueSignIn: async () => {
         continued = true;
       },
-    })).rejects.toThrow("Password is incorrect.");
+    })).toBe("provider_error");
     expect(continued).toBeFalse();
   });
 
@@ -459,10 +477,10 @@ describe("unified authentication wrapper", () => {
     const signIn = {
       async password() {
         return {
-          error: {
-            code: "identifier_already_signed_in",
-            message: "You're already signed in.",
-          },
+          error: clerkApiResponseError(
+            "identifier_already_signed_in",
+            "You're already signed in.",
+          ),
         };
       },
     };
@@ -547,7 +565,12 @@ describe("unified authentication wrapper", () => {
       existingSession: { sessionId: "ambient-session" },
       status: "needs_protect_check",
       async submitProtectCheck() {
-        return { error: { message: "Protect proof rejected" } };
+        return {
+          error: clerkApiResponseError(
+            "protect_proof_rejected",
+            "Protect proof rejected",
+          ),
+        };
       },
     };
 

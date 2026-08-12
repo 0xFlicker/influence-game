@@ -1,6 +1,7 @@
 "use client";
 
 import { useClerk, useSession, useSignIn, useSignUp } from "@clerk/nextjs";
+import { isClerkAPIResponseError } from "@clerk/nextjs/errors";
 import { executeProtectCheck } from "@clerk/shared/internal/clerk-js/protectCheck";
 import {
   useCallback,
@@ -55,7 +56,7 @@ type FlowStep =
   | "success";
 
 type ClerkOperationResult = {
-  error: { code?: string; message?: string; longMessage?: string } | null;
+  error: unknown | null;
 };
 
 type ClerkExistingSessionResource = {
@@ -92,7 +93,20 @@ function clerkErrorMessage(
   fallback: string,
 ): string | null {
   if (!result.error) return null;
-  return result.error.longMessage ?? result.error.message ?? fallback;
+  if (isClerkAPIResponseError(result.error)) {
+    const error = result.error.errors[0];
+    return error?.longMessage ?? error?.message ?? fallback;
+  }
+  return result.error instanceof Error ? result.error.message : fallback;
+}
+
+function clerkResultHasCode(
+  result: ClerkOperationResult,
+  code: string,
+): boolean {
+  return Boolean(result.error)
+    && isClerkAPIResponseError(result.error)
+    && result.error.errors.some((error) => error.code === code);
 }
 
 export async function activateClerkExistingSession<
@@ -123,21 +137,19 @@ export async function runClerkPasswordAttempt<T extends ClerkPasswordResource>({
   emailAddress: string;
   password: string;
   continueSignIn: (signIn: T) => Promise<void>;
-}): Promise<"continued" | "account_missing"> {
+}): Promise<"continued" | "account_missing" | "provider_error"> {
   const result = await signIn.password({ emailAddress, password });
-  if (result.error?.code === "form_identifier_not_found") {
+  if (clerkResultHasCode(result, "form_identifier_not_found")) {
     return "account_missing";
   }
-  const message = clerkErrorMessage(result, "Could not sign in.");
   const submittedAccountAlreadyHasSession =
-    result.error?.code === "identifier_already_signed_in"
+    clerkResultHasCode(result, "identifier_already_signed_in")
     && Boolean(signIn.existingSession?.sessionId);
-  if (message && !submittedAccountAlreadyHasSession) {
-    throw new Error(
-      result.error?.code === "identifier_already_signed_in"
-        ? "Sign-in could not finish. Reload and try again."
-        : message,
-    );
+  if (result.error && !submittedAccountAlreadyHasSession) {
+    if (clerkResultHasCode(result, "identifier_already_signed_in")) {
+      throw new Error("Sign-in could not finish. Reload and try again.");
+    }
+    return "provider_error";
   }
   await continueSignIn(signIn);
   return "continued";
@@ -635,7 +647,7 @@ export function ClerkPasswordFlow({
       emailAddress: email.trim(),
       password,
     });
-    if (result.error?.code === "form_identifier_exists") {
+    if (clerkResultHasCode(result, "form_identifier_exists")) {
       currentSignupOwnsCompletionRef.current = false;
       setAcceptedLegalTerms(false);
       setStatus("");
@@ -922,6 +934,10 @@ export function ClerkPasswordFlow({
     : signUpErrors.fields.password?.message;
   const codeError =
     signInErrors.fields.code?.message ?? signUpErrors.fields.code?.message;
+  const fieldErrorMessages = [emailError, passwordError, codeError].filter(
+    (message): message is string => Boolean(message),
+  );
+  const flowError = error && !fieldErrorMessages.includes(error) ? error : null;
 
   if (
     mode === "existing-only"
@@ -1002,7 +1018,7 @@ export function ClerkPasswordFlow({
         >
           Use a different email
         </button>
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1029,7 +1045,7 @@ export function ClerkPasswordFlow({
         >
           Use a different email
         </button>
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1069,7 +1085,7 @@ export function ClerkPasswordFlow({
             setStatus("");
           }}
         />
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1089,7 +1105,7 @@ export function ClerkPasswordFlow({
             Cancel
           </button>
         </div>
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1104,7 +1120,7 @@ export function ClerkPasswordFlow({
         <button type="button" disabled={busy} className="influence-button-primary rounded-lg px-4 py-2 text-sm" onClick={() => void reauthenticateWallet()}>
           {busy ? "Waiting…" : "Continue with Privy"}
         </button>
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1136,7 +1152,7 @@ export function ClerkPasswordFlow({
             email/password accounts can still sign in.
           </p>
         )}
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1167,7 +1183,7 @@ export function ClerkPasswordFlow({
         >
           {busy ? "Verifying…" : "Submit"}
         </button>
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1205,7 +1221,7 @@ export function ClerkPasswordFlow({
         >
           {busy ? "Please wait…" : "Accept and link Privy"}
         </button>
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1301,7 +1317,7 @@ export function ClerkPasswordFlow({
             Use a different email
           </button>
         </div>
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1331,7 +1347,7 @@ export function ClerkPasswordFlow({
             {busy ? "Saving…" : "Reset password"}
           </button>
         </form>
-        <FlowMessages error={error} status={status} errorRef={errorRef} />
+        <FlowMessages error={flowError} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -1428,7 +1444,7 @@ export function ClerkPasswordFlow({
         </button>
       )}
 
-      <FlowMessages error={error} status={status} errorRef={errorRef} />
+      <FlowMessages error={flowError} status={status} errorRef={errorRef} />
     </FlowPanel>
   );
 }
@@ -1515,11 +1531,13 @@ function AuthField({
         onChange={(event) => onChange(event.target.value)}
         className="influence-field min-h-11 w-full rounded-lg px-4 py-2.5 text-sm"
       />
-      {error && (
-        <p id={errorId} className="mt-1 text-xs text-red-300">
-          {error}
-        </p>
-      )}
+      <p
+        id={errorId}
+        aria-live="polite"
+        className="mt-1 min-h-4 text-xs text-red-300"
+      >
+        {error}
+      </p>
     </div>
   );
 }
