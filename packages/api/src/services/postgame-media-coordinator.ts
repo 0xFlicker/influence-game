@@ -13,6 +13,10 @@ import type {
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getCompletedGameResults } from "./completed-game-results.js";
+import {
+  CURRENT_PRIVACY_VERSION,
+  CURRENT_TERMS_VERSION,
+} from "./legal-acceptance.js";
 import { getPostgameHighlights } from "./postgame-highlights.js";
 
 const MEDIA_TYPE = "house_highlights_trailer" as const;
@@ -134,8 +138,13 @@ export async function requestPostgameMedia(
     return result;
   }
 
+  const waitingMusicAcceptance = row?.status === "waiting_music"
+    ? await allImplicatedOwnersHaveCurrentLegalAcceptance(db, game.id)
+    : undefined;
   if (row?.status === "waiting_music") {
-    const storedSnapshot = parseStoredSnapshot(row.renderInputSnapshot);
+    const storedSnapshot = waitingMusicAcceptance
+      ? parseStoredSnapshot(row.renderInputSnapshot)
+      : null;
     if (storedSnapshot) {
       const nextRenderVersion = row.renderVersion + 1;
       const nextAttemptNumber = row.attemptNumber + 1;
@@ -156,7 +165,7 @@ export async function requestPostgameMedia(
     }
   }
 
-  const snapshot = await createSnapshot(db, game.id);
+  const snapshot = await createSnapshot(db, game.id, waitingMusicAcceptance);
   if (!snapshot) {
     if (!row) await ensureWaitingPostgameMediaRow(db, game.id);
     if (row?.status === "waiting_inputs" || (row !== null && isRetryableEnqueueFailure(row))) {
@@ -336,7 +345,16 @@ function newArtifactVersion(): string {
 async function createSnapshot(
   db: DrizzleDB,
   gameId: string,
+  currentLegalAcceptance?: boolean,
 ): Promise<HouseHighlightsTrailerManifest | null> {
+  if (currentLegalAcceptance === false) return null;
+  if (
+    currentLegalAcceptance === undefined
+    && !(await allImplicatedOwnersHaveCurrentLegalAcceptance(db, gameId))
+  ) {
+    return null;
+  }
+
   const [resultsResponse, highlightsResponse, avatarRows] = await Promise.all([
     getCompletedGameResults(db, gameId),
     getPostgameHighlights(db, gameId),
@@ -367,6 +385,33 @@ async function createSnapshot(
   } catch {
     return null;
   }
+}
+
+export async function allImplicatedOwnersHaveCurrentLegalAcceptance(
+  db: DrizzleDB,
+  gameId: string,
+): Promise<boolean> {
+  const players = await db.select({
+    playerOwnerId: schema.gamePlayers.userId,
+    profileOwnerId: schema.agentProfiles.userId,
+  })
+    .from(schema.gamePlayers)
+    .leftJoin(schema.agentProfiles, eq(schema.gamePlayers.agentProfileId, schema.agentProfiles.id))
+    .where(eq(schema.gamePlayers.gameId, gameId));
+  const ownerIds = [...new Set(players.flatMap((player) => [
+    player.playerOwnerId,
+    player.profileOwnerId,
+  ]).filter((ownerId): ownerId is string => ownerId !== null))];
+  if (ownerIds.length === 0) return true;
+
+  const acceptedOwners = await db.select({ userId: schema.legalAcceptances.userId })
+    .from(schema.legalAcceptances)
+    .where(and(
+      inArray(schema.legalAcceptances.userId, ownerIds),
+      eq(schema.legalAcceptances.termsVersion, CURRENT_TERMS_VERSION),
+      eq(schema.legalAcceptances.privacyVersion, CURRENT_PRIVACY_VERSION),
+    ));
+  return new Set(acceptedOwners.map(({ userId }) => userId)).size === ownerIds.length;
 }
 
 async function recordPostgameMediaAudit(

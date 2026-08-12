@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { AccountLegalConsent } from "@/components/account-legal-consent";
 import {
   ApiError,
   createManagedAuthentication,
@@ -55,13 +56,14 @@ export function E2ELayeredPasswordFlow({
   onIntentChange: (intent: PasswordFlowIntent) => void;
   onComplete: () => void;
   onCancel: () => void;
-  onContinueWithPrivy: () => void;
+  onContinueWithPrivy: (acceptedLegalTerms: boolean) => void;
   reversePrivyToken?: string;
 }) {
   const { completeAuthenticationAttempt, requestPrivyProof } = useAuth();
   const [step, setStep] = useState<Step>("credentials");
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
+  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
   const [code, setCode] = useState("");
   const [managedToken, setManagedToken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -141,6 +143,10 @@ export function E2ELayeredPasswordFlow({
 
   async function submitCredentials(): Promise<void> {
     if (!email.trim() || !password) return;
+    if (intent === "create_account" && !acceptedLegalTerms) {
+      setError("Agree to the Terms of Use and acknowledge the Privacy Policy to create an account.");
+      return;
+    }
     const token = tokenForEmail();
     if (intent === "create_account" || intent === "link_password") {
       setManagedToken(token);
@@ -209,9 +215,14 @@ export function E2ELayeredPasswordFlow({
     return (
       <Panel heading="Finish account setup">
         <p>Your email is verified. Confirm to create the Influence account.</p>
+        <AccountLegalConsent
+          checked={acceptedLegalTerms}
+          disabled={busy}
+          onChange={setAcceptedLegalTerms}
+        />
         <button
           type="button"
-          disabled={busy || mode !== "full" || !managedToken}
+          disabled={busy || mode !== "full" || !managedToken || !acceptedLegalTerms}
           onClick={() => void run(async () => {
             if (!managedToken) return;
             await complete(() => createManagedAuthentication(managedToken));
@@ -297,7 +308,14 @@ export function E2ELayeredPasswordFlow({
             onChange={(event) => setPassword(event.target.value)}
           />
         </label>
-        <button type="submit" disabled={busy || !email.trim() || !password}>
+        {intent === "create_account" && (
+          <AccountLegalConsent
+            checked={acceptedLegalTerms}
+            disabled={busy}
+            onChange={setAcceptedLegalTerms}
+          />
+        )}
+        <button type="submit" disabled={busy || !email.trim() || !password || (intent === "create_account" && !acceptedLegalTerms)}>
           {intent === "create_account"
             ? "Create account"
             : intent === "link_password"
@@ -305,8 +323,12 @@ export function E2ELayeredPasswordFlow({
               : "Sign in with email"}
         </button>
       </form>
-      {intent === "sign_in" && !reversePrivyToken && (
-        <button type="button" onClick={onContinueWithPrivy}>
+      {(intent === "sign_in" || intent === "create_account") && !reversePrivyToken && (
+        <button
+          type="button"
+          disabled={busy || (intent === "create_account" && !acceptedLegalTerms)}
+          onClick={() => onContinueWithPrivy(acceptedLegalTerms)}
+        >
           Continue with Privy
         </button>
       )}

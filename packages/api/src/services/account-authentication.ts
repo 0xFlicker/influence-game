@@ -39,6 +39,7 @@ export interface ResolveAccountAuthenticationInput {
   /** Null only when token verification passed but the provider profile was unavailable. */
   evidence: VerifiedProviderEvidence | null;
   compatibilityBridgeEnabled?: boolean;
+  allowAccountCreation?: boolean;
   checkInviteRequired?: (
     tx: AuthenticationTransaction,
   ) => Promise<boolean>;
@@ -46,7 +47,10 @@ export interface ResolveAccountAuthenticationInput {
     tx: AuthenticationTransaction,
     userId: string,
   ) => Promise<boolean>;
-  beforeCommit?: (tx: AuthenticationTransaction) => Promise<void>;
+  beforeCommit?: (
+    tx: AuthenticationTransaction,
+    userId: string,
+  ) => Promise<void>;
 }
 
 const RETRYABLE_AUTH_CONSTRAINTS = new Set([
@@ -123,7 +127,10 @@ export async function exchangeExistingAccountAuthentication(
 export async function createManagedAccountAuthentication(
   db: DrizzleDB,
   evidence: VerifiedProviderEvidence,
-  beforeCommit?: (tx: AuthenticationTransaction) => Promise<void>,
+  beforeCommit?: (
+    tx: AuthenticationTransaction,
+    userId: string,
+  ) => Promise<void>,
 ): Promise<AccountAuthenticationOutcome> {
   if (evidence.provider !== "clerk" || evidence.owner.kind !== "email") {
     return { status: "support_blocked" };
@@ -368,6 +375,9 @@ async function resolveInTransaction(
     }
     return { status: preflight };
   }
+  if (input.allowAccountCreation === false) {
+    return { status: "setup_incomplete" };
+  }
   const inviteRequired = await input.checkInviteRequired?.(tx) ?? false;
   if (inviteRequired && !input.redeemInvite) {
     return { status: "invite_required" };
@@ -391,7 +401,7 @@ async function resolveInTransaction(
   if (inviteRequired && input.redeemInvite && !await input.redeemInvite(tx, userId)) {
     throw new InvalidInviteError();
   }
-  await input.beforeCommit?.(tx);
+  await input.beforeCommit?.(tx, userId);
 
   return { status: "authenticated", user: createdUser, created: true };
 }

@@ -16,6 +16,10 @@ import {
   hashOpaqueSecret,
   pkceS256,
 } from "../services/mcp-oauth.js";
+import {
+  CURRENT_PRIVACY_VERSION,
+  CURRENT_TERMS_VERSION,
+} from "../services/legal-acceptance.js";
 import { setupTestDB } from "./test-utils.js";
 
 const MCP_ADDRESS = "0xmcp000000000000000000000000000000000011";
@@ -1910,6 +1914,12 @@ async function createUserSession(
     id: userId,
     walletAddress: walletAddress?.toLowerCase() ?? null,
     displayName: walletAddress ? `Test ${walletAddress.slice(2, 8)}` : "Test Walletless",
+  });
+  await db.insert(schema.legalAcceptances).values({
+    userId,
+    termsVersion: CURRENT_TERMS_VERSION,
+    privacyVersion: CURRENT_PRIVACY_VERSION,
+    source: "existing_account",
   });
 
   if (roleName) {

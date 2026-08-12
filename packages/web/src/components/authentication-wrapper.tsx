@@ -6,6 +6,7 @@ import { E2ELayeredPasswordFlow } from "@/components/e2e-layered-password-flow";
 import { useAuth } from "@/hooks/use-auth";
 import type { ProviderAuthenticationAttempt } from "@/lib/auth-session-coordinator";
 import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
+import { PRESENTED_LEGAL_ACCEPTANCE } from "@/lib/api";
 
 type AuthenticationRequestDetail = {
   intent?: PasswordFlowIntent;
@@ -219,7 +220,7 @@ export function AuthenticationWrapper({
         }
       }}
       onCancel={() => close(true)}
-      onContinueWithPrivy={() => {
+      onContinueWithPrivy={(acceptedLegalTerms) => {
         setAttempt(null);
         openPrivySignIn((outcome) => {
           if (outcome.kind === "link_required") {
@@ -229,7 +230,9 @@ export function AuthenticationWrapper({
           if (outcome.kind === "cancelled") {
             setAttempt(beginAuthenticationAttempt());
           }
-        });
+        }, intent === "create_account" && acceptedLegalTerms
+          ? PRESENTED_LEGAL_ACCEPTANCE
+          : undefined);
       }}
     />
   ) : null;

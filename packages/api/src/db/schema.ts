@@ -201,6 +201,31 @@ export const users = pgTable("users", {
   ),
 ]);
 
+export const legalAcceptances = pgTable("legal_acceptances", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id")
+    .notNull()
+    .references(() => users.id, { onDelete: "restrict" }),
+  termsVersion: text("terms_version").notNull(),
+  privacyVersion: text("privacy_version").notNull(),
+  source: text("source")
+    .notNull()
+    .$type<"account_creation" | "existing_account">(),
+  acceptedAt: text("accepted_at")
+    .notNull()
+    .default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("legal_acceptances_user_versions_unique").on(
+    table.userId,
+    table.termsVersion,
+    table.privacyVersion,
+  ),
+  check(
+    "legal_acceptances_source_check",
+    sql`${table.source} IN ('account_creation', 'existing_account')`,
+  ),
+]);
+
 export type AuthenticationProvider = "privy" | "clerk";
 
 export const authenticationCredentials = pgTable("authentication_credentials", {

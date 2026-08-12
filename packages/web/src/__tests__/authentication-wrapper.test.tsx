@@ -11,10 +11,14 @@ import {
   verifyClerkClientTrustEmailCode,
 } from "../components/clerk-password-flow";
 import {
+  acceptCurrentLegalTerms,
   ApiError,
   AUTH_TOKEN_KEY,
+  createManagedAuthentication,
   linkPrivyAuthentication,
   linkManagedAuthentication,
+  loginWithPrivyToken,
+  PRESENTED_LEGAL_ACCEPTANCE,
 } from "../lib/api";
 
 const wrapperSource = readFileSync(
@@ -27,6 +31,10 @@ const passwordFlowSource = readFileSync(
 );
 const authenticationRouteSource = readFileSync(
   join(import.meta.dir, "../components/authentication-route.tsx"),
+  "utf8",
+);
+const legalConsentSource = readFileSync(
+  join(import.meta.dir, "../components/account-legal-consent.tsx"),
   "utf8",
 );
 const apiSource = readFileSync(
@@ -50,11 +58,60 @@ describe("unified authentication wrapper", () => {
     ]);
     expect(AUTHENTICATION_METHOD_MATRIX.create_account).toEqual([
       "email_password",
+      "privy",
     ]);
     expect(passwordFlowSource).toContain("Continue with Privy");
     expect(wrapperSource).toContain('role="tablist"');
     expect(wrapperSource).toContain("Create account");
-    expect(passwordFlowSource).not.toContain("Create account with Privy");
+    expect(passwordFlowSource).toContain(
+      "isCreateAccount && !acceptedLegalTerms",
+    );
+  });
+
+  it("requires conspicuous Terms and Privacy acceptance before account creation", () => {
+    expect(passwordFlowSource).toContain("acceptedLegalTerms");
+    expect(passwordFlowSource).toContain("isCreateAccount && !acceptedLegalTerms");
+    expect(legalConsentSource).toContain('type="checkbox"');
+    expect(legalConsentSource).toContain("required");
+    expect(legalConsentSource).toContain('href="/terms"');
+    expect(legalConsentSource).toContain('href="/privacy"');
+    expect(legalConsentSource).toContain('rel="noopener noreferrer"');
+    expect(legalConsentSource).toContain("Daily Dispatches and other promotion");
+  });
+
+  it("binds account creation and acceptance to the presented legal versions", async () => {
+    const originalFetch = globalThis.fetch;
+    const requestBodies: unknown[] = [];
+    try {
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        value: async (_input: RequestInfo | URL, init?: RequestInit) => {
+          requestBodies.push(JSON.parse(String(init?.body)));
+          return new Response(JSON.stringify({}), { status: 200 });
+        },
+      });
+
+      await loginWithPrivyToken("sign-in-token");
+      await loginWithPrivyToken(
+        "create-token",
+        undefined,
+        PRESENTED_LEGAL_ACCEPTANCE,
+      );
+      await createManagedAuthentication("managed-token");
+      await acceptCurrentLegalTerms();
+
+      expect(requestBodies).toEqual([
+        { token: "sign-in-token" },
+        { token: "create-token", ...PRESENTED_LEGAL_ACCEPTANCE },
+        { token: "managed-token", ...PRESENTED_LEGAL_ACCEPTANCE },
+        PRESENTED_LEGAL_ACCEPTANCE,
+      ]);
+    } finally {
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        value: originalFetch,
+      });
+    }
   });
 
   it("uses labelled native fields with persistent recovery semantics", () => {
@@ -656,6 +713,19 @@ describe("unified authentication wrapper", () => {
     );
     expect(authHookSource).toContain(
       "pendingPrivyProofResolution.current !== resolveProof",
+    );
+  });
+
+  it("keeps create-account legal acceptance scoped to its Privy attempt", () => {
+    expect(wrapperSource).toContain("PRESENTED_LEGAL_ACCEPTANCE");
+    expect(authHookSource).toContain(
+      "const attemptLegalAcceptance = legalAcceptance;",
+    );
+    expect(authHookSource).toContain(
+      "pendingPrivyLegalAcceptance.current === legalAcceptance",
+    );
+    expect(authHookSource).toContain(
+      "pendingPrivyLegalAcceptance.current = undefined",
     );
   });
 

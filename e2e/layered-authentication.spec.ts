@@ -84,6 +84,10 @@ test.describe("deterministic layered authentication", () => {
     await page.getByLabel("Password").fill("test-password");
     await page
       .getByRole("dialog", { name: "Influence authentication" })
+      .getByRole("checkbox")
+      .check();
+    await page
+      .getByRole("dialog", { name: "Influence authentication" })
       .locator("form")
       .getByRole("button", { name: "Create account" })
       .click();
@@ -215,7 +219,12 @@ test.describe("deterministic layered authentication", () => {
       request,
       harness,
       "/api/auth/managed/create",
-      { token: harness.tokens.newManaged, confirm: true },
+      {
+        token: harness.tokens.newManaged,
+        acceptTerms: true,
+        termsVersion: "2026-08-12",
+        privacyVersion: "2026-08-12",
+      },
     );
     expect(created.status()).toBe(200);
     const createdBody = await created.json();
@@ -355,7 +364,12 @@ test.describe("deterministic layered authentication", () => {
       request,
       harness,
       "/e2e/existing-only/api/auth/managed/create",
-      { token: "clerk:unused", confirm: true },
+      {
+        token: "clerk:unused",
+        acceptTerms: true,
+        termsVersion: "2026-08-12",
+        privacyVersion: "2026-08-12",
+      },
     );
     expect(existingOnlyCreate.status()).toBe(403);
     const disabled = await authRequest(
@@ -414,6 +428,13 @@ test.describe("deterministic layered authentication", () => {
     }).toString();
 
     await page.goto(authorizeUrl.toString(), { waitUntil: "networkidle" });
+    await expect(page.getByRole("heading", { name: "Before you continue" }))
+      .toBeVisible();
+    const agreeButton = page.getByRole("button", { name: "Agree and continue" });
+    await expect(agreeButton).toBeDisabled();
+    await page.getByRole("checkbox").check();
+    await expect(agreeButton).toBeEnabled();
+    await agreeButton.click();
     await expect(page.getByRole("heading", { name: "Game MCP Access" }))
       .toBeVisible();
     await expect(page.getByText("No wallet", { exact: true })).toBeVisible();
@@ -492,6 +513,7 @@ test.describe("real Clerk development project", () => {
     });
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill(initialPassword);
+    await authenticationDialog.getByRole("checkbox").check();
     await authenticationDialog
       .locator("form")
       .getByRole("button", { name: "Create account" })

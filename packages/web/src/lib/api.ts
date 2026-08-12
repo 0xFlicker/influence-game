@@ -1468,7 +1468,21 @@ export interface AuthMe extends AuthenticatedPublicIdentity {
     privy: boolean;
     emailPassword: boolean;
   };
+  legal: {
+    termsVersion: string;
+    privacyVersion: string;
+    accepted: boolean;
+    acceptedAt: string | null;
+  };
 }
+
+export const PRESENTED_LEGAL_ACCEPTANCE = {
+  acceptTerms: true,
+  termsVersion: "2026-08-12",
+  privacyVersion: "2026-08-12",
+} as const;
+
+export type PresentedLegalAcceptance = typeof PRESENTED_LEGAL_ACCEPTANCE;
 
 export async function getMe(): Promise<AuthMe> {
   return apiFetch("/api/auth/me");
@@ -1477,13 +1491,18 @@ export async function getMe(): Promise<AuthMe> {
 export async function loginWithPrivyToken(
   privyToken: string,
   inviteCode?: string,
+  legalAcceptance?: PresentedLegalAcceptance,
 ): Promise<{
   token: string;
   user: Omit<AuthMe, "isAdmin">;
 }> {
   return providerAuthFetch("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
+    body: JSON.stringify({
+      token: privyToken,
+      ...(inviteCode ? { inviteCode } : {}),
+      ...legalAcceptance,
+    }),
   });
 }
 
@@ -1510,7 +1529,14 @@ export async function createManagedAuthentication(
   return providerAuthFetch("/api/auth/managed/create", {
     method: "POST",
     headers: correlationId ? { "x-correlation-id": correlationId } : undefined,
-    body: JSON.stringify({ token, confirm: true }),
+    body: JSON.stringify({ token, ...PRESENTED_LEGAL_ACCEPTANCE }),
+  });
+}
+
+export async function acceptCurrentLegalTerms(): Promise<AuthMe["legal"]> {
+  return apiFetch("/api/auth/legal-acceptance", {
+    method: "POST",
+    body: JSON.stringify(PRESENTED_LEGAL_ACCEPTANCE),
   });
 }
 

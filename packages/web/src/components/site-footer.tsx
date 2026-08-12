@@ -47,7 +47,10 @@ export const SITE_FOOTER_SECTIONS: ReadonlyArray<{
   },
   {
     label: "Legal",
-    links: [{ label: "Privacy", href: "/privacy" }],
+    links: [
+      { label: "Terms", href: "/terms" },
+      { label: "Privacy", href: "/privacy" },
+    ],
   },
 ];
 

@@ -11,6 +11,12 @@ import { createMiddleware } from "hono/factory";
 import { PrivyClient } from "@privy-io/server-auth";
 import { SignJWT, jwtVerify } from "jose";
 import type { DrizzleDB } from "../db/index.js";
+import {
+  currentLegalAcceptanceVersions,
+  hasCurrentLegalAcceptanceVersions,
+  projectCurrentLegalAcceptance,
+  type LegalAcceptanceVersions,
+} from "../services/legal-acceptance.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -93,6 +99,7 @@ function getJwtSecret(): Uint8Array {
 export interface SessionTokenOptions {
   roles?: string[];
   permissions?: string[];
+  legalAcceptance?: LegalAcceptanceVersions | null;
 }
 
 /** Create a signed JWT session token for a user. */
@@ -100,10 +107,16 @@ export async function createSessionToken(
   userId: string,
   options?: SessionTokenOptions,
 ): Promise<string> {
+  // Direct callers are predominantly tests and local utilities. Production
+  // issuance always supplies an explicit accepted or pending legal claim.
+  const legalAcceptance = options?.legalAcceptance === undefined
+    ? currentLegalAcceptanceVersions()
+    : options.legalAcceptance;
   return new SignJWT({
     sub: userId,
     roles: options?.roles ?? [],
     perms: options?.permissions ?? [],
+    legal: legalAcceptance,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -116,6 +129,7 @@ export interface SessionPayload {
   userId: string;
   roles: string[];
   permissions: string[];
+  legalAcceptance: LegalAcceptanceVersions | null;
 }
 
 /** Verify and decode a session JWT. Returns user ID, roles, and permissions or null. */
@@ -128,10 +142,23 @@ export async function verifySessionToken(
     });
     const userId = payload.sub as string | undefined;
     if (!userId) return null;
+    const legal = payload.legal;
+    const legalRecord = legal && typeof legal === "object"
+      ? legal as Record<string, unknown>
+      : null;
+    const legalAcceptance = legalRecord
+      && typeof legalRecord.termsVersion === "string"
+      && typeof legalRecord.privacyVersion === "string"
+      ? {
+        termsVersion: legalRecord.termsVersion,
+        privacyVersion: legalRecord.privacyVersion,
+      }
+      : null;
     return {
       userId,
       roles: (payload.roles as string[] | undefined) ?? [],
       permissions: (payload.perms as string[] | undefined) ?? [],
+      legalAcceptance,
     };
   } catch {
     return null;
@@ -171,7 +198,10 @@ export async function getPrivyUser(privyUserId: string) {
  * Sets `c.get("user")` with the authenticated user record,
  * plus `c.get("userRoles")` and `c.get("userPermissions")` from JWT.
  */
-export function requireAuth(db: DrizzleDB) {
+export function requireAuth(
+  db: DrizzleDB,
+  options: { allowPendingLegalAcceptance?: boolean } = {},
+) {
   return createMiddleware<AuthEnv>(async (c, next) => {
     const authHeader = c.req.header("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
@@ -195,6 +225,19 @@ export function requireAuth(db: DrizzleDB) {
 
     if (!user) {
       return c.json({ error: "User not found" }, 401);
+    }
+
+    if (
+      !options.allowPendingLegalAcceptance
+      && !hasCurrentLegalAcceptanceVersions(session.legalAcceptance)
+    ) {
+      const legal = await projectCurrentLegalAcceptance(db, user.id);
+      if (!legal.accepted) {
+        return c.json({
+          error: "Current Terms and Privacy Policy acceptance is required",
+          code: "LEGAL_ACCEPTANCE_REQUIRED",
+        }, 403);
+      }
     }
 
     c.set("user", projectAuthUser(user));

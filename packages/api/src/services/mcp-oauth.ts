@@ -4,6 +4,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPermissionsForAddress } from "../db/rbac.js";
 import type { AuthUser } from "../middleware/auth.js";
+import { projectCurrentLegalAcceptance } from "./legal-acceptance.js";
 import {
   createRedirectAuditDetail,
   providerRedirectRuleForUri,
@@ -770,6 +771,9 @@ async function refreshMcpOAuthAccessToken(
     .where(eq(schema.users.id, tokenRow.userId)))[0];
   if (!user) {
     return invalidGrant("Authorization subject is no longer active", audit);
+  }
+  if (!(await projectCurrentLegalAcceptance(db, user.id)).accepted) {
+    return invalidGrant("Current Terms and Privacy Policy acceptance is required", audit);
   }
   if (mcpOAuthScopeSetHasProducer(tokenScopes.scopes) && !(await hasCurrentProducerRole(db, user))) {
     return invalidGrant("Producer role is no longer active for this user", audit);

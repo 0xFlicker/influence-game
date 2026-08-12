@@ -12,6 +12,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { ClerkProvider, useClerk } from "@clerk/nextjs";
+import { usePathname } from "next/navigation";
 import { AuthenticationWrapper } from "@/components/authentication-wrapper";
 import { isLayeredAuthE2EAdapterEnabled } from "@/lib/e2e-layered-auth";
 import {
@@ -37,6 +38,7 @@ import { InviteCodeModal } from "@/components/invite-code-modal";
 import { StandingDailyAgentPrompt } from "@/components/standing-daily-agent-prompt";
 import { AvatarGenerationActivity } from "@/components/avatar-generation-activity";
 import { PublicIdentityOnboarding } from "@/components/public-identity-onboarding";
+import { LegalAcceptancePrompt } from "@/components/legal-acceptance-prompt";
 import {
   classifyAuthenticatedIdentityPayload,
   identityDismissalKey,
@@ -128,6 +130,7 @@ type IdentityResolution = "pending" | "available" | "legacy" | "error";
 // ---------------------------------------------------------------------------
 
 function AuthExperience({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
   const {
     authenticated,
     account,
@@ -142,6 +145,8 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
   const [identityResolution, setIdentityResolution] = useState<IdentityResolution>("pending");
   const [identityDismissed, setIdentityDismissed] = useState(false);
   const [dailyAgentHandoffPublicId, setDailyAgentHandoffPublicId] =
+    useState<string | null>(null);
+  const [legalAcceptanceOverridePublicId, setLegalAcceptanceOverridePublicId] =
     useState<string | null>(null);
   const identityPublicIdRef = useRef<string | null>(null);
   const signedIn = authenticated;
@@ -186,10 +191,13 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!authenticated) {
+      setLegalAcceptanceOverridePublicId(null);
       syncIdentity(null, false);
       return;
     }
-    if (account) syncIdentity(account, true);
+    if (account) {
+      syncIdentity(account, true);
+    }
   }, [account, authenticated, syncIdentity]);
 
   useEffect(() => {
@@ -253,6 +261,22 @@ function AuthExperience({ children }: { children: React.ReactNode }) {
     dailyAgentHandoffPublicId === identity?.publicId
       ? dailyAgentHandoffPublicId
       : null;
+
+  const requiresLegalAcceptance = signedIn
+    && account
+    && !account.legal.accepted
+    && pathname !== "/terms"
+    && pathname !== "/privacy"
+    && legalAcceptanceOverridePublicId !== account.publicId;
+
+  if (requiresLegalAcceptance) {
+    return (
+      <LegalAcceptancePrompt
+        onAccepted={() => setLegalAcceptanceOverridePublicId(account.publicId)}
+        onLogout={logout}
+      />
+    );
+  }
 
   return (
     <InviteContext.Provider value={inviteState}>

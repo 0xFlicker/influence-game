@@ -22,9 +22,10 @@ describe("site footer", () => {
     expect(layoutSource).toContain("<SiteFooter />");
   });
 
-  it("keeps About and Privacy in the footer, not the header", () => {
+  it("keeps About and legal pages in the footer, not the header", () => {
     expect(navSource).not.toContain('href="/about"');
     expect(navSource).not.toContain('href="/privacy"');
+    expect(navSource).not.toContain('href="/terms"');
   });
 
   it("appears on standard site and account routes", () => {
@@ -34,6 +35,7 @@ describe("site footer", () => {
     expect(shouldShowSiteFooter("/rules")).toBe(true);
     expect(shouldShowSiteFooter("/about")).toBe(true);
     expect(shouldShowSiteFooter("/privacy")).toBe(true);
+    expect(shouldShowSiteFooter("/terms")).toBe(true);
     expect(shouldShowSiteFooter("/updates")).toBe(true);
     expect(shouldShowSiteFooter("/dashboard")).toBe(true);
   });
@@ -64,6 +66,7 @@ describe("site footer", () => {
         href: "https://github.com/0xFlicker/influence-game",
         external: true,
       },
+      { label: "Terms", href: "/terms" },
       { label: "Privacy", href: "/privacy" },
     ]);
   });

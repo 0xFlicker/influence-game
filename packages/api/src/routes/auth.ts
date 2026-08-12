@@ -40,6 +40,12 @@ import {
   issueInfluenceSession,
   projectLoginMethods,
 } from "../services/session-issuance.js";
+import {
+  CURRENT_PRIVACY_VERSION,
+  CURRENT_TERMS_VERSION,
+  projectCurrentLegalAcceptance,
+  recordCurrentLegalAcceptance,
+} from "../services/legal-acceptance.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -139,6 +145,10 @@ export function createAuthRoutes(
     if (!body?.token || typeof body.token !== "string") {
       return c.json({ error: "token is required" }, 400);
     }
+    const legalConsent = readCurrentLegalConsent(body);
+    if (legalConsent === "invalid") {
+      return staleLegalVersionResponse(c);
+    }
 
     const verification = await privyVerifier.verify(body.token);
     if (verification.status === "invalid") {
@@ -162,9 +172,17 @@ export function createAuthRoutes(
       subject,
       evidence: verification.status === "verified" ? verification.evidence : null,
       compatibilityBridgeEnabled,
+      allowAccountCreation: legalConsent === "accepted",
       checkInviteRequired: (tx) => inviteIsRequired(tx),
       redeemInvite: typeof body.inviteCode === "string"
         ? (tx, userId) => redeemCode(tx, body.inviteCode as string, userId)
+        : undefined,
+      beforeCommit: legalConsent === "accepted"
+        ? (tx, userId) => recordCurrentLegalAcceptance(
+          tx,
+          userId,
+          "account_creation",
+        )
         : undefined,
     });
 
@@ -202,6 +220,12 @@ export function createAuthRoutes(
       authentication.status === "setup_incomplete"
       || authentication.status === "reauth_required"
     ) {
+      if (authentication.status === "setup_incomplete") {
+        return c.json({
+          error: "Current Terms and Privacy Policy acceptance is required",
+          code: "LEGAL_ACCEPTANCE_REQUIRED",
+        }, 403);
+      }
       return c.json({
         error: "Authentication could not be completed",
         code: "ACCOUNT_SUPPORT_REQUIRED",
@@ -237,8 +261,15 @@ export function createAuthRoutes(
       clerkVerifier,
     );
     if (availability) return availability;
-    const request = await readStrictTokenRequest(c, ["token", "confirm"], true);
+    const request = await readStrictTokenRequest(
+      c,
+      ["token", "acceptTerms", "termsVersion", "privacyVersion"],
+      "acceptTerms",
+    );
     if (!request.ok) return request.response;
+    if (readCurrentLegalConsent(request.body) !== "accepted") {
+      return staleLegalVersionResponse(c);
+    }
     const verification = await verifyManagedEvidence(
       c,
       clerkVerifier!,
@@ -250,7 +281,15 @@ export function createAuthRoutes(
     return managedOutcomeResponse(
       c,
       db,
-      await createManagedAccountAuthentication(db, verification.evidence),
+      await createManagedAccountAuthentication(
+        db,
+        verification.evidence,
+        (tx, userId) => recordCurrentLegalAcceptance(
+          tx,
+          userId,
+          "account_creation",
+        ),
+      ),
     );
   });
 
@@ -264,7 +303,7 @@ export function createAuthRoutes(
     const request = await readStrictTokenRequest(
       c,
       ["token", "privyToken", "confirm"],
-      true,
+      "confirm",
     );
     if (!request.ok) return request.response;
     const influenceUserId = await readInfluenceUserId(c);
@@ -320,7 +359,11 @@ export function createAuthRoutes(
         code: "INFLUENCE_AUTH_REQUIRED",
       }, 401);
     }
-    const request = await readStrictTokenRequest(c, ["token", "confirm"], true);
+    const request = await readStrictTokenRequest(
+      c,
+      ["token", "confirm"],
+      "confirm",
+    );
     if (!request.ok) return request.response;
     const verification = await privyVerifier.verify(request.body.token);
     if (verification.status === "profile_unavailable") {
@@ -358,11 +401,16 @@ export function createAuthRoutes(
   // GET /api/auth/me — get current authenticated user
   // -------------------------------------------------------------------------
 
-  app.get("/api/auth/me", requireAuth(db), async (c) => {
+  app.get("/api/auth/me", requireAuth(db, {
+    allowPendingLegalAcceptance: true,
+  }), async (c) => {
     const user = c.get("authContextUser");
     const roles = c.get("userRoles") ?? [];
     const permissions = c.get("userPermissions") ?? [];
-    const loginMethods = await projectLoginMethods(db, user.id);
+    const [loginMethods, legal] = await Promise.all([
+      projectLoginMethods(db, user.id),
+      projectCurrentLegalAcceptance(db, user.id),
+    ]);
 
     const isAdmin =
       roles.includes("sysop") ||
@@ -378,7 +426,27 @@ export function createAuthRoutes(
       roles,
       permissions,
       loginMethods,
+      legal,
     });
+  });
+
+  app.post("/api/auth/legal-acceptance", requireAuth(db, {
+    allowPendingLegalAcceptance: true,
+  }), async (c) => {
+    const body = await parseJsonBody(c, "POST /api/auth/legal-acceptance");
+    if (
+      !body
+      || typeof body !== "object"
+      || Array.isArray(body)
+      || Object.keys(body).length !== 3
+      || body.acceptTerms !== true
+      || readCurrentLegalConsent(body) !== "accepted"
+    ) {
+      return staleLegalVersionResponse(c);
+    }
+    const user = c.get("authContextUser");
+    await recordCurrentLegalAcceptance(db, user.id, "existing_account");
+    return c.json(await projectCurrentLegalAcceptance(db, user.id));
   });
 
   return app;
@@ -428,12 +496,15 @@ type StrictAuthBody = {
   token: string;
   privyToken?: string;
   confirm?: true;
+  acceptTerms?: true;
+  termsVersion?: string;
+  privacyVersion?: string;
 };
 
 async function readStrictTokenRequest(
   c: Context,
   allowedKeys: Array<keyof StrictAuthBody>,
-  requireConfirmation = false,
+  requiredTrueKey?: "confirm" | "acceptTerms",
 ): Promise<
   | { ok: true; body: StrictAuthBody }
   | { ok: false; response: Response }
@@ -476,7 +547,7 @@ async function readStrictTokenRequest(
         || body.privyToken.length > 8_192
       )
     )
-    || (requireConfirmation && body.confirm !== true)
+    || (requiredTrueKey && body[requiredTrueKey] !== true)
   ) {
     return { ok: false, response: c.json({ error: "Invalid request" }, 400) };
   }
@@ -486,8 +557,38 @@ async function readStrictTokenRequest(
       token: body.token,
       privyToken: body.privyToken as string | undefined,
       confirm: body.confirm as true | undefined,
+      acceptTerms: body.acceptTerms as true | undefined,
+      termsVersion: body.termsVersion as string | undefined,
+      privacyVersion: body.privacyVersion as string | undefined,
     },
   };
+}
+
+function readCurrentLegalConsent(
+  body: {
+    acceptTerms?: unknown;
+    termsVersion?: unknown;
+    privacyVersion?: unknown;
+  },
+): "accepted" | "absent" | "invalid" {
+  const hasLegalFields = body.acceptTerms !== undefined
+    || body.termsVersion !== undefined
+    || body.privacyVersion !== undefined;
+  if (!hasLegalFields) return "absent";
+  return body.acceptTerms === true
+    && body.termsVersion === CURRENT_TERMS_VERSION
+    && body.privacyVersion === CURRENT_PRIVACY_VERSION
+    ? "accepted"
+    : "invalid";
+}
+
+function staleLegalVersionResponse(c: Context): Response {
+  return c.json({
+    error: "The current Terms and Privacy Policy versions must be accepted",
+    code: "LEGAL_VERSION_MISMATCH",
+    termsVersion: CURRENT_TERMS_VERSION,
+    privacyVersion: CURRENT_PRIVACY_VERSION,
+  }, 400);
 }
 
 function managedRouteAvailability(

@@ -19,6 +19,10 @@ import {
   MCP_OAUTH_PURPOSE,
   hashOpaqueSecret,
 } from "../services/mcp-oauth.js";
+import {
+  CURRENT_PRIVACY_VERSION,
+  CURRENT_TERMS_VERSION,
+} from "../services/legal-acceptance.js";
 import { setupTestDB } from "./test-utils.js";
 
 const MCP_OAUTH_DEFAULT_READ_SCOPE = "agents:read games:read";
@@ -617,6 +621,23 @@ describe("/mcp Streamable HTTP route", () => {
       expect(tokenRow?.lastUsedAt).toBeTruthy();
     });
 
+    test("rejects an existing MCP access token after current legal acceptance is absent", async () => {
+      const issued = await issueMcpAccessToken(db, {
+        walletAddress: "0xmcphttp00000000000000000000000000000011",
+      });
+      await db.delete(schema.legalAcceptances)
+        .where(eq(schema.legalAcceptances.userId, issued.userId));
+      const app = createDbBackedTestApp(db);
+
+      const response = await app.request("/mcp", {
+        method: "POST",
+        headers: jsonHeaders({ Authorization: `Bearer ${issued.accessToken}` }),
+        body: JSON.stringify({ jsonrpc: "2.0", id: "init", method: "initialize" }),
+      });
+
+      expect(response.status).toBe(403);
+    });
+
     test("accepts active local tokens bound to an equivalent loopback resource alias", async () => {
       const previousNodeEnv = process.env.NODE_ENV;
       const previousResource = process.env.MCP_OAUTH_RESOURCE_URI;
@@ -967,6 +988,12 @@ async function insertUser(db: DrizzleDB, walletAddress: string): Promise<string>
     id: userId,
     walletAddress: walletAddress.toLowerCase(),
     displayName: "MCP HTTP tester",
+  });
+  await db.insert(schema.legalAcceptances).values({
+    userId,
+    termsVersion: CURRENT_TERMS_VERSION,
+    privacyVersion: CURRENT_PRIVACY_VERSION,
+    source: "existing_account",
   });
   return userId;
 }

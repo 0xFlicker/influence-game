@@ -372,6 +372,13 @@
       "when": 1786148056673,
       "tag": "0052_zippy_pyro",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1786554165047,
+      "tag": "0053_lame_karen_page",
+      "breakpoints": true
     }
   ]
 }

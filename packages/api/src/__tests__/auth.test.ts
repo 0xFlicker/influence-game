@@ -40,6 +40,11 @@ import type {
 // ---------------------------------------------------------------------------
 
 const TEST_ADMIN_ADDRESS = "0xadmin000000000000000000000000000000dead";
+const CURRENT_LEGAL_CONSENT = {
+  acceptTerms: true,
+  termsVersion: "2026-08-12",
+  privacyVersion: "2026-08-12",
+} as const;
 
 beforeAll(() => {
   process.env.JWT_SECRET = "test-jwt-secret-auth-tests";
@@ -208,6 +213,75 @@ describe("requireAuth middleware", () => {
     expect(body.permissions).toContain("create_game");
     expect(body.permissions).toContain("view_admin");
   });
+
+  test("denies a pending session until current legal acceptance is recorded", async () => {
+    await db.insert(schema.users).values({
+      id: "pending-legal-user",
+      displayName: "Pending legal user",
+    });
+    const token = await createSessionToken("pending-legal-user", {
+      legalAcceptance: null,
+    });
+    const protectedApp = new Hono<AuthEnv>();
+    protectedApp.use("/*", requireAuth(db));
+    protectedApp.get("/protected", (c) => c.json({ ok: true }));
+
+    const denied = await protectedApp.request("/protected", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toEqual({
+      error: "Current Terms and Privacy Policy acceptance is required",
+      code: "LEGAL_ACCEPTANCE_REQUIRED",
+    });
+
+    const authApp = new Hono();
+    authApp.route("/", createAuthRoutes(db));
+    const accepted = await authApp.request("/api/auth/legal-acceptance", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(CURRENT_LEGAL_CONSENT),
+    });
+    expect(accepted.status).toBe(200);
+
+    const allowed = await protectedApp.request("/protected", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(allowed.status).toBe(200);
+  });
+
+  test("a prior-version acceptance does not satisfy the current requirement", async () => {
+    await db.insert(schema.users).values({
+      id: "stale-legal-user",
+      displayName: "Stale legal user",
+    });
+    await db.insert(schema.legalAcceptances).values({
+      userId: "stale-legal-user",
+      termsVersion: "2026-07-01",
+      privacyVersion: "2026-07-01",
+      source: "existing_account",
+    });
+    const token = await createSessionToken("stale-legal-user", {
+      legalAcceptance: {
+        termsVersion: "2026-07-01",
+        privacyVersion: "2026-07-01",
+      },
+    });
+    const app = new Hono<AuthEnv>();
+    app.use("/*", requireAuth(db));
+    app.get("/protected", (c) => c.json({ ok: true }));
+
+    const response = await app.request("/protected", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      code: "LEGAL_ACCEPTANCE_REQUIRED",
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -297,6 +371,12 @@ describe("local CLI session exchange", () => {
       walletAddress,
       displayName: "Producer CLI",
       createdAt: "2026-07-17T00:00:00.000Z",
+    });
+    await db.insert(schema.legalAcceptances).values({
+      userId: "producer-cli-user",
+      termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
+      privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+      source: "existing_account",
     });
     await assignRoles(db, walletAddress, ["producer", "gamer"]);
     const mcpToken = await issueProducerMcpToken(db, {
@@ -530,6 +610,102 @@ describe("authenticated public identity session projection", () => {
     expect(await db.select().from(schema.users)).toHaveLength(1);
   });
 
+  test("unknown Privy login creates nothing without current consent and creates once with it", async () => {
+    let inviteChecks = 0;
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      verifyPrivyToken: async () => "did:privy:new-consented-user",
+      getPrivyUser: async () => ({
+        id: "did:privy:new-consented-user",
+        createdAt: new Date(),
+        isGuest: false,
+        customMetadata: {},
+        linkedAccounts: [{
+          type: "email",
+          address: "new-consented@example.com",
+          verifiedAt: new Date(),
+          firstVerifiedAt: new Date(),
+          latestVerifiedAt: new Date(),
+        }],
+      }),
+      isInviteRequired: async () => {
+        inviteChecks += 1;
+        return false;
+      },
+    }));
+
+    const denied = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: "verified-token" }),
+    });
+    expect(denied.status).toBe(403);
+    expect(await denied.json()).toMatchObject({
+      code: "LEGAL_ACCEPTANCE_REQUIRED",
+    });
+    expect(inviteChecks).toBe(0);
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
+    expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(0);
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+
+    const created = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: "verified-token",
+        ...CURRENT_LEGAL_CONSENT,
+      }),
+    });
+    expect(created.status).toBe(200);
+    const createdBody = await created.json() as { token: string };
+    expect((await verifySessionToken(createdBody.token))?.legalAcceptance).toEqual({
+      termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
+      privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+    });
+    expect(inviteChecks).toBe(1);
+    expect(await db.select().from(schema.users)).toHaveLength(1);
+    expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(1);
+    expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(1);
+    const acceptances = await db.select().from(schema.legalAcceptances);
+    expect(acceptances).toHaveLength(1);
+    expect(acceptances[0]).toMatchObject({
+      termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
+      privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+      source: "account_creation",
+    });
+  });
+
+  test("Privy login rejects stale presented legal versions before verification", async () => {
+    let verificationCalls = 0;
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      verifyPrivyToken: async () => {
+        verificationCalls += 1;
+        return "did:privy:stale-consent";
+      },
+    }));
+
+    const response = await app.request("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        token: "verified-token",
+        acceptTerms: true,
+        termsVersion: "2026-07-01",
+        privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      code: "LEGAL_VERSION_MISMATCH",
+      termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
+      privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+    });
+    expect(verificationCalls).toBe(0);
+    expect(await db.select().from(schema.users)).toHaveLength(0);
+  });
+
   test("known Privy credentials ignore profile and invite-service outages", async () => {
     await db.insert(schema.users).values({
       id: "durable-known-user",
@@ -561,6 +737,7 @@ describe("authenticated public identity session projection", () => {
     const body = await res.json() as { token: string; user: { id: string } };
     expect(body.token).toBeTruthy();
     expect(body.user.id).toBe("durable-known-user");
+    expect((await verifySessionToken(body.token))?.legalAcceptance).toBeNull();
   });
 
   test("stalled Privy token verification returns unavailable without mutation", async () => {
@@ -677,15 +854,30 @@ describe("managed authentication routes", () => {
     }));
 
     const routes = [
-      { path: "/api/auth/managed/create", influenceToken: undefined },
-      { path: "/api/auth/managed/link", influenceToken },
-      { path: "/api/auth/privy/link", influenceToken },
+      {
+        path: "/api/auth/managed/create",
+        influenceToken: undefined,
+        confirmationKey: "acceptTerms",
+      },
+      {
+        path: "/api/auth/managed/link",
+        influenceToken,
+        confirmationKey: "confirm",
+      },
+      {
+        path: "/api/auth/privy/link",
+        influenceToken,
+        confirmationKey: "confirm",
+      },
     ];
     for (const route of routes) {
       for (const body of [
         { token: "provider-token" },
-        { token: "provider-token", confirm: false },
-        { token: "provider-token", confirm: "yes" },
+        { token: "provider-token", [route.confirmationKey]: false },
+        { token: "provider-token", [route.confirmationKey]: "yes" },
+        ...(route.confirmationKey === "acceptTerms"
+          ? [{ token: "provider-token", acceptTerms: true }]
+          : []),
       ]) {
         const response = await managedRequest(
           app,
@@ -701,6 +893,29 @@ describe("managed authentication routes", () => {
     expect(privyCalls).toBe(0);
     expect(await db.select().from(schema.authenticationCredentials)).toHaveLength(0);
     expect(await db.select().from(schema.verifiedEmailClaims)).toHaveLength(0);
+  });
+
+  test("managed creation rejects stale legal versions before verification", async () => {
+    let calls = 0;
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db, {
+      managedAuthMode: "full",
+      clerkVerifier: clerkVerifier(async () => {
+        calls += 1;
+        return verifiedClerk("clerk-stale-legal", "stale@example.com");
+      }),
+    }));
+
+    const response = await managedRequest(app, "/api/auth/managed/create", {
+      token: "completed",
+      acceptTerms: true,
+      termsVersion: "2026-07-01",
+      privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "LEGAL_VERSION_MISMATCH" });
+    expect(calls).toBe(0);
+    expect(await db.select().from(schema.users)).toHaveLength(0);
   });
 
   test("unknown completed session requires explicit create and then exchanges repeatably", async () => {
@@ -726,11 +941,11 @@ describe("managed authentication routes", () => {
     const [first, second] = await Promise.all([
       managedRequest(app, "/api/auth/managed/create", {
         token: "completed",
-        confirm: true,
+        ...CURRENT_LEGAL_CONSENT,
       }),
       managedRequest(app, "/api/auth/managed/create", {
         token: "completed",
-        confirm: true,
+        ...CURRENT_LEGAL_CONSENT,
       }),
     ]);
     expect(first.status).toBe(200);
@@ -749,7 +964,19 @@ describe("managed authentication routes", () => {
       emailPassword: true,
     });
     expect((await verifySessionToken(firstBody.token))?.userId).toBe(firstBody.user.id);
+    expect((await verifySessionToken(firstBody.token))?.legalAcceptance).toEqual({
+      termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
+      privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+    });
     expect(await db.select().from(schema.users)).toHaveLength(1);
+    const acceptances = await db.select().from(schema.legalAcceptances);
+    expect(acceptances).toHaveLength(1);
+    expect(acceptances[0]).toMatchObject({
+      userId: firstBody.user.id,
+      termsVersion: "2026-08-12",
+      privacyVersion: "2026-08-12",
+      source: "account_creation",
+    });
 
     const later = await managedRequest(
       app,
@@ -757,6 +984,89 @@ describe("managed authentication routes", () => {
       { token: "completed" },
     );
     expect(later.status).toBe(200);
+  });
+
+  test("existing accounts must explicitly accept the current legal terms", async () => {
+    await db.insert(schema.users).values({
+      id: "legal-existing-user",
+      displayName: "Legal existing user",
+    });
+    const token = await createSessionToken("legal-existing-user", {
+      legalAcceptance: null,
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db));
+
+    const before = await app.request("/api/auth/me", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(before.status).toBe(200);
+    expect(await before.json()).toMatchObject({
+      legal: { accepted: false, acceptedAt: null },
+    });
+
+    const rejected = await app.request("/api/auth/legal-acceptance", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ acceptTerms: false }),
+    });
+    expect(rejected.status).toBe(400);
+
+    const accepted = await app.request("/api/auth/legal-acceptance", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(CURRENT_LEGAL_CONSENT),
+    });
+    expect(accepted.status).toBe(200);
+    expect(await accepted.json()).toMatchObject({
+      termsVersion: "2026-08-12",
+      privacyVersion: "2026-08-12",
+      accepted: true,
+    });
+    const repeated = await app.request("/api/auth/legal-acceptance", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(CURRENT_LEGAL_CONSENT),
+    });
+    expect(repeated.status).toBe(200);
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(1);
+  });
+
+  test("legal acceptance rejects a stale presented version without writing", async () => {
+    await db.insert(schema.users).values({
+      id: "stale-acceptance-user",
+      displayName: "Stale acceptance user",
+    });
+    const token = await createSessionToken("stale-acceptance-user", {
+      legalAcceptance: null,
+    });
+    const app = new Hono();
+    app.route("/", createAuthRoutes(db));
+
+    const response = await app.request("/api/auth/legal-acceptance", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        acceptTerms: true,
+        termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
+        privacyVersion: "2026-07-01",
+      }),
+    });
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ code: "LEGAL_VERSION_MISMATCH" });
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
   });
 
   test("email collision asks for confirmation and authenticated link preserves the account", async () => {

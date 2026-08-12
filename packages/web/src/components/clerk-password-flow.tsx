@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import Link from "next/link";
+import { AccountLegalConsent } from "@/components/account-legal-consent";
 import {
   ApiError,
   createManagedAuthentication,
@@ -30,7 +31,7 @@ export type ManagedAuthMode = "existing-only" | "full";
 
 export const AUTHENTICATION_METHOD_MATRIX = {
   sign_in: ["email_password", "privy"],
-  create_account: ["email_password"],
+  create_account: ["email_password", "privy"],
   link_password: ["email_password"],
   reset_password: ["email_password"],
 } as const;
@@ -298,7 +299,7 @@ export function ClerkPasswordFlow({
   onIntentChange: (intent: PasswordFlowIntent) => void;
   onComplete: () => void;
   onCancel: () => void;
-  onContinueWithPrivy: () => void;
+  onContinueWithPrivy: (acceptedLegalTerms: boolean) => void;
   reversePrivyToken?: string;
 }) {
   const clerk = useClerk();
@@ -318,6 +319,7 @@ export function ClerkPasswordFlow({
   const [step, setStep] = useState<FlowStep>("credentials");
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState("");
+  const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -353,6 +355,7 @@ export function ClerkPasswordFlow({
   useEffect(() => {
     setEmail(initialEmail);
     setPassword("");
+    setAcceptedLegalTerms(false);
     setCode("");
     setNewPassword("");
     setError(null);
@@ -597,6 +600,11 @@ export function ClerkPasswordFlow({
       await run(async () => {
         await attemptPasswordSignIn();
       }, "Signing in…");
+      return;
+    }
+
+    if (intent === "create_account" && !acceptedLegalTerms) {
+      setError("Agree to the Terms of Use and acknowledge the Privacy Policy to create an account.");
       return;
     }
 
@@ -933,10 +941,15 @@ export function ClerkPasswordFlow({
           Your email is verified. Confirm to finish creating the Influence
           account. You can also return later and complete this step.
         </p>
+        <AccountLegalConsent
+          checked={acceptedLegalTerms}
+          disabled={busy}
+          onChange={setAcceptedLegalTerms}
+        />
         {mode === "full" ? (
           <button
             type="button"
-            disabled={busy || !managedToken}
+            disabled={busy || !managedToken || !acceptedLegalTerms}
             className="influence-button-primary rounded-lg px-4 py-2 text-sm"
             onClick={() => void finishManagedSetup()}
           >
@@ -1081,6 +1094,7 @@ export function ClerkPasswordFlow({
 
   const isSignIn = intent === "sign_in";
   const isReset = intent === "reset_password";
+  const isCreateAccount = intent === "create_account";
   const title = isSignIn
     ? "Sign in"
     : isReset
@@ -1121,7 +1135,14 @@ export function ClerkPasswordFlow({
             onChange={setPassword}
           />
         )}
-        <button type="submit" disabled={busy || !email.trim() || (!isReset && !password)} className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm">
+        {isCreateAccount && (
+          <AccountLegalConsent
+            checked={acceptedLegalTerms}
+            disabled={busy}
+            onChange={setAcceptedLegalTerms}
+          />
+        )}
+        <button type="submit" disabled={busy || !email.trim() || (!isReset && !password) || (isCreateAccount && !acceptedLegalTerms)} className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm">
           {busy
             ? "Please wait…"
             : isSignIn
@@ -1134,7 +1155,7 @@ export function ClerkPasswordFlow({
         </button>
       </form>
 
-      {isSignIn && !reversePrivyToken && (
+      {(isSignIn || isCreateAccount) && !reversePrivyToken && (
         <>
           <div className="flex items-center gap-3" aria-hidden="true">
             <span className="h-px flex-1 bg-border-subtle" />
@@ -1143,14 +1164,17 @@ export function ClerkPasswordFlow({
           </div>
           <button
             type="button"
+            disabled={busy || (isCreateAccount && !acceptedLegalTerms)}
             className="influence-button-secondary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
-            onClick={onContinueWithPrivy}
+            onClick={() => onContinueWithPrivy(acceptedLegalTerms)}
           >
             Continue with Privy
           </button>
-          <button type="button" disabled={busy} className="influence-link text-sm" onClick={() => onIntentChange("reset_password")}>
-            Forgot password?
-          </button>
+          {isSignIn && (
+            <button type="button" disabled={busy} className="influence-link text-sm" onClick={() => onIntentChange("reset_password")}>
+              Forgot password?
+            </button>
+          )}
         </>
       )}
 
