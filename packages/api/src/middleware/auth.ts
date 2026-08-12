@@ -343,10 +343,13 @@ export function optionalAuth(db: DrizzleDB) {
         const { schema } = await import("../db/index.js");
         const { eq } = await import("drizzle-orm");
 
-        const user = (await db
+        const legalAccepted = hasCurrentLegalAcceptanceVersions(
+          session.legalAcceptance,
+        ) || (await projectCurrentLegalAcceptance(db, session.userId)).accepted;
+        const user = legalAccepted ? (await db
           .select()
           .from(schema.users)
-          .where(eq(schema.users.id, session.userId)))[0];
+          .where(eq(schema.users.id, session.userId)))[0] : null;
 
         if (user) {
           c.set("user", projectAuthUser(user));

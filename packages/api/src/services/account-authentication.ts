@@ -127,10 +127,10 @@ export async function exchangeExistingAccountAuthentication(
 export async function createManagedAccountAuthentication(
   db: DrizzleDB,
   evidence: VerifiedProviderEvidence,
-  beforeCommit?: (
-    tx: AuthenticationTransaction,
-    userId: string,
-  ) => Promise<void>,
+  creation: Pick<
+    ResolveAccountAuthenticationInput,
+    "checkInviteRequired" | "redeemInvite" | "beforeCommit"
+  > = {},
 ): Promise<AccountAuthenticationOutcome> {
   if (evidence.provider !== "clerk" || evidence.owner.kind !== "email") {
     return { status: "support_blocked" };
@@ -140,7 +140,7 @@ export async function createManagedAccountAuthentication(
     subject: evidence.subject,
     evidence,
     compatibilityBridgeEnabled: false,
-    beforeCommit,
+    ...creation,
   });
 }
 
@@ -338,6 +338,9 @@ async function resolveInTransaction(
 
   if (legacyUser.status === "conflict") return { status: "support_blocked" };
   if (legacyUser.status === "found") {
+    if (input.allowAccountCreation === true) {
+      return { status: "authenticated", user: legacyUser.user, created: false };
+    }
     if (input.compatibilityBridgeEnabled === false) {
       return { status: "support_blocked" };
     }

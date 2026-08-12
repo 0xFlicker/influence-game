@@ -35,6 +35,10 @@ interface LayeredAuthHarness {
     walletPrivyFresh: string;
     walletPrivyExpired: string;
     uiExistingPrivy: string;
+    uiNewPrivy: string;
+    uiExistingOnlyPrivy: string;
+    uiDisabledPrivy: string;
+    uiOutagePrivy: string;
     uiReversePrivy: string;
     uiWalletPrivyFresh: string;
     uiWalletPrivyExpired: string;
@@ -151,6 +155,10 @@ async function main(): Promise<void> {
       walletPrivyFresh: "privy:wallet:fresh",
       walletPrivyExpired: "privy:wallet:expired",
       uiExistingPrivy: "privy:ui-existing",
+      uiNewPrivy: "privy:ui-new",
+      uiExistingOnlyPrivy: "privy:ui-existing-only",
+      uiDisabledPrivy: "privy:ui-disabled",
+      uiOutagePrivy: "privy:ui-outage",
       uiReversePrivy: "privy:ui-reverse",
       uiWalletPrivyFresh: "privy:ui-wallet:fresh",
       uiWalletPrivyExpired: "privy:ui-wallet:expired",
@@ -313,6 +321,11 @@ function createInjectedClerkVerifier(): ClerkAuthenticationProviderVerifier {
           return { status: "profile_unavailable" };
         case "clerk:ui-new":
           return verifiedClerk("clerk-ui-new", "ui-new+e2e@example.test");
+        case "clerk:ui-signin-new":
+          return verifiedClerk(
+            "clerk-ui-signin-new",
+            "ui-signin-new+e2e@example.test",
+          );
         case "clerk:ui-existing":
           return verifiedClerk(
             "clerk-ui-existing",
@@ -356,6 +369,14 @@ async function verifyInjectedPrivyToken(token: string): Promise<string | null> {
       return "did:privy:wallet";
     case "privy:ui-existing":
       return "did:privy:ui-existing";
+    case "privy:ui-new":
+      return "did:privy:ui-new";
+    case "privy:ui-existing-only":
+      return "did:privy:ui-existing-only";
+    case "privy:ui-disabled":
+      return "did:privy:ui-disabled";
+    case "privy:ui-outage":
+      return "did:privy:ui-outage";
     case "privy:ui-reverse":
       return "did:privy:ui-reverse";
     case "privy:ui-wallet:fresh":
@@ -382,6 +403,18 @@ const linkedAccountsBySubject: Record<
     emailAccount("ui-existing@example.test"),
     embeddedWallet(UI_EMBEDDED_WALLET),
   ],
+  "did:privy:ui-new": () => [
+    emailAccount("ui-privy-new+e2e@example.test"),
+    embeddedWallet("0x6666666666666666666666666666666666666666"),
+  ],
+  "did:privy:ui-existing-only": () => [
+    emailAccount("ui-privy-existing-only+e2e@example.test"),
+    embeddedWallet("0x8888888888888888888888888888888888888888"),
+  ],
+  "did:privy:ui-disabled": () => [
+    emailAccount("ui-privy-disabled+e2e@example.test"),
+    embeddedWallet("0x7777777777777777777777777777777777777777"),
+  ],
   "did:privy:reverse": () => [emailAccount("reverse@example.test")],
   "did:privy:ui-reverse": () => [emailAccount("ui-reverse@example.test")],
   "did:privy:ui-wallet": () => [
@@ -395,6 +428,9 @@ const linkedAccountsBySubject: Record<
 };
 
 async function loadInjectedPrivyUser(subject: string) {
+  if (subject === "did:privy:ui-outage") {
+    throw new Error("Injected Privy profile outage");
+  }
   const linkedAccounts = (
     linkedAccountsBySubject[subject]
     ?? linkedAccountsBySubject["did:privy:wallet"]!

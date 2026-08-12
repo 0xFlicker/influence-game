@@ -344,18 +344,15 @@ function InfluenceAuthLayer({
     return (
       <InfluenceAuthProvider managedAuthEnabled>
         <AuthExperience>{children}</AuthExperience>
-        <AuthenticationWrapper
-          managedAuthMode={
-            managedAuthMode === "disabled" ? "existing-only" : managedAuthMode
-          }
-        />
+        <AuthenticationWrapper managedAuthMode={managedAuthMode} />
       </InfluenceAuthProvider>
     );
   }
   if (managedAuthMode === "disabled") {
     return (
-      <InfluenceAuthProvider>
+      <InfluenceAuthProvider managedAuthEnabled>
         <AuthExperience>{children}</AuthExperience>
+        <AuthenticationWrapper managedAuthMode="disabled" />
       </InfluenceAuthProvider>
     );
   }

@@ -11,6 +11,7 @@ import {
 import Link from "next/link";
 import { AccountLegalConsent } from "@/components/account-legal-consent";
 import {
+  acceptCurrentLegalTermsForSession,
   ApiError,
   createManagedAuthentication,
   exchangeManagedAuthentication,
@@ -38,6 +39,8 @@ export const AUTHENTICATION_METHOD_MATRIX = {
 
 type FlowStep =
   | "credentials"
+  | "account_creation_offer"
+  | "account_exists"
   | "verify_email"
   | "verify_client_trust"
   | "reset_code"
@@ -45,6 +48,8 @@ type FlowStep =
   | "protect_check"
   | "link_confirmation"
   | "wallet_reauth"
+  | "legal_acceptance_for_link"
+  | "invite_required"
   | "setup_incomplete"
   | "support_blocked"
   | "success";
@@ -118,8 +123,11 @@ export async function runClerkPasswordAttempt<T extends ClerkPasswordResource>({
   emailAddress: string;
   password: string;
   continueSignIn: (signIn: T) => Promise<void>;
-}): Promise<void> {
+}): Promise<"continued" | "account_missing"> {
   const result = await signIn.password({ emailAddress, password });
+  if (result.error?.code === "form_identifier_not_found") {
+    return "account_missing";
+  }
   const message = clerkErrorMessage(result, "Could not sign in.");
   const submittedAccountAlreadyHasSession =
     result.error?.code === "identifier_already_signed_in"
@@ -132,6 +140,7 @@ export async function runClerkPasswordAttempt<T extends ClerkPasswordResource>({
     );
   }
   await continueSignIn(signIn);
+  return "continued";
 }
 
 export async function runClerkProtectAttempt<T extends ClerkProtectResource>({
@@ -296,7 +305,7 @@ export function ClerkPasswordFlow({
   attempt: ProviderAuthenticationAttempt;
   initialEmail?: string;
   presentation?: "modal" | "inline";
-  onIntentChange: (intent: PasswordFlowIntent) => void;
+  onIntentChange: (intent: PasswordFlowIntent, email?: string) => void;
   onComplete: () => void;
   onCancel: () => void;
   onContinueWithPrivy: (acceptedLegalTerms: boolean) => void;
@@ -314,6 +323,7 @@ export function ClerkPasswordFlow({
   signUpRef.current = signUp;
   const {
     completeAuthenticationAttempt,
+    isAuthenticationAttemptCurrent,
     requestPrivyProof,
   } = useAuth();
   const [step, setStep] = useState<FlowStep>("credentials");
@@ -322,10 +332,12 @@ export function ClerkPasswordFlow({
   const [acceptedLegalTerms, setAcceptedLegalTerms] = useState(false);
   const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [localBusy, setLocalBusy] = useState(false);
   const [managedToken, setManagedToken] = useState<string | null>(null);
+  const [pendingInfluenceSession, setPendingInfluenceSession] = useState<InfluenceSessionResult | null>(null);
   const [supportId, setSupportId] = useState<string | null>(null);
   const [correlationId] = useState(supportReference);
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -358,9 +370,11 @@ export function ClerkPasswordFlow({
     setAcceptedLegalTerms(false);
     setCode("");
     setNewPassword("");
+    setInviteCode("");
     setError(null);
     setStatus("");
     setManagedToken(null);
+    setPendingInfluenceSession(null);
     setSupportId(null);
     setStep("credentials");
   }, [initialEmail, intent]);
@@ -383,7 +397,11 @@ export function ClerkPasswordFlow({
     if (
       resumedCompletionRef.current
       || currentSignupOwnsCompletionRef.current
-      || (intent !== "create_account" && intent !== "link_password")
+      || (
+        intent !== "sign_in"
+        && intent !== "create_account"
+        && intent !== "link_password"
+      )
       || signUp.status !== "complete"
     ) {
       return;
@@ -441,11 +459,28 @@ export function ClerkPasswordFlow({
       return true;
     }
     if (
-      apiError.code === "ACCOUNT_SETUP_INCOMPLETE"
+      apiError.code === "ACCOUNT_CREATION_REQUIRED"
       || apiError.code === "MANAGED_AUTH_SETUP_INCOMPLETE"
     ) {
       setManagedToken(token);
       setStep("setup_incomplete");
+      return true;
+    }
+    if (apiError.code === "ACCOUNT_ALREADY_EXISTS") {
+      setManagedToken(null);
+      setAcceptedLegalTerms(false);
+      setStep("account_exists");
+      return true;
+    }
+    if (
+      apiError.code === "INVITE_REQUIRED"
+      || apiError.code === "INVALID_INVITE_CODE"
+    ) {
+      setManagedToken(token);
+      setStep("invite_required");
+      if (apiError.code === "INVALID_INVITE_CODE") {
+        setError("That invite code is invalid or has already been used.");
+      }
       return true;
     }
     if (apiError.code === "WALLET_REAUTH_REQUIRED") {
@@ -468,20 +503,30 @@ export function ClerkPasswordFlow({
     }
     try {
       if (reversePrivyToken) {
-        await completeInfluenceSession(async () => {
-          const managedSession = await exchangeManagedAuthentication(
-            token,
-            correlationId,
-          );
-          return linkPrivyAuthentication(
+        const managedSession = await exchangeManagedAuthentication(
+          token,
+          correlationId,
+        );
+        if (!isAuthenticationAttemptCurrent(attempt)) return;
+        if (!managedSession.user.legal.accepted) {
+          setPendingInfluenceSession(managedSession);
+          setAcceptedLegalTerms(false);
+          setStep("legal_acceptance_for_link");
+          return;
+        }
+        await completeInfluenceSession(
+          () => linkPrivyAuthentication(
             reversePrivyToken,
             managedSession.token,
             correlationId,
-          );
-        });
+          ),
+        );
         return;
       }
-      if (intent === "create_account") {
+      if (
+        intent === "create_account"
+        || (intent === "sign_in" && currentSignupOwnsCompletionRef.current)
+      ) {
         await completeInfluenceSession(
           () => createManagedAuthentication(token, correlationId),
         );
@@ -570,12 +615,48 @@ export function ClerkPasswordFlow({
 
   async function attemptPasswordSignIn(): Promise<void> {
     const currentSignIn = signInRef.current;
-    await runClerkPasswordAttempt({
+    const outcome = await runClerkPasswordAttempt({
       signIn: currentSignIn,
       emailAddress: email.trim(),
       password,
       continueSignIn,
     });
+    if (outcome === "account_missing") {
+      setAcceptedLegalTerms(false);
+      setError(null);
+      setStatus("");
+      setStep("account_creation_offer");
+    }
+  }
+
+  async function beginClerkAccountCreation(): Promise<void> {
+    currentSignupOwnsCompletionRef.current = true;
+    const result = await signUpRef.current.password({
+      emailAddress: email.trim(),
+      password,
+    });
+    if (result.error?.code === "form_identifier_exists") {
+      currentSignupOwnsCompletionRef.current = false;
+      setAcceptedLegalTerms(false);
+      setStatus("");
+      setStep("account_exists");
+      return;
+    }
+    const message = clerkErrorMessage(result, "Could not create the account.");
+    if (message) throw new Error(message);
+    const currentSignUp = signUpRef.current;
+    if (currentSignUp.status === "complete") {
+      await exchangeAfterVerification(await finalizeSignUp());
+      return;
+    }
+    const sent = await currentSignUp.verifications.sendEmailCode();
+    const sendError = clerkErrorMessage(
+      sent,
+      "Could not send a verification code.",
+    );
+    if (sendError) throw new Error(sendError);
+    setStep("verify_email");
+    setStatus("Verification code sent.");
   }
 
   async function submitCredentials(): Promise<void> {
@@ -609,26 +690,7 @@ export function ClerkPasswordFlow({
     }
 
     await run(async () => {
-      currentSignupOwnsCompletionRef.current = true;
-      const result = await signUp.password({
-        emailAddress: email.trim(),
-        password,
-      });
-      const message = clerkErrorMessage(result, "Could not create the account.");
-      if (message) throw new Error(message);
-      const currentSignUp = signUpRef.current;
-      if (currentSignUp.status === "complete") {
-        await exchangeAfterVerification(await finalizeSignUp());
-        return;
-      }
-      const sent = await currentSignUp.verifications.sendEmailCode();
-      const sendError = clerkErrorMessage(
-        sent,
-        "Could not send a verification code.",
-      );
-      if (sendError) throw new Error(sendError);
-      setStep("verify_email");
-      setStatus("Verification code sent.");
+      await beginClerkAccountCreation();
     }, "Creating your secure sign-in…");
   }
 
@@ -711,6 +773,27 @@ export function ClerkPasswordFlow({
       setStatus("");
       setStep("credentials");
     }, "Restarting sign in…");
+  }
+
+  async function returnToDifferentEmail(
+    provider: "sign_in" | "create_account",
+  ): Promise<void> {
+    await run(async () => {
+      const result = provider === "sign_in"
+        ? await signInRef.current.reset()
+        : await signUpRef.current.reset()
+      const message = clerkErrorMessage(result, "Could not restart account setup.");
+      if (message) throw new Error(message);
+      currentSignupOwnsCompletionRef.current = false;
+      setEmail("");
+      setPassword("");
+      setAcceptedLegalTerms(false);
+      setCode("");
+      setInviteCode("");
+      setManagedToken(null);
+      setStatus("");
+      setStep("credentials");
+    }, "Restarting…");
   }
 
   async function resendResetCode(): Promise<void> {
@@ -811,12 +894,32 @@ export function ClerkPasswordFlow({
     }, "Finishing account setup…");
   }
 
-  const emailError =
-    signInErrors.fields.identifier?.message
-    ?? signUpErrors.fields.emailAddress?.message;
-  const passwordError =
-    signInErrors.fields.password?.message
-    ?? signUpErrors.fields.password?.message;
+  async function submitManagedInvite(): Promise<void> {
+    if (!managedToken || !inviteCode.trim()) return;
+    await run(async () => {
+      try {
+        await completeInfluenceSession(
+          () => createManagedAuthentication(
+            managedToken,
+            correlationId,
+            inviteCode.trim(),
+          ),
+        );
+      } catch (caught) {
+        if (caught instanceof ApiError && handleApiState(caught, managedToken)) {
+          return;
+        }
+        throw caught;
+      }
+    }, "Verifying invite code…");
+  }
+
+  const emailError = intent === "sign_in" || intent === "reset_password"
+    ? signInErrors.fields.identifier?.message
+    : signUpErrors.fields.emailAddress?.message;
+  const passwordError = intent === "sign_in" || intent === "reset_password"
+    ? signInErrors.fields.password?.message
+    : signUpErrors.fields.password?.message;
   const codeError =
     signInErrors.fields.code?.message ?? signUpErrors.fields.code?.message;
 
@@ -855,6 +958,78 @@ export function ClerkPasswordFlow({
             Back to sign in
           </button>
         </div>
+      </FlowPanel>
+    );
+  }
+
+  if (step === "account_creation_offer") {
+    return (
+      <FlowPanel heading="Create your account" headingRef={headingRef}>
+        <p className="influence-copy text-sm">
+          We couldn&apos;t find an account for {email.trim()}. Create one with
+          these details to continue.
+        </p>
+        {mode === "full" ? (
+          <>
+            <AccountLegalConsent
+              checked={acceptedLegalTerms}
+              disabled={busy}
+              onChange={setAcceptedLegalTerms}
+            />
+            <button
+              type="button"
+              disabled={busy || !acceptedLegalTerms}
+              className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
+              onClick={() => void run(
+                beginClerkAccountCreation,
+                "Creating your secure sign-in…",
+              )}
+            >
+              {busy ? "Please wait…" : "Create account"}
+            </button>
+          </>
+        ) : (
+          <p role="alert" className="text-sm text-amber-300">
+            New account setup is temporarily unavailable. Existing accounts
+            can still sign in.
+          </p>
+        )}
+        <button
+          type="button"
+          disabled={busy}
+          className="influence-link text-sm"
+          onClick={() => void returnToDifferentEmail("sign_in")}
+        >
+          Use a different email
+        </button>
+        <FlowMessages error={error} status={status} errorRef={errorRef} />
+      </FlowPanel>
+    );
+  }
+
+  if (step === "account_exists") {
+    return (
+      <FlowPanel heading="Account already exists" headingRef={headingRef}>
+        <p className="influence-copy text-sm">
+          An account already exists for {email.trim()}. Sign in instead.
+        </p>
+        <button
+          type="button"
+          disabled={busy}
+          className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
+          onClick={() => onIntentChange("sign_in", email.trim())}
+        >
+          Go to sign in
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          className="influence-link text-sm"
+          onClick={() => void returnToDifferentEmail("create_account")}
+        >
+          Use a different email
+        </button>
+        <FlowMessages error={error} status={status} errorRef={errorRef} />
       </FlowPanel>
     );
   }
@@ -936,10 +1111,10 @@ export function ClerkPasswordFlow({
 
   if (step === "setup_incomplete") {
     return (
-      <FlowPanel heading="Finish account setup" headingRef={headingRef}>
+      <FlowPanel heading="Create your account" headingRef={headingRef}>
         <p className="influence-copy text-sm">
-          Your email is verified. Confirm to finish creating the Influence
-          account. You can also return later and complete this step.
+          Your email is verified but is not connected to a House account yet.
+          Create one to continue.
         </p>
         <AccountLegalConsent
           checked={acceptedLegalTerms}
@@ -953,7 +1128,7 @@ export function ClerkPasswordFlow({
             className="influence-button-primary rounded-lg px-4 py-2 text-sm"
             onClick={() => void finishManagedSetup()}
           >
-            Finish account setup
+            Create account
           </button>
         ) : (
           <p role="alert" className="text-sm text-amber-300">
@@ -961,6 +1136,75 @@ export function ClerkPasswordFlow({
             email/password accounts can still sign in.
           </p>
         )}
+        <FlowMessages error={error} status={status} errorRef={errorRef} />
+      </FlowPanel>
+    );
+  }
+
+  if (step === "invite_required") {
+    return (
+      <FlowPanel heading="Invite Code Required" headingRef={headingRef}>
+        <p className="influence-copy text-sm">
+          Enter an invite code to create your account. Your Terms acceptance
+          remains attached to this creation attempt.
+        </p>
+        <label className="block space-y-2">
+          <span className="text-sm font-medium">Invite code</span>
+          <input
+            type="text"
+            value={inviteCode}
+            onChange={(event) => setInviteCode(event.target.value.toUpperCase())}
+            maxLength={12}
+            autoComplete="off"
+            className="influence-field w-full rounded-lg px-4 py-3 font-mono tracking-widest"
+          />
+        </label>
+        <button
+          type="button"
+          disabled={busy || !inviteCode.trim()}
+          className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
+          onClick={() => void submitManagedInvite()}
+        >
+          {busy ? "Verifying…" : "Submit"}
+        </button>
+        <FlowMessages error={error} status={status} errorRef={errorRef} />
+      </FlowPanel>
+    );
+  }
+
+  if (step === "legal_acceptance_for_link") {
+    return (
+      <FlowPanel heading="Accept the Terms to continue" headingRef={headingRef}>
+        <p className="influence-copy text-sm">
+          Your email/password sign-in is verified. Accept the current Terms of
+          Use before linking this Privy sign-in.
+        </p>
+        <AccountLegalConsent
+          checked={acceptedLegalTerms}
+          disabled={busy}
+          onChange={setAcceptedLegalTerms}
+        />
+        <button
+          type="button"
+          disabled={busy || !acceptedLegalTerms || !pendingInfluenceSession || !reversePrivyToken}
+          className="influence-button-primary min-h-11 w-full rounded-lg px-4 py-2 text-sm"
+          onClick={() => void run(async () => {
+            if (!pendingInfluenceSession || !reversePrivyToken) return;
+            const acceptedSession = await acceptCurrentLegalTermsForSession(
+              pendingInfluenceSession.token,
+            );
+            if (!isAuthenticationAttemptCurrent(attempt)) return;
+            await completeInfluenceSession(
+              () => linkPrivyAuthentication(
+                reversePrivyToken,
+                acceptedSession.token,
+                correlationId,
+              ),
+            );
+          }, "Recording acceptance…")}
+        >
+          {busy ? "Please wait…" : "Accept and link Privy"}
+        </button>
         <FlowMessages error={error} status={status} errorRef={errorRef} />
       </FlowPanel>
     );

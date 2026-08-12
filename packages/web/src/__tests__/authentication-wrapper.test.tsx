@@ -11,7 +11,7 @@ import {
   verifyClerkClientTrustEmailCode,
 } from "../components/clerk-password-flow";
 import {
-  acceptCurrentLegalTerms,
+  acceptCurrentLegalTermsForSession,
   ApiError,
   AUTH_TOKEN_KEY,
   createManagedAuthentication,
@@ -89,22 +89,31 @@ describe("unified authentication wrapper", () => {
         configurable: true,
         value: async (_input: RequestInfo | URL, init?: RequestInit) => {
           requestBodies.push(JSON.parse(String(init?.body)));
-          return new Response(JSON.stringify({}), { status: 200 });
+          return new Response(JSON.stringify({
+            token: "test-session",
+            user: { legal: { accepted: true } },
+          }), { status: 200 });
         },
       });
 
-      await loginWithPrivyToken("sign-in-token");
+      await loginWithPrivyToken("sign-in-token", { intent: "sign_in" });
       await loginWithPrivyToken(
         "create-token",
-        undefined,
-        PRESENTED_LEGAL_ACCEPTANCE,
+        {
+          intent: "create_account",
+          legalAcceptance: PRESENTED_LEGAL_ACCEPTANCE,
+        },
       );
       await createManagedAuthentication("managed-token");
-      await acceptCurrentLegalTerms();
+      await acceptCurrentLegalTermsForSession("existing-session-token");
 
       expect(requestBodies).toEqual([
-        { token: "sign-in-token" },
-        { token: "create-token", ...PRESENTED_LEGAL_ACCEPTANCE },
+        { token: "sign-in-token", intent: "sign_in" },
+        {
+          token: "create-token",
+          intent: "create_account",
+          ...PRESENTED_LEGAL_ACCEPTANCE,
+        },
         { token: "managed-token", ...PRESENTED_LEGAL_ACCEPTANCE },
         PRESENTED_LEGAL_ACCEPTANCE,
       ]);
@@ -181,13 +190,8 @@ describe("unified authentication wrapper", () => {
   });
 
   it("continues from Clerk's settled password resource without polling or identity gates", () => {
-    const signInSubmit = passwordFlowSource.slice(
-      passwordFlowSource.indexOf('if (intent === "sign_in")'),
-      passwordFlowSource.indexOf("currentSignupOwnsCompletionRef.current = true"),
-    );
-
-    expect(signInSubmit).not.toContain("updatedClerkResource");
-    expect(signInSubmit).toContain("await attemptPasswordSignIn()");
+    expect(passwordFlowSource).not.toContain("updatedClerkResource");
+    expect(passwordFlowSource).toContain("await attemptPasswordSignIn()");
     expect(passwordFlowSource).toContain("await runClerkPasswordAttempt({");
     expect(passwordFlowSource).toContain(
       "await beginClerkClientTrustEmailCode({",
@@ -402,6 +406,30 @@ describe("unified authentication wrapper", () => {
     ]);
   });
 
+  it("classifies an unknown Clerk identifier without exposing the provider error", async () => {
+    let continued = false;
+    const outcome = await runClerkPasswordAttempt({
+      signIn: {
+        async password() {
+          return {
+            error: {
+              code: "form_identifier_not_found",
+              message: "Couldn't find your account.",
+            },
+          };
+        },
+      },
+      emailAddress: "new@example.test",
+      password: "secret",
+      continueSignIn: async () => {
+        continued = true;
+      },
+    });
+
+    expect(outcome).toBe("account_missing");
+    expect(continued).toBeFalse();
+  });
+
   it("does not let a stale existing session mask a password failure", async () => {
     let continued = false;
     const signIn = {
@@ -609,7 +637,7 @@ describe("unified authentication wrapper", () => {
 
   it("does not let resumed-signup detection overwrite an active verification flow", () => {
     const passwordSignup = passwordFlowSource.indexOf(
-      "const result = await signUp.password",
+      "const result = await signUpRef.current.password",
     );
     expect(passwordSignup).toBeGreaterThan(0);
     expect(passwordFlowSource.slice(0, passwordSignup)).toContain(
@@ -721,14 +749,15 @@ describe("unified authentication wrapper", () => {
   it("keeps create-account legal acceptance scoped to its Privy attempt", () => {
     expect(wrapperSource).toContain("PRESENTED_LEGAL_ACCEPTANCE");
     expect(authHookSource).toContain(
-      "const attemptLegalAcceptance = legalAcceptance;",
+      "pendingPrivyRequest.current = request;",
     );
     expect(authHookSource).toContain(
-      "pendingPrivyLegalAcceptance.current === legalAcceptance",
+      "pendingPrivyRequest.current === request",
     );
     expect(authHookSource).toContain(
-      "pendingPrivyLegalAcceptance.current = undefined",
+      "pendingPrivyRequest.current = null",
     );
+    expect(authHookSource).toContain('request?.intent !== "create_account"');
   });
 
   it("lets invite-gated Privy users dismiss the prompt or sign out", () => {

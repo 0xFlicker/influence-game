@@ -43,6 +43,7 @@ import {
 import {
   CURRENT_PRIVACY_VERSION,
   CURRENT_TERMS_VERSION,
+  hasCurrentLegalAcceptanceVersions,
   normalizeDeploymentSha,
   projectCurrentLegalAcceptance,
   recordCurrentLegalAcceptance,
@@ -142,12 +143,28 @@ export function createAuthRoutes(
   // -------------------------------------------------------------------------
 
   app.post("/api/auth/login", async (c) => {
-    const body = await parseJsonBody(c, "POST /api/auth/login");
-    if (!body?.token || typeof body.token !== "string") {
-      return c.json({ error: "token is required" }, 400);
+    const request = await readStrictTokenRequest(c, [
+      "token",
+      "intent",
+      "inviteCode",
+      "acceptTerms",
+      "termsVersion",
+      "privacyVersion",
+      "deploymentSha",
+    ]);
+    if (!request.ok) return request.response;
+    const { body } = request;
+    if (body.intent !== "sign_in" && body.intent !== "create_account") {
+      return c.json({ error: "Invalid request" }, 400);
     }
     const legalConsent = readCurrentLegalConsent(body);
-    if (legalConsent === "invalid") {
+    if (
+      (
+        body.intent === "sign_in"
+        && (legalConsent !== "absent" || body.inviteCode !== undefined)
+      )
+      || (body.intent === "create_account" && legalConsent !== "accepted")
+    ) {
       return staleLegalVersionResponse(c);
     }
 
@@ -173,12 +190,12 @@ export function createAuthRoutes(
       subject,
       evidence: verification.status === "verified" ? verification.evidence : null,
       compatibilityBridgeEnabled,
-      allowAccountCreation: legalConsent === "accepted",
+      allowAccountCreation: body.intent === "create_account",
       checkInviteRequired: (tx) => inviteIsRequired(tx),
       redeemInvite: typeof body.inviteCode === "string"
-        ? (tx, userId) => redeemCode(tx, body.inviteCode as string, userId)
+        ? (tx, userId) => redeemCode(tx, body.inviteCode!, userId)
         : undefined,
-      beforeCommit: legalConsent === "accepted"
+      beforeCommit: body.intent === "create_account"
         ? (tx, userId) => recordCurrentLegalAcceptance(
           tx,
           userId,
@@ -224,14 +241,17 @@ export function createAuthRoutes(
     ) {
       if (authentication.status === "setup_incomplete") {
         return c.json({
-          error: "Current Terms and Privacy Policy acceptance is required",
-          code: "LEGAL_ACCEPTANCE_REQUIRED",
-        }, 403);
+          error: "This verified sign-in is not connected to a House account",
+          code: "ACCOUNT_CREATION_REQUIRED",
+        }, 409);
       }
       return c.json({
         error: "Authentication could not be completed",
         code: "ACCOUNT_SUPPORT_REQUIRED",
       }, 409);
+    }
+    if (body.intent === "create_account" && !authentication.created) {
+      return accountAlreadyExistsResponse(c);
     }
     return c.json(await issueInfluenceSession(db, authentication.user));
   });
@@ -265,7 +285,14 @@ export function createAuthRoutes(
     if (availability) return availability;
     const request = await readStrictTokenRequest(
       c,
-      ["token", "acceptTerms", "termsVersion", "privacyVersion", "deploymentSha"],
+      [
+        "token",
+        "inviteCode",
+        "acceptTerms",
+        "termsVersion",
+        "privacyVersion",
+        "deploymentSha",
+      ],
       "acceptTerms",
     );
     if (!request.ok) return request.response;
@@ -280,20 +307,42 @@ export function createAuthRoutes(
     );
     if (!verification.ok) return verification.response;
 
-    return managedOutcomeResponse(
-      c,
+    const outcome = await createManagedAccountAuthentication(
       db,
-      await createManagedAccountAuthentication(
-        db,
-        verification.evidence,
-        (tx, userId) => recordCurrentLegalAcceptance(
+      verification.evidence,
+      {
+        checkInviteRequired: (tx) => inviteIsRequired(tx),
+        redeemInvite: typeof request.body.inviteCode === "string"
+          ? (tx, userId) => redeemCode(
+            tx,
+            request.body.inviteCode!,
+            userId,
+          )
+          : undefined,
+        beforeCommit: (tx, userId) => recordCurrentLegalAcceptance(
           tx,
           userId,
           "account_creation",
           request.body.deploymentSha!,
         ),
-      ),
+      },
     );
+    if (outcome.status === "authenticated" && !outcome.created) {
+      return accountAlreadyExistsResponse(c);
+    }
+    if (outcome.status === "invite_required") {
+      return c.json({
+        error: "Invite code required",
+        code: "INVITE_REQUIRED",
+      }, 403);
+    }
+    if (outcome.status === "invalid_invite") {
+      return c.json({
+        error: "Invalid or already used invite code",
+        code: "INVALID_INVITE_CODE",
+      }, 403);
+    }
+    return managedOutcomeResponse(c, db, outcome);
   });
 
   app.post("/api/auth/managed/link", async (c) => {
@@ -309,7 +358,13 @@ export function createAuthRoutes(
       "confirm",
     );
     if (!request.ok) return request.response;
-    const influenceUserId = await readInfluenceUserId(c);
+    const influenceSession = await readInfluenceSession(c, db);
+    if (influenceSession.status === "legal_acceptance_required") {
+      return legalAcceptanceRequiredResponse(c);
+    }
+    const influenceUserId = influenceSession.status === "authenticated"
+      ? influenceSession.userId
+      : null;
     const verification = await verifyManagedEvidence(
       c,
       clerkVerifier!,
@@ -355,13 +410,17 @@ export function createAuthRoutes(
       clerkVerifier,
     );
     if (availability) return availability;
-    const influenceUserId = await readInfluenceUserId(c);
-    if (!influenceUserId) {
+    const influenceSession = await readInfluenceSession(c, db);
+    if (influenceSession.status === "legal_acceptance_required") {
+      return legalAcceptanceRequiredResponse(c);
+    }
+    if (influenceSession.status !== "authenticated") {
       return c.json({
         error: "Authentication required",
         code: "INFLUENCE_AUTH_REQUIRED",
       }, 401);
     }
+    const influenceUserId = influenceSession.userId;
     const request = await readStrictTokenRequest(
       c,
       ["token", "confirm"],
@@ -454,7 +513,7 @@ export function createAuthRoutes(
       "existing_account",
       body.deploymentSha as string,
     );
-    return c.json(await projectCurrentLegalAcceptance(db, user.id));
+    return c.json(await issueInfluenceSession(db, user));
   });
 
   return app;
@@ -494,14 +553,31 @@ function createConfiguredClerkVerifier(
   }));
 }
 
-async function readInfluenceUserId(c: Context): Promise<string | null> {
+async function readInfluenceSession(
+  c: Context,
+  db: DrizzleDB,
+): Promise<
+  | { status: "absent" }
+  | { status: "legal_acceptance_required" }
+  | { status: "authenticated"; userId: string }
+> {
   const token = extractBearerToken(c.req.header("Authorization"));
-  if (!token) return null;
-  return (await verifySessionToken(token))?.userId ?? null;
+  if (!token) return { status: "absent" };
+  const session = await verifySessionToken(token);
+  if (!session) return { status: "absent" };
+  if (hasCurrentLegalAcceptanceVersions(session.legalAcceptance)) {
+    return { status: "authenticated", userId: session.userId };
+  }
+  const legal = await projectCurrentLegalAcceptance(db, session.userId);
+  return legal.accepted
+    ? { status: "authenticated", userId: session.userId }
+    : { status: "legal_acceptance_required" };
 }
 
 type StrictAuthBody = {
   token: string;
+  intent?: "sign_in" | "create_account";
+  inviteCode?: string;
   privyToken?: string;
   confirm?: true;
   acceptTerms?: true;
@@ -549,6 +625,19 @@ async function readStrictTokenRequest(
     || body.token.length === 0
     || body.token.length > 8_192
     || (
+      body.intent !== undefined
+      && body.intent !== "sign_in"
+      && body.intent !== "create_account"
+    )
+    || (
+      body.inviteCode !== undefined
+      && (
+        typeof body.inviteCode !== "string"
+        || body.inviteCode.length === 0
+        || body.inviteCode.length > 256
+      )
+    )
+    || (
       body.privyToken !== undefined
       && (
         typeof body.privyToken !== "string"
@@ -564,6 +653,8 @@ async function readStrictTokenRequest(
     ok: true,
     body: {
       token: body.token,
+      intent: body.intent as "sign_in" | "create_account" | undefined,
+      inviteCode: body.inviteCode as string | undefined,
       privyToken: body.privyToken as string | undefined,
       confirm: body.confirm as true | undefined,
       acceptTerms: body.acceptTerms as true | undefined,
@@ -602,6 +693,20 @@ function staleLegalVersionResponse(c: Context): Response {
     termsVersion: CURRENT_TERMS_VERSION,
     privacyVersion: CURRENT_PRIVACY_VERSION,
   }, 400);
+}
+
+function accountAlreadyExistsResponse(c: Context): Response {
+  return c.json({
+    error: "This sign-in is already connected to a House account",
+    code: "ACCOUNT_ALREADY_EXISTS",
+  }, 409);
+}
+
+function legalAcceptanceRequiredResponse(c: Context): Response {
+  return c.json({
+    error: "Current Terms and Privacy Policy acceptance is required",
+    code: "LEGAL_ACCEPTANCE_REQUIRED",
+  }, 403);
 }
 
 function managedRouteAvailability(
@@ -715,8 +820,8 @@ async function managedOutcomeResponse(
       }, 409);
     case "setup_incomplete":
       return c.json({
-        error: "Account setup must be completed explicitly",
-        code: "ACCOUNT_SETUP_INCOMPLETE",
+        error: "This verified sign-in is not connected to a House account",
+        code: "ACCOUNT_CREATION_REQUIRED",
       }, 409);
     case "reauth_required":
       return c.json({

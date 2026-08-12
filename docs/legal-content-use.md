@@ -14,10 +14,27 @@ contact rather than the sole contact method.
 
 ## Acceptance
 
-- Email/password account creation requires explicit acceptance before the
-  provider account is exchanged for a new Influence account.
-- Existing accounts, including accounts created through Privy, receive a
-  blocking acceptance screen after authentication.
+- The Create account view requires explicit acceptance before either Clerk or
+  Privy can create a new House account.
+- Sign in never creates an account implicitly. When Clerk or Privy verifies an
+  identity that has no House account, the authentication wrapper presents an
+  explicit consent-gated Create your account step instead of a provider error
+  or redirect loop.
+- Acceptance is written only when House account creation commits. Clicking the
+  checkbox, starting Clerk signup, and beginning email verification do not
+  create an acceptance record.
+- Invite-gated Clerk and Privy creation keep the consent payload attached to
+  the pending attempt and commit the account, invite redemption, and acceptance
+  in one transaction. A missing, invalid, abandoned, or raced invite writes
+  none of them.
+- Managed-auth rollout modes gate Clerk mutations only. Privy account creation
+  remains available with the same explicit consent handoff in `full`,
+  `existing-only`, and `disabled` modes.
+- Existing accounts with no current acceptance receive a blocking acceptance
+  screen after authentication. Reverse Privy linking collects that acceptance
+  before the credential mutation and resumes with the refreshed session token.
+- Successful existing-account acceptance rotates the browser session to a JWT
+  carrying the current versions, avoiding repeated database fallback checks.
 - Existing app sessions, MCP access tokens, and MCP refresh tokens fail closed
   until the account accepts the current versions.
 - The API records the Terms version, Privacy version, presented web deployment
@@ -25,7 +42,9 @@ contact rather than the sole contact method.
   `legal_acceptances`. The web build embeds its full SHA in the acceptance
   payload, so even a browser tab left open across a deployment records the
   commit containing the React legal documents and presentation it actually
-  displayed. Production API startup also requires its own full `GIT_SHA`.
+  displayed. Production API startup also requires its own full `GIT_SHA`. This
+  is client-presented provenance, not server attestation that a person viewed
+  the documents or that the submitted web SHA belongs to an approved release.
 - Accounts must represent that their users are at least 18 and the age of
   majority where they live; Influence does not implement a guardian-consent
   flow.
