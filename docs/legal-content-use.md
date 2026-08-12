@@ -7,6 +7,11 @@ materially requires matching version changes there and in
 `packages/web/src/lib/api.ts` so every account is prompted again and the client
 can prove which text it presented.
 
+Influence is a game by and is operated by False Floor LLC. The legal documents
+link to `https://falsefloor.ai` and use `support@falsefloor.ai` as the primary
+legal and privacy contact. The House Discord remains an optional community
+contact rather than the sole contact method.
+
 ## Acceptance
 
 - Email/password account creation requires explicit acceptance before the

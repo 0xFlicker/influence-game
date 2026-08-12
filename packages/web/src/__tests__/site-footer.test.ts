@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "bun:test";
-import { HOUSE_DISCORD_URL } from "../lib/product-identity";
+import { FALSE_FLOOR, HOUSE_DISCORD_URL } from "../lib/product-identity";
 import {
   EXTERNAL_FOOTER_LINK_PROPS,
   SITE_FOOTER_SECTIONS,
@@ -60,6 +60,7 @@ describe("site footer", () => {
       { label: "Rules", href: "/rules" },
       { label: "About", href: "/about" },
       { label: "Updates", href: "/updates" },
+      { label: "False Floor", href: FALSE_FLOOR.websiteUrl, external: true },
       { label: "Discord", href: HOUSE_DISCORD_URL, external: true },
       {
         label: "GitHub",

@@ -5,7 +5,7 @@ import {
   LegalParagraph as P,
   LegalSection as Section,
 } from "@/components/legal-document";
-import { HOUSE_DISCORD_URL } from "@/lib/product-identity";
+import { FALSE_FLOOR, HOUSE_DISCORD_URL } from "@/lib/product-identity";
 
 export const metadata: Metadata = {
   title: "Terms of Use — Influence",
@@ -28,7 +28,18 @@ export default function TermsPage() {
           </h1>
           <div className="influence-copy space-y-4 text-lg leading-relaxed">
             <P>
-              These Terms govern your access to and use of The House,
+              Influence is a game by{" "}
+              <a
+                href={FALSE_FLOOR.websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-text-primary underline underline-offset-4 hover:text-accent"
+              >
+                {FALSE_FLOOR.name}
+              </a>{" "}
+              (&ldquo;False Floor,&rdquo; &ldquo;we,&rdquo; &ldquo;us,&rdquo;
+              or &ldquo;our&rdquo;). These Terms are an agreement between you
+              and False Floor and govern your access to and use of The House,
               Influence, and related websites, games, features, content, and
               services (collectively, the &ldquo;Service&rdquo;).
             </P>
@@ -72,7 +83,7 @@ export default function TermsPage() {
             ]}
           />
           <P>
-            Between you and Influence, you keep any rights you have in Your
+            Between you and False Floor, you keep any rights you have in Your
             Content. AI-generated material may not be unique or eligible for
             intellectual-property protection. These Terms do not promise that
             you own any particular AI-generated output.
@@ -81,7 +92,7 @@ export default function TermsPage() {
 
         <Section title="License to Operate the Service">
           <P>
-            You grant Influence a non-exclusive, worldwide, royalty-free,
+            You grant False Floor a non-exclusive, worldwide, royalty-free,
             fully paid, transferable, and sublicensable license to host, store,
             reproduce, use, modify, adapt, translate, create derivative works
             from, publish, display, perform, distribute, and otherwise process
@@ -100,7 +111,7 @@ export default function TermsPage() {
 
         <Section title="Promotion, Daily Dispatches, and Publicity Permission">
           <P>
-            You also grant Influence a non-exclusive, worldwide, royalty-free,
+            You also grant False Floor a non-exclusive, worldwide, royalty-free,
             fully paid, transferable, sublicensable, and, to the extent allowed
             by law, irrevocable and perpetual license to use Public Content and
             Public Gameplay Content to advertise, market, publicize, and promote
@@ -170,11 +181,11 @@ export default function TermsPage() {
           </P>
         </Section>
 
-        <Section title="Service and Influence Content">
+        <Section title="Service and False Floor Content">
           <P>
             The Service, including its software, designs, branding, game rules,
             systems, and content we provide, is owned by or licensed to
-            Influence. Subject to these Terms, we give you a limited,
+            False Floor. Subject to these Terms, we give you a limited,
             revocable, non-transferable, non-sublicensable right to use the
             Service for its intended purpose.
           </P>
@@ -189,7 +200,7 @@ export default function TermsPage() {
 
         <Section title="Feedback">
           <P>
-            If you send ideas, suggestions, or feedback, you grant Influence a
+            If you send ideas, suggestions, or feedback, you grant False Floor a
             worldwide, perpetual, irrevocable, royalty-free, fully paid,
             transferable, and sublicensable license to use it without
             restriction or compensation.
@@ -224,13 +235,13 @@ export default function TermsPage() {
 
         <Section title="Limitation of Liability">
           <P>
-            To the maximum extent allowed by law, Influence and its operators,
-            affiliates, service providers, licensors, and representatives will
+            To the maximum extent allowed by law, False Floor and its affiliates,
+            service providers, licensors, and representatives will
             not be liable for indirect, incidental, special, consequential,
             exemplary, or punitive damages, or for lost profits, data,
             goodwill, or opportunities, arising from the Service. Their total
             liability for all claims relating to the Service will not exceed the
-            greater of the amount you paid Influence in the 12 months before the
+            greater of the amount you paid False Floor in the 12 months before the
             claim or US $100. Some jurisdictions do not allow certain
             limitations, so those limitations apply only to the extent allowed
             by law.
@@ -240,7 +251,7 @@ export default function TermsPage() {
         <Section title="Indemnity">
           <P>
             To the extent allowed by law, you will defend, indemnify, and hold
-            harmless Influence and its operators, affiliates, service
+            harmless False Floor and its affiliates, service
             providers, and representatives from claims, damages, losses, and
             reasonable expenses arising from Your Content, your use of the
             Service, your violation of these Terms, or your violation of
@@ -273,7 +284,22 @@ export default function TermsPage() {
 
         <Section id="contact" title="Contact">
           <P>
-            For questions about these Terms, contact us through{" "}
+            For questions about these Terms, email{" "}
+            <a
+              href={`mailto:${FALSE_FLOOR.supportEmail}`}
+              className="text-text-primary underline underline-offset-4 hover:text-accent"
+            >
+              {FALSE_FLOOR.supportEmail}
+            </a>. You can also visit{" "}
+            <a
+              href={FALSE_FLOOR.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-primary underline underline-offset-4 hover:text-accent"
+            >
+              {FALSE_FLOOR.name}
+            </a>{" "}
+            or contact us through{" "}
             <a
               href={HOUSE_DISCORD_URL}
               target="_blank"

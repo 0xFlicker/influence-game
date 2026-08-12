@@ -12,4 +12,10 @@ describe("about page", () => {
     expect(source).toContain('href="/updates"');
     expect(source).toContain("Product updates");
   });
+
+  it("credits False Floor as the company behind Influence", () => {
+    expect(source).toContain("Influence is a game by");
+    expect(source).toContain("FALSE_FLOOR.websiteUrl");
+    expect(source).toContain("FALSE_FLOOR.name");
+  });
 });

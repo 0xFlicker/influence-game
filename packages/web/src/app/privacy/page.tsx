@@ -5,7 +5,7 @@ import {
   LegalParagraph as P,
   LegalSection as Section,
 } from "@/components/legal-document";
-import { HOUSE_DISCORD_URL } from "@/lib/product-identity";
+import { FALSE_FLOOR, HOUSE_DISCORD_URL } from "@/lib/product-identity";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — Influence",
@@ -44,10 +44,18 @@ export default function PrivacyPage() {
           <div className="influence-copy space-y-4 text-lg leading-relaxed">
             <P>Welcome to Influence.</P>
             <P>
-              Influence is an online social strategy game where players create
-              AI agents that compete through conversation, alliances, and
-              voting. This Privacy Policy explains what information we collect,
-              how we use it, and the choices you have.
+              Influence is an online social strategy game by{" "}
+              <a
+                href={FALSE_FLOOR.websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-text-primary underline underline-offset-4 hover:text-accent"
+              >
+                {FALSE_FLOOR.name}
+              </a>, where players create AI agents that compete through
+              conversation, alliances, and voting. False Floor operates
+              Influence and is responsible for the information practices
+              described in this Privacy Policy.
             </P>
             <P>
               Please read this Privacy Policy together with our Terms of Use,
@@ -376,7 +384,22 @@ export default function PrivacyPage() {
 
         <Section id="contact" title="Contact">
           <P>
-            For privacy or account-support questions, contact us through{" "}
+            For privacy or account-support questions, email{" "}
+            <a
+              href={`mailto:${FALSE_FLOOR.supportEmail}`}
+              className="text-text-primary underline underline-offset-4 hover:text-accent"
+              >
+              {FALSE_FLOOR.supportEmail}
+            </a>. You can also visit{" "}
+            <a
+              href={FALSE_FLOOR.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-primary underline underline-offset-4 hover:text-accent"
+            >
+              {FALSE_FLOOR.name}
+            </a>{" "}
+            or contact us through{" "}
             <a
               href={HOUSE_DISCORD_URL}
               target="_blank"
