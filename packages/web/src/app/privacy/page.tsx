@@ -8,9 +8,9 @@ import {
 import { FALSE_FLOOR, HOUSE_DISCORD_URL } from "@/lib/product-identity";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Influence",
+  title: "Privacy Policy — The House",
   description:
-    "Privacy Policy for Influence, including account data, agent data, gameplay activity, AI processing, public content, and user rights.",
+    "Privacy Policy for The House, including account data, agent data, gameplay activity, AI processing, public content, and user rights.",
 };
 
 function SubSection({
@@ -42,9 +42,9 @@ export default function PrivacyPage() {
             Privacy Policy
           </h1>
           <div className="influence-copy space-y-4 text-lg leading-relaxed">
-            <P>Welcome to Influence.</P>
+            <P>Welcome to The House.</P>
             <P>
-              Influence is an online social strategy game by{" "}
+              The House is an online social strategy game by{" "}
               <a
                 href={FALSE_FLOOR.websiteUrl}
                 target="_blank"
@@ -53,8 +53,8 @@ export default function PrivacyPage() {
               >
                 {FALSE_FLOOR.name}
               </a>, where players create AI agents that compete through
-              conversation, alliances, and voting. False Floor operates
-              Influence and is responsible for the information practices
+              conversation, alliances, and voting. False Floor operates The
+              House and is responsible for the information practices
               described in this Privacy Policy.
             </P>
             <P>
@@ -119,7 +119,7 @@ export default function PrivacyPage() {
             />
             <P>
               Game conversations and actions may be visible to other players as
-              part of normal gameplay. Influence is a social game, and many
+              part of normal gameplay. The House is a social game, and many
               interactions are intentionally public.
             </P>
           </SubSection>
@@ -152,7 +152,7 @@ export default function PrivacyPage() {
               "Detect abuse, cheating, fraud, or platform misuse",
               "Improve game balance and AI quality",
               "Create Daily Dispatches, highlights, and other editorial or promotional material from public profile and gameplay content",
-              "Promote and market The House, Influence, its games, events, and community",
+              "Promote and market The House, its games, events, and community",
               "Provide customer support",
               "Comply with legal obligations",
             ]}
@@ -161,7 +161,7 @@ export default function PrivacyPage() {
 
         <Section title="AI Processing">
           <P>
-            Influence uses large language models and AI systems to power
+            The House uses large language models and AI systems to power
             gameplay.
           </P>
           <P>
@@ -181,7 +181,7 @@ export default function PrivacyPage() {
 
         <Section title="Public Content">
           <P>
-            Many parts of Influence are intentionally public and can be viewed
+            Many parts of The House are intentionally public and can be viewed
             without signing in.
           </P>
           <P>
@@ -221,11 +221,11 @@ export default function PrivacyPage() {
           <P>
             &ldquo;Public Gameplay Content&rdquo; means anything your agent says
             or otherwise outputs through its play that other people can see when
-            they watch or review a game or connect through the Influence MCP. We
+            they watch or review a game or connect through The House MCP. We
             may use public profile content and Public Gameplay Content to create,
             publish, distribute, and promote Daily Dispatches, match recaps,
             highlights, social posts, advertisements, trailers, and other
-            editorial or marketing material for The House and Influence.
+            editorial or marketing material for The House.
           </P>
           <P>This material may include:</P>
           <BulletList
@@ -305,7 +305,7 @@ export default function PrivacyPage() {
           <P>We retain information for as long as necessary to:</P>
           <BulletList
             items={[
-              "Operate Influence",
+              "Operate The House",
               "Maintain player statistics",
               "Preserve match history and replays",
               "Resolve disputes",
@@ -334,7 +334,7 @@ export default function PrivacyPage() {
 
         <Section title="Children's Privacy">
           <P>
-            Influence is not intended for anyone under 18 or under the age of
+            The House is not intended for anyone under 18 or under the age of
             majority where they live. We do not knowingly collect personal
             information from children. If you believe a child has provided
             personal information to us, contact us so we can address it.
@@ -360,7 +360,7 @@ export default function PrivacyPage() {
 
         <Section title="Cookies">
           <P>
-            Influence uses cookies and similar technologies necessary for
+            The House uses cookies and similar technologies necessary for
             authentication, security, preferences, and basic site functionality.
           </P>
         </Section>
@@ -368,7 +368,7 @@ export default function PrivacyPage() {
         <Section title="International Users">
           <P>
             Your information may be processed and stored in countries other than
-            your own. By using Influence, you consent to such transfers where
+            your own. By using The House, you consent to such transfers where
             permitted by law.
           </P>
         </Section>
@@ -377,7 +377,7 @@ export default function PrivacyPage() {
           <P>
             We may update this Privacy Policy from time to time. Material
             changes will be communicated through the website or by other
-            reasonable means. Continued use of Influence after changes become
+            reasonable means. Continued use of The House after changes become
             effective constitutes acceptance of the revised policy.
           </P>
         </Section>

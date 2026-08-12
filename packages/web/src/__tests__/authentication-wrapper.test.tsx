@@ -76,7 +76,9 @@ describe("unified authentication wrapper", () => {
     expect(legalConsentSource).toContain('href="/terms"');
     expect(legalConsentSource).toContain('href="/privacy"');
     expect(legalConsentSource).toContain('rel="noopener noreferrer"');
-    expect(legalConsentSource).toContain("Daily Dispatches and other promotion");
+    expect(legalConsentSource).toContain("I agree to the");
+    expect(legalConsentSource).toContain("and acknowledge the");
+    expect(legalConsentSource).not.toContain("Daily Dispatches");
   });
 
   it("binds account creation and acceptance to the presented legal versions", async () => {

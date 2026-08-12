@@ -1480,6 +1480,7 @@ export const PRESENTED_LEGAL_ACCEPTANCE = {
   acceptTerms: true,
   termsVersion: "2026-08-12",
   privacyVersion: "2026-08-12",
+  deploymentSha: process.env.NEXT_PUBLIC_GIT_SHA ?? "unknown",
 } as const;
 
 export type PresentedLegalAcceptance = typeof PRESENTED_LEGAL_ACCEPTANCE;

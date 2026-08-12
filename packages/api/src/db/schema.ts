@@ -208,6 +208,7 @@ export const legalAcceptances = pgTable("legal_acceptances", {
     .references(() => users.id, { onDelete: "restrict" }),
   termsVersion: text("terms_version").notNull(),
   privacyVersion: text("privacy_version").notNull(),
+  deploymentSha: text("deployment_sha").notNull(),
   source: text("source")
     .notNull()
     .$type<"account_creation" | "existing_account">(),

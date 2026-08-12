@@ -43,6 +43,7 @@ import {
 import {
   CURRENT_PRIVACY_VERSION,
   CURRENT_TERMS_VERSION,
+  normalizeDeploymentSha,
   projectCurrentLegalAcceptance,
   recordCurrentLegalAcceptance,
 } from "../services/legal-acceptance.js";
@@ -182,6 +183,7 @@ export function createAuthRoutes(
           tx,
           userId,
           "account_creation",
+          body.deploymentSha as string,
         )
         : undefined,
     });
@@ -263,7 +265,7 @@ export function createAuthRoutes(
     if (availability) return availability;
     const request = await readStrictTokenRequest(
       c,
-      ["token", "acceptTerms", "termsVersion", "privacyVersion"],
+      ["token", "acceptTerms", "termsVersion", "privacyVersion", "deploymentSha"],
       "acceptTerms",
     );
     if (!request.ok) return request.response;
@@ -288,6 +290,7 @@ export function createAuthRoutes(
           tx,
           userId,
           "account_creation",
+          request.body.deploymentSha!,
         ),
       ),
     );
@@ -438,14 +441,19 @@ export function createAuthRoutes(
       !body
       || typeof body !== "object"
       || Array.isArray(body)
-      || Object.keys(body).length !== 3
+      || Object.keys(body).length !== 4
       || body.acceptTerms !== true
       || readCurrentLegalConsent(body) !== "accepted"
     ) {
       return staleLegalVersionResponse(c);
     }
     const user = c.get("authContextUser");
-    await recordCurrentLegalAcceptance(db, user.id, "existing_account");
+    await recordCurrentLegalAcceptance(
+      db,
+      user.id,
+      "existing_account",
+      body.deploymentSha as string,
+    );
     return c.json(await projectCurrentLegalAcceptance(db, user.id));
   });
 
@@ -499,6 +507,7 @@ type StrictAuthBody = {
   acceptTerms?: true;
   termsVersion?: string;
   privacyVersion?: string;
+  deploymentSha?: string;
 };
 
 async function readStrictTokenRequest(
@@ -560,6 +569,7 @@ async function readStrictTokenRequest(
       acceptTerms: body.acceptTerms as true | undefined,
       termsVersion: body.termsVersion as string | undefined,
       privacyVersion: body.privacyVersion as string | undefined,
+      deploymentSha: body.deploymentSha as string | undefined,
     },
   };
 }
@@ -569,15 +579,18 @@ function readCurrentLegalConsent(
     acceptTerms?: unknown;
     termsVersion?: unknown;
     privacyVersion?: unknown;
+    deploymentSha?: unknown;
   },
 ): "accepted" | "absent" | "invalid" {
   const hasLegalFields = body.acceptTerms !== undefined
     || body.termsVersion !== undefined
-    || body.privacyVersion !== undefined;
+    || body.privacyVersion !== undefined
+    || body.deploymentSha !== undefined;
   if (!hasLegalFields) return "absent";
   return body.acceptTerms === true
     && body.termsVersion === CURRENT_TERMS_VERSION
     && body.privacyVersion === CURRENT_PRIVACY_VERSION
+    && normalizeDeploymentSha(body.deploymentSha) !== null
     ? "accepted"
     : "invalid";
 }

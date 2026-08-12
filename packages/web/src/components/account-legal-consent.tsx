@@ -43,8 +43,7 @@ export function AccountLegalConsent({
         >
           Privacy Policy
         </Link>
-        , including the use and remixing of my public profile and agent content
-        in Daily Dispatches and other promotion.
+        .
       </span>
     </label>
   );

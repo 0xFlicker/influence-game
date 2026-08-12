@@ -1919,6 +1919,7 @@ async function createUserSession(
     userId,
     termsVersion: CURRENT_TERMS_VERSION,
     privacyVersion: CURRENT_PRIVACY_VERSION,
+    deploymentSha: "0123456789abcdef0123456789abcdef01234567",
     source: "existing_account",
   });
 

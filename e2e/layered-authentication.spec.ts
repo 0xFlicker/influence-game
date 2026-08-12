@@ -224,6 +224,7 @@ test.describe("deterministic layered authentication", () => {
         acceptTerms: true,
         termsVersion: "2026-08-12",
         privacyVersion: "2026-08-12",
+        deploymentSha: "unknown",
       },
     );
     expect(created.status()).toBe(200);
@@ -369,6 +370,7 @@ test.describe("deterministic layered authentication", () => {
         acceptTerms: true,
         termsVersion: "2026-08-12",
         privacyVersion: "2026-08-12",
+        deploymentSha: "unknown",
       },
     );
     expect(existingOnlyCreate.status()).toBe(403);

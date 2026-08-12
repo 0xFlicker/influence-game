@@ -34,16 +34,22 @@ import type {
   ClerkAuthenticationProviderVerifier,
   ProviderVerificationResult,
 } from "../services/authentication-providers.js";
+import {
+  assertRuntimeDeploymentSha,
+  recordCurrentLegalAcceptance,
+} from "../services/legal-acceptance.js";
 
 // ---------------------------------------------------------------------------
 // Environment
 // ---------------------------------------------------------------------------
 
 const TEST_ADMIN_ADDRESS = "0xadmin000000000000000000000000000000dead";
+const TEST_DEPLOYMENT_SHA = "0123456789abcdef0123456789abcdef01234567";
 const CURRENT_LEGAL_CONSENT = {
   acceptTerms: true,
   termsVersion: "2026-08-12",
   privacyVersion: "2026-08-12",
+  deploymentSha: TEST_DEPLOYMENT_SHA,
 } as const;
 
 beforeAll(() => {
@@ -262,6 +268,7 @@ describe("requireAuth middleware", () => {
       userId: "stale-legal-user",
       termsVersion: "2026-07-01",
       privacyVersion: "2026-07-01",
+      deploymentSha: TEST_DEPLOYMENT_SHA,
       source: "existing_account",
     });
     const token = await createSessionToken("stale-legal-user", {
@@ -376,6 +383,7 @@ describe("local CLI session exchange", () => {
       userId: "producer-cli-user",
       termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
       privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+      deploymentSha: TEST_DEPLOYMENT_SHA,
       source: "existing_account",
     });
     await assignRoles(db, walletAddress, ["producer", "gamer"]);
@@ -672,6 +680,7 @@ describe("authenticated public identity session projection", () => {
     expect(acceptances[0]).toMatchObject({
       termsVersion: CURRENT_LEGAL_CONSENT.termsVersion,
       privacyVersion: CURRENT_LEGAL_CONSENT.privacyVersion,
+      deploymentSha: TEST_DEPLOYMENT_SHA,
       source: "account_creation",
     });
   });
@@ -975,6 +984,7 @@ describe("managed authentication routes", () => {
       userId: firstBody.user.id,
       termsVersion: "2026-08-12",
       privacyVersion: "2026-08-12",
+      deploymentSha: TEST_DEPLOYMENT_SHA,
       source: "account_creation",
     });
 
@@ -1038,7 +1048,13 @@ describe("managed authentication routes", () => {
       body: JSON.stringify(CURRENT_LEGAL_CONSENT),
     });
     expect(repeated.status).toBe(200);
-    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(1);
+    const acceptances = await db.select().from(schema.legalAcceptances);
+    expect(acceptances).toHaveLength(1);
+    expect(acceptances[0]).toMatchObject({
+      userId: "legal-existing-user",
+      deploymentSha: TEST_DEPLOYMENT_SHA,
+      source: "existing_account",
+    });
   });
 
   test("legal acceptance rejects a stale presented version without writing", async () => {
@@ -1067,6 +1083,59 @@ describe("managed authentication routes", () => {
     expect(response.status).toBe(400);
     expect(await response.json()).toMatchObject({ code: "LEGAL_VERSION_MISMATCH" });
     expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+  });
+
+  test("production requires full runtime and presentation deployment SHAs", async () => {
+    await db.insert(schema.users).values({
+      id: "missing-deployment-sha-user",
+      displayName: "Missing deployment SHA user",
+    });
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalGitSha = process.env.GIT_SHA;
+    process.env.NODE_ENV = "production";
+    try {
+      for (const invalidSha of [undefined, "", "abc1234", "g".repeat(40)]) {
+        if (invalidSha === undefined) {
+          delete process.env.GIT_SHA;
+        } else {
+          process.env.GIT_SHA = invalidSha;
+        }
+        expect(() => assertRuntimeDeploymentSha()).toThrow(
+          "GIT_SHA must be a full 40-character commit SHA",
+        );
+        await expect(recordCurrentLegalAcceptance(
+          db,
+          "missing-deployment-sha-user",
+          "existing_account",
+          invalidSha ?? "unknown",
+        )).rejects.toThrow(
+          "Legal acceptance requires a valid presentation deployment SHA",
+        );
+      }
+
+      process.env.GIT_SHA = "A".repeat(40);
+      expect(() => assertRuntimeDeploymentSha()).not.toThrow();
+      await recordCurrentLegalAcceptance(
+        db,
+        "missing-deployment-sha-user",
+        "existing_account",
+        "A".repeat(40),
+      );
+    } finally {
+      if (originalNodeEnv === undefined) {
+        delete process.env.NODE_ENV;
+      } else {
+        process.env.NODE_ENV = originalNodeEnv;
+      }
+      if (originalGitSha === undefined) {
+        delete process.env.GIT_SHA;
+      } else {
+        process.env.GIT_SHA = originalGitSha;
+      }
+    }
+    const acceptances = await db.select().from(schema.legalAcceptances);
+    expect(acceptances).toHaveLength(1);
+    expect(acceptances[0]?.deploymentSha).toBe("a".repeat(40));
   });
 
   test("email collision asks for confirmation and authenticated link preserves the account", async () => {

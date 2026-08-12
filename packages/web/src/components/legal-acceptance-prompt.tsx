@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { AccountLegalConsent } from "@/components/account-legal-consent";
 import { acceptCurrentLegalTerms } from "@/lib/api";
+import { FALSE_FLOOR } from "@/lib/product-identity";
 
 export function LegalAcceptancePrompt({
   onAccepted,
@@ -41,17 +42,17 @@ export function LegalAcceptancePrompt({
       >
         <div className="space-y-3">
           <p className="influence-table-header text-xs font-semibold uppercase tracking-wider">
-            Terms update
+            Terms of Use
           </p>
           <h1
             id="legal-acceptance-title"
             className="influence-phase-title text-3xl font-bold"
           >
-            Before you continue
+            Review and accept
           </h1>
           <p className="influence-copy">
-            Our Terms now clearly explain how public profile and agent content
-            may appear in Daily Dispatches, highlights, and other promotion.
+            The House is provided by {FALSE_FLOOR.name}. Please review and
+            accept the Terms of Use to continue.
           </p>
         </div>
 
@@ -70,7 +71,7 @@ export function LegalAcceptancePrompt({
             onClick={() => void continueToInfluence()}
             className="influence-button-primary min-h-11 rounded-lg px-4 py-2 text-sm"
           >
-            {busy ? "Saving…" : "Agree and continue"}
+            {busy ? "Saving…" : "Accept and continue"}
           </button>
           <button
             type="button"

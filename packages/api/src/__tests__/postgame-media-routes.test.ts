@@ -567,6 +567,7 @@ async function insertLegalAcceptances(
   await db.insert(schema.legalAcceptances).values(ownerIds.map((userId) => ({
     userId,
     ...versions,
+    deploymentSha: "0123456789abcdef0123456789abcdef01234567",
     source: "existing_account" as const,
   })));
 }

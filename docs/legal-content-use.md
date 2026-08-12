@@ -20,8 +20,12 @@ contact rather than the sole contact method.
   blocking acceptance screen after authentication.
 - Existing app sessions, MCP access tokens, and MCP refresh tokens fail closed
   until the account accepts the current versions.
-- The API records the Terms version, Privacy version, source, and server-side
-  acceptance timestamp in `legal_acceptances`.
+- The API records the Terms version, Privacy version, presented web deployment
+  Git SHA, source, and server-side acceptance timestamp in
+  `legal_acceptances`. The web build embeds its full SHA in the acceptance
+  payload, so even a browser tab left open across a deployment records the
+  commit containing the React legal documents and presentation it actually
+  displayed. Production API startup also requires its own full `GIT_SHA`.
 - Accounts must represent that their users are at least 18 and the age of
   majority where they live; Influence does not implement a guardian-consent
   flow.
@@ -54,8 +58,7 @@ described in the Terms, subject to applicable law.
 2. Change the relevant current version constant in
    `packages/api/src/services/legal-acceptance.ts` and the matching presented
    version in `packages/web/src/lib/api.ts`.
-3. Update the acceptance prompt summary if the material change is not captured
-   by its current Daily Dispatch language.
+3. Update the acceptance prompt when the presentation copy changes.
 4. Add or update route, projection, and UI-gate tests.
 5. Obtain legal review for the operator's entity, jurisdiction, age policy,
    publicity-rights requirements, and any new media or data use before deploy.

@@ -16,6 +16,26 @@ export type LegalAcceptanceSource =
   | "account_creation"
   | "existing_account";
 
+export function normalizeDeploymentSha(value: unknown): string | null {
+  const deploymentSha = typeof value === "string" ? value.trim() : "";
+  if (deploymentSha && /^[0-9a-f]{40}$/i.test(deploymentSha)) {
+    return deploymentSha.toLowerCase();
+  }
+  if (deploymentSha === "unknown" && process.env.NODE_ENV !== "production") {
+    return deploymentSha;
+  }
+  return null;
+}
+
+export function assertRuntimeDeploymentSha(): void {
+  if (
+    process.env.NODE_ENV === "production"
+    && normalizeDeploymentSha(process.env.GIT_SHA) === null
+  ) {
+    throw new Error("GIT_SHA must be a full 40-character commit SHA");
+  }
+}
+
 export function currentLegalAcceptanceVersions(): LegalAcceptanceVersions {
   return {
     termsVersion: CURRENT_TERMS_VERSION,
@@ -34,11 +54,17 @@ export async function recordCurrentLegalAcceptance(
   db: LegalAcceptanceWriter,
   userId: string,
   source: LegalAcceptanceSource,
+  presentedDeploymentSha: string,
 ): Promise<void> {
+  const deploymentSha = normalizeDeploymentSha(presentedDeploymentSha);
+  if (deploymentSha === null) {
+    throw new Error("Legal acceptance requires a valid presentation deployment SHA");
+  }
   await db.insert(schema.legalAcceptances).values({
     userId,
     termsVersion: CURRENT_TERMS_VERSION,
     privacyVersion: CURRENT_PRIVACY_VERSION,
+    deploymentSha,
     source,
   }).onConflictDoNothing();
 }
