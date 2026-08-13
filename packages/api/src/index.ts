@@ -38,6 +38,7 @@ import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
 import { suspendOrphanedInProgressGamesOnStartup } from "./services/startup-orphaned-games.js";
 import { preparePendingCompletionSettlementsOnStartup } from "./services/game-completion-settlement.js";
 import { reconcileCompletedPostgameMedia } from "./services/postgame-media-coordinator.js";
+import { assertRuntimeDeploymentSha } from "./services/legal-acceptance.js";
 import {
   setServer,
   handleOpen,
@@ -92,6 +93,15 @@ try {
 } catch (error) {
   console.error(
     `\n  Privy compatibility bridge configuration error:\n\n    ${(error as Error).message}\n`,
+  );
+  process.exit(1);
+}
+
+try {
+  assertRuntimeDeploymentSha();
+} catch (error) {
+  console.error(
+    `\n  Deployment provenance configuration error:\n\n    ${(error as Error).message}\n`,
   );
   process.exit(1);
 }

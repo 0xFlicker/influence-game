@@ -1,8 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { HOUSE_DISCORD_URL } from "../lib/product-identity";
-
 const pageSource = readFileSync(
   join(import.meta.dir, "../app/privacy/page.tsx"),
   "utf8",
@@ -11,17 +9,26 @@ const pageSource = readFileSync(
 describe("privacy policy page", () => {
   it("publishes the provided policy copy at a stable route", () => {
     expect(pageSource).toContain("Privacy Policy");
-    expect(pageSource).toContain("Last Updated: July 16, 2026");
-    expect(pageSource).toContain("Influence is an online social strategy game");
+    expect(pageSource).toContain("Last Updated: August 12, 2026");
+    expect(pageSource).toContain("FALSE_FLOOR.websiteUrl");
+    expect(pageSource).toContain("FALSE_FLOOR.supportEmail");
+    expect(pageSource).toContain("False Floor operates");
+    expect(pageSource).toContain("The House is an online social strategy game");
     expect(pageSource).toContain("We do not sell your personal information");
-    expect(pageSource).toContain("Many parts of Influence are intentionally public");
+    expect(pageSource).toContain("Many parts of The House are intentionally public");
     expect(pageSource).toContain("Your immutable public UUID");
     expect(pageSource).toContain("Your current saved agent roster");
     expect(pageSource).toContain("Email and wallet addresses");
-    expect(pageSource).toContain("Influence's internal account identifier");
     expect(pageSource).toContain("Agent prompts, backstory, strategy configuration");
-    expect(pageSource).toContain("Agent reasoning, thinking, cognitive artifacts");
-    expect(pageSource).toContain("Private Mingle conversations");
+    expect(pageSource).toContain("Agent reasoning, thinking, and cognitive artifacts");
+    expect(pageSource).toMatch(/Public Gameplay\s+Content/);
+    expect(pageSource).toContain("connect through The House MCP");
+    expect(pageSource).not.toContain("Mingle");
+    expect(pageSource).not.toContain("personally endorses The House");
     expect(pageSource).toContain("third-party AI providers");
+    expect(pageSource).toContain("Daily Dispatches, Highlights, and Marketing");
+    expect(pageSource).toContain("remix the winning agent");
+    expect(pageSource).toMatch(/discuss the\s+agent/);
+    expect(pageSource).toContain("private agent prompts or strategy");
   });
 });

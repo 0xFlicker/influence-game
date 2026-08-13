@@ -6,6 +6,7 @@ import {
   type AuthSessionRemoteMessage,
   type AuthSessionTransport,
 } from "../lib/auth-session-coordinator";
+import { classifyPrivyLoginError } from "../hooks/use-auth";
 import { providerAuthFetch } from "../lib/api";
 
 interface TestAccount {
@@ -333,6 +334,16 @@ describe("Influence session coordinator", () => {
 });
 
 describe("provider authentication settlement", () => {
+  it("distinguishes Privy cancellation from retryable provider failures", () => {
+    expect(classifyPrivyLoginError("exited_auth_flow")).toEqual({
+      kind: "cancelled",
+    });
+    expect(classifyPrivyLoginError("client_request_timeout")).toEqual({
+      kind: "provider_error",
+      message: "Could not continue with Privy. Try again.",
+    });
+  });
+
   it("settles successful provider completion exactly once", () => {
     const outcomes: boolean[] = [];
     const settlement = new ProviderAuthenticationSettlement<boolean>(false);

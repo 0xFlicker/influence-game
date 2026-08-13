@@ -5,6 +5,12 @@ export const HOUSE_VENUE = {
 
 export const HOUSE_DISCORD_URL = "https://discord.gg/XfsmWr26xW";
 
+export const FALSE_FLOOR = {
+  name: "False Floor LLC",
+  websiteUrl: "https://falsefloor.ai",
+  supportEmail: "support@falsefloor.ai",
+} as const;
+
 export const ACTIVE_GAME = {
   id: "influence",
   name: "Influence",

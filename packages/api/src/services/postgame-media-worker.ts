@@ -8,6 +8,7 @@ import type { PostgameMediaArtifactMetadata } from "../db/schema.js";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { hashPostgameMediaToken, secureTokenEquals } from "./postgame-media-worker-auth.js";
+import { allImplicatedOwnersHaveCurrentLegalAcceptance } from "./postgame-media-coordinator.js";
 
 const MEDIA_TYPE = "house_highlights_trailer" as const;
 const CLAIMABLE_STALE_STATUSES = ["claimed", "rendering", "composing", "uploading"] as const;
@@ -79,6 +80,9 @@ export async function claimPostgameMedia(
     .limit(20);
 
   for (const candidate of candidates) {
+    if (!await allImplicatedOwnersHaveCurrentLegalAcceptance(db, candidate.gameId)) {
+      continue;
+    }
     if (!candidate.artifactVersion || !candidate.renderInputSnapshot || !candidate.renderInputSnapshotHash
       || !candidate.renderInputSnapshotVersion || !candidate.rendererVersion
       || !candidate.timingContractVersion || !candidate.musicAssetId) {
@@ -223,6 +227,9 @@ export async function finalizePostgameMedia(
   const now = options.now ?? new Date();
   const authorization = await authorizeActiveLease(db, request, now);
   if (!authorization) return { ok: false, error: "stale_or_invalid_lease" };
+  if (!await allImplicatedOwnersHaveCurrentLegalAcceptance(db, request.gameId)) {
+    return { ok: false, error: "legal_acceptance_required" };
+  }
   const provenanceError = validateFinalizeProvenance(authorization, request);
   if (provenanceError) return { ok: false, error: provenanceError };
   const artifactError = validateArtifacts(request.gameId, authorization.artifactVersion, request.artifacts);
@@ -280,6 +287,9 @@ export async function authorizeActivePostgameMediaLease(
   request: LeaseRequest,
   now: Date,
 ): Promise<ActiveLeaseAuthorization | null> {
+  if (!await allImplicatedOwnersHaveCurrentLegalAcceptance(db, request.gameId)) {
+    return null;
+  }
   const row = (await db.select().from(schema.gamePostgameMedia)
     .where(and(
       eq(schema.gamePostgameMedia.gameId, request.gameId),

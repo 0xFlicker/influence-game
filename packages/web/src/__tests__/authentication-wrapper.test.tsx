@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { ClerkAPIResponseError } from "@clerk/nextjs/errors";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -11,10 +12,14 @@ import {
   verifyClerkClientTrustEmailCode,
 } from "../components/clerk-password-flow";
 import {
+  acceptCurrentLegalTermsForSession,
   ApiError,
   AUTH_TOKEN_KEY,
+  createManagedAuthentication,
   linkPrivyAuthentication,
   linkManagedAuthentication,
+  loginWithPrivyToken,
+  PRESENTED_LEGAL_ACCEPTANCE,
 } from "../lib/api";
 
 const wrapperSource = readFileSync(
@@ -27,6 +32,10 @@ const passwordFlowSource = readFileSync(
 );
 const authenticationRouteSource = readFileSync(
   join(import.meta.dir, "../components/authentication-route.tsx"),
+  "utf8",
+);
+const legalConsentSource = readFileSync(
+  join(import.meta.dir, "../components/account-legal-consent.tsx"),
   "utf8",
 );
 const apiSource = readFileSync(
@@ -42,6 +51,13 @@ const inviteModalSource = readFileSync(
   "utf8",
 );
 
+function clerkApiResponseError(code: string, message: string) {
+  return new ClerkAPIResponseError(message, {
+    data: [{ code, message }],
+    status: 422,
+  });
+}
+
 describe("unified authentication wrapper", () => {
   it("matches the settled sign-in and create-account method matrix", () => {
     expect(AUTHENTICATION_METHOD_MATRIX.sign_in).toEqual([
@@ -50,11 +66,71 @@ describe("unified authentication wrapper", () => {
     ]);
     expect(AUTHENTICATION_METHOD_MATRIX.create_account).toEqual([
       "email_password",
+      "privy",
     ]);
     expect(passwordFlowSource).toContain("Continue with Privy");
     expect(wrapperSource).toContain('role="tablist"');
     expect(wrapperSource).toContain("Create account");
-    expect(passwordFlowSource).not.toContain("Create account with Privy");
+    expect(passwordFlowSource).toContain(
+      "isCreateAccount && !acceptedLegalTerms",
+    );
+  });
+
+  it("requires conspicuous Terms and Privacy acceptance before account creation", () => {
+    expect(passwordFlowSource).toContain("acceptedLegalTerms");
+    expect(passwordFlowSource).toContain("isCreateAccount && !acceptedLegalTerms");
+    expect(legalConsentSource).toContain('type="checkbox"');
+    expect(legalConsentSource).toContain("required");
+    expect(legalConsentSource).toContain('href="/terms"');
+    expect(legalConsentSource).toContain('href="/privacy"');
+    expect(legalConsentSource).toContain('rel="noopener noreferrer"');
+    expect(legalConsentSource).toContain("I agree to the");
+    expect(legalConsentSource).toContain("and acknowledge the");
+    expect(legalConsentSource).not.toContain("Daily Dispatches");
+  });
+
+  it("binds account creation and acceptance to the presented legal versions", async () => {
+    const originalFetch = globalThis.fetch;
+    const requestBodies: unknown[] = [];
+    try {
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        value: async (_input: RequestInfo | URL, init?: RequestInit) => {
+          requestBodies.push(JSON.parse(String(init?.body)));
+          return new Response(JSON.stringify({
+            token: "test-session",
+            user: { legal: { accepted: true } },
+          }), { status: 200 });
+        },
+      });
+
+      await loginWithPrivyToken("sign-in-token", { intent: "sign_in" });
+      await loginWithPrivyToken(
+        "create-token",
+        {
+          intent: "create_account",
+          legalAcceptance: PRESENTED_LEGAL_ACCEPTANCE,
+        },
+      );
+      await createManagedAuthentication("managed-token");
+      await acceptCurrentLegalTermsForSession("existing-session-token");
+
+      expect(requestBodies).toEqual([
+        { token: "sign-in-token", intent: "sign_in" },
+        {
+          token: "create-token",
+          intent: "create_account",
+          ...PRESENTED_LEGAL_ACCEPTANCE,
+        },
+        { token: "managed-token", ...PRESENTED_LEGAL_ACCEPTANCE },
+        PRESENTED_LEGAL_ACCEPTANCE,
+      ]);
+    } finally {
+      Object.defineProperty(globalThis, "fetch", {
+        configurable: true,
+        value: originalFetch,
+      });
+    }
   });
 
   it("uses labelled native fields with persistent recovery semantics", () => {
@@ -122,13 +198,8 @@ describe("unified authentication wrapper", () => {
   });
 
   it("continues from Clerk's settled password resource without polling or identity gates", () => {
-    const signInSubmit = passwordFlowSource.slice(
-      passwordFlowSource.indexOf('if (intent === "sign_in")'),
-      passwordFlowSource.indexOf("currentSignupOwnsCompletionRef.current = true"),
-    );
-
-    expect(signInSubmit).not.toContain("updatedClerkResource");
-    expect(signInSubmit).toContain("await attemptPasswordSignIn()");
+    expect(passwordFlowSource).not.toContain("updatedClerkResource");
+    expect(passwordFlowSource).toContain("await attemptPasswordSignIn()");
     expect(passwordFlowSource).toContain("await runClerkPasswordAttempt({");
     expect(passwordFlowSource).toContain(
       "await beginClerkClientTrustEmailCode({",
@@ -171,7 +242,12 @@ describe("unified authentication wrapper", () => {
       mfa: {
         async sendEmailCode() {
           calls.push(`send:${step}`);
-          return { error: { message: "Email delivery failed." } };
+          return {
+            error: clerkApiResponseError(
+              "email_delivery_failed",
+              "Email delivery failed.",
+            ),
+          };
         },
         async verifyEmailCode() {
           return { error: null };
@@ -252,10 +328,10 @@ describe("unified authentication wrapper", () => {
         },
         async verifyEmailCode() {
           return {
-            error: {
-              code: "form_code_incorrect",
-              message: "That code is incorrect.",
-            },
+            error: clerkApiResponseError(
+              "form_code_incorrect",
+              "That code is incorrect.",
+            ),
           };
         },
       },
@@ -304,17 +380,17 @@ describe("unified authentication wrapper", () => {
         emailAddress: string;
         password: string;
       }) => Promise<{
-        error: { code: string; message: string } | null;
+        error: ClerkAPIResponseError | null;
       }>;
     } = {
       async password({ emailAddress }) {
         calls.push(`password:${emailAddress}`);
         signIn.existingSession = { sessionId: "session-for-submitted-email" };
         return {
-          error: {
-            code: "identifier_already_signed_in",
-            message: "You're already signed in.",
-          },
+          error: clerkApiResponseError(
+            "identifier_already_signed_in",
+            "You're already signed in.",
+          ),
         };
       },
     };
@@ -343,28 +419,57 @@ describe("unified authentication wrapper", () => {
     ]);
   });
 
+  it("classifies an unknown Clerk identifier without exposing the provider error", async () => {
+    let continued = false;
+    const outcome = await runClerkPasswordAttempt({
+      signIn: {
+        async password() {
+          return {
+            error: clerkApiResponseError(
+              "form_identifier_not_found",
+              "Couldn't find your account.",
+            ),
+          };
+        },
+      },
+      emailAddress: "new@example.test",
+      password: "secret",
+      continueSignIn: async () => {
+        continued = true;
+      },
+    });
+
+    expect(outcome).toBe("account_missing");
+    expect(continued).toBeFalse();
+  });
+
+  it("reserves field-error space and never repeats a field error in the flow alert", () => {
+    expect(passwordFlowSource).toContain("min-h-4");
+    expect(passwordFlowSource).toContain("fieldErrorMessages.includes(error)");
+  });
+
   it("does not let a stale existing session mask a password failure", async () => {
     let continued = false;
     const signIn = {
       existingSession: { sessionId: "stale-session" },
       async password() {
         return {
-          error: {
-            code: "form_password_incorrect",
-            message: "Password is incorrect.",
-          },
+          error: clerkApiResponseError(
+            "form_password_incorrect",
+            "Password is incorrect.",
+          ),
         };
       },
     };
 
-    await expect(runClerkPasswordAttempt({
+    expect(await runClerkPasswordAttempt({
       signIn,
       emailAddress: "submitted@example.test",
       password: "wrong",
       continueSignIn: async () => {
         continued = true;
       },
-    })).rejects.toThrow("Password is incorrect.");
+    })).toBe("provider_error");
     expect(continued).toBeFalse();
   });
 
@@ -372,10 +477,10 @@ describe("unified authentication wrapper", () => {
     const signIn = {
       async password() {
         return {
-          error: {
-            code: "identifier_already_signed_in",
-            message: "You're already signed in.",
-          },
+          error: clerkApiResponseError(
+            "identifier_already_signed_in",
+            "You're already signed in.",
+          ),
         };
       },
     };
@@ -460,7 +565,12 @@ describe("unified authentication wrapper", () => {
       existingSession: { sessionId: "ambient-session" },
       status: "needs_protect_check",
       async submitProtectCheck() {
-        return { error: { message: "Protect proof rejected" } };
+        return {
+          error: clerkApiResponseError(
+            "protect_proof_rejected",
+            "Protect proof rejected",
+          ),
+        };
       },
     };
 
@@ -550,7 +660,7 @@ describe("unified authentication wrapper", () => {
 
   it("does not let resumed-signup detection overwrite an active verification flow", () => {
     const passwordSignup = passwordFlowSource.indexOf(
-      "const result = await signUp.password",
+      "const result = await signUpRef.current.password",
     );
     expect(passwordSignup).toBeGreaterThan(0);
     expect(passwordFlowSource.slice(0, passwordSignup)).toContain(
@@ -657,6 +767,20 @@ describe("unified authentication wrapper", () => {
     expect(authHookSource).toContain(
       "pendingPrivyProofResolution.current !== resolveProof",
     );
+  });
+
+  it("keeps create-account legal acceptance scoped to its Privy attempt", () => {
+    expect(wrapperSource).toContain("PRESENTED_LEGAL_ACCEPTANCE");
+    expect(authHookSource).toContain(
+      "pendingPrivyRequest.current = request;",
+    );
+    expect(authHookSource).toContain(
+      "pendingPrivyRequest.current === request",
+    );
+    expect(authHookSource).toContain(
+      "pendingPrivyRequest.current = null",
+    );
+    expect(authHookSource).toContain('request?.intent !== "create_account"');
   });
 
   it("lets invite-gated Privy users dismiss the prompt or sign out", () => {

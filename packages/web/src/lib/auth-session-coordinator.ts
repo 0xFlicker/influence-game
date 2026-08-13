@@ -191,6 +191,10 @@ export class InfluenceSessionCoordinator<Account> {
     return { generation };
   }
 
+  isProviderAttemptCurrent(attempt: ProviderAuthenticationAttempt): boolean {
+    return this.isCurrentAttempt(attempt);
+  }
+
   async completeProviderAttempt(
     attempt: ProviderAuthenticationAttempt,
     exchange: () => Promise<ProviderAuthenticationResult<Account>>,

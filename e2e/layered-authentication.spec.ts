@@ -27,6 +27,10 @@ interface LayeredAuthHarness {
     walletPrivyFresh: string;
     walletPrivyExpired: string;
     uiExistingPrivy: string;
+    uiNewPrivy: string;
+    uiExistingOnlyPrivy: string;
+    uiDisabledPrivy: string;
+    uiOutagePrivy: string;
     uiReversePrivy: string;
     uiWalletPrivyFresh: string;
     uiWalletPrivyExpired: string;
@@ -65,6 +69,255 @@ test.describe("deterministic layered authentication", () => {
     if (harnessProcess) await stopHarness(harnessProcess);
   });
 
+  test("recovers account creation from sign in and keeps creation consent explicit", async ({
+    page,
+  }) => {
+    await page.addInitScript((token) => {
+      window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
+    }, harness.tokens.uiNewPrivy);
+    await page.goto(`${harness.webUrl}/get-mcp`, {
+      waitUntil: "networkidle",
+    });
+
+    await clickNavigationSignIn(page);
+    await page.getByLabel("Email").fill("ui-signin-new+e2e@example.test");
+    await page.getByLabel("Password").fill("test-password");
+    await page.getByRole("button", { name: "Sign in with email" }).click();
+    await expect(page.getByRole("heading", { name: "Create your account" }))
+      .toBeVisible();
+    await expect(page.getByText(
+      "We couldn't find an account for ui-signin-new+e2e@example.test. Create one with these details to continue.",
+      { exact: true },
+    )).toBeVisible();
+    const clerkConsent = page.getByRole("dialog", {
+      name: "Influence authentication",
+    }).getByRole("checkbox");
+    await expect(clerkConsent).not.toBeChecked();
+    await expect(page.getByRole("button", { name: "Create account" }))
+      .toBeDisabled();
+    await clerkConsent.check();
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page.getByRole("heading", { name: "Verify your email" }))
+      .toBeVisible();
+    await page.getByLabel("Verification code").fill("424242");
+    await page.getByRole("button", { name: "Verify code" }).click();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await page.getByLabel("Display name").fill("Sign-in Recovery E2E");
+    await page.getByLabel("Handle").fill("e2e-signin-recovery");
+    await page.getByLabel("Handle").press("Enter");
+    await expect(page.getByRole("heading", {
+      name: "Choose how players know you",
+    })).toBeHidden();
+    await page.getByRole("button", { name: "Sign out" }).click();
+
+    await clickNavigationSignIn(page);
+    await page.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(page.getByRole("heading", { name: "Create your account" }))
+      .toBeVisible();
+    await expect(page.getByText(
+      "This Privy sign-in isn't connected to a House account yet. Create one to continue.",
+      { exact: true },
+    )).toBeVisible();
+    await page.getByRole("button", {
+      name: "Use a different Privy account",
+    }).click();
+    await expect(page.getByRole("tab", { name: "Sign in" })).toBeVisible();
+    expect(await page.evaluate(
+      () => window.__INFLUENCE_E2E_AUTH__?.privyToken ?? null,
+    )).toBeNull();
+    await page.evaluate((token) => {
+      window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
+    }, harness.tokens.uiNewPrivy);
+    await page.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(page.getByRole("heading", { name: "Create your account" }))
+      .toBeVisible();
+    const privyConsent = page.getByRole("dialog", {
+      name: "Influence authentication",
+    }).getByRole("checkbox");
+    await expect(privyConsent).not.toBeChecked();
+    await expect(page.getByRole("button", { name: "Continue with Privy" }))
+      .toBeDisabled();
+    await privyConsent.check();
+    await page.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await page.getByLabel("Display name").fill("Privy Recovery E2E");
+    await page.getByLabel("Handle").fill("e2e-privy-recovery");
+    await page.getByLabel("Handle").press("Enter");
+    await expect(page.getByRole("heading", {
+      name: "Choose how players know you",
+    })).toBeHidden();
+    await page.getByRole("button", { name: "Sign out" }).click();
+
+    await clickNavigationSignIn(page);
+    await page.getByRole("tab", { name: "Create account" }).click();
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(page.getByRole("heading", { name: "Account already exists" }))
+      .toBeVisible();
+    await page.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await page.getByRole("button", { name: "Sign out" }).click();
+
+    await clickNavigationSignIn(page);
+    await page.getByRole("tab", { name: "Create account" }).click();
+    await page.getByLabel("Email").fill("ui-reverse@example.test");
+    await page.getByLabel("Password").fill("must-be-cleared");
+    await expect(page.getByRole("button", { name: "Create account" }))
+      .toBeDisabled();
+    await expect(page.getByRole("button", { name: "Continue with Privy" }))
+      .toBeDisabled();
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Create account" }).click();
+    await expect(page.getByRole("heading", { name: "Account already exists" }))
+      .toBeVisible();
+    await page.getByRole("button", { name: "Go to sign in" }).click();
+    await expect(page.getByLabel("Email")).toHaveValue("ui-reverse@example.test");
+    await expect(page.getByLabel("Password")).toHaveValue("");
+  });
+
+  test("keeps verified Clerk consent bound while recovering through the invite gate", async ({
+    page,
+  }) => {
+    const creationBodies: Array<Record<string, unknown>> = [];
+    await page.route("**/api/auth/managed/create", async (route) => {
+      const body = route.request().postDataJSON() as Record<string, unknown>;
+      creationBodies.push(body);
+      if (creationBodies.length === 1) {
+        await route.fulfill({
+          status: 403,
+          json: { error: "Invite code required", code: "INVITE_REQUIRED" },
+        });
+        return;
+      }
+      if (creationBodies.length === 2) {
+        await route.fulfill({
+          status: 403,
+          json: {
+            error: "Invalid or already used invite code",
+            code: "INVALID_INVITE_CODE",
+          },
+        });
+        return;
+      }
+      const existing = await fetch(`${harness.apiUrl}/api/auth/me`, {
+        headers: {
+          authorization: `Bearer ${harness.sessions.walletless}`,
+        },
+      });
+      await route.fulfill({
+        status: existing.status,
+        contentType: "application/json",
+        body: JSON.stringify({
+          token: harness.sessions.walletless,
+          user: await existing.json(),
+        }),
+      });
+    });
+
+    await page.goto(`${harness.webUrl}/get-mcp`, { waitUntil: "networkidle" });
+    await clickNavigationSignIn(page);
+    await page.getByRole("tab", { name: "Create account" }).click();
+    await page.getByLabel("Email").fill("ui-new+e2e@example.test");
+    await page.getByLabel("Password").fill("test-password");
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Create account" }).click();
+    await page.getByLabel("Verification code").fill("424242");
+    await page.getByRole("button", { name: "Verify code" }).click();
+
+    await expect(page.getByRole("heading", { name: "Invite Code Required" }))
+      .toBeVisible();
+    await page.getByLabel("Invite code").fill("INVALID");
+    await page.getByRole("button", { name: "Submit" }).click();
+    await expect(page.getByText(
+      "That invite code is invalid or has already been used.",
+    ))
+      .toBeVisible();
+    await page.getByLabel("Invite code").fill("VALID123");
+    await page.getByRole("button", { name: "Submit" }).click();
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+
+    expect(creationBodies).toHaveLength(3);
+    const consentKeys = [
+      "acceptTerms",
+      "termsVersion",
+      "privacyVersion",
+      "deploymentSha",
+    ] as const;
+    for (const key of consentKeys) {
+      expect(creationBodies[1]?.[key]).toBe(creationBodies[0]?.[key]);
+      expect(creationBodies[2]?.[key]).toBe(creationBodies[0]?.[key]);
+    }
+    expect(creationBodies[0]?.inviteCode).toBeUndefined();
+    expect(creationBodies[1]?.inviteCode).toBe("INVALID");
+    expect(creationBodies[2]?.inviteCode).toBe("VALID123");
+  });
+
+  test("keeps Privy account creation available in managed rollout modes", async ({
+    browser,
+  }) => {
+    for (const scenario of [
+      {
+        mode: "existing-only" as const,
+        token: harness.tokens.uiExistingOnlyPrivy,
+      },
+      {
+        mode: "disabled" as const,
+        token: harness.tokens.uiDisabledPrivy,
+      },
+    ]) {
+      const context = await browser.newContext();
+      await context.addInitScript((token) => {
+        window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
+      }, scenario.token);
+      const page = await context.newPage();
+      await page.route("**/runtime-config", async (route) => {
+        await route.fulfill({
+          json: {
+            PRIVY_APP_ID: "e2e-test-privy-app-id-001",
+            CLERK_PUBLISHABLE_KEY: "pk_test_layered_auth_e2e",
+            MANAGED_AUTH_MODE: scenario.mode,
+            API_URL: harness.apiUrl,
+            WS_URL: harness.apiUrl,
+            MCP_OAUTH_RESOURCE_URI: `${harness.apiUrl}/mcp`,
+            ADMIN_ADDRESS: "",
+            EPHEMERAL: false,
+            EPHEMERAL_PR: "",
+            SOURCE_ENV_URL: "",
+          },
+        });
+      });
+      await page.goto(`${harness.webUrl}/get-mcp`, {
+        waitUntil: "networkidle",
+      });
+      await clickNavigationSignIn(page);
+      await page.getByRole("button", { name: "Continue with Privy" }).click();
+      await expect(page.getByRole("heading", { name: "Create your account" }))
+        .toBeVisible();
+      const consent = page.getByRole("dialog", {
+        name: "Influence authentication",
+      }).getByRole("checkbox");
+      await consent.check();
+      await page.getByRole("button", { name: "Continue with Privy" }).click();
+      await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+      await context.close();
+    }
+  });
+
+  test("shows a retryable message when Privy is unavailable", async ({ page }) => {
+    await page.addInitScript((token) => {
+      window.__INFLUENCE_E2E_AUTH__ = { privyToken: token };
+    }, harness.tokens.uiOutagePrivy);
+    await page.goto(`${harness.webUrl}/get-mcp`, { waitUntil: "networkidle" });
+    await clickNavigationSignIn(page);
+    await page.getByRole("button", { name: "Continue with Privy" }).click();
+    await expect(page.getByText(
+      "Privy is temporarily unavailable. Try again.",
+      { exact: true },
+    )).toBeVisible();
+    await expect(page.getByRole("button", { name: "Continue with Privy" }))
+      .toBeVisible();
+  });
+
   test("drives the unified browser wrapper through signup, linking, reverse collision, and outage fallback", async ({
     page,
   }) => {
@@ -82,6 +335,10 @@ test.describe("deterministic layered authentication", () => {
     await page.getByRole("tab", { name: "Create account" }).click();
     await page.getByLabel("Email").fill("ui-new+e2e@example.test");
     await page.getByLabel("Password").fill("test-password");
+    await page
+      .getByRole("dialog", { name: "Influence authentication" })
+      .getByRole("checkbox")
+      .check();
     await page
       .getByRole("dialog", { name: "Influence authentication" })
       .locator("form")
@@ -135,6 +392,11 @@ test.describe("deterministic layered authentication", () => {
     await page.getByLabel("Email").fill("ui-reverse@example.test");
     await page.getByLabel("Password").fill("test-password");
     await page.getByRole("button", { name: "Sign in with email" }).click();
+    await expect(page.getByRole("heading", {
+      name: "Accept the Terms to continue",
+    })).toBeVisible();
+    await page.getByRole("checkbox").check();
+    await page.getByRole("button", { name: "Accept and link Privy" }).click();
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
 
     await page.getByRole("button", { name: "Sign out" }).click();
@@ -208,14 +470,20 @@ test.describe("deterministic layered authentication", () => {
     );
     expect(before.status()).toBe(409);
     expect(await before.json()).toMatchObject({
-      code: "ACCOUNT_SETUP_INCOMPLETE",
+      code: "ACCOUNT_CREATION_REQUIRED",
     });
 
     const created = await authRequest(
       request,
       harness,
       "/api/auth/managed/create",
-      { token: harness.tokens.newManaged, confirm: true },
+      {
+        token: harness.tokens.newManaged,
+        acceptTerms: true,
+        termsVersion: "2026-08-12",
+        privacyVersion: "2026-08-12",
+        deploymentSha: "unknown",
+      },
     );
     expect(created.status()).toBe(200);
     const createdBody = await created.json();
@@ -294,7 +562,7 @@ test.describe("deterministic layered authentication", () => {
       request,
       harness,
       "/api/auth/login",
-      { token: harness.tokens.reversePrivy },
+      { token: harness.tokens.reversePrivy, intent: "sign_in" },
     );
     expect(collision.status()).toBe(409);
     expect(await collision.json()).toMatchObject({
@@ -310,12 +578,39 @@ test.describe("deterministic layered authentication", () => {
     expect(passwordProof.status()).toBe(200);
     const passwordSession = await passwordProof.json();
 
-    const linked = await authRequest(
+    const pendingLink = await authRequest(
       request,
       harness,
       "/api/auth/privy/link",
       { token: harness.tokens.reversePrivy, confirm: true },
       passwordSession.token,
+    );
+    expect(pendingLink.status()).toBe(403);
+    expect(await pendingLink.json()).toMatchObject({
+      code: "LEGAL_ACCEPTANCE_REQUIRED",
+    });
+
+    const acceptance = await authRequest(
+      request,
+      harness,
+      "/api/auth/legal-acceptance",
+      {
+        acceptTerms: true,
+        termsVersion: "2026-08-12",
+        privacyVersion: "2026-08-12",
+        deploymentSha: "unknown",
+      },
+      passwordSession.token,
+    );
+    expect(acceptance.status()).toBe(200);
+    const acceptedSession = await acceptance.json();
+
+    const linked = await authRequest(
+      request,
+      harness,
+      "/api/auth/privy/link",
+      { token: harness.tokens.reversePrivy, confirm: true },
+      acceptedSession.token,
     );
     expect(linked.status()).toBe(200);
     expect((await linked.json()).user).toMatchObject({
@@ -339,7 +634,7 @@ test.describe("deterministic layered authentication", () => {
       request,
       harness,
       "/api/auth/login",
-      { token: harness.tokens.existingPrivy },
+      { token: harness.tokens.existingPrivy, intent: "sign_in" },
     );
     expect(privy.status()).toBe(200);
     expect((await privy.json()).user.id).toBe(harness.users.existingEmail);
@@ -355,7 +650,13 @@ test.describe("deterministic layered authentication", () => {
       request,
       harness,
       "/e2e/existing-only/api/auth/managed/create",
-      { token: "clerk:unused", confirm: true },
+      {
+        token: "clerk:unused",
+        acceptTerms: true,
+        termsVersion: "2026-08-12",
+        privacyVersion: "2026-08-12",
+        deploymentSha: "unknown",
+      },
     );
     expect(existingOnlyCreate.status()).toBe(403);
     const disabled = await authRequest(
@@ -414,6 +715,13 @@ test.describe("deterministic layered authentication", () => {
     }).toString();
 
     await page.goto(authorizeUrl.toString(), { waitUntil: "networkidle" });
+    await expect(page.getByRole("heading", { name: "Review and accept" }))
+      .toBeVisible();
+    const agreeButton = page.getByRole("button", { name: "Accept and continue" });
+    await expect(agreeButton).toBeDisabled();
+    await page.getByRole("checkbox").check();
+    await expect(agreeButton).toBeEnabled();
+    await agreeButton.click();
     await expect(page.getByRole("heading", { name: "Game MCP Access" }))
       .toBeVisible();
     await expect(page.getByText("No wallet", { exact: true })).toBeVisible();
@@ -492,6 +800,7 @@ test.describe("real Clerk development project", () => {
     });
     await page.getByLabel("Email").fill(email);
     await page.getByLabel("Password").fill(initialPassword);
+    await authenticationDialog.getByRole("checkbox").check();
     await authenticationDialog
       .locator("form")
       .getByRole("button", { name: "Create account" })

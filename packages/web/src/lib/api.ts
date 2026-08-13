@@ -1468,7 +1468,30 @@ export interface AuthMe extends AuthenticatedPublicIdentity {
     privy: boolean;
     emailPassword: boolean;
   };
+  legal: {
+    termsVersion: string;
+    privacyVersion: string;
+    accepted: boolean;
+    acceptedAt: string | null;
+  };
 }
+
+export const PRESENTED_LEGAL_ACCEPTANCE = {
+  acceptTerms: true,
+  termsVersion: "2026-08-12",
+  privacyVersion: "2026-08-12",
+  deploymentSha: process.env.NEXT_PUBLIC_GIT_SHA ?? "unknown",
+} as const;
+
+export type PresentedLegalAcceptance = typeof PRESENTED_LEGAL_ACCEPTANCE;
+
+export type PrivyAuthenticationRequest =
+  | { intent: "sign_in" }
+  | {
+    intent: "create_account";
+    legalAcceptance: PresentedLegalAcceptance;
+    inviteCode?: string;
+  };
 
 export async function getMe(): Promise<AuthMe> {
   return apiFetch("/api/auth/me");
@@ -1476,14 +1499,23 @@ export async function getMe(): Promise<AuthMe> {
 
 export async function loginWithPrivyToken(
   privyToken: string,
-  inviteCode?: string,
+  request: PrivyAuthenticationRequest,
 ): Promise<{
   token: string;
   user: Omit<AuthMe, "isAdmin">;
 }> {
   return providerAuthFetch("/api/auth/login", {
     method: "POST",
-    body: JSON.stringify({ token: privyToken, ...(inviteCode ? { inviteCode } : {}) }),
+    body: JSON.stringify({
+      token: privyToken,
+      intent: request.intent,
+      ...(request.intent === "create_account"
+        ? {
+          ...(request.inviteCode ? { inviteCode: request.inviteCode } : {}),
+          ...request.legalAcceptance,
+        }
+        : {}),
+    }),
   });
 }
 
@@ -1506,11 +1538,37 @@ export async function exchangeManagedAuthentication(
 export async function createManagedAuthentication(
   token: string,
   correlationId?: string,
+  inviteCode?: string,
 ): Promise<InfluenceSessionResult> {
   return providerAuthFetch("/api/auth/managed/create", {
     method: "POST",
     headers: correlationId ? { "x-correlation-id": correlationId } : undefined,
-    body: JSON.stringify({ token, confirm: true }),
+    body: JSON.stringify({
+      token,
+      ...(inviteCode ? { inviteCode } : {}),
+      ...PRESENTED_LEGAL_ACCEPTANCE,
+    }),
+  });
+}
+
+export async function acceptCurrentLegalTerms(): Promise<AuthMe["legal"]> {
+  const influenceToken = getAuthToken();
+  if (!influenceToken) throw new Error("Authentication required");
+  const session = await acceptCurrentLegalTermsForSession(influenceToken);
+  if (getAuthToken() !== influenceToken) {
+    throw new Error("Your session changed before acceptance finished. Sign in again.");
+  }
+  setAuthToken(session.token);
+  return session.user.legal;
+}
+
+export async function acceptCurrentLegalTermsForSession(
+  influenceToken: string,
+): Promise<InfluenceSessionResult> {
+  return providerAuthFetch("/api/auth/legal-acceptance", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${influenceToken}` },
+      body: JSON.stringify(PRESENTED_LEGAL_ACCEPTANCE),
   });
 }
 

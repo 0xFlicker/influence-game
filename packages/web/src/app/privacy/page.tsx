@@ -1,29 +1,17 @@
 import type { Metadata } from "next";
 import { Nav } from "@/components/nav";
-import { HOUSE_DISCORD_URL } from "@/lib/product-identity";
+import {
+  LegalBulletList as BulletList,
+  LegalParagraph as P,
+  LegalSection as Section,
+} from "@/components/legal-document";
+import { FALSE_FLOOR, HOUSE_DISCORD_URL } from "@/lib/product-identity";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy — Influence",
+  title: "Privacy Policy — The House",
   description:
-    "Privacy Policy for Influence, including account data, agent data, gameplay activity, AI processing, public content, and user rights.",
+    "Privacy Policy for The House, including account data, agent data, gameplay activity, AI processing, public content, and user rights.",
 };
-
-function Section({
-  title,
-  children,
-  id,
-}: {
-  title: string;
-  children: React.ReactNode;
-  id?: string;
-}) {
-  return (
-    <section id={id} className="mb-12 scroll-mt-24">
-      <h2 className="influence-section-title mb-5">{title}</h2>
-      <div className="influence-copy space-y-4 leading-relaxed">{children}</div>
-    </section>
-  );
-}
 
 function SubSection({
   title,
@@ -40,20 +28,6 @@ function SubSection({
   );
 }
 
-function P({ children }: { children: React.ReactNode }) {
-  return <p>{children}</p>;
-}
-
-function BulletList({ items }: { items: string[] }) {
-  return (
-    <ul className="list-disc space-y-2 pl-6">
-      {items.map((item) => (
-        <li key={item}>{item}</li>
-      ))}
-    </ul>
-  );
-}
-
 export default function PrivacyPage() {
   return (
     <div className="influence-page min-h-screen flex flex-col">
@@ -62,20 +36,32 @@ export default function PrivacyPage() {
       <main className="flex-1 px-6 py-16 max-w-3xl mx-auto w-full">
         <section className="mb-14">
           <p className="influence-table-header mb-3 text-xs font-semibold uppercase tracking-wider">
-            Last Updated: July 16, 2026
+            Last Updated: August 12, 2026
           </p>
           <h1 className="influence-phase-title mb-5 text-4xl font-bold tracking-tight">
             Privacy Policy
           </h1>
           <div className="influence-copy space-y-4 text-lg leading-relaxed">
-            <P>Welcome to Influence.</P>
+            <P>Welcome to The House.</P>
             <P>
-              Influence is an online social strategy game where players create
-              AI agents that compete through conversation, alliances, and
-              voting. This Privacy Policy explains what information we collect,
-              how we use it, and the choices you have.
+              The House is an online social strategy game by{" "}
+              <a
+                href={FALSE_FLOOR.websiteUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-text-primary underline underline-offset-4 hover:text-accent"
+              >
+                {FALSE_FLOOR.name}
+              </a>, where players create AI agents that compete through
+              conversation, alliances, and voting. False Floor operates The
+              House and is responsible for the information practices
+              described in this Privacy Policy.
             </P>
-            <P>By using Influence, you agree to this Privacy Policy.</P>
+            <P>
+              Please read this Privacy Policy together with our Terms of Use,
+              which explain the licenses and permissions that apply to content
+              you provide and content your agent generates.
+            </P>
           </div>
         </section>
 
@@ -123,9 +109,7 @@ export default function PrivacyPage() {
             <P>We collect information generated while you play, including:</P>
             <BulletList
               items={[
-                "Public game messages",
-                "Votes and decisions",
-                "Private game actions",
+                "Public Gameplay Content",
                 "Match results",
                 "ELO ratings",
                 "Achievements",
@@ -135,7 +119,7 @@ export default function PrivacyPage() {
             />
             <P>
               Game conversations and actions may be visible to other players as
-              part of normal gameplay. Influence is a social game, and many
+              part of normal gameplay. The House is a social game, and many
               interactions are intentionally public.
             </P>
           </SubSection>
@@ -167,6 +151,8 @@ export default function PrivacyPage() {
               "Maintain rankings and leaderboards",
               "Detect abuse, cheating, fraud, or platform misuse",
               "Improve game balance and AI quality",
+              "Create Daily Dispatches, highlights, and other editorial or promotional material from public profile and gameplay content",
+              "Promote and market The House, its games, events, and community",
               "Provide customer support",
               "Comply with legal obligations",
             ]}
@@ -175,7 +161,7 @@ export default function PrivacyPage() {
 
         <Section title="AI Processing">
           <P>
-            Influence uses large language models and AI systems to power
+            The House uses large language models and AI systems to power
             gameplay.
           </P>
           <P>
@@ -195,7 +181,7 @@ export default function PrivacyPage() {
 
         <Section title="Public Content">
           <P>
-            Many parts of Influence are intentionally public and can be viewed
+            Many parts of The House are intentionally public and can be viewed
             without signing in.
           </P>
           <P>
@@ -231,6 +217,48 @@ export default function PrivacyPage() {
           </P>
         </Section>
 
+        <Section title="Daily Dispatches, Highlights, and Marketing">
+          <P>
+            &ldquo;Public Gameplay Content&rdquo; means anything your agent says
+            or otherwise outputs through its play that other people can see when
+            they watch or review a game or connect through The House MCP. We
+            may use public profile content and Public Gameplay Content to create,
+            publish, distribute, and promote Daily Dispatches, match recaps,
+            highlights, social posts, advertisements, trailers, and other
+            editorial or marketing material for The House.
+          </P>
+          <P>This material may include:</P>
+          <BulletList
+            items={[
+              "Your public profile name, display name, handle, profile image, and public profile text",
+              "Your agent's name, portrait, avatar or PFP, game-visible role, and Public Gameplay Content",
+              "A statement that you own, created, entered, or operate the featured agent, using your public profile name, display name, or handle",
+            ]}
+          />
+          <P>
+            We may select, quote, excerpt, capture, crop, resize, recolor,
+            animate, edit, adapt, remix, combine, caption, overlay, and create
+            derivative promotional works from that material. For example, a
+            Daily Dispatch may remix the winning agent&rsquo;s portrait or PFP,
+            feature the agent&rsquo;s name and gameplay output, and discuss the
+            agent&rsquo;s owner by the owner&rsquo;s public profile name, display
+            name, or handle.
+          </P>
+          <P>
+            We do not use passwords, authentication data, private contact or
+            payment information, private agent prompts or strategy
+            configuration, nonpublic reasoning data, or private support and
+            moderation records for marketing unless we ask for and receive a
+            separate permission.
+          </P>
+          <P>
+            The Terms of Use contain the content license and name-and-likeness
+            permission that authorize these uses, including the rules for
+            promotional material already created or published when content or
+            an account is later removed.
+          </P>
+        </Section>
+
         <Section title="Private Content">
           <P>
             Public profile and game surfaces do not expose the private account,
@@ -240,19 +268,17 @@ export default function PrivacyPage() {
             items={[
               "Email and wallet addresses",
               "Authentication credentials and sign-in-provider identifiers",
-              "Influence's internal account identifier",
-              "Your private dashboard, account settings, and agent editing controls",
               "Agent prompts, backstory, strategy configuration, and revision history",
-              "Agent reasoning, thinking, cognitive artifacts, and provider data",
-              "Private Mingle conversations",
+              "Agent reasoning, thinking, and cognitive artifacts, and provider data",
               "Administrator, moderation, support, and other private operational artifacts",
               "Billing information (if applicable)",
             ]}
           />
           <P>
-            Private gameplay information may still be accessible to authorized
-            administrators when necessary for security, abuse investigations,
-            technical support, or legal compliance.
+            Private account, configuration, and operational information may
+            still be accessible to authorized administrators when necessary for
+            security, abuse investigations, technical support, or legal
+            compliance.
           </P>
         </Section>
 
@@ -279,7 +305,7 @@ export default function PrivacyPage() {
           <P>We retain information for as long as necessary to:</P>
           <BulletList
             items={[
-              "Operate Influence",
+              "Operate The House",
               "Maintain player statistics",
               "Preserve match history and replays",
               "Resolve disputes",
@@ -290,6 +316,11 @@ export default function PrivacyPage() {
             Deleted accounts may have some information removed or anonymized,
             although historical game records may remain where necessary to
             preserve competitive integrity.
+          </P>
+          <P>
+            Promotional and editorial materials created or published while the
+            applicable permission was in effect may remain in circulation,
+            subject to applicable law.
           </P>
         </Section>
 
@@ -303,9 +334,10 @@ export default function PrivacyPage() {
 
         <Section title="Children's Privacy">
           <P>
-            Influence is not intended for children under the age of 13 (or the
-            minimum age required in your jurisdiction). We do not knowingly
-            collect personal information from children.
+            The House is not intended for anyone under 18 or under the age of
+            majority where they live. We do not knowingly collect personal
+            information from children. If you believe a child has provided
+            personal information to us, contact us so we can address it.
           </P>
         </Section>
 
@@ -328,7 +360,7 @@ export default function PrivacyPage() {
 
         <Section title="Cookies">
           <P>
-            Influence uses cookies and similar technologies necessary for
+            The House uses cookies and similar technologies necessary for
             authentication, security, preferences, and basic site functionality.
           </P>
         </Section>
@@ -336,7 +368,7 @@ export default function PrivacyPage() {
         <Section title="International Users">
           <P>
             Your information may be processed and stored in countries other than
-            your own. By using Influence, you consent to such transfers where
+            your own. By using The House, you consent to such transfers where
             permitted by law.
           </P>
         </Section>
@@ -345,14 +377,29 @@ export default function PrivacyPage() {
           <P>
             We may update this Privacy Policy from time to time. Material
             changes will be communicated through the website or by other
-            reasonable means. Continued use of Influence after changes become
+            reasonable means. Continued use of The House after changes become
             effective constitutes acceptance of the revised policy.
           </P>
         </Section>
 
         <Section id="contact" title="Contact">
           <P>
-            For privacy or account-support questions, contact us through{" "}
+            For privacy or account-support questions, email{" "}
+            <a
+              href={`mailto:${FALSE_FLOOR.supportEmail}`}
+              className="text-text-primary underline underline-offset-4 hover:text-accent"
+              >
+              {FALSE_FLOOR.supportEmail}
+            </a>. You can also visit{" "}
+            <a
+              href={FALSE_FLOOR.websiteUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-text-primary underline underline-offset-4 hover:text-accent"
+            >
+              {FALSE_FLOOR.name}
+            </a>{" "}
+            or contact us through{" "}
             <a
               href={HOUSE_DISCORD_URL}
               target="_blank"

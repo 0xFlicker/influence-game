@@ -1,0 +1,83 @@
+# Legal content-use contract
+
+Influence publishes its current Terms of Use at `/terms` and Privacy Policy at
+`/privacy`. The current accepted versions are owned by
+`packages/api/src/services/legal-acceptance.ts`; changing either legal document
+materially requires matching version changes there and in
+`packages/web/src/lib/api.ts` so every account is prompted again and the client
+can prove which text it presented.
+
+Influence is a game by and is operated by False Floor LLC. The legal documents
+link to `https://falsefloor.ai` and use `support@falsefloor.ai` as the primary
+legal and privacy contact. The House Discord remains an optional community
+contact rather than the sole contact method.
+
+## Acceptance
+
+- The Create account view requires explicit acceptance before either Clerk or
+  Privy can create a new House account.
+- Sign in never creates an account implicitly. When Clerk or Privy verifies an
+  identity that has no House account, the authentication wrapper presents an
+  explicit consent-gated Create your account step instead of a provider error
+  or redirect loop.
+- Acceptance is written only when House account creation commits. Clicking the
+  checkbox, starting Clerk signup, and beginning email verification do not
+  create an acceptance record.
+- Invite-gated Clerk and Privy creation keep the consent payload attached to
+  the pending attempt and commit the account, invite redemption, and acceptance
+  in one transaction. A missing, invalid, abandoned, or raced invite writes
+  none of them.
+- Managed-auth rollout modes gate Clerk mutations only. Privy account creation
+  remains available with the same explicit consent handoff in `full`,
+  `existing-only`, and `disabled` modes.
+- Existing accounts with no current acceptance receive a blocking acceptance
+  screen after authentication. Reverse Privy linking collects that acceptance
+  before the credential mutation and resumes with the refreshed session token.
+- Successful existing-account acceptance rotates the browser session to a JWT
+  carrying the current versions, avoiding repeated database fallback checks.
+- Existing app sessions, MCP access tokens, and MCP refresh tokens fail closed
+  until the account accepts the current versions.
+- The API records the Terms version, Privacy version, presented web deployment
+  Git SHA, source, and server-side acceptance timestamp in
+  `legal_acceptances`. The web build embeds its full SHA in the acceptance
+  payload, so even a browser tab left open across a deployment records the
+  commit containing the React legal documents and presentation it actually
+  displayed. Production API startup also requires its own full `GIT_SHA`. This
+  is client-presented provenance, not server attestation that a person viewed
+  the documents or that the submitted web SHA belongs to an approved release.
+- Accounts must represent that their users are at least 18 and the age of
+  majority where they live; Influence does not implement a guardian-consent
+  flow.
+- Never backfill acceptance rows or infer acceptance from account activity.
+
+## Content use
+
+The Terms grant operational rights over user and agent content and promotional
+rights over public profile content and Public Gameplay Content. Public Gameplay
+Content means anything an agent says or otherwise outputs through its play that
+other people can see when they watch or review a game or connect through the
+Influence MCP. The named Daily Dispatch example includes remixing a winning
+agent portrait or PFP, featuring the agent name and Public Gameplay Content,
+and discussing the owner by the owner's public profile name, display name, or
+handle.
+
+Current Daily Dispatch and highlight workflows remain public-facts-only. Do not
+publish private prompts, strategy configuration, nonpublic reasoning,
+credentials, contact or payment data, or private support and moderation records
+without a separate, specific permission.
+
+Before using an account's content in a new promotional asset, verify that the
+account has accepted the current Terms and Privacy versions. Existing material
+created or published under an accepted version can remain in circulation as
+described in the Terms, subject to applicable law.
+
+## Updating the contract
+
+1. Update `/terms` and `/privacy` together when content use changes.
+2. Change the relevant current version constant in
+   `packages/api/src/services/legal-acceptance.ts` and the matching presented
+   version in `packages/web/src/lib/api.ts`.
+3. Update the acceptance prompt when the presentation copy changes.
+4. Add or update route, projection, and UI-gate tests.
+5. Obtain legal review for the operator's entity, jurisdiction, age policy,
+   publicity-rights requirements, and any new media or data use before deploy.

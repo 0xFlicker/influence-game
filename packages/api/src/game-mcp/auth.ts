@@ -16,6 +16,7 @@ import {
   parseAndValidateMcpOAuthScopes,
   type McpOAuthScope,
 } from "../services/mcp-scope-policy.js";
+import { projectCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 
 export interface GameMcpAuthContext {
   userId: string;
@@ -75,6 +76,12 @@ export async function validateGameMcpBearerToken(
   const introspection = await introspectMcpAccessToken(db, token);
   if (!introspection.active) {
     return { ok: false, status: 401, reason: "inactive_token" };
+  }
+  if (!introspection.sub) {
+    return { ok: false, status: 401, reason: "invalid_token_claims" };
+  }
+  if (!(await projectCurrentLegalAcceptance(db, introspection.sub)).accepted) {
+    return { ok: false, status: 403, reason: "legal_acceptance_required" };
   }
 
   const parsedScopes = parseAndValidateMcpOAuthScopes(introspection.scope);

@@ -285,7 +285,7 @@ A verified external authentication identity, such as a Privy subject or a manage
 
 ## Authentication wrapper
 
-The provider-neutral entry surface for establishing an Influence browser session. It separates Sign in from Create account: Sign in supports managed email/password and the existing combined Privy email-or-wallet flow, while Create account supports managed email/password only. OAuth renders it in place while keeping the authorization request mounted; other entry points use existing redirect behavior without preserving or replaying an interrupted application action.
+The provider-neutral entry surface for establishing an Influence browser session. It separates Sign in from Create account while supporting managed email/password and Privy email-or-wallet authentication in both paths. Sign in never creates an account implicitly: an unknown verified identity moves to an explicit consent-gated Create account step. OAuth renders the wrapper in place while keeping the authorization request mounted; other entry points use existing redirect behavior without preserving or replaying an interrupted application action.
 
 ## Managed-provider exit
 
