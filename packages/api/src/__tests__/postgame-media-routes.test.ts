@@ -18,10 +18,6 @@ import { schema } from "../db/index.js";
 import { createPostgameMediaWorkerRoutes, postgameMediaPublicBaseUrl } from "../routes/postgame-media-worker.js";
 import { createUploadRoutes } from "../routes/upload.js";
 import { appendGameEvents } from "../services/game-events.js";
-import {
-  CURRENT_PRIVACY_VERSION,
-  CURRENT_TERMS_VERSION,
-} from "../services/legal-acceptance.js";
 import { getAdminPostgameMedia, getPublicPostgameMedia } from "../services/postgame-media.js";
 import { reconcilePostgameMediaForGame, requestPostgameMedia } from "../services/postgame-media-coordinator.js";
 import { claimPostgameMedia, finalizePostgameMedia, heartbeatPostgameMedia } from "../services/postgame-media-worker.js";
@@ -133,23 +129,19 @@ describe("postgame media worker routes and leases", () => {
     });
   });
 
-  test("does not create a promotional snapshot when an implicated owner has no acceptance", async () => {
-    const { gameId, ownerIds } = await insertOwnedCompletedMediaGame(db);
-    await insertLegalAcceptances(db, [ownerIds[0]], {
-      termsVersion: CURRENT_TERMS_VERSION,
-      privacyVersion: CURRENT_PRIVACY_VERSION,
-    });
+  test("creates a trailer snapshot regardless of owner legal acceptance", async () => {
+    const { gameId } = await insertOwnedCompletedMediaGame(db);
 
-    expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("waiting_inputs");
+    expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("queued");
     const [row] = await db.select().from(schema.gamePostgameMedia)
       .where(eq(schema.gamePostgameMedia.gameId, gameId));
     expect(row).toMatchObject({
-      status: "waiting_inputs",
-      renderInputSnapshot: null,
+      status: "queued",
     });
+    expect(row?.renderInputSnapshot).not.toBeNull();
   });
 
-  test("does not claim a previously queued promotional snapshot without current acceptance", async () => {
+  test("claims a queued trailer regardless of owner legal acceptance", async () => {
     const ownerUserId = "postgame-media-queued-owner";
     const gameId = await insertQueuedMedia(db, "queued-consent");
     await db.insert(schema.users).values({
@@ -164,47 +156,7 @@ describe("postgame media worker routes and leases", () => {
       agentConfig: JSON.stringify({ model: "test-model", temperature: 0 }),
     });
 
-    expect(await claimPostgameMedia(db, "current-worker-token")).toBeNull();
-
-    await insertLegalAcceptances(db, [ownerUserId], {
-      termsVersion: CURRENT_TERMS_VERSION,
-      privacyVersion: CURRENT_PRIVACY_VERSION,
-    });
     expect(await claimPostgameMedia(db, "current-worker-token")).not.toBeNull();
-  });
-
-  test("does not create a promotional snapshot from stale legal acceptance", async () => {
-    const { gameId, ownerIds } = await insertOwnedCompletedMediaGame(db);
-    await insertLegalAcceptances(db, [ownerIds[0]], {
-      termsVersion: CURRENT_TERMS_VERSION,
-      privacyVersion: CURRENT_PRIVACY_VERSION,
-    });
-    await insertLegalAcceptances(db, [ownerIds[1]], {
-      termsVersion: "2026-08-11",
-      privacyVersion: "2026-08-11",
-    });
-
-    expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("waiting_inputs");
-    const [row] = await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, gameId));
-    expect(row).toMatchObject({
-      status: "waiting_inputs",
-      renderInputSnapshot: null,
-    });
-  });
-
-  test("creates a promotional snapshot only after every implicated owner accepts current legal versions", async () => {
-    const { gameId, ownerIds } = await insertOwnedCompletedMediaGame(db);
-    await insertLegalAcceptances(db, ownerIds, {
-      termsVersion: CURRENT_TERMS_VERSION,
-      privacyVersion: CURRENT_PRIVACY_VERSION,
-    });
-
-    expect((await reconcilePostgameMediaForGame(db, gameId)).outcome).toBe("queued");
-    const [row] = await db.select().from(schema.gamePostgameMedia)
-      .where(eq(schema.gamePostgameMedia.gameId, gameId));
-    expect(row?.status).toBe("queued");
-    expect(row?.renderInputSnapshot).not.toBeNull();
   });
 
   test("records safe durable audit history for an admin backfill request", async () => {
@@ -269,7 +221,7 @@ describe("postgame media worker routes and leases", () => {
     expect(row?.artifactVersion).not.toBe("rv_fixture-version");
   });
 
-  test("does not let a stored waiting-music snapshot bypass current legal acceptance", async () => {
+  test("requeues a stored waiting-music snapshot regardless of owner legal acceptance", async () => {
     const actorUserId = "postgame-media-consent-actor";
     const ownerUserId = "postgame-media-consent-owner";
     const gameId = await insertQueuedMedia(db, "waiting-music-consent");
@@ -296,15 +248,15 @@ describe("postgame media worker routes and leases", () => {
       source: "admin_route",
     });
 
-    expect(result.outcome).toBe("waiting_inputs");
+    expect(result.outcome).toBe("queued");
     const [row] = await db.select().from(schema.gamePostgameMedia)
       .where(eq(schema.gamePostgameMedia.gameId, gameId));
     expect(row).toMatchObject({
-      status: "waiting_music",
-      renderVersion: 1,
-      attemptNumber: 1,
-      artifactVersion: "rv_fixture-version",
+      status: "queued",
+      renderVersion: 2,
+      attemptNumber: 2,
     });
+    expect(row?.artifactVersion).not.toBe("rv_fixture-version");
   });
 
   test("allows an unexpired lease to heartbeat and rejects it after expiry", async () => {
@@ -557,19 +509,6 @@ async function insertOwnedCompletedMediaGame(
     events: createEdgeSmokeDuskEvents(gameId),
   });
   return { gameId, ownerIds: [directOwnerId, profileOwnerId] };
-}
-
-async function insertLegalAcceptances(
-  db: DrizzleDB,
-  ownerIds: readonly string[],
-  versions: { termsVersion: string; privacyVersion: string },
-): Promise<void> {
-  await db.insert(schema.legalAcceptances).values(ownerIds.map((userId) => ({
-    userId,
-    ...versions,
-    deploymentSha: "0123456789abcdef0123456789abcdef01234567",
-    source: "existing_account" as const,
-  })));
 }
 
 async function insertQueuedMedia(db: DrizzleDB, suffix: string): Promise<string> {
