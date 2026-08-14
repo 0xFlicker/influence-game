@@ -162,6 +162,18 @@ function buildScores(
       bucket: "plurality_total",
     }));
   }
+  if (formatId === "even_votes" && aggregate.capability === "sealed_elim") {
+    const allOdd = Object.values(aggregate.totals).every((value) => value % 2 !== 0);
+    return Object.entries(aggregate.totals).map(([id, value]) => ({
+      playerName: playerName(id as UUID),
+      value,
+      bucket: allOdd
+        ? "odd_empowered_pool"
+        : value % 2 === 0
+          ? "even_total"
+          : "odd_safe",
+    }));
+  }
   if (formatId === "safety_bounce" && aggregate.capability === "public_chain") {
     const totals = aggregate.voteTotals;
     const vulnerable = aggregate.vulnerablePlayerIds;
@@ -189,7 +201,9 @@ function summarizeResolution(input: {
         ? "fewest positive votes"
         : input.formatId === "majority_elimination"
           ? "highest total"
-          : "most votes in vulnerable pool";
+          : input.formatId === "even_votes"
+            ? "highest even total"
+            : "most votes in vulnerable pool";
 
   if (input.soleVulnerable) {
     return `Elimination: ${input.eliminatedName} alone vulnerable (sole_vulnerable) — no final ballot.`;

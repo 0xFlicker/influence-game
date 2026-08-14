@@ -1,6 +1,8 @@
 import { describe, expect, it } from "bun:test";
 import { Phase } from "@influence/engine";
 import {
+  createEvenVotesClearViewerDecisions,
+  createEvenVotesTieViewerDecisions,
   createMajorityEliminationClearViewerDecisions,
   createMajorityEliminationTieViewerDecisions,
   createSafetyBounceViewerDecisions,
@@ -652,6 +654,45 @@ describe("format presentation compiler", () => {
     expect(JSON.stringify({ clear, tied })).not.toMatch(
       /zero.safe|\bVulnerable\b|\bPower\b|\bCouncil\b/i,
     );
+  });
+
+  it("stages Even Votes with exact parity eligibility and an empowered highest-even tie", () => {
+    const clear = compileFormatPresentationPrefix({
+      gameId: FORMAT_KERNEL_VIEWER_GAME_ID,
+      gameKernel: "format",
+      roster: FORMAT_KERNEL_VIEWER_ROSTER,
+      decisions: createEvenVotesClearViewerDecisions(),
+    });
+    const tied = compileFormatPresentationPrefix({
+      gameId: FORMAT_KERNEL_VIEWER_GAME_ID,
+      gameKernel: "format",
+      roster: FORMAT_KERNEL_VIEWER_ROSTER,
+      decisions: createEvenVotesTieViewerDecisions(),
+    });
+
+    expect(clear.status).toBe("ready");
+    expect(clear.cues.find((cue) => cue.kind === "format_aggregate")).toMatchObject({
+      ballotPresentationStatus: "revealed",
+      resolution: {
+        formatId: "even_votes",
+        eliminatedId: "lyra",
+        aggregate: {
+          capability: "sealed_elim",
+          totals: { atlas: 0, lyra: 2, echo: 1, rex: 1 },
+          eligiblePlayerIds: ["atlas", "lyra"],
+        },
+      },
+    });
+    expect(tied.status).toBe("ready");
+    expect(tied.cues.at(-2)).toMatchObject({
+      kind: "format_tiebreak",
+      tiebreakerId: "atlas",
+      tiedPlayerIds: ["lyra", "echo"],
+    });
+    expect(tied.cues.at(-1)).toMatchObject({
+      kind: "format_elimination",
+      eliminatedId: "echo",
+    });
   });
 
   it("accepts a one-format manifest selection without inventing an offer", () => {

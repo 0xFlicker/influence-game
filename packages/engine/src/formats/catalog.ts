@@ -15,6 +15,11 @@ import {
   resolveMajorityElimination,
 } from "./majority-elimination";
 import {
+  computeEvenVotesTallies,
+  isLegalEvenVotesBallot,
+  resolveEvenVotes,
+} from "./even-votes";
+import {
   isLegalSaveOrEliminateBallot,
   resolveSaveOrEliminate,
 } from "./save-or-eliminate";
@@ -34,7 +39,10 @@ import {
   resolveVoteBomb,
 } from "./vote-bomb";
 
-export type SealedElimFormatId = "vote_bomb" | "majority_elimination";
+export type SealedElimFormatId =
+  | "vote_bomb"
+  | "majority_elimination"
+  | "even_votes";
 
 export interface SealedElimDecisionContract<
   TId extends SealedElimFormatId = SealedElimFormatId,
@@ -44,17 +52,25 @@ export interface SealedElimDecisionContract<
   targetPolicy: "alive_non_self";
   publicName: string;
   ballotHeading: string;
-  agentMethod: "getVoteBombBallot" | "getMajorityEliminationBallot";
-  toolName: "vote_bomb_ballot" | "majority_elimination_ballot";
+  agentMethod:
+    | "getVoteBombBallot"
+    | "getMajorityEliminationBallot"
+    | "getEvenVotesBallot";
+  toolName:
+    | "vote_bomb_ballot"
+    | "majority_elimination_ballot"
+    | "even_votes_ballot";
   toolDescription: string;
   traceAction:
     | "format-vote-bomb-ballot"
-    | "format-majority-elimination-ballot";
+    | "format-majority-elimination-ballot"
+    | "format-even-votes-ballot";
   decisionLabel: string;
   strategyGuidance: string;
   invalidTargetReason:
     | "invalid_vote_bomb_target"
-    | "invalid_majority_elimination_target";
+    | "invalid_majority_elimination_target"
+    | "invalid_even_votes_target";
   fallbackThinking: string;
 }
 
@@ -65,7 +81,7 @@ export interface SealedElimAggregateAdapter {
 }
 
 export interface SealedElimPresentationContract {
-  scoring: "fewest_positive" | "highest_total";
+  scoring: "fewest_positive" | "highest_total" | "highest_even";
   zeroVoteTreatment: "safe" | "eligible";
 }
 
@@ -229,6 +245,34 @@ export const FORMAT_CATALOG: FormatCatalog = {
     aggregate: sealedElimAggregateAdapter,
     presentation: {
       scoring: "highest_total",
+      zeroVoteTreatment: "eligible",
+    },
+  },
+  even_votes: {
+    id: "even_votes",
+    capability: "sealed_elim",
+    score: computeEvenVotesTallies,
+    resolve: resolveEvenVotes,
+    isLegalBallot: isLegalEvenVotesBallot,
+    decision: {
+      handler: "sealed_elim",
+      formatId: "even_votes",
+      targetPolicy: "alive_non_self",
+      publicName: "Even Votes",
+      ballotHeading: "Even Votes Ballot",
+      agentMethod: "getEvenVotesBallot",
+      toolName: "even_votes_ballot",
+      toolDescription: "Cast one sealed Even Votes ballot against a legal non-self target.",
+      traceAction: "format-even-votes-ballot",
+      decisionLabel: "Even Votes Ballot",
+      strategyGuidance:
+        "Even Votes rewards parity control, not simple pile-ons. Only even totals qualify, including zero, and the highest even total is lethal. An odd total is safe unless every living player finishes odd, which hands the empowered player the entire field. Use your ballot to flip a target between odd safety and even danger, and account for how allies or opponents may flip that parity after you.",
+      invalidTargetReason: "invalid_even_votes_target",
+      fallbackThinking: "fallback sealed Even Votes ballot after tool failure",
+    },
+    aggregate: sealedElimAggregateAdapter,
+    presentation: {
+      scoring: "highest_even",
       zeroVoteTreatment: "eligible",
     },
   },

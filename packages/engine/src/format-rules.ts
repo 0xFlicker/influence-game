@@ -11,6 +11,10 @@ export {
   computeMajorityEliminationTallies,
   resolveMajorityElimination,
 } from "./formats/majority-elimination";
+export {
+  computeEvenVotesTallies,
+  resolveEvenVotes,
+} from "./formats/even-votes";
 export { resolveSafetyBounceVote } from "./formats/safety-bounce";
 export { getFormatRegistration } from "./formats/catalog";
 export type { FormatEliminationResolution } from "./formats/types";

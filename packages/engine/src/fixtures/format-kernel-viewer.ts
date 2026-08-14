@@ -16,6 +16,8 @@ export const FORMAT_KERNEL_VIEWER_SCENARIO_IDS = [
   "vote_bomb_clear",
   "majority_elimination_clear",
   "majority_elimination_tie",
+  "even_votes_clear",
+  "even_votes_tie",
   "safety_bounce_tie",
   "safety_bounce_sole_vulnerable",
   "terminal_menu",
@@ -61,6 +63,8 @@ export function createFormatKernelViewerScenario(
   const voteBomb = createVoteBombViewerDecisions();
   const majorityEliminationClear = createMajorityEliminationClearViewerDecisions();
   const majorityEliminationTie = createMajorityEliminationTieViewerDecisions();
+  const evenVotesClear = createEvenVotesClearViewerDecisions();
+  const evenVotesTie = createEvenVotesTieViewerDecisions();
   const safetyBounce = createSafetyBounceViewerDecisions();
 
   switch (id) {
@@ -95,6 +99,24 @@ export function createFormatKernelViewerScenario(
       return scenario(id, roster, majorityEliminationTie, {
         status: "ready",
         selectedFormatId: "majority_elimination",
+        resolutionKind: "clear",
+        eliminatedId: "echo",
+        tiebreakerId: "atlas",
+        ballotPresentation: "revealed",
+      });
+    case "even_votes_clear":
+      return scenario(id, roster, evenVotesClear, {
+        status: "ready",
+        selectedFormatId: "even_votes",
+        resolutionKind: "auto",
+        eliminatedId: "lyra",
+        tiebreakerId: null,
+        ballotPresentation: "revealed",
+      });
+    case "even_votes_tie":
+      return scenario(id, roster, evenVotesTie, {
+        status: "ready",
+        selectedFormatId: "even_votes",
         resolutionKind: "clear",
         eliminatedId: "echo",
         tiebreakerId: "atlas",
@@ -411,6 +433,90 @@ function createMajorityEliminationViewerDecisions(input: {
         capability: "sealed_elim",
         totals: input.totals,
         eligiblePlayerIds: ["atlas", "lyra", "echo", "rex"],
+      },
+    }),
+  ];
+}
+
+export function createEvenVotesClearViewerDecisions(): ViewerDecisionEvent[] {
+  return createEvenVotesViewerDecisions({
+    sequenceStart: 80,
+    ballots: [
+      ["atlas", "lyra"],
+      ["lyra", "echo"],
+      ["echo", "rex"],
+      ["rex", "lyra"],
+    ],
+    eliminatedId: "lyra",
+    resolutionKind: "auto",
+    tiedPlayerIds: ["lyra"],
+    tiebreakerId: null,
+    totals: { atlas: 0, lyra: 2, echo: 1, rex: 1 },
+    eligiblePlayerIds: ["atlas", "lyra"],
+  });
+}
+
+export function createEvenVotesTieViewerDecisions(): ViewerDecisionEvent[] {
+  return createEvenVotesViewerDecisions({
+    sequenceStart: 90,
+    ballots: [
+      ["atlas", "lyra"],
+      ["lyra", "echo"],
+      ["echo", "lyra"],
+      ["rex", "echo"],
+    ],
+    eliminatedId: "echo",
+    resolutionKind: "clear",
+    tiedPlayerIds: ["lyra", "echo"],
+    tiebreakerId: "atlas",
+    totals: { atlas: 0, lyra: 2, echo: 2, rex: 0 },
+    eligiblePlayerIds: ["atlas", "lyra", "echo", "rex"],
+  });
+}
+
+function createEvenVotesViewerDecisions(input: {
+  sequenceStart: number;
+  ballots: ReadonlyArray<readonly [string, string]>;
+  eliminatedId: string;
+  resolutionKind: "clear" | "auto";
+  tiedPlayerIds: string[];
+  tiebreakerId: string | null;
+  totals: Record<string, number>;
+  eligiblePlayerIds: string[];
+}): ViewerDecisionEvent[] {
+  return [
+    viewerDecision(input.sequenceStart, Phase.FORMAT_MENU, "format.menu_offered", {
+      empoweredId: "atlas",
+      offeredFormatIds: ["even_votes", "vote_bomb"],
+    }),
+    viewerDecision(input.sequenceStart + 1, Phase.FORMAT_PICK, "format.selected", {
+      empoweredId: "atlas",
+      formatId: "even_votes",
+    }),
+    ...input.ballots.map(([voterId, targetId], index) =>
+      viewerDecision(
+        input.sequenceStart + 2 + index,
+        Phase.FORMAT_RESOLVE,
+        "format.ballot_cast",
+        {
+          formatId: "even_votes",
+          voterId,
+          targetId,
+          polarity: null,
+        },
+      )
+    ),
+    viewerDecision(input.sequenceStart + 6, Phase.FORMAT_RESOLVE, "format.resolved", {
+      formatId: "even_votes",
+      empoweredId: "atlas",
+      eliminatedId: input.eliminatedId,
+      resolutionKind: input.resolutionKind,
+      tiedPlayerIds: input.tiedPlayerIds,
+      tiebreakerId: input.tiebreakerId,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: input.totals,
+        eligiblePlayerIds: input.eligiblePlayerIds,
       },
     }),
   ];

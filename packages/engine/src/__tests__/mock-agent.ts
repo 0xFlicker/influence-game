@@ -326,6 +326,25 @@ export class MockAgent implements IAgent {
     };
   }
 
+  async getEvenVotesBallot(
+    ctx: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    const others = aliveIds.filter((id) => id !== this.id);
+    const index = Math.max(
+      0,
+      ctx.alivePlayers.findIndex((player) => player.id === this.id),
+    ) % Math.max(1, others.length);
+    const targetId = others[index] ?? others[0] ?? this.id;
+    return {
+      targetId,
+      thinking: `mock: even votes → ${targetId}`,
+      decisionLog: this.decisionLog("even votes ballot"),
+      decisionSource: "llm",
+      fallbackReason: null,
+    };
+  }
+
   async getBouncePointer(
     _ctx: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },

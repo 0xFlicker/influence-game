@@ -106,6 +106,12 @@ export interface CompletedGameResultsMajorityEliminationScore {
   votes: number;
 }
 
+export interface CompletedGameResultsEvenVotesScore {
+  player: RevealedPlayerRef;
+  votes: number;
+  evenEligible: boolean;
+}
+
 export interface CompletedGameResultsSafetyBounceScore {
   player: RevealedPlayerRef;
   votes: number;
@@ -123,6 +129,10 @@ export type CompletedGameResultsFormatScoring =
   | {
       kind: "majority_elimination";
       rows: CompletedGameResultsMajorityEliminationScore[];
+    }
+  | {
+      kind: "even_votes";
+      rows: CompletedGameResultsEvenVotesScore[];
     }
   | {
       kind: "safety_bounce";
@@ -473,6 +483,23 @@ function buildFormatScoring(
         return votes === undefined
           ? []
           : [{ player: playerRef(projection, playerId), votes }];
+      }),
+    };
+  }
+  if (format.selectedFormatId === "even_votes" && format.evenVotes) {
+    const eligibleIds = new Set(format.evenVotes.eligible.map((player) => player.id));
+    const totalsByPlayer = voteCountMap(format.evenVotes.totals);
+    return {
+      kind: "even_votes",
+      rows: projection.playerOrder.flatMap((playerId) => {
+        const votes = totalsByPlayer.get(playerId);
+        return votes === undefined
+          ? []
+          : [{
+              player: playerRef(projection, playerId),
+              votes,
+              evenEligible: eligibleIds.has(playerId),
+            }];
       }),
     };
   }

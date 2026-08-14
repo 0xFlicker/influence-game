@@ -42,6 +42,12 @@ export {
 } from "./majority-elimination";
 
 export {
+  computeEvenVotesTallies,
+  isLegalEvenVotesBallot,
+  resolveEvenVotes,
+} from "./even-votes";
+
+export {
   DEFAULT_FORMAT_MANIFEST,
   LEGACY_FORMAT_MANIFEST,
   FORMAT_CATALOG,

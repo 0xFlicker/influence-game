@@ -720,7 +720,9 @@ async function resolveSealedElimFormatRound(
     .join(", ");
   const criterion = registration.presentation.scoring === "fewest_positive"
     ? "fewest positive votes"
-    : "highest total";
+    : registration.presentation.scoring === "highest_even"
+      ? "highest even total"
+      : "highest total";
   if (registration.presentation.zeroVoteTreatment === "safe") {
     const eligibleIds = new Set(tallies.eligibleIds);
     const zeroSafe = aliveIds
@@ -728,6 +730,18 @@ async function resolveSealedElimFormatRound(
       .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
     logger.logSystem(
       `${registration.decision.publicName} tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      Phase.FORMAT_RESOLVE,
+    );
+  } else if (registration.presentation.scoring === "highest_even") {
+    const eligibleIds = new Set(tallies.eligibleIds);
+    const allOdd = aliveIds.every((id) => (tallies.totals[id] ?? 0) % 2 !== 0);
+    const oddSafe = aliveIds
+      .filter((id) => !eligibleIds.has(id))
+      .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
+    logger.logSystem(
+      allOdd
+        ? `${registration.decision.publicName} tally: every total is odd; the entire living field goes to the empowered tiebreak`
+        : `${registration.decision.publicName} tally: SAFE(odd)=[${oddSafe}]; even totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
       Phase.FORMAT_RESOLVE,
     );
   } else {

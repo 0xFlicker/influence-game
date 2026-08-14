@@ -184,6 +184,69 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(resolution.payload.tiedPlayerIds).toContain(resolution.payload.eliminatedId);
   });
 
+  it("runs Even Votes through the shared sealed path with exact parity eligibility", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    const [a, b, c, d, e] = agents;
+    if (!a || !b || !c || !d || !e) throw new Error("expected five agents");
+    const targets = new Map([
+      [a.id, b.id],
+      [b.id, a.id],
+      [c.id, a.id],
+      [d.id, a.id],
+      [e.id, a.id],
+    ]);
+    for (const agent of agents) {
+      agent.getEvenVotesBallot = async () => ({
+        targetId: targets.get(agent.id)!,
+        thinking: "force a sole highest-even target",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+    }
+
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, maxRounds: 1, formatManifest: ["even_votes"] },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await runner.run();
+
+    const canonical = runner.getCanonicalEvents();
+    const resolution = canonical.find((event) => event.type === "format.resolved");
+    if (!resolution || resolution.type !== "format.resolved") {
+      throw new Error("expected Even Votes resolution");
+    }
+    expect(canonical.filter((event) => event.type === "format.menu_offered")).toHaveLength(0);
+    expect(resolution.payloadVersion).toBe(2);
+    expect(resolution.payload).toMatchObject({
+      formatId: "even_votes",
+      eliminatedId: a.id,
+      resolutionKind: "auto",
+      tiedPlayerIds: [a.id],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: {
+          [a.id]: 4,
+          [b.id]: 1,
+          [c.id]: 0,
+          [d.id]: 0,
+          [e.id]: 0,
+        },
+        eligiblePlayerIds: [a.id, c.id, d.id, e.id],
+      },
+    });
+    expect(canonical.filter((event) => event.type === "format.ballot_cast")).toHaveLength(5);
+    expect(canonical.filter((event) => event.type === "player.eliminated")).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({ playerId: a.id }),
+      }),
+    ]);
+  });
+
   it("retains only an agent's own ballot receipt before resolution and reveals peers afterward", () => {
     const state = new GameState(
       [

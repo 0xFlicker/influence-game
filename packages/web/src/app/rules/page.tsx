@@ -290,9 +290,10 @@ export default function RulesPage() {
           <SubSection title="5. Format Selection">
             <P>
               Each game freezes a non-empty format manifest when it is created.
-              Omitting that optional manifest uses all four default formats:
-              Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority
-              Elimination. The frozen set remains legal for that game.
+              Omitting that optional manifest uses all five default formats:
+              Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority
+              Elimination, and Even Votes. The frozen set remains legal for
+              that game.
             </P>
             <P>
               With two or more formats, The House offers exactly two distinct
@@ -360,6 +361,13 @@ export default function RulesPage() {
                 sealed vote for another living player. Most votes is eliminated;
                 the empowered player breaks highest-total ties, including when
                 the empowered player is tied.
+              </li>
+              <li>
+                <Em>Even Votes</Em>: Every living player casts one sealed vote
+                for another living player. Only even totals qualify, including
+                zero; the highest even total is eliminated. Odd totals are safe.
+                The empowered player breaks a highest-even tie. If every total
+                is odd, the empowered player chooses from the entire living field.
               </li>
             </ul>
             <P>

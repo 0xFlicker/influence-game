@@ -226,6 +226,56 @@ describe("buildHouseFormatResolutionFacts", () => {
     expect(facts?.eliminatedName).toBe("B");
   });
 
+  it("labels an all-odd Even Votes board as the empowered pool", () => {
+    const state = new GameState(
+      [
+        { id: "a", name: "A" },
+        { id: "b", name: "B" },
+        { id: "c", name: "C" },
+        { id: "d", name: "D" },
+      ],
+      {
+        gameId: "house-even-votes-facts",
+        now: fixedClock(),
+        formatManifest: ["even_votes"],
+      },
+    );
+    state.startRound();
+    state.setEmpowered("a", "initial");
+    state.recordFormatSelected("a", "even_votes");
+    state.recordFormatBallot({ formatId: "even_votes", voterId: "a", targetId: "b" });
+    state.recordFormatBallot({ formatId: "even_votes", voterId: "b", targetId: "c" });
+    state.recordFormatBallot({ formatId: "even_votes", voterId: "c", targetId: "d" });
+    state.recordFormatBallot({ formatId: "even_votes", voterId: "d", targetId: "a" });
+    state.recordFormatResolution({
+      formatId: "even_votes",
+      empoweredId: "a",
+      eliminatedId: "b",
+      resolutionKind: "clear",
+      tiedPlayerIds: ["a", "b", "c", "d"],
+      tiebreakerId: "a",
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { a: 1, b: 1, c: 1, d: 1 },
+        eligiblePlayerIds: ["a", "b", "c", "d"],
+      },
+    });
+
+    const facts = buildHouseFormatResolutionFacts(
+      state.getCanonicalEvents(),
+      1,
+      names(state),
+    );
+    expect(facts?.scores).toEqual([
+      { playerName: "A", value: 1, bucket: "odd_empowered_pool" },
+      { playerName: "B", value: 1, bucket: "odd_empowered_pool" },
+      { playerName: "C", value: 1, bucket: "odd_empowered_pool" },
+      { playerName: "D", value: 1, bucket: "odd_empowered_pool" },
+    ]);
+    expect(facts?.resolutionSummary).toContain("highest even total");
+    expect(facts?.resolutionSummary).toContain("A, B, C, D");
+  });
+
   it("returns null when the round has no format.resolved event", () => {
     const state = new GameState(
       [

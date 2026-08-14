@@ -87,5 +87,6 @@ export type FormatEliminationResolution =
         | "sole_vulnerable"
         | "sole_lowest_net"
         | "sole_fewest_positive"
-        | "sole_highest";
+        | "sole_highest"
+        | "sole_highest_even";
     };

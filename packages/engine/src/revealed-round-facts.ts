@@ -136,6 +136,11 @@ export interface RevealedMajorityEliminationFacts {
   totals: RevealedVoteCount[];
 }
 
+export interface RevealedEvenVotesFacts {
+  totals: RevealedVoteCount[];
+  eligible: RevealedPlayerRef[];
+}
+
 export interface RevealedSafetyBounceFacts {
   starter: RevealedPlayerRef | null;
   pointers: RevealedFormatBouncePointer[];
@@ -157,6 +162,7 @@ export interface RevealedFormatFacts {
   saveOrEliminate: RevealedSaveOrEliminateFacts | null;
   voteBomb: RevealedVoteBombFacts | null;
   majorityElimination: RevealedMajorityEliminationFacts | null;
+  evenVotes: RevealedEvenVotesFacts | null;
   safetyBounce: RevealedSafetyBounceFacts | null;
   /** Sanitized accepted ballots in canonical event order, readable immediately by operators. */
   acceptedBallots: RevealedFormatBallotEntry[];
@@ -512,6 +518,13 @@ function buildFormatFacts(
         totals: countsToVoteCounts(aggregate.totals, projection),
       }
     : null;
+  const evenVotes = resolved?.payload.formatId === "even_votes"
+    && aggregate?.capability === "sealed_elim"
+    ? {
+        totals: countsToVoteCounts(aggregate.totals, projection),
+        eligible: aggregate.eligiblePlayerIds.map((id) => playerRef(projection, id)),
+      }
+    : null;
 
   const eliminatedId = resolved?.payload.eliminatedId ?? null;
   const rawTiedIds = resolved?.payload.tiedPlayerIds ?? [];
@@ -561,6 +574,7 @@ function buildFormatFacts(
     saveOrEliminate,
     voteBomb,
     majorityElimination,
+    evenVotes,
     safetyBounce,
     acceptedBallots,
     ballotPresentation,
@@ -822,6 +836,7 @@ function emptyFormat(
     saveOrEliminate: null,
     voteBomb: null,
     majorityElimination: null,
+    evenVotes: null,
     safetyBounce: null,
     acceptedBallots: [],
     ballotPresentation: {

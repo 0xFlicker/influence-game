@@ -4,6 +4,7 @@ import {
   applyFormatTiebreak,
   buildFormatMenu,
   computeMajorityEliminationTallies,
+  computeEvenVotesTallies,
   computeSaveOrEliminateNets,
   computeVoteBombTallies,
   createBounceBoard,
@@ -12,6 +13,7 @@ import {
   getFormatRegistration,
   isLegalBouncePointer,
   isLegalMajorityEliminationBallot,
+  isLegalEvenVotesBallot,
   isLegalSaveOrEliminateBallot,
   isLegalVoteBombBallot,
   LAUNCH_FORMAT_IDS,
@@ -19,6 +21,7 @@ import {
   requireSealedElimRegistration,
   resolveFormatManifest,
   resolveMajorityElimination,
+  resolveEvenVotes,
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
   scoreSealedElimBallots,
@@ -357,8 +360,83 @@ describe("majority elimination", () => {
   });
 });
 
+describe("even votes", () => {
+  it("eliminates the sole highest even total while odd totals stay safe", () => {
+    const alive = ids("A", "B", "C", "D", "E", "F");
+    const ballots: SealedElimBallot[] = [
+      { voterId: "b", targetId: "a" },
+      { voterId: "c", targetId: "a" },
+      { voterId: "d", targetId: "a" },
+      { voterId: "e", targetId: "a" },
+      { voterId: "f", targetId: "b" },
+      { voterId: "a", targetId: "c" },
+    ];
+
+    expect(computeEvenVotesTallies(alive, ballots)).toEqual({
+      totals: { a: 4, b: 1, c: 1, d: 0, e: 0, f: 0 },
+      eligibleIds: ["a", "d", "e", "f"],
+    });
+    expect(resolveEvenVotes(alive, ballots)).toEqual({
+      kind: "auto",
+      eliminatedId: "a",
+      tiedSet: ["a"],
+      reason: "sole_highest_even",
+    });
+  });
+
+  it("includes zero as even and restricts a tie to the highest even set", () => {
+    const alive = ids("A", "B", "C", "D", "E", "F");
+    const ballots: SealedElimBallot[] = [
+      { voterId: "c", targetId: "a" },
+      { voterId: "d", targetId: "a" },
+      { voterId: "e", targetId: "b" },
+      { voterId: "f", targetId: "b" },
+      { voterId: "a", targetId: "c" },
+      { voterId: "b", targetId: "d" },
+    ];
+
+    expect(computeEvenVotesTallies(alive, ballots)).toEqual({
+      totals: { a: 2, b: 2, c: 1, d: 1, e: 0, f: 0 },
+      eligibleIds: ["a", "b", "e", "f"],
+    });
+    expect(resolveEvenVotes(alive, ballots)).toEqual({
+      kind: "tie",
+      eliminatedId: null,
+      tiedSet: ["a", "b"],
+    });
+  });
+
+  it("sends an all-odd tally to an empowered tiebreak across the living field", () => {
+    const alive = ids("A", "B", "C", "D");
+    const ballots: SealedElimBallot[] = [
+      { voterId: "a", targetId: "b" },
+      { voterId: "b", targetId: "c" },
+      { voterId: "c", targetId: "d" },
+      { voterId: "d", targetId: "a" },
+    ];
+
+    expect(computeEvenVotesTallies(alive, ballots)).toEqual({
+      totals: { a: 1, b: 1, c: 1, d: 1 },
+      eligibleIds: alive,
+    });
+    expect(resolveEvenVotes(alive, ballots)).toEqual({
+      kind: "tie",
+      eliminatedId: null,
+      tiedSet: alive,
+    });
+  });
+
+  it("rejects self-targets, dead voters, and dead targets", () => {
+    const alive = ids("A", "B", "C");
+    expect(isLegalEvenVotesBallot("a", "a", alive)).toBe(false);
+    expect(isLegalEvenVotesBallot("z", "b", alive)).toBe(false);
+    expect(isLegalEvenVotesBallot("a", "z", alive)).toBe(false);
+    expect(isLegalEvenVotesBallot("a", "b", alive)).toBe(true);
+  });
+});
+
 describe("format catalog", () => {
-  it("exhaustively registers the four launch formats by capability", () => {
+  it("exhaustively registers the five launch formats by capability", () => {
     expect(Object.keys(FORMAT_CATALOG)).toEqual([...LAUNCH_FORMAT_IDS]);
     expect(FORMAT_CATALOG.save_or_eliminate.capability).toBe(
       "sealed_polarity",
@@ -368,6 +446,7 @@ describe("format catalog", () => {
     expect(FORMAT_CATALOG.majority_elimination.capability).toBe(
       "sealed_elim",
     );
+    expect(FORMAT_CATALOG.even_votes.capability).toBe("sealed_elim");
   });
 
   it("owns sealed-elim legality, resolution, decision, and aggregate interpretation", () => {
@@ -411,6 +490,19 @@ describe("format catalog", () => {
     expect(FORMAT_CATALOG.vote_bomb.presentation).toEqual({
       scoring: "fewest_positive",
       zeroVoteTreatment: "safe",
+    });
+    expect(FORMAT_CATALOG.even_votes.decision).toMatchObject({
+      handler: "sealed_elim",
+      formatId: "even_votes",
+      targetPolicy: "alive_non_self",
+      publicName: "Even Votes",
+      toolName: "even_votes_ballot",
+      traceAction: "format-even-votes-ballot",
+      invalidTargetReason: "invalid_even_votes_target",
+    });
+    expect(FORMAT_CATALOG.even_votes.presentation).toEqual({
+      scoring: "highest_even",
+      zeroVoteTreatment: "eligible",
     });
   });
 

@@ -961,6 +961,7 @@ export type FormatDecisionFallbackReason =
   | "invalid_save_or_eliminate_ballot"
   | "invalid_vote_bomb_target"
   | "invalid_majority_elimination_target"
+  | "invalid_even_votes_target"
   | "invalid_bounce_pointer"
   | "invalid_safety_bounce_target"
   | "invalid_format_tiebreak_target";
@@ -1100,6 +1101,10 @@ export interface IAgent {
     aliveIds: UUID[],
   ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
   getMajorityEliminationBallot?(
+    context: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getEvenVotesBallot?(
     context: PhaseContext,
     aliveIds: UUID[],
   ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;

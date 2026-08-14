@@ -457,6 +457,29 @@ function formatScoringModel(
       })),
     };
   }
+  if (scoring.kind === "even_votes") {
+    const allOdd = scoring.rows.every((row) => row.votes % 2 !== 0);
+    const highestEven = Math.max(
+      ...scoring.rows.filter((row) => row.evenEligible).map((row) => row.votes),
+      0,
+    );
+    return {
+      columns: ["Agent", "Votes", "Parity status"],
+      rows: scoring.rows.map((row) => ({
+        playerName: row.player.name,
+        values: [
+          String(row.votes),
+          allOdd
+            ? "Odd · empowered choice"
+            : !row.evenEligible
+              ? "Odd · safe"
+              : row.votes === highestEven
+                ? "Highest even · elimination eligible"
+                : "Even · below danger",
+        ],
+      })),
+    };
+  }
   if (scoring.kind === "safety_bounce") {
     return {
       columns: ["Vulnerable agent", "Votes"],

@@ -134,6 +134,23 @@ describe("FormatPresentation", () => {
     );
   });
 
+  it("renders Even Votes parity eligibility without Vote Bomb zero-safety copy", () => {
+    const resolution = renderToString(
+      <FormatPresentation
+        cue={evenVotesAggregateCue()}
+        roster={roster}
+        currentStateEntry={false}
+      />,
+    );
+
+    expect(resolution).toContain("Even Votes aggregate");
+    expect(resolution).toContain("Highest even total · elimination eligible");
+    expect(resolution).toContain("Odd total · safe");
+    expect(resolution).toContain("Even total · below danger");
+    expect(resolution).not.toContain("Zero votes · safe");
+    expect(resolution).not.toContain("Fewest positive");
+  });
+
   it("renders a one-format automatic selection without a fake offered pair", () => {
     const cue = majoritySelectedCue();
     const html = renderToString(
@@ -443,6 +460,34 @@ function majorityAggregateCue(): Extract<FormatPresentationCue, { kind: "format_
       capability: "sealed_elim" as const,
       totals: { p1: 0, p2: 2, p3: 1 },
       eligiblePlayerIds: ["p1", "p2", "p3"],
+    },
+  };
+  return {
+    ...baseCue(
+      10,
+      "FORMAT_RESOLVE",
+      before,
+      { ...before, canonicalSequence: 10, resolution },
+    ),
+    kind: "format_aggregate",
+    resolution,
+    ballotPresentationStatus: "revealed",
+  };
+}
+
+function evenVotesAggregateCue(): Extract<FormatPresentationCue, { kind: "format_aggregate" }> {
+  const before = resolvedBefore("even_votes");
+  const resolution = {
+    formatId: "even_votes" as const,
+    empoweredId: "p1",
+    eliminatedId: "p2",
+    resolutionKind: "auto" as const,
+    tiedPlayerIds: ["p2"],
+    tiebreakerId: null,
+    aggregate: {
+      capability: "sealed_elim" as const,
+      totals: { p1: 0, p2: 2, p3: 1 },
+      eligiblePlayerIds: ["p1", "p2"],
     },
   };
   return {

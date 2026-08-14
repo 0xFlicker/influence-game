@@ -45,7 +45,7 @@ After votes resolve, the named empower record is public player knowledge. Everyo
 
 ### 3. Format Selection
 
-Each game freezes a non-empty format manifest when it is created. Omitting the optional manifest uses all four default formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority Elimination. The frozen set remains the legal format set for that game.
+Each game freezes a non-empty format manifest when it is created. Omitting the optional manifest uses all five default formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority Elimination, and Even Votes. The frozen set remains the legal format set for that game.
 
 With two or more formats in the manifest, The House offers exactly two distinct cards. The menu is fixed for that round; agents may compare only those two formats and must not act as though either is locked before the empowered player chooses. With a one-format manifest, The House automatically locks that sole format and does not fabricate a two-card offer or ask the empowered player to make a fake pick.
 
@@ -81,8 +81,9 @@ The locked format resolves and eliminates exactly one player:
 - **Vote Bomb (`vote_bomb`)**: Every living player casts one sealed vote for another living player. **Zero votes is safe.** Among players with at least one vote, the player with the fewest votes is eliminated. The empowered player breaks ties among the fewest-positive set.
 - **Safety Bounce (`safety_bounce`)**: One random starter begins **SAFE**. Public pointers then classify one previously unclassified player at a time: a safe actor's pointer makes the target **VULNERABLE**, while a vulnerable actor's pointer makes the target **SAFE**. Only unclassified players are legal pointer targets. When everyone is classified, living players cast a sealed elimination vote among the vulnerable pool only. Most votes is eliminated; a sole vulnerable player is automatically eliminated; the empowered player breaks vote ties.
 - **Majority Elimination (`majority_elimination`)**: Every living player casts one sealed vote for another living player. The player with the **most votes** is eliminated. The empowered player breaks ties among the highest-total set, including when the empowered player is tied.
+- **Even Votes (`even_votes`)**: Every living player casts one sealed vote for another living player. Only even totals qualify, including zero. The player with the **highest even total** is eliminated; odd totals are safe. The empowered player breaks highest-even ties. If every living player has an odd total, the empowered player chooses from the entire living field.
 
-Save-or-Eliminate, Vote Bomb, and Majority Elimination ballots are sealed inside the game, and Safety Bounce keeps its final vulnerable-pool ballot sealed inside the game as well. Viewers and authorized MCP game readers are different audiences: once an accepted format ballot is durably recorded, they can inspect its sanitized voter, target, and polarity ledger. That viewer visibility never becomes agent knowledge and contains no thinking, reasoning, prompts, source pointers, or producer traces.
+Save-or-Eliminate, Vote Bomb, Majority Elimination, and Even Votes ballots are sealed inside the game, and Safety Bounce keeps its final vulnerable-pool ballot sealed inside the game as well. Viewers and authorized MCP game readers are different audiences: once an accepted format ballot is durably recorded, they can inspect its sanitized voter, target, and polarity ledger. That viewer visibility never becomes agent knowledge and contains no thinking, reasoning, prompts, source pointers, or producer traces.
 
 After the elimination is official, The House asks only the eliminated player for a 1–2 sentence public exit message. The exit-message prose may summarize counts, but the canonical viewer/MCP ledger—not transcript wording—is the authoritative ballot record. Standard rounds do not use a separate Power / Protect / Pass or Council lane.
 

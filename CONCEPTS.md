@@ -95,11 +95,11 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-eliminate, Vote Bomb, Safety Bounce, and Majority Elimination.
+The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, and Even Votes.
 
 ## Round format
 
-The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-eliminate, Vote Bomb, Safety Bounce, and Majority Elimination.
+The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, and Even Votes.
 
 ## Format catalog
 
@@ -107,7 +107,7 @@ The registered set of round formats The House may offer under the format kernel.
 
 ## Format manifest
 
-The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the four-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game. A one-format manifest auto-selects its only card without a menu or empowered pick call; a manifest with two or more formats uses the normal two-card menu. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
+The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the five-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game. A one-format manifest auto-selects its only card without a menu or empowered pick call; a manifest with two or more formats uses the normal two-card menu. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
 
 ## Format menu
 
@@ -128,6 +128,10 @@ A launch round format where one random starter begins safe and agents alternate 
 ## Majority Elimination
 
 A default catalog round format where each alive agent casts one sealed non-self elimination-direction vote. The player with the most votes is eliminated; ties for the highest total are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from Vote Bomb (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote.
+
+## Even Votes
+
+A default catalog round format where each alive agent casts one sealed non-self elimination-direction vote. Only even totals qualify, including zero, and the highest even total is eliminated. Odd totals are safe unless every living player finishes odd; that exceptional all-odd board sends the entire living field to the empowered tiebreak so the round still produces exactly one elimination. The strategy is parity control rather than ordinary plurality.
 
 ## Operator
 

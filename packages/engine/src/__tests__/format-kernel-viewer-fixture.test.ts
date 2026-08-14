@@ -16,6 +16,10 @@ import {
   computeMajorityEliminationTallies,
   resolveMajorityElimination,
 } from "../formats/majority-elimination";
+import {
+  computeEvenVotesTallies,
+  resolveEvenVotes,
+} from "../formats/even-votes";
 
 describe("format-kernel viewer fixture family", () => {
   it("covers every launch format, tie and clear outcomes, terminal prefixes, and malformed history", () => {
@@ -24,6 +28,8 @@ describe("format-kernel viewer fixture family", () => {
       "vote_bomb_clear",
       "majority_elimination_clear",
       "majority_elimination_tie",
+      "even_votes_clear",
+      "even_votes_tie",
       "safety_bounce_tie",
       "safety_bounce_sole_vulnerable",
       "terminal_menu",
@@ -44,6 +50,7 @@ describe("format-kernel viewer fixture family", () => {
         "save_or_eliminate",
         "vote_bomb",
         "majority_elimination",
+        "even_votes",
         "safety_bounce",
       ]));
     expect(scenarios.some((scenario) => scenario.expected.resolutionKind === "clear"))
@@ -237,6 +244,65 @@ describe("format-kernel viewer fixture family", () => {
       expect(serialized).not.toContain("vulnerablePlayerIds");
       expect(serialized).not.toContain("Power");
       expect(serialized).not.toContain("Council");
+    }
+  });
+
+  it("keeps Even Votes clear and tied-highest-even fixtures aligned with version-2 rule math", () => {
+    for (const scenarioId of ["even_votes_clear", "even_votes_tie"] as const) {
+      const scenario = createFormatKernelViewerScenario(scenarioId);
+      const ballots = scenario.decisions.flatMap((decision) =>
+        decision.type === "format.ballot_cast"
+          && decision.payload.formatId === "even_votes"
+          ? [{ voterId: decision.payload.voterId, targetId: decision.payload.targetId }]
+          : []
+      );
+      const resolution = scenario.decisions.find(
+        (decision) => decision.type === "format.resolved",
+      );
+      if (
+        !resolution
+        || resolution.payload.formatId !== "even_votes"
+        || resolution.payload.aggregate.capability !== "sealed_elim"
+      ) {
+        throw new Error("Even Votes fixture is missing its v2 aggregate.");
+      }
+
+      expect(
+        computeEvenVotesTallies(
+          scenario.roster.map((player) => player.id),
+          ballots,
+        ),
+      ).toEqual({
+        totals: resolution.payload.aggregate.totals,
+        eligibleIds: resolution.payload.aggregate.eligiblePlayerIds,
+      });
+      const natural = resolveEvenVotes(
+        scenario.roster.map((player) => player.id),
+        ballots,
+      );
+      if (scenarioId === "even_votes_clear") {
+        expect(natural).toEqual({
+          kind: "auto",
+          eliminatedId: "lyra",
+          tiedSet: ["lyra"],
+          reason: "sole_highest_even",
+        });
+        expect(resolution.payload.tiebreakerId).toBeNull();
+      } else {
+        expect(natural).toEqual({
+          kind: "tie",
+          eliminatedId: null,
+          tiedSet: ["lyra", "echo"],
+        });
+        expect(
+          applyFormatTiebreak(natural.tiedSet, resolution.payload.eliminatedId),
+        ).toEqual({
+          kind: "clear",
+          eliminatedId: "echo",
+          tiedSet: ["lyra", "echo"],
+        });
+        expect(resolution.payload.tiebreakerId).toBe("atlas");
+      }
     }
   });
 });

@@ -31,13 +31,15 @@ describe("rules page", () => {
     expect(source).not.toContain("current Council");
   });
 
-  it("documents the frozen four-format catalog and one-format selection path", () => {
-    expect(normalizedSource).toContain("all four default formats");
-    expect(normalizedSource).toContain("Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority Elimination");
+  it("documents the frozen five-format catalog and one-format selection path", () => {
+    expect(normalizedSource).toContain("all five default formats");
+    expect(normalizedSource).toContain("Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority Elimination, and Even Votes");
     expect(normalizedSource).toContain("automatically locks that card without inventing an offer");
     expect(normalizedSource).toContain("A one-format game has already locked its only card");
     expect(normalizedSource).toContain("Most votes is eliminated");
     expect(normalizedSource).toContain("highest-total ties");
+    expect(normalizedSource).toContain("highest even total is eliminated");
+    expect(normalizedSource).toContain("every total is odd");
   });
 
   it("separates sealed agent context from the viewer and MCP ballot ledger", () => {
