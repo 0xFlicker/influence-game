@@ -18,6 +18,7 @@ describe("format presentation metadata", () => {
       "safety_bounce",
       "majority_elimination",
       "even_votes",
+      "restricted_history",
     ]);
     expect(formatPresentationMetadata("save_or_eliminate")).toMatchObject({
       id: "save_or_eliminate",

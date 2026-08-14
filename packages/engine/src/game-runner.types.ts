@@ -1237,6 +1237,13 @@ export interface PlayerAllianceContext {
   proposalHistory: PlayerAllianceContextProposal[];
 }
 
+export interface RestrictedHistoryLegalityProjection {
+  priorTargetIds: UUID[];
+  priorTargetNames: string[];
+  legalTargetIds: UUID[];
+  legalTargetNames: string[];
+}
+
 export interface PhaseContext {
   gameId: UUID;
   round: number;
@@ -1253,6 +1260,8 @@ export interface PhaseContext {
   postVotePressure?: PostVotePressureProjection;
   /** Current format menu, locked rules, and public Safety Bounce board. */
   formatPressure?: FormatPressureProjection;
+  /** Actor-specific Restricted History exclusions and current legal targets. */
+  restrictedHistoryLegality?: RestrictedHistoryLegalityProjection;
   /** Public named vote record revealed to players after each standard Vote resolves. */
   revealedVoteLedger?: RevealedVoteLedgerEntry[];
   /** Player-visible canonical event record rendered with names for endgame context. */

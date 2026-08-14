@@ -1076,6 +1076,72 @@ describe("InfluenceAgent structured output mode", () => {
     }
   });
 
+  it("renders authoritative Restricted History targets during coordination and ballot selection", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "mingle_turn",
+          args: {
+            thinking: "Coordinate only around the legal targets.",
+            message: "Mira is my only legal target.",
+            noReply: false,
+            gotoRoomId: null,
+            gotoPlayerName: null,
+            decisionLog: "coordinate a legal ballot",
+          },
+        },
+        {
+          toolName: "restricted_history_ballot",
+          args: {
+            thinking: "Vera is unavailable because I targeted her before.",
+            target: "Mira",
+            decisionLog: "vote for the only legal target",
+          },
+        },
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const context: PhaseContext = {
+      ...makeContext(Phase.FORMAT_MINGLE),
+      round: 5,
+      formatPressure: {
+        empoweredId: "mira-id",
+        empoweredName: "Mira",
+        offeredFormats: ["restricted_history", "vote_bomb"],
+        selectedFormat: "restricted_history",
+        ruleSheetSummary: ruleSheetForFormat("restricted_history"),
+      },
+      restrictedHistoryLegality: {
+        priorTargetIds: ["vera-id"],
+        priorTargetNames: ["Vera"],
+        legalTargetIds: ["mira-id"],
+        legalTargetNames: ["Mira"],
+      },
+    };
+
+    await agent.takeMingleTurn(context, ["Atlas", "Mira"], []);
+    await agent.getRestrictedHistoryBallot(
+      { ...context, phase: Phase.FORMAT_RESOLVE },
+      ["mira-id"],
+    );
+
+    const prompts = requests.map((request) => {
+      const messages = request.messages as Array<{ content: string }>;
+      return messages.map((message) => message.content).join("\n");
+    });
+    for (const prompt of prompts) {
+      expect(prompt).toContain("Restricted History Legal Ledger (authoritative)");
+      expect(prompt).toContain("Previous elimination-direction targets, unavailable this round: Vera");
+      expect(prompt).toContain("Only legal living ballot targets this round: Mira");
+      expect(prompt).toContain("Do not promise, coordinate, or describe an unavailable target as your ballot");
+    }
+  });
+
   it("uses format-aware alliance commitments before and after format lock", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
