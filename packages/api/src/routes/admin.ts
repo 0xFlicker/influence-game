@@ -774,7 +774,7 @@ export function createAdminRoutes(
         slug: game.slug,
         status: game.status,
         playerCount: game.maxPlayers ?? config.maxPlayers ?? players.length,
-        currentRound: 0,
+        currentRound: result[0]?.roundsPlayed ?? 0,
         maxRounds: config.maxRounds ?? 10,
         currentPhase: game.status === "completed" ? "END" : game.status === "suspended" ? "SUSPENDED" : "INIT",
         phaseTimeRemaining: null,

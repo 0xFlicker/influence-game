@@ -137,9 +137,13 @@ function GameRow({
       </td>
       <td className="py-3 px-4 text-white text-sm">
         {game.winner ? (
-          <span>
+          <span className="block max-w-sm">
             {game.winner}{" "}
-            <span className="text-white/40 text-xs">({game.winnerPersona})</span>
+            {game.winnerPersona && (
+              <span className="mt-0.5 block line-clamp-2 text-xs leading-5 text-white/40" title={game.winnerPersona}>
+                {game.winnerPersona}
+              </span>
+            )}
           </span>
         ) : (
           <span className="text-white/25 italic">—</span>
