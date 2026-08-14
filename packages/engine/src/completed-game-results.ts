@@ -131,6 +131,11 @@ export type CompletedGameResultsFormatScoring =
       rows: CompletedGameResultsMajorityEliminationScore[];
     }
   | {
+      kind: "restricted_history";
+      rows: CompletedGameResultsMajorityEliminationScore[];
+      forfeited: RevealedPlayerRef[];
+    }
+  | {
       kind: "even_votes";
       rows: CompletedGameResultsEvenVotesScore[];
     }
@@ -394,11 +399,20 @@ function buildFormatRecap(
     scoring,
     ballotPresentation: {
       status: format.ballotPresentation.status,
-      rollCall: format.ballotPresentation.rollCall.map((entry) => ({
-        voter: { ...entry.voter },
-        target: { ...entry.target },
-        polarity: entry.polarity,
-      })),
+      rollCall: format.ballotPresentation.rollCall.map((entry) =>
+        entry.target === null
+          ? {
+              voter: { ...entry.voter },
+              target: null,
+              polarity: null,
+              forfeited: true as const,
+            }
+          : {
+              voter: { ...entry.voter },
+              target: { ...entry.target },
+              polarity: entry.polarity,
+            }
+      ),
     },
     safetyBounce: format.safetyBounce
       ? {
@@ -484,6 +498,22 @@ function buildFormatScoring(
           ? []
           : [{ player: playerRef(projection, playerId), votes }];
       }),
+    };
+  }
+  if (
+    format.selectedFormatId === "restricted_history"
+    && format.restrictedHistory
+  ) {
+    const totalsByPlayer = voteCountMap(format.restrictedHistory.totals);
+    return {
+      kind: "restricted_history",
+      rows: projection.playerOrder.flatMap((playerId) => {
+        const votes = totalsByPlayer.get(playerId);
+        return votes === undefined
+          ? []
+          : [{ player: playerRef(projection, playerId), votes }];
+      }),
+      forfeited: format.restrictedHistory.forfeited.map((player) => ({ ...player })),
     };
   }
   if (format.selectedFormatId === "even_votes" && format.evenVotes) {
@@ -686,6 +716,11 @@ function buildVotePatterns(
         : "";
       signatures.get(event.payload.voterId)?.push(
         `r${event.round}:format=${event.payload.formatId}:${polarity}${event.payload.targetId}`,
+      );
+    }
+    if (event.type === "format.ballot_forfeited") {
+      signatures.get(event.payload.voterId)?.push(
+        `r${event.round}:format=${event.payload.formatId}:forfeit`,
       );
     }
   }

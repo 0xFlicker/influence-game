@@ -345,6 +345,20 @@ export class MockAgent implements IAgent {
     };
   }
 
+  async getRestrictedHistoryBallot(
+    _ctx: PhaseContext,
+    legalTargetIds: UUID[],
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+    const targetId = legalTargetIds[0] ?? this.id;
+    return {
+      targetId,
+      thinking: `mock: restricted history → ${targetId}`,
+      decisionLog: this.decisionLog("restricted history ballot"),
+      decisionSource: "llm",
+      fallbackReason: null,
+    };
+  }
+
   async getBouncePointer(
     _ctx: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },

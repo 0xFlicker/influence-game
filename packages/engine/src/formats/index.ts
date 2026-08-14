@@ -48,9 +48,20 @@ export {
 } from "./even-votes";
 
 export {
+  computeRestrictedHistoryTallies,
+  isEliminationDirectionBallot,
+  isLegalRestrictedHistoryBallot,
+  resolveRestrictedHistory,
+  restrictedHistoryLegalTargets,
+  type HistoricalFormatBallot,
+  type RestrictedHistoryBallot,
+} from "./restricted-history";
+
+export {
   DEFAULT_FORMAT_MANIFEST,
   LEGACY_FORMAT_MANIFEST,
   FORMAT_CATALOG,
+  formatsAvailableInRound,
   getFormatRegistration,
   isRegisteredFormatId,
   resolveFormatManifest,

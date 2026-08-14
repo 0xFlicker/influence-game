@@ -962,6 +962,7 @@ export type FormatDecisionFallbackReason =
   | "invalid_vote_bomb_target"
   | "invalid_majority_elimination_target"
   | "invalid_even_votes_target"
+  | "invalid_restricted_history_target"
   | "invalid_bounce_pointer"
   | "invalid_safety_bounce_target"
   | "invalid_format_tiebreak_target";
@@ -1107,6 +1108,10 @@ export interface IAgent {
   getEvenVotesBallot?(
     context: PhaseContext,
     aliveIds: UUID[],
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getRestrictedHistoryBallot?(
+    context: PhaseContext,
+    legalTargetIds: UUID[],
   ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
   getBouncePointer?(
     context: PhaseContext,

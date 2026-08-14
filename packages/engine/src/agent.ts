@@ -3505,6 +3505,13 @@ Use the save_or_eliminate_ballot tool.`;
     return this.getSealedElimBallot(ctx, aliveIds, "even_votes");
   }
 
+  async getRestrictedHistoryBallot(
+    ctx: PhaseContext,
+    legalTargetIds: UUID[],
+  ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
+    return this.getSealedElimBallot(ctx, legalTargetIds, "restricted_history");
+  }
+
   async getBouncePointer(
     ctx: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },

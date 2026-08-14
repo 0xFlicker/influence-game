@@ -47,6 +47,14 @@ export const FORMAT_PRESENTATION_METADATA = {
     ruleSheet:
       "Each living player casts one sealed vote for another living player (no self-votes). Only players with even vote totals qualify, including zero. The highest qualifying even total is eliminated. The empowered player breaks a highest-even tie. If every living player has an odd total, the empowered player chooses from the entire living field.",
   },
+  restricted_history: {
+    id: "restricted_history",
+    displayName: "Restricted History",
+    conciseRules:
+      "Cast one sealed vote against someone you have not previously targeted with an elimination ballot. Most votes out; if no legal target remains, you lose your vote. Available from round 3.",
+    ruleSheet:
+      "Each living player casts one sealed elimination vote for another living player they have not targeted in an earlier round. SAVE ballots do not consume target history. A player with no legal target forfeits their ballot. Highest vote total is eliminated; the empowered player breaks highest-total ties. This format is unavailable in rounds 1 and 2.",
+  },
 } as const;
 
 export type LaunchFormatId = keyof typeof FORMAT_PRESENTATION_METADATA;
@@ -60,6 +68,7 @@ export const LAUNCH_FORMAT_IDS: readonly LaunchFormatId[] = [
   "safety_bounce",
   "majority_elimination",
   "even_votes",
+  "restricted_history",
 ] as const;
 
 export const LAUNCH_FORMAT_DISPLAY_NAMES: Readonly<
@@ -71,6 +80,7 @@ export const LAUNCH_FORMAT_DISPLAY_NAMES: Readonly<
   majority_elimination:
     FORMAT_PRESENTATION_METADATA.majority_elimination.displayName,
   even_votes: FORMAT_PRESENTATION_METADATA.even_votes.displayName,
+  restricted_history: FORMAT_PRESENTATION_METADATA.restricted_history.displayName,
 };
 
 export function isLaunchFormatId(value: string): value is LaunchFormatId {

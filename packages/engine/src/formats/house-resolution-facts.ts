@@ -70,7 +70,7 @@ export function buildHouseFormatResolutionFacts(
   const ballots: HouseFormatBallotLine[] = ballotPresentation.rollCall
     .map((entry) => ({
       voterName: playerName(entry.voterId),
-      targetName: playerName(entry.targetId),
+      targetName: entry.targetId === null ? "FORFEIT" : playerName(entry.targetId),
       ...(entry.polarity ? { polarity: entry.polarity } : {}),
     }));
 

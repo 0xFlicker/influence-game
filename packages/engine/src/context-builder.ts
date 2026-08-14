@@ -357,6 +357,8 @@ export class ContextBuilder {
         const target = this.name(event.payload.targetId);
         return `${prefix}: Your format ballot: ${polarity} → ${target} (sealed).`;
       }
+      case "format.ballot_forfeited":
+        return `${prefix}: ${this.name(event.payload.voterId)} forfeited their Restricted History ballot because no legal target remained.`;
       case "format.safety_bounce_started":
         return `${prefix}: Safety Bounce started by ${this.name(event.payload.starterId)} (SAFE).`;
       case "format.safety_bounce_pointer":
@@ -441,6 +443,7 @@ export class ContextBuilder {
   ): boolean {
     switch (event.type) {
       case "format.ballot_cast":
+      case "format.ballot_forfeited":
         return event.payload.voterId === agentId
           || this.formatBallotIsResolved(event, resolvedFormats);
       case "alliance.proposal_submitted":
@@ -483,7 +486,7 @@ export class ContextBuilder {
     for (const event of events) {
       if (!this.canonicalEventVisibleToAgent(event, agentId, resolvedFormats)) continue;
       if (
-        event.type === "format.ballot_cast"
+        (event.type === "format.ballot_cast" || event.type === "format.ballot_forfeited")
         && this.formatBallotIsResolved(event, resolvedFormats)
       ) {
         continue;
@@ -497,7 +500,10 @@ export class ContextBuilder {
   }
 
   private formatBallotIsResolved(
-    ballot: Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>,
+    ballot: Extract<
+      CanonicalGameEvent,
+      { type: "format.ballot_cast" | "format.ballot_forfeited" }
+    >,
     resolvedFormats?: ReadonlyMap<string, number>,
   ): boolean {
     if (resolvedFormats) {
@@ -540,6 +546,9 @@ export class ContextBuilder {
     if (presentation.status !== "revealed") return [];
     const prefix = `R${resolved.round}${resolved.phase ? `/${resolved.phase}` : ""}`;
     return presentation.rollCall.map((entry) => {
+      if (entry.targetId === null) {
+        return `${prefix}: ${this.name(entry.voterId)} forfeited their Restricted History ballot (no legal target).`;
+      }
       const polarity = entry.polarity ?? "eliminate";
       return `${prefix}: ${this.name(entry.voterId)} format ballot: ${polarity} → ${this.name(entry.targetId)}.`;
     });

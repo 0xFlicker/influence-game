@@ -10,6 +10,7 @@ import type { CanonicalGameEvent } from "./canonical-events";
 import { buildFormatPressureProjection } from "./format-pressure";
 import {
   LEGACY_FORMAT_MANIFEST,
+  formatsAvailableInRound,
   isLaunchFormatId,
   resolveFormatManifest,
   type LaunchFormatId,
@@ -25,6 +26,7 @@ export type FormatResumeCoordinate =
 
 const FORMAT_RESOLUTION_EVENT_TYPES = new Set<CanonicalGameEvent["type"]>([
   "format.ballot_cast",
+  "format.ballot_forfeited",
   "format.safety_bounce_started",
   "format.safety_bounce_pointer",
   "format.resolved",
@@ -95,7 +97,10 @@ function historicalLastSelectedFormat(
   let lastSelected: LaunchFormatId | null = null;
   for (const event of events) {
     if (event.type === "format.selected") {
-      if (!isLaunchFormatId(event.payload.formatId) || !manifest.includes(event.payload.formatId)) {
+      if (
+        !isLaunchFormatId(event.payload.formatId)
+        || !formatsAvailableInRound(manifest, event.round).includes(event.payload.formatId)
+      ) {
         throw new Error(`Canonical format selection is outside the frozen manifest: ${event.payload.formatId}`);
       }
       lastSelected = event.payload.formatId;
@@ -146,6 +151,7 @@ export function validateFormatResumePrerequisites(
 
   const roundEvents = eventsInRound(canonicalEvents, round);
   const formatManifest = formatManifestFromCanonicalEvents(canonicalEvents);
+  const availableFormats = formatsAvailableInRound(formatManifest, round);
   const menus = roundEvents.filter((event) => event.type === "format.menu_offered");
   const selections = roundEvents.filter((event) => event.type === "format.selected");
   const resolutionFacts = roundEvents.filter((event) =>
@@ -167,8 +173,8 @@ export function validateFormatResumePrerequisites(
   }
 
 
-  if (formatManifest.length === 1) {
-    const onlyFormat = formatManifest[0]!;
+  if (availableFormats.length === 1) {
+    const onlyFormat = availableFormats[0]!;
     if (menus.length > 0) return `${actorCoordinate}_unexpected_menu_offered`;
     if (selections.length === 0) return `${actorCoordinate}_missing_format_selected`;
     if (selections.length > 1) return `${actorCoordinate}_duplicate_format_selected`;
@@ -208,7 +214,7 @@ export function validateFormatResumePrerequisites(
   }
   const offeredFormats = parseOfferedFormats(menu.payload.offeredFormatIds);
   if (!offeredFormats) return `${actorCoordinate}_invalid_offered_formats`;
-  if (!offeredFormats.every((formatId) => formatManifest.includes(formatId))) {
+  if (!offeredFormats.every((formatId) => availableFormats.includes(formatId))) {
     return `${actorCoordinate}_offered_format_outside_manifest`;
   }
 
@@ -281,12 +287,13 @@ export function buildFormatKernelStateForResume(params: {
 
 
   const formatManifest = formatManifestFromCanonicalEvents(params.canonicalEvents);
-  if (formatManifest.length === 1) {
-    const round = currentRoundNumber(params.canonicalEvents);
+  const round = currentRoundNumber(params.canonicalEvents);
+  const availableFormats = formatsAvailableInRound(formatManifest, round);
+  if (availableFormats.length === 1) {
     const selection = eventsInRound(params.canonicalEvents, round)
       .find((event) => event.type === "format.selected");
     if (!selection || selection.type !== "format.selected") return emptyActive;
-    const selectedFormat = formatManifest[0]!;
+    const selectedFormat = availableFormats[0]!;
     const empoweredId = selection.payload.empoweredId;
     return {
       offeredFormats: null,
@@ -301,7 +308,6 @@ export function buildFormatKernelStateForResume(params: {
     };
   }
 
-  const round = currentRoundNumber(params.canonicalEvents);
   const roundEvents = eventsInRound(params.canonicalEvents, round);
   const menu = roundEvents.find((event) => event.type === "format.menu_offered");
   if (!menu || menu.type !== "format.menu_offered") {

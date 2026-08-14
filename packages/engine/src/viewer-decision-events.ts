@@ -6,6 +6,9 @@ import {
   computeSaveOrEliminateNets,
   formatResolutionAggregate,
   getFormatRegistration,
+  formatsAvailableInRound,
+  LEGACY_FORMAT_MANIFEST,
+  restrictedHistoryLegalTargets,
   type FormatEliminationResolution,
   type LaunchFormatId,
 } from "./formats";
@@ -37,6 +40,7 @@ export type ViewerDecisionEventType =
   | "format.menu_offered"
   | "format.selected"
   | "format.ballot_cast"
+  | "format.ballot_forfeited"
   | "format.safety_bounce_started"
   | "format.safety_bounce_pointer"
   | "format.resolved"
@@ -74,6 +78,10 @@ export type ViewerDecisionEvent =
   | ViewerDecisionEventBase<
       "format.ballot_cast",
       { formatId: LaunchFormatId; voterId: UUID; targetId: UUID; polarity: "save" | "eliminate" | null }
+    >
+  | ViewerDecisionEventBase<
+      "format.ballot_forfeited",
+      { formatId: "restricted_history"; voterId: UUID; reason: "history_exhausted" }
     >
   | ViewerDecisionEventBase<"format.safety_bounce_started", { starterId: UUID }>
   | ViewerDecisionEventBase<
@@ -119,6 +127,7 @@ const VIEWER_DECISION_EVENT_TYPES = new Set<string>([
   "format.menu_offered",
   "format.selected",
   "format.ballot_cast",
+  "format.ballot_forfeited",
   "format.safety_bounce_started",
   "format.safety_bounce_pointer",
   "format.resolved",
@@ -145,11 +154,19 @@ export type FormatBallotPresentationStatus =
   | "not_applicable"
   | "unavailable";
 
-export interface ProjectedFormatBallotEntry {
-  voterId: UUID;
-  targetId: UUID;
-  polarity: "save" | "eliminate" | null;
-}
+export type ProjectedFormatBallotEntry =
+  | {
+      voterId: UUID;
+      targetId: UUID;
+      polarity: "save" | "eliminate" | null;
+      forfeited?: never;
+    }
+  | {
+      voterId: UUID;
+      targetId: null;
+      polarity: null;
+      forfeited: true;
+    };
 
 export interface ProjectedFormatBallotPresentation {
   status: FormatBallotPresentationStatus;
@@ -236,6 +253,16 @@ export function projectViewerDecisionEvent(
           voterId: event.payload.voterId,
           targetId: event.payload.targetId,
           polarity: event.payload.polarity,
+        },
+      };
+    case "format.ballot_forfeited":
+      return {
+        ...base,
+        type: event.type,
+        payload: {
+          formatId: event.payload.formatId,
+          voterId: event.payload.voterId,
+          reason: event.payload.reason,
         },
       };
     case "format.safety_bounce_started":
@@ -339,6 +366,7 @@ export function projectFormatBallotPresentation(
   const menus = eventsOfType(events, "format.menu_offered");
   const selections = eventsOfType(events, "format.selected");
   const ballots = eventsOfType(events, "format.ballot_cast");
+  const forfeitures = eventsOfType(events, "format.ballot_forfeited");
   const resolutions = eventsOfType(events, "format.resolved");
   const selected = selections.at(-1) ?? null;
   const resolved = resolutions.at(-1) ?? null;
@@ -347,7 +375,7 @@ export function projectFormatBallotPresentation(
       event.type === "game.roster_initialized",
   );
 
-  if (!selected && !resolved && ballots.length === 0) {
+  if (!selected && !resolved && ballots.length === 0 && forfeitures.length === 0) {
     return ballotPresentation("not_applicable");
   }
   if (
@@ -357,11 +385,28 @@ export function projectFormatBallotPresentation(
       menus,
       selected,
       options.formatManifest ?? roster?.payload.formatManifest,
+      options.round,
     )
   ) {
     return ballotPresentation("unavailable");
   }
-  if (!validAcceptedBallots(ballots, selected.payload.formatId, options.eligibleVoterIds)) {
+  if (!validAcceptedBallots(
+    ballots,
+    selected.payload.formatId,
+    options.eligibleVoterIds,
+    options.round,
+    options.events,
+  )) {
+    return ballotPresentation("unavailable");
+  }
+  if (!validRestrictedHistoryForfeitures({
+    forfeitures,
+    ballots,
+    selectedFormatId: selected.payload.formatId,
+    eligibleVoterIds: options.eligibleVoterIds,
+    round: options.round,
+    allEvents: options.events,
+  })) {
     return ballotPresentation("unavailable");
   }
   if (!resolved) {
@@ -390,16 +435,20 @@ export function projectFormatBallotPresentation(
   }
 
   if (
-    ballots.length !== options.eligibleVoterIds.length
+    ballots.length + forfeitures.length !== options.eligibleVoterIds.length
     || !aggregateMatchesBallots(resolved, ballots, options.eligibleVoterIds)
   ) {
     return ballotPresentation("unavailable");
   }
 
   const byVoter = new Map(ballots.map((event) => [event.payload.voterId, event.payload]));
+  const forfeited = new Set(forfeitures.map((event) => event.payload.voterId));
   return {
     status: "revealed",
     rollCall: options.eligibleVoterIds.map((voterId) => {
+      if (forfeited.has(voterId)) {
+        return { voterId, targetId: null, polarity: null, forfeited: true };
+      }
       const ballot = byVoter.get(voterId)!;
       return {
         voterId,
@@ -414,11 +463,63 @@ function selectionMatchesMenuOrManifest(
   menus: readonly Extract<CanonicalGameEvent, { type: "format.menu_offered" }>[],
   selected: Extract<CanonicalGameEvent, { type: "format.selected" }>,
   formatManifest: readonly LaunchFormatId[] | undefined,
+  round: number,
 ): boolean {
-  if (menus.length === 1) return menuMatchesSelection(menus[0]!, selected);
-  return menus.length === 0
-    && formatManifest?.length === 1
-    && formatManifest[0] === selected.payload.formatId;
+  if (menus.length === 1) {
+    const available = formatsAvailableInRound(
+      formatManifest ?? LEGACY_FORMAT_MANIFEST,
+      round,
+    );
+    return menus[0]!.payload.offeredFormatIds.every((formatId) =>
+      available.includes(formatId)
+    ) && menuMatchesSelection(menus[0]!, selected);
+  }
+  if (menus.length !== 0 || !formatManifest) return false;
+  const available = formatsAvailableInRound(formatManifest, round);
+  return available.length === 1 && available[0] === selected.payload.formatId;
+}
+
+function validRestrictedHistoryForfeitures(options: {
+  forfeitures: readonly Extract<CanonicalGameEvent, { type: "format.ballot_forfeited" }>[];
+  ballots: readonly Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>[];
+  selectedFormatId: LaunchFormatId;
+  eligibleVoterIds: readonly UUID[];
+  round: number;
+  allEvents: readonly CanonicalGameEvent[];
+}): boolean {
+  if (options.forfeitures.length === 0) return true;
+  if (options.selectedFormatId !== "restricted_history") return false;
+  const eligible = new Set(options.eligibleVoterIds);
+  const ballotVoters = new Set(options.ballots.map((event) => event.payload.voterId));
+  const forfeitedVoters = new Set<UUID>();
+  const history = options.allEvents.flatMap((event) =>
+    event.type === "format.ballot_cast"
+      ? [{
+          round: event.round,
+          voterId: event.payload.voterId,
+          targetId: event.payload.targetId,
+          polarity: event.payload.polarity,
+        }]
+      : []
+  );
+  return options.forfeitures.every((event) => {
+    const voterId = event.payload.voterId;
+    if (
+      !eligible.has(voterId)
+      || ballotVoters.has(voterId)
+      || forfeitedVoters.has(voterId)
+      || event.payload.reason !== "history_exhausted"
+    ) {
+      return false;
+    }
+    forfeitedVoters.add(voterId);
+    return restrictedHistoryLegalTargets(
+      voterId,
+      options.eligibleVoterIds,
+      options.round,
+      history,
+    ).length === 0;
+  });
 }
 
 function ballotPresentation(
@@ -439,6 +540,8 @@ function validAcceptedBallots(
   ballots: readonly Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>[],
   formatId: LaunchFormatId,
   eligibleVoterIds: readonly UUID[],
+  round: number,
+  allEvents: readonly CanonicalGameEvent[],
 ): boolean {
   const eligible = new Set(eligibleVoterIds);
   const voters = new Set<UUID>();
@@ -449,6 +552,26 @@ function validAcceptedBallots(
       || !eligible.has(payload.voterId)
       || !eligible.has(payload.targetId)
       || voters.has(payload.voterId)
+    ) {
+      return false;
+    }
+    if (
+      formatId === "restricted_history"
+      && !restrictedHistoryLegalTargets(
+        payload.voterId,
+        eligibleVoterIds,
+        round,
+        allEvents.flatMap((event) =>
+          event.type === "format.ballot_cast"
+            ? [{
+                round: event.round,
+                voterId: event.payload.voterId,
+                targetId: event.payload.targetId,
+                polarity: event.payload.polarity,
+              }]
+            : []
+        ),
+      ).includes(payload.targetId)
     ) {
       return false;
     }

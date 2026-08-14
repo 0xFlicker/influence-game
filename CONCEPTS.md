@@ -95,11 +95,11 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, and Even Votes.
+The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, Even Votes, and Restricted History.
 
 ## Round format
 
-The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, and Even Votes.
+The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, Even Votes, and Restricted History.
 
 ## Format catalog
 
@@ -107,11 +107,11 @@ The registered set of round formats The House may offer under the format kernel.
 
 ## Format manifest
 
-The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the five-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game. A one-format manifest auto-selects its only card without a menu or empowered pick call; a manifest with two or more formats uses the normal two-card menu. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
+The non-empty, duplicate-free subset of registered formats frozen when a game is created. Omitting it for a new game selects the six-format default catalog. The frozen manifest, not later process-wide catalog changes, controls every round in that game, while catalog admission rules may narrow the legal cards for a particular round. If exactly one card is available that round it auto-selects without a menu or empowered pick call. A manifest containing only later-round cards is invalid because round 1 would have no legal format. Historical games whose canonical game-start event predates this field recover the original launch trio only; present malformed manifests fail closed rather than widening. See also format catalog, format menu.
 
 ## Format menu
 
-The two distinct legal round formats The House offers after empower resolves when the frozen manifest contains at least two cards. The empowered agent must pick exactly one. Menu construction uses the frozen manifest with soft anti-repeat pressure: exclude last round’s format when at least two other manifest cards remain, otherwise sample two from the manifest. A one-format manifest skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
+The two distinct legal round formats The House offers after empower resolves when at least two manifest cards are admitted for the current round. The empowered agent must pick exactly one. Menu construction filters round-ineligible cards first, then applies soft anti-repeat pressure: exclude last round’s format when at least two other cards remain, otherwise sample two from the available set. Exactly one available card skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
 
 ## Save-or-eliminate
 
@@ -132,6 +132,10 @@ A default catalog round format where each alive agent casts one sealed non-self 
 ## Even Votes
 
 A default catalog round format where each alive agent casts one sealed non-self elimination-direction vote. Only even totals qualify, including zero, and the highest even total is eliminated. Odd totals are safe unless every living player finishes odd; that exceptional all-odd board sends the entire living field to the empowered tiebreak so the round still produces exactly one elimination. The strategy is parity control rather than ordinary plurality.
+
+## Restricted History
+
+A default catalog round format admitted only from round 3 onward. Each alive agent casts one sealed elimination vote, but cannot target a living player they targeted with an elimination-direction format ballot in an earlier round. SAVE ballots do not consume target history. A player with no legal non-self target canonically forfeits their ballot. Highest total is eliminated and the empowered player breaks a highest-total tie.
 
 ## Operator
 

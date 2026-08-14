@@ -103,17 +103,17 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 
 Choose one recipe; do not run both unless comparing providers. Inspect the new `packages/engine/docs/simulations/batch-*/summary.md`, `game-1.txt`, and `game-1-turns.jsonl`, then record the provider/model, batch path, and each check as pass or fail:
 
-- Default games freeze all five registered formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority Elimination, and Even Votes. Their two-card rounds contain `FORMAT MENU`, `FORMAT LOCKED`, and `FORMAT RESOLVE`, with no standard-round power action or Council elimination.
+- Default games freeze all six registered formats: Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority Elimination, Even Votes, and Restricted History. Restricted History is admitted only from round 3. Rounds with two available cards contain `FORMAT MENU`, `FORMAT LOCKED`, and `FORMAT RESOLVE`, with no standard-round power action or Council elimination.
 - Every two-card round has a `format-pick` record with useful `thinking` and `decisionSource: "llm"`.
-- Save-or-Eliminate, Vote Bomb, Majority Elimination, and Even Votes rounds have `format-ballot` records with useful `thinking` and `decisionSource: "llm"`.
+- Save-or-Eliminate, Vote Bomb, Majority Elimination, Even Votes, and non-forfeited Restricted History rounds have `format-ballot` records with useful `thinking` and `decisionSource: "llm"`.
 - Safety Bounce rounds have `bounce-pointer` and `format-ballot` records with useful `thinking` and `decisionSource: "llm"`.
-- Vote Bomb reasoning preserves zero-safe/fewest-positive semantics; Majority Elimination reasoning targets the highest total; Even Votes reasoning manipulates parity and recognizes zero as even plus the all-odd empowered fallback.
+- Vote Bomb reasoning preserves zero-safe/fewest-positive semantics; Majority Elimination reasoning targets the highest total; Even Votes reasoning manipulates parity and recognizes zero as even plus the all-odd empowered fallback; Restricted History uses only the supplied never-before-targeted legal set and does not treat prior SAVE ballots as target history.
 - Each elimination has exactly one `elimination-message` turn after `player.eliminated`; sealed formats expose received counts to that call without named voters.
 - Any exercised `format-tiebreak` has useful `thinking` and `decisionSource: "llm"`.
 - Any `decisionSource: "fallback"` fails the proof; inspect its `fallbackReason` and matching `agent_turn`.
 - Agent thinking applies the active rule, and at least two observed formats produce non-identical coalition scripts.
 
-Random two-card menus are not catalog coverage. To prove one specific card, append `--formats <id>` (or `--format-manifest <id>`) with one of `save_or_eliminate`, `vote_bomb`, `safety_bounce`, `majority_elimination`, or `even_votes`. The frozen one-format manifest must emit `format.selected` and complete the round without `format.menu_offered`, a `format-pick` turn, or an empowered pick model call. Use a separate bounded run per required card; do not add a production round-count gate or remove `--max-rounds 2` and drift into Endgame. Omitting `--formats` uses the five-format default; two or more supplied ids retain the normal two-card menu. Whole-game timeout is off by default; add `--game-timeout-sec` only when the operator deliberately wants a wall clock.
+Random two-card menus are not catalog coverage. To prove one round-1-eligible card, append `--formats <id>` (or `--format-manifest <id>`) with one of `save_or_eliminate`, `vote_bomb`, `safety_bounce`, `majority_elimination`, or `even_votes`. The frozen one-format manifest must emit `format.selected` and complete the round without `format.menu_offered`, a `format-pick` turn, or an empowered pick model call. Restricted History must instead be tested in round 3 with at least one round-1-eligible companion card; `--formats restricted_history` is rejected because rounds 1–2 would have no legal format. Use a separate bounded run per required card. Omitting `--formats` uses the six-format default; two or more currently available ids retain the normal two-card menu. Whole-game timeout is off by default; add `--game-timeout-sec` only when the operator deliberately wants a wall clock.
 
 Initial triage:
 

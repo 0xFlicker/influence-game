@@ -414,7 +414,7 @@ describe("Format kernel integration (MockAgent)", () => {
   });
 
   it("completes every registered format through an explicit one-format manifest", async () => {
-    for (const formatId of LAUNCH_FORMAT_IDS) {
+    for (const formatId of LAUNCH_FORMAT_IDS.filter((id) => id !== "restricted_history")) {
       const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
         (name) => new MockAgent(createUUID(), `${formatId}-${name}`),
       );
@@ -455,6 +455,88 @@ describe("Format kernel integration (MockAgent)", () => {
       );
       expect(ballots.length, formatId).toBeGreaterThan(0);
       expect(ballots.every((ballot) => ballot.visibility === "private"), formatId).toBe(true);
+    }
+  });
+
+  it("admits Restricted History only in round 3 and resolves it through the sealed path", async () => {
+    const agents = ["A", "B", "C", "D", "E", "F", "G"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    let restrictedCalls = 0;
+    for (const agent of agents) {
+      agent.pickRoundFormat = async (context, offered) => ({
+        formatId: context.round >= 3 && offered.includes("restricted_history")
+          ? "restricted_history"
+          : offered[0]!,
+        thinking: "exercise the round-gated format",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+      agent.getRestrictedHistoryBallot = async (_context, legalTargetIds) => {
+        restrictedCalls += 1;
+        return {
+          targetId: legalTargetIds[0]!,
+          thinking: "choose from the canonical Restricted History target set",
+          decisionSource: "llm",
+          fallbackReason: null,
+        };
+      };
+    }
+
+    const runner = new GameRunner(
+      agents,
+      {
+        ...TEST_CONFIG,
+        maxRounds: 3,
+        formatManifest: ["majority_elimination", "restricted_history"],
+      },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await runner.run();
+
+    const selections = runner.getCanonicalEvents().filter(
+      (event) => event.type === "format.selected",
+    );
+    expect(selections.filter((event) => event.round < 3).every(
+      (event) => event.payload.formatId !== "restricted_history",
+    )).toBe(true);
+    expect(selections.find((event) => event.round === 3)?.payload.formatId)
+      .toBe("restricted_history");
+    const resolution = runner.getCanonicalEvents().find(
+      (event) => event.type === "format.resolved" && event.round === 3,
+    );
+    expect(resolution).toMatchObject({
+      payloadVersion: 2,
+      payload: {
+        formatId: "restricted_history",
+        aggregate: {
+          capability: "sealed_elim",
+          totals: expect.any(Object),
+          eligiblePlayerIds: expect.any(Array),
+        },
+      },
+    });
+    const restrictedBallots = runner.getCanonicalEvents().filter(
+      (event): event is Extract<
+        (typeof event),
+        { type: "format.ballot_cast" }
+      > => event.type === "format.ballot_cast"
+        && event.round === 3
+        && event.payload.formatId === "restricted_history",
+    );
+    expect(restrictedBallots.length).toBeGreaterThan(0);
+    expect(restrictedCalls).toBe(restrictedBallots.length);
+    for (const ballot of restrictedBallots) {
+      const priorTargets = runner.getCanonicalEvents().flatMap((event) =>
+        event.type === "format.ballot_cast"
+          && event.round < 3
+          && event.payload.voterId === ballot.payload.voterId
+          && event.payload.polarity !== "save"
+          ? [event.payload.targetId]
+          : []
+      );
+      expect(priorTargets).not.toContain(ballot.payload.targetId);
     }
   });
 

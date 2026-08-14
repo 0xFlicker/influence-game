@@ -454,7 +454,10 @@ function resolutionOutcomeMatchesRules(
 
   if (registration.capability === "sealed_elim") {
     if (resolution.aggregate.capability !== "sealed_elim") return false;
-    const accepted = unpolarizedBallots(ballots);
+    const accepted = unpolarizedBallots(
+      ballots,
+      resolution.formatId === "restricted_history",
+    );
     if (!accepted) return false;
     return outcomeMatchesRuleResolution(
       resolution,
@@ -531,7 +534,10 @@ function aggregatesMatch(
     if (resolution.aggregate.capability !== "sealed_elim") return false;
     const aggregate = resolution.aggregate;
     if (!hasExactKeys(aggregate.totals, rosterIds)) return false;
-    const accepted = unpolarizedBallots(ballots);
+    const accepted = unpolarizedBallots(
+      ballots,
+      resolution.formatId === "restricted_history",
+    );
     if (!accepted) return false;
     const expected = registration.score(rosterIds, accepted);
     return sameCountRecord(aggregate.totals, expected.totals)
@@ -574,13 +580,18 @@ function saveOrEliminateBallots(
 
 function unpolarizedBallots(
   ballots: ReadonlyMap<string, FormatPresentationBallot>,
+  allowForfeits = false,
 ): Array<{ voterId: string; targetId: string }> | null {
-  const accepted = [...ballots.values()].flatMap((ballot) =>
-    ballot.polarity === null
+  const values = [...ballots.values()];
+  const accepted = values.flatMap((ballot) =>
+    ballot.targetId !== null && ballot.polarity === null
       ? [{ voterId: ballot.voterId, targetId: ballot.targetId }]
       : []
   );
-  return accepted.length === ballots.size ? accepted : null;
+  const validForfeits = values.filter((ballot) => ballot.targetId === null && ballot.forfeited).length;
+  return accepted.length + (allowForfeits ? validForfeits : 0) === ballots.size
+    ? accepted
+    : null;
 }
 
 function sameCountRecord(
