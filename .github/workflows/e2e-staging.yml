@@ -1,10 +1,11 @@
 name: "E2E Staging Tests"
+run-name: "E2E staging / ${{ inputs.image_tag }}"
 
 on:
   workflow_dispatch:
     inputs:
       image_tag:
-        description: "Immutable image tag that was deployed (informational)"
+        description: "Immutable 7-40 character git SHA image tag deployed to staging"
         required: true
 
 permissions:
@@ -16,8 +17,32 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Validate deployed image tag
+        env:
+          STAGING_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          if ! [[ "$STAGING_IMAGE_TAG" =~ ^[0-9a-f]{7,40}$ ]]; then
+            echo "image_tag must be an immutable lowercase git SHA" >&2
+            exit 64
+          fi
+
+      - name: Checkout source history
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve deployed source identity
+        id: source-identity
+        env:
+          STAGING_IMAGE_TAG: ${{ inputs.image_tag }}
+        run: |
+          expected_sha="$(git rev-parse --verify "${STAGING_IMAGE_TAG}^{commit}")"
+          if [[ "$expected_sha" != "$STAGING_IMAGE_TAG"* ]]; then
+            echo "resolved commit $expected_sha does not match requested image tag $STAGING_IMAGE_TAG" >&2
+            exit 1
+          fi
+          echo "commit_sha=$expected_sha" >> "$GITHUB_OUTPUT"
+          echo "Resolved deployed source commit $expected_sha for image tag $STAGING_IMAGE_TAG"
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
@@ -51,6 +76,20 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Run E2E tests
-        run: bunx playwright test
+        run: bunx playwright test --retries=0
         env:
           PLAYWRIGHT_BASE_URL: http://influence-staging
+          STAGING_RELEASE_GATE: "1"
+          STAGING_IMAGE_TAG: ${{ inputs.image_tag }}
+          STAGING_EXPECTED_COMMIT_SHA: ${{ steps.source-identity.outputs.commit_sha }}
+
+      - name: Upload Playwright failure evidence
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-failure-${{ inputs.image_tag }}-${{ github.run_id }}
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: warn
+          retention-days: 14
