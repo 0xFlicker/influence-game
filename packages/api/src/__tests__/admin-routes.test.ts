@@ -538,20 +538,28 @@ describe("admin route RBAC", () => {
     const season = await createSeason(db, { slug: "season-zero", name: "Season 0" });
     const gameId = await insertGame(db, { slug: "admin-season-game" });
     await db.update(schema.games).set({ seasonId: season.id }).where(eq(schema.games.id, gameId));
+    await db.insert(schema.gameResults).values({
+      id: randomUUID(),
+      gameId,
+      roundsPlayed: 7,
+      tokenUsage: "{}",
+    });
 
     const res = await app.request("/api/admin/games", {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const rows = await res.json() as Array<Record<string, unknown>>;
 
-    expect(rows[0]).toMatchObject({
+    const game = rows.find((row) => row.id === gameId);
+    expect(game).toMatchObject({
       id: gameId,
       slug: "admin-season-game",
+      currentRound: 7,
       seasonId: season.id,
       season: { id: season.id, slug: "season-zero", name: "Season 0" },
       completionSettlement: { state: "not_applicable", retryEligible: false },
     });
-    expect(rows[0]).not.toHaveProperty("gameNumber");
+    expect(game).not.toHaveProperty("gameNumber");
   });
 
   test("auto-suffixes conflicting imported profiles without rewriting historical persona", async () => {

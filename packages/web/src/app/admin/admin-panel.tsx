@@ -197,10 +197,10 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
   return (
     <div
       onClick={() => router.push(`/games/${game.slug}`)}
-      className="border border-white/10 rounded-xl p-5 flex items-center justify-between gap-4 cursor-pointer hover:border-white/20 transition-colors"
+      className="flex cursor-pointer flex-col gap-4 rounded-xl border border-white/10 p-5 transition-colors hover:border-white/20 lg:flex-row lg:items-center lg:justify-between"
     >
-      <div>
-        <div className="flex items-center gap-3 mb-1">
+      <div className="min-w-0">
+        <div className="mb-1 flex flex-wrap items-center gap-x-3 gap-y-1">
           <span className="text-white font-semibold">{game.slug}</span>
           <span className="text-white/50 text-sm">
             {game.playerCount}-player · {filling ? `${game.playerCount}/${game.playerCount} slots filled` : "Not started"} · {game.modelLabel}
@@ -215,11 +215,11 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
           {filling ? "AI personas being generated — game will be ready shortly" : "Waiting to start"}
         </p>
       </div>
-      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+      <div className="flex flex-shrink-0 flex-col items-start gap-1 lg:items-end">
         {actionError && (
           <p className="text-xs text-red-400/80">{actionError}</p>
         )}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {canFill && !filling && (
             <button
               onClick={(e) => { e.stopPropagation(); handleFill(); }}
@@ -378,59 +378,61 @@ function RecentGameRow({
   return (
     <tr
       onClick={() => router.push(`/games/${game.slug}`)}
-      className="border-t border-white/5 hover:bg-white/[0.02] transition-colors cursor-pointer"
+      className="block cursor-pointer border-t border-white/5 transition-colors hover:bg-white/[0.02] md:table-row"
     >
-      <td className="py-3 px-4 text-white/60 text-sm">{game.slug}</td>
-      <td className="py-3 px-4 text-white text-sm">
+      <td className="block w-full px-4 pt-4 align-top md:table-cell md:w-56 md:py-4">
+        <p className="font-mono text-sm font-medium text-white/80">{game.slug}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums text-white/35">
+          <span>{game.playerCount} players</span>
+          <span>{game.currentRound > 0 ? `${game.currentRound} rounds` : "Rounds unavailable"}</span>
+          <span>{date}</span>
+        </div>
+        <p className="mt-1 line-clamp-1 text-xs text-white/30" title={game.modelLabel}>{game.modelLabel}</p>
+      </td>
+      <td className="block w-full px-4 py-3 align-top text-sm text-white md:table-cell md:py-4">
         {game.winner ? (
-          <span>
-            {game.winner}{" "}
-            <span className="text-white/40 text-xs">({game.winnerPersona})</span>
-          </span>
+          <div className="max-w-xl">
+            <p className="font-semibold">{game.winner}</p>
+            {game.winnerPersona && (
+              <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-white/40" title={game.winnerPersona}>
+                {game.winnerPersona}
+              </p>
+            )}
+          </div>
         ) : (
           <span className="text-white/30 italic">—</span>
         )}
       </td>
-      <td className="py-3 px-4 text-white/50 text-sm">{game.playerCount}p</td>
-      <td className="py-3 px-4 text-white/50 text-sm">{game.currentRound}</td>
-      <td className="py-3 px-4 text-white/50 text-sm">{game.modelLabel}</td>
-      <td className="py-3 px-4 text-white/40 text-xs">{date}</td>
-      <td className="py-3 px-4">
-        <StatusBadge status={game.status} errorInfo={game.errorInfo} />
-      </td>
-      <td className="py-3 px-4">
-        <AdminCostPill
-          summary={game.cost}
-          onClick={onOpenCosts}
-          ariaLabel={`Open cost details for game ${game.slug}`}
-        />
-      </td>
-      <td className="py-3 px-4">
-        <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
-      </td>
-      <td className="py-3 px-4">
-        <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
-      </td>
-      <td className="py-3 px-4">
-        {canVoidSuspendedGame(game.status, canStop) && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setConfirmVoid(true); }}
-            disabled={voiding}
-            className="mr-3 text-amber-300/70 hover:text-amber-200 text-xs transition-colors disabled:opacity-50"
-          >
-            {voiding ? "Voiding..." : "Void"}
-          </button>
-        )}
-        {canHide && (
-          <button
-            onClick={(e) => { e.stopPropagation(); setConfirmHide(true); }}
-            disabled={hiding}
-            title="Hide from public lists"
-            className="text-white/20 hover:text-orange-400 text-xs transition-colors disabled:opacity-50"
-          >
-            {hiding ? "…" : "Hide"}
-          </button>
-        )}
+      <td className="block w-full px-4 pb-4 align-top md:table-cell md:w-80 md:py-4">
+        <div className="flex flex-wrap items-center justify-start gap-2 md:justify-end">
+          <StatusBadge status={game.status} errorInfo={game.errorInfo} />
+          <AdminCostPill
+            summary={game.cost}
+            onClick={onOpenCosts}
+            ariaLabel={`Open cost details for game ${game.slug}`}
+          />
+          <AdminHighlightsPill game={game} onClick={onOpenHighlights} />
+          <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
+          {canVoidSuspendedGame(game.status, canStop) && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmVoid(true); }}
+              disabled={voiding}
+              className="min-h-8 rounded-md border border-amber-700/40 px-2.5 py-1 text-xs text-amber-200 transition-colors hover:border-amber-400/60 hover:bg-amber-950/40 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:opacity-50"
+            >
+              {voiding ? "Voiding..." : "Void"}
+            </button>
+          )}
+          {canHide && (
+            <button
+              onClick={(e) => { e.stopPropagation(); setConfirmHide(true); }}
+              disabled={hiding}
+              title="Hide from public lists"
+              className="min-h-8 rounded-md border border-white/10 px-2.5 py-1 text-xs text-white/45 transition-colors hover:border-orange-500/50 hover:text-orange-300 focus:outline-none focus:ring-2 focus:ring-orange-400 disabled:opacity-50"
+            >
+              {hiding ? "…" : "Hide"}
+            </button>
+          )}
+        </div>
         {actionError && <p className="mt-1 text-xs text-red-400/80">{actionError}</p>}
         {confirmVoid && (
           <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={(e) => e.stopPropagation()}>
@@ -608,15 +610,15 @@ export function AdminPanel() {
           <h2 className="text-xs font-semibold text-amber-300/80 uppercase tracking-wider mb-3">
             Failed Games ({suspendedGames.length})
           </h2>
-          <div className="overflow-x-auto rounded-xl border border-amber-900/40">
-            <table className="min-w-[72rem] w-full">
-              <thead>
+          <div className="rounded-xl border border-amber-900/40">
+            <table className="block w-full md:table md:table-fixed">
+              <thead className="hidden md:table-header-group">
                 <tr className="border-b border-amber-900/30">
-                  {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
+                  {["Game", "Winner", "Operations"].map(
                     (h) => (
                       <th
                         key={h}
-                        className="text-left text-xs font-medium text-amber-200/40 uppercase tracking-wider px-4 py-3"
+                        className={`${h === "Operations" ? "w-80 text-right" : h === "Game" ? "w-56 text-left" : "text-left"} px-4 py-3 text-xs font-medium uppercase tracking-wider text-amber-200/40`}
                       >
                         {h}
                       </th>
@@ -624,7 +626,7 @@ export function AdminPanel() {
                   )}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="block md:table-row-group">
                 {suspendedGames.map((g) => (
                   <RecentGameRow key={g.id} game={g} onRefresh={fetchGames} canHide={canHideGame} canStop={canStopGame} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
                 ))}
@@ -686,15 +688,15 @@ export function AdminPanel() {
             No completed games yet.
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-white/10">
-            <table className="min-w-[72rem] w-full">
-              <thead>
+          <div className="rounded-xl border border-white/10">
+            <table className="block w-full md:table md:table-fixed">
+              <thead className="hidden md:table-header-group">
                 <tr className="border-b border-white/10">
-                  {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Cost", "Highlights", "Trailer", ""].map(
+                  {["Game", "Winner", "Operations"].map(
                     (h) => (
                       <th
                         key={h}
-                        className="text-left py-3 px-4 text-xs text-white/30 font-medium"
+                        className={`${h === "Operations" ? "w-80 text-right" : h === "Game" ? "w-56 text-left" : "text-left"} px-4 py-3 text-xs font-medium text-white/30`}
                       >
                         {h}
                       </th>
@@ -702,7 +704,7 @@ export function AdminPanel() {
                   )}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="block md:table-row-group">
                 {recentGames.slice(0, 5).map((g) => (
                   <RecentGameRow key={g.id} game={g} canHide={canHideGame} canStop={canStopGame} onRefresh={fetchGames} onOpenCosts={() => setCostGame(g)} onOpenHighlights={() => setHighlightsGame(g)} onOpenMedia={() => setMediaGame(g)} />
                 ))}
