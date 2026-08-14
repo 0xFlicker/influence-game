@@ -16,13 +16,12 @@ export function isEliminationDirectionBallot(
   return ballot.polarity !== "save";
 }
 
-export function restrictedHistoryLegalTargets(
+export function restrictedHistoryPriorTargetIds(
   voterId: UUID,
-  aliveIds: readonly UUID[],
   currentRound: number,
   history: readonly HistoricalFormatBallot[],
 ): UUID[] {
-  const priorTargets = new Set(
+  return [...new Set(
     history
       .filter((ballot) =>
         ballot.round < currentRound
@@ -30,7 +29,16 @@ export function restrictedHistoryLegalTargets(
         && isEliminationDirectionBallot(ballot)
       )
       .map((ballot) => ballot.targetId),
-  );
+  )];
+}
+
+export function restrictedHistoryLegalTargets(
+  voterId: UUID,
+  aliveIds: readonly UUID[],
+  currentRound: number,
+  history: readonly HistoricalFormatBallot[],
+): UUID[] {
+  const priorTargets = new Set(restrictedHistoryPriorTargetIds(voterId, currentRound, history));
   return aliveIds.filter((targetId) => targetId !== voterId && !priorTargets.has(targetId));
 }
 

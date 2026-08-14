@@ -26,6 +26,7 @@ import {
   resolveRestrictedHistory,
   resolveSealedElimRound,
   restrictedHistoryLegalTargets,
+  restrictedHistoryPriorTargetIds,
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
   scoreSealedElimBallots,
@@ -485,10 +486,12 @@ describe("format catalog", () => {
     const alive = ids("A", "B", "C", "D");
     const history = [
       { round: 1, voterId: "a", targetId: "b", polarity: null },
+      { round: 1, voterId: "a", targetId: "b", polarity: "eliminate" as const },
       { round: 1, voterId: "a", targetId: "c", polarity: "save" as const },
       { round: 2, voterId: "a", targetId: "d", polarity: "eliminate" as const },
       { round: 3, voterId: "a", targetId: "c", polarity: null },
     ];
+    expect(restrictedHistoryPriorTargetIds("a", 3, history)).toEqual(["b", "d"]);
     expect(restrictedHistoryLegalTargets("a", alive, 3, history)).toEqual(["c"]);
 
     const ballots: SealedElimBallot[] = [

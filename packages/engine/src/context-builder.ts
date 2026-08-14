@@ -56,6 +56,11 @@ export interface PrivateRecallSelectionObservation {
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
+import {
+  restrictedHistoryLegalTargets,
+  restrictedHistoryPriorTargetIds,
+  type HistoricalFormatBallot,
+} from "./formats/restricted-history";
 import type { CanonicalGameEvent } from "./canonical-events";
 import { projectFormatBallotPresentation } from "./viewer-decision-events";
 
@@ -747,6 +752,43 @@ export class ContextBuilder {
       .slice(-12);
   }
 
+  private buildRestrictedHistoryLegality(
+    agentId: UUID,
+    formatPressure: FormatPressureProjection | undefined,
+  ): PhaseContext["restrictedHistoryLegality"] {
+    if (formatPressure?.selectedFormat !== "restricted_history") return undefined;
+
+    const history: HistoricalFormatBallot[] = this.gameState.getCanonicalEvents().flatMap((event) =>
+      event.type === "format.ballot_cast"
+        ? [{
+            round: event.round,
+            voterId: event.payload.voterId,
+            targetId: event.payload.targetId,
+            polarity: event.payload.polarity,
+          }]
+        : []
+    );
+    const aliveIds = this.gameState.getAlivePlayers().map((player) => player.id);
+    const priorTargetIds = restrictedHistoryPriorTargetIds(
+      agentId,
+      this.gameState.round,
+      history,
+    );
+    const legalTargetIds = restrictedHistoryLegalTargets(
+      agentId,
+      aliveIds,
+      this.gameState.round,
+      history,
+    );
+
+    return {
+      priorTargetIds,
+      priorTargetNames: priorTargetIds.map((id) => this.name(id)),
+      legalTargetIds,
+      legalTargetNames: legalTargetIds.map((id) => this.name(id)),
+    };
+  }
+
   buildPhaseContext(
     agentId: UUID,
     phase: Phase,
@@ -777,6 +819,9 @@ export class ContextBuilder {
           playerNames: r.playerIds.map((id) => this.gameState.getPlayerName(id)),
         }))
       : undefined;
+    const formatPressure = extra && "formatPressure" in extra
+      ? extra.formatPressure ?? undefined
+      : this.currentFormatPressure ?? undefined;
 
     return {
       gameId: this.gameState.gameId,
@@ -794,9 +839,8 @@ export class ContextBuilder {
       postVotePressure: extra && "postVotePressure" in extra
         ? extra.postVotePressure ?? undefined
         : this.currentPostVotePressure ?? undefined,
-      formatPressure: extra && "formatPressure" in extra
-        ? extra.formatPressure ?? undefined
-        : this.currentFormatPressure ?? undefined,
+      formatPressure,
+      restrictedHistoryLegality: this.buildRestrictedHistoryLegality(agentId, formatPressure),
       revealedVoteLedger: this.revealedVoteLedger.map((entry) => ({ ...entry })),
       gameEventRecord: this.buildGameEventRecord(agentId),
       publicTranscriptContext: this.buildPublicTranscriptContext(),

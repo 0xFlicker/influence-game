@@ -295,6 +295,54 @@ describe("ContextBuilder", () => {
     );
   });
 
+  it("projects each actor's authoritative Restricted History ledger into phase context", () => {
+    const alice = gs.getAlivePlayers().find((player) => player.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((player) => player.name === "Bob")!;
+    const charlie = gs.getAlivePlayers().find((player) => player.name === "Charlie")!;
+    const dave = gs.getAlivePlayers().find((player) => player.name === "Dave")!;
+    const eve = gs.getAlivePlayers().find((player) => player.name === "Eve")!;
+
+    gs.recordFormatBallot({
+      formatId: "majority_elimination",
+      voterId: alice.id,
+      targetId: bob.id,
+    });
+    gs.startRound();
+    gs.recordFormatBallot({
+      formatId: "save_or_eliminate",
+      voterId: alice.id,
+      targetId: charlie.id,
+      polarity: "save",
+    });
+    gs.startRound();
+    gs.recordFormatBallot({
+      formatId: "even_votes",
+      voterId: alice.id,
+      targetId: dave.id,
+    });
+    gs.startRound();
+    builder.currentFormatPressure = {
+      empoweredId: eve.id,
+      empoweredName: eve.name,
+      offeredFormats: ["restricted_history", "vote_bomb"],
+      selectedFormat: "restricted_history",
+      ruleSheetSummary: "You cannot target anyone you previously targeted to eliminate.",
+    };
+
+    const mingleContext = builder.buildPhaseContext(alice.id, Phase.FORMAT_MINGLE);
+    const resolveContext = builder.buildPhaseContext(alice.id, Phase.FORMAT_RESOLVE);
+
+    expect(mingleContext.restrictedHistoryLegality).toEqual({
+      priorTargetIds: [bob.id, dave.id],
+      priorTargetNames: [bob.name, dave.name],
+      legalTargetIds: [charlie.id, eve.id],
+      legalTargetNames: [charlie.name, eve.name],
+    });
+    expect(resolveContext.restrictedHistoryLegality).toEqual(
+      mingleContext.restrictedHistoryLegality,
+    );
+  });
+
   it("does not turn private format-ballot operator turns into player transcript context", () => {
     const alice = gs.getAlivePlayers().find((player) => player.name === "Alice")!;
     const bob = gs.getAlivePlayers().find((player) => player.name === "Bob")!;

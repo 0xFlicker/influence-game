@@ -53,6 +53,7 @@ export {
   isLegalRestrictedHistoryBallot,
   resolveRestrictedHistory,
   restrictedHistoryLegalTargets,
+  restrictedHistoryPriorTargetIds,
   type HistoricalFormatBallot,
   type RestrictedHistoryBallot,
 } from "./restricted-history";
