@@ -30,8 +30,9 @@ const originalNavigator = globalThis.navigator;
 const originalLocalStorage = globalThis.localStorage;
 let activeDomWindow: HappyDOMWindow | null = null;
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await new Promise<void>((resolve) => setImmediate(resolve));
   const domWindow = activeDomWindow;
   activeDomWindow = null;
   globalThis.fetch = originalFetch;
