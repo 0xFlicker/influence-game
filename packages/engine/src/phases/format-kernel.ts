@@ -16,6 +16,7 @@ import {
   isLegalSaveOrEliminateBallot,
   pickFormatFromMenu,
   resolveSealedElimRound,
+  restrictedHistoryLegalTargets,
   resolveSafetyBounceVote,
   resolveSaveOrEliminate,
   type FormatEliminationResolution,
@@ -138,6 +139,7 @@ export async function runFormatMenuPhase(
   const menu = buildFormatMenu({
     formatManifest: gameState.formatManifest,
     lastFormatId: state.lastSelectedFormat,
+    round: gameState.round,
     random: ctx.random,
   });
   state.offeredFormats = menu.offered;
@@ -585,6 +587,16 @@ async function resolveSealedElimFormatRound(
   const { gameState, logger } = ctx;
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
+  const historicalBallots = gameState.getCanonicalEvents().flatMap((event) =>
+    event.type === "format.ballot_cast"
+      ? [{
+          round: event.round,
+          voterId: event.payload.voterId,
+          targetId: event.payload.targetId,
+          polarity: event.payload.polarity,
+        }]
+      : []
+  );
   const resolved = await resolveSealedElimRound<
     SealedElimDecisionRecord,
     CanonicalSourcePointer[]
@@ -592,7 +604,15 @@ async function resolveSealedElimFormatRound(
     registration,
     participants: alive,
     traceAction: registration.decision.traceAction,
-    collectDecision: async (player, fallbackTargetId) => {
+    legalTargetIdsFor: registration.decision.targetPolicy === "restricted_history"
+      ? (player) => restrictedHistoryLegalTargets(
+          player.id,
+          aliveIds,
+          gameState.round,
+          historicalBallots,
+        )
+      : undefined,
+    collectDecision: async (player, fallbackTargetId, legalTargetIds) => {
       const agent = requireAgent(
         ctx,
         player.id,
@@ -621,7 +641,7 @@ async function resolveSealedElimFormatRound(
           ctx,
           Phase.FORMAT_RESOLVE,
           `${registration.decision.publicName} ballot (${player.name})`,
-          () => ballotFn(phaseCtx, aliveIds),
+          () => ballotFn(phaseCtx, [...legalTargetIds]),
           () => ({
             targetId: fallbackTargetId,
             thinking: timeoutThinking,
@@ -694,6 +714,14 @@ async function resolveSealedElimFormatRound(
         text: `${player.name} sealed ballot: eliminate → ${targetName}`,
       });
     },
+    recordForfeitedBallot: async (player) => {
+      await assertCanAcceptCommit(ctx);
+      gameState.recordFormatBallotForfeited(player.id);
+      logger.logSystem(
+        `${player.name} has already targeted every legal opponent and forfeits their Restricted History ballot.`,
+        Phase.FORMAT_RESOLVE,
+      );
+    },
     beforeScore: () => assertCanAcceptCommit(ctx),
     breakTie: async (tiedPlayerIds) => {
       const broken = await breakFormatTie(ctx, empoweredId, tiedPlayerIds);
@@ -711,6 +739,7 @@ async function resolveSealedElimFormatRound(
   logger.logSystem(
     `${registration.decision.publicName} ballots: ${resolved.ballots
       .map((b) => `${gameState.getPlayerName(b.voterId)}→${gameState.getPlayerName(b.targetId)}`)
+      .concat(resolved.forfeitedVoterIds.map((id) => `${gameState.getPlayerName(id)}→FORFEIT`))
       .join("; ")}`,
     Phase.FORMAT_RESOLVE,
   );
@@ -720,7 +749,9 @@ async function resolveSealedElimFormatRound(
     .join(", ");
   const criterion = registration.presentation.scoring === "fewest_positive"
     ? "fewest positive votes"
-    : "highest total";
+    : registration.presentation.scoring === "highest_even"
+      ? "highest even total"
+      : "highest total";
   if (registration.presentation.zeroVoteTreatment === "safe") {
     const eligibleIds = new Set(tallies.eligibleIds);
     const zeroSafe = aliveIds
@@ -728,6 +759,18 @@ async function resolveSealedElimFormatRound(
       .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
     logger.logSystem(
       `${registration.decision.publicName} tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      Phase.FORMAT_RESOLVE,
+    );
+  } else if (registration.presentation.scoring === "highest_even") {
+    const eligibleIds = new Set(tallies.eligibleIds);
+    const allOdd = aliveIds.every((id) => (tallies.totals[id] ?? 0) % 2 !== 0);
+    const oddSafe = aliveIds
+      .filter((id) => !eligibleIds.has(id))
+      .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
+    logger.logSystem(
+      allOdd
+        ? `${registration.decision.publicName} tally: every total is odd; the entire living field goes to the empowered tiebreak`
+        : `${registration.decision.publicName} tally: SAFE(odd)=[${oddSafe}]; even totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
       Phase.FORMAT_RESOLVE,
     );
   } else {

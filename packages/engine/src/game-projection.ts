@@ -302,6 +302,7 @@ export function applyCanonicalEvent(
       break;
     }
     case "format.ballot_cast":
+    case "format.ballot_forfeited":
     case "format.safety_bounce_started":
     case "format.safety_bounce_pointer":
     case "format.resolved": {

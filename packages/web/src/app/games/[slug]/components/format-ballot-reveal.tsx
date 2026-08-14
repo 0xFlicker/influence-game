@@ -31,10 +31,14 @@ export function FormatBallotReveal({
         <span className="text-xl text-white/35" aria-hidden="true">→</span>
         <BallotName
           label="Target"
-          name={playerName(cue.ballot.targetId, roster)}
+          name={cue.ballot.targetId === null ? "FORFEIT" : playerName(cue.ballot.targetId, roster)}
         />
       </div>
-      {cue.ballot.polarity ? (
+      {cue.ballot.targetId === null ? (
+        <div className="format-ballot-reveal__polarity" data-ballot-polarity="forfeit">
+          no legal target
+        </div>
+      ) : cue.ballot.polarity ? (
         <p
           data-ballot-polarity={cue.ballot.polarity}
           className={`mt-4 text-sm font-semibold uppercase tracking-[0.18em] ${
@@ -83,10 +87,10 @@ export function FormatBallotReveal({
                     {playerName(ballot.voterId, roster)}
                   </th>
                   <td className="px-3 py-3 uppercase tracking-[0.14em]">
-                    {ballot.polarity ?? "vote"}
+                    {ballot.targetId === null ? "forfeit" : ballot.polarity ?? "vote"}
                   </td>
                   <td className="px-3 py-3">
-                    {playerName(ballot.targetId, roster)}
+                    {ballot.targetId === null ? "FORFEIT" : playerName(ballot.targetId, roster)}
                   </td>
                 </tr>
               );

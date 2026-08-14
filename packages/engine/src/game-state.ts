@@ -2209,6 +2209,21 @@ export class GameState {
     );
   }
 
+  recordFormatBallotForfeited(voterId: UUID): void {
+    this.appendCanonicalEvent(
+      "format.ballot_forfeited",
+      {
+        formatId: "restricted_history" as const,
+        voterId,
+        reason: "history_exhausted" as const,
+      },
+      {
+        phase: Phase.FORMAT_RESOLVE,
+        visibility: "producer",
+      },
+    );
+  }
+
   recordSafetyBounceStarted(starterId: UUID): void {
     this.appendCanonicalEvent("format.safety_bounce_started", { starterId }, {
       phase: Phase.FORMAT_RESOLVE,

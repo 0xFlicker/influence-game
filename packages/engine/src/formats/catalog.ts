@@ -15,6 +15,16 @@ import {
   resolveMajorityElimination,
 } from "./majority-elimination";
 import {
+  computeEvenVotesTallies,
+  isLegalEvenVotesBallot,
+  resolveEvenVotes,
+} from "./even-votes";
+import {
+  computeRestrictedHistoryTallies,
+  isLegalRestrictedHistoryBallot,
+  resolveRestrictedHistory,
+} from "./restricted-history";
+import {
   isLegalSaveOrEliminateBallot,
   resolveSaveOrEliminate,
 } from "./save-or-eliminate";
@@ -34,27 +44,43 @@ import {
   resolveVoteBomb,
 } from "./vote-bomb";
 
-export type SealedElimFormatId = "vote_bomb" | "majority_elimination";
+export type SealedElimFormatId =
+  | "vote_bomb"
+  | "majority_elimination"
+  | "even_votes"
+  | "restricted_history";
 
 export interface SealedElimDecisionContract<
   TId extends SealedElimFormatId = SealedElimFormatId,
 > {
   handler: "sealed_elim";
   formatId: TId;
-  targetPolicy: "alive_non_self";
+  targetPolicy: "alive_non_self" | "restricted_history";
   publicName: string;
   ballotHeading: string;
-  agentMethod: "getVoteBombBallot" | "getMajorityEliminationBallot";
-  toolName: "vote_bomb_ballot" | "majority_elimination_ballot";
+  agentMethod:
+    | "getVoteBombBallot"
+    | "getMajorityEliminationBallot"
+    | "getEvenVotesBallot"
+    | "getRestrictedHistoryBallot";
+  toolName:
+    | "vote_bomb_ballot"
+    | "majority_elimination_ballot"
+    | "even_votes_ballot"
+    | "restricted_history_ballot";
   toolDescription: string;
   traceAction:
     | "format-vote-bomb-ballot"
-    | "format-majority-elimination-ballot";
+    | "format-majority-elimination-ballot"
+    | "format-even-votes-ballot"
+    | "format-restricted-history-ballot";
   decisionLabel: string;
   strategyGuidance: string;
   invalidTargetReason:
     | "invalid_vote_bomb_target"
-    | "invalid_majority_elimination_target";
+    | "invalid_majority_elimination_target"
+    | "invalid_even_votes_target"
+    | "invalid_restricted_history_target";
   fallbackThinking: string;
 }
 
@@ -65,7 +91,7 @@ export interface SealedElimAggregateAdapter {
 }
 
 export interface SealedElimPresentationContract {
-  scoring: "fewest_positive" | "highest_total";
+  scoring: "fewest_positive" | "highest_total" | "highest_even";
   zeroVoteTreatment: "safe" | "eligible";
 }
 
@@ -74,6 +100,8 @@ export interface SealedElimRegistration<
 > {
   id: TId;
   capability: "sealed_elim";
+  availableFromRound: number;
+  ballotParticipation: "required" | "forfeit_if_no_legal_target";
   score: (
     aliveIds: readonly UUID[],
     ballots: readonly SealedElimBallot[],
@@ -95,6 +123,7 @@ export interface SealedElimRegistration<
 export interface SealedPolarityRegistration {
   id: "save_or_eliminate";
   capability: "sealed_polarity";
+  availableFromRound: number;
   handler: "save_or_eliminate";
   resolve: typeof resolveSaveOrEliminate;
   isLegalBallot: typeof isLegalSaveOrEliminateBallot;
@@ -106,6 +135,7 @@ export interface SealedPolarityRegistration {
 export interface PublicChainRegistration {
   id: "safety_bounce";
   capability: "public_chain";
+  availableFromRound: number;
   handler: "safety_bounce";
   resolveVote: typeof resolveSafetyBounceVote;
   isLegalVote: typeof isLegalSafetyBounceVote;
@@ -156,6 +186,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   save_or_eliminate: {
     id: "save_or_eliminate",
     capability: "sealed_polarity",
+    availableFromRound: 1,
     handler: "save_or_eliminate",
     resolve: resolveSaveOrEliminate,
     isLegalBallot: isLegalSaveOrEliminateBallot,
@@ -169,6 +200,8 @@ export const FORMAT_CATALOG: FormatCatalog = {
   vote_bomb: {
     id: "vote_bomb",
     capability: "sealed_elim",
+    availableFromRound: 1,
+    ballotParticipation: "required",
     score: voteBombScore,
     resolve: resolveVoteBomb,
     isLegalBallot: isLegalVoteBombBallot,
@@ -197,6 +230,7 @@ export const FORMAT_CATALOG: FormatCatalog = {
   safety_bounce: {
     id: "safety_bounce",
     capability: "public_chain",
+    availableFromRound: 1,
     handler: "safety_bounce",
     resolveVote: resolveSafetyBounceVote,
     isLegalVote: isLegalSafetyBounceVote,
@@ -207,6 +241,8 @@ export const FORMAT_CATALOG: FormatCatalog = {
   majority_elimination: {
     id: "majority_elimination",
     capability: "sealed_elim",
+    availableFromRound: 1,
+    ballotParticipation: "required",
     score: computeMajorityEliminationTallies,
     resolve: resolveMajorityElimination,
     isLegalBallot: isLegalMajorityEliminationBallot,
@@ -225,6 +261,66 @@ export const FORMAT_CATALOG: FormatCatalog = {
         "Majority Elimination removes the player with the most votes. This is not Vote Bomb: zero votes is not a special safe class, and the fewest-positive rule does not apply. This is not Safety Bounce: every living non-self target is legal, not only a vulnerable pool. All living players, including the empowered player, can receive ballots and be eliminated.",
       invalidTargetReason: "invalid_majority_elimination_target",
       fallbackThinking: "fallback sealed Majority Elimination ballot after tool failure",
+    },
+    aggregate: sealedElimAggregateAdapter,
+    presentation: {
+      scoring: "highest_total",
+      zeroVoteTreatment: "eligible",
+    },
+  },
+  even_votes: {
+    id: "even_votes",
+    capability: "sealed_elim",
+    availableFromRound: 1,
+    ballotParticipation: "required",
+    score: computeEvenVotesTallies,
+    resolve: resolveEvenVotes,
+    isLegalBallot: isLegalEvenVotesBallot,
+    decision: {
+      handler: "sealed_elim",
+      formatId: "even_votes",
+      targetPolicy: "alive_non_self",
+      publicName: "Even Votes",
+      ballotHeading: "Even Votes Ballot",
+      agentMethod: "getEvenVotesBallot",
+      toolName: "even_votes_ballot",
+      toolDescription: "Cast one sealed Even Votes ballot against a legal non-self target.",
+      traceAction: "format-even-votes-ballot",
+      decisionLabel: "Even Votes Ballot",
+      strategyGuidance:
+        "Even Votes rewards parity control, not simple pile-ons. Only even totals qualify, including zero, and the highest even total is lethal. An odd total is safe unless every living player finishes odd, which hands the empowered player the entire field. Use your ballot to flip a target between odd safety and even danger, and account for how allies or opponents may flip that parity after you.",
+      invalidTargetReason: "invalid_even_votes_target",
+      fallbackThinking: "fallback sealed Even Votes ballot after tool failure",
+    },
+    aggregate: sealedElimAggregateAdapter,
+    presentation: {
+      scoring: "highest_even",
+      zeroVoteTreatment: "eligible",
+    },
+  },
+  restricted_history: {
+    id: "restricted_history",
+    capability: "sealed_elim",
+    availableFromRound: 3,
+    ballotParticipation: "forfeit_if_no_legal_target",
+    score: computeRestrictedHistoryTallies,
+    resolve: resolveRestrictedHistory,
+    isLegalBallot: isLegalRestrictedHistoryBallot,
+    decision: {
+      handler: "sealed_elim",
+      formatId: "restricted_history",
+      targetPolicy: "restricted_history",
+      publicName: "Restricted History",
+      ballotHeading: "Restricted History Ballot",
+      agentMethod: "getRestrictedHistoryBallot",
+      toolName: "restricted_history_ballot",
+      toolDescription: "Cast one sealed Restricted History ballot against a legal target you have not previously targeted for elimination.",
+      traceAction: "format-restricted-history-ballot",
+      decisionLabel: "Restricted History Ballot",
+      strategyGuidance:
+        "Restricted History removes the player with the most votes, but you cannot target anyone you previously targeted with an elimination-direction format ballot. SAVE ballots do not consume history. Your legal target list is authoritative; if it is empty, your ballot is forfeited without an agent call.",
+      invalidTargetReason: "invalid_restricted_history_target",
+      fallbackThinking: "fallback sealed Restricted History ballot after tool failure",
     },
     aggregate: sealedElimAggregateAdapter,
     presentation: {
@@ -269,7 +365,22 @@ export function resolveFormatManifest(value: unknown): LaunchFormatId[] {
     seen.add(entry);
     resolved.push(entry);
   }
+  if (!resolved.some((formatId) => FORMAT_CATALOG[formatId].availableFromRound <= 1)) {
+    throw new Error("Format manifest must contain at least one format available in round 1");
+  }
   return resolved;
+}
+
+export function formatsAvailableInRound(
+  manifest: readonly LaunchFormatId[],
+  round: number,
+): LaunchFormatId[] {
+  if (!Number.isInteger(round) || round < 1) {
+    throw new Error(`Format round must be a positive integer: ${round}`);
+  }
+  return resolveFormatManifest(manifest).filter(
+    (formatId) => FORMAT_CATALOG[formatId].availableFromRound <= round,
+  );
 }
 
 export function getFormatRegistration<TId extends LaunchFormatId>(

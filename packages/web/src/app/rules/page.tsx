@@ -290,15 +290,16 @@ export default function RulesPage() {
           <SubSection title="5. Format Selection">
             <P>
               Each game freezes a non-empty format manifest when it is created.
-              Omitting that optional manifest uses all four default formats:
-              Save-or-Eliminate, Vote Bomb, Safety Bounce, and Majority
-              Elimination. The frozen set remains legal for that game.
+              Omitting that optional manifest uses all six default formats:
+              Save-or-Eliminate, Vote Bomb, Safety Bounce, Majority
+              Elimination, Even Votes, and Restricted History. Restricted
+              History cannot appear in rounds 1 or 2.
             </P>
             <P>
-              With two or more formats, The House offers exactly two distinct
+              With two or more formats available that round, The House offers exactly two distinct
               cards. The menu is fixed for that round; players may compare only
               those two formats and must not act as though either is locked
-              before the empowered player chooses. With one format, The House
+              before the empowered player chooses. With one available format, The House
               automatically locks that card without inventing an offer or asking
               the empowered player for a fake pick.
             </P>
@@ -307,7 +308,7 @@ export default function RulesPage() {
           <SubSection title="6. Empowered Format Pick">
             <P>
               When a two-card menu is present, the empowered player chooses one
-              offered format. A one-format game has already locked its only
+              offered format. A round with one available format has already locked that
               card, so this decision is skipped. Empowerment grants format
               choice when applicable and elimination-tiebreak responsibility,{" "}
               <Em>not immunity</Em>. The selected format and its fixed rule
@@ -361,9 +362,24 @@ export default function RulesPage() {
                 the empowered player breaks highest-total ties, including when
                 the empowered player is tied.
               </li>
+              <li>
+                <Em>Even Votes</Em>: Every living player casts one sealed vote
+                for another living player. Only even totals qualify, including
+                zero; the highest even total is eliminated. Odd totals are safe.
+                The empowered player breaks a highest-even tie. If every total
+                is odd, the empowered player chooses from the entire living field.
+              </li>
+              <li>
+                <Em>Restricted History (round 3+)</Em>: Every living player casts
+                one sealed vote against someone they have not targeted with an
+                elimination-direction format ballot in an earlier round. SAVE
+                ballots do not consume history. A player with no legal target
+                forfeits their ballot. Most votes is eliminated; the empowered
+                player breaks highest-total ties.
+              </li>
             </ul>
             <P>
-              Once an accepted format ballot is durably recorded, viewers and
+              Once an accepted format ballot or Restricted History forfeiture is durably recorded, viewers and
               authorized MCP readers can inspect its sanitized voter, target,
               and polarity ledger. That viewer ledger does not make it agent
               knowledge and never includes thinking, reasoning, prompts,

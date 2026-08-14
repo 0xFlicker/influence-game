@@ -81,23 +81,36 @@ function SealedEliminationAggregate({ resolution, roster }: AggregateProps) {
   if (registration.capability !== "sealed_elim") return null;
   const eligible = new Set(facts.eligiblePlayerIds);
   const eligibleTotals = facts.eligiblePlayerIds.map((id) => facts.totals[id] ?? 0);
-  const dangerTotal = registration.presentation.scoring === "highest_total"
+  const highestWins = registration.presentation.scoring !== "fewest_positive";
+  const allOdd = registration.presentation.scoring === "highest_even"
+    && Object.values(facts.totals).every((total) => total % 2 !== 0);
+  const dangerTotal = highestWins
     ? Math.max(...eligibleTotals)
     : Math.min(...eligibleTotals);
   const ids = orderedIds(facts.totals, roster);
   const isDanger = (playerId: string) => (
-    eligible.has(playerId) && facts.totals[playerId] === dangerTotal
+    eligible.has(playerId)
+    && (allOdd || facts.totals[playerId] === dangerTotal)
   );
   const status = (playerId: string) => {
-    if (!eligible.has(playerId)) return "Zero votes · safe";
-    if (isDanger(playerId)) {
-      return registration.presentation.scoring === "highest_total"
-        ? "Highest total · elimination eligible"
-        : "Fewest positive · eligible";
+    if (allOdd) return "Odd total · empowered choice";
+    if (!eligible.has(playerId)) {
+      return registration.presentation.scoring === "highest_even"
+        ? "Odd total · safe"
+        : "Zero votes · safe";
     }
-    return registration.presentation.scoring === "highest_total"
-      ? "Below the high vote"
-      : "Above the line";
+    if (isDanger(playerId)) {
+      if (registration.presentation.scoring === "highest_total") {
+        return "Highest total · elimination eligible";
+      }
+      if (registration.presentation.scoring === "highest_even") {
+        return "Highest even total · elimination eligible";
+      }
+      return "Fewest positive · eligible";
+    }
+    if (registration.presentation.scoring === "highest_total") return "Below the high vote";
+    if (registration.presentation.scoring === "highest_even") return "Even total · below danger";
+    return "Above the line";
   };
   return (
     <AggregateTable

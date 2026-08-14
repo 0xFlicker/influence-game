@@ -168,6 +168,7 @@ function isSealedFormatBallotArtifactContext(context: CognitiveArtifactPolicyCon
     action === "format-save-or-eliminate-ballot" ||
     action === "format-vote-bomb-ballot" ||
     action === "format-majority-elimination-ballot" ||
+    action === "format-even-votes-ballot" ||
     action === "format-safety-bounce-vote";
 }
 

@@ -62,6 +62,7 @@ import {
   displayNameForFormat,
   isLaunchFormatId,
   pickFormatFromMenu,
+  requireSealedElimRegistration,
   type LaunchFormatId,
   type SealedElimFormatId,
 } from "./formats";
@@ -3477,9 +3478,7 @@ Use the save_or_eliminate_ballot tool.`;
         this.recordStrategicDecision(ctx, action, label, metadata);
       },
       onToolFailure: (error, fallbackTarget) => {
-        const method = formatId === "vote_bomb"
-          ? "getVoteBombBallot"
-          : "getMajorityEliminationBallot";
+        const method = requireSealedElimRegistration(formatId).decision.agentMethod;
         console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=${method} error="${error instanceof Error ? error.message : error}" fallback="${fallbackTarget.name}"`);
       },
     });
@@ -3497,6 +3496,20 @@ Use the save_or_eliminate_ballot tool.`;
     aliveIds: UUID[],
   ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
     return this.getSealedElimBallot(ctx, aliveIds, "majority_elimination");
+  }
+
+  async getEvenVotesBallot(
+    ctx: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
+    return this.getSealedElimBallot(ctx, aliveIds, "even_votes");
+  }
+
+  async getRestrictedHistoryBallot(
+    ctx: PhaseContext,
+    legalTargetIds: UUID[],
+  ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
+    return this.getSealedElimBallot(ctx, legalTargetIds, "restricted_history");
   }
 
   async getBouncePointer(

@@ -81,6 +81,7 @@ export type CanonicalGameEventType =
   | "format.menu_offered"
   | "format.selected"
   | "format.ballot_cast"
+  | "format.ballot_forfeited"
   | "format.safety_bounce_started"
   | "format.safety_bounce_pointer"
   | "format.resolved"
@@ -140,12 +141,16 @@ export const ACCEPTED_ACTION_REGISTRY = {
       "format-save-or-eliminate-ballot",
       "format-vote-bomb-ballot",
       "format-majority-elimination-ballot",
+      "format-even-votes-ballot",
+      "format-restricted-history-ballot",
       "format-safety-bounce-vote",
     ],
     traceActions: [
       "format-save-or-eliminate-ballot",
       "format-vote-bomb-ballot",
       "format-majority-elimination-ballot",
+      "format-even-votes-ballot",
+      "format-restricted-history-ballot",
       "format-safety-bounce-vote",
     ],
     actorPayloadPath: "voterId",
@@ -335,6 +340,7 @@ const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "format.menu_offered",
   "format.selected",
   "format.ballot_cast",
+  "format.ballot_forfeited",
   "format.safety_bounce_started",
   "format.safety_bounce_pointer",
   "format.resolved",
@@ -469,6 +475,12 @@ export type FormatBallotPayload = {
   polarity: "save" | "eliminate" | null;
 };
 
+export type FormatBallotForfeitedPayload = {
+  formatId: "restricted_history";
+  voterId: UUID;
+  reason: "history_exhausted";
+};
+
 export type CanonicalGameEvent =
   | CanonicalEventEnvelope<
       "game.roster_initialized",
@@ -520,6 +532,7 @@ export type CanonicalGameEvent =
       { empoweredId: UUID; formatId: LaunchFormatId }
     >
   | CanonicalEventEnvelope<"format.ballot_cast", FormatBallotPayload>
+  | CanonicalEventEnvelope<"format.ballot_forfeited", FormatBallotForfeitedPayload>
   | CanonicalEventEnvelope<"format.safety_bounce_started", { starterId: UUID }>
   | CanonicalEventEnvelope<
       "format.safety_bounce_pointer",

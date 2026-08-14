@@ -309,6 +309,7 @@ async function loadArtifactCards(
       ne(schema.gameCognitiveArtifacts.action, "format-save-or-eliminate-ballot"),
       ne(schema.gameCognitiveArtifacts.action, "format-vote-bomb-ballot"),
       ne(schema.gameCognitiveArtifacts.action, "format-majority-elimination-ballot"),
+      ne(schema.gameCognitiveArtifacts.action, "format-even-votes-ballot"),
       ne(schema.gameCognitiveArtifacts.action, "format-safety-bounce-vote"),
       or(
         isNull(schema.gameCognitiveArtifacts.phase),

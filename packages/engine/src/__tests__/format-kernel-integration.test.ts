@@ -184,6 +184,69 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(resolution.payload.tiedPlayerIds).toContain(resolution.payload.eliminatedId);
   });
 
+  it("runs Even Votes through the shared sealed path with exact parity eligibility", async () => {
+    const agents = ["A", "B", "C", "D", "E"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    const [a, b, c, d, e] = agents;
+    if (!a || !b || !c || !d || !e) throw new Error("expected five agents");
+    const targets = new Map([
+      [a.id, b.id],
+      [b.id, a.id],
+      [c.id, a.id],
+      [d.id, a.id],
+      [e.id, a.id],
+    ]);
+    for (const agent of agents) {
+      agent.getEvenVotesBallot = async () => ({
+        targetId: targets.get(agent.id)!,
+        thinking: "force a sole highest-even target",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+    }
+
+    const runner = new GameRunner(
+      agents,
+      { ...TEST_CONFIG, maxRounds: 1, formatManifest: ["even_votes"] },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await runner.run();
+
+    const canonical = runner.getCanonicalEvents();
+    const resolution = canonical.find((event) => event.type === "format.resolved");
+    if (!resolution || resolution.type !== "format.resolved") {
+      throw new Error("expected Even Votes resolution");
+    }
+    expect(canonical.filter((event) => event.type === "format.menu_offered")).toHaveLength(0);
+    expect(resolution.payloadVersion).toBe(2);
+    expect(resolution.payload).toMatchObject({
+      formatId: "even_votes",
+      eliminatedId: a.id,
+      resolutionKind: "auto",
+      tiedPlayerIds: [a.id],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: {
+          [a.id]: 4,
+          [b.id]: 1,
+          [c.id]: 0,
+          [d.id]: 0,
+          [e.id]: 0,
+        },
+        eligiblePlayerIds: [a.id, c.id, d.id, e.id],
+      },
+    });
+    expect(canonical.filter((event) => event.type === "format.ballot_cast")).toHaveLength(5);
+    expect(canonical.filter((event) => event.type === "player.eliminated")).toEqual([
+      expect.objectContaining({
+        payload: expect.objectContaining({ playerId: a.id }),
+      }),
+    ]);
+  });
+
   it("retains only an agent's own ballot receipt before resolution and reveals peers afterward", () => {
     const state = new GameState(
       [
@@ -351,7 +414,7 @@ describe("Format kernel integration (MockAgent)", () => {
   });
 
   it("completes every registered format through an explicit one-format manifest", async () => {
-    for (const formatId of LAUNCH_FORMAT_IDS) {
+    for (const formatId of LAUNCH_FORMAT_IDS.filter((id) => id !== "restricted_history")) {
       const agents = ["Alpha", "Beta", "Gamma", "Delta", "Echo"].map(
         (name) => new MockAgent(createUUID(), `${formatId}-${name}`),
       );
@@ -392,6 +455,88 @@ describe("Format kernel integration (MockAgent)", () => {
       );
       expect(ballots.length, formatId).toBeGreaterThan(0);
       expect(ballots.every((ballot) => ballot.visibility === "private"), formatId).toBe(true);
+    }
+  });
+
+  it("admits Restricted History only in round 3 and resolves it through the sealed path", async () => {
+    const agents = ["A", "B", "C", "D", "E", "F", "G"].map(
+      (name) => new MockAgent(createUUID(), name),
+    );
+    let restrictedCalls = 0;
+    for (const agent of agents) {
+      agent.pickRoundFormat = async (context, offered) => ({
+        formatId: context.round >= 3 && offered.includes("restricted_history")
+          ? "restricted_history"
+          : offered[0]!,
+        thinking: "exercise the round-gated format",
+        decisionSource: "llm",
+        fallbackReason: null,
+      });
+      agent.getRestrictedHistoryBallot = async (_context, legalTargetIds) => {
+        restrictedCalls += 1;
+        return {
+          targetId: legalTargetIds[0]!,
+          thinking: "choose from the canonical Restricted History target set",
+          decisionSource: "llm",
+          fallbackReason: null,
+        };
+      };
+    }
+
+    const runner = new GameRunner(
+      agents,
+      {
+        ...TEST_CONFIG,
+        maxRounds: 3,
+        formatManifest: ["majority_elimination", "restricted_history"],
+      },
+      undefined,
+      { maxRoundsMode: "exact" },
+    );
+    await runner.run();
+
+    const selections = runner.getCanonicalEvents().filter(
+      (event) => event.type === "format.selected",
+    );
+    expect(selections.filter((event) => event.round < 3).every(
+      (event) => event.payload.formatId !== "restricted_history",
+    )).toBe(true);
+    expect(selections.find((event) => event.round === 3)?.payload.formatId)
+      .toBe("restricted_history");
+    const resolution = runner.getCanonicalEvents().find(
+      (event) => event.type === "format.resolved" && event.round === 3,
+    );
+    expect(resolution).toMatchObject({
+      payloadVersion: 2,
+      payload: {
+        formatId: "restricted_history",
+        aggregate: {
+          capability: "sealed_elim",
+          totals: expect.any(Object),
+          eligiblePlayerIds: expect.any(Array),
+        },
+      },
+    });
+    const restrictedBallots = runner.getCanonicalEvents().filter(
+      (event): event is Extract<
+        (typeof event),
+        { type: "format.ballot_cast" }
+      > => event.type === "format.ballot_cast"
+        && event.round === 3
+        && event.payload.formatId === "restricted_history",
+    );
+    expect(restrictedBallots.length).toBeGreaterThan(0);
+    expect(restrictedCalls).toBe(restrictedBallots.length);
+    for (const ballot of restrictedBallots) {
+      const priorTargets = runner.getCanonicalEvents().flatMap((event) =>
+        event.type === "format.ballot_cast"
+          && event.round < 3
+          && event.payload.voterId === ballot.payload.voterId
+          && event.payload.polarity !== "save"
+          ? [event.payload.targetId]
+          : []
+      );
+      expect(priorTargets).not.toContain(ballot.payload.targetId);
     }
   });
 
