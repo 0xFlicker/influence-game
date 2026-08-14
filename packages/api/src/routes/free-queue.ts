@@ -19,6 +19,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
   requireAuth,
+  requireServiceAuth,
   requirePermission,
   optionalAuth,
   type AuthEnv,
@@ -253,7 +254,7 @@ export function createFreeQueueRoutes(
   // POST /api/free-queue/draw — daily draw (admin/scheduler)
   // -------------------------------------------------------------------------
 
-  app.post("/api/free-queue/draw", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
+  app.post("/api/free-queue/draw", requireServiceAuth(db), requirePermission("schedule_free_game"), async (c) => {
     const idempotencyKey = c.req.header("Idempotency-Key")?.trim();
     if (!idempotencyKey || idempotencyKey.length > 200) {
       return c.json({
@@ -492,7 +493,7 @@ export function createFreeQueueRoutes(
   // POST /api/free-queue/start — start today's free game (admin/scheduler)
   // -------------------------------------------------------------------------
 
-  app.post("/api/free-queue/start", requireAuth(db), requirePermission("schedule_free_game"), async (c) => {
+  app.post("/api/free-queue/start", requireServiceAuth(db), requirePermission("schedule_free_game"), async (c) => {
     const requestedGameId = c.req.query("gameId")?.trim();
     const gameConditions = [
       eq(schema.games.trackType, "free"),

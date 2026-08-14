@@ -29,6 +29,91 @@ afterAll(async () => {
 });
 
 describe("free queue season admission", () => {
+  test("ordinary player queue mutations still require current legal acceptance", async () => {
+    const db = await setupTestDB();
+    const ownerId = await insertUser(db, "pending-player");
+    const profile = (await createOwnedAgentProfile(db, { userId: ownerId }, {
+      name: "Pending Player Agent",
+      personality: "Patient",
+    })).profile;
+    const token = await createSessionToken(ownerId, {
+      roles: ["player"],
+      permissions: [],
+      legalAcceptance: null,
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    const response = await app.request("/api/free-queue/join", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ agentProfileId: profile.id }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: "LEGAL_ACCEPTANCE_REQUIRED" });
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+    expect(await db.select().from(schema.freeGameQueue)).toHaveLength(0);
+  });
+
+  test("service scheduler token draws and starts without legal claims or acceptance rows", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "pending-scheduler");
+    await createQueuedAgent(db, "pending-scheduler-a", "Aster Service");
+    await createQueuedAgent(db, "pending-scheduler-b", "Maris Service");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+      legalAcceptance: null,
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:service-auth",
+      },
+    });
+    expect(draw.status).toBe(201);
+    const drawn = await draw.json() as { gameId: string };
+
+    const start = await app.request(`/api/free-queue/start?gameId=${drawn.gameId}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(start.status).toBe(200);
+    expect(await start.json()).toMatchObject({ started: true, gameId: drawn.gameId });
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+    await abortAllGames();
+  });
+
+  test("service scheduler endpoints remain forbidden without schedule permission", async () => {
+    const db = await setupTestDB();
+    const userId = await insertUser(db, "pending-non-scheduler");
+    const token = await createSessionToken(userId, {
+      roles: ["scheduler"],
+      permissions: [],
+      legalAcceptance: null,
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+
+    for (const path of ["/api/free-queue/draw", "/api/free-queue/start"]) {
+      const response = await app.request(path, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Idempotency-Key": "daily-free:test:no-service-permission",
+        },
+      });
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "Insufficient permissions" });
+    }
+    expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
+  });
+
   test("REST join preserves its response id and maps owned-agent errors", async () => {
     const db = await setupTestDB();
     const ownerId = await insertUser(db, "rest-owner");

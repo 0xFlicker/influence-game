@@ -249,6 +249,15 @@ export function requireAuth(
   });
 }
 
+/**
+ * Authenticate an operational service account without applying the human
+ * Terms/Privacy acceptance policy. Service routes must chain an explicit,
+ * narrowly scoped permission middleware after this middleware.
+ */
+export function requireServiceAuth(db: DrizzleDB) {
+  return requireAuth(db, { allowPendingLegalAcceptance: true });
+}
+
 // ---------------------------------------------------------------------------
 // Middleware: require permission (must be chained after requireAuth)
 // ---------------------------------------------------------------------------

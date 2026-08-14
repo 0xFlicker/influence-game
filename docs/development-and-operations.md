@@ -130,6 +130,12 @@ Creating a season in the producer UI immediately makes it active. The same UI ca
 
 ### Daily Free draw idempotency
 
+`POST /api/free-queue/draw` and `POST /api/free-queue/start` are operational
+service-account endpoints. Their JWT must carry `schedule_free_game`; they do
+not require a human Terms/Privacy claim or a `legal_acceptances` row. Do not
+provision acceptance records for the scheduler identity. Ordinary player and
+account routes continue to enforce the current legal-acceptance policy.
+
 `POST /api/free-queue/draw` requires an `Idempotency-Key` header containing 1-200 nonblank characters. A successful draw persists that key on the created Daily Free game, and retrying the same key returns that exact game in any status. The draw advisory lock also converges distinct operator keys: while any Daily Free game is still `waiting`, a new draw request returns that exact waiting game instead of creating a parallel roster. Once it starts, a later distinct key may create the next game from the owners who are then eligible. This lets a recovered late game coexist with the following scheduled draw after the recovered game has started, without weakening duplicate-delivery protection.
 
 Suspended Daily Free assignments do not make a standing owner ineligible. If that owner is selected again, the draw normally supersedes the suspended game by cancelling it and revoking its active run owner with `superseded_by_new_draw`. A suspended game with a `pending` or `repair_required` completion settlement is never superseded: its sealed completion remains available for operator retry or investigation, while the selected owner may still enter the new roster.
