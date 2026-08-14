@@ -150,6 +150,12 @@ E2E tests live in two places and require more infrastructure:
 
 The full game-flow E2E test spins up an API server, creates a real 6-player LLM game, and watches it via Puppeteer (up to 11 minute timeout). Run it sparingly.
 
+### Staging release E2E contract
+
+The `E2E Staging Tests` workflow receives the immutable deployed image tag, resolves it to the exact source commit while keeping the release-gate test code on current `main`, and requires `/api/health` to report that same full commit SHA before and after every serial smoke test. It navigates the homepage with normal browser headers, keeps the title assertion, and fails closed on an identity mismatch, non-HTML response, or blank/missing title.
+
+On failure, the workflow uploads Playwright traces, screenshots, and a bounded homepage evidence attachment containing final URL, status, redacted response headers, title, and a SHA-256 body fingerprint. Staging traces exclude DOM snapshots and source files, and the workflow never uploads the raw page body. A passing staging deploy is not a release certificate until the deployment workflow has separately adopted the E2E result after the required stability proof.
+
 The deterministic layered-auth project drives the visible unified wrapper plus
 the real Influence API/session coordinator, but its Clerk and Privy assertions
 are injected. The real Clerk project requires `+clerk_test` addresses, the

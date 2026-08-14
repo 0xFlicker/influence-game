@@ -6,6 +6,7 @@ const localIdentityRun =
   || process.env.PLAYWRIGHT_BASE_URL === undefined;
 const layeredAuthRun = process.env.PLAYWRIGHT_LAYERED_AUTH;
 const localSerialRun = localIdentityRun || layeredAuthRun === "deterministic";
+const stagingReleaseGate = process.env.STAGING_RELEASE_GATE === "1";
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const chromiumUse = {
   browserName: "chromium" as const,
@@ -22,10 +23,14 @@ export default defineConfig({
   retries: localSerialRun ? 0 : 1,
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://influence-staging",
-    extraHTTPHeaders: {
-      Accept: "application/json",
-    },
-    trace: "retain-on-failure",
+    trace: stagingReleaseGate
+      ? {
+          mode: "retain-on-failure",
+          snapshots: false,
+          screenshots: true,
+          sources: false,
+        }
+      : "retain-on-failure",
     screenshot: "only-on-failure",
   },
   projects: layeredAuthRun
