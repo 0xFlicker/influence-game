@@ -152,9 +152,9 @@ The full game-flow E2E test spins up an API server, creates a real 6-player LLM 
 
 ### Staging release E2E contract
 
-The `E2E Staging Tests` workflow receives the immutable deployed image tag, resolves it to the exact source commit while keeping the release-gate test code on current `main`, and requires `/api/health` to report that same full commit SHA before and after every serial smoke test. It navigates the homepage with normal browser headers, keeps the title assertion, and fails closed on an identity mismatch, non-HTML response, or blank/missing title.
+The `E2E Staging Tests` workflow receives the immutable deployed image tag, resolves it to the exact source commit while keeping the release-gate test code on current `main`, and requires `/api/health` to report that same full commit SHA before and after every serial smoke test. It navigates the homepage at `https://influence-staging.tail8a79ed.ts.net` with normal browser headers, keeps the title assertion, and fails closed on an identity mismatch, non-HTML response, or blank/missing title.
 
-On failure, the workflow uploads Playwright traces, screenshots, and a bounded homepage evidence attachment containing final URL, status, redacted response headers, title, and a SHA-256 body fingerprint. Staging traces exclude DOM snapshots and source files, and the workflow never uploads the raw page body. A passing staging deploy is not a release certificate until the deployment workflow has separately adopted the E2E result after the required stability proof.
+On failure, the workflow uploads Playwright traces, screenshots, and a bounded `homepage-failure-evidence.json` file containing final URL, status, redacted response headers, title, and a SHA-256 body fingerprint. Staging traces exclude DOM snapshots and source files, and the workflow never uploads the raw page body. A passing staging deploy is not a release certificate until the deployment workflow has separately adopted the E2E result after the required stability proof.
 
 The deterministic layered-auth project drives the visible unified wrapper plus
 the real Influence API/session coordinator, but its Clerk and Privy assertions
@@ -627,7 +627,7 @@ To manually trigger a staging deploy, use the `deploy-staging` skill or trigger 
 
 House Highlights postgame media adds a third, single-concurrency service. The API owns jobs, leases, storage credentials, and publication state; the render worker owns Remotion/Chromium/ffmpeg work only. Build, local smoke, health, temp-space, object-delivery, admin backfill, and concrete Compose handoff instructions are in `docs/deployment/house-highlights-render-worker.md`. Do not place `LINODE_OBJ_*` credentials in the worker container.
 
-**Board access URL:** `https://influencer-staging.tail8a79ed.ts.net/`
+**Board access URL:** `https://influence-staging.tail8a79ed.ts.net/`
 
 ### Port Allocation
 

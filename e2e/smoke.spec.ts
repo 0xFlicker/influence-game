@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import {
   test,
   expect,
@@ -87,26 +88,23 @@ async function attachHomepageFailureEvidence(
     titleReadError = error instanceof Error ? error.message : String(error);
   }
 
-  await testInfo.attach("homepage-failure-evidence.json", {
-    body: JSON.stringify({
-      requestedImageTag: requestedImageTag ?? null,
-      expectedCommitSha: expectedCommitSha ?? null,
-      finalUrl: page.url(),
-      responseUrl: response?.url() ?? null,
-      responseStatus: response?.status() ?? null,
-      responseHeaders: response ? redactResponseHeaders(response.headers()) : null,
-      requestAccept: response?.request().headers().accept ?? null,
-      title,
-      titleReadError,
-      bodySource,
-      bodyByteLength: body?.byteLength ?? null,
-      bodySha256: body
-        ? createHash("sha256").update(body).digest("hex")
-        : null,
-      bodyReadError,
-    }, null, 2),
-    contentType: "application/json",
-  });
+  await writeFile(testInfo.outputPath("homepage-failure-evidence.json"), JSON.stringify({
+    requestedImageTag: requestedImageTag ?? null,
+    expectedCommitSha: expectedCommitSha ?? null,
+    finalUrl: page.url(),
+    responseUrl: response?.url() ?? null,
+    responseStatus: response?.status() ?? null,
+    responseHeaders: response ? redactResponseHeaders(response.headers()) : null,
+    requestAccept: response?.request().headers().accept ?? null,
+    title,
+    titleReadError,
+    bodySource,
+    bodyByteLength: body?.byteLength ?? null,
+    bodySha256: body
+      ? createHash("sha256").update(body).digest("hex")
+      : null,
+    bodyReadError,
+  }, null, 2));
 }
 
 test.describe("Smoke Tests", () => {

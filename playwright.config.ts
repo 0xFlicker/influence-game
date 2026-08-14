@@ -22,7 +22,7 @@ export default defineConfig({
   workers: localSerialRun ? 1 : undefined,
   retries: localSerialRun ? 0 : 1,
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://influence-staging",
+    baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "https://influence-staging.tail8a79ed.ts.net",
     trace: stagingReleaseGate
       ? {
           mode: "retain-on-failure",

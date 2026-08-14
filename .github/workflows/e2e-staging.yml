@@ -78,7 +78,7 @@ jobs:
       - name: Run E2E tests
         run: bunx playwright test --retries=0
         env:
-          PLAYWRIGHT_BASE_URL: http://influence-staging
+          PLAYWRIGHT_BASE_URL: https://influence-staging.tail8a79ed.ts.net
           STAGING_RELEASE_GATE: "1"
           STAGING_IMAGE_TAG: ${{ inputs.image_tag }}
           STAGING_EXPECTED_COMMIT_SHA: ${{ steps.source-identity.outputs.commit_sha }}
