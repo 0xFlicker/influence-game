@@ -74,8 +74,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-    outputs:
-      image_tag: ${{ steps.sha.outputs.short }}
     strategy:
       fail-fast: false
       matrix:
@@ -83,14 +81,17 @@ jobs:
           - target: api
             dockerfile: Dockerfile.api
             image: ghcr.io/0xflicker/influence-api
+            digest_artifact: digest-api
             build_args: ""
           - target: web
             dockerfile: Dockerfile.web
             image: ghcr.io/0xflicker/influence-web
+            digest_artifact: digest-web
             build_args: '--build-arg PRIVY_APP_ID="$PRIVY_APP_ID"'
           - target: render-worker
             dockerfile: Dockerfile.render-worker
             image: ghcr.io/0xflicker/influence-render-worker
+            digest_artifact: digest-render-worker
             build_args: ""
     steps:
       - uses: actions/checkout@v4
@@ -123,8 +124,121 @@ jobs:
               test "$(find /app/music/house-highlights-variants -name "*.m4a" | wc -l)" -ge 24
             '
           fi
-          docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }}
+          push_output="$(docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }})"
+          printf '%s\n' "$push_output"
+          immutable_digest="$(awk '$1 == "digest:" { print $2 }' <<< "$push_output" | tail -n 1)"
+          if ! [[ "$immutable_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "immutable push did not report a valid digest for ${{ matrix.target }}" >&2
+            exit 1
+          fi
+          printf '%s\n' "$immutable_digest" > "${{ matrix.target }}.digest"
           docker push ${{ matrix.image }}:staging
+
+      - name: Upload ${{ matrix.target }} digest evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.digest_artifact }}
+          path: ${{ matrix.target }}.digest
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+  release-manifest:
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
+    needs: docker-build-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      candidate_sha: ${{ steps.manifest.outputs.candidate_sha }}
+      api_digest: ${{ steps.manifest.outputs.api_digest }}
+      web_digest: ${{ steps.manifest.outputs.web_digest }}
+      worker_digest: ${{ steps.manifest.outputs.worker_digest }}
+      migration_set: ${{ steps.manifest.outputs.migration_set }}
+      artifact_name: ${{ steps.manifest.outputs.artifact_name }}
+      manifest_digest: ${{ steps.manifest.outputs.manifest_digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download immutable service digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: release-digests
+          merge-multiple: true
+
+      - name: Aggregate exact release manifest
+        id: manifest
+        env:
+          CANDIDATE_SHA: ${{ github.sha }}
+        run: |
+          if ! [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "candidate SHA must be a full lowercase git SHA" >&2
+            exit 64
+          fi
+
+          mapfile -t digest_files < <(find release-digests -maxdepth 1 -type f -name '*.digest' -print | LC_ALL=C sort)
+          if [ "${#digest_files[@]}" -ne 3 ]; then
+            echo "expected exactly three service digest artifacts, found ${#digest_files[@]}" >&2
+            exit 1
+          fi
+
+          api_digest="$(tr -d '\n' < release-digests/api.digest)"
+          web_digest="$(tr -d '\n' < release-digests/web.digest)"
+          worker_digest="$(tr -d '\n' < release-digests/render-worker.digest)"
+          for digest in "$api_digest" "$web_digest" "$worker_digest"; do
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "release manifest contains an invalid service digest" >&2
+              exit 1
+            fi
+          done
+
+          migration_hash="$({
+            cd packages/api
+            find drizzle -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+          } | sha256sum | awk '{ print $1 }')"
+          migration_set="sha256:${migration_hash}"
+          artifact_name="influence-release-manifest-${CANDIDATE_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          jq -n \
+            --arg candidate_sha "$CANDIDATE_SHA" \
+            --arg api_digest "$api_digest" \
+            --arg web_digest "$web_digest" \
+            --arg worker_digest "$worker_digest" \
+            --arg migration_set "$migration_set" \
+            --argjson build_run_id "$GITHUB_RUN_ID" \
+            --argjson build_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            '{
+              schema_version: 1,
+              candidate_sha: $candidate_sha,
+              build_run_id: $build_run_id,
+              build_run_attempt: $build_run_attempt,
+              migration_set: $migration_set,
+              images: {
+                api: { digest: $api_digest },
+                web: { digest: $web_digest },
+                render_worker: { digest: $worker_digest }
+              }
+            }' > release-manifest.json
+
+          manifest_digest="sha256:$(sha256sum release-manifest.json | awk '{ print $1 }')"
+          {
+            echo "candidate_sha=$CANDIDATE_SHA"
+            echo "api_digest=$api_digest"
+            echo "web_digest=$web_digest"
+            echo "worker_digest=$worker_digest"
+            echo "migration_set=$migration_set"
+            echo "artifact_name=$artifact_name"
+            echo "manifest_digest=$manifest_digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact release manifest
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.manifest.outputs.artifact_name }}
+          path: release-manifest.json
+          if-no-files-found: error
+          retention-days: 14
 
   tag-deploy:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -145,8 +259,16 @@ jobs:
 
   trigger-deploy:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    needs: docker-build-push
+    needs: release-manifest
     runs-on: ubuntu-latest
+    env:
+      CANDIDATE_SHA: ${{ needs.release-manifest.outputs.candidate_sha }}
+      API_DIGEST: ${{ needs.release-manifest.outputs.api_digest }}
+      WEB_DIGEST: ${{ needs.release-manifest.outputs.web_digest }}
+      WORKER_DIGEST: ${{ needs.release-manifest.outputs.worker_digest }}
+      MIGRATION_SET: ${{ needs.release-manifest.outputs.migration_set }}
+      RELEASE_MANIFEST_ARTIFACT: ${{ needs.release-manifest.outputs.artifact_name }}
+      RELEASE_MANIFEST_DIGEST: ${{ needs.release-manifest.outputs.manifest_digest }}
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -168,6 +290,14 @@ jobs:
               workflow_id: 'deploy-staging.yml',
               ref: 'main',
               inputs: {
-                image_tag: '${{ needs.docker-build-push.outputs.image_tag }}'
+                candidate_sha: process.env.CANDIDATE_SHA,
+                api_digest: process.env.API_DIGEST,
+                web_digest: process.env.WEB_DIGEST,
+                worker_digest: process.env.WORKER_DIGEST,
+                migration_set: process.env.MIGRATION_SET,
+                build_run_id: String(context.runId),
+                build_run_attempt: process.env.GITHUB_RUN_ATTEMPT,
+                release_manifest_artifact: process.env.RELEASE_MANIFEST_ARTIFACT,
+                release_manifest_digest: process.env.RELEASE_MANIFEST_DIGEST
               }
             });

@@ -1,11 +1,35 @@
 name: "E2E Staging Tests"
-run-name: "E2E staging / ${{ inputs.image_tag }}"
+run-name: "E2E staging / ${{ inputs.candidate_sha }}"
 
 on:
   workflow_dispatch:
     inputs:
-      image_tag:
-        description: "Immutable 7-40 character git SHA image tag deployed to staging"
+      candidate_sha:
+        description: "Full source SHA deployed to staging"
+        required: true
+      api_digest:
+        description: "Immutable API image digest"
+        required: true
+      web_digest:
+        description: "Immutable web image digest"
+        required: true
+      worker_digest:
+        description: "Immutable render-worker image digest"
+        required: true
+      migration_set:
+        description: "Bundled migration-set identity"
+        required: true
+      staging_run_id:
+        description: "Trusted Linode staging workflow run ID"
+        required: true
+      staging_run_attempt:
+        description: "Trusted Linode staging workflow run attempt"
+        required: true
+      staging_receipt_artifact:
+        description: "Exact staging deployment receipt artifact"
+        required: true
+      staging_receipt_digest:
+        description: "SHA-256 identity of the staging receipt"
         required: true
 
 permissions:
@@ -15,14 +39,37 @@ jobs:
   e2e:
     name: Run E2E Tests
     runs-on: ubuntu-latest
+    env:
+      CANDIDATE_SHA: ${{ inputs.candidate_sha }}
+      API_DIGEST: ${{ inputs.api_digest }}
+      WEB_DIGEST: ${{ inputs.web_digest }}
+      WORKER_DIGEST: ${{ inputs.worker_digest }}
+      MIGRATION_SET: ${{ inputs.migration_set }}
+      STAGING_RUN_ID: ${{ inputs.staging_run_id }}
+      STAGING_RUN_ATTEMPT: ${{ inputs.staging_run_attempt }}
+      STAGING_RECEIPT_ARTIFACT: ${{ inputs.staging_receipt_artifact }}
+      STAGING_RECEIPT_DIGEST: ${{ inputs.staging_receipt_digest }}
 
     steps:
-      - name: Validate deployed image tag
-        env:
-          STAGING_IMAGE_TAG: ${{ inputs.image_tag }}
+      - name: Validate candidate evidence
         run: |
-          if ! [[ "$STAGING_IMAGE_TAG" =~ ^[0-9a-f]{7,40}$ ]]; then
-            echo "image_tag must be an immutable lowercase git SHA" >&2
+          if ! [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "candidate_sha must be a full lowercase git SHA" >&2
+            exit 64
+          fi
+          for digest in "$API_DIGEST" "$WEB_DIGEST" "$WORKER_DIGEST" "$MIGRATION_SET" "$STAGING_RECEIPT_DIGEST"; do
+            if ! [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "candidate evidence contains an invalid SHA-256 digest" >&2
+              exit 64
+            fi
+          done
+          if ! [[ "$STAGING_RUN_ID" =~ ^[1-9][0-9]*$ ]] || ! [[ "$STAGING_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "staging run identity must contain positive integers" >&2
+            exit 64
+          fi
+          expected_receipt="staging-deployment-receipt-${STAGING_RUN_ID}-${STAGING_RUN_ATTEMPT}"
+          if [ "$STAGING_RECEIPT_ARTIFACT" != "$expected_receipt" ]; then
+            echo "staging receipt artifact does not match the staging run identity" >&2
             exit 64
           fi
 
@@ -33,16 +80,14 @@ jobs:
 
       - name: Resolve deployed source identity
         id: source-identity
-        env:
-          STAGING_IMAGE_TAG: ${{ inputs.image_tag }}
         run: |
-          expected_sha="$(git rev-parse --verify "${STAGING_IMAGE_TAG}^{commit}")"
-          if [[ "$expected_sha" != "$STAGING_IMAGE_TAG"* ]]; then
-            echo "resolved commit $expected_sha does not match requested image tag $STAGING_IMAGE_TAG" >&2
+          expected_sha="$(git rev-parse --verify "${CANDIDATE_SHA}^{commit}")"
+          if [ "$expected_sha" != "$CANDIDATE_SHA" ]; then
+            echo "resolved commit $expected_sha does not match candidate $CANDIDATE_SHA" >&2
             exit 1
           fi
           echo "commit_sha=$expected_sha" >> "$GITHUB_OUTPUT"
-          echo "Resolved deployed source commit $expected_sha for image tag $STAGING_IMAGE_TAG"
+          echo "Resolved deployed source commit $expected_sha"
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
@@ -80,14 +125,47 @@ jobs:
         env:
           PLAYWRIGHT_BASE_URL: https://influence-staging.tail8a79ed.ts.net
           STAGING_RELEASE_GATE: "1"
-          STAGING_IMAGE_TAG: ${{ inputs.image_tag }}
+          STAGING_IMAGE_TAG: ${{ inputs.candidate_sha }}
           STAGING_EXPECTED_COMMIT_SHA: ${{ steps.source-identity.outputs.commit_sha }}
+
+      - name: Generate GitHub App token for linode-iac
+        id: app-token
+        uses: actions/create-github-app-token@v1
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: linode-iac
+
+      - name: Report qualified production candidate
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            await github.rest.repos.createDispatchEvent({
+              owner: '0xFlicker',
+              repo: 'linode-iac',
+              event_type: 'influence-production-candidate-qualified',
+              client_payload: {
+                candidate_sha: process.env.CANDIDATE_SHA,
+                api_digest: process.env.API_DIGEST,
+                web_digest: process.env.WEB_DIGEST,
+                worker_digest: process.env.WORKER_DIGEST,
+                migration_set: process.env.MIGRATION_SET,
+                staging_run_id: Number(process.env.STAGING_RUN_ID),
+                staging_run_attempt: Number(process.env.STAGING_RUN_ATTEMPT),
+                staging_receipt_artifact: process.env.STAGING_RECEIPT_ARTIFACT,
+                staging_receipt_digest: process.env.STAGING_RECEIPT_DIGEST,
+                e2e_run_id: context.runId,
+                e2e_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT)
+              }
+            });
 
       - name: Upload Playwright failure evidence
         if: ${{ failure() }}
         uses: actions/upload-artifact@v4
         with:
-          name: staging-e2e-failure-${{ inputs.image_tag }}-${{ github.run_id }}
+          name: staging-e2e-failure-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             test-results/
             playwright-report/
