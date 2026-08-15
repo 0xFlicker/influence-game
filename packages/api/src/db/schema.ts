@@ -922,6 +922,83 @@ export type CognitiveArtifactReadOutcome =
   | "expired"
   | "redacted";
 
+export type DeploymentAdmissionPhase =
+  | "draining"
+  | "validating"
+  | "switching"
+  | "accepting"
+  | "restoring";
+export type DeploymentAdmissionLeaseStatus =
+  | "active"
+  | "accepted"
+  | "restored"
+  | "aborted"
+  | "revoked"
+  | "expired";
+
+/** Singleton lock and monotonic fence source for every start/release race. */
+export const deploymentAdmissionState = pgTable("deployment_admission_state", {
+  id: integer("id").primaryKey().default(1),
+  nextFencingToken: bigint("next_fencing_token", { mode: "number" }).notNull().default(1),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  check("deployment_admission_state_singleton_check", sql`${table.id} = 1`),
+  check("deployment_admission_state_next_fence_check", sql`${table.nextFencingToken} > 0`),
+]);
+
+/** Append-only lease identities; terminal rows retain release and Resume audit. */
+export const deploymentAdmissionLeases = pgTable("deployment_admission_leases", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  fencingToken: bigint("fencing_token", { mode: "number" }).notNull(),
+  candidateSha: text("candidate_sha").notNull(),
+  sourceRepository: text("source_repository").notNull(),
+  workflowRunId: bigint("workflow_run_id", { mode: "number" }).notNull(),
+  workflowRunAttempt: integer("workflow_run_attempt").notNull(),
+  actor: text("actor").notNull(),
+  phase: text("phase").notNull().$type<DeploymentAdmissionPhase>().default("draining"),
+  status: text("status").notNull().$type<DeploymentAdmissionLeaseStatus>().default("active"),
+  revision: integer("revision").notNull().default(1),
+  acquiredAt: text("acquired_at").notNull().default(sql`now()::text`),
+  heartbeatAt: text("heartbeat_at").notNull().default(sql`now()::text`),
+  expiresAt: text("expires_at").notNull(),
+  absoluteDeadlineAt: text("absolute_deadline_at").notNull(),
+  completedAt: text("completed_at"),
+  completionReason: text("completion_reason"),
+  revokedAt: text("revoked_at"),
+  revokedBy: text("revoked_by"),
+  revocationReason: text("revocation_reason"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("deployment_admission_leases_fence_unique").on(table.fencingToken),
+  uniqueIndex("deployment_admission_leases_one_active")
+    .on(table.status)
+    .where(sql`${table.status} = 'active'`),
+  index("deployment_admission_leases_candidate_sha_idx").on(table.candidateSha),
+  check("deployment_admission_leases_fence_check", sql`${table.fencingToken} > 0`),
+  check("deployment_admission_leases_candidate_sha_check", sql`${table.candidateSha} ~ '^[0-9a-f]{40}$'`),
+  check("deployment_admission_leases_source_repository_check", sql`${table.sourceRepository} = '0xFlicker/linode-iac'`),
+  check("deployment_admission_leases_workflow_run_check", sql`${table.workflowRunId} > 0 AND ${table.workflowRunAttempt} > 0`),
+  check("deployment_admission_leases_actor_check", sql`${table.actor} ~ '^[A-Za-z0-9][A-Za-z0-9-]{0,38}$'`),
+  check("deployment_admission_leases_phase_check", sql`${table.phase} IN ('draining', 'validating', 'switching', 'accepting', 'restoring')`),
+  check("deployment_admission_leases_status_check", sql`${table.status} IN ('active', 'accepted', 'restored', 'aborted', 'revoked', 'expired')`),
+  check("deployment_admission_leases_revision_check", sql`${table.revision} > 0`),
+  check("deployment_admission_leases_deadline_order_check", sql`${table.expiresAt}::timestamptz <= ${table.absoluteDeadlineAt}::timestamptz`),
+  check(
+    "deployment_admission_leases_revocation_audit_check",
+    sql`(
+      ${table.status} = 'revoked'
+      AND ${table.revokedAt} IS NOT NULL
+      AND ${table.revokedBy} IS NOT NULL
+      AND ${table.revocationReason} IS NOT NULL
+    ) OR (
+      ${table.status} <> 'revoked'
+      AND ${table.revokedAt} IS NULL
+      AND ${table.revokedBy} IS NULL
+      AND ${table.revocationReason} IS NULL
+    )`,
+  ),
+]);
+
 export const gameRunOwners = pgTable("game_run_owners", {
   id: text("id").primaryKey(), // UUID
   gameId: text("game_id")

@@ -32,6 +32,7 @@ import { createOwnerLearningRoutes } from "./routes/owner-learning.js";
 import { createPostgameMediaWorkerRoutes } from "./routes/postgame-media-worker.js";
 import { createSeasonRoutes } from "./routes/seasons.js";
 import { createPublicPlayerRoutes } from "./routes/public-players.js";
+import { createDeploymentControlRoutes } from "./routes/deployment-control.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
 import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
@@ -314,6 +315,9 @@ app.route("/", gameRoutes);
 
 const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db);
 app.route("/", postgameMediaWorkerRoutes);
+
+const deploymentControlRoutes = createDeploymentControlRoutes(db);
+app.route("/", deploymentControlRoutes);
 
 // Public watch intelligence routes
 const watchIntelligenceRoutes = createWatchIntelligenceRoutes(db);

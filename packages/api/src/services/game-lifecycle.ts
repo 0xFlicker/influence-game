@@ -77,6 +77,7 @@ import {
 import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
 import { reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
 import { CompetitionSettlementRepairRequiredError } from "./competition-completion.js";
+import { checkGameStartAdmission } from "./deployment-admission.js";
 import {
   COMPLETION_SETTLEMENT_REPAIR_REQUIRED,
   COMPLETION_SETTLEMENT_TRANSIENT_FAILURE,
@@ -595,7 +596,14 @@ export async function validateGameStartReadiness(
   db: DrizzleDB,
   gameId: string,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<{ error?: string }> {
+): Promise<{
+  error?: string;
+  code?: "deployment_admission_closed" | "deployment_admission_unavailable";
+  retryable?: boolean;
+}> {
+  const admission = await checkGameStartAdmission(db);
+  if (!admission.ok) return admission;
+
   const game = (await db
     .select()
     .from(schema.games)
