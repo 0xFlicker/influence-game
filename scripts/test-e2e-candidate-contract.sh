@@ -35,6 +35,7 @@ require_literal "$e2e_workflow" "staging deploy attempt input" "staging_run_atte
 require_literal "$e2e_workflow" "staging receipt artifact input" "staging_receipt_artifact"
 require_literal "$e2e_workflow" "staging receipt digest input" "staging_receipt_digest"
 require_literal "$e2e_workflow" "successful candidate dispatch" "event_type: 'influence-production-candidate-qualified'"
+require_literal "$e2e_workflow" "least-privilege repository dispatch token" "permission-contents: write"
 require_literal "$e2e_workflow" "E2E run ID evidence" "e2e_run_id: context.runId"
 require_literal "$e2e_workflow" "E2E run attempt evidence" "e2e_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT)"
 require_literal "$e2e_workflow" "trusted E2E workflow SHA evidence" "e2e_workflow_sha: process.env.GITHUB_SHA"

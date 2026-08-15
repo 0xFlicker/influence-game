@@ -147,6 +147,7 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: 0xFlicker
           repositories: linode-iac
+          permission-contents: write
 
       - name: Report qualified production candidate
         id: candidate-dispatch
