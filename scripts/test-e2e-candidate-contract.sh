@@ -42,6 +42,11 @@ require_literal "$e2e_workflow" "API digest evidence" "api_digest: process.env.A
 require_literal "$e2e_workflow" "web digest evidence" "web_digest: process.env.WEB_DIGEST"
 require_literal "$e2e_workflow" "worker digest evidence" "worker_digest: process.env.WORKER_DIGEST"
 require_literal "$e2e_workflow" "receipt bound to staging identity" 'expected_receipt="staging-deployment-receipt-${STAGING_RUN_ID}-${STAGING_RUN_ATTEMPT}"'
+require_literal "$e2e_workflow" "release-control capability gate" "STAGING_MIN_RELEASE_CONTROL_PROTOCOL"
+require_literal "$e2e_workflow" "durable staging E2E evidence" "staging-e2e-evidence.json"
+require_literal "$e2e_workflow" "candidate evidence job summary" "## Influence staging release evidence"
+require_literal "$e2e_workflow" "staging receipt evidence link" 'actions/runs/$STAGING_RUN_ID/attempts/$STAGING_RUN_ATTEMPT'
+require_literal "$e2e_workflow" "E2E evidence link" 'actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT'
 
 e2e_line="$(grep -n 'name: Run E2E tests' "$e2e_workflow" | cut -d: -f1)"
 dispatch_line="$(grep -n 'name: Report qualified production candidate' "$e2e_workflow" | cut -d: -f1)"

@@ -49,9 +49,11 @@ jobs:
       STAGING_RUN_ATTEMPT: ${{ inputs.staging_run_attempt }}
       STAGING_RECEIPT_ARTIFACT: ${{ inputs.staging_receipt_artifact }}
       STAGING_RECEIPT_DIGEST: ${{ inputs.staging_receipt_digest }}
+      MIN_RELEASE_CONTROL_PROTOCOL: "1"
 
     steps:
       - name: Validate candidate evidence
+        id: validate-evidence
         run: |
           if ! [[ "$CANDIDATE_SHA" =~ ^[0-9a-f]{40}$ ]]; then
             echo "candidate_sha must be a full lowercase git SHA" >&2
@@ -121,12 +123,14 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Run E2E tests
+        id: release-e2e
         run: bunx playwright test --retries=0
         env:
           PLAYWRIGHT_BASE_URL: https://influence-staging.tail8a79ed.ts.net
           STAGING_RELEASE_GATE: "1"
           STAGING_IMAGE_TAG: ${{ inputs.candidate_sha }}
           STAGING_EXPECTED_COMMIT_SHA: ${{ steps.source-identity.outputs.commit_sha }}
+          STAGING_MIN_RELEASE_CONTROL_PROTOCOL: ${{ env.MIN_RELEASE_CONTROL_PROTOCOL }}
 
       - name: Generate GitHub App token for linode-iac
         id: app-token
@@ -138,6 +142,7 @@ jobs:
           repositories: linode-iac
 
       - name: Report qualified production candidate
+        id: candidate-dispatch
         uses: actions/github-script@v7
         with:
           github-token: ${{ steps.app-token.outputs.token }}
@@ -160,6 +165,58 @@ jobs:
                 e2e_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT)
               }
             });
+
+      - name: Record staging release evidence
+        if: ${{ always() && steps.validate-evidence.outcome == 'success' }}
+        env:
+          E2E_OUTCOME: ${{ steps.release-e2e.outcome }}
+          DISPATCH_OUTCOME: ${{ steps.candidate-dispatch.outcome }}
+        run: |
+          jq -n \
+            --arg candidate_sha "$CANDIDATE_SHA" \
+            --arg api_digest "$API_DIGEST" \
+            --arg web_digest "$WEB_DIGEST" \
+            --arg worker_digest "$WORKER_DIGEST" \
+            --arg migration_set "$MIGRATION_SET" \
+            --argjson staging_run_id "$STAGING_RUN_ID" \
+            --argjson staging_run_attempt "$STAGING_RUN_ATTEMPT" \
+            --arg staging_receipt_artifact "$STAGING_RECEIPT_ARTIFACT" \
+            --arg staging_receipt_digest "$STAGING_RECEIPT_DIGEST" \
+            --argjson e2e_run_id "$GITHUB_RUN_ID" \
+            --argjson e2e_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg e2e_outcome "$E2E_OUTCOME" \
+            --arg dispatch_outcome "$DISPATCH_OUTCOME" \
+            --argjson minimum_release_control_protocol "$MIN_RELEASE_CONTROL_PROTOCOL" \
+            '{schema_version:1,candidate_sha:$candidate_sha,
+              images:{api:{digest:$api_digest},web:{digest:$web_digest},render_worker:{digest:$worker_digest}},
+              migration_set:$migration_set,
+              staging:{run_id:$staging_run_id,run_attempt:$staging_run_attempt,receipt_artifact:$staging_receipt_artifact,receipt_digest:$staging_receipt_digest},
+              e2e:{run_id:$e2e_run_id,run_attempt:$e2e_run_attempt,outcome:$e2e_outcome},
+              release_control:{minimum_protocol:$minimum_release_control_protocol},
+              candidate_dispatch:{outcome:$dispatch_outcome}}' > staging-e2e-evidence.json
+          {
+            echo "## Influence staging release evidence"
+            echo
+            echo "- Candidate: \`$CANDIDATE_SHA\`"
+            echo "- API digest: \`$API_DIGEST\`"
+            echo "- Web digest: \`$WEB_DIGEST\`"
+            echo "- Worker digest: \`$WORKER_DIGEST\`"
+            echo "- Migration set: \`$MIGRATION_SET\`"
+            echo "- Minimum release-control protocol: \`$MIN_RELEASE_CONTROL_PROTOCOL\`"
+            echo "- Staging receipt: [\`$STAGING_RECEIPT_ARTIFACT\`](https://github.com/0xFlicker/linode-iac/actions/runs/$STAGING_RUN_ID/attempts/$STAGING_RUN_ATTEMPT)"
+            echo "- E2E run: [\`$GITHUB_RUN_ID\` attempt \`$GITHUB_RUN_ATTEMPT\`](https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT)"
+            echo "- E2E result: \`$E2E_OUTCOME\`"
+            echo "- Candidate callback: \`$DISPATCH_OUTCOME\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload staging release evidence
+        if: ${{ always() && steps.validate-evidence.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-e2e-evidence-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: staging-e2e-evidence.json
+          if-no-files-found: warn
+          retention-days: 35
 
       - name: Upload Playwright failure evidence
         if: ${{ failure() }}
