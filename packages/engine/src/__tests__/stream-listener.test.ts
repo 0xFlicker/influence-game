@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { GameRunner } from "../game-runner";
-import type { GameStreamEvent, GameStateSnapshot, PhaseContext } from "../game-runner";
+import type { GameStreamEvent, GameStateSnapshot } from "../game-runner";
 import { Phase, type GameConfig } from "../types";
 import { MockAgent } from "./mock-agent";
 import { createUUID } from "../game-state";

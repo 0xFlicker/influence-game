@@ -873,8 +873,18 @@ export interface AllianceProposalResponseAction extends AllianceActionBase {
 }
 
 export interface AllianceCounterAction extends AllianceActionBase {
-  action: "counter" | "amend";
+  action: "counter";
   lineageId: UUID;
+  versionId?: UUID;
+  name: string;
+  memberNames: string[];
+  purpose: string;
+  timebox?: string | null;
+}
+
+export interface AllianceAmendAction extends AllianceActionBase {
+  action: "amend";
+  allianceId: UUID;
   versionId?: UUID;
   name: string;
   memberNames: string[];
@@ -890,7 +900,27 @@ export type AllianceAction =
   | AllianceProposalAction
   | AllianceProposalResponseAction
   | AllianceCounterAction
+  | AllianceAmendAction
   | AlliancePassAction;
+
+export interface AllianceActionOpportunityTerms {
+  name: string;
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+}
+
+export type AllianceActionOpportunity =
+  | {
+    kind: "proposer";
+  }
+  | {
+    kind: "response";
+    lineageId: UUID;
+    versionId: UUID;
+    counterAllowed: boolean;
+    terms: AllianceActionOpportunityTerms;
+  };
 
 export interface AllianceHuddlePromptContext {
   allianceId: UUID;
@@ -1077,8 +1107,8 @@ export interface IAgent {
   getWhispers(context: PhaseContext): Promise<Array<{ to: UUID[]; text: string }>>;
   /** Called before House initial Mingle room assignment to form a hidden private-room strategy intent */
   getMingleIntent?(context: PhaseContext): Promise<MingleIntentAction | null>;
-  /** Called during Mingle I to propose, respond to, counter, or pass on official named alliances. */
-  getAllianceAction?(context: PhaseContext): Promise<AllianceAction>;
+  /** Called during Mingle I for one engine-scoped official named-alliance opportunity. */
+  getAllianceAction?(context: PhaseContext, opportunity: AllianceActionOpportunity): Promise<AllianceAction>;
   /** Called during a House-scheduled alliance huddle for one private speaking opportunity. */
   getAllianceHuddleTurn?(context: PhaseContext, huddle: AllianceHuddlePromptContext, conversationHistory?: Array<{ from: string; text: string }>): Promise<AllianceHuddleTurnAction>;
   /** Send a private room message to all other occupants, or null to pass */

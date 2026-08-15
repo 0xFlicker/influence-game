@@ -95,7 +95,9 @@
  * historical traces and isolated prompt-lab fixtures may still contain it.
  * Named-alliance records are inspectable through both turns and canonical
  * events: post-pick `alliance-action` turns capture proposal/accept/decline/
- * counter behavior, `alliance-huddle-schedule` turns capture private House
+ * counter/amend behavior. Each call exposes only its current legal opportunity;
+ * the engine binds proposal/version identity and maps request-local amendment
+ * handles. `alliance-huddle-schedule` turns capture private House
  * grant/skip rationale, `alliance-huddle-turn` records capture member speech
  * plus structured target/action/commitment/contingency/dissent facts, and
  * `alliance-huddle-outcome` records carry those facts forward alongside a

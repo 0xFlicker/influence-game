@@ -8,7 +8,7 @@ topic: thin-strategic-decision-fields
 
 ## Summary
 
-Replace standalone strategic-reflection inference with compact strategy data returned by gameplay calls the product already needs. Normal decisions carry an action, a concise private rationale, and an optional shared strategy delta. Before the first diary, deltas extend an implicit opening posture derived from authored character strategy and available game evidence. After each eviction, the first valid diary answer receives the prior active strategy and establishes a concise-but-complete new baseline; diary follow-ups and later gameplay actions use the same optional delta envelope. If the diary closes without a valid baseline, the next eligible paid decision must repair it without adding a strategy-only call. Completion requires one fresh current-meta eight-player local game to produce a human-accepted replacement lab scenario and directional evidence that the game looks cheaper without making a population-wide quality or savings claim.
+Replace standalone strategic-reflection inference with compact strategy data returned by gameplay calls the product already needs. Normal decisions carry an action, a concise private rationale, and an optional shared strategy delta. Before the first diary, deltas extend an implicit opening posture derived from authored character strategy and available game evidence. After each eviction, the first valid diary answer receives the prior active strategy and establishes a concise-but-complete new baseline; diary follow-ups and later gameplay actions use the same optional delta envelope. If the diary closes without a valid baseline, the next eligible paid decision must repair it without adding a strategy-only call. Completion requires one fresh current-meta twelve-player game run through the local API lifecycle against hosted `gpt-5.6-luna` to produce a human-accepted replacement lab scenario and directional evidence that the game looks cheaper without making a population-wide quality or savings claim.
 
 ---
 
@@ -42,7 +42,7 @@ This slice does not seek a statistical cost model. The `$1.82` production snapsh
 - **Mechanical strategy acceptance only.** A valid gameplay action survives a missing, malformed, oversized, boundary-invalid, or obsolete-revision strategy operation. The engine records the mechanically unusable operation without buying a retry; it does not judge whether natural-language strategy is smart.
 - **Frontier-hosted quality target.** Smaller local models do not justify retaining paid reflection calls or the obsolete reflection schema.
 - **Private strategy is not game authority.** Canonical events and projections remain authoritative for game facts and accepted actions; private rationale and strategy state remain fallible agent cognition.
-- **One-game scenario-replacement gate.** Run exactly one current-meta eight-player local game, mine its best qualifying survivor chain, and present the candidate and provenance to a human. Human acceptance replaces the weak lab fixture; rejection leaves the gate closed and does not automatically authorize another game.
+- **One-game scenario-replacement gate.** Run exactly one current-meta twelve-player game through the local API lifecycle against hosted `gpt-5.6-luna`, mine its best qualifying survivor chain, and present the candidate and provenance to a human. Human acceptance replaces the weak lab fixture; rejection leaves the gate closed and does not automatically authorize another game.
 - **Directional business validation.** Compare the `$1.82` reference workload with the one fresh local game, then make a practical human judgment: do the agents look competent enough, and does the game look meaningfully cheaper? No multi-game sampling or statistical claim is required.
 
 ```mermaid
@@ -123,10 +123,10 @@ flowchart TB
 
 **Fresh strategic scenario gate**
 
-- R32. Before the scenario-replacement gate can pass, a maintainer must start a configured local OpenAI-compatible backend and complete exactly one fresh eight-player simulation using the current format meta with diary and full-fidelity private decision artifacts enabled.
+- R32. Before the scenario-replacement gate can pass, a maintainer must start the local API, then use the API-backed simulation launcher to complete exactly one fresh twelve-player game against hosted `gpt-5.6-luna` using the current format meta with diary and full-fidelity private decision artifacts enabled. No local model backend participates in this gate.
 - R33. The mined case must use model-authored non-fallback turns and span one canonical elimination, one survivor's first post-eviction diary answer, any House follow-ups, and that survivor's next eligible strategic decision.
 - R34. The next decision must offer at least two legal, materially different choices and include a commitment, alliance, target, or betrayal that could reasonably change the best action.
-- R35. The maintainer must select the best qualifying candidate from that game and present its local model, run configuration, simulation batch, source turns and events, candidate choices, and reason it has strategic headroom to a human reviewer.
+- R35. The maintainer must select the best qualifying candidate from that game and present its hosted model, local API run configuration, game identity, source turns and events, candidate choices, and reason it has strategic headroom to a human reviewer.
 - R36. The human reviewer must explicitly accept or reject the presented candidate. Acceptance opens the gate; rejection leaves it closed and does not automatically trigger or authorize another simulation.
 - R37. The human-accepted chain must replace the older weak fixture in the deterministic lab and pass provider-free contracts for legal-action preservation, living-player targeting, commitment availability, post-eviction replacement and repair, and final-strategy carry-forward. Passing these contracts qualifies the fixture and does not prove broad model or game quality.
 - R38. A paid-provider simulation must require separate explicit approval; ordinary post-deployment games may supply production evidence without a special paid experiment.
@@ -179,7 +179,7 @@ flowchart TB
 - F6. Maintainer replaces the weak lab scenario
   - **Trigger:** The implementation reaches scenario-replacement validation.
   - **Actors:** A3
-  - **Steps:** The maintainer starts the local backend, completes exactly one current-meta eight-player game, and inspects canonical events and full-fidelity private turn artifacts. The maintainer selects the best qualifying eviction-to-next-decision chain and presents it with provenance to a human. Acceptance freezes it in the deterministic lab; rejection leaves the gate closed without automatically running another game.
+  - **Steps:** The maintainer starts the local API, completes exactly one current-meta twelve-player game against hosted `gpt-5.6-luna` through the API-backed launcher, and inspects canonical events and full-fidelity private turn artifacts. The maintainer selects the best qualifying eviction-to-next-decision chain and presents it with provenance to a human. Acceptance freezes it in the deterministic lab; rejection leaves the gate closed without automatically running another game.
   - **Outcome:** The lab receives a human-accepted current-meta fixture with strategic headroom, without treating one game as broad quality proof.
   - **Covered by:** R32, R33, R34, R35, R36, R37
 
@@ -225,7 +225,7 @@ flowchart TB
   - **Then:** the game looks meaningfully cheaper and strategically competent enough to continue, with the result recorded as a directional human judgment rather than a statistical claim or mandatory paid-validation gate.
 
 - AE7. Covers R32, R33, R34, R35, R36, R37.
-  - **Given:** A configured local backend completes a fresh current-meta eight-player simulation with diary and private decision artifacts enabled.
+  - **Given:** The local API completes a fresh current-meta twelve-player `gpt-5.6-luna` game with diary and private decision artifacts enabled.
   - **When:** A non-fallback survivor chain spans an eviction, diary reconciliation, and a next decision with at least two materially different legal choices.
   - **Then:** The run provenance and strategic headroom are presented to a human, and only explicit acceptance lets the chain replace the deterministic lab fixture.
 
@@ -235,7 +235,7 @@ flowchart TB
   - **Then:** The answer remains visible, the repair packet becomes the session baseline, and no strategy-only retry is purchased.
 
 - AE9. Covers R34, R35, R36.
-  - **Given:** Exactly one fresh eight-player game completes and the maintainer presents its best candidate to a human.
+  - **Given:** Exactly one fresh twelve-player local-API game completes and the maintainer presents its best candidate to a human.
   - **When:** The human rejects the candidate because its next decision is forced, strategically equivalent, or otherwise unsuitable for the lab.
   - **Then:** The run may remain local evidence, but the replacement gate stays closed and no additional simulation starts automatically.
 
@@ -245,7 +245,7 @@ flowchart TB
 
 - Standard daily games emit zero dedicated strategic-reflection provider calls.
 - Deterministic modeling and one fresh local game show a meaningfully cheaper call, token, and estimated-cost profile than the `$1.82` reference workload, and a human judges the play competent enough to continue; the result is explicitly directional rather than statistical.
-- Exactly one fresh current-meta eight-player local game is run, its best qualifying non-fallback eviction-to-diary-to-next-decision chain is presented with provenance, and a human explicitly accepts it for the lab.
+- Exactly one fresh current-meta twelve-player local-API game is run against hosted `gpt-5.6-luna`, its best qualifying non-fallback eviction-to-diary-to-next-decision chain is presented with provenance, and a human explicitly accepts it for the lab.
 - The accepted chain replaces the older weak fixture and preserves legal actions, living-player targeting, remembered commitments, and coherent next-turn posture in provider-free tests without claiming broad game quality.
 - Before the first diary, the agent carries an implicit opening posture plus accepted deltas; after each eviction, every survivor either establishes a concise-but-complete replacement baseline grounded in the resolved living board or is marked as requiring repair on the next paid decision.
 - Mechanically unusable strategy updates never block a valid action or cause a strategy-only provider retry, and the engine does not reject merely poor natural-language strategy.
@@ -261,7 +261,7 @@ In scope:
 - Collapsing model-authored cognitive output to a concise private rationale and compact strategy state.
 - Carrying an implicit opening posture until the first diary, replacing strategy on the first post-eviction diary answer, and refining it through the shared optional delta used by other actions.
 - Independent action validation and mechanical strategy validation, private observability, durable one-epoch carry-forward, and directional provider-free cost modeling.
-- Running exactly one current-meta eight-player local game, mining its best qualifying post-eviction chain, presenting it to a human, and freezing it into the deterministic lab only after acceptance.
+- Running exactly one current-meta twelve-player local-API game against hosted `gpt-5.6-luna`, mining its best qualifying post-eviction chain, presenting it to a human, and freezing it into the deterministic lab only after acceptance.
 - Removing obsolete production reflection paths instead of keeping a disabled fallback.
 
 Deferred for later:
@@ -291,7 +291,7 @@ Outside this slice:
 - The active carry-forward state remains bounded to one full baseline plus its mechanically accepted deltas. The next full diary update compacts that epoch rather than accumulating earlier baselines and delta lists in active prompt state.
 - Full-fidelity local simulation source packs may retain real producer-visible context and private decision artifacts; public or committed structural reports preserve their existing redaction boundary without degrading engineering inputs.
 - Structural prompt-reuse estimates are observability signals, not provider cache billing or guaranteed savings.
-- A configured local OpenAI-compatible backend and model can complete the single bounded eight-player game with observable diary and private decision artifacts.
+- The configured local API can complete the single bounded twelve-player game against hosted `gpt-5.6-luna` with observable diary and private decision artifacts.
 
 ---
 

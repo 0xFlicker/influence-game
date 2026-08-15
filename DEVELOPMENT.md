@@ -465,6 +465,8 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 bun run simulate:api -- --provider lm-studio --model <lm-studio-model-id> --players 6
 bun run simulate:api -- --provider katana --model deepseek-v4-flash --players 6
 # Defaults to a short player-scaled smoke cap (6 players -> 7 rounds); pass --max-rounds to override.
+# Named-alliance calls receive one engine-scoped proposer or response opportunity. Models choose only
+# legal actions for that opportunity; the engine owns proposal/version IDs and maps amendment handles.
 
 # Chatty mode (live colored transcript with agent thinking + native reasoningContext / labeled provider summaries on Mingle turns, alliance actions, huddle turns, votes, format picks/ballots/pointers/tiebreaks, legacy classic actions, and endgame decisions):
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \

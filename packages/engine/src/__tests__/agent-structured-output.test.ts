@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
+import type { AllianceActionOpportunity as PublicAllianceActionOpportunity } from "../index";
 import { TemplateHouseInterviewer } from "../house-interviewer";
 import type {
   PhaseContext,
@@ -1217,7 +1218,7 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    await agent.getAllianceAction(makeContext(Phase.MINGLE_I));
+    await agent.getAllianceAction(makeContext(Phase.MINGLE_I), { kind: "proposer" });
     await agent.getAllianceHuddleTurn(
       {
         ...makeContext(Phase.PRE_COUNCIL_HUDDLE),
@@ -2028,7 +2029,7 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const action = await agent.getAllianceAction(makeContext(Phase.MINGLE_I));
+    const action = await agent.getAllianceAction(makeContext(Phase.MINGLE_I), { kind: "proposer" });
 
     expect(action).toEqual({
       action: "propose",
@@ -2047,6 +2048,322 @@ describe("InfluenceAgent structured output mode", () => {
         }),
       ]),
     );
+    const tool = (requests[0]?.tools as Array<{
+      function: { parameters: { properties: Record<string, { enum?: unknown[] }> } };
+    }>)[0]!;
+    expect(tool.function.parameters.properties.action?.enum).toEqual(["propose", "pass"]);
+    expect(tool.function.parameters.properties.allianceHandle?.enum).toEqual([null]);
+  });
+
+  it("binds proposal responses to the engine-owned opportunity without provider identifiers", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "take_alliance_action",
+        {
+          thinking: "Accept the current proposal.",
+          action: "accept",
+          name: null,
+          memberNames: [],
+          purpose: null,
+          timebox: null,
+          allianceHandle: null,
+          lineageId: "provider-invented-lineage",
+          versionId: "provider-invented-version",
+          strategyDelta: null,
+        },
+      ),
+      "gpt-5.6-luna",
+    );
+    const context: PhaseContext = {
+      ...makeContext(Phase.FORMAT_MINGLE),
+      allianceContext: {
+        activeAlliances: [],
+        openProposals: [
+          {
+            lineageId: "other-lineage",
+            allianceId: "other-alliance",
+            status: "open",
+            currentVersionId: "other-version",
+            currentTerms: {
+              name: "Smoke Test",
+              memberIds: ["atlas-id", "vera-id"],
+              memberNames: ["Atlas", "Vera"],
+              purpose: "A different open proposal.",
+              timebox: "this round",
+            },
+            yourResponse: null,
+          },
+          {
+            lineageId: "engine-lineage",
+            allianceId: "engine-alliance",
+            status: "open",
+            currentVersionId: "engine-version",
+            currentTerms: {
+              name: "Glass Table",
+              memberIds: ["atlas-id", "mira-id"],
+              memberNames: ["Atlas", "Mira"],
+              purpose: "Vote together.",
+              timebox: "this round",
+            },
+            yourResponse: null,
+          },
+        ],
+        proposalHistory: [],
+      },
+    };
+    agent.onGameStart("game-1", context.alivePlayers);
+
+    const opportunity: PublicAllianceActionOpportunity = {
+      kind: "response",
+      lineageId: "engine-lineage",
+      versionId: "engine-version",
+      counterAllowed: false,
+      terms: {
+        name: "Glass Table",
+        memberNames: ["Atlas", "Mira"],
+        purpose: "Vote together.",
+        timebox: "this round",
+      },
+    };
+    const action = await agent.getAllianceAction(context, opportunity);
+
+    expect(action).toMatchObject({
+      action: "accept",
+      lineageId: "engine-lineage",
+      versionId: "engine-version",
+    });
+    const tool = (requests[0]?.tools as Array<{
+      function: { parameters: { properties: Record<string, { enum?: unknown[] }> } };
+    }>)[0]!;
+    expect(tool.function.parameters.properties).not.toHaveProperty("lineageId");
+    expect(tool.function.parameters.properties).not.toHaveProperty("versionId");
+    expect(tool.function.parameters.properties.action?.enum).toEqual([
+      "accept",
+      "decline",
+      "defer",
+      "trial",
+      "pass",
+    ]);
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)?.content ?? "";
+    expect(prompt).toContain("proposed Glass Table");
+    expect(prompt).toContain("Current proposal: Glass Table");
+    expect(prompt).not.toContain("Smoke Test");
+    expect(prompt).not.toContain("engine-lineage");
+    expect(prompt).not.toContain("engine-version");
+  });
+
+  it("offers a counter only while the engine says the response opportunity can counter", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "take_alliance_action",
+        {
+          thinking: "Counter with a tighter pair.",
+          action: "counter",
+          name: "Glass Pair",
+          memberNames: ["Atlas", "Mira"],
+          purpose: "Coordinate the next ballot.",
+          timebox: "this round",
+          strategyDelta: null,
+        },
+      ),
+      "gpt-5.6-luna",
+    );
+    const context = makeContext(Phase.FORMAT_MINGLE);
+    agent.onGameStart("game-1", context.alivePlayers);
+
+    const action = await agent.getAllianceAction(context, {
+      kind: "response",
+      lineageId: "engine-lineage",
+      versionId: "engine-version",
+      counterAllowed: true,
+      terms: {
+        name: "Glass Table",
+        memberNames: ["Atlas", "Mira", "Vera"],
+        purpose: "Coordinate the next ballot.",
+        timebox: "this round",
+      },
+    });
+
+    expect(action).toMatchObject({
+      action: "counter",
+      lineageId: "engine-lineage",
+      name: "Glass Pair",
+    });
+    expect(action).not.toHaveProperty("versionId");
+    const tool = (requests[0]?.tools as Array<{
+      function: { parameters: { properties: Record<string, { enum?: unknown[] }> } };
+    }>)[0]!;
+    expect(tool.function.parameters.properties.action?.enum).toEqual([
+      "accept",
+      "decline",
+      "defer",
+      "trial",
+      "counter",
+      "pass",
+    ]);
+  });
+
+  it("discards strategy when unavailable counter output normalizes to pass", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "take_alliance_action",
+        {
+          thinking: "Try one more counter.",
+          action: "counter",
+          name: "Late Counter",
+          memberNames: ["Atlas", "Mira"],
+          purpose: "Change the terms after the cap.",
+          timebox: "this round",
+          strategyDelta: "act as though the rejected counter became official",
+        },
+      ),
+      "gpt-5.6-luna",
+    );
+    const context = makeContext(Phase.FORMAT_MINGLE);
+    agent.onGameStart("game-1", context.alivePlayers);
+
+    const action = await agent.getAllianceAction(context, {
+      kind: "response",
+      lineageId: "engine-lineage",
+      versionId: "engine-version",
+      counterAllowed: false,
+      terms: {
+        name: "Glass Table",
+        memberNames: ["Atlas", "Mira"],
+        purpose: "Coordinate the next ballot.",
+        timebox: "this round",
+      },
+    });
+
+    expect(action).toMatchObject({
+      action: "pass",
+      strategyDelta: "act as though the rejected counter became official",
+      strategyGameplayAccepted: false,
+    });
+    expect(action).not.toHaveProperty("decisionId");
+  });
+
+  it("discards strategy when an unknown alliance action normalizes to pass", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "take_alliance_action",
+        {
+          thinking: "Invent an unsupported action.",
+          action: "teleport",
+          name: null,
+          memberNames: [],
+          purpose: null,
+          timebox: null,
+          allianceHandle: null,
+          strategyDelta: "act as though the unsupported action succeeded",
+        },
+      ),
+      "gpt-5.6-luna",
+    );
+    const context = makeContext(Phase.FORMAT_MINGLE);
+    agent.onGameStart("game-1", context.alivePlayers);
+
+    const action = await agent.getAllianceAction(context, { kind: "proposer" });
+
+    expect(action).toMatchObject({
+      action: "pass",
+      strategyDelta: "act as though the unsupported action succeeded",
+      strategyGameplayAccepted: false,
+    });
+    expect(action).not.toHaveProperty("decisionId");
+  });
+
+  it("maps a request-local alliance handle for a legal amendment opportunity", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(
+        requests,
+        "take_alliance_action",
+        {
+          thinking: "Update the existing alliance terms.",
+          action: "amend",
+          name: "Glass Table",
+          memberNames: ["Atlas", "Mira", "Vera"],
+          purpose: "Expand the current voting agreement.",
+          timebox: "this round",
+          allianceHandle: "A1",
+          strategyDelta: null,
+        },
+      ),
+      "gpt-5.6-luna",
+    );
+    const context: PhaseContext = {
+      ...makeContext(Phase.FORMAT_MINGLE),
+      allianceContext: {
+        activeAlliances: [
+          {
+            id: "alliance-former",
+            name: "Former Table",
+            memberIds: ["mira-id", "vera-id"],
+            memberNames: ["Mira", "Vera"],
+            purpose: "Atlas is no longer a member.",
+            timebox: "this round",
+            status: "active",
+            huddleOutcomes: [],
+          },
+          {
+            id: "alliance-current",
+            name: "Glass Table",
+            memberIds: ["atlas-id", "mira-id"],
+            memberNames: ["Atlas", "Mira"],
+            purpose: "Vote together.",
+            timebox: "this round",
+            status: "active",
+            huddleOutcomes: [],
+          },
+        ],
+        openProposals: [],
+        proposalHistory: [],
+      },
+    };
+    agent.onGameStart("game-1", context.alivePlayers);
+
+    const action = await agent.getAllianceAction(context, { kind: "proposer" });
+
+    expect(action).toMatchObject({
+      action: "amend",
+      allianceId: "alliance-current",
+      name: "Glass Table",
+    });
+    const tool = (requests[0]?.tools as Array<{
+      function: { parameters: { properties: Record<string, { enum?: unknown[] }> } };
+    }>)[0]!;
+    expect(tool.function.parameters.properties.action?.enum).toEqual(["propose", "amend", "pass"]);
+    expect(tool.function.parameters.properties.allianceHandle?.enum).toEqual([null, "A1"]);
+    const messages = requests[0]?.messages as Array<{ content: string }>;
+    const prompt = messages.at(-1)?.content ?? "";
+    expect(prompt).toContain("A1: Glass Table");
+    expect(prompt).not.toContain("alliance-current");
+    expect(prompt).not.toContain("alliance-former");
   });
 
   it("prompts Mingle I proposals toward distinctive layered alliance names", async () => {
@@ -2077,7 +2394,7 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    await agent.getAllianceAction(makeContext(Phase.MINGLE_I));
+    await agent.getAllianceAction(makeContext(Phase.MINGLE_I), { kind: "proposer" });
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;

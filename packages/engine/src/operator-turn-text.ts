@@ -130,7 +130,7 @@ export function formatAllianceActionOperatorText(
       const { membersPart, idPart } = allianceIdentityBits({
         allianceName: action.name,
         memberNames: context?.memberNames?.length ? context.memberNames : action.memberNames,
-        shortId: context?.shortId ?? action.lineageId.slice(0, 8),
+        shortId: context?.shortId ?? (action.action === "counter" ? action.lineageId : action.allianceId).slice(0, 8),
       });
       return `${playerName} alliance ${action.action} "${clip(action.name, 40)}"${idPart}${membersPart} → ${result}`;
     }

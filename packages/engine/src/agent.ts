@@ -20,6 +20,7 @@ import type {
   AgentCallOptions,
   AgentResponse,
   AllianceAction,
+  AllianceActionOpportunity,
   AllianceHuddlePromptContext,
   AllianceHuddleTurnAction,
   CandidateChoiceRequest,
@@ -506,53 +507,113 @@ const TOOL_MINGLE_INTENT: ChatCompletionTool = {
   },
 };
 
-const TOOL_ALLIANCE_ACTION: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "take_alliance_action",
-    description: "Take one post-format named-alliance action: propose, accept, decline, counter, defer, trial, amend, or pass.",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this alliance action (hidden from other players)" },
-        action: {
-          type: "string",
-          enum: ["propose", "accept", "decline", "counter", "defer", "trial", "amend", "pass"],
-          description: "The official alliance action to attempt this pass.",
-        },
-        name: {
-          type: ["string", "null"],
-          description: "Alliance name for propose/counter/amend, otherwise null.",
-        },
-        memberNames: {
-          type: "array",
-          items: { type: "string" },
-          description: "Player names for propose/counter/amend. Include yourself and all intended active members after the terms change.",
-        },
-        purpose: {
-          type: ["string", "null"],
-          description: "Alliance purpose for propose/counter/amend, otherwise null.",
-        },
-        timebox: {
-          type: ["string", "null"],
-          description: "How long the alliance should last, or null if intentionally open-ended.",
-        },
-        lineageId: {
-          type: ["string", "null"],
-          description: "Proposal lineage id for accept/decline/defer/trial/counter; active alliance id for amend; otherwise null. Use ids from alliance context only.",
-        },
-        versionId: {
-          type: ["string", "null"],
-          description: "Proposal version id for accept/decline/defer/trial, optional new version id for counter/amend, or null to target/generate automatically.",
-        },
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+interface AllianceActionHandle {
+  handle: string;
+  allianceId: string;
+  name: string;
+}
+
+function allowedAllianceActions(
+  opportunity: AllianceActionOpportunity,
+  handles: readonly AllianceActionHandle[],
+): AllianceAction["action"][] {
+  if (opportunity.kind === "response") {
+    const actions: AllianceAction["action"][] = ["accept", "decline", "defer", "trial"];
+    if (opportunity.counterAllowed) actions.push("counter");
+    actions.push("pass");
+    return actions;
+  }
+
+  const actions: AllianceAction["action"][] = ["propose"];
+  if (handles.length > 0) actions.push("amend");
+  actions.push("pass");
+  return actions;
+}
+
+function allianceActionTool(
+  opportunity: AllianceActionOpportunity,
+  handles: readonly AllianceActionHandle[],
+  actions: readonly AllianceAction["action"][],
+): ChatCompletionTool {
+  const handleProperties = opportunity.kind === "proposer"
+    ? {
+      allianceHandle: {
+        type: ["string", "null"],
+        enum: [null, ...handles.map((entry) => entry.handle)],
+        description: "For amend, choose the request-local handle of your active alliance. Otherwise null.",
       },
-      required: ["thinking", "action", "name", "memberNames", "purpose", "timebox", "lineageId", "versionId", ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+    }
+    : {};
+  const handleRequired = opportunity.kind === "proposer" ? ["allianceHandle"] : [];
+
+  return {
+    type: "function",
+    function: {
+      name: "take_alliance_action",
+      description: opportunity.kind === "response"
+        ? "Respond to the one active named-alliance proposal selected by the engine."
+        : "Use the current named-alliance proposer opportunity.",
+      parameters: {
+        type: "object",
+        properties: {
+          thinking: { type: "string", description: "Your internal reasoning for this alliance action (hidden from other players)" },
+          action: {
+            type: "string",
+            enum: actions,
+            description: "The official alliance action to attempt in this exact opportunity.",
+          },
+          name: {
+            type: ["string", "null"],
+            description: "Alliance name for propose/counter/amend, otherwise null.",
+          },
+          memberNames: {
+            type: "array",
+            items: { type: "string" },
+            description: "Player names for propose/counter/amend. Include yourself and all intended active members after the terms change.",
+          },
+          purpose: {
+            type: ["string", "null"],
+            description: "Alliance purpose for propose/counter/amend, otherwise null.",
+          },
+          timebox: {
+            type: ["string", "null"],
+            description: "How long the alliance should last, or null if intentionally open-ended.",
+          },
+          ...handleProperties,
+          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+        },
+        required: ["thinking", "action", "name", "memberNames", "purpose", "timebox", ...handleRequired, ...STRATEGIC_DECISION_REQUIRED],
+        additionalProperties: false,
+      },
+      strict: true,
     },
-    strict: true,
-  },
-};
+  };
+}
+
+interface AllianceTermsResult {
+  name?: unknown;
+  memberNames?: unknown;
+  purpose?: unknown;
+  timebox?: unknown;
+}
+
+function normalizeAllianceTerms(result: AllianceTermsResult): {
+  name: string;
+  memberNames: string[];
+  purpose: string;
+  timebox: string | null;
+} | null {
+  const name = normalizeNullableString(result.name);
+  const memberNames = normalizeStringArray(result.memberNames);
+  const purpose = normalizeNullableString(result.purpose);
+  if (!name || memberNames.length === 0 || !purpose) return null;
+  return {
+    name,
+    memberNames,
+    purpose,
+    timebox: normalizeNullableString(result.timebox),
+  };
+}
 
 const TOOL_ALLIANCE_HUDDLE_TURN: ChatCompletionTool = {
   type: "function",
@@ -1174,10 +1235,6 @@ function formatEliminationVoteDisclosure(disclosure: EliminationVoteDisclosure):
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
 function normalizePreferredRoomSize(value: unknown): MinglePreferredRoomSize {
   return value === "solo" || value === "pair" || value === "small_group" || value === "large_group" || value === "any"
     ? value
@@ -1199,14 +1256,10 @@ const ALLIANCE_ACTION_KINDS = [
   "pass",
 ] as const;
 
-function normalizeAllianceActionKind(value: unknown): AllianceAction["action"] {
+function normalizeAllianceActionKind(value: unknown): AllianceAction["action"] | null {
   return typeof value === "string" && ALLIANCE_ACTION_KINDS.includes(value as AllianceAction["action"])
     ? value as AllianceAction["action"]
-    : "pass";
-}
-
-function readOptionalStrategicLens(value: unknown): StrategicLens | undefined {
-  return STRATEGIC_LENSES.includes(value as StrategicLens) ? value as StrategicLens : undefined;
+    : null;
 }
 
 function normalizeStrategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
@@ -2087,32 +2140,34 @@ Use the form_mingle_intent tool.`;
     }
   }
 
-  async getAllianceAction(ctx: PhaseContext): Promise<AllianceAction> {
+  async getAllianceAction(
+    ctx: PhaseContext,
+    opportunity: AllianceActionOpportunity,
+  ): Promise<AllianceAction> {
     const otherPlayers = ctx.alivePlayers
       .filter((player) => player.id !== this.id)
       .map((player) => player.name);
-    const openPrompt = `
-## Your Task
-This is the official named-alliance action window after the round format was chosen.
-
-The House resolves one proposal at a time. You may take exactly one structured alliance action now:
-- propose: create a named alliance offer with explicit members, purpose, and optional timebox.
-- accept/decline/defer/trial: respond to an open proposal version from your alliance context.
-- counter: offer changed terms for an open proposal lineage.
-- amend: offer changed terms for one of your active alliances by using its active alliance id.
-- pass: do nothing in this opportunity.
-
-Rules:
-- Official alliance truth requires every required live member to accept or trial the same proposal version.
-- You may be in multiple alliances.
-- Do not propose an alliance of only yourself.
-- Do not use alliance chat here; this is a structured request window.
-- If you are responding to a visible open proposal, target that lineage and accept, decline, defer, trial, or counter.
-- If there is no open proposal directed at you, either propose one concrete alliance or pass.
-- Do not recreate an active alliance with the exact same member roster; use its upcoming huddle if The House grants one.
-- Overlapping alliances are legal. Layer them when it helps: a final-two pair can sit inside a final-three voting pod, which can sit inside a final-four shield or majority bloc.
-- Do not default every proposal to you plus the same two perceived stable players. Choose 2 players for a tight promise, 3 for a voting pod, or 4 for a larger shield/majority.
-
+    const allianceHandles: AllianceActionHandle[] = opportunity.kind === "proposer"
+      ? (ctx.allianceContext?.activeAlliances ?? [])
+        .filter((alliance) => alliance.status === "active" && alliance.memberIds.includes(this.id))
+        .map((alliance, index) => ({
+          handle: `A${index + 1}`,
+          allianceId: alliance.id,
+          name: alliance.name,
+        }))
+      : [];
+    const allowedActions = allowedAllianceActions(opportunity, allianceHandles);
+    const opportunityPrompt = opportunity.kind === "response"
+      ? `You are responding to the one current proposal selected by The House. The engine owns proposal identity; do not reproduce or infer ids.
+Current proposal: ${opportunity.terms.name}; members=${opportunity.terms.memberNames.join(", ")}; purpose=${opportunity.terms.purpose}; timebox=${opportunity.terms.timebox ?? "none"}.
+Allowed actions: ${allowedActions.join(", ")}.
+${opportunity.counterAllowed ? "A counter must provide the complete replacement name, member roster, purpose, and timebox." : "The counter limit is exhausted, so counter is not legal in this opportunity."}`
+      : `This is your proposer opportunity.
+Allowed actions: ${allowedActions.join(", ")}.
+${allianceHandles.length > 0
+  ? `To amend one of your active alliances, choose its request-local handle and provide the complete replacement terms:\n${allianceHandles.map((entry) => `- ${entry.handle}: ${entry.name}`).join("\n")}`
+  : "You have no active alliance available to amend."}`;
+    const namingRules = opportunity.kind === "proposer" ? `
 Alliance name rules when proposing:
 - Pick a name that is unique from visible active alliances, open proposals, and proposal history in your official alliance context.
 - Base the name on a concrete shared trait, contrast, promise, risk, strategy, or relationship among the proposed members.
@@ -2120,11 +2175,40 @@ Alliance name rules when proposing:
 - Avoid vague stability words as the main identity: "Calm", "Anchor", "Core", "Axis", "Circle", "Steady", "Solid", "Trust".
 - Good examples: "The Late Voters", "Mirror Knives", "The Smoke Test", "Back Row Pact", "The Alibi Pair".
 - Bad examples: "Calm Anchor Trio", "Steady Core", "Trust Circle", "Calm Axis".
+` : "";
+    const openPrompt = `
+## Your Task
+This is the official named-alliance action window after the round format was chosen.
+
+${opportunityPrompt}
+
+Rules:
+- Official alliance truth requires every required live member to accept or trial the same proposal version.
+- You may be in multiple alliances.
+- Do not propose an alliance of only yourself.
+- Do not use alliance chat here; this is a structured request window.
+- Do not recreate an active alliance with the exact same member roster; use its upcoming huddle if The House grants one.
+- Overlapping alliances are legal. Layer them when it helps: a final-two pair can sit inside a final-three voting pod, which can sit inside a final-four shield or majority bloc.
+- Do not default every proposal to you plus the same two perceived stable players. Choose 2 players for a tight promise, 3 for a voting pod, or 4 for a larger shield/majority.
+${namingRules}
 
 Available other players: ${otherPlayers.join(", ") || "none"}
-If proposing, make the roster size intentional and name a concrete purpose tied to the locked format: the ballot or pointer target, expected votes, and a contingency if the bloc falls short. Use the full format name and legal actions from Current Format Pressure; do not drift into abstract format language.`;
+${opportunity.kind === "proposer"
+  ? "If proposing, make the roster size intentional and name a concrete purpose tied to the locked format: the ballot or pointer target, expected votes, and a contingency if the bloc falls short. Use the full format name and legal actions from Current Format Pressure; do not drift into abstract format language."
+  : "If countering, make the complete replacement terms concrete and legal under Current Format Pressure."}`;
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
+    const promptContext = opportunity.kind === "response" && ctx.allianceContext
+      ? {
+        ...ctx,
+        allianceContext: {
+          ...ctx.allianceContext,
+          openProposals: ctx.allianceContext.openProposals.filter(
+            (proposal) => proposal.lineageId === opportunity.lineageId,
+          ),
+        },
+      }
+      : ctx;
     try {
       const result = await this.callTool<{
         thinking?: string;
@@ -2133,14 +2217,13 @@ If proposing, make the roster size intentional and name a concrete purpose tied 
         memberNames?: unknown;
         purpose?: unknown;
         timebox?: unknown;
-        lineageId?: unknown;
-        versionId?: unknown;
+        allianceHandle?: unknown;
         strategy?: unknown;
         strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
-        this.buildUserPrompt(ctx) + openPrompt,
-        TOOL_ALLIANCE_ACTION,
+        this.buildUserPrompt(promptContext) + openPrompt,
+        allianceActionTool(opportunity, allianceHandles, allowedActions),
         220,
         sys,
         this.traceOptions(ctx, { action: "alliance-action", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
@@ -2152,51 +2235,63 @@ If proposing, make the roster size intentional and name a concrete purpose tied 
         reasoningContext: result.reasoningContext,
         ...metadata,
       };
+      const invalidPass = (): AllianceAction => {
+        const { decisionId: _decisionId, ...candidate } = base;
+        return {
+          action: "pass",
+          ...candidate,
+          strategyGameplayAccepted: false,
+        };
+      };
+
+      if (opportunity.kind === "response") {
+        if (action === "accept" || action === "decline" || action === "defer" || action === "trial") {
+          return {
+            action,
+            lineageId: opportunity.lineageId,
+            versionId: opportunity.versionId,
+            ...base,
+          };
+        }
+
+        if (action === "counter" && opportunity.counterAllowed) {
+          const terms = normalizeAllianceTerms(result);
+          if (!terms) return invalidPass();
+          return {
+            action,
+            lineageId: opportunity.lineageId,
+            ...terms,
+            ...base,
+          };
+        }
+
+        return action === "pass" ? { action, ...base } : invalidPass();
+      }
 
       if (action === "propose") {
-        const name = normalizeNullableString(result.name);
-        const purpose = normalizeNullableString(result.purpose);
-        const memberNames = normalizeStringArray(result.memberNames);
-        if (!name || !purpose || memberNames.length === 0) return { action: "pass", ...base };
+        const terms = normalizeAllianceTerms(result);
+        if (!terms) return invalidPass();
         return {
           action,
-          name,
-          memberNames,
-          purpose,
-          timebox: normalizeNullableString(result.timebox),
+          ...terms,
           ...base,
         };
       }
 
-      if (action === "accept" || action === "decline" || action === "defer" || action === "trial") {
-        const lineageId = normalizeNullableString(result.lineageId);
-        if (!lineageId) return { action: "pass", ...base };
+      if (action === "amend") {
+        const handle = normalizeNullableString(result.allianceHandle);
+        const allianceId = allianceHandles.find((entry) => entry.handle === handle)?.allianceId;
+        const terms = normalizeAllianceTerms(result);
+        if (!allianceId || !terms) return invalidPass();
         return {
           action,
-          lineageId,
-          versionId: normalizeNullableString(result.versionId),
+          allianceId,
+          ...terms,
           ...base,
         };
       }
 
-      if (action === "counter" || action === "amend") {
-        const lineageId = normalizeNullableString(result.lineageId);
-        const name = normalizeNullableString(result.name);
-        const purpose = normalizeNullableString(result.purpose);
-        const memberNames = normalizeStringArray(result.memberNames);
-        if (!lineageId || !name || !purpose || memberNames.length === 0) return { action: "pass", ...base };
-        return {
-          action,
-          lineageId,
-          name,
-          memberNames,
-          purpose,
-          timebox: normalizeNullableString(result.timebox),
-          ...base,
-        };
-      }
-
-      return { action: "pass", ...base };
+      return action === "pass" ? { action, ...base } : invalidPass();
     } catch (err) {
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAllianceAction error="${err instanceof Error ? err.message : err}" fallback=pass`);
       return {
@@ -4458,13 +4553,13 @@ This epoch predates the newest canonical elimination. It is evidence to reconcil
       const outcomes = alliance.huddleOutcomes.length > 0
         ? ` outcomes=${alliance.huddleOutcomes.map((outcome) => `R${outcome.round}: ${outcome.plan}`).join(" | ")}`
         : "";
-      return `- ${alliance.name} [${alliance.id}] status=${alliance.status}; members=${alliance.memberNames.join(", ")}; purpose=${alliance.purpose}; timebox=${alliance.timebox ?? "none"}${outcomes}`;
+      return `- ${alliance.name}; status=${alliance.status}; members=${alliance.memberNames.join(", ")}; purpose=${alliance.purpose}; timebox=${alliance.timebox ?? "none"}${outcomes}`;
     });
     const open = allianceContext.openProposals.map((proposal) =>
-      `- lineage=${proposal.lineageId} version=${proposal.currentVersionId}; proposed ${proposal.currentTerms.name}; members=${proposal.currentTerms.memberNames.join(", ")}; purpose=${proposal.currentTerms.purpose}; yourResponse=${proposal.yourResponse ?? "none"}`,
+      `- proposed ${proposal.currentTerms.name}; members=${proposal.currentTerms.memberNames.join(", ")}; purpose=${proposal.currentTerms.purpose}; yourResponse=${proposal.yourResponse ?? "none"}`,
     );
     const history = allianceContext.proposalHistory.map((proposal) =>
-      `- lineage=${proposal.lineageId} status=${proposal.status}; ${proposal.currentTerms.name}; members=${proposal.currentTerms.memberNames.join(", ")}; purpose=${proposal.currentTerms.purpose}; yourResponse=${proposal.yourResponse ?? "none"}`,
+      `- status=${proposal.status}; ${proposal.currentTerms.name}; members=${proposal.currentTerms.memberNames.join(", ")}; purpose=${proposal.currentTerms.purpose}; yourResponse=${proposal.yourResponse ?? "none"}`,
     );
     if (active.length === 0 && open.length === 0 && history.length === 0) return "";
     return `## Your Official Alliance Context

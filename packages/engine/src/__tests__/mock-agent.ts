@@ -3,7 +3,7 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, RecallContinuitySnapshot, TargetDecision } from "../game-runner";
+import type { AgentResponse, AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, RecallContinuitySnapshot, TargetDecision } from "../game-runner";
 import type { CompactStrategyCandidate, CompactStrategyDecisionBoundary, FormatDecisionProvenance } from "../game-runner.types";
 import type { LaunchFormatId } from "../formats";
 import type { UUID } from "../types";
@@ -120,7 +120,7 @@ export class MockAgent implements IAgent {
     };
   }
 
-  async getAllianceAction(_ctx: PhaseContext): Promise<AllianceAction> {
+  async getAllianceAction(_ctx: PhaseContext, _opportunity: AllianceActionOpportunity): Promise<AllianceAction> {
     return this.allianceActions.shift() ?? {
       action: "pass",
       thinking: "mock: no alliance action queued",

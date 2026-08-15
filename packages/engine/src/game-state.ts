@@ -934,6 +934,13 @@ export class GameState {
     return null;
   }
 
+  canCounterAllianceProposal(lineageId: UUID): boolean {
+    const lineage = this._allianceProposalLineages.get(lineageId);
+    if (!lineage || lineage.status !== "open") return false;
+    return lineage.versions.filter((version) => version.counterIndex > 0).length
+      < ALLIANCE_COUNTER_LIMIT;
+  }
+
   recordAllianceCounter(
     input: AllianceCounterInput,
     options: AllianceMutationOptions = {},
@@ -941,14 +948,13 @@ export class GameState {
     const phase = this.assertAllianceMutationPhase(options);
     const existing = this._allianceProposalLineages.get(input.lineageId);
     if (!existing) throw new Error(`Unknown alliance proposal lineage: ${input.lineageId}`);
-    if (existing.status !== "open") return null;
+    if (!this.canCounterAllianceProposal(input.lineageId)) return null;
     const currentVersion = this.currentAllianceVersion(existing);
     const currentRequiredConsentMemberIds = currentVersion.requiredConsentMemberIds ?? currentVersion.terms.memberIds;
     if (!currentRequiredConsentMemberIds.includes(input.proposerId)) {
       throw new Error(`Alliance counter proposer is not invited to the current version: ${input.proposerId}`);
     }
     const counterCount = existing.versions.filter((version) => version.counterIndex > 0).length;
-    if (counterCount >= ALLIANCE_COUNTER_LIMIT) return null;
 
     const terms = this.normalizeAllianceTerms(input);
     this.assertNoDuplicateActiveAllianceRoster(terms.memberIds, existing.allianceId);

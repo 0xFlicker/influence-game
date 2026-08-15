@@ -71,7 +71,7 @@ Correlation is forward-only. Legacy rows without an exact decision-bearing manif
 
 ## Format Mingle social sequence
 
-The post-pick social window in a normal pre-endgame round. The format and rule sheet are already locked. It runs private-room conversation and movement, then the official named-alliance action window, then any scarce House-scheduled alliance huddles. Players may propose, accept, decline, counter, defer, or agree to trial alliances during the structured action window; official alliance records cannot be formed or mutated outside that window in v1.
+The post-pick social window in a normal pre-endgame round. The format and rule sheet are already locked. It runs private-room conversation and movement, then the official named-alliance action window, then any scarce House-scheduled alliance huddles. Players may propose, accept, decline, counter, defer, agree to trial alliances, amend an active alliance, or pass during the structured action window; official alliance records cannot be formed or mutated outside that window in v1. Each model call receives only its current legal opportunity. Proposal/version identity remains engine-owned, while request-local amendment handles select among the acting player's active alliances.
 
 ## Mingle
 

@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import type { AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
+import type { AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
 import { createUUID } from "../game-state";
 import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
 import {
@@ -74,6 +74,7 @@ async function collectAllianceAction(
   ctx: PhaseRunnerContext,
   playerId: UUID,
   phase: Phase.FORMAT_MINGLE,
+  opportunity: AllianceActionOpportunity,
 ): Promise<AllianceAction> {
   const agent = ctx.agents.get(playerId)!;
   if (!agent.getAllianceAction) {
@@ -85,7 +86,28 @@ async function collectAllianceAction(
 
   const phaseCtx = prepareAgentPhaseContext(ctx, agent, playerId, phase, "strategic_decision");
   try {
-    return await agent.getAllianceAction(phaseCtx);
+    const action = await agent.getAllianceAction(phaseCtx, opportunity);
+    if (opportunity.kind !== "response") return action;
+    if (
+      action.action === "accept"
+      || action.action === "decline"
+      || action.action === "defer"
+      || action.action === "trial"
+    ) {
+      return {
+        ...action,
+        lineageId: opportunity.lineageId,
+        versionId: opportunity.versionId,
+      };
+    }
+    if (action.action === "counter") {
+      const { versionId: _providerVersionId, ...counter } = action;
+      return {
+        ...counter,
+        lineageId: opportunity.lineageId,
+      };
+    }
+    return action;
   } catch (error) {
     return {
       action: "pass",
@@ -201,13 +223,17 @@ async function applyAllianceAction(
           repairNotes.push("Alliance amendment rejected because fewer than two live members were resolved.");
           break;
         }
-        const alliance = ctx.gameState.getAlliance(action.lineageId);
+        const alliance = ctx.gameState.getAlliance(action.allianceId);
         if (!alliance || alliance.status !== "active") {
-          repairNotes.push(`Alliance amendment rejected because active alliance was not found: ${action.lineageId}`);
+          repairNotes.push(`Alliance amendment rejected because active alliance was not found: ${action.allianceId}`);
+          break;
+        }
+        if (!alliance.memberIds.includes(playerId)) {
+          repairNotes.push(`Alliance amendment rejected because proposer is not an active member: ${playerId}`);
           break;
         }
         ctx.gameState.recordAllianceAmendment({
-          allianceId: action.lineageId,
+          allianceId: action.allianceId,
           versionId: action.versionId,
           proposerId: playerId,
           name: action.name,
@@ -253,11 +279,12 @@ function resolveAllianceActionOperatorContext(
     "lineageId" in action && typeof action.lineageId === "string" && action.lineageId.length > 0
       ? action.lineageId
       : null;
+  const allianceId = action.action === "amend" ? action.allianceId : null;
 
   // After a successful propose, lineage may only exist under a generated id.
-  // Prefer action.lineageId; otherwise scan open lineages that match proposal name.
+  // Prefer an action lineage; otherwise scan generated proposal/amendment lineages by name.
   let lineage = lineageId ? ctx.gameState.getAllianceProposalLineage(lineageId) : undefined;
-  if (!lineage && action.action === "propose") {
+  if (!lineage && (action.action === "propose" || action.action === "amend")) {
     const open = ctx.gameState.getAllianceProposalLineages()
       .filter((candidate) => candidate.status === "open")
       .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
@@ -272,7 +299,7 @@ function resolveAllianceActionOperatorContext(
       return {
         allianceName: action.name,
         memberNames: action.memberNames,
-        shortId: lineageId ? lineageId.slice(0, 8) : null,
+        shortId: (lineageId ?? allianceId)?.slice(0, 8) ?? null,
       };
     }
     return { shortId: lineageId ? lineageId.slice(0, 8) : null };
@@ -351,11 +378,15 @@ function currentRequiredMemberIds(
 }
 
 function validateProposerAction(action: AllianceAction): string | null {
-  if (action.action === "propose" || action.action === "pass") return null;
-  return "Only propose or pass is legal during a proposer opportunity.";
+  if (action.action === "propose" || action.action === "amend" || action.action === "pass") return null;
+  return "Only propose, amend, or pass is legal during a proposer opportunity.";
 }
 
-function validateProposalResponseAction(action: AllianceAction, lineageId: UUID): string | null {
+function validateProposalResponseAction(
+  action: AllianceAction,
+  lineageId: UUID,
+  counterAllowed: boolean,
+): string | null {
   if (action.action === "pass") return null;
   if (
     action.action === "accept"
@@ -364,6 +395,9 @@ function validateProposalResponseAction(action: AllianceAction, lineageId: UUID)
     || action.action === "trial"
     || action.action === "counter"
   ) {
+    if (action.action === "counter" && !counterAllowed) {
+      return "Alliance counter rejected because the counter cap was reached.";
+    }
     return action.lineageId === lineageId
       ? null
       : `Alliance response rejected because it targeted ${action.lineageId} instead of active proposal ${lineageId}.`;
@@ -414,9 +448,21 @@ async function resolveAllianceProposalTransaction(
       return;
     }
 
-    const action = await collectAllianceAction(ctx, responder.id, phase);
+    const counterAllowed = ctx.gameState.canCounterAllianceProposal(lineageId);
+    const action = await collectAllianceAction(ctx, responder.id, phase, {
+      kind: "response",
+      lineageId,
+      versionId: version.versionId,
+      counterAllowed,
+      terms: {
+        name: version.terms.name,
+        memberNames: version.terms.memberIds.map((memberId) => ctx.gameState.getPlayerName(memberId)),
+        purpose: version.terms.purpose,
+        timebox: version.terms.timebox,
+      },
+    });
     askedIds.add(responder.id);
-    const modeError = validateProposalResponseAction(action, lineageId);
+    const modeError = validateProposalResponseAction(action, lineageId, counterAllowed);
     if (modeError) {
       await assertCanAcceptCommit(ctx);
       resolveActionStrategyCandidate(ctx.agents.get(responder.id)!, action, false);
@@ -717,7 +763,7 @@ export async function runAllianceFormationPhase(
 
   const step = { value: 1 };
   for (const player of gameState.getAlivePlayers()) {
-    const action = await collectAllianceAction(ctx, player.id, phase);
+    const action = await collectAllianceAction(ctx, player.id, phase, { kind: "proposer" });
     const modeError = validateProposerAction(action);
     if (modeError) {
       await assertCanAcceptCommit(ctx);
@@ -732,9 +778,10 @@ export async function runAllianceFormationPhase(
     emitAllianceActionTurn(ctx, player.id, action, step.value, result.result, result.repairNotes, phase);
     step.value += 1;
 
-    if (action.action !== "propose" || !result.changed) continue;
-    const lineageId = action.lineageId
-      ?? newestLineageId(beforeLineageIds, gameState.getAllianceProposalLineages());
+    if ((action.action !== "propose" && action.action !== "amend") || !result.changed) continue;
+    const lineageId = action.action === "propose"
+      ? action.lineageId ?? newestLineageId(beforeLineageIds, gameState.getAllianceProposalLineages())
+      : newestLineageId(beforeLineageIds, gameState.getAllianceProposalLineages());
     if (lineageId) await resolveAllianceProposalTransaction(ctx, lineageId, step, phase);
   }
 

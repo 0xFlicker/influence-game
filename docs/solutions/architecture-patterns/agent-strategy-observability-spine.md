@@ -9,9 +9,10 @@ severity: high
 applies_when:
   - tuning social-strategy agents from simulation evidence
   - adding hidden agent decision surfaces
+  - adding structured actions that target engine-owned records
   - validating private strategy through simulation artifacts
   - separating producer diagnostics from player-visible game state
-tags: [mingle, strategy-observability, strategic-lens, strategy-thread, game-mcp, agent-turns, local-models]
+tags: [mingle, named-alliances, strategy-observability, strategic-lens, strategy-thread, game-mcp, agent-turns, local-models]
 related_components: [simulation-mcp, prompt-design, canonical-events, local-model-evaluation]
 ---
 
@@ -68,6 +69,17 @@ Accepted-action correlation bridges private evidence to canonical facts without 
 - Correlation failure is nonfatal and retryable. Ordinary event flushes retry it, and the lifecycle performs one final pre-settlement reconciliation.
 - The contract is forward-only: do not infer historical links where no exact decision-bearing manifest exists.
 - Authority remains explicit: owners get bounded health and citations, producers may inspect exact private links, and public or peer views never expose private pointers.
+
+Treat opaque action identity as engine-owned opportunity state, not model output. When a phase already knows the one proposal, version, candidate set, or other canonical record an agent may act on:
+
+- pass that exact opportunity into the agent adapter and expose only actions legal at that boundary
+- omit canonical UUIDs and stale or closed actions from the provider schema
+- bind the chosen response to the current engine identity after the provider call and before canonical mutation
+- generate new canonical version IDs in the engine
+- when the model must select among several authorized records, expose short request-local handles such as `A1` and map them back inside the adapter; never make the handle durable authority
+- keep a phase-runner legality check for custom/test agents, stale returns, and defense in depth
+
+Named-alliance responses follow this pattern: response calls never transcribe lineage/version IDs, counter disappears after the lineage cap, and active-alliance amendments use member-scoped local handles before entering the normal versioned-consent transaction. Private `agent_turn` records may still explain the requested action, result, and repair notes, while canonical alliance events remain the only accepted state.
 
 Elimination speech follows the same seam. Commit `player.eliminated` before asking for speech, then make one dedicated structured call to the eliminated agent and record the accepted text separately. Do not build that prompt from the general system transcript: sealed ballot reveal lines can contain named receipts that the eliminated player is not authorized to receive. Pass an explicit disclosure object instead — public votes may include voter names, sealed votes include counts only, and direct/sole-vulnerable eliminations carry a no-vote reason.
 
