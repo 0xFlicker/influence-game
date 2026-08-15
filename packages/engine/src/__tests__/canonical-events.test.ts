@@ -9,6 +9,7 @@ import {
 } from "../canonical-events";
 import {
   projectViewerDecisionEvent,
+  projectFormatBallotPresentation,
   reconstructSafetyBouncePrefix,
 } from "../viewer-decision-events";
 import { GameState } from "../game-state";
@@ -806,6 +807,95 @@ describe("format.menu_offered", () => {
         targetId: "charlie",
         polarity: null,
       },
+    });
+  });
+
+  it("projects an exhausted Restricted History voter as a canonical forfeiture", () => {
+    const gs = new GameState(
+      [
+        { id: "atlas", name: "Atlas" },
+        { id: "lyra", name: "Lyra" },
+        { id: "echo", name: "Echo" },
+      ],
+      {
+        gameId: "restricted-history-forfeit",
+        now: () => 1_700_000_000_000,
+        formatManifest: ["majority_elimination", "restricted_history"],
+      },
+    );
+    const recordMajorityRound = (atlasTarget: "lyra" | "echo") => {
+      gs.startRound();
+      gs.recordFormatSelected("atlas", "majority_elimination");
+      gs.recordFormatBallot({ formatId: "majority_elimination", voterId: "atlas", targetId: atlasTarget });
+      gs.recordFormatBallot({ formatId: "majority_elimination", voterId: "lyra", targetId: "echo" });
+      gs.recordFormatBallot({ formatId: "majority_elimination", voterId: "echo", targetId: "lyra" });
+      gs.recordFormatResolution({
+        formatId: "majority_elimination",
+        empoweredId: "atlas",
+        eliminatedId: "lyra",
+        resolutionKind: "clear",
+        tiedPlayerIds: ["lyra", "echo"],
+        tiebreakerId: "atlas",
+        aggregate: {
+          capability: "sealed_elim",
+          totals: {
+            atlas: 0,
+            lyra: atlasTarget === "lyra" ? 2 : 1,
+            echo: atlasTarget === "echo" ? 2 : 1,
+          },
+          eligiblePlayerIds: ["atlas", "lyra", "echo"],
+        },
+      });
+    };
+    recordMajorityRound("lyra");
+    recordMajorityRound("echo");
+
+    gs.startRound();
+    gs.recordFormatMenu("atlas", ["majority_elimination", "restricted_history"]);
+    gs.recordFormatSelected("atlas", "restricted_history");
+    gs.recordFormatBallotForfeited("atlas");
+    gs.recordFormatBallot({ formatId: "restricted_history", voterId: "lyra", targetId: "atlas" });
+    gs.recordFormatBallot({ formatId: "restricted_history", voterId: "echo", targetId: "atlas" });
+    gs.recordFormatResolution({
+      formatId: "restricted_history",
+      empoweredId: "atlas",
+      eliminatedId: "atlas",
+      resolutionKind: "auto",
+      tiedPlayerIds: ["atlas"],
+      tiebreakerId: null,
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { atlas: 2, lyra: 0, echo: 0 },
+        eligiblePlayerIds: ["atlas", "lyra", "echo"],
+      },
+    });
+
+    const forfeiture = gs.getCanonicalEvents().find(
+      (event) => event.type === "format.ballot_forfeited",
+    );
+    expect(forfeiture).toMatchObject({
+      visibility: "producer",
+      payload: {
+        formatId: "restricted_history",
+        voterId: "atlas",
+        reason: "history_exhausted",
+      },
+    });
+    expect(forfeiture && projectViewerDecisionEvent(forfeiture)).toMatchObject({
+      type: "format.ballot_forfeited",
+      payload: { voterId: "atlas", reason: "history_exhausted" },
+    });
+    expect(projectFormatBallotPresentation({
+      events: gs.getCanonicalEvents(),
+      round: 3,
+      eligibleVoterIds: ["atlas", "lyra", "echo"],
+    })).toEqual({
+      status: "revealed",
+      rollCall: [
+        { voterId: "atlas", targetId: null, polarity: null, forfeited: true },
+        { voterId: "lyra", targetId: "atlas", polarity: null },
+        { voterId: "echo", targetId: "atlas", polarity: null },
+      ],
     });
   });
 

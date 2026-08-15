@@ -1015,6 +1015,8 @@ export type FormatDecisionFallbackReason =
   | "invalid_save_or_eliminate_ballot"
   | "invalid_vote_bomb_target"
   | "invalid_majority_elimination_target"
+  | "invalid_even_votes_target"
+  | "invalid_restricted_history_target"
   | "invalid_bounce_pointer"
   | "invalid_safety_bounce_target"
   | "invalid_format_tiebreak_target";
@@ -1173,6 +1175,14 @@ export interface IAgent {
     context: PhaseContext,
     aliveIds: UUID[],
   ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getEvenVotesBallot?(
+    context: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
+  getRestrictedHistoryBallot?(
+    context: PhaseContext,
+    legalTargetIds: UUID[],
+  ): Promise<FormatDecisionProvenance & StrategicDecisionMetadata & { targetId: UUID; thinking?: string; reasoningContext?: string }>;
   getBouncePointer?(
     context: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
@@ -1292,6 +1302,13 @@ export interface PlayerAllianceContext {
   proposalHistory: PlayerAllianceContextProposal[];
 }
 
+export interface RestrictedHistoryLegalityProjection {
+  priorTargetIds: UUID[];
+  priorTargetNames: string[];
+  legalTargetIds: UUID[];
+  legalTargetNames: string[];
+}
+
 export interface PhaseContext {
   gameId: UUID;
   round: number;
@@ -1308,6 +1325,8 @@ export interface PhaseContext {
   postVotePressure?: PostVotePressureProjection;
   /** Current format menu, locked rules, and public Safety Bounce board. */
   formatPressure?: FormatPressureProjection;
+  /** Actor-specific Restricted History exclusions and current legal targets. */
+  restrictedHistoryLegality?: RestrictedHistoryLegalityProjection;
   /** Public named vote record revealed to players after each standard Vote resolves. */
   revealedVoteLedger?: RevealedVoteLedgerEntry[];
   /** Player-visible canonical event record rendered with names for endgame context. */

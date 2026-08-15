@@ -878,8 +878,8 @@ function productionGameMcpTools(
     tool({
       name: "filter_events",
       description: includeProducerVariant
-        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Public/player reads expose sanitized format.ballot_cast mappings immediately after durable record with eventShape: viewer_decision; producer mode retains raw canonical envelopes and provenance."
-        : "Filter viewer-safe canonical decisions by game, type, phase, actor, sequence range, or limit. Rows mark the sanitized decision shape with eventShape: viewer_decision, including sanitized format.ballot_cast mappings immediately after durable record.",
+        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Public/player reads expose sanitized format.ballot_cast and format.ballot_forfeited decisions immediately after durable record with eventShape: viewer_decision; producer mode retains raw canonical envelopes and provenance."
+        : "Filter viewer-safe canonical decisions by game, type, phase, actor, sequence range, or limit. Rows mark the sanitized decision shape with eventShape: viewer_decision, including sanitized format.ballot_cast and format.ballot_forfeited decisions immediately after durable record.",
       properties: {
         gameIdOrSlug: { type: "string" },
         eventType: { type: "string" },

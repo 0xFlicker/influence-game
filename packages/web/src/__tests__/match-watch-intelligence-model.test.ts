@@ -282,6 +282,7 @@ function publicIntelligence({
               saveOrEliminate: null,
               voteBomb: null,
               majorityElimination: null,
+              evenVotes: null,
               safetyBounce: null,
               acceptedBallots: [],
               ballotPresentation: { status: "not_applicable", rollCall: [] },

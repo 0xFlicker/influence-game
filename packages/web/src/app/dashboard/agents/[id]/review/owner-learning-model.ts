@@ -267,6 +267,9 @@ function formatBallotLabel(ballot: Record<string, unknown> | null): string | nul
   if (ballot.formatId === "majority_elimination") {
     return `Majority Elimination vote against ${target}`;
   }
+  if (ballot.formatId === "even_votes") {
+    return `Even Votes vote against ${target}`;
+  }
   if (ballot.formatId === "safety_bounce") return `Safety Bounce vote against ${target}`;
   return `Format vote against ${target}`;
 }

@@ -473,6 +473,59 @@ describe("buildCompletedGameResults", () => {
     expect(JSON.stringify(read.rounds[0]?.formatRecap)).not.toContain("vulnerable");
   });
 
+  it("reports Even Votes parity eligibility without relabeling odd totals as zero-safe", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      {
+        gameId: "completed-results-even-votes",
+        now: fixedClock(),
+        formatManifest: ["even_votes"],
+      },
+    );
+    state.startRound();
+    state.setEmpowered("alice", "initial");
+    state.recordFormatSelected("alice", "even_votes");
+    state.recordFormatBallot({ formatId: "even_votes", voterId: "alice", targetId: "bob" });
+    state.recordFormatBallot({ formatId: "even_votes", voterId: "bob", targetId: "charlie" });
+    state.recordFormatBallot({ formatId: "even_votes", voterId: "charlie", targetId: "bob" });
+    state.recordFormatBallot({ formatId: "even_votes", voterId: "dave", targetId: "charlie" });
+    state.recordFormatResolution({
+      formatId: "even_votes",
+      empoweredId: "alice",
+      eliminatedId: "bob",
+      resolutionKind: "clear",
+      tiedPlayerIds: ["bob", "charlie"],
+      tiebreakerId: "alice",
+      aggregate: {
+        capability: "sealed_elim",
+        totals: { alice: 0, bob: 2, charlie: 2, dave: 0 },
+        eligiblePlayerIds: ["alice", "bob", "charlie", "dave"],
+      },
+    });
+    state.eliminatePlayer("bob");
+
+    const read = buildCompletedGameResults({ events: state.getCanonicalEvents() });
+    expect(read.rounds[0]?.formatRecap).toMatchObject({
+      selectedFormatId: "even_votes",
+      eliminated: playerResult("bob", "Bob"),
+      scoring: {
+        kind: "even_votes",
+        rows: [
+          { player: playerResult("alice", "Alice"), votes: 0, evenEligible: true },
+          { player: playerResult("bob", "Bob"), votes: 2, evenEligible: true },
+          { player: playerResult("charlie", "Charlie"), votes: 2, evenEligible: true },
+          { player: playerResult("dave", "Dave"), votes: 0, evenEligible: true },
+        ],
+      },
+    });
+    expect(JSON.stringify(read.rounds[0]?.formatRecap)).not.toContain("zeroSafe");
+  });
+
   it("retains a partial format prefix without inventing scoring or elimination", () => {
     const state = new GameState(
       [

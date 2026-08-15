@@ -657,6 +657,8 @@ describe("Game REST API", () => {
         "vote_bomb",
         "safety_bounce",
         "majority_elimination",
+        "even_votes",
+        "restricted_history",
       ]);
     });
 

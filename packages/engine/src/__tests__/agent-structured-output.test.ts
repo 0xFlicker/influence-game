@@ -392,6 +392,62 @@ describe("sealed-elim agent decision surface", () => {
     expect(prompt).not.toContain("Use the vote_bomb_ballot tool");
   });
 
+  it("uses a distinct strict Even Votes tool and parity strategy", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "even_votes_ballot", {
+        thinking: "Flip Vera from odd safety to even danger.",
+        target: "Vera",
+        strategyDelta: "Put Vera onto the lethal highest even total.",
+      }),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const context: PhaseContext = {
+      ...makeContext(Phase.FORMAT_RESOLVE),
+      formatPressure: {
+        empoweredId: "mira-id",
+        empoweredName: "Mira",
+        offeredFormats: ["even_votes", "vote_bomb"],
+        selectedFormat: "even_votes",
+        ruleSheetSummary: ruleSheetForFormat("even_votes"),
+      },
+    };
+
+    const ballot = await agent.getEvenVotesBallot(
+      context,
+      context.alivePlayers.map((player) => player.id),
+    );
+
+    expect(ballot).toMatchObject({
+      targetId: "vera-id",
+      decisionSource: "llm",
+      fallbackReason: null,
+      strategyDelta: "Put Vera onto the lethal highest even total.",
+    });
+    expect(ballot.decisionId).toBe(traces[0]?.decisionId);
+    expect(traces[0]?.action).toBe("format-even-votes-ballot");
+    const request = requests[0]!;
+    expect((request.tool_choice as { function?: { name?: string } }).function?.name)
+      .toBe("even_votes_ballot");
+    const prompt = (request.messages as Array<{ content: string }>).at(-1)?.content ?? "";
+    expect(prompt).toContain(ruleSheetForFormat("even_votes"));
+    expect(prompt.toLowerCase()).toContain("parity");
+    expect(prompt.toLowerCase()).toContain("including zero");
+    expect(prompt.toLowerCase()).toContain("entire field");
+  });
+
   it("repairs illegal sealed-elim targets without claiming model-accept correlation", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const traces: PrivateDecisionTrace[] = [];
@@ -416,6 +472,14 @@ describe("sealed-elim agent decision surface", () => {
             decisionLog: "Attempt a target outside the living cast.",
           },
         },
+        {
+          toolName: "even_votes_ballot",
+          args: {
+            thinking: "Try an illegal target.",
+            target: "Nobody",
+            decisionLog: "Attempt a target outside the living cast.",
+          },
+        },
       ]),
       "gpt-5-nano",
       undefined,
@@ -432,6 +496,7 @@ describe("sealed-elim agent decision surface", () => {
 
     const majority = await agent.getMajorityEliminationBallot(context, aliveIds);
     const voteBomb = await agent.getVoteBombBallot(context, aliveIds);
+    const evenVotes = await agent.getEvenVotesBallot(context, aliveIds);
 
     expect(majority).toMatchObject({
       targetId: "mira-id",
@@ -443,9 +508,15 @@ describe("sealed-elim agent decision surface", () => {
       decisionSource: "fallback",
       fallbackReason: "invalid_vote_bomb_target",
     });
+    expect(evenVotes).toMatchObject({
+      targetId: "mira-id",
+      decisionSource: "fallback",
+      fallbackReason: "invalid_even_votes_target",
+    });
     expect(majority.decisionId).toBeUndefined();
     expect(voteBomb.decisionId).toBeUndefined();
-    expect(traces).toHaveLength(2);
+    expect(evenVotes.decisionId).toBeUndefined();
+    expect(traces).toHaveLength(3);
     expect(traces.every((trace) => Boolean(trace.decisionId))).toBe(true);
   });
 });
@@ -1180,6 +1251,75 @@ describe("InfluenceAgent structured output mode", () => {
       expect(prompt).not.toContain("Current Council status:");
       expect(prompt).not.toContain("Next major decision: Power");
       expect(prompt).not.toContain("## Post-Vote Pressure");
+    }
+  });
+
+  it("renders authoritative Restricted History targets during coordination and ballot selection", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "mingle_turn",
+          args: {
+            thinking: "Coordinate only around the legal targets.",
+            message: "Mira is my only legal target.",
+            noReply: false,
+            gotoRoomId: null,
+            gotoPlayerName: null,
+            decisionLog: "coordinate a legal ballot",
+          },
+        },
+        {
+          toolName: "restricted_history_ballot",
+          args: {
+            thinking: "Vera is unavailable because I targeted her before.",
+            target: "Mira",
+            decisionLog: "vote for the only legal target",
+          },
+        },
+      ]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const context: PhaseContext = {
+      ...makeContext(Phase.FORMAT_MINGLE),
+      round: 5,
+      formatPressure: {
+        empoweredId: "mira-id",
+        empoweredName: "Mira",
+        offeredFormats: ["restricted_history", "vote_bomb"],
+        selectedFormat: "restricted_history",
+        ruleSheetSummary: ruleSheetForFormat("restricted_history"),
+      },
+      restrictedHistoryLegality: {
+        priorTargetIds: ["vera-id"],
+        priorTargetNames: ["Vera"],
+        legalTargetIds: ["mira-id"],
+        legalTargetNames: ["Mira"],
+      },
+    };
+
+    await agent.takeMingleTurn(context, ["Atlas", "Mira"], []);
+    await agent.getRestrictedHistoryBallot(
+      { ...context, phase: Phase.FORMAT_RESOLVE },
+      ["mira-id"],
+    );
+
+    const prompts = requests.map((request) => {
+      const messages = request.messages as Array<{ content: string }>;
+      return messages.map((message) => message.content).join("\n");
+    });
+    for (const prompt of prompts) {
+      expect(prompt).toContain("Restricted History Legal Ledger (authoritative)");
+      expect(prompt).toContain(
+        "This ledger is specific to you. Other players may have different legal and unavailable targets; do not infer their eligibility from yours.",
+      );
+      expect(prompt).toContain("Previous elimination-direction targets, unavailable this round: Vera");
+      expect(prompt).toContain("Only legal living ballot targets this round: Mira");
+      expect(prompt).toContain("Do not promise, coordinate, or describe an unavailable target as your ballot");
     }
   });
 

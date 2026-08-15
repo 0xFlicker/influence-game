@@ -17,6 +17,8 @@ describe("format presentation metadata", () => {
       "vote_bomb",
       "safety_bounce",
       "majority_elimination",
+      "even_votes",
+      "restricted_history",
     ]);
     expect(formatPresentationMetadata("save_or_eliminate")).toMatchObject({
       id: "save_or_eliminate",
@@ -40,6 +42,16 @@ describe("format presentation metadata", () => {
     expect(
       formatPresentationMetadata("majority_elimination").ruleSheet.length,
     ).toBeGreaterThan(0);
+    expect(formatPresentationMetadata("even_votes")).toMatchObject({
+      id: "even_votes",
+      displayName: "Even Votes",
+    });
+    expect(formatPresentationMetadata("even_votes").ruleSheet).toContain(
+      "including zero",
+    );
+    expect(formatPresentationMetadata("even_votes").ruleSheet).toContain(
+      "every living player has an odd total",
+    );
     expect(ruleSheetForFormat("safety_bounce")).toBe(
       "After mingle: one random starter is SAFE and points publicly. A SAFE player's pointer makes the target VULNERABLE; a VULNERABLE player's pointer makes the target SAFE until all are classified. Then a sealed vote among the vulnerable pool only — most votes out. Sole vulnerable auto-elims. Empowered breaks ties.",
     );

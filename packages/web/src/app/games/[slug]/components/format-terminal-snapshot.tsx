@@ -41,7 +41,10 @@ export function FormatTerminalSnapshot({
   const unresolvedBallot = decisions.some(
     (decision) => (
       decision.round === compilation.snapshot.round
-      && decision.type === "format.ballot_cast"
+      && (
+        decision.type === "format.ballot_cast"
+        || decision.type === "format.ballot_forfeited"
+      )
     ),
   ) && compilation.snapshot.resolution === null;
 

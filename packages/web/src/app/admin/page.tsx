@@ -10,7 +10,7 @@ export default function AdminPage() {
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
-      <main className="flex-1 px-6 py-10 max-w-5xl mx-auto w-full">
+      <main className="mx-auto w-full max-w-[90rem] flex-1 px-4 py-8 sm:px-6 lg:px-8 lg:py-10">
         <AdminGate>
           <AdminTabs />
         </AdminGate>

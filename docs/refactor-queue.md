@@ -16,6 +16,8 @@ Last simulator variant cleanup added: 2026-08-14
 
 Last House summary cost architecture added: 2026-08-15
 
+Last CI test-discovery gap added: 2026-08-14
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -68,6 +70,16 @@ Items are ordered by current priority.
 - Concrete seam: startup recovery coordination, recovered-run ownership/heartbeat lifetime, the `FORMAT_RESOLVE` actor walk, and lifecycle handoff after the first post-recovery checkpoint.
 - Validation path: reproduce from the durable `free-blue-wire` event/checkpoint shape; restart at `FORMAT_RESOLVE`; verify the same game advances beyond the next `LOBBY` boundary under a healthy owner and reaches normal completion without duplicate resolution/elimination events or a second orphan suspension.
 - Suggested slice: identify why the recovered runner became orphaned after committing event 78, fix the smallest ownership or lifecycle defect, and add a DB-backed restart-to-completion regression. Preserve event-only hydration and fail-closed admission for corrupt prerequisites.
+
+### R20. Complete CI test discovery without paid or external side effects
+
+- Status: `ready`
+- Priority: **high**
+- Sources: root and workspace `package.json` test scripts, `.github/workflows/ci.yml`, and the missed `format-presentation-metadata.test.ts` assertion found after PR #88 merged.
+- Signal: required CI runs hand-maintained `test:mock` file lists rather than all provider-free tests. PR #88 passed required checks even though a deterministic engine test was already red because that file was absent from the list. Adding individual files repairs known gaps but does not prove the lists are complete.
+- Concrete seam: workspace test layout, provider/DB/browser dependency classification, `test:mock` scripts, and CI test jobs.
+- Validation path: inventory every test file; classify paid, credentialed, DB-backed, browser, and provider-free suites; prove every provider-free suite is discovered automatically; fail CI when a new test is unclassified; keep paid model simulations and external writes opt-in only.
+- Suggested slice: replace hand-maintained provider-free file lists with an automatic lane based on an explicit directory or naming contract, move exceptional suites into named opt-in lanes, and add a manifest/completeness check so newly added tests cannot silently miss required CI.
 
 ### R12. Player Strategy Thread checkpoint hydration
 

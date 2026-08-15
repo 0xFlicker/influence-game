@@ -63,6 +63,7 @@ import {
   displayNameForFormat,
   isLaunchFormatId,
   pickFormatFromMenu,
+  requireSealedElimRegistration,
   type LaunchFormatId,
   type SealedElimFormatId,
 } from "./formats";
@@ -3304,9 +3305,7 @@ Use the save_or_eliminate_ballot tool.`;
         }),
       ),
       onToolFailure: (error, fallbackTarget) => {
-        const method = formatId === "vote_bomb"
-          ? "getVoteBombBallot"
-          : "getMajorityEliminationBallot";
+        const method = requireSealedElimRegistration(formatId).decision.agentMethod;
         console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=${method} error="${error instanceof Error ? error.message : error}" fallback="${fallbackTarget.name}"`);
       },
     });
@@ -3324,6 +3323,20 @@ Use the save_or_eliminate_ballot tool.`;
     aliveIds: UUID[],
   ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
     return this.getSealedElimBallot(ctx, aliveIds, "majority_elimination");
+  }
+
+  async getEvenVotesBallot(
+    ctx: PhaseContext,
+    aliveIds: UUID[],
+  ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
+    return this.getSealedElimBallot(ctx, aliveIds, "even_votes");
+  }
+
+  async getRestrictedHistoryBallot(
+    ctx: PhaseContext,
+    legalTargetIds: UUID[],
+  ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
+    return this.getSealedElimBallot(ctx, legalTargetIds, "restricted_history");
   }
 
   async getBouncePointer(
@@ -4144,6 +4157,26 @@ Use these as live facts for strategy and conversation. You may plead, bargain, r
 Use only this locked format for the current round. Prefer the full public name in speech. Do not import rules from an unselected format or the retired default Power-to-Council loop.`;
   }
 
+  private buildRestrictedHistoryLegalitySection(ctx: PhaseContext): string {
+    if (ctx.formatPressure?.selectedFormat !== "restricted_history") return "";
+    const legality = ctx.restrictedHistoryLegality;
+    if (!legality) {
+      throw new Error(`Restricted History prompt context missing for ${ctx.selfId}`);
+    }
+    const priorTargets = legality.priorTargetNames.length > 0
+      ? legality.priorTargetNames.join(", ")
+      : "none";
+    const legalTargets = legality.legalTargetNames.length > 0
+      ? legality.legalTargetNames.join(", ")
+      : "none (your ballot will be forfeited)";
+    return `## Restricted History Legal Ledger (authoritative)
+- This ledger is specific to you. Other players may have different legal and unavailable targets; do not infer their eligibility from yours.
+- Previous elimination-direction targets, unavailable this round: ${priorTargets}
+- Only legal living ballot targets this round: ${legalTargets}
+- Do not promise, coordinate, or describe an unavailable target as your ballot.
+- If the legal list is empty, your ballot is forfeited; do not invent a target.`;
+  }
+
   private buildGameRulesSection(ctx: PhaseContext): string {
     if (ctx.phase === Phase.COUNCIL) {
       return `## Council Vote Rules
@@ -4614,6 +4647,7 @@ ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
     );
     const gameRulesSection = this.buildGameRulesSection(ctx);
     const formatPressureSection = this.buildFormatPressureSection(ctx);
+    const restrictedHistoryLegalitySection = this.buildRestrictedHistoryLegalitySection(ctx);
     const currentBoardContractSection = this.buildCurrentBoardContractSection(ctx);
     const currentStakesSection = this.buildCurrentStakesSection(ctx);
     const postVotePressureSection = this.buildPostVotePressureSection(ctx);
@@ -4679,6 +4713,7 @@ ${currentBoardContractSection}
 ${gameRulesSection}
 
 ${formatPressureSection ? `${formatPressureSection}\n` : ""}
+${restrictedHistoryLegalitySection ? `${restrictedHistoryLegalitySection}\n` : ""}
 ${currentStakesSection}
 
 ${allianceContextSection ? `${allianceContextSection}\n` : ""}${planHuddleSection ? `${planHuddleSection}\n` : ""}

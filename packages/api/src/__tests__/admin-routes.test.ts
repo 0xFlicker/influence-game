@@ -538,20 +538,28 @@ describe("admin route RBAC", () => {
     const season = await createSeason(db, { slug: "season-zero", name: "Season 0" });
     const gameId = await insertGame(db, { slug: "admin-season-game" });
     await db.update(schema.games).set({ seasonId: season.id }).where(eq(schema.games.id, gameId));
+    await db.insert(schema.gameResults).values({
+      id: randomUUID(),
+      gameId,
+      roundsPlayed: 7,
+      tokenUsage: "{}",
+    });
 
     const res = await app.request("/api/admin/games", {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
     const rows = await res.json() as Array<Record<string, unknown>>;
 
-    expect(rows[0]).toMatchObject({
+    const game = rows.find((row) => row.id === gameId);
+    expect(game).toMatchObject({
       id: gameId,
       slug: "admin-season-game",
+      currentRound: 7,
       seasonId: season.id,
       season: { id: season.id, slug: "season-zero", name: "Season 0" },
       completionSettlement: { state: "not_applicable", retryEligible: false },
     });
-    expect(rows[0]).not.toHaveProperty("gameNumber");
+    expect(game).not.toHaveProperty("gameNumber");
   });
 
   test("auto-suffixes conflicting imported profiles without rewriting historical persona", async () => {
@@ -1104,7 +1112,7 @@ describe("admin route RBAC", () => {
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createCanonicalEventFixture(gameId);
     const privatePlayerNote = "PRIVATE_PLAYER_CONTINUITY_SENTINEL";
-    const privateStrategyPacket = "PRIVATE_STRATEGY_PACKET_SENTINEL";
+    const privateStrategyBaseline = "PRIVATE_STRATEGY_BASELINE_SENTINEL";
     const privateHouseSummary = "PRIVATE_HOUSE_CONTINUITY_SENTINEL";
     await appendGameEvents(db, { gameId, ownerEpoch, events });
     const baseCapsule = createCheckpointCapsule(events);
@@ -1112,20 +1120,12 @@ describe("admin route RBAC", () => {
     const capsule = enrichCapsuleForV1Candidate(baseCapsule, { ownerEpoch, eventHeadHash });
     capsule.playerContinuityCapsules = (capsule.playerContinuityCapsules ?? []).map((playerCapsule, index) => ({
       ...playerCapsule,
-      strategyPacket: {
-        revisionId: `strategy-packet-${index}`,
-        previousRevisionId: null,
-        updatedAtRound: capsule.round,
-        updatedAtPhase: capsule.phase,
-        objective: `${privateStrategyPacket} ${playerCapsule.playerName}`,
-        targetPosture: "keep target pressure private",
-        coalitionPosture: "hold an alliance read",
-        nextSocialProbe: "ask a bounded question",
-        strategicLens: "vote_math",
-        strategicLensRationale: "vote pressure is the current useful frame",
-        uncertainty: "whether the alliance will hold",
-        reviseTrigger: "new contradiction appears",
-        changedSincePrevious: "initial packet",
+      compactStrategy: {
+        lifecycle: "active",
+        baseline: `${privateStrategyBaseline} ${playerCapsule.playerName}`,
+        deltas: [`private refinement ${index}`],
+        priorEpoch: null,
+        revision: 1,
       },
       notes: [{ subject: "continuity", note: `${privatePlayerNote} ${playerCapsule.playerName}` }],
       roundHistory: [{ round: capsule.round, myVotes: { empower: "Mira" } }],
@@ -1227,9 +1227,9 @@ describe("admin route RBAC", () => {
     expect(serialized).not.toContain("storageBucket");
     expect(serialized).not.toContain("storageKey");
     expect(serialized).not.toContain("sourcePointers");
-    expect(serialized).not.toContain("strategyPacket");
+    expect(serialized).not.toContain("compactStrategy");
     expect(serialized).not.toContain(privatePlayerNote);
-    expect(serialized).not.toContain(privateStrategyPacket);
+    expect(serialized).not.toContain(privateStrategyBaseline);
     expect(serialized).not.toContain(privateHouseSummary);
     expect(serialized).not.toContain("private-content");
     expect(serialized).not.toContain(`content/${gameId}/round-1/response.json`);

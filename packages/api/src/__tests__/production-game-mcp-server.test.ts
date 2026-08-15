@@ -1006,7 +1006,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       (tool) => (tool as { name: string }).name === "filter_events",
     ) as { description: string };
     expect(filterEventsTool.description).toContain(
-      "sanitized format.ballot_cast mappings immediately after durable record",
+      "sanitized format.ballot_cast and format.ballot_forfeited decisions immediately after durable record",
     );
     expect(filterEventsTool.description).toContain(
       "producer mode retains raw canonical envelopes and provenance",

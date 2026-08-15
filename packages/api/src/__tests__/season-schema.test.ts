@@ -73,9 +73,9 @@ describe("Dual Crown schema", () => {
       revisionPolicyVersion: "agent-revision-v2",
     });
     expect(revisions[0]!.effectiveRuntimeSnapshot).toMatchObject({
-      model: "gpt-5-nano",
+      model: "gpt-5.6-luna",
       providerProfileId: "openai",
-      catalogId: "openai:gpt-5-nano",
+      catalogId: "openai:gpt-5.6-luna",
     });
 
     const profile = (await db.select().from(schema.agentProfiles)

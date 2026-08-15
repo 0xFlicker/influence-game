@@ -97,6 +97,7 @@ function eventKernelEvidence(event: CanonicalGameEvent): GameKernel | null {
     case "format.selected":
     case "format.resolved":
     case "format.ballot_cast":
+    case "format.ballot_forfeited":
     case "format.safety_bounce_started":
     case "format.safety_bounce_pointer":
       return "format";

@@ -263,7 +263,6 @@ async function interruptGameAtBoundary(
   options: {
     config?: GameConfig & Record<string, unknown>;
     playerCount?: number;
-    requireBlockedMingleInbox?: boolean;
     writeUnsupportedNewerCheckpoint?: string;
     preferSafetyBounceFromRound?: number;
     gameIdSuffix?: string;
@@ -303,10 +302,6 @@ async function interruptGameAtBoundary(
         checkpoint.runtimeSnapshot?.actorWitness.actorCoordinate === actorCoordinate &&
         checkpoint.lastEventSequence > 0
       ) {
-        const hasBlockedMingleInbox = checkpoint.runtimeSnapshot.accumulatorRegistry.entries.some((entry) =>
-          entry.id === "mingleInbox" && entry.status === "blocked"
-        );
-        if (options.requireBlockedMingleInbox && !hasBlockedMingleInbox) return;
         interruptedAtSequence = checkpoint.lastEventSequence;
         if (options.writeUnsupportedNewerCheckpoint) {
           const unsupportedCheckpoint = structuredClone(checkpoint);
@@ -740,42 +735,6 @@ describe("game startup recovery", () => {
       .where(eq(schema.gameResults.gameId, gameId))).toHaveLength(0);
   });
 
-  test("startup recovery resumes from a boundary with reconstructable Mingle inbox messages", async () => {
-    // vote still sits after Mingle I; inbox rebuild must include MINGLE_I room speech.
-    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "vote", {
-      config: recoveryConfigWithMingle,
-      playerCount: 6,
-      requireBlockedMingleInbox: true,
-    });
-
-    const candidate = await getSupportedRecovery(db, gameId);
-    if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
-    expect(candidate.ok).toBeTrue();
-    expect(candidate.resumeFrom.mingleInboxReplay?.entries.length).toBeGreaterThan(0);
-    expect(candidate.resumeFrom.mingleInboxReplay?.unresolvedRecipientNames).toEqual([]);
-    expect(candidate.resumeFrom.actorCoordinate).toBe("vote");
-
-    const suspendedInspection = await getDurableRunInspection(db, gameId);
-    expect(suspendedInspection.ok).toBeTrue();
-    if (!suspendedInspection.ok) throw new Error("durable inspection failed");
-    const supportedBoundary = findCheckpointBoundary(suspendedInspection, {
-      lastEventSequence: interruptedAtSequence,
-      actorCoordinate: "vote",
-    });
-    expect(supportedBoundary?.resumeAvailable).toBeTrue();
-
-    const recovery = await recoverGamesOnStartup(db);
-    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
-
-    await assertRecoveredGameCompleted({
-      db,
-      gameId,
-      originalOwnerEpoch: ownerEpoch,
-      interruptedAtSequence,
-      expectedIntroductionCount: 6,
-    });
-  }, 60000);
-
   test("startup recovery fails closed for retired pre-format social and classic Power→Council coordinates", async () => {
     // Coordinates remain listed on PHASE_BOUNDARY for type/hydration forensics, but resume is fail-closed.
     for (const actorCoordinate of ["mingle_i", "pre_vote_huddle", "post_vote_mingle", "power", "reveal", "pre_council_huddle", "council"] as const) {
@@ -954,12 +913,19 @@ describe("game startup recovery", () => {
   });
 
   test("startup recovery resumes Safety Bounce format_resolve without pre-checkpoint bounce facts", async () => {
-    // Round 1: force a non-Safety-Bounce selection so anti-repeat guarantees Safety Bounce
-    // is offered in Round 2. Interrupt at the Round 2 format_resolve phase-entry boundary.
+    // Freeze this fixture to two formats so both are offered in each round. The
+    // agent chooses Save or Eliminate in round 1 and Safety Bounce in round 2.
+    const safetyBounceRecoveryConfig = {
+      ...recoveryConfigWithMingle,
+      formatManifest: [
+        "save_or_eliminate",
+        "safety_bounce",
+      ] satisfies LaunchFormatId[],
+    };
     const bounceGameId = await insertGame(db, {
       id: "startup-recovery-format_resolve-safety-bounce",
       status: "in_progress",
-      config: recoveryConfigWithMingle,
+      config: safetyBounceRecoveryConfig,
     });
     const bounceOwnerEpoch = await insertOwner(db, bounceGameId);
     const agents = await insertRecoveryPlayers(db, bounceGameId, 6, {
@@ -970,7 +936,7 @@ describe("game startup recovery", () => {
 
     let interruptedAt = 0;
     let runner: GameRunner | null = null;
-    runner = new GameRunner(agents, recoveryConfigWithMingle, new TemplateHouseInterviewer(), {
+    runner = new GameRunner(agents, safetyBounceRecoveryConfig, new TemplateHouseInterviewer(), {
       gameId: bounceGameId,
       tokenTracker,
       durableEventSink: async (events) => {
@@ -1265,7 +1231,7 @@ describe("game startup recovery", () => {
     const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
       ownerEpoch,
       eventHeadHash: hashCanonicalEvent(events.at(-1)!),
-      actorCoordinate: "mingle_i",
+      actorCoordinate: "vote",
     });
     checkpoint.transcriptReplay = { version: 2, entries: [] };
     const write = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });

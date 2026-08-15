@@ -37,10 +37,11 @@
  * Require FORMAT MENU -> FORMAT LOCKED -> FORMAT RESOLVE on two-card rounds,
  * model-authored format actions (`decisionSource: "llm"` with useful thinking),
  * no fallback, and no default Power/Council elimination. Omission uses the
- * frozen four-format default. For proof of one specific card, append
+ * frozen six-format default. For proof of one round-1-eligible card, append
  * `--formats <id>` and require FORMAT LOCKED -> FORMAT RESOLVE with no
  * format.menu_offered event, format-pick turn, or empowered pick model call.
- * Do not use extra production rounds as a catalog-coverage gate. See
+ * Restricted History requires round 3 plus a round-1-eligible companion format.
+ * See
  * docs/local-model-evaluation.md for the complete pass/fail and triage checklist.
  *   # Whole-game timeout is off by default; only set when you want a hard wall clock:
  *   #   --game-timeout-sec 7200
@@ -116,8 +117,9 @@
  * context is intentionally narrower than operator transport: sanitized accepted
  * ballot mappings are readable there immediately after durable record, while
  * viewer named Roll Call presentation remains resolution-gated. Together the format
- * records expose seven typed agent decisions: pickRoundFormat,
+ * records expose nine typed agent decisions: pickRoundFormat,
  * getSaveOrEliminateBallot, getVoteBombBallot, getMajorityEliminationBallot,
+ * getEvenVotesBallot, getRestrictedHistoryBallot,
  * getBouncePointer, getSafetyBounceVote, and breakFormatEliminationTie. Their
  * responses include `decisionSource` and nullable `fallbackReason`; reasoning
  * is diagnostic evidence, never canonical game fact. Safety Bounce pointer

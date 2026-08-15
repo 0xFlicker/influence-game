@@ -42,9 +42,27 @@ export {
 } from "./majority-elimination";
 
 export {
+  computeEvenVotesTallies,
+  isLegalEvenVotesBallot,
+  resolveEvenVotes,
+} from "./even-votes";
+
+export {
+  computeRestrictedHistoryTallies,
+  isEliminationDirectionBallot,
+  isLegalRestrictedHistoryBallot,
+  resolveRestrictedHistory,
+  restrictedHistoryLegalTargets,
+  restrictedHistoryPriorTargetIds,
+  type HistoricalFormatBallot,
+  type RestrictedHistoryBallot,
+} from "./restricted-history";
+
+export {
   DEFAULT_FORMAT_MANIFEST,
   LEGACY_FORMAT_MANIFEST,
   FORMAT_CATALOG,
+  formatsAvailableInRound,
   getFormatRegistration,
   isRegisteredFormatId,
   resolveFormatManifest,

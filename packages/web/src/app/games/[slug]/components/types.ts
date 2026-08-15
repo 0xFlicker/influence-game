@@ -94,11 +94,19 @@ export interface FormatPresentationRosterPlayer {
   name: string;
 }
 
-export interface FormatPresentationBallot {
-  voterId: string;
-  targetId: string;
-  polarity: "save" | "eliminate" | null;
-}
+export type FormatPresentationBallot =
+  | {
+      voterId: string;
+      targetId: string;
+      polarity: "save" | "eliminate" | null;
+      forfeited?: never;
+    }
+  | {
+      voterId: string;
+      targetId: null;
+      polarity: null;
+      forfeited: true;
+    };
 
 export interface FormatEmpowerVoteReceipt {
   voterId: string;

@@ -41,7 +41,10 @@ export function AdminTabs() {
   return (
     <div>
       {/* Tab bar */}
-      <div className="mb-8 flex max-w-full gap-1 overflow-x-auto border-b border-white/10">
+      <div
+        className="mb-8 grid grid-cols-2 gap-1 rounded-xl border border-white/10 bg-white/[0.025] p-1 sm:grid-cols-4 xl:grid-cols-8"
+        aria-label="Admin sections"
+      >
         <TabButton
           active={activeTab === "seasons"}
           onClick={() => setActiveTab("seasons")}
@@ -118,11 +121,13 @@ function TabButton({
 }) {
   return (
     <button
+      type="button"
       onClick={onClick}
-      className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
+      aria-pressed={active}
+      className={`min-h-10 rounded-lg px-3 py-2 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-indigo-400 ${
         active
-          ? "border-indigo-500 text-white"
-          : "border-transparent text-white/40 hover:text-white/70"
+          ? "bg-white/10 text-white shadow-sm"
+          : "text-white/45 hover:bg-white/[0.04] hover:text-white/80"
       }`}
     >
       {children}

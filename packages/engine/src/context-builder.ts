@@ -56,6 +56,11 @@ export interface PrivateRecallSelectionObservation {
 import { computeJurySize } from "./types";
 import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { FormatPressureProjection } from "./format-pressure";
+import {
+  restrictedHistoryLegalTargets,
+  restrictedHistoryPriorTargetIds,
+  type HistoricalFormatBallot,
+} from "./formats/restricted-history";
 import type { CanonicalGameEvent } from "./canonical-events";
 import { projectFormatBallotPresentation } from "./viewer-decision-events";
 
@@ -357,6 +362,8 @@ export class ContextBuilder {
         const target = this.name(event.payload.targetId);
         return `${prefix}: Your format ballot: ${polarity} → ${target} (sealed).`;
       }
+      case "format.ballot_forfeited":
+        return `${prefix}: ${this.name(event.payload.voterId)} forfeited their Restricted History ballot because no legal target remained.`;
       case "format.safety_bounce_started":
         return `${prefix}: Safety Bounce started by ${this.name(event.payload.starterId)} (SAFE).`;
       case "format.safety_bounce_pointer":
@@ -441,6 +448,7 @@ export class ContextBuilder {
   ): boolean {
     switch (event.type) {
       case "format.ballot_cast":
+      case "format.ballot_forfeited":
         return event.payload.voterId === agentId
           || this.formatBallotIsResolved(event, resolvedFormats);
       case "alliance.proposal_submitted":
@@ -483,7 +491,7 @@ export class ContextBuilder {
     for (const event of events) {
       if (!this.canonicalEventVisibleToAgent(event, agentId, resolvedFormats)) continue;
       if (
-        event.type === "format.ballot_cast"
+        (event.type === "format.ballot_cast" || event.type === "format.ballot_forfeited")
         && this.formatBallotIsResolved(event, resolvedFormats)
       ) {
         continue;
@@ -497,7 +505,10 @@ export class ContextBuilder {
   }
 
   private formatBallotIsResolved(
-    ballot: Extract<CanonicalGameEvent, { type: "format.ballot_cast" }>,
+    ballot: Extract<
+      CanonicalGameEvent,
+      { type: "format.ballot_cast" | "format.ballot_forfeited" }
+    >,
     resolvedFormats?: ReadonlyMap<string, number>,
   ): boolean {
     if (resolvedFormats) {
@@ -540,6 +551,9 @@ export class ContextBuilder {
     if (presentation.status !== "revealed") return [];
     const prefix = `R${resolved.round}${resolved.phase ? `/${resolved.phase}` : ""}`;
     return presentation.rollCall.map((entry) => {
+      if (entry.targetId === null) {
+        return `${prefix}: ${this.name(entry.voterId)} forfeited their Restricted History ballot (no legal target).`;
+      }
       const polarity = entry.polarity ?? "eliminate";
       return `${prefix}: ${this.name(entry.voterId)} format ballot: ${polarity} → ${this.name(entry.targetId)}.`;
     });
@@ -738,6 +752,43 @@ export class ContextBuilder {
       .slice(-12);
   }
 
+  private buildRestrictedHistoryLegality(
+    agentId: UUID,
+    formatPressure: FormatPressureProjection | undefined,
+  ): PhaseContext["restrictedHistoryLegality"] {
+    if (formatPressure?.selectedFormat !== "restricted_history") return undefined;
+
+    const history: HistoricalFormatBallot[] = this.gameState.getCanonicalEvents().flatMap((event) =>
+      event.type === "format.ballot_cast"
+        ? [{
+            round: event.round,
+            voterId: event.payload.voterId,
+            targetId: event.payload.targetId,
+            polarity: event.payload.polarity,
+          }]
+        : []
+    );
+    const aliveIds = this.gameState.getAlivePlayers().map((player) => player.id);
+    const priorTargetIds = restrictedHistoryPriorTargetIds(
+      agentId,
+      this.gameState.round,
+      history,
+    );
+    const legalTargetIds = restrictedHistoryLegalTargets(
+      agentId,
+      aliveIds,
+      this.gameState.round,
+      history,
+    );
+
+    return {
+      priorTargetIds,
+      priorTargetNames: priorTargetIds.map((id) => this.name(id)),
+      legalTargetIds,
+      legalTargetNames: legalTargetIds.map((id) => this.name(id)),
+    };
+  }
+
   buildPhaseContext(
     agentId: UUID,
     phase: Phase,
@@ -768,6 +819,9 @@ export class ContextBuilder {
           playerNames: r.playerIds.map((id) => this.gameState.getPlayerName(id)),
         }))
       : undefined;
+    const formatPressure = extra && "formatPressure" in extra
+      ? extra.formatPressure ?? undefined
+      : this.currentFormatPressure ?? undefined;
 
     return {
       gameId: this.gameState.gameId,
@@ -785,9 +839,8 @@ export class ContextBuilder {
       postVotePressure: extra && "postVotePressure" in extra
         ? extra.postVotePressure ?? undefined
         : this.currentPostVotePressure ?? undefined,
-      formatPressure: extra && "formatPressure" in extra
-        ? extra.formatPressure ?? undefined
-        : this.currentFormatPressure ?? undefined,
+      formatPressure,
+      restrictedHistoryLegality: this.buildRestrictedHistoryLegality(agentId, formatPressure),
       revealedVoteLedger: this.revealedVoteLedger.map((entry) => ({ ...entry })),
       gameEventRecord: this.buildGameEventRecord(agentId),
       publicTranscriptContext: this.buildPublicTranscriptContext(),
