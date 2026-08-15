@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, readdir, rm, statfs } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, rename, rm, statfs, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
 import {
   HouseHighlightsTrailerMusicUnavailableError,
@@ -68,6 +68,68 @@ interface UploadTarget {
   contentType: string;
 }
 
+export interface HouseHighlightsMediaWorkerDrainAcknowledgement {
+  schemaVersion: 1;
+  claimDisabled: true;
+  claimInFlight: boolean;
+  signal: "SIGINT" | "SIGTERM";
+  acknowledgedAt: string;
+}
+
+export class HouseHighlightsMediaWorkerDrainController {
+  private disabled = false;
+  private claimInFlight = false;
+  private readonly drainPromise: Promise<void>;
+  private resolveDrain!: () => void;
+  private acknowledgementPromise: Promise<void> = Promise.resolve();
+
+  constructor(
+    private readonly onAcknowledge: (acknowledgement: HouseHighlightsMediaWorkerDrainAcknowledgement) => void | Promise<void> = () => undefined,
+  ) {
+    this.drainPromise = new Promise((resolve) => { this.resolveDrain = resolve; });
+  }
+
+  get claimDisabled(): boolean {
+    return this.disabled;
+  }
+
+  setClaimInFlight(value: boolean): void {
+    this.claimInFlight = value;
+  }
+
+  requestDrain(signal: "SIGINT" | "SIGTERM", now = new Date()): void {
+    if (this.disabled) return;
+    this.disabled = true;
+    this.resolveDrain();
+    this.acknowledgementPromise = Promise.resolve(this.onAcknowledge({
+      schemaVersion: 1,
+      claimDisabled: true,
+      claimInFlight: this.claimInFlight,
+      signal,
+      acknowledgedAt: now.toISOString(),
+    })).catch(() => undefined);
+  }
+
+  waitForAcknowledgement(): Promise<void> {
+    return this.acknowledgementPromise;
+  }
+
+  async waitForPollDelay(ms: number, sleepImpl?: (ms: number) => Promise<void>): Promise<void> {
+    if (this.disabled) return;
+    if (sleepImpl) {
+      await Promise.race([sleepImpl(ms), this.drainPromise]);
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      void this.drainPromise.then(() => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
+  }
+}
+
 export function houseHighlightsMediaWorkerConfig(env: Record<string, string | undefined> = process.env): HouseHighlightsMediaWorkerConfig {
   const apiBaseUrl = env.POSTGAME_MEDIA_API_URL;
   const workerToken = env.POSTGAME_MEDIA_WORKER_TOKEN;
@@ -98,6 +160,8 @@ export interface HouseHighlightsMediaWorkerLoopOptions {
   sleepImpl?: (ms: number) => Promise<void>;
   random?: () => number;
   onError?: (code: string) => void;
+  drainController?: HouseHighlightsMediaWorkerDrainController;
+  runOnceImpl?: () => Promise<"idle" | "completed" | "waiting_music" | "failed">;
 }
 
 export async function runHouseHighlightsMediaWorker(
@@ -106,23 +170,40 @@ export async function runHouseHighlightsMediaWorker(
   options: HouseHighlightsMediaWorkerLoopOptions = {},
 ): Promise<void> {
   const maxIterations = options.maxIterations ?? Number.POSITIVE_INFINITY;
-  const sleepImpl = options.sleepImpl ?? sleep;
   const random = options.random ?? Math.random;
   const onError = options.onError ?? ((code) => console.error(`[postgame-media-worker] ${code}`));
+  const drainController = options.drainController ?? new HouseHighlightsMediaWorkerDrainController();
+  const runOnce = options.runOnceImpl ?? (() => runHouseHighlightsMediaWorkerOnce(config, fetchImpl));
   let consecutiveFailures = 0;
   for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+    if (drainController.claimDisabled) break;
     let delayMs = config.pollIntervalMs;
+    drainController.setClaimInFlight(true);
     try {
-      await runHouseHighlightsMediaWorkerOnce(config, fetchImpl);
+      await runOnce();
       consecutiveFailures = 0;
     } catch (error) {
       consecutiveFailures += 1;
       onError(safePollFailureCode(error));
       const baseDelay = Math.min(MAX_POLL_BACKOFF_MS, config.pollIntervalMs * 2 ** Math.min(consecutiveFailures - 1, 6));
       delayMs = Math.min(MAX_POLL_BACKOFF_MS, baseDelay + Math.floor(baseDelay * 0.2 * random()));
+    } finally {
+      drainController.setClaimInFlight(false);
     }
-    if (iteration + 1 < maxIterations) await sleepImpl(delayMs);
+    if (drainController.claimDisabled) break;
+    if (iteration + 1 < maxIterations) await drainController.waitForPollDelay(delayMs, options.sleepImpl);
   }
+  await drainController.waitForAcknowledgement();
+}
+
+export async function writeHouseHighlightsMediaWorkerDrainAcknowledgement(
+  file: string,
+  acknowledgement: HouseHighlightsMediaWorkerDrainAcknowledgement,
+): Promise<void> {
+  await mkdir(dirname(file), { recursive: true });
+  const temporary = `${file}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(acknowledgement)}\n`, { mode: 0o600 });
+  await rename(temporary, file);
 }
 
 export function assertHouseHighlightsMediaWorkerSmokeResult(result: "idle" | "completed" | "waiting_music" | "failed"): void {
@@ -388,7 +469,6 @@ function targetFor(targets: readonly UploadTarget[], artifact: string): UploadTa
 function publicArtifactFor(claim: WorkerClaim, artifact: string): WorkerClaim["publicArtifacts"][number] { const target = claim.publicArtifacts.find((candidate) => candidate.artifact === artifact); if (!target) throw new Error(`missing_public_artifact_${artifact}`); return target; }
 function categorizedFailure(error: unknown): { category: string; message: string } { const message = error instanceof Error ? error.message : "unknown worker failure"; return { category: message.startsWith("artifact_upload") ? "upload" : message.startsWith("worker_api") ? "api" : "render", message: message.slice(0, 240) }; }
 function positiveInt(value: string | undefined, fallback: number): number { const parsed = Number(value); return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback; }
-function sleep(ms: number): Promise<void> { return new Promise((resolvePromise) => setTimeout(resolvePromise, ms)); }
 function safePollFailureCode(error: unknown): string {
   const message = error instanceof Error ? error.message : "unknown";
   if (/^(?:worker_api|worker_temp_space_low_)[a-z0-9_]+$/i.test(message)) return `poll_failed:${message}`;
@@ -407,9 +487,20 @@ async function fetchWithTimeout(fetchImpl: typeof fetch, input: RequestInfo | UR
 if (import.meta.main) {
   const mode = parseHouseHighlightsMediaWorkerArgs(Bun.argv.slice(2));
   const config = houseHighlightsMediaWorkerConfig();
+  const drainAcknowledgementFile = process.env.POSTGAME_MEDIA_DRAIN_ACK_FILE;
+  const drainController = new HouseHighlightsMediaWorkerDrainController((acknowledgement) => {
+    if (!drainAcknowledgementFile) return;
+    return writeHouseHighlightsMediaWorkerDrainAcknowledgement(drainAcknowledgementFile, acknowledgement);
+  });
+  const onSigterm = () => { drainController.requestDrain("SIGTERM"); };
+  const onSigint = () => { drainController.requestDrain("SIGINT"); };
+  if (mode === "poll") {
+    process.on("SIGTERM", onSigterm);
+    process.on("SIGINT", onSigint);
+  }
   const run = mode === "health"
     ? checkHouseHighlightsMediaWorkerHealth(config).then(() => console.log("House Highlights media worker health check passed."))
-    : mode === "poll" ? runHouseHighlightsMediaWorker(config) : runHouseHighlightsMediaWorkerOnce(config).then((result) => {
+    : mode === "poll" ? runHouseHighlightsMediaWorker(config, fetch, { drainController }) : runHouseHighlightsMediaWorkerOnce(config).then((result) => {
       if (mode === "smoke") assertHouseHighlightsMediaWorkerSmokeResult(result);
       console.log(mode === "smoke" ? "Smoke render completed." : result);
     });

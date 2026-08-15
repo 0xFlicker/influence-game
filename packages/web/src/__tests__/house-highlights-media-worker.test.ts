@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
@@ -13,10 +13,13 @@ import {
   assertPreparedHouseHighlightsTrailerMusicMatrix,
   houseHighlightsMediaWorkerConfig,
   checkHouseHighlightsMediaWorkerHealth,
+  HouseHighlightsMediaWorkerDrainController,
+  type HouseHighlightsMediaWorkerDrainAcknowledgement,
   heartbeatIntervalForLease,
   parseHouseHighlightsMediaWorkerArgs,
   runHouseHighlightsMediaWorker,
   runHouseHighlightsMediaWorkerOnce,
+  writeHouseHighlightsMediaWorkerDrainAcknowledgement,
   withWorkerReachableAssetUrls,
 } from "../scripts/render-house-highlights-media-worker";
 
@@ -171,6 +174,83 @@ describe("House Highlights media worker bundle", () => {
     expect(sleeps).toEqual([10]);
     expect(errors).toEqual(["poll_failed:worker_api_request_failed"]);
     expect(errors.join(" ")).not.toContain("secret.example");
+  });
+
+  it("acknowledges an idle drain and exits without another claim", async () => {
+    const config = houseHighlightsMediaWorkerConfig({
+      POSTGAME_MEDIA_API_URL: "http://api.test/",
+      POSTGAME_MEDIA_WORKER_TOKEN: "secret-worker-token",
+      POSTGAME_MEDIA_POLL_INTERVAL_MS: "10",
+      POSTGAME_MEDIA_MIN_FREE_BYTES: "1",
+    });
+    const acknowledgements: HouseHighlightsMediaWorkerDrainAcknowledgement[] = [];
+    const drainController = new HouseHighlightsMediaWorkerDrainController((acknowledgement) => {
+      acknowledgements.push(acknowledgement);
+    });
+    let claims = 0;
+
+    await runHouseHighlightsMediaWorker(config, (async () => {
+      claims += 1;
+      return Response.json({ claim: null });
+    }) as unknown as typeof fetch, {
+      maxIterations: 3,
+      drainController,
+      sleepImpl: async () => { drainController.requestDrain("SIGTERM"); },
+    });
+
+    expect(claims).toBe(1);
+    expect(acknowledgements).toEqual([{ schemaVersion: 1, claimDisabled: true, claimInFlight: false, signal: "SIGTERM", acknowledgedAt: expect.any(String) }]);
+  });
+
+  it("acknowledges an active claim and lets it finish before exiting", async () => {
+    const config = houseHighlightsMediaWorkerConfig({
+      POSTGAME_MEDIA_API_URL: "http://api.test/",
+      POSTGAME_MEDIA_WORKER_TOKEN: "secret-worker-token",
+    });
+    const acknowledgements: HouseHighlightsMediaWorkerDrainAcknowledgement[] = [];
+    const drainController = new HouseHighlightsMediaWorkerDrainController((acknowledgement) => {
+      acknowledgements.push(acknowledgement);
+    });
+    let finishClaim!: () => void;
+    let calls = 0;
+    const claimFinished = new Promise<void>((resolve) => { finishClaim = resolve; });
+    const worker = runHouseHighlightsMediaWorker(config, fetch, {
+      maxIterations: 2,
+      drainController,
+      runOnceImpl: async () => {
+        calls += 1;
+        await claimFinished;
+        return "completed";
+      },
+    });
+    await Promise.resolve();
+
+    drainController.requestDrain("SIGTERM", new Date("2026-08-15T00:00:00.000Z"));
+    expect(acknowledgements).toEqual([{ schemaVersion: 1, claimDisabled: true, claimInFlight: true, signal: "SIGTERM", acknowledgedAt: "2026-08-15T00:00:00.000Z" }]);
+    expect(calls).toBe(1);
+    finishClaim();
+    await worker;
+    expect(calls).toBe(1);
+  });
+
+  it("writes an atomic non-secret drain acknowledgement for the host", async () => {
+    const root = await mkdtemp(join(tmpdir(), "house-highlights-worker-drain-"));
+    const file = join(root, "control", "drain-ack.json");
+    await writeHouseHighlightsMediaWorkerDrainAcknowledgement(file, {
+      schemaVersion: 1,
+      claimDisabled: true,
+      claimInFlight: true,
+      signal: "SIGTERM",
+      acknowledgedAt: "2026-08-15T00:00:00.000Z",
+    });
+
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      schemaVersion: 1,
+      claimDisabled: true,
+      claimInFlight: true,
+      signal: "SIGTERM",
+      acknowledgedAt: "2026-08-15T00:00:00.000Z",
+    });
   });
 
   it("heartbeats well before the minimum API lease expires", () => {

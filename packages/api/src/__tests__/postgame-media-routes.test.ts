@@ -283,6 +283,10 @@ describe("postgame media worker routes and leases", () => {
     const claim = claims.find((entry) => entry !== null);
     expect(claims.filter((entry) => entry !== null)).toHaveLength(1);
 
+    const differentGameId = await insertQueuedMedia(db, "claim-during-worker-drain");
+    const differentClaim = await claimPostgameMedia(db, "replacement-worker-token", new Date(now.getTime() + 1_000));
+    expect(differentClaim?.gameId).toBe(differentGameId);
+
     await db.update(schema.gamePostgameMedia)
       .set({ leaseExpiresAt: new Date(now.getTime() - 1_000).toISOString() })
       .where(eq(schema.gamePostgameMedia.gameId, gameId));
@@ -294,6 +298,8 @@ describe("postgame media worker routes and leases", () => {
       attemptNumber: claim!.attemptNumber,
       leaseToken: claim!.leaseToken,
     }, new Date(now.getTime() + 3_000))).toBe(false);
+    expect(await finalizePostgameMedia(db, finalizeFixture(gameId, claim!), { now: new Date(now.getTime() + 3_000) }))
+      .toEqual({ ok: false, error: "stale_or_invalid_lease" });
   });
 
   test("finalize enforces provenance and opaque storage prefix without replacing a ready version twice", async () => {
