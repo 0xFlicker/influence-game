@@ -6,11 +6,9 @@ import { useRouter } from "next/navigation";
 import {
   fillGame,
   hideGame,
-  isFillAccepted,
   listGames,
   startGame,
   stopGame,
-  type FillGameResponse,
   type GameStatus,
   type GameSummary,
 } from "@/lib/api";
@@ -72,7 +70,6 @@ interface GameCardProps {
   canStop: boolean;
   canHide: boolean;
   onRefresh: () => Promise<void>;
-  onGameUpdate: (gameId: string, updater: (game: GameSummary) => GameSummary) => void;
 }
 
 function GameCard({
@@ -83,7 +80,6 @@ function GameCard({
   canStop,
   canHide,
   onRefresh,
-  onGameUpdate,
 }: GameCardProps) {
   const router = useRouter();
   const isJoinable = game.status === "waiting";
@@ -101,31 +97,13 @@ function GameCard({
   const [confirmHide, setConfirmHide] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const applyFilledState = useCallback(
-    (result: Pick<FillGameResponse, "players" | "totalPlayers">) => {
-      onGameUpdate(game.id, (current) => ({
-        ...current,
-        alivePlayers: Math.max(current.alivePlayers, result.totalPlayers),
-      }));
-    },
-    [game.id, onGameUpdate],
-  );
-
   async function handleFill() {
     setActionError(null);
     setFilling(true);
     try {
-      const result = await fillGame(game.id);
-      if (isFillAccepted(result)) {
-        applyFilledState(result);
-        setFilling(false);
-        await onRefresh();
-        return;
-      }
-
-      applyFilledState(result);
-      setFilling(false);
+      await fillGame(game.id);
       await onRefresh();
+      setFilling(false);
     } catch (err) {
       setActionError(err instanceof Error ? err.message : "Failed to fill game.");
       setFilling(false);
@@ -242,11 +220,6 @@ function GameCard({
                   style={{ width: `${pct}%` }}
                 />
               </div>
-            )}
-            {isJoinable && filling && (
-              <p className="influence-copy-muted text-xs mt-2">
-                AI personas are being generated. Start will unlock here as soon as the game is full.
-              </p>
             )}
             {isLive && (
               <p className="influence-copy-muted text-xs mt-2">Watch live now</p>
@@ -425,10 +398,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
     };
   }, []);
 
-  const updateGame = useCallback((gameId: string, updater: (game: GameSummary) => GameSummary) => {
-    setGames((current) => current.map((game) => (game.id === gameId ? updater(game) : game)));
-  }, []);
-
   const canCreate = hasPermission("create_game");
   const canFill = hasPermission("fill_game");
   const canStart = hasPermission("start_game");
@@ -574,7 +543,6 @@ export function GamesBrowser({ onJoin, compact = false }: GamesBrowserProps) {
               canStop={canStop}
               canHide={canHide}
               onRefresh={refreshGames}
-              onGameUpdate={updateGame}
             />
           ))}
         </div>

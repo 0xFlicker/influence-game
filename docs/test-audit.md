@@ -3,6 +3,7 @@
 **Date:** 2026-03-24
 **Author:** Founding Engineer
 **Codebase version:** v0.8.1
+**Status:** Historical v0.8.1 snapshot; use current Bun commands for the live test inventory.
 
 ## Summary
 

@@ -639,18 +639,7 @@ export interface FillGameResult {
   players: Array<{ id: string; name: string; archetype: string }>;
 }
 
-export interface FillGameAccepted {
-  filling: true;
-  slotsToFill: number;
-  filled: number;
-  totalPlayers: number;
-  maxPlayers: number;
-  players: Array<{ id: string; name: string; archetype: string }>;
-}
-
-export type FillGameResponse = FillGameResult | FillGameAccepted;
-
-export async function fillGame(id: string): Promise<FillGameResponse> {
+export async function fillGame(id: string): Promise<FillGameResult> {
   const token = getAuthToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -668,11 +657,7 @@ export async function fillGame(id: string): Promise<FillGameResponse> {
     }
     throw new ApiError(res.status, text);
   }
-  return res.json() as Promise<FillGameResponse>;
-}
-
-export function isFillAccepted(r: FillGameResponse): r is FillGameAccepted {
-  return "filling" in r && r.filling === true;
+  return res.json() as Promise<FillGameResult>;
 }
 
 export interface CognitiveArtifactIndexEntry {

@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAccount } from "wagmi";
-import { fillGame, hideGame, isFillAccepted, listAdminGames, startGame, stopGame, type AdminGameSummary, type GameSummary } from "@/lib/api";
+import { fillGame, hideGame, listAdminGames, startGame, stopGame, type AdminGameSummary, type GameSummary } from "@/lib/api";
 import { usePermissions } from "@/hooks/use-permissions";
 import { TruncatedAddress } from "@/components/truncated-address";
 import { AdminCostPanel, AdminCostPill } from "./admin-cost-view";
@@ -140,13 +140,7 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
     setActionError(null);
     setFilling(true);
     try {
-      const result = await fillGame(game.id);
-      if (isFillAccepted(result)) {
-        setFilling(false);
-        onRefresh();
-        return;
-      }
-      // Sync path (legacy): fill completed immediately
+      await fillGame(game.id);
       setFilling(false);
       onRefresh();
     } catch (err) {
@@ -203,17 +197,15 @@ function WaitingGameCard({ game, onRefresh, canStart, canFill, canStop, canHide 
         <div className="flex items-center gap-3 mb-1">
           <span className="text-white font-semibold">{game.slug}</span>
           <span className="text-white/50 text-sm">
-            {game.playerCount}-player · {filling ? `${game.playerCount}/${game.playerCount} slots filled` : "Not started"} · {game.modelLabel}
+            {game.playerCount}-player · Not started · {game.modelLabel}
           </span>
           {filling && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-900/40 text-indigo-400 animate-pulse">
-              Generating AI players…
+              Filling seats…
             </span>
           )}
         </div>
-        <p className="text-xs text-white/30">
-          {filling ? "AI personas being generated — game will be ready shortly" : "Waiting to start"}
-        </p>
+        <p className="text-xs text-white/30">Waiting to start</p>
       </div>
       <div className="flex flex-col items-end gap-1 flex-shrink-0">
         {actionError && (

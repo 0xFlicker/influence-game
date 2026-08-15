@@ -66,7 +66,6 @@ import {
   assertUnownedSeatAdmissionInTransaction,
   lockWaitingGameForRosterWrite,
   OwnedSeatProjectionError,
-  updateWaitingHouseSeatPersonaInTransaction,
 } from "../services/owned-seat-projection.js";
 import { getPublicGameCompetitionReceipts } from "../services/season-read-model.js";
 import { generateUniqueSlug } from "../lib/slug.js";
@@ -82,7 +81,7 @@ import {
   LEGACY_FORMAT_MANIFEST,
   MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
-  generatePersona,
+  getHousePersonaDetails,
   normalizeGameModelSelection,
   normalizeOpenAIRequestServiceTier,
   pickAgentNames,
@@ -91,7 +90,6 @@ import {
   resolveModelSelection,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
-import { resolveOpenAIBudgetGenerationLlm } from "../lib/openai-budget-generation-llm.js";
 
 const PUBLIC_SUSPENDED_ERROR_INFO = "The game failed and cannot be resumed.";
 
@@ -624,7 +622,7 @@ export function createGameRoutes(
     );
     const agentModel = resolvedModelSelection.modelId;
 
-    // Step 1: Create placeholder players immediately (no LLM needed)
+    // Create final House players synchronously from deterministic archetypes.
     const addedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
     let totalPlayers = existingPlayers.length;
 
@@ -653,14 +651,15 @@ export function createGameRoutes(
         for (let i = 0; i < actualSlots; i++) {
           const name = names[i] ?? `Agent-${i + 1}`;
           const archetype = archetypes[i] ?? "strategic";
+          const defaults = getHousePersonaDetails(archetype);
 
           const playerId = randomUUID();
           const persona = {
             name,
             personality: archetype,
-            strategyHints: null,
+            strategyHints: defaults.strategyHints,
             personaKey: archetype,
-            personalityBlurb: null,
+            personalityBlurb: defaults.personalityBlurb,
           };
 
           const agentCfg = {
@@ -694,61 +693,12 @@ export function createGameRoutes(
 
     await tryRefreshGameWatchStateSummary(db, gameId, "players_filled");
 
-    // Fill progress stays on the authenticated HTTP operation path, not the product watch stream.
-    // House-fill blurbs always use catalog-paired GPT-5.6 Luna — never env local base URL.
-    // Game-runtime models still come from the game's modelSelection at start.
-    const generationLlm = resolveOpenAIBudgetGenerationLlm();
-
-    if (generationLlm) {
-      void (async () => {
-        const updatedPlayers: Array<{ id: string; name: string; archetype: string }> = [];
-
-        for (const player of addedPlayers) {
-          try {
-            const generated = await generatePersona(
-              generationLlm.client,
-              player.name,
-              player.archetype as Personality,
-              generationLlm.modelId,
-            );
-
-            const existing = (await db
-              .select()
-              .from(schema.gamePlayers)
-              .where(eq(schema.gamePlayers.id, player.id)))[0];
-
-            if (existing) {
-              const persona = JSON.parse(existing.persona);
-              persona.strategyHints = generated.strategyHints || null;
-              persona.personalityBlurb = generated.personality || null;
-
-              const updated = await db.transaction((tx) => updateWaitingHouseSeatPersonaInTransaction(tx, {
-                gameId,
-                playerId: player.id,
-                persona: JSON.stringify(persona),
-              }));
-              if (updated) updatedPlayers.push(player);
-            }
-          } catch (err) {
-            console.warn(`[games] Persona generation failed for ${player.name}:`, err instanceof Error ? err.message : err);
-          }
-        }
-
-        if (updatedPlayers.length > 0) {
-          console.log(`[games] Generated personas for ${updatedPlayers.length} filled player(s) in ${gameId}`);
-        }
-      })();
-    }
-
-    // Step 4: Return 202 Accepted immediately
     return c.json({
-      filling: true,
-      slotsToFill: addedPlayers.length,
       filled: addedPlayers.length,
       totalPlayers,
       maxPlayers: game.maxPlayers,
       players: addedPlayers,
-    }, 202);
+    });
   });
 
   // -------------------------------------------------------------------------

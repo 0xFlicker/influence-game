@@ -454,15 +454,14 @@ export type { InfluenceAgentOptions, Personality } from "./agent";
 export { LLMHouseInterviewer, TemplateHouseInterviewer } from "./house-interviewer";
 export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult, LLMHouseInterviewerOptions } from "./house-interviewer";
 
-// Persona generator
+// House personas
 export {
   HOUSE_AGENT_NAMES,
-  generatePersona,
+  getHousePersonaDetails,
   isReservedHouseAgentName,
   pickAgentNames,
   pickArchetypes,
-} from "./persona-generator";
-export type { GeneratedPersona } from "./persona-generator";
+} from "./house-personas";
 
 // LLM provider configuration
 export {

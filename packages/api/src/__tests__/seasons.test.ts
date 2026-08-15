@@ -11,10 +11,7 @@ import {
   finalizeSeason,
   validateRatedGameRoster,
 } from "../services/seasons.js";
-import {
-  admitOwnedSeatInTransaction,
-  updateWaitingHouseSeatPersonaInTransaction,
-} from "../services/owned-seat-projection.js";
+import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
 import { fingerprintEffectiveRuntimeSnapshot } from "../services/revision-policy.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -221,26 +218,6 @@ describe("season admission and state", () => {
       agentProfileId: profile.id,
       playerId: randomUUID(),
     }))).rejects.toMatchObject({ code: "invalid_state" });
-  });
-
-  test("discards late House persona enrichment after the waiting boundary", async () => {
-    const db = await setupTestDB();
-    const gameId = await insertWaitingFreeGame(db);
-    await insertHouseSeat(db, gameId, "House Before");
-    const seat = (await db.select().from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.gameId, gameId)))[0]!;
-    await db.update(schema.games).set({
-      status: "in_progress",
-      startedAt: new Date().toISOString(),
-    }).where(eq(schema.games.id, gameId));
-
-    await expect(db.transaction((tx) => updateWaitingHouseSeatPersonaInTransaction(tx, {
-      gameId,
-      playerId: seat.id,
-      persona: JSON.stringify({ name: "House After", personality: "late" }),
-    }))).rejects.toMatchObject({ code: "invalid_state" });
-    expect((await db.select().from(schema.gamePlayers)
-      .where(eq(schema.gamePlayers.id, seat.id)))[0]?.persona).toBe(seat.persona);
   });
 
   test("keeps admitted games in a closing season and blocks premature finalization", async () => {

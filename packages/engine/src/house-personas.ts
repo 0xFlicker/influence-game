@@ -1,13 +1,6 @@
-/**
- * Persona Generator
- *
- * Uses LLM to generate unique personality descriptions and strategy hints
- * for AI players based on their archetype. Falls back to hardcoded defaults.
- */
+/** Deterministic House persona names, archetypes, and display copy. */
 
-import OpenAI from "openai";
 import type { Personality } from "./agent";
-import { DEFAULT_MODEL_ID } from "./model-catalog";
 
 // ---------------------------------------------------------------------------
 // Agent name pool — diverse names for AI players
@@ -29,7 +22,7 @@ export function isReservedHouseAgentName(name: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Default personality blurbs (fallback if LLM fails)
+// Default personality blurbs
 // ---------------------------------------------------------------------------
 
 const DEFAULT_BLURBS: Record<Personality, { personality: string; strategy: string }> = {
@@ -92,100 +85,17 @@ const DEFAULT_BLURBS: Record<Personality, { personality: string; strategy: strin
 };
 
 // ---------------------------------------------------------------------------
-// LLM generation
+// Deterministic persona details
 // ---------------------------------------------------------------------------
 
-export interface GeneratedPersona {
-  name: string;
-  personality: string;
+export function getHousePersonaDetails(archetype: Personality): {
+  personalityBlurb: string;
   strategyHints: string;
-  personaKey: Personality;
-}
-
-const PERSONA_RESPONSE_FORMAT = {
-  type: "json_schema" as const,
-  json_schema: {
-    name: "generated_persona",
-    strict: true,
-    schema: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        personality: { type: "string" },
-        strategy: { type: "string" },
-      },
-      required: ["personality", "strategy"],
-    },
-  },
-};
-
-/**
- * Generate a unique personality description and strategy using LLM.
- * Falls back to defaults if the LLM call fails.
- */
-export async function generatePersona(
-  openai: OpenAI,
-  name: string,
-  archetype: Personality,
-  model = DEFAULT_MODEL_ID,
-): Promise<GeneratedPersona> {
-  try {
-    const isGpt5 = model.startsWith("gpt-5");
-    const isReasoning = /^o\d/.test(model)
-      || model === "gpt-5-nano"
-      || model === "gpt-5-mini"
-      || model === "gpt-5.4-nano"
-      || model === "gpt-5.4-mini"
-      || model === "gpt-5.6-luna";
-    const budget = isReasoning ? 200 + 4000 : 200;
-    const response = await openai.chat.completions.create({
-      model,
-      ...(isGpt5 || isReasoning
-        ? { max_completion_tokens: budget }
-        : { max_tokens: budget }),
-      ...(!isReasoning && { temperature: 0.9 }),
-      messages: [
-        {
-          role: "system",
-          content: `You are a character designer for a social strategy game called "Influence". Generate a unique personality description and strategy hint for an AI player.`,
-        },
-        {
-          role: "user",
-          content: `Create a personality blurb and strategy hint for a player named "${name}" with the "${archetype}" archetype.
-
-Respond with JSON only:
-{
-  "personality": "A 1-2 sentence description of this character's personality and vibe. Make it unique and flavorful.",
-  "strategy": "A 1-2 sentence summary of their strategic approach in the game."
-}`,
-        },
-      ],
-      response_format: PERSONA_RESPONSE_FORMAT,
-    });
-
-    const content = response.choices[0]?.message?.content;
-    if (content) {
-      const parsed = JSON.parse(content) as { personality?: string; strategy?: string };
-      if (parsed.personality && parsed.strategy) {
-        return {
-          name,
-          personality: parsed.personality,
-          strategyHints: parsed.strategy,
-          personaKey: archetype,
-        };
-      }
-    }
-  } catch (err) {
-    console.warn(`[persona-generator] LLM generation failed for ${name}, using defaults:`, err);
-  }
-
-  // Fallback to defaults
+} {
   const defaults = DEFAULT_BLURBS[archetype];
   return {
-    name,
-    personality: defaults.personality,
+    personalityBlurb: defaults.personality,
     strategyHints: defaults.strategy,
-    personaKey: archetype,
   };
 }
 

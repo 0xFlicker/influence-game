@@ -14,6 +14,8 @@ Last live recovery regression added: 2026-08-04
 
 Last simulator variant cleanup added: 2026-08-14
 
+Last House summary cost architecture added: 2026-08-15
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -42,6 +44,20 @@ Status legend:
 ## Ready Backlog
 
 Items are ordered by current priority.
+
+### R21. Agentic, selective-fact House summaries at phase cadence
+
+- Status: `ready`
+- Priority: **high**
+- Sources: `packages/engine/src/game-runner.ts` (`emitHouseRoundInterstitial`, `buildHouseEvidenceBundle`, `buildHouseRoundFacts`), `packages/engine/src/house-interviewer.ts` (`formatHouseEvidence`, `buildSummaryPrompt`, `generateHouseSummary`), `packages/engine/src/game-runner.types.ts` (`HouseEvidenceBundle`, `HouseGameplaySummaryContext`), `packages/api/src/game-mcp/` canonical fact reads, and `docs/plans/2026-08-14-001-perf-compact-decision-envelope-plan.md`.
+- Signal: House narration currently runs once per round, but each call receives the accumulated transcript, public messages, diary entries, room allocations, strategy packet, and round facts. That broad replay made `house-summary` the most expensive individual call family in the reviewed simulation. Multiplying the current call shape across nearly every phase would turn the desired narration cadence into a major burn increase.
+- Goal: make a concise House beat viable after nearly every meaningful phase while keeping total per-game House-summary spend near the current round-only budget, rather than multiplying today's per-call cost by the number of phases. Inference may take more small turns; the optimization target is paid tokens without making the narration factually weak or generic.
+- Proposed direction: replace the monolithic prompt with a bounded frontier-model tool loop. Seed the House with only the phase boundary, a compact canonical change/salience catalog, and compact prior narrative state. Let it request a small number of narrow typed fact slices for the players, decisions, rooms, quotations, or prior story threads it elects to highlight, then synthesize the audience beat from only those returned facts. Do not preload the full transcript or full-round evidence as a precautionary appendix.
+- Authority and scope: fact tools must read canonical events/projections or explicitly authorized dialogue/House producer evidence; transcript prose must never become game-state authority. Tool results carry compact source coordinates so factual claims remain traceable. This refactor does not widen House or audience visibility: it applies the existing House authorization and public-output rules to selective reads.
+- Concrete seam: phase-completion summary scheduling; a compact House narrative-continuity record; deterministic phase-change/salience indexing; in-process read-only House fact tools over existing event/projection and dialogue stores; bounded tool-call execution in `HouseInterviewer`; summary trace/source receipts; and per-phase/per-game token accounting.
+- Guardrails: hard-cap tool calls and aggregate returned bytes/tokens; allow a no-material-change exit instead of paying for filler; cache stable House voice/schema prefixes; keep milestone and round-end beats richer than ordinary phase beats without falling back to whole-history replay; and fail summaries non-fatally without delaying or mutating canonical gameplay.
+- Validation path: focused tests prove tool authorization, source coordinates, call/result bounds, no transcript-to-fact parsing, continuity across adjacent phases, and graceful no-summary/fallback behavior. A current-meta API-backed simulation then exercises near-every-phase cadence and reports House cost per phase, total House cost, tool-call counts, selected sources, factual errors, and narrative continuity against the existing round-only baseline. The implementation is not successful merely because each new call is cheaper: the higher cadence must fit the per-game budget target and produce specific, canonically supported highlights.
+- Suggested slice: first build one end-to-end post-phase loop for a high-value boundary using a tiny change catalog plus two or three existing fact categories, with deterministic fake-tool tests and real token accounting. Expand cadence and fact categories only after that slice demonstrates specific narration without full-history replay. Do not introduce a feature flag or release boundary; deployment remains the gate.
 
 ### R15. Format-kernel phase-boundary startup recovery
 
@@ -346,6 +362,6 @@ Items are ordered by current priority.
 - Accusation Capsule V1 / full accumulator resume slice: implemented in the current branch. `tribunal_defense` now recovers from a structured `currentAccusations` accumulator payload sealed to the checkpoint boundary, with DB-backed recovery coverage.
 - Public upload presigner type cleanup: implemented in the current branch. `@influence/api` owns aligned AWS S3 SDK dependencies, and `packages/api/src/lib/storage.ts` calls `getSignedUrl` without `as any` or lint suppression.
 - Broad public DTO package: unnecessary right now; use targeted public-surface builders and sentinel tests.
-- Dashboard redesign, MCP install pages, MatchWatchShell chrome, post-vote Mingle drama, exposed-candidate rule changes, and House narration upgrades: product/UX/gameplay work, not refactor backlog unless a fresh implementation bug appears.
+- Dashboard redesign, MCP install pages, MatchWatchShell chrome, post-vote Mingle drama, exposed-candidate rule changes, and purely presentational House narration upgrades: product/UX/gameplay work, not refactor backlog unless a fresh implementation bug appears. The selective-fact/cost architecture required for phase-cadence House summaries is tracked separately as R21.
 
 `Crash-Honesty Extraction` does not survive as a standalone backlog item. Its completed coverage is recorded under R2; its remaining public-replay and multi-process concerns are W3 and D1.
