@@ -368,6 +368,36 @@ export async function getDeploymentAdmissionStatus(
   });
 }
 
+/**
+ * Activation is valid only after the host has accepted routing ownership for
+ * this exact fence. Post-switch leases do not expire operationally, so the
+ * successful check cannot be displaced by a newer lease before completion.
+ */
+export async function validateDeploymentAdmissionActivationFence(
+  db: DrizzleDB,
+  fence: DeploymentAdmissionFence,
+): Promise<{ ok: true } | DeploymentAdmissionFailure> {
+  try {
+    return await db.transaction(async (tx) => {
+      await lockAdmissionState(tx);
+      const now = await databaseTimes(tx);
+      const lease = await effectiveActiveLease(tx, now.now);
+      const exact = matchFence(lease, fence);
+      if (!exact.ok) return exact;
+      if (exact.lease.phase !== "accepting") {
+        return failure(
+          "invalid_transition",
+          "Candidate runtime activation requires an accepting deployment lease",
+          false,
+        );
+      }
+      return { ok: true as const };
+    });
+  } catch {
+    return unavailableFailure();
+  }
+}
+
 export async function checkGameStartAdmission(
   db: DrizzleDB,
 ): Promise<GameStartAdmissionResult> {

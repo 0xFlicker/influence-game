@@ -14,6 +14,7 @@ import {
   heartbeatDeploymentAdmissionLease,
   type DeploymentAdmissionErrorCode,
 } from "../services/deployment-admission.js";
+import type { RuntimeActivationController } from "../services/runtime-activation.js";
 
 const PHASES = new Set<DeploymentAdmissionPhase>([
   "draining",
@@ -23,7 +24,10 @@ const PHASES = new Set<DeploymentAdmissionPhase>([
   "restoring",
 ]);
 
-export function createDeploymentControlRoutes(db: DrizzleDB) {
+export function createDeploymentControlRoutes(
+  db: DrizzleDB,
+  options: { runtimeActivation?: RuntimeActivationController } = {},
+) {
   const app = new Hono<DeploymentControlAuthEnv>();
   app.use("/api/internal/deployment-control/*", requireDeploymentControlAuth());
 
@@ -88,6 +92,24 @@ export function createDeploymentControlRoutes(db: DrizzleDB) {
       ? c.json({ lease: result.lease })
       : c.json({ error: result.error, code: result.code, retryable: result.retryable }, errorStatus(result.code));
   });
+
+  if (options.runtimeActivation) {
+    app.post("/api/internal/deployment-control/leases/:leaseId/activate", async (c) => {
+      const fence = await parseFence(c, "activate");
+      if (!fence) return c.json({ error: "A valid lease ID and fencing token are required" }, 400);
+      const result = await options.runtimeActivation!.activate(fence);
+      if (!result.ok) {
+        return c.json(
+          { error: result.error, code: result.code, retryable: result.retryable },
+          activationErrorStatus(result.code),
+        );
+      }
+      return c.json({
+        outcome: result.outcome,
+        releaseControl: result.releaseControl,
+      });
+    });
+  }
 
   app.post("/api/internal/deployment-control/leases/:leaseId/complete", async (c) => {
     const body = recordOrNull(await parseJsonBody(c, "POST /api/internal/deployment-control/leases/:leaseId/complete"));
@@ -171,4 +193,10 @@ function errorStatus(code: DeploymentAdmissionErrorCode): 400 | 409 | 503 {
   if (code === "invalid_provenance" || code === "invalid_transition") return 400;
   if (code === "deployment_admission_unavailable") return 503;
   return 409;
+}
+
+function activationErrorStatus(code: string): 409 | 503 {
+  return code === "deployment_admission_unavailable" || code === "runtime_activation_failed"
+    ? 503
+    : 409;
 }

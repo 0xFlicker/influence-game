@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { eq, or } from "drizzle-orm";
 import { createDB, schema } from "./db/index.js";
-import { runMigrations } from "./db/migrate.js";
+import { calculateMigrationSet, runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
 import {
@@ -54,6 +54,14 @@ import {
   ownerLearningGenerationEnabled,
 } from "./services/owner-learning-public.js";
 import {
+  validateDeploymentAdmissionActivationFence,
+} from "./services/deployment-admission.js";
+import {
+  createRuntimeActivationController,
+  readRuntimeStartupMode,
+  type RuntimeStartupMode,
+} from "./services/runtime-activation.js";
+import {
   createServerShutdownController,
   installServerShutdownSignalHandlers,
 } from "./server-shutdown.js";
@@ -80,11 +88,21 @@ const REQUIRED_ENV = [
 ] as const;
 
 let managedAuthMode: ManagedAuthMode;
+let runtimeStartupMode: RuntimeStartupMode;
 try {
   managedAuthMode = readManagedAuthMode();
 } catch (error) {
   console.error(
     `\n  Managed authentication configuration error:\n\n    ${(error as Error).message}\n`,
+  );
+  process.exit(1);
+}
+
+try {
+  runtimeStartupMode = readRuntimeStartupMode();
+} catch (error) {
+  console.error(
+    `\n  Runtime startup configuration error:\n\n    ${(error as Error).message}\n`,
   );
   process.exit(1);
 }
@@ -182,66 +200,74 @@ function getAllowedCorsOrigins(): string[] {
 const databaseUrl = process.env.DATABASE_URL;
 await runMigrations(databaseUrl);
 const db = createDB(databaseUrl);
-await seedRBAC(db);
-const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
-const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
-  ? startOwnerLearningWorkerLoop(db, {
-      provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
-      cursorSecret: process.env.JWT_SECRET,
-    })
-  : null;
-if (!ownerLearningDeploymentEnabled()) {
-  console.info("[owner-learning] Live review generation disabled by deployment configuration");
-} else if (!ownerLearningWorker) {
-  console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
-}
-try {
-  const reconciliation = await reconcileCompletedPostgameMedia(db);
-  if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
-    console.info(`[postgame-media] Reconciled ${reconciliation.examined} completed games; queued ${reconciliation.queued}, waiting inputs ${reconciliation.waitingInputs}`);
+const releaseMigrationSet = calculateMigrationSet();
+const runtimeActivation = createRuntimeActivationController({
+  mode: runtimeStartupMode,
+  validateFence: (fence) => validateDeploymentAdmissionActivationFence(db, fence),
+  startRuntime: startBackgroundRuntime,
+});
+await runtimeActivation.initialize();
+
+async function startBackgroundRuntime() {
+  await seedRBAC(db);
+  try {
+    const reconciliation = await reconcileCompletedPostgameMedia(db);
+    if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
+      console.info(`[postgame-media] Reconciled ${reconciliation.examined} completed games; queued ${reconciliation.queued}, waiting inputs ${reconciliation.waitingInputs}`);
+    }
+  } catch {
+    console.warn("[postgame-media] Startup reconciliation deferred");
   }
-} catch {
-  console.warn("[postgame-media] Startup reconciliation deferred");
-}
 
-// ---------------------------------------------------------------------------
-// Startup cleanup — this API process is also the worker in current deployments.
-// Any pre-existing in_progress row has no in-memory runner here, so fail it
-// closed and let configured recovery decide whether it can continue.
-// ---------------------------------------------------------------------------
-
-const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
-for (const orphan of startupOrphans.returnedToWaiting) {
-  console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
-}
-for (const orphan of startupOrphans.repairRequired) {
-  console.warn(
-    `[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting; roster repair is required`,
-  );
-}
-for (const orphan of startupOrphans.suspended) {
-  const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
-  console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age}; ${orphan.reason})`);
-}
-
-const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
-if (pendingSettlements.readyGameIds.length > 0) {
-  console.warn(
-    `[startup] Marked ${pendingSettlements.readyGameIds.length} sealed completion settlement(s) ready for operator retry`,
-  );
-}
-
-const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
-if (!startupRecoveryDisabled) {
-  const recovery = await recoverGamesOnStartup(db);
-  if (recovery.attempted > 0) {
-    console.info(
-      `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
+  // This API process owns in-memory game runners. Validation candidates must
+  // never classify or recover the accepted color's durable work.
+  const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
+  for (const orphan of startupOrphans.returnedToWaiting) {
+    console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
+  }
+  for (const orphan of startupOrphans.repairRequired) {
+    console.warn(
+      `[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting; roster repair is required`,
     );
-    for (const skipped of recovery.skipped) {
-      console.warn(`[startup] Recovery skipped ${skipped.gameId}: ${skipped.reason}`);
+  }
+  for (const orphan of startupOrphans.suspended) {
+    const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
+    console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age}; ${orphan.reason})`);
+  }
+
+  const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
+  if (pendingSettlements.readyGameIds.length > 0) {
+    console.warn(
+      `[startup] Marked ${pendingSettlements.readyGameIds.length} sealed completion settlement(s) ready for operator retry`,
+    );
+  }
+
+  const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
+  if (!startupRecoveryDisabled) {
+    const recovery = await recoverGamesOnStartup(db);
+    if (recovery.attempted > 0) {
+      console.info(
+        `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
+      );
+      for (const skipped of recovery.skipped) {
+        console.warn(`[startup] Recovery skipped ${skipped.gameId}: ${skipped.reason}`);
+      }
     }
   }
+
+  const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
+  const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
+    ? startOwnerLearningWorkerLoop(db, {
+        provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
+        cursorSecret: process.env.JWT_SECRET,
+      })
+    : null;
+  if (!ownerLearningDeploymentEnabled()) {
+    console.info("[owner-learning] Live review generation disabled by deployment configuration");
+  } else if (!ownerLearningWorker) {
+    console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
+  }
+  return ownerLearningWorker ?? undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +295,10 @@ const healthResponse = () => ({
   service: "influence-api",
   version: apiVersion,
   commit: process.env.GIT_SHA ?? "unknown",
+  releaseControl: {
+    ...runtimeActivation.getStatus(),
+    migrationSet: releaseMigrationSet,
+  },
   timestamp: new Date().toISOString(),
 });
 app.get("/health", (c) => c.json(healthResponse()));
@@ -285,6 +315,10 @@ app.get("/", (c) => {
     name: "Influence Game API",
     version: apiVersion,
     commit: process.env.GIT_SHA ?? "unknown",
+    releaseControl: {
+      ...runtimeActivation.getStatus(),
+      migrationSet: releaseMigrationSet,
+    },
     endpoints: {
       health: "/api/health",
       config: "/api/config",
@@ -313,10 +347,12 @@ app.route("/", mcpRoutes);
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
 
-const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db);
+const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db, {
+  canClaimWork: () => runtimeActivation.canClaimWork(),
+});
 app.route("/", postgameMediaWorkerRoutes);
 
-const deploymentControlRoutes = createDeploymentControlRoutes(db);
+const deploymentControlRoutes = createDeploymentControlRoutes(db, { runtimeActivation });
 app.route("/", deploymentControlRoutes);
 
 // Public watch intelligence routes
@@ -440,7 +476,7 @@ setServer(server);
 
 const shutdown = createServerShutdownController({
   server,
-  worker: ownerLearningWorker,
+  worker: { stop: () => runtimeActivation.stop() },
   stopAcceptingRequests: () => {
     acceptingRequests = false;
   },

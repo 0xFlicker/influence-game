@@ -32,6 +32,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -39,6 +41,31 @@ jobs:
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Enforce release migration policy
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [[ "$BASE_SHA" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null; then
+            comparison_base="$BASE_SHA"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            comparison_base="$(git rev-parse HEAD^)"
+          else
+            comparison_base="$(git hash-object -t tree /dev/null)"
+          fi
+
+          mapfile -t migration_files < <(
+            git diff --name-only --diff-filter=AM "$comparison_base" "$GITHUB_SHA" -- 'packages/api/drizzle/*.sql'
+          )
+          bun run packages/api/src/db/migrate.ts --check-release-compatibility "${migration_files[@]}"
+
+          calculated_set="$(bun run packages/api/src/db/migrate.ts --print-release-migration-set)"
+          manifest_hash="$({
+            cd packages/api
+            find drizzle -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum
+          } | sha256sum | awk '{ print $1 }')"
+          test "$calculated_set" = "sha256:$manifest_hash"
+          echo "Release migration set: $calculated_set"
 
       - name: Typecheck
         run: bun run typecheck

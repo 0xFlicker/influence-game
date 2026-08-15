@@ -11,7 +11,10 @@ import {
   type PostgameMediaUploadDeclaration,
 } from "../services/postgame-media-uploads.js";
 
-export function createPostgameMediaWorkerRoutes(db: DrizzleDB) {
+export function createPostgameMediaWorkerRoutes(
+  db: DrizzleDB,
+  options: { canClaimWork?: () => boolean } = {},
+) {
   const app = new Hono();
 
   app.use("/api/internal/postgame-media/*", async (c, next) => {
@@ -22,6 +25,13 @@ export function createPostgameMediaWorkerRoutes(db: DrizzleDB) {
   });
 
   app.post("/api/internal/postgame-media/claim", async (c) => {
+    if (options.canClaimWork && !options.canClaimWork()) {
+      return c.json({
+        error: "Candidate background runtime is not active",
+        code: "runtime_not_active",
+        retryable: true,
+      }, 503);
+    }
     const workerToken = workerTokenFromAuthorization(c.req.header("Authorization"));
     if (!workerToken) return c.json({ error: "Worker authentication required" }, 401);
     let storage: ReturnType<typeof postgameMediaPublicStorageIdentity>;
