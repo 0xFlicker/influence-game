@@ -68,6 +68,9 @@ jobs:
           test "$calculated_set" = "sha256:$manifest_hash"
           echo "Release migration set: $calculated_set"
 
+      - name: Enforce staging E2E candidate contract
+        run: bash scripts/test-e2e-candidate-contract.sh
+
       - name: Typecheck
         run: bun run typecheck
 

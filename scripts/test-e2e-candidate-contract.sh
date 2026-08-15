@@ -38,14 +38,18 @@ require_literal "$e2e_workflow" "successful candidate dispatch" "event_type: 'in
 require_literal "$e2e_workflow" "least-privilege repository dispatch token" "permission-contents: write"
 require_literal "$e2e_workflow" "E2E run ID evidence" "e2e_run_id: context.runId"
 require_literal "$e2e_workflow" "E2E run attempt evidence" "e2e_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT)"
-require_literal "$e2e_workflow" "trusted E2E workflow SHA evidence" "e2e_workflow_sha: process.env.GITHUB_SHA"
-require_literal "$e2e_workflow" "candidate SHA evidence" "candidate_sha: process.env.CANDIDATE_SHA"
-require_literal "$e2e_workflow" "API digest evidence" "api_digest: process.env.API_DIGEST"
-require_literal "$e2e_workflow" "web digest evidence" "web_digest: process.env.WEB_DIGEST"
-require_literal "$e2e_workflow" "worker digest evidence" "worker_digest: process.env.WORKER_DIGEST"
+require_literal "$e2e_workflow" "immutable E2E evidence artifact locator" "e2e_evidence_artifact: process.env.E2E_EVIDENCE_ARTIFACT"
+require_literal "$e2e_workflow" "immutable E2E evidence digest locator" "e2e_evidence_digest:"
+require_literal "$e2e_workflow" "trusted E2E workflow SHA evidence" 'trusted_workflow_sha: $trusted_workflow_sha'
+require_literal "$e2e_workflow" "candidate SHA evidence" 'candidate_sha: $candidate_sha'
+require_literal "$e2e_workflow" "API digest evidence" 'api: {digest: $api_digest}'
+require_literal "$e2e_workflow" "web digest evidence" 'web: {digest: $web_digest}'
+require_literal "$e2e_workflow" "worker digest evidence" 'render_worker: {digest: $worker_digest}'
 require_literal "$e2e_workflow" "receipt bound to staging identity" 'expected_receipt="staging-deployment-receipt-${STAGING_RUN_ID}-${STAGING_RUN_ATTEMPT}"'
 require_literal "$e2e_workflow" "release-control capability gate" "STAGING_MIN_RELEASE_CONTROL_PROTOCOL"
 require_literal "$e2e_workflow" "durable staging E2E evidence" "staging-e2e-evidence.json"
+require_literal "$e2e_workflow" "deterministic candidate evidence artifact" 'E2E_EVIDENCE_ARTIFACT: staging-e2e-evidence-${{ inputs.candidate_sha }}'
+require_literal "$e2e_workflow" "strict evidence artifact upload" "if-no-files-found: error"
 require_literal "$e2e_workflow" "candidate evidence job summary" "## Influence staging release evidence"
 require_literal "$e2e_workflow" "staging receipt evidence link" 'actions/runs/$STAGING_RUN_ID/attempts/$STAGING_RUN_ATTEMPT'
 require_literal "$e2e_workflow" "E2E evidence link" 'actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT'
@@ -54,9 +58,32 @@ require_literal "$e2e_workflow" "candidate bound to trusted main history" 'git m
 require_literal "$e2e_workflow" "exact deployed source checkout" 'git checkout --detach "$expected_sha"'
 
 e2e_line="$(grep -n 'name: Run E2E tests' "$e2e_workflow" | cut -d: -f1)"
+evidence_line="$(grep -n 'name: Create immutable staging E2E evidence' "$e2e_workflow" | cut -d: -f1)"
+upload_line="$(grep -n 'name: Upload immutable staging E2E evidence' "$e2e_workflow" | cut -d: -f1)"
 dispatch_line="$(grep -n 'name: Report qualified production candidate' "$e2e_workflow" | cut -d: -f1)"
-if [ "$e2e_line" -ge "$dispatch_line" ]; then
-  echo "::error::candidate callback must occur only after E2E succeeds" >&2
+if [ "$e2e_line" -ge "$evidence_line" ] || [ "$evidence_line" -ge "$upload_line" ] || [ "$upload_line" -ge "$dispatch_line" ]; then
+  echo "::error::candidate evidence must be created and uploaded after E2E succeeds but before callback" >&2
+  exit 1
+fi
+
+actual_payload_fields="$({
+  sed -n '/client_payload: {/,/^              }/p' "$e2e_workflow" \
+    | grep -oE '^[[:space:]]+[a-z0-9_]+:' \
+    | tr -d ' :' \
+    | grep -v '^client_payload$' || true
+} | LC_ALL=C sort -u)"
+expected_payload_fields="$(printf '%s\n' \
+  e2e_evidence_artifact \
+  e2e_evidence_digest \
+  e2e_run_attempt \
+  e2e_run_id | LC_ALL=C sort)"
+if [ "$actual_payload_fields" != "$expected_payload_fields" ]; then
+  printf 'unexpected candidate callback fields:\n%s\n' "$actual_payload_fields" >&2
+  exit 1
+fi
+
+if ! grep -Fq 'run: bash scripts/test-e2e-candidate-contract.sh' "$ci_workflow"; then
+  echo "::error::required CI does not exercise the staging E2E candidate contract" >&2
   exit 1
 fi
 
