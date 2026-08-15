@@ -1,6 +1,6 @@
 ---
 title: Agent Strategy Observability Spine
-date: 2026-06-13
+date: 2026-08-15
 category: architecture-patterns
 module: engine agent strategy and simulation observability
 problem_type: architecture_pattern
@@ -12,7 +12,7 @@ applies_when:
   - adding structured actions that target engine-owned records
   - validating private strategy through simulation artifacts
   - separating producer diagnostics from player-visible game state
-tags: [mingle, named-alliances, strategy-observability, strategic-lens, strategy-thread, game-mcp, agent-turns, local-models]
+tags: [mingle, named-alliances, strategy-observability, compact-strategy, game-mcp, agent-turns, simulations]
 related_components: [simulation-mcp, prompt-design, canonical-events, local-model-evaluation]
 ---
 
@@ -20,370 +20,164 @@ related_components: [simulation-mcp, prompt-design, canonical-events, local-mode
 
 ## Context
 
-The Mingle hardening work started from a model-quality problem, not a missing enum: agents were entering Mingle with lobby-shaped behavior, treating private rooms as polite vibe checks, often collapsing to the same room choice, and overusing repeated "script / performance / authenticity" language. The first fix was not to demand that every agent name a target. The useful direction was to make real strategy available, varied, inspectable, and private.
+Agent-quality work is not complete when prompt copy changes. Influence needs an end-to-end spine from the model's decision envelope through engine acceptance, private artifacts, deterministic replay, and human review.
 
-Several related issues compounded into the same pattern:
+The current strategy contract removes standalone reflection inference. Living-player calls the game already needs carry:
 
-- Mingle needed current product vocabulary rather than legacy Whisper wording, because stale phase terms confused both prompts and frontend expectations.
-- Room choice by agent-selected room number was fake-strategic. Agents could express seek/avoid intent, but they could not know everyone else's intent, so most choices collapsed to neutral room IDs.
-- Pair-cooldown reshuffling looked like a helpful allocator optimization but secretly moved players after their choices. It made the game less legible and undermined player-authored movement.
-- Strategic reflection initially updated memory but was not emitted as a searchable simulation artifact, so we could not validate whether Mingle changed later strategy.
-- Strategy Thread packets gave agents multi-round continuity, but needed to remain live-agent producer/debug state rather than pretending to solve crash-safe persistence.
-- Hard-coded rumor examples poisoned style. They helped parse the task, but also amplified repeated "rehearsed/script/performance" language.
-- The later presentation-read attractor needed a structured counterweight: a `strategicLens` field that lets models choose concrete evidence frames such as vote math, room traffic, coalition geometry, promise debt, or information control.
+- their existing action or message fields
+- concise private `thinking`
+- nullable `strategyDelta` on ordinary strategic boundaries
+- required full `strategy` on the first survivor diary answer after an eviction or on a later repair boundary
 
-Session history reinforced the pattern: canonical board facts, player-visible transcripts, and private decision artifacts must remain separate. The game MCP and simulation artifacts are the validation surface; public transcript prose alone is too subjective for evaluating agent strategy. (session history)
+This reduces calls while keeping strategy inspectable. It also preserves the authority split: canonical events say what happened; compact strategy and rationale explain what the agent intended.
 
 ## Guidance
 
-Treat agent-strategy improvements as a spine that runs through prompt, type contract, phase runner, artifact, MCP search, tests, and docs. Do not treat them as prompt copy alone.
-
-The durable architecture is:
+Use one consistent flow:
 
 ```mermaid
 flowchart TB
-  Prompt["Private prompt context"] --> Tool["Typed agent tool result"]
-  Tool --> Phase["Phase runner"]
-  Phase --> Public["Player-visible transcript when speech is allowed"]
-  Phase --> Private["Private agent_turn record"]
-  Phase --> Canonical["Canonical game event only for accepted board facts"]
-  Private --> Turns["game-N-turns.jsonl"]
-  Canonical --> Events["game-N-events.jsonl"]
-  Turns --> MCP["Game MCP search_logs and linked_records"]
-  Events --> Projection["Replayable projection"]
-  MCP --> Review["Producer validation"]
+  Prompt["Board Contract + private compact strategy"] --> Call["One typed gameplay or diary call"]
+  Call --> Validate["Validate gameplay and strategy independently"]
+  Validate --> Guard["Existing phase ownership and acceptance guard"]
+  Guard --> Canonical["Canonical event for accepted game fact"]
+  Guard --> Strategy["Commit accepted strategy operation"]
+  Call --> Trace["Private decision trace"]
+  Strategy --> Turn["Private agent_turn result and revision"]
+  Canonical --> Replay["Replayable projection"]
+  Trace --> Review["Authorized cognition review"]
+  Turn --> Review
 ```
 
-Use this split consistently:
+Keep the surfaces separate:
 
-- **Player-visible transcript** is what other players or viewers can see as game speech.
-- **Private `agent_turn` records** are producer/debug evidence: hidden intent, reasoning metadata, strategy packets, strategic lenses, room assignment diagnostics, decision logs, and movement purpose.
-- **Canonical game events** are accepted board facts: votes, eliminations, powers, rounds, endgame transitions. They rebuild state and can point back to private source records, but they do not store hidden strategy as game truth.
-- **Completed-game results review** is a public-by-URL postgame product projection. It should roll up canonical events into per-round revealed facts, elimination order, vote matrices, endgame votes, jury votes, and placements. Agent context can provide snippets from active public-facing cognitive artifacts, but those snippets explain texture only; they do not decide who voted for whom, who was eliminated, or who won.
+- **Canonical events** are the sole authority for votes, formats, alliances, eliminations, phase changes, and results.
+- **Public or room transcript** contains only delivered speech and authorized viewer-safe `thinking` projections.
+- **Private decision traces** retain prompt/response evidence, model provenance, usage, emitted thinking, and the submitted strategy candidate.
+- **Private `agent_turn` records** retain the game-used action plus accepted/rejected/no-change strategy result and resulting engine revision.
+- **Compact strategy state** is fallible private cognition. It never becomes a target, commitment, or living-player fact merely because prose names one.
 
-Accepted-action correlation bridges private evidence to canonical facts without collapsing that split:
+The new fields inherit the same authorization scope as strategic `thinking` on that surface. They do not create a new privacy policy or new class of principals.
 
-- The exact agent call returns a fresh decision receipt. Never recover accepted-action identity from mutable "last private decision" state.
-- The accepting phase stamps the receipt on the direct canonical event only when the model choice is accepted unchanged. Passes, fallbacks, rejected choices, and materially repaired choices stay unlinked.
-- After durable event append, API reconciliation transactionally updates the relational evidence manifest, cognitive artifact, and prompt-reuse source. It does not rewrite raw trace assets or make evidence canonical.
-- Correlation failure is nonfatal and retryable. Ordinary event flushes retry it, and the lifecycle performs one final pre-settlement reconciliation.
-- The contract is forward-only: do not infer historical links where no exact decision-bearing manifest exists.
-- Authority remains explicit: owners get bounded health and citations, producers may inspect exact private links, and public or peer views never expose private pointers.
+## Compact Strategy Lifecycle
 
-Treat opaque action identity as engine-owned opportunity state, not model output. When a phase already knows the one proposal, version, candidate set, or other canonical record an agent may act on:
-
-- pass that exact opportunity into the agent adapter and expose only actions legal at that boundary
-- omit canonical UUIDs and stale or closed actions from the provider schema
-- bind the chosen response to the current engine identity after the provider call and before canonical mutation
-- generate new canonical version IDs in the engine
-- when the model must select among several authorized records, expose short request-local handles such as `A1` and map them back inside the adapter; never make the handle durable authority
-- keep a phase-runner legality check for custom/test agents, stale returns, and defense in depth
-
-Named-alliance responses follow this pattern: response calls never transcribe lineage/version IDs, counter disappears after the lineage cap, and active-alliance amendments use member-scoped local handles before entering the normal versioned-consent transaction. Private `agent_turn` records may still explain the requested action, result, and repair notes, while canonical alliance events remain the only accepted state.
-
-Elimination speech follows the same seam. Commit `player.eliminated` before asking for speech, then make one dedicated structured call to the eliminated agent and record the accepted text separately. Do not build that prompt from the general system transcript: sealed ballot reveal lines can contain named receipts that the eliminated player is not authorized to receive. Pass an explicit disclosure object instead — public votes may include voter names, sealed votes include counts only, and direct/sole-vulnerable eliminations carry a no-vote reason.
-
-When a model-quality complaint appears, convert it into typed observable state instead of an untestable prompt vibe.
-
-Examples:
-
-- "Agents are not using Mingle strategically" became hidden Mingle intent, strategy signals, movement purpose, and strategic reflection records.
-- "Agents forget what they were doing next round" became Strategy Thread packets plus private `decisionLog` receipts.
-- "Agents keep using authenticity/performance language" became `strategicLens` on Mingle intent, rumor, strategic reflection, and Strategy Thread packets, with presentation reads allowed but explicitly not privileged.
-- "All agents pick Room 1" became House-assigned rooms from all hidden intents, plus deterministic repair diagnostics.
-
-Keep the agent on a strategy spectrum. A good system permits:
-
-- soft reads and guarded probes
-- explicit asks and information trades
-- named provisional targets
-- alliance repair
-- silence or deferral when that fits persona/context
-- pivots when new evidence contradicts prior plans
-
-Avoid making "concrete strategic act" a hard gate. If target naming is required, agents learn to satisfy the prompt rather than play the social game. Standing targets should be a posture, not a quota: a target can be a quiet watch target, Mingle probe, expose candidate, or no target yet with a concrete evidence gap.
-
-## Core Implementation Pattern
-
-### 1. Put strategy in typed private returns
-
-Private strategy should appear in typed contracts that phase runners can log and tests can assert. The current shared types make strategy metadata explicit without injecting it into game-state mutation:
+The engine owns one bounded state per living player:
 
 ```ts
-export interface MingleIntentAction extends MingleIntentSummaryBase {
-  thinking?: string;
-  reasoningContext?: string;
-  decisionLog?: string | null;
-}
-
-export interface StrategicReflectionAction {
-  certainties: string[];
-  suspicions: string[];
-  allies: string[];
-  threats: string[];
-  plan: string;
-  strategicLens: StrategicLens;
-  strategicLensRationale: string;
-  thinking?: string;
-  reasoningContext?: string;
-  strategyPacket?: StrategyPacketSummary | null;
+interface CompactStrategyState {
+  lifecycle: "opening" | "active" | "reconciliation_required" | "repair_required";
+  baseline: string | null;
+  deltas: string[];
+  priorEpoch: CompactStrategyPriorEpoch | null;
+  revision: number;
 }
 ```
 
-The key is that these are return values and `agent_turn` payloads, not player speech and not canonical facts.
+- `opening` derives posture from authored personality/strategy plus current evidence; accepted deltas may refine it.
+- `active` contains one concise baseline and ordered accepted deltas.
+- canonical eviction moves living survivors to `reconciliation_required` and preserves the immediately prior valid epoch as historical evidence.
+- a valid first survivor diary `strategy` replaces the old epoch and returns to `active` with no deltas.
+- an optional House follow-up may append the shared `strategyDelta`; if replacement failed, the same follow-up is a full-strategy repair boundary.
+- if the optional follow-up does not happen or repair fails, the next eligible paid action requests full `strategy` while still allowing its legal gameplay/message result to proceed.
 
-### 2. Use structured prompt fields to widen behavior
+Strategy validation is mechanical only: boundary, type, whitespace, per-value size, delta count, and aggregate size. Do not score the prose or reject it for naming a dead player. Current Board Contract remains the override.
 
-The strategic lens field is deliberately a typed enum, not a prose hint buried in the prompt:
+## Commit After Acceptance
 
-```ts
-const STRATEGIC_LENSES: readonly StrategicLens[] = [
-  "vote_math",
-  "room_traffic",
-  "promise_debt",
-  "power_position",
-  "private_inconsistency",
-  "coalition_geometry",
-  "information_control",
-  "jury_threat",
-  "loyalty_stress",
-  "retaliation_risk",
-  "social_cover",
-  "timing_pattern",
-  "presentation_read",
-  "relationship_repair",
-  "broad_read",
-];
-```
+Never mutate durable strategy inside `InfluenceAgent` before phase ownership and mechanic checks succeed.
 
-This gives the model a menu of evidence frames. It also gives reviewers a searchable distribution after a run, so "the attractor is still alive" can be measured instead of guessed.
+The call returns a candidate. The phase runner:
 
-### 3. Let the House solve global room allocation
+1. parses and validates the gameplay action independently;
+2. applies the existing ownership/commit guard;
+3. commits the canonical mechanic when accepted;
+4. applies the strategy candidate with the boundary appropriate to the current lifecycle;
+5. records the result on the existing private turn.
 
-Agents can form intent, but they cannot assign rooms intelligently from only their own private view. That is a global optimization problem. The House sees all hidden Mingle intents and proposes initial room assignments:
+A missing, malformed, oversized, or wrong-boundary strategy field cannot cause a provider retry or reject a legal action. A fallback, stale return, timeout, illegal mechanic proposal, or rejected action cannot mutate strategy.
 
-```ts
-const prompt = `Assign initial Mingle rooms for Round ${context.round}.
+## Engine-Owned Opaque Identity
 
-Rooms available: ${roomList}
-Alive players and hidden Mingle intents:
-${playerLines}
+When a phase already knows the proposal, version, alliance, candidate set, or other canonical record the agent may act on, do not ask the model to transcribe its UUID.
 
-Your job:
-- Form interesting, strategic, roughly balanced rooms from seek/avoid/preferred-size/purpose signals.
-- Prefer rooms that create useful conversations: tests, coalition repair, pressure checks, information trades, and unresolved tensions.
-- Do not hide everyone in Room 1. Room numbers are neutral containers; assign people based on the full set of intents.
-- Assign every listed player exactly once.
-- Use only the exact player IDs above and room IDs from the available room list.`;
-```
+- pass one exact opportunity into the agent adapter;
+- expose only legal actions for that opportunity;
+- bind the response to the current canonical identity after the provider call;
+- generate new version IDs in the engine;
+- use short request-local handles such as `A1` only when the model must choose among several authorized records;
+- map handles back inside the adapter and keep a phase legality check for defense in depth.
 
-The House output is advisory. The engine validates and repairs it deterministically:
+Named-alliance responses use this pattern. Proposal lineage/version UUIDs never appear in provider output. Amendment handles are member-scoped and request-local.
 
-- invalid rooms are rejected
-- duplicate players keep the first valid placement
-- missing players are filled by affinity, preferred size, empty-room coverage, and balance
-- repairs are logged in assignment diagnostics
+## Diary Reconciliation
 
-This makes the allocator legible and testable. It also avoids hidden pair-cooldown reshuffling. Later movement remains agent-authored through `gotoRoomId` and is recorded as movement.
+Diary follow-ups are optional. The first post-eviction answer and any follow-up are real dialogue calls, not a hidden reflection cadence.
 
-One design caveat is still live: the current repair pass fills empty rooms when there are enough players. That was originally framed as coverage, but empty rooms may be useful as future movement space. Treat that as an open design choice, not settled doctrine.
+- The first visible answer remains valid even when its required full strategy is unusable.
+- Context is rebuilt after every answer so an accepted replacement or delta is visible to the next optional question.
+- House question generation receives the session Q&A and authorized game evidence, not the player's private compact strategy.
+- Closing the diary makes no extra summarization or reflection call.
+- Eliminated jurors do not enter survivor reconciliation or repair.
 
-### 4. Preserve multi-round intent as compact private context
+## Recall and Recovery
 
-Mingle intent is phase-local. Strategic reflection and Strategy Thread packets are the multi-round carry-forward path.
+Recall Plan has two prompt classes: `ordinary_speech` and `strategic_decision`.
 
-The prompt renders packet state as private context, not command text:
+- Protected lane: Current Board Contract, compact strategy, authorized compact huddle outcomes, and required current receipts.
+- Hot lane: active-room Mingle speech for that turn.
+- History lane: bounded public plus actor-owned Mingle evidence for `strategic_decision` only.
 
-```ts
-## Strategy Thread
-This is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.
-- Objective: ...
-- Target posture: ...
-- Coalition posture: ...
-- Next social probe: ...
-- Strategic lens: ...
-- Lens rationale: ...
-- Uncertainty: ...
-- Revise if: ...
+Player continuity capsule v2 restores compact lifecycle, baseline, deltas, prior reconciliation epoch when required, engine revision, and the remaining private continuity fields. Older capsule versions fail closed. Never reconstruct private strategy from events, transcripts, traces, or `MemoryStore`.
 
-Standing target discipline:
-- A standing target is your current living default pressure/read target.
-- Never treat an eliminated player as an active standing target.
-- Do not force target naming.
-```
+## Observability and Review
 
-The packet is deliberately live-agent state for v1. Do not describe it as crash-safe or restart-safe until persistence and hydration are designed and tested.
+Use `game-N-events.jsonl` for accepted facts and `game-N-turns.jsonl` / private traces for decision quality. Useful private search fields include:
 
-### 5. Make rumors inspectable without making them explain themselves publicly
+- `thinking` and `reasoningContext`
+- `strategyCandidate`
+- `strategyResult`
+- `strategy`, `strategyDelta`, and resulting revision
+- alliance `requestedAction`, `result`, and `repairNotes`
+- movement and coordination receipts
 
-Anonymous rumors are public speech, but the reason for the rumor can stay private:
+The accepted deterministic strategy scenario is `packages/engine/src/__tests__/fixtures/prompt-scenarios/sage-round-2.ts`. It freezes the human-accepted twelve-player `gpt-5.6-luna` chain through prior elimination, Lyra's Round 2 eviction, Sage's full diary replacement, optional refinement, immediate Round 3 lobby, and nine-choice empower vote. The fake-provider runner proves contract behavior without additional spend.
 
-```ts
-logger.emitAgentTurn({
-  phase: Phase.RUMOR,
-  action: "rumor",
-  visibility: "anonymous",
-  response: {
-    message: rumor.message,
-    displayOrder: i + 1,
-    strategicLens: rumor.strategicLens ?? null,
-    strategicLensRationale: rumor.strategicLensRationale ?? null,
-    ...strategicDecisionResponse(rumor),
-  },
-  thinking: rumor.thinking,
-  reasoningContext: rumor.reasoningContext,
-});
-```
-
-This avoids contaminating the public artifact with mechanical explanation while still letting a producer review whether rumors are driven by evidence frames or style repetition.
-
-### 6. Validate through simulation artifacts and the game MCP
-
-The expected validation loop is:
+Run:
 
 ```bash
-bun run simulate:local -- --variant mingle --chatty --strategic-reflections --game-timeout-sec 7200 --llm-timeout-sec 300
-
-cd packages/engine
-bun run mcp:game -- docs/simulations
+bun test packages/engine/src/__tests__/prompt-scenario-lab.test.ts
+bun test packages/engine/src/__tests__/strategy-state.test.ts
+bun test packages/engine/src/__tests__/diary-room-strategy.test.ts
+bun run check
 ```
-
-Then inspect turn logs through MCP or JSONL for:
-
-- `mingle-intent`
-- `mingle-room-assignment`
-- `mingle-turn`
-- `rumor`
-- `strategic-reflection`
-- `strategy-packet`
-- `strategicLens`
-- `decisionLog`
-- `gotoPlayerName`
-- `gotoStatus`
-- `empower-revote`
-
-Use `game-N-events.jsonl` and projections for board state, and `game-N-turns.jsonl` for private decision quality. When a canonical event has source pointers, use `linked_records` to bridge from accepted outcome back to private decision evidence.
-
-For postgame UI, prefer vote alignment visuals over formal alliance inference. Similar vote colors or grouped target columns can make blocs legible without asserting that an alliance exists. House alliance hypotheses remain producer analysis unless a later product slice deliberately designs confidence, evidence, and naming rules for them.
-
-## Why This Matters
-
-Agent-quality work can easily become prompt folklore. The spine above keeps it grounded:
-
-- prompts tell models what kind of decision is available
-- tool schemas force the decision into inspectable fields
-- phase runners preserve only the right pieces in the right visibility surface
-- simulation artifacts make behavior reviewable after long local model runs
-- MCP search gives a stable query surface across current and past batches
-- tests prevent hidden strategy fields from leaking into public transcript surfaces
-
-This matters especially for social games because "better strategy" is not one scalar metric. A healthy game includes guarded social reads, explicit target pressure, loyalty repair, misinformation, vote math, relationship preservation, and occasional silence. Typed private metadata lets reviewers see that variety without flattening agent play into compliance.
 
 ## What Did Not Work
 
-- Prompt-only changes were insufficient. They could give permission, but they could not prove behavior changed or give later agents continuity.
-- Room-number choice by agents was fake strategy. The agent could know its own intent but not everyone else's intent, so the room ID itself had no real meaning.
-- Pair-cooldown reshuffling was the wrong kind of clever. It moved players secretly to avoid repeated pairings, which damaged legibility and contradicted the user-visible social premise.
-- Hard-coded rumor examples improved task comprehension but also created repeated language attractors. Abstract guidance is safer than quoted examples when style diversity matters.
-- Requiring a concrete strategic act would have overfit the model to target-naming compliance. The better success test is a healthy mix of strategy signals. (session history)
-- Treating strategic reflection as memory side effect only left no artifact to validate. It needed a producer/debug record.
-- Treating the MCP as a per-run sidecar was too narrow. A corpus-level read-only MCP over past and current simulations supports comparative validation and avoids making the simulator own a server lifecycle. (session history)
-- Dumping raw hidden reasoning into chat is not the right review pattern. Summarize, classify, count, and cite where private reasoning lives; do not confuse hidden producer/debug state with player-visible material. (session history)
-
-## When to Apply
-
-Use this pattern when:
-
-- a model-behavior issue is visible in simulation but hard to score from public transcript alone
-- a prompt improvement needs validation across many hidden decisions
-- agents need continuity across phases or rounds
-- the House or producer has global context that individual agents should not have
-- private reasoning should be inspectable by maintainers without becoming player-visible
-- local model evaluation needs searchable artifacts, not just chatty terminal logs
-
-Do not use this pattern to:
-
-- put hidden strategy into canonical board facts
-- make every private thought public
-- build a scoring dashboard before the artifacts are trustworthy
-- promise crash-safe state from live-agent memory
-- force every agent onto the same strategic style
-
-## Examples
-
-### Turning a complaint into a field
-
-Complaint:
-
-> Agents are all doing authenticity audits.
-
-Weak fix:
-
-```text
-Do not talk about authenticity so much.
-```
-
-Durable fix:
-
-- Add `strategicLens` to decision tools.
-- Include concrete lens options.
-- Prefer non-presentation lenses when evidence supports them.
-- Emit the lens to private turn logs.
-- Count lens distribution after a run.
-
-### Turning continuity into evidence
-
-The Strategy Thread is not just prompt memory. Later strategic actions need a compact private receipt:
-
-```ts
-export interface StrategicDecisionMetadata {
-  decisionLog?: string | null;
-}
-```
-
-That receipt lets a reviewer distinguish "the agent forgot" from "the agent pivoted because the room/vote evidence changed." Strategic reflection still owns Strategy Thread revision on the normal reflection cadence.
-
-### Keeping public and private surfaces separate
-
-Mingle intent can contain seek/avoid lists, provisional target, opening ask, strategic lens, thinking, and reasoning context. Other players should see none of that unless the agent chooses to speak it in-room.
-
-Correct pattern:
-
-- `mingle-intent` private `agent_turn`
-- public/private room transcript only for delivered room speech
-- canonical event only when game state changes
-
-Incorrect pattern:
-
-- storing intent in room metadata shown to players
-- making canonical events out of hidden hypotheses
-- writing raw reasoning into public transcript text
+- Standalone reflection calls repaid large prompt context to generate cognition that can ride retained calls.
+- Field-heavy packets encouraged filler and made strategy updates unnecessarily expensive.
+- A second `decisionLog` rationale duplicated `thinking` and created another carry-forward lane.
+- Whole-response retry on invalid strategy metadata risked buying another call for an otherwise legal action.
+- Asking models to copy alliance proposal/version UUIDs caused stale and malformed action rejection despite clear strategic intent.
+- Reusing one DiaryRoom context across follow-ups hid newly accepted strategy from the next answer.
+- Treating a weak, strategically forced fixture as quality evidence produced vacuous equal-choice assertions.
 
 ## Validation Checklist
 
-Before considering a strategy-observability change done:
-
-- Prompt tests assert the new private context appears where intended.
-- Prompt tests also assert no hard target quota if strategy should remain a spectrum.
-- Phase tests prove hidden strategy records are emitted as `agent_turn` records.
-- Visibility tests prove hidden strategy does not leak into player-visible transcript or WebSocket public surfaces.
-- MCP tests can search the new record names/fields.
-- Simulation docs list the new artifacts and search terms.
-- Local-model runbook includes concrete review questions.
-- `bun run test` passes.
-- `bun run check` passes or reports only known pre-existing warnings.
-
-For the latest strategic-lens slice, focused engine tests, `bun run test`, and `bun run check` passed. `bun run check` still printed existing web lint warnings but exited 0.
+- Ordinary living-player schemas keep mechanic fields plus `thinking` and nullable `strategyDelta`.
+- First post-eviction and repair schemas request full `strategy` without a fixed sentence count.
+- Legal gameplay survives an unusable strategy operation without retry.
+- Illegal/fallback/stale gameplay does not mutate compact strategy.
+- The first diary replacement and optional follow-up delta appear in the next eligible prompt.
+- Living-target and action legality come from typed board state, not strategy prose.
+- Private traces show the proposal; private turns show final strategy result and revision.
+- Canonical/public/WebSocket surfaces do not gain compact strategy or diagnostics.
+- Capsule v2 round-trips every lifecycle and rejects obsolete versions.
+- The human-accepted Sage Round 2 fixture passes provider-free chain tests.
+- `bun run test` and `bun run check` pass.
 
 ## Related
 
 - `CONCEPTS.md`
 - `docs/reasoning-transcript-observability.md`
 - `docs/local-model-evaluation.md`
-- `docs/brainstorms/2026-06-12-mingle-intent-act-requirements.md`
-- `docs/brainstorms/2026-06-12-strategy-thread-carry-forward-packet-requirements.md`
-- `docs/plans/2026-06-12-001-feat-mingle-strategy-observability-plan.md`
-- `docs/plans/2026-06-12-002-feat-strategy-thread-packet-plan.md`
-- `docs/ideation/2026-06-12-mingle-prompt-unblocking-ideation.html`
-- `docs/ideation/2026-06-12-multi-round-strategy-propagation-ideation.html`
-- No related GitHub issues were found for the search `Mingle strategy observability strategic lens Strategy Thread packet`.
+- `docs/brainstorms/2026-06-17-thin-strategic-decision-fields-requirements.md`

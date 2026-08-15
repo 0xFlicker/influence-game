@@ -5,6 +5,8 @@
  * actor-visible transcript) so context changes can be compared without
  * running another full game. The runner returns structural diagnostics only;
  * captured prompt text and model output stay inside the caller's private pack.
+ * "Private" is an Influence visibility boundary, not repository secrecy: a
+ * source pack may be committed when a maintainer explicitly accepts it.
  */
 
 import type OpenAI from "openai";
@@ -43,8 +45,9 @@ export type PromptScenarioAction =
     };
 
 /**
- * Private input pack. It may contain real producer-visible game data and must
- * never be written to the structural report or committed as a public fixture.
+ * Producer-visible input pack. It may contain real game data and must never be
+ * copied into the content-free structural report. Explicitly accepted source
+ * packs may be committed as deterministic fixtures.
  */
 export interface PromptScenario {
   /** Random, opaque key minted by the private scenario-pack producer. */
@@ -110,12 +113,52 @@ export interface PromptScenarioDiaryResponse {
   readonly strategyDelta?: unknown;
 }
 
+export interface PromptScenarioSourceDecision {
+  readonly decisionId: UUID;
+  readonly evidenceManifestId: UUID;
+  readonly transcriptIds: readonly number[];
+  readonly totalTokens: number;
+}
+
+export interface PromptScenarioSourceProvenance {
+  readonly acceptedAt: string;
+  readonly label: string;
+  readonly game: {
+    readonly id: UUID;
+    readonly slug: string;
+    readonly status: "completed";
+    readonly startedAt: string;
+    readonly endedAt: string;
+    readonly playerCount: number;
+    readonly modelCatalogId: string;
+    readonly serviceTier: string;
+    readonly reasoningPolicy: string;
+    readonly sourceRevision: string;
+    readonly formatManifest: readonly string[];
+  };
+  readonly canonical: {
+    readonly priorEliminationSequence: number;
+    readonly eliminationSequence: number;
+    readonly roundResultSequence: number;
+    readonly eliminatedPlayerId: UUID;
+  };
+  readonly decisions: {
+    readonly firstDiary: PromptScenarioSourceDecision;
+    readonly followUpDiary: PromptScenarioSourceDecision;
+    readonly nextLobby: PromptScenarioSourceDecision;
+    readonly nextVote: PromptScenarioSourceDecision;
+  };
+}
+
 export interface PromptScenarioChain {
   readonly reportKey: string;
   readonly comparisonKey: string;
+  readonly source: PromptScenarioSourceProvenance;
   readonly actor: PromptScenario["actor"];
   readonly model: string;
   readonly fullRoster: PromptScenario["fullRoster"];
+  /** Earlier eliminations needed to recreate the accepted round's living board. */
+  readonly previouslyEliminatedPlayerIds: readonly UUID[];
   readonly phaseContext: PhaseContext;
   readonly continuity: RecallContinuitySnapshot;
   readonly transcript: readonly TranscriptEntry[];
@@ -128,7 +171,14 @@ export interface PromptScenarioChain {
       readonly response: PromptScenarioDiaryResponse;
     };
   };
+  /** The actual first paid strategic boundary after the accepted diary closes. */
+  readonly nextLobby: {
+    readonly response: PromptScenarioDiaryResponse;
+  };
+  /** The first structured choice after that lobby, retained for legal-choice scoring. */
   readonly nextVote: {
+    readonly publicMessages: PhaseContext["publicMessages"];
+    readonly transcriptAppend: readonly TranscriptEntry[];
     readonly response: {
       readonly empower: string;
       readonly thinking?: string;
@@ -139,7 +189,7 @@ export interface PromptScenarioChain {
 }
 
 export interface PromptScenarioChainStructuralReport {
-  readonly version: 1;
+  readonly version: 2;
   readonly scenarioKey: string;
   readonly comparisonKey: string;
   readonly model: string;
@@ -154,7 +204,13 @@ export interface PromptScenarioChainStructuralReport {
     readonly followUpPresent: boolean;
     readonly followUpStrategyStatus?: CompactStrategyApplicationResult["status"];
   };
-  readonly nextDecision: {
+  readonly nextEligibleDecision: {
+    readonly action: "lobby";
+    readonly modelActionAccepted: true;
+    readonly strategyStatus: CompactStrategyApplicationResult["status"];
+  };
+  readonly choiceDecision: {
+    readonly action: "vote";
     readonly legalChoiceCount: number;
     readonly modelActionAccepted: true;
     readonly selectedTargetWasLiving: true;
@@ -168,7 +224,7 @@ export interface PromptScenarioChainStructuralReport {
     readonly priorEpochRetained: boolean;
   };
   readonly renderedPrompts: ReadonlyArray<{
-    readonly action: "diary" | "vote";
+    readonly action: "diary" | "lobby" | "vote";
     readonly characters: number;
     readonly tokenEstimate: number;
   }>;
@@ -186,6 +242,8 @@ export interface PromptScenarioChainPrivatePack {
   readonly firstStrategyResult: CompactStrategyApplicationResult;
   readonly followUpDiaryResponse?: Awaited<ReturnType<InfluenceAgent["getDiaryEntry"]>>;
   readonly followUpStrategyResult?: CompactStrategyApplicationResult;
+  readonly nextLobbyResponse: Awaited<ReturnType<InfluenceAgent["getLobbyMessage"]>>;
+  readonly nextLobbyStrategyResult: CompactStrategyApplicationResult;
   readonly nextVoteResponse: Awaited<ReturnType<InfluenceAgent["getVotes"]>>;
   readonly nextVoteStrategyResult: CompactStrategyApplicationResult;
   readonly finalStrategy: CompactStrategyState;
@@ -286,6 +344,7 @@ function makeReplayOpenAIStub(
 
 type PromptScenarioChainProviderStep =
   | { readonly kind: "diary"; readonly response: PromptScenarioDiaryResponse }
+  | { readonly kind: "lobby"; readonly response: PromptScenarioChain["nextLobby"]["response"] }
   | { readonly kind: "vote"; readonly response: PromptScenarioChain["nextVote"]["response"] };
 
 function makeChainReplayOpenAIStub(
@@ -301,7 +360,7 @@ function makeChainReplayOpenAIStub(
           const step = steps[stepIndex];
           stepIndex += 1;
           if (!step) throw new Error("Prompt scenario chain received an unexpected provider retry or extra call.");
-          if (step.kind === "diary") {
+          if (step.kind === "diary" || step.kind === "lobby") {
             return {
               choices: [{
                 finish_reason: "stop",
@@ -437,6 +496,10 @@ function buildChainPhaseContext(
   agent: InfluenceAgent,
   gameState: GameState,
   phase: Phase,
+  options: {
+    readonly transcript?: readonly TranscriptEntry[];
+    readonly publicMessages?: PhaseContext["publicMessages"];
+  } = {},
 ): PhaseContext {
   const continuity = agent.getRecallContinuitySnapshot();
   const alivePlayers = gameState.getAlivePlayers().map((player) => ({
@@ -452,6 +515,10 @@ function buildChainPhaseContext(
     round: gameState.round,
     phase,
     alivePlayers,
+    publicMessages: options.publicMessages ?? scenario.phaseContext.publicMessages,
+    ...(phase === Phase.DIARY_ROOM
+      ? {}
+      : { empoweredId: undefined }),
     ...(latestEliminatedPlayerName && { latestEliminatedPlayerName }),
     recallPromptClass: "strategic_decision",
   };
@@ -460,7 +527,7 @@ function buildChainPhaseContext(
     promptClass: "strategic_decision",
     continuity,
     phaseContext: base,
-    transcript: scenario.transcript,
+    transcript: options.transcript ?? scenario.transcript,
   });
   return { ...base, recallPlan };
 }
@@ -494,6 +561,7 @@ export async function runPromptScenarioChain(
     ...(scenario.diary.followUp
       ? [{ kind: "diary" as const, response: scenario.diary.followUp.response }]
       : []),
+    { kind: "lobby", response: scenario.nextLobby.response },
     { kind: "vote", response: scenario.nextVote.response },
   ];
   const agent = new InfluenceAgent(
@@ -516,7 +584,17 @@ export async function runPromptScenarioChain(
     scenario.fullRoster.map((player) => ({ id: player.id, name: player.name })),
     { gameId: scenario.phaseContext.gameId, now: () => 1_700_000_000_000 },
   );
+  for (const previouslyEliminatedPlayerId of scenario.previouslyEliminatedPlayerIds) {
+    gameState.startRound();
+    if (!gameState.getPlayer(previouslyEliminatedPlayerId)) {
+      throw new Error("Prompt scenario chain prior eliminated player is not in the frozen roster.");
+    }
+    gameState.eliminatePlayer(previouslyEliminatedPlayerId);
+  }
   gameState.startRound();
+  if (gameState.round !== scenario.phaseContext.round) {
+    throw new Error("Prompt scenario chain prior eliminations must recreate the accepted source round.");
+  }
   if (!gameState.getPlayer(scenario.eliminatedPlayerId)) {
     throw new Error("Prompt scenario chain eliminated player is not in the frozen roster.");
   }
@@ -558,7 +636,33 @@ export async function runPromptScenarioChain(
     );
   }
 
-  const nextVoteContext = buildChainPhaseContext(scenario, agent, gameState, Phase.VOTE);
+  gameState.startRound();
+  const nextLobbyContext = buildChainPhaseContext(
+    scenario,
+    agent,
+    gameState,
+    Phase.LOBBY,
+    { publicMessages: [] },
+  );
+  const nextLobbyResponse = await agent.getLobbyMessage(nextLobbyContext);
+  if (!nextLobbyResponse.message.trim() || nextLobbyResponse.message === "[No response]") {
+    throw new Error("Prompt scenario chain requires a model-authored next-lobby message.");
+  }
+  const nextLobbyStrategyResult = agent.commitCompactStrategyCandidate(
+    compactStrategyBoundaryForNextAction(agent.getCompactStrategyState()),
+    nextLobbyResponse,
+  );
+
+  const nextVoteContext = buildChainPhaseContext(
+    scenario,
+    agent,
+    gameState,
+    Phase.VOTE,
+    {
+      transcript: [...scenario.transcript, ...scenario.nextVote.transcriptAppend],
+      publicMessages: scenario.nextVote.publicMessages,
+    },
+  );
   const legalChoiceCount = nextVoteContext.alivePlayers.filter(
     (player) => player.id !== scenario.actor.id,
   ).length;
@@ -595,7 +699,7 @@ export async function runPromptScenarioChain(
     .filter((receipt): receipt is NonNullable<typeof receipt> => receipt !== undefined);
 
   const report: PromptScenarioChainStructuralReport = {
-    version: 1,
+    version: 2,
     scenarioKey: scenario.reportKey,
     comparisonKey: scenario.comparisonKey,
     model: scenario.model,
@@ -610,7 +714,13 @@ export async function runPromptScenarioChain(
       followUpPresent: scenario.diary.followUp !== undefined,
       ...(followUpStrategyResult && { followUpStrategyStatus: followUpStrategyResult.status }),
     },
-    nextDecision: {
+    nextEligibleDecision: {
+      action: "lobby",
+      modelActionAccepted: true,
+      strategyStatus: nextLobbyStrategyResult.status,
+    },
+    choiceDecision: {
+      action: "vote",
       legalChoiceCount,
       modelActionAccepted: true,
       selectedTargetWasLiving: true,
@@ -638,6 +748,8 @@ export async function runPromptScenarioChain(
       firstStrategyResult,
       ...(followUpDiaryResponse && { followUpDiaryResponse }),
       ...(followUpStrategyResult && { followUpStrategyResult }),
+      nextLobbyResponse,
+      nextLobbyStrategyResult,
       nextVoteResponse,
       nextVoteStrategyResult,
       finalStrategy,

@@ -131,6 +131,13 @@ flowchart TB
 - R37. The human-accepted chain must replace the older weak fixture in the deterministic lab and pass provider-free contracts for legal-action preservation, living-player targeting, commitment availability, post-eviction replacement and repair, and final-strategy carry-forward. Passing these contracts qualifies the fixture and does not prove broad model or game quality.
 - R38. A paid-provider simulation must require separate explicit approval; ordinary post-deployment games may supply production evidence without a special paid experiment.
 
+**Scenario gate result — accepted 2026-08-15**
+
+- The authorized gate run completed through the local API lifecycle as the twelve-player game `calm-cyan-frost` (`c8c891fe-9ef1-4019-8e43-d61a26735c33`) using hosted `openai:gpt-5.6-luna`, Flex service, action-policy reasoning, and the current four-format manifest.
+- The selected source chain is **Sage Round 2**: Lyra's canonical elimination at event 221, Sage's first post-eviction diary replacement, the optional House follow-up delta, Sage's immediate Round 3 lobby turn, and Sage's nine-choice empower vote for Zara.
+- The human explicitly accepted that candidate on 2026-08-15. Its exact roster, source decision/manifests, dialogue, strategy operations, and configuration are frozen in `packages/engine/src/__tests__/fixtures/prompt-scenarios/sage-round-2.ts`.
+- This acceptance qualifies one deterministic lab case only. The run's cost and play evidence remains directional and does not become a broad quality or savings claim.
+
 **Removal and documentation**
 
 - R39. The implementation must remove obsolete reflection-only runtime paths, configuration, prompt classes, and current-behavior documentation rather than retaining compatibility fallbacks.

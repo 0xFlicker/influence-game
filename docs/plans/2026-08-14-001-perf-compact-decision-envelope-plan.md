@@ -12,7 +12,7 @@ origin: docs/brainstorms/2026-06-17-thin-strategic-decision-fields-requirements.
 
 Remove standalone strategic-reflection inference and carry compact private strategy on model calls the game already needs. Active-player decisions retain their action-specific fields and `thinking`, add either a boundary-appropriate full `strategy` or optional `strategyDelta`, and feed a versioned one-epoch strategy state through prompts, recovery, and the same authorized artifact surfaces as existing strategic thinking.
 
-Completion requires provider-free cost evidence and exactly one current-meta eight-player local game. The best qualifying eviction-to-next-decision chain from that game must be presented to a human and accepted before it replaces the strategically weak scenario-lab fixture.
+Completion requires provider-free cost evidence and exactly one current-meta twelve-player game run through the local API lifecycle against hosted `gpt-5.6-luna`. The best qualifying eviction-to-next-decision chain from that game must be presented to a human and accepted before it replaces the strategically weak scenario-lab fixture.
 
 ---
 
@@ -60,7 +60,7 @@ The existing scenario lab replays a single vote or plea against an old strategic
 - R19. Provider-free cost modeling must compare the $1.82 reference workload's removed reflection requests with added envelope output on retained calls, using mutually exclusive uncached-input, cached-read, cache-write, and total-output buckets without double-counting reasoning. Covers origin R29-R31.
 - R20. Cost and play conclusions must remain directional estimates with no fixed percentage threshold, multi-game sampling, or broad quality claim. Covers origin R30, R31, R37, R38.
 - R21. The scenario lab must support a deterministic multi-step chain spanning canonical elimination, survivor diary replacement, optional follow-up delta or repair, and the survivor's next eligible decision with materially different legal choices. Covers origin R33, R34, R37.
-- R22. Implementation completion must pause after exactly one fresh current-meta eight-player local game and require both a passing whole-game cost-and-play judgment and human acceptance of the best qualifying non-fallback candidate; either rejection leaves the gate closed and starts no additional game. Covers origin R32-R38.
+- R22. Implementation completion must pause after exactly one fresh current-meta twelve-player game run through the local API lifecycle against hosted `gpt-5.6-luna` and require both a passing whole-game cost-and-play judgment and human acceptance of the best qualifying non-fallback candidate; either rejection leaves the gate closed and starts no additional game. Covers origin R32-R38.
 
 **Removal and current-state documentation**
 
@@ -153,7 +153,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-  Ready["Implementation and provider-free contracts ready"] --> Run["Run exactly one current-meta eight-player local game"]
+  Ready["Implementation and provider-free contracts ready"] --> Run["Run exactly one current-meta twelve-player local API game against hosted gpt-5.6-luna"]
   Run --> Mine["Mine best qualifying non-fallback survivor chain"]
   Mine --> Present["Present whole-game profile plus candidate provenance and headroom"]
   Present --> GameDecision{"Whole game looks cheaper and competent"}
@@ -418,7 +418,7 @@ flowchart TB
   - `packages/engine/src/__tests__/fixtures/prompt-scenarios/`
   - `packages/engine/src/simulate.ts`
   - `packages/engine/docs/simulations/`
-- **Approach:** Extend the lab's single-call vote/plea adapter into the smallest deterministic chain runner that applies a canonical elimination, commits a first diary replacement, applies optional follow-up delta or repair, and builds the same survivor's next strategic decision from resulting compact state. Preserve full-fidelity producer-private source packs while keeping structural reports content-free. `Producer-private` describes in-product visibility, not sensitive player data or repository confidentiality; full accepted fixture content and provenance are safe to commit. After all preceding units and provider-free tests pass, start the configured local OpenAI-compatible backend and run exactly one eight-player current-meta game with diary, chatty reasoning/transcript observability, and full private decision artifacts. Present the complete game's call, token, estimated-cost, and strategic-play profile for a human judgment that it looks meaningfully cheaper and competent enough to continue. Separately mine and present the best qualifying non-fallback chain with model, configuration, batch, source turns/events, legal choices, and strategic headroom. Stop at that checkpoint. Both the whole-game judgment and candidate acceptance must pass; candidate rejection or a failed whole-game judgment leaves the gate closed and does not authorize another game.
+- **Approach:** Extend the lab's single-call vote/plea adapter into the smallest deterministic chain runner that applies a canonical elimination, commits a first diary replacement, applies optional follow-up delta or repair, and builds the same survivor's next strategic decision from resulting compact state. Preserve full-fidelity producer-private source packs while keeping structural reports content-free. `Producer-private` describes in-product visibility, not sensitive player data or repository confidentiality; full accepted fixture content and provenance are safe to commit. After all preceding units and provider-free tests pass, start the local API and use the API-backed launcher to run exactly one twelve-player current-meta game against hosted `gpt-5.6-luna` with diary, chatty reasoning/transcript observability, and full private decision artifacts. Present the complete game's call, token, estimated-cost, and strategic-play profile for a human judgment that it looks meaningfully cheaper and competent enough to continue. Separately mine and present the best qualifying non-fallback chain with model, configuration, batch, source turns/events, legal choices, and strategic headroom. Stop at that checkpoint. Both the whole-game judgment and candidate acceptance must pass; candidate rejection or a failed whole-game judgment leaves the gate closed and does not authorize another game.
 - **Execution note:** This unit has a mandatory human stop. Running the single game is authorized by the plan only when implementation reaches this unit; any hosted paid-provider run still requires separate approval.
 - **Patterns to follow:** Producer-private scenario packs and redacted structural reports in `packages/engine/src/prompt-scenario-lab.ts`, plus the three-level evidence discipline in `docs/solutions/architecture-patterns/evaluate-prompt-context-in-three-levels.md`.
 - **Test scenarios:**
@@ -507,7 +507,7 @@ flowchart TB
   - **Covers:** R19-R20.
 
 - AE8. Human-accepted scenario replacement
-  - **Given:** Exactly one fresh local eight-player game has completed and its whole-game cost-and-play judgment has passed.
+  - **Given:** Exactly one fresh twelve-player local API game against hosted `gpt-5.6-luna` has completed and its whole-game cost-and-play judgment has passed.
   - **When:** The best qualifying non-fallback chain is presented with provenance and the human accepts it.
   - **Then:** That chain replaces the weak fixture and passes the deterministic multi-step contracts.
   - **Covers:** R21-R22.

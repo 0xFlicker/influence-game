@@ -165,7 +165,7 @@ The eliminated agent's one-time final public statement, requested only after `pl
 
 ## Revealed vote ledger
 
-The public agent-known record of named standard-round votes after Vote resolves. On the format-kernel path it lists each voter, their empower target, and any empower re-vote target when a tie forces a re-vote. Legacy dual-ballot games may still include expose targets. Agents receive this ledger in later game cards so Mingle and strategy reflections can use empower votes as social receipts rather than relying on hidden memory or Strategy Thread summaries.
+The public agent-known record of named standard-round votes after Vote resolves. On the format-kernel path it lists each voter, their empower target, and any empower re-vote target when a tie forces a re-vote. Legacy dual-ballot games may still include expose targets. Agents receive this ledger in later game cards so Mingle and later strategic decisions can use empower votes as social receipts rather than relying on hidden memory or strategy prose.
 
 ## Revealed game facts
 
@@ -185,39 +185,31 @@ A private-room behavior during Mingle that reveals or advances game posture, suc
 
 ## Strategic lens
 
-The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across rumors, reflections, and Strategy Thread packets without forcing the public message to explain itself. Historical Mingle-intent traces may also carry one.
+The private evidence frame an agent selects for a decision, such as vote math, room traffic, coalition shape, promise debt, information control, or broad read. Strategic lenses make the agent's reasoning style searchable and comparable across decisions without forcing the public message to explain itself. Historical Mingle-intent traces may also carry one.
 
 ## Agent turn record
 
 A producer/debug record of one agent decision, message, or hidden assessment. Agent turn records preserve structured response fields, hidden thinking, native reasoning context or labeled provider summaries when available, visibility, actor, phase, and action so simulations and MCP queries can analyze behavior without treating every private decision as public dialogue or canonical game state.
 
-## Strategic reflection record
+## Compact strategy state
 
-A structured producer/debug artifact for an agent's hidden strategic assessment after a decision phase. It should expose the agent's current certainties, suspicions, allies, threats, and plan, plus hidden reasoning metadata when available, so simulations and the game MCP can validate whether Mingle changed broader strategy. It is not player-visible dialogue.
-
-## Strategy Thread / Carry-Forward Packet
-
-A compact private strategy state an agent carries across rounds. It summarizes the agent's current objective, target posture, coalition posture, next intended social probe, important uncertainty, abandon-or-revise trigger, and revision metadata so later prompts can show continuity without forcing target naming or overt game talk. It is private producer/debug state, not player-visible dialogue, canonical board state, or `MemoryStore` truth. On supported phase-boundary startup recovery it is restored from a versioned player continuity capsule sealed into the checkpoint, together with reflection, notes, relationships, round history, power-action memory, and recent decision receipts.
+Engine-owned private cognition carried across agent decisions without a separate reflection call. It has an implicit `opening` posture, an `active` concise baseline plus ordered accepted deltas, and explicit `reconciliation_required` / `repair_required` lifecycle states after an eviction or unusable replacement. The first valid survivor diary answer after an eviction replaces the old epoch with a full baseline; an optional diary follow-up and ordinary strategic actions may append the same nullable delta. Canonical board facts always override this fallible prose. Capsule v2 restores the lifecycle, baseline, deltas, prior reconciliation epoch when needed, and engine-owned revision without parsing transcripts or `MemoryStore`.
 
 ## Recall Plan
 
-A server-authored, deterministic context-selection contract for one agent call. ContextBuilder compiles it from the actor, an explicit **prompt class** (`ordinary_speech` | `strategic_decision` | `strategic_reflection`), current projection, and a narrow `RecallContinuitySnapshot` (Strategy Thread, reflection summary, recent strategic receipts, strategic evidence version). It is not model-controlled search, never makes dialogue authoritative, and must not reveal the existence of ineligible private material. Unspecified callers default to `ordinary_speech`.
+A server-authored, deterministic context-selection contract for one agent call. ContextBuilder compiles it from the actor, an explicit **prompt class** (`ordinary_speech` | `strategic_decision`), current projection, and a narrow `RecallContinuitySnapshot` containing only compact strategy state. It is not model-controlled search, never makes dialogue authoritative, and must not reveal the existence of ineligible private material. Unspecified callers default to `ordinary_speech`.
 
 **Lanes (render order):**
 
-- **Protected** — Current Board Contract (canonical facts override all memory), Strategy Thread, authorized compact official huddle outcomes (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent strategic decisions, recent decisions, revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
+- **Protected** — Current Board Contract (canonical facts override all memory), compact strategy state, authorized compact official huddle outcomes (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent decisions and revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
 - **Hot** — Active-room Mingle conversation for the current turn only. Distinct from historical archive recall.
-- **History** — Bounded public + actor-owned Mingle archive evidence, only for `strategic_decision` and `strategic_reflection`. Eligibility uses immutable `speakerPlayerId` / `audiencePlayerIds` before ranking; missing/ambiguous legacy identity fails closed (no display-name fallback). Selected prose is historical evidence only.
+- **History** — Bounded public + actor-owned Mingle archive evidence, only for `strategic_decision`. Eligibility uses immutable `speakerPlayerId` / `audiencePlayerIds` before ranking; missing/ambiguous legacy identity fails closed (no display-name fallback). Selected prose is historical evidence only.
 
-Protected material is never truncated to make room for history. When protected truth alone exceeds the nominal envelope, strategic decisions may still use at most 1,200 history characters and strategic reflections at most 1,600; ordinary speech keeps no history reserve. This protected-overflow exception is the only way history may extend beyond the nominal prompt-class envelope.
+Protected material is never truncated to make room for history. When protected truth alone exceeds the nominal envelope, strategic decisions may still use at most 1,200 history characters; ordinary speech keeps no history reserve. This protected-overflow exception is the only way history may extend beyond the nominal prompt-class envelope.
 
 **Privacy and legacy:** Thinking, `reasoningContext`, raw huddle dialogue, diary, whisper, system, sealed, and producer rows are ineligible before candidate counts or diagnostics. Foreign private Mingle must not change another actor's plan, receipt, or event boundary. Older huddle outcomes recover a participant snapshot only from the matching completed-session `speakerIds`; otherwise the outcome is unavailable for recall.
 
 **Evaluation artifact:** Simulation batches write `game-N-recall-plan.json` — a producer-only structural aggregate (`coverage: "structural_recall_receipts"`) of prompt-class counts, lane/source-class counts, budget token estimates (`ceil(chars/4)`), and actor-authorized event boundaries. It never stores dialogue, names, entry IDs, rejected counts, prompts, thinking, or reasoning. Full `game-N.json` / private traces remain producer artifacts and are **not** the R13 promotion input; the deterministic gate lives in `context-recall-evaluation.test.ts` against a frozen late-game corpus.
-
-## Decision log
-
-A compact private receipt attached to a strategic agent action. It records what the action meant strategically so later prompts and strategic reflection can understand when and why the agent changed course. Decision logs are producer/debug context for the same agent and maintainers; they are not player-visible dialogue, canonical board state, raw thinking, or native reasoning context.
 
 ## Whisper
 
@@ -237,7 +229,7 @@ A first-class product read-model record for an agent's reasoning, thinking, or s
 
 ## Player-private reasoning lane
 
-The owner-accessible product lane for an agent's private reasoning and strategy, including reasoning artifacts and strategy reflections exposed through authorized game/MCP contexts for the user's own agents. Player-private reasoning can include the agent's `thinking`, `reasoningContext`, reasoning summaries, and strategic reflection content when artifact policy allows it. It must not include producer-only wrappers such as full prompt requests, raw provider responses, provider profile metadata, model IDs, requested reasoning effort, token or usage counts, router billing fields, private trace storage keys, or provider debug envelopes unless a later product decision explicitly creates a sanitized player-facing form.
+The owner-accessible product lane for an agent's private reasoning and strategy, including reasoning artifacts and compact strategy candidates exposed through authorized game/MCP contexts for the user's own agents. Player-private reasoning can include the agent's `thinking`, `reasoningContext`, reasoning summaries, and strategy prose when artifact policy allows it. It must not include producer-only wrappers such as full prompt requests, raw provider responses, provider profile metadata, model IDs, requested reasoning effort, token or usage counts, router billing fields, private trace storage keys, or provider debug envelopes unless a later product decision explicitly creates a sanitized player-facing form.
 
 ## chatty mode
 

@@ -8,6 +8,7 @@ import {
 } from "../prompt-scenario-lab";
 import { Phase } from "../types";
 import { getRecallBaselineCase } from "./fixtures/recall-baseline/late-game-corpus";
+import { ACCEPTED_SAGE_ROUND_2_SCENARIO } from "./fixtures/prompt-scenarios/sage-round-2";
 
 function makeScenario(overrides: Partial<PromptScenario> = {}): PromptScenario {
   const baseline = getRecallBaselineCase("huddle_heavy_strategic_decision");
@@ -52,48 +53,8 @@ function makeScenario(overrides: Partial<PromptScenario> = {}): PromptScenario {
 }
 
 function makeChainScenario(overrides: Partial<PromptScenarioChain> = {}): PromptScenarioChain {
-  const scenario = makeScenario();
-  const eliminated = scenario.fullRoster.find((player) =>
-    player.id !== scenario.actor.id && player.name === "Vera"
-  ) ?? scenario.fullRoster.find((player) => player.id !== scenario.actor.id);
-  if (!eliminated) throw new Error("Expected a non-actor player to eliminate");
-  const nextTarget = scenario.fullRoster.find((player) =>
-    player.id !== scenario.actor.id && player.id !== eliminated.id
-  );
-  if (!nextTarget) throw new Error("Expected a living next-vote target");
   return {
-    reportKey: "f4eaf2046f4f4a23a3a2b10b",
-    comparisonKey: "14f8f540f23a4d0e9cdd83ab",
-    actor: scenario.actor,
-    model: scenario.model,
-    fullRoster: scenario.fullRoster,
-    phaseContext: scenario.phaseContext,
-    continuity: scenario.continuity,
-    transcript: scenario.transcript,
-    eliminatedPlayerId: eliminated.id,
-    diary: {
-      firstQuestion: "What changed after that eviction?",
-      firstResponse: {
-        message: "I need to rebuild around the living field.",
-        thinking: "The old target left, so the coalition map must change.",
-        strategy: "NEW_BASELINE_SENTINEL: keep Mira close and test Nyx before committing.",
-      },
-      followUp: {
-        question: "What is your first concrete test?",
-        response: {
-          message: "I will ask Mira for a specific vote promise.",
-          thinking: "A concrete promise distinguishes warmth from alignment.",
-          strategyDelta: "FOLLOW_UP_DELTA_SENTINEL: ask Mira for one named vote promise.",
-        },
-      },
-    },
-    nextVote: {
-      response: {
-        empower: nextTarget.name,
-        thinking: "Use the vote to reward the clearest surviving partner.",
-        strategyDelta: "NEXT_VOTE_DELTA_SENTINEL: compare the promise with the revealed vote.",
-      },
-    },
+    ...ACCEPTED_SAGE_ROUND_2_SCENARIO,
     ...overrides,
   };
 }
@@ -156,23 +117,30 @@ describe("prompt scenario lab", () => {
     expect(report.recallPlanReceipt.selectedLaneCounts.history).toBe(0);
   });
 
-  it("runs canonical eviction, diary replacement, optional refinement, and the next legal decision", async () => {
+  it("replays the human-accepted Sage Round 2 chain through lobby and the next legal vote", async () => {
     const run = await runPromptScenarioChain(makeChainScenario());
     const { report, privatePack } = run;
 
     expect(report.canonicalElimination).toMatchObject({ committed: true });
+    expect(report.canonicalElimination.survivorCount).toBe(10);
     expect(report.diary).toEqual({
       firstMessageAccepted: true,
       firstStrategyStatus: "accepted",
       followUpPresent: true,
       followUpStrategyStatus: "accepted",
     });
-    expect(report.nextDecision).toMatchObject({
+    expect(report.nextEligibleDecision).toMatchObject({
+      action: "lobby",
+      modelActionAccepted: true,
+      strategyStatus: "no_change",
+    });
+    expect(report.choiceDecision).toMatchObject({
+      action: "vote",
       modelActionAccepted: true,
       selectedTargetWasLiving: true,
       strategyStatus: "accepted",
     });
-    expect(report.nextDecision.legalChoiceCount).toBeGreaterThanOrEqual(2);
+    expect(report.choiceDecision.legalChoiceCount).toBe(9);
     expect(report.finalStrategy).toEqual({
       lifecycle: "active",
       revision: privatePack.finalStrategy.revision,
@@ -182,25 +150,48 @@ describe("prompt scenario lab", () => {
     });
     expect(privatePack.finalStrategy).toMatchObject({
       lifecycle: "active",
-      baseline: expect.stringContaining("NEW_BASELINE_SENTINEL"),
+      baseline: expect.stringContaining("Treat Luna as a consequential"),
       deltas: [
-        expect.stringContaining("FOLLOW_UP_DELTA_SENTINEL"),
-        expect.stringContaining("NEXT_VOTE_DELTA_SENTINEL"),
+        expect.stringContaining("Audit Riven"),
+        expect.stringContaining("Treat Zara as the pivotal swing"),
       ],
     });
     expect(privatePack.canonicalEvents.some((event) => event.type === "player.eliminated")).toBe(true);
-    expect(privatePack.providerRequests).toHaveLength(3);
-    expect(privatePack.decisionTraces.map((trace) => trace.action)).toEqual(["diary", "diary", "vote"]);
-    expect(JSON.stringify(privatePack.providerRequests[2])).toContain("FOLLOW_UP_DELTA_SENTINEL");
-    expect(JSON.stringify(privatePack.providerRequests[2])).toContain("NEW_BASELINE_SENTINEL");
+    expect(privatePack.canonicalEvents.filter((event) => event.type === "player.eliminated")).toHaveLength(2);
+    expect(privatePack.providerRequests).toHaveLength(4);
+    expect(privatePack.decisionTraces.map((trace) => trace.action)).toEqual(["diary", "diary", "lobby", "vote"]);
+    expect(privatePack.nextLobbyResponse.message).toContain("living choices matter");
+    expect(privatePack.nextVoteResponse.empowerTarget).toBe("1e846a8f-4df7-4cc4-a94e-c74452769080");
+    expect(JSON.stringify(privatePack.providerRequests[2])).toContain("Audit Riven");
+    expect(JSON.stringify(privatePack.providerRequests[3])).toContain("Treat Luna as a consequential");
+    expect(JSON.stringify(privatePack.providerRequests[3])).toContain("Audit Riven");
+    expect(JSON.stringify(privatePack.providerRequests[3])).toContain("Zara has my support for empower");
+    expect(JSON.stringify(privatePack.providerRequests[3])).toContain("my provisional target is **Sage**");
+    expect(JSON.stringify(privatePack.providerRequests[0])).toContain("Own Atlas as a provisional");
+    expect(JSON.stringify(privatePack.providerRequests[1])).toContain("Treat Luna as a consequential");
+    expect(privatePack.scenario.source).toMatchObject({
+      acceptedAt: "2026-08-15",
+      label: "Sage Round 2",
+      game: {
+        slug: "calm-cyan-frost",
+        playerCount: 12,
+        modelCatalogId: "openai:gpt-5.6-luna",
+      },
+      canonical: {
+        eliminationSequence: 221,
+        roundResultSequence: 223,
+      },
+    });
 
     const serializedReport = JSON.stringify(report);
     for (const privateText of [
-      "NEW_BASELINE_SENTINEL",
-      "FOLLOW_UP_DELTA_SENTINEL",
-      "NEXT_VOTE_DELTA_SENTINEL",
+      "Treat Luna as a consequential",
+      "Audit Riven",
+      "Treat Zara as the pivotal swing",
       makeChainScenario().actor.name,
       makeChainScenario().actor.id,
+      makeChainScenario().source.game.id,
+      makeChainScenario().source.decisions.firstDiary.decisionId,
     ]) {
       expect(serializedReport).not.toContain(privateText);
     }
@@ -242,7 +233,7 @@ describe("prompt scenario lab", () => {
       operation: "replace",
       state: { lifecycle: "active" },
     });
-    expect(run.privatePack.providerRequests).toHaveLength(3);
+    expect(run.privatePack.providerRequests).toHaveLength(4);
     expect(run.privatePack.finalStrategy.baseline).toContain("FOLLOW_UP_REPAIR_SENTINEL");
   });
 
@@ -256,9 +247,9 @@ describe("prompt scenario lab", () => {
           thinking: "The diary closes without a follow-up.",
         },
       },
-      nextVote: {
+      nextLobby: {
         response: {
-          ...scenario.nextVote.response,
+          ...scenario.nextLobby.response,
           strategyDelta: undefined,
           strategy: "NEXT_ACTION_REPAIR_SENTINEL: use the vote to establish the new coalition.",
         },
@@ -269,9 +260,9 @@ describe("prompt scenario lab", () => {
       firstStrategyStatus: "rejected",
       followUpPresent: false,
     });
-    expect(run.report.nextDecision.strategyStatus).toBe("accepted");
-    expect(run.privatePack.providerRequests).toHaveLength(2);
-    expect(run.privatePack.nextVoteStrategyResult).toMatchObject({
+    expect(run.report.nextEligibleDecision.strategyStatus).toBe("accepted");
+    expect(run.privatePack.providerRequests).toHaveLength(3);
+    expect(run.privatePack.nextLobbyStrategyResult).toMatchObject({
       status: "accepted",
       operation: "replace",
       state: { lifecycle: "active" },
