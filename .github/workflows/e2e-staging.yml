@@ -89,12 +89,14 @@ jobs:
             echo "resolved commit $expected_sha does not match candidate $CANDIDATE_SHA" >&2
             exit 1
           fi
-          if [ "$expected_sha" != "$GITHUB_SHA" ]; then
-            echo "candidate $expected_sha is not the main commit executing this trusted E2E workflow" >&2
+          if ! git merge-base --is-ancestor "$expected_sha" "$GITHUB_SHA"; then
+            echo "candidate $expected_sha is not reachable from the trusted main workflow commit $GITHUB_SHA" >&2
             exit 1
           fi
+          git checkout --detach "$expected_sha"
+          [ "$(git rev-parse HEAD)" = "$expected_sha" ] || exit 1
           echo "commit_sha=$expected_sha" >> "$GITHUB_OUTPUT"
-          echo "Resolved deployed source commit $expected_sha"
+          echo "Resolved and checked out deployed source commit $expected_sha"
 
       - name: Connect to Tailscale
         uses: tailscale/github-action@v3
@@ -167,7 +169,8 @@ jobs:
                 staging_receipt_artifact: process.env.STAGING_RECEIPT_ARTIFACT,
                 staging_receipt_digest: process.env.STAGING_RECEIPT_DIGEST,
                 e2e_run_id: context.runId,
-                e2e_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT)
+                e2e_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+                e2e_workflow_sha: process.env.GITHUB_SHA
               }
             });
 
@@ -189,6 +192,7 @@ jobs:
             --arg staging_receipt_digest "$STAGING_RECEIPT_DIGEST" \
             --argjson e2e_run_id "$GITHUB_RUN_ID" \
             --argjson e2e_run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg e2e_workflow_sha "$GITHUB_SHA" \
             --arg e2e_outcome "$E2E_OUTCOME" \
             --arg dispatch_outcome "$DISPATCH_OUTCOME" \
             --argjson minimum_release_control_protocol "$MIN_RELEASE_CONTROL_PROTOCOL" \
@@ -196,7 +200,7 @@ jobs:
               images:{api:{digest:$api_digest},web:{digest:$web_digest},render_worker:{digest:$worker_digest}},
               migration_set:$migration_set,
               staging:{run_id:$staging_run_id,run_attempt:$staging_run_attempt,receipt_artifact:$staging_receipt_artifact,receipt_digest:$staging_receipt_digest},
-              e2e:{run_id:$e2e_run_id,run_attempt:$e2e_run_attempt,outcome:$e2e_outcome},
+              e2e:{run_id:$e2e_run_id,run_attempt:$e2e_run_attempt,workflow_sha:$e2e_workflow_sha,outcome:$e2e_outcome},
               release_control:{minimum_protocol:$minimum_release_control_protocol},
               candidate_dispatch:{outcome:$dispatch_outcome}}' > staging-e2e-evidence.json
           {
