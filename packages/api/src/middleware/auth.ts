@@ -69,6 +69,7 @@ export type AuthEnv = {
 export const DEPLOYMENT_CONTROL_AUDIENCE = "influence-deployment-control";
 export const DEPLOYMENT_CONTROL_SUBJECT = "influence-release-controller";
 export const DEPLOYMENT_CONTROL_PERMISSION = "manage_deployment_admission";
+export const MIN_DEPLOYMENT_CONTROL_LEASE_TOKEN_SECONDS = 5 * 60 * 60;
 const DEPLOYMENT_CONTROL_TOKEN_TYPE = "service";
 
 export type DeploymentControlAuthEnv = {
@@ -77,6 +78,7 @@ export type DeploymentControlAuthEnv = {
       subject: typeof DEPLOYMENT_CONTROL_SUBJECT;
       audience: typeof DEPLOYMENT_CONTROL_AUDIENCE;
       permission: typeof DEPLOYMENT_CONTROL_PERMISSION;
+      expiresAt: number;
     };
   };
 };
@@ -202,6 +204,7 @@ export async function verifyDeploymentControlToken(token: string): Promise<{
   subject: typeof DEPLOYMENT_CONTROL_SUBJECT;
   audience: typeof DEPLOYMENT_CONTROL_AUDIENCE;
   permission: typeof DEPLOYMENT_CONTROL_PERMISSION;
+  expiresAt: number;
 } | null> {
   try {
     const { payload, protectedHeader } = await jwtVerify(token, getJwtSecret(), {
@@ -213,6 +216,7 @@ export async function verifyDeploymentControlToken(token: string): Promise<{
       protectedHeader.typ !== "JWT"
       || payload.token_type !== DEPLOYMENT_CONTROL_TOKEN_TYPE
       || payload.sub !== DEPLOYMENT_CONTROL_SUBJECT
+      || typeof payload.exp !== "number"
       || !Array.isArray(permissions)
       || permissions.length !== 1
       || permissions[0] !== DEPLOYMENT_CONTROL_PERMISSION
@@ -223,6 +227,7 @@ export async function verifyDeploymentControlToken(token: string): Promise<{
       subject: DEPLOYMENT_CONTROL_SUBJECT,
       audience: DEPLOYMENT_CONTROL_AUDIENCE,
       permission: DEPLOYMENT_CONTROL_PERMISSION,
+      expiresAt: payload.exp,
     };
   } catch {
     return null;

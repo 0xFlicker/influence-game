@@ -157,7 +157,7 @@ describe("fence-aware runtime activation", () => {
     await runtime.initialize();
     const app = new Hono();
     app.route("/", createDeploymentControlRoutes(db, { runtimeActivation: runtime }));
-    const token = await createDeploymentControlToken("1h");
+    const token = await createDeploymentControlToken("6h");
     const endpoint = `/api/internal/deployment-control/leases/${acquired.lease.id}/activate`;
     const body = { fencingToken: acquired.lease.fencingToken };
 

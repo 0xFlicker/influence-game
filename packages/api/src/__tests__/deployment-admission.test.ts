@@ -347,6 +347,7 @@ describe("deployment controller API", () => {
       subject: "influence-release-controller",
       audience: "influence-deployment-control",
       permission: "manage_deployment_admission",
+      expiresAt: expect.any(Number),
     });
     expect((await app.request("/api/internal/deployment-control/status")).status).toBe(401);
     expect((await app.request("/api/internal/deployment-control/status", {
@@ -365,8 +366,14 @@ describe("deployment controller API", () => {
       .where(eq(schema.games.id, gameId));
     const app = new Hono();
     app.route("/", createDeploymentControlRoutes(db));
-    const token = await createDeploymentControlToken("1h");
+    const shortToken = await createDeploymentControlToken("4h");
 
+    const tooShort = await app.request("/api/internal/deployment-control/leases", controllerPost(shortToken, PROVENANCE));
+    expect(tooShort.status).toBe(401);
+    expect(await tooShort.json()).toMatchObject({ code: "controller_token_lifetime_insufficient" });
+    expect(await db.select().from(schema.deploymentAdmissionLeases)).toHaveLength(0);
+
+    const token = await createDeploymentControlToken("6h");
     const invalid = await app.request("/api/internal/deployment-control/leases", controllerPost(token, {
       ...PROVENANCE,
       actor: "operator\nmarkdown",
@@ -396,7 +403,7 @@ describe("deployment controller API", () => {
     const db = await setupTestDB();
     const app = new Hono();
     app.route("/", createDeploymentControlRoutes(db));
-    const token = await createDeploymentControlToken("1h");
+    const token = await createDeploymentControlToken("6h");
     const created = await app.request("/api/internal/deployment-control/leases", controllerPost(token, PROVENANCE));
     const createdBody = await created.json() as { lease: { id: string; fencingToken: number } };
     const lease = createdBody.lease;

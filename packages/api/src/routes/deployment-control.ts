@@ -3,6 +3,7 @@ import type { DrizzleDB } from "../db/index.js";
 import type { DeploymentAdmissionPhase } from "../db/schema.js";
 import { parseJsonBody } from "../lib/parse-json-body.js";
 import {
+  MIN_DEPLOYMENT_CONTROL_LEASE_TOKEN_SECONDS,
   requireDeploymentControlAuth,
   type DeploymentControlAuthEnv,
 } from "../middleware/auth.js";
@@ -32,6 +33,14 @@ export function createDeploymentControlRoutes(
   app.use("/api/internal/deployment-control/*", requireDeploymentControlAuth());
 
   app.post("/api/internal/deployment-control/leases", async (c) => {
+    const controller = c.get("deploymentController");
+    if (controller.expiresAt < Math.floor(Date.now() / 1000) + MIN_DEPLOYMENT_CONTROL_LEASE_TOKEN_SECONDS) {
+      return c.json({
+        error: "Deployment controller token expires before the absolute release recovery window",
+        code: "controller_token_lifetime_insufficient",
+        retryable: false,
+      }, 401);
+    }
     const body = recordOrNull(await parseJsonBody(c, "POST /api/internal/deployment-control/leases"));
     const candidateSha = stringValue(body?.candidateSha);
     const sourceRepository = stringValue(body?.sourceRepository);
