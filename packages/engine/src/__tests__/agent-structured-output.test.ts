@@ -1136,6 +1136,9 @@ describe("InfluenceAgent structured output mode", () => {
     });
     for (const prompt of prompts) {
       expect(prompt).toContain("Restricted History Legal Ledger (authoritative)");
+      expect(prompt).toContain(
+        "This ledger is specific to you. Other players may have different legal and unavailable targets; do not infer their eligibility from yours.",
+      );
       expect(prompt).toContain("Previous elimination-direction targets, unavailable this round: Vera");
       expect(prompt).toContain("Only legal living ballot targets this round: Mira");
       expect(prompt).toContain("Do not promise, coordinate, or describe an unavailable target as your ballot");

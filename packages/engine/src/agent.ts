@@ -4342,6 +4342,7 @@ Use only this locked format for the current round. Prefer the full public name i
       ? legality.legalTargetNames.join(", ")
       : "none (your ballot will be forfeited)";
     return `## Restricted History Legal Ledger (authoritative)
+- This ledger is specific to you. Other players may have different legal and unavailable targets; do not infer their eligibility from yours.
 - Previous elimination-direction targets, unavailable this round: ${priorTargets}
 - Only legal living ballot targets this round: ${legalTargets}
 - Do not promise, coordinate, or describe an unavailable target as your ballot.
