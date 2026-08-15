@@ -17,7 +17,11 @@ import {
   initialGameTranscriptStateValues,
   TRANSCRIPT_CAPTURE_VERSION,
 } from "./transcript-capture.js";
-import { checkGameStartAdmissionInTransaction } from "./deployment-admission.js";
+import {
+  checkGameStartAdmissionInTransaction,
+  checkRecoveryAdmissionInTransaction,
+  type DeploymentAdmissionFence,
+} from "./deployment-admission.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
@@ -295,7 +299,11 @@ export async function acquireRecoveryGameRunOwner(
   db: DrizzleDB,
   gameId: string,
   checkpointEventSequence: number,
-  options: { processId?: string; leaseMs?: number } = {},
+  options: {
+    processId?: string;
+    leaseMs?: number;
+    activationFence?: DeploymentAdmissionFence;
+  } = {},
 ): Promise<GameOwnerClaimResult> {
   const now = new Date();
   const ownerEpoch = randomUUID();
@@ -303,7 +311,9 @@ export async function acquireRecoveryGameRunOwner(
 
   try {
     const claim = await db.transaction(async (tx) => {
-      const admission = await checkGameStartAdmissionInTransaction(tx);
+      const admission = await checkRecoveryAdmissionInTransaction(tx, {
+        activationFence: options.activationFence,
+      });
       if (!admission.ok) {
         return {
           ...admission,

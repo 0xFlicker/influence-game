@@ -66,7 +66,7 @@ export function readRuntimeStartupMode(
 export function createRuntimeActivationController(options: {
   mode: RuntimeStartupMode;
   validateFence(fence: RuntimeActivationFence): Promise<RuntimeFenceValidationResult>;
-  startRuntime(): void | RuntimeStopHandle | Promise<void | RuntimeStopHandle>;
+  startRuntime(fence?: RuntimeActivationFence): void | RuntimeStopHandle | Promise<void | RuntimeStopHandle>;
   logger?: RuntimeActivationLogger;
 }): RuntimeActivationController {
   const logger = options.logger ?? console;
@@ -87,8 +87,8 @@ export function createRuntimeActivationController(options: {
     activatedLeaseId,
   });
 
-  const start = async (): Promise<void> => {
-    const started = await options.startRuntime();
+  const start = async (fence?: RuntimeActivationFence): Promise<void> => {
+    const started = await options.startRuntime(fence);
     stopHandle = started ?? null;
   };
 
@@ -150,7 +150,7 @@ export function createRuntimeActivationController(options: {
             state = "validation";
             return validation;
           }
-          await start();
+          await start(fence);
           activeFenceKey = fenceKey;
           activatedLeaseId = fence.leaseId;
           state = "active";

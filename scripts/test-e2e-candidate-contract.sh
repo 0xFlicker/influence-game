@@ -47,6 +47,8 @@ require_literal "$e2e_workflow" "durable staging E2E evidence" "staging-e2e-evid
 require_literal "$e2e_workflow" "candidate evidence job summary" "## Influence staging release evidence"
 require_literal "$e2e_workflow" "staging receipt evidence link" 'actions/runs/$STAGING_RUN_ID/attempts/$STAGING_RUN_ATTEMPT'
 require_literal "$e2e_workflow" "E2E evidence link" 'actions/runs/$GITHUB_RUN_ID/attempts/$GITHUB_RUN_ATTEMPT'
+require_literal "$e2e_workflow" "main-ref secret boundary" "if: \${{ github.ref == 'refs/heads/main' }}"
+require_literal "$e2e_workflow" "candidate bound to executing main commit" 'if [ "$expected_sha" != "$GITHUB_SHA" ]'
 
 e2e_line="$(grep -n 'name: Run E2E tests' "$e2e_workflow" | cut -d: -f1)"
 dispatch_line="$(grep -n 'name: Report qualified production candidate' "$e2e_workflow" | cut -d: -f1)"

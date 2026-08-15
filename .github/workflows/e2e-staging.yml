@@ -38,6 +38,7 @@ permissions:
 jobs:
   e2e:
     name: Run E2E Tests
+    if: ${{ github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     env:
       CANDIDATE_SHA: ${{ inputs.candidate_sha }}
@@ -86,6 +87,10 @@ jobs:
           expected_sha="$(git rev-parse --verify "${CANDIDATE_SHA}^{commit}")"
           if [ "$expected_sha" != "$CANDIDATE_SHA" ]; then
             echo "resolved commit $expected_sha does not match candidate $CANDIDATE_SHA" >&2
+            exit 1
+          fi
+          if [ "$expected_sha" != "$GITHUB_SHA" ]; then
+            echo "candidate $expected_sha is not the main commit executing this trusted E2E workflow" >&2
             exit 1
           fi
           echo "commit_sha=$expected_sha" >> "$GITHUB_OUTPUT"

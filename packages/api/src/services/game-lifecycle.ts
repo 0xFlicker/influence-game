@@ -77,7 +77,10 @@ import {
 import { isUserSelectableAgentArchetype } from "./agent-archetypes.js";
 import { reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
 import { CompetitionSettlementRepairRequiredError } from "./competition-completion.js";
-import { checkGameStartAdmission } from "./deployment-admission.js";
+import {
+  checkGameStartAdmission,
+  type DeploymentAdmissionFence,
+} from "./deployment-admission.js";
 import {
   COMPLETION_SETTLEMENT_REPAIR_REQUIRED,
   COMPLETION_SETTLEMENT_TRANSIENT_FAILURE,
@@ -903,6 +906,7 @@ export async function tryReturnZeroEventOwnerFailureToWaiting(
 export async function recoverGame(
   db: DrizzleDB,
   gameId: string,
+  options: { activationFence?: DeploymentAdmissionFence } = {},
 ): Promise<{ error?: string; recovered?: boolean; skippedReason?: string }> {
   if (activeGames.has(gameId)) {
     return { error: "Game is already running" };
@@ -913,7 +917,9 @@ export async function recoverGame(
     return { skippedReason: candidate.reason };
   }
 
-  const owner = await acquireRecoveryGameRunOwner(db, gameId, candidate.resumeFrom.lastEventSequence);
+  const owner = await acquireRecoveryGameRunOwner(db, gameId, candidate.resumeFrom.lastEventSequence, {
+    activationFence: options.activationFence,
+  });
   if (!owner.ok) {
     return { error: owner.error };
   }
@@ -940,13 +946,14 @@ export async function recoverGame(
 
 export async function recoverGamesOnStartup(
   db: DrizzleDB,
+  options: { activationFence?: DeploymentAdmissionFence } = {},
 ): Promise<{ attempted: number; recovered: number; skipped: Array<{ gameId: string; reason: string }> }> {
   const gameIds = await findStartupRecoverableGameIds(db);
   const skipped: Array<{ gameId: string; reason: string }> = [];
   let recovered = 0;
 
   for (const gameId of gameIds) {
-    const result = await recoverGame(db, gameId);
+    const result = await recoverGame(db, gameId, options);
     if (result.recovered) {
       recovered += 1;
       continue;

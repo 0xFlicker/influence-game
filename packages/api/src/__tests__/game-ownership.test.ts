@@ -20,7 +20,10 @@ import {
   insertCanonicalEventRows,
 } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
-import { acquireDeploymentAdmissionLease } from "../services/deployment-admission.js";
+import {
+  acquireDeploymentAdmissionLease,
+  advanceDeploymentAdmissionPhase,
+} from "../services/deployment-admission.js";
 
 describe("atomic game owner claim and roster freeze", () => {
   test("serializes update-before-freeze into one coherent new tuple and snapshot", async () => {
@@ -442,6 +445,52 @@ describe("atomic game owner claim and roster freeze", () => {
       statusCode: 409,
     });
     expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "suspended" });
+  });
+
+  test("the exact accepting activation fence can resume already-admitted suspended work", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const owner = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    expect(owner.ok).toBeTrue();
+    await revokeActiveGameRunOwner(fixture.db, fixture.gameId, "release handoff");
+    await fixture.db.update(schema.games).set({ status: "suspended" })
+      .where(eq(schema.games.id, fixture.gameId));
+    const acquired = await acquireDeploymentAdmissionLease(fixture.db, {
+      candidateSha: "e".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 1000,
+      workflowRunAttempt: 2,
+      actor: "release-operator",
+    });
+    if (!acquired.ok) throw new Error(acquired.error);
+    for (const [expectedPhase, nextPhase] of [
+      ["draining", "validating"],
+      ["validating", "switching"],
+      ["switching", "accepting"],
+    ] as const) {
+      const advanced = await advanceDeploymentAdmissionPhase(fixture.db, {
+        leaseId: acquired.lease.id,
+        fencingToken: acquired.lease.fencingToken,
+        expectedPhase,
+        nextPhase,
+      });
+      expect(advanced.ok).toBeTrue();
+    }
+
+    const stale = await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0, {
+      activationFence: {
+        leaseId: acquired.lease.id,
+        fencingToken: acquired.lease.fencingToken + 1,
+      },
+    });
+    expect(stale).toMatchObject({ ok: false, code: "deployment_admission_closed" });
+
+    const recovery = await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0, {
+      activationFence: {
+        leaseId: acquired.lease.id,
+        fencingToken: acquired.lease.fencingToken,
+      },
+    });
+    expect(recovery.ok).toBeTrue();
   });
 });
 

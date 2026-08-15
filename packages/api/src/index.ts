@@ -208,7 +208,10 @@ const runtimeActivation = createRuntimeActivationController({
 });
 await runtimeActivation.initialize();
 
-async function startBackgroundRuntime() {
+async function startBackgroundRuntime(activationFence?: {
+  leaseId: string;
+  fencingToken: number;
+}) {
   await seedRBAC(db);
   try {
     const reconciliation = await reconcileCompletedPostgameMedia(db);
@@ -244,7 +247,7 @@ async function startBackgroundRuntime() {
 
   const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
   if (!startupRecoveryDisabled) {
-    const recovery = await recoverGamesOnStartup(db);
+    const recovery = await recoverGamesOnStartup(db, { activationFence });
     if (recovery.attempted > 0) {
       console.info(
         `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
