@@ -229,13 +229,14 @@ describe("admin route RBAC", () => {
   let gamerToken: string;
   let sysopToken: string;
   let adminUserId: string;
+  let gamerUserId: string;
   let sysopUserId: string;
 
   beforeEach(async () => {
     db = await setupDB();
 
     adminUserId = await createUser(db, ADMIN_ADDRESS, "Admin");
-    const gamerUserId = await createUser(db, GAMER_ADDRESS, "Gamer");
+    gamerUserId = await createUser(db, GAMER_ADDRESS, "Gamer");
     sysopUserId = await createUser(db, SYSOP_ADDRESS, "Sysop");
     await assignRole(db, ADMIN_ADDRESS, "admin");
     await assignRole(db, GAMER_ADDRESS, "gamer");
@@ -332,11 +333,11 @@ describe("admin route RBAC", () => {
       nextPhase: "validating",
     });
     expect(validating.ok).toBeTrue();
-    const viewOnlyToken = await createSessionToken(adminUserId, {
+    const viewOnlyToken = await createSessionToken(gamerUserId, {
       roles: ["admin-reader"],
       permissions: ["view_admin"],
     });
-    const startOnlyToken = await createSessionToken(adminUserId, {
+    const startOnlyToken = await createSessionToken(gamerUserId, {
       roles: ["starter"],
       permissions: ["start_game"],
     });
@@ -398,6 +399,34 @@ describe("admin route RBAC", () => {
       nextPhase: "switching",
     });
     expect(staleController.ok).toBeFalse();
+  });
+
+  test("revokes deployment Resume authority for an already-issued session", async () => {
+    const acquired = await acquireDeploymentAdmissionLease(db, {
+      candidateSha: "a".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 445,
+      workflowRunAttempt: 1,
+      actor: "release-operator",
+    });
+    if (!acquired.ok) throw new Error(acquired.error);
+
+    await db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress, ADMIN_ADDRESS));
+
+    const status = await app.request("/api/admin/deployment-admission", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(status.status).toBe(403);
+    const resume = await app.request(
+      `/api/admin/deployment-admission/${acquired.lease.id}/resume`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: acquired.lease.revision, reason: "stale session" }),
+      },
+    );
+    expect(resume.status).toBe(403);
+    expect((await getDeploymentAdmissionStatus(db)).admissionBlocked).toBeTrue();
   });
 
   test("makes concurrent Resume idempotent and cannot revoke a newer lease", async () => {

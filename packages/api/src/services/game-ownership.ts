@@ -303,6 +303,16 @@ export async function acquireRecoveryGameRunOwner(
 
   try {
     const claim = await db.transaction(async (tx) => {
+      const admission = await checkGameStartAdmissionInTransaction(tx);
+      if (!admission.ok) {
+        return {
+          ...admission,
+          statusCode: admission.code === "deployment_admission_unavailable"
+            ? 503 as const
+            : 409 as const,
+        };
+      }
+
       const game = (await tx
         .select({ status: schema.games.status })
         .from(schema.games)

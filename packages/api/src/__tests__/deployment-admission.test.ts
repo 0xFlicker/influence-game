@@ -16,6 +16,7 @@ import {
   completeDeploymentAdmissionLease,
   getDeploymentAdmissionStatus,
   heartbeatDeploymentAdmissionLease,
+  revokeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
 import { acquireGameRunOwner } from "../services/game-ownership.js";
 import { setupTestDB } from "./test-utils.js";
@@ -30,6 +31,32 @@ const PROVENANCE = {
 };
 
 describe("deployment admission lease", () => {
+  test("records canonical Privy and Clerk operator identities during Resume", async () => {
+    for (const revokedBy of ["did:privy:existing-user", "user_clerk"]) {
+      const db = await setupTestDB();
+      const acquired = await acquireDeploymentAdmissionLease(db, PROVENANCE);
+      if (!acquired.ok) throw new Error(acquired.error);
+      const validating = await advanceDeploymentAdmissionPhase(db, {
+        leaseId: acquired.lease.id,
+        fencingToken: acquired.lease.fencingToken,
+        expectedPhase: "draining",
+        nextPhase: "validating",
+      });
+      expect(validating.ok).toBeTrue();
+
+      const resumed = await revokeDeploymentAdmissionLease(db, {
+        leaseId: acquired.lease.id,
+        expectedRevision: 2,
+        revokedBy,
+        reason: "operator recovery",
+      });
+
+      expect(resumed).toMatchObject({ ok: true, outcome: "revoked" });
+      expect((await db.select().from(schema.deploymentAdmissionLeases))[0])
+        .toMatchObject({ revokedBy });
+    }
+  });
+
   test("blocks the authoritative waiting-to-in-progress transition without mutating the game", async () => {
     const db = await setupTestDB();
     const gameId = await insertWaitingGame(db);

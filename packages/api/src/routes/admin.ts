@@ -14,6 +14,7 @@
  */
 
 import { Hono, type Context } from "hono";
+import { createMiddleware } from "hono/factory";
 import { eq, sql, isNull, and, or, asc, like, desc, inArray } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -107,7 +108,25 @@ export function createAdminRoutes(
   const requireRoleManagement = requirePermission("manage_roles");
   const requirePostgameMediaManagement = requirePermission("manage_postgame_media", "manage_roles");
   const requireFreeQueueManagement = requirePermission("schedule_free_game", "manage_roles");
-  const requireDeploymentAdmissionManagement = requirePermission("manage_deployment_admission");
+  const requireDeploymentAdmissionManagement = createMiddleware<AuthEnv>(async (c, next) => {
+    const walletAddress = c.get("user").walletAddress;
+    if (!walletAddress) {
+      return c.json({ error: "Insufficient permissions" }, 403);
+    }
+    try {
+      const current = await getPermissionsForAddress(db, walletAddress);
+      if (!current.permissions.includes("manage_deployment_admission")) {
+        return c.json({ error: "Insufficient permissions" }, 403);
+      }
+      await next();
+    } catch {
+      return c.json({
+        error: "Deployment admission permission state is temporarily unavailable",
+        code: "deployment_admission_permission_unavailable",
+        retryable: true,
+      }, 503);
+    }
+  });
   const canManageCostAccounting = (permissions: string[]) => (
     permissions.includes("manage_cost_accounting") || permissions.includes("manage_roles")
   );

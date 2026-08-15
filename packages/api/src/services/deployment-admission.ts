@@ -568,7 +568,7 @@ function validAuditReason(reason: string): boolean {
 function validAuditActor(actor: string): boolean {
   return actor.length >= 1
     && actor.length <= 200
-    && /^[A-Za-z0-9-]+$/.test(actor);
+    && /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(actor);
 }
 
 function failure(
