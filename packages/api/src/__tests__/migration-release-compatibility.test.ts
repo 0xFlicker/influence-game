@@ -43,6 +43,20 @@ describe("expand-contract release migration policy", () => {
     `)).toEqual([]);
   });
 
+  test("requires a default when an added column is immediately NOT NULL", () => {
+    expect(inspectReleaseMigrationSql(
+      "unsafe-not-null.sql",
+      "ALTER TABLE games ADD COLUMN release_id uuid NOT NULL;",
+    )).toEqual([expect.objectContaining({
+      rule: "add-not-null-without-default",
+      file: "unsafe-not-null.sql",
+    })]);
+    expect(inspectReleaseMigrationSql(
+      "safe-not-null.sql",
+      "ALTER TABLE games ADD COLUMN release_state text DEFAULT 'pending' NOT NULL;",
+    )).toEqual([]);
+  });
+
   test("rejects DROP, rename, narrowing, truncation, and data deletion", () => {
     const cases = [
       ["drop-column", "ALTER TABLE games DROP COLUMN legacy_note;"],

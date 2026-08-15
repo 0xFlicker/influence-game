@@ -298,6 +298,7 @@ const healthResponse = () => ({
   releaseControl: {
     ...runtimeActivation.getStatus(),
     migrationSet: releaseMigrationSet,
+    imageDigest: process.env.INFLUENCE_API_IMAGE_DIGEST ?? null,
   },
   timestamp: new Date().toISOString(),
 });
@@ -318,6 +319,7 @@ app.get("/", (c) => {
     releaseControl: {
       ...runtimeActivation.getStatus(),
       migrationSet: releaseMigrationSet,
+      imageDigest: process.env.INFLUENCE_API_IMAGE_DIGEST ?? null,
     },
     endpoints: {
       health: "/api/health",
@@ -327,6 +329,7 @@ app.get("/", (c) => {
       admin: "/api/admin",
       freeQueue: "/api/free-queue",
       ws: "/ws/games/:id",
+      wsReleaseProbe: "/ws/health",
     },
   });
 });
@@ -415,6 +418,18 @@ const server = Bun.serve<WsConnectionData>({
 
     const url = new URL(req.url);
 
+    // Canonical release probes need a real WebSocket upgrade that does not
+    // depend on mutable game data or subscribe to a game stream.
+    if (url.pathname === "/ws/health") {
+      const upgraded = server.upgrade(req, {
+        data: { gameId: "", releaseProbe: true },
+      });
+      if (upgraded) {
+        return undefined as unknown as Response;
+      }
+      return new Response("WebSocket upgrade failed", { status: 400 });
+    }
+
     // WebSocket upgrade for /ws/games/:id (accepts UUID or slug)
     if (url.pathname.startsWith("/ws/games/")) {
       const slugOrId = url.pathname.split("/ws/games/")[1]?.split("/")[0];
@@ -448,6 +463,11 @@ const server = Bun.serve<WsConnectionData>({
   },
   websocket: {
     open(ws) {
+      if (ws.data.releaseProbe) {
+        ws.send("ok");
+        ws.close(1000, "Release probe complete");
+        return;
+      }
       handleOpen(ws);
 
       // Send persisted viewer-safe watch state for catch-up.
@@ -463,6 +483,7 @@ const server = Bun.serve<WsConnectionData>({
         });
     },
     close(ws) {
+      if (ws.data.releaseProbe) return;
       handleClose(ws);
     },
     message(_ws, _message) {

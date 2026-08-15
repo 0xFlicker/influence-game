@@ -227,6 +227,30 @@ describe("deployment admission lease", () => {
     });
     if (!second.ok) throw new Error(second.error);
     expect(second.lease.fencingToken).toBe(first.lease.fencingToken + 1);
+    const acceptedReplay = await completeDeploymentAdmissionLease(db, {
+      leaseId: first.lease.id,
+      fencingToken: first.lease.fencingToken,
+      outcome: "accepted",
+      reason: "canonical probes passed",
+    });
+    expect(acceptedReplay).toMatchObject({
+      ok: true,
+      lease: { id: first.lease.id, status: "accepted" },
+    });
+    if (!acceptedReplay.ok) throw new Error(acceptedReplay.error);
+    expect(acceptedReplay.lease.revision).toBe(accepted.ok ? accepted.lease.revision : -1);
+    expect(await completeDeploymentAdmissionLease(db, {
+      leaseId: first.lease.id,
+      fencingToken: first.lease.fencingToken,
+      outcome: "accepted",
+      reason: "different completion reason",
+    })).toMatchObject({ ok: false, code: "stale_lease" });
+    expect(await completeDeploymentAdmissionLease(db, {
+      leaseId: first.lease.id,
+      fencingToken: first.lease.fencingToken + 1,
+      outcome: "accepted",
+      reason: "canonical probes passed",
+    })).toMatchObject({ ok: false, code: "stale_lease" });
     expect(await heartbeatDeploymentAdmissionLease(db, {
       leaseId: first.lease.id,
       fencingToken: first.lease.fencingToken,
@@ -256,6 +280,12 @@ describe("deployment admission lease", () => {
       reason: "previous route restored",
     });
     expect(restored.ok).toBeTrue();
+    expect(await completeDeploymentAdmissionLease(db, {
+      leaseId: second.lease.id,
+      fencingToken: second.lease.fencingToken,
+      outcome: "restored",
+      reason: "previous route restored",
+    })).toMatchObject({ ok: true, lease: { status: "restored" } });
     expect((await acquireGameRunOwner(db, secondGameId)).ok).toBeTrue();
   });
 

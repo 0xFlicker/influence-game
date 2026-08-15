@@ -89,6 +89,17 @@ export function inspectReleaseMigrationSql(
       evidence: match[0].replace(/\s+/g, " ").trim().slice(0, 160),
     });
   }
+  for (const statement of policyInput.split(";")) {
+    const match = statement.match(
+      /\bALTER\s+TABLE\b[\s\S]*?\bADD\s+(?:COLUMN\s+)?[\s\S]*?\bNOT\s+NULL\b/i,
+    );
+    if (!match || /\bDEFAULT\b/i.test(statement)) continue;
+    violations.push({
+      file,
+      rule: "add-not-null-without-default",
+      evidence: match[0].replace(/\s+/g, " ").trim().slice(0, 160),
+    });
+  }
   return violations;
 }
 

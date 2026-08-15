@@ -241,6 +241,23 @@ export async function completeDeploymentAdmissionLease(
       await lockAdmissionState(tx);
       const now = await databaseTimes(tx);
       const lease = await effectiveActiveLease(tx, now.now);
+      const requestedLease = lease?.id === input.leaseId
+        ? lease
+        : (await tx.select().from(schema.deploymentAdmissionLeases)
+            .where(eq(schema.deploymentAdmissionLeases.id, input.leaseId))
+            .limit(1)
+            .for("update"))[0];
+      if (requestedLease?.status !== "active") {
+        if (
+          requestedLease
+          && requestedLease.fencingToken === input.fencingToken
+          && requestedLease.status === input.outcome
+          && requestedLease.completionReason === input.reason
+        ) {
+          return { ok: true as const, lease: projectLease(requestedLease) };
+        }
+        return staleLeaseFailure();
+      }
       const exact = matchFence(lease, input);
       if (!exact.ok) return exact;
       const outcomeAllowed = input.outcome === "aborted"
