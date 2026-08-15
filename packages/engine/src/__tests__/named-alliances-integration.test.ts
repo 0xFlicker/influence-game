@@ -40,14 +40,14 @@ function createAgents() {
     purpose: "Coordinate the empower vote, then branch under the locked format.",
     timebox: null,
     thinking: "mock: propose a two-person named alliance before Vote",
-    decisionLog: "mock: test named-alliance formation in a complete round",
+    strategyDelta: "mock: test named-alliance formation in a complete round",
   });
   bob.allianceActions.push({
     action: "accept",
     lineageId: "glass-table-lineage",
     versionId: "glass-table-v1",
     thinking: "mock: accept the exact Glass Table version",
-    decisionLog: "mock: consent to the same version",
+    strategyDelta: "mock: consent to the same version",
   });
 
   return [alice, bob, charlie, dana, echo];

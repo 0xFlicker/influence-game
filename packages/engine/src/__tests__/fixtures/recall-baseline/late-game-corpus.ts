@@ -4,7 +4,7 @@
  * Inputs are fixed PhaseContext + continuity snapshots representing:
  * 1. ordinary endgame speech (no historical archive under new policy)
  * 2. huddle-heavy strategic decision
- * 3. Strategy Reflection
+ * 3. post-eviction diary strategy reconciliation
  *
  * `legacy` estimates were measured against the pre-U4 full-history renderer
  * (`## Full Public Transcript` + complete `## Game Event Record`) using
@@ -17,14 +17,14 @@ import type {
   PhaseContext,
   RecallContinuitySnapshot,
   RecallPromptClass,
-  StrategyPacketSummary,
+  CompactStrategyState,
 } from "../../../game-runner.types";
 import { estimateTokensFromChars } from "../../../context-recall-plan";
 
 export type RecallBaselineCaseId =
   | "ordinary_endgame_speech"
   | "huddle_heavy_strategic_decision"
-  | "strategic_reflection";
+  | "post_eviction_diary_strategy";
 
 export interface RecallBaselineLegacyEstimate {
   /** Character length of the legacy `buildUserPrompt` output. */
@@ -42,20 +42,15 @@ export interface RecallBaselineCase {
   readonly legacy: RecallBaselineLegacyEstimate;
 }
 
-const STRATEGY_PACKET: StrategyPacketSummary = {
-  revisionId: "rev-late-3",
-  previousRevisionId: "rev-late-2",
-  updatedAtRound: 4,
-  updatedAtPhase: Phase.VOTE,
-  objective: "Survive Reckoning and carry Mira into the final two",
-  targetPosture: "Pressure Vera as the public threat; watch Nyx as secondary",
-  coalitionPosture: "Hold Atlas-Mira pair; treat Nyx as flexible",
-  nextSocialProbe: "Ask Mira whether she will still cover on a direct elimination vote",
-  strategicLens: "coalition_geometry",
-  strategicLensRationale: "Pair integrity is the only remaining durable structure",
-  uncertainty: "Whether Vera has a secret juror commitment",
-  reviseTrigger: "If Mira publicly breaks with Atlas",
-  changedSincePrevious: "Dropped Rex after elimination; retargeted Vera",
+const COMPACT_STRATEGY: CompactStrategyState = {
+  lifecycle: "active",
+  baseline: "Survive Reckoning with Mira as the closest partner while treating Vera as the public threat and Nyx as flexible.",
+  deltas: [
+    "Ask Mira whether she will still cover on a direct elimination vote.",
+    "Reassess if Mira publicly breaks with Atlas.",
+  ],
+  priorEpoch: null,
+  revision: 3,
 };
 
 const LONG_PUBLIC_LINES = Array.from({ length: 40 }, (_, index) => {
@@ -188,34 +183,10 @@ function baseAllianceContext(): NonNullable<PhaseContext["allianceContext"]> {
 
 function baseContinuity(): RecallContinuitySnapshot {
   return {
-    strategyPacket: { ...STRATEGY_PACKET },
-    reflectionSummary: {
-      certainties: ["Mira still treats Atlas as primary cover", "Vera is the loudest public threat"],
-      suspicions: ["Nyx may be shopping a juror story", "Vera will pitch jury punishment"],
-      allies: ["Mira"],
-      threats: ["Vera", "Nyx"],
-      plan: "Keep Mira close, isolate Vera, reassess Nyx after Reckoning speech",
-      strategicLens: "coalition_geometry",
-      strategicLensRationale: "Pair math dominates with four left",
+    compactStrategy: {
+      ...COMPACT_STRATEGY,
+      deltas: [...COMPACT_STRATEGY.deltas],
     },
-    recentStrategicDecisions: [
-      {
-        round: 4,
-        phase: Phase.VOTE,
-        action: "empower",
-        label: "Empower ballot",
-        decisionLog: "Empowered Mira to keep chooser seat with the pair",
-      },
-      {
-        round: 3,
-        phase: Phase.COUNCIL,
-        action: "council_vote",
-        label: "Council ballot",
-        decisionLog: "Voted Finn to protect pair geometry",
-      },
-    ],
-    strategicEvidenceVersion: 7,
-    strategyPacketRevisionCounter: 3,
   };
 }
 
@@ -286,7 +257,7 @@ function makeHuddleHeavyStrategicDecisionContext(): PhaseContext {
   };
 }
 
-function makeStrategicReflectionContext(): PhaseContext {
+function makePostEvictionDiaryStrategyContext(): PhaseContext {
   return {
     ...makeOrdinaryEndgameSpeechContext(),
     phase: Phase.DIARY_ROOM,
@@ -306,7 +277,7 @@ function makeStrategicReflectionContext(): PhaseContext {
  */
 const LEGACY_ORDINARY_CHARS = 18_645;
 const LEGACY_STRATEGIC_CHARS = 18_645;
-const LEGACY_REFLECTION_CHARS = 18_657;
+const LEGACY_DIARY_STRATEGY_CHARS = 18_657;
 
 export const RECALL_BASELINE_CORPUS: readonly RecallBaselineCase[] = [
   {
@@ -330,13 +301,26 @@ export const RECALL_BASELINE_CORPUS: readonly RecallBaselineCase[] = [
     },
   },
   {
-    id: "strategic_reflection",
-    promptClass: "strategic_reflection",
-    phaseContext: makeStrategicReflectionContext(),
-    continuity: baseContinuity(),
+    id: "post_eviction_diary_strategy",
+    promptClass: "strategic_decision",
+    phaseContext: makePostEvictionDiaryStrategyContext(),
+    continuity: {
+      compactStrategy: {
+        lifecycle: "reconciliation_required",
+        baseline: null,
+        deltas: [],
+        priorEpoch: {
+          lifecycle: "active",
+          baseline: COMPACT_STRATEGY.baseline,
+          deltas: [...COMPACT_STRATEGY.deltas],
+          revision: COMPACT_STRATEGY.revision,
+        },
+        revision: 4,
+      },
+    },
     legacy: {
-      characterCount: LEGACY_REFLECTION_CHARS,
-      tokenEstimate: estimateTokensFromChars(LEGACY_REFLECTION_CHARS),
+      characterCount: LEGACY_DIARY_STRATEGY_CHARS,
+      tokenEstimate: estimateTokensFromChars(LEGACY_DIARY_STRATEGY_CHARS),
     },
   },
 ];

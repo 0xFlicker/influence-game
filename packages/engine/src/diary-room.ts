@@ -11,20 +11,15 @@ import type { IHouseInterviewer, DiaryRoomContext } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase } from "./types";
 import type {
+  CompactStrategyApplicationResult,
+  CompactStrategyDecisionBoundary,
   HouseProducerBrief,
   HouseRoundFacts,
   HouseStrategyBiblePacket,
   IAgent,
-  StrategicReflectionAction,
-  StrategicReflectionOptions,
-  StrategyPacketSummary,
 } from "./game-runner.types";
 import { emptyRecallContinuitySnapshot } from "./context-recall-plan";
-import {
-  formatHouseProducerBriefOperatorText,
-  formatStrategicReflectionOperatorText,
-  formatStrategyPacketOperatorText,
-} from "./operator-turn-text";
+import { formatHouseProducerBriefOperatorText } from "./operator-turn-text";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
 
 export class DiaryRoom {
@@ -44,113 +39,8 @@ export class DiaryRoom {
     private readonly houseInterviewer: IHouseInterviewer,
     private readonly getHouseStrategyBible?: () => HouseStrategyBiblePacket | null,
     private readonly getHouseRoundFacts?: () => HouseRoundFacts,
+    private readonly beforeAcceptedCommit?: () => Promise<void> | void,
   ) {}
-
-  /**
-   * Run strategic reflections for all alive agents after a phase.
-   * Thinking is now captured per-message via structured output, but strategic
-   * reflections are still a separate step that updates agent memory.
-   */
-  async runStrategicReflections(phase: Phase, options?: StrategicReflectionOptions): Promise<void> {
-    if (this.config.enableStrategicReflections === false) {
-      return;
-    }
-
-    const alivePlayers = this.gameState.getAlivePlayers();
-    await Promise.all(
-      alivePlayers.map(async (player) => {
-        const agent = this.agents.get(player.id);
-        if (!agent) return;
-
-        try {
-            const continuity = agent.getRecallContinuitySnapshot?.() ?? emptyRecallContinuitySnapshot();
-            const phaseCtx = this.contextBuilder.buildPhaseContextForAgentCall({
-              agentId: player.id,
-              phase,
-              promptClass: "strategic_reflection",
-              continuity,
-            });
-            const reflection = await agent.getStrategicReflection(phaseCtx, options);
-            if (reflection) {
-              this.emitStrategicReflectionTurn(player.id, player.name, phase, reflection, options);
-              if (reflection.strategyPacket) {
-                this.emitStrategyPacketTurn(player.id, player.name, phase, reflection.strategyPacket, reflection, options);
-              }
-            }
-        } catch (error) {
-          console.error(`[DiaryRoom] Strategic reflection failed for ${player.name}, continuing:`, error);
-        }
-      }),
-    );
-  }
-
-  private emitStrategicReflectionTurn(
-    playerId: UUID,
-    playerName: string,
-    reflectedPhase: Phase,
-    reflection: StrategicReflectionAction,
-    options?: StrategicReflectionOptions,
-  ): void {
-    this.logger.emitAgentTurn({
-      phase: reflectedPhase,
-      action: "strategic-reflection",
-      actor: { id: playerId, name: playerName, role: "player" },
-      visibility: "private",
-      response: {
-        reflectedPhase,
-        reflectionTiming: options?.timing ?? "post_phase",
-        certainties: reflection.certainties,
-        suspicions: reflection.suspicions,
-        allies: reflection.allies,
-        threats: reflection.threats,
-        plan: reflection.plan,
-        strategicLens: reflection.strategicLens,
-        strategicLensRationale: reflection.strategicLensRationale,
-      },
-      thinking: reflection.thinking,
-      reasoningContext: reflection.reasoningContext,
-      scope: "thinking",
-      text: formatStrategicReflectionOperatorText({
-        playerName,
-        strategicLens: reflection.strategicLens,
-        allies: reflection.allies,
-        threats: reflection.threats,
-        plan: reflection.plan,
-      }),
-    });
-  }
-
-  private emitStrategyPacketTurn(
-    playerId: UUID,
-    playerName: string,
-    reflectedPhase: Phase,
-    strategyPacket: StrategyPacketSummary,
-    reflection: StrategicReflectionAction,
-    options?: StrategicReflectionOptions,
-  ): void {
-    this.logger.emitAgentTurn({
-      phase: reflectedPhase,
-      action: "strategy-packet",
-      actor: { id: playerId, name: playerName, role: "player" },
-      visibility: "private",
-      response: {
-        reflectedPhase,
-        reflectionTiming: options?.timing ?? "post_phase",
-        strategyPacket,
-      },
-      thinking: reflection.thinking,
-      reasoningContext: reflection.reasoningContext,
-      scope: "thinking",
-      text: formatStrategyPacketOperatorText({
-        playerName,
-        objective: strategyPacket.objective,
-        targetPosture: strategyPacket.targetPosture,
-        coalitionPosture: strategyPacket.coalitionPosture,
-        nextSocialProbe: strategyPacket.nextSocialProbe,
-        strategicLens: strategyPacket.strategicLens,
-      }),
-    });
-  }
 
   /**
    * Run a diary room session after a game phase completes.
@@ -166,16 +56,16 @@ export class DiaryRoom {
 
     await Promise.all(
       alivePlayers.map(async (player) => {
+        const agent = this.agents.get(player.id);
+        if (!agent) return;
         try {
           await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
         } catch (error) {
+          await this.markFailedReconciliationOpportunity(agent);
           console.error(`[DiaryRoom] Interview failed for ${player.name}, skipping:`, error);
         }
       }),
     );
-
-    // Strategic reflections after diary room
-    await this.runStrategicReflections(Phase.DIARY_ROOM);
 
     // During Judgment, also interview active jury members
     if (this.gameState.endgameStage === "judgment") {
@@ -220,17 +110,12 @@ export class DiaryRoom {
     const firstQuestion = await this.houseInterviewer.generateQuestion(diaryContext);
     this.logger.logDiary(houseLabel, firstQuestion);
 
-    const continuity = agent.getRecallContinuitySnapshot?.() ?? emptyRecallContinuitySnapshot();
-    const ctx = this.contextBuilder.buildPhaseContextForAgentCall({
-      agentId: playerId,
-      phase: Phase.DIARY_ROOM,
-      promptClass: "ordinary_speech",
-      continuity,
-      isEliminated: isJuror || undefined,
-    });
+    const ctx = this.buildAgentDiaryContext(agent, playerId, isJuror);
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
+    await this.beforeAcceptedCommit?.();
     const firstTranscriptThinking = transcriptThinkingFor(agent, firstResponse.thinking, firstResponse.reasoningContext);
     this.logger.logDiary(label, firstResponse.message, firstTranscriptThinking.thinking, firstTranscriptThinking.reasoningContext);
+    const firstStrategyResult = this.commitDiaryStrategy(agent, firstResponse, isJuror);
     this.logger.emitAgentTurn({
       phase: Phase.DIARY_ROOM,
       action: "diary-answer",
@@ -242,6 +127,8 @@ export class DiaryRoom {
         precedingPhase,
         followUpIndex: 0,
       },
+      ...(firstTranscriptThinking.decisionId && { decisionId: firstTranscriptThinking.decisionId }),
+      ...(firstStrategyResult && { strategyResult: firstStrategyResult }),
       thinking: firstResponse.thinking,
       reasoningContext: firstResponse.reasoningContext,
       scope: "diary",
@@ -269,9 +156,12 @@ export class DiaryRoom {
 
       this.logger.logDiary(houseLabel, result.question);
 
-      const followUpResponse = await agent.getDiaryEntry(ctx, result.question, sessionExchanges);
+      const followUpContext = this.buildAgentDiaryContext(agent, playerId, isJuror);
+      const followUpResponse = await agent.getDiaryEntry(followUpContext, result.question, sessionExchanges);
+      await this.beforeAcceptedCommit?.();
       const followUpTranscriptThinking = transcriptThinkingFor(agent, followUpResponse.thinking, followUpResponse.reasoningContext);
       this.logger.logDiary(label, followUpResponse.message, followUpTranscriptThinking.thinking, followUpTranscriptThinking.reasoningContext);
+      const followUpStrategyResult = this.commitDiaryStrategy(agent, followUpResponse, isJuror);
       this.logger.emitAgentTurn({
         phase: Phase.DIARY_ROOM,
         action: "diary-answer",
@@ -283,6 +173,8 @@ export class DiaryRoom {
           precedingPhase,
           followUpIndex: i,
         },
+        ...(followUpTranscriptThinking.decisionId && { decisionId: followUpTranscriptThinking.decisionId }),
+        ...(followUpStrategyResult && { strategyResult: followUpStrategyResult }),
         thinking: followUpResponse.thinking,
         reasoningContext: followUpResponse.reasoningContext,
         scope: "diary",
@@ -299,6 +191,56 @@ export class DiaryRoom {
         answer: followUpResponse.message,
       });
     }
+  }
+
+  private buildAgentDiaryContext(
+    agent: IAgent,
+    playerId: UUID,
+    isJuror: boolean,
+  ) {
+    const continuity = agent.getRecallContinuitySnapshot?.() ?? emptyRecallContinuitySnapshot();
+    return this.contextBuilder.buildPhaseContextForAgentCall({
+      agentId: playerId,
+      phase: Phase.DIARY_ROOM,
+      promptClass: isJuror ? "ordinary_speech" : "strategic_decision",
+      continuity,
+      isEliminated: isJuror || undefined,
+    });
+  }
+
+  private diaryStrategyBoundary(
+    agent: IAgent,
+    isJuror: boolean,
+  ): CompactStrategyDecisionBoundary | null {
+    if (isJuror) return null;
+    const state = agent.getCompactStrategyState?.();
+    if (!state) return null;
+    if (state.lifecycle === "reconciliation_required") return "post_eviction_diary";
+    if (state.lifecycle === "repair_required") return "diary_repair";
+    return "diary_follow_up";
+  }
+
+  private commitDiaryStrategy(
+    agent: IAgent,
+    response: { strategy?: unknown; strategyDelta?: unknown },
+    isJuror: boolean,
+  ): CompactStrategyApplicationResult | undefined {
+    const boundary = this.diaryStrategyBoundary(agent, isJuror);
+    if (!boundary) return undefined;
+    return agent.commitCompactStrategyCandidate?.(boundary, response);
+  }
+
+  /** A failed post-eviction interview consumes the diary repair opportunity. */
+  private async markFailedReconciliationOpportunity(agent: IAgent): Promise<void> {
+    const state = agent.getCompactStrategyState?.();
+    if (!state || (state.lifecycle !== "reconciliation_required" && state.lifecycle !== "repair_required")) {
+      return;
+    }
+    await this.beforeAcceptedCommit?.();
+    agent.commitCompactStrategyCandidate?.(
+      state.lifecycle === "reconciliation_required" ? "post_eviction_diary" : "diary_repair",
+      {},
+    );
   }
 
   /**

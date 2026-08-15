@@ -2,6 +2,7 @@ import { Phase } from "../types";
 import {
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseActor,
@@ -30,10 +31,16 @@ async function runLobbyMessages(
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.LOBBY, "ordinary_speech");
       phaseCtx.lobbySubRound = sub;
       phaseCtx.lobbyTotalSubRounds = messagesPerPlayer;
-      const { message, thinking, reasoningContext, decisionLog } = await agent.getLobbyMessage(phaseCtx);
+      const response = await agent.getLobbyMessage(phaseCtx);
+      const { message, thinking, reasoningContext } = response;
       await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.LOBBY, transcriptThinking);
+      resolveActionStrategyCandidate(
+        agent,
+        response,
+        response.strategyGameplayAccepted !== false,
+      );
       logger.emitAgentTurn({
         phase: Phase.LOBBY,
         action: "lobby-message",
@@ -43,7 +50,7 @@ async function runLobbyMessages(
           message,
           subRound: sub,
           totalSubRounds: messagesPerPlayer,
-          ...strategicDecisionResponse({ decisionLog }),
+          ...strategicDecisionResponse(response),
         },
         thinking,
         reasoningContext,

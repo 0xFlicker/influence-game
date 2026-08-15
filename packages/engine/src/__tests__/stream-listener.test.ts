@@ -5,9 +5,9 @@
  * Uses MockAgent — no LLM calls.
  */
 
-import { describe, it, expect, mock } from "bun:test";
+import { describe, it, expect } from "bun:test";
 import { GameRunner } from "../game-runner";
-import type { GameStreamEvent, GameStateSnapshot, PhaseContext, StrategicReflectionAction } from "../game-runner";
+import type { GameStreamEvent, GameStateSnapshot, PhaseContext } from "../game-runner";
 import { Phase, type GameConfig } from "../types";
 import { MockAgent } from "./mock-agent";
 import { createUUID } from "../game-state";
@@ -151,6 +151,14 @@ describe("GameRunner stream listener", () => {
       expect(voteTurn.actor.name).toBeTruthy();
       expect(voteTurn.response).toHaveProperty("empowerTarget");
       expect(voteTurn.thinking).toBeTruthy();
+      expect(voteTurn.strategyResult).toMatchObject({
+        status: "no_change",
+        operation: "delta",
+        reason: "optional_value_absent",
+      });
+      expect(voteTurn.response).not.toHaveProperty("strategy");
+      expect(voteTurn.response).not.toHaveProperty("strategyDelta");
+      expect(voteTurn.response).not.toHaveProperty("strategyResult");
     }
 
     const mingleTurn = agentTurns.find((e) => e.type === "agent_turn" && e.action === "mingle-turn");
@@ -161,103 +169,12 @@ describe("GameRunner stream listener", () => {
     }
   });
 
-  it("emits the initial strategic-reflection agent_turn after introductions when enabled", async () => {
-    const agents = makeAgents(5);
-    const runner = new GameRunner(agents, {
-      ...FAST_CONFIG,
-      diaryRoomAfterPhases: [],
-      enableStrategicReflections: true,
-      mingleSessionsPerRound: 1,
-    });
-
-    const events: GameStreamEvent[] = [];
-    runner.setStreamListener((event) => events.push(event));
-
-    await runner.run();
-
-    const reflection = events.find((event) => event.type === "agent_turn" && event.action === "strategic-reflection");
-    expect(reflection).toBeDefined();
-    if (reflection?.type === "agent_turn") {
-      expect(reflection.round).toBe(0);
-      expect(reflection.phase).toBe(Phase.INTRODUCTION);
-      expect(reflection.visibility).toBe("private");
-      expect(reflection.scope).toBe("thinking");
-      expect(reflection.response).toMatchObject({
-        reflectedPhase: "INTRODUCTION",
-        plan: "mock: keep gathering information",
-      });
-      expect(reflection.response).toHaveProperty("certainties");
-      expect(reflection.thinking).toBe("mock: reflect on current strategy");
-    }
-
-    const packet = events.find((event) => event.type === "agent_turn" && event.action === "strategy-packet");
-    expect(packet).toBeDefined();
-    if (packet?.type === "agent_turn") {
-      expect(packet.visibility).toBe("private");
-      expect(packet.scope).toBe("thinking");
-      expect(packet.response).toMatchObject({
-        reflectedPhase: "INTRODUCTION",
-        strategyPacket: {
-          revisionId: "mock-r1",
-          objective: "mock: survive while gathering information",
-          reviseTrigger: "mock: revise if votes contradict room talk",
-        },
-      });
-    }
-
-    expect(events.some((event) =>
-      event.type === "agent_turn"
-      && event.action === "strategic-reflection"
-      && event.round <= 1
-      && event.phase === Phase.VOTE
-    )).toBe(false);
-
-    const decisionWithReceipt = events.find((event) =>
-      event.type === "agent_turn"
-      && event.action !== "strategy-packet"
-      && typeof event.response.decisionLog === "string"
-    );
-    expect(decisionWithReceipt).toBeDefined();
-    if (decisionWithReceipt?.type === "agent_turn") {
-      expect(decisionWithReceipt.response.decisionLog).toContain("mock:");
-    }
-  });
-
-  it("runs an additional pre-vote strategic reflection before later-round votes", async () => {
+  it("never invokes or emits standalone strategic reflection or strategy packet turns", async () => {
     const agents = makeAgents(6);
     const runner = new GameRunner(agents, {
       ...FAST_CONFIG,
-      diaryRoomAfterPhases: [],
-      enableStrategicReflections: true,
-      mingleSessionsPerRound: 1,
-    });
-
-    const events: GameStreamEvent[] = [];
-    runner.setStreamListener((event) => events.push(event));
-
-    await runner.run();
-
-    const reflectionEvents = events.filter((event) =>
-      event.type === "agent_turn"
-      && event.action === "strategic-reflection"
-      && event.response.reflectedPhase === Phase.VOTE
-    );
-    expect(reflectionEvents.some((event) =>
-      event.type === "agent_turn"
-      && event.response.reflectionTiming === "pre_vote"
-    )).toBe(true);
-    expect(reflectionEvents.some((event) =>
-      event.type === "agent_turn"
-      && event.response.reflectionTiming === "post_phase"
-    )).toBe(true);
-  });
-
-  it("does not emit strategic-reflection agent_turn events when disabled", async () => {
-    const agents = makeAgents(5);
-    const runner = new GameRunner(agents, {
-      ...FAST_CONFIG,
-      diaryRoomAfterPhases: [],
-      enableStrategicReflections: false,
+      diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE, Phase.COUNCIL],
+      maxDiaryFollowUps: 0,
       mingleSessionsPerRound: 1,
     });
 
@@ -356,40 +273,6 @@ describe("GameRunner stream listener", () => {
       expect(brief.response).toHaveProperty("producerBrief");
       expect(JSON.stringify(brief.response)).toContain("privateDoNotReveal");
     }
-  });
-
-  it("keeps successful strategic-reflection records when one agent reflection fails", async () => {
-    class ThrowingReflectionAgent extends MockAgent {
-      override async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-        throw new Error("forced reflection failure");
-      }
-    }
-
-    const agents = makeAgents(5);
-    agents[0] = new ThrowingReflectionAgent(agents[0]!.id, agents[0]!.name);
-    const runner = new GameRunner(agents, {
-      ...FAST_CONFIG,
-      diaryRoomAfterPhases: [],
-      enableStrategicReflections: true,
-      mingleSessionsPerRound: 1,
-    });
-
-    const events: GameStreamEvent[] = [];
-    runner.setStreamListener((event) => events.push(event));
-
-    const originalError = console.error;
-    console.error = mock(() => undefined);
-    try {
-      await runner.run();
-    } finally {
-      console.error = originalError;
-    }
-
-    const reflectionActors = events
-      .filter((event) => event.type === "agent_turn" && event.action === "strategic-reflection")
-      .map((event) => event.type === "agent_turn" ? event.actor.name : "");
-    expect(reflectionActors).not.toContain(agents[0]!.name);
-    expect(reflectionActors.length).toBeGreaterThan(0);
   });
 
   it("emits a game_over event at the end", async () => {

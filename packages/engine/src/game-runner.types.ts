@@ -264,7 +264,7 @@ export interface RuntimeSnapshotV1 {
  * These are producer-only state for supported-boundary hydration of agent/House behavior.
  * They must not leak raw thinking or reasoningContext.
  */
-export const PLAYER_CONTINUITY_CAPSULE_VERSION = 1 as const;
+export const PLAYER_CONTINUITY_CAPSULE_VERSION = 2 as const;
 
 /**
  * Checkpoint-time House Strategy Bible continuity contract.
@@ -292,16 +292,12 @@ export interface PlayerContinuityCapsule {
   version: typeof PLAYER_CONTINUITY_CAPSULE_VERSION;
   playerId: UUID;
   playerName: string;
-  strategyPacket: StrategyPacketSummary | null;
-  reflectionSummary: StrategicReflectionSummary | null;
+  /** The only private strategy source admitted by supported recovery. */
+  compactStrategy: CompactStrategyState;
   notes: Array<{ subject: string; note: string }>;
   relationships: { allies: string[]; threats: string[] };
   powerActionMemory: PlayerPowerActionMemoryEntry[];
   roundHistory: PlayerRoundHistoryEntry[];
-  /** Bounded private strategic receipts carried across supported restarts. */
-  recentStrategicDecisions: StrategicDecisionReceipt[];
-  /** Ensures the next Strategy Thread revision advances after hydration. */
-  strategyPacketRevisionCounter: number;
 }
 
 export interface HouseContinuityCapsule {
@@ -368,7 +364,7 @@ export interface GameCheckpointCapsule {
 // Agent response — structured output from message-producing methods
 // ---------------------------------------------------------------------------
 
-export interface AgentResponse {
+export interface AgentResponse extends StrategicDecisionMetadata {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking: string;
   /** The actual message content */
@@ -378,8 +374,6 @@ export interface AgentResponse {
    * `reasoning_content`; hosted OpenAI calls may provide a labeled provider summary.
    */
   reasoningContext?: string;
-  /** Private producer/debug receipt describing what this action meant strategically. */
-  decisionLog?: string | null;
   /** Private producer/debug frame describing the main evidence lens for this response. */
   strategicLens?: StrategicLens;
   /** Compact private rationale for the selected strategic lens. */
@@ -515,62 +509,116 @@ export interface PrivateDecisionTrace {
   providerReasoningSummary?: ProviderReasoningSummary;
   toolName?: string;
   toolArguments?: unknown;
-  decisionLog?: string;
-  strategicLens?: StrategicLens;
-  strategicLensRationale?: string;
-  strategyPacketUpdate?: StrategyPacketUpdateAction;
-  strategyPacketSummary?: StrategyPacketSummary;
-  strategicReflectionSummary?: StrategicReflectionSummary;
-  strategyPacketRevision?: string;
+  /** Model-submitted compact strategy proposal. Acceptance is decided later. */
+  strategyCandidate?: {
+    operation: "replace" | "delta";
+    submittedValue: unknown;
+  };
   boundary?: PrivateDecisionTraceBoundary;
 }
 
 export type PrivateTraceSink = (trace: PrivateDecisionTrace) => Promise<void> | void;
 
-export interface StrategicDecisionMetadata {
-  /** Compact private receipt tied to the current action, not raw hidden reasoning. */
-  decisionLog?: string | null;
+// ---------------------------------------------------------------------------
+// Compact private strategy state
+// ---------------------------------------------------------------------------
+
+export type CompactStrategyLifecycle =
+  | "opening"
+  | "active"
+  | "reconciliation_required"
+  | "repair_required";
+
+export type CompactStrategyDecisionBoundary =
+  | "ordinary_action"
+  | "diary_follow_up"
+  | "post_eviction_diary"
+  | "diary_repair"
+  | "action_repair";
+
+export interface CompactStrategyPriorEpoch {
+  lifecycle: "opening" | "active";
+  baseline: string | null;
+  deltas: string[];
+  revision: number;
+}
+
+/**
+ * Engine-owned private cognition. Canonical board facts always override this
+ * fallible strategy text when the two disagree.
+ */
+export interface CompactStrategyState {
+  lifecycle: CompactStrategyLifecycle;
+  /** Null during the implicit authored opening posture and while reconciling. */
+  baseline: string | null;
+  /** Ordered, mechanically accepted refinements to the current epoch. */
+  deltas: string[];
+  /** The last valid epoch, retained only while post-eviction repair is pending. */
+  priorEpoch: CompactStrategyPriorEpoch | null;
+  /** Monotonic engine-owned revision; models never supply this value. */
+  revision: number;
+}
+
+/** Raw flat fields decoded independently from the mechanic-specific action. */
+export interface CompactStrategyCandidate {
+  strategy?: unknown;
+  strategyDelta?: unknown;
+}
+
+export type CompactStrategyOperation = "replace" | "delta";
+
+export type CompactStrategyRejectionReason =
+  | "action_not_accepted"
+  | "boundary_field_not_allowed"
+  | "lifecycle_operation_not_allowed"
+  | "required_value_missing"
+  | "value_not_string"
+  | "value_too_long"
+  | "delta_limit_reached"
+  | "aggregate_too_long";
+
+export interface CompactStrategyApplicationBase {
+  operation: CompactStrategyOperation;
+  state: CompactStrategyState;
+  previousRevision: number;
+  resultingRevision: number;
+}
+
+export interface CompactStrategyAccepted extends CompactStrategyApplicationBase {
+  status: "accepted";
+  value: string;
+}
+
+export interface CompactStrategyNoChange extends CompactStrategyApplicationBase {
+  status: "no_change";
+  reason: "optional_value_absent";
+}
+
+export interface CompactStrategyRejected extends CompactStrategyApplicationBase {
+  status: "rejected";
+  reason: CompactStrategyRejectionReason;
+  diagnostic: string;
+}
+
+export type CompactStrategyApplicationResult =
+  | CompactStrategyAccepted
+  | CompactStrategyNoChange
+  | CompactStrategyRejected;
+
+export interface StrategicDecisionMetadata extends CompactStrategyCandidate {
+  /**
+   * Engine-only marker that this response came from a model-authored strategic
+   * surface even when the required strategy field was missing. Provider and
+   * deterministic fallbacks omit it so they cannot consume a pending repair.
+   */
+  strategyCandidateProposed?: boolean;
+  /** Engine-only mechanic validation outcome for candidate discard diagnostics. */
+  strategyGameplayAccepted?: boolean;
   /**
    * Fresh private-decision receipt minted by this exact model call.
    * Acceptance writers may use it only when the returned value is accepted directly.
    */
   decisionId?: UUID;
-}
-
-export interface StrategicDecisionReceipt {
-  round: number;
-  phase: Phase;
-  action: string;
-  label: string;
-  decisionLog: string;
-}
-
-export interface StrategyPacketSummary {
-  revisionId: string;
-  previousRevisionId: string | null;
-  updatedAtRound: number;
-  updatedAtPhase: Phase;
-  objective: string;
-  targetPosture: string;
-  coalitionPosture: string;
-  nextSocialProbe: string;
-  strategicLens: StrategicLens;
-  strategicLensRationale: string;
-  uncertainty: string;
-  reviseTrigger: string;
-  changedSincePrevious: string;
-}
-
-export interface StrategyPacketUpdateAction {
-  objective: string;
-  targetPosture: string;
-  coalitionPosture: string;
-  nextSocialProbe: string;
-  strategicLens: StrategicLens;
-  strategicLensRationale: string;
-  uncertainty: string;
-  reviseTrigger: string;
-  changedSincePrevious: string;
 }
 
 export type HouseAllianceStatus = "speculative" | "forming" | "active" | "fracturing" | "retired";
@@ -855,16 +903,15 @@ export interface AllianceHuddlePromptContext {
   pass: number;
 }
 
-export interface AllianceHuddleTurnAction {
+export interface AllianceHuddleTurnAction extends StrategicDecisionMetadata {
   thinking?: string;
   reasoningContext?: string;
   message: string | null;
   noReply?: boolean;
-  decisionLog?: string | null;
   commitment?: Omit<AllianceHuddleCommitmentFact, "speakerId" | "speakerName">;
 }
 
-export interface MingleTurnAction {
+export interface MingleTurnAction extends StrategicDecisionMetadata {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
   /** Private room message. Empty/null means no TALK action. */
@@ -877,8 +924,6 @@ export interface MingleTurnAction {
   gotoPlayerName?: string | null;
   /** Model-side reasoning evidence for debug surfaces. */
   reasoningContext?: string;
-  /** Private producer/debug strategic decision metadata for this action. */
-  decisionLog?: string | null;
   /** Private receipt for a concrete proposal made in a decision-relevant allied room. */
   coordinationReceipt?: {
     proposedTarget: string | null;
@@ -888,32 +933,12 @@ export interface MingleTurnAction {
   };
 }
 
-export interface MingleIntentAction extends MingleIntentSummaryBase {
+export interface MingleIntentAction extends MingleIntentSummaryBase, StrategicDecisionMetadata {
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
   /** Model-side reasoning evidence for debug surfaces. */
   reasoningContext?: string;
-  /** Private producer/debug strategic decision metadata for this action. */
-  decisionLog?: string | null;
 }
-
-export interface StrategicReflectionAction {
-  certainties: string[];
-  suspicions: string[];
-  allies: string[];
-  threats: string[];
-  plan: string;
-  strategicLens: StrategicLens;
-  strategicLensRationale: string;
-  /** Agent's internal thinking (hidden from players, visible to viewers) */
-  thinking?: string;
-  /** Model-side reasoning evidence for debug surfaces. */
-  reasoningContext?: string;
-  /** New strategy packet revision carried forward from this reflection, if one was produced. */
-  strategyPacket?: StrategyPacketSummary | null;
-}
-
-export type StrategicReflectionSummary = Pick<StrategicReflectionAction, "certainties" | "suspicions" | "allies" | "threats" | "plan" | "strategicLens" | "strategicLensRationale">;
 
 export interface TargetDecision extends StrategicDecisionMetadata {
   target: UUID;
@@ -936,11 +961,10 @@ export interface CandidateChoiceRequest {
   protectedCandidateId?: UUID;
 }
 
-export interface CandidateSelectionDecision {
+export interface CandidateSelectionDecision extends StrategicDecisionMetadata {
   selectedCandidateIds: UUID[];
   thinking?: string;
   reasoningContext?: string;
-  decisionLog?: string | null;
 }
 
 export interface PowerActionOptions {
@@ -986,6 +1010,10 @@ export interface AgentTurnEvent {
   actor: AgentTurnActor;
   visibility: AgentTurnVisibility;
   response: Record<string, unknown>;
+  /** Exact correlation with the proposal-time private decision trace. */
+  decisionId?: UUID;
+  /** Post-guard mechanical result; authorized exactly like `thinking`. */
+  strategyResult?: CompactStrategyApplicationResult;
   thinking?: string;
   reasoningContext?: string;
   scope?: TranscriptEntry["scope"];
@@ -1025,6 +1053,18 @@ export interface IAgent {
    * the implementation emits private decision traces. Optional for mock agents.
    */
   getLastPrivateDecisionId?(): UUID | undefined;
+  /** Current private compact-strategy state. Phase code never mutates this value directly. */
+  getCompactStrategyState?(): CompactStrategyState;
+  /**
+   * Apply a strategy candidate only after the associated gameplay proposal has
+   * passed the phase's acceptance guard and canonical mechanic mutation.
+   */
+  commitCompactStrategyCandidate?(
+    boundary: CompactStrategyDecisionBoundary,
+    candidate: CompactStrategyCandidate,
+  ): CompactStrategyApplicationResult;
+  /** Canonical elimination invalidates the current strategy epoch. */
+  markCompactStrategyReconciliationRequired?(): CompactStrategyState;
   /** Called once when the game starts */
   onGameStart(gameId: UUID, allPlayers: Array<{ id: UUID; name: string }>): void;
   /** Called at the start of each phase with current game context */
@@ -1132,7 +1172,7 @@ export interface IAgent {
   /** Reckoning/Tribunal: vote to eliminate one player (simple plurality) */
   getEndgameEliminationVote(context: PhaseContext, options?: AgentCallOptions): Promise<TargetDecision>;
   /** Tribunal: publicly accuse one player */
-  getAccusation(context: PhaseContext, options?: AgentCallOptions): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>;
+  getAccusation(context: PhaseContext, options?: AgentCallOptions): Promise<StrategicDecisionMetadata & { targetId: UUID; text: string; thinking?: string; reasoningContext?: string }>;
   /** Tribunal: defend against an accusation */
   getDefense(context: PhaseContext, accusation: string, accuserName: string, options?: AgentCallOptions): Promise<AgentResponse>;
   /** Judgment: opening statement to the jury */
@@ -1146,11 +1186,6 @@ export interface IAgent {
   /** Judgment: juror votes for the winner */
   getJuryVote(context: PhaseContext, finalistIds: [UUID, UUID], options?: AgentCallOptions): Promise<TargetDecision>;
 
-  // --- Strategic reflection (called after diary room) ---
-  /** Produce a private strategic reflection for memory and strategy continuity. */
-  getStrategicReflection(context: PhaseContext, options?: StrategicReflectionOptions): Promise<StrategicReflectionAction | null | void>;
-  /** Return the live private strategy packet for this game run, if one exists. */
-  getStrategyPacket?(): StrategyPacketSummary | null;
   /**
    * Narrow continuity snapshot for Recall Plan compilation (U3).
    * Phase runners obtain this immediately before ContextBuilder; they never read agent memory fields directly.
@@ -1458,24 +1493,15 @@ export interface TranscriptEntry {
  */
 export type RecallPromptClass =
   | "ordinary_speech"
-  | "strategic_decision"
-  | "strategic_reflection";
+  | "strategic_decision";
 
 /**
  * Narrow actor continuity input for Recall Plan compilation.
  * Phase runners obtain this immediately before context build (U3); pure compiler takes it as data.
  */
 export interface RecallContinuitySnapshot {
-  strategyPacket: StrategyPacketSummary | null;
-  reflectionSummary: StrategicReflectionSummary | null;
-  recentStrategicDecisions: readonly StrategicDecisionReceipt[];
-  /**
-   * Monotonic actor-local version for strategic evidence boundary / cache keys.
-   * Advanced when a decision receipt is retained; Strategy Thread mutation stays on reflection.
-   */
-  strategicEvidenceVersion: number;
-  /** Optional Strategy Thread revision counter from continuity capsules. */
-  strategyPacketRevisionCounter?: number;
+  /** Cloned engine-owned private strategy state; free-form text is never authoritative. */
+  compactStrategy: CompactStrategyState;
 }
 
 /** Canonical board facts pinned in the protected lane (structured, not rendered). */
@@ -1548,11 +1574,9 @@ export interface RecallPlanBudgetLedger {
 
 export interface RecallPlanProtectedLane {
   boardContract: RecallBoardContractFacts;
-  strategyThread: StrategyPacketSummary | null;
-  reflectionSummary: StrategicReflectionSummary | null;
+  compactStrategy: CompactStrategyState;
   huddleOutcomes: RecallProtectedHuddleOutcome[];
   currentReceipts: {
-    recentStrategicDecisions: StrategicDecisionReceipt[];
     recentDecisions: RecentDecisionContextEntry[];
     revealedVoteLedger: RevealedVoteLedgerEntry[];
   };

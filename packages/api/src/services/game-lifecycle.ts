@@ -36,7 +36,6 @@ import type {
   PrivateDecisionTrace,
   PrivateTraceSink,
   PowerAction,
-  StrategicReflectionAction,
   TargetDecision,
   TranscriptEntry,
   UUID,
@@ -332,15 +331,18 @@ class ApiTestMockAgent implements IAgent {
   async onPhaseStart() {}
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> {
     return {
-      version: 1,
-      strategyPacket: null,
-      reflectionSummary: null,
+      version: 2,
+      compactStrategy: {
+        lifecycle: "opening",
+        baseline: null,
+        deltas: [],
+        priorEpoch: null,
+        revision: 0,
+      },
       notes: [],
       relationships: { allies: [], threats: [] },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: [],
-      strategyPacketRevisionCounter: 0,
     };
   }
   restoreContinuityCapsule(_capsule: PlayerContinuityCapsule): void {
@@ -421,19 +423,6 @@ class ApiTestMockAgent implements IAgent {
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
     return { target: finalistIds[0], thinking: "api route test jury vote" };
   }
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    return {
-      certainties: [],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "api route test plan",
-      strategicLens: "broad_read",
-      strategicLensRationale: "api route test broad reflection",
-      thinking: "api route test strategic reflection",
-    };
-  }
-
   updateAlly(_playerName: string): void {}
   updateThreat(_playerName: string): void {}
   addNote(_playerName: string, _note: string): void {}

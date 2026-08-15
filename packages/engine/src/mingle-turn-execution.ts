@@ -4,6 +4,7 @@ import { formatMingleTurnOperatorText } from "./operator-turn-text";
 import {
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseRunnerContext,
@@ -197,6 +198,11 @@ export async function executeMingleTurn(input: {
       createdAt: new Date().toISOString(),
     });
   }
+  resolveActionStrategyCandidate(
+    agent,
+    resolvedAction,
+    resolvedAction.strategyGameplayAccepted !== false,
+  );
 
   const message = resolvedAction.noReply ? null : resolvedAction.message?.trim();
   const messageSent = Boolean(message && recipientIds.length > 0);

@@ -474,7 +474,7 @@ describe("ProductionGameMcpReadModel", () => {
         formatId: "vote_bomb" as const,
         ballotCount: 4,
         pointerCount: 0,
-        resolutionKind: "clear" as const,
+        resolutionKind: "auto" as const,
       },
       {
         name: "Safety Bounce",
@@ -2048,8 +2048,8 @@ function createPersistedFormatFixtureEvents(
       formatId: selectedFormat,
       empoweredId: empowered,
       eliminatedId: cara.id,
-      resolutionKind: "clear",
-      tiedPlayerIds: [],
+      resolutionKind: "auto",
+      tiedPlayerIds: [cara.id],
       tiebreakerId: null,
       saveOrEliminate: null,
       voteBomb: {
@@ -2839,7 +2839,10 @@ describe("ProductionGameMcpReadModel owned match cognition (U5)", () => {
       actorPlayerId: ownerB,
       actorUserId: userId,
       artifactType: "strategy",
-      payload: { decisionLog: "seat-b strategy" },
+      payload: {
+        stage: "proposal",
+        strategyCandidate: { operation: "delta", submittedValue: "seat-b strategy" },
+      },
       createdAt: "2026-07-21T10:00:01.000Z",
     });
     await insertCognitionArtifact(db, {
@@ -2883,7 +2886,12 @@ describe("ProductionGameMcpReadModel owned match cognition (U5)", () => {
     expect(thinkingEntry?.strategyProse).toBeUndefined();
 
     const strategyEntry = page.entries.find((e) => e.id === strategyB);
-    expect(strategyEntry?.strategyProse?.decisionLog).toBe("seat-b strategy");
+    expect(strategyEntry?.strategyProse).toMatchObject({
+      stage: "proposal",
+      operation: "delta",
+      submission: "value",
+      value: "seat-b strategy",
+    });
     expect(strategyEntry?.strategyProse?.contentTrust).toBe("untrusted_game_authored");
   });
 

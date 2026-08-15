@@ -32,6 +32,7 @@ import {
   type MingleTurnExecutionRecord,
 } from "./mingle-turn-execution";
 import { providerProfileById } from "./model-catalog";
+import { parsePlayerContinuityCapsule } from "./player-continuity";
 import {
   prepareAgentPhaseContext,
   type PhaseRunnerContext,
@@ -652,12 +653,8 @@ function validatePromptThreadCase(
   }
   const continuity = new Map<UUID, PlayerContinuityCapsule>();
   for (const value of continuityRecord.playerContinuityCapsules) {
-    const capsule = record(value, "player continuity capsule") as unknown as PlayerContinuityCapsule;
-    if (
-      capsule.version !== 1
-      || typeof capsule.playerId !== "string"
-      || typeof capsule.playerName !== "string"
-    ) {
+    const capsule = parsePlayerContinuityCapsule(value);
+    if (!capsule) {
       throw new Error("Prompt-thread player continuity capsule is invalid");
     }
     continuity.set(capsule.playerId, structuredClone(capsule));

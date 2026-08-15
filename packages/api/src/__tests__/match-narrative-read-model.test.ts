@@ -58,7 +58,7 @@ describe("match-narrative-read-model dual surface", () => {
       actorPlayerId: fixture.playerA,
       artifactType: "strategy",
       decisionId: decisionA,
-      payload: { decisionLog: "alice plan" },
+      payload: strategyPayload("alice plan"),
       createdAt: "2026-07-21T10:00:01.000Z",
     });
     await insertCognition(db, {
@@ -67,7 +67,7 @@ describe("match-narrative-read-model dual surface", () => {
       actorPlayerId: fixture.playerB,
       artifactType: "strategy",
       decisionId: decisionB,
-      payload: { decisionLog: "bob plan" },
+      payload: strategyPayload("bob plan"),
       createdAt: "2026-07-21T10:00:02.000Z",
     });
     // Peer thinking should appear only under full_cognition, not strategic.
@@ -127,7 +127,7 @@ describe("match-narrative-read-model dual surface", () => {
       gameId: fixture.gameId,
       actorPlayerId: fixture.playerA,
       artifactType: "strategy",
-      payload: { decisionLog: "plan" },
+      payload: strategyPayload("plan"),
       createdAt: "2026-07-21T10:00:02.000Z",
     });
 
@@ -148,7 +148,7 @@ describe("match-narrative-read-model dual surface", () => {
       actorPlayerId: fixture.playerA,
       artifactType: "strategy",
       decisionId,
-      payload: { decisionLog: "paired plan" },
+      payload: strategyPayload("paired plan"),
       createdAt: "2026-07-21T10:00:04.000Z",
     });
     await insertCognition(db, {
@@ -207,7 +207,7 @@ describe("match-narrative-read-model dual surface", () => {
       actorUserId: fixture.ownerUserId,
       artifactType: "strategy",
       decisionId,
-      payload: { decisionLog: "owned strategy" },
+      payload: strategyPayload("owned strategy"),
       createdAt: "2026-07-21T10:00:01.000Z",
     });
     await insertCognition(db, {
@@ -215,7 +215,7 @@ describe("match-narrative-read-model dual surface", () => {
       gameId: fixture.gameId,
       actorPlayerId: fixture.playerB,
       artifactType: "strategy",
-      payload: { decisionLog: "peer strategy secret" },
+      payload: strategyPayload("peer strategy secret"),
       createdAt: "2026-07-21T10:00:02.000Z",
     });
 
@@ -558,7 +558,7 @@ describe("match-narrative-read-model dual surface", () => {
       actorUserId: fixture.ownerUserId,
       artifactType: "strategy",
       decisionId,
-      payload: { decisionLog: "vote Bob for cover" },
+      payload: strategyPayload("vote Bob for cover"),
       createdAt: "2026-07-21T10:00:05.000Z",
     });
 
@@ -603,7 +603,7 @@ describe("match-narrative-read-model dual surface", () => {
       action: "vote",
       phase: "VOTE",
       round: 2,
-      payload: { decisionLog: "empower Mira, expose Echo" },
+      payload: strategyPayload("empower Mira, expose Echo"),
       createdAt: "2026-07-21T10:00:10.000Z",
     });
     await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
@@ -745,7 +745,7 @@ describe("match-narrative-read-model dual surface", () => {
       action: "power",
       phase: "POWER",
       round: 2,
-      payload: { decisionLog: "protect Mira" },
+      payload: strategyPayload("protect Mira"),
       createdAt: "2026-07-21T10:00:10.000Z",
     });
     await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
@@ -801,7 +801,7 @@ describe("match-narrative-read-model dual surface", () => {
       action: "power",
       phase: "POWER",
       round: 2,
-      payload: { decisionLog: "protect Mira" },
+      payload: strategyPayload("protect Mira"),
       createdAt: "2026-07-21T10:00:10.000Z",
     });
     await insertCanonicalEventRows(
@@ -889,7 +889,7 @@ describe("match-narrative-read-model dual surface", () => {
       action: "vote",
       phase: "VOTE",
       round: 2,
-      payload: { decisionLog: "bob vote plan" },
+      payload: strategyPayload("bob vote plan"),
       createdAt: "2026-07-21T10:00:10.000Z",
     });
     await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
@@ -940,7 +940,7 @@ describe("match-narrative-read-model dual surface", () => {
       action: "vote",
       phase: "VOTE",
       round: 2,
-      payload: { decisionLog: "first vote plan" },
+      payload: strategyPayload("first vote plan"),
       createdAt: "2026-07-21T10:00:01.000Z",
     });
     await insertCognition(db, {
@@ -953,7 +953,7 @@ describe("match-narrative-read-model dual surface", () => {
       action: "vote",
       phase: "VOTE",
       round: 2,
-      payload: { decisionLog: "second vote plan" },
+      payload: strategyPayload("second vote plan"),
       createdAt: "2026-07-21T10:00:02.000Z",
     });
     await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
@@ -1068,7 +1068,7 @@ describe("match-narrative-read-model dual surface", () => {
       action: "vote",
       phase: "VOTE",
       round: 2,
-      payload: { decisionLog: "vote plan" },
+      payload: strategyPayload("vote plan"),
       createdAt: "2026-07-21T10:00:01.000Z",
     });
     await insertCognition(db, {
@@ -1081,7 +1081,7 @@ describe("match-narrative-read-model dual surface", () => {
       action: "vote",
       phase: "VOTE",
       round: 2,
-      payload: { decisionLog: "later plan" },
+      payload: strategyPayload("later plan"),
       createdAt: "2026-07-21T10:00:02.000Z",
     });
     await insertCanonicalEventRows(db, fixture.gameId, ownerEpoch, [
@@ -1196,10 +1196,9 @@ describe("match-narrative-read-model dual surface", () => {
       actorUserId: fixture.ownerUserId,
       artifactType: "strategy",
       decisionId,
-      payload: {
-        decisionLog:
-          "Mingle turn to Atlas and Sage. Propose a lean Lantern Pact signal after Round 2, request candor and quick check-in.",
-      },
+      payload: strategyPayload(
+        "Mingle turn to Atlas and Sage. Propose a lean Lantern Pact signal after Round 2, request candor and quick check-in.",
+      ),
       createdAt: "2026-07-21T10:00:06.000Z",
     });
     // Unpaired noise strategy that v1 would ship and v2 strategic should omit.
@@ -1211,7 +1210,7 @@ describe("match-narrative-read-model dual surface", () => {
         actorUserId: fixture.ownerUserId,
         artifactType: "strategy",
         decisionId: randomUUID(),
-        payload: { decisionLog: `unpaired reflection ${i} with extra filler text for size` },
+        payload: strategyPayload(`unpaired strategy ${i} with extra filler text for size`),
         createdAt: `2026-07-21T10:01:0${i}.000Z`,
       });
     }
@@ -1399,6 +1398,16 @@ async function insertCognition(
     visibilityStatus: "active",
     createdAt: params.createdAt,
   });
+}
+
+function strategyPayload(
+  submittedValue: string | null,
+  operation: "replace" | "delta" = "delta",
+): Record<string, unknown> {
+  return {
+    stage: "proposal",
+    strategyCandidate: { operation, submittedValue },
+  };
 }
 
 async function insertOwnedProfile(

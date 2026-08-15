@@ -18,11 +18,16 @@ import type { IHouseInterviewer } from "../house-interviewer";
 import type { createPhaseMachine } from "../phase-machine";
 import type { UUID, GameConfig, Phase } from "../types";
 import type {
+  CompactStrategyApplicationResult,
   IAgent,
   PhaseContext,
   RecallPromptClass,
   StrategicDecisionMetadata,
 } from "../game-runner.types";
+import {
+  discardUnacceptedStrategyCandidate,
+  hasCompactStrategyCandidate,
+} from "../strategy-state";
 import type { FormatPressureProjection } from "../format-pressure";
 import type { LaunchFormatId } from "../formats";
 
@@ -87,13 +92,46 @@ export function transcriptThinkingFor(
   };
 }
 
+const strategyResultsByCandidate = new WeakMap<object, CompactStrategyApplicationResult>();
+
 export function strategicDecisionResponse(
   metadata?: StrategicDecisionMetadata,
-): StrategicDecisionMetadata {
+): { decisionId?: UUID; strategyResult?: CompactStrategyApplicationResult } {
   if (!metadata) return {};
+  const strategyResult = strategyResultsByCandidate.get(metadata);
   return {
-    ...(metadata.decisionLog ? { decisionLog: metadata.decisionLog } : {}),
+    ...(metadata.decisionId ? { decisionId: metadata.decisionId } : {}),
+    ...(strategyResult ? { strategyResult } : {}),
   };
+}
+
+/**
+ * The only active-game strategy mutation seam. Call after the existing
+ * ownership guard and mechanic acceptance decision, never from model decoding.
+ */
+export function resolveActionStrategyCandidate(
+  agent: IAgent,
+  candidate: StrategicDecisionMetadata,
+  gameplayAccepted: boolean,
+): CompactStrategyApplicationResult | undefined {
+  const state = agent.getCompactStrategyState?.();
+  if (!state) return undefined;
+  if (!gameplayAccepted) {
+    if (!hasCompactStrategyCandidate(candidate)) return undefined;
+    const result = discardUnacceptedStrategyCandidate(state, candidate) ?? undefined;
+    if (result) strategyResultsByCandidate.set(candidate, result);
+    return result;
+  }
+  if (!hasCompactStrategyCandidate(candidate) && candidate.strategyCandidateProposed !== true) {
+    return undefined;
+  }
+  const boundary = state.lifecycle === "reconciliation_required"
+    || state.lifecycle === "repair_required"
+    ? "action_repair"
+    : "ordinary_action";
+  const result = agent.commitCompactStrategyCandidate?.(boundary, candidate);
+  if (result) strategyResultsByCandidate.set(candidate, result);
+  return result;
 }
 
 /**

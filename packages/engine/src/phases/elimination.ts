@@ -145,6 +145,9 @@ export async function handleElimination(
 
   await assertCanAcceptCommit(ctx);
   gameState.eliminatePlayer(eliminatedId);
+  for (const survivor of gameState.getAlivePlayers()) {
+    agents.get(survivor.id)?.markCompactStrategyReconciliationRequired?.();
+  }
   logger.logSystem(`ELIMINATED: ${eliminated.name}`, phase);
   ctx.diaryRoom.lastEliminatedName = eliminated.name;
   ctx.eliminationOrder.push(eliminated.name);

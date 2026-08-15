@@ -63,6 +63,7 @@ function captureMetadata(trace: PrivateDecisionTrace): Record<string, unknown> {
     },
     ...(trace.phase && { phase: trace.phase }),
     ...(trace.round !== undefined && { round: trace.round }),
+    ...(trace.decisionId && { decisionId: trace.decisionId }),
     traceCreatedAt: trace.createdAt,
   };
 }
@@ -71,19 +72,12 @@ function extractStrategyPayload(
   trace: PrivateDecisionTrace,
   capture: Record<string, unknown>,
 ): Record<string, unknown> | null {
-  const decisionLog = nonEmptyText(trace.decisionLog);
-  const strategicLensRationale = nonEmptyText(trace.strategicLensRationale);
-  const strategy: Record<string, unknown> = {
+  if (!trace.strategyCandidate) return null;
+  return {
     capture,
-    ...(decisionLog && { decisionLog }),
-    ...(trace.strategicLens && { strategicLens: trace.strategicLens }),
-    ...(strategicLensRationale && { strategicLensRationale }),
-    ...(trace.strategyPacketRevision && { strategyPacketRevision: trace.strategyPacketRevision }),
-    ...(trace.strategyPacketUpdate && { strategyPacketUpdate: trace.strategyPacketUpdate }),
-    ...(trace.strategyPacketSummary && { strategyPacketSummary: trace.strategyPacketSummary }),
-    ...(trace.strategicReflectionSummary && { strategicReflectionSummary: trace.strategicReflectionSummary }),
+    stage: "proposal",
+    strategyCandidate: trace.strategyCandidate,
   };
-  return Object.keys(strategy).length > 1 ? strategy : null;
 }
 
 export function extractCognitiveArtifactDrafts(

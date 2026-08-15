@@ -13,6 +13,7 @@ import {
   agentTurnSourcePointer,
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   type PhaseActor,
   type PhaseRunnerContext,
@@ -25,9 +26,7 @@ function nameKey(value: string): string {
 }
 
 function actionDecision(action: AllianceAction): Record<string, unknown> {
-  return {
-    ...(action.decisionLog ? strategicDecisionResponse(action) : {}),
-  };
+  return { ...strategicDecisionResponse(action) };
 }
 
 function resolvePlayerRefs(
@@ -81,7 +80,6 @@ async function collectAllianceAction(
     return {
       action: "pass",
       thinking: "No alliance action method is available.",
-      decisionLog: "fallback: pass alliance action",
     };
   }
 
@@ -93,7 +91,6 @@ async function collectAllianceAction(
       action: "pass",
       thinking: "Alliance action generation failed; passing.",
       reasoningContext: error instanceof Error ? error.message : String(error),
-      decisionLog: "fallback: alliance action error",
     };
   }
 }
@@ -235,6 +232,12 @@ async function applyAllianceAction(
   }
 
   const changed = ctx.gameState.getCanonicalEvents().length > beforeCount;
+  resolveActionStrategyCandidate(
+    ctx.agents.get(playerId)!,
+    action,
+    (changed || action.action === "pass")
+      && action.strategyGameplayAccepted !== false,
+  );
   return {
     result: changed ? "recorded" : action.action === "pass" ? "passed" : "rejected",
     repairNotes,
@@ -301,6 +304,12 @@ function emitAllianceActionTurn(
   const player = ctx.gameState.getPlayer(playerId);
   const playerName = player?.name ?? playerId;
   const operatorContext = resolveAllianceActionOperatorContext(ctx, action);
+  const {
+    strategy: _strategy,
+    strategyDelta: _strategyDelta,
+    strategyCandidateProposed: _strategyCandidateProposed,
+    ...normalizedAction
+  } = action;
   ctx.logger.emitAgentTurn({
     phase,
     action: "alliance-action",
@@ -309,7 +318,7 @@ function emitAllianceActionTurn(
     response: {
       pass,
       requestedAction: action.action,
-      normalizedAction: action,
+      normalizedAction,
       result,
       repairNotes,
       // Operator-facing identity (also useful in turns JSONL / MCP).
@@ -409,6 +418,8 @@ async function resolveAllianceProposalTransaction(
     askedIds.add(responder.id);
     const modeError = validateProposalResponseAction(action, lineageId);
     if (modeError) {
+      await assertCanAcceptCommit(ctx);
+      resolveActionStrategyCandidate(ctx.agents.get(responder.id)!, action, false);
       emitAllianceActionTurn(ctx, responder.id, action, step.value, "rejected", [modeError], phase);
       step.value += 1;
       continue;
@@ -518,7 +529,6 @@ async function collectAllianceHuddleTurn(
       thinking: "No alliance huddle method is available.",
       message: null,
       noReply: true,
-      decisionLog: "fallback: pass alliance huddle turn",
     };
   }
 
@@ -536,7 +546,6 @@ async function collectAllianceHuddleTurn(
       reasoningContext: error instanceof Error ? error.message : String(error),
       message: null,
       noReply: true,
-      decisionLog: "fallback: alliance huddle turn error",
     };
   }
 }
@@ -571,8 +580,8 @@ async function completeHuddleSession(
     sessionAudiencePlayerIds: speakerIds,
   };
   for (const speakerId of speakerIds) {
-    await assertCanAcceptCommit(ctx);
     const turn = await collectAllianceHuddleTurn(ctx, speakerId, huddle, conversationHistory);
+    await assertCanAcceptCommit(ctx);
     const message = turn.noReply ? null : (turn.message?.trim() || null);
     if (turn.commitment) {
       commitments.push({
@@ -593,6 +602,11 @@ async function completeHuddleSession(
       );
       conversationHistory.push({ from: ctx.gameState.getPlayerName(speakerId), text: message });
     }
+    resolveActionStrategyCandidate(
+      ctx.agents.get(speakerId)!,
+      turn,
+      turn.strategyGameplayAccepted !== false,
+    );
     const speakerName = ctx.gameState.getPlayerName(speakerId);
     ctx.logger.emitAgentTurn({
       phase,
@@ -706,6 +720,8 @@ export async function runAllianceFormationPhase(
     const action = await collectAllianceAction(ctx, player.id, phase);
     const modeError = validateProposerAction(action);
     if (modeError) {
+      await assertCanAcceptCommit(ctx);
+      resolveActionStrategyCandidate(ctx.agents.get(player.id)!, action, false);
       emitAllianceActionTurn(ctx, player.id, action, step.value, "rejected", [modeError], phase);
       step.value += 1;
       continue;

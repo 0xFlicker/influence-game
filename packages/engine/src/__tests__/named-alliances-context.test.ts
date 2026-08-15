@@ -319,10 +319,13 @@ describe("named alliance member-safe context", () => {
       actorId: "alice" as UUID,
       promptClass: "strategic_decision",
       continuity: {
-        strategyPacket: null,
-        reflectionSummary: null,
-        recentStrategicDecisions: [],
-        strategicEvidenceVersion: 0,
+        compactStrategy: {
+          lifecycle: "opening",
+          baseline: null,
+          deltas: [],
+          priorEpoch: null,
+          revision: 0,
+        },
       },
       phaseContext: aliceContext,
       transcript: [],
@@ -400,10 +403,13 @@ describe("named alliance member-safe context", () => {
     ).toEqual([]);
 
     const emptyContinuity = {
-      strategyPacket: null,
-      reflectionSummary: null,
-      recentStrategicDecisions: [],
-      strategicEvidenceVersion: 0,
+      compactStrategy: {
+        lifecycle: "opening" as const,
+        baseline: null,
+        deltas: [],
+        priorEpoch: null,
+        revision: 0,
+      },
     };
     const alicePlan = compileRecallPlan({
       actorId: "alice" as UUID,

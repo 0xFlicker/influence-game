@@ -9,12 +9,15 @@
 
 import type OpenAI from "openai";
 import { InfluenceAgent, type Personality } from "./agent";
+import { GameState } from "./game-state";
 import {
   compileRecallPlan,
   estimateTokensFromChars,
   toStructuralRecallPlanReceipt,
 } from "./context-recall-plan";
 import type {
+  CompactStrategyApplicationResult,
+  CompactStrategyState,
   PhaseContext,
   PrivateDecisionTrace,
   PromptReuseReceipt,
@@ -23,7 +26,7 @@ import type {
   RecallPromptClass,
   TranscriptEntry,
 } from "./game-runner.types";
-import type { UUID } from "./types";
+import { Phase, type UUID } from "./types";
 
 export type PromptScenarioAction =
   | {
@@ -32,7 +35,11 @@ export type PromptScenarioAction =
     }
   | {
       readonly kind: "vote";
-      readonly response: { readonly empower: string; readonly thinking?: string; readonly decisionLog?: string };
+      readonly response: {
+        readonly empower: string;
+        readonly thinking?: string;
+        readonly strategyDelta?: unknown;
+      };
     };
 
 /**
@@ -96,6 +103,99 @@ export interface PromptScenarioComparison {
   };
 }
 
+export interface PromptScenarioDiaryResponse {
+  readonly message: string;
+  readonly thinking?: string;
+  readonly strategy?: unknown;
+  readonly strategyDelta?: unknown;
+}
+
+export interface PromptScenarioChain {
+  readonly reportKey: string;
+  readonly comparisonKey: string;
+  readonly actor: PromptScenario["actor"];
+  readonly model: string;
+  readonly fullRoster: PromptScenario["fullRoster"];
+  readonly phaseContext: PhaseContext;
+  readonly continuity: RecallContinuitySnapshot;
+  readonly transcript: readonly TranscriptEntry[];
+  readonly eliminatedPlayerId: UUID;
+  readonly diary: {
+    readonly firstQuestion: string;
+    readonly firstResponse: PromptScenarioDiaryResponse;
+    readonly followUp?: {
+      readonly question: string;
+      readonly response: PromptScenarioDiaryResponse;
+    };
+  };
+  readonly nextVote: {
+    readonly response: {
+      readonly empower: string;
+      readonly thinking?: string;
+      readonly strategy?: unknown;
+      readonly strategyDelta?: unknown;
+    };
+  };
+}
+
+export interface PromptScenarioChainStructuralReport {
+  readonly version: 1;
+  readonly scenarioKey: string;
+  readonly comparisonKey: string;
+  readonly model: string;
+  readonly canonicalElimination: {
+    readonly committed: true;
+    readonly sequence: number;
+    readonly survivorCount: number;
+  };
+  readonly diary: {
+    readonly firstMessageAccepted: true;
+    readonly firstStrategyStatus: CompactStrategyApplicationResult["status"];
+    readonly followUpPresent: boolean;
+    readonly followUpStrategyStatus?: CompactStrategyApplicationResult["status"];
+  };
+  readonly nextDecision: {
+    readonly legalChoiceCount: number;
+    readonly modelActionAccepted: true;
+    readonly selectedTargetWasLiving: true;
+    readonly strategyStatus: CompactStrategyApplicationResult["status"];
+  };
+  readonly finalStrategy: {
+    readonly lifecycle: CompactStrategyState["lifecycle"];
+    readonly revision: number;
+    readonly hasBaseline: boolean;
+    readonly deltaCount: number;
+    readonly priorEpochRetained: boolean;
+  };
+  readonly renderedPrompts: ReadonlyArray<{
+    readonly action: "diary" | "vote";
+    readonly characters: number;
+    readonly tokenEstimate: number;
+  }>;
+  readonly requestFingerprints: ReadonlyArray<
+    NonNullable<PromptScenarioStructuralReport["requestFingerprint"]>
+  >;
+}
+
+export interface PromptScenarioChainPrivatePack {
+  readonly scenario: PromptScenarioChain;
+  readonly canonicalEvents: ReturnType<GameState["getCanonicalEvents"]>;
+  readonly providerRequests: ReadonlyArray<Record<string, unknown>>;
+  readonly decisionTraces: readonly PrivateDecisionTrace[];
+  readonly firstDiaryResponse: Awaited<ReturnType<InfluenceAgent["getDiaryEntry"]>>;
+  readonly firstStrategyResult: CompactStrategyApplicationResult;
+  readonly followUpDiaryResponse?: Awaited<ReturnType<InfluenceAgent["getDiaryEntry"]>>;
+  readonly followUpStrategyResult?: CompactStrategyApplicationResult;
+  readonly nextVoteResponse: Awaited<ReturnType<InfluenceAgent["getVotes"]>>;
+  readonly nextVoteStrategyResult: CompactStrategyApplicationResult;
+  readonly finalStrategy: CompactStrategyState;
+}
+
+export interface PromptScenarioChainRun {
+  readonly report: PromptScenarioChainStructuralReport;
+  readonly privatePack: PromptScenarioChainPrivatePack;
+}
+
 function requireOpaqueKey(label: string, value: string): void {
   if (!/^[a-f0-9]{24}$/i.test(value)) {
     throw new Error(`${label} must be a 24-character opaque hexadecimal key.`);
@@ -108,24 +208,24 @@ function toRequestFingerprint(receipt: PromptReuseReceipt | undefined): PromptSc
   return fingerprint;
 }
 
-function seedContinuity(agent: InfluenceAgent, scenario: PromptScenario): void {
+function seedContinuity(
+  agent: InfluenceAgent,
+  scenario: Pick<PromptScenario, "continuity" | "actor" | "phaseContext">,
+): void {
   const continuity = scenario.continuity;
   agent.restoreContinuityCapsule(
     {
-      version: 1,
+      version: 2,
       playerId: scenario.actor.id,
       playerName: scenario.actor.name,
-      strategyPacket: continuity.strategyPacket,
-      reflectionSummary: continuity.reflectionSummary,
+      compactStrategy: continuity.compactStrategy,
       notes: [],
       relationships: {
-        allies: continuity.reflectionSummary?.allies ?? [],
-        threats: continuity.reflectionSummary?.threats ?? [],
+        allies: [],
+        threats: [],
       },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: continuity.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
-      strategyPacketRevisionCounter: continuity.strategyPacketRevisionCounter ?? 0,
     },
     {
       livingPlayerNames: scenario.phaseContext.alivePlayers.map((player) => player.name),
@@ -157,7 +257,7 @@ function makeReplayOpenAIStub(
                       arguments: JSON.stringify({
                         thinking: action.response.thinking ?? "Fixture vote reasoning.",
                         empower: action.response.empower,
-                        decisionLog: action.response.decisionLog ?? null,
+                        strategyDelta: action.response.strategyDelta ?? null,
                       }),
                     },
                   }],
@@ -175,6 +275,75 @@ function makeReplayOpenAIStub(
                   thinking: action.response.thinking ?? "Fixture plea reasoning.",
                   message: action.response.message,
                 }),
+              },
+            }],
+          };
+        },
+      },
+    },
+  } as unknown as OpenAI;
+}
+
+type PromptScenarioChainProviderStep =
+  | { readonly kind: "diary"; readonly response: PromptScenarioDiaryResponse }
+  | { readonly kind: "vote"; readonly response: PromptScenarioChain["nextVote"]["response"] };
+
+function makeChainReplayOpenAIStub(
+  requests: Array<Record<string, unknown>>,
+  steps: readonly PromptScenarioChainProviderStep[],
+): OpenAI {
+  let stepIndex = 0;
+  return {
+    chat: {
+      completions: {
+        create: async (params: Record<string, unknown>) => {
+          requests.push(params);
+          const step = steps[stepIndex];
+          stepIndex += 1;
+          if (!step) throw new Error("Prompt scenario chain received an unexpected provider retry or extra call.");
+          if (step.kind === "diary") {
+            return {
+              choices: [{
+                finish_reason: "stop",
+                message: {
+                  role: "assistant",
+                  content: JSON.stringify({
+                    thinking: step.response.thinking ?? "Fixture diary reasoning.",
+                    message: step.response.message,
+                    ...(Object.prototype.hasOwnProperty.call(step.response, "strategy") && {
+                      strategy: step.response.strategy,
+                    }),
+                    ...(Object.prototype.hasOwnProperty.call(step.response, "strategyDelta") && {
+                      strategyDelta: step.response.strategyDelta,
+                    }),
+                  }),
+                },
+              }],
+            };
+          }
+          return {
+            choices: [{
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [{
+                  id: "scenario-chain-vote",
+                  type: "function",
+                  function: {
+                    name: "cast_votes",
+                    arguments: JSON.stringify({
+                      thinking: step.response.thinking ?? "Fixture next-vote reasoning.",
+                      empower: step.response.empower,
+                      ...(Object.prototype.hasOwnProperty.call(step.response, "strategy") && {
+                        strategy: step.response.strategy,
+                      }),
+                      ...(Object.prototype.hasOwnProperty.call(step.response, "strategyDelta") && {
+                        strategyDelta: step.response.strategyDelta,
+                      }),
+                    }),
+                  },
+                }],
               },
             }],
           };
@@ -260,6 +429,219 @@ export async function runPromptScenario(scenario: PromptScenario): Promise<Promp
     },
     recallPlanReceipt: toStructuralRecallPlanReceipt(plan.receipt),
     ...(requestFingerprint && { requestFingerprint }),
+  };
+}
+
+function buildChainPhaseContext(
+  scenario: PromptScenarioChain,
+  agent: InfluenceAgent,
+  gameState: GameState,
+  phase: Phase,
+): PhaseContext {
+  const continuity = agent.getRecallContinuitySnapshot();
+  const alivePlayers = gameState.getAlivePlayers().map((player) => ({
+    id: player.id,
+    name: player.name,
+    shielded: player.shielded,
+  }));
+  const latestEliminatedPlayerName = gameState.getAllPlayers()
+    .filter((player) => player.status === "eliminated")
+    .at(-1)?.name;
+  const base: PhaseContext = {
+    ...scenario.phaseContext,
+    round: gameState.round,
+    phase,
+    alivePlayers,
+    ...(latestEliminatedPlayerName && { latestEliminatedPlayerName }),
+    recallPromptClass: "strategic_decision",
+  };
+  const recallPlan = compileRecallPlan({
+    actorId: scenario.actor.id,
+    promptClass: "strategic_decision",
+    continuity,
+    phaseContext: base,
+    transcript: scenario.transcript,
+  });
+  return { ...base, recallPlan };
+}
+
+function compactStrategyBoundaryForNextAction(
+  state: CompactStrategyState,
+): "ordinary_action" | "action_repair" {
+  return state.lifecycle === "reconciliation_required" || state.lifecycle === "repair_required"
+    ? "action_repair"
+    : "ordinary_action";
+}
+
+/**
+ * Runs the provider-free multi-step contract used by the replacement gate.
+ * The structural report is safe to share; the separate private pack deliberately
+ * retains complete prompts, model proposals, strategy prose, and provenance.
+ */
+export async function runPromptScenarioChain(
+  scenario: PromptScenarioChain,
+): Promise<PromptScenarioChainRun> {
+  requireOpaqueKey("reportKey", scenario.reportKey);
+  requireOpaqueKey("comparisonKey", scenario.comparisonKey);
+  if (scenario.eliminatedPlayerId === scenario.actor.id) {
+    throw new Error("Prompt scenario chain actor must survive the canonical elimination.");
+  }
+
+  const providerRequests: Array<Record<string, unknown>> = [];
+  const decisionTraces: PrivateDecisionTrace[] = [];
+  const providerSteps: PromptScenarioChainProviderStep[] = [
+    { kind: "diary", response: scenario.diary.firstResponse },
+    ...(scenario.diary.followUp
+      ? [{ kind: "diary" as const, response: scenario.diary.followUp.response }]
+      : []),
+    { kind: "vote", response: scenario.nextVote.response },
+  ];
+  const agent = new InfluenceAgent(
+    scenario.actor.id,
+    scenario.actor.name,
+    scenario.actor.personality,
+    makeChainReplayOpenAIStub(providerRequests, providerSteps),
+    scenario.model,
+    undefined,
+    undefined,
+    { privateTraceSink: (trace) => { decisionTraces.push(trace); } },
+  );
+  agent.onGameStart(
+    scenario.phaseContext.gameId,
+    scenario.fullRoster.map((player) => ({ id: player.id, name: player.name })),
+  );
+  seedContinuity(agent, scenario);
+
+  const gameState = new GameState(
+    scenario.fullRoster.map((player) => ({ id: player.id, name: player.name })),
+    { gameId: scenario.phaseContext.gameId, now: () => 1_700_000_000_000 },
+  );
+  gameState.startRound();
+  if (!gameState.getPlayer(scenario.eliminatedPlayerId)) {
+    throw new Error("Prompt scenario chain eliminated player is not in the frozen roster.");
+  }
+  gameState.eliminatePlayer(scenario.eliminatedPlayerId);
+  agent.markCompactStrategyReconciliationRequired();
+
+  const canonicalEvents = gameState.getCanonicalEvents();
+  const eliminationEvent = [...canonicalEvents]
+    .reverse()
+    .find((event) => event.type === "player.eliminated");
+  if (!eliminationEvent) throw new Error("Prompt scenario chain failed to commit canonical elimination.");
+
+  const firstDiaryContext = buildChainPhaseContext(scenario, agent, gameState, Phase.DIARY_ROOM);
+  const firstDiaryResponse = await agent.getDiaryEntry(
+    firstDiaryContext,
+    scenario.diary.firstQuestion,
+    [],
+  );
+  const firstStrategyResult = agent.commitCompactStrategyCandidate(
+    "post_eviction_diary",
+    firstDiaryResponse,
+  );
+
+  let followUpDiaryResponse: Awaited<ReturnType<InfluenceAgent["getDiaryEntry"]>> | undefined;
+  let followUpStrategyResult: CompactStrategyApplicationResult | undefined;
+  if (scenario.diary.followUp) {
+    const followUpContext = buildChainPhaseContext(scenario, agent, gameState, Phase.DIARY_ROOM);
+    followUpDiaryResponse = await agent.getDiaryEntry(
+      followUpContext,
+      scenario.diary.followUp.question,
+      [{ question: scenario.diary.firstQuestion, answer: firstDiaryResponse.message }],
+    );
+    const followUpBoundary = agent.getCompactStrategyState().lifecycle === "repair_required"
+      ? "diary_repair"
+      : "diary_follow_up";
+    followUpStrategyResult = agent.commitCompactStrategyCandidate(
+      followUpBoundary,
+      followUpDiaryResponse,
+    );
+  }
+
+  const nextVoteContext = buildChainPhaseContext(scenario, agent, gameState, Phase.VOTE);
+  const legalChoiceCount = nextVoteContext.alivePlayers.filter(
+    (player) => player.id !== scenario.actor.id,
+  ).length;
+  if (legalChoiceCount < 2) {
+    throw new Error("Prompt scenario chain requires at least two materially different legal next-vote choices.");
+  }
+  const nextVoteResponse = await agent.getVotes(nextVoteContext);
+  if (nextVoteResponse.strategyGameplayAccepted === false) {
+    throw new Error("Prompt scenario chain requires a non-fallback accepted next action.");
+  }
+  const selectedTargetWasLiving = nextVoteContext.alivePlayers.some(
+    (player) => player.id === nextVoteResponse.empowerTarget && player.id !== scenario.actor.id,
+  );
+  if (!selectedTargetWasLiving) {
+    throw new Error("Prompt scenario chain next action selected a non-living or self target.");
+  }
+  const nextVoteStrategyResult = agent.commitCompactStrategyCandidate(
+    compactStrategyBoundaryForNextAction(agent.getCompactStrategyState()),
+    nextVoteResponse,
+  );
+  const finalStrategy = agent.getCompactStrategyState();
+
+  const actionByRequest = providerSteps.map((step) => step.kind);
+  const renderedPrompts = providerRequests.map((request, index) => {
+    const prompt = lastUserPrompt(request);
+    return {
+      action: actionByRequest[index] ?? "diary",
+      characters: prompt.length,
+      tokenEstimate: estimateTokensFromChars(prompt.length),
+    };
+  });
+  const requestFingerprints = decisionTraces
+    .map((trace) => toRequestFingerprint(trace.promptReuse))
+    .filter((receipt): receipt is NonNullable<typeof receipt> => receipt !== undefined);
+
+  const report: PromptScenarioChainStructuralReport = {
+    version: 1,
+    scenarioKey: scenario.reportKey,
+    comparisonKey: scenario.comparisonKey,
+    model: scenario.model,
+    canonicalElimination: {
+      committed: true,
+      sequence: eliminationEvent.sequence,
+      survivorCount: gameState.getAlivePlayers().length,
+    },
+    diary: {
+      firstMessageAccepted: true,
+      firstStrategyStatus: firstStrategyResult.status,
+      followUpPresent: scenario.diary.followUp !== undefined,
+      ...(followUpStrategyResult && { followUpStrategyStatus: followUpStrategyResult.status }),
+    },
+    nextDecision: {
+      legalChoiceCount,
+      modelActionAccepted: true,
+      selectedTargetWasLiving: true,
+      strategyStatus: nextVoteStrategyResult.status,
+    },
+    finalStrategy: {
+      lifecycle: finalStrategy.lifecycle,
+      revision: finalStrategy.revision,
+      hasBaseline: finalStrategy.baseline !== null,
+      deltaCount: finalStrategy.deltas.length,
+      priorEpochRetained: finalStrategy.priorEpoch !== null,
+    },
+    renderedPrompts,
+    requestFingerprints,
+  };
+
+  return {
+    report,
+    privatePack: {
+      scenario,
+      canonicalEvents,
+      providerRequests,
+      decisionTraces,
+      firstDiaryResponse,
+      firstStrategyResult,
+      ...(followUpDiaryResponse && { followUpDiaryResponse }),
+      ...(followUpStrategyResult && { followUpStrategyResult }),
+      nextVoteResponse,
+      nextVoteStrategyResult,
+      finalStrategy,
+    },
   };
 }
 

@@ -42,17 +42,17 @@ import type {
   RecallContinuitySnapshot,
   RecallPlan,
   StrategicDecisionMetadata,
-  StrategicDecisionReceipt,
-  StrategicReflectionAction,
-  StrategicReflectionSummary,
   StrategicLens,
-  StrategyPacketSummary,
-  StrategyPacketUpdateAction,
   TargetDecision,
   PlayerContinuityCapsule,
   ProviderReasoningSummary,
 } from "./game-runner";
+import { PLAYER_CONTINUITY_CAPSULE_VERSION } from "./game-runner";
 import type {
+  CompactStrategyApplicationResult,
+  CompactStrategyCandidate,
+  CompactStrategyDecisionBoundary,
+  CompactStrategyState,
   FormatDecisionFallbackReason,
   FormatDecisionProvenance,
 } from "./game-runner.types";
@@ -66,11 +66,19 @@ import {
   type SealedElimFormatId,
 } from "./formats";
 import {
+  FULL_STRATEGY_REQUIRED,
+  FULL_STRATEGY_TOOL_PROPERTIES,
   runSealedElimTargetDecision,
   STRATEGIC_DECISION_REQUIRED,
   STRATEGIC_DECISION_TOOL_PROPERTIES,
   type SealedElimModelOutput,
 } from "./formats/agent-surface";
+import {
+  applyStrategyCandidate,
+  cloneCompactStrategyState,
+  createOpeningStrategyState,
+  markStrategyReconciliationRequired,
+} from "./strategy-state";
 import { ruleSheetForFormat } from "./format-pressure";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
 import {
@@ -1170,31 +1178,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function normalizeStrategyPacketUpdate(value: unknown): StrategyPacketUpdateAction | null {
-  if (!isRecord(value)) return null;
-  const update: StrategyPacketUpdateAction = {
-    objective: normalizeRequiredString(value.objective),
-    targetPosture: normalizeRequiredString(value.targetPosture),
-    coalitionPosture: normalizeRequiredString(value.coalitionPosture),
-    nextSocialProbe: normalizeRequiredString(value.nextSocialProbe),
-    strategicLens: normalizeStrategicLens(value.strategicLens),
-    strategicLensRationale: normalizeRequiredString(value.strategicLensRationale),
-    uncertainty: normalizeRequiredString(value.uncertainty),
-    reviseTrigger: normalizeRequiredString(value.reviseTrigger),
-    changedSincePrevious: normalizeRequiredString(value.changedSincePrevious),
-  };
-  return [
-    update.objective,
-    update.targetPosture,
-    update.coalitionPosture,
-    update.nextSocialProbe,
-    update.strategicLensRationale,
-    update.uncertainty,
-    update.reviseTrigger,
-    update.changedSincePrevious,
-  ].some((entry) => entry.length > 0) ? update : null;
-}
-
 function normalizePreferredRoomSize(value: unknown): MinglePreferredRoomSize {
   return value === "solo" || value === "pair" || value === "small_group" || value === "large_group" || value === "any"
     ? value
@@ -1227,10 +1210,14 @@ function readOptionalStrategicLens(value: unknown): StrategicLens | undefined {
 }
 
 function normalizeStrategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
-  const decisionLog = normalizeNullableString(record.decisionLog);
   const decisionId = normalizeNullableString(record.decisionId);
   return {
-    ...(decisionLog ? { decisionLog } : {}),
+    ...(Object.prototype.hasOwnProperty.call(record, "strategyDelta")
+      ? { strategyDelta: record.strategyDelta }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(record, "strategy")
+      ? { strategy: record.strategy }
+      : {}),
     ...(decisionId ? { decisionId } : {}),
   };
 }
@@ -1239,8 +1226,14 @@ function acceptedActionMetadata(
   metadata: StrategicDecisionMetadata,
   directModelChoice: boolean,
 ): StrategicDecisionMetadata {
-  if (directModelChoice) return metadata;
-  return metadata.decisionLog ? { decisionLog: metadata.decisionLog } : {};
+  if (!directModelChoice) {
+    const { decisionId: _decisionId, ...candidate } = metadata;
+    return {
+      ...candidate,
+      strategyGameplayAccepted: false,
+    };
+  }
+  return metadata;
 }
 
 class ToolCallRetryError extends Error {
@@ -1256,85 +1249,6 @@ class ToolCallFatalError extends Error {
     this.name = "ToolCallFatalError";
   }
 }
-
-const TOOL_STRATEGIC_REFLECTION: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "strategic_reflection",
-    description: "Record your strategic assessment of the current game state",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this reflection (hidden from other players)" },
-        certainties: {
-          type: "array",
-          items: { type: "string" },
-          description: "Things you KNOW for certain (observed facts)",
-        },
-        suspicions: {
-          type: "array",
-          items: { type: "string" },
-          description: "Things you SUSPECT but cannot confirm",
-        },
-        allies: {
-          type: "array",
-          items: { type: "string" },
-          description: "Current allies and why (name: reason)",
-        },
-        threats: {
-          type: "array",
-          items: { type: "string" },
-          description: "Current threats and why (name: reason)",
-        },
-        plan: {
-          type: "string",
-          description: "Your plan for the next round in 1-2 sentences",
-        },
-        ...STRATEGIC_LENS_TOOL_PROPERTIES,
-        strategyPacket: {
-          type: "object",
-          description: "Compact private strategy state to carry forward into future prompts. This is producer/debug state, not player-visible speech.",
-          properties: {
-            objective: {
-              type: "string",
-              description: "Current strategic objective, in one short sentence.",
-            },
-            targetPosture: {
-              type: "string",
-              description: "Standing target posture. Name one living player when useful; otherwise state no standing target yet and what evidence would create one. Never carry an eliminated player as an active target.",
-            },
-            coalitionPosture: {
-              type: "string",
-              description: "Who you are trying to work with, test, protect, mislead, or keep flexible.",
-            },
-            nextSocialProbe: {
-              type: "string",
-              description: "The next social question, room move, information trade, or trust test you want to try.",
-            },
-            ...STRATEGIC_LENS_TOOL_PROPERTIES,
-            uncertainty: {
-              type: "string",
-              description: "The most important uncertainty or read that could be wrong.",
-            },
-            reviseTrigger: {
-              type: "string",
-              description: "What evidence or event would make you abandon or revise this plan.",
-            },
-            changedSincePrevious: {
-              type: "string",
-              description: "What changed from the previous Strategy Thread, or 'initial packet' if this is the first one.",
-            },
-          },
-          required: ["objective", "targetPosture", "coalitionPosture", "nextSocialProbe", ...STRATEGIC_LENS_REQUIRED, "uncertainty", "reviseTrigger", "changedSincePrevious"],
-          additionalProperties: false,
-        },
-      },
-      required: ["thinking", "certainties", "suspicions", "allies", "threats", "plan", ...STRATEGIC_LENS_REQUIRED, "strategyPacket"],
-      additionalProperties: false,
-    },
-    strict: true,
-  },
-};
 
 // ---------------------------------------------------------------------------
 // Agent memory
@@ -1360,12 +1274,6 @@ interface AgentMemory {
     action: PowerAction["action"];
     target: string;
   }>;
-  /** Most recent strategic reflection from diary room */
-  lastReflection: StrategicReflectionSummary | null;
-  /** Compact private strategy state carried across rounds in this live run only. */
-  strategyPacket: StrategyPacketSummary | null;
-  /** Bounded private strategic receipts from recent action calls in this live run only. */
-  recentStrategicDecisions: StrategicDecisionReceipt[];
 }
 
 export interface InfluenceAgentOptions {
@@ -1447,16 +1355,8 @@ export class InfluenceAgent implements IAgent {
     notes: new Map(),
     roundHistory: [],
     powerActions: [],
-    lastReflection: null,
-    strategyPacket: null,
-    recentStrategicDecisions: [],
   };
-  private strategyPacketRevisionCounter = 0;
-  /**
-   * Actor-local strategic evidence version for Recall Plan cache keys (U3).
-   * Advanced only when a normal decision receipt is retained; does not mutate Strategy Thread.
-   */
-  private strategicEvidenceVersion = 0;
+  private compactStrategyState = createOpeningStrategyState();
 
   constructor(
     id: UUID,
@@ -1493,6 +1393,27 @@ export class InfluenceAgent implements IAgent {
 
   getLastPrivateDecisionId(): string | undefined {
     return this.lastPrivateDecisionId;
+  }
+
+  getCompactStrategyState(): CompactStrategyState {
+    return cloneCompactStrategyState(this.compactStrategyState);
+  }
+
+  commitCompactStrategyCandidate(
+    boundary: CompactStrategyDecisionBoundary,
+    candidate: CompactStrategyCandidate,
+  ): CompactStrategyApplicationResult {
+    const result = applyStrategyCandidate(this.compactStrategyState, boundary, candidate);
+    this.compactStrategyState = result.state;
+    return {
+      ...result,
+      state: cloneCompactStrategyState(result.state),
+    };
+  }
+
+  markCompactStrategyReconciliationRequired(): CompactStrategyState {
+    this.compactStrategyState = markStrategyReconciliationRequired(this.compactStrategyState);
+    return this.getCompactStrategyState();
   }
 
   /** Attach a token tracker to record LLM usage. */
@@ -1539,51 +1460,21 @@ export class InfluenceAgent implements IAgent {
     // No-op for now; could be used for strategic pre-phase thinking
   }
 
-  getStrategyPacket(): StrategyPacketSummary | null {
-    return this.memory.strategyPacket;
-  }
-
   /**
    * Narrow actor continuity for ContextBuilder Recall Plan compilation.
    * Phase runners call this immediately before context build; they never read memory fields.
    */
   getRecallContinuitySnapshot(): RecallContinuitySnapshot {
-    const m = this.memory;
     return {
-      strategyPacket: m.strategyPacket ? { ...m.strategyPacket } : null,
-      reflectionSummary: m.lastReflection
-        ? {
-            certainties: [...(m.lastReflection.certainties ?? [])],
-            suspicions: [...(m.lastReflection.suspicions ?? [])],
-            allies: [...(m.lastReflection.allies ?? [])],
-            threats: [...(m.lastReflection.threats ?? [])],
-            plan: m.lastReflection.plan,
-            strategicLens: m.lastReflection.strategicLens ?? "broad_read",
-            strategicLensRationale: m.lastReflection.strategicLensRationale ?? "",
-          }
-        : null,
-      recentStrategicDecisions: m.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
-      strategicEvidenceVersion: this.strategicEvidenceVersion,
-      strategyPacketRevisionCounter: this.strategyPacketRevisionCounter,
+      compactStrategy: this.getCompactStrategyState(),
     };
   }
 
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null {
     const m = this.memory;
     return {
-      version: 1,
-      strategyPacket: m.strategyPacket ? { ...m.strategyPacket } : null,
-      reflectionSummary: m.lastReflection
-        ? {
-            certainties: [...(m.lastReflection.certainties ?? [])],
-            suspicions: [...(m.lastReflection.suspicions ?? [])],
-            allies: [...(m.lastReflection.allies ?? [])],
-            threats: [...(m.lastReflection.threats ?? [])],
-            plan: m.lastReflection.plan,
-            strategicLens: m.lastReflection.strategicLens ?? "broad_read",
-            strategicLensRationale: m.lastReflection.strategicLensRationale ?? "",
-          }
-        : null,
+      version: PLAYER_CONTINUITY_CAPSULE_VERSION,
+      compactStrategy: this.getCompactStrategyState(),
       notes: Array.from(m.notes.entries()).map(([subject, note]) => ({ subject, note })),
       relationships: {
         allies: Array.from(m.allies),
@@ -1600,21 +1491,19 @@ export class InfluenceAgent implements IAgent {
         ...(entry.empowered !== undefined && { empowered: entry.empowered }),
         myVotes: { empower: entry.myVotes.empower },
       })),
-      recentStrategicDecisions: m.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
-      strategyPacketRevisionCounter: this.strategyPacketRevisionCounter,
     };
   }
 
   /**
    * Restore a validated versioned continuity capsule after onGameStart roster setup.
-   * Scrubs eliminated players from actionable relationships, notes, and strategy targeting
-   * while preserving historical round/power/decision context.
+   * Scrubs eliminated players from actionable relationship memory while
+   * preserving capsule-authored compact strategy prose exactly as historical cognition.
    */
   restoreContinuityCapsule(
     capsule: PlayerContinuityCapsule,
     options: { livingPlayerNames?: readonly string[] } = {},
   ): void {
-    if (capsule.version !== 1) {
+    if (capsule.version !== PLAYER_CONTINUITY_CAPSULE_VERSION) {
       throw new Error(`Unsupported player continuity capsule version: ${String(capsule.version)}`);
     }
     if (capsule.playerId !== this.id || capsule.playerName !== this.name) {
@@ -1638,21 +1527,8 @@ export class InfluenceAgent implements IAgent {
         action: entry.action,
         target: entry.target,
       })),
-      lastReflection: capsule.reflectionSummary
-        ? {
-            certainties: [...(capsule.reflectionSummary.certainties ?? [])],
-            suspicions: [...(capsule.reflectionSummary.suspicions ?? [])],
-            allies: [...(capsule.reflectionSummary.allies ?? [])],
-            threats: [...(capsule.reflectionSummary.threats ?? [])],
-            plan: capsule.reflectionSummary.plan,
-            strategicLens: capsule.reflectionSummary.strategicLens,
-            strategicLensRationale: capsule.reflectionSummary.strategicLensRationale,
-          }
-        : null,
-      strategyPacket: capsule.strategyPacket ? { ...capsule.strategyPacket } : null,
-      recentStrategicDecisions: capsule.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
     };
-    this.strategyPacketRevisionCounter = capsule.strategyPacketRevisionCounter;
+    this.compactStrategyState = cloneCompactStrategyState(capsule.compactStrategy);
 
     const living = options.livingPlayerNames
       ?? this.allPlayers.map((player) => player.name);
@@ -1665,101 +1541,17 @@ export class InfluenceAgent implements IAgent {
     for (const name of new Set(eliminatedNames)) {
       this.removeFromMemory(name);
     }
-    // Always scrub Strategy Thread text for anyone not living (covers names only in packet fields).
-    if (this.memory.strategyPacket) {
-      const rosterEliminated = this.allPlayers
-        .map((player) => player.name)
-        .filter((name) => !livingSet.has(name));
-      if (rosterEliminated.length > 0) {
-        this.memory.strategyPacket = {
-          ...this.memory.strategyPacket,
-          objective: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.objective, rosterEliminated),
-          targetPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.targetPosture, rosterEliminated),
-          coalitionPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.coalitionPosture, rosterEliminated),
-          nextSocialProbe: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.nextSocialProbe, rosterEliminated),
-          strategicLensRationale: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.strategicLensRationale, rosterEliminated),
-          uncertainty: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.uncertainty, rosterEliminated),
-          reviseTrigger: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.reviseTrigger, rosterEliminated),
-          changedSincePrevious: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.changedSincePrevious, rosterEliminated),
-        };
-      }
-    }
-  }
-
-  private nextStrategyPacketRevisionId(ctx: PhaseContext): string {
-    this.strategyPacketRevisionCounter += 1;
-    return `r${ctx.round}-${ctx.phase.toLowerCase()}-${this.strategyPacketRevisionCounter}`;
-  }
-
-  private applyStrategyPacketUpdate(
-    ctx: PhaseContext,
-    update: StrategyPacketUpdateAction | null,
-  ): StrategyPacketSummary | null {
-    if (!update) return null;
-    const previousRevisionId = this.memory.strategyPacket?.revisionId ?? null;
-    const packet: StrategyPacketSummary = {
-      revisionId: this.nextStrategyPacketRevisionId(ctx),
-      previousRevisionId,
-      updatedAtRound: ctx.round,
-      updatedAtPhase: ctx.phase,
-      objective: update.objective,
-      targetPosture: update.targetPosture,
-      coalitionPosture: update.coalitionPosture,
-      nextSocialProbe: update.nextSocialProbe,
-      strategicLens: update.strategicLens,
-      strategicLensRationale: update.strategicLensRationale,
-      uncertainty: update.uncertainty,
-      reviseTrigger: update.reviseTrigger,
-      changedSincePrevious: update.changedSincePrevious || (previousRevisionId ? "Updated after reflection." : "initial packet"),
-    };
-    this.memory.strategyPacket = packet;
-    return packet;
   }
 
   private strategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
-    return normalizeStrategicDecisionMetadata(record);
-  }
-
-  private recordStrategicDecision(ctx: PhaseContext, action: string, label: string, metadata: StrategicDecisionMetadata): void {
-    const decisionLog = normalizeNullableString(metadata.decisionLog);
-    if (!decisionLog) return;
-
-    this.memory.recentStrategicDecisions.push({
-      round: ctx.round,
-      phase: ctx.phase,
-      action,
-      label,
-      decisionLog,
-    });
-    this.memory.recentStrategicDecisions = this.memory.recentStrategicDecisions.slice(-12);
-    // Cache break for next eligible strategic Recall Plan only — no model call, no Strategy Thread mutation (R12 / AE3).
-    this.strategicEvidenceVersion += 1;
-  }
-
-  private actionLabel(action: string): string {
-    return action
-      .split("-")
-      .filter(Boolean)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ") || "Strategic Decision";
-  }
-
-  private recordStrategicDecisionFromTraceContext(
-    traceContext: PrivateDecisionTraceContext | undefined,
-    metadata: StrategicDecisionMetadata,
-  ): void {
-    if (!traceContext?.phase || traceContext.round === undefined) return;
-    const decisionLog = normalizeNullableString(metadata.decisionLog);
-    if (!decisionLog) return;
-    this.memory.recentStrategicDecisions.push({
-      round: traceContext.round,
-      phase: traceContext.phase,
-      action: traceContext.action,
-      label: this.actionLabel(traceContext.action),
-      decisionLog,
-    });
-    this.memory.recentStrategicDecisions = this.memory.recentStrategicDecisions.slice(-12);
-    this.strategicEvidenceVersion += 1;
+    const metadata = normalizeStrategicDecisionMetadata(record);
+    const replacementExpected = this.compactStrategyState.lifecycle === "reconciliation_required"
+      || this.compactStrategyState.lifecycle === "repair_required";
+    return replacementExpected
+      && !Object.prototype.hasOwnProperty.call(metadata, "strategy")
+      && !Object.prototype.hasOwnProperty.call(metadata, "strategyDelta")
+      ? { ...metadata, strategyCandidateProposed: true }
+      : metadata;
   }
 
   private privateTraceContext(ctx: PhaseContext, action: string): PrivateDecisionTraceContext {
@@ -1987,28 +1779,6 @@ export class InfluenceAgent implements IAgent {
     };
   }
 
-  private privateTraceStrategicDecisionMetadata(output: unknown): StrategicDecisionMetadata {
-    if (!output || typeof output !== "object" || Array.isArray(output)) return {};
-    const record = output as Record<string, unknown>;
-    return this.strategicDecisionMetadata(record);
-  }
-
-  private privateTraceStrategicReflectionSummary(
-    action: string,
-    record: Record<string, unknown>,
-  ): StrategicReflectionSummary | undefined {
-    if (action !== "reflection") return undefined;
-    return {
-      certainties: normalizeStringArray(record.certainties),
-      suspicions: normalizeStringArray(record.suspicions),
-      allies: normalizeStringArray(record.allies),
-      threats: normalizeStringArray(record.threats),
-      plan: normalizeRequiredString(record.plan),
-      strategicLens: normalizeStrategicLens(record.strategicLens),
-      strategicLensRationale: normalizeRequiredString(record.strategicLensRationale),
-    };
-  }
-
   private async emitPrivateDecisionTrace(params: {
     options?: LlmCallOptions;
     messages: readonly { role: string; content: unknown; name?: string }[];
@@ -2050,12 +1820,12 @@ export class InfluenceAgent implements IAgent {
         ? ""
         : outputReasoningContext) ||
       InfluenceAgent.extractReasoningContext(message);
-    const strategicDecision = this.privateTraceStrategicDecisionMetadata(params.output);
-    const strategicLens = readOptionalStrategicLens(outputRecord.strategicLens);
-    const strategicLensRationale = normalizeNullableString(outputRecord.strategicLensRationale);
-    const strategyPacketUpdate = normalizeStrategyPacketUpdate(outputRecord.strategyPacket);
+    const strategyCandidate = Object.prototype.hasOwnProperty.call(outputRecord, "strategy")
+      ? { operation: "replace" as const, submittedValue: outputRecord.strategy }
+      : Object.prototype.hasOwnProperty.call(outputRecord, "strategyDelta")
+        ? { operation: "delta" as const, submittedValue: outputRecord.strategyDelta }
+        : undefined;
     const traceContext = params.options.privateTrace;
-    const strategicReflectionSummary = this.privateTraceStrategicReflectionSummary(traceContext.action, outputRecord);
     const requestedReasoningEffort = this.requestedReasoningEffort(params.options);
     const privateTraceMessages = InfluenceAgent.privateTraceMessages(params.messages);
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
@@ -2109,15 +1879,7 @@ export class InfluenceAgent implements IAgent {
       ...(params.providerReasoningSummary && { providerReasoningSummary: params.providerReasoningSummary }),
       ...(params.toolName && { toolName: params.toolName }),
       ...(params.toolArguments !== undefined && { toolArguments: params.toolArguments }),
-      ...(strategicDecision.decisionLog && { decisionLog: strategicDecision.decisionLog }),
-      ...(strategicLens && { strategicLens }),
-      ...(strategicLensRationale && { strategicLensRationale }),
-      ...(strategyPacketUpdate && { strategyPacketUpdate }),
-      ...(this.memory.strategyPacket && traceContext.action !== "reflection" && {
-        strategyPacketSummary: this.memory.strategyPacket,
-      }),
-      ...(strategicReflectionSummary && { strategicReflectionSummary }),
-      ...(this.memory.strategyPacket?.revisionId && { strategyPacketRevision: this.memory.strategyPacket.revisionId }),
+      ...(strategyCandidate && { strategyCandidate }),
       ...(traceContext.boundary && { boundary: traceContext.boundary }),
     };
 
@@ -2127,40 +1889,6 @@ export class InfluenceAgent implements IAgent {
       console.warn(`[trace-sink] agent="${this.name}" action=${trace.action} failed:`, error);
     }
     return decisionId;
-  }
-
-  private scrubEliminatedPlayerNames(text: string, eliminatedNames: string[]): string {
-    let scrubbed = text;
-    for (const name of eliminatedNames) {
-      const escapedName = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      scrubbed = scrubbed.replace(
-        new RegExp(`\\b${escapedName}\\b(?! \\(eliminated; not an active target\\))`, "g"),
-        `${name} (eliminated; not an active target)`,
-      );
-    }
-    return scrubbed;
-  }
-
-  private strategyPacketForPrompt(ctx: PhaseContext): StrategyPacketSummary | null {
-    const packet = this.memory.strategyPacket;
-    if (!packet) return null;
-    const eliminatedNames = this.allPlayers
-      .filter((player) => !ctx.alivePlayers.some((alive) => alive.id === player.id))
-      .map((player) => player.name);
-    if (eliminatedNames.length === 0) return packet;
-
-    return {
-      ...packet,
-      objective: this.scrubEliminatedPlayerNames(packet.objective, eliminatedNames),
-      targetPosture: this.scrubEliminatedPlayerNames(packet.targetPosture, eliminatedNames),
-      coalitionPosture: this.scrubEliminatedPlayerNames(packet.coalitionPosture, eliminatedNames),
-      nextSocialProbe: this.scrubEliminatedPlayerNames(packet.nextSocialProbe, eliminatedNames),
-      strategicLens: packet.strategicLens,
-      strategicLensRationale: this.scrubEliminatedPlayerNames(packet.strategicLensRationale, eliminatedNames),
-      uncertainty: this.scrubEliminatedPlayerNames(packet.uncertainty, eliminatedNames),
-      reviseTrigger: this.scrubEliminatedPlayerNames(packet.reviseTrigger, eliminatedNames),
-      changedSincePrevious: this.scrubEliminatedPlayerNames(packet.changedSincePrevious, eliminatedNames),
-    };
   }
 
   // ---------------------------------------------------------------------------
@@ -2312,7 +2040,7 @@ Most other players will expect you to name a target. You may also stay provision
 Standing target check:
 - A standing target is one living player you want to eventually eliminate from the game.
 - If you name provisionalTarget, use exactly one name from Available other players. Never name yourself or anyone listed as eliminated.
-- If your prior Strategy Thread points at an eliminated player or stale target: either pick a living replacement, or set provisionalTarget to null and explain why.
+- If your prior private strategy names an eliminated player or stale target: either pick a living replacement, or set provisionalTarget to null and explain why.
 - It is valid to leave provisionalTarget null when your plan is relationship-building, alliance repair, or broad read gathering. The reason should be concrete.
 
 ${STRATEGIC_LENS_GUIDANCE}
@@ -2331,14 +2059,14 @@ Use the form_mingle_intent tool.`;
         openingAsk?: unknown;
         strategicLens?: unknown;
         strategicLensRationale?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt, TOOL_MINGLE_INTENT, 300, sys,
         this.traceOptions(ctx, { action: "mingle-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "mingle-intent", "Mingle Intent", metadata);
       return {
         seekPlayers: normalizeStringArray(result.seekPlayers),
         avoidPlayers: normalizeStringArray(result.avoidPlayers),
@@ -2407,7 +2135,8 @@ If proposing, make the roster size intentional and name a concrete purpose tied 
         timebox?: unknown;
         lineageId?: unknown;
         versionId?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         this.buildUserPrompt(ctx) + openPrompt,
@@ -2417,7 +2146,6 @@ If proposing, make the roster size intentional and name a concrete purpose tied 
         this.traceOptions(ctx, { action: "alliance-action", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "alliance-action", "Alliance Action", metadata);
       const action = normalizeAllianceActionKind(result.action);
       const base = {
         thinking: result.thinking,
@@ -2475,7 +2203,6 @@ If proposing, make the roster size intentional and name a concrete purpose tied 
         action: "pass",
         thinking: "Alliance action failed; passing.",
         reasoningContext: err instanceof Error ? err.message : String(err),
-        decisionLog: "fallback: alliance action failed",
       };
     }
   }
@@ -2535,7 +2262,8 @@ Use the alliance_huddle_turn tool.`;
         confidence?: unknown;
         dissent?: unknown;
         alternativePlan?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt,
@@ -2545,7 +2273,6 @@ Use the alliance_huddle_turn tool.`;
         this.traceOptions(ctx, { action: "alliance-huddle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "alliance-huddle-turn", "Alliance Huddle Turn", metadata);
       const message = result.noReply ? null : (result.message?.trim() || null);
       const commitment = normalizeHuddleCommitment(result, ctx);
       return {
@@ -2564,7 +2291,6 @@ Use the alliance_huddle_turn tool.`;
         message: null,
         noReply: true,
         commitment: normalizeHuddleCommitment({}, ctx),
-        decisionLog: "fallback: alliance huddle turn failed",
       };
     }
   }
@@ -2721,7 +2447,8 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
         proposedAction?: unknown;
         commitment?: unknown;
         noProposalReason?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt, TOOL_MINGLE_TURN, 300, sys,
@@ -2730,7 +2457,6 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
       const msg = result.noReply ? null : (result.message?.trim() || null);
       const gotoRoomId = Number.isInteger(result.gotoRoomId) ? result.gotoRoomId : null;
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "mingle-turn", "Mingle Turn", metadata);
       const requestedTarget = normalizeNullableString(result.proposedTarget);
       const proposedTarget = normalizeLivingTarget(result.proposedTarget, ctx);
       const coordinationReceipt = {
@@ -2763,7 +2489,13 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
           gotoPlayerName: null,
         };
       }
-      return { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null };
+      return {
+        thinking: "",
+        message: null,
+        noReply: true,
+        gotoRoomId: null,
+        gotoPlayerName: null,
+      };
     }
   }
 
@@ -2814,7 +2546,8 @@ Use the spread_rumor tool.`;
         message?: unknown;
         strategicLens?: unknown;
         strategicLensRationale?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt, TOOL_RUMOR, 180, sys,
@@ -2822,7 +2555,6 @@ Use the spread_rumor tool.`;
       );
       // Strip "The shadows whisper: " prefix if the LLM included it.
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "rumor", "Rumor", metadata);
       return {
         thinking: result.thinking ?? "",
         message: normalizeRequiredString(result.message).replace(/^the\s+shadows?\s+whispers?:\s*/i, ""),
@@ -2877,7 +2609,7 @@ Cast your empower vote for this round.
 Use the cast_votes tool. The empower field must be exactly one name from the legal list above.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; empower: string; decisionLog?: unknown; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; empower: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt,
         buildCastVotesTool(legalEmpowerNames),
         100,
@@ -2923,7 +2655,6 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
       this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "vote", "Standard Vote", metadata);
       return {
         empowerTarget,
         thinking: result.thinking,
@@ -2933,7 +2664,11 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
     } catch (err) {
       const empFallback = randomOther();
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVotes error="${err instanceof Error ? err.message : err}" fallback=empower:"${empFallback.name}"`);
-      return { empowerTarget: empFallback.id, thinking: undefined, reasoningContext: undefined };
+      return {
+        empowerTarget: empFallback.id,
+        thinking: undefined,
+        reasoningContext: undefined,
+      };
     }
   }
 
@@ -2968,7 +2703,7 @@ Choose exactly one eligible tied candidate to empower. If this revote is still t
 Use the cast_empower_revote tool. Return only an empower target from the eligible tied candidates.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; empower: string; decisionLog?: unknown; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; empower: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt, TOOL_EMPOWER_REVOTE, 100, sys,
         this.traceOptions(ctx, { action: "empower-revote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
@@ -2979,7 +2714,6 @@ Use the cast_empower_revote tool. Return only an empower target from the eligibl
       }
 
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "empower-revote", "Empower Revote", metadata);
       return {
         empowerTarget: empowerPlayer?.id ?? fallbackTarget.id,
         thinking: result.thinking,
@@ -3027,7 +2761,7 @@ Choose exactly ${request.requiredCount} player${request.requiredCount === 1 ? ""
 Use the select_council_candidates tool.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; candidates: unknown; decisionLog?: unknown; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; candidates: unknown; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt, TOOL_CANDIDATE_SELECTION, 120, sys,
         this.traceOptions(ctx, { action: "candidate-selection", reasoningEffort: "medium" }),
       );
@@ -3047,7 +2781,6 @@ Use the select_council_candidates tool.`;
         console.warn(`[vote-fallback] agent="${this.name}" method=getCandidateSelection insufficient eligible choices required=${request.requiredCount} selected=${selectedCandidateIds.length}`);
       }
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "candidate-selection", "Candidate Selection", metadata);
       return {
         selectedCandidateIds,
         thinking: result.thinking,
@@ -3191,7 +2924,7 @@ Before using the tool, decide what future debt or backlash your action creates. 
 Use the use_power tool to declare your final hidden action.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; action: string; target: string; shieldPullUpCandidates?: unknown; decisionLog?: unknown; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; action: string; target: string; shieldPullUpCandidates?: unknown; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
         this.traceOptions(ctx, { action: "power", reasoningEffort: "medium" }),
       );
@@ -3244,11 +2977,9 @@ Use the use_power tool to declare your final hidden action.`;
         target: targetPlayer?.name ?? candidateNames[0] ?? "unknown",
       });
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "power", "Power Action", metadata);
       const directModelChoice =
-        Boolean(targetPlayer)
-        && validAction !== "pass"
-        && validAction === result.action
+        validAction === result.action
+        && (validAction === "pass" || Boolean(targetPlayer))
         && !shieldSelectionRepaired;
       return {
         action: validAction,
@@ -3259,7 +2990,11 @@ Use the use_power tool to declare your final hidden action.`;
         ...(shieldPullUpCandidateIds.length > 0 ? { shieldPullUpCandidateIds } : {}),
       };
     } catch {
-      return { action: "pass", target: candidates[0], thinking: "fallback to pass under pressure" };
+      return {
+        action: "pass",
+        target: candidates[0],
+        thinking: "fallback to pass under pressure",
+      };
     }
   }
 
@@ -3287,9 +3022,8 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 Use the council_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; eliminate: string; decisionLog?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
+      const result = await this.callTool<{ thinking?: string; eliminate: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "council-vote", isEmpowered ? "Council Tiebreaker" : "Council Vote", metadata);
       const eliminationName = typeof result.eliminate === "string" ? result.eliminate : "";
       const target = normalizeName(eliminationName) === normalizeName(c1Name) ? c1
         : normalizeName(eliminationName) === normalizeName(c2Name) ? c2
@@ -3310,7 +3044,11 @@ Use the council_vote tool to cast your vote.`;
       const fallback = candidates[Math.floor(Math.random() * 2)]!;
       const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getCouncilVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
-      return { target: fallback, thinking: "fallback council decision due to error", reasoningContext: undefined };
+      return {
+        target: fallback,
+        thinking: "fallback council decision due to error",
+        reasoningContext: undefined,
+      };
     }
   }
 
@@ -3344,7 +3082,8 @@ Use the pick_round_format tool with exactly one offered format id.`;
       const result = await this.callTool<{
         thinking?: string;
         formatId?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt,
@@ -3358,7 +3097,6 @@ Use the pick_round_format tool with exactly one offered format id.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "format-pick", "Format Pick", metadata);
       const selected = typeof result.formatId === "string"
         ? pickFormatFromMenu(offeredFormats, result.formatId)
         : null;
@@ -3401,7 +3139,8 @@ Use the save_or_eliminate_ballot tool.`;
         thinking?: string;
         polarity?: unknown;
         target?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt,
@@ -3415,12 +3154,6 @@ Use the save_or_eliminate_ballot tool.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(
-        ctx,
-        "format-save-or-eliminate-ballot",
-        "Save-or-Eliminate Ballot",
-        metadata,
-      );
       const polarity = result.polarity === "save" || result.polarity === "eliminate"
         ? result.polarity
         : null;
@@ -3462,6 +3195,8 @@ Use the save_or_eliminate_ballot tool.`;
       alivePlayers: ctx.alivePlayers,
       basePrompt: this.buildUserPrompt(ctx),
       ruleSheet: activeFormatRule(ctx, formatId),
+      requiresStrategyReplacement: this.compactStrategyState.lifecycle === "reconciliation_required"
+        || this.compactStrategyState.lifecycle === "repair_required",
       callTool: ({ prompt, tool, traceAction }) => this.callTool<SealedElimModelOutput>(
         prompt,
         tool,
@@ -3473,9 +3208,6 @@ Use the save_or_eliminate_ballot tool.`;
           reasoningEffort: "low",
         }),
       ),
-      recordDecision: (action, label, metadata) => {
-        this.recordStrategicDecision(ctx, action, label, metadata);
-      },
       onToolFailure: (error, fallbackTarget) => {
         const method = formatId === "vote_bomb"
           ? "getVoteBombBallot"
@@ -3541,7 +3273,8 @@ Use the bounce_pointer tool.`;
       const result = await this.callTool<{
         thinking?: string;
         target?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt,
@@ -3560,7 +3293,6 @@ Use the bounce_pointer tool.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "bounce-pointer", "Safety Bounce Pointer", metadata);
       const target = findByName(
         legalTargets,
         typeof result.target === "string" ? result.target : undefined,
@@ -3603,7 +3335,8 @@ Use the safety_bounce_vote tool.`;
       const result = await this.callTool<{
         thinking?: string;
         target?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt,
@@ -3622,7 +3355,6 @@ Use the safety_bounce_vote tool.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "format-safety-bounce-vote", "Safety Bounce Vote", metadata);
       const target = findByName(
         legalTargets,
         typeof result.target === "string" ? result.target : undefined,
@@ -3665,7 +3397,8 @@ Use the format_tiebreak tool.`;
       const result = await this.callTool<{
         thinking?: string;
         target?: unknown;
-        decisionLog?: unknown;
+        strategy?: unknown;
+        strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt,
@@ -3684,7 +3417,6 @@ Use the format_tiebreak tool.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "format-tiebreak", "Format Tiebreak", metadata);
       const target = findByName(
         legalTargets,
         typeof result.target === "string" ? result.target : undefined,
@@ -3846,8 +3578,6 @@ Keep it to 2-3 sentences. Make it compelling.`;
     const stage = ctx.endgameStage ?? "reckoning";
     const stageName = stage === "reckoning" ? "THE RECKONING" : "THE TRIBUNAL";
     const traceAction = options?.traceAction ?? "elimination-vote";
-    const decisionAction = options?.decisionAction ?? traceAction;
-    const decisionLabel = options?.decisionLabel ?? "Endgame Elimination Vote";
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -3863,9 +3593,8 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; eliminate: string; decisionLog?: unknown; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, this.traceOptions(ctx, { action: traceAction, reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
+      const result = await this.callTool<{ thinking?: string; eliminate: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, this.traceOptions(ctx, { action: traceAction, reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, decisionAction, decisionLabel, metadata);
       const target = findByName(others, result.eliminate);
       if (target) return { target: target.id, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -3884,11 +3613,15 @@ Use the elimination_vote tool to cast your vote.`;
       const fallback = others[Math.floor(Math.random() * others.length)];
       if (!fallback) throw new Error("No other players available for elimination vote");
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEndgameEliminationVote error="${err instanceof Error ? err.message : err}" fallback="${fallback.name}"`);
-      return { target: fallback.id, thinking: "fallback endgame elimination vote due to error", reasoningContext: undefined };
+      return {
+        target: fallback.id,
+        thinking: "fallback endgame elimination vote due to error",
+        reasoningContext: undefined,
+      };
     }
   }
 
-  async getAccusation(ctx: PhaseContext, options?: AgentCallOptions): Promise<{ targetId: UUID; text: string; thinking?: string; reasoningContext?: string }> {
+  async getAccusation(ctx: PhaseContext, options?: AgentCallOptions): Promise<StrategicDecisionMetadata & { targetId: UUID; text: string; thinking?: string; reasoningContext?: string }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
@@ -3904,7 +3637,7 @@ Available players: ${others.map((p) => p.name).join(", ")}
 Use the make_accusation tool to submit your accusation.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; target: string; accusation: string; reasoningContext?: string }>(
+      const result = await this.callTool<{ thinking?: string; target: string; accusation: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt, TOOL_MAKE_ACCUSATION, 200, sys,
         this.traceOptions(ctx, { action: "accusation", reasoningEffort: "medium", signal: options?.signal }),
       );
@@ -3914,11 +3647,13 @@ Use the make_accusation tool to submit your accusation.`;
       if (!target) {
         console.warn(`[vote-fallback] agent="${this.name}" method=getAccusation returned="${result.target}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallbackOther.name}"`);
       }
+      const metadata = this.strategicDecisionMetadata(result);
       return {
         targetId: target?.id ?? fallbackOther.id,
         text: result.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
+        ...acceptedActionMetadata(metadata, Boolean(target)),
       };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
@@ -3927,7 +3662,10 @@ Use the make_accusation tool to submit your accusation.`;
       const fallbackOther = others[0];
       if (!fallbackOther) throw new Error("No other players available for accusation");
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAccusation error="${err instanceof Error ? err.message : err}" fallback="${fallbackOther.name}"`);
-      return { targetId: fallbackOther.id, text: `I believe ${fallbackOther.name} should go.` };
+      return {
+        targetId: fallbackOther.id,
+        text: `I believe ${fallbackOther.name} should go.`,
+      };
     }
   }
 
@@ -4068,9 +3806,8 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; winner: string; decisionLog?: unknown; reasoningContext?: string }>(prompt, TOOL_JURY_VOTE, 80, sys, this.traceOptions(ctx, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
+      const result = await this.callTool<{ thinking?: string; winner: string; reasoningContext?: string }>(prompt, TOOL_JURY_VOTE, 80, sys, this.traceOptions(ctx, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
       const metadata = this.strategicDecisionMetadata(result);
-      this.recordStrategicDecision(ctx, "jury-vote", "Jury Vote", metadata);
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
@@ -4181,7 +3918,7 @@ IMPORTANT: Treat alive players as the only live game actors for messages, votes,
       : "not in endgame";
 
     return `## Current Board Contract
-Canonical current-board facts override Strategy Thread, Strategic Assessment, House summaries, vote history, and public transcript for live-state interpretation. They do not rewrite history.
+Canonical current-board facts override private strategy, House summaries, vote history, and public transcript for live-state interpretation. They do not rewrite history.
 - Alive players: ${aliveNames.join(", ") || "none"}
 - Eliminated players: ${eliminatedNames.length > 0 ? eliminatedNames.join(", ") : "none"}
 - Current phase: ${ctx.phase}
@@ -4196,16 +3933,12 @@ ${classicCouncilStatusLine}- Latest resolved elimination: ${latestEliminated}
 
   private buildRecentDecisionsSection(ctx: PhaseContext): string {
     const decisions = ctx.recentDecisions ?? [];
-    const recordedLines = decisions
+    const lines = decisions
       .map((decision) => `  - R${decision.round}/${decision.phase} ${decision.label}: ${decision.detail}`)
       .join("\n");
-    const receiptLines = this.memory.recentStrategicDecisions
-      .map((receipt) => `  - R${receipt.round}/${receipt.phase} ${receipt.label} (${receipt.action}): ${receipt.decisionLog}.`)
-      .join("\n");
-    const lines = [recordedLines, receiptLines].filter(Boolean).join("\n");
     if (!lines) return "";
     return `## Your Recent Decisions
-These are already recorded decisions and private decision receipts, not instructions to repeat them. Use the round, phase, and labels to know when each decision happened.
+These are typed already-recorded decisions, not instructions to repeat them. Use the round, phase, and labels to know when each decision happened.
 ${lines}`;
   }
 
@@ -4677,46 +4410,45 @@ Use this to avoid repeating prior answers or questions.
 ${lines}`;
   }
 
-  private buildStrategyPacketSection(ctx: PhaseContext, strategyPacket: StrategyPacketSummary | null): string {
-    if (!strategyPacket) return "";
-    const canonicalOverride = this.isEndgamePrompt(ctx)
-      ? "Canonical fact override: Current Board Contract, Endgame Rules, and Judgment Questions So Far are current truth. Historical dialogue evidence cannot override them. If this Strategy Thread claims different alive status, eliminated status, finalists, jurors, latest elimination, or endgame status, treat the packet claim as stale history."
-      : "Canonical fact override: Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure are current truth. Historical dialogue evidence cannot override them. If this Strategy Thread claims different active shields, empowered player, council candidates, latest elimination, or alive status, treat the packet claim as stale history.";
-    return `## Strategy Thread
-This is your private carry-forward strategy context, not an order. You may follow it, test it, revise it, ignore it, or defer it when current evidence warrants.
-- Revision: ${strategyPacket.revisionId}${strategyPacket.previousRevisionId ? ` (previous ${strategyPacket.previousRevisionId})` : ""}
-This Strategy Thread was last updated in Round ${strategyPacket.updatedAtRound} during ${strategyPacket.updatedAtPhase}; if Mingle or other phases happened after that, treat those newer events as evidence to weigh alongside or revise the strategy.
-${canonicalOverride}
-- Objective: ${strategyPacket.objective || "stay flexible"}
-- Target posture: ${strategyPacket.targetPosture || "no named target yet"}
-- Coalition posture: ${strategyPacket.coalitionPosture || "keep relationships flexible"}
-- Next social probe: ${strategyPacket.nextSocialProbe || "look for new evidence"}
-- Strategic lens: ${strategyPacket.strategicLens || "broad_read"}
-- Lens rationale: ${strategyPacket.strategicLensRationale || "none recorded"}
-- Uncertainty: ${strategyPacket.uncertainty || "none recorded"}
-- Revise if: ${strategyPacket.reviseTrigger || "new evidence contradicts the plan"}
-- Changed since previous: ${strategyPacket.changedSincePrevious || "none recorded"}
-Standing target discipline:
-- A standing target is your current living default pressure/read target. It can be a quiet watch target, a Mingle probe, an expose candidate, or no target yet.
-- Never treat an eliminated player as an active standing target. If the packet names someone marked eliminated, use that as stale history and pivot to a living replacement or explicitly no standing target.
-- Do not force target naming. Soft reads, alliance repair, and information-gathering are valid when the evidence is not there.
-When a tool asks for decisionLog, write a compact private receipt for what this action means strategically. If the action changes, contradicts, materially tests, follows, or defers this Strategy Thread, say that plainly in decisionLog.`;
-  }
+  private buildCompactStrategySection(state: CompactStrategyState): string {
+    const deltas = state.deltas.length > 0
+      ? state.deltas.map((delta, index) => `  ${index + 1}. ${delta}`).join("\n")
+      : "  (none)";
+    const authority = "Canonical override: the Current Board Contract rendered above is current truth. This private strategy is fallible cognition and cannot change living status, eligibility, targets, commitments, votes, or phase facts.";
 
-  private buildStrategicAssessmentSection(ctx: PhaseContext): string {
-    if (!this.memory.lastReflection) return "";
-    const override = this.isEndgamePrompt(ctx)
-      ? "This is older private memory. Current Board Contract, Endgame Rules, and Judgment Questions So Far override it if they disagree. Historical dialogue evidence cannot override them either."
-      : "This is older private memory. Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure override it if they disagree. Historical dialogue evidence cannot override them either.";
-    return `## Strategic Assessment
-${override}
-- Certainties: ${(this.memory.lastReflection.certainties ?? []).join("; ") || "none"}
-- Suspicions: ${(this.memory.lastReflection.suspicions ?? []).join("; ") || "none"}
-- Allies: ${(this.memory.lastReflection.allies ?? []).join("; ") || "none"}
-- Threats: ${(this.memory.lastReflection.threats ?? []).join("; ") || "none"}
-- Plan: ${this.memory.lastReflection.plan ?? "none"}
-- Strategic lens: ${this.memory.lastReflection.strategicLens ?? "broad_read"}
-- Lens rationale: ${this.memory.lastReflection.strategicLensRationale ?? "none recorded"}`;
+    if (state.lifecycle === "opening") {
+      return `## Private Strategy Context
+${authority}
+- Lifecycle: opening
+- Engine revision: ${state.revision}
+- Full model-authored baseline: none yet. Use your authored personality and strategy guidance as the opening posture.
+- Accepted refinements, in order:\n${deltas}`;
+    }
+
+    if (state.lifecycle === "active") {
+      return `## Private Strategy Context
+${authority}
+- Lifecycle: active
+- Engine revision: ${state.revision}
+- Full baseline: ${state.baseline}
+- Accepted refinements, in order:\n${deltas}`;
+    }
+
+    const prior = state.priorEpoch;
+    const priorDeltas = prior && prior.deltas.length > 0
+      ? prior.deltas.map((delta, index) => `  ${index + 1}. ${delta}`).join("\n")
+      : "  (none)";
+    return `## Private Strategy Context
+${authority}
+- Lifecycle: ${state.lifecycle}
+- Engine revision: ${state.revision}
+- Current baseline: unavailable until reconciliation succeeds.
+## Historical Prior Strategy Epoch
+This epoch predates the newest canonical elimination. It is evidence to reconcile, not a current plan and never authority over the Current Board Contract.
+- Prior lifecycle: ${prior?.lifecycle ?? "opening"}
+- Prior revision: ${prior?.revision ?? 0}
+- Prior full baseline: ${prior?.baseline ?? "none; authored opening posture only"}
+- Prior accepted refinements, in order:\n${priorDeltas}`;
   }
 
   private buildAllianceContextSection(ctx: PhaseContext): string {
@@ -4780,11 +4512,11 @@ ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
 
     const allies = Array.from(this.memory.allies).join(", ") || "none";
     const threats = Array.from(this.memory.threats).join(", ") || "none";
-    const strategyPacket = this.strategyPacketForPrompt(ctx);
     const voteHistorySection = this.buildVoteHistorySection(ctx.round);
     const recentDecisionsSection = this.buildRecentDecisionsSection(ctx);
-    const strategyPacketSection = this.buildStrategyPacketSection(ctx, strategyPacket);
-    const strategicAssessmentSection = this.buildStrategicAssessmentSection(ctx);
+    const compactStrategySection = this.buildCompactStrategySection(
+      recallPlan.protected.compactStrategy,
+    );
     const gameRulesSection = this.buildGameRulesSection(ctx);
     const formatPressureSection = this.buildFormatPressureSection(ctx);
     const currentBoardContractSection = this.buildCurrentBoardContractSection(ctx);
@@ -4834,8 +4566,7 @@ ${allianceContextSection ? `${allianceContextSection}\n` : ""}${planHuddleSectio
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 ${recentDecisionsSection ? `${recentDecisionsSection}\n` : ""}
 ${voteHistorySection ? `${voteHistorySection}\n` : ""}
-${strategyPacketSection ? `${strategyPacketSection}\n` : ""}
-${strategicAssessmentSection ? `${strategicAssessmentSection}\n` : ""}
+${compactStrategySection}
 ${revealedVoteLedgerSection ? `${revealedVoteLedgerSection}\n` : ""}
 ${visibleTranscriptSection ? `${visibleTranscriptSection}\n` : ""}${historicalEvidenceSection ? `${historicalEvidenceSection}\n` : ""}
 ${hotRoomSection ? `${hotRoomSection}\n` : ""}`;
@@ -4862,8 +4593,7 @@ ${allianceContextSection ? `${allianceContextSection}\n` : ""}${planHuddleSectio
 ${memoryNotes ? `- Notes:\n${memoryNotes}` : ""}
 ${recentDecisionsSection ? `${recentDecisionsSection}\n` : ""}
 ${voteHistorySection ? `${voteHistorySection}\n` : ""}
-${strategyPacketSection ? `${strategyPacketSection}\n` : ""}
-${strategicAssessmentSection ? `${strategicAssessmentSection}\n` : ""}
+${compactStrategySection}
 ${revealedVoteLedgerSection ? `${revealedVoteLedgerSection}\n` : ""}
 ${visibleTranscriptSection}
 ${historicalEvidenceSection ? `${historicalEvidenceSection}\n` : ""}${postVotePressureSection}
@@ -4917,7 +4647,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
    * prompt complexity: low-effort uses ~256-1000 reasoning tokens for simple prompts,
    * medium ~1000-2500 for game prompts, high ~3000-4000+ for complex decisions.
    * Per-action overrides allow tighter budgets for simple outputs (introductions,
-   * lobby chat) and more headroom for complex decisions (votes, strategic reflection).
+   * lobby chat) and more headroom for complex decisions (votes and format actions).
    * Structured output (JSON schema) adds ~200-400 tokens of formatting overhead.
    */
   private static REASONING_TOKEN_OVERHEAD = 8192;
@@ -4937,13 +4667,108 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         properties: {
           thinking: { type: "string", description: "Your internal reasoning (hidden from other players, visible to viewers)" },
           message: { type: "string", description: "Your actual message" },
-          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
         },
-        required: ["thinking", "message", ...STRATEGIC_DECISION_REQUIRED],
+        required: ["thinking", "message"],
         additionalProperties: false,
       },
     },
   };
+
+  private static readonly STRATEGIC_ACTIONS = new Set([
+    "introduction",
+    "lobby",
+    "mingle-intent",
+    "alliance-action",
+    "alliance-huddle-turn",
+    "room-message",
+    "mingle-turn",
+    "rumor",
+    "vote",
+    "empower-revote",
+    "candidate-selection",
+    "power-lobby",
+    "power",
+    "council-vote",
+    "format-pick",
+    "format-save-or-eliminate-ballot",
+    "format-vote-bomb-ballot",
+    "format-majority-elimination-ballot",
+    "bounce-pointer",
+    "format-safety-bounce-vote",
+    "format-tiebreak",
+    "plea",
+    "elimination-vote",
+    "reckoning-vote",
+    "tribunal-vote",
+    "accusation",
+    "tribunal-defense",
+    "opening-statement",
+    "jury-answer",
+    "closing-argument",
+    "diary",
+  ]);
+
+  private strategyBoundaryForCall(
+    options?: LlmCallOptions,
+  ): "ordinary_action" | "action_repair" | null {
+    const trace = options?.privateTrace;
+    if (!trace || trace.actor.role !== "player") return null;
+    if (!InfluenceAgent.STRATEGIC_ACTIONS.has(trace.action)) return null;
+    return this.compactStrategyState.lifecycle === "reconciliation_required"
+      || this.compactStrategyState.lifecycle === "repair_required"
+      ? "action_repair"
+      : "ordinary_action";
+  }
+
+  private strategySchemaFragment(options?: LlmCallOptions): {
+    properties: Record<string, unknown>;
+    required: readonly string[];
+  } | null {
+    const boundary = this.strategyBoundaryForCall(options);
+    if (!boundary) return null;
+    return boundary === "action_repair"
+      ? { properties: FULL_STRATEGY_TOOL_PROPERTIES, required: FULL_STRATEGY_REQUIRED }
+      : { properties: STRATEGIC_DECISION_TOOL_PROPERTIES, required: STRATEGIC_DECISION_REQUIRED };
+  }
+
+  private withStrategyCandidateSchema(
+    schema: Record<string, unknown>,
+    options?: LlmCallOptions,
+  ): Record<string, unknown> {
+    const fragment = this.strategySchemaFragment(options);
+    const currentProperties = schema.properties && typeof schema.properties === "object"
+      && !Array.isArray(schema.properties)
+      ? schema.properties as Record<string, unknown>
+      : {};
+    const properties = Object.fromEntries(
+      Object.entries(currentProperties)
+        .filter(([key]) => key !== "strategy" && key !== "strategyDelta" && key !== "decisionLog"),
+    );
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter((key) => key !== "strategy" && key !== "strategyDelta" && key !== "decisionLog")
+      : [];
+    return {
+      ...schema,
+      properties: {
+        ...properties,
+        ...(fragment?.properties ?? {}),
+      },
+      required: [...required, ...(fragment?.required ?? [])],
+    };
+  }
+
+  private agentResponseFormat(options?: LlmCallOptions): typeof InfluenceAgent.AGENT_RESPONSE_FORMAT {
+    return {
+      ...InfluenceAgent.AGENT_RESPONSE_FORMAT,
+      json_schema: {
+        ...InfluenceAgent.AGENT_RESPONSE_FORMAT.json_schema,
+        schema: this.withStrategyCandidateSchema(
+          InfluenceAgent.AGENT_RESPONSE_FORMAT.json_schema.schema,
+          options,
+        ),
+      },
+    } as typeof InfluenceAgent.AGENT_RESPONSE_FORMAT;
+  }
 
   private recordTokenUsage(response: ChatCompletion, sourceKey: string): void {
     if (!this.tokenTracker) return;
@@ -5134,14 +4959,22 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     };
   }
 
-  private toolForStructuredMode(tool: ChatCompletionTool): ChatCompletionTool {
+  private toolForStructuredMode(tool: ChatCompletionTool, options?: LlmCallOptions): ChatCompletionTool {
     // We no longer strip "thinking" for local structured compatibility.
     // Agents should still emit their internal thinking (in tool args or free content)
     // even when using local models. The raw hidden channel (if any) goes only to
     // reasoningContext. This makes --chatty + local model Mingle/vote/power traces
     // show both the emitted thinking and the native reasoningContext.
-    if (!this.usesLocalStructuredCompatibility()) return tool;
-    return tool;
+    return {
+      ...tool,
+      function: {
+        ...tool.function,
+        parameters: this.withStrategyCandidateSchema(
+          (tool.function.parameters ?? {}) as Record<string, unknown>,
+          options,
+        ),
+      },
+    };
   }
 
   private static parseAgentResponseContent(content: string): AgentResponse | null {
@@ -5152,7 +4985,12 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
 
     for (const candidate of candidates) {
       try {
-        const parsed = JSON.parse(candidate) as { thinking?: unknown; message?: unknown; decisionLog?: unknown };
+        const parsed = JSON.parse(candidate) as {
+          thinking?: unknown;
+          message?: unknown;
+          strategy?: unknown;
+          strategyDelta?: unknown;
+        };
         if (typeof parsed.message === "string" && parsed.message.trim()) {
           const metadata = normalizeStrategicDecisionMetadata(parsed as Record<string, unknown>);
           return {
@@ -5167,6 +5005,33 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     }
 
     return null;
+  }
+
+  private normalizeAgentResponseForCall(
+    response: AgentResponse,
+    options?: LlmCallOptions,
+  ): AgentResponse {
+    const {
+      strategy: _strategy,
+      strategyDelta: _strategyDelta,
+      strategyCandidateProposed: _strategyCandidateProposed,
+      strategyGameplayAccepted: _strategyGameplayAccepted,
+      ...base
+    } = response;
+    if (!this.strategyBoundaryForCall(options)) {
+      return base;
+    }
+    const metadata = normalizeStrategicDecisionMetadata(response as unknown as Record<string, unknown>);
+    const replacementExpected = this.strategyBoundaryForCall(options) === "action_repair";
+    return {
+      ...base,
+      ...metadata,
+      ...(replacementExpected
+        && !Object.prototype.hasOwnProperty.call(metadata, "strategy")
+        && !Object.prototype.hasOwnProperty.call(metadata, "strategyDelta")
+        ? { strategyCandidateProposed: true }
+        : {}),
+    };
   }
 
   private static readStringField(value: unknown): string {
@@ -5237,14 +5102,15 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({ role: "user", content: prompt });
+    const responseFormat = this.agentResponseFormat(options);
 
     const response = await this.openai.responses.create(
       {
         ...this.responseBaseParams(prompt, effectiveMaxTokens, systemPrompt, options),
         text: {
           format: InfluenceAgent.responseJsonSchemaFormat(
-            InfluenceAgent.AGENT_RESPONSE_FORMAT.json_schema.name,
-            InfluenceAgent.AGENT_RESPONSE_FORMAT.json_schema.schema,
+            responseFormat.json_schema.name,
+            responseFormat.json_schema.schema,
           ),
         },
       },
@@ -5268,14 +5134,17 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
 
     const parsed = InfluenceAgent.parseAgentResponseContent(content);
     if (parsed) {
-      this.recordStrategicDecisionFromTraceContext(options?.privateTrace, parsed);
-      const output = InfluenceAgent.withProviderReasoningSummaryDisplay(parsed, providerReasoningSummary);
-      await this.emitPrivateDecisionTrace({ options, messages, response, output: parsed, providerReasoningSummary });
+      const normalized = this.normalizeAgentResponseForCall(parsed, options);
+      const output = InfluenceAgent.withProviderReasoningSummaryDisplay(normalized, providerReasoningSummary);
+      await this.emitPrivateDecisionTrace({ options, messages, response, output: normalized, providerReasoningSummary });
       return output;
     }
 
     console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON Responses output, treating as plain message`);
-    const traceOutput = { thinking: "", message: content };
+    const traceOutput = this.normalizeAgentResponseForCall({
+      thinking: "",
+      message: content,
+    }, options);
     const output = InfluenceAgent.withProviderReasoningSummaryDisplay(traceOutput, providerReasoningSummary);
     await this.emitPrivateDecisionTrace({ options, messages, response, output: traceOutput, providerReasoningSummary });
     return output;
@@ -5408,15 +5277,17 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
           return output;
         }
 
-        const output = {
+        const output: AgentResponse = {
           thinking,
           message,
           ...(reasoningContext && { reasoningContext }),
-          ...(parsed?.decisionLog && { decisionLog: parsed.decisionLog }),
+          ...(parsed
+            ? normalizeStrategicDecisionMetadata(parsed as unknown as Record<string, unknown>)
+            : {}),
         };
-        this.recordStrategicDecisionFromTraceContext(options?.privateTrace, output);
-        await this.emitPrivateDecisionTrace({ options, messages, response, output });
-        return output;
+        const normalizedOutput = this.normalizeAgentResponseForCall(output, options);
+        await this.emitPrivateDecisionTrace({ options, messages, response, output: normalizedOutput });
+        return normalizedOutput;
       } catch (error) {
         if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
           throw error;
@@ -5654,7 +5525,7 @@ ${JSON.stringify(tool.function.parameters)}`,
               : { max_tokens: effectiveMaxTokens }),
             ...(this.supportsCustomTemperature() && { temperature: this.temperature }),
             ...(this.requestedReasoningEffort(options) && { reasoning_effort: this.requestedReasoningEffort(options) }),
-            response_format: InfluenceAgent.AGENT_RESPONSE_FORMAT,
+            response_format: this.agentResponseFormat(options),
           },
           { signal: options?.signal },
         );
@@ -5672,15 +5543,17 @@ ${JSON.stringify(tool.function.parameters)}`,
 
         const parsed = InfluenceAgent.parseAgentResponseContent(content);
         if (parsed) {
-          const output = parsed;
-          this.recordStrategicDecisionFromTraceContext(options?.privateTrace, output);
+          const output = this.normalizeAgentResponseForCall(parsed, options);
           await this.emitPrivateDecisionTrace({ options, messages, response, output });
           return output;
         }
 
         // Fallback: treat entire content as message (model didn't return valid JSON)
         console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON, treating as plain message`);
-        const output = { thinking: "", message: content };
+        const output = this.normalizeAgentResponseForCall({
+          thinking: "",
+          message: content,
+        }, options);
         await this.emitPrivateDecisionTrace({ options, messages, response, output });
         return output;
       } catch (error) {
@@ -5721,7 +5594,7 @@ ${JSON.stringify(tool.function.parameters)}`,
     );
     const maxAttempts = this.structuredCallMaxAttempts ?? 2; // 1 initial + 1 retry
     const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
-    const requestTool = this.toolForStructuredMode(tool);
+    const requestTool = this.toolForStructuredMode(tool, options);
 
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
@@ -5890,113 +5763,6 @@ ${JSON.stringify(tool.function.parameters)}`,
   }
 
   // ---------------------------------------------------------------------------
-  // Strategic reflection (called after diary room sessions)
-  // ---------------------------------------------------------------------------
-
-  async getStrategicReflection(ctx: PhaseContext, options?: { timing?: "post_phase" | "pre_vote" }): Promise<StrategicReflectionAction | null> {
-    const sys = this.buildSystemPrompt(ctx.phase, ctx.round, { includePhaseGuidelines: false });
-    const introReflectionGuidance = ctx.phase === Phase.INTRODUCTION && options?.timing !== "pre_vote"
-      ? `
-Introduction-specific guidance: introductions are public communication and valid first-impression evidence, but they are thin evidence. Do not invent alliances, threats, promises, vote plans, or game commitments that have not happened yet. The Strategy Thread packet can be provisional: use broad_read or presentation_read, keep targetPosture as no standing target yet when appropriate, and make nextSocialProbe about what to ask in the first Lobby.`
-      : "";
-    const reflectionMode = options?.timing === "pre_vote"
-      ? `## Private Pre-Vote Strategy Realignment
-You are NOT taking a live phase action right now. The phase shown above is the upcoming vote you are preparing for.
-Do not write a player-visible message, do not speak to the room, do not cast a vote, and do not choose a Power/Council action.
-This is a private producer/debug checkpoint for memory and strategy only. Other players will not see this reflection or Strategy Thread packet.
-
-## Strategic Reflection
-Reflected phase: ${ctx.phase}.
-This is before a later-round vote, after prior eliminations and phase outcomes have changed the board.
-Use the strategic_reflection tool to record your analysis before voting.
-
-Prune eliminated players from active targets, allies, threats, and plans. Reset stale assumptions about who will be empowered or immune: no one has won the upcoming empower tally yet, and last round's empowered player is not automatically protected. Form a current empower intent from the living field before you vote.
-
-Be specific — name living players, cite events, reference conversations.
-Treat vote ledgers, Power outcomes, room traffic, eliminations, and public/private messages as evidence. Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure override stale Strategy Thread or Strategic Assessment claims. Do not turn this into a message you intend to send.`
-      : `## Private Reflection Mode
-You are NOT taking a live phase action right now. The phase shown above is the phase you are reflecting on after it resolved.
-Do not write a player-visible message, do not speak to the room, do not cast a vote, and do not choose a Power/Council action.
-This is a private producer/debug checkpoint for memory and strategy only. Other players will not see this reflection or Strategy Thread packet.
-
-## Strategic Reflection
-Reflected phase: ${ctx.phase}.
-Based on everything you know so far, produce a strategic assessment of what happened and what it means.
-Use the strategic_reflection tool to record your analysis.
-
-Be specific — name players, cite events, reference conversations.
-Treat vote ledgers, Power outcomes, room traffic, and public/private messages as evidence. Current Board Contract, Current Stakes, Revealed Vote Ledger, and Post-Vote Pressure override stale Strategy Thread or Strategic Assessment claims. Do not turn this into a message you intend to send.${introReflectionGuidance}`;
-    const prompt = this.buildUserPrompt(ctx) + `
-${reflectionMode}
-
-${STRATEGIC_LENS_GUIDANCE}
-
-For strategyPacket.targetPosture, choose a standing target posture:
-- If you have enough evidence, name one living player as the current default pressure/read target and say how hard the pressure should be.
-- If you do not have enough evidence, explicitly say there is no standing target yet and name what evidence would change that.
-- If a prior target is now eliminated, do not carry them as active. Note the pivot in changedSincePrevious and choose a living replacement only if the current evidence supports one.`;
-
-    try {
-      const reflection = await this.callTool<{
-        thinking?: string;
-        certainties?: unknown;
-        suspicions?: unknown;
-        allies?: unknown;
-        threats?: unknown;
-        plan?: unknown;
-        strategicLens?: unknown;
-        strategicLensRationale?: unknown;
-        strategyPacket?: unknown;
-        reasoningContext?: string;
-      }>(
-        prompt, TOOL_STRATEGIC_REFLECTION, 300, sys,
-        this.traceOptions(ctx, { action: "reflection", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "medium" }),
-      );
-      const normalized: StrategicReflectionAction = {
-        certainties: normalizeStringArray(reflection.certainties),
-        suspicions: normalizeStringArray(reflection.suspicions),
-        allies: normalizeStringArray(reflection.allies),
-        threats: normalizeStringArray(reflection.threats),
-        plan: normalizeRequiredString(reflection.plan),
-        strategicLens: normalizeStrategicLens(reflection.strategicLens),
-        strategicLensRationale: normalizeRequiredString(reflection.strategicLensRationale),
-        thinking: reflection.thinking,
-        reasoningContext: reflection.reasoningContext,
-      };
-      const strategyPacket = this.applyStrategyPacketUpdate(
-        ctx,
-        normalizeStrategyPacketUpdate(reflection.strategyPacket),
-      );
-      if (strategyPacket) {
-        normalized.strategyPacket = strategyPacket;
-      }
-      const { thinking: _thinking, reasoningContext: _reasoningContext, ...reflectionSummary } = normalized;
-      this.memory.lastReflection = {
-        certainties: reflectionSummary.certainties,
-        suspicions: reflectionSummary.suspicions,
-        allies: reflectionSummary.allies,
-        threats: reflectionSummary.threats,
-        plan: reflectionSummary.plan,
-        strategicLens: reflectionSummary.strategicLens,
-        strategicLensRationale: reflectionSummary.strategicLensRationale,
-      };
-      this.persistMemory("reflection", null, JSON.stringify({
-        certainties: normalized.certainties,
-        suspicions: normalized.suspicions,
-        allies: normalized.allies,
-        threats: normalized.threats,
-        plan: normalized.plan,
-        strategicLens: normalized.strategicLens,
-        strategicLensRationale: normalized.strategicLensRationale,
-      }));
-      return normalized;
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getStrategicReflection error="${err instanceof Error ? err.message : err}" fallback=skipped`);
-      return null;
-    }
-  }
-
-  // ---------------------------------------------------------------------------
   // Memory updates (called externally by GameRunner after phase events)
   // ---------------------------------------------------------------------------
 
@@ -6021,22 +5787,9 @@ For strategyPacket.targetPosture, choose a standing target posture:
     this.memory.allies.delete(playerName);
     this.memory.threats.delete(playerName);
     this.memory.notes.delete(playerName);
-    if (this.memory.strategyPacket) {
-      this.memory.strategyPacket = {
-        ...this.memory.strategyPacket,
-        objective: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.objective, [playerName]),
-        targetPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.targetPosture, [playerName]),
-        coalitionPosture: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.coalitionPosture, [playerName]),
-        nextSocialProbe: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.nextSocialProbe, [playerName]),
-        strategicLensRationale: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.strategicLensRationale, [playerName]),
-        uncertainty: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.uncertainty, [playerName]),
-        reviseTrigger: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.reviseTrigger, [playerName]),
-        changedSincePrevious: this.scrubEliminatedPlayerNames(this.memory.strategyPacket.changedSincePrevious, [playerName]),
-      };
-    }
   }
 
-  private persistMemory(type: "ally" | "threat" | "note" | "vote_history" | "reflection", subject: string | null, content: string): void {
+  private persistMemory(type: "ally" | "threat" | "note" | "vote_history", subject: string | null, content: string): void {
     if (!this.memoryStore || !this.gameId) return;
     const round = this.memory.roundHistory.length > 0
       ? this.memory.roundHistory[this.memory.roundHistory.length - 1]!.round

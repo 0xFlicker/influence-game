@@ -2,6 +2,7 @@ import { Phase } from "../types";
 import {
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseActor,
@@ -22,8 +23,8 @@ export async function runRumorPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.RUMOR, "ordinary_speech");
-      const { message, thinking, reasoningContext, decisionLog, strategicLens, strategicLensRationale } = await agent.getRumorMessage(phaseCtx);
-      return { playerId: player.id, message, thinking, reasoningContext, decisionLog, strategicLens, strategicLensRationale };
+      const response = await agent.getRumorMessage(phaseCtx);
+      return { playerId: player.id, ...response };
     }),
   );
 
@@ -45,6 +46,11 @@ export async function runRumorPhase(
       displayOrder: i + 1,
       ...transcriptThinking,
     });
+    resolveActionStrategyCandidate(
+      agent,
+      rumor,
+      rumor.strategyGameplayAccepted !== false,
+    );
     logger.emitAgentTurn({
       phase: Phase.RUMOR,
       action: "rumor",

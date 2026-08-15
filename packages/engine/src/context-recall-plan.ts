@@ -17,11 +17,12 @@ import type {
   RecallPlanReceipt,
   RecallPromptClass,
   RecallProtectedHuddleOutcome,
-  StrategicDecisionReceipt,
-  StrategyPacketSummary,
-  StrategicReflectionSummary,
   TranscriptEntry,
 } from "./game-runner.types";
+import {
+  cloneCompactStrategyState,
+  createOpeningStrategyState,
+} from "./strategy-state";
 
 // ---------------------------------------------------------------------------
 // Budget envelopes (fixture-calibrated character ceilings per prompt class)
@@ -38,7 +39,7 @@ export interface RecallBudgetEnvelope {
   readonly historyCeilingChars: number;
   /**
    * Small strategic-only archive allowance that survives protected overflow.
-   * It is intentionally bounded so an oversized Strategy Thread cannot turn
+   * It is intentionally bounded so oversized protected cognition cannot turn
    * historical recall into another unbounded prompt lane.
    */
   readonly overflowHistoryReserveChars: number;
@@ -60,21 +61,12 @@ export const RECALL_BUDGET_ENVELOPES: Readonly<Record<RecallPromptClass, RecallB
     historyCeilingChars: 4_000,
     overflowHistoryReserveChars: 1_200,
   },
-  strategic_reflection: {
-    envelopeChars: 18_000,
-    historyCeilingChars: 6_000,
-    overflowHistoryReserveChars: 1_600,
-  },
 };
 
 /** Empty continuity when an agent does not implement the snapshot accessor (e.g. mocks). */
 export function emptyRecallContinuitySnapshot(): RecallContinuitySnapshot {
   return {
-    strategyPacket: null,
-    reflectionSummary: null,
-    recentStrategicDecisions: [],
-    strategicEvidenceVersion: 0,
-    strategyPacketRevisionCounter: 0,
+    compactStrategy: createOpeningStrategyState(),
   };
 }
 
@@ -106,18 +98,7 @@ export function buildRecallEvidenceBoundaryKey(params: {
   const payload = {
     actorId,
     promptClass,
-    strategicEvidenceVersion: continuity.strategicEvidenceVersion,
-    strategyPacketRevisionCounter: continuity.strategyPacketRevisionCounter ?? 0,
-    strategyRevisionId: continuity.strategyPacket?.revisionId ?? null,
-    reflectionPlan: continuity.reflectionSummary?.plan ?? null,
-    reflectionLens: continuity.reflectionSummary?.strategicLens ?? null,
-    recentStrategicDecisions: continuity.recentStrategicDecisions.map((receipt) => ({
-      round: receipt.round,
-      phase: receipt.phase,
-      action: receipt.action,
-      label: receipt.label,
-      decisionLog: receipt.decisionLog,
-    })),
+    compactStrategy: cloneCompactStrategyState(continuity.compactStrategy),
     board: {
       round: phaseContext.round,
       phase: phaseContext.phase,
@@ -244,12 +225,11 @@ export const RECALL_PROMOTION_TOKEN_REDUCTION_TARGET = 0.5;
 export interface RecallProtectedCoverageExpectation {
   /** Board Contract is always required on every compiled plan. */
   requireBoardContract: boolean;
-  /** Strategy Thread revision when continuity supplied one. */
-  strategyRevisionId: string | null;
+  /** Engine-owned compact strategy revision and lifecycle. */
+  strategyRevision: number;
+  strategyLifecycle: RecallContinuitySnapshot["compactStrategy"]["lifecycle"];
   /** Official huddle outcome ids that must remain in the protected lane. */
   huddleOutcomeIds: readonly string[];
-  /** Recent strategic decision receipts expected in protected current receipts. */
-  recentStrategicDecisionCount: number;
 }
 
 export interface RecallPromotionCaseInput {
@@ -359,20 +339,15 @@ function checkProtectedCoverage(
       return false;
     }
   }
-  if (expected.strategyRevisionId != null) {
-    if (plan.protected.strategyThread?.revisionId !== expected.strategyRevisionId) {
-      return false;
-    }
+  if (
+    plan.protected.compactStrategy.revision !== expected.strategyRevision
+    || plan.protected.compactStrategy.lifecycle !== expected.strategyLifecycle
+  ) {
+    return false;
   }
   const presentHuddleIds = new Set(plan.protected.huddleOutcomes.map((o) => o.id));
   for (const id of expected.huddleOutcomeIds) {
     if (!presentHuddleIds.has(id)) return false;
-  }
-  if (
-    plan.protected.currentReceipts.recentStrategicDecisions.length
-    < expected.recentStrategicDecisionCount
-  ) {
-    return false;
   }
   // Receipt protected record count must be positive when board is required.
   if (expected.requireBoardContract && plan.receipt.eventBoundary.protectedRecordCount < 1) {
@@ -394,9 +369,9 @@ export function expectedProtectedCoverageFromInputs(params: {
   );
   return {
     requireBoardContract: true,
-    strategyRevisionId: params.continuity.strategyPacket?.revisionId ?? null,
+    strategyRevision: params.continuity.compactStrategy.revision,
+    strategyLifecycle: params.continuity.compactStrategy.lifecycle,
     huddleOutcomeIds,
-    recentStrategicDecisionCount: params.continuity.recentStrategicDecisions.length,
   };
 }
 
@@ -546,19 +521,6 @@ export function collectAuthorizedCandidates(
 // Seed compilation
 // ---------------------------------------------------------------------------
 
-function collectEliminatedNameTokens(phaseContext: PhaseContext): Set<string> {
-  const dead = new Set<string>();
-  if (phaseContext.latestEliminatedPlayerName) {
-    addNameTokens(dead, phaseContext.latestEliminatedPlayerName);
-  }
-  if (phaseContext.jury) {
-    for (const juror of phaseContext.jury) {
-      addNameTokens(dead, juror.playerName);
-    }
-  }
-  return dead;
-}
-
 function collectAliveNameTokens(phaseContext: PhaseContext): Set<string> {
   const alive = new Set<string>();
   for (const player of phaseContext.alivePlayers) {
@@ -569,9 +531,9 @@ function collectAliveNameTokens(phaseContext: PhaseContext): Set<string> {
 }
 
 /**
- * Compile non-stopword seed terms from board, non-conflicting Strategy Thread,
- * exact receipts, and recent strategic decisions. Strategy Thread terms that
- * name eliminated (Board-contradicted) players are removed before seeding.
+ * Compile non-stopword seed terms from canonical board facts and typed current
+ * receipts. Free-form compact strategy is intentionally not parsed into recall
+ * seeds, targets, or ranking signals.
  */
 export function compileRecallSeedTerms(params: {
   promptClass: RecallPromptClass;
@@ -580,13 +542,12 @@ export function compileRecallSeedTerms(params: {
   huddleOutcomes: readonly RecallProtectedHuddleOutcome[];
 }): Set<string> {
   const seeds = new Set<string>();
-  const { phaseContext, continuity, huddleOutcomes, promptClass } = params;
+  const { phaseContext, huddleOutcomes, promptClass } = params;
 
   // Prompt class as a stable structural seed (does not leak content).
   addTokens(seeds, promptClass.replace(/_/g, " "));
 
   const aliveNames = collectAliveNameTokens(phaseContext);
-  const deadNames = collectEliminatedNameTokens(phaseContext);
 
   // Board contract seeds
   for (const token of aliveNames) seeds.add(token);
@@ -636,64 +597,13 @@ export function compileRecallSeedTerms(params: {
     addTokens(seeds, decision.label);
     addTokens(seeds, decision.detail);
   }
-  for (const receipt of continuity.recentStrategicDecisions) {
-    addTokens(seeds, receipt.label);
-    addTokens(seeds, receipt.action);
-    addTokens(seeds, receipt.decisionLog);
-  }
   for (const entry of phaseContext.revealedVoteLedger ?? []) {
     addNameTokens(seeds, entry.voterName);
     addNameTokens(seeds, entry.empowerTargetName);
     if (entry.exposeTargetName) addNameTokens(seeds, entry.exposeTargetName);
   }
 
-  // Strategy Thread: drop terms contradicted by Board Contract (eliminated names as targets).
-  addStrategyThreadSeeds(seeds, continuity.strategyPacket, continuity.reflectionSummary, deadNames, aliveNames);
-
   return seeds;
-}
-
-function addStrategyThreadSeeds(
-  seeds: Set<string>,
-  packet: StrategyPacketSummary | null,
-  reflection: StrategicReflectionSummary | null,
-  deadNames: Set<string>,
-  aliveNames: Set<string>,
-): void {
-  const acceptToken = (token: string): boolean => {
-    // Drop tokens that name Board-contradicted (eliminated) players.
-    if (deadNames.has(token) && !aliveNames.has(token)) return false;
-    return true;
-  };
-
-  const addFiltered = (text: string | null | undefined): void => {
-    if (!text) return;
-    for (const token of tokenizeRecallText(text)) {
-      if (acceptToken(token)) seeds.add(token);
-    }
-  };
-
-  if (packet) {
-    addFiltered(packet.objective);
-    addFiltered(packet.targetPosture);
-    addFiltered(packet.coalitionPosture);
-    addFiltered(packet.nextSocialProbe);
-    addFiltered(packet.strategicLens);
-    addFiltered(packet.strategicLensRationale);
-    addFiltered(packet.uncertainty);
-    addFiltered(packet.reviseTrigger);
-    addFiltered(packet.changedSincePrevious);
-  }
-
-  if (reflection) {
-    for (const item of reflection.certainties) addFiltered(item);
-    for (const item of reflection.suspicions) addFiltered(item);
-    for (const item of reflection.allies) addFiltered(item);
-    for (const item of reflection.threats) addFiltered(item);
-    addFiltered(reflection.plan);
-    addFiltered(reflection.strategicLens);
-    addFiltered(reflection.strategicLensRationale);
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -718,42 +628,23 @@ const PRIORITY_SPEAKER_SCORE_BONUS = 125;
 const CURRENT_ROUND_SCORE_BONUS = 100;
 
 /**
- * Identify living speakers explicitly named in target/probe-oriented strategy.
- * Coalition/alliance prose is deliberately excluded so every ally does not
- * become equally "priority" merely by appearing in protected context.
+ * Typed current-board and official alliance facts may prioritize speakers.
+ * Free-form compact strategy is never parsed into a ranking signal.
  */
 function compileRecallPrioritySpeakerTokens(params: {
   phaseContext: PhaseContext;
   continuity: RecallContinuitySnapshot;
 }): Set<string> {
-  const packet = params.continuity.strategyPacket;
-  const livingSpeakers = params.phaseContext.alivePlayers.map((player) => ({
-    tokens: tokenizeRecallText(player.name),
-  }));
-  const priorityFrom = (texts: readonly (string | null | undefined)[]): Set<string> => {
-    const focusTokens = new Set<string>();
-    for (const text of texts) addTokens(focusTokens, text);
-    const priority = new Set<string>();
-    for (const { tokens: nameTokens } of livingSpeakers) {
-      if (
-        nameTokens.length > 0
-        && nameTokens.every((token) => focusTokens.has(token))
-      ) {
-        for (const token of nameTokens) priority.add(token);
-      }
-    }
-    return priority;
-  };
-
-  const explicitTargets = priorityFrom([packet?.targetPosture]);
-  if (explicitTargets.size > 0) return explicitTargets;
-
-  const reflection = params.continuity.reflectionSummary;
-  return priorityFrom([
-    packet?.nextSocialProbe,
-    ...(reflection?.suspicions ?? []),
-    ...(reflection?.threats ?? []),
-  ]);
+  const priority = new Set<string>();
+  const typedIds = new Set<string>();
+  if (params.phaseContext.empoweredId) typedIds.add(params.phaseContext.empoweredId);
+  for (const id of params.phaseContext.councilCandidates ?? []) typedIds.add(id);
+  for (const id of params.phaseContext.finalists ?? []) typedIds.add(id);
+  for (const player of params.phaseContext.alivePlayers) {
+    if (!typedIds.has(player.id)) continue;
+    addNameTokens(priority, player.name);
+  }
+  return priority;
 }
 
 /**
@@ -914,16 +805,6 @@ function projectHotMessages(phaseContext: PhaseContext): RecallHotMessage[] {
   }));
 }
 
-function cloneReceipts(receipts: readonly StrategicDecisionReceipt[]): StrategicDecisionReceipt[] {
-  return receipts.map((r) => ({
-    round: r.round,
-    phase: r.phase,
-    action: r.action,
-    label: r.label,
-    decisionLog: r.decisionLog,
-  }));
-}
-
 // ---------------------------------------------------------------------------
 // History budget fill
 // ---------------------------------------------------------------------------
@@ -1006,30 +887,15 @@ export function compileRecallPlan(params: CompileRecallPlanParams): RecallPlan {
 
   const boardContract = projectBoardContractFacts(phaseContext);
   const huddleOutcomes = projectProtectedHuddleOutcomes(phaseContext);
-  const strategyThread = continuity.strategyPacket
-    ? { ...continuity.strategyPacket }
-    : null;
-  const reflectionSummary = continuity.reflectionSummary
-    ? {
-        certainties: [...continuity.reflectionSummary.certainties],
-        suspicions: [...continuity.reflectionSummary.suspicions],
-        allies: [...continuity.reflectionSummary.allies],
-        threats: [...continuity.reflectionSummary.threats],
-        plan: continuity.reflectionSummary.plan,
-        strategicLens: continuity.reflectionSummary.strategicLens,
-        strategicLensRationale: continuity.reflectionSummary.strategicLensRationale,
-      }
-    : null;
+  const compactStrategy = cloneCompactStrategyState(continuity.compactStrategy);
   const currentReceipts = {
-    recentStrategicDecisions: cloneReceipts(continuity.recentStrategicDecisions),
     recentDecisions: (phaseContext.recentDecisions ?? []).map((d) => ({ ...d })),
     revealedVoteLedger: (phaseContext.revealedVoteLedger ?? []).map((e) => ({ ...e })),
   };
 
   const protectedLane = {
     boardContract,
-    strategyThread,
-    reflectionSummary,
+    compactStrategy,
     huddleOutcomes,
     currentReceipts,
   };
@@ -1094,10 +960,8 @@ export function compileRecallPlan(params: CompileRecallPlanParams): RecallPlan {
 
   const protectedRecordCount =
     1 // board contract
-    + (strategyThread ? 1 : 0)
-    + (reflectionSummary ? 1 : 0)
+    + 1 // compact strategy state
     + huddleOutcomes.length
-    + currentReceipts.recentStrategicDecisions.length
     + currentReceipts.recentDecisions.length
     + currentReceipts.revealedVoteLedger.length;
 
@@ -1256,7 +1120,7 @@ These are private to your current room occupants only.`;
 }
 
 /**
- * Selected historical dialogue evidence for strategic_decision / strategic_reflection only.
+ * Selected historical dialogue evidence for strategic_decision only.
  * Explicitly non-authoritative. Omits the section entirely when empty so the prompt
  * does not imply excluded archive content exists.
  */

@@ -81,11 +81,9 @@ export interface PrivateTraceManifestMetadata {
   reasoningContextByteLength: number;
   providerReasoningSummaryByteLength: number;
   toolName?: string;
-  strategicDecision?: {
-    decisionLogBytes?: number;
-  };
-  strategyPacket?: {
-    revision?: string;
+  strategyCandidate?: {
+    operation: "replace" | "delta";
+    submittedValueByteLength: number;
   };
   boundary?: PrivateDecisionTraceBoundary;
   createdAt: string;
@@ -157,14 +155,10 @@ function buildTraceMetadata(trace: PrivateDecisionTrace, body: string, createdAt
     reasoningContextByteLength: byteLength(trace.reasoningContext),
     providerReasoningSummaryByteLength: byteLength(trace.providerReasoningSummary),
     ...(trace.toolName && { toolName: trace.toolName }),
-    ...(trace.decisionLog && {
-      strategicDecision: {
-        decisionLogBytes: byteLength(trace.decisionLog),
-      },
-    }),
-    ...(trace.strategyPacketRevision && {
-      strategyPacket: {
-        revision: trace.strategyPacketRevision,
+    ...(trace.strategyCandidate && {
+      strategyCandidate: {
+        operation: trace.strategyCandidate.operation,
+        submittedValueByteLength: byteLength(trace.strategyCandidate.submittedValue),
       },
     }),
     ...(trace.boundary && { boundary: trace.boundary }),

@@ -446,25 +446,9 @@ function isTranscriptCursorFromWatermark(
 }
 
 function isPlayerContinuityCapsule(value: unknown): boolean {
-  // Versioned capsules use the shared fail-closed parser.
-  if (isRecord(value) && value.version === PLAYER_CONTINUITY_CAPSULE_VERSION) {
-    return parsePlayerContinuityCapsule(value) != null;
-  }
-  // Legacy unversioned capsules remain inspectable for passport diagnostics but
-  // are not recovery-admissible (recovery requires versioned capsules).
-  if (!isRecord(value) || value.version != null) return false;
-  const relationships = value.relationships;
-  return typeof value.playerId === "string" &&
-    value.playerId.length > 0 &&
-    typeof value.playerName === "string" &&
-    value.playerName.length > 0 &&
-    Array.isArray(value.notes) &&
-    isRecord(relationships) &&
-    Array.isArray(relationships.allies) &&
-    Array.isArray(relationships.threats) &&
-    Array.isArray(value.roundHistory) &&
-    (value.strategyPacket === null || isRecord(value.strategyPacket)) &&
-    (value.reflectionSummary === null || isRecord(value.reflectionSummary));
+  return isRecord(value)
+    && value.version === PLAYER_CONTINUITY_CAPSULE_VERSION
+    && parsePlayerContinuityCapsule(value) != null;
 }
 
 function isHouseContinuityCapsule(value: unknown): boolean {

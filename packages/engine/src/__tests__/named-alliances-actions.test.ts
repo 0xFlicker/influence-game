@@ -42,7 +42,15 @@ function createActionHarness() {
 
 describe("Format Mingle alliance action runner", () => {
   it("forms an official alliance from a proposal and same-version acceptance", async () => {
-    const { gameState, agents, ctx } = createActionHarness();
+    const { gameState, logger, agents, ctx } = createActionHarness();
+    const serializedResponses: string[] = [];
+    const strategyResults: unknown[] = [];
+    logger.setStreamListener((event) => {
+      if (event.type === "agent_turn" && event.action === "alliance-action") {
+        serializedResponses.push(JSON.stringify(event.response));
+        strategyResults.push(event.strategyResult);
+      }
+    });
     agents.get("alice")!.allianceActions.push({
       action: "propose",
       allianceId: "alliance-ab",
@@ -53,6 +61,7 @@ describe("Format Mingle alliance action runner", () => {
       purpose: "Vote together before Council.",
       timebox: "round one",
       thinking: "mock: propose to Bob",
+      strategyDelta: "Keep Bob close if he accepts this deal.",
       decisionId: "decision-propose-ab",
     });
     agents.get("bob")!.allianceActions.push({
@@ -83,6 +92,13 @@ describe("Format Mingle alliance action runner", () => {
     expect(proposal?.sourcePointers[0]?.decisionId).toBe("decision-propose-ab");
     expect(response?.sourcePointers[0]?.decisionId).toBe("decision-accept-ab");
     expect(activation?.sourcePointers).toEqual([]);
+    expect(serializedResponses.join("\n")).not.toContain("strategyDelta");
+    expect(serializedResponses.join("\n")).not.toContain("Keep Bob close if he accepts this deal.");
+    expect(strategyResults).toContainEqual(expect.objectContaining({
+      status: "accepted",
+      operation: "delta",
+      resultingRevision: 1,
+    }));
   });
 
   it("resolves invited responses before the next proposer and rejects exact duplicate rosters", async () => {

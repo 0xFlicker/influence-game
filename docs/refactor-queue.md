@@ -12,6 +12,8 @@ Last watch-shell accessibility audit added: 2026-07-26
 
 Last live recovery regression added: 2026-08-04
 
+Last simulator variant cleanup added: 2026-08-14
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -105,6 +107,16 @@ Items are ordered by current priority.
 - Concrete seam: a new lightweight `@influence/simulation` workspace package above the engine; simulator CLI/configuration, artifact writers, local corpus MCP, Node filesystem/process utilities, and simulation-only dependencies; explicit engine exports for pure domain, runtime/provider adapters, and browser-safe leaves.
 - Validation path: preserve existing root simulation commands and artifact formats through the new package; keep deterministic engine and API tests passing; prove browser-safe engine subpaths with a production Next.js build; add an import-boundary test that rejects Node/provider/simulation dependencies from designated pure/browser entries.
 - Suggested slice: first move `simulate.ts`, `api-simulate.ts`, simulation instrumentation, local artifact writing, and the filesystem-backed simulation MCP into `@influence/simulation` without redesigning gameplay. Then inventory the remaining Node/OpenAI coupling and lift it behind injected runtime/provider/UUID/hash ports in bounded follow-ups. Do not claim the engine is environment-agnostic until those remaining imports are removed from its designated core boundary.
+
+### R20. Remove stale simulator variant aliases
+
+- Status: `ready`
+- Priority: **low**
+- Sources: `packages/engine/src/simulate.ts`, `packages/engine/src/__tests__/simulate-config.test.ts`, `docs/local-model-evaluation.md`, and the compact-decision-envelope one-game validation review on 2026-08-14.
+- Signal: simulator variants still describe Mingle as an experiment even though both `baseline` and `mingle` now resolve to the same current configuration: one Lobby message per player, three Mingle beats, and no post-vote Power Lobby. Selecting `mingle` changes the recorded label but not gameplay, while the remaining string matrix mixes that obsolete alias with still-distinct Power Lobby experiments. This makes production-like run recipes look more experimental and less reviewable than they are.
+- Concrete seam: `SimArgs.variant`, `INFLUENCE_SIM_VARIANT`, CLI parsing, `MINGLE_VARIANTS`, `POWER_LOBBY_VARIANTS`, `buildSimulationConfig()`, run metadata, simulator examples, and focused configuration tests.
+- Validation path: prove the normal simulator configuration remains byte-for-byte equivalent after cleanup; prove any retained Power Lobby experiment is selected through an explicit option; verify current runbooks no longer require `--variant mingle`; preserve historical batch metadata as historical evidence rather than a compatibility input.
+- Suggested slice: remove the semantically duplicate `mingle` alias and replace the combined variant-name matrix with explicit simulator options for any experiment that still has an owner. Keep the default path equal to current normal gameplay and do not introduce a feature flag into production game configuration.
 
 ### R4. Private trace purge execution
 

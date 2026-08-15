@@ -19,7 +19,7 @@ import type {
 import type { GameState } from "./game-state";
 import type { TranscriptLogger } from "./transcript-logger";
 import type { Phase, UUID } from "./types";
-import type { AgentTurnEvent } from "./game-runner.types";
+import type { AgentTurnEvent, CompactStrategyApplicationResult } from "./game-runner.types";
 
 export type { EndgameSpeechKind, FormalSpeechProvenance };
 
@@ -247,6 +247,8 @@ export interface FormalSpeechAgentTurnInput {
   response: Record<string, unknown>;
   thinking?: string;
   reasoningContext?: string;
+  /** Runs after the canonical speech commit and before private turn emission. */
+  commitStrategy?: () => CompactStrategyApplicationResult | undefined;
   /** Optional thinking/reasoning for transcript row (viewer-only). */
   transcriptThinking?: { thinking?: string; reasoningContext?: string; decisionId?: string };
 }
@@ -308,6 +310,8 @@ export function commitAcceptedFormalSpeech(
     );
   }
 
+  const strategyResult = agentTurn.commitStrategy?.();
+
   deps.logger.logPublic(speech.playerId, displayText, speech.phase, {
     ...agentTurn.transcriptThinking,
     dialogueContext: {
@@ -325,6 +329,10 @@ export function commitAcceptedFormalSpeech(
     actor: agentTurn.actor,
     visibility: "public",
     response: agentTurn.response,
+    ...(agentTurn.transcriptThinking?.decisionId
+      ? { decisionId: agentTurn.transcriptThinking.decisionId }
+      : {}),
+    ...(strategyResult ? { strategyResult } : {}),
     ...(agentTurn.thinking ? { thinking: agentTurn.thinking } : {}),
     ...(agentTurn.reasoningContext ? { reasoningContext: agentTurn.reasoningContext } : {}),
     scope: "public",

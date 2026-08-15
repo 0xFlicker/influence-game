@@ -112,11 +112,26 @@ export class TranscriptLogger {
   }
 
   emitAgentTurn(input: AgentTurnInput): void {
+    const {
+      decisionId: responseDecisionId,
+      strategyResult: responseStrategyResult,
+      ...response
+    } = input.response as Record<string, unknown> & {
+      decisionId?: AgentTurnEvent["decisionId"];
+      strategyResult?: AgentTurnEvent["strategyResult"];
+    };
     const event: AgentTurnEvent = {
       type: "agent_turn",
       round: this.gameState.round,
       timestamp: Date.now(),
       ...input,
+      response,
+      ...(input.decisionId ?? responseDecisionId
+        ? { decisionId: input.decisionId ?? responseDecisionId }
+        : {}),
+      ...(input.strategyResult ?? responseStrategyResult
+        ? { strategyResult: input.strategyResult ?? responseStrategyResult }
+        : {}),
     };
     this.emitStream(event);
   }

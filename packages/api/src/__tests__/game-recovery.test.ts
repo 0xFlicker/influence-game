@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { and, asc, eq } from "drizzle-orm";
 import {
   DEFAULT_CONFIG,
+  createOpeningStrategyState,
   GameRunner,
   GameState,
   Phase,
@@ -19,7 +20,6 @@ import {
   type PlayerContinuityCapsule,
   type PowerAction,
   type StrategicDecisionMetadata,
-  type StrategicReflectionAction,
   type TargetDecision,
   type UUID,
 } from "@influence/engine";
@@ -110,15 +110,12 @@ class RecoverySmokeAgent implements IAgent {
   async onPhaseStart(): Promise<void> {}
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> {
     return {
-      version: 1,
-      strategyPacket: null,
-      reflectionSummary: null,
+      version: 2,
+      compactStrategy: createOpeningStrategyState(),
       notes: [],
       relationships: { allies: [], threats: [] },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: [],
-      strategyPacketRevisionCounter: 0,
     };
   }
   restoreContinuityCapsule(_capsule: PlayerContinuityCapsule): void {}
@@ -215,18 +212,6 @@ class RecoverySmokeAgent implements IAgent {
   async getClosingArgument(): Promise<AgentResponse> { return mockResponse("closing"); }
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
     return { target: finalistIds[0], thinking: "startup recovery jury vote" };
-  }
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    return {
-      certainties: [],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "startup recovery plan",
-      strategicLens: "broad_read",
-      strategicLensRationale: "startup recovery broad reflection",
-      thinking: "startup recovery strategic reflection",
-    };
   }
 
   updateAlly(_playerName: string): void {}
@@ -764,8 +749,8 @@ describe("game startup recovery", () => {
     });
 
     const candidate = await getSupportedRecovery(db, gameId);
-    expect(candidate.ok).toBeTrue();
     if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
+    expect(candidate.ok).toBeTrue();
     expect(candidate.resumeFrom.mingleInboxReplay?.entries.length).toBeGreaterThan(0);
     expect(candidate.resumeFrom.mingleInboxReplay?.unresolvedRecipientNames).toEqual([]);
     expect(candidate.resumeFrom.actorCoordinate).toBe("vote");
@@ -1214,12 +1199,30 @@ describe("game startup recovery", () => {
       checkpoint.playerContinuityCapsules = [];
     })).toMatchObject({ ok: false, reason: "player_continuity_missing" });
 
-    expect(await seedAndEvaluate("unsupported-version", (checkpoint) => {
+    expect(await seedAndEvaluate("v1", (checkpoint) => {
       checkpoint.playerContinuityCapsules = (checkpoint.playerContinuityCapsules ?? []).map((capsule) => ({
         ...capsule,
-        version: 99 as unknown as 1,
+        version: 1 as unknown as 2,
       }));
     })).toMatchObject({ ok: false, reason: "player_continuity_unsupported_version" });
+
+    expect(await seedAndEvaluate("partial", (checkpoint) => {
+      checkpoint.playerContinuityCapsules = (checkpoint.playerContinuityCapsules ?? []).slice(0, -1);
+    })).toMatchObject({ ok: false, reason: "player_continuity_coverage_mismatch" });
+
+    expect(await seedAndEvaluate("duplicate", (checkpoint) => {
+      const capsules = checkpoint.playerContinuityCapsules ?? [];
+      checkpoint.playerContinuityCapsules = [...capsules, capsules[0]!];
+    })).toMatchObject({ ok: false, reason: "player_continuity_duplicate" });
+
+    expect(await seedAndEvaluate("obsolete-field", (checkpoint) => {
+      const capsules = [...(checkpoint.playerContinuityCapsules ?? [])];
+      capsules[0] = {
+        ...capsules[0]!,
+        strategyPacket: null,
+      } as typeof capsules[0];
+      checkpoint.playerContinuityCapsules = capsules;
+    })).toMatchObject({ ok: false, reason: "player_continuity_malformed" });
 
     expect(await seedAndEvaluate("identity-mismatch", (checkpoint) => {
       const capsules = [...(checkpoint.playerContinuityCapsules ?? [])];
@@ -1231,17 +1234,14 @@ describe("game startup recovery", () => {
       checkpoint.playerContinuityCapsules = [
         ...(checkpoint.playerContinuityCapsules ?? []),
         {
-          version: 1,
+          version: 2,
           playerId: "extra",
           playerName: "Extra",
-          strategyPacket: null,
-          reflectionSummary: null,
+          compactStrategy: createOpeningStrategyState(),
           notes: [],
           relationships: { allies: [], threats: [] },
           powerActionMemory: [],
           roundHistory: [],
-          recentStrategicDecisions: [],
-          strategyPacketRevisionCounter: 0,
         },
       ];
     })).toMatchObject({ ok: false, reason: "player_continuity_coverage_mismatch" });

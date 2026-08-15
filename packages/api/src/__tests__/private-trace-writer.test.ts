@@ -150,8 +150,10 @@ function makeTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDecisi
       expose: "Vera",
       reasoningContext: "native reasoning secret",
     },
-    strategyPacketRevision: "r1-vote-1",
-    decisionLog: "The vote followed the packet by rewarding Mira and pressuring Vera.",
+    strategyCandidate: {
+      operation: "delta",
+      submittedValue: "Reward Mira and pressure Vera.",
+    },
     boundary: {
       currentEventSequence: 7,
       currentEventHash: "sha256:event-head",
@@ -270,11 +272,9 @@ describe("private trace writer", () => {
       },
       toolName: "cast_votes",
       providerReasoningSummaryByteLength: expect.any(Number),
-      strategicDecision: {
-        decisionLogBytes: expect.any(Number),
-      },
-      strategyPacket: {
-        revision: "r1-vote-1",
+      strategyCandidate: {
+        operation: "delta",
+        submittedValueByteLength: expect.any(Number),
       },
     });
     expect(metadata.byteLength).toBeGreaterThan(0);
@@ -305,14 +305,12 @@ describe("private trace writer", () => {
           credits: 17,
         },
       },
-      strategicDecision: {
-        decisionLogBytes: expect.any(Number),
-      },
-      strategyPacket: {
-        revision: "r1-vote-1",
+      strategyCandidate: {
+        operation: "delta",
+        submittedValueByteLength: expect.any(Number),
       },
     });
-    expect(JSON.stringify(index.manifests[0])).not.toContain("The vote followed the packet");
+    expect(JSON.stringify(index.manifests[0])).not.toContain("Reward Mira and pressure Vera");
   });
 
   test("persists effective OpenAI tier and cache-write usage for cost backfill", async () => {
