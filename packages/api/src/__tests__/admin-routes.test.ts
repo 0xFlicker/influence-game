@@ -27,6 +27,11 @@ import {
   captureGameCompletionSettlement,
   settleCapturedGameCompletion,
 } from "../services/game-completion-settlement.js";
+import {
+  acquireDeploymentAdmissionLease,
+  advanceDeploymentAdmissionPhase,
+  getDeploymentAdmissionStatus,
+} from "../services/deployment-admission.js";
 
 const ADMIN_ADDRESS = "0xadmin000000000000000000000000000000000001";
 const GAMER_ADDRESS = "0xgamer000000000000000000000000000000000001";
@@ -246,6 +251,7 @@ describe("admin route RBAC", () => {
         "schedule_free_game",
         "hide_game",
         "manage_postgame_media",
+        "manage_deployment_admission",
         "retry_game_settlement",
       ],
     });
@@ -271,6 +277,7 @@ describe("admin route RBAC", () => {
         "view_admin",
         "manage_cost_accounting",
         "manage_postgame_media",
+        "manage_deployment_admission",
         "retry_game_settlement",
         "schedule_free_game",
         "hide_game",
@@ -297,6 +304,183 @@ describe("admin route RBAC", () => {
     expect(admin.permissions).toContain("retry_game_settlement");
     expect(sysop.permissions).toContain("retry_game_settlement");
     expect(gamer.permissions).not.toContain("retry_game_settlement");
+  });
+
+  test("grants deployment Resume only to the admin and sysop seed roles", async () => {
+    const admin = await getPermissionsForAddress(db, ADMIN_ADDRESS);
+    const sysop = await getPermissionsForAddress(db, SYSOP_ADDRESS);
+    const gamer = await getPermissionsForAddress(db, GAMER_ADDRESS);
+
+    expect(admin.permissions).toContain("manage_deployment_admission");
+    expect(sysop.permissions).toContain("manage_deployment_admission");
+    expect(gamer.permissions).not.toContain("manage_deployment_admission");
+  });
+
+  test("exposes safe admission status and revokes a validating lease without its private fence", async () => {
+    const acquired = await acquireDeploymentAdmissionLease(db, {
+      candidateSha: "4".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 444,
+      workflowRunAttempt: 2,
+      actor: "release-operator",
+    });
+    if (!acquired.ok) throw new Error(acquired.error);
+    const validating = await advanceDeploymentAdmissionPhase(db, {
+      leaseId: acquired.lease.id,
+      fencingToken: acquired.lease.fencingToken,
+      expectedPhase: "draining",
+      nextPhase: "validating",
+    });
+    expect(validating.ok).toBeTrue();
+    const viewOnlyToken = await createSessionToken(adminUserId, {
+      roles: ["admin-reader"],
+      permissions: ["view_admin"],
+    });
+    const startOnlyToken = await createSessionToken(adminUserId, {
+      roles: ["starter"],
+      permissions: ["start_game"],
+    });
+
+    for (const token of [viewOnlyToken, startOnlyToken]) {
+      expect((await app.request("/api/admin/deployment-admission", {
+        headers: { Authorization: `Bearer ${token}` },
+      })).status).toBe(403);
+      expect((await app.request(
+        `/api/admin/deployment-admission/${acquired.lease.id}/resume`,
+        {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ revision: 2, reason: "not authorized" }),
+        },
+      )).status).toBe(403);
+    }
+
+    const status = await app.request("/api/admin/deployment-admission", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(status.status).toBe(200);
+    const statusBody = await status.json() as Record<string, unknown>;
+    expect(statusBody).toMatchObject({
+      schemaVersion: 1,
+      admissionBlocked: true,
+      activeGameCount: 0,
+      lease: {
+        id: acquired.lease.id,
+        revision: 2,
+        phase: "validating",
+        canResume: true,
+        workflowRunId: 444,
+        workflowRunAttempt: 2,
+      },
+    });
+    expect(JSON.stringify(statusBody)).not.toContain("fencingToken");
+
+    const resumed = await app.request(
+      `/api/admin/deployment-admission/${acquired.lease.id}/resume`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: 2, reason: "release runner was canceled" }),
+      },
+    );
+    expect(resumed.status).toBe(200);
+    expect(await resumed.json()).toMatchObject({ outcome: "revoked" });
+    expect(JSON.stringify(await getDeploymentAdmissionStatus(db))).not.toContain("fencingToken");
+    expect((await db.select().from(schema.deploymentAdmissionLeases))[0]).toMatchObject({
+      status: "revoked",
+      revokedBy: adminUserId,
+      revocationReason: "release runner was canceled",
+    });
+    const staleController = await advanceDeploymentAdmissionPhase(db, {
+      leaseId: acquired.lease.id,
+      fencingToken: acquired.lease.fencingToken,
+      expectedPhase: "validating",
+      nextPhase: "switching",
+    });
+    expect(staleController.ok).toBeFalse();
+  });
+
+  test("makes concurrent Resume idempotent and cannot revoke a newer lease", async () => {
+    const acquired = await acquireDeploymentAdmissionLease(db, {
+      candidateSha: "5".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 555,
+      workflowRunAttempt: 1,
+      actor: "release-operator",
+    });
+    if (!acquired.ok) throw new Error(acquired.error);
+    const request = (token: string) => app.request(
+      `/api/admin/deployment-admission/${acquired.lease.id}/resume`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: acquired.lease.revision, reason: "duplicate operator recovery" }),
+      },
+    );
+
+    const responses = await Promise.all([request(adminToken), request(sysopToken)]);
+    expect(responses.map((response) => response.status)).toEqual([200, 200]);
+    const bodies = await Promise.all(responses.map((response) => response.json())) as Array<{ outcome: string }>;
+    expect(bodies.map((body) => body.outcome).sort()).toEqual(["already_resumed", "revoked"]);
+
+    const newer = await acquireDeploymentAdmissionLease(db, {
+      candidateSha: "6".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 556,
+      workflowRunAttempt: 1,
+      actor: "release-operator",
+    });
+    if (!newer.ok) throw new Error(newer.error);
+    const stale = await request(adminToken);
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ code: "stale_lease" });
+    expect((await getDeploymentAdmissionStatus(db)).lease?.id).toBe(newer.lease.id);
+  });
+
+  test("refuses Resume during switching and restoration", async () => {
+    const acquired = await acquireDeploymentAdmissionLease(db, {
+      candidateSha: "7".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 777,
+      workflowRunAttempt: 1,
+      actor: "release-operator",
+    });
+    if (!acquired.ok) throw new Error(acquired.error);
+    for (const [expectedPhase, nextPhase] of [
+      ["draining", "validating"],
+      ["validating", "switching"],
+    ] as const) {
+      const advanced = await advanceDeploymentAdmissionPhase(db, {
+        leaseId: acquired.lease.id,
+        fencingToken: acquired.lease.fencingToken,
+        expectedPhase,
+        nextPhase,
+      });
+      expect(advanced.ok).toBeTrue();
+    }
+    const resume = () => app.request(
+      `/api/admin/deployment-admission/${acquired.lease.id}/resume`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ revision: 3, reason: "unsafe late recovery" }),
+      },
+    );
+
+    const switching = await resume();
+    expect(switching.status).toBe(409);
+    expect(await switching.json()).toMatchObject({ code: "resume_too_late" });
+    const restoring = await advanceDeploymentAdmissionPhase(db, {
+      leaseId: acquired.lease.id,
+      fencingToken: acquired.lease.fencingToken,
+      expectedPhase: "switching",
+      nextPhase: "restoring",
+    });
+    expect(restoring.ok).toBeTrue();
+    const restorationResume = await resume();
+    expect(restorationResume.status).toBe(409);
+    expect(await restorationResume.json()).toMatchObject({ code: "resume_too_late" });
+    expect((await getDeploymentAdmissionStatus(db)).admissionBlocked).toBeTrue();
   });
 
   test("audits denied, invalid, successful, repeated, and repair-blocked settlement retries", async () => {

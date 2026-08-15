@@ -84,6 +84,12 @@ import {
   listAdminOwnerLearningReviews,
   parseAdminOwnerLearningReviewFilters,
 } from "../services/owner-learning-admin.js";
+import {
+  getDeploymentAdmissionStatus,
+  revokeDeploymentAdmissionLease,
+  type DeploymentAdmissionErrorCode,
+  type DeploymentAdmissionStatus,
+} from "../services/deployment-admission.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -101,6 +107,7 @@ export function createAdminRoutes(
   const requireRoleManagement = requirePermission("manage_roles");
   const requirePostgameMediaManagement = requirePermission("manage_postgame_media", "manage_roles");
   const requireFreeQueueManagement = requirePermission("schedule_free_game", "manage_roles");
+  const requireDeploymentAdmissionManagement = requirePermission("manage_deployment_admission");
   const canManageCostAccounting = (permissions: string[]) => (
     permissions.includes("manage_cost_accounting") || permissions.includes("manage_roles")
   );
@@ -115,6 +122,56 @@ export function createAdminRoutes(
 
   // All admin routes require authentication. Permissions are applied per-route.
   app.use("/api/admin/*", requireAuth(db));
+
+  app.get("/api/admin/deployment-admission", requireDeploymentAdmissionManagement, async (c) => {
+    try {
+      return c.json(projectAdminDeploymentAdmissionStatus(await getDeploymentAdmissionStatus(db)));
+    } catch {
+      return c.json({
+        error: "Deployment admission state is temporarily unavailable",
+        code: "deployment_admission_unavailable",
+        retryable: true,
+      }, 503);
+    }
+  });
+
+  app.post(
+    "/api/admin/deployment-admission/:leaseId/resume",
+    requireDeploymentAdmissionManagement,
+    async (c) => {
+      const leaseId = c.req.param("leaseId");
+      const body = await parseJsonBody(c, "POST /api/admin/deployment-admission/:leaseId/resume");
+      const revision = body?.revision;
+      const reason = body?.reason;
+      if (
+        !validUuid(leaseId)
+        || typeof revision !== "number"
+        || !Number.isSafeInteger(revision)
+        || revision < 1
+        || typeof reason !== "string"
+      ) {
+        return c.json({ error: "A valid lease revision and Resume reason are required" }, 400);
+      }
+      const result = await revokeDeploymentAdmissionLease(db, {
+        leaseId,
+        expectedRevision: revision,
+        revokedBy: c.get("user").id,
+        reason,
+      });
+      if (!result.ok) {
+        return c.json(
+          { error: result.error, code: result.code, retryable: result.retryable },
+          adminDeploymentAdmissionErrorStatus(result.code),
+        );
+      }
+      return c.json({
+        schemaVersion: 1 as const,
+        outcome: result.outcome,
+        leaseId: result.lease.id,
+        revision: result.lease.revision,
+      });
+    },
+  );
 
   // -------------------------------------------------------------------------
   // GET /api/admin/roles — list all roles with their permissions
@@ -1532,6 +1589,43 @@ export function createAdminRoutes(
   });
 
   return app;
+}
+
+function projectAdminDeploymentAdmissionStatus(status: DeploymentAdmissionStatus) {
+  return {
+    schemaVersion: 1 as const,
+    admissionBlocked: status.admissionBlocked,
+    activeGameCount: status.activeGameCount,
+    lease: status.lease ? {
+      id: status.lease.id,
+      revision: status.lease.revision,
+      candidateSha: status.lease.candidateSha,
+      sourceRepository: status.lease.sourceRepository,
+      workflowRunId: status.lease.workflowRunId,
+      workflowRunAttempt: status.lease.workflowRunAttempt,
+      actor: status.lease.actor,
+      phase: status.lease.phase,
+      status: status.lease.status,
+      acquiredAt: status.lease.acquiredAt,
+      heartbeatAt: status.lease.heartbeatAt,
+      expiresAt: status.lease.expiresAt,
+      absoluteDeadlineAt: status.lease.absoluteDeadlineAt,
+      canResume: status.lease.phase === "draining" || status.lease.phase === "validating",
+    } : null,
+  };
+}
+
+function adminDeploymentAdmissionErrorStatus(
+  code: DeploymentAdmissionErrorCode,
+): 400 | 404 | 409 | 503 {
+  if (code === "lease_not_found") return 404;
+  if (code === "deployment_admission_unavailable") return 503;
+  if (code === "invalid_transition" || code === "invalid_provenance") return 400;
+  return 409;
+}
+
+function validUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function postgameHighlightsErrorResponse(

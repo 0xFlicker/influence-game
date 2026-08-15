@@ -24,6 +24,9 @@ export type DeploymentAdmissionErrorCode =
   | "invalid_provenance"
   | "invalid_transition"
   | "lease_expired"
+  | "lease_not_found"
+  | "lease_revision_changed"
+  | "resume_too_late"
   | "stale_lease";
 
 export type DeploymentAdmissionFailure = {
@@ -268,6 +271,86 @@ export async function completeDeploymentAdmissionLease(
   }
 }
 
+export async function revokeDeploymentAdmissionLease(
+  db: DrizzleDB,
+  input: {
+    leaseId: string;
+    expectedRevision: number;
+    revokedBy: string;
+    reason: string;
+  },
+): Promise<
+  | { ok: true; outcome: "revoked" | "already_resumed"; lease: DeploymentAdmissionLease }
+  | DeploymentAdmissionFailure
+> {
+  if (
+    !Number.isSafeInteger(input.expectedRevision)
+    || input.expectedRevision < 1
+    || !validAuditActor(input.revokedBy)
+    || !validAuditReason(input.reason)
+  ) {
+    return failure("invalid_transition", "A valid lease revision, actor, and Resume reason are required", false);
+  }
+
+  try {
+    return await db.transaction(async (tx) => {
+      await lockAdmissionState(tx);
+      const now = await databaseTimes(tx);
+      const activeLease = await effectiveActiveLease(tx, now.now);
+      const requestedLease = (await tx.select().from(schema.deploymentAdmissionLeases)
+        .where(eq(schema.deploymentAdmissionLeases.id, input.leaseId))
+        .limit(1)
+        .for("update"))[0];
+      if (!requestedLease) {
+        return failure("lease_not_found", "The deployment admission lease was not found", false);
+      }
+      if (requestedLease.status !== "active") {
+        if (activeLease && activeLease.id !== requestedLease.id) return staleLeaseFailure();
+        return {
+          ok: true as const,
+          outcome: "already_resumed" as const,
+          lease: projectLease(requestedLease),
+        };
+      }
+      if (!activeLease || activeLease.id !== requestedLease.id) return staleLeaseFailure();
+      if (!PRE_SWITCH_PHASES.has(requestedLease.phase)) {
+        return failure(
+          "resume_too_late",
+          "Resume is unavailable after the production route switch begins",
+          false,
+        );
+      }
+      if (requestedLease.revision !== input.expectedRevision) {
+        return failure(
+          "lease_revision_changed",
+          "The deployment admission lease changed; refresh status before resuming",
+          true,
+        );
+      }
+
+      const updated = (await tx.update(schema.deploymentAdmissionLeases).set({
+        status: "revoked",
+        completedAt: now.now,
+        completionReason: "admin_resume",
+        revokedAt: now.now,
+        revokedBy: input.revokedBy,
+        revocationReason: input.reason,
+        revision: sql`${schema.deploymentAdmissionLeases.revision} + 1`,
+        updatedAt: now.now,
+      }).where(and(
+        eq(schema.deploymentAdmissionLeases.id, requestedLease.id),
+        eq(schema.deploymentAdmissionLeases.status, "active"),
+        eq(schema.deploymentAdmissionLeases.revision, input.expectedRevision),
+        eq(schema.deploymentAdmissionLeases.phase, requestedLease.phase),
+      )).returning())[0];
+      if (!updated) return staleLeaseFailure();
+      return { ok: true as const, outcome: "revoked" as const, lease: projectLease(updated) };
+    });
+  } catch {
+    return unavailableFailure();
+  }
+}
+
 export async function getDeploymentAdmissionStatus(
   db: DrizzleDB,
 ): Promise<DeploymentAdmissionStatus> {
@@ -450,6 +533,12 @@ function validAuditReason(reason: string): boolean {
   return reason.length >= 1
     && reason.length <= 240
     && /^[A-Za-z0-9 ._/@,:#+()-]+$/.test(reason);
+}
+
+function validAuditActor(actor: string): boolean {
+  return actor.length >= 1
+    && actor.length <= 200
+    && /^[A-Za-z0-9-]+$/.test(actor);
 }
 
 function failure(

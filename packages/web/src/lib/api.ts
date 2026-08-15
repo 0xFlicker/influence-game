@@ -2791,6 +2791,42 @@ export interface AdminUser {
   createdAt: string;
 }
 
+export type AdminDeploymentAdmissionPhase =
+  | "draining"
+  | "validating"
+  | "switching"
+  | "accepting"
+  | "restoring";
+
+export interface AdminDeploymentAdmissionStatus {
+  schemaVersion: 1;
+  admissionBlocked: boolean;
+  activeGameCount: number;
+  lease: null | {
+    id: string;
+    revision: number;
+    candidateSha: string;
+    sourceRepository: string;
+    workflowRunId: number;
+    workflowRunAttempt: number;
+    actor: string;
+    phase: AdminDeploymentAdmissionPhase;
+    status: "active";
+    acquiredAt: string;
+    heartbeatAt: string;
+    expiresAt: string;
+    absoluteDeadlineAt: string;
+    canResume: boolean;
+  };
+}
+
+export interface AdminDeploymentAdmissionResumeResult {
+  schemaVersion: 1;
+  outcome: "revoked" | "already_resumed";
+  leaseId: string;
+  revision: number;
+}
+
 // ---------------------------------------------------------------------------
 // Admin RBAC API calls
 // ---------------------------------------------------------------------------
@@ -2825,6 +2861,21 @@ export async function revokeRole(
 
 export async function listAdminUsers(): Promise<AdminUser[]> {
   return apiFetch("/api/admin/users");
+}
+
+export async function getAdminDeploymentAdmission(): Promise<AdminDeploymentAdmissionStatus> {
+  return apiFetch("/api/admin/deployment-admission");
+}
+
+export async function resumeAdminDeploymentAdmission(
+  leaseId: string,
+  revision: number,
+  reason: string,
+): Promise<AdminDeploymentAdmissionResumeResult> {
+  return apiFetch(`/api/admin/deployment-admission/${encodeURIComponent(leaseId)}/resume`, {
+    method: "POST",
+    body: JSON.stringify({ revision, reason }),
+  });
 }
 
 // ---------------------------------------------------------------------------
