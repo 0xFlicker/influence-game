@@ -1,0 +1,212 @@
+name: "Influence Production Approval"
+run-name: "Production approval / ${{ github.event.client_payload.request_artifact }}"
+
+on:
+  repository_dispatch:
+    types: [influence-production-approval-requested]
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  validate:
+    name: Validate private production request
+    if: ${{ github.ref == 'refs/heads/main' && github.actor == 'flick-ai-dev[bot]' && github.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      kind: ${{ steps.request.outputs.kind }}
+    env:
+      SOURCE_RUN_ID: ${{ github.event.client_payload.request_run_id }}
+      SOURCE_RUN_ATTEMPT: ${{ github.event.client_payload.request_run_attempt }}
+      SOURCE_ARTIFACT: ${{ github.event.client_payload.request_artifact }}
+      SOURCE_DIGEST: ${{ github.event.client_payload.request_digest }}
+    steps:
+      - name: Checkout trusted approval broker
+        uses: actions/checkout@v4
+
+      - name: Generate read-only Linode provenance token
+        id: linode-read-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: linode-iac
+          permission-actions: read
+          permission-contents: read
+
+      - name: Verify immutable private request
+        id: request
+        env:
+          LINODE_TOKEN: ${{ steps.linode-read-token.outputs.token }}
+        run: |
+          kind="$(bash scripts/production-approval.sh verify-request validated-request)"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Verified production approval request"
+            echo
+            echo "- Operation: \`$kind\`"
+            echo "- Private source: [\`$SOURCE_RUN_ID\` attempt \`$SOURCE_RUN_ATTEMPT\`](https://github.com/0xFlicker/linode-iac/actions/runs/$SOURCE_RUN_ID/attempts/$SOURCE_RUN_ATTEMPT)"
+            echo "- Request artifact: \`$SOURCE_ARTIFACT\`"
+            echo "- Request digest: \`$SOURCE_DIGEST\`"
+            echo
+            jq -r '
+              if .kind == "candidate" then "- Candidate: `\(.operation.qualification.candidate_sha)`\n- Baseline: `\(.operation.qualification.production_baseline.candidate_sha)`\n- API: `\(.operation.qualification.images.api.digest)`\n- Web: `\(.operation.qualification.images.web.digest)`\n- Worker: `\(.operation.qualification.images.render_worker.digest)`\n- Migrations: `\(.operation.qualification.migration_set)`"
+              elif .kind == "bootstrap-inventory" then "- Accepted color: `\(.operation.accepted_color)`\n- This approval authorizes durable recovery plus private inventory collection."
+              elif .kind == "bootstrap-conversion" then "- Accepted color: `\(.operation.accepted_color)`\n- Private inventory: `\(.operation.inventory.artifact)`\n- Inventory digest: `\(.operation.inventory.digest)`"
+              else "- Candidate: `\(.operation.qualification.candidate_sha)`\n- Baseline: `\(.operation.qualification.production_baseline.candidate_sha)`\n- Reason: \(.operation.reason)"
+              end
+            ' validated-request/production-approval-request.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify current approval protection before prompting
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/production-approval.sh verify-preapproval-policy validated-policy
+
+  authorize:
+    name: Approve production handoff
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: production
+      deployment: false
+    concurrency:
+      group: influence-production-approval-${{ github.event.client_payload.request_artifact }}-${{ github.event.client_payload.request_digest }}
+      cancel-in-progress: false
+    env:
+      SOURCE_RUN_ID: ${{ github.event.client_payload.request_run_id }}
+      SOURCE_RUN_ATTEMPT: ${{ github.event.client_payload.request_run_attempt }}
+      SOURCE_ARTIFACT: ${{ github.event.client_payload.request_artifact }}
+      SOURCE_DIGEST: ${{ github.event.client_payload.request_digest }}
+      APPROVAL_ARTIFACT: production-approval-${{ needs.validate.outputs.kind }}-${{ github.run_id }}-${{ github.run_attempt }}
+    steps:
+      - name: Checkout trusted approval broker
+        uses: actions/checkout@v4
+
+      - name: Generate independent read-only Linode token
+        id: linode-read-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: linode-iac
+          permission-actions: read
+          permission-contents: read
+
+      - name: Reverify exact private request after approval
+        env:
+          LINODE_TOKEN: ${{ steps.linode-read-token.outputs.token }}
+        run: |
+          kind="$(bash scripts/production-approval.sh verify-request approved-request)"
+          [ "$kind" = "${{ needs.validate.outputs.kind }}" ] || {
+            echo "request kind changed across the approval boundary" >&2
+            exit 1
+          }
+
+      - name: Verify reviewer and current protection policy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/production-approval.sh verify-policy approved-policy
+
+      - name: Create immutable approval receipt
+        id: approval
+        run: |
+          jq -S -n \
+            --slurpfile request approved-request/production-approval-request.json \
+            --slurpfile provenance approved-request/request-provenance.json \
+            --slurpfile reviewer approved-policy/approval-reviewer.json \
+            --argjson run_id "$GITHUB_RUN_ID" \
+            --argjson run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg workflow_sha "$GITHUB_SHA" \
+            --arg actor_login "$GITHUB_ACTOR" \
+            --argjson actor_id 270169057 \
+            '{
+              schema_version: 1,
+              approval: {
+                repository: "0xFlicker/influence-game",
+                workflow: ".github/workflows/production-approval.yml",
+                run_id: $run_id,
+                run_attempt: $run_attempt,
+                workflow_sha: $workflow_sha,
+                actor: {login:$actor_login,id:$actor_id},
+                environment: "production",
+                reviewer: $reviewer[0]
+              },
+              request: $request[0],
+              request_provenance: $provenance[0]
+            }' > production-approval.json
+          approval_digest="sha256:$(sha256sum production-approval.json | awk '{print $1}')"
+          echo "approval_digest=$approval_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Upload immutable approval receipt
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APPROVAL_ARTIFACT }}
+          path: production-approval.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Generate callback-only Linode token
+        id: linode-callback-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: linode-iac
+          permission-contents: write
+
+      - name: Hand approved locator back to private execution
+        uses: actions/github-script@v7
+        env:
+          APPROVAL_DIGEST: ${{ steps.approval.outputs.approval_digest }}
+          APPROVAL_KIND: ${{ needs.validate.outputs.kind }}
+        with:
+          github-token: ${{ steps.linode-callback-token.outputs.token }}
+          script: |
+            const events = {
+              candidate: 'influence-production-candidate-approved',
+              'bootstrap-inventory': 'influence-production-bootstrap-inventory-approved',
+              'bootstrap-conversion': 'influence-production-bootstrap-conversion-approved',
+              'break-glass': 'influence-production-break-glass-approved'
+            };
+            const payload = {
+              approval_run_id: context.runId,
+              approval_run_attempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+              approval_artifact: process.env.APPROVAL_ARTIFACT,
+              approval_digest: process.env.APPROVAL_DIGEST
+            };
+            for (let attempt = 1; attempt <= 3; attempt += 1) {
+              try {
+                await github.rest.repos.createDispatchEvent({
+                  owner: '0xFlicker',
+                  repo: 'linode-iac',
+                  event_type: events[process.env.APPROVAL_KIND],
+                  client_payload: payload
+                });
+                return;
+              } catch (error) {
+                if (attempt === 3) throw error;
+                await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+              }
+            }
+
+      - name: Record approval handoff
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## Production approval handed off"
+            echo
+            echo "- Operation: \`${{ needs.validate.outputs.kind }}\`"
+            echo "- Reviewer: \`0xFlicker\`"
+            echo "- Approval artifact: \`$APPROVAL_ARTIFACT\`"
+            echo "- Approval digest: \`${{ steps.approval.outputs.approval_digest }}\`"
+            echo "- Private execution: [Linode Actions](https://github.com/0xFlicker/linode-iac/actions)"
+            echo
+            echo "> This run proves approval handoff only. Linode's terminal evidence proves execution or deployment."
+          } >> "$GITHUB_STEP_SUMMARY"
