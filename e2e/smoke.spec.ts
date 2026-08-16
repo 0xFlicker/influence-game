@@ -12,6 +12,7 @@ import {
 const stagingReleaseGate = process.env.STAGING_RELEASE_GATE === "1";
 const requestedImageTag = process.env.STAGING_IMAGE_TAG?.trim();
 const expectedCommitSha = process.env.STAGING_EXPECTED_COMMIT_SHA?.trim();
+const minimumReleaseControlProtocol = Number(process.env.STAGING_MIN_RELEASE_CONTROL_PROTOCOL ?? "1");
 
 const SENSITIVE_RESPONSE_HEADER = /authorization|cookie|secret|token/i;
 
@@ -26,6 +27,10 @@ function requiredStagingCommit(): string | null {
     expectedCommitSha,
     "STAGING_EXPECTED_COMMIT_SHA must be provided when STAGING_RELEASE_GATE=1",
   ).toMatch(/^[0-9a-f]{40}$/);
+  expect(
+    minimumReleaseControlProtocol,
+    "STAGING_MIN_RELEASE_CONTROL_PROTOCOL must be a positive integer",
+  ).toBeGreaterThanOrEqual(1);
 
   const imageTag = requestedImageTag!;
   const commitSha = expectedCommitSha!;
@@ -55,12 +60,18 @@ async function assertApiHealth(
     status?: string;
     service?: string;
     commit?: string;
+    releaseControl?: {
+      protocolVersion?: number;
+      runtimeState?: string;
+    };
   };
   expect(body.status).toBe("ok");
   expect(body.service).toBe("influence-api");
 
   if (expectedStagingCommit) {
     expect(body.commit).toBe(expectedStagingCommit);
+    expect(body.releaseControl?.protocolVersion).toBeGreaterThanOrEqual(minimumReleaseControlProtocol);
+    expect(body.releaseControl?.runtimeState).toBe("active");
   }
 }
 

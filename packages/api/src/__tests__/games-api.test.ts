@@ -23,6 +23,10 @@ import {
 import { refreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import { setServer } from "../services/ws-manager.js";
 import { createSeason } from "../services/seasons.js";
+import {
+  acquireDeploymentAdmissionLease,
+  completeDeploymentAdmissionLease,
+} from "../services/deployment-admission.js";
 import { GameState, Phase, type CanonicalGameEvent } from "@influence/engine";
 import {
   createCanonicalEventFixture,
@@ -657,6 +661,8 @@ describe("Game REST API", () => {
         "vote_bomb",
         "safety_bounce",
         "majority_elimination",
+        "even_votes",
+        "restricted_history",
       ]);
     });
 
@@ -1815,6 +1821,59 @@ describe("Game REST API", () => {
         .from(schema.games))[0]!;
       expect(game.status).toBe("in_progress");
       expect(game.startedAt).toBeTruthy();
+    });
+
+    test("denies a manual start at the deployment barrier without replaying it", async () => {
+      const { id } = await createTestGame(app, adminToken);
+      for (let i = 0; i < 6; i++) {
+        await joinTestPlayer(app, id, `DrainingPlayer${i}`, userToken);
+      }
+      const acquired = await acquireDeploymentAdmissionLease(db, {
+        candidateSha: "2".repeat(40),
+        sourceRepository: "0xFlicker/linode-iac",
+        workflowRunId: 321,
+        workflowRunAttempt: 1,
+        actor: "release-operator",
+      });
+      if (!acquired.ok) throw new Error(acquired.error);
+      let startupCalls = 0;
+      const admissionAwareApp = new Hono().route("/", createGameRoutes(db, {
+        startGame: async () => {
+          startupCalls += 1;
+          return {};
+        },
+      }));
+
+      const blocked = await admissionAwareApp.request(
+        `/api/games/${id}/start`,
+        authPost(adminToken),
+      );
+
+      expect(blocked.status).toBe(409);
+      expect(await blocked.json()).toMatchObject({
+        code: "deployment_admission_closed",
+        retryable: true,
+      });
+      expect(startupCalls).toBe(0);
+      expect((await db.select().from(schema.games).where(eq(schema.games.id, id)))[0])
+        .toMatchObject({ status: "waiting", startedAt: null });
+      expect(await db.select().from(schema.gameRunOwners)
+        .where(eq(schema.gameRunOwners.gameId, id))).toHaveLength(0);
+
+      const released = await completeDeploymentAdmissionLease(db, {
+        leaseId: acquired.lease.id,
+        fencingToken: acquired.lease.fencingToken,
+        outcome: "aborted",
+        reason: "route admission test complete",
+      });
+      expect(released.ok).toBeTrue();
+
+      const retried = await admissionAwareApp.request(
+        `/api/games/${id}/start`,
+        authPost(adminToken),
+      );
+      expect(retried.status).toBe(200);
+      expect(startupCalls).toBe(1);
     });
 
     test("returns typed roster-freeze failures to start clients", async () => {

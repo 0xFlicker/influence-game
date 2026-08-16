@@ -787,7 +787,15 @@ export function createGameRoutes(
 
     const readiness = await validateGameStartReadiness(db, gameId);
     if (readiness.error) {
-      return c.json({ error: readiness.error }, 500);
+      return c.json({
+        error: readiness.error,
+        ...(readiness.code && { code: readiness.code }),
+        ...(readiness.retryable !== undefined && { retryable: readiness.retryable }),
+      }, readiness.code === "deployment_admission_closed"
+        ? 409
+        : readiness.code === "deployment_admission_unavailable"
+          ? 503
+          : 500);
     }
 
     const owner = await acquireGameRunOwner(db, gameId);

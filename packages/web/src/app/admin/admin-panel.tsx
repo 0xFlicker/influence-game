@@ -10,6 +10,7 @@ import { TruncatedAddress } from "@/components/truncated-address";
 import { AdminCostPanel, AdminCostPill } from "./admin-cost-view";
 import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "./admin-highlights-diagnostics";
 import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "./admin-postgame-media";
+import { AdminDeploymentAdmission } from "./admin-deployment-admission";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -581,6 +582,8 @@ export function AdminPanel() {
           {error}
         </div>
       )}
+
+      <AdminDeploymentAdmission />
 
       {/* Active games */}
       <section className="mb-8">

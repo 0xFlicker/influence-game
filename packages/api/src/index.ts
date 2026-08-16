@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { eq, or } from "drizzle-orm";
 import { createDB, schema } from "./db/index.js";
-import { runMigrations } from "./db/migrate.js";
+import { calculateMigrationSet, runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
 import {
@@ -32,6 +32,7 @@ import { createOwnerLearningRoutes } from "./routes/owner-learning.js";
 import { createPostgameMediaWorkerRoutes } from "./routes/postgame-media-worker.js";
 import { createSeasonRoutes } from "./routes/seasons.js";
 import { createPublicPlayerRoutes } from "./routes/public-players.js";
+import { createDeploymentControlRoutes } from "./routes/deployment-control.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
 import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
@@ -52,6 +53,16 @@ import {
   ownerLearningDeploymentEnabled,
   ownerLearningGenerationEnabled,
 } from "./services/owner-learning-public.js";
+import {
+  validateDeploymentAdmissionActivationFence,
+} from "./services/deployment-admission.js";
+import { runPendingDeploymentRecoveryReconciliation } from "./services/deployment-recovery-reconciliation.js";
+import {
+  createRuntimeActivationController,
+  readRuntimeStartupMode,
+  type AcceptedRuntimeIdentity,
+  type RuntimeStartupMode,
+} from "./services/runtime-activation.js";
 import {
   createServerShutdownController,
   installServerShutdownSignalHandlers,
@@ -79,11 +90,21 @@ const REQUIRED_ENV = [
 ] as const;
 
 let managedAuthMode: ManagedAuthMode;
+let runtimeStartupMode: RuntimeStartupMode;
 try {
   managedAuthMode = readManagedAuthMode();
 } catch (error) {
   console.error(
     `\n  Managed authentication configuration error:\n\n    ${(error as Error).message}\n`,
+  );
+  process.exit(1);
+}
+
+try {
+  runtimeStartupMode = readRuntimeStartupMode();
+} catch (error) {
+  console.error(
+    `\n  Runtime startup configuration error:\n\n    ${(error as Error).message}\n`,
   );
   process.exit(1);
 }
@@ -181,66 +202,140 @@ function getAllowedCorsOrigins(): string[] {
 const databaseUrl = process.env.DATABASE_URL;
 await runMigrations(databaseUrl);
 const db = createDB(databaseUrl);
-await seedRBAC(db);
-const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
-const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
-  ? startOwnerLearningWorkerLoop(db, {
-      provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
-      cursorSecret: process.env.JWT_SECRET,
-    })
-  : null;
-if (!ownerLearningDeploymentEnabled()) {
-  console.info("[owner-learning] Live review generation disabled by deployment configuration");
-} else if (!ownerLearningWorker) {
-  console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
+const releaseMigrationSet = calculateMigrationSet();
+const runtimeActivation = createRuntimeActivationController({
+  mode: runtimeStartupMode,
+  validateFence: (fence) => validateDeploymentAdmissionActivationFence(db, fence),
+  validateIdentity: validateAcceptedRuntimeIdentity,
+  startRuntime: startBackgroundRuntime,
+});
+await runtimeActivation.initialize();
+
+function validateAcceptedRuntimeIdentity(identity: AcceptedRuntimeIdentity) {
+  const expected = {
+    candidateSha: process.env.GIT_SHA ?? "",
+    apiDigest: process.env.INFLUENCE_API_IMAGE_DIGEST ?? "",
+    migrationSet: releaseMigrationSet,
+  };
+  return identity.candidateSha === expected.candidateSha
+    && identity.apiDigest === expected.apiDigest
+    && identity.migrationSet === expected.migrationSet
+    ? { ok: true as const }
+    : {
+        ok: false as const,
+        code: "accepted_runtime_identity_mismatch",
+        error: "Accepted runtime identity does not match this API process",
+        retryable: false,
+      };
 }
-try {
-  const reconciliation = await reconcileCompletedPostgameMedia(db);
-  if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
-    console.info(`[postgame-media] Reconciled ${reconciliation.examined} completed games; queued ${reconciliation.queued}, waiting inputs ${reconciliation.waitingInputs}`);
+
+async function startBackgroundRuntime(context: {
+  fence?: { leaseId: string; fencingToken: number };
+  signal: AbortSignal;
+}) {
+  const activationFence = context.fence;
+  const assertNotAborted = () => context.signal.throwIfAborted();
+  assertNotAborted();
+  await seedRBAC(db);
+  assertNotAborted();
+  try {
+    const reconciliation = await reconcileCompletedPostgameMedia(db);
+    if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
+      console.info(`[postgame-media] Reconciled ${reconciliation.examined} completed games; queued ${reconciliation.queued}, waiting inputs ${reconciliation.waitingInputs}`);
+    }
+  } catch {
+    console.warn("[postgame-media] Startup reconciliation deferred");
   }
-} catch {
-  console.warn("[postgame-media] Startup reconciliation deferred");
-}
 
-// ---------------------------------------------------------------------------
-// Startup cleanup — this API process is also the worker in current deployments.
-// Any pre-existing in_progress row has no in-memory runner here, so fail it
-// closed and let configured recovery decide whether it can continue.
-// ---------------------------------------------------------------------------
+  // A fenced candidate is still reversible until the host completes the
+  // accepting lease. It may initialize background services, but it must not
+  // classify, claim, or recover durable game ownership. Lease completion
+  // atomically enqueues the same DB-backed recovery reconciliation consumed
+  // below after admission reopens.
+  if (!activationFence) {
+    assertNotAborted();
+    const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
+    assertNotAborted();
+    for (const orphan of startupOrphans.returnedToWaiting) {
+      console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
+    }
+    for (const orphan of startupOrphans.repairRequired) {
+      console.warn(
+        `[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting; roster repair is required`,
+      );
+    }
+    for (const orphan of startupOrphans.suspended) {
+      const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
+      console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age}; ${orphan.reason})`);
+    }
 
-const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
-for (const orphan of startupOrphans.returnedToWaiting) {
-  console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
-}
-for (const orphan of startupOrphans.repairRequired) {
-  console.warn(
-    `[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting; roster repair is required`,
-  );
-}
-for (const orphan of startupOrphans.suspended) {
-  const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
-  console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age}; ${orphan.reason})`);
-}
+    const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
+    assertNotAborted();
+    if (pendingSettlements.readyGameIds.length > 0) {
+      console.warn(
+        `[startup] Marked ${pendingSettlements.readyGameIds.length} sealed completion settlement(s) ready for operator retry`,
+      );
+    }
 
-const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
-if (pendingSettlements.readyGameIds.length > 0) {
-  console.warn(
-    `[startup] Marked ${pendingSettlements.readyGameIds.length} sealed completion settlement(s) ready for operator retry`,
-  );
-}
-
-const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
-if (!startupRecoveryDisabled) {
-  const recovery = await recoverGamesOnStartup(db);
-  if (recovery.attempted > 0) {
-    console.info(
-      `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
-    );
-    for (const skipped of recovery.skipped) {
-      console.warn(`[startup] Recovery skipped ${skipped.gameId}: ${skipped.reason}`);
+    const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
+    if (!startupRecoveryDisabled) {
+      const recovery = await recoverGamesOnStartup(db, { signal: context.signal });
+      assertNotAborted();
+      if (recovery.attempted > 0) {
+        console.info(
+          `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
+        );
+        for (const skipped of recovery.skipped) {
+          console.warn(`[startup] Recovery skipped ${skipped.gameId}: ${skipped.reason}`);
+        }
+      }
     }
   }
+
+  const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
+  assertNotAborted();
+  const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
+    ? startOwnerLearningWorkerLoop(db, {
+        provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
+        cursorSecret: process.env.JWT_SECRET,
+      })
+    : null;
+  if (!ownerLearningDeploymentEnabled()) {
+    console.info("[owner-learning] Live review generation disabled by deployment configuration");
+  } else if (!ownerLearningWorker) {
+    console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
+  }
+  const reconcilePendingRecovery = async () => {
+    try {
+      const result = await runPendingDeploymentRecoveryReconciliation(
+        db,
+        () => recoverGamesOnStartup(db, { signal: context.signal }),
+        context.signal,
+      );
+      if (result.outcome === "succeeded") {
+        console.info(
+          `[startup] Reconciled terminal deployment ${result.leaseId}; recovered ${result.recovery.recovered}/${result.recovery.attempted} suspended game(s)`,
+        );
+      } else if (result.outcome === "retry") {
+        console.warn(`[startup] Terminal deployment ${result.leaseId} recovery will retry: ${result.error}`);
+      }
+    } catch (error) {
+      if (!context.signal.aborted) console.warn("[startup] Deployment recovery reconciliation deferred", error);
+    }
+  };
+  await reconcilePendingRecovery();
+  assertNotAborted();
+  const reconciliationTimer = setInterval(() => {
+    void reconcilePendingRecovery();
+  }, 5_000);
+  reconciliationTimer.unref();
+
+  return {
+    async stop() {
+      clearInterval(reconciliationTimer);
+      await ownerLearningWorker?.stop();
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +363,11 @@ const healthResponse = () => ({
   service: "influence-api",
   version: apiVersion,
   commit: process.env.GIT_SHA ?? "unknown",
+  releaseControl: {
+    ...runtimeActivation.getStatus(),
+    migrationSet: releaseMigrationSet,
+    imageDigest: process.env.INFLUENCE_API_IMAGE_DIGEST ?? null,
+  },
   timestamp: new Date().toISOString(),
 });
 app.get("/health", (c) => c.json(healthResponse()));
@@ -284,6 +384,11 @@ app.get("/", (c) => {
     name: "Influence Game API",
     version: apiVersion,
     commit: process.env.GIT_SHA ?? "unknown",
+    releaseControl: {
+      ...runtimeActivation.getStatus(),
+      migrationSet: releaseMigrationSet,
+      imageDigest: process.env.INFLUENCE_API_IMAGE_DIGEST ?? null,
+    },
     endpoints: {
       health: "/api/health",
       config: "/api/config",
@@ -292,6 +397,7 @@ app.get("/", (c) => {
       admin: "/api/admin",
       freeQueue: "/api/free-queue",
       ws: "/ws/games/:id",
+      wsReleaseProbe: "/ws/health",
     },
   });
 });
@@ -312,8 +418,13 @@ app.route("/", mcpRoutes);
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
 
-const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db);
+const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db, {
+  canClaimWork: () => runtimeActivation.canClaimWork(),
+});
 app.route("/", postgameMediaWorkerRoutes);
+
+const deploymentControlRoutes = createDeploymentControlRoutes(db, { runtimeActivation });
+app.route("/", deploymentControlRoutes);
 
 // Public watch intelligence routes
 const watchIntelligenceRoutes = createWatchIntelligenceRoutes(db);
@@ -375,6 +486,18 @@ const server = Bun.serve<WsConnectionData>({
 
     const url = new URL(req.url);
 
+    // Canonical release probes need a real WebSocket upgrade that does not
+    // depend on mutable game data or subscribe to a game stream.
+    if (url.pathname === "/ws/health") {
+      const upgraded = server.upgrade(req, {
+        data: { gameId: "", releaseProbe: true },
+      });
+      if (upgraded) {
+        return undefined as unknown as Response;
+      }
+      return new Response("WebSocket upgrade failed", { status: 400 });
+    }
+
     // WebSocket upgrade for /ws/games/:id (accepts UUID or slug)
     if (url.pathname.startsWith("/ws/games/")) {
       const slugOrId = url.pathname.split("/ws/games/")[1]?.split("/")[0];
@@ -408,6 +531,11 @@ const server = Bun.serve<WsConnectionData>({
   },
   websocket: {
     open(ws) {
+      if (ws.data.releaseProbe) {
+        ws.send("ok");
+        ws.close(1000, "Release probe complete");
+        return;
+      }
       handleOpen(ws);
 
       // Send persisted viewer-safe watch state for catch-up.
@@ -423,6 +551,7 @@ const server = Bun.serve<WsConnectionData>({
         });
     },
     close(ws) {
+      if (ws.data.releaseProbe) return;
       handleClose(ws);
     },
     message(_ws, _message) {
@@ -436,7 +565,7 @@ setServer(server);
 
 const shutdown = createServerShutdownController({
   server,
-  worker: ownerLearningWorker,
+  worker: { stop: () => runtimeActivation.stop() },
   stopAcceptingRequests: () => {
     acceptingRequests = false;
   },
