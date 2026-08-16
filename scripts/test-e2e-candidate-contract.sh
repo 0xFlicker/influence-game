@@ -26,6 +26,7 @@ require_literal "$ci_workflow" "staging API digest" "api_digest"
 require_literal "$ci_workflow" "staging web digest" "web_digest"
 require_literal "$ci_workflow" "staging worker digest" "worker_digest"
 require_literal "$ci_workflow" "manifest content identity" "manifest_digest"
+require_literal "$ci_workflow" "Docker push digest parser" "awk '\$2 == \"digest:\" { print \$3 }'"
 require_literal "$ci_workflow" "manifest-gated staging dispatch" "needs: release-manifest"
 require_literal "$ci_workflow" "build run ID pass-through" "build_run_id: String(context.runId)"
 require_literal "$ci_workflow" "actual build attempt pass-through" "build_run_attempt: process.env.GITHUB_RUN_ATTEMPT"
@@ -89,6 +90,14 @@ fi
 
 if grep -Fq 'image_tag:' "$e2e_workflow"; then
   echo "::error::E2E candidate workflow must not accept a mutable or shortened image tag" >&2
+  exit 1
+fi
+
+expected_push_digest="sha256:$(printf 'a%.0s' {1..64})"
+docker_push_output="59054e8: digest: ${expected_push_digest} size: 2404"
+parsed_push_digest="$(awk '$2 == "digest:" { print $3 }' <<< "$docker_push_output" | tail -n 1)"
+if [ "$parsed_push_digest" != "$expected_push_digest" ]; then
+  echo "::error::Docker push digest parser did not extract the immutable digest" >&2
   exit 1
 fi
 
