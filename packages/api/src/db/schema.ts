@@ -1000,7 +1000,7 @@ export const deploymentAdmissionLeases = pgTable("deployment_admission_leases", 
   ),
 ]);
 
-/** One durable, single-flight recovery reconciliation for each terminal pre-switch lease. */
+/** One durable, single-flight recovery reconciliation for each terminal deployment lease. */
 export const deploymentRecoveryReconciliations = pgTable("deployment_recovery_reconciliations", {
   leaseId: uuid("lease_id")
     .primaryKey()

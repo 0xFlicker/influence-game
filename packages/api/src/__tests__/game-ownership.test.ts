@@ -23,6 +23,7 @@ import { setupTestDB } from "./test-utils.js";
 import {
   acquireDeploymentAdmissionLease,
   advanceDeploymentAdmissionPhase,
+  completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
 
 describe("atomic game owner claim and roster freeze", () => {
@@ -447,7 +448,7 @@ describe("atomic game owner claim and roster freeze", () => {
     expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "suspended" });
   });
 
-  test("the exact accepting activation fence can resume already-admitted suspended work", async () => {
+  test("accepting candidates cannot recover suspended work before terminal host acceptance", async () => {
     const fixture = await createRatedWaitingFixture();
     const owner = await acquireGameRunOwner(fixture.db, fixture.gameId);
     expect(owner.ok).toBeTrue();
@@ -476,21 +477,17 @@ describe("atomic game owner claim and roster freeze", () => {
       expect(advanced.ok).toBeTrue();
     }
 
-    const stale = await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0, {
-      activationFence: {
-        leaseId: acquired.lease.id,
-        fencingToken: acquired.lease.fencingToken + 1,
-      },
-    });
-    expect(stale).toMatchObject({ ok: false, code: "deployment_admission_closed" });
+    const fencedCandidate = await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0);
+    expect(fencedCandidate).toMatchObject({ ok: false, code: "deployment_admission_closed" });
 
-    const recovery = await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0, {
-      activationFence: {
-        leaseId: acquired.lease.id,
-        fencingToken: acquired.lease.fencingToken,
-      },
+    const completed = await completeDeploymentAdmissionLease(fixture.db, {
+      leaseId: acquired.lease.id,
+      fencingToken: acquired.lease.fencingToken,
+      outcome: "accepted",
+      reason: "host acceptance is durable",
     });
-    expect(recovery.ok).toBeTrue();
+    expect(completed.ok).toBeTrue();
+    expect((await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0)).ok).toBeTrue();
   });
 });
 

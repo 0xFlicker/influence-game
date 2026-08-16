@@ -79,7 +79,6 @@ import { reconcilePostgameMediaForGame } from "./postgame-media-coordinator.js";
 import { CompetitionSettlementRepairRequiredError } from "./competition-completion.js";
 import {
   checkGameStartAdmission,
-  type DeploymentAdmissionFence,
 } from "./deployment-admission.js";
 import {
   COMPLETION_SETTLEMENT_REPAIR_REQUIRED,
@@ -906,7 +905,7 @@ export async function tryReturnZeroEventOwnerFailureToWaiting(
 export async function recoverGame(
   db: DrizzleDB,
   gameId: string,
-  options: { activationFence?: DeploymentAdmissionFence; signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<{ error?: string; recovered?: boolean; skippedReason?: string }> {
   options.signal?.throwIfAborted();
   if (activeGames.has(gameId)) {
@@ -919,9 +918,7 @@ export async function recoverGame(
     return { skippedReason: candidate.reason };
   }
 
-  const owner = await acquireRecoveryGameRunOwner(db, gameId, candidate.resumeFrom.lastEventSequence, {
-    activationFence: options.activationFence,
-  });
+  const owner = await acquireRecoveryGameRunOwner(db, gameId, candidate.resumeFrom.lastEventSequence);
   if (!owner.ok) {
     return { error: owner.error };
   }
@@ -949,7 +946,7 @@ export async function recoverGame(
 
 export async function recoverGamesOnStartup(
   db: DrizzleDB,
-  options: { activationFence?: DeploymentAdmissionFence; signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal } = {},
 ): Promise<{ attempted: number; recovered: number; skipped: Array<{ gameId: string; reason: string }> }> {
   const gameIds = await findStartupRecoverableGameIds(db);
   const skipped: Array<{ gameId: string; reason: string }> = [];

@@ -87,10 +87,6 @@ export type GameStartAdmissionResult =
     retryable: true;
   };
 
-export type RecoveryAdmissionOptions = {
-  activationFence?: DeploymentAdmissionFence;
-};
-
 const ALLOWED_TRANSITIONS: Record<DeploymentAdmissionPhase, DeploymentAdmissionPhase[]> = {
   draining: ["validating"],
   validating: ["switching"],
@@ -285,9 +281,7 @@ export async function completeDeploymentAdmissionLease(
         eq(schema.deploymentAdmissionLeases.status, "active"),
       )).returning())[0];
       if (!updated) return staleLeaseFailure();
-      if (input.outcome === "aborted") {
-        await markRecoveryReconciliationPending(tx, updated.id, now.now);
-      }
+      await markRecoveryReconciliationPending(tx, updated.id, now.now);
       return { ok: true as const, lease: projectLease(updated) };
     });
   } catch {
@@ -458,32 +452,14 @@ export async function checkGameStartAdmissionInTransaction(
   }
 }
 
-/**
- * Startup recovery normally obeys the same closed admission seam as every
- * other game start. The one exception is the candidate runtime being
- * activated by the exact accepting release fence: those suspended games were
- * already admitted before the drain and must resume on the new owner before
- * the lease can complete.
- */
 export async function checkRecoveryAdmissionInTransaction(
   tx: DrizzleTransaction,
-  options: RecoveryAdmissionOptions = {},
 ): Promise<GameStartAdmissionResult> {
   try {
     await lockAdmissionState(tx);
     const now = await databaseTimes(tx);
     const lease = await effectiveActiveLease(tx, now.now);
     if (!lease) return { ok: true };
-
-    const fence = options.activationFence;
-    if (
-      fence
-      && lease.id === fence.leaseId
-      && lease.fencingToken === fence.fencingToken
-      && lease.phase === "accepting"
-    ) {
-      return { ok: true };
-    }
 
     return {
       ok: false,

@@ -20,7 +20,6 @@ import {
 import {
   checkGameStartAdmissionInTransaction,
   checkRecoveryAdmissionInTransaction,
-  type DeploymentAdmissionFence,
 } from "./deployment-admission.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
@@ -302,7 +301,6 @@ export async function acquireRecoveryGameRunOwner(
   options: {
     processId?: string;
     leaseMs?: number;
-    activationFence?: DeploymentAdmissionFence;
   } = {},
 ): Promise<GameOwnerClaimResult> {
   const now = new Date();
@@ -311,9 +309,7 @@ export async function acquireRecoveryGameRunOwner(
 
   try {
     const claim = await db.transaction(async (tx) => {
-      const admission = await checkRecoveryAdmissionInTransaction(tx, {
-        activationFence: options.activationFence,
-      });
+      const admission = await checkRecoveryAdmissionInTransaction(tx);
       if (!admission.ok) {
         return {
           ...admission,

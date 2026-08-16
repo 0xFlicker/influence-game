@@ -222,6 +222,9 @@ describe("deployment admission lease", () => {
       reason: "canonical probes passed",
     });
     expect(accepted.ok).toBeTrue();
+    expect((await db.select().from(schema.deploymentRecoveryReconciliations)
+      .where(eq(schema.deploymentRecoveryReconciliations.leaseId, first.lease.id)))[0])
+      .toMatchObject({ status: "pending", attempts: 0 });
     expect((await acquireGameRunOwner(db, firstGameId)).ok).toBeTrue();
     await db.update(schema.games).set({ status: "completed" })
       .where(eq(schema.games.id, firstGameId));
@@ -286,6 +289,9 @@ describe("deployment admission lease", () => {
       reason: "previous route restored",
     });
     expect(restored.ok).toBeTrue();
+    expect((await db.select().from(schema.deploymentRecoveryReconciliations)
+      .where(eq(schema.deploymentRecoveryReconciliations.leaseId, second.lease.id)))[0])
+      .toMatchObject({ status: "pending", attempts: 0 });
     expect(await completeDeploymentAdmissionLease(db, {
       leaseId: second.lease.id,
       fencingToken: second.lease.fencingToken,

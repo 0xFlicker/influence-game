@@ -15,7 +15,7 @@ export type DeploymentRecoveryReconciliationResult =
   | { outcome: "retry"; leaseId: string; error: string };
 
 /**
- * Claims one terminal pre-switch reconciliation with a DB lease. The accepted
+ * Claims one terminal deployment reconciliation with a DB lease. The accepted
  * runtime is the only caller, and it rechecks that admission is open before
  * and after claiming so recovery never runs inside a later deployment drain.
  */

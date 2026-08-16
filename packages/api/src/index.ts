@@ -247,42 +247,47 @@ async function startBackgroundRuntime(context: {
     console.warn("[postgame-media] Startup reconciliation deferred");
   }
 
-  // This API process owns in-memory game runners. Validation candidates must
-  // never classify or recover the accepted color's durable work.
-  assertNotAborted();
-  const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
-  assertNotAborted();
-  for (const orphan of startupOrphans.returnedToWaiting) {
-    console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
-  }
-  for (const orphan of startupOrphans.repairRequired) {
-    console.warn(
-      `[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting; roster repair is required`,
-    );
-  }
-  for (const orphan of startupOrphans.suspended) {
-    const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
-    console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age}; ${orphan.reason})`);
-  }
-
-  const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
-  assertNotAborted();
-  if (pendingSettlements.readyGameIds.length > 0) {
-    console.warn(
-      `[startup] Marked ${pendingSettlements.readyGameIds.length} sealed completion settlement(s) ready for operator retry`,
-    );
-  }
-
-  const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
-  if (!startupRecoveryDisabled) {
-    const recovery = await recoverGamesOnStartup(db, { activationFence, signal: context.signal });
+  // A fenced candidate is still reversible until the host completes the
+  // accepting lease. It may initialize background services, but it must not
+  // classify, claim, or recover durable game ownership. Lease completion
+  // atomically enqueues the same DB-backed recovery reconciliation consumed
+  // below after admission reopens.
+  if (!activationFence) {
     assertNotAborted();
-    if (recovery.attempted > 0) {
-      console.info(
-        `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
+    const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
+    assertNotAborted();
+    for (const orphan of startupOrphans.returnedToWaiting) {
+      console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
+    }
+    for (const orphan of startupOrphans.repairRequired) {
+      console.warn(
+        `[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting; roster repair is required`,
       );
-      for (const skipped of recovery.skipped) {
-        console.warn(`[startup] Recovery skipped ${skipped.gameId}: ${skipped.reason}`);
+    }
+    for (const orphan of startupOrphans.suspended) {
+      const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
+      console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age}; ${orphan.reason})`);
+    }
+
+    const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
+    assertNotAborted();
+    if (pendingSettlements.readyGameIds.length > 0) {
+      console.warn(
+        `[startup] Marked ${pendingSettlements.readyGameIds.length} sealed completion settlement(s) ready for operator retry`,
+      );
+    }
+
+    const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
+    if (!startupRecoveryDisabled) {
+      const recovery = await recoverGamesOnStartup(db, { signal: context.signal });
+      assertNotAborted();
+      if (recovery.attempted > 0) {
+        console.info(
+          `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
+        );
+        for (const skipped of recovery.skipped) {
+          console.warn(`[startup] Recovery skipped ${skipped.gameId}: ${skipped.reason}`);
+        }
       }
     }
   }
