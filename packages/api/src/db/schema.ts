@@ -935,6 +935,7 @@ export type DeploymentAdmissionLeaseStatus =
   | "aborted"
   | "revoked"
   | "expired";
+export type DeploymentRecoveryReconciliationStatus = "pending" | "running" | "succeeded";
 
 /** Singleton lock and monotonic fence source for every start/release race. */
 export const deploymentAdmissionState = pgTable("deployment_admission_state", {
@@ -995,6 +996,39 @@ export const deploymentAdmissionLeases = pgTable("deployment_admission_leases", 
       AND ${table.revokedAt} IS NULL
       AND ${table.revokedBy} IS NULL
       AND ${table.revocationReason} IS NULL
+    )`,
+  ),
+]);
+
+/** One durable, single-flight recovery reconciliation for each terminal pre-switch lease. */
+export const deploymentRecoveryReconciliations = pgTable("deployment_recovery_reconciliations", {
+  leaseId: uuid("lease_id")
+    .primaryKey()
+    .references(() => deploymentAdmissionLeases.id),
+  status: text("status").notNull().$type<DeploymentRecoveryReconciliationStatus>().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  claimToken: uuid("claim_token"),
+  claimExpiresAt: text("claim_expires_at"),
+  lastError: text("last_error"),
+  requestedAt: text("requested_at").notNull().default(sql`now()::text`),
+  completedAt: text("completed_at"),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("deployment_recovery_reconciliations_status_idx").on(table.status, table.updatedAt),
+  check(
+    "deployment_recovery_reconciliations_status_check",
+    sql`${table.status} IN ('pending', 'running', 'succeeded')`,
+  ),
+  check(
+    "deployment_recovery_reconciliations_claim_check",
+    sql`(
+      ${table.status} = 'running'
+      AND ${table.claimToken} IS NOT NULL
+      AND ${table.claimExpiresAt} IS NOT NULL
+    ) OR (
+      ${table.status} <> 'running'
+      AND ${table.claimToken} IS NULL
+      AND ${table.claimExpiresAt} IS NULL
     )`,
   ),
 ]);

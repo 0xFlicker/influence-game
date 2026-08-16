@@ -23,6 +23,11 @@ const PROVENANCE = {
   workflowRunAttempt: 2,
   actor: "release-operator",
 };
+const ACCEPTED_IDENTITY = {
+  candidateSha: PROVENANCE.candidateSha,
+  apiDigest: `sha256:${"a".repeat(64)}`,
+  migrationSet: `sha256:${"b".repeat(64)}`,
+};
 
 describe("runtime startup mode", () => {
   test("defaults to active and fails fast on unsupported modes", () => {
@@ -170,7 +175,7 @@ describe("fence-aware runtime activation", () => {
       releaseControl: {
         protocolVersion: 1,
         startupMode: "validation",
-        runtimeState: "active",
+        runtimeState: "standby",
         activatedLeaseId: acquired.lease.id,
       },
     });
@@ -186,6 +191,18 @@ describe("fence-aware runtime activation", () => {
     expect(different).toMatchObject({
       ok: false,
       code: "runtime_activation_fence_conflict",
+    });
+    expect(starts).toBe(0);
+    expect(runtime.canClaimWork()).toBeFalse();
+
+    const accept = await app.request(
+      `/api/internal/deployment-control/leases/${acquired.lease.id}/accept`,
+      postJson({ fencingToken: acquired.lease.fencingToken, ...ACCEPTED_IDENTITY }, token),
+    );
+    expect(accept.status).toBe(200);
+    expect(await accept.json()).toMatchObject({
+      outcome: "accepted",
+      releaseControl: { runtimeState: "active" },
     });
     expect(starts).toBe(1);
     expect(runtime.canClaimWork()).toBeTrue();
@@ -208,15 +225,94 @@ describe("fence-aware runtime activation", () => {
     });
     await runtime.initialize();
 
-    expect(await runtime.activate(fence)).toMatchObject({
+    expect(await runtime.activate(fence)).toMatchObject({ ok: true, outcome: "activated" });
+    expect(await runtime.accept(fence, ACCEPTED_IDENTITY)).toMatchObject({
       ok: false,
       code: "runtime_activation_failed",
       retryable: true,
     });
+    expect(runtime.getStatus().runtimeState).toBe("standby");
+    expect(runtime.canClaimWork()).toBeFalse();
+    expect(await runtime.accept(fence, ACCEPTED_IDENTITY)).toMatchObject({ ok: true, outcome: "accepted" });
+    expect(attempts).toBe(2);
+  });
+
+  test("explicit restoration abort cancels an in-flight accepted startup before claims open", async () => {
+    const fence = {
+      leaseId: "11111111-1111-4111-8111-111111111111",
+      fencingToken: 4,
+    };
+    let observedAbort = false;
+    let signalRuntimeStarted!: () => void;
+    const runtimeStarted = new Promise<void>((resolve) => { signalRuntimeStarted = resolve; });
+    const runtime = createRuntimeActivationController({
+      mode: "validation",
+      validateFence: async () => ({ ok: true }),
+      startRuntime: ({ signal }) => new Promise((resolve, reject) => {
+        signalRuntimeStarted();
+        signal.addEventListener("abort", () => {
+          observedAbort = true;
+          reject(new DOMException("aborted", "AbortError"));
+        }, { once: true });
+      }),
+      logger: { error() {} },
+    });
+    expect(await runtime.activate(fence)).toMatchObject({ ok: true, outcome: "activated" });
+    const accepting = runtime.accept(fence, ACCEPTED_IDENTITY);
+    await runtimeStarted;
+    const aborted = await runtime.abort(fence);
+
+    expect(await accepting).toMatchObject({ ok: false, code: "runtime_activation_aborted" });
+    expect(aborted).toMatchObject({ ok: true, outcome: "aborted" });
+    expect(observedAbort).toBeTrue();
     expect(runtime.getStatus().runtimeState).toBe("validation");
     expect(runtime.canClaimWork()).toBeFalse();
-    expect(await runtime.activate(fence)).toMatchObject({ ok: true, outcome: "activated" });
-    expect(attempts).toBe(2);
+  });
+
+  test("restoration abort is idempotent before activation starts", async () => {
+    const runtime = createRuntimeActivationController({
+      mode: "validation",
+      validateFence: async () => ({ ok: true }),
+      startRuntime: () => undefined,
+    });
+    await runtime.initialize();
+
+    expect(await runtime.abort({
+      leaseId: "11111111-1111-4111-8111-111111111111",
+      fencingToken: 4,
+    })).toMatchObject({ ok: true, outcome: "aborted" });
+    expect(runtime.getStatus().runtimeState).toBe("validation");
+  });
+
+  test("concurrent activation is single-flight for one fence and rejects substitution", async () => {
+    const fence = {
+      leaseId: "11111111-1111-4111-8111-111111111111",
+      fencingToken: 4,
+    };
+    let releaseValidation!: () => void;
+    const validation = new Promise<void>((resolve) => { releaseValidation = resolve; });
+    let validations = 0;
+    const runtime = createRuntimeActivationController({
+      mode: "validation",
+      validateFence: async () => {
+        validations += 1;
+        await validation;
+        return { ok: true };
+      },
+      startRuntime: () => undefined,
+    });
+
+    const first = runtime.activate(fence);
+    const repeated = runtime.activate(fence);
+    expect(await runtime.activate({ ...fence, fencingToken: 5 })).toMatchObject({
+      ok: false,
+      code: "runtime_activation_fence_conflict",
+    });
+    releaseValidation();
+
+    expect(await first).toMatchObject({ ok: true, outcome: "activated" });
+    expect(await repeated).toMatchObject({ ok: true, outcome: "activated" });
+    expect(validations).toBe(1);
   });
 });
 

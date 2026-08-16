@@ -56,9 +56,11 @@ import {
 import {
   validateDeploymentAdmissionActivationFence,
 } from "./services/deployment-admission.js";
+import { runPendingDeploymentRecoveryReconciliation } from "./services/deployment-recovery-reconciliation.js";
 import {
   createRuntimeActivationController,
   readRuntimeStartupMode,
+  type AcceptedRuntimeIdentity,
   type RuntimeStartupMode,
 } from "./services/runtime-activation.js";
 import {
@@ -204,15 +206,38 @@ const releaseMigrationSet = calculateMigrationSet();
 const runtimeActivation = createRuntimeActivationController({
   mode: runtimeStartupMode,
   validateFence: (fence) => validateDeploymentAdmissionActivationFence(db, fence),
+  validateIdentity: validateAcceptedRuntimeIdentity,
   startRuntime: startBackgroundRuntime,
 });
 await runtimeActivation.initialize();
 
-async function startBackgroundRuntime(activationFence?: {
-  leaseId: string;
-  fencingToken: number;
+function validateAcceptedRuntimeIdentity(identity: AcceptedRuntimeIdentity) {
+  const expected = {
+    candidateSha: process.env.GIT_SHA ?? "",
+    apiDigest: process.env.INFLUENCE_API_IMAGE_DIGEST ?? "",
+    migrationSet: releaseMigrationSet,
+  };
+  return identity.candidateSha === expected.candidateSha
+    && identity.apiDigest === expected.apiDigest
+    && identity.migrationSet === expected.migrationSet
+    ? { ok: true as const }
+    : {
+        ok: false as const,
+        code: "accepted_runtime_identity_mismatch",
+        error: "Accepted runtime identity does not match this API process",
+        retryable: false,
+      };
+}
+
+async function startBackgroundRuntime(context: {
+  fence?: { leaseId: string; fencingToken: number };
+  signal: AbortSignal;
 }) {
+  const activationFence = context.fence;
+  const assertNotAborted = () => context.signal.throwIfAborted();
+  assertNotAborted();
   await seedRBAC(db);
+  assertNotAborted();
   try {
     const reconciliation = await reconcileCompletedPostgameMedia(db);
     if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
@@ -224,7 +249,9 @@ async function startBackgroundRuntime(activationFence?: {
 
   // This API process owns in-memory game runners. Validation candidates must
   // never classify or recover the accepted color's durable work.
+  assertNotAborted();
   const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
+  assertNotAborted();
   for (const orphan of startupOrphans.returnedToWaiting) {
     console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
   }
@@ -239,6 +266,7 @@ async function startBackgroundRuntime(activationFence?: {
   }
 
   const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
+  assertNotAborted();
   if (pendingSettlements.readyGameIds.length > 0) {
     console.warn(
       `[startup] Marked ${pendingSettlements.readyGameIds.length} sealed completion settlement(s) ready for operator retry`,
@@ -247,7 +275,8 @@ async function startBackgroundRuntime(activationFence?: {
 
   const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
   if (!startupRecoveryDisabled) {
-    const recovery = await recoverGamesOnStartup(db, { activationFence });
+    const recovery = await recoverGamesOnStartup(db, { activationFence, signal: context.signal });
+    assertNotAborted();
     if (recovery.attempted > 0) {
       console.info(
         `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
@@ -259,6 +288,7 @@ async function startBackgroundRuntime(activationFence?: {
   }
 
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
+  assertNotAborted();
   const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
     ? startOwnerLearningWorkerLoop(db, {
         provider: createOwnerLearningOpenAIProvider({ apiKey: ownerLearningApiKey }),
@@ -270,7 +300,37 @@ async function startBackgroundRuntime(activationFence?: {
   } else if (!ownerLearningWorker) {
     console.warn("[owner-learning] Review generation unavailable because OPENAI_API_KEY is not configured");
   }
-  return ownerLearningWorker ?? undefined;
+  const reconcilePendingRecovery = async () => {
+    try {
+      const result = await runPendingDeploymentRecoveryReconciliation(
+        db,
+        () => recoverGamesOnStartup(db, { signal: context.signal }),
+        context.signal,
+      );
+      if (result.outcome === "succeeded") {
+        console.info(
+          `[startup] Reconciled terminal deployment ${result.leaseId}; recovered ${result.recovery.recovered}/${result.recovery.attempted} suspended game(s)`,
+        );
+      } else if (result.outcome === "retry") {
+        console.warn(`[startup] Terminal deployment ${result.leaseId} recovery will retry: ${result.error}`);
+      }
+    } catch (error) {
+      if (!context.signal.aborted) console.warn("[startup] Deployment recovery reconciliation deferred", error);
+    }
+  };
+  await reconcilePendingRecovery();
+  assertNotAborted();
+  const reconciliationTimer = setInterval(() => {
+    void reconcilePendingRecovery();
+  }, 5_000);
+  reconciliationTimer.unref();
+
+  return {
+    async stop() {
+      clearInterval(reconciliationTimer);
+      await ownerLearningWorker?.stop();
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -285,6 +285,9 @@ export async function completeDeploymentAdmissionLease(
         eq(schema.deploymentAdmissionLeases.status, "active"),
       )).returning())[0];
       if (!updated) return staleLeaseFailure();
+      if (input.outcome === "aborted") {
+        await markRecoveryReconciliationPending(tx, updated.id, now.now);
+      }
       return { ok: true as const, lease: projectLease(updated) };
     });
   } catch {
@@ -365,6 +368,7 @@ export async function revokeDeploymentAdmissionLease(
         eq(schema.deploymentAdmissionLeases.phase, requestedLease.phase),
       )).returning())[0];
       if (!updated) return staleLeaseFailure();
+      await markRecoveryReconciliationPending(tx, updated.id, now.now);
       return { ok: true as const, outcome: "revoked" as const, lease: projectLease(updated) };
     });
   } catch {
@@ -527,6 +531,20 @@ async function expireLease(tx: DrizzleTransaction, lease: LeaseRow, now: string)
     eq(schema.deploymentAdmissionLeases.fencingToken, lease.fencingToken),
     eq(schema.deploymentAdmissionLeases.status, "active"),
   ));
+  await markRecoveryReconciliationPending(tx, lease.id, now);
+}
+
+async function markRecoveryReconciliationPending(
+  tx: DrizzleTransaction,
+  leaseId: string,
+  now: string,
+): Promise<void> {
+  await tx.insert(schema.deploymentRecoveryReconciliations).values({
+    leaseId,
+    status: "pending",
+    requestedAt: now,
+    updatedAt: now,
+  }).onConflictDoNothing({ target: schema.deploymentRecoveryReconciliations.leaseId });
 }
 
 async function databaseTimes(tx: DrizzleTransaction): Promise<{

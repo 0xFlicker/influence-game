@@ -906,13 +906,15 @@ export async function tryReturnZeroEventOwnerFailureToWaiting(
 export async function recoverGame(
   db: DrizzleDB,
   gameId: string,
-  options: { activationFence?: DeploymentAdmissionFence } = {},
+  options: { activationFence?: DeploymentAdmissionFence; signal?: AbortSignal } = {},
 ): Promise<{ error?: string; recovered?: boolean; skippedReason?: string }> {
+  options.signal?.throwIfAborted();
   if (activeGames.has(gameId)) {
     return { error: "Game is already running" };
   }
 
   const candidate = await getSupportedRecovery(db, gameId);
+  options.signal?.throwIfAborted();
   if (!candidate.ok) {
     return { skippedReason: candidate.reason };
   }
@@ -923,6 +925,7 @@ export async function recoverGame(
   if (!owner.ok) {
     return { error: owner.error };
   }
+  options.signal?.throwIfAborted();
 
   let startupError: string | undefined;
   try {
@@ -946,13 +949,14 @@ export async function recoverGame(
 
 export async function recoverGamesOnStartup(
   db: DrizzleDB,
-  options: { activationFence?: DeploymentAdmissionFence } = {},
+  options: { activationFence?: DeploymentAdmissionFence; signal?: AbortSignal } = {},
 ): Promise<{ attempted: number; recovered: number; skipped: Array<{ gameId: string; reason: string }> }> {
   const gameIds = await findStartupRecoverableGameIds(db);
   const skipped: Array<{ gameId: string; reason: string }> = [];
   let recovered = 0;
 
   for (const gameId of gameIds) {
+    options.signal?.throwIfAborted();
     const result = await recoverGame(db, gameId, options);
     if (result.recovered) {
       recovered += 1;

@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readdir, rename, rm, statfs, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import { dirname, join } from "node:path";
 import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
@@ -36,6 +37,16 @@ export interface HouseHighlightsMediaWorkerConfig {
   remotionOptions: HouseHighlightsRemotionMediaOptions;
 }
 
+export type HouseHighlightsMediaWorkerStartupMode = "active" | "standby";
+
+export function readHouseHighlightsMediaWorkerStartupMode(
+  env: Record<string, string | undefined> = process.env,
+): HouseHighlightsMediaWorkerStartupMode {
+  const mode = env.POSTGAME_MEDIA_STARTUP_MODE ?? "active";
+  if (mode === "active" || mode === "standby") return mode;
+  throw new Error("POSTGAME_MEDIA_STARTUP_MODE must be active or standby");
+}
+
 interface WorkerClaim {
   gameId: string;
   artifactVersion: string;
@@ -69,7 +80,8 @@ interface UploadTarget {
 }
 
 export interface HouseHighlightsMediaWorkerDrainAcknowledgement {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  workerInstanceId: string;
   claimDisabled: true;
   claimInFlight: boolean;
   signal: "SIGINT" | "SIGTERM";
@@ -79,18 +91,21 @@ export interface HouseHighlightsMediaWorkerDrainAcknowledgement {
 export class HouseHighlightsMediaWorkerDrainController {
   private disabled = false;
   private claimInFlight = false;
-  private readonly drainPromise: Promise<void>;
-  private resolveDrain!: () => void;
+  private readonly drainAbortController = new AbortController();
+  private pollWaiters = 0;
   private acknowledgementPromise: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly onAcknowledge: (acknowledgement: HouseHighlightsMediaWorkerDrainAcknowledgement) => void | Promise<void> = () => undefined,
-  ) {
-    this.drainPromise = new Promise((resolve) => { this.resolveDrain = resolve; });
-  }
+    private readonly workerInstanceId = randomUUID(),
+  ) {}
 
   get claimDisabled(): boolean {
     return this.disabled;
+  }
+
+  get pendingPollWaiterCount(): number {
+    return this.pollWaiters;
   }
 
   setClaimInFlight(value: boolean): void {
@@ -100,9 +115,10 @@ export class HouseHighlightsMediaWorkerDrainController {
   requestDrain(signal: "SIGINT" | "SIGTERM", now = new Date()): void {
     if (this.disabled) return;
     this.disabled = true;
-    this.resolveDrain();
+    this.drainAbortController.abort();
     this.acknowledgementPromise = Promise.resolve(this.onAcknowledge({
-      schemaVersion: 1,
+      schemaVersion: 2,
+      workerInstanceId: this.workerInstanceId,
       claimDisabled: true,
       claimInFlight: this.claimInFlight,
       signal,
@@ -116,17 +132,30 @@ export class HouseHighlightsMediaWorkerDrainController {
 
   async waitForPollDelay(ms: number, sleepImpl?: (ms: number) => Promise<void>): Promise<void> {
     if (this.disabled) return;
-    if (sleepImpl) {
-      await Promise.race([sleepImpl(ms), this.drainPromise]);
-      return;
+    const signal = this.drainAbortController.signal;
+    let resolveDrain!: () => void;
+    const drain = new Promise<void>((resolve) => { resolveDrain = resolve; });
+    const onAbort = () => resolveDrain();
+    this.pollWaiters += 1;
+    signal.addEventListener("abort", onAbort, { once: true });
+    try {
+      if (sleepImpl) {
+        await Promise.race([sleepImpl(ms), drain]);
+      } else {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          await Promise.race([
+            new Promise<void>((resolve) => { timer = setTimeout(resolve, ms); }),
+            drain,
+          ]);
+        } finally {
+          if (timer !== undefined) clearTimeout(timer);
+        }
+      }
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      this.pollWaiters -= 1;
     }
-    await new Promise<void>((resolve) => {
-      const timer = setTimeout(resolve, ms);
-      void this.drainPromise.then(() => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
   }
 }
 
@@ -204,6 +233,26 @@ export async function writeHouseHighlightsMediaWorkerDrainAcknowledgement(
   const temporary = `${file}.${process.pid}.tmp`;
   await writeFile(temporary, `${JSON.stringify(acknowledgement)}\n`, { mode: 0o600 });
   await rename(temporary, file);
+}
+
+export async function initializeHouseHighlightsMediaWorkerControl(
+  acknowledgementFile: string,
+  workerInstanceId: string,
+  now = new Date(),
+): Promise<string> {
+  if (!/^[0-9a-f-]{36}$/i.test(workerInstanceId)) throw new Error("worker instance ID must be a UUID");
+  const controlDir = dirname(acknowledgementFile);
+  const identityFile = join(controlDir, "worker-instance.json");
+  await mkdir(controlDir, { recursive: true });
+  await rm(acknowledgementFile, { force: true });
+  const temporary = `${identityFile}.${process.pid}.tmp`;
+  await writeFile(temporary, `${JSON.stringify({
+    schemaVersion: 1,
+    workerInstanceId,
+    startedAt: now.toISOString(),
+  })}\n`, { mode: 0o600 });
+  await rename(temporary, identityFile);
+  return identityFile;
 }
 
 export function assertHouseHighlightsMediaWorkerSmokeResult(result: "idle" | "completed" | "waiting_music" | "failed"): void {
@@ -488,21 +537,37 @@ if (import.meta.main) {
   const mode = parseHouseHighlightsMediaWorkerArgs(Bun.argv.slice(2));
   const config = houseHighlightsMediaWorkerConfig();
   const drainAcknowledgementFile = process.env.POSTGAME_MEDIA_DRAIN_ACK_FILE;
-  const drainController = new HouseHighlightsMediaWorkerDrainController((acknowledgement) => {
-    if (!drainAcknowledgementFile) return;
-    return writeHouseHighlightsMediaWorkerDrainAcknowledgement(drainAcknowledgementFile, acknowledgement);
-  });
-  const onSigterm = () => { drainController.requestDrain("SIGTERM"); };
-  const onSigint = () => { drainController.requestDrain("SIGINT"); };
-  if (mode === "poll") {
-    process.on("SIGTERM", onSigterm);
-    process.on("SIGINT", onSigint);
-  }
-  const run = mode === "health"
-    ? checkHouseHighlightsMediaWorkerHealth(config).then(() => console.log("House Highlights media worker health check passed."))
-    : mode === "poll" ? runHouseHighlightsMediaWorker(config, fetch, { drainController }) : runHouseHighlightsMediaWorkerOnce(config).then((result) => {
-      if (mode === "smoke") assertHouseHighlightsMediaWorkerSmokeResult(result);
-      console.log(mode === "smoke" ? "Smoke render completed." : result);
-    });
-  run.catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });
+  const run = async () => {
+    if (mode === "health") {
+      await checkHouseHighlightsMediaWorkerHealth(config);
+      console.log("House Highlights media worker health check passed.");
+      return;
+    }
+    if (mode === "poll") {
+      if (!drainAcknowledgementFile) throw new Error("POSTGAME_MEDIA_DRAIN_ACK_FILE is required in poll mode");
+      const startupMode = readHouseHighlightsMediaWorkerStartupMode();
+      const workerInstanceId = randomUUID();
+      await initializeHouseHighlightsMediaWorkerControl(drainAcknowledgementFile, workerInstanceId);
+      const drainController = new HouseHighlightsMediaWorkerDrainController(
+        (acknowledgement) => writeHouseHighlightsMediaWorkerDrainAcknowledgement(
+          drainAcknowledgementFile,
+          acknowledgement,
+        ),
+        workerInstanceId,
+      );
+      process.on("SIGTERM", () => { drainController.requestDrain("SIGTERM"); });
+      process.on("SIGINT", () => { drainController.requestDrain("SIGINT"); });
+      if (startupMode === "standby") {
+        while (!drainController.claimDisabled) await drainController.waitForPollDelay(config.pollIntervalMs);
+        await drainController.waitForAcknowledgement();
+      } else {
+        await runHouseHighlightsMediaWorker(config, fetch, { drainController });
+      }
+      return;
+    }
+    const result = await runHouseHighlightsMediaWorkerOnce(config);
+    if (mode === "smoke") assertHouseHighlightsMediaWorkerSmokeResult(result);
+    console.log(mode === "smoke" ? "Smoke render completed." : result);
+  };
+  run().catch((error) => { console.error(error instanceof Error ? error.message : String(error)); process.exit(1); });
 }

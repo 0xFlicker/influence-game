@@ -1,11 +1,17 @@
 export const RELEASE_CONTROL_PROTOCOL_VERSION = 1 as const;
 
 export type RuntimeStartupMode = "active" | "validation";
-export type RuntimeState = "starting" | "validation" | "activating" | "active";
+export type RuntimeState = "starting" | "validation" | "activating" | "standby" | "accepting" | "active";
 
 export type RuntimeActivationFence = {
   leaseId: string;
   fencingToken: number;
+};
+
+export type AcceptedRuntimeIdentity = {
+  candidateSha: string;
+  apiDigest: string;
+  migrationSet: string;
 };
 
 export type RuntimeFenceValidationResult =
@@ -27,7 +33,7 @@ export type RuntimeActivationFailure = {
 export type RuntimeActivationResult =
   | {
     ok: true;
-    outcome: "activated" | "already_active";
+    outcome: "activated" | "already_active" | "accepted" | "aborted";
     releaseControl: RuntimeActivationStatus;
   }
   | RuntimeActivationFailure;
@@ -46,6 +52,8 @@ export interface RuntimeStopHandle {
 export interface RuntimeActivationController {
   initialize(): Promise<void>;
   activate(fence: RuntimeActivationFence): Promise<RuntimeActivationResult>;
+  accept(fence: RuntimeActivationFence, identity: AcceptedRuntimeIdentity): Promise<RuntimeActivationResult>;
+  abort(fence: RuntimeActivationFence): Promise<RuntimeActivationResult>;
   getStatus(): RuntimeActivationStatus;
   canClaimWork(): boolean;
   stop(): Promise<void>;
@@ -66,7 +74,12 @@ export function readRuntimeStartupMode(
 export function createRuntimeActivationController(options: {
   mode: RuntimeStartupMode;
   validateFence(fence: RuntimeActivationFence): Promise<RuntimeFenceValidationResult>;
-  startRuntime(fence?: RuntimeActivationFence): void | RuntimeStopHandle | Promise<void | RuntimeStopHandle>;
+  validateIdentity?(identity: AcceptedRuntimeIdentity): RuntimeFenceValidationResult | Promise<RuntimeFenceValidationResult>;
+  startRuntime(context: {
+    fence?: RuntimeActivationFence;
+    identity?: AcceptedRuntimeIdentity;
+    signal: AbortSignal;
+  }): void | RuntimeStopHandle | Promise<void | RuntimeStopHandle>;
   logger?: RuntimeActivationLogger;
 }): RuntimeActivationController {
   const logger = options.logger ?? console;
@@ -75,10 +88,15 @@ export function createRuntimeActivationController(options: {
   let activeFenceKey: string | null = null;
   let activatedLeaseId: string | null = null;
   let stopHandle: RuntimeStopHandle | null = null;
+  let pendingAcceptance: {
+    fenceKey: string;
+    promise: Promise<RuntimeActivationResult>;
+  } | null = null;
   let pendingActivation: {
     fenceKey: string;
     promise: Promise<RuntimeActivationResult>;
   } | null = null;
+  let runtimeAbortController: AbortController | null = null;
 
   const getStatus = (): RuntimeActivationStatus => ({
     protocolVersion: RELEASE_CONTROL_PROTOCOL_VERSION,
@@ -87,8 +105,21 @@ export function createRuntimeActivationController(options: {
     activatedLeaseId,
   });
 
-  const start = async (fence?: RuntimeActivationFence): Promise<void> => {
-    const started = await options.startRuntime(fence);
+  const start = async (
+    fence?: RuntimeActivationFence,
+    identity?: AcceptedRuntimeIdentity,
+  ): Promise<void> => {
+    runtimeAbortController ??= new AbortController();
+    runtimeAbortController.signal.throwIfAborted();
+    const started = await options.startRuntime({
+      fence,
+      identity,
+      signal: runtimeAbortController.signal,
+    });
+    if (runtimeAbortController.signal.aborted) {
+      await started?.stop();
+      throw new DOMException("Runtime activation was aborted", "AbortError");
+    }
     stopHandle = started ?? null;
   };
 
@@ -119,7 +150,7 @@ export function createRuntimeActivationController(options: {
       }
 
       const fenceKey = `${fence.leaseId}:${fence.fencingToken}`;
-      if (state === "active") {
+      if (state === "active" || state === "standby") {
         return Promise.resolve(activeFenceKey === fenceKey
           ? {
             ok: true,
@@ -132,6 +163,9 @@ export function createRuntimeActivationController(options: {
             false,
           ));
       }
+      if (state === "accepting" && activeFenceKey === fenceKey) {
+        return Promise.resolve({ ok: true, outcome: "already_active", releaseControl: getStatus() });
+      }
       if (pendingActivation) {
         return pendingActivation.fenceKey === fenceKey
           ? pendingActivation.promise
@@ -140,6 +174,13 @@ export function createRuntimeActivationController(options: {
             "A different deployment fence is already activating the runtime",
             true,
           ));
+      }
+      if (pendingAcceptance) {
+        return Promise.resolve(failure(
+          "runtime_activation_fence_conflict",
+          "The runtime is already completing durable acceptance",
+          true,
+        ));
       }
 
       state = "activating";
@@ -150,10 +191,9 @@ export function createRuntimeActivationController(options: {
             state = "validation";
             return validation;
           }
-          await start(fence);
           activeFenceKey = fenceKey;
           activatedLeaseId = fence.leaseId;
-          state = "active";
+          state = "standby";
           return {
             ok: true,
             outcome: "activated",
@@ -175,6 +215,87 @@ export function createRuntimeActivationController(options: {
       return promise;
     },
 
+    accept(fence, identity) {
+      if (options.mode !== "validation" || !validFence(fence) || !validIdentity(identity)) {
+        return Promise.resolve(failure(
+          "invalid_acceptance",
+          "A valid activated fence and exact accepted runtime identity are required",
+          false,
+        ));
+      }
+      const fenceKey = `${fence.leaseId}:${fence.fencingToken}`;
+      if (state === "active") {
+        return Promise.resolve(activeFenceKey === fenceKey
+          ? { ok: true, outcome: "already_active", releaseControl: getStatus() }
+          : failure("runtime_activation_fence_conflict", "The runtime was activated by a different deployment fence", false));
+      }
+      if (activeFenceKey !== fenceKey || state !== "standby") {
+        if (pendingAcceptance?.fenceKey === fenceKey) return pendingAcceptance.promise;
+        return Promise.resolve(failure(
+          "runtime_not_activated",
+          "The candidate runtime must be activated before durable acceptance",
+          true,
+        ));
+      }
+      state = "accepting";
+      runtimeAbortController = new AbortController();
+      const promise = (async (): Promise<RuntimeActivationResult> => {
+        try {
+          const fenceValidation = await options.validateFence(fence);
+          if (!fenceValidation.ok) {
+            state = "standby";
+            return fenceValidation;
+          }
+          runtimeAbortController?.signal.throwIfAborted();
+          const identityValidation = await options.validateIdentity?.(identity) ?? { ok: true as const };
+          if (!identityValidation.ok) {
+            state = "standby";
+            return identityValidation;
+          }
+          runtimeAbortController?.signal.throwIfAborted();
+          await start(fence, identity);
+          state = "active";
+          return { ok: true, outcome: "accepted", releaseControl: getStatus() };
+        } catch (error) {
+          state = "standby";
+          logger.error("[runtime-activation] Accepted runtime startup failed", error);
+          return failure(
+            error instanceof DOMException && error.name === "AbortError"
+              ? "runtime_activation_aborted"
+              : "runtime_activation_failed",
+            "Accepted background runtime failed to start",
+            true,
+          );
+        } finally {
+          pendingAcceptance = null;
+        }
+      })();
+      pendingAcceptance = { fenceKey, promise };
+      return promise;
+    },
+
+    async abort(fence) {
+      const fenceKey = `${fence.leaseId}:${fence.fencingToken}`;
+      if (!validFence(fence)) {
+        return failure("runtime_activation_fence_conflict", "The runtime activation fence does not match", false);
+      }
+      if (state === "validation" && activeFenceKey === null) {
+        return { ok: true, outcome: "aborted", releaseControl: getStatus() };
+      }
+      if (activeFenceKey !== fenceKey) {
+        return failure("runtime_activation_fence_conflict", "The runtime activation fence does not match", false);
+      }
+      runtimeAbortController?.abort();
+      await pendingAcceptance?.promise;
+      await stopHandle?.stop();
+      stopHandle = null;
+      runtimeAbortController = null;
+      activeFenceKey = null;
+      activatedLeaseId = null;
+      state = "validation";
+      return { ok: true, outcome: "aborted", releaseControl: getStatus() };
+    },
+
     getStatus,
 
     canClaimWork() {
@@ -182,12 +303,19 @@ export function createRuntimeActivationController(options: {
     },
 
     async stop() {
-      await pendingActivation?.promise;
+      runtimeAbortController?.abort();
+      await pendingAcceptance?.promise;
       await stopHandle?.stop();
     },
   };
 
   return controller;
+}
+
+function validIdentity(identity: AcceptedRuntimeIdentity): boolean {
+  return /^[0-9a-f]{40}$/.test(identity.candidateSha)
+    && /^sha256:[0-9a-f]{64}$/.test(identity.apiDigest)
+    && /^sha256:[0-9a-f]{64}$/.test(identity.migrationSet);
 }
 
 function validFence(fence: RuntimeActivationFence): boolean {

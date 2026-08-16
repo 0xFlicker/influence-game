@@ -118,6 +118,40 @@ export function createDeploymentControlRoutes(
         releaseControl: result.releaseControl,
       });
     });
+
+    app.post("/api/internal/deployment-control/leases/:leaseId/accept", async (c) => {
+      const body = recordOrNull(await parseJsonBody(c, "POST deployment-control accept"));
+      const fence = fenceFromBody(c.req.param("leaseId"), body);
+      const candidateSha = stringValue(body?.candidateSha);
+      const apiDigest = stringValue(body?.apiDigest);
+      const migrationSet = stringValue(body?.migrationSet);
+      if (!fence || !candidateSha || !apiDigest || !migrationSet) {
+        return c.json({ error: "A valid fence and exact accepted runtime identity are required" }, 400);
+      }
+      const result = await options.runtimeActivation!.accept(fence, {
+        candidateSha,
+        apiDigest,
+        migrationSet,
+      });
+      return result.ok
+        ? c.json({ outcome: result.outcome, releaseControl: result.releaseControl })
+        : c.json(
+            { error: result.error, code: result.code, retryable: result.retryable },
+            activationErrorStatus(result.code),
+          );
+    });
+
+    app.post("/api/internal/deployment-control/leases/:leaseId/abort-activation", async (c) => {
+      const fence = await parseFence(c, "abort activation");
+      if (!fence) return c.json({ error: "A valid lease ID and fencing token are required" }, 400);
+      const result = await options.runtimeActivation!.abort(fence);
+      return result.ok
+        ? c.json({ outcome: result.outcome, releaseControl: result.releaseControl })
+        : c.json(
+            { error: result.error, code: result.code, retryable: result.retryable },
+            activationErrorStatus(result.code),
+          );
+    });
   }
 
   app.post("/api/internal/deployment-control/leases/:leaseId/complete", async (c) => {
@@ -165,7 +199,13 @@ async function parseFence(
   action: string,
 ): Promise<{ leaseId: string; fencingToken: number } | null> {
   const body = recordOrNull(await parseJsonBody(c, `POST deployment-control ${action}`));
-  const leaseId = c.req.param("leaseId");
+  return fenceFromBody(c.req.param("leaseId"), body);
+}
+
+function fenceFromBody(
+  leaseId: string | undefined,
+  body: Record<string, unknown> | null,
+): { leaseId: string; fencingToken: number } | null {
   const fencingToken = positiveInteger(body?.fencingToken);
   return leaseId && validUuid(leaseId) && fencingToken ? { leaseId, fencingToken } : null;
 }

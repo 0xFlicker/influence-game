@@ -120,6 +120,7 @@ const INFLUENCE_TABLES = [
   "game_watch_state_summaries",
   "game_events",
   "game_run_owners",
+  "deployment_recovery_reconciliations",
   "deployment_admission_leases",
   "deployment_admission_state",
   "season_honors",

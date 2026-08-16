@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { Hono } from "hono";
+import { SignJWT } from "jose";
 import { schema, type DrizzleDB } from "../db/index.js";
 import {
   createDeploymentControlToken,
@@ -19,6 +20,7 @@ import {
   revokeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
 import { acquireGameRunOwner } from "../services/game-ownership.js";
+import { runPendingDeploymentRecoveryReconciliation } from "../services/deployment-recovery-reconciliation.js";
 import { setupTestDB } from "./test-utils.js";
 
 const CANDIDATE_SHA = "1".repeat(40);
@@ -54,6 +56,8 @@ describe("deployment admission lease", () => {
       expect(resumed).toMatchObject({ ok: true, outcome: "revoked" });
       expect((await db.select().from(schema.deploymentAdmissionLeases))[0])
         .toMatchObject({ revokedBy });
+      expect((await db.select().from(schema.deploymentRecoveryReconciliations))[0])
+        .toMatchObject({ leaseId: acquired.lease.id, status: "pending" });
     }
   });
 
@@ -157,6 +161,8 @@ describe("deployment admission lease", () => {
     });
     expect(stale).toMatchObject({ ok: false, code: "lease_expired" });
     expect((await getDeploymentAdmissionStatus(db)).lease).toBeNull();
+    expect((await db.select().from(schema.deploymentRecoveryReconciliations))[0])
+      .toMatchObject({ leaseId: acquired.lease.id, status: "pending" });
   });
 
   test("switching remains closed after expiry until the host transaction resolves it", async () => {
@@ -358,6 +364,33 @@ describe("deployment controller API", () => {
     })).status).toBe(200);
   });
 
+  test("rejects every malformed controller authority without mutating admission", async () => {
+    const secret = "deployment-admission-test-secret";
+    process.env.JWT_SECRET = secret;
+    const db = await setupTestDB();
+    const app = new Hono();
+    app.route("/", createDeploymentControlRoutes(db));
+    const cases = [
+      ["type", { tokenType: "session" }],
+      ["audience", { audience: "influence-api" }],
+      ["subject", { subject: "human-operator" }],
+      ["permission", { permission: "manage_users" }],
+      ["signature", { signingSecret: "different-signing-secret" }],
+      ["expiration", { expiresAt: Math.floor(Date.now() / 1000) - 60 }],
+    ] as const;
+
+    for (const [label, overrides] of cases) {
+      const token = await controllerTokenFixture(secret, overrides);
+      const response = await app.request(
+        "/api/internal/deployment-control/leases",
+        controllerPost(token, PROVENANCE),
+      );
+      expect({ label, status: response.status }).toEqual({ label, status: 401 });
+      expect({ label, leases: await db.select().from(schema.deploymentAdmissionLeases) })
+        .toEqual({ label, leases: [] });
+    }
+  });
+
   test("validates provenance before creating a lease and exposes the durable active set", async () => {
     process.env.JWT_SECRET = "deployment-admission-test-secret";
     const db = await setupTestDB();
@@ -425,6 +458,84 @@ describe("deployment controller API", () => {
       status: "aborted",
       completionReason: "candidate canceled",
     });
+    expect((await db.select().from(schema.deploymentRecoveryReconciliations))[0]).toMatchObject({
+      leaseId: lease.id,
+      status: "pending",
+      attempts: 0,
+    });
+  });
+});
+
+describe("terminal deployment recovery reconciliation", () => {
+  test("uses one DB-backed claim and records success only while admission stays open", async () => {
+    const db = await setupTestDB();
+    const acquired = await acquireDeploymentAdmissionLease(db, PROVENANCE);
+    if (!acquired.ok) throw new Error(acquired.error);
+    const released = await completeDeploymentAdmissionLease(db, {
+      leaseId: acquired.lease.id,
+      fencingToken: acquired.lease.fencingToken,
+      outcome: "aborted",
+      reason: "controller aborted candidate validation",
+    });
+    expect(released.ok).toBeTrue();
+
+    let calls = 0;
+    let releaseRecovery!: () => void;
+    const recoveryGate = new Promise<void>((resolve) => { releaseRecovery = resolve; });
+    const recover = async () => {
+      calls += 1;
+      await recoveryGate;
+      return { attempted: 1, recovered: 1, skipped: [] };
+    };
+    const first = runPendingDeploymentRecoveryReconciliation(db, recover);
+    while (calls === 0) await Bun.sleep(1);
+    const second = await runPendingDeploymentRecoveryReconciliation(db, recover);
+    expect(second).toEqual({ outcome: "idle" });
+    releaseRecovery();
+    expect(await first).toMatchObject({ outcome: "succeeded", leaseId: acquired.lease.id });
+    expect(calls).toBe(1);
+    expect((await db.select().from(schema.deploymentRecoveryReconciliations))[0]).toMatchObject({
+      status: "succeeded",
+      attempts: 1,
+      claimToken: null,
+      claimExpiresAt: null,
+      lastError: null,
+    });
+  });
+
+  test("defers pending recovery during a newer drain and retries after recovery failure", async () => {
+    const db = await setupTestDB();
+    const firstLease = await acquireDeploymentAdmissionLease(db, PROVENANCE);
+    if (!firstLease.ok) throw new Error(firstLease.error);
+    await completeDeploymentAdmissionLease(db, {
+      leaseId: firstLease.lease.id,
+      fencingToken: firstLease.lease.fencingToken,
+      outcome: "aborted",
+      reason: "candidate controller aborted",
+    });
+    const newer = await acquireDeploymentAdmissionLease(db, { ...PROVENANCE, workflowRunId: 124 });
+    if (!newer.ok) throw new Error(newer.error);
+    let calls = 0;
+    expect(await runPendingDeploymentRecoveryReconciliation(db, async () => {
+      calls += 1;
+      return { attempted: 0, recovered: 0, skipped: [] };
+    })).toEqual({ outcome: "deferred" });
+    expect(calls).toBe(0);
+    await completeDeploymentAdmissionLease(db, {
+      leaseId: newer.lease.id,
+      fencingToken: newer.lease.fencingToken,
+      outcome: "aborted",
+      reason: "newer candidate controller aborted",
+    });
+
+    const failed = await runPendingDeploymentRecoveryReconciliation(db, async () => {
+      calls += 1;
+      throw new Error("transient recovery failure");
+    });
+    expect(failed).toMatchObject({ outcome: "retry", error: "transient recovery failure" });
+    expect((await db.select().from(schema.deploymentRecoveryReconciliations)
+      .where(eq(schema.deploymentRecoveryReconciliations.leaseId, firstLease.lease.id)))[0])
+      .toMatchObject({ status: "pending", attempts: 1, lastError: "transient recovery failure" });
   });
 });
 
@@ -475,4 +586,28 @@ function controllerPost(token: string, body: Record<string, unknown>): RequestIn
     },
     body: JSON.stringify(body),
   };
+}
+
+async function controllerTokenFixture(
+  secret: string,
+  overrides: {
+    tokenType?: string;
+    audience?: string;
+    subject?: string;
+    permission?: string;
+    signingSecret?: string;
+    expiresAt?: number;
+  },
+): Promise<string> {
+  return new SignJWT({
+    token_type: overrides.tokenType ?? "service",
+    perms: [overrides.permission ?? "manage_deployment_admission"],
+  })
+    .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
+    .setExpirationTime(overrides.expiresAt ?? Math.floor(Date.now() / 1000) + 6 * 60 * 60)
+    .setIssuer("influence-api")
+    .setAudience(overrides.audience ?? "influence-deployment-control")
+    .setSubject(overrides.subject ?? "influence-release-controller")
+    .sign(new TextEncoder().encode(overrides.signingSecret ?? secret));
 }
