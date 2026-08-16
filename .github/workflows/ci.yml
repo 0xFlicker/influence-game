@@ -157,7 +157,7 @@ jobs:
           fi
           push_output="$(docker push ${{ matrix.image }}:${{ steps.sha.outputs.short }})"
           printf '%s\n' "$push_output"
-          immutable_digest="$(awk '$1 == "digest:" { print $2 }' <<< "$push_output" | tail -n 1)"
+          immutable_digest="$(awk '$2 == "digest:" { print $3 }' <<< "$push_output" | tail -n 1)"
           if ! [[ "$immutable_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
             echo "immutable push did not report a valid digest for ${{ matrix.target }}" >&2
             exit 1
