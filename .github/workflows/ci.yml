@@ -74,6 +74,9 @@ jobs:
       - name: Enforce production approval broker contract
         run: bash scripts/test-production-approval-contract.sh
 
+      - name: Exercise production approval broker verifier
+        run: bash scripts/test-production-approval-behavior.sh
+
       - name: Typecheck
         run: bun run typecheck
 

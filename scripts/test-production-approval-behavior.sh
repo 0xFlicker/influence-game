@@ -1,0 +1,119 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+CONTROLLER="$ROOT_DIR/scripts/production-approval.sh"
+
+fail() { echo "FAIL: $*" >&2; exit 1; }
+expect_failure() {
+  local label="$1"; shift
+  if "$@" >/dev/null 2>&1; then fail "$label unexpectedly succeeded"; fi
+}
+
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+baseline=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+digest=sha256:$(printf 'c%.0s' {1..64})
+mkdir -p "$tmp/mock-bin"
+
+cat > "$tmp/mock-bin/gh" <<'MOCK_GH'
+#!/usr/bin/env bash
+endpoint="${@: -1}"
+case "$endpoint" in
+  */actions/runs/*/artifacts\?*) cat "$GH_ARTIFACTS" ;;
+  */actions/runs/*) cat "$GH_RUN" ;;
+  */actions/artifacts/*/zip) cat "$GH_ARCHIVE" ;;
+  *) echo "unexpected gh endpoint: $endpoint" >&2; exit 1 ;;
+esac
+MOCK_GH
+chmod +x "$tmp/mock-bin/gh"
+
+write_operation() {
+  local kind="$1" output="$2"
+  case "$kind" in
+    candidate)
+      jq -S -n --arg sha "$sha" --arg baseline "$baseline" --arg digest "$digest" '{qualification:{
+        schema_version:2,candidate_sha:$sha,
+        images:{api:{digest:$digest},web:{digest:$digest},render_worker:{digest:$digest}},migration_set:$digest,
+        build:{run_id:10,run_attempt:1,artifact:"manifest",digest:$digest},
+        staging:{run_id:11,run_attempt:1,artifact:"receipt",digest:$digest},
+        e2e:{run_id:12,run_attempt:1,workflow_sha:$sha,artifact:"evidence",digest:$digest},
+        production_baseline:{candidate_sha:$baseline,api_digest:$digest,protocol:1,runtime_state:"accepted"},
+        release_control:{minimum_protocol:1,candidate_protocol:1},commit_list:[$sha],clean_switch_capable:true
+      }}' > "$output"
+      ;;
+    bootstrap-inventory)
+      jq -S -n '{accepted_color:"blue",confirmation:"CONVERT_WITH_BRIEF_INGRESS_RESTART"}' > "$output"
+      ;;
+    bootstrap-conversion)
+      jq -S -n --arg digest "$digest" '{accepted_color:"blue",inventory:{run_id:20,run_attempt:1,artifact:"production-ingress-inventory-20-1",digest:$digest}}' > "$output"
+      ;;
+    break-glass)
+      jq -S -n --arg sha "$sha" --arg baseline "$baseline" --arg digest "$digest" '{qualification:{
+        schema_version:2,mode:"break-glass",candidate_sha:$sha,
+        production_baseline:{candidate_sha:$baseline,api_digest:$digest,protocol:1,runtime_state:"accepted"},
+        images:{api:{digest:$digest},web:{digest:$digest},render_worker:{digest:$digest}},migration_set:$digest,
+        compare_status:"ahead",commit_list:[$sha],compatibility_proven:true
+      },reason:"operator-approved recovery"}' > "$output"
+      ;;
+  esac
+}
+
+source_contract() {
+  case "$1" in
+    candidate) printf '%s\t%s\t%s\t%s\n' .github/workflows/production-candidate.yml repository_dispatch 'flick-ai-dev[bot]' 270169057 ;;
+    bootstrap-inventory) printf '%s\t%s\t%s\t%s\n' .github/workflows/bootstrap-production-ingress.yml workflow_dispatch 0xFlicker 97764360 ;;
+    bootstrap-conversion) printf '%s\t%s\t%s\t%s\n' .github/workflows/bootstrap-production-ingress.yml repository_dispatch 'flick-ai-dev[bot]' 270169057 ;;
+    break-glass) printf '%s\t%s\t%s\t%s\n' .github/workflows/promote-prod.yml workflow_dispatch 0xFlicker 97764360 ;;
+  esac
+}
+
+verify_kind() {
+  local kind="$1" case_dir="$tmp/$kind" workflow event actor actor_id artifact content_digest archive_digest
+  mkdir -p "$case_dir/archive"
+  write_operation "$kind" "$case_dir/operation.json"
+  IFS=$'\t' read -r workflow event actor actor_id <<< "$(source_contract "$kind")"
+  jq -S -n --arg kind "$kind" --arg workflow "$workflow" --arg actor "$actor" --argjson actor_id "$actor_id" --arg sha "$sha" --slurpfile operation "$case_dir/operation.json" \
+    '{schema_version:1,kind:$kind,source:{repository:"0xFlicker/linode-iac",workflow:$workflow,run_id:123,run_attempt:1,controller_sha:$sha,actor:{login:$actor,id:$actor_id}},operation:$operation[0]}' \
+    > "$case_dir/archive/production-approval-request.json"
+  content_digest="sha256:$(sha256sum "$case_dir/archive/production-approval-request.json" | awk '{print $1}')"
+  (cd "$case_dir/archive" && zip -X -q "$case_dir/artifact.zip" production-approval-request.json)
+  archive_digest="sha256:$(sha256sum "$case_dir/artifact.zip" | awk '{print $1}')"
+  artifact="production-approval-request-${kind}-123-1"
+  jq -S -n --arg workflow "$workflow" --arg event "$event" --arg actor "$actor" --argjson actor_id "$actor_id" --arg sha "$sha" \
+    '{id:123,repository:{full_name:"0xFlicker/linode-iac"},head_branch:"main",head_sha:$sha,status:"completed",conclusion:"success",run_attempt:1,path:$workflow,event:$event,actor:{login:$actor,id:$actor_id}}' > "$case_dir/run.json"
+  jq -S -n --arg name "$artifact" --arg digest "$archive_digest" '{total_count:1,artifacts:[{id:789,name:$name,digest:$digest,expired:false,workflow_run:{id:123}}]}' > "$case_dir/artifacts.json"
+  result="$(PATH="$tmp/mock-bin:$PATH" GH_RUN="$case_dir/run.json" GH_ARTIFACTS="$case_dir/artifacts.json" GH_ARCHIVE="$case_dir/artifact.zip" \
+    SOURCE_RUN_ID=123 SOURCE_RUN_ATTEMPT=1 SOURCE_ARTIFACT="$artifact" SOURCE_DIGEST="$content_digest" LINODE_TOKEN=test APPROVAL_WAIT_SECONDS=1 \
+    bash "$CONTROLLER" verify-request "$case_dir/verified")"
+  [ "$result" = "$kind" ] || fail "$kind was not verified"
+  jq -e --arg kind "$kind" '.kind == $kind and .artifact.id == 789 and .source_run.attempt == 1' "$case_dir/verified/request-provenance.json" >/dev/null \
+    || fail "$kind provenance was not frozen"
+}
+
+for kind in candidate bootstrap-inventory bootstrap-conversion break-glass; do verify_kind "$kind"; done
+
+jq -S -n '{required_pull_request_reviews:{required_approving_review_count:0,bypass_pull_request_allowances:{users:[],teams:[],apps:[]}},enforce_admins:{enabled:true},allow_force_pushes:{enabled:false},allow_deletions:{enabled:false}}' > "$tmp/protection.json"
+bash "$CONTROLLER" validate-main-protection-fixture "$tmp/protection.json"
+for bypass_kind in users teams apps; do
+  jq --arg kind "$bypass_kind" '.required_pull_request_reviews.bypass_pull_request_allowances[$kind] = [{slug:"bypass"}]' "$tmp/protection.json" > "$tmp/protection-$bypass_kind.json"
+  expect_failure "$bypass_kind PR bypass" bash "$CONTROLLER" validate-main-protection-fixture "$tmp/protection-$bypass_kind.json"
+done
+
+candidate_dir="$tmp/candidate"
+candidate_content_digest="sha256:$(sha256sum "$candidate_dir/archive/production-approval-request.json" | awk '{print $1}')"
+jq '.actor = {login:"attacker",id:1}' "$candidate_dir/run.json" > "$candidate_dir/wrong-actor-run.json"
+expect_failure "wrong source actor" env PATH="$tmp/mock-bin:$PATH" GH_RUN="$candidate_dir/wrong-actor-run.json" GH_ARTIFACTS="$candidate_dir/artifacts.json" GH_ARCHIVE="$candidate_dir/artifact.zip" \
+  SOURCE_RUN_ID=123 SOURCE_RUN_ATTEMPT=1 SOURCE_ARTIFACT=production-approval-request-candidate-123-1 SOURCE_DIGEST="$candidate_content_digest" LINODE_TOKEN=test APPROVAL_WAIT_SECONDS=1 \
+  bash "$CONTROLLER" verify-request "$tmp/rejected"
+jq '.path = ".github/workflows/production-candidate.yml.evil"' "$candidate_dir/run.json" > "$candidate_dir/prefix-run.json"
+expect_failure "workflow prefix collision" env PATH="$tmp/mock-bin:$PATH" GH_RUN="$candidate_dir/prefix-run.json" GH_ARTIFACTS="$candidate_dir/artifacts.json" GH_ARCHIVE="$candidate_dir/artifact.zip" \
+  SOURCE_RUN_ID=123 SOURCE_RUN_ATTEMPT=1 SOURCE_ARTIFACT=production-approval-request-candidate-123-1 SOURCE_DIGEST="$candidate_content_digest" LINODE_TOKEN=test APPROVAL_WAIT_SECONDS=1 \
+  bash "$CONTROLLER" verify-request "$tmp/rejected"
+expect_failure "source rerun" env PATH="$tmp/mock-bin:$PATH" GH_RUN="$candidate_dir/run.json" GH_ARTIFACTS="$candidate_dir/artifacts.json" GH_ARCHIVE="$candidate_dir/artifact.zip" \
+  SOURCE_RUN_ID=123 SOURCE_RUN_ATTEMPT=2 SOURCE_ARTIFACT=production-approval-request-candidate-123-1 SOURCE_DIGEST="$digest" LINODE_TOKEN=test APPROVAL_WAIT_SECONDS=1 \
+  bash "$CONTROLLER" verify-request "$tmp/rejected"
+
+bash -n "$CONTROLLER"
+echo "Production approval broker behavior tests passed"

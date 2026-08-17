@@ -3,7 +3,6 @@ set -euo pipefail
 
 readonly LINODE_REPOSITORY="0xFlicker/linode-iac"
 readonly INFLUENCE_REPOSITORY="0xFlicker/influence-game"
-readonly APPROVAL_WORKFLOW=".github/workflows/production-approval.yml"
 readonly APPROVAL_ENVIRONMENT="production"
 readonly APPROVER_LOGIN="0xFlicker"
 readonly APPROVER_ID="97764360"
@@ -46,13 +45,35 @@ validate_operation() {
     candidate)
       jq -e '
         (.operation | keys | sort) == ["qualification"]
-        and (.operation.qualification | type == "object")
+        and (.operation.qualification | keys | sort) == ["build", "candidate_sha", "clean_switch_capable", "commit_list", "e2e", "images", "migration_set", "production_baseline", "release_control", "schema_version", "staging"]
+        and .operation.qualification.schema_version == 2
         and (.operation.qualification.candidate_sha | test("^[0-9a-f]{40}$"))
+        and (.operation.qualification.images | keys | sort) == ["api", "render_worker", "web"]
+        and (.operation.qualification.images.api | keys) == ["digest"]
+        and (.operation.qualification.images.web | keys) == ["digest"]
+        and (.operation.qualification.images.render_worker | keys) == ["digest"]
         and (.operation.qualification.images.api.digest | test("^sha256:[0-9a-f]{64}$"))
         and (.operation.qualification.images.web.digest | test("^sha256:[0-9a-f]{64}$"))
         and (.operation.qualification.images.render_worker.digest | test("^sha256:[0-9a-f]{64}$"))
         and (.operation.qualification.migration_set | test("^sha256:[0-9a-f]{64}$"))
+        and (.operation.qualification.build | keys | sort) == ["artifact", "digest", "run_attempt", "run_id"]
+        and (.operation.qualification.staging | keys | sort) == ["artifact", "digest", "run_attempt", "run_id"]
+        and (.operation.qualification.e2e | keys | sort) == ["artifact", "digest", "run_attempt", "run_id", "workflow_sha"]
+        and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.run_id | type == "number" and . > 0))
+        and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.run_attempt == 1))
+        and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.artifact | type == "string" and test("^[A-Za-z0-9._-]{1,255}$")))
+        and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.digest | test("^sha256:[0-9a-f]{64}$")))
+        and (.operation.qualification.e2e.workflow_sha | test("^[0-9a-f]{40}$"))
+        and (.operation.qualification.production_baseline | keys | sort) == ["api_digest", "candidate_sha", "protocol", "runtime_state"]
         and (.operation.qualification.production_baseline.candidate_sha | test("^[0-9a-f]{40}$"))
+        and ((.operation.qualification.production_baseline.api_digest == "") or (.operation.qualification.production_baseline.api_digest | test("^sha256:[0-9a-f]{64}$")))
+        and (.operation.qualification.production_baseline.protocol | type == "number" and . >= 0)
+        and (.operation.qualification.production_baseline.runtime_state | type == "string" and length > 0)
+        and (.operation.qualification.release_control | keys | sort) == ["candidate_protocol", "minimum_protocol"]
+        and (.operation.qualification.release_control.minimum_protocol | type == "number" and . >= 1)
+        and (.operation.qualification.release_control.candidate_protocol | type == "number" and . >= 1)
+        and (.operation.qualification.commit_list | type == "array" and all(.[]; test("^[0-9a-f]{40}$")))
+        and (.operation.qualification.clean_switch_capable | type == "boolean")
       ' "$request_file" >/dev/null || die "candidate request schema is invalid"
       ;;
     bootstrap-inventory)
@@ -64,14 +85,13 @@ validate_operation() {
       ;;
     bootstrap-conversion)
       jq -e '
-        (.operation | keys | sort) == ["accepted_color", "inventory", "release_bundle_dir"]
+        (.operation | keys | sort) == ["accepted_color", "inventory"]
         and (.operation.accepted_color == "blue" or .operation.accepted_color == "green")
         and (.operation.inventory | keys | sort) == ["artifact", "digest", "run_attempt", "run_id"]
         and (.operation.inventory.run_id | type == "number" and . > 0)
         and .operation.inventory.run_attempt == 1
         and (.operation.inventory.artifact | test("^production-ingress-inventory-[1-9][0-9]*-1$"))
         and (.operation.inventory.digest | test("^sha256:[0-9a-f]{64}$"))
-        and (.operation.release_bundle_dir | test("^/opt/influence/release/controllers/[1-9][0-9]*-1$"))
       ' "$request_file" >/dev/null || die "bootstrap conversion request schema is invalid"
       ;;
     break-glass)
@@ -79,12 +99,26 @@ validate_operation() {
         (.operation | keys | sort) == ["qualification", "reason"]
         and (.operation.reason | type == "string" and length >= 8 and length <= 240)
         and (.operation.reason | test("^[A-Za-z0-9 .,:_/#()@+-]+$"))
+        and (.operation.qualification | keys | sort) == ["candidate_sha", "commit_list", "compare_status", "compatibility_proven", "images", "migration_set", "mode", "production_baseline", "schema_version"]
+        and .operation.qualification.schema_version == 2
+        and .operation.qualification.mode == "break-glass"
         and (.operation.qualification.candidate_sha | test("^[0-9a-f]{40}$"))
+        and (.operation.qualification.images | keys | sort) == ["api", "render_worker", "web"]
+        and (.operation.qualification.images.api | keys) == ["digest"]
+        and (.operation.qualification.images.web | keys) == ["digest"]
+        and (.operation.qualification.images.render_worker | keys) == ["digest"]
         and (.operation.qualification.images.api.digest | test("^sha256:[0-9a-f]{64}$"))
         and (.operation.qualification.images.web.digest | test("^sha256:[0-9a-f]{64}$"))
         and (.operation.qualification.images.render_worker.digest | test("^sha256:[0-9a-f]{64}$"))
         and (.operation.qualification.migration_set | test("^sha256:[0-9a-f]{64}$"))
+        and (.operation.qualification.production_baseline | keys | sort) == ["api_digest", "candidate_sha", "protocol", "runtime_state"]
         and (.operation.qualification.production_baseline.candidate_sha | test("^[0-9a-f]{40}$"))
+        and ((.operation.qualification.production_baseline.api_digest == "") or (.operation.qualification.production_baseline.api_digest | test("^sha256:[0-9a-f]{64}$")))
+        and (.operation.qualification.production_baseline.protocol | type == "number" and . >= 0)
+        and (.operation.qualification.production_baseline.runtime_state | type == "string" and length > 0)
+        and (.operation.qualification.compatibility_proven | type == "boolean")
+        and (.operation.qualification.compare_status | IN("ahead", "behind", "diverged", "identical"))
+        and (.operation.qualification.commit_list | type == "array" and all(.[]; test("^[0-9a-f]{40}$")))
       ' "$request_file" >/dev/null || die "break-glass request schema is invalid"
       ;;
     *) die "unsupported production approval kind" ;;
@@ -185,7 +219,7 @@ verify_request() {
     --argjson actor_id "$expected_actor_id" \
     --argjson run_id "$SOURCE_RUN_ID" '
     .event == $event
-    and (.path | startswith($workflow))
+    and (.path == $workflow or (.path | startswith($workflow + "@")))
     and .actor.login == $actor
     and .actor.id == $actor_id
     and .id == $run_id
@@ -217,9 +251,23 @@ verify_request() {
   printf '%s\n' "$kind"
 }
 
+validate_main_protection_file() {
+  local protection_file="${1:?protection file is required}"
+  jq -e '
+    .required_pull_request_reviews.required_approving_review_count == 0
+    and ((.required_pull_request_reviews.bypass_pull_request_allowances.users // []) | length == 0)
+    and ((.required_pull_request_reviews.bypass_pull_request_allowances.teams // []) | length == 0)
+    and ((.required_pull_request_reviews.bypass_pull_request_allowances.apps // []) | length == 0)
+    and .enforce_admins.enabled == true
+    and .allow_force_pushes.enabled == false
+    and .allow_deletions.enabled == false
+  ' "$protection_file" >/dev/null || die "Influence main branch protection is unsafe"
+}
+
 verify_policy() {
   local output_dir="${1:?output directory is required}" require_approval="${2:-true}"
   [ -n "${GH_TOKEN:-}" ] || die "GH_TOKEN is required"
+  [ -n "${POLICY_TOKEN:-}" ] || die "POLICY_TOKEN is required"
   [ "${GITHUB_REPOSITORY:-}" = "$INFLUENCE_REPOSITORY" ] || die "approval must run in Influence"
   [ "${GITHUB_RUN_ATTEMPT:-}" = "1" ] || die "approval reruns are not authoritative"
   [ "${GITHUB_ACTOR:-}" = "$APP_ACTOR_LOGIN" ] || die "approval run was not initiated by the trusted App"
@@ -245,14 +293,20 @@ verify_policy() {
     and .deployment_branch_policy.custom_branch_policies == false
   ' "$output_dir/environment.json" >/dev/null || die "Influence production environment policy is unsafe"
 
-  gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/branches/main/protection" \
+  GH_TOKEN="$POLICY_TOKEN" gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/branches/main/protection" \
     > "$output_dir/main-protection.json"
-  jq -e '
-    .required_pull_request_reviews.required_approving_review_count == 0
-    and .enforce_admins.enabled == true
-    and .allow_force_pushes.enabled == false
-    and .allow_deletions.enabled == false
-  ' "$output_dir/main-protection.json" >/dev/null || die "Influence main branch protection is unsafe"
+  validate_main_protection_file "$output_dir/main-protection.json"
+
+  GH_TOKEN="$POLICY_TOKEN" gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/environments/$APPROVAL_ENVIRONMENT/secrets" \
+    > "$output_dir/environment-secrets.json"
+  jq -e '.total_count == 0 and (.secrets | length) == 0' "$output_dir/environment-secrets.json" >/dev/null \
+    || die "Influence production environment must not contain secrets"
+
+  gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/git/ref/heads/main" \
+    > "$output_dir/main-ref.json"
+  jq -e --arg workflow_sha "$GITHUB_SHA" '
+    .ref == "refs/heads/main" and .object.type == "commit" and .object.sha == $workflow_sha
+  ' "$output_dir/main-ref.json" >/dev/null || die "approval workflow is not the current Influence main revision"
 
   if [ "$require_approval" = true ]; then
     gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/actions/runs/$GITHUB_RUN_ID/approvals" \
@@ -272,5 +326,6 @@ case "${1:-}" in
   verify-request) verify_request "${2:-verified-request}" ;;
   verify-policy) verify_policy "${2:-verified-policy}" ;;
   verify-preapproval-policy) verify_policy "${2:-verified-policy}" false ;;
+  validate-main-protection-fixture) validate_main_protection_file "${2:-}" ;;
   *) die "usage: $0 {verify-request|verify-policy} [output-directory]" ;;
 esac

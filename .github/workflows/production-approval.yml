@@ -10,6 +10,16 @@ permissions:
   contents: read
 
 jobs:
+  reject-untrusted:
+    name: Reject untrusted approval invocation
+    if: ${{ !(github.ref == 'refs/heads/main' && github.actor == 'flick-ai-dev[bot]' && github.run_attempt == 1) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Reject non-authoritative invocation
+        run: |
+          echo "Production approvals require an App-authored, first-attempt repository dispatch on main." >&2
+          exit 1
+
   validate:
     name: Validate private production request
     if: ${{ github.ref == 'refs/heads/main' && github.actor == 'flick-ai-dev[bot]' && github.run_attempt == 1 }}
@@ -36,6 +46,17 @@ jobs:
           repositories: linode-iac
           permission-actions: read
           permission-contents: read
+
+      - name: Generate branch-policy verification token
+        id: influence-policy-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: influence-game
+          permission-administration: read
+          permission-environments: read
 
       - name: Verify immutable private request
         id: request
@@ -64,6 +85,7 @@ jobs:
       - name: Verify current approval protection before prompting
         env:
           GH_TOKEN: ${{ github.token }}
+          POLICY_TOKEN: ${{ steps.influence-policy-token.outputs.token }}
         run: bash scripts/production-approval.sh verify-preapproval-policy validated-policy
 
   authorize:
@@ -98,6 +120,17 @@ jobs:
           permission-actions: read
           permission-contents: read
 
+      - name: Generate branch-policy verification token
+        id: influence-policy-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: influence-game
+          permission-administration: read
+          permission-environments: read
+
       - name: Reverify exact private request after approval
         env:
           LINODE_TOKEN: ${{ steps.linode-read-token.outputs.token }}
@@ -111,6 +144,7 @@ jobs:
       - name: Verify reviewer and current protection policy
         env:
           GH_TOKEN: ${{ github.token }}
+          POLICY_TOKEN: ${{ steps.influence-policy-token.outputs.token }}
         run: bash scripts/production-approval.sh verify-policy approved-policy
 
       - name: Create immutable approval receipt
@@ -181,7 +215,7 @@ jobs:
               approval_artifact: process.env.APPROVAL_ARTIFACT,
               approval_digest: process.env.APPROVAL_DIGEST
             };
-            for (let attempt = 1; attempt <= 3; attempt += 1) {
+            for (let attempt = 1; attempt <= 5; attempt += 1) {
               try {
                 await github.rest.repos.createDispatchEvent({
                   owner: '0xFlicker',
@@ -191,22 +225,38 @@ jobs:
                 });
                 return;
               } catch (error) {
-                if (attempt === 3) throw error;
-                await new Promise(resolve => setTimeout(resolve, 2000 * attempt));
+                const status = error.status ?? error.response?.status;
+                const transient = status === undefined || status === 429 || status >= 500;
+                if (!transient || attempt === 5) throw error;
+                const retryAfter = Number(error.response?.headers?.['retry-after']);
+                const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
+                  ? Math.min(retryAfter * 1000, 30000)
+                  : Math.min(2000 * (2 ** (attempt - 1)), 30000) + Math.floor(Math.random() * 500);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
               }
             }
 
       - name: Record approval handoff
-        if: ${{ always() }}
+        if: ${{ success() }}
         run: |
           {
             echo "## Production approval handed off"
             echo
             echo "- Operation: \`${{ needs.validate.outputs.kind }}\`"
             echo "- Reviewer: \`0xFlicker\`"
-            echo "- Approval artifact: \`$APPROVAL_ARTIFACT\`"
+            echo "- Private execution locator: \`$APPROVAL_ARTIFACT\`"
             echo "- Approval digest: \`${{ steps.approval.outputs.approval_digest }}\`"
             echo "- Private execution: [Linode Actions](https://github.com/0xFlicker/linode-iac/actions)"
             echo
             echo "> This run proves approval handoff only. Linode's terminal evidence proves execution or deployment."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Record failed approval handoff
+        if: ${{ failure() }}
+        run: |
+          {
+            echo "## Production approval was not handed off"
+            echo
+            echo "The protected job did not complete request revalidation, receipt publication, and callback delivery."
+            echo "Create a fresh first-attempt approval request; this run grants no reusable execution authority."
           } >> "$GITHUB_STEP_SUMMARY"
