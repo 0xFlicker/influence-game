@@ -6,13 +6,13 @@ The GitHub App must grant read-only Actions and Contents access for provenance p
 
 ## Repository configuration
 
-Before enabling Linode approval receivers:
+Linode approval receivers may be enabled only after these conditions hold:
 
 1. Merge the approval broker into `influence-game/main`.
 2. Keep repository ruleset `20924439` active and targeting `main`. Its internal rules are controlled by the repository operator and are not interpreted as deployment authority.
 3. Create the `production` environment with required reviewer `0xFlicker`, prevent self-review enabled, administrator bypass disabled, and no environment secrets. The broker independently requires the designated active `main` ruleset and exact current `main` workflow revision, so environment branch filters are not approval authority.
-4. Run `TEMPORARY: Production Approval Principal Proof`. The first human-authored job dispatches a second App-authored run. Approve only the second run; it verifies its approval history and live policy before recording `flick-ai-dev[bot]` ID `270169057`, reviewer `0xFlicker`, no callback, and no host authority.
-5. Remove the temporary proof workflow before enabling Linode execution receivers.
+4. Preserve the successful sole-maintainer proof evidence from [run `31999647070`, attempt 1](https://github.com/0xFlicker/influence-game/actions/runs/31999647070): App actor `flick-ai-dev[bot]` ID `270169057`, reviewer `0xFlicker`, current `main`, no callback, and no host authority.
+5. Keep the temporary proof workflow removed; production approval is available only through the repository-dispatch broker.
 
 The broker itself accepts only `repository_dispatch`. A human-started rerun or workflow dispatch is never approval authority.
 
