@@ -12,17 +12,17 @@ permissions:
 jobs:
   reject-untrusted:
     name: Reject untrusted approval invocation
-    if: ${{ !(github.ref == 'refs/heads/main' && github.actor == 'flick-ai-dev[bot]' && github.run_attempt == 1) }}
+    if: ${{ !(github.ref == 'refs/heads/main' && github.actor == 'flick-ai-dev[bot]') }}
     runs-on: ubuntu-latest
     steps:
       - name: Reject non-authoritative invocation
         run: |
-          echo "Production approvals require an App-authored, first-attempt repository dispatch on main." >&2
+          echo "Production approvals require an App-authored repository dispatch handled on main." >&2
           exit 1
 
   validate:
     name: Validate private production request
-    if: ${{ github.ref == 'refs/heads/main' && github.actor == 'flick-ai-dev[bot]' && github.run_attempt == 1 }}
+    if: ${{ github.ref == 'refs/heads/main' && github.actor == 'flick-ai-dev[bot]' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     outputs:
@@ -213,26 +213,12 @@ jobs:
               approval_artifact: process.env.APPROVAL_ARTIFACT,
               approval_digest: process.env.APPROVAL_DIGEST
             };
-            for (let attempt = 1; attempt <= 5; attempt += 1) {
-              try {
-                await github.rest.repos.createDispatchEvent({
-                  owner: '0xFlicker',
-                  repo: 'linode-iac',
-                  event_type: events[process.env.APPROVAL_KIND],
-                  client_payload: payload
-                });
-                return;
-              } catch (error) {
-                const status = error.status ?? error.response?.status;
-                const transient = status === undefined || status === 429 || status >= 500;
-                if (!transient || attempt === 5) throw error;
-                const retryAfter = Number(error.response?.headers?.['retry-after']);
-                const delayMs = Number.isFinite(retryAfter) && retryAfter > 0
-                  ? Math.min(retryAfter * 1000, 30000)
-                  : Math.min(2000 * (2 ** (attempt - 1)), 30000) + Math.floor(Math.random() * 500);
-                await new Promise(resolve => setTimeout(resolve, delayMs));
-              }
-            }
+            await github.rest.repos.createDispatchEvent({
+              owner: '0xFlicker',
+              repo: 'linode-iac',
+              event_type: events[process.env.APPROVAL_KIND],
+              client_payload: payload
+            });
 
       - name: Record approval handoff
         if: ${{ success() }}
@@ -256,5 +242,5 @@ jobs:
             echo "## Production approval was not handed off"
             echo
             echo "The protected job did not complete request revalidation, receipt publication, and callback delivery."
-            echo "Create a fresh first-attempt approval request; this run grants no reusable execution authority."
+            echo "Use GitHub's normal rerun control. Revalidation and private execution are idempotent for the same immutable request."
           } >> "$GITHUB_STEP_SUMMARY"

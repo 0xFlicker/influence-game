@@ -14,11 +14,11 @@ Linode approval receivers may be enabled only after these conditions hold:
 4. Preserve the successful sole-maintainer proof evidence from [run `31999647070`, attempt 1](https://github.com/0xFlicker/influence-game/actions/runs/31999647070): App actor `flick-ai-dev[bot]` ID `270169057`, reviewer `0xFlicker`, current `main`, no callback, and no host authority.
 5. Keep the temporary proof workflow removed; production approval is available only through the repository-dispatch broker.
 
-The broker itself accepts only `repository_dispatch`. A human-started rerun or workflow dispatch is never approval authority.
+The broker itself accepts only `repository_dispatch`; it does not expose a human `workflow_dispatch` entrypoint. GitHub reruns retain the original repository-dispatch provenance and are accepted when the exact rerun attempt succeeds.
 
 ## Approval flow
 
-Linode uploads one immutable `production-approval-request.json` and dispatches only its run, attempt, artifact, and content digest. Influence waits for that exact first-attempt run to succeed, verifies its trusted workflow and actor, checks both the GitHub artifact archive digest and JSON digest, and validates the operation schema.
+Linode uploads one immutable `production-approval-request.json` per attempt and dispatches only its run, attempt, artifact, and content digest. Influence waits for that exact attempt to succeed, verifies its trusted workflow and actor, checks both the GitHub artifact archive digest and JSON digest, and validates the operation schema.
 
 The protected job repeats the download and validation after approval, rechecks the current environment and designated active `main` ruleset, verifies approval history against user ID `97764360`, and uploads `production-approval.json`. Its callback again contains only artifact locators and a digest.
 
@@ -35,10 +35,12 @@ The Influence run proves approval handoff only. Linode's terminal artifact and h
 
 ## Retry rules
 
-Every approval and source request must be workflow attempt 1. Rejection, cancellation, expiry, verifier failure, controller drift, or a consumed authority requires a fresh request:
+Workflow attempts are evidence, not an authority veto. A failed GitHub job may use **Re-run failed jobs**; artifacts are attempt-specific, and Linode binds every successful rerun to its exact attempt. The same immutable request maps to one durable private operation claim, so an approval callback or execution rerun resumes the original host transaction or returns success when it is already accepted.
+
+A rejection, cancellation, expiry, controller drift, changed request, or terminally restored/aborted host transaction requires a fresh request:
 
 - Candidate retries repeat staging E2E and qualification.
 - Bootstrap retries restart the inventory and two-approval cycle.
 - Break-glass retries submit a new SHA and reason request.
 
-Never rerun an approval job or reuse an approval artifact. Duplicate callback delivery is safe because Linode serializes and consumes by the exact approval artifact ID.
+Duplicate callback delivery and approval-job reruns are safe because Linode serializes by immutable request content and reuses the original operation claim. Workflows intentionally contain no custom retry loops; ordinary infrastructure failures remain visible and are retried with GitHub's controls.

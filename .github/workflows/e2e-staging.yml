@@ -50,7 +50,7 @@ jobs:
       STAGING_RUN_ATTEMPT: ${{ inputs.staging_run_attempt }}
       STAGING_RECEIPT_ARTIFACT: ${{ inputs.staging_receipt_artifact }}
       STAGING_RECEIPT_DIGEST: ${{ inputs.staging_receipt_digest }}
-      E2E_EVIDENCE_ARTIFACT: staging-e2e-evidence-${{ inputs.candidate_sha }}
+      E2E_EVIDENCE_ARTIFACT: staging-e2e-evidence-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       MIN_RELEASE_CONTROL_PROTOCOL: "1"
 
     steps:

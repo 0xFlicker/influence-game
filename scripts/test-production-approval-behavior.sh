@@ -126,9 +126,19 @@ jq '.path = ".github/workflows/production-candidate.yml.evil"' "$candidate_dir/r
 expect_failure "workflow prefix collision" env PATH="$tmp/mock-bin:$PATH" GH_RUN="$candidate_dir/prefix-run.json" GH_ARTIFACTS="$candidate_dir/artifacts.json" GH_ARCHIVE="$candidate_dir/artifact.zip" \
   SOURCE_RUN_ID=123 SOURCE_RUN_ATTEMPT=1 SOURCE_ARTIFACT=production-approval-request-candidate-123-1 SOURCE_DIGEST="$candidate_content_digest" LINODE_TOKEN=test APPROVAL_WAIT_SECONDS=1 \
   bash "$CONTROLLER" verify-request "$tmp/rejected"
-expect_failure "source rerun" env PATH="$tmp/mock-bin:$PATH" GH_RUN="$candidate_dir/run.json" GH_ARTIFACTS="$candidate_dir/artifacts.json" GH_ARCHIVE="$candidate_dir/artifact.zip" \
-  SOURCE_RUN_ID=123 SOURCE_RUN_ATTEMPT=2 SOURCE_ARTIFACT=production-approval-request-candidate-123-1 SOURCE_DIGEST="$digest" LINODE_TOKEN=test APPROVAL_WAIT_SECONDS=1 \
-  bash "$CONTROLLER" verify-request "$tmp/rejected"
+rerun_dir="$tmp/candidate-rerun"
+mkdir -p "$rerun_dir/archive"
+jq '.source.run_attempt = 2' "$candidate_dir/archive/production-approval-request.json" > "$rerun_dir/archive/production-approval-request.json"
+rerun_content_digest="sha256:$(sha256sum "$rerun_dir/archive/production-approval-request.json" | awk '{print $1}')"
+(cd "$rerun_dir/archive" && zip -X -q "$rerun_dir/artifact.zip" production-approval-request.json)
+rerun_archive_digest="sha256:$(sha256sum "$rerun_dir/artifact.zip" | awk '{print $1}')"
+jq '.run_attempt = 2' "$candidate_dir/run.json" > "$rerun_dir/run.json"
+jq -S -n --arg digest "$rerun_archive_digest" '{total_count:1,artifacts:[{id:790,name:"production-approval-request-candidate-123-2",digest:$digest,expired:false,workflow_run:{id:123}}]}' > "$rerun_dir/artifacts.json"
+PATH="$tmp/mock-bin:$PATH" GH_RUN="$rerun_dir/run.json" GH_ARTIFACTS="$rerun_dir/artifacts.json" GH_ARCHIVE="$rerun_dir/artifact.zip" \
+  SOURCE_RUN_ID=123 SOURCE_RUN_ATTEMPT=2 SOURCE_ARTIFACT=production-approval-request-candidate-123-2 SOURCE_DIGEST="$rerun_content_digest" LINODE_TOKEN=test APPROVAL_WAIT_SECONDS=1 \
+  bash "$CONTROLLER" verify-request "$rerun_dir/verified" >/dev/null
+jq -e '.source_run.attempt == 2' "$rerun_dir/verified/request-provenance.json" >/dev/null \
+  || fail "successful source rerun provenance was not retained"
 
 bash -n "$CONTROLLER"
 echo "Production approval broker behavior tests passed"
