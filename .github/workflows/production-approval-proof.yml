@@ -62,6 +62,7 @@ jobs:
 
       - name: Verify App principal, approval, and policy
         env:
+          GH_TOKEN: ${{ github.token }}
           POLICY_TOKEN: ${{ steps.policy-token.outputs.token }}
         run: |
           jq -e '

@@ -63,6 +63,7 @@ require "$proof_workflow" 'influence-production-approval-proof-requested' "proof
 require "$proof_workflow" 'deployment: false' "proof creates a deployment instead of approval-only evidence"
 require "$proof_workflow" 'sender.id == 270169057' "proof does not bind the App ID"
 require "$proof_workflow" 'verify-policy proof-policy' "proof does not verify its approval and live policy"
+require "$proof_workflow" 'GH_TOKEN: \$\{\{ github\.token \}\}' "proof does not provide GitHub API authority to the policy verifier"
 require "$proof_workflow" 'Production callback:.*none' "proof can be mistaken for execution authority"
 reject "$proof_workflow" '(TS_OAUTH|SSH_PRIVATE_KEY|DOPPLER|GHCR_TOKEN|root@influence-prod)' "proof workflow contains production authority"
 
