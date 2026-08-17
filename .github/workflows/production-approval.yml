@@ -55,7 +55,6 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: 0xFlicker
           repositories: influence-game
-          permission-administration: read
           permission-environments: read
 
       - name: Verify immutable private request
@@ -128,7 +127,6 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: 0xFlicker
           repositories: influence-game
-          permission-administration: read
           permission-environments: read
 
       - name: Reverify exact private request after approval

@@ -94,12 +94,12 @@ verify_kind() {
 
 for kind in candidate bootstrap-inventory bootstrap-conversion break-glass; do verify_kind "$kind"; done
 
-jq -S -n '{required_pull_request_reviews:{required_approving_review_count:0,bypass_pull_request_allowances:{users:[],teams:[],apps:[]}},enforce_admins:{enabled:true},allow_force_pushes:{enabled:false},allow_deletions:{enabled:false}}' > "$tmp/protection.json"
-bash "$CONTROLLER" validate-main-protection-fixture "$tmp/protection.json"
-for bypass_kind in users teams apps; do
-  jq --arg kind "$bypass_kind" '.required_pull_request_reviews.bypass_pull_request_allowances[$kind] = [{slug:"bypass"}]' "$tmp/protection.json" > "$tmp/protection-$bypass_kind.json"
-  expect_failure "$bypass_kind PR bypass" bash "$CONTROLLER" validate-main-protection-fixture "$tmp/protection-$bypass_kind.json"
-done
+jq -S -n '{id:20924439,name:"main",target:"branch",source_type:"Repository",source:"0xFlicker/influence-game",enforcement:"active",conditions:{ref_name:{include:["refs/heads/main"],exclude:[]}},rules:[]}' > "$tmp/ruleset.json"
+bash "$CONTROLLER" validate-main-ruleset-fixture "$tmp/ruleset.json"
+jq '.enforcement = "disabled"' "$tmp/ruleset.json" > "$tmp/disabled-ruleset.json"
+expect_failure "disabled main ruleset" bash "$CONTROLLER" validate-main-ruleset-fixture "$tmp/disabled-ruleset.json"
+jq '.conditions.ref_name.include = ["refs/heads/dev"]' "$tmp/ruleset.json" > "$tmp/wrong-target-ruleset.json"
+expect_failure "ruleset missing main" bash "$CONTROLLER" validate-main-ruleset-fixture "$tmp/wrong-target-ruleset.json"
 
 candidate_dir="$tmp/candidate"
 candidate_content_digest="sha256:$(sha256sum "$candidate_dir/archive/production-approval-request.json" | awk '{print $1}')"

@@ -2,16 +2,16 @@
 
 Influence is the human approval surface for application production changes. It does not receive production host credentials, raw bootstrap inventory, registry mutation authority, Doppler tokens, or deployment-control credentials. Private `linode-iac` qualifies requests, verifies approval receipts, and owns execution evidence.
 
-The GitHub App must grant read-only Actions and Contents access for provenance plus read-only Administration and Environments access for the exact `main` branch-protection and zero-environment-secrets checks. Workflows mint that policy token separately and use it only for those checks. Callback dispatch uses a separate Contents-write token; the App has no Deployments or Packages permission.
+The GitHub App must grant read-only Actions and Contents access for provenance plus read-only Environments access for the zero-environment-secrets check. The designated repository ruleset is readable through GitHub's metadata permission; its internal checks and bypass policy remain operator-owned. Workflows mint the policy token separately and use it only for these checks. Callback dispatch uses a separate Contents-write token; the App has no Administration, Deployments, or Packages permission.
 
 ## Repository configuration
 
 Before enabling Linode approval receivers:
 
 1. Merge the approval broker into `influence-game/main`.
-2. Protect `main` with pull requests required, zero approving reviews, administrator enforcement, and force-push/deletion disabled. Do not add a required status check as part of this change.
+2. Keep repository ruleset `20924439` active and targeting `main`. Its internal rules are controlled by the repository operator and are not interpreted as deployment authority.
 3. Create the `production` environment with required reviewer `0xFlicker`, prevent self-review enabled, administrator bypass disabled, protected branches only, and no environment secrets.
-4. Run `TEMPORARY: Production Approval Principal Proof`. The first human-authored job dispatches a second App-authored run. Approve only the second run and verify its summary identifies `flick-ai-dev[bot]` ID `270169057`, reviewer `0xFlicker`, no callback, and no host authority.
+4. Run `TEMPORARY: Production Approval Principal Proof`. The first human-authored job dispatches a second App-authored run. Approve only the second run; it verifies its approval history and live policy before recording `flick-ai-dev[bot]` ID `270169057`, reviewer `0xFlicker`, no callback, and no host authority.
 5. Remove the temporary proof workflow before enabling Linode execution receivers.
 
 The broker itself accepts only `repository_dispatch`. A human-started rerun or workflow dispatch is never approval authority.
@@ -20,7 +20,7 @@ The broker itself accepts only `repository_dispatch`. A human-started rerun or w
 
 Linode uploads one immutable `production-approval-request.json` and dispatches only its run, attempt, artifact, and content digest. Influence waits for that exact first-attempt run to succeed, verifies its trusted workflow and actor, checks both the GitHub artifact archive digest and JSON digest, and validates the operation schema.
 
-The protected job repeats the download and validation after approval, rechecks the current environment and `main` protection, verifies approval history against user ID `97764360`, and uploads `production-approval.json`. Its callback again contains only artifact locators and a digest.
+The protected job repeats the download and validation after approval, rechecks the current environment and designated active `main` ruleset, verifies approval history against user ID `97764360`, and uploads `production-approval.json`. Its callback again contains only artifact locators and a digest.
 
 Linode independently repeats the proof, compares the embedded request with the original private artifact, rejects controller drift, and writes a private one-time consumption marker before production credentials become available.
 
