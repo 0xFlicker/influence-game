@@ -8,6 +8,7 @@ readonly APPROVER_LOGIN="0xFlicker"
 readonly APPROVER_ID="97764360"
 readonly APP_ACTOR_LOGIN="flick-ai-dev[bot]"
 readonly APP_ACTOR_ID="270169057"
+readonly MAIN_RULESET_ID="20924439"
 
 die() {
   printf 'production approval: %s\n' "$*" >&2
@@ -251,17 +252,17 @@ verify_request() {
   printf '%s\n' "$kind"
 }
 
-validate_main_protection_file() {
-  local protection_file="${1:?protection file is required}"
-  jq -e '
-    .required_pull_request_reviews.required_approving_review_count == 0
-    and ((.required_pull_request_reviews.bypass_pull_request_allowances.users // []) | length == 0)
-    and ((.required_pull_request_reviews.bypass_pull_request_allowances.teams // []) | length == 0)
-    and ((.required_pull_request_reviews.bypass_pull_request_allowances.apps // []) | length == 0)
-    and .enforce_admins.enabled == true
-    and .allow_force_pushes.enabled == false
-    and .allow_deletions.enabled == false
-  ' "$protection_file" >/dev/null || die "Influence main branch protection is unsafe"
+validate_main_ruleset_file() {
+  local ruleset_file="${1:?ruleset file is required}"
+  jq -e --argjson ruleset_id "$MAIN_RULESET_ID" --arg repository "$INFLUENCE_REPOSITORY" '
+    .id == $ruleset_id
+    and .name == "main"
+    and .target == "branch"
+    and .source_type == "Repository"
+    and .source == $repository
+    and .enforcement == "active"
+    and (.conditions.ref_name.include | index("refs/heads/main") != null)
+  ' "$ruleset_file" >/dev/null || die "Influence main ruleset is unavailable"
 }
 
 verify_policy() {
@@ -293,9 +294,9 @@ verify_policy() {
     and .deployment_branch_policy.custom_branch_policies == false
   ' "$output_dir/environment.json" >/dev/null || die "Influence production environment policy is unsafe"
 
-  GH_TOKEN="$POLICY_TOKEN" gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/branches/main/protection" \
-    > "$output_dir/main-protection.json"
-  validate_main_protection_file "$output_dir/main-protection.json"
+  GH_TOKEN="$POLICY_TOKEN" gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/rulesets/$MAIN_RULESET_ID" \
+    > "$output_dir/main-ruleset.json"
+  validate_main_ruleset_file "$output_dir/main-ruleset.json"
 
   GH_TOKEN="$POLICY_TOKEN" gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/environments/$APPROVAL_ENVIRONMENT/secrets" \
     > "$output_dir/environment-secrets.json"
@@ -326,6 +327,6 @@ case "${1:-}" in
   verify-request) verify_request "${2:-verified-request}" ;;
   verify-policy) verify_policy "${2:-verified-policy}" ;;
   verify-preapproval-policy) verify_policy "${2:-verified-policy}" false ;;
-  validate-main-protection-fixture) validate_main_protection_file "${2:-}" ;;
+  validate-main-ruleset-fixture) validate_main_ruleset_file "${2:-}" ;;
   *) die "usage: $0 {verify-request|verify-policy} [output-directory]" ;;
 esac

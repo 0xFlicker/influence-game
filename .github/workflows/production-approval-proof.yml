@@ -7,6 +7,7 @@ on:
     types: [influence-production-approval-proof-requested]
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -47,13 +48,28 @@ jobs:
       name: production
       deployment: false
     steps:
-      - name: Verify App principal and record proof
+      - uses: actions/checkout@v4
+
+      - name: Generate policy verification token
+        id: policy-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ secrets.GH_APP_ID }}
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: 0xFlicker
+          repositories: influence-game
+          permission-environments: read
+
+      - name: Verify App principal, approval, and policy
+        env:
+          POLICY_TOKEN: ${{ steps.policy-token.outputs.token }}
         run: |
           jq -e '
             .action == "influence-production-approval-proof-requested"
             and .sender.login == "flick-ai-dev[bot]"
             and .sender.id == 270169057
           ' "$GITHUB_EVENT_PATH" >/dev/null
+          bash scripts/production-approval.sh verify-policy proof-policy
           {
             echo "## Sole-maintainer approval proof passed"
             echo
