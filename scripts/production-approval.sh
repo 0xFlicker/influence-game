@@ -17,8 +17,8 @@ die() {
 
 require_locator() {
   [[ "${SOURCE_RUN_ID:-}" =~ ^[1-9][0-9]*$ ]] || die "source run ID is invalid"
-  [ "${SOURCE_RUN_ATTEMPT:-}" = "1" ] || die "only first-attempt source runs are accepted"
-  [[ "${SOURCE_ARTIFACT:-}" =~ ^production-approval-request-(candidate|bootstrap-inventory|bootstrap-conversion|break-glass)-[1-9][0-9]*-1$ ]] \
+  [[ "${SOURCE_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]*$ ]] || die "source run attempt is invalid"
+  [[ "${SOURCE_ARTIFACT:-}" =~ ^production-approval-request-(candidate|bootstrap-inventory|bootstrap-conversion|break-glass)-[1-9][0-9]*-[1-9][0-9]*$ ]] \
     || die "source artifact name is invalid"
   [[ "${SOURCE_DIGEST:-}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "source content digest is invalid"
   [ -n "${LINODE_TOKEN:-}" ] || die "LINODE_TOKEN is required"
@@ -61,7 +61,7 @@ validate_operation() {
         and (.operation.qualification.staging | keys | sort) == ["artifact", "digest", "run_attempt", "run_id"]
         and (.operation.qualification.e2e | keys | sort) == ["artifact", "digest", "run_attempt", "run_id", "workflow_sha"]
         and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.run_id | type == "number" and . > 0))
-        and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.run_attempt == 1))
+        and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.run_attempt | type == "number" and . > 0))
         and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.artifact | type == "string" and test("^[A-Za-z0-9._-]{1,255}$")))
         and ([.operation.qualification.build, .operation.qualification.staging, .operation.qualification.e2e] | all(.digest | test("^sha256:[0-9a-f]{64}$")))
         and (.operation.qualification.e2e.workflow_sha | test("^[0-9a-f]{40}$"))
@@ -90,8 +90,8 @@ validate_operation() {
         and (.operation.accepted_color == "blue" or .operation.accepted_color == "green")
         and (.operation.inventory | keys | sort) == ["artifact", "digest", "run_attempt", "run_id"]
         and (.operation.inventory.run_id | type == "number" and . > 0)
-        and .operation.inventory.run_attempt == 1
-        and (.operation.inventory.artifact | test("^production-ingress-inventory-[1-9][0-9]*-1$"))
+        and (.operation.inventory.run_attempt | type == "number" and . > 0)
+        and (.operation.inventory.artifact | test("^production-ingress-inventory-[1-9][0-9]*-[1-9][0-9]*$"))
         and (.operation.inventory.digest | test("^sha256:[0-9a-f]{64}$"))
       ' "$request_file" >/dev/null || die "bootstrap conversion request schema is invalid"
       ;;
@@ -139,14 +139,14 @@ verify_request() {
   request_file="$output_dir/production-approval-request.json"
 
   wait_for_source_run "$run_file"
-  jq -e --argjson run_id "$SOURCE_RUN_ID" '
+  jq -e --argjson run_id "$SOURCE_RUN_ID" --argjson attempt "$SOURCE_RUN_ATTEMPT" '
     .id == $run_id
     and .repository.full_name == "0xFlicker/linode-iac"
     and .head_branch == "main"
     and (.head_sha | test("^[0-9a-f]{40}$"))
     and .status == "completed"
     and .conclusion == "success"
-    and .run_attempt == 1
+    and .run_attempt == $attempt
   ' "$run_file" >/dev/null || die "source run provenance is invalid"
 
   GH_TOKEN="$LINODE_TOKEN" gh api --method GET \
@@ -176,7 +176,7 @@ verify_request() {
     and .schema_version == 1
     and (.source | keys | sort) == ["actor", "controller_sha", "repository", "run_attempt", "run_id", "workflow"]
     and .source.repository == "0xFlicker/linode-iac"
-    and .source.run_attempt == 1
+    and (.source.run_attempt | type == "number" and . > 0)
     and (.source.run_id | type == "number" and . > 0)
     and (.source.controller_sha | test("^[0-9a-f]{40}$"))
     and (.source.actor | keys | sort) == ["id", "login"]
@@ -230,11 +230,13 @@ verify_request() {
     --arg actor "$expected_actor" \
     --argjson actor_id "$expected_actor_id" \
     --argjson run_id "$SOURCE_RUN_ID" \
+    --argjson run_attempt "$SOURCE_RUN_ATTEMPT" \
     --arg controller_sha "$(jq -er '.head_sha' "$run_file")" '
     .source.workflow == $workflow
     and .source.actor.login == $actor
     and .source.actor.id == $actor_id
     and .source.run_id == $run_id
+    and .source.run_attempt == $run_attempt
     and .source.controller_sha == $controller_sha
   ' "$request_file" >/dev/null || die "source request does not match its workflow run"
 
@@ -286,7 +288,7 @@ verify_policy() {
   [ -n "${GH_TOKEN:-}" ] || die "GH_TOKEN is required"
   [ -n "${POLICY_TOKEN:-}" ] || die "POLICY_TOKEN is required"
   [ "${GITHUB_REPOSITORY:-}" = "$INFLUENCE_REPOSITORY" ] || die "approval must run in Influence"
-  [ "${GITHUB_RUN_ATTEMPT:-}" = "1" ] || die "approval reruns are not authoritative"
+  [[ "${GITHUB_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]*$ ]] || die "approval run attempt is invalid"
   [ "${GITHUB_ACTOR:-}" = "$APP_ACTOR_LOGIN" ] || die "approval run was not initiated by the trusted App"
   [ -f "${GITHUB_EVENT_PATH:-}" ] || die "approval event metadata is unavailable"
   jq -e --arg actor "$APP_ACTOR_LOGIN" --argjson actor_id "$APP_ACTOR_ID" \
@@ -321,7 +323,7 @@ verify_policy() {
       [.[]
         | select(.state == "approved")
         | select(.user.login == $reviewer and .user.id == $reviewer_id)
-        | select(any(.environments[]?; .name == "production"))] | length == 1
+        | select(any(.environments[]?; .name == "production"))] | length >= 1
     ' "$output_dir/approval-history.json" >/dev/null || die "exact Influence production approval is unavailable"
     jq -S -n --arg login "$APPROVER_LOGIN" --argjson id "$APPROVER_ID" '{login:$login,id:$id}' \
       > "$output_dir/approval-reviewer.json"

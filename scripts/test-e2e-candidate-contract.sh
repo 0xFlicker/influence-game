@@ -19,6 +19,9 @@ require_literal "$ci_workflow" "release manifest aggregation job" "release-manif
 require_literal "$ci_workflow" "API digest artifact" "digest-api"
 require_literal "$ci_workflow" "web digest artifact" "digest-web"
 require_literal "$ci_workflow" "render-worker digest artifact" "digest-render-worker"
+require_literal "$ci_workflow" "rerunnable stable digest artifacts" 'name: ${{ matrix.digest_artifact }}'
+require_literal "$ci_workflow" "idempotent failed-matrix replacement" "overwrite: true"
+require_literal "$ci_workflow" "cross-attempt digest aggregation" "pattern: digest-*"
 require_literal "$ci_workflow" "three-digest completeness check" 'expected exactly three service digest artifacts'
 require_literal "$ci_workflow" "migration-set identity" "migration_set"
 require_literal "$ci_workflow" "full candidate SHA" "candidate_sha"
@@ -49,7 +52,7 @@ require_literal "$e2e_workflow" "worker digest evidence" 'render_worker: {digest
 require_literal "$e2e_workflow" "receipt bound to staging identity" 'expected_receipt="staging-deployment-receipt-${STAGING_RUN_ID}-${STAGING_RUN_ATTEMPT}"'
 require_literal "$e2e_workflow" "release-control capability gate" "STAGING_MIN_RELEASE_CONTROL_PROTOCOL"
 require_literal "$e2e_workflow" "durable staging E2E evidence" "staging-e2e-evidence.json"
-require_literal "$e2e_workflow" "deterministic candidate evidence artifact" 'E2E_EVIDENCE_ARTIFACT: staging-e2e-evidence-${{ inputs.candidate_sha }}'
+require_literal "$e2e_workflow" "attempt-specific candidate evidence artifact" 'E2E_EVIDENCE_ARTIFACT: staging-e2e-evidence-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}'
 require_literal "$e2e_workflow" "strict evidence artifact upload" "if-no-files-found: error"
 require_literal "$e2e_workflow" "candidate evidence job summary" "## Influence staging release evidence"
 require_literal "$e2e_workflow" "staging receipt evidence link" 'actions/runs/$STAGING_RUN_ID/attempts/$STAGING_RUN_ATTEMPT'

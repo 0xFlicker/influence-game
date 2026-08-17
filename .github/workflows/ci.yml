@@ -177,8 +177,8 @@ jobs:
           name: ${{ matrix.digest_artifact }}
           path: ${{ matrix.target }}.digest
           if-no-files-found: error
-          overwrite: true
           retention-days: 14
+          overwrite: true
 
   release-manifest:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
@@ -276,23 +276,6 @@ jobs:
           path: release-manifest.json
           if-no-files-found: error
           retention-days: 14
-
-  tag-deploy:
-    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
-    needs: docker-build-push
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Create staging deployment tag
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          TAG="staging/$(date -u +%Y-%m-%d)/$(echo ${{ github.sha }} | cut -c1-7)"
-          git tag -a "$TAG" -m "Staging deploy from ${GITHUB_SHA}"
-          git push origin "$TAG"
 
   trigger-deploy:
     if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main'
