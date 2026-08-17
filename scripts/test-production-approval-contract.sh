@@ -2,7 +2,6 @@
 set -euo pipefail
 
 workflow=.github/workflows/production-approval.yml
-proof_workflow=.github/workflows/production-approval-proof.yml
 controller=scripts/production-approval.sh
 ci=.github/workflows/ci.yml
 
@@ -57,16 +56,11 @@ require "$workflow" "headers\?\.\['retry-after'\]" "callback retry does not hono
 require "$workflow" 'attempt <= 5' "callback retry budget is not bounded"
 require "$workflow" 'Math\.random\(\)' "callback retry backoff has no jitter"
 require "$ci" 'bash scripts/test-production-approval-contract.sh' "approval contract is not in required CI"
-
-require "$proof_workflow" 'workflow_dispatch:' "temporary proof cannot be started"
-require "$proof_workflow" 'influence-production-approval-proof-requested' "proof is not App-authored"
-require "$proof_workflow" 'deployment: false' "proof creates a deployment instead of approval-only evidence"
-require "$proof_workflow" 'sender.id == 270169057' "proof does not bind the App ID"
-require "$proof_workflow" 'verify-policy proof-policy' "proof does not verify its approval and live policy"
-require "$proof_workflow" 'GH_TOKEN: \$\{\{ github\.token \}\}' "proof does not provide GitHub API authority to the policy verifier"
-require "$proof_workflow" 'Production callback:.*none' "proof can be mistaken for execution authority"
-reject "$proof_workflow" '(TS_OAUTH|SSH_PRIVATE_KEY|DOPPLER|GHCR_TOKEN|root@influence-prod)' "proof workflow contains production authority"
+[ ! -e .github/workflows/production-approval-proof.yml ] || fail "temporary approval proof workflow was reintroduced"
+if grep -R -Fq 'influence-production-approval-proof-requested' .github/workflows; then
+  fail "temporary approval proof dispatch event was reintroduced"
+fi
 
 bash -n "$controller"
-ruby -e 'require "yaml"; ARGV.each { |f| YAML.parse_file(f) }' "$workflow" "$proof_workflow"
+ruby -e 'require "yaml"; YAML.parse_file(ARGV.fetch(0))' "$workflow"
 echo "Production approval broker contract tests passed"

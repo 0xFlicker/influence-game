@@ -34,7 +34,7 @@ jobs:
       SOURCE_DIGEST: ${{ github.event.client_payload.request_digest }}
     steps:
       - name: Checkout trusted approval broker
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Generate read-only Linode provenance token
         id: linode-read-token
@@ -106,7 +106,7 @@ jobs:
       APPROVAL_ARTIFACT: production-approval-${{ needs.validate.outputs.kind }}-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout trusted approval broker
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Generate independent read-only Linode token
         id: linode-read-token
