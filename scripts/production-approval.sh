@@ -265,6 +265,22 @@ validate_main_ruleset_file() {
   ' "$ruleset_file" >/dev/null || die "Influence main ruleset is unavailable"
 }
 
+validate_environment_file() {
+  local environment_file="${1:?environment file is required}"
+  jq -e --arg reviewer "$APPROVER_LOGIN" --argjson reviewer_id "$APPROVER_ID" '
+    ([.protection_rules[]? | select(.type == "required_reviewers")] | length) == 1
+    and ([.protection_rules[]? | select(.type == "required_reviewers")][0] as $rule
+      | $rule.prevent_self_review == true
+      and ($rule.reviewers | length) == 1
+      and $rule.reviewers[0].type == "User"
+      and $rule.reviewers[0].reviewer.login == $reviewer
+      and $rule.reviewers[0].reviewer.id == $reviewer_id)
+  ' "$environment_file" >/dev/null \
+    || die "Influence production environment must require exact reviewer with self-review prevention"
+  jq -e '.can_admins_bypass == false' "$environment_file" >/dev/null \
+    || die "Influence production environment must disable administrator bypass"
+}
+
 verify_policy() {
   local output_dir="${1:?output directory is required}" require_approval="${2:-true}"
   [ -n "${GH_TOKEN:-}" ] || die "GH_TOKEN is required"
@@ -281,18 +297,7 @@ verify_policy() {
 
   gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/environments/$APPROVAL_ENVIRONMENT" \
     > "$output_dir/environment.json"
-  jq -e --arg reviewer "$APPROVER_LOGIN" --argjson reviewer_id "$APPROVER_ID" '
-    ([.protection_rules[]? | select(.type == "required_reviewers")] | length) == 1
-    and ([.protection_rules[]? | select(.type == "required_reviewers")][0] as $rule
-      | $rule.prevent_self_review == true
-      and ($rule.reviewers | length) == 1
-      and $rule.reviewers[0].type == "User"
-      and $rule.reviewers[0].reviewer.login == $reviewer
-      and $rule.reviewers[0].reviewer.id == $reviewer_id)
-    and .can_admins_bypass == false
-    and .deployment_branch_policy.protected_branches == true
-    and .deployment_branch_policy.custom_branch_policies == false
-  ' "$output_dir/environment.json" >/dev/null || die "Influence production environment policy is unsafe"
+  validate_environment_file "$output_dir/environment.json"
 
   GH_TOKEN="$POLICY_TOKEN" gh api -H 'Accept: application/vnd.github+json' "/repos/$INFLUENCE_REPOSITORY/rulesets/$MAIN_RULESET_ID" \
     > "$output_dir/main-ruleset.json"
@@ -327,6 +332,7 @@ case "${1:-}" in
   verify-request) verify_request "${2:-verified-request}" ;;
   verify-policy) verify_policy "${2:-verified-policy}" ;;
   verify-preapproval-policy) verify_policy "${2:-verified-policy}" false ;;
+  validate-environment-fixture) validate_environment_file "${2:-}" ;;
   validate-main-ruleset-fixture) validate_main_ruleset_file "${2:-}" ;;
   *) die "usage: $0 {verify-request|verify-policy} [output-directory]" ;;
 esac

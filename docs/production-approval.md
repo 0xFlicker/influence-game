@@ -10,7 +10,7 @@ Before enabling Linode approval receivers:
 
 1. Merge the approval broker into `influence-game/main`.
 2. Keep repository ruleset `20924439` active and targeting `main`. Its internal rules are controlled by the repository operator and are not interpreted as deployment authority.
-3. Create the `production` environment with required reviewer `0xFlicker`, prevent self-review enabled, administrator bypass disabled, protected branches only, and no environment secrets.
+3. Create the `production` environment with required reviewer `0xFlicker`, prevent self-review enabled, administrator bypass disabled, and no environment secrets. The broker independently requires the designated active `main` ruleset and exact current `main` workflow revision, so environment branch filters are not approval authority.
 4. Run `TEMPORARY: Production Approval Principal Proof`. The first human-authored job dispatches a second App-authored run. Approve only the second run; it verifies its approval history and live policy before recording `flick-ai-dev[bot]` ID `270169057`, reviewer `0xFlicker`, no callback, and no host authority.
 5. Remove the temporary proof workflow before enabling Linode execution receivers.
 
