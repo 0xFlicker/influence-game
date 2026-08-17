@@ -71,6 +71,12 @@ jobs:
       - name: Enforce staging E2E candidate contract
         run: bash scripts/test-e2e-candidate-contract.sh
 
+      - name: Enforce production approval broker contract
+        run: bash scripts/test-production-approval-contract.sh
+
+      - name: Exercise production approval broker verifier
+        run: bash scripts/test-production-approval-behavior.sh
+
       - name: Typecheck
         run: bun run typecheck
 
