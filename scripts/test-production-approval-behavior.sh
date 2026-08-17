@@ -9,6 +9,12 @@ expect_failure() {
   local label="$1"; shift
   if "$@" >/dev/null 2>&1; then fail "$label unexpectedly succeeded"; fi
 }
+expect_failure_with() {
+  local label="$1" expected="$2" output
+  shift 2
+  if output="$("$@" 2>&1)"; then fail "$label unexpectedly succeeded"; fi
+  grep -Fq -- "$expected" <<< "$output" || fail "$label returned the wrong diagnostic: $output"
+}
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
@@ -93,6 +99,15 @@ verify_kind() {
 }
 
 for kind in candidate bootstrap-inventory bootstrap-conversion break-glass; do verify_kind "$kind"; done
+
+jq -S -n '{protection_rules:[{type:"required_reviewers",prevent_self_review:true,reviewers:[{type:"User",reviewer:{login:"0xFlicker",id:97764360}}]}],can_admins_bypass:false,deployment_branch_policy:null}' > "$tmp/environment.json"
+bash "$CONTROLLER" validate-environment-fixture "$tmp/environment.json"
+jq '.protection_rules[0].reviewers[0].reviewer.id = 1' "$tmp/environment.json" > "$tmp/wrong-reviewer-environment.json"
+expect_failure_with "wrong required reviewer" "must require exact reviewer with self-review prevention" bash "$CONTROLLER" validate-environment-fixture "$tmp/wrong-reviewer-environment.json"
+jq '.protection_rules[0].prevent_self_review = false' "$tmp/environment.json" > "$tmp/self-review-environment.json"
+expect_failure_with "self review allowed" "must require exact reviewer with self-review prevention" bash "$CONTROLLER" validate-environment-fixture "$tmp/self-review-environment.json"
+jq '.can_admins_bypass = true' "$tmp/environment.json" > "$tmp/admin-bypass-environment.json"
+expect_failure_with "admin bypass allowed" "must disable administrator bypass" bash "$CONTROLLER" validate-environment-fixture "$tmp/admin-bypass-environment.json"
 
 jq -S -n '{id:20924439,name:"main",target:"branch",source_type:"Repository",source:"0xFlicker/influence-game",enforcement:"active",conditions:{ref_name:{include:["refs/heads/main"],exclude:[]}},rules:[]}' > "$tmp/ruleset.json"
 bash "$CONTROLLER" validate-main-ruleset-fixture "$tmp/ruleset.json"
