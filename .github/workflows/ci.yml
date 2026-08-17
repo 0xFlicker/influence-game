@@ -31,7 +31,7 @@ jobs:
       DRIZZLE_MIGRATIONS_DIR: ./drizzle
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -91,7 +91,7 @@ jobs:
     needs: check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Build render worker
         run: docker build -f Dockerfile.render-worker -t influence-render-worker:pr-check .
@@ -131,7 +131,7 @@ jobs:
             digest_artifact: digest-render-worker
             build_args: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -195,7 +195,7 @@ jobs:
       artifact_name: ${{ steps.manifest.outputs.artifact_name }}
       manifest_digest: ${{ steps.manifest.outputs.manifest_digest }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download immutable service digests
         uses: actions/download-artifact@v4
@@ -284,7 +284,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Create staging deployment tag
         run: |
