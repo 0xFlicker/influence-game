@@ -27,8 +27,7 @@ Linode independently repeats the proof, compares the embedded request with the o
 Supported operations are:
 
 - `candidate`: one exact E2E-qualified image family.
-- `bootstrap-inventory`: durable recovery plus private inventory collection.
-- `bootstrap-conversion`: conversion bound to the exact private inventory digest and controller.
+- `bootstrap-conversion`: conversion bound to the exact private inventory digest and controller. Recovery and inventory collection run directly from the explicit Linode bootstrap dispatch and do not require a separate public approval.
 - `break-glass`: one pre-resolved exact image family and public-safe reason.
 
 The Influence run proves approval handoff only. Linode's terminal artifact and host journal prove execution, restoration, or deployment.
@@ -40,7 +39,7 @@ Workflow attempts are evidence, not an authority veto. A failed GitHub job may u
 A rejection, cancellation, expiry, controller drift, changed request, or terminally restored/aborted host transaction requires a fresh request:
 
 - Candidate retries repeat staging E2E and qualification.
-- Bootstrap retries restart the inventory and two-approval cycle.
+- Bootstrap retries rerun inventory, then request a fresh conversion approval.
 - Break-glass retries submit a new SHA and reason request.
 
 Duplicate callback delivery and approval-job reruns are safe because Linode serializes by immutable request content and reuses the original operation claim. Workflows intentionally contain no custom retry loops; ordinary infrastructure failures remain visible and are retried with GitHub's controls.

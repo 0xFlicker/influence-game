@@ -18,7 +18,7 @@ die() {
 require_locator() {
   [[ "${SOURCE_RUN_ID:-}" =~ ^[1-9][0-9]*$ ]] || die "source run ID is invalid"
   [[ "${SOURCE_RUN_ATTEMPT:-}" =~ ^[1-9][0-9]*$ ]] || die "source run attempt is invalid"
-  [[ "${SOURCE_ARTIFACT:-}" =~ ^production-approval-request-(candidate|bootstrap-inventory|bootstrap-conversion|break-glass)-[1-9][0-9]*-[1-9][0-9]*$ ]] \
+  [[ "${SOURCE_ARTIFACT:-}" =~ ^production-approval-request-(candidate|bootstrap-conversion|break-glass)-[1-9][0-9]*-[1-9][0-9]*$ ]] \
     || die "source artifact name is invalid"
   [[ "${SOURCE_DIGEST:-}" =~ ^sha256:[0-9a-f]{64}$ ]] || die "source content digest is invalid"
   [ -n "${LINODE_TOKEN:-}" ] || die "LINODE_TOKEN is required"
@@ -76,13 +76,6 @@ validate_operation() {
         and (.operation.qualification.commit_list | type == "array" and all(.[]; test("^[0-9a-f]{40}$")))
         and (.operation.qualification.clean_switch_capable | type == "boolean")
       ' "$request_file" >/dev/null || die "candidate request schema is invalid"
-      ;;
-    bootstrap-inventory)
-      jq -e '
-        (.operation | keys | sort) == ["accepted_color", "confirmation"]
-        and (.operation.accepted_color == "blue" or .operation.accepted_color == "green")
-        and .operation.confirmation == "CONVERT_WITH_BRIEF_INGRESS_RESTART"
-      ' "$request_file" >/dev/null || die "bootstrap inventory request schema is invalid"
       ;;
     bootstrap-conversion)
       jq -e '
@@ -192,17 +185,11 @@ verify_request() {
       expected_actor="$APP_ACTOR_LOGIN"
       expected_actor_id="$APP_ACTOR_ID"
       ;;
-    bootstrap-inventory)
+    bootstrap-conversion)
       expected_workflow=".github/workflows/bootstrap-production-ingress.yml"
       expected_event=workflow_dispatch
       expected_actor="$APPROVER_LOGIN"
       expected_actor_id="$APPROVER_ID"
-      ;;
-    bootstrap-conversion)
-      expected_workflow=".github/workflows/bootstrap-production-ingress.yml"
-      expected_event=repository_dispatch
-      expected_actor="$APP_ACTOR_LOGIN"
-      expected_actor_id="$APP_ACTOR_ID"
       ;;
     break-glass)
       expected_workflow=".github/workflows/promote-prod.yml"

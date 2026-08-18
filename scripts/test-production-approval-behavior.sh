@@ -49,9 +49,6 @@ write_operation() {
         release_control:{minimum_protocol:1,candidate_protocol:1},commit_list:[$sha],clean_switch_capable:true
       }}' > "$output"
       ;;
-    bootstrap-inventory)
-      jq -S -n '{accepted_color:"blue",confirmation:"CONVERT_WITH_BRIEF_INGRESS_RESTART"}' > "$output"
-      ;;
     bootstrap-conversion)
       jq -S -n --arg digest "$digest" '{accepted_color:"blue",inventory:{run_id:20,run_attempt:1,artifact:"production-ingress-inventory-20-1",digest:$digest}}' > "$output"
       ;;
@@ -69,8 +66,7 @@ write_operation() {
 source_contract() {
   case "$1" in
     candidate) printf '%s\t%s\t%s\t%s\n' .github/workflows/production-candidate.yml repository_dispatch 'flick-ai-dev[bot]' 270169057 ;;
-    bootstrap-inventory) printf '%s\t%s\t%s\t%s\n' .github/workflows/bootstrap-production-ingress.yml workflow_dispatch 0xFlicker 97764360 ;;
-    bootstrap-conversion) printf '%s\t%s\t%s\t%s\n' .github/workflows/bootstrap-production-ingress.yml repository_dispatch 'flick-ai-dev[bot]' 270169057 ;;
+    bootstrap-conversion) printf '%s\t%s\t%s\t%s\n' .github/workflows/bootstrap-production-ingress.yml workflow_dispatch 0xFlicker 97764360 ;;
     break-glass) printf '%s\t%s\t%s\t%s\n' .github/workflows/promote-prod.yml workflow_dispatch 0xFlicker 97764360 ;;
   esac
 }
@@ -98,7 +94,7 @@ verify_kind() {
     || fail "$kind provenance was not frozen"
 }
 
-for kind in candidate bootstrap-inventory bootstrap-conversion break-glass; do verify_kind "$kind"; done
+for kind in candidate bootstrap-conversion break-glass; do verify_kind "$kind"; done
 
 jq -S -n '{protection_rules:[{type:"required_reviewers",prevent_self_review:true,reviewers:[{type:"User",reviewer:{login:"0xFlicker",id:97764360}}]}],can_admins_bypass:false,deployment_branch_policy:null}' > "$tmp/environment.json"
 bash "$CONTROLLER" validate-environment-fixture "$tmp/environment.json"

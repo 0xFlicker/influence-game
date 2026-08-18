@@ -30,9 +30,10 @@ require "$workflow" 'approval_artifact:' "callback artifact locator is missing"
 require "$workflow" 'approval_digest:' "callback digest locator is missing"
 reject "$workflow" 'client_payload:.*(candidate_sha|api_digest|web_digest|worker_digest|migration_set)' "callback carries candidate authority"
 
-for kind in candidate bootstrap-inventory bootstrap-conversion break-glass; do
+for kind in candidate bootstrap-conversion break-glass; do
   require "$controller" "${kind}" "request kind $kind is not validated"
 done
+reject "$controller" 'bootstrap-inventory' "obsolete bootstrap inventory approval remains supported"
 require "$controller" 'source artifact archive digest mismatch' "archive digest verification is missing"
 require "$controller" 'source request content digest mismatch' "content digest verification is missing"
 require "$controller" 'source run attempt is invalid' "positive source-attempt validation is missing"
