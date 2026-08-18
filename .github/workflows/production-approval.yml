@@ -74,7 +74,6 @@ jobs:
             echo
             jq -r '
               if .kind == "candidate" then "- Candidate: `\(.operation.qualification.candidate_sha)`\n- Baseline: `\(.operation.qualification.production_baseline.candidate_sha)`\n- API: `\(.operation.qualification.images.api.digest)`\n- Web: `\(.operation.qualification.images.web.digest)`\n- Worker: `\(.operation.qualification.images.render_worker.digest)`\n- Migrations: `\(.operation.qualification.migration_set)`"
-              elif .kind == "bootstrap-inventory" then "- Accepted color: `\(.operation.accepted_color)`\n- This approval authorizes durable recovery plus private inventory collection."
               elif .kind == "bootstrap-conversion" then "- Accepted color: `\(.operation.accepted_color)`\n- Private inventory: `\(.operation.inventory.artifact)`\n- Inventory digest: `\(.operation.inventory.digest)`"
               else "- Candidate: `\(.operation.qualification.candidate_sha)`\n- Baseline: `\(.operation.qualification.production_baseline.candidate_sha)`\n- Reason: \(.operation.reason)"
               end
@@ -203,7 +202,6 @@ jobs:
           script: |
             const events = {
               candidate: 'influence-production-candidate-approved',
-              'bootstrap-inventory': 'influence-production-bootstrap-inventory-approved',
               'bootstrap-conversion': 'influence-production-bootstrap-conversion-approved',
               'break-glass': 'influence-production-break-glass-approved'
             };
