@@ -21,6 +21,7 @@ import type { GameWatchState } from "./game-watch-state.js";
 
 export interface WsConnectionData {
   gameId: string;
+  releaseProbe?: boolean;
 }
 
 type PublicWsRoomMetadata = {

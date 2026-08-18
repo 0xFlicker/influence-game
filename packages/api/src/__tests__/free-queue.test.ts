@@ -10,6 +10,10 @@ import { hashCanonicalEvent } from "../services/game-events.js";
 import { abortAllGames } from "../services/game-lifecycle.js";
 import { createSeason } from "../services/seasons.js";
 import {
+  acquireDeploymentAdmissionLease,
+  completeDeploymentAdmissionLease,
+} from "../services/deployment-admission.js";
+import {
   createCanonicalEventFixture,
   insertCanonicalEventRows,
 } from "./durable-run-test-utils.js";
@@ -314,6 +318,76 @@ describe("free queue season admission", () => {
       .where(eq(schema.games.id, drawn.gameId)))[0]?.status).toBe("in_progress");
     expect((await db.select().from(schema.games)
       .where(eq(schema.games.id, unrelatedGameId)))[0]?.status).toBe("waiting");
+    await abortAllGames();
+  });
+
+  test("denies a Daily Free start at the deployment barrier without replaying it", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "draining-operator");
+    await createQueuedAgent(db, "draining-a", "Aster Draining");
+    await createQueuedAgent(db, "draining-b", "Maris Draining");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:deployment-admission",
+      },
+    });
+    const drawn = await draw.json() as { gameId: string };
+    const acquired = await acquireDeploymentAdmissionLease(db, {
+      candidateSha: "3".repeat(40),
+      sourceRepository: "0xFlicker/linode-iac",
+      workflowRunId: 654,
+      workflowRunAttempt: 1,
+      actor: "release-operator",
+    });
+    if (!acquired.ok) throw new Error(acquired.error);
+    let startupCalls = 0;
+    const admissionAwareApp = new Hono().route("/", createFreeQueueRoutes(db, {
+      startGame: async () => {
+        startupCalls += 1;
+        return {};
+      },
+    }));
+
+    const blocked = await admissionAwareApp.request(
+      `/api/free-queue/start?gameId=${drawn.gameId}`,
+      { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+    );
+
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toMatchObject({
+      code: "deployment_admission_closed",
+      retryable: true,
+    });
+    expect(startupCalls).toBe(0);
+    expect((await db.select().from(schema.games)
+      .where(eq(schema.games.id, drawn.gameId)))[0]).toMatchObject({
+      status: "waiting",
+      startedAt: null,
+    });
+    expect(await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, drawn.gameId))).toHaveLength(0);
+
+    const released = await completeDeploymentAdmissionLease(db, {
+      leaseId: acquired.lease.id,
+      fencingToken: acquired.lease.fencingToken,
+      outcome: "aborted",
+      reason: "free queue admission test complete",
+    });
+    expect(released.ok).toBeTrue();
+
+    const retried = await admissionAwareApp.request(
+      `/api/free-queue/start?gameId=${drawn.gameId}`,
+      { method: "POST", headers: { Authorization: `Bearer ${token}` } },
+    );
+    expect(retried.status).toBe(200);
+    expect(startupCalls).toBe(1);
     await abortAllGames();
   });
 

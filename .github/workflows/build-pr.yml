@@ -101,7 +101,7 @@ jobs:
       DRIZZLE_MIGRATIONS_DIR: ./drizzle
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.ephemeral-status.outputs.head_sha }}
 
@@ -147,7 +147,7 @@ jobs:
             image: ghcr.io/0xflicker/influence-render-worker
             build_args: ""
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.ephemeral-status.outputs.head_sha }}
 

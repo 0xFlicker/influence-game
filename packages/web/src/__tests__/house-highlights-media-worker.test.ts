@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdir, mkdtemp, readdir } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { parseHouseHighlightsTrailerManifest, type HouseHighlightsTrailerManifest } from "@influence/engine";
@@ -13,14 +13,25 @@ import {
   assertPreparedHouseHighlightsTrailerMusicMatrix,
   houseHighlightsMediaWorkerConfig,
   checkHouseHighlightsMediaWorkerHealth,
+  HouseHighlightsMediaWorkerDrainController,
+  initializeHouseHighlightsMediaWorkerControl,
+  type HouseHighlightsMediaWorkerDrainAcknowledgement,
   heartbeatIntervalForLease,
   parseHouseHighlightsMediaWorkerArgs,
+  readHouseHighlightsMediaWorkerStartupMode,
   runHouseHighlightsMediaWorker,
   runHouseHighlightsMediaWorkerOnce,
+  writeHouseHighlightsMediaWorkerDrainAcknowledgement,
   withWorkerReachableAssetUrls,
 } from "../scripts/render-house-highlights-media-worker";
 
 describe("House Highlights media worker bundle", () => {
+  it("defaults to active claims and validates the claim-disabled standby mode", () => {
+    expect(readHouseHighlightsMediaWorkerStartupMode({})).toBe("active");
+    expect(readHouseHighlightsMediaWorkerStartupMode({ POSTGAME_MEDIA_STARTUP_MODE: "standby" })).toBe("standby");
+    expect(() => readHouseHighlightsMediaWorkerStartupMode({ POSTGAME_MEDIA_STARTUP_MODE: "paused" }))
+      .toThrow("POSTGAME_MEDIA_STARTUP_MODE must be active or standby");
+  });
   it("serializes visual rendering, poster rendering, and music composition", async () => {
     const root = await mkdtemp(join(tmpdir(), "house-highlights-worker-order-"));
     const musicDir = join(root, "music");
@@ -171,6 +182,118 @@ describe("House Highlights media worker bundle", () => {
     expect(sleeps).toEqual([10]);
     expect(errors).toEqual(["poll_failed:worker_api_request_failed"]);
     expect(errors.join(" ")).not.toContain("secret.example");
+  });
+
+  it("acknowledges an idle drain and exits without another claim", async () => {
+    const config = houseHighlightsMediaWorkerConfig({
+      POSTGAME_MEDIA_API_URL: "http://api.test/",
+      POSTGAME_MEDIA_WORKER_TOKEN: "secret-worker-token",
+      POSTGAME_MEDIA_POLL_INTERVAL_MS: "10",
+      POSTGAME_MEDIA_MIN_FREE_BYTES: "1",
+    });
+    const acknowledgements: HouseHighlightsMediaWorkerDrainAcknowledgement[] = [];
+    const workerInstanceId = "11111111-1111-4111-8111-111111111111";
+    const drainController = new HouseHighlightsMediaWorkerDrainController((acknowledgement) => {
+      acknowledgements.push(acknowledgement);
+    }, workerInstanceId);
+    let claims = 0;
+
+    await runHouseHighlightsMediaWorker(config, (async () => {
+      claims += 1;
+      return Response.json({ claim: null });
+    }) as unknown as typeof fetch, {
+      maxIterations: 3,
+      drainController,
+      sleepImpl: async () => { drainController.requestDrain("SIGTERM"); },
+    });
+
+    expect(claims).toBe(1);
+    expect(acknowledgements).toEqual([{ schemaVersion: 2, workerInstanceId, claimDisabled: true, claimInFlight: false, signal: "SIGTERM", acknowledgedAt: expect.any(String) }]);
+    expect(drainController.pendingPollWaiterCount).toBe(0);
+  });
+
+  it("acknowledges an active claim and lets it finish before exiting", async () => {
+    const config = houseHighlightsMediaWorkerConfig({
+      POSTGAME_MEDIA_API_URL: "http://api.test/",
+      POSTGAME_MEDIA_WORKER_TOKEN: "secret-worker-token",
+    });
+    const acknowledgements: HouseHighlightsMediaWorkerDrainAcknowledgement[] = [];
+    const workerInstanceId = "22222222-2222-4222-8222-222222222222";
+    const drainController = new HouseHighlightsMediaWorkerDrainController((acknowledgement) => {
+      acknowledgements.push(acknowledgement);
+    }, workerInstanceId);
+    let finishClaim!: () => void;
+    let calls = 0;
+    const claimFinished = new Promise<void>((resolve) => { finishClaim = resolve; });
+    const worker = runHouseHighlightsMediaWorker(config, fetch, {
+      maxIterations: 2,
+      drainController,
+      runOnceImpl: async () => {
+        calls += 1;
+        await claimFinished;
+        return "completed";
+      },
+    });
+    await Promise.resolve();
+
+    drainController.requestDrain("SIGTERM", new Date("2026-08-15T00:00:00.000Z"));
+    expect(acknowledgements).toEqual([{ schemaVersion: 2, workerInstanceId, claimDisabled: true, claimInFlight: true, signal: "SIGTERM", acknowledgedAt: "2026-08-15T00:00:00.000Z" }]);
+    expect(calls).toBe(1);
+    finishClaim();
+    await worker;
+    expect(calls).toBe(1);
+  });
+
+  it("writes an atomic non-secret drain acknowledgement for the host", async () => {
+    const root = await mkdtemp(join(tmpdir(), "house-highlights-worker-drain-"));
+    const file = join(root, "control", "drain-ack.json");
+    await writeHouseHighlightsMediaWorkerDrainAcknowledgement(file, {
+      schemaVersion: 2,
+      workerInstanceId: "33333333-3333-4333-8333-333333333333",
+      claimDisabled: true,
+      claimInFlight: true,
+      signal: "SIGTERM",
+      acknowledgedAt: "2026-08-15T00:00:00.000Z",
+    });
+
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({
+      schemaVersion: 2,
+      workerInstanceId: "33333333-3333-4333-8333-333333333333",
+      claimDisabled: true,
+      claimInFlight: true,
+      signal: "SIGTERM",
+      acknowledgedAt: "2026-08-15T00:00:00.000Z",
+    });
+  });
+
+  it("publishes a fresh worker instance before claims and removes stale acknowledgement state", async () => {
+    const root = await mkdtemp(join(tmpdir(), "house-highlights-worker-instance-"));
+    const acknowledgementFile = join(root, "control", "drain-ack.json");
+    const workerInstanceId = "44444444-4444-4444-8444-444444444444";
+    await mkdir(join(root, "control"), { recursive: true });
+    await writeFile(acknowledgementFile, "stale\n");
+
+    const identityFile = await initializeHouseHighlightsMediaWorkerControl(
+      acknowledgementFile,
+      workerInstanceId,
+      new Date("2026-08-15T01:02:03.000Z"),
+    );
+
+    expect(await Bun.file(acknowledgementFile).exists()).toBeFalse();
+    expect(JSON.parse(await readFile(identityFile, "utf8"))).toEqual({
+      schemaVersion: 1,
+      workerInstanceId,
+      startedAt: "2026-08-15T01:02:03.000Z",
+    });
+  });
+
+  it("removes every completed poll waiter", async () => {
+    const drainController = new HouseHighlightsMediaWorkerDrainController();
+
+    for (let cycle = 0; cycle < 20; cycle += 1) {
+      await drainController.waitForPollDelay(1, async () => undefined);
+      expect(drainController.pendingPollWaiterCount).toBe(0);
+    }
   });
 
   it("heartbeats well before the minimum API lease expires", () => {

@@ -17,6 +17,10 @@ import {
   initialGameTranscriptStateValues,
   TRANSCRIPT_CAPTURE_VERSION,
 } from "./transcript-capture.js";
+import {
+  checkGameStartAdmissionInTransaction,
+  checkRecoveryAdmissionInTransaction,
+} from "./deployment-admission.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
@@ -29,8 +33,8 @@ export type GameOwnerClaimResult =
   | {
     ok: false;
     error: string;
-    statusCode: 400 | 404 | 409;
-    code?: RosterFreezeErrorCode;
+    statusCode: 400 | 404 | 409 | 503;
+    code?: RosterFreezeErrorCode | "stale_owner" | "deployment_admission_closed" | "deployment_admission_unavailable";
     reason?: RosterFreezeErrorReason;
     retryable?: boolean;
   };
@@ -73,6 +77,16 @@ export async function acquireGameRunOwner(
 
   try {
     const claim = await db.transaction(async (tx) => {
+      const admission = await checkGameStartAdmissionInTransaction(tx);
+      if (!admission.ok) {
+        return {
+          ...admission,
+          statusCode: admission.code === "deployment_admission_unavailable"
+            ? 503 as const
+            : 409 as const,
+        };
+      }
+
       const game = (await tx
         .select({
           status: schema.games.status,
@@ -135,17 +149,33 @@ export async function acquireGameRunOwner(
     return claim;
   } catch (error) {
     const freezeError = toRosterFreezeError(error);
+    if (error instanceof GameOwnerTransitionError) {
+      return {
+        ok: false,
+        error: error.message,
+        statusCode: 409,
+        code: error.code,
+        retryable: false,
+      };
+    }
+    if (!freezeError) {
+      return {
+        ok: false,
+        error: "New game starts are temporarily unavailable",
+        statusCode: 503,
+        code: "deployment_admission_unavailable",
+        retryable: true,
+      };
+    }
     return {
       ok: false,
       error: error instanceof Error ? error.message : "Failed to acquire game owner",
-      statusCode: freezeError?.code === "rated_roster_invalid"
+      statusCode: freezeError.code === "rated_roster_invalid"
         ? 400
         : 409,
-      ...(freezeError && {
-        code: freezeError.code,
-        reason: freezeError.reason,
-        retryable: false,
-      }),
+      code: freezeError.code,
+      reason: freezeError.reason,
+      retryable: false,
     };
   }
 }
@@ -268,7 +298,10 @@ export async function acquireRecoveryGameRunOwner(
   db: DrizzleDB,
   gameId: string,
   checkpointEventSequence: number,
-  options: { processId?: string; leaseMs?: number } = {},
+  options: {
+    processId?: string;
+    leaseMs?: number;
+  } = {},
 ): Promise<GameOwnerClaimResult> {
   const now = new Date();
   const ownerEpoch = randomUUID();
@@ -276,6 +309,16 @@ export async function acquireRecoveryGameRunOwner(
 
   try {
     const claim = await db.transaction(async (tx) => {
+      const admission = await checkRecoveryAdmissionInTransaction(tx);
+      if (!admission.ok) {
+        return {
+          ...admission,
+          statusCode: admission.code === "deployment_admission_unavailable"
+            ? 503 as const
+            : 409 as const,
+        };
+      }
+
       const game = (await tx
         .select({ status: schema.games.status })
         .from(schema.games)

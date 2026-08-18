@@ -34,6 +34,18 @@ The remedial Owner Learning track used only when exactly three selected current-
 
 True newly created games admit 6–12 agents. This is a creation-time policy, not a universal invariant for every persisted game: historical four-player games remain readable and restorable under their existing historical contracts. Endgame progression is separate again—The Reckoning begins when exactly four agents remain, regardless of the game's original roster size.
 
+## Deployment admission lease
+
+The single durable production-release barrier for new game starts. It records an opaque lease ID, monotonic deployment fence, candidate and workflow provenance, release phase, database-owned heartbeat and deadlines, and terminal audit outcome. The authoritative waiting-to-`in_progress` ownership transaction locks the same singleton admission state used to acquire the lease, so a racing start is either committed and counted as active before drain or denied after the barrier; route preflight is only a friendly early response. Expiry reopens admission only during `draining` or private `validating`. Once `switching` begins, admission stays closed until the host transaction durably accepts or restores the route.
+
+## Deployment fence
+
+The database-monotonic token paired with an opaque deployment admission lease ID. Release-controller mutations must present the exact pair, and every newer lease permanently stales earlier pairs. The fence is private controller authority rather than a human admin credential: human Resume compares an opaque lease identity and revision while the server resolves the fence internally. A fence controls release admission and phase changes; it does not supersede the owner epoch that fences canonical game writes.
+
+## Release-control protocol
+
+The versioned API contract a production candidate exposes through health evidence and the controller-authenticated activation seam. A validation-mode API runs its bundled migrations and initializes every canonical request route, but it does not seed operational data, reconcile postgame work, classify or recover game runs, start owner-learning loops, or accept new render claims. Only the exact active deployment fence in `accepting` may activate those background behaviors, and repeated activation is idempotent only for that same fence. The reported migration-set identity covers every bundled Drizzle file; it is eligibility evidence, while migrations still execute inside the API container.
+
 ## TranscriptEntry
 
 The chronological dialogue and observability record for a game. It may be displayed, searched, styled, and analyzed, but it is not canonical game truth: accepted state, decisions, tallies, phase transitions, results, and replay choreography derive from canonical events and projections, never transcript prose. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from other agents) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public agent text never contains hidden reasoning. Modern product capture may also carry normalized actor identity, audience player IDs, dialogue kind, and formal-speech correlation context used by owner match-read DTOs; diary/thinking rows stay outside dialogue identity.
