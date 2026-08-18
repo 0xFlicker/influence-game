@@ -49,9 +49,6 @@ write_operation() {
         release_control:{minimum_protocol:1,candidate_protocol:1},commit_list:[$sha],clean_switch_capable:true
       }}' > "$output"
       ;;
-    bootstrap-conversion)
-      jq -S -n --arg digest "$digest" '{accepted_color:"blue",inventory:{run_id:20,run_attempt:1,artifact:"production-ingress-inventory-20-1",digest:$digest}}' > "$output"
-      ;;
     break-glass)
       jq -S -n --arg sha "$sha" --arg baseline "$baseline" --arg digest "$digest" '{qualification:{
         schema_version:2,mode:"break-glass",candidate_sha:$sha,
@@ -66,7 +63,6 @@ write_operation() {
 source_contract() {
   case "$1" in
     candidate) printf '%s\t%s\t%s\t%s\n' .github/workflows/production-candidate.yml repository_dispatch 'flick-ai-dev[bot]' 270169057 ;;
-    bootstrap-conversion) printf '%s\t%s\t%s\t%s\n' .github/workflows/bootstrap-production-ingress.yml workflow_dispatch 0xFlicker 97764360 ;;
     break-glass) printf '%s\t%s\t%s\t%s\n' .github/workflows/promote-prod.yml workflow_dispatch 0xFlicker 97764360 ;;
   esac
 }
@@ -94,7 +90,20 @@ verify_kind() {
     || fail "$kind provenance was not frozen"
 }
 
-for kind in candidate bootstrap-conversion break-glass; do verify_kind "$kind"; done
+for kind in candidate break-glass; do verify_kind "$kind"; done
+
+retired_dir="$tmp/bootstrap-conversion"
+mkdir -p "$retired_dir/archive"
+jq -S -n --arg digest "$digest" '{schema_version:1,kind:"bootstrap-conversion",source:{repository:"0xFlicker/linode-iac",workflow:".github/workflows/bootstrap-production-ingress.yml",run_id:123,run_attempt:1,controller_sha:"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",actor:{login:"0xFlicker",id:97764360}},operation:{accepted_color:"blue",inventory:{run_id:20,run_attempt:1,artifact:"production-ingress-inventory-20-1",digest:$digest}}}' \
+  > "$retired_dir/archive/production-approval-request.json"
+retired_content_digest="sha256:$(sha256sum "$retired_dir/archive/production-approval-request.json" | awk '{print $1}')"
+(cd "$retired_dir/archive" && zip -X -q "$retired_dir/artifact.zip" production-approval-request.json)
+retired_archive_digest="sha256:$(sha256sum "$retired_dir/artifact.zip" | awk '{print $1}')"
+jq -S -n --arg sha "$sha" '{id:123,repository:{full_name:"0xFlicker/linode-iac"},head_branch:"main",head_sha:$sha,status:"completed",conclusion:"success",run_attempt:1,path:".github/workflows/bootstrap-production-ingress.yml",event:"workflow_dispatch",actor:{login:"0xFlicker",id:97764360}}' > "$retired_dir/run.json"
+jq -S -n --arg digest "$retired_archive_digest" '{total_count:1,artifacts:[{id:789,name:"production-approval-request-bootstrap-conversion-123-1",digest:$digest,expired:false,workflow_run:{id:123}}]}' > "$retired_dir/artifacts.json"
+expect_failure "retired bootstrap conversion request" env PATH="$tmp/mock-bin:$PATH" GH_RUN="$retired_dir/run.json" GH_ARTIFACTS="$retired_dir/artifacts.json" GH_ARCHIVE="$retired_dir/artifact.zip" \
+  SOURCE_RUN_ID=123 SOURCE_RUN_ATTEMPT=1 SOURCE_ARTIFACT=production-approval-request-bootstrap-conversion-123-1 SOURCE_DIGEST="$retired_content_digest" LINODE_TOKEN=test APPROVAL_WAIT_SECONDS=1 \
+  bash "$CONTROLLER" verify-request "$retired_dir/verified"
 
 jq -S -n '{protection_rules:[{type:"required_reviewers",prevent_self_review:true,reviewers:[{type:"User",reviewer:{login:"0xFlicker",id:97764360}}]}],can_admins_bypass:false,deployment_branch_policy:null}' > "$tmp/environment.json"
 bash "$CONTROLLER" validate-environment-fixture "$tmp/environment.json"
