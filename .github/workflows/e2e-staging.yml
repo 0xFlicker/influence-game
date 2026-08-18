@@ -100,11 +100,12 @@ jobs:
           echo "Resolved and checked out deployed source commit $expected_sha"
 
       - name: Connect to Tailscale
-        uses: tailscale/github-action@v3
+        uses: tailscale/github-action@v4
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
           tags: tag:ci
+          use-cache: "false"
 
       - name: Wait for Tailscale connectivity
         run: |
@@ -185,7 +186,7 @@ jobs:
           echo "evidence_digest=$evidence_digest" >> "$GITHUB_OUTPUT"
 
       - name: Upload immutable staging E2E evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.E2E_EVIDENCE_ARTIFACT }}
           path: staging-e2e-evidence.json
@@ -194,7 +195,7 @@ jobs:
 
       - name: Generate GitHub App token for linode-iac
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
           app-id: ${{ secrets.GH_APP_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
@@ -204,7 +205,7 @@ jobs:
 
       - name: Report qualified production candidate
         id: candidate-dispatch
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
@@ -245,7 +246,7 @@ jobs:
 
       - name: Upload Playwright failure evidence
         if: ${{ failure() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: staging-e2e-failure-${{ inputs.candidate_sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |

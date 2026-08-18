@@ -174,7 +174,7 @@ jobs:
           echo "approval_digest=$approval_digest" >> "$GITHUB_OUTPUT"
 
       - name: Upload immutable approval receipt
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: ${{ env.APPROVAL_ARTIFACT }}
           path: production-approval.json
@@ -192,7 +192,7 @@ jobs:
           permission-contents: write
 
       - name: Hand approved locator back to private execution
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           APPROVAL_DIGEST: ${{ steps.approval.outputs.approval_digest }}
           APPROVAL_KIND: ${{ needs.validate.outputs.kind }}
