@@ -6,6 +6,7 @@ import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseActor,
@@ -103,14 +104,20 @@ async function runPowerLobbyMessages(
           councilCandidates: provisionalCandidates,
         },
       );
-      const { message, thinking, reasoningContext, decisionLog } = await agent.getPowerLobbyMessage(
+      const response = await agent.getPowerLobbyMessage(
         phaseCtx,
         provisionalCandidates,
         exposePressure,
       );
+      const { message, thinking, reasoningContext } = response;
       await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.POWER, transcriptThinking);
+      resolveActionStrategyCandidate(
+        agent,
+        response,
+        response.strategyGameplayAccepted !== false,
+      );
       logger.emitAgentTurn({
         phase: Phase.POWER,
         action: "power-lobby-message",
@@ -120,7 +127,7 @@ async function runPowerLobbyMessages(
           message,
           empowered: { id: empoweredId, name: gameState.getPlayerName(empoweredId) },
           provisionalCandidates: provisionalCandidates.map((id) => ({ id, name: gameState.getPlayerName(id) })),
-          ...strategicDecisionResponse({ decisionLog }),
+          ...strategicDecisionResponse(response),
         },
         thinking,
         reasoningContext,
@@ -191,6 +198,11 @@ export async function runPowerPhase(
       powerAction.action === "pass" ? undefined : powerActionResult.decisionId,
     ),
   ]);
+  resolveActionStrategyCandidate(
+    empoweredAgent,
+    powerActionResult,
+    powerActionResult.strategyGameplayAccepted !== false,
+  );
   let replacementCandidateIds: UUID[] = [];
   let shieldPullUpResponse: Record<string, unknown> | null = null;
   if (powerAction.action === "protect" && prelim.includes(powerAction.target)) {

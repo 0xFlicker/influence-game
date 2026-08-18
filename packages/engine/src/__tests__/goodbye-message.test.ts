@@ -953,7 +953,12 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       function: { strict?: boolean; parameters?: { required?: string[]; additionalProperties?: unknown } };
     }>)[0];
     expect(tool?.function.strict).toBe(true);
-    expect(tool?.function.parameters?.required).toEqual(["thinking", "message", "pass"]);
+    expect(tool?.function.parameters?.required).toEqual([
+      "thinking",
+      "message",
+      "pass",
+      "strategyDelta",
+    ]);
     expect(tool?.function.parameters?.additionalProperties).toBe(false);
   });
 
@@ -1049,12 +1054,12 @@ describe("InfluenceAgent tool-call fallbacks", () => {
               items: { type: "string" },
               description: "Replacement candidate names to pull up if protecting a current Council candidate creates an unresolved replacement slot; otherwise use an empty array",
             },
-            decisionLog: {
+            strategyDelta: {
               type: ["string", "null"],
-              description: "Compact private producer/debug receipt for what this action means strategically. Use null when there is no meaningful strategic note.",
+              description: "A concise private refinement to your current strategy. Use null when the decision does not materially change it.",
             },
           },
-          required: ["thinking", "action", "target", "shieldPullUpCandidates", "decisionLog"],
+          required: ["thinking", "action", "target", "shieldPullUpCandidates", "strategyDelta"],
           additionalProperties: false,
         },
       },

@@ -4,7 +4,6 @@
  * transcript prose or operational MemoryStore rows.
  */
 
-import type { Phase, StrategicLens } from "./types";
 import {
   PLAYER_CONTINUITY_CAPSULE_VERSION,
   type HouseContinuityCapsule,
@@ -12,10 +11,11 @@ import {
   type PlayerContinuityCapsule,
   type PlayerPowerActionMemoryEntry,
   type PlayerRoundHistoryEntry,
-  type StrategicDecisionReceipt,
-  type StrategicReflectionSummary,
-  type StrategyPacketSummary,
 } from "./game-runner.types";
+import {
+  cloneCompactStrategyState,
+  isValidCompactStrategyState,
+} from "./strategy-state";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -25,83 +25,34 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-const STRATEGIC_LENSES = new Set<string>([
-  "vote_math",
-  "room_traffic",
-  "promise_debt",
-  "power_position",
-  "private_inconsistency",
-  "coalition_geometry",
-  "information_control",
-  "jury_threat",
-  "loyalty_stress",
-  "retaliation_risk",
-  "social_cover",
-  "timing_pattern",
-  "presentation_read",
-  "relationship_repair",
-  "broad_read",
-]);
-
-function isStrategicLens(value: unknown): value is StrategicLens {
-  return typeof value === "string" && STRATEGIC_LENSES.has(value);
+function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+  return Object.keys(value).every((key) => allowed.has(key));
 }
 
-function isPhase(value: unknown): value is Phase {
-  return typeof value === "string" && value.length > 0;
-}
-
-function isStrategyPacketSummary(value: unknown): value is StrategyPacketSummary {
-  if (!isRecord(value)) return false;
-  return typeof value.revisionId === "string" &&
-    value.revisionId.length > 0 &&
-    (value.previousRevisionId === null || typeof value.previousRevisionId === "string") &&
-    typeof value.updatedAtRound === "number" &&
-    isPhase(value.updatedAtPhase) &&
-    typeof value.objective === "string" &&
-    typeof value.targetPosture === "string" &&
-    typeof value.coalitionPosture === "string" &&
-    typeof value.nextSocialProbe === "string" &&
-    isStrategicLens(value.strategicLens) &&
-    typeof value.strategicLensRationale === "string" &&
-    typeof value.uncertainty === "string" &&
-    typeof value.reviseTrigger === "string" &&
-    typeof value.changedSincePrevious === "string";
-}
-
-function isStrategicReflectionSummary(value: unknown): value is StrategicReflectionSummary {
-  if (!isRecord(value)) return false;
-  return isStringArray(value.certainties) &&
-    isStringArray(value.suspicions) &&
-    isStringArray(value.allies) &&
-    isStringArray(value.threats) &&
-    typeof value.plan === "string" &&
-    isStrategicLens(value.strategicLens) &&
-    typeof value.strategicLensRationale === "string";
-}
+const POWER_ACTION_MEMORY_KEYS = new Set(["round", "action", "target"]);
+const ROUND_HISTORY_KEYS = new Set(["round", "eliminated", "empowered", "myVotes"]);
+const VOTE_MEMORY_KEYS = new Set(["empower"]);
+const NOTE_KEYS = new Set(["subject", "note"]);
+const RELATIONSHIP_KEYS = new Set(["allies", "threats"]);
 
 function isPowerActionMemoryEntry(value: unknown): value is PlayerPowerActionMemoryEntry {
   if (!isRecord(value)) return false;
-  return typeof value.round === "number" &&
+  return hasOnlyKeys(value, POWER_ACTION_MEMORY_KEYS) &&
+    Number.isInteger(value.round) &&
+    (value.round as number) >= 0 &&
     (value.action === "eliminate" || value.action === "protect" || value.action === "pass") &&
     typeof value.target === "string";
 }
 
 function isRoundHistoryEntry(value: unknown): value is PlayerRoundHistoryEntry {
   if (!isRecord(value) || !isRecord(value.myVotes)) return false;
-  return typeof value.round === "number" &&
+  return hasOnlyKeys(value, ROUND_HISTORY_KEYS) &&
+    hasOnlyKeys(value.myVotes, VOTE_MEMORY_KEYS) &&
+    Number.isInteger(value.round) &&
+    (value.round as number) >= 0 &&
     typeof value.myVotes.empower === "string" &&
     (value.eliminated === undefined || typeof value.eliminated === "string") &&
     (value.empowered === undefined || typeof value.empowered === "string");
-}
-
-function isStrategicDecisionReceipt(value: unknown): value is StrategicDecisionReceipt {
-  if (!isRecord(value)) return false;
-  return typeof value.round === "number" &&
-    isPhase(value.phase) &&
-    typeof value.action === "string" &&
-    typeof value.label === "string" &&
-    typeof value.decisionLog === "string";
 }
 
 function hasForbiddenPrivateFields(value: unknown): boolean {
@@ -115,13 +66,34 @@ function hasForbiddenPrivateFields(value: unknown): boolean {
       lower === "prompt" ||
       lower === "response" ||
       lower === "rawprompt" ||
-      lower === "rawresponse"
+      lower === "rawresponse" ||
+      lower === "strategypacket" ||
+      lower === "reflectionsummary" ||
+      lower === "recentstrategicdecisions" ||
+      lower === "strategypacketrevisioncounter" ||
+      lower === "strategicevidenceversion" ||
+      lower === "decisionlog"
     ) {
       return true;
     }
     if (hasForbiddenPrivateFields(child)) return true;
   }
   return false;
+}
+
+const PLAYER_CONTINUITY_KEYS = new Set([
+  "version",
+  "playerId",
+  "playerName",
+  "compactStrategy",
+  "notes",
+  "relationships",
+  "powerActionMemory",
+  "roundHistory",
+]);
+
+function hasOnlyPlayerContinuityKeys(value: Record<string, unknown>): boolean {
+  return hasOnlyKeys(value, PLAYER_CONTINUITY_KEYS);
 }
 
 /**
@@ -131,16 +103,20 @@ function hasForbiddenPrivateFields(value: unknown): boolean {
 export function parsePlayerContinuityCapsule(value: unknown): PlayerContinuityCapsule | null {
   if (!isRecord(value)) return null;
   if (value.version !== PLAYER_CONTINUITY_CAPSULE_VERSION) return null;
+  if (!hasOnlyPlayerContinuityKeys(value)) return null;
   if (typeof value.playerId !== "string" || value.playerId.length === 0) return null;
   if (typeof value.playerName !== "string" || value.playerName.length === 0) return null;
-  if (value.strategyPacket !== null && !isStrategyPacketSummary(value.strategyPacket)) return null;
-  if (value.reflectionSummary !== null && !isStrategicReflectionSummary(value.reflectionSummary)) return null;
+  if (!isValidCompactStrategyState(value.compactStrategy)) return null;
   if (!Array.isArray(value.notes) || !value.notes.every((note) =>
-    isRecord(note) && typeof note.subject === "string" && typeof note.note === "string"
+    isRecord(note)
+    && hasOnlyKeys(note, NOTE_KEYS)
+    && typeof note.subject === "string"
+    && typeof note.note === "string"
   )) {
     return null;
   }
   if (!isRecord(value.relationships)) return null;
+  if (!hasOnlyKeys(value.relationships, RELATIONSHIP_KEYS)) return null;
   if (!isStringArray(value.relationships.allies) || !isStringArray(value.relationships.threats)) {
     return null;
   }
@@ -150,27 +126,13 @@ export function parsePlayerContinuityCapsule(value: unknown): PlayerContinuityCa
   if (!Array.isArray(value.roundHistory) || !value.roundHistory.every(isRoundHistoryEntry)) {
     return null;
   }
-  if (
-    !Array.isArray(value.recentStrategicDecisions) ||
-    !value.recentStrategicDecisions.every(isStrategicDecisionReceipt)
-  ) {
-    return null;
-  }
-  if (
-    typeof value.strategyPacketRevisionCounter !== "number" ||
-    !Number.isInteger(value.strategyPacketRevisionCounter) ||
-    value.strategyPacketRevisionCounter < 0
-  ) {
-    return null;
-  }
   if (hasForbiddenPrivateFields(value)) return null;
 
   return {
     version: PLAYER_CONTINUITY_CAPSULE_VERSION,
     playerId: value.playerId,
     playerName: value.playerName,
-    strategyPacket: value.strategyPacket,
-    reflectionSummary: value.reflectionSummary,
+    compactStrategy: cloneCompactStrategyState(value.compactStrategy),
     notes: value.notes.map((note) => {
       const entry = note as { subject: string; note: string };
       return { subject: entry.subject, note: entry.note };
@@ -190,14 +152,6 @@ export function parsePlayerContinuityCapsule(value: unknown): PlayerContinuityCa
       ...(entry.empowered !== undefined && { empowered: entry.empowered }),
       myVotes: { empower: entry.myVotes.empower },
     })),
-    recentStrategicDecisions: value.recentStrategicDecisions.map((receipt) => ({
-      round: receipt.round,
-      phase: receipt.phase,
-      action: receipt.action,
-      label: receipt.label,
-      decisionLog: receipt.decisionLog,
-    })),
-    strategyPacketRevisionCounter: value.strategyPacketRevisionCounter,
   };
 }
 

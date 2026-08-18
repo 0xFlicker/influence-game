@@ -3,6 +3,7 @@ import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseActor,
@@ -92,6 +93,11 @@ export async function runCouncilPhase(
         voteResult.decisionId,
       ),
     ]);
+    resolveActionStrategyCandidate(
+      agent,
+      voteResult,
+      voteResult.strategyGameplayAccepted !== false,
+    );
 
     const votedAgainstName = gameState.getPlayerName(vote);
     agent.addNote(votedAgainstName, `Voted against in council R${gameState.round}`);

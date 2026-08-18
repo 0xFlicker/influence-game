@@ -4,7 +4,6 @@ import {
   formatMingleIntentOperatorText,
   formatMingleRoomAssignmentOperatorText,
   formatMingleTurnOperatorText,
-  formatStrategicReflectionOperatorText,
 } from "../operator-turn-text";
 import { formatAgentTurnTrace } from "../simulate";
 import type { AgentTurnEvent } from "../game-runner.types";
@@ -93,20 +92,6 @@ describe("operator turn text", () => {
       'Vera alliance accept "The Non-Theater Reasoning Pact" #36a7c377 members=Kael,Vera,Rune,Echo,Lyra → recorded',
     );
     expect(text).not.toContain("lineage=");
-  });
-
-  test("strategic reflection includes lens allies threats plan", () => {
-    const text = formatStrategicReflectionOperatorText({
-      playerName: "Finn",
-      strategicLens: "vote_math",
-      allies: ["Sage"],
-      threats: ["Lyra"],
-      plan: "Hold the center and re-check sealed ballot targets.",
-    });
-    expect(text).toContain("Finn reflection: lens=vote_math");
-    expect(text).toContain("allies=Sage");
-    expect(text).toContain("threats=Lyra");
-    expect(text).toContain("plan=");
   });
 
   test("chatty prints operator text even without thinking", () => {

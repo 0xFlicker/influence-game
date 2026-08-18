@@ -651,8 +651,6 @@ export interface GameConfig {
   maxDiaryFollowUps?: number;
   /** If set, only run diary rooms after these phases. If unset, diary rooms run after every phase. */
   diaryRoomAfterPhases?: Phase[];
-  /** Enable hidden strategic reflection calls that update agent memory (default true). */
-  enableStrategicReflections?: boolean;
   /** Messages per player in the lobby phase. Defaults to one. */
   lobbyMessagesPerPlayer?: number;
   /** Number of open-room movement beats per round (default 2). */

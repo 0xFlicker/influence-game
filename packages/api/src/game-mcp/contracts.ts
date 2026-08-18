@@ -1497,13 +1497,10 @@ const strategyProseSchema = closedObject(
   ["contentTrust"],
   {
     contentTrust: contentTrustSchema,
-    decisionLog: { type: "string" },
-    strategicLens: { type: "string" },
-    strategicLensRationale: { type: "string" },
-    strategyPacketRevision: { type: "string" },
-    strategyPacketUpdate: { type: "string" },
-    strategyPacketSummary: { type: "string" },
-    strategicReflectionSummary: { type: "string" },
+    stage: { type: "string", const: "proposal" },
+    operation: { type: "string", enum: ["replace", "delta"] },
+    submission: { type: "string", enum: ["value", "no_change", "mechanically_invalid"] },
+    value: nullableStringSchema,
   },
 );
 
@@ -1653,13 +1650,10 @@ const narrativeMemberFieldsSchema = closedObject(
     // Thinking allowlist
     thinking: { type: "string" },
     // Strategy allowlist
-    decisionLog: { type: "string" },
-    strategicLens: { type: "string" },
-    strategicLensRationale: { type: "string" },
-    strategyPacketRevision: { type: "string" },
-    strategyPacketUpdate: { type: "string" },
-    strategyPacketSummary: { type: "string" },
-    strategicReflectionSummary: { type: "string" },
+    strategyStage: { type: "string", const: "proposal" },
+    strategyOperation: { type: "string", enum: ["replace", "delta"] },
+    strategySubmission: { type: "string", enum: ["value", "no_change", "mechanically_invalid"] },
+    strategyValue: { type: "string" },
   },
 );
 

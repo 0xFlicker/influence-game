@@ -10,14 +10,31 @@ import {
   type SealedElimFormatId,
 } from "./catalog";
 
-export const STRATEGIC_DECISION_TOOL_PROPERTIES = {
-  decisionLog: {
-    type: ["string", "null"],
-    description: "Compact private producer/debug receipt for what this action means strategically. Use null when there is no meaningful strategic note.",
+export const STRATEGIC_THINKING_TOOL_PROPERTIES = {
+  thinking: {
+    type: "string",
+    description: "Your concise private reasoning for this decision.",
   },
 };
 
-export const STRATEGIC_DECISION_REQUIRED = ["decisionLog"];
+export const STRATEGY_DELTA_TOOL_PROPERTIES = {
+  strategyDelta: {
+    type: ["string", "null"],
+    description: "A concise private refinement to your current strategy. Use null when the decision does not materially change it.",
+  },
+};
+
+export const FULL_STRATEGY_TOOL_PROPERTIES = {
+  strategy: {
+    type: "string",
+    description: "Your concise but complete private strategy after reconciling the current living board, material commitments, coalition posture, target posture, and important uncertainty.",
+  },
+};
+
+/** Ordinary strategic surfaces retain their historical import name during U1. */
+export const STRATEGIC_DECISION_TOOL_PROPERTIES = STRATEGY_DELTA_TOOL_PROPERTIES;
+export const STRATEGIC_DECISION_REQUIRED = ["strategyDelta"] as const;
+export const FULL_STRATEGY_REQUIRED = ["strategy"] as const;
 
 export interface SealedElimTargetPlayer {
   id: UUID;
@@ -27,7 +44,8 @@ export interface SealedElimTargetPlayer {
 export interface SealedElimModelOutput {
   thinking?: string;
   target?: unknown;
-  decisionLog?: unknown;
+  strategyDelta?: unknown;
+  strategy?: unknown;
   decisionId?: UUID;
   reasoningContext?: string;
 }
@@ -52,14 +70,11 @@ export interface RunSealedElimTargetDecisionInput {
   alivePlayers: readonly SealedElimTargetPlayer[];
   basePrompt: string;
   ruleSheet: string;
+  /** True only when this retained gameplay call must repair strategy continuity. */
+  requiresStrategyReplacement?: boolean;
   callTool: (
     request: SealedElimToolCallRequest,
   ) => Promise<SealedElimModelOutput>;
-  recordDecision: (
-    action: string,
-    label: string,
-    metadata: StrategicDecisionMetadata,
-  ) => void;
   onToolFailure?: (
     error: unknown,
     fallbackTarget: SealedElimTargetPlayer,
@@ -92,21 +107,35 @@ function acceptedActionMetadata(
   metadata: StrategicDecisionMetadata,
   directModelChoice: boolean,
 ): StrategicDecisionMetadata {
-  if (directModelChoice) return metadata;
-  return metadata.decisionLog ? { decisionLog: metadata.decisionLog } : {};
+  if (!directModelChoice) {
+    const { decisionId: _decisionId, ...candidate } = metadata;
+    return {
+      ...candidate,
+      strategyGameplayAccepted: false,
+    };
+  }
+  return metadata;
 }
 
 function strategicDecisionMetadata(
   output: SealedElimModelOutput,
+  requiresStrategyReplacement: boolean,
 ): StrategicDecisionMetadata {
-  const decisionLog = typeof output.decisionLog === "string"
-    ? output.decisionLog.trim()
-    : "";
   const decisionId = typeof output.decisionId === "string"
     ? output.decisionId.trim()
     : "";
+  const hasStrategyCandidate = Object.prototype.hasOwnProperty.call(output, "strategyDelta")
+    || Object.prototype.hasOwnProperty.call(output, "strategy");
   return {
-    ...(decisionLog ? { decisionLog } : {}),
+    ...(Object.prototype.hasOwnProperty.call(output, "strategyDelta")
+      ? { strategyDelta: output.strategyDelta }
+      : {}),
+    ...(Object.prototype.hasOwnProperty.call(output, "strategy")
+      ? { strategy: output.strategy }
+      : {}),
+    ...(requiresStrategyReplacement && !hasStrategyCandidate
+      ? { strategyCandidateProposed: true }
+      : {}),
     ...(decisionId ? { decisionId } : {}),
   };
 }
@@ -133,10 +162,7 @@ export function buildSealedElimBallotTool(
       parameters: {
         type: "object",
         properties: {
-          thinking: {
-            type: "string",
-            description: "Your hidden strategic reasoning for this sealed ballot.",
-          },
+          ...STRATEGIC_THINKING_TOOL_PROPERTIES,
           target: {
             type: "string",
             enum: [...legalTargetNames],
@@ -185,8 +211,10 @@ Use the ${surface.toolName} tool.`;
       ),
       traceAction: surface.traceAction,
     });
-    const metadata = strategicDecisionMetadata(output);
-    input.recordDecision(surface.traceAction, surface.decisionLabel, metadata);
+    const metadata = strategicDecisionMetadata(
+      output,
+      input.requiresStrategyReplacement === true,
+    );
     const target = findTargetByName(legalTargets, output.target);
     const accepted = target !== undefined;
     return {

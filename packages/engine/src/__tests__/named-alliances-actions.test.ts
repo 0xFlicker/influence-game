@@ -4,7 +4,7 @@ import { GameState } from "../game-state";
 import { runAllianceFormationPhase } from "../phases/alliances";
 import type { PhaseRunnerContext } from "../phases/phase-runner-context";
 import { TranscriptLogger } from "../transcript-logger";
-import { DEFAULT_CONFIG } from "../types";
+import { DEFAULT_CONFIG, Phase } from "../types";
 import { MockAgent } from "./mock-agent";
 
 const PLAYERS = [
@@ -41,8 +41,16 @@ function createActionHarness() {
 }
 
 describe("Format Mingle alliance action runner", () => {
-  it("forms an official alliance from a proposal and same-version acceptance", async () => {
-    const { gameState, agents, ctx } = createActionHarness();
+  it("binds an invited response to the current proposal instead of trusting supplied identifiers", async () => {
+    const { gameState, logger, agents, ctx } = createActionHarness();
+    const serializedResponses: string[] = [];
+    const strategyResults: unknown[] = [];
+    logger.setStreamListener((event) => {
+      if (event.type === "agent_turn" && event.action === "alliance-action") {
+        serializedResponses.push(JSON.stringify(event.response));
+        strategyResults.push(event.strategyResult);
+      }
+    });
     agents.get("alice")!.allianceActions.push({
       action: "propose",
       allianceId: "alliance-ab",
@@ -53,12 +61,13 @@ describe("Format Mingle alliance action runner", () => {
       purpose: "Vote together before Council.",
       timebox: "round one",
       thinking: "mock: propose to Bob",
+      strategyDelta: "Keep Bob close if he accepts this deal.",
       decisionId: "decision-propose-ab",
     });
     agents.get("bob")!.allianceActions.push({
       action: "accept",
-      lineageId: "lineage-ab",
-      versionId: "version-ab",
+      lineageId: "mistyped-lineage",
+      versionId: "mistyped-version",
       thinking: "mock: accept Alice's proposal",
       decisionId: "decision-accept-ab",
     });
@@ -83,6 +92,60 @@ describe("Format Mingle alliance action runner", () => {
     expect(proposal?.sourcePointers[0]?.decisionId).toBe("decision-propose-ab");
     expect(response?.sourcePointers[0]?.decisionId).toBe("decision-accept-ab");
     expect(activation?.sourcePointers).toEqual([]);
+    expect(serializedResponses.join("\n")).not.toContain("strategyDelta");
+    expect(serializedResponses.join("\n")).not.toContain("Keep Bob close if he accepts this deal.");
+    expect(strategyResults).toContainEqual(expect.objectContaining({
+      status: "accepted",
+      operation: "delta",
+      resultingRevision: 1,
+    }));
+  });
+
+  it("permits an active-alliance amendment and resolves its consent transaction", async () => {
+    const { gameState, agents, ctx } = createActionHarness();
+    gameState.recordAllianceProposal({
+      allianceId: "alliance-ab",
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      proposerId: "alice",
+      name: "Alice Bob",
+      memberIds: ["alice", "bob"],
+      purpose: "Vote together.",
+      timebox: "this round",
+    }, { phase: Phase.FORMAT_MINGLE });
+    gameState.recordAllianceResponse({
+      lineageId: "lineage-ab",
+      versionId: "version-ab",
+      playerId: "bob",
+      response: "accepted",
+    }, { phase: Phase.FORMAT_MINGLE });
+
+    agents.get("alice")!.allianceActions.push({
+      action: "amend",
+      allianceId: "alliance-ab",
+      name: "Alice Bob Charlie",
+      memberNames: ["Alice", "Bob", "Charlie"],
+      purpose: "Expand the voting agreement.",
+      timebox: "this round",
+    });
+    agents.get("bob")!.allianceActions.push({
+      action: "accept",
+      lineageId: "provider-bob-lineage",
+      versionId: "provider-bob-version",
+    });
+    agents.get("charlie")!.allianceActions.push({
+      action: "accept",
+      lineageId: "provider-charlie-lineage",
+      versionId: "provider-charlie-version",
+    });
+
+    await runAllianceFormationPhase(ctx);
+
+    expect(gameState.getAlliance("alliance-ab")).toMatchObject({
+      status: "active",
+      name: "Alice Bob Charlie",
+      memberIds: ["alice", "bob", "charlie"],
+    });
   });
 
   it("resolves invited responses before the next proposer and rejects exact duplicate rosters", async () => {
@@ -295,11 +358,11 @@ describe("Format Mingle alliance action runner", () => {
 
     const lineage = gameState.getAllianceProposalLineage("lineage-cap");
     expect(lineage?.status).toBe("expired");
-    expect(lineage?.versions.map((version) => version.versionId)).toEqual([
-      "version-1",
-      "version-2",
-      "version-3",
-    ]);
+    expect(lineage?.versions.map((version) => version.counterIndex)).toEqual([0, 1, 2]);
+    expect(lineage?.versions[0]?.versionId).toBe("version-1");
+    expect(lineage?.versions.slice(1).map((version) => version.versionId)).not.toContain("version-2");
+    expect(lineage?.versions.slice(1).map((version) => version.versionId)).not.toContain("version-3");
+    expect(lineage?.versions.map((version) => version.versionId)).not.toContain("version-4");
     expect(gameState.getAlliance("alliance-cap")).toBeUndefined();
   });
 

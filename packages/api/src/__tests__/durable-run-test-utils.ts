@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import {
   GameState,
   Phase,
+  createOpeningStrategyState,
   replayCanonicalEvents,
   buildActorWitness,
   buildPhaseAccumulatorRegistry,
@@ -261,17 +262,14 @@ export function buildPositivePlayerContinuityCapsules(_capsule: GameCheckpointCa
     { playerId: "mira", playerName: "Mira" },
     { playerId: "nyx", playerName: "Nyx" },
   ].map((player) => ({
-    version: 1 as const,
+    version: 2 as const,
     playerId: player.playerId,
     playerName: player.playerName,
-    strategyPacket: null,
-    reflectionSummary: null,
+    compactStrategy: createOpeningStrategyState(),
     notes: [],
     relationships: { allies: [], threats: [] },
     powerActionMemory: [],
     roundHistory: [],
-    recentStrategicDecisions: [],
-    strategyPacketRevisionCounter: 0,
   }));
 }
 

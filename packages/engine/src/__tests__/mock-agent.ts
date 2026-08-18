@@ -3,11 +3,12 @@
  * Uses simple scripted strategies to validate game mechanics.
  */
 
-import type { AgentResponse, AllianceAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, RecallContinuitySnapshot, StrategicReflectionAction, StrategyPacketSummary, TargetDecision } from "../game-runner";
-import type { FormatDecisionProvenance } from "../game-runner.types";
+import type { AgentResponse, AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, RecallContinuitySnapshot, TargetDecision } from "../game-runner";
+import type { CompactStrategyCandidate, CompactStrategyDecisionBoundary, FormatDecisionProvenance } from "../game-runner.types";
 import type { LaunchFormatId } from "../formats";
 import type { UUID } from "../types";
 import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
+import { applyStrategyCandidate, cloneCompactStrategyState, createOpeningStrategyState, markStrategyReconciliationRequired } from "../strategy-state";
 
 /** Assert a value is defined — throws in tests if assumption is violated */
 function defined<T>(value: T | undefined, msg = "Expected value to be defined"): T {
@@ -23,7 +24,7 @@ function respond(message: string, thinking = "", reasoningContext?: string): Age
 export class MockAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
-  private strategyPacket: StrategyPacketSummary | null = null;
+  private compactStrategy = createOpeningStrategyState();
 
   /** Optional override for endgame elimination vote target */
   eliminationTarget?: UUID;
@@ -43,19 +44,30 @@ export class MockAgent implements IAgent {
 
   async onPhaseStart(_ctx: PhaseContext): Promise<void> {}
 
-  getStrategyPacket(): StrategyPacketSummary | null {
-    return this.strategyPacket;
-  }
-
   getRecallContinuitySnapshot(): RecallContinuitySnapshot {
     return {
       ...emptyRecallContinuitySnapshot(),
-      strategyPacket: this.strategyPacket ? { ...this.strategyPacket } : null,
+      compactStrategy: cloneCompactStrategyState(this.compactStrategy),
     };
   }
 
-  private decisionLog(action = "use current strategy packet"): string | undefined {
-    if (!this.strategyPacket) return undefined;
+  getCompactStrategyState() {
+    return cloneCompactStrategyState(this.compactStrategy);
+  }
+
+  commitCompactStrategyCandidate(boundary: CompactStrategyDecisionBoundary, candidate: CompactStrategyCandidate) {
+    const result = applyStrategyCandidate(this.compactStrategy, boundary, candidate);
+    this.compactStrategy = result.state;
+    return result;
+  }
+
+  markCompactStrategyReconciliationRequired() {
+    this.compactStrategy = markStrategyReconciliationRequired(this.compactStrategy);
+    return this.getCompactStrategyState();
+  }
+
+  private strategyDelta(action = "use current compact strategy"): string | undefined {
+    if (this.compactStrategy.revision === 0) return undefined;
     return `mock: ${action}`;
   }
 
@@ -104,16 +116,16 @@ export class MockAgent implements IAgent {
       strategicLensRationale: "mock: use Mingle rooms to compare who seeks or avoids whom",
       thinking: "mock: form hidden Mingle intent",
       reasoningContext: undefined,
-      decisionLog: this.decisionLog("form intent from current strategy packet"),
+      strategyDelta: this.strategyDelta("form intent from current strategy packet"),
     };
   }
 
-  async getAllianceAction(_ctx: PhaseContext): Promise<AllianceAction> {
+  async getAllianceAction(_ctx: PhaseContext, _opportunity: AllianceActionOpportunity): Promise<AllianceAction> {
     return this.allianceActions.shift() ?? {
       action: "pass",
       thinking: "mock: no alliance action queued",
       reasoningContext: undefined,
-      decisionLog: this.decisionLog("pass alliance action"),
+      strategyDelta: this.strategyDelta("pass alliance action"),
     };
   }
 
@@ -145,7 +157,7 @@ export class MockAgent implements IAgent {
         dissent: [],
         alternativePlan: null,
       },
-      decisionLog: this.decisionLog("take alliance huddle turn"),
+      strategyDelta: this.strategyDelta("take alliance huddle turn"),
     };
   }
 
@@ -164,8 +176,8 @@ export class MockAgent implements IAgent {
   async takeMingleTurn(ctx: PhaseContext, roomMates: string[], conversationHistory?: Array<{ from: string; text: string }>): Promise<MingleTurnAction> {
     const response = await this.sendRoomMessage(ctx, roomMates, conversationHistory);
     return response
-      ? { ...response, noReply: false, gotoRoomId: null, gotoPlayerName: null, decisionLog: this.decisionLog("talk from current strategy packet") }
-      : { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null, decisionLog: this.decisionLog("defer current strategy packet") };
+      ? { ...response, noReply: false, gotoRoomId: null, gotoPlayerName: null, strategyDelta: this.strategyDelta("talk from current strategy packet") }
+      : { thinking: "", message: null, noReply: true, gotoRoomId: null, gotoPlayerName: null, strategyDelta: this.strategyDelta("defer current strategy packet") };
   }
 
   async getRumorMessage(ctx: PhaseContext): Promise<AgentResponse> {
@@ -181,7 +193,7 @@ export class MockAgent implements IAgent {
 
   async getVotes(
     ctx: PhaseContext,
-  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     if (others.length === 0) {
       return { empowerTarget: this.id, thinking: "No one else left", reasoningContext: undefined };
@@ -189,20 +201,20 @@ export class MockAgent implements IAgent {
 
     // Always empower the first other player (empower-only; no expose).
     const empowerTarget = defined(others[0], "Expected at least one other player to empower").id;
-    return { empowerTarget, thinking: `Empower ally`, reasoningContext: undefined, decisionLog: this.decisionLog("empower ally") };
+    return { empowerTarget, thinking: `Empower ally`, reasoningContext: undefined, strategyDelta: this.strategyDelta("empower ally") };
   }
 
   async getEmpowerRevote(
     ctx: PhaseContext,
     tiedCandidates: UUID[],
     _originalVote: { empowerTarget: UUID },
-  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<{ empowerTarget: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     const target = tiedCandidates[0] ?? ctx.alivePlayers.find((p) => p.id !== this.id)?.id ?? this.id;
     return {
       empowerTarget: target,
       thinking: "mock: empower first tied candidate in revote",
       reasoningContext: undefined,
-      decisionLog: this.decisionLog("revote within current strategy packet"),
+      strategyDelta: this.strategyDelta("revote within current strategy packet"),
     };
   }
 
@@ -214,7 +226,7 @@ export class MockAgent implements IAgent {
       selectedCandidateIds: request.eligibleCandidateIds.slice(0, request.requiredCount),
       thinking: "mock: select first eligible candidate choice",
       reasoningContext: undefined,
-      decisionLog: this.decisionLog("select first eligible candidate choice"),
+      strategyDelta: this.strategyDelta("select first eligible candidate choice"),
     };
   }
 
@@ -248,23 +260,23 @@ export class MockAgent implements IAgent {
       ...(replacementRequest ? { shieldPullUpCandidateIds: replacementRequest.eligibleCandidateIds.slice(0, replacementRequest.requiredCount) } : {}),
       thinking: "mock: pass to let council expose the field",
       reasoningContext: undefined,
-      decisionLog: this.decisionLog("pass to let council expose the field"),
+      strategyDelta: this.strategyDelta("pass to let council expose the field"),
     };
   }
 
-  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  async getCouncilVote(ctx: PhaseContext, candidates: [UUID, UUID]): Promise<{ target: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     // Always vote for the first candidate
-    return { target: candidates[0], thinking: "mock: vote first candidate for council", reasoningContext: undefined, decisionLog: this.decisionLog("vote first candidate for council") };
+    return { target: candidates[0], thinking: "mock: vote first candidate for council", reasoningContext: undefined, strategyDelta: this.strategyDelta("vote first candidate for council") };
   }
 
   async pickRoundFormat(
     _ctx: PhaseContext,
     offeredFormats: [LaunchFormatId, LaunchFormatId],
-  ): Promise<FormatDecisionProvenance & { formatId: string; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { formatId: string; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     return {
       formatId: offeredFormats[0],
       thinking: `mock: pick first offered format ${offeredFormats[0]}`,
-      decisionLog: this.decisionLog("pick first offered format"),
+      strategyDelta: this.strategyDelta("pick first offered format"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -278,7 +290,7 @@ export class MockAgent implements IAgent {
     targetId: UUID;
     thinking?: string;
     reasoningContext?: string;
-    decisionLog?: string | null;
+    strategyDelta?: string | null;
   }> {
     const others = aliveIds.filter((id) => id !== this.id);
     const targetId = others[others.length - 1] ?? this.id;
@@ -289,7 +301,7 @@ export class MockAgent implements IAgent {
       polarity,
       targetId: chosen,
       thinking: `mock: ${polarity} ${chosen}`,
-      decisionLog: this.decisionLog("save-or-eliminate ballot"),
+      strategyDelta: this.strategyDelta("save-or-eliminate ballot"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -298,7 +310,7 @@ export class MockAgent implements IAgent {
   async getVoteBombBallot(
     ctx: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     const others = aliveIds.filter((id) => id !== this.id);
     // Spread votes: each agent votes for a different offset target to avoid pure pile-on.
     const idx = Math.max(0, ctx.alivePlayers.findIndex((p) => p.id === this.id)) % Math.max(1, others.length);
@@ -306,7 +318,7 @@ export class MockAgent implements IAgent {
     return {
       targetId,
       thinking: `mock: vote bomb → ${targetId}`,
-      decisionLog: this.decisionLog("vote bomb ballot"),
+      strategyDelta: this.strategyDelta("vote bomb ballot"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -315,12 +327,12 @@ export class MockAgent implements IAgent {
   async getMajorityEliminationBallot(
     _ctx: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     const targetId = aliveIds.find((id) => id !== this.id) ?? this.id;
     return {
       targetId,
       thinking: `mock: majority elimination → ${targetId}`,
-      decisionLog: this.decisionLog("majority elimination ballot"),
+      strategyDelta: this.strategyDelta("majority elimination ballot"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -329,7 +341,7 @@ export class MockAgent implements IAgent {
   async getEvenVotesBallot(
     ctx: PhaseContext,
     aliveIds: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     const others = aliveIds.filter((id) => id !== this.id);
     const index = Math.max(
       0,
@@ -339,7 +351,7 @@ export class MockAgent implements IAgent {
     return {
       targetId,
       thinking: `mock: even votes → ${targetId}`,
-      decisionLog: this.decisionLog("even votes ballot"),
+      strategyDelta: this.strategyDelta("even votes ballot"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -348,12 +360,12 @@ export class MockAgent implements IAgent {
   async getRestrictedHistoryBallot(
     _ctx: PhaseContext,
     legalTargetIds: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     const targetId = legalTargetIds[0] ?? this.id;
     return {
       targetId,
       thinking: `mock: restricted history → ${targetId}`,
-      decisionLog: this.decisionLog("restricted history ballot"),
+      strategyDelta: this.strategyDelta("restricted history ballot"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -362,12 +374,12 @@ export class MockAgent implements IAgent {
   async getBouncePointer(
     _ctx: PhaseContext,
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     const targetId = board.unclassified[0] ?? this.id;
     return {
       targetId,
       thinking: `mock: bounce → ${targetId}`,
-      decisionLog: this.decisionLog("bounce pointer"),
+      strategyDelta: this.strategyDelta("bounce pointer"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -376,12 +388,12 @@ export class MockAgent implements IAgent {
   async getSafetyBounceVote(
     _ctx: PhaseContext,
     vulnerableIds: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     const targetId = vulnerableIds[vulnerableIds.length - 1] ?? this.id;
     return {
       targetId,
       thinking: `mock: bounce vote → ${targetId}`,
-      decisionLog: this.decisionLog("safety bounce vote"),
+      strategyDelta: this.strategyDelta("safety bounce vote"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -390,11 +402,11 @@ export class MockAgent implements IAgent {
   async breakFormatEliminationTie(
     _ctx: PhaseContext,
     tiedSet: UUID[],
-  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; decisionLog?: string | null }> {
+  ): Promise<FormatDecisionProvenance & { targetId: UUID; thinking?: string; reasoningContext?: string; strategyDelta?: string | null }> {
     return {
       targetId: tiedSet[0] ?? this.id,
       thinking: "mock: break format tie with first tied player",
-      decisionLog: this.decisionLog("format tiebreak"),
+      strategyDelta: this.strategyDelta("format tiebreak"),
       decisionSource: "llm",
       fallbackReason: null,
     };
@@ -499,36 +511,6 @@ export class MockAgent implements IAgent {
       target: finalistIds[0],
       thinking: "mock: vote first finalist for jury winner",
       reasoningContext: undefined,
-    };
-  }
-
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    this.strategyPacket = {
-      revisionId: "mock-r1",
-      previousRevisionId: null,
-      updatedAtRound: _ctx.round,
-      updatedAtPhase: _ctx.phase,
-      objective: "mock: survive while gathering information",
-      targetPosture: "mock: no named target yet",
-      coalitionPosture: "mock: keep first ally close",
-      nextSocialProbe: "mock: ask who feels too comfortable",
-      strategicLens: "broad_read",
-      strategicLensRationale: "mock: broad strategic scan",
-      uncertainty: "mock: unclear who is coordinating",
-      reviseTrigger: "mock: revise if votes contradict room talk",
-      changedSincePrevious: "initial packet",
-    };
-    return {
-      certainties: [`${this.name} is still alive`],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "mock: keep gathering information",
-      strategicLens: "broad_read",
-      strategicLensRationale: "mock: broad strategic scan",
-      thinking: "mock: reflect on current strategy",
-      reasoningContext: undefined,
-      strategyPacket: this.strategyPacket,
     };
   }
 

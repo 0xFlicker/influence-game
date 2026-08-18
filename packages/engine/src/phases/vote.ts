@@ -5,6 +5,7 @@ import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseActor,
@@ -104,6 +105,11 @@ export async function runVotePhase(
           votes.decisionId,
         ),
       ]);
+      resolveActionStrategyCandidate(
+        agent,
+        votes,
+        votes.strategyGameplayAccepted !== false,
+      );
 
       const empowerName = gameState.getPlayerName(votes.empowerTarget);
       const transcriptThinking = transcriptThinkingFor(agent, votes.thinking, votes.reasoningContext);
@@ -174,6 +180,11 @@ export async function runVotePhase(
               acceptedDirectly ? revote.decisionId : undefined,
             ),
           ]);
+          resolveActionStrategyCandidate(
+            agent,
+            revote,
+            acceptedDirectly && revote.strategyGameplayAccepted !== false,
+          );
           revoteTargetsByPlayerId.set(player.id, empowerTarget);
           const empowerName = gameState.getPlayerName(empowerTarget);
           const transcriptThinking = transcriptThinkingFor(agent, revote.thinking, revote.reasoningContext);
@@ -305,6 +316,11 @@ export async function runReckoningVote(
           vote.decisionId,
         ),
       ]);
+      resolveActionStrategyCandidate(
+        agent,
+        vote,
+        vote.strategyGameplayAccepted !== false,
+      );
       const targetName = gameState.getPlayerName(vote.target);
       const transcriptThinking = transcriptThinkingFor(agent, vote.thinking, vote.reasoningContext);
       logger.logSystem(
@@ -380,6 +396,11 @@ export async function runTribunalVote(
           vote.decisionId,
         ),
       ]);
+      resolveActionStrategyCandidate(
+        agent,
+        vote,
+        vote.strategyGameplayAccepted !== false,
+      );
       const targetName = gameState.getPlayerName(vote.target);
       const transcriptThinking = transcriptThinkingFor(agent, vote.thinking, vote.reasoningContext);
       logger.logSystem(

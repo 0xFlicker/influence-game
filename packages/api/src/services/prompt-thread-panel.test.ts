@@ -74,17 +74,20 @@ const realWorkerRoster = [
 
 function realWorkerContinuity(playerId: string, playerName: string) {
   return {
-    version: 1,
+    version: 2,
     playerId,
     playerName,
-    strategyPacket: null,
-    reflectionSummary: null,
+    compactStrategy: {
+      lifecycle: "opening",
+      baseline: null,
+      deltas: [],
+      priorEpoch: null,
+      revision: 0,
+    },
     notes: [],
     relationships: { allies: [], threats: [] },
     powerActionMemory: [],
     roundHistory: [],
-    recentStrategicDecisions: [],
-    strategyPacketRevisionCounter: 0,
   };
 }
 
@@ -116,7 +119,7 @@ function realWorkerIntent(actorId: string, other: string, round: number) {
         openingAsk: `Ask ${other} what changed`,
         strategicLens: "broad_read",
         strategicLensRationale: "Use the room to compare reads.",
-        decisionLog: `Keep ${other} close for this vote.`,
+        strategyDelta: `Keep ${other} close for this vote.`,
         thinking: "fixture intent",
       },
     },
@@ -1095,7 +1098,7 @@ function generatedSpeechOutput(message: string) {
     proposedAction: null,
     commitment: null,
     noProposalReason: null,
-    decisionLog: `Recorded ${message}`,
+    strategyDelta: `Recorded ${message}`,
     thinking: `Thinking about ${message}`,
   };
 }

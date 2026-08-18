@@ -22,7 +22,6 @@ import { TranscriptLogger } from "../transcript-logger";
 import type {
   PhaseContext,
   RecallContinuitySnapshot,
-  StrategyPacketSummary,
   TranscriptEntry,
 } from "../game-runner.types";
 import { Phase } from "../types";
@@ -32,39 +31,15 @@ const ALICE = "alice" as UUID;
 const BOB = "bob" as UUID;
 const CHARLIE = "charlie" as UUID;
 
-function strategyPacket(): StrategyPacketSummary {
-  return {
-    revisionId: "rev-replay-1",
-    previousRevisionId: null,
-    updatedAtRound: 2,
-    updatedAtPhase: Phase.VOTE,
-    objective: "Hold the Alice-Bob pair through the next vote",
-    targetPosture: "Pressure Charlie if he drifts",
-    coalitionPosture: "Locked pair",
-    nextSocialProbe: "Confirm Bob still commits",
-    strategicLens: "coalition_geometry",
-    strategicLensRationale: "Pair integrity",
-    uncertainty: "Whether Charlie has a side deal",
-    reviseTrigger: "If Bob flips publicly",
-    changedSincePrevious: "initial",
-  };
-}
-
 function continuity(): RecallContinuitySnapshot {
   return {
-    strategyPacket: strategyPacket(),
-    reflectionSummary: null,
-    recentStrategicDecisions: [
-      {
-        round: 2,
-        phase: Phase.VOTE,
-        action: "empower",
-        label: "Empower ballot",
-        decisionLog: "Empowered Bob to keep the pair chooser seat",
-      },
-    ],
-    strategicEvidenceVersion: 1,
-    strategyPacketRevisionCounter: 1,
+    compactStrategy: {
+      lifecycle: "active",
+      baseline: "Hold the Alice-Bob pair through the next vote; pressure Charlie only if current evidence warrants it.",
+      deltas: ["Confirm whether Bob still honors the commitment."],
+      priorEpoch: null,
+      revision: 2,
+    },
   };
 }
 

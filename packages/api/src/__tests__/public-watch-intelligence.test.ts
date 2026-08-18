@@ -20,7 +20,7 @@ describe("getPublicWatchIntelligence", () => {
     db = await setupTestDB();
   });
 
-  test("returns selected-player thinking, strategy, and canonical receipts without private fields", async () => {
+  test("returns selected-player thinking and canonical receipts without compact strategy fields", async () => {
     const gameId = await seedGameWithPlayers(db, "watch-intelligence-public");
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createResolvedRoundCanonicalEventFixture(gameId);
@@ -48,8 +48,11 @@ describe("getPublicWatchIntelligence", () => {
       action: "vote",
       eventSequence: events[3]?.sequence ?? 3,
       payload: {
-        decisionLog: "Back Mira publicly while keeping Echo from feeling isolated.",
-        strategicLens: "Stay useful to two voting blocs.",
+        stage: "proposal",
+        strategyCandidate: {
+          operation: "delta",
+          submittedValue: "COMPACT_STRATEGY_SENTINEL",
+        },
         rawProviderResponse: "RAW_RESPONSE_SENTINEL",
         sourcePointers: [{ key: "TRACE_POINTER_SENTINEL" }],
       },
@@ -104,13 +107,10 @@ describe("getPublicWatchIntelligence", () => {
         "Transcript-level thought is still viewer-facing.",
       ]),
     );
-    expect(result.intelligence.strategy.status).toBe("available");
-    expect(result.intelligence.strategy.cards.map((card) => card.text)).toEqual(
-      expect.arrayContaining([
-        "Back Mira publicly while keeping Echo from feeling isolated.",
-        "Stay useful to two voting blocs.",
-      ]),
-    );
+    expect(result.intelligence.strategy).toMatchObject({
+      status: "unavailable",
+      cards: [],
+    });
     expect(result.intelligence.receipts.status).toBe("available");
     expect(result.intelligence.receipts.canonicalGameFacts.availability).toMatchObject({
       canonicalFactsStatus: "available",
@@ -127,6 +127,8 @@ describe("getPublicWatchIntelligence", () => {
     expect(serialized).not.toContain("RAW_RESPONSE_SENTINEL");
     expect(serialized).not.toContain("TRACE_POINTER_SENTINEL");
     expect(serialized).not.toContain("REASONING_ARTIFACT_SENTINEL");
+    expect(serialized).not.toContain("COMPACT_STRATEGY_SENTINEL");
+    expect(serialized).not.toContain("strategyCandidate");
     expect(serialized).not.toContain("payload");
   });
 
@@ -317,7 +319,7 @@ describe("getPublicWatchIntelligence", () => {
     expect(JSON.stringify(result)).not.toContain("This should wait");
   });
 
-  test("renders structured strategy packets and prevents repeated decision logs from crowding the section", async () => {
+  test("never exposes compact strategy state through public watch", async () => {
     const gameId = await seedGameWithPlayers(db, "watch-intelligence-strategy-packet");
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createResolvedRoundCanonicalEventFixture(gameId);
@@ -337,21 +339,10 @@ describe("getPublicWatchIntelligence", () => {
       phase: "COUNCIL",
       eventSequence: sequenceFromEnd(1),
       payload: {
-        decisionLog: "Keep final words brief and do not name a fresh target.",
-        strategyPacketSummary: {
-          revisionId: "r1-introduction-1",
-          previousRevisionId: null,
-          updatedAtRound: 1,
-          updatedAtPhase: "INTRODUCTION",
-          objective: "Build rapport while identifying one reliable collaborator.",
-          targetPosture: "No named target yet.",
-          coalitionPosture: "Stay close to Mira without sounding locked.",
-          nextSocialProbe: "Ask Bob for one concrete loyalty signal.",
-          strategicLens: "coalition_geometry",
-          strategicLensRationale: "Early room shape matters more than vote math.",
-          uncertainty: "Bob may be mirroring the room.",
-          reviseTrigger: "Mira stops reciprocating trust.",
-          changedSincePrevious: "First packet.",
+        stage: "proposal",
+        strategyCandidate: {
+          operation: "replace",
+          submittedValue: "PRIVATE_BASELINE_SENTINEL",
         },
       },
     });
@@ -364,9 +355,11 @@ describe("getPublicWatchIntelligence", () => {
       phase: "MINGLE",
       eventSequence: sequenceFromEnd(2),
       payload: {
-        decisionLog: "Open a soft Bob conversation without committing.",
-        strategicLens: "coalition_geometry",
-        strategicLensRationale: "Bob and Mira are the likely hinge relationships.",
+        stage: "proposal",
+        strategyCandidate: {
+          operation: "delta",
+          submittedValue: "PRIVATE_DELTA_SENTINEL",
+        },
       },
     });
     await insertArtifact(db, {
@@ -378,7 +371,8 @@ describe("getPublicWatchIntelligence", () => {
       phase: "MINGLE",
       eventSequence: sequenceFromEnd(3),
       payload: {
-        decisionLog: "Repeat a low-risk Bob probe.",
+        lifecycle: "repair_required",
+        diagnostic: "PRIVATE_REPAIR_DIAGNOSTIC_SENTINEL",
       },
     });
     await insertArtifact(db, {
@@ -390,7 +384,7 @@ describe("getPublicWatchIntelligence", () => {
       phase: "MINGLE",
       eventSequence: sequenceFromEnd(4),
       payload: {
-        decisionLog: "Keep options open and avoid hard targets.",
+        priorEpoch: "PRIVATE_PRIOR_EPOCH_SENTINEL",
       },
     });
 
@@ -404,17 +398,21 @@ describe("getPublicWatchIntelligence", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) throw new Error("Expected ok result");
-    const strategyCards = result.intelligence.strategy.cards;
-    expect(strategyCards.map((card) => card.title)).toEqual([
-      "Decision Log",
-      "Strategy Packet",
-      "Strategic Lens",
-      "Lens Rationale",
-    ]);
-    expect(strategyCards.find((card) => card.title === "Strategy Packet")?.text).toContain(
-      "Objective: Build rapport while identifying one reliable collaborator.",
-    );
-    expect(strategyCards.filter((card) => card.title === "Decision Log")).toHaveLength(1);
+    expect(result.intelligence.strategy).toMatchObject({
+      status: "unavailable",
+      cards: [],
+    });
+    const serialized = JSON.stringify(result);
+    for (const sentinel of [
+      "PRIVATE_BASELINE_SENTINEL",
+      "PRIVATE_DELTA_SENTINEL",
+      "PRIVATE_REPAIR_DIAGNOSTIC_SENTINEL",
+      "PRIVATE_PRIOR_EPOCH_SENTINEL",
+      "strategyCandidate",
+      "priorEpoch",
+    ]) {
+      expect(serialized).not.toContain(sentinel);
+    }
   });
 
   test("does not leak same-round future phase intelligence into an earlier replay phase", async () => {

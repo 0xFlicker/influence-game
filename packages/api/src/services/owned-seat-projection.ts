@@ -4,7 +4,7 @@ import {
   resolveModelSelection,
   resolveToolChoiceMode,
 } from "@influence/engine";
-import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import {
@@ -427,23 +427,6 @@ export async function assertUnownedSeatAdmissionInTransaction(
   }
   assertNameAvailable(players, input.name);
   return game;
-}
-
-/** A generated House persona may only enrich an unfrozen House seat. */
-export async function updateWaitingHouseSeatPersonaInTransaction(
-  tx: DrizzleTransaction,
-  input: { gameId: string; playerId: string; persona: string },
-): Promise<boolean> {
-  await lockWaitingGameForRosterWrite(tx, input.gameId);
-  const updated = await tx.update(schema.gamePlayers)
-    .set({ persona: input.persona })
-    .where(and(
-      eq(schema.gamePlayers.id, input.playerId),
-      eq(schema.gamePlayers.gameId, input.gameId),
-      isNull(schema.gamePlayers.agentProfileId),
-    ))
-    .returning({ id: schema.gamePlayers.id });
-  return updated.length === 1;
 }
 
 /**

@@ -574,7 +574,6 @@ describe("GameRunner canonical events", () => {
       mingleSessionsPerRound: 1,
       maxDiaryFollowUps: 0,
       diaryRoomAfterPhases: [],
-      enableStrategicReflections: false,
       formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
     }, undefined, {
       durableEventSink: (events) => {
@@ -675,10 +674,13 @@ describe("GameRunner canonical events", () => {
     const logger = new TranscriptLogger(resumed);
     const builder = new ContextBuilder(resumed, logger, new Map(), 3);
     const emptyContinuity = {
-      strategyPacket: null,
-      reflectionSummary: null,
-      recentStrategicDecisions: [],
-      strategicEvidenceVersion: 0,
+      compactStrategy: {
+        lifecycle: "opening" as const,
+        baseline: null,
+        deltas: [],
+        priorEpoch: null,
+        revision: 0,
+      },
     };
     const alicePlan = compileRecallPlan({
       actorId: "alice" as UUID,
@@ -696,5 +698,44 @@ describe("GameRunner canonical events", () => {
     });
     expect(alicePlan.protected.huddleOutcomes.map((o) => o.id)).toEqual(["outcome-ab"]);
     expect(caraPlan.protected.huddleOutcomes).toEqual([]);
+  });
+
+  it("replays canonical state identically whether private compact strategy exists or not", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "cara", name: "Cara" },
+      ],
+      { gameId: "game-private-strategy-replay", now: fixedClock() },
+    );
+    gs.startRound();
+    const events = gs.getCanonicalEvents();
+    const context = new ContextBuilder(
+      gs,
+      new TranscriptLogger(gs),
+      new Map(),
+      3,
+    ).buildPhaseContext("alice", Phase.VOTE);
+    const before = replayCanonicalEvents(events);
+
+    compileRecallPlan({
+      actorId: "alice" as UUID,
+      promptClass: "strategic_decision",
+      continuity: {
+        compactStrategy: {
+          lifecycle: "active",
+          baseline: "Keep Bob close while checking Cara's public commitments.",
+          deltas: ["Ask Bob for one concrete vote promise."],
+          priorEpoch: null,
+          revision: 2,
+        },
+      },
+      phaseContext: context,
+      transcript: [],
+    });
+
+    expect(gs.getCanonicalEvents()).toEqual(events);
+    expect(replayCanonicalEvents(events)).toEqual(before);
   });
 });

@@ -1711,41 +1711,24 @@ describe("Game REST API", () => {
 
   describe("POST /api/games/:id/fill", () => {
     test("returns fill state for refresh without broadcasting operational player frames", async () => {
-      const envKeys = [
-        "INFLUENCE_LLM_BASE_URL",
-        "OPENAI_BASE_URL",
-        "LM_STUDIO_BASE_URL",
-        "INFLUENCE_LLM_API_KEY",
-        "OPENAI_API_KEY",
-        "LM_STUDIO_API_KEY",
-      ] as const;
-      const savedEnv = new Map<string, string | undefined>(
-        envKeys.map((key) => [key, process.env[key]]),
-      );
-      for (const key of envKeys) {
-        delete process.env[key];
-      }
+      const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
+      await joinTestPlayer(app, id, "Atlas", userToken);
+
+      const published: Array<{ topic: string; data: string }> = [];
+      setServer({
+        publish(topic: string, data: string) {
+          published.push({ topic, data });
+        },
+      });
 
       try {
-        const { id } = await createTestGame(app, adminToken, { playerCount: 6 });
-        await joinTestPlayer(app, id, "Atlas", userToken);
-
-        const published: Array<{ topic: string; data: string }> = [];
-        setServer({
-          publish(topic: string, data: string) {
-            published.push({ topic, data });
-          },
-        });
-
         const res = await app.request(`/api/games/${id}/fill`, authPost(adminToken));
-        expect(res.status).toBe(202);
+        expect(res.status).toBe(200);
         const body = (await res.json()) as {
-          filling: true;
           filled: number;
           totalPlayers: number;
           players: Array<{ id: string; name: string; archetype: string }>;
         };
-        expect(body.filling).toBe(true);
         expect(body.filled).toBe(5);
         expect(body.totalPlayers).toBe(6);
         expect(body.players).toHaveLength(5);
@@ -1761,15 +1744,17 @@ describe("Game REST API", () => {
           .where(eq(schema.gamePlayers.gameId, id));
         expect(filledPlayers.map((player) => JSON.parse(player.agentConfig).model))
           .toEqual(Array(6).fill("gpt-5.6-luna"));
+        const housePlayers = filledPlayers.filter((player) => player.userId === null);
+        expect(housePlayers).toHaveLength(5);
+        expect(housePlayers.every((player) => {
+          const persona = JSON.parse(player.persona) as {
+            personalityBlurb?: string;
+            strategyHints?: string;
+          };
+          return Boolean(persona.personalityBlurb && persona.strategyHints);
+        })).toBe(true);
       } finally {
         setServer({ publish() {} });
-        for (const [key, value] of savedEnv) {
-          if (value === undefined) {
-            delete process.env[key];
-          } else {
-            process.env[key] = value;
-          }
-        }
       }
     });
 
@@ -1785,7 +1770,7 @@ describe("Game REST API", () => {
       await joinTestPlayer(app, id, "Atlas", userToken);
 
       const res = await app.request(`/api/games/${id}/fill`, authPost(adminToken));
-      expect(res.status).toBe(202);
+      expect(res.status).toBe(200);
 
       const players = await db
         .select()

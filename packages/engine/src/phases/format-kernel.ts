@@ -34,6 +34,7 @@ import type {
   EliminationVoteDisclosure,
   FormatDecisionFallbackReason,
   FormatDecisionProvenance,
+  StrategicDecisionMetadata,
 } from "../game-runner.types";
 import { Phase, type UUID } from "../types";
 import { handleElimination } from "./elimination";
@@ -41,6 +42,7 @@ import {
   agentTurnSourcePointer,
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   type PhaseActor,
   type PhaseRunnerContext,
@@ -220,7 +222,7 @@ export async function runFormatPickPhase(
   let chosen: LaunchFormatId = offeredFormats[0]!;
   let thinking = "House fallback: first offered format";
   let reasoningContext: string | undefined;
-  let decisionLog: string | null | undefined;
+  let strategyMetadata: StrategicDecisionMetadata = {};
   let decisionId: UUID | undefined;
   let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -255,7 +257,7 @@ export async function runFormatPickPhase(
       }
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
-      decisionLog = result.decisionLog;
+      strategyMetadata = result;
     }
   }
 
@@ -281,6 +283,11 @@ export async function runFormatPickPhase(
       decisionId,
     ),
   ]);
+  resolveActionStrategyCandidate(
+    empoweredAgent,
+    strategyMetadata,
+    provenance.decisionSource === "llm",
+  );
 
   const sheet = ruleSheetForFormat(chosen);
   logger.logSystem(
@@ -297,7 +304,7 @@ export async function runFormatPickPhase(
       offeredFormats,
       selectedFormat: chosen,
       ...provenance,
-      ...strategicDecisionResponse({ decisionLog }),
+      ...strategicDecisionResponse(strategyMetadata),
     },
     thinking,
     reasoningContext,
@@ -429,7 +436,7 @@ async function resolveSaveOrEliminateRound(
     let targetId = others[others.length - 1] ?? others[0] ?? player.id;
     let thinking = "fallback eliminate first other";
     let reasoningContext: string | undefined;
-    let decisionLog: string | null | undefined;
+    let strategyMetadata: StrategicDecisionMetadata = {};
     let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -459,12 +466,12 @@ async function resolveSaveOrEliminateRound(
         if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        strategyMetadata = result;
       } else {
         provenance = fallbackFormatProvenance("invalid_save_or_eliminate_ballot");
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        strategyMetadata = result;
       }
     }
 
@@ -486,6 +493,11 @@ async function resolveSaveOrEliminateRound(
         decisionId,
       ),
     ]);
+    resolveActionStrategyCandidate(
+      agent,
+      strategyMetadata,
+      provenance.decisionSource === "llm",
+    );
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -498,7 +510,7 @@ async function resolveSaveOrEliminateRound(
         targetName,
         sealed: true,
         ...provenance,
-        ...strategicDecisionResponse({ decisionLog }),
+        ...strategicDecisionResponse(strategyMetadata),
       },
       thinking,
       reasoningContext,
@@ -574,8 +586,8 @@ async function resolveSaveOrEliminateRound(
 interface SealedElimDecisionRecord {
   thinking: string;
   reasoningContext?: string;
-  decisionLog?: string | null;
   decisionId?: UUID;
+  strategyMetadata: StrategicDecisionMetadata;
   provenance: FormatDecisionProvenance;
 }
 
@@ -629,6 +641,7 @@ async function resolveSealedElimFormatRound(
       let targetId = fallbackTargetId;
       let decision: SealedElimDecisionRecord = {
         thinking: registration.decision.fallbackThinking,
+        strategyMetadata: {},
         provenance: fallbackFormatProvenance("agent_method_unavailable"),
       };
 
@@ -658,8 +671,8 @@ async function resolveSealedElimFormatRound(
         decision = {
           thinking: result.thinking ?? decision.thinking,
           reasoningContext: result.reasoningContext,
-          decisionLog: result.decisionLog,
           decisionId: provenance.decisionSource === "llm" ? result.decisionId : undefined,
+          strategyMetadata: result,
           provenance,
         };
       }
@@ -695,6 +708,11 @@ async function resolveSealedElimFormatRound(
           decisionId,
         ),
       ]);
+      resolveActionStrategyCandidate(
+        ctx.agents.get(ballot.voterId)!,
+        decision.strategyMetadata,
+        provenance.decisionSource === "llm",
+      );
       logger.emitAgentTurn({
         phase: Phase.FORMAT_RESOLVE,
         action: "format-ballot",
@@ -706,7 +724,7 @@ async function resolveSealedElimFormatRound(
           targetName,
           sealed: true,
           ...provenance,
-          ...strategicDecisionResponse({ decisionLog: decision.decisionLog }),
+          ...strategicDecisionResponse(decision.strategyMetadata),
         },
         thinking: decision.thinking,
         reasoningContext: decision.reasoningContext,
@@ -841,7 +859,7 @@ async function resolveSafetyBounceRound(
     let targetId = board.unclassified[0]!;
     let thinking = "fallback first unclassified";
     let reasoningContext: string | undefined;
-    let decisionLog: string | null | undefined;
+    let strategyMetadata: StrategicDecisionMetadata = {};
     let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -880,7 +898,7 @@ async function resolveSafetyBounceRound(
         }
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        strategyMetadata = result;
       }
     }
 
@@ -903,6 +921,11 @@ async function resolveSafetyBounceRound(
         ),
       ],
     );
+    resolveActionStrategyCandidate(
+      agent,
+      strategyMetadata,
+      provenance.decisionSource === "llm",
+    );
     logger.logSystem(
       `Bounce: ${gameState.getPlayerName(actorId)} → ${gameState.getPlayerName(targetId)} (${classification})`,
       Phase.FORMAT_RESOLVE,
@@ -916,7 +939,7 @@ async function resolveSafetyBounceRound(
         targetId,
         classification,
         ...provenance,
-        ...strategicDecisionResponse({ decisionLog }),
+        ...strategicDecisionResponse(strategyMetadata),
       },
       thinking,
       reasoningContext,
@@ -974,7 +997,7 @@ async function resolveSafetyBounceRound(
     let targetId = board.vulnerable[board.vulnerable.length - 1] ?? board.vulnerable[0]!;
     let thinking = "fallback first vulnerable";
     let reasoningContext: string | undefined;
-    let decisionLog: string | null | undefined;
+    let strategyMetadata: StrategicDecisionMetadata = {};
     let decisionId: UUID | undefined;
     let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -1002,12 +1025,12 @@ async function resolveSafetyBounceRound(
         if (provenance.decisionSource === "llm") decisionId = result.decisionId;
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        strategyMetadata = result;
       } else {
         provenance = fallbackFormatProvenance("invalid_safety_bounce_target");
         thinking = result.thinking ?? thinking;
         reasoningContext = result.reasoningContext;
-        decisionLog = result.decisionLog;
+        strategyMetadata = result;
       }
     }
 
@@ -1029,6 +1052,11 @@ async function resolveSafetyBounceRound(
         decisionId,
       ),
     ]);
+    resolveActionStrategyCandidate(
+      agent,
+      strategyMetadata,
+      provenance.decisionSource === "llm",
+    );
     logger.emitAgentTurn({
       phase: Phase.FORMAT_RESOLVE,
       action: "format-ballot",
@@ -1040,7 +1068,7 @@ async function resolveSafetyBounceRound(
         targetName,
         sealed: true,
         ...provenance,
-        ...strategicDecisionResponse({ decisionLog }),
+        ...strategicDecisionResponse(strategyMetadata),
       },
       thinking,
       reasoningContext,
@@ -1169,7 +1197,7 @@ async function breakFormatTie(
   let choiceId = tiedSet[0]!;
   let thinking = "fallback first tied";
   let reasoningContext: string | undefined;
-  let decisionLog: string | null | undefined;
+  let strategyMetadata: StrategicDecisionMetadata = {};
   let decisionId: UUID | undefined;
   let provenance = fallbackFormatProvenance("agent_method_unavailable");
 
@@ -1197,19 +1225,25 @@ async function breakFormatTie(
       if (provenance.decisionSource === "llm") decisionId = result.decisionId;
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
-      decisionLog = result.decisionLog;
+      strategyMetadata = result;
     } else {
       provenance = fallbackFormatProvenance("invalid_format_tiebreak_target");
       thinking = result.thinking ?? thinking;
       reasoningContext = result.reasoningContext;
-      decisionLog = result.decisionLog;
+      strategyMetadata = result;
     }
   }
 
+  await assertCanAcceptCommit(ctx);
   const broken = applyFormatTiebreak(tiedSet, choiceId);
   if (!broken || broken.kind !== "clear" || !broken.eliminatedId) {
     throw new Error("Format tiebreak failed");
   }
+  resolveActionStrategyCandidate(
+    agent,
+    strategyMetadata,
+    provenance.decisionSource === "llm",
+  );
 
   logger.logSystem(
     `Empowered tiebreak: ${gameState.getPlayerName(empoweredId)} eliminates ${gameState.getPlayerName(broken.eliminatedId)} among ${tiedSet.map((id) => gameState.getPlayerName(id)).join(", ")}`,
@@ -1224,7 +1258,7 @@ async function breakFormatTie(
       tiedSet: [...tiedSet],
       eliminatedId: broken.eliminatedId,
       ...provenance,
-      ...strategicDecisionResponse({ decisionLog }),
+      ...strategicDecisionResponse(strategyMetadata),
     },
     thinking,
     reasoningContext,

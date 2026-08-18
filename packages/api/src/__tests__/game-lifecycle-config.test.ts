@@ -37,6 +37,16 @@ describe("game lifecycle engine config", () => {
     expect("whisper" in config.timers).toBeFalse();
   });
 
+  test("does not restore the removed strategic-reflection switch from stored config", () => {
+    const config = buildEngineConfigFromGameRecord(
+      { enableStrategicReflections: true },
+      4,
+      8,
+    );
+
+    expect("enableStrategicReflections" in config).toBeFalse();
+  });
+
   test("forwards sealed House Strategy Bible configuration from the game record", () => {
     const config = buildEngineConfigFromGameRecord(
       {

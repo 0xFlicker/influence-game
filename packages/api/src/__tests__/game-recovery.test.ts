@@ -2,6 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { and, asc, eq } from "drizzle-orm";
 import {
   DEFAULT_CONFIG,
+  createOpeningStrategyState,
   GameRunner,
   GameState,
   Phase,
@@ -19,7 +20,6 @@ import {
   type PlayerContinuityCapsule,
   type PowerAction,
   type StrategicDecisionMetadata,
-  type StrategicReflectionAction,
   type TargetDecision,
   type UUID,
 } from "@influence/engine";
@@ -110,15 +110,12 @@ class RecoverySmokeAgent implements IAgent {
   async onPhaseStart(): Promise<void> {}
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> {
     return {
-      version: 1,
-      strategyPacket: null,
-      reflectionSummary: null,
+      version: 2,
+      compactStrategy: createOpeningStrategyState(),
       notes: [],
       relationships: { allies: [], threats: [] },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: [],
-      strategyPacketRevisionCounter: 0,
     };
   }
   restoreContinuityCapsule(_capsule: PlayerContinuityCapsule): void {}
@@ -216,18 +213,6 @@ class RecoverySmokeAgent implements IAgent {
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
     return { target: finalistIds[0], thinking: "startup recovery jury vote" };
   }
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    return {
-      certainties: [],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "startup recovery plan",
-      strategicLens: "broad_read",
-      strategicLensRationale: "startup recovery broad reflection",
-      thinking: "startup recovery strategic reflection",
-    };
-  }
 
   updateAlly(_playerName: string): void {}
   updateThreat(_playerName: string): void {}
@@ -278,7 +263,6 @@ async function interruptGameAtBoundary(
   options: {
     config?: GameConfig & Record<string, unknown>;
     playerCount?: number;
-    requireBlockedMingleInbox?: boolean;
     writeUnsupportedNewerCheckpoint?: string;
     preferSafetyBounceFromRound?: number;
     gameIdSuffix?: string;
@@ -318,10 +302,6 @@ async function interruptGameAtBoundary(
         checkpoint.runtimeSnapshot?.actorWitness.actorCoordinate === actorCoordinate &&
         checkpoint.lastEventSequence > 0
       ) {
-        const hasBlockedMingleInbox = checkpoint.runtimeSnapshot.accumulatorRegistry.entries.some((entry) =>
-          entry.id === "mingleInbox" && entry.status === "blocked"
-        );
-        if (options.requireBlockedMingleInbox && !hasBlockedMingleInbox) return;
         interruptedAtSequence = checkpoint.lastEventSequence;
         if (options.writeUnsupportedNewerCheckpoint) {
           const unsupportedCheckpoint = structuredClone(checkpoint);
@@ -755,42 +735,6 @@ describe("game startup recovery", () => {
       .where(eq(schema.gameResults.gameId, gameId))).toHaveLength(0);
   });
 
-  test("startup recovery resumes from a boundary with reconstructable Mingle inbox messages", async () => {
-    // vote still sits after Mingle I; inbox rebuild must include MINGLE_I room speech.
-    const { gameId, ownerEpoch, interruptedAtSequence } = await interruptGameAtBoundary(db, "vote", {
-      config: recoveryConfigWithMingle,
-      playerCount: 6,
-      requireBlockedMingleInbox: true,
-    });
-
-    const candidate = await getSupportedRecovery(db, gameId);
-    expect(candidate.ok).toBeTrue();
-    if (!candidate.ok) throw new Error(`expected recovery support, got ${candidate.reason}`);
-    expect(candidate.resumeFrom.mingleInboxReplay?.entries.length).toBeGreaterThan(0);
-    expect(candidate.resumeFrom.mingleInboxReplay?.unresolvedRecipientNames).toEqual([]);
-    expect(candidate.resumeFrom.actorCoordinate).toBe("vote");
-
-    const suspendedInspection = await getDurableRunInspection(db, gameId);
-    expect(suspendedInspection.ok).toBeTrue();
-    if (!suspendedInspection.ok) throw new Error("durable inspection failed");
-    const supportedBoundary = findCheckpointBoundary(suspendedInspection, {
-      lastEventSequence: interruptedAtSequence,
-      actorCoordinate: "vote",
-    });
-    expect(supportedBoundary?.resumeAvailable).toBeTrue();
-
-    const recovery = await recoverGamesOnStartup(db);
-    expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
-
-    await assertRecoveredGameCompleted({
-      db,
-      gameId,
-      originalOwnerEpoch: ownerEpoch,
-      interruptedAtSequence,
-      expectedIntroductionCount: 6,
-    });
-  }, 60000);
-
   test("startup recovery fails closed for retired pre-format social and classic Power→Council coordinates", async () => {
     // Coordinates remain listed on PHASE_BOUNDARY for type/hydration forensics, but resume is fail-closed.
     for (const actorCoordinate of ["mingle_i", "pre_vote_huddle", "post_vote_mingle", "power", "reveal", "pre_council_huddle", "council"] as const) {
@@ -969,12 +913,19 @@ describe("game startup recovery", () => {
   });
 
   test("startup recovery resumes Safety Bounce format_resolve without pre-checkpoint bounce facts", async () => {
-    // Round 1: force a non-Safety-Bounce selection so anti-repeat guarantees Safety Bounce
-    // is offered in Round 2. Interrupt at the Round 2 format_resolve phase-entry boundary.
+    // Freeze this fixture to two formats so both are offered in each round. The
+    // agent chooses Save or Eliminate in round 1 and Safety Bounce in round 2.
+    const safetyBounceRecoveryConfig = {
+      ...recoveryConfigWithMingle,
+      formatManifest: [
+        "save_or_eliminate",
+        "safety_bounce",
+      ] satisfies LaunchFormatId[],
+    };
     const bounceGameId = await insertGame(db, {
       id: "startup-recovery-format_resolve-safety-bounce",
       status: "in_progress",
-      config: recoveryConfigWithMingle,
+      config: safetyBounceRecoveryConfig,
     });
     const bounceOwnerEpoch = await insertOwner(db, bounceGameId);
     const agents = await insertRecoveryPlayers(db, bounceGameId, 6, {
@@ -985,7 +936,7 @@ describe("game startup recovery", () => {
 
     let interruptedAt = 0;
     let runner: GameRunner | null = null;
-    runner = new GameRunner(agents, recoveryConfigWithMingle, new TemplateHouseInterviewer(), {
+    runner = new GameRunner(agents, safetyBounceRecoveryConfig, new TemplateHouseInterviewer(), {
       gameId: bounceGameId,
       tokenTracker,
       durableEventSink: async (events) => {
@@ -1214,12 +1165,30 @@ describe("game startup recovery", () => {
       checkpoint.playerContinuityCapsules = [];
     })).toMatchObject({ ok: false, reason: "player_continuity_missing" });
 
-    expect(await seedAndEvaluate("unsupported-version", (checkpoint) => {
+    expect(await seedAndEvaluate("v1", (checkpoint) => {
       checkpoint.playerContinuityCapsules = (checkpoint.playerContinuityCapsules ?? []).map((capsule) => ({
         ...capsule,
-        version: 99 as unknown as 1,
+        version: 1 as unknown as 2,
       }));
     })).toMatchObject({ ok: false, reason: "player_continuity_unsupported_version" });
+
+    expect(await seedAndEvaluate("partial", (checkpoint) => {
+      checkpoint.playerContinuityCapsules = (checkpoint.playerContinuityCapsules ?? []).slice(0, -1);
+    })).toMatchObject({ ok: false, reason: "player_continuity_coverage_mismatch" });
+
+    expect(await seedAndEvaluate("duplicate", (checkpoint) => {
+      const capsules = checkpoint.playerContinuityCapsules ?? [];
+      checkpoint.playerContinuityCapsules = [...capsules, capsules[0]!];
+    })).toMatchObject({ ok: false, reason: "player_continuity_duplicate" });
+
+    expect(await seedAndEvaluate("obsolete-field", (checkpoint) => {
+      const capsules = [...(checkpoint.playerContinuityCapsules ?? [])];
+      capsules[0] = {
+        ...capsules[0]!,
+        strategyPacket: null,
+      } as typeof capsules[0];
+      checkpoint.playerContinuityCapsules = capsules;
+    })).toMatchObject({ ok: false, reason: "player_continuity_malformed" });
 
     expect(await seedAndEvaluate("identity-mismatch", (checkpoint) => {
       const capsules = [...(checkpoint.playerContinuityCapsules ?? [])];
@@ -1231,17 +1200,14 @@ describe("game startup recovery", () => {
       checkpoint.playerContinuityCapsules = [
         ...(checkpoint.playerContinuityCapsules ?? []),
         {
-          version: 1,
+          version: 2,
           playerId: "extra",
           playerName: "Extra",
-          strategyPacket: null,
-          reflectionSummary: null,
+          compactStrategy: createOpeningStrategyState(),
           notes: [],
           relationships: { allies: [], threats: [] },
           powerActionMemory: [],
           roundHistory: [],
-          recentStrategicDecisions: [],
-          strategyPacketRevisionCounter: 0,
         },
       ];
     })).toMatchObject({ ok: false, reason: "player_continuity_coverage_mismatch" });
@@ -1265,7 +1231,7 @@ describe("game startup recovery", () => {
     const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
       ownerEpoch,
       eventHeadHash: hashCanonicalEvent(events.at(-1)!),
-      actorCoordinate: "mingle_i",
+      actorCoordinate: "vote",
     });
     checkpoint.transcriptReplay = { version: 2, entries: [] };
     const write = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });

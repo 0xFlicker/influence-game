@@ -38,7 +38,6 @@ export interface SimulatorArgsSnapshot {
   /** Default operator action feed (choices/outcomes, no thinking). */
   operatorFeed?: boolean;
   houseSummaries?: boolean;
-  enableStrategicReflections?: boolean;
   richProducer?: boolean;
   enableDiary?: boolean;
   openAIReasoningSummary?: "auto" | "concise" | "detailed";

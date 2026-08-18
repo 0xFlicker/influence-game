@@ -69,20 +69,17 @@ function seedAgentContinuity(agent: InfluenceAgent, entry: RecallBaselineCase): 
   const continuity = entry.continuity;
   agent.restoreContinuityCapsule(
     {
-      version: 1,
+      version: 2,
       playerId: agent.id,
       playerName: agent.name,
-      strategyPacket: continuity.strategyPacket,
-      reflectionSummary: continuity.reflectionSummary,
+      compactStrategy: continuity.compactStrategy,
       notes: [],
       relationships: {
-        allies: continuity.reflectionSummary?.allies ?? [],
-        threats: continuity.reflectionSummary?.threats ?? [],
+        allies: ["Mira"],
+        threats: ["Vera", "Nyx"],
       },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: continuity.recentStrategicDecisions.map((receipt) => ({ ...receipt })),
-      strategyPacketRevisionCounter: continuity.strategyPacketRevisionCounter ?? 0,
     },
     {
       livingPlayerNames: entry.phaseContext.alivePlayers.map((player) => player.name),
@@ -213,7 +210,7 @@ describe("U5 structural Recall Plan receipt serialization", () => {
     expect(serialized).not.toContain("Coalition geometry");
     expect(serialized).not.toContain("Atlas");
     expect(serialized).not.toContain("Mira");
-    expect(serialized).not.toContain(entry.continuity.strategyPacket?.objective ?? "___objective___");
+    expect(serialized).not.toContain(entry.continuity.compactStrategy.baseline ?? "___baseline___");
 
     expect(structural.eventBoundary).toEqual(plan.receipt.eventBoundary);
     expect(structural.eventBoundary.maxAuthorizedEntrySequence).toBe(11);
@@ -227,7 +224,7 @@ describe("U5 structural Recall Plan receipt serialization", () => {
     const plan = compileCasePlan(entry);
     const aggregate = new RecallPlanReceiptAggregate();
     aggregate.add(plan.receipt);
-    aggregate.add(compileCasePlan(getRecallBaselineCase("strategic_reflection")).receipt);
+    aggregate.add(compileCasePlan(getRecallBaselineCase("post_eviction_diary_strategy")).receipt);
 
     const snapshot = aggregate.snapshot();
     const serialized = JSON.stringify(snapshot);
@@ -258,8 +255,10 @@ describe("U5 late-game promotion gate (frozen corpus)", () => {
       expect(measured.prompt).not.toContain("## Full Public Transcript");
       expect(measured.prompt).not.toContain("## Game Event Record");
       expect(measured.prompt).toContain("## Current Board Contract");
-      // Protected strategy thread + huddle evidence retained in rendered prompt.
-      expect(measured.prompt).toContain("Survive Reckoning and carry Mira into the final two");
+      // Compact strategy state + huddle evidence retained in rendered prompt.
+      expect(measured.prompt).toContain(
+        "Survive Reckoning with Mira as the closest partner while treating Vera as the public threat and Nyx as flexible.",
+      );
       expect(measured.prompt).toContain("Official Alliance Context");
       // Compact huddle plan text from member-safe alliance context (protected lane source).
       expect(measured.prompt).toContain("Publicly soft-talk Vera then ballot Mira empower");
@@ -366,7 +365,13 @@ describe("U5 promotion failures", () => {
       ...plan,
       protected: {
         ...plan.protected,
-        strategyThread: null,
+        compactStrategy: {
+          lifecycle: "opening",
+          baseline: null,
+          deltas: [],
+          priorEpoch: null,
+          revision: 0,
+        },
         huddleOutcomes: [],
       },
       receipt: {
@@ -399,7 +404,7 @@ describe("U5 promotion failures", () => {
   });
 
   it("increased model-call count fails promotion", () => {
-    const entry = getRecallBaselineCase("strategic_reflection");
+    const entry = getRecallBaselineCase("post_eviction_diary_strategy");
     const plan = compileCasePlan(entry);
     const evaluation = evaluateRecallPromotionCase({
       caseId: entry.id,

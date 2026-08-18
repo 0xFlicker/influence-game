@@ -22,7 +22,7 @@ export type OpenAIBudgetGenerationLlm = LlmClientConfig & {
 
 /**
  * Resolve a hosted OpenAI client + model id for budget generation tasks
- * (house-fill persona blurbs, agent-profile AI help, etc.).
+ * such as agent-profile AI help.
  *
  * Returns null when OPENAI_API_KEY is unavailable — callers should fall back
  * to defaults rather than routing the hosted baseline at a local base URL.

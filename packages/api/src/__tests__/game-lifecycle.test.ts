@@ -12,7 +12,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { eq } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { GameRunner, GameState, Phase, projectViewerDecisionEvent } from "@influence/engine";
-import type { AgentResponse, IAgent, MingleIntentAction, PhaseContext, StrategicReflectionAction, TargetDecision } from "@influence/engine";
+import type { AgentResponse, IAgent, MingleIntentAction, PhaseContext, TargetDecision } from "@influence/engine";
 import type { UUID, PowerAction, GameConfig } from "@influence/engine";
 import { setupTestDB } from "./test-utils.js";
 import {
@@ -428,19 +428,6 @@ class LifecycleMockAgent implements IAgent {
   async getJuryVote(_ctx: PhaseContext, finalistIds: [UUID, UUID]): Promise<TargetDecision> {
     return { target: finalistIds[0], thinking: "lifecycle mock jury vote" };
   }
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    return {
-      certainties: [],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "lifecycle mock plan",
-      strategicLens: "broad_read",
-      strategicLensRationale: "lifecycle mock broad reflection",
-      thinking: "lifecycle mock strategic reflection",
-    };
-  }
-
   // Memory methods (no-ops for mock)
   updateAlly(_playerName: string): void { /* no-op */ }
   updateThreat(_playerName: string): void { /* no-op */ }

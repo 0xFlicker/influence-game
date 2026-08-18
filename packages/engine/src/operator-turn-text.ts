@@ -4,7 +4,7 @@
  */
 
 import type { AllianceAction } from "./game-runner.types";
-import type { MingleIntentSummary, StrategicLens } from "./types";
+import type { MingleIntentSummary } from "./types";
 
 function clip(value: string, max = 96): string {
   const trimmed = value.trim().replace(/\s+/g, " ");
@@ -130,7 +130,7 @@ export function formatAllianceActionOperatorText(
       const { membersPart, idPart } = allianceIdentityBits({
         allianceName: action.name,
         memberNames: context?.memberNames?.length ? context.memberNames : action.memberNames,
-        shortId: context?.shortId ?? action.lineageId.slice(0, 8),
+        shortId: context?.shortId ?? (action.action === "counter" ? action.lineageId : action.allianceId).slice(0, 8),
       });
       return `${playerName} alliance ${action.action} "${clip(action.name, 40)}"${idPart}${membersPart} → ${result}`;
     }
@@ -195,27 +195,6 @@ export function formatAllianceHuddleOutcomeOperatorText(params: {
 }): string {
   const name = params.allianceName ? `${params.allianceName}: ` : "";
   return `House huddle outcome — ${name}posture=${params.posture} conf=${params.confidence} | ask=${clip(params.ask, 64)} | plan=${clip(params.plan, 64)}`;
-}
-
-export function formatStrategicReflectionOperatorText(params: {
-  playerName: string;
-  strategicLens: StrategicLens | string;
-  allies: readonly string[];
-  threats: readonly string[];
-  plan: string;
-}): string {
-  return `${params.playerName} reflection: lens=${params.strategicLens} | allies=${listOrNone(params.allies)} | threats=${listOrNone(params.threats)} | plan=${clip(params.plan, 80)}`;
-}
-
-export function formatStrategyPacketOperatorText(params: {
-  playerName: string;
-  objective: string;
-  targetPosture: string;
-  coalitionPosture: string;
-  nextSocialProbe: string;
-  strategicLens: StrategicLens | string;
-}): string {
-  return `${params.playerName} strategy packet: lens=${params.strategicLens} | obj=${clip(params.objective, 56)} | target=${clip(params.targetPosture, 48)} | coal=${clip(params.coalitionPosture, 48)} | probe=${clip(params.nextSocialProbe, 48)}`;
 }
 
 export function formatHouseProducerBriefOperatorText(params: {

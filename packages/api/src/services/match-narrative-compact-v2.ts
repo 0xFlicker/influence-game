@@ -83,17 +83,10 @@ function pickStrategy(members: readonly NarrativeGroupMember[]): NarrativeGroupM
 
 function strategyString(member: NarrativeGroupMember, detail: string): string | undefined {
   const fields = member.fields;
-  if (typeof fields.decisionLog === "string" && fields.decisionLog.length > 0) {
-    return fields.decisionLog;
+  if (typeof fields.strategyValue === "string" && fields.strategyValue.length > 0) {
+    return fields.strategyValue;
   }
-  if (detail === "full") {
-    if (typeof fields.strategicReflectionSummary === "string") {
-      return fields.strategicReflectionSummary;
-    }
-    if (typeof fields.strategyPacketSummary === "string") {
-      return fields.strategyPacketSummary;
-    }
-  }
+  void detail;
   return undefined;
 }
 
@@ -142,9 +135,6 @@ export function encodeCompactV2Groups(
     if (strategy) {
       const s = strategyString(strategy, detail);
       if (s) encoded.strategy = s;
-      if (typeof strategy.fields.strategicLens === "string") {
-        encoded.lens = strategy.fields.strategicLens;
-      }
     }
 
     if (g.relatedActionRefs && g.relatedActionRefs.length > 0) {

@@ -2,6 +2,7 @@ import { Phase } from "../types";
 import {
   assertCanAcceptCommit,
   prepareAgentPhaseContext,
+  resolveActionStrategyCandidate,
   strategicDecisionResponse,
   transcriptThinkingFor,
   type PhaseRunnerContext,
@@ -22,16 +23,22 @@ export async function runIntroductionPhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.INTRODUCTION, "ordinary_speech");
-      const { message, thinking, reasoningContext, decisionLog } = await agent.getIntroduction(phaseCtx);
+      const response = await agent.getIntroduction(phaseCtx);
+      const { message, thinking, reasoningContext } = response;
       await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.INTRODUCTION, transcriptThinking);
+      resolveActionStrategyCandidate(
+        agent,
+        response,
+        response.strategyGameplayAccepted !== false,
+      );
       logger.emitAgentTurn({
         phase: Phase.INTRODUCTION,
         action: "introduction",
         actor: { id: player.id, name: player.name, role: "player" },
         visibility: "public",
-        response: { message, ...strategicDecisionResponse({ decisionLog }) },
+        response: { message, ...strategicDecisionResponse(response) },
         thinking,
         reasoningContext,
         scope: "public",

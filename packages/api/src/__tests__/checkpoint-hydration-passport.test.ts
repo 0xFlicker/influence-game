@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import {
   DEFAULT_CONFIG,
+  createOpeningStrategyState,
   GameRunner,
   Phase,
   TemplateHouseInterviewer,
@@ -11,7 +12,6 @@ import {
   type PhaseContext,
   type PlayerContinuityCapsule,
   type PowerAction,
-  type StrategicReflectionAction,
   type TargetDecision,
   type UUID,
 } from "@influence/engine";
@@ -63,15 +63,12 @@ class PassportProofAgent implements IAgent {
   getContinuityCapsule(): Omit<PlayerContinuityCapsule, "playerId" | "playerName"> | null {
     if (!this.started) return null;
     return {
-      version: 1,
-      strategyPacket: null,
-      reflectionSummary: null,
+      version: 2,
+      compactStrategy: createOpeningStrategyState(),
       notes: [],
       relationships: { allies: [], threats: [] },
       powerActionMemory: [],
       roundHistory: [],
-      recentStrategicDecisions: [],
-      strategyPacketRevisionCounter: 0,
     };
   }
 
@@ -169,18 +166,6 @@ class PassportProofAgent implements IAgent {
     return { target: finalistIds[0], thinking: "passport proof jury vote" };
   }
 
-  async getStrategicReflection(_ctx: PhaseContext): Promise<StrategicReflectionAction> {
-    return {
-      certainties: [],
-      suspicions: [],
-      allies: [],
-      threats: [],
-      plan: "passport proof plan",
-      strategicLens: "broad_read",
-      strategicLensRationale: "passport proof broad reflection",
-      thinking: "passport proof strategic reflection",
-    };
-  }
 
   updateAlly(_playerName: string): void {}
   updateThreat(_playerName: string): void {}

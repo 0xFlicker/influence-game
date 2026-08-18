@@ -122,24 +122,9 @@ describe("cognitive artifact writer", () => {
           credits: 3,
         },
       },
-      decisionLog: "Vera is gaining too much cover, so I am applying pressure.",
-      strategicLens: "vote_math",
-      strategicLensRationale: "The expose and empower incentives make Vera the highest leverage vote.",
-      strategyPacketRevision: "r2-vote-1",
-      strategyPacketSummary: {
-        revisionId: "r2-vote-1",
-        previousRevisionId: "r1-reflection-1",
-        updatedAtRound: 2,
-        updatedAtPhase: Phase.VOTE,
-        objective: "Keep the coalition flexible while testing Vera.",
-        targetPosture: "Pressure Vera unless new evidence clears her.",
-        coalitionPosture: "Stay close to Mira without overcommitting.",
-        nextSocialProbe: "Ask Finn whether Vera promised protection.",
-        strategicLens: "vote_math",
-        strategicLensRationale: "Vote incentives are exposing the real coalition.",
-        uncertainty: "Mira may be shielding Vera.",
-        reviseTrigger: "Vera loses room traffic support.",
-        changedSincePrevious: "The vote board made Vera more central.",
+      strategyCandidate: {
+        operation: "delta",
+        submittedValue: "Vera is gaining too much cover, so I am applying pressure.",
       },
     };
   }
@@ -187,7 +172,9 @@ describe("cognitive artifact writer", () => {
     expect(serializedPayloads).not.toContain("promptTokens");
     expect(serializedPayloads).toContain("I should vote against the unstable coalition.");
     expect(serializedPayloads).toContain("Vera is gaining too much cover");
-    expect(serializedPayloads).toContain("strategyPacketSummary");
+    expect(serializedPayloads).toContain("strategyCandidate");
+    expect(serializedPayloads).toContain('"stage":"proposal"');
+    expect(serializedPayloads).not.toContain("strategyPacketSummary");
     expect(serializedPayloads).not.toContain("SECRET PROMPT SHOULD NOT BE STORED");
     expect(serializedPayloads).not.toContain("RAW RESPONSE SECRET SHOULD NOT BE STORED");
     expect(serializedPayloads).not.toContain("TOOL ARG SECRET SHOULD NOT BE STORED");
@@ -220,11 +207,7 @@ describe("cognitive artifact writer", () => {
       ...traceForPlayer(playerId),
       reasoningContext: undefined,
       emittedThinking: undefined,
-      decisionLog: undefined,
-      strategicLens: undefined,
-      strategicLensRationale: undefined,
-      strategyPacketRevision: undefined,
-      strategyPacketSummary: undefined,
+      strategyCandidate: undefined,
       providerReasoningSummary: {
         provider: "openai_responses",
         mode: "auto",
@@ -266,11 +249,7 @@ describe("cognitive artifact writer", () => {
       reasoningContext: undefined,
       providerReasoningSummary: undefined,
       emittedThinking: "Keep the introduction personable and concrete.",
-      decisionLog: undefined,
-      strategicLens: undefined,
-      strategicLensRationale: undefined,
-      strategyPacketRevision: undefined,
-      strategyPacketSummary: undefined,
+      strategyCandidate: undefined,
     };
 
     const result = await writeCognitiveArtifactsForTrace(db, {
@@ -300,11 +279,7 @@ describe("cognitive artifact writer", () => {
       emittedThinking: "x".repeat(MAX_COGNITIVE_ARTIFACT_PAYLOAD_BYTES + 1),
       reasoningContext: undefined,
       providerReasoningSummary: undefined,
-      decisionLog: undefined,
-      strategicLens: undefined,
-      strategicLensRationale: undefined,
-      strategyPacketRevision: undefined,
-      strategyPacketSummary: undefined,
+      strategyCandidate: undefined,
     };
 
     const result = await writeCognitiveArtifactsForTrace(db, {
