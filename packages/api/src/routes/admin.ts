@@ -31,10 +31,9 @@ import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { tryRefreshGameWatchStateSummary } from "../services/game-watch-state-summary.js";
 import {
   backfillGameCostAccounting,
-  getGameCostDetail,
   getGameCostSummaryMap,
 } from "../services/provider-cost-accounting.js";
-import { getPromptReuseDetail } from "../services/prompt-reuse-accounting.js";
+import { getAdminGameCostDetail } from "../services/admin-game-cost-detail.js";
 import {
   getPostgameHighlightsDiagnostics,
   type PostgameHighlightsReadStatus,
@@ -720,11 +719,11 @@ export function createAdminRoutes(
   });
 
   app.get("/api/admin/games/:idOrSlug/costs", requireAdminRead, async (c) => {
-    const result = await getGameCostDetail(db, c.req.param("idOrSlug"));
+    const result = await getAdminGameCostDetail(db, c.req.param("idOrSlug"));
     if (!result.ok) {
       return c.json({ error: result.error }, result.statusCode);
     }
-    return c.json({ ...result.detail, promptReuse: await getPromptReuseDetail(db, result.detail.gameId) });
+    return c.json(result.detail);
   });
 
   app.get("/api/admin/games/:idOrSlug/postgame/highlights/diagnostics", requireAdminRead, async (c) => {

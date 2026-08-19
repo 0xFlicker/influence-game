@@ -384,6 +384,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
 
     expect(names).toContain("list_games");
     expect(names).toContain("read_producer_season_diagnostics");
+    expect(names).toContain("read_producer_game_cost_detail");
     expect(names).toContain("read_trace_content");
     expect(names).toContain("search_reasoning_traces");
     expect(tools.find((tool) => tool.name === "list_games")?.securitySchemes).toEqual([
@@ -844,6 +845,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "read_producer_season_diagnostics",
       "inspect_durable_run",
       "read_producer_game_analysis",
+      "read_producer_game_cost_detail",
       "read_producer_match_narrative",
       "list_trace_manifests",
       "read_trace_content",
@@ -866,6 +868,16 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const searchTool = tools.find((tool) => (tool as { name: string }).name === "search_reasoning_traces");
     expect(JSON.stringify(searchTool)).not.toContain("maxBytesPerObject");
     expect(JSON.stringify(searchTool)).toContain("maxBytes");
+    const costTool = tools.find(
+      (tool) => (tool as { name: string }).name === "read_producer_game_cost_detail",
+    ) as { inputSchema?: Record<string, unknown>; description?: string } | undefined;
+    expect(costTool?.inputSchema).toMatchObject({
+      type: "object",
+      required: ["gameIdOrSlug"],
+      additionalProperties: false,
+    });
+    expect(costTool?.description).toContain("same provider-cost totals");
+    expect(costTool?.description).toContain("does not create accounting rows");
     const briefTool = tools.find((tool) => (tool as { name: string }).name === "read_game_brief");
     expect(JSON.stringify(briefTool)).toContain("outputSchema");
     expect(JSON.stringify(briefTool)).toContain("finalVote");
@@ -2892,6 +2904,7 @@ function fakeReadModel(
     playerTimeline: async () => ({ events: [] }),
     inspectDurableRun: async () => ({ durableRun: null }),
     readProducerGameAnalysis: async () => ({ schemaVersion: 1, ok: true, producerAnalysis: null }),
+    readProducerGameCostDetail: async () => ({ gameId: "game", state: "no_calls" }),
     listTraceManifests: async () => ({ manifests: [] }),
     readTraceContent: async () => ({ content: "" }),
     searchReasoningTraces: async () => ({ matches: [] }),
