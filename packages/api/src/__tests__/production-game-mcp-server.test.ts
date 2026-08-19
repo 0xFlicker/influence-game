@@ -1032,12 +1032,82 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(juryTool.outputSchema)).toContain("runnerUpSupporters");
     const playerSummaryTool = tools.find((tool) => (tool as { name: string }).name === "read_player_game_summary") as {
       inputSchema: { properties: Record<string, unknown> };
-      outputSchema: unknown;
+      outputSchema: {
+        oneOf: Array<{
+          properties?: {
+            player?: {
+              properties?: {
+                majorityAlignmentByRound?: {
+                  items?: unknown;
+                };
+              };
+            };
+          };
+        }>;
+      };
     };
     expect(playerSummaryTool.inputSchema.properties).not.toHaveProperty("detailLevel");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("formatBallotsCastByRound");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("majorityAlignmentByRound");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("overallGameShape");
+    const majorityAlignmentItem = playerSummaryTool.outputSchema.oneOf[0]?.properties
+      ?.player?.properties?.majorityAlignmentByRound?.items;
+    expect(majorityAlignmentItem).toMatchObject({
+      required: ["round", "empowerAligned", "councilAligned", "aligned", "basis"],
+      properties: {
+        round: { type: "number" },
+        empowerAligned: {
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+        },
+        councilAligned: {
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+        },
+        aligned: {
+          description: "Null means canonical evidence did not prove participation in that scored decision.",
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+        },
+        basis: {
+          type: "array",
+          items: { type: "string", enum: ["empower", "council"] },
+        },
+      },
+    });
+    const producerAnalysisTool = tools.find(
+      (tool) => (tool as { name: string }).name === "read_producer_game_analysis",
+    ) as {
+      outputSchema: {
+        oneOf: Array<{
+          properties?: {
+            producerAnalysis?: {
+              properties?: {
+                playerByPlayerStrategicGrades?: {
+                  items?: {
+                    properties?: {
+                      signals?: {
+                        properties?: Record<string, unknown>;
+                      };
+                    };
+                  };
+                };
+              };
+            };
+          };
+        }>;
+      };
+    };
+    const strategicGradeSignals = producerAnalysisTool.outputSchema.oneOf[0]?.properties
+      ?.producerAnalysis?.properties?.playerByPlayerStrategicGrades?.items
+      ?.properties?.signals?.properties;
+    expect(strategicGradeSignals).toMatchObject({
+      majorityAlignmentRoundsScored: {
+        type: "number",
+        description: "Rounds where canonical evidence proved participation in the scored majority decision.",
+      },
+      majorityAlignmentRate: {
+        type: "number",
+        description: "Majority-aligned rounds divided by majorityAlignmentRoundsScored; null non-participation is excluded.",
+      },
+    });
     const turningPointsTool = tools.find((tool) => (tool as { name: string }).name === "read_game_turning_points") as {
       inputSchema: { properties: Record<string, unknown> };
     };

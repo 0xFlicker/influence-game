@@ -1766,6 +1766,7 @@ function strategicGradeForPlayer(player: PostgamePlayerGameSummary): {
   grade: "A" | "B" | "C" | "D";
   method: "deterministic_v0_score";
   signals: {
+    majorityAlignmentRoundsScored: number;
     majorityAlignedRounds: number;
     majorityAlignmentRate: number;
     timesNominated: number;
@@ -1773,10 +1774,10 @@ function strategicGradeForPlayer(player: PostgamePlayerGameSummary): {
     won: boolean;
   };
 } {
-  const alignmentRounds = player.majorityAlignmentByRound.filter((round) => round.aligned !== null);
-  const majorityAlignedRounds = alignmentRounds.filter((round) => round.aligned === true).length;
-  const majorityAlignmentRate = alignmentRounds.length > 0
-    ? majorityAlignedRounds / alignmentRounds.length
+  const scoredAlignmentRounds = player.majorityAlignmentByRound.filter((round) => round.aligned !== null);
+  const majorityAlignedRounds = scoredAlignmentRounds.filter((round) => round.aligned === true).length;
+  const majorityAlignmentRate = scoredAlignmentRounds.length > 0
+    ? majorityAlignedRounds / scoredAlignmentRounds.length
     : 0;
   const finalistBonus = player.status === "finalist" ? 18 : 0;
   const winBonus = player.won ? 30 : 0;
@@ -1792,6 +1793,7 @@ function strategicGradeForPlayer(player: PostgamePlayerGameSummary): {
     grade: score >= 85 ? "A" : score >= 70 ? "B" : score >= 55 ? "C" : "D",
     method: "deterministic_v0_score",
     signals: {
+      majorityAlignmentRoundsScored: scoredAlignmentRounds.length,
       majorityAlignedRounds,
       majorityAlignmentRate,
       timesNominated: player.timesNominated.length,

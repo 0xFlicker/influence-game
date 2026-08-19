@@ -429,6 +429,20 @@ describe("ProductionGameMcpReadModel", () => {
     expect(player.player.overallGameShape.value).toBe("under the radar");
     expect(player.player.majorityAlignmentByRound.filter((round) => round.aligned === true)).toHaveLength(5);
 
+    const eliminatedPlayer = await readModel.readPlayerGameSummary({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+      player: EDGE_SMOKE_DUSK_PLAYERS.ash.name,
+    }, PRODUCER_ACCESS);
+    expect(eliminatedPlayer.ok).toBe(true);
+    if (!eliminatedPlayer.ok) return;
+    const serializedAlignment = JSON.parse(JSON.stringify(
+      eliminatedPlayer.player.majorityAlignmentByRound,
+    )) as Array<{ round: number; aligned: boolean | null }>;
+    expect(serializedAlignment.slice(0, 2)).toEqual([
+      expect.objectContaining({ round: 1, aligned: false }),
+      expect.objectContaining({ round: 2, aligned: null }),
+    ]);
+
     const turningPoints = await readModel.readGameTurningPoints({
       gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
     }, PRODUCER_ACCESS);
@@ -457,6 +471,13 @@ describe("ProductionGameMcpReadModel", () => {
       grade.player.id === EDGE_SMOKE_DUSK_EXPECTED.winnerId &&
       grade.grade === "A"
     )).toBe(true);
+    expect(producer.producerAnalysis.playerByPlayerStrategicGrades.find((grade) =>
+      grade.player.id === EDGE_SMOKE_DUSK_PLAYERS.willow.id
+    )?.signals).toMatchObject({
+      majorityAlignmentRoundsScored: 2,
+      majorityAlignedRounds: 1,
+      majorityAlignmentRate: 0.5,
+    });
     expect(producer.developerEvidence).toHaveProperty("cognitiveArtifacts");
   });
 

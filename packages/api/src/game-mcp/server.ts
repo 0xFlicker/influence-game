@@ -1687,6 +1687,30 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     },
     additionalProperties: true,
   };
+  const majorityAlignmentSchema = {
+    type: "object",
+    required: ["round", "empowerAligned", "councilAligned", "aligned", "basis"],
+    properties: {
+      round: { type: "number" },
+      empowerAligned: {
+        ...nullableSchema({ type: "boolean" }),
+        description: "Null means canonical evidence did not prove participation in the scored empower decision.",
+      },
+      councilAligned: {
+        ...nullableSchema({ type: "boolean" }),
+        description: "Null means canonical evidence did not prove participation in the scored Council decision.",
+      },
+      aligned: {
+        ...nullableSchema({ type: "boolean" }),
+        description: "Null means canonical evidence did not prove participation in that scored decision.",
+      },
+      basis: {
+        type: "array",
+        items: { type: "string", enum: ["empower", "council"] },
+      },
+    },
+    additionalProperties: true,
+  };
   const playerSummarySchema = {
     type: "object",
     required: [
@@ -1715,7 +1739,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
       exposeVotesReceivedByRound: { type: "array", items: { type: "object", additionalProperties: true } },
       councilVotesCast: { type: "array", items: { type: "object", additionalProperties: true } },
       councilVotesReceived: { type: "array", items: { type: "object", additionalProperties: true } },
-      majorityAlignmentByRound: { type: "array", items: { type: "object", additionalProperties: true } },
+      majorityAlignmentByRound: { type: "array", items: majorityAlignmentSchema },
       endgame: { type: "object", additionalProperties: true },
       jury: { type: "object", additionalProperties: true },
       overallGameShape: { type: "object", additionalProperties: true },
@@ -1829,6 +1853,27 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     },
     additionalProperties: true,
   };
+  const strategicGradeSchema = {
+    type: "object",
+    properties: {
+      signals: {
+        type: "object",
+        required: ["majorityAlignmentRoundsScored", "majorityAlignmentRate"],
+        properties: {
+          majorityAlignmentRoundsScored: {
+            type: "number",
+            description: "Rounds where canonical evidence proved participation in the scored majority decision.",
+          },
+          majorityAlignmentRate: {
+            type: "number",
+            description: "Majority-aligned rounds divided by majorityAlignmentRoundsScored; null non-participation is excluded.",
+          },
+        },
+        additionalProperties: true,
+      },
+    },
+    additionalProperties: true,
+  };
   const kindSchemas: Record<string, { required: string[]; properties: Record<string, unknown> }> = {
     agentGames: {
       required: ["schemaVersion", "ok", "agent", "games", "diagnostics"],
@@ -1909,7 +1954,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
             derivedVoteCohorts: { type: "array", items: { type: "object", additionalProperties: true } },
             inferredAlliances: { type: "object", additionalProperties: true },
             juryManagementAnalysis: { type: "object", additionalProperties: true },
-            playerByPlayerStrategicGrades: { type: "array", items: { type: "object", additionalProperties: true } },
+            playerByPlayerStrategicGrades: { type: "array", items: strategicGradeSchema },
           },
           additionalProperties: true,
         },
