@@ -12,6 +12,8 @@ Last watch-shell accessibility audit added: 2026-07-26
 
 Last live recovery regression added: 2026-08-04
 
+Last startup-listener recovery hardening added: 2026-08-19
+
 Last simulator variant cleanup added: 2026-08-14
 
 Last House summary cost architecture added: 2026-08-15
@@ -63,13 +65,13 @@ Items are ordered by current priority.
 
 ### R15. Format-kernel phase-boundary startup recovery
 
-- Status: `ready`
-- Priority: **high** (reopened 2026-08-04 after a live local failure)
+- Status: `closed`
+- Priority: **high** (reopened 2026-08-04 after a live local failure; resolved 2026-08-19)
 - Sources: local game `free-blue-wire`; `packages/api/src/services/game-recovery-support.ts`, `packages/engine/src/format-recovery.ts`, `packages/engine/src/game-runner.ts`, `packages/engine/src/mingle-inbox-replay.ts`, `packages/api/src/__tests__/game-recovery.test.ts`, plan `docs/plans/2026-07-26-001-fix-format-phase-boundary-recovery-plan.md`.
-- Signal: `free-blue-wire` failed to reach stable continuation after a local restart from its event-62 `FORMAT_RESOLVE` checkpoint. The recovery attempt appended canonical format-resolution and elimination events through event 78 and sealed a new `LOBBY` checkpoint, but the game still ended `suspended` with an expired owner whose failure reason is `startup_orphaned`. The existing checkpoint-admission and same-game event-prefix tests therefore do not justify treating format recovery as closed.
-- Concrete seam: startup recovery coordination, recovered-run ownership/heartbeat lifetime, the `FORMAT_RESOLVE` actor walk, and lifecycle handoff after the first post-recovery checkpoint.
-- Validation path: reproduce from the durable `free-blue-wire` event/checkpoint shape; restart at `FORMAT_RESOLVE`; verify the same game advances beyond the next `LOBBY` boundary under a healthy owner and reaches normal completion without duplicate resolution/elimination events or a second orphan suspension.
-- Suggested slice: identify why the recovered runner became orphaned after committing event 78, fix the smallest ownership or lifecycle defect, and add a DB-backed restart-to-completion regression. Preserve event-only hydration and fail-closed admission for corrupt prerequisites.
+- Finding: durable inspection showed that one healthy owner appended events 63-78 after the event-62 `FORMAT_RESOLVE` checkpoint and sealed the event-78 `LOBBY` checkpoint. A competing API launch then ran startup orphan classification before its `Bun.serve` call discovered `EADDRINUSE`, so it fenced that still-live owner as `startup_orphaned`. The event-78 post-round lobby is intentionally not a supported resume boundary, and the older event-62 checkpoint was no longer at the event head, leaving the game correctly fail-closed after the erroneous suspension.
+- Resolution: API startup now claims its HTTP/WebSocket listener before runtime activation can classify, recover, or otherwise mutate durable run ownership. A competing process therefore fails at bind time without touching the healthy runner. If runtime initialization fails after a successful bind, the claimed listener is force-closed and startup fails.
+- Automated proof: the DB-backed `format_resolve` restart case waits for the recovered owner to seal the next `LOBBY` checkpoint, proves a competing listener collision cannot reach orphan classification, observes the same owner advance into round 2, and then verifies normal same-game completion with one first-round `format.resolved`, one first-round `player.eliminated`, no `startup_orphaned` owner, and one healthy closed recovery owner. Existing corrupt-prerequisite cases retain event-head, event-only hydration, and fail-closed admission coverage.
+- Runtime proof boundary: the historical `free-blue-wire` rows establish the causal durable shape; the closure proof is deterministic DB/API lifecycle automation, not a new provider-backed live game or an operating-system two-process rehearsal.
 
 ### R20. Complete CI test discovery without paid or external side effects
 
