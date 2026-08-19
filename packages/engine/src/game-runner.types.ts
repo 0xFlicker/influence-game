@@ -608,7 +608,7 @@ export type CompactStrategyApplicationResult =
 export interface StrategicDecisionMetadata extends CompactStrategyCandidate {
   /**
    * Engine-only marker that this response came from a model-authored strategic
-   * surface even when the required strategy field was missing. Provider and
+   * surface even when the offered strategy field was omitted. Provider and
    * deterministic fallbacks omit it so they cannot consume a pending repair.
    */
   strategyCandidateProposed?: boolean;

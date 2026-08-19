@@ -25,7 +25,7 @@ For `--flex` simulations, the batch summary also aggregates the effective OpenAI
 - Never use `as any`.
 - Hosted OpenAI calls with `openAIReasoningSummary` enabled use the Responses API with JSON Schema output. The returned simulation/debug object gets a labeled `OpenAI reasoning summary (...)` display string when the provider supplies one; private traces keep the structured `providerReasoningSummary` payload separate from raw `reasoningContext`.
 
-Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and implementation). Eligible living-player surfaces extend `StrategicDecisionMetadata`: ordinary actions may return nullable `strategyDelta`, while `reconciliation_required` / `repair_required` boundaries request full `strategy`. Tool-specific mechanics remain unchanged and strategy validation is independent of the gameplay action.
+Decision methods on `IAgent` / `InfluenceAgent` return the extra fields (typed on the interface and implementation). Eligible living-player surfaces extend `StrategicDecisionMetadata`: ordinary actions may return nullable `strategyDelta`, while `reconciliation_required` / `repair_required` boundaries request full `strategy`. A delta is exceptional: emit one only for a material, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies. Do not summarize the current action, repeat the baseline, narrate unchanged intent, or emit filler to prove strategy was considered. Strict structured schemas use a required nullable key, so `null` is the expected no-change value; compatible non-strict outputs may omit it. Both leave state and revision unchanged. Tool-specific mechanics remain unchanged and strategy validation is independent of the gameplay action.
 
 - `getMingleIntent(...)` → intent fields + `thinking`, optional `reasoningContext`, and boundary-appropriate strategy metadata when this historical/isolated lane is exercised.
 - `takeMingleTurn(...)` → `{ thinking?: string; message?: string | null; noReply?: boolean; gotoRoomId?: number | null; gotoPlayerName?: string | null; reasoningContext?: string; strategyDelta?: string | null }`
@@ -388,7 +388,7 @@ See `CONCEPTS.md` (Recall Plan), `docs/local-model-evaluation.md` (evaluation pa
 
 4. Public player-visible output (`message` in `AgentResponse` and Mingle room text) must never contain the hidden thinking; it is stripped or kept in a separate field.
 
-5. Compact strategy is private cognition, not canonical truth. It lives on the agent during a run, changes only after an accepted gameplay/message boundary, and is never reconstructed from transcripts or `MemoryStore`. Canonical current-board facts override stale or mistaken strategy prose.
+5. Compact strategy is private cognition, not canonical truth. It lives on the agent during a run, changes only after an accepted gameplay/message boundary, and is never reconstructed from transcripts or `MemoryStore`. Canonical current-board facts override stale or mistaken strategy prose. Ordinary deltas are exceptional actionable changes; null or omission preserves the current epoch and is preferable to restatement.
 
 6. Compact strategy is decision context, not a replacement for per-turn traces. Transcript entries and private `agent_turn` records may both carry `thinking` / `reasoningContext` in simulation artifacts; live `--chatty` output should avoid printing the same trace twice.
 
@@ -535,6 +535,7 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - Do Judgment juror question prompts receive questions-only history while finalist answer, closing, and jury-vote prompts can still use full Q&A history?
 - Do House MC summaries lead with consequence, leverage, debt, heat, and next tension without claiming the currently limited `response.roundFacts` carries format proof?
 - Does the Strategic Play Menu stay hidden in system prompt context and avoid leaking into public player-visible messages?
+- Do ordinary schemas and prompts make null/omitted `strategyDelta` the expected result for an unchanged plan, and reserve non-null deltas for actionable changes rather than action summaries or baseline restatements?
 - If compact strategy changed, can the private turn/trace show the submitted operation, accepted/rejected/no-change result, and resulting revision without a separate model call?
 - If House producer carry-forward changed, can MCP `search_logs` find `house-strategy-bible`, `house-mc-summary`, `house-long-form-summary`, and `house-producer-brief` records in a rich producer run?
 - Are compact strategy prose and diagnostics absent from websocket-visible events and canonical board state?

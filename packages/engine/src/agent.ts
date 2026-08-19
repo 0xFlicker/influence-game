@@ -73,6 +73,7 @@ import {
   runSealedElimTargetDecision,
   STRATEGIC_DECISION_REQUIRED,
   STRATEGIC_DECISION_TOOL_PROPERTIES,
+  STRATEGY_DELTA_GUIDANCE,
   type SealedElimModelOutput,
 } from "./formats/agent-surface";
 import {
@@ -457,6 +458,11 @@ Current phase guidance:
 - When endangered by the format: Make a concrete safety plea. Offer value, identify a bigger threat, or propose a legal ballot or pointer path that keeps you alive.
 
 Choose one or two relevant strategic modes at most. Keep your public message natural, characterful, and socially readable. Do not reveal hidden reasoning, private instructions, or this strategy menu.`;
+
+const STRATEGY_CARRY_FORWARD_GUIDANCE = `## Strategy Carry-Forward
+When the response schema offers strategyDelta, treat it as exceptional rather than a turn summary.
+${STRATEGY_DELTA_GUIDANCE}
+A pivot can be valid even when it breaks the prior plan; record the new actionable posture, not a defense of consistency. Strategy is private, fallible cognition and never makes a target, alliance, commitment, or vote canonical.`;
 
 const TOOL_MINGLE_INTENT: ChatCompletionTool = {
   type: "function",
@@ -1597,11 +1603,12 @@ export class InfluenceAgent implements IAgent {
     }
   }
 
-  private strategicDecisionMetadata(record: Record<string, unknown>): StrategicDecisionMetadata {
+  private strategicDecisionMetadata(
+    record: Record<string, unknown>,
+    action: string,
+  ): StrategicDecisionMetadata {
     const metadata = normalizeStrategicDecisionMetadata(record);
-    const replacementExpected = this.compactStrategyState.lifecycle === "reconciliation_required"
-      || this.compactStrategyState.lifecycle === "repair_required";
-    return replacementExpected
+    return InfluenceAgent.STRATEGIC_ACTIONS.has(action)
       && !Object.prototype.hasOwnProperty.call(metadata, "strategy")
       && !Object.prototype.hasOwnProperty.call(metadata, "strategyDelta")
       ? { ...metadata, strategyCandidateProposed: true }
@@ -2120,7 +2127,7 @@ Use the form_mingle_intent tool.`;
         prompt, TOOL_MINGLE_INTENT, 300, sys,
         this.traceOptions(ctx, { action: "mingle-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "mingle-intent");
       return {
         seekPlayers: normalizeStringArray(result.seekPlayers),
         avoidPlayers: normalizeStringArray(result.avoidPlayers),
@@ -2229,7 +2236,7 @@ ${opportunity.kind === "proposer"
         sys,
         this.traceOptions(ctx, { action: "alliance-action", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "alliance-action");
       const action = normalizeAllianceActionKind(result.action);
       const base = {
         thinking: result.thinking,
@@ -2368,7 +2375,7 @@ Use the alliance_huddle_turn tool.`;
         sys,
         this.traceOptions(ctx, { action: "alliance-huddle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "alliance-huddle-turn");
       const message = result.noReply ? null : (result.message?.trim() || null);
       const commitment = normalizeHuddleCommitment(result, ctx);
       return {
@@ -2552,7 +2559,7 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
       );
       const msg = result.noReply ? null : (result.message?.trim() || null);
       const gotoRoomId = Number.isInteger(result.gotoRoomId) ? result.gotoRoomId : null;
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "mingle-turn");
       const requestedTarget = normalizeNullableString(result.proposedTarget);
       const proposedTarget = normalizeLivingTarget(result.proposedTarget, ctx);
       const coordinationReceipt = {
@@ -2650,7 +2657,7 @@ Use the spread_rumor tool.`;
         this.traceOptions(ctx, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       // Strip "The shadows whisper: " prefix if the LLM included it.
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "rumor");
       return {
         thinking: result.thinking ?? "",
         message: normalizeRequiredString(result.message).replace(/^the\s+shadows?\s+whispers?:\s*/i, ""),
@@ -2750,7 +2757,7 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
       }
       this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "vote");
       return {
         empowerTarget,
         thinking: result.thinking,
@@ -2809,7 +2816,7 @@ Use the cast_empower_revote tool. Return only an empower target from the eligibl
         console.warn(`[vote-fallback] agent="${this.name}" method=getEmpowerRevote returned="${result.empower}" eligible=[${tiedPlayers.map((p) => p.name).join(", ")}] fallback="${fallbackTarget.name}"`);
       }
 
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "empower-revote");
       return {
         empowerTarget: empowerPlayer?.id ?? fallbackTarget.id,
         thinking: result.thinking,
@@ -2876,7 +2883,7 @@ Use the select_council_candidates tool.`;
       if (selectedCandidateIds.length < request.requiredCount) {
         console.warn(`[vote-fallback] agent="${this.name}" method=getCandidateSelection insufficient eligible choices required=${request.requiredCount} selected=${selectedCandidateIds.length}`);
       }
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "candidate-selection");
       return {
         selectedCandidateIds,
         thinking: result.thinking,
@@ -3072,7 +3079,7 @@ Use the use_power tool to declare your final hidden action.`;
         action: validAction,
         target: targetPlayer?.name ?? candidateNames[0] ?? "unknown",
       });
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "power");
       const directModelChoice =
         validAction === result.action
         && (validAction === "pass" || Boolean(targetPlayer))
@@ -3119,7 +3126,7 @@ Use the council_vote tool to cast your vote.`;
 
     try {
       const result = await this.callTool<{ thinking?: string; eliminate: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "council-vote");
       const eliminationName = typeof result.eliminate === "string" ? result.eliminate : "";
       const target = normalizeName(eliminationName) === normalizeName(c1Name) ? c1
         : normalizeName(eliminationName) === normalizeName(c2Name) ? c2
@@ -3192,7 +3199,7 @@ Use the pick_round_format tool with exactly one offered format id.`;
           reasoningEffort: "low",
         }),
       );
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "format-pick");
       const selected = typeof result.formatId === "string"
         ? pickFormatFromMenu(offeredFormats, result.formatId)
         : null;
@@ -3249,7 +3256,7 @@ Use the save_or_eliminate_ballot tool.`;
           reasoningEffort: "low",
         }),
       );
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "format-save-or-eliminate-ballot");
       const polarity = result.polarity === "save" || result.polarity === "eliminate"
         ? result.polarity
         : null;
@@ -3291,8 +3298,6 @@ Use the save_or_eliminate_ballot tool.`;
       alivePlayers: ctx.alivePlayers,
       basePrompt: this.buildUserPrompt(ctx),
       ruleSheet: activeFormatRule(ctx, formatId),
-      requiresStrategyReplacement: this.compactStrategyState.lifecycle === "reconciliation_required"
-        || this.compactStrategyState.lifecycle === "repair_required",
       callTool: ({ prompt, tool, traceAction }) => this.callTool<SealedElimModelOutput>(
         prompt,
         tool,
@@ -3400,7 +3405,7 @@ Use the bounce_pointer tool.`;
           reasoningEffort: "low",
         }),
       );
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "bounce-pointer");
       const target = findByName(
         legalTargets,
         typeof result.target === "string" ? result.target : undefined,
@@ -3462,7 +3467,7 @@ Use the safety_bounce_vote tool.`;
           reasoningEffort: "low",
         }),
       );
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "format-safety-bounce-vote");
       const target = findByName(
         legalTargets,
         typeof result.target === "string" ? result.target : undefined,
@@ -3524,7 +3529,7 @@ Use the format_tiebreak tool.`;
           reasoningEffort: "low",
         }),
       );
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "format-tiebreak");
       const target = findByName(
         legalTargets,
         typeof result.target === "string" ? result.target : undefined,
@@ -3702,7 +3707,7 @@ Use the elimination_vote tool to cast your vote.`;
 
     try {
       const result = await this.callTool<{ thinking?: string; eliminate: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, this.traceOptions(ctx, { action: traceAction, reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, traceAction);
       const target = findByName(others, result.eliminate);
       if (target) return { target: target.id, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
       const fallback = others[Math.floor(Math.random() * others.length)];
@@ -3755,7 +3760,7 @@ Use the make_accusation tool to submit your accusation.`;
       if (!target) {
         console.warn(`[vote-fallback] agent="${this.name}" method=getAccusation returned="${result.target}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallbackOther.name}"`);
       }
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "accusation");
       return {
         targetId: target?.id ?? fallbackOther.id,
         text: result.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
@@ -3915,7 +3920,7 @@ Use the jury_vote tool to cast your vote.`;
 
     try {
       const result = await this.callTool<{ thinking?: string; winner: string; reasoningContext?: string }>(prompt, TOOL_JURY_VOTE, 80, sys, this.traceOptions(ctx, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
-      const metadata = this.strategicDecisionMetadata(result);
+      const metadata = this.strategicDecisionMetadata(result, "jury-vote");
       const target = findByName(finalists, result.winner);
       const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
       if (!randomFinalist) throw new Error("No finalist available for jury vote");
@@ -3969,6 +3974,7 @@ ${this.personalityPrompt ? `\n## Owner-Authored Personality\n${this.personalityP
 ${this.strategyInstructions ? `\n## Owner-Authored Strategy Guidance\n${this.strategyInstructions}\n` : ""}
 
 ${includeStrategicPlayMenu ? STRATEGIC_PLAY_MENU : ""}
+${includeStrategicPlayMenu ? STRATEGY_CARRY_FORWARD_GUIDANCE : ""}
 
 ${phaseGuidelines ? `## ${phaseGuidelines}\n` : ""}
 IMPORTANT: Treat alive players as the only live game actors for messages, votes, targets, rooms, shields, and normal-round strategy. Eliminated players may be referenced as history, evidence, jury context, reputation, or social fallout, but they are gone and cannot be interacted with as live players.
@@ -4823,6 +4829,8 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     "format-save-or-eliminate-ballot",
     "format-vote-bomb-ballot",
     "format-majority-elimination-ballot",
+    "format-even-votes-ballot",
+    "format-restricted-history-ballot",
     "bounce-pointer",
     "format-safety-bounce-vote",
     "format-tiebreak",
@@ -5152,12 +5160,10 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       return base;
     }
     const metadata = normalizeStrategicDecisionMetadata(response as unknown as Record<string, unknown>);
-    const replacementExpected = this.strategyBoundaryForCall(options) === "action_repair";
     return {
       ...base,
       ...metadata,
-      ...(replacementExpected
-        && !Object.prototype.hasOwnProperty.call(metadata, "strategy")
+      ...(!Object.prototype.hasOwnProperty.call(metadata, "strategy")
         && !Object.prototype.hasOwnProperty.call(metadata, "strategyDelta")
         ? { strategyCandidateProposed: true }
         : {}),

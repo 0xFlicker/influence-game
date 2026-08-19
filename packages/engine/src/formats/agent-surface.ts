@@ -17,10 +17,12 @@ export const STRATEGIC_THINKING_TOOL_PROPERTIES = {
   },
 };
 
+export const STRATEGY_DELTA_GUIDANCE = "Treat strategyDelta as an exceptional private carry-forward update. Set it only for a material, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies that should guide future decisions. Use null when the current strategy still applies; omit the field when the response format permits omission. Do not summarize the action, repeat the baseline, narrate unchanged intent, or use the field merely to prove strategic consideration.";
+
 export const STRATEGY_DELTA_TOOL_PROPERTIES = {
   strategyDelta: {
     type: ["string", "null"],
-    description: "A concise private refinement to your current strategy. Use null when the decision does not materially change it.",
+    description: STRATEGY_DELTA_GUIDANCE,
   },
 };
 
@@ -70,8 +72,6 @@ export interface RunSealedElimTargetDecisionInput {
   alivePlayers: readonly SealedElimTargetPlayer[];
   basePrompt: string;
   ruleSheet: string;
-  /** True only when this retained gameplay call must repair strategy continuity. */
-  requiresStrategyReplacement?: boolean;
   callTool: (
     request: SealedElimToolCallRequest,
   ) => Promise<SealedElimModelOutput>;
@@ -117,10 +117,7 @@ function acceptedActionMetadata(
   return metadata;
 }
 
-function strategicDecisionMetadata(
-  output: SealedElimModelOutput,
-  requiresStrategyReplacement: boolean,
-): StrategicDecisionMetadata {
+function strategicDecisionMetadata(output: SealedElimModelOutput): StrategicDecisionMetadata {
   const decisionId = typeof output.decisionId === "string"
     ? output.decisionId.trim()
     : "";
@@ -133,7 +130,7 @@ function strategicDecisionMetadata(
     ...(Object.prototype.hasOwnProperty.call(output, "strategy")
       ? { strategy: output.strategy }
       : {}),
-    ...(requiresStrategyReplacement && !hasStrategyCandidate
+    ...(!hasStrategyCandidate
       ? { strategyCandidateProposed: true }
       : {}),
     ...(decisionId ? { decisionId } : {}),
@@ -211,10 +208,7 @@ Use the ${surface.toolName} tool.`;
       ),
       traceAction: surface.traceAction,
     });
-    const metadata = strategicDecisionMetadata(
-      output,
-      input.requiresStrategyReplacement === true,
-    );
+    const metadata = strategicDecisionMetadata(output);
     const target = findTargetByName(legalTargets, output.target);
     const accepted = target !== undefined;
     return {

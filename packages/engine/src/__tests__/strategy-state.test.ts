@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   FULL_STRATEGY_REQUIRED,
   FULL_STRATEGY_TOOL_PROPERTIES,
+  STRATEGY_DELTA_GUIDANCE,
   buildSealedElimBallotTool,
 } from "../formats/agent-surface";
 import {
@@ -10,6 +11,7 @@ import {
   createOpeningStrategyState,
   markStrategyReconciliationRequired,
 } from "../strategy-state";
+import { STRATEGY_DELTA_QUALITY_SCENARIOS } from "./fixtures/prompt-scenarios/strategy-delta-quality";
 
 describe("compact strategy decision envelope", () => {
   it("uses thinking plus a nullable delta on ordinary strategic actions", () => {
@@ -25,6 +27,11 @@ describe("compact strategy decision envelope", () => {
     expect(parameters.properties).toHaveProperty("strategyDelta");
     expect(parameters.properties).not.toHaveProperty("strategy");
     expect(parameters.properties).not.toHaveProperty("decisionLog");
+
+    expect(STRATEGY_DELTA_GUIDANCE).toContain("material, actionable change");
+    expect(STRATEGY_DELTA_GUIDANCE).toContain("targets, alliance posture, commitments");
+    expect(STRATEGY_DELTA_GUIDANCE).toContain("Do not summarize the action");
+    expect(STRATEGY_DELTA_GUIDANCE).toContain("repeat the baseline");
   });
 
   it("defines a full-strategy-only fragment for diary and repair boundaries", () => {
@@ -46,6 +53,36 @@ describe("compact strategy lifecycle", () => {
       expect(result.resultingRevision).toBe(0);
     }
   });
+
+  for (const scenario of STRATEGY_DELTA_QUALITY_SCENARIOS) {
+    it(`applies the focused delta-quality scenario: ${scenario.label}`, () => {
+      const active = applyStrategyCandidate(
+        markStrategyReconciliationRequired(createOpeningStrategyState()),
+        "post_eviction_diary",
+        { strategy: scenario.baseline },
+      ).state;
+      const result = applyStrategyCandidate(active, "ordinary_action", scenario.candidate);
+
+      expect(result.status).toBe(scenario.expectedStatus);
+      if (scenario.expectedStatus === "accepted") {
+        expect(result.state.deltas).toEqual([scenario.expectedDelta]);
+        expect(result.resultingRevision).toBe(active.revision + 1);
+      } else {
+        expect(result.state).toEqual(active);
+        expect(result.resultingRevision).toBe(active.revision);
+
+        const mechanicallySubmittedRestatement = applyStrategyCandidate(
+          active,
+          "ordinary_action",
+          { strategyDelta: scenario.temptingNonDelta },
+        );
+        expect(mechanicallySubmittedRestatement.status).toBe("accepted");
+        expect(mechanicallySubmittedRestatement.state.deltas).toEqual([
+          scenario.temptingNonDelta,
+        ]);
+      }
+    });
+  }
 
   it("accepts mechanically valid prose without judging its quality", () => {
     const result = applyStrategyCandidate(
