@@ -2,6 +2,8 @@
 
 Influence is the human approval surface for application production changes. It does not receive production host credentials, registry mutation authority, Doppler tokens, or deployment-control credentials. Private `linode-iac` qualifies requests, verifies approval receipts, and owns execution evidence.
 
+The cross-repository authority model, host transaction, incident learnings, and steady-state colored release invariants are documented in [Migrating to Durable Colored Production Deploys](https://github.com/0xFlicker/linode-iac/blob/main/docs/solutions/architecture-patterns/migrating-to-durable-colored-production-deploys.md). This document covers only Influence's approval role.
+
 The GitHub App must grant read-only Actions and Contents access for provenance plus read-only Environments access for the zero-environment-secrets check. The designated repository ruleset is readable through GitHub's metadata permission; its internal checks and bypass policy remain operator-owned. Workflows mint the policy token separately and use it only for these checks. Callback dispatch uses a separate Contents-write token; the App has no Administration, Deployments, or Packages permission.
 
 ## Repository configuration
