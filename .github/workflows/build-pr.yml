@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Determine ephemeral redeploy eligibility
         id: status
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         env:
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           INPUT_HEAD_SHA: ${{ inputs.head_sha }}
@@ -185,15 +185,15 @@ jobs:
     steps:
       - name: Generate GitHub App token
         id: app-token
-        uses: actions/create-github-app-token@v1
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.GH_APP_ID }}
+          client-id: ${{ vars.GH_APP_CLIENT_ID }}
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: 0xFlicker
           repositories: linode-iac
 
       - name: Trigger ephemeral deploy
-        uses: actions/github-script@v7
+        uses: actions/github-script@v8
         with:
           github-token: ${{ steps.app-token.outputs.token }}
           script: |
