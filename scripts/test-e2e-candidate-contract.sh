@@ -16,6 +16,15 @@ require_literal() {
 }
 
 require_literal "$ci_workflow" "release manifest aggregation job" "release-manifest:"
+require_literal "$ci_workflow" "release-image scope job" "release-scope:"
+require_literal "$ci_workflow" "manual release override" 'github.event_name == '\''workflow_dispatch'\'''
+require_literal "$ci_workflow" "release input comparison" 'git diff --quiet "$comparison_base" "$GITHUB_SHA" --'
+require_literal "$ci_workflow" "API image inputs" "packages/api/"
+require_literal "$ci_workflow" "web image inputs" "packages/web/"
+require_literal "$ci_workflow" "engine image inputs" "packages/engine/"
+require_literal "$ci_workflow" "render-worker media inputs" "music/house-highlights-variants/"
+require_literal "$ci_workflow" "Docker build scope dependency" "needs: [check, release-scope]"
+require_literal "$ci_workflow" "Docker build release scope gate" "needs.release-scope.outputs.release_required == 'true'"
 require_literal "$ci_workflow" "API digest artifact" "digest-api"
 require_literal "$ci_workflow" "web digest artifact" "digest-web"
 require_literal "$ci_workflow" "render-worker digest artifact" "digest-render-worker"
