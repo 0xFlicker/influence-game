@@ -46,6 +46,14 @@ The database-monotonic token paired with an opaque deployment admission lease ID
 
 The versioned API contract a production candidate exposes through health evidence and the controller-authenticated activation seam. A validation-mode API runs its bundled migrations and initializes every canonical request route, but it does not seed operational data, reconcile postgame work, classify or recover game runs, start owner-learning loops, or accept new render claims. Only the exact active deployment fence in `accepting` may activate those background behaviors, and repeated activation is idempotent only for that same fence. The reported migration-set identity covers every bundled Drizzle file; it is eligibility evidence, while migrations still execute inside the API container.
 
+## Accepted-runtime recovery reconciliation
+
+The durable, single-flight application process that resumes suspended games after a fenced deployment becomes terminally accepted. Candidate validation never performs this recovery; lease completion records reconciliation pending, and the accepted runtime may claim it only after deployment admission is open and no later drain is active. Normal startup outside a deployment continues to recover directly.
+
+## Render-worker generation
+
+The identity of one postgame render-worker process lifetime. A worker publishes a fresh generation before claiming work, and release drain intent and acknowledgment must name that exact generation so controller recovery can reuse a valid acknowledgment without accepting stale process state. Existing database job leases remain the authority for in-flight work.
+
 ## TranscriptEntry
 
 The chronological dialogue and observability record for a game. It may be displayed, searched, styled, and analyzed, but it is not canonical game truth: accepted state, decisions, tallies, phase transitions, results, and replay choreography derive from canonical events and projections, never transcript prose. Every entry carries `round`, `phase`, `from`, `scope`, `text`, plus optional `thinking` (the agent's or House's internal note, hidden from other agents) and `reasoningContext` (raw native model output such as `reasoning_content` from local servers, or a clearly labeled provider-generated reasoning summary such as `OpenAI reasoning summary (auto): ...`). Current Mingle entries should use current Mingle phase/scope vocabulary; older records may still contain legacy Whisper values. Public agent text never contains hidden reasoning. Modern product capture may also carry normalized actor identity, audience player IDs, dialogue kind, and formal-speech correlation context used by owner match-read DTOs; diary/thinking rows stay outside dialogue identity.
