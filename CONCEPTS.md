@@ -621,7 +621,7 @@ A producer/admin operational accounting trail with one safe metadata row per cap
 
 ## Game cost rollup
 
-An admin read model rebuilt from provider spend ledger rows. It summarizes cost and token totals by game and owner epoch, including unavailable/estimated/actual cost states and provider/model/action/player/House breakdowns. It is operational visibility for administrators, not player-visible result data or canonical game state.
+An admin read model rebuilt from provider spend ledger rows. It summarizes cost and token totals by game and owner epoch, including unavailable/estimated/actual cost states and provider/model/action/player/House breakdowns. The same Admin Cost Detail contract is available at `GET /api/admin/games/:idOrSlug/costs` and through producer-only MCP `read_producer_game_cost_detail`; the MCP read adds no accounting or metrics of its own. It is producer/admin operational visibility, not player-visible result data or canonical game state.
 
 ## Cost reconciliation record
 

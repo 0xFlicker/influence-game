@@ -99,6 +99,9 @@ import {
   READ_OWNED_MATCH_NARRATIVE_INPUT_SCHEMA,
   READ_OWNED_MATCH_NARRATIVE_OUTPUT_SCHEMA,
   READ_OWNED_MATCH_NARRATIVE_TOOL,
+  READ_PRODUCER_GAME_COST_DETAIL_DESCRIPTION,
+  READ_PRODUCER_GAME_COST_DETAIL_INPUT_SCHEMA,
+  READ_PRODUCER_GAME_COST_DETAIL_TOOL,
   READ_PRODUCER_MATCH_NARRATIVE_DESCRIPTION,
   READ_PRODUCER_MATCH_NARRATIVE_INPUT_SCHEMA,
   READ_PRODUCER_MATCH_NARRATIVE_OUTPUT_SCHEMA,
@@ -578,6 +581,13 @@ export class ProductionGameMcpJsonRpcServer {
         requireScopes(auth, ["producer"]);
         return postgameContent(await this.readModel.readProducerGameAnalysis(postgameArgs(args), auth));
       }
+      if (name === READ_PRODUCER_GAME_COST_DETAIL_TOOL) {
+        requireScopes(auth, ["producer"]);
+        return content(await this.readModel.readProducerGameCostDetail(
+          requiredString(args, "gameIdOrSlug"),
+          auth,
+        ));
+      }
       if (name === "read_producer_season_diagnostics") {
         requireScopes(auth, ["producer"]);
         return content(await this.readModel.readProducerSeasonDiagnostics(
@@ -989,6 +999,13 @@ function productionGameMcpTools(
       scopes: ["producer"],
       readOnlyHint: true,
       outputSchema: postgameOutputSchema("producerAnalysis"),
+    }),
+    tool({
+      name: READ_PRODUCER_GAME_COST_DETAIL_TOOL,
+      description: READ_PRODUCER_GAME_COST_DETAIL_DESCRIPTION,
+      inputSchema: READ_PRODUCER_GAME_COST_DETAIL_INPUT_SCHEMA,
+      scopes: ["producer"],
+      readOnlyHint: true,
     }),
     tool({
       name: READ_PRODUCER_MATCH_NARRATIVE_TOOL,

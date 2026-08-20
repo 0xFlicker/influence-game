@@ -20,7 +20,7 @@ Supported scopes:
 | `agents:read` | Read owned agents, archetypes, ratings, queue state, and agent records. | None |
 | `agents:write` | Create or update owned agents and enroll them in supported pre-match queues. | Requires `agents:read` in the same grant |
 | `games:read` | Read accessible games, visible events, projections, timelines, rules, authorized cognitive artifacts, and the owner match-completeness tools (`read_match_manifest`, `read_match_transcript`, `read_owned_match_cognition`, `read_owned_match_narrative`). Those tools aggregate and narrow row classes already covered by this scope (accessible inspection, owner huddles via alliances, owned cognitive artifacts); they do not introduce a new OAuth private-data class or require renewed consent. | None |
-| `producer` | Read global producer/debug views, producer evidence, private trace tooling, and `read_producer_match_narrative`. | requires the logged-in subject to currently hold the `producer` role |
+| `producer` | Read global producer/debug views, producer evidence, private trace tooling, Admin Cost Detail through `read_producer_game_cost_detail`, and `read_producer_match_narrative`. | requires the logged-in subject to currently hold the `producer` role |
 
 Normal users can authorize the non-producer scopes they were asked for. If a client asks for `producer` and the user lacks the `producer` role, the authorization screen omits that scope because it cannot be granted. Users may also uncheck optional scopes, including write scopes, before approval. An approval with no selected scopes is rejected.
 
@@ -227,6 +227,7 @@ Producer-only tools requiring `producer`:
 
 - `inspect_durable_run`: durable-run inspection summary and evidence counts.
 - `read_producer_game_analysis`: producer-only postgame analysis with derived vote cohorts, deterministic strategic-grade signals, private cognitive-artifact indexes, private trace-manifest indexes, and tuning diagnostics. It does not replace explicit raw trace reads.
+- `read_producer_game_cost_detail`: return the existing Admin Cost Detail payload for one game ID or slug, including provider-cost totals, token buckets, prompt-reuse aggregates, actual/estimated/unavailable state, breakdowns, owner epochs, expensive calls, backfill/pricing/reconciliation detail, and retry/failure spend. It shares the admin endpoint read contract, performs no backfill or mutation, and is not callable with `games:read` alone.
 - `read_producer_match_narrative`: token-efficient grouped narrative for producers (default `strategic` + `compact`, **`schemaVersion: 2`** slot groups). Full product dialogue scopes (public/system/mingle/whisper/huddle under capture-safe rules) plus all player/juror thinking/strategy. Same unpaired-omission and correlation metrics as the owner tool. Optional `actions: [{seq,type}]` cite trusted canonical events for groups that already include authorized cognition — public dialogue alone never unlocks a producer-visible event reference. Citations are not board outcomes. No ownership required. Does **not** embed private-trace bodies, reasoning dumps, payloads, or source pointers. `games:read` alone does not grant this tool.
 - `list_trace_manifests`: private trace metadata for one game.
 - `read_trace_content`: explicit raw private trace read by manifest ID.

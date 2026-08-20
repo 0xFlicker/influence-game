@@ -90,6 +90,10 @@ import {
   listPublicSeasons,
 } from "../services/season-read-model.js";
 import { getPublicPlayerProfile } from "../services/public-player-profile.js";
+import {
+  getAdminGameCostDetail,
+  type AdminGameCostDetailPayload,
+} from "../services/admin-game-cost-detail.js";
 
 const DEFAULT_EVENT_LIMIT = 50;
 const MAX_EVENT_LIMIT = 200;
@@ -999,6 +1003,16 @@ export class ProductionGameMcpReadModel {
         traceManifests,
       },
     };
+  }
+
+  async readProducerGameCostDetail(
+    gameIdOrSlug: string,
+    access: ProductionGameMcpAccess,
+  ): Promise<AdminGameCostDetailPayload> {
+    requireProducerAccess(access);
+    const result = await getAdminGameCostDetail(this.db, gameIdOrSlug);
+    if (!result.ok) throw new Error(result.error);
+    return result.detail;
   }
 
   async inspectDurableRun(gameIdOrSlug: string, access: ProductionGameMcpAccess): Promise<{
