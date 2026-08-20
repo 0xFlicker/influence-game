@@ -432,12 +432,10 @@ test.describe("deterministic layered authentication", () => {
       expiredProof: harness.tokens.uiWalletPrivyExpired,
     });
     const page = await context.newPage();
-    await page.goto(`${harness.webUrl}/get-mcp`, {
+    await page.goto(`${harness.webUrl}/dashboard/profile`, {
       waitUntil: "networkidle",
     });
-    await page.evaluate(() => {
-      window.dispatchEvent(new CustomEvent("auth:open-link-password"));
-    });
+    await page.getByRole("button", { name: "Add email/password" }).click();
     await expect(page.getByRole("heading", { name: "Add email/password" }))
       .toBeVisible();
     await page.getByLabel("Email").fill("ui-wallet@example.test");
