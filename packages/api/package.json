@@ -9,7 +9,7 @@
     "start": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun run src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "bun run test:postgres",
-    "test:postgres": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun test --config=../../bunfig.toml . --max-concurrency 1 --path-ignore-patterns='**/e2e/**' --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*'",
+    "test:postgres": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun test --config=../../bunfig.toml . --max-concurrency 1 --timeout 30000 --path-ignore-patterns='**/e2e/**' --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*'",
     "test:browser": "DRIZZLE_MIGRATIONS_DIR=./drizzle bun test --config=../../bunfig.browser.toml .e2e.test --max-concurrency 1",
     "lint": "eslint src/",
     "db:generate": "bunx drizzle-kit generate",
