@@ -536,8 +536,8 @@ export async function runPromptThreadGeneratedCell(
       dispatch: async (request) => {
         const response = await input.dispatch(request);
         generated = {
-          request: structuredClone(request),
-          response: structuredClone(response),
+          request: toJsonObject(request),
+          response: toJsonValue(response),
         };
         return response;
       },
@@ -1024,13 +1024,13 @@ function createGeneratedCellProvider(
               if (prior === undefined) {
                 throw new Error(`Generated replay is missing prior response for turn ${turn}`);
               }
-              return structuredClone(prior);
+              return toJsonValue(prior);
             }
             if (turn !== input.turn) {
               throw new Error(`Generated replay attempted future turn ${turn}`);
             }
             const request = {
-              ...structuredClone(params),
+              ...toJsonObject(params),
               model: input.model,
               prompt_cache_key: input.promptCacheKey,
             };
