@@ -12,6 +12,14 @@ ROOT_PASSWORD="${MINIO_ROOT_PASSWORD:-influence-private}"
 CONTENT_BUCKET="${LINODE_PRIVATE_CONTENT_BUCKET:-influence-private-content-local}"
 ENV_FILE="${INFLUENCE_PRIVATE_TRACE_ENV_FILE:-$ROOT_DIR/.env.private-trace.local}"
 endpoint="http://127.0.0.1:${HOST_PORT}"
+trace_mcp_cursor_secret="${INFLUENCE_TRACE_MCP_CURSOR_SECRET:-}"
+
+if [[ -z "$trace_mcp_cursor_secret" && -f "$ENV_FILE" ]]; then
+  trace_mcp_cursor_secret="$(sed -n 's/^INFLUENCE_TRACE_MCP_CURSOR_SECRET=//p' "$ENV_FILE" | tail -n 1)"
+fi
+if [[ -z "$trace_mcp_cursor_secret" ]]; then
+  trace_mcp_cursor_secret="$(bun -e 'process.stdout.write(require("node:crypto").randomBytes(32).toString("hex"))')"
+fi
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Docker is required to bootstrap the local private content S3 endpoint." >&2
@@ -64,6 +72,7 @@ LINODE_PRIVATE_CONTENT_ENDPOINT=$endpoint
 LINODE_PRIVATE_CONTENT_ACCESS_KEY=$ROOT_USER
 LINODE_PRIVATE_CONTENT_SECRET_KEY=$ROOT_PASSWORD
 LINODE_PRIVATE_CONTENT_BUCKET=$CONTENT_BUCKET
+INFLUENCE_TRACE_MCP_CURSOR_SECRET=$trace_mcp_cursor_secret
 EOF
 
 cat <<EOF

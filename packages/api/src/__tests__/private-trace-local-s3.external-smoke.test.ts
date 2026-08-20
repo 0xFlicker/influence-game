@@ -110,6 +110,8 @@ describe("private trace local S3 external smoke", () => {
 
     const readModel = new PrivateTraceReadModel(db);
     const manifests = await readModel.listManifests(gameId);
+    expect(manifests.ok).toBe(true);
+    if (!manifests.ok) throw new Error(manifests.error);
     expect(manifests.manifests).toHaveLength(1);
     expect(manifests.manifests[0]!.id).toBe(write.manifestId);
     expect(JSON.stringify(manifests.manifests[0])).not.toContain("local smoke prompt secret");
