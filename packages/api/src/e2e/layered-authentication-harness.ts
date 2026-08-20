@@ -16,6 +16,7 @@ import type {
 } from "../services/authentication-providers.js";
 import { observeHarnessSignals } from "./harness-signals.js";
 import { cleanupE2eResources } from "./cleanup.js";
+import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 
 const WORKSPACE_ROOT = path.resolve(import.meta.dir, "../../../..");
 const JWT_SECRET = "layered-authentication-e2e-jwt-secret";
@@ -301,6 +302,12 @@ async function seedFixture(db: DrizzleDB): Promise<{
       state: "active",
     },
   ]);
+  await recordCurrentLegalAcceptance(
+    db,
+    uiWalletOwner,
+    "existing_account",
+    "0123456789abcdef0123456789abcdef01234567",
+  );
 
   return {
     users: { existingEmail, walletOwner, reverseOwner },
