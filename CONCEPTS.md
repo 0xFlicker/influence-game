@@ -633,7 +633,7 @@ A local-development producer MCP that inspects API-backed durable runs through p
 
 ## Shared test database lease
 
-A process-lifetime PostgreSQL session advisory lock acquired by `setupTestDB()` before migrations or truncation. It makes independent Bun processes wait for exclusive use of the shared test database and releases automatically when the owning database session disconnects, including process crashes. It does not serialize `test.concurrent` calls inside one process, so shared-DB tests remain sequential within their Bun process.
+A process-lifetime PostgreSQL session advisory lock acquired by `setupTestDB()` before migrations or truncation. It makes independent Bun processes wait for exclusive use of the shared test database and releases automatically when the owning database session disconnects, including process crashes. It does not serialize `test.concurrent` calls inside one process, so shared-DB tests remain sequential within their Bun process. Browser harnesses are outside this lease: each owns and drops a uniquely named database so Browser Coverage can run beside the shared API lane without cross-truncation.
 
 ## callTool reasoning augmentation
 

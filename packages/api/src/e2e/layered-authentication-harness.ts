@@ -14,6 +14,9 @@ import type {
   ClerkAuthenticationProviderVerifier,
   ProviderVerificationResult,
 } from "../services/authentication-providers.js";
+import { observeHarnessSignals } from "./harness-signals.js";
+import { cleanupE2eResources } from "./cleanup.js";
+import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 
 const WORKSPACE_ROOT = path.resolve(import.meta.dir, "../../../..");
 const JWT_SECRET = "layered-authentication-e2e-jwt-secret";
@@ -62,13 +65,19 @@ let isolatedDatabaseUrl: string | null = null;
 let stopping = false;
 
 async function main(): Promise<void> {
+  const signals = observeHarnessSignals();
+  let requestedShutdown: Promise<void> | null = null;
+  try {
   process.env.JWT_SECRET = JWT_SECRET;
   process.env.MANAGED_AUTH_MODE = "full";
   process.env.PRIVY_COMPATIBILITY_BRIDGE_ENABLED = "false";
 
-  const { db, databaseUrl } = await createIsolatedTestDb();
+  const { db, databaseUrl } = await createIsolatedTestDb({ signal: signals.signal });
   isolatedDatabaseUrl = databaseUrl;
+  signals.onRequest(() => { requestedShutdown ??= shutdown(); });
+  if (signals.requested()) return;
   const fixture = await seedFixture(db);
+  if (signals.requested()) return;
   const webPort = randomPort();
   const apiPort = randomPort();
   const apiUrl = `http://127.0.0.1:${apiPort}`;
@@ -139,7 +148,8 @@ async function main(): Promise<void> {
       stderr: "inherit",
     },
   );
-  await waitForHealth(webUrl, 60_000);
+  await waitForHealth(webUrl, 60_000, signals.signal);
+  if (signals.requested()) return;
 
   const harness: LayeredAuthHarness = {
     apiUrl,
@@ -168,11 +178,11 @@ async function main(): Promise<void> {
   };
   console.log(`E2E_LAYERED_AUTH_READY ${JSON.stringify(harness)}`);
 
-  await new Promise<void>((resolve) => {
-    process.once("SIGINT", resolve);
-    process.once("SIGTERM", resolve);
-  });
-  await shutdown();
+  await signals.received;
+  } finally {
+    signals.dispose();
+    await (requestedShutdown ?? shutdown());
+  }
 }
 
 async function seedFixture(db: DrizzleDB): Promise<{
@@ -292,6 +302,12 @@ async function seedFixture(db: DrizzleDB): Promise<{
       state: "active",
     },
   ]);
+  await recordCurrentLegalAcceptance(
+    db,
+    uiWalletOwner,
+    "existing_account",
+    "0123456789abcdef0123456789abcdef01234567",
+  );
 
   return {
     users: { existingEmail, walletOwner, reverseOwner },
@@ -482,13 +498,23 @@ function randomPort(): number {
   return 10_000 + Math.floor(Math.random() * 50_000);
 }
 
-async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
+async function waitForHealth(
+  url: string,
+  timeoutMs: number,
+  signal?: AbortSignal,
+): Promise<void> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
     try {
-      const response = await fetch(url);
+      if (signal?.aborted) throw new Error(`Startup aborted while waiting for ${url}`);
+      const remainingMs = timeoutMs - (Date.now() - startedAt);
+      const requestTimeout = AbortSignal.timeout(Math.max(1, Math.min(1_000, remainingMs)));
+      const response = await fetch(url, {
+        signal: signal ? AbortSignal.any([signal, requestTimeout]) : requestTimeout,
+      });
       if (response.ok) return;
-    } catch {
+    } catch (error) {
+      if (signal?.aborted) throw error;
       // Process is still starting.
     }
     await Bun.sleep(250);
@@ -499,18 +525,28 @@ async function waitForHealth(url: string, timeoutMs: number): Promise<void> {
 async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
-  if (webProcess) {
-    webProcess.kill("SIGTERM");
-    await Promise.race([webProcess.exited, Bun.sleep(5_000)]);
-    if (webProcess.exitCode === null) webProcess.kill("SIGKILL");
-    webProcess = null;
-  }
-  apiServer?.stop(true);
-  apiServer = null;
-  if (isolatedDatabaseUrl) {
-    await destroyIsolatedTestDb(isolatedDatabaseUrl);
-    isolatedDatabaseUrl = null;
-  }
+  await cleanupE2eResources([
+    ["web", async () => {
+      if (!webProcess) return;
+      const processToStop = webProcess;
+      processToStop.kill("SIGTERM");
+      await Promise.race([processToStop.exited, Bun.sleep(5_000)]);
+      if (processToStop.exitCode === null) {
+        processToStop.kill("SIGKILL");
+        await processToStop.exited;
+      }
+      webProcess = null;
+    }],
+    ["api", () => {
+      apiServer?.stop(true);
+      apiServer = null;
+    }],
+    ["database", async () => {
+      if (!isolatedDatabaseUrl) return;
+      await destroyIsolatedTestDb(isolatedDatabaseUrl);
+      isolatedDatabaseUrl = null;
+    }],
+  ]);
 }
 
 void main().catch(async (error) => {

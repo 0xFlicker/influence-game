@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { Browser, Page } from "puppeteer";
 import { schema } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import {
   closeSeason,
   createSeason,
@@ -24,8 +25,13 @@ import {
   createAuthenticatedPage,
   launchBrowser,
 } from "./test-browser.js";
-import { createTestDb, destroyTestDb, type TestDB } from "./test-db.js";
+import {
+  createIsolatedTestDb,
+  destroyIsolatedTestDb,
+  type TestDB,
+} from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
+import { cleanupE2eResources } from "./cleanup.js";
 
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
 
@@ -39,8 +45,14 @@ let gameSlug: string;
 let seasonSlug: string;
 
 beforeAll(async () => {
-  testDb = await createTestDb();
+  testDb = await createIsolatedTestDb();
   admin = await createAdminUser(testDb.db);
+  await recordCurrentLegalAcceptance(
+    testDb.db,
+    admin.userId,
+    "existing_account",
+    "0123456789abcdef0123456789abcdef01234567",
+  );
   adminJwt = await mintTestJwt(admin.userId, {
     roles: ["sysop", "producer"],
     permissions: [
@@ -80,6 +92,19 @@ beforeAll(async () => {
     maxPlayers: 4,
     startedAt: "2026-07-10T18:30:00.000Z",
     endedAt: "2026-07-10T19:00:00.000Z",
+  });
+  await testDb.db.insert(schema.gameResults).values({
+    id: randomUUID(),
+    gameId,
+    winnerId: null,
+    roundsPlayed: 1,
+    tokenUsage: JSON.stringify({
+      promptTokens: 0,
+      completionTokens: 0,
+      totalTokens: 0,
+      estimatedCost: 0,
+    }),
+    finishedAt: "2026-07-10T19:00:00.000Z",
   });
   const receiptId = randomUUID();
   await testDb.db.insert(schema.competitionReceipts).values({
@@ -158,9 +183,11 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  if (browser) await closeBrowser(browser);
-  if (servers) await stopTestServers(servers);
-  if (testDb) destroyTestDb(testDb.databaseUrl);
+  await cleanupE2eResources([
+    ["browser", async () => { if (browser) await closeBrowser(browser); }],
+    ["servers", async () => { if (servers) await stopTestServers(servers); }],
+    ["database", async () => { if (testDb) await destroyIsolatedTestDb(testDb.databaseUrl); }],
+  ]);
 });
 
 describe("E2E: Dual Crown season surfaces", () => {
@@ -179,7 +206,7 @@ describe("E2E: Dual Crown season surfaces", () => {
       await assertRoute(publicPage, `${webUrl}/games/free?season=${seasonSlug}`, [
         "Browser QA Championship", "AGENT CHAMPION", "ARCHITECT CHAMPION", "Dual Crown sweep",
       ]);
-      await assertRoute(publicPage, `${webUrl}/games/${gameSlug}`, [
+      await assertRoute(publicPage, `${webUrl}/games/${gameSlug}/results`, [
         "Championship point receipts", "QA Champion", "Place 1 of 4", "120",
       ]);
       expect(await pageText(publicPage)).not.toContain("opponentRatings");

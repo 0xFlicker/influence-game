@@ -122,7 +122,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version: 1.3.14
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
@@ -132,7 +132,7 @@ jobs:
 
       - name: Run E2E tests
         id: release-e2e
-        run: bunx playwright test --retries=0
+        run: bun run test:e2e:staging
         env:
           PLAYWRIGHT_BASE_URL: https://influence-staging.tail8a79ed.ts.net
           STAGING_RELEASE_GATE: "1"

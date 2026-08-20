@@ -27,17 +27,20 @@ const ROSTER = [
 
 function continuity(playerId: string, playerName: string) {
   return {
-    version: 1,
+    version: 2,
     playerId,
     playerName,
-    strategyPacket: null,
-    reflectionSummary: null,
+    compactStrategy: {
+      lifecycle: "opening",
+      baseline: null,
+      deltas: [],
+      priorEpoch: null,
+      revision: 0,
+    },
     notes: [],
     relationships: { allies: [], threats: [] },
     powerActionMemory: [],
     roundHistory: [],
-    recentStrategicDecisions: [],
-    strategyPacketRevisionCounter: 0,
   };
 }
 

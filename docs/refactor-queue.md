@@ -49,7 +49,7 @@ Items are ordered by current priority.
 
 ### R21. Agentic, selective-fact House summaries at phase cadence
 
-- Status: `ready`
+- Status: `implementation ready for review; branch-protection migration remains operator-owned after merge`
 - Priority: **high**
 - Sources: `packages/engine/src/game-runner.ts` (`emitHouseRoundInterstitial`, `buildHouseEvidenceBundle`, `buildHouseRoundFacts`), `packages/engine/src/house-interviewer.ts` (`formatHouseEvidence`, `buildSummaryPrompt`, `generateHouseSummary`), `packages/engine/src/game-runner.types.ts` (`HouseEvidenceBundle`, `HouseGameplaySummaryContext`), `packages/api/src/game-mcp/` canonical fact reads, and `docs/plans/2026-08-14-001-perf-compact-decision-envelope-plan.md`.
 - Signal: House narration currently runs once per round, but each call receives the accumulated transcript, public messages, diary entries, room allocations, strategy packet, and round facts. That broad replay made `house-summary` the most expensive individual call family in the reviewed simulation. Multiplying the current call shape across nearly every phase would turn the desired narration cadence into a major burn increase.
@@ -80,6 +80,7 @@ Items are ordered by current priority.
 - Concrete seam: workspace test layout, provider/DB/browser dependency classification, `test:mock` scripts, and CI test jobs.
 - Validation path: inventory every test file; classify paid, credentialed, DB-backed, browser, and provider-free suites; prove every provider-free suite is discovered automatically; fail CI when a new test is unclassified; keep paid model simulations and external writes opt-in only.
 - Suggested slice: replace hand-maintained provider-free file lists with an automatic lane based on an explicit directory or naming contract, move exceptional suites into named opt-in lanes, and add a manifest/completeness check so newly added tests cannot silently miss required CI.
+- Implemented shape: ordinary provider-free and API/PostgreSQL tests use Bun discovery; exceptional suites use structural suffixes; `scripts/check-test-classification.ts` fails closed for unowned tests; deterministic browser coverage is isolated and visible but non-required; live-provider, external, real-Clerk, and staging execution remain opt-in.
 
 ### R12. Player Strategy Thread checkpoint hydration
 

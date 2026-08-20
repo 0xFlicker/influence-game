@@ -1,16 +1,20 @@
 /**
  * E2E: Full Game Flow
  *
- * Three browser scenarios validating the core user journey:
+ * Two provider-free browser scenarios validating the core setup journey:
  *   1. Admin creates a 6-player budget live game (via API, verified in browser)
  *   2. 6 players join the game (via API, verified in browser)
- *   3. Anonymous viewer watches game play to completion
  *
- * Run with: doppler run -- bun test src/e2e/game-flow.e2e.test.ts
+ * The live-model completion story is classified separately in
+ * game-flow.live-provider.test.ts.
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { createTestDb, destroyTestDb, type TestDB } from "./test-db.js";
+import {
+  createIsolatedTestDb,
+  destroyIsolatedTestDb,
+  type TestDB,
+} from "./test-db.js";
 import {
   createAdminUser,
   createPlayerUser,
@@ -21,11 +25,8 @@ import {
   stopTestServers,
   type TestServerHandles,
 } from "./test-server.js";
-import {
-  launchBrowser,
-  createAnonymousPage,
-  closeBrowser,
-} from "./test-browser.js";
+import { launchBrowser, closeBrowser } from "./test-browser.js";
+import { cleanupE2eResources } from "./cleanup.js";
 import type { Browser, Page } from "puppeteer";
 import { mkdirSync } from "fs";
 import path from "path";
@@ -33,14 +34,17 @@ import path from "path";
 // Match JWT_SECRET to what test-server uses
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
 
-// Screenshot directory for failure debugging
-const SCREENSHOT_DIR = path.join(import.meta.dir, "../../..", "e2e-screenshots");
+const SCREENSHOT_DIR = path.resolve(
+  process.env.INFLUENCE_E2E_RESULTS_DIR
+    ?? path.join(import.meta.dir, "../../../..", "test-results"),
+  "screenshots",
+);
 
 async function screenshotOnFailure(page: Page, name: string): Promise<void> {
   try {
     mkdirSync(SCREENSHOT_DIR, { recursive: true });
     await page.screenshot({
-      path: path.join(SCREENSHOT_DIR, `${name}-${Date.now()}.png`),
+      path: path.join(SCREENSHOT_DIR, `${name}.png`),
       fullPage: true,
     });
   } catch {
@@ -69,7 +73,7 @@ let gameSlug: string;
 // ---------------------------------------------------------------------------
 
 beforeAll(async () => {
-  testDb = await createTestDb();
+  testDb = await createIsolatedTestDb();
 
   admin = await createAdminUser(testDb.db);
 
@@ -83,9 +87,11 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  if (browser) await closeBrowser(browser);
-  if (servers) await stopTestServers(servers);
-  if (testDb) destroyTestDb(testDb.databaseUrl);
+  await cleanupE2eResources([
+    ["browser", async () => { if (browser) await closeBrowser(browser); }],
+    ["servers", async () => { if (servers) await stopTestServers(servers); }],
+    ["database", async () => { if (testDb) await destroyIsolatedTestDb(testDb.databaseUrl); }],
+  ]);
 });
 
 // ---------------------------------------------------------------------------
@@ -260,7 +266,7 @@ describe("E2E: Full Game Flow", () => {
 
         // Wait for players to render in the PlayerRoster
         await page.waitForFunction(
-          "document.body.innerText.includes('Players') && document.body.innerText.includes('alive')",
+          "document.body.innerText.toLowerCase().includes('players') && document.body.innerText.toLowerCase().includes('6 alive')",
           { timeout: 20000 },
         );
 
@@ -272,7 +278,7 @@ describe("E2E: Full Game Flow", () => {
         }
 
         // Player count should show 6 alive
-        expect(pageText).toContain("6 alive");
+        expect(pageText.toLowerCase()).toContain("6 alive");
       } catch (err) {
         await screenshotOnFailure(page, "scenario2-failure");
         throw err;
@@ -282,116 +288,4 @@ describe("E2E: Full Game Flow", () => {
     }
   }, 60_000);
 
-  // -------------------------------------------------------------------------
-  // Scenario 3 — Anonymous viewer watches game to completion
-  // -------------------------------------------------------------------------
-
-  test(
-    "anonymous viewer watches game to completion",
-    async () => {
-      // Start the game via admin API call
-      const startRes = await fetch(
-        `${servers.apiUrl}/api/games/${gameId}/start`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${admin.jwt}`,
-          },
-        },
-      );
-
-      expect(startRes.ok).toBe(true);
-      const startData = (await startRes.json()) as {
-        status: string;
-        players: number;
-      };
-      expect(startData.status).toBe("in_progress");
-      expect(startData.players).toBe(6);
-
-      // Open anonymous (incognito) page — no auth
-      const page = await createAnonymousPage(browser, servers.webUrl!);
-      try {
-        // Navigate to game page via slug
-        await page.goto(`${servers.webUrl}/games/${gameSlug}`, {
-          waitUntil: "networkidle2",
-          timeout: 30000,
-        });
-
-        // Assert: page loads without auth wall
-        await page.waitForFunction(
-          "document.body.innerText.length > 50",
-          { timeout: 15000 },
-        );
-
-        await page.waitForSelector(
-          '[data-testid="match-watch-shell"][data-watch-mode="live"]',
-          { timeout: 15000 },
-        );
-        const initialText = await getPageText(page);
-        expect(initialText).not.toContain("Access denied");
-        expect(initialText).not.toContain("Connect wallet");
-        expect(initialText).toContain("Watch Room");
-
-        // Poll game status via API until completion (timeout 10 min)
-        const POLL_INTERVAL_MS = 5000;
-        const MAX_WAIT_MS = 600_000;
-        const startTime = Date.now();
-        let completed = false;
-        let finalGame: {
-          status: string;
-          winner?: string;
-          currentRound: number;
-        } | null = null;
-
-        while (Date.now() - startTime < MAX_WAIT_MS) {
-          const res = await fetch(`${servers.apiUrl}/api/games/${gameId}`);
-          if (res.ok) {
-            finalGame = (await res.json()) as typeof finalGame;
-            if (finalGame!.status === "completed") {
-              completed = true;
-              break;
-            }
-            if (finalGame!.status === "cancelled") {
-              await screenshotOnFailure(page, "scenario3-cancelled");
-              break;
-            }
-          }
-          await Bun.sleep(POLL_INTERVAL_MS);
-        }
-
-        expect(completed).toBe(true);
-        expect(finalGame).not.toBeNull();
-        expect(finalGame!.status).toBe("completed");
-        expect(finalGame!.currentRound).toBeGreaterThan(0);
-
-        // Reload page to watch the completed transcript in replay shell mode.
-        await page.goto(`${servers.webUrl}/games/${gameSlug}`, {
-          waitUntil: "networkidle2",
-          timeout: 30000,
-        });
-
-        await page.waitForSelector(
-          '[data-testid="match-watch-shell"][data-watch-mode="replay"]',
-          { timeout: 15000 },
-        );
-
-        const finalText = await getPageText(page);
-        expect(finalText).toContain("Watch Room");
-        expect(finalText).toContain("Replay");
-        expect(finalText).not.toContain("Watch Replay");
-
-        // Game should show completed status
-        expect(finalGame!.status).toBe("completed");
-      } catch (err) {
-        await screenshotOnFailure(page, "scenario3-failure");
-        throw err;
-      } finally {
-        // Close the incognito context (not just the page)
-        const context = page.browserContext();
-        await context.close();
-      }
-    },
-    660_000, // 11 minutes: 10 min game + 1 min buffer
-  );
 });

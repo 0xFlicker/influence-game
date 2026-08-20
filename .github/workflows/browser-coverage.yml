@@ -1,0 +1,135 @@
+name: Browser Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: browser-coverage-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  TEST_DATABASE_URL: postgresql://influence:influence@127.0.0.1:54320/influence_test
+  INFLUENCE_E2E_RESULTS_DIR: ${{ github.workspace }}/test-results/services
+
+jobs:
+  identity:
+    name: Browser Coverage / Public identity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services: &postgres
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: influence
+          POSTGRES_PASSWORD: influence
+          POSTGRES_DB: influence_test
+        ports:
+          - 54320:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Run deterministic public identity story
+        run: bun run test:e2e:identity
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-public-identity-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  layered-auth:
+    name: Browser Coverage / Layered auth
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services: *postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Run deterministic layered-auth story
+        run: bun run test:e2e:layered-auth
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-layered-auth-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  format-viewer:
+    name: Browser Coverage / Format viewer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services: *postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+      - name: Run hermetic format viewer story
+        run: bun run test:e2e:format-viewer
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-format-viewer-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  api-browser:
+    name: Browser Coverage / API browser stories
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services: *postgres
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Install browser system dependencies
+        run: bunx playwright install-deps chromium
+      - name: Install Puppeteer Chrome
+        run: bunx puppeteer browsers install chrome
+      - name: Run isolated API browser stories serially
+        run: bun run test:browser:api
+      - name: Upload failure evidence
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: browser-api-stories-${{ github.run_id }}-${{ github.run_attempt }}
+          path: test-results
+          if-no-files-found: ignore
+          retention-days: 7

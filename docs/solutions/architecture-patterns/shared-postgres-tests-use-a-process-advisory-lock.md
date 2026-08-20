@@ -35,13 +35,14 @@ The regression test launches two real Bun processes. The first acquires the data
 
 The lease serializes processes, not tests scheduled concurrently inside one process. DB-backed tests that share this database must not use `test.concurrent` or `describe.concurrent`. New shared-DB tests must call `setupTestDB()` before mutation; code that bypasses the helper also bypasses the lease.
 
+The automatic API/PostgreSQL lane runs all ordinary API tests in one Bun process with `--max-concurrency 1`. Browser tests do not join this lease: each browser harness creates a uniquely named database, owns its API/web children, and drops that database during cleanup. This lets Browser Coverage run beside the required shared-DB lane without cross-truncation.
+
 ## Verification
 
 Run:
 
 ```bash
-cd packages/api
-bun test src/__tests__/test-db-process-lock.test.ts
+bun run test:postgres
 ```
 
-The test must prove that the second process remains blocked during the first process's hold window and proceeds after the first exits.
+The lane includes the process-lock regression, which proves that the second process remains blocked during the first process's hold window and proceeds after the first exits.

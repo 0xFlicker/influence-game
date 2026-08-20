@@ -5,8 +5,6 @@ import { writePrivateDecisionTrace } from "../services/private-trace-writer.js";
 import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
-const smokeTest = process.env.INFLUENCE_PRIVATE_TRACE_S3_SMOKE === "1" ? test : test.skip;
-
 function makeTrace(gameId: string, ownerEpoch: string): PrivateDecisionTrace {
   return {
     version: 2,
@@ -81,28 +79,28 @@ function makeTrace(gameId: string, ownerEpoch: string): PrivateDecisionTrace {
   };
 }
 
-describe("private trace local S3 smoke", () => {
-  smokeTest("writes trace content to local S3 and reads it through the read model", async () => {
+describe("private trace local S3 external smoke", () => {
+  test("writes trace content to local S3 and reads it through the read model", async () => {
+    if (process.env.INFLUENCE_PRIVATE_TRACE_S3_SMOKE !== "1") {
+      throw new Error(
+        "External S3 smoke requires INFLUENCE_PRIVATE_TRACE_S3_SMOKE=1.",
+      );
+    }
     const endpoint = process.env.LINODE_PRIVATE_CONTENT_ENDPOINT;
     const accessKey = process.env.LINODE_PRIVATE_CONTENT_ACCESS_KEY;
     const secretKey = process.env.LINODE_PRIVATE_CONTENT_SECRET_KEY;
     const privateBucket = process.env.LINODE_PRIVATE_CONTENT_BUCKET;
     if (!endpoint || !accessKey || !secretKey || !privateBucket) {
-      throw new Error("local private trace S3 smoke requires private content S3 env");
+      throw new Error("Local private trace S3 smoke requires private content S3 env.");
     }
     expect(process.env.LINODE_OBJ_BUCKET).not.toBe(privateBucket);
 
     const db = await setupTestDB();
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
-
     const write = await writePrivateDecisionTrace(
       db,
-      {
-        gameId,
-        ownerEpoch,
-        trace: makeTrace(gameId, ownerEpoch),
-      },
+      { gameId, ownerEpoch, trace: makeTrace(gameId, ownerEpoch) },
       { now: () => new Date("2026-06-15T12:00:00.000Z") },
     );
 

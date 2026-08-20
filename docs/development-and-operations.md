@@ -216,14 +216,11 @@ Do not wrap `bun run dev:api` or `bun run dev:web` in another `doppler run`.
 ### 4. Run tests
 
 ```bash
-# Unit tests -- fast, no LLM calls, no secrets needed
-bun test:engine
+# Automatically discovered provider-free tests; no secrets needed
+bun run test
 
-# Full integration tests -- requires a hosted or local OpenAI-compatible LLM provider
-bun run test:engine:full
-
-# All packages (unit tests only)
-bun test
+# Automatically discovered API tests; local PostgreSQL required
+bun run test:postgres
 
 # Type check everything
 bun run typecheck
@@ -231,8 +228,16 @@ bun run typecheck
 # Deterministic layered-auth browser/API coverage (local Docker PostgreSQL)
 bun run test:e2e:layered-auth
 
+# Other deterministic Browser Coverage lanes (local Docker PostgreSQL)
+bun run test:e2e:identity
+bun run test:e2e:format-viewer
+bun run test:browser:api
+
 # Real Clerk development-instance coverage (explicit credentials required)
 bun run test:e2e:layered-auth:clerk
+
+# Live-provider suites are manual and fail closed without provider configuration
+doppler run -- bun run test:live-provider
 ```
 
 ### Format-aware viewer verification
@@ -243,18 +248,19 @@ Use deterministic fixtures before creating a fresh game:
 - `mild-cream-rune` — second all-format completed replay/results fixture.
 - `young-ruby-isle` — Safety Bounce-heavy completed fixture.
 - `edge-smoke-dusk` — frozen engine-authored classic characterization; the
-  browser story route-projects its canonical events, so no persisted row is
-  required.
+  browser harness persists its canonical events into the isolated fixture
+  database.
 
-With the local API and web processes already running, execute:
+Run the hermetic story from the repository root:
 
 ```bash
-PLAYWRIGHT_BASE_URL=http://127.0.0.1:3001 \
-PLAYWRIGHT_FORMAT_VIEWER=1 \
-bunx playwright test e2e/format-aware-game-viewer.spec.ts
+bun run test:e2e:format-viewer
 ```
 
-The story installs Playwright Clock and does not use sleep-based assertions. It
+The story creates and migrates a unique PostgreSQL database, seeds the named
+format and classic games from canonical engine events, starts local API/web
+children, and drops/stops everything during cleanup. It installs Playwright
+Clock and does not use sleep-based assertions. It
 checks browser-routed current-state entry for every format, deterministic
 WebSocket reconnect and higher-sequence repair, reload from a local mid-roll-call
 position, terminal/malformed trusted prefixes, canonical pointer landing, lane
@@ -271,8 +277,10 @@ DRIZZLE_MIGRATIONS_DIR=./drizzle \
 bun test src/__tests__/production-game-mcp-read-model.test.ts
 ```
 
-The test database path uses `setupTestDB()` and its process advisory lock. Do not
-run these DB tests concurrently inside one Bun process.
+The shared API test database uses `setupTestDB()` and its process advisory lock.
+Run the API/PostgreSQL lane as one Bun process with `--max-concurrency 1`; do not
+use `test.concurrent` or `describe.concurrent` in shared-DB tests. Browser
+harnesses use unique databases instead and never truncate the shared database.
 
 A fresh controlled format game is still required for end-to-end API/WebSocket
 integration proof beyond the deterministic browser-routed story. Use

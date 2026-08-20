@@ -16,6 +16,7 @@ import {
   createPrivateWorkspace,
   createTemporaryMaterialization,
   inspectRunRecovery,
+  parseGitWorktreeRoots,
   promoteValidatedMaterialization,
   readArtifact,
   readDurableProviderSettledSpendUsd,
@@ -50,6 +51,23 @@ async function workspaceFixture(): Promise<PrivateWorkspace> {
 }
 
 describe("private workspace boundary", () => {
+  test("excludes prunable git worktree records", () => {
+    expect(parseGitWorktreeRoots([
+      "worktree /repo/main",
+      "HEAD aaaaaaa",
+      "branch refs/heads/main",
+      "",
+      "worktree /repo/stale",
+      "HEAD bbbbbbb",
+      "prunable gitdir file points to non-existent location",
+      "",
+      "worktree /repo/live",
+      "HEAD ccccccc",
+      "detached",
+      "",
+    ].join("\n"))).toEqual(["/repo/main", "/repo/live"]);
+  });
+
   test("requires an absolute root outside resolved git worktrees", async () => {
     await expect(createPrivateWorkspace("relative/path", {
       gitWorktreeRoots: [process.cwd()],

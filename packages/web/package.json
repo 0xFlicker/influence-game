@@ -14,7 +14,7 @@
     "render-worker:health": "bun run src/scripts/render-house-highlights-media-worker.ts --health",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test:mock": "bun test src/__tests__/"
+    "test": "bun test --config=../../bunfig.toml ./src --max-concurrency 1 --path-ignore-patterns='**/*live-provider*' --path-ignore-patterns='**/*external-smoke*'"
   },
   "dependencies": {
     "@clerk/nextjs": "7.5.20",

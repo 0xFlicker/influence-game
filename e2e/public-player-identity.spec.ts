@@ -1,6 +1,9 @@
 import { expect, test, type Browser, type BrowserContext } from "@playwright/test";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createInterface } from "node:readline";
+import {
+  startLocalHarness,
+  stopLocalHarness,
+  type LocalHarnessProcess,
+} from "./local-harness";
 
 const LOCAL_IDENTITY_RUN =
   process.env.PLAYWRIGHT_LOCAL_IDENTITY === "1"
@@ -30,7 +33,7 @@ test.describe("local public player identity", () => {
   );
   test.describe.configure({ mode: "serial", retries: 0 });
 
-  let harnessProcess: ChildProcessWithoutNullStreams;
+  let harnessProcess: LocalHarnessProcess;
   let servers: LocalIdentityHarness;
   let fixture: IdentityFixture;
 
@@ -280,57 +283,21 @@ async function authenticatedContext(
 }
 
 async function startLocalIdentityHarness(): Promise<{
-  process: ChildProcessWithoutNullStreams;
+  process: LocalHarnessProcess;
   harness: LocalIdentityHarness;
 }> {
-  const child = spawn(
-    "bun",
-    ["run", "packages/api/src/e2e/public-player-identity-harness.ts"],
-    {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
-  let stderrTail = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderrTail = `${stderrTail}${chunk}`.slice(-16_384);
+  return startLocalHarness<LocalIdentityHarness>({
+    script: "packages/api/src/e2e/public-player-identity-harness.ts",
+    readyPrefix: "E2E_IDENTITY_READY ",
+    startupTimeoutMs: 100_000,
+    errorLabel: "Local identity harness exited before it was ready.",
   });
-
-  const lines = createInterface({ input: child.stdout });
-  const timeout = setTimeout(() => {
-    child.kill("SIGTERM");
-  }, 100_000);
-
-  try {
-    for await (const line of lines) {
-      if (!line.startsWith("E2E_IDENTITY_READY ")) continue;
-      const harness = JSON.parse(
-        line.slice("E2E_IDENTITY_READY ".length),
-      ) as LocalIdentityHarness;
-      return { process: child, harness };
-    }
-  } finally {
-    clearTimeout(timeout);
-    lines.close();
-  }
-
-  throw new Error(
-    `Local identity harness exited before it was ready.\n${stderrTail}`.trim(),
-  );
 }
 
 async function stopLocalIdentityHarness(
-  child: ChildProcessWithoutNullStreams,
+  child: LocalHarnessProcess,
 ): Promise<void> {
-  if (child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
-  ]);
-  if (child.exitCode === null) child.kill("SIGKILL");
+  await stopLocalHarness(child);
 }
 
 function assertNoForbiddenPublicKeys(value: unknown): void {
