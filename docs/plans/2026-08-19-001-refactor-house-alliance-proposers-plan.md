@@ -1,7 +1,7 @@
 ---
 title: "refactor: House-selected alliance proposer opportunities"
 type: refactor
-status: active
+status: completed
 date: 2026-08-19
 ---
 
