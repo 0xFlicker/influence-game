@@ -94,6 +94,7 @@ import {
   getAdminGameCostDetail,
   type AdminGameCostDetailPayload,
 } from "../services/admin-game-cost-detail.js";
+import { sha256StableJson } from "../services/stable-hash.js";
 
 const DEFAULT_EVENT_LIMIT = 50;
 const MAX_EVENT_LIMIT = 200;
@@ -970,7 +971,7 @@ export class ProductionGameMcpReadModel {
     options: ProductionGameMcpPostgameOptions,
     access: ProductionGameMcpAccess,
   ): Promise<{
-    schemaVersion: 1;
+    schemaVersion: 2;
     ok: true;
     game: PostgameAnalysisOk["game"];
     producerAnalysis: ReturnType<typeof buildProducerPostgameAnalysis>;
@@ -991,10 +992,13 @@ export class ProductionGameMcpReadModel {
         gameIdOrSlug: game.id,
         limit: 50,
       }, this.producerCognitiveAccessor(access)),
-      this.privateTrace.listManifests(game.id, 50),
+      this.privateTrace.listManifests(game.id, {
+        limit: 50,
+        cursorBinding: producerTraceCursorBinding(access),
+      }),
     ]);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       ok: true,
       game: result.game,
       producerAnalysis: buildProducerPostgameAnalysis(result.analysis),
@@ -1036,16 +1040,21 @@ export class ProductionGameMcpReadModel {
     gameIdOrSlug: string,
     access: ProductionGameMcpAccess,
     limit?: number,
+    cursor?: string,
   ): Promise<{
-    schemaVersion: 1;
+    schemaVersion: 2;
     developerEvidence: unknown;
   }> {
     requireProducerAccess(access);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       developerEvidence: await this.privateTrace.listManifests(
         gameIdOrSlug,
-        clamp(limit ?? 50, 1, MAX_TRACE_MANIFEST_LIMIT),
+        {
+          limit: clamp(limit ?? 50, 1, MAX_TRACE_MANIFEST_LIMIT),
+          cursor,
+          cursorBinding: producerTraceCursorBinding(access),
+        },
       ),
     };
   }
@@ -1097,12 +1106,12 @@ export class ProductionGameMcpReadModel {
     params: ListCognitiveArtifactsParams,
     access: ProductionGameMcpAccess,
   ): Promise<{
-    schemaVersion: 1;
+    schemaVersion: 2;
     cognitiveArtifacts: unknown;
   }> {
     const accessor = await this.cognitiveAccessorForMcp(params.gameIdOrSlug, access);
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       cognitiveArtifacts: await this.cognitiveArtifacts.listArtifacts(params, accessor),
     };
   }
@@ -1901,6 +1910,15 @@ function requireProducerAccess(access: ProductionGameMcpAccess): void {
   if (access.authProfile !== "producer") {
     throw new Error("Producer-only MCP evidence requires MCP scope: producer");
   }
+}
+
+function producerTraceCursorBinding(access: ProductionGameMcpAccess): string {
+  return sha256StableJson({
+    domain: "influence.private_trace.index_binding.v1",
+    surface: "production_game_mcp_producer",
+    authProfile: access.authProfile,
+    userId: access.userId ?? null,
+  });
 }
 
 function settlementHoldsTerminalOutcome(
