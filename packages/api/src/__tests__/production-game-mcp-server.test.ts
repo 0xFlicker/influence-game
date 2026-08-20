@@ -997,6 +997,10 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       },
     };
     expectMatchesJsonSchema(producerAnalysisResponse, producerAnalysisTool.outputSchema);
+    expect(() => expectMatchesJsonSchema({
+      ...producerAnalysisResponse,
+      schemaVersion: 1,
+    }, producerAnalysisTool.outputSchema)).toThrow("oneOf");
     for (const indexKey of ["cognitiveArtifacts", "traceManifests"] as const) {
       for (const metadataKey of ["pageSize", "totalCount", "nextCursor"] as const) {
         const invalidResponse = structuredClone(producerAnalysisResponse);

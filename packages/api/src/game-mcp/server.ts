@@ -2017,6 +2017,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     producerAnalysis: {
       required: ["schemaVersion", "ok", "game", "producerAnalysis", "developerEvidence"],
       properties: {
+        schemaVersion: { type: "number", const: 2 },
         producerAnalysis: {
           type: "object",
           required: ["executiveSummary", "gameMomentum", "derivedVoteCohorts", "inferredAlliances", "juryManagementAnalysis", "playerByPlayerStrategicGrades"],
