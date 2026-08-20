@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import type { Browser, Dialog, Page } from "puppeteer";
 import { schema } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { closeSeason, createSeason } from "../services/seasons.js";
 import {
   createAdminUser,
@@ -17,8 +18,13 @@ import {
   createAuthenticatedPage,
   launchBrowser,
 } from "./test-browser.js";
-import { createTestDb, destroyTestDb, type TestDB } from "./test-db.js";
+import {
+  createIsolatedTestDb,
+  destroyIsolatedTestDb,
+  type TestDB,
+} from "./test-db.js";
 import { startTestServers, stopTestServers, type TestServerHandles } from "./test-server.js";
+import { cleanupE2eResources } from "./cleanup.js";
 
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
 
@@ -42,12 +48,26 @@ interface QueueStatusResponse {
 }
 
 beforeAll(async () => {
-  testDb = await createTestDb();
+  testDb = await createIsolatedTestDb();
   admin = await createAdminUser(testDb.db);
   player = await createPlayerUser(testDb.db, 0);
   agentlessPlayer = await createPlayerUser(testDb.db, 1);
   singleAgentPlayer = await createPlayerUser(testDb.db, 2);
   surfacePlayer = await createPlayerUser(testDb.db, 3);
+  for (const userId of [
+    admin.userId,
+    player.userId,
+    agentlessPlayer.userId,
+    singleAgentPlayer.userId,
+    surfacePlayer.userId,
+  ]) {
+    await recordCurrentLegalAcceptance(
+      testDb.db,
+      userId,
+      "existing_account",
+      "0123456789abcdef0123456789abcdef01234567",
+    );
+  }
   adminJwt = await mintTestJwt(admin.userId, {
     roles: ["sysop"],
     permissions: ["view_admin", "schedule_free_game"],
@@ -92,19 +112,12 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
-  let seasonCleanupError: unknown;
-  try {
-    if (testDb && seasonId) await closeSeason(testDb.db, seasonId);
-  } catch (error) {
-    seasonCleanupError = error;
-  }
-  try {
-    if (browser) await closeBrowser(browser);
-  } finally {
-    if (servers) await stopTestServers(servers);
-    if (testDb) destroyTestDb(testDb.databaseUrl);
-  }
-  if (seasonCleanupError) throw seasonCleanupError;
+  await cleanupE2eResources([
+    ["season", async () => { if (testDb && seasonId) await closeSeason(testDb.db, seasonId); }],
+    ["browser", async () => { if (browser) await closeBrowser(browser); }],
+    ["servers", async () => { if (servers) await stopTestServers(servers); }],
+    ["database", async () => { if (testDb) await destroyIsolatedTestDb(testDb.databaseUrl); }],
+  ]);
 });
 
 describe("E2E: Standing Daily Agent", () => {
@@ -114,7 +127,7 @@ describe("E2E: Standing Daily Agent", () => {
       privateKey: agentlessPlayer.wallet.privateKey,
     });
 
-    await waitForText(page, "Play Daily Free", 15_000);
+    await waitForText(page, "Play for Free", 15_000);
     await waitForText(page, "Create an agent");
     await clickButton(page, "Create an agent");
     await page.type('input[placeholder="e.g. ShadowPlay-7"]', "Prompt Newcomer");
@@ -122,11 +135,12 @@ describe("E2E: Standing Daily Agent", () => {
       'textarea[placeholder^="How does your agent behave"]',
       "Curious, composed, and willing to make a clear decision.",
     );
+    await page.click('button[role="radio"][aria-checked="false"]');
     await clickButton(page, "Create and enter");
 
     const createdAgent = await waitForOwnedAgentByName(agentlessPlayer.userId, "Prompt Newcomer");
     await waitForQueueAgent(agentlessPlayer.userId, createdAgent.id);
-    await waitForMissingText(page, "Play Daily Free");
+    await waitForMissingText(page, "Play for Free");
 
     await page.goto(`${webUrl}/games/free`, { waitUntil: "domcontentloaded" });
     await waitForText(page, "Prompt Newcomer");
@@ -139,11 +153,11 @@ describe("E2E: Standing Daily Agent", () => {
       privateKey: singleAgentPlayer.wallet.privateKey,
     });
 
-    await waitForText(page, "Play Daily Free", 15_000);
+    await waitForText(page, "Play for Free", 15_000);
     await waitForText(page, "Enter Solo Gamma");
     expect(await pageText(page)).not.toContain("Select an agent");
     await clickButton(page, "Maybe later");
-    await waitForMissingText(page, "Play Daily Free");
+    await waitForMissingText(page, "Play for Free");
 
     const suppression = await waitForSuppression(singleAgentPlayer.userId);
     expect(suppression.reason).toBe("maybe_later");
@@ -154,7 +168,7 @@ describe("E2E: Standing Daily Agent", () => {
     const status = await reloadAndReadQueueStatus(page);
     expect(status.promptEligible).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 3_200));
-    expect(await pageText(page)).not.toContain("Play Daily Free");
+    expect(await pageText(page)).not.toContain("Play for Free");
     expect((await testDb.db.select().from(schema.freeGameQueue)
       .where(eq(schema.freeGameQueue.userId, singleAgentPlayer.userId))).length).toBe(0);
   }, 60_000);
@@ -165,7 +179,7 @@ describe("E2E: Standing Daily Agent", () => {
       privateKey: player.wallet.privateKey,
     });
 
-    await waitForText(playerPage, "Play Daily Free", 15_000);
+    await waitForText(playerPage, "Play for Free", 15_000);
     await waitForText(playerPage, "Choose an agent");
     expect(await pageText(playerPage)).toContain("Maybe later");
     await playerPage.waitForFunction(`document.activeElement?.id === 'daily-agent-choice'`);
@@ -177,11 +191,11 @@ describe("E2E: Standing Daily Agent", () => {
     await playerPage.waitForFunction(`document.activeElement?.id === 'daily-agent-choice'`);
 
     await playerPage.keyboard.press("Escape");
-    await waitForMissingText(playerPage, "Play Daily Free");
+    await waitForMissingText(playerPage, "Play for Free");
     await playerPage.evaluate(`document.querySelector('a[href="/rules"]')?.click()`);
     await playerPage.waitForFunction('window.location.pathname === "/rules"');
     await new Promise((resolve) => setTimeout(resolve, 3_200));
-    expect(await pageText(playerPage)).not.toContain("Play Daily Free");
+    expect(await pageText(playerPage)).not.toContain("Play for Free");
 
     const observedPromptDelay = await reloadAndMeasurePrompt(playerPage);
     expect(observedPromptDelay).toBeGreaterThanOrEqual(2_800);
@@ -193,15 +207,15 @@ describe("E2E: Standing Daily Agent", () => {
       return true;
     })()`) as boolean;
     expect(clickedOutside).toBe(true);
-    await waitForMissingText(playerPage, "Play Daily Free");
+    await waitForMissingText(playerPage, "Play for Free");
     await playerPage.waitForFunction(`document.activeElement?.id === 'focus-restoration-sentinel'`);
 
     await playerPage.reload({ waitUntil: "domcontentloaded" });
-    await waitForText(playerPage, "Play Daily Free", 15_000);
+    await waitForText(playerPage, "Play for Free", 15_000);
 
     await playerPage.select("#daily-agent-choice", firstAgentId);
     await clickButton(playerPage, "Enter agent");
-    await waitForMissingText(playerPage, "Play Daily Free");
+    await waitForMissingText(playerPage, "Play for Free");
     await waitForQueueAgent(player.userId, firstAgentId);
 
     await playerPage.goto(`${webUrl}/games/free`, { waitUntil: "domcontentloaded" });
@@ -272,10 +286,10 @@ describe("E2E: Standing Daily Agent", () => {
     await waitForPrompt(surfacePage);
     await waitForText(surfacePage, "Enter Surface Delta");
     await surfacePage.keyboard.press("Escape");
-    await waitForMissingText(surfacePage, "Play Daily Free");
+    await waitForMissingText(surfacePage, "Play for Free");
     await playerPage.goto(`${webUrl}/dashboard`, { waitUntil: "domcontentloaded" });
     await playerPage.waitForSelector(`a[href='/games/${gameSlug}']`, { timeout: 45_000 });
-    expect(await pageText(playerPage)).toContain("Daily Beta is in the current Daily Free game.");
+    expect(await pageText(playerPage)).toContain(`${gameSlug} is in progress now.`);
     expect(await playerPage.$eval(
       `a[href='/games/${gameSlug}']`,
       (element) => element.getAttribute("href"),
@@ -321,7 +335,7 @@ describe("E2E: Standing Daily Agent", () => {
     expect(await pageText(adminPage)).not.toContain("Are you sure");
 
     await playerPage.reload({ waitUntil: "domcontentloaded" });
-    await playerPage.waitForSelector("button.influence-selection-card", { timeout: 45_000 });
+    await playerPage.waitForSelector('button[aria-label="Select Daily Alpha"]', { timeout: 45_000 });
     await clickAgentCard(playerPage, "Daily Alpha");
     await clickButton(playerPage, "Join Influence Queue");
     await waitForQueueAgent(player.userId, firstAgentId);
@@ -343,7 +357,7 @@ describe("E2E: Standing Daily Agent", () => {
     const closedStatus = await reloadAndReadQueueStatus(playerPage);
     expect(closedStatus.promptEligible).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 3_200));
-    expect(await pageText(playerPage)).not.toContain("Play Daily Free");
+    expect(await pageText(playerPage)).not.toContain("Play for Free");
   }, 120_000);
 });
 
@@ -360,7 +374,7 @@ async function waitForText(page: Page, text: string, timeout = 30_000): Promise<
 
 async function waitForPrompt(page: Page): Promise<void> {
   await page.waitForSelector('[role="dialog"][aria-modal="true"]', { timeout: 15_000 });
-  expect(await pageText(page)).toContain("Play Daily Free");
+  expect(await pageText(page)).toContain("Play for Free");
 }
 
 async function waitForMissingText(page: Page, text: string, timeout = 10_000): Promise<void> {
@@ -438,8 +452,8 @@ async function reloadAndMeasurePrompt(page: Page): Promise<number> {
     target.focus();
     return document.activeElement === target;
   })()`);
-  expect(await pageText(page)).not.toContain("Play Daily Free");
-  await waitForText(page, "Play Daily Free", 15_000);
+  expect(await pageText(page)).not.toContain("Play for Free");
+  await waitForText(page, "Play for Free", 15_000);
   return Date.now() - readyAt;
 }
 

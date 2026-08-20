@@ -5,7 +5,9 @@ const localIdentityRun =
   process.env.PLAYWRIGHT_LOCAL_IDENTITY === "1"
   || process.env.PLAYWRIGHT_BASE_URL === undefined;
 const layeredAuthRun = process.env.PLAYWRIGHT_LAYERED_AUTH;
-const localSerialRun = localIdentityRun || layeredAuthRun === "deterministic";
+const localFormatViewerRun = process.env.PLAYWRIGHT_FORMAT_VIEWER === "1";
+const localSerialRun =
+  localIdentityRun || localFormatViewerRun || layeredAuthRun === "deterministic";
 const stagingReleaseGate = process.env.STAGING_RELEASE_GATE === "1";
 const macChrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const chromiumUse = {
@@ -17,7 +19,7 @@ const chromiumUse = {
 
 export default defineConfig({
   testDir: "./e2e",
-  timeout: layeredAuthRun ? 90_000 : 30_000,
+  timeout: layeredAuthRun || localFormatViewerRun ? 90_000 : 30_000,
   fullyParallel: !localSerialRun,
   workers: localSerialRun ? 1 : undefined,
   retries: localSerialRun ? 0 : 1,

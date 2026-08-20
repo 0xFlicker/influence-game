@@ -84,15 +84,20 @@ If `types.ts` needs new fields, the FE makes those changes. LGD should never edi
 
 ## Testing
 
-### Test Tiers
+### Test lanes
 
-Tests are organized into three tiers with different requirements:
+The file location and suffix own each test. `bun run test:classification` fails when a new test has no lane.
 
-| Tier | Command | Needs DB? | Needs LLM provider? | When to run |
-|------|---------|-----------|---------------------|-------------|
-| **Unit (mock)** | `bun run test` | No | No | Every commit (pre-commit check) |
-| **DB integration** | `bun run test:db` | Yes (PostgreSQL) | No for most tests; configured provider for optional LLM generation tests | Before merging API changes |
-| **Full LLM** | `bun run test:engine:full` | No | Yes (`OPENAI_API_KEY` via Doppler or `INFLUENCE_LLM_BASE_URL` for LM Studio) | Before releasing engine changes |
+| Lane | Ownership | Command | Automatic CI? |
+|------|-----------|---------|---------------|
+| Provider-free | ordinary engine, web, protocol, and root-script tests | `bun run test` | Required |
+| API / PostgreSQL | every ordinary non-E2E API test | `bun run test:postgres` | Required |
+| Browser Coverage | `packages/api/src/e2e/*.e2e.test.ts` plus explicitly classified deterministic Playwright specs | commands below | Visible, non-required |
+| Live provider | `*.live-provider.test.ts` | `doppler run -- bun run test:live-provider` or explicitly configured local provider | Never automatic |
+| External smoke | `*.external-smoke.test.ts` | `bun run test:external-smoke` with explicit service configuration | Never automatic |
+| Real Clerk / staging | explicitly selected Playwright project or staging workflow | commands below | Opt-in / release-only |
+
+Required jobs do not receive provider, Clerk, staging, or external-service credentials. A missing credential is not a passing live-provider test: opt-in suites fail closed when invoked without their configuration.
 
 ### Context evaluation levels
 
@@ -109,32 +114,26 @@ The evaluator's `strategic-probe` also makes zero provider calls. It compares se
 ### Running Tests
 
 ```bash
-# From repo root — runs ALL unit tests across all packages (engine + api + web)
+# Classification plus all automatically discovered provider-free tests
 bun run test
 
-# API integration tests (requires PostgreSQL on port 54320)
+# All automatically discovered API tests (requires PostgreSQL on port 54320)
 bun run db:bootstrap
-bun run test:db
+bun run test:postgres
 
-# Engine unit tests only
-bun run test:engine
+# Deterministic Browser Coverage lanes (isolated databases and child processes)
+bun run test:e2e:identity
+bun run test:e2e:layered-auth
+bun run test:e2e:format-viewer
+bun run test:browser:api
 
-# Engine full tests with real LLM calls (requires OpenAI-compatible provider)
-bun run test:engine:full
-
-# E2E smoke tests (requires running API server)
-cd packages/api && bun run test:e2e
+# Manual suites; configure the named dependency before invoking
+doppler run -- bun run test:live-provider
+bun run test:external-smoke
+bun run test:e2e:layered-auth:clerk
 ```
 
-**Important:** Always use `bun run test` (the script), not `bun test` (the raw runner). Running `bun test` from the repo root bypasses the workspace filter and picks up all test files, including integration tests that require PostgreSQL.
-
-### What each package's `test:mock` runs
-
-- **engine**: core game mechanics, canonical event replay, stream events, goodbye/tool fallback behavior, simulation instrumentation/config, structured-output mode, and LLM provider config
-- **api**: `websocket.test.ts` (10 tests — WS manager), `viewer-event-pacer.test.ts` (12 tests — event pacing)
-- **web**: `api-utils.test.ts` (7 tests), `constants.test.ts` (17 tests), `message-parsing.test.ts` (30 tests) — frontend utilities
-
-The remaining API tests (`db.test.ts`, `auth.test.ts`, `games-api.test.ts`, `agent-profiles.test.ts`, `game-lifecycle.test.ts`) are integration tests that require a running PostgreSQL instance. Run them with `bun run test:db`.
+**Important:** use the repository scripts, not raw root `bun test`. The scripts select the correct Bun config and ensure paid/external suites cannot be discovered by a required lane.
 
 ### E2E Tests
 
@@ -142,13 +141,15 @@ E2E tests live in two places and require more infrastructure:
 
 | Test | Runner | Dependencies | Command |
 |------|--------|--------------|---------|
-| `e2e/smoke.spec.ts` | Playwright | Running staging server | `bun run test:e2e` |
+| `e2e/smoke.spec.ts` | Playwright | Qualified staging candidate | `bun run test:e2e:staging` (workflow only) |
 | `e2e/layered-authentication.spec.ts` (deterministic) | Playwright | Docker PostgreSQL; starts isolated API/web; injected provider adapters | `bun run test:e2e:layered-auth` |
 | `e2e/layered-authentication.spec.ts` (real Clerk) | Playwright + `@clerk/testing` | Disposable DB, Clerk development instance credentials, configured development web/API | `bun run test:e2e:layered-auth:clerk` |
-| `packages/api/src/e2e/e2e-smoke.test.ts` | Bun + Puppeteer | PostgreSQL | `cd packages/api && bun test src/e2e/e2e-smoke.test.ts` |
-| `packages/api/src/e2e/game-flow.e2e.test.ts` | Bun + Puppeteer | PostgreSQL + Doppler | `cd packages/api && doppler run -- bun test src/e2e/game-flow.e2e.test.ts` |
+| `e2e/public-player-identity.spec.ts` | Playwright | PostgreSQL; isolated API/web | `bun run test:e2e:identity` |
+| `e2e/format-aware-game-viewer.spec.ts` | Playwright | PostgreSQL; seeded canonical fixtures; isolated API/web | `bun run test:e2e:format-viewer` |
+| `packages/api/src/e2e/*.e2e.test.ts` | Bun + Puppeteer | PostgreSQL; one isolated DB per file | `bun run test:browser:api` |
+| `packages/api/src/e2e/game-flow.live-provider.test.ts` | Bun + Puppeteer | PostgreSQL + configured provider | `doppler run -- bun run test:live-provider` |
 
-The full game-flow E2E test spins up an API server, creates a real 6-player LLM game, and watches it via Puppeteer (up to 11 minute timeout). Run it sparingly.
+Browser Coverage runs with zero retries. API/web output is drained into bounded logs and CI uploads Playwright/Puppeteer evidence only on failure. Every harness owns a uniquely named database, terminates its child processes, and drops that database in cleanup.
 
 ### Staging release E2E contract
 
@@ -166,7 +167,7 @@ unverified, not green. The complete cutover and hosted reviewer gates live in
 
 ### Full Test Audit
 
-See `docs/test-audit.md` for a comprehensive inventory of all 280 tests: what they cover, their dependencies, timing, and cost.
+See `docs/test-audit.md` for the current ownership and CI matrix.
 
 ### Testing Contract
 
@@ -174,7 +175,7 @@ Rules:
 - New game mechanics require new unit tests in `game-engine.test.ts`.
 - New personas require a mock-game smoke test or a note in the PR explaining why one wasn't added.
 - Never merge code that breaks `bun run test`.
-- Integration tests (`full-game.test.ts`) are allowed to be flaky due to LLM non-determinism, but should not systematically fail.
+- Provider-free integration tests such as `full-game.test.ts` are deterministic and must not be treated as flaky. Only manual `*.live-provider.test.ts` outcomes may vary with provider behavior, and those suites are never required CI.
 
 ## Adding a New Persona
 
@@ -266,6 +267,7 @@ Required delivery sequence:
    - `bun run typecheck`
    - `bun run lint`
    - `bun run test`
+   - `bun run test:postgres`
 2. Fix failures before moving on.
 3. Commit the change.
 4. Push the branch.
@@ -284,6 +286,7 @@ Use this closeout format in the PR description or final task summary:
   - `bun run typecheck` — passed / failed / not run
   - `bun run lint` — passed / failed / not run
   - `bun run test` — passed / failed / not run
+  - `bun run test:postgres` — passed / failed / not run
 - Not run: none / <why>
 - Remaining risk: none / <details>
 ```
@@ -367,9 +370,10 @@ To test a specific release:
    ```bash
    cd ../influence-game-test && bun install
    ```
-3. Run simulations:
+3. Run the deterministic suites:
    ```bash
-   bun run test:engine:full
+   bun run test
+   bun run test:postgres
    ```
 4. Write analysis referencing the version in the filename:
    ```
@@ -540,7 +544,7 @@ Three Doppler configs exist under the `social-strategy-agent` project:
 
 **Agents use the `dev` config** for local hosted-provider development. Staging receives updates from `main`; production requires manual approval. Do not run experiments directly against staging unless the task explicitly asks for staging QA.
 
-The root `simulate` and `test:engine:full` scripts pass `--project social-strategy-agent --config dev` to Doppler so hosted-provider validation does not depend on a per-checkout Doppler setup file. Run hosted simulator batches from the repo root with:
+The root `simulate` script passes `--project social-strategy-agent --config dev` to Doppler so hosted-provider validation does not depend on a per-checkout Doppler setup file. Hosted-provider tests are excluded from every required test command; when a task explicitly requires paid validation, run `doppler run -- bun run test:live-provider` from a trusted environment. Run hosted simulator batches from the repo root with:
 
 ```bash
 bun run simulate -- --games 2 --players 8 --personas Atlas,Vera,Finn,Mira,Rex,Lyra,Kael,Echo --model gpt-5.6-luna
@@ -687,7 +691,7 @@ If any check fails, fix it before committing. No exceptions.
 Before creating a version tag:
 
 1. All pre-commit checks pass
-2. Full test suite passes: `bun run test:engine:full`
+2. Both required test lanes pass: `bun run test` and `bun run test:postgres`
 3. All package.json `version` fields are synced to the new version
 4. Commit message: `release: vX.Y.Z`
 5. Annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z: <summary>"`

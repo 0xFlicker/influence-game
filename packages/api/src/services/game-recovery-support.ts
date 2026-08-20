@@ -63,12 +63,31 @@ const RESUME_SUPPORTED_ACTOR_COORDINATES = new Set<string>(
   ),
 );
 
+const HISTORICAL_SUPPORTED_ACTOR_COORDINATES = new Set<string>([
+  ...RESUME_SUPPORTED_ACTOR_COORDINATES,
+  "mingle_i",
+  "pre_vote_huddle",
+]);
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function isSupportedActorCoordinate(value: string): value is GameRunnerResumeActorCoordinate {
   return RESUME_SUPPORTED_ACTOR_COORDINATES.has(value);
+}
+
+function isHistoricalActorCoordinate(value: string): value is GameRunnerResumeActorCoordinate {
+  return HISTORICAL_SUPPORTED_ACTOR_COORDINATES.has(value);
+}
+
+function isAdmittedActorCoordinate(
+  value: string,
+  historical: boolean,
+): value is GameRunnerResumeActorCoordinate {
+  return historical
+    ? isHistoricalActorCoordinate(value)
+    : isSupportedActorCoordinate(value);
 }
 
 function isRuntimeSnapshotV1(value: unknown): value is RuntimeSnapshotV1 {
@@ -328,13 +347,17 @@ function validateActorCoordinatePrerequisites(
   actorCoordinate: GameRunnerResumeActorCoordinate,
   canonicalEvents: readonly CanonicalGameEvent[],
   gameState: GameState,
+  historical: boolean,
 ): string | null {
   const hasRoundStarted = canonicalEvents.some((event) => event.type === "round.started");
   if (actorCoordinate === "lobby") {
     return hasRoundStarted ? "unsupported_lobby_after_round_started" : null;
   }
   if (!hasRoundStarted) return `${actorCoordinate}_missing_round_started`;
-  if (actorCoordinate === "vote") return null;
+  if (actorCoordinate === "vote" ||
+      (historical && (actorCoordinate === "mingle_i" || actorCoordinate === "pre_vote_huddle"))) {
+    return null;
+  }
 
   // Endgame checkpoints are valid after either legacy Council elimination or a
   // format-kernel elimination. Validate their endgame state directly before
@@ -398,7 +421,7 @@ function validateActorCoordinatePrerequisites(
 function evaluateCheckpointIntegrity(params: {
   checkpoint: HistoricalCheckpointIntegrityInput;
   persistedEvents: PersistedEventsResult;
-  requireCurrentHead: boolean;
+  mode: "historical" | "resume";
 }): SupportedRecoveryEvaluation {
   if (params.checkpoint.checkpointKind !== "phase_boundary") {
     return { ok: false, reason: `unsupported_checkpoint_kind:${params.checkpoint.checkpointKind}` };
@@ -409,7 +432,8 @@ function evaluateCheckpointIntegrity(params: {
   if (!isRuntimeSnapshotV1(runtimeSnapshot)) return { ok: false, reason: "missing_runtime_snapshot" };
 
   const actorCoordinate = runtimeSnapshot.actorWitness.actorCoordinate;
-  if (!isSupportedActorCoordinate(actorCoordinate)) {
+  const historical = params.mode === "historical";
+  if (!isAdmittedActorCoordinate(actorCoordinate, historical)) {
     return { ok: false, reason: `unsupported_actor_coordinate:${actorCoordinate}` };
   }
   const transcriptReplay = readTranscriptReplay(isRecord(snapshot) ? snapshot.transcriptReplay : null);
@@ -426,7 +450,7 @@ function evaluateCheckpointIntegrity(params: {
   if (params.persistedEvents.status !== "complete") {
     return { ok: false, reason: `invalid_event_log:${params.persistedEvents.status}` };
   }
-  if (params.requireCurrentHead &&
+  if (params.mode === "resume" &&
       params.persistedEvents.lastTrustedSequence !== params.checkpoint.lastEventSequence) {
     return { ok: false, reason: "checkpoint_not_at_event_head" };
   }
@@ -458,7 +482,12 @@ function evaluateCheckpointIntegrity(params: {
   });
   if (!accumulatorResult.ok) return { ok: false, reason: accumulatorResult.reason };
 
-  const prerequisiteReason = validateActorCoordinatePrerequisites(actorCoordinate, canonicalEvents, gameState);
+  const prerequisiteReason = validateActorCoordinatePrerequisites(
+    actorCoordinate,
+    canonicalEvents,
+    gameState,
+    historical,
+  );
   if (prerequisiteReason) return { ok: false, reason: prerequisiteReason };
 
   const tokenCostCursor = readTokenCostCursor(params.checkpoint.tokenCostCursor);
@@ -525,7 +554,7 @@ export function evaluateHistoricalCheckpointIntegrity(params: {
 }): SupportedRecoveryEvaluation {
   return evaluateCheckpointIntegrity({
     ...params,
-    requireCurrentHead: false,
+    mode: "historical",
   });
 }
 
@@ -540,7 +569,7 @@ export function evaluateSupportedRecovery(params: {
   return evaluateCheckpointIntegrity({
     checkpoint: params.checkpoint,
     persistedEvents: params.persistedEvents,
-    requireCurrentHead: true,
+    mode: "resume",
   });
 }
 

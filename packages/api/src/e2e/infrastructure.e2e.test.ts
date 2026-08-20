@@ -11,7 +11,11 @@
  */
 
 import { describe, test, expect, afterAll } from "bun:test";
-import { createTestDb, destroyTestDb, type TestDB } from "./test-db.js";
+import {
+  createIsolatedTestDb,
+  destroyIsolatedTestDb,
+  type TestDB,
+} from "./test-db.js";
 import {
   createAdminUser,
   createPlayerUser,
@@ -27,6 +31,8 @@ import {
 } from "./test-server.js";
 import { launchBrowser, closeBrowser } from "./test-browser.js";
 import type { Browser } from "puppeteer";
+import postgres from "postgres";
+import { cleanupE2eResources } from "./cleanup.js";
 
 // Set JWT_SECRET for token minting (must match what test-server uses)
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
@@ -37,14 +43,16 @@ let serverHandles: TestServerHandles | null = null;
 let browser: Browser | null = null;
 
 afterAll(async () => {
-  if (browser) await closeBrowser(browser);
-  if (serverHandles) await stopTestServers(serverHandles);
-  if (testDb) destroyTestDb(testDb.databaseUrl);
+  await cleanupE2eResources([
+    ["browser", async () => { if (browser) await closeBrowser(browser); }],
+    ["servers", async () => { if (serverHandles) await stopTestServers(serverHandles); }],
+    ["database", async () => { if (testDb) await destroyIsolatedTestDb(testDb.databaseUrl); }],
+  ]);
 });
 
 describe("e2e infrastructure smoke test", () => {
-  test("createTestDb creates a DB with migrations and RBAC", async () => {
-    testDb = await createTestDb();
+  test("createIsolatedTestDb creates a DB with migrations and RBAC", async () => {
+    testDb = await createIsolatedTestDb();
     expect(testDb.db).toBeTruthy();
     expect(testDb.databaseUrl).toContain("postgresql://");
   });
@@ -140,11 +148,32 @@ describe("e2e infrastructure smoke test", () => {
     await page.close();
   }, 15000);
 
-  test("destroyTestDb is a no-op for PostgreSQL", async () => {
-    // For PostgreSQL, destroyTestDb is a no-op (no temp files to clean up)
-    // Just verify it doesn't throw
-    const throwaway = await createTestDb();
+  test("destroyIsolatedTestDb drops its per-run database", async () => {
+    const throwaway = await createIsolatedTestDb();
     expect(throwaway.databaseUrl).toContain("postgresql://");
-    destroyTestDb(throwaway.databaseUrl);
+    await destroyIsolatedTestDb(throwaway.databaseUrl);
+
+    const parsed = new URL(throwaway.databaseUrl);
+    const databaseName = parsed.pathname.slice(1);
+    parsed.pathname = "/postgres";
+    const admin = postgres(parsed.toString(), { max: 1 });
+    try {
+      const rows = await admin<{ exists: boolean }[]>`
+        SELECT EXISTS(
+          SELECT 1 FROM pg_database WHERE datname = ${databaseName}
+        ) AS exists
+      `;
+      expect(rows[0]?.exists).toBe(false);
+    } finally {
+      await admin.end();
+    }
+  });
+
+  test("destroyIsolatedTestDb refuses the shared database", async () => {
+    const sharedDatabaseUrl = process.env.TEST_DATABASE_URL
+      ?? "postgresql://influence:influence@127.0.0.1:54320/influence_test";
+    await expect(destroyIsolatedTestDb(sharedDatabaseUrl)).rejects.toThrow(
+      "Refusing to drop non-isolated test database",
+    );
   });
 });

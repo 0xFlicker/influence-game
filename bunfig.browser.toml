@@ -1,0 +1,6 @@
+[test]
+timeout = 120000
+pathIgnorePatterns = [
+  "**/*live-provider*",
+  "**/*external-smoke*",
+]

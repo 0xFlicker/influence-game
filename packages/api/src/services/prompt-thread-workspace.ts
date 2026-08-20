@@ -906,12 +906,19 @@ async function discoverGitWorktreeRoots(cwd: string): Promise<string[]> {
       `Unable to resolve git worktrees: ${Buffer.concat(stderr).toString("utf8").trim()}`,
     );
   }
-  const roots = Buffer.concat(stdout).toString("utf8")
-    .split("\n")
-    .filter((line) => line.startsWith("worktree "))
-    .map((line) => line.slice("worktree ".length));
+  const roots = parseGitWorktreeRoots(Buffer.concat(stdout).toString("utf8"));
   if (roots.length === 0) throw new Error("No git worktrees were resolved");
   return Promise.all(roots.map((path) => realpath(path)));
+}
+
+export function parseGitWorktreeRoots(output: string): string[] {
+  return output
+    .trim()
+    .split(/\n\n+/)
+    .filter((record) => !record.split("\n").some((line) => line.startsWith("prunable")))
+    .map((record) => record.split("\n").find((line) => line.startsWith("worktree ")))
+    .filter((line): line is string => Boolean(line))
+    .map((line) => line.slice("worktree ".length));
 }
 
 async function assertRootEntryIsNotSymlink(root: string): Promise<void> {

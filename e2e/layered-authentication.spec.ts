@@ -1,11 +1,14 @@
 import { createHash, randomUUID } from "node:crypto";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import { createInterface } from "node:readline";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 import {
   clerkSetup,
   setupClerkTestingToken,
 } from "@clerk/testing/playwright";
+import {
+  startLocalHarness,
+  stopLocalHarness,
+  type LocalHarnessProcess,
+} from "./local-harness";
 
 const DETERMINISTIC_RUN =
   process.env.PLAYWRIGHT_LAYERED_AUTH === "deterministic";
@@ -55,7 +58,7 @@ test.describe("deterministic layered authentication", () => {
   );
   test.describe.configure({ mode: "serial", retries: 0 });
 
-  let harnessProcess: ChildProcessWithoutNullStreams;
+  let harnessProcess: LocalHarnessProcess;
   let harness: LayeredAuthHarness;
 
   test.beforeAll(async () => {
@@ -890,52 +893,19 @@ async function clickNavigationSignIn(
 }
 
 async function startHarness(): Promise<{
-  process: ChildProcessWithoutNullStreams;
+  process: LocalHarnessProcess;
   harness: LayeredAuthHarness;
 }> {
-  const child = spawn(
-    "bun",
-    ["run", "packages/api/src/e2e/layered-authentication-harness.ts"],
-    {
-      cwd: process.cwd(),
-      env: process.env,
-      stdio: ["pipe", "pipe", "pipe"],
-    },
-  );
-  let stderrTail = "";
-  child.stderr.setEncoding("utf8");
-  child.stderr.on("data", (chunk: string) => {
-    stderrTail = `${stderrTail}${chunk}`.slice(-16_384);
+  return startLocalHarness<LayeredAuthHarness>({
+    script: "packages/api/src/e2e/layered-authentication-harness.ts",
+    readyPrefix: "E2E_LAYERED_AUTH_READY ",
+    startupTimeoutMs: 100_000,
+    errorLabel: "Layered auth harness exited before ready.",
   });
-  const lines = createInterface({ input: child.stdout });
-  const timeout = setTimeout(() => child.kill("SIGTERM"), 100_000);
-  try {
-    for await (const line of lines) {
-      if (!line.startsWith("E2E_LAYERED_AUTH_READY ")) continue;
-      return {
-        process: child,
-        harness: JSON.parse(
-          line.slice("E2E_LAYERED_AUTH_READY ".length),
-        ) as LayeredAuthHarness,
-      };
-    }
-  } finally {
-    clearTimeout(timeout);
-    lines.close();
-  }
-  throw new Error(
-    `Layered auth harness exited before ready.\n${stderrTail}`.trim(),
-  );
 }
 
 async function stopHarness(
-  child: ChildProcessWithoutNullStreams,
+  child: LocalHarnessProcess,
 ): Promise<void> {
-  if (child.exitCode !== null) return;
-  child.kill("SIGTERM");
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    new Promise<void>((resolve) => setTimeout(resolve, 10_000)),
-  ]);
-  if (child.exitCode === null) child.kill("SIGKILL");
+  await stopLocalHarness(child);
 }

@@ -1219,38 +1219,40 @@ describe("game startup recovery", () => {
     expect(valid.resumeFrom.houseContinuityRequirement).toBe("disabled");
   });
 
-  test("historical checkpoint integrity is reusable without weakening live recovery admission", async () => {
-    const gameId = await insertGame(db, {
-      id: "historical-checkpoint-is-not-live-recovery",
-      status: "completed",
-      config: recoveryConfig,
-    });
-    const ownerEpoch = await insertOwner(db, gameId);
-    const events = createCanonicalEventFixture(gameId);
-    await appendGameEvents(db, { gameId, ownerEpoch, events });
-    const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
-      ownerEpoch,
-      eventHeadHash: hashCanonicalEvent(events.at(-1)!),
-      actorCoordinate: "vote",
-    });
-    checkpoint.transcriptReplay = { version: 2, entries: [] };
-    const write = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
-    expect(write.ok).toBeTrue();
-    const checkpointRow = (await db
-      .select()
-      .from(schema.gameCheckpoints)
-      .where(eq(schema.gameCheckpoints.gameId, gameId)))[0]!;
-    const persistedEvents = await getPersistedGameEvents(db, gameId);
+  test("historical checkpoint integrity admits retired Mingle evidence without weakening live recovery admission", async () => {
+    for (const actorCoordinate of ["mingle_i", "pre_vote_huddle"] as const) {
+      const gameId = await insertGame(db, {
+        id: `historical-${actorCoordinate}-is-not-live-recovery`,
+        status: "completed",
+        config: recoveryConfig,
+      });
+      const ownerEpoch = await insertOwner(db, gameId);
+      const events = createCanonicalEventFixture(gameId);
+      await appendGameEvents(db, { gameId, ownerEpoch, events });
+      const checkpoint = enrichCapsuleForV1Candidate(createCheckpointCapsule(events), {
+        ownerEpoch,
+        eventHeadHash: hashCanonicalEvent(events.at(-1)!),
+        actorCoordinate,
+      });
+      checkpoint.transcriptReplay = { version: 2, entries: [] };
+      const write = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
+      expect(write.ok).toBeTrue();
+      const checkpointRow = (await db
+        .select()
+        .from(schema.gameCheckpoints)
+        .where(eq(schema.gameCheckpoints.gameId, gameId)))[0]!;
+      const persistedEvents = await getPersistedGameEvents(db, gameId);
 
-    expect(evaluateHistoricalCheckpointIntegrity({
-      checkpoint: checkpointRow,
-      persistedEvents,
-    }).ok).toBeTrue();
-    expect(await getSupportedRecovery(db, gameId)).toEqual({
-      ok: false,
-      gameId,
-      reason: "unsupported_game_status:completed",
-    });
+      expect(evaluateHistoricalCheckpointIntegrity({
+        checkpoint: checkpointRow,
+        persistedEvents,
+      }).ok).toBeTrue();
+      expect(await getSupportedRecovery(db, gameId)).toEqual({
+        ok: false,
+        gameId,
+        reason: "unsupported_game_status:completed",
+      });
+    }
   });
 
   test("startup recovery uses sealed House requirement and ignores incomplete agent_memories rows", async () => {

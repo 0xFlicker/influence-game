@@ -18,6 +18,11 @@ import {
   installDeterministicCompletedClassicGame,
   installDeterministicFormatGame,
 } from "./format-aware-game-viewer.fixtures";
+import {
+  startLocalHarness,
+  stopLocalHarness,
+  type LocalHarnessProcess,
+} from "./local-harness";
 
 const RUN_FORMAT_VIEWER = process.env.PLAYWRIGHT_FORMAT_VIEWER === "1";
 const FORMAT_VIEWER_SLUG =
@@ -84,12 +89,30 @@ const FORMAT_BROWSER_MATRIX = [
   formatName: string;
 }[];
 
+interface LocalFormatViewerHarness {
+  webUrl: string;
+}
+
+let harnessProcess: LocalHarnessProcess;
+let harness: LocalFormatViewerHarness;
+
 test.describe("format-aware game viewer", () => {
   test.skip(
     !RUN_FORMAT_VIEWER,
-    "Set PLAYWRIGHT_FORMAT_VIEWER=1 against the local persisted fixture database.",
+    "Set PLAYWRIGHT_FORMAT_VIEWER=1 to run the isolated local format viewer story.",
   );
   test.describe.configure({ mode: "serial", retries: 0 });
+
+  test.beforeAll(async () => {
+    test.setTimeout(180_000);
+    const started = await startLocalFormatViewerHarness();
+    harnessProcess = started.process;
+    harness = started.harness;
+  });
+
+  test.afterAll(async () => {
+    if (harnessProcess) await stopLocalFormatViewerHarness(harnessProcess);
+  });
 
   for (const entry of FORMAT_BROWSER_MATRIX) {
     test(`${entry.formatName} (${entry.scenarioId}) hydrates live current state and retains completed replay/results`, async ({
@@ -105,7 +128,7 @@ test.describe("format-aware game viewer", () => {
         initialDecisionCount: liveDecisionCount,
       });
 
-      await page.goto(`/games/${entry.slug}`, {
+      await page.goto(viewerUrl(`/games/${entry.slug}`), {
         waitUntil: "domcontentloaded",
       });
       const liveShell = page.getByTestId("match-watch-shell");
@@ -144,7 +167,7 @@ test.describe("format-aware game viewer", () => {
         scenarioId: entry.scenarioId,
         status: "completed",
       });
-      await page.goto(`/games/${replaySlug}/replay`, {
+      await page.goto(viewerUrl(`/games/${replaySlug}/replay`), {
         waitUntil: "domcontentloaded",
       });
       const replayShell = page.getByTestId("match-watch-shell");
@@ -155,7 +178,7 @@ test.describe("format-aware game viewer", () => {
       ).toBeVisible();
       await assertCompletedFormatReplayProgression(page, replayShell);
 
-      await page.goto("/games/dark-coral-horn/results", {
+      await page.goto(viewerUrl("/games/dark-coral-horn/results"), {
         waitUntil: "domcontentloaded",
       });
       const results = page.getByTestId("completed-results-review");
@@ -175,7 +198,7 @@ test.describe("format-aware game viewer", () => {
       status: "in_progress",
       initialDecisionCount: 5,
     });
-    await page.goto("/games/deterministic-safety-reconnect", {
+    await page.goto(viewerUrl("/games/deterministic-safety-reconnect"), {
       waitUntil: "domcontentloaded",
     });
 
@@ -252,7 +275,7 @@ test.describe("format-aware game viewer", () => {
         scenarioId,
         status,
       });
-      await page.goto(`/games/${slug}`, { waitUntil: "domcontentloaded" });
+      await page.goto(viewerUrl(`/games/${slug}`), { waitUntil: "domcontentloaded" });
       await expect(
         page.getByText(status === "suspended" ? "Game failed" : "Game unavailable", {
           exact: true,
@@ -275,7 +298,7 @@ test.describe("format-aware game viewer", () => {
         scenarioId,
         status: "suspended",
       });
-      await page.goto(`/games/${slug}`, { waitUntil: "domcontentloaded" });
+      await page.goto(viewerUrl(`/games/${slug}`), { waitUntil: "domcontentloaded" });
       const snapshot = page.locator("[data-format-terminal-snapshot]");
       await expect(snapshot).toBeVisible();
       await expect(snapshot).toHaveAttribute(
@@ -293,7 +316,7 @@ test.describe("format-aware game viewer", () => {
   }, testInfo) => {
     await page.clock.install();
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto(`/games/${FORMAT_VIEWER_SLUG}/replay`, {
+    await page.goto(viewerUrl(`/games/${FORMAT_VIEWER_SLUG}/replay`), {
       waitUntil: "domcontentloaded",
     });
     await pauseAutoplay(page, "⏸ Pause");
@@ -373,7 +396,7 @@ test.describe("format-aware game viewer", () => {
     await page.clock.install();
     await page.emulateMedia({ reducedMotion: "reduce" });
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`/games/${FORMAT_VIEWER_SLUG}/replay`, {
+    await page.goto(viewerUrl(`/games/${FORMAT_VIEWER_SLUG}/replay`), {
       waitUntil: "domcontentloaded",
     });
     await page.clock.runFor(100);
@@ -403,7 +426,7 @@ test.describe("format-aware game viewer", () => {
     test.setTimeout(90_000);
     await page.setViewportSize({ width: 1440, height: 900 });
     for (const fixture of COMPLETED_FORMAT_FIXTURES) {
-      await page.goto(`/games/${fixture.slug}/results`, {
+      await page.goto(viewerUrl(`/games/${fixture.slug}/results`), {
         waitUntil: "domcontentloaded",
       });
       const review = page.getByTestId("completed-results-review");
@@ -429,7 +452,7 @@ test.describe("format-aware game viewer", () => {
     }
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/games/dark-coral-horn/results", {
+    await page.goto(viewerUrl("/games/dark-coral-horn/results"), {
       waitUntil: "domcontentloaded",
     });
     const mobileReview = page.getByTestId("completed-results-review");
@@ -448,7 +471,7 @@ test.describe("format-aware game viewer", () => {
   }, testInfo) => {
     await page.clock.install();
     await page.setViewportSize({ width: 1440, height: 900 });
-    await page.goto("/games/dark-coral-horn/replay", {
+    await page.goto(viewerUrl("/games/dark-coral-horn/replay"), {
       waitUntil: "domcontentloaded",
     });
     await pauseAutoplay(page, "⏸ Pause");
@@ -481,7 +504,7 @@ test.describe("format-aware game viewer", () => {
       status: "in_progress",
       gameKernel: "classic",
     });
-    await page.goto("/games/deterministic-classic-active", {
+    await page.goto(viewerUrl("/games/deterministic-classic-active"), {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByTestId("match-watch-shell")).toBeVisible();
@@ -493,7 +516,7 @@ test.describe("format-aware game viewer", () => {
       status: "suspended",
       gameKernel: null,
     });
-    await page.goto("/games/deterministic-classic-suspended", {
+    await page.goto(viewerUrl("/games/deterministic-classic-suspended"), {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByText("Game failed", { exact: true })).toBeVisible();
@@ -504,7 +527,7 @@ test.describe("format-aware game viewer", () => {
       status: "cancelled",
       gameKernel: "classic",
     });
-    await page.goto("/games/deterministic-classic-cancelled", {
+    await page.goto(viewerUrl("/games/deterministic-classic-cancelled"), {
       waitUntil: "domcontentloaded",
     });
     await expect(page.getByText("Game unavailable", { exact: true })).toBeVisible();
@@ -515,7 +538,7 @@ test.describe("format-aware game viewer", () => {
       page,
       CLASSIC_VIEWER_SLUG,
     );
-    await page.goto(`/games/${CLASSIC_VIEWER_SLUG}/replay`, {
+    await page.goto(viewerUrl(`/games/${CLASSIC_VIEWER_SLUG}/replay`), {
       waitUntil: "domcontentloaded",
     });
     await pauseAutoplay(page, "⏸ Pause");
@@ -528,7 +551,7 @@ test.describe("format-aware game viewer", () => {
       "classic-replay-characterization.png",
     );
 
-    await page.goto(`/games/${CLASSIC_VIEWER_SLUG}/results`, {
+    await page.goto(viewerUrl(`/games/${CLASSIC_VIEWER_SLUG}/results`), {
       waitUntil: "domcontentloaded",
     });
     const classicResults = page.getByTestId("completed-results-review");
@@ -622,7 +645,7 @@ async function replayPlayerCounts(
   const count = async (label: "Alive" | "Out") => {
     const value = await replayShell
       .getByTestId(`match-watch-count-${label.toLowerCase()}`)
-      .locator("strong")
+      .locator("strong:visible")
       .textContent();
     const parsed = Number(value);
     if (!Number.isInteger(parsed)) {
@@ -708,4 +731,27 @@ async function assertLocatorInsideViewport(
   expect(box.width).toBeGreaterThan(0);
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(viewportWidth);
+}
+
+function viewerUrl(pathname: string): string {
+  if (!harness) throw new Error("Format viewer harness is not ready");
+  return new URL(pathname, harness.webUrl).toString();
+}
+
+async function startLocalFormatViewerHarness(): Promise<{
+  process: LocalHarnessProcess;
+  harness: LocalFormatViewerHarness;
+}> {
+  return startLocalHarness<LocalFormatViewerHarness>({
+    script: "packages/api/src/e2e/format-aware-game-viewer-harness.ts",
+    readyPrefix: "E2E_FORMAT_VIEWER_READY ",
+    startupTimeoutMs: 160_000,
+    errorLabel: "Local format viewer harness exited before it was ready.",
+  });
+}
+
+async function stopLocalFormatViewerHarness(
+  child: LocalHarnessProcess,
+): Promise<void> {
+  await stopLocalHarness(child);
 }

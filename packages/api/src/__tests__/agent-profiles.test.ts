@@ -8,10 +8,7 @@ import { describe, test, expect, beforeEach, beforeAll } from "bun:test";
 import { Hono } from "hono";
 import { schema } from "../db/index.js";
 import type { DrizzleDB } from "../db/index.js";
-import {
-  createAgentProfileRoutes,
-  resolveAgentProfileGenerationLlm,
-} from "../routes/agent-profiles.js";
+import { createAgentProfileRoutes } from "../routes/agent-profiles.js";
 import { createGameRoutes } from "../routes/games.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { randomUUID } from "crypto";
@@ -1472,56 +1469,5 @@ describe("Agent Profile API", () => {
       }
     });
 
-    // LLM integration test — only runs when hosted OpenAI is configured.
-    const llmTest = resolveAgentProfileGenerationLlm() ? test : test.skip;
-
-    llmTest("generates a personality from traits", async () => {
-      const res = await app.request(
-        "/api/agent-profiles/generate",
-        jsonReq({ traits: "charming, manipulative, always smiling", occupation: "used car salesman" }, tokenA),
-      );
-      expect(res.status).toBe(200);
-
-      const body = await res.json() as {
-        name: string;
-        backstory: string | null;
-        personality: string;
-        strategyStyle: string | null;
-        personaKey: string;
-        gender: "male" | "female" | "non-binary";
-      };
-      expect(body.name).toBeTruthy();
-      expect(body.personality).toBeTruthy();
-      expect(body.personaKey).toBeTruthy();
-      expect(["male", "female", "non-binary"]).toContain(body.gender);
-    }, 15_000);
-
-    llmTest("generates a personality from archetype only", async () => {
-      const res = await app.request(
-        "/api/agent-profiles/generate",
-        jsonReq({ archetype: "wildcard" }, tokenA),
-      );
-      expect(res.status).toBe(200);
-      const body = await res.json() as { personaKey: string };
-      expect(body.personaKey).toBeTruthy();
-    }, 15_000);
-
-    llmTest("refines an existing profile", async () => {
-      const res = await app.request(
-        "/api/agent-profiles/generate",
-        jsonReq({
-          existingProfile: {
-            name: "Rex",
-            personality: "Aggressive and loud",
-            backstory: "Former bouncer",
-          },
-          traits: "add some vulnerability, a soft side",
-        }, tokenA),
-      );
-      expect(res.status).toBe(200);
-      const body = await res.json() as { name: string; backstory: string };
-      expect(body.name).toBeTruthy();
-      expect(body.backstory).toBeTruthy();
-    }, 15_000);
   });
 });

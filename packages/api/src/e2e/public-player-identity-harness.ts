@@ -15,7 +15,10 @@ import {
 } from "./test-server.js";
 import { schema, type DrizzleDB } from "../db/index.js";
 import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
+import { recordCurrentLegalAcceptance } from "../services/legal-acceptance.js";
 import { createSeason } from "../services/seasons.js";
+import { observeHarnessSignals } from "./harness-signals.js";
+import { cleanupE2eResources } from "./cleanup.js";
 
 const JWT_SECRET = "e2e-test-jwt-secret";
 const LAUNCH_CUTOFF = "2026-07-01T00:00:00.000Z";
@@ -38,37 +41,48 @@ let isolatedDatabaseUrl: string | null = null;
 let stopping = false;
 
 async function main(): Promise<void> {
-  const { db, databaseUrl } = await createIsolatedTestDb();
-  isolatedDatabaseUrl = databaseUrl;
-  const fixture = await seedIdentityFixture(db);
-  servers = await startTestServers({
-    databaseUrl,
-    jwtSecret: JWT_SECRET,
-    publicIdentityLaunchCutoff: LAUNCH_CUTOFF,
-  });
-  if (!servers.webUrl) throw new Error("Identity harness requires the web server");
+  const signals = observeHarnessSignals();
+  let requestedShutdown: Promise<void> | null = null;
+  try {
+    const { db, databaseUrl } = await createIsolatedTestDb({ signal: signals.signal });
+    isolatedDatabaseUrl = databaseUrl;
+    signals.onRequest(() => { requestedShutdown ??= shutdown(); });
+    if (signals.requested()) return;
+    const fixture = await seedIdentityFixture(db);
+    if (signals.requested()) return;
+    servers = await startTestServers({
+      databaseUrl,
+      jwtSecret: JWT_SECRET,
+      publicIdentityLaunchCutoff: LAUNCH_CUTOFF,
+      signal: signals.signal,
+    });
+    if (signals.requested()) return;
+    if (!servers.webUrl) throw new Error("Identity harness requires the web server");
 
-  console.log(`E2E_IDENTITY_READY ${JSON.stringify({
-    apiUrl: servers.apiUrl,
-    webUrl: servers.webUrl,
-    fixture,
-  })}`);
+    console.log(`E2E_IDENTITY_READY ${JSON.stringify({
+      apiUrl: servers.apiUrl,
+      webUrl: servers.webUrl,
+      fixture,
+    })}`);
 
-  await new Promise<void>((resolve) => {
-    process.once("SIGINT", resolve);
-    process.once("SIGTERM", resolve);
-  });
-  await shutdown();
+    await signals.received;
+  } finally {
+    signals.dispose();
+    await (requestedShutdown ?? shutdown());
+  }
 }
 
 async function shutdown(): Promise<void> {
   if (stopping) return;
   stopping = true;
-  if (servers) await stopTestServers(servers);
-  if (isolatedDatabaseUrl) {
-    await destroyIsolatedTestDb(isolatedDatabaseUrl);
-    isolatedDatabaseUrl = null;
-  }
+  await cleanupE2eResources([
+    ["servers", async () => { if (servers) await stopTestServers(servers); }],
+    ["database", async () => {
+      if (!isolatedDatabaseUrl) return;
+      await destroyIsolatedTestDb(isolatedDatabaseUrl);
+      isolatedDatabaseUrl = null;
+    }],
+  ]);
 }
 
 async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {
@@ -154,6 +168,19 @@ async function seedIdentityFixture(db: DrizzleDB): Promise<IdentityFixture> {
     handle: null,
     createdAt: LAUNCH_CUTOFF,
   });
+  for (const userId of [
+    complete.userId,
+    required.userId,
+    deferrable.userId,
+    collision.userId,
+  ]) {
+    await recordCurrentLegalAcceptance(
+      db,
+      userId,
+      "existing_account",
+      "0123456789abcdef0123456789abcdef01234567",
+    );
+  }
   const collisionOwnerWallet = generateTestWallet();
   await createTestUser(db, {
     id: "e2e-collision-owner",
