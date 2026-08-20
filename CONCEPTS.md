@@ -611,6 +611,10 @@ A producer/debug metadata record that points to raw LLM evidence such as prompts
 
 The maintainer/debug evidence lane that can include full prompt requests, raw model responses, tool calls, provider profile, model ID, requested reasoning effort, observed reasoning metadata, token or usage counts, router billing fields, storage pointers, and normalized decision records. Producer private trace data may contain the same reasoning and strategy material that later feeds player-private reasoning artifacts, but it also contains operational and provider evidence that is not part of the player-private product lane.
 
+## Producer evidence index page
+
+A bounded, newest-first page over authorized cognitive-artifact metadata or private-trace manifest metadata. The first read pins a PostgreSQL insertion-visibility snapshot plus the newest `(createdAt, id)` boundary, then returns the number of rows emitted as `pageSize`, that snapshot's authorized `totalCount`, and an opaque `nextCursor`; terminal pages return `nextCursor: null`. Historical rows without insertion-XID metadata remain visible, while newly written rows record an immutable insertion XID so evidence arriving after page one cannot enter the sealed snapshot even at an equal timestamp. The cursor binds the game, index kind, normalized filters, and caller/surface authorization while allowing page size to change. It is pagination state, not evidence identity, canonical game authority, a privacy capability, or a raw trace-content reference.
+
 ## Private trace content
 
 The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, checkpoint resume authority, or unsanitized player-private product data.

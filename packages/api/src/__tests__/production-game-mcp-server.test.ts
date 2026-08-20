@@ -97,6 +97,12 @@ function validateJsonSchema(value: unknown, rawSchema: unknown, path: string): s
       ? []
       : [`${path}: did not match anyOf`];
   }
+  if (Array.isArray(schema.oneOf)) {
+    const matches = schema.oneOf.filter(
+      (candidate) => validateJsonSchema(value, candidate, path).length === 0,
+    );
+    return matches.length === 1 ? [] : [`${path}: did not match exactly one oneOf branch`];
+  }
   if ("const" in schema && value !== schema.const) return [`${path}: expected const ${String(schema.const)}`];
   if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return [`${path}: value is not in enum`];
 
@@ -878,6 +884,133 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     });
     expect(costTool?.description).toContain("same provider-cost totals");
     expect(costTool?.description).toContain("does not create accounting rows");
+    const cognitiveIndexTool = tools.find(
+      (tool) => (tool as { name: string }).name === "list_cognitive_artifacts",
+    ) as {
+      description: string;
+      inputSchema: { properties: Record<string, unknown> };
+      outputSchema: Record<string, unknown>;
+    };
+    expect(cognitiveIndexTool.description).toContain("game and filters fixed");
+    expect(cognitiveIndexTool.description).toContain("until it is null");
+    expect(cognitiveIndexTool.inputSchema.properties).toHaveProperty("cursor");
+    expect(JSON.stringify(cognitiveIndexTool.outputSchema)).toContain("pageSize");
+    expect(JSON.stringify(cognitiveIndexTool.outputSchema)).toContain("totalCount");
+    expect(JSON.stringify(cognitiveIndexTool.outputSchema)).toContain("nextCursor");
+    expectMatchesJsonSchema({
+      schemaVersion: 2,
+      cognitiveArtifacts: {
+        ok: true,
+        game: { id: "game-1" },
+        artifacts: [],
+        pageSize: 0,
+        totalCount: 0,
+        nextCursor: null,
+      },
+    }, cognitiveIndexTool.outputSchema);
+    expect(() => expectMatchesJsonSchema({
+      schemaVersion: 2,
+      cognitiveArtifacts: {
+        ok: true,
+        artifacts: [],
+        pageSize: 0,
+        totalCount: 0,
+        nextCursor: null,
+      },
+    }, cognitiveIndexTool.outputSchema)).toThrow("did not match anyOf");
+    const traceIndexTool = tools.find(
+      (tool) => (tool as { name: string }).name === "list_trace_manifests",
+    ) as {
+      description: string;
+      inputSchema: { properties: Record<string, unknown> };
+      outputSchema: Record<string, unknown>;
+    };
+    expect(traceIndexTool.description).toContain("until it is null");
+    expect(traceIndexTool.inputSchema.properties).toHaveProperty("cursor");
+    expectMatchesJsonSchema({
+      schemaVersion: 2,
+      developerEvidence: {
+        ok: true,
+        gameId: "game-1",
+        linkageSummary: {},
+        manifests: [],
+        pageSize: 0,
+        totalCount: 0,
+        nextCursor: null,
+      },
+    }, traceIndexTool.outputSchema);
+    expect(() => expectMatchesJsonSchema({
+      schemaVersion: 2,
+      developerEvidence: {
+        ok: true,
+        gameId: "game-1",
+        manifests: [],
+        pageSize: 0,
+        totalCount: 0,
+        nextCursor: null,
+      },
+    }, traceIndexTool.outputSchema)).toThrow("did not match anyOf");
+    const producerAnalysisTool = tools.find(
+      (tool) => (tool as { name: string }).name === "read_producer_game_analysis",
+    ) as { description: string; outputSchema: Record<string, unknown> };
+    expect(producerAnalysisTool.description).toContain("developerEvidence.cognitiveArtifacts.nextCursor");
+    expect(producerAnalysisTool.description).toContain("developerEvidence.traceManifests.nextCursor");
+    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("cognitiveArtifacts");
+    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("traceManifests");
+    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("nextCursor");
+    const producerAnalysisResponse = {
+      schemaVersion: 2,
+      ok: true,
+      game: {
+        id: "game-1",
+        status: "completed",
+        trackType: "daily_free",
+        playerCount: 8,
+        roundCount: 7,
+      },
+      producerAnalysis: {
+        executiveSummary: [],
+        gameMomentum: [],
+        derivedVoteCohorts: [],
+        inferredAlliances: {},
+        juryManagementAnalysis: {},
+        playerByPlayerStrategicGrades: [],
+      },
+      developerEvidence: {
+        cognitiveArtifacts: {
+          ok: true,
+          game: { id: "game-1" },
+          artifacts: [],
+          pageSize: 0,
+          totalCount: 0,
+          nextCursor: null,
+        },
+        traceManifests: {
+          ok: true,
+          gameId: "game-1",
+          linkageSummary: {},
+          manifests: [],
+          pageSize: 0,
+          totalCount: 0,
+          nextCursor: null,
+        },
+      },
+    };
+    expectMatchesJsonSchema(producerAnalysisResponse, producerAnalysisTool.outputSchema);
+    expect(() => expectMatchesJsonSchema({
+      ...producerAnalysisResponse,
+      schemaVersion: 1,
+    }, producerAnalysisTool.outputSchema)).toThrow("oneOf");
+    for (const indexKey of ["cognitiveArtifacts", "traceManifests"] as const) {
+      for (const metadataKey of ["pageSize", "totalCount", "nextCursor"] as const) {
+        const invalidResponse = structuredClone(producerAnalysisResponse);
+        delete (invalidResponse.developerEvidence[indexKey] as Record<string, unknown>)[metadataKey];
+        expect(() => expectMatchesJsonSchema(
+          invalidResponse,
+          producerAnalysisTool.outputSchema,
+        )).toThrow("oneOf");
+      }
+    }
     const briefTool = tools.find((tool) => (tool as { name: string }).name === "read_game_brief");
     expect(JSON.stringify(briefTool)).toContain("outputSchema");
     expect(JSON.stringify(briefTool)).toContain("finalVote");
@@ -2138,6 +2271,135 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     const text = ((response?.result as { content: Array<{ text: string }> }).content[0]?.text);
     expect(text).toContain("\"schemaVersion\": 2");
     expect(text).toContain("\"round\": 2");
+  });
+
+  test("forwards producer index cursors and filters to both read models", async () => {
+    const calls: unknown[] = [];
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      listCognitiveArtifacts: async (args: unknown, access: unknown) => {
+        calls.push({ method: "listCognitiveArtifacts", args, access });
+        return {
+          schemaVersion: 2,
+          cognitiveArtifacts: {
+            ok: true,
+            game: { id: "game-1" },
+            artifacts: [],
+            pageSize: 0,
+            totalCount: 0,
+            nextCursor: null,
+          },
+        };
+      },
+      listTraceManifests: async (...args: unknown[]) => {
+        calls.push({ method: "listTraceManifests", args });
+        return {
+          schemaVersion: 2,
+          developerEvidence: {
+            ok: true,
+            gameId: "game-1",
+            linkageSummary: {},
+            manifests: [],
+            pageSize: 0,
+            totalCount: 0,
+            nextCursor: null,
+          },
+        };
+      },
+    }));
+
+    const cognitiveResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "cognitive-page",
+      method: "tools/call",
+      params: {
+        name: "list_cognitive_artifacts",
+        arguments: {
+          gameIdOrSlug: "game-1",
+          artifactType: "thinking",
+          actorPlayerId: "player-1",
+          limit: 7,
+          cursor: "pi1.cognitive",
+        },
+      },
+    }, PRODUCER_AUTH);
+    const traceResponse = await server.handle({
+      jsonrpc: "2.0",
+      id: "trace-page",
+      method: "tools/call",
+      params: {
+        name: "list_trace_manifests",
+        arguments: {
+          gameIdOrSlug: "game-1",
+          limit: 9,
+          cursor: "pi1.trace",
+        },
+      },
+    }, PRODUCER_AUTH);
+
+    expect(calls).toEqual([
+      {
+        method: "listCognitiveArtifacts",
+        args: {
+          gameIdOrSlug: "game-1",
+          artifactType: "thinking",
+          actorPlayerId: "player-1",
+          limit: 7,
+          cursor: "pi1.cognitive",
+        },
+        access: PRODUCER_AUTH,
+      },
+      {
+        method: "listTraceManifests",
+        args: ["game-1", PRODUCER_AUTH, 9, "pi1.trace"],
+      },
+    ]);
+    for (const response of [cognitiveResponse, traceResponse]) {
+      const result = response?.result as {
+        structuredContent: unknown;
+        content: Array<{ text: string }>;
+      };
+      expect(JSON.parse(result.content[0]!.text)).toEqual(result.structuredContent);
+    }
+  });
+
+  test("returns producer index cursor failures with structured/text parity", async () => {
+    const cursorError = {
+      ok: false,
+      status: "cursor_invalid_or_stale" as const,
+      error: "Cursor is invalid or stale",
+    };
+    const server = new ProductionGameMcpJsonRpcServer(fakeReadModel({
+      listCognitiveArtifacts: async () => ({
+        schemaVersion: 2,
+        cognitiveArtifacts: cursorError,
+      }),
+      listTraceManifests: async () => ({
+        schemaVersion: 2,
+        developerEvidence: cursorError,
+      }),
+    }));
+
+    for (const [id, name] of [
+      ["cognitive-error", "list_cognitive_artifacts"],
+      ["trace-error", "list_trace_manifests"],
+    ] as const) {
+      const response = await server.handle({
+        jsonrpc: "2.0",
+        id,
+        method: "tools/call",
+        params: {
+          name,
+          arguments: { gameIdOrSlug: "game-1", cursor: "pi1.invalid" },
+        },
+      }, PRODUCER_AUTH);
+      const result = response?.result as {
+        structuredContent: unknown;
+        content: Array<{ text: string }>;
+      };
+      expect(JSON.parse(result.content[0]!.text)).toEqual(result.structuredContent);
+      expect(result.structuredContent).toMatchObject({ schemaVersion: 2 });
+      expect(JSON.stringify(result.structuredContent)).toContain("cursor_invalid_or_stale");
+    }
   });
 
   test("forwards games auth context to user-facing resources and tools", async () => {

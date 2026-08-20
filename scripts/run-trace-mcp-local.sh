@@ -15,7 +15,8 @@ for required_var in \
   LINODE_PRIVATE_CONTENT_ENDPOINT \
   LINODE_PRIVATE_CONTENT_ACCESS_KEY \
   LINODE_PRIVATE_CONTENT_SECRET_KEY \
-  LINODE_PRIVATE_CONTENT_BUCKET
+  LINODE_PRIVATE_CONTENT_BUCKET \
+  INFLUENCE_TRACE_MCP_CURSOR_SECRET
 do
   if [[ -z "${!required_var:-}" ]]; then
     echo "$required_var is required for local Trace MCP private content storage." >&2

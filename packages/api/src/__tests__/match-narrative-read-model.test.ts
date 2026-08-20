@@ -714,6 +714,8 @@ describe("match-narrative-read-model dual surface", () => {
     const manifestIndex = await new PrivateTraceReadModel(db).listManifests(
       fixture.gameId,
     );
+    expect(manifestIndex.ok).toBe(true);
+    if (!manifestIndex.ok) throw new Error(manifestIndex.error);
     expect(manifestIndex.linkageSummary).toEqual({
       trustedCanonicalPrefixStatus: "complete",
       eligibleAcceptedDecisionCount: 2,
@@ -864,6 +866,8 @@ describe("match-narrative-read-model dual surface", () => {
     const manifestIndex = await new PrivateTraceReadModel(db).listManifests(
       fixture.gameId,
     );
+    expect(manifestIndex.ok).toBe(true);
+    if (!manifestIndex.ok) throw new Error(manifestIndex.error);
     expect(manifestIndex.linkageSummary).toEqual({
       trustedCanonicalPrefixStatus: "invalid",
       eligibleAcceptedDecisionCount: 1,
