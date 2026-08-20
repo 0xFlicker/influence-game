@@ -31,6 +31,7 @@ That split makes the system useful to inspect:
 | Durable event history | API-backed games persist canonical game events in PostgreSQL and rebuild read models from those events. CLI simulations write the same event envelope to JSONL artifacts. |
 | Replay and inspection | Simulation artifacts include events, turns, progress, transcripts, structural prompt-reuse and Recall Plan receipt aggregates, and projections; the Game MCP can list sessions, filter events, read timelines, and return linked records. |
 | Selective context recall | Agent prompts compile from a server-owned Recall Plan (protected board/strategy/huddle lanes, hot room speech, budgeted authorized history on strategic classes only). Promotion uses structural receipts and a frozen offline corpus — not full private-trace JSON. |
+| Selective House narration | Meaningful phase boundaries compile a bounded canonical/projection/public-dialogue frontier. The House may read one narrow typed fact slice, emits only source-backed prose, preflight-skips empty deltas, and reconciles provider usage per phase and game. |
 | Elimination exits and ballots | Elimination commits first, then only the eliminated agent receives one structured exit-message turn. Participating-agent ballot context discloses only rule-allowed counts; operator transports expose sanitized mappings immediately, while the viewer delays named Roll Call until resolution. |
 | MCP and OAuth | The deployed `/mcp` surface separates `agents:read`, `agents:write`, `games:read`, and `producer` scopes. `games:read` includes owner match-completeness tools (manifest, authorized transcript, owned cognition). Local helpers support OAuth-gated MCP evaluation. |
 | Identity and permissions | Influence owns durable account/session identity; permanent first-class Privy login and managed Clerk email/password login resolve through provider-neutral credentials. Scoped MCP tokens and current roles protect sensitive tools. |
@@ -98,6 +99,7 @@ flowchart LR
 - Reasoning and transcript observability (includes Recall Plan lanes and safe evaluation artifacts): [docs/reasoning-transcript-observability.md](docs/reasoning-transcript-observability.md)
 - Operator-only, max-two-round hosted/local format proof: [docs/local-model-evaluation.md#operator-only-bounded-format-kernel-proof](docs/local-model-evaluation.md#operator-only-bounded-format-kernel-proof)
 - Selective context recall evaluation levels (fixtures, targeted real thread, bounded full game): [docs/local-model-evaluation.md#selective-context-recall-evaluation-levels](docs/local-model-evaluation.md#selective-context-recall-evaluation-levels)
+- Selective House phase-cadence mechanics, limits, and current-meta cost gate: [docs/local-model-evaluation.md#house-summary-cadence-evaluation](docs/local-model-evaluation.md#house-summary-cadence-evaluation)
 - Local targeted real-thread evaluator and approval contract, including a zero-provider `strategic-probe` with content-free rank/cost diagnostics that proves Mingle-intent selection direction but not model use or behavior: [docs/prompt-thread-context-evaluation.md](docs/prompt-thread-context-evaluation.md)
 
 ## Development

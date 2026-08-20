@@ -3,6 +3,7 @@ import {
   createLlmClientFromEnv,
   createFlexProcessingFetch,
   describeLlmProvider,
+  NO_FLEX_TRANSPORT_RETRY_HEADER,
   normalizeOpenAIRequestServiceTier,
   resolveOpenAIReasoningSummaryMode,
   resolveToolChoiceMode,
@@ -125,6 +126,25 @@ describe("LLM client env config", () => {
 });
 
 describe("OpenAI Flex processing", () => {
+  it("honors an explicit one-transport-attempt budget and strips the internal header", async () => {
+    const requests: Request[] = [];
+    const flexFetch = createFlexProcessingFetch(async (request) => {
+      requests.push(request as Request);
+      return new Response(null, { status: 429 });
+    });
+
+    const response = await flexFetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: { [NO_FLEX_TRANSPORT_RETRY_HEADER]: "1" },
+      body: JSON.stringify({ model: "gpt-5.6-luna", messages: [] }),
+    });
+
+    expect(response.status).toBe(429);
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.headers.has(NO_FLEX_TRANSPORT_RETRY_HEADER)).toBe(false);
+    expect((await requests[0]?.clone().json() as { service_tier?: string }).service_tier).toBe("flex");
+  });
+
   it("retries three Flex 429s with exponential backoff before using auto tier", async () => {
     const tiers: string[] = [];
     const delays: number[] = [];

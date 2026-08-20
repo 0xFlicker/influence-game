@@ -31,6 +31,7 @@ const DIALOGUE_SCOPES = new Set<TranscriptEntry["scope"]>([
 export class TranscriptLogger {
   readonly transcript: TranscriptEntry[] = [];
   readonly publicMessages: Array<{ from: string; text: string; phase: Phase; round: number; anonymous?: boolean; displayOrder?: number }> = [];
+  private readonly dialogueEntries: TranscriptEntry[] = [];
   private _streamListener?: (event: GameStreamEvent) => void;
   private streamBuffer: GameStreamEvent[] | null = null;
   /** 1-based product dialogue sequence counter (dialogue scopes only). */
@@ -41,6 +42,7 @@ export class TranscriptLogger {
   seed(entries: readonly TranscriptEntry[]): void {
     this.transcript.length = 0;
     this.publicMessages.length = 0;
+    this.dialogueEntries.length = 0;
     this.dialogueSequence = 0;
     for (const entry of entries) {
       const seededEntry: TranscriptEntry = { ...entry };
@@ -50,6 +52,9 @@ export class TranscriptLogger {
         seededEntry.entrySequence > this.dialogueSequence
       ) {
         this.dialogueSequence = seededEntry.entrySequence;
+      }
+      if (typeof seededEntry.entrySequence === "number" && DIALOGUE_SCOPES.has(seededEntry.scope)) {
+        this.dialogueEntries.push(seededEntry);
       }
       if (seededEntry.scope === "public") {
         this.publicMessages.push({
@@ -88,6 +93,21 @@ export class TranscriptLogger {
   /** Whether the durable stream buffer is empty (post-flush boundary evidence). */
   isStreamBufferEmpty(): boolean {
     return this.streamBuffer === null || this.streamBuffer.length === 0;
+  }
+
+  get dialogueHead(): number {
+    return this.dialogueSequence;
+  }
+
+  dialogueEntriesAfter(sequence: number): readonly TranscriptEntry[] {
+    let low = 0;
+    let high = this.dialogueEntries.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if ((this.dialogueEntries[middle]?.entrySequence ?? 0) <= sequence) low = middle + 1;
+      else high = middle;
+    }
+    return this.dialogueEntries.slice(low);
   }
 
   emitStream(event: GameStreamEvent): void {
@@ -146,6 +166,7 @@ export class TranscriptLogger {
       throw new Error(`pushDialogueEntry called for non-dialogue scope ${entry.scope}`);
     }
     this.transcript.push(entry);
+    this.dialogueEntries.push(entry);
     this.emitStream({ type: "transcript_entry", entry });
   }
 

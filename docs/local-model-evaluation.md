@@ -274,6 +274,45 @@ Create a dated note in `docs/simulations/` or near the generated batch artifacts
 - whether House summaries help keep up with teams forming, leverage shifts, and unresolved questions without treating the currently legacy-shaped `roundFacts` payload as format proof
 - when using `--rich-producer`, whether House Strategy Bible revisions carry alliance hypotheses forward instead of silently forgetting them, and whether diary producer briefs sharpen questions without leaking private producer reads as fact
 
+## House summary cadence evaluation
+
+House MC narration now uses a selective frontier after meaningful actor-coordinate boundaries rather than replaying the accumulated transcript and round evidence into every concise call. Run the provider-free mechanics first:
+
+```bash
+bun test packages/engine/src/__tests__/house-summary-frontier.test.ts \
+  packages/engine/src/__tests__/house-interviewer-structured-output.test.ts \
+  packages/engine/src/__tests__/house-summary-cadence.test.ts \
+  packages/engine/src/__tests__/house-summary-accounting.test.ts \
+  packages/engine/src/__tests__/evaluate-house-summary-cadence.test.ts
+bun run --cwd packages/engine typecheck
+```
+
+Those tests prove authorization, bounded tool behavior, source receipts, continuity, preflight/model/failure paths, actor-coordinate scheduling, nonfatal gameplay, and exact/inconclusive accounting. They do not prove current-model prose quality or realized provider cost.
+
+After the deterministic gate, the opt-in hosted comparison is:
+
+```bash
+cd packages/engine
+doppler run --project social-strategy-agent --config dev -- \
+  bun run src/scripts/evaluate-house-summary-cadence.ts \
+    --scope=full \
+    --output=/tmp/house-summary-cadence-unreviewed.json
+
+# The paid command intentionally exits nonzero until its saved prose is reviewed.
+# This second command is offline and makes no provider calls.
+bun run src/scripts/evaluate-house-summary-cadence.ts \
+  --review-report=/tmp/house-summary-cadence-unreviewed.json \
+  --quality-reviewed \
+  --reviewer=<local-reviewer-id> \
+  --output=/tmp/house-summary-cadence-reviewed.json
+```
+
+This is paid provider validation. Each invocation creates a fresh canonical game UUID and uses it for both the candidate and narration-free baseline, while retaining the fixed seed and player roster. The identity appears near the start of both request families, so an earlier evaluator run cannot supply a cached fixed-ID prompt prefix; the evaluator still requires identical baseline/candidate canonical fingerprints. Real success/failure continuity determines each next frontier, and later baseline prompts carry only earlier baseline outputs. A conclusive result requires returned usage, response identity, effective service tier, and frozen rate-card pricing for every provider response. Its automatic gate requires at least 80% emitted eligible beats, at least 80% fresh selected-fact-specific beats, supported source receipts, continuity coverage, unique/non-repetitive output, reconciled receipts and calls, zero provider calls for preflight skips, and candidate realized cost at or below `1.25x` the same game's round-only baseline. The saved-report review then fails closed on canonical contradiction, unsupported aliases, continuity breaks, repetitive or low-value ordinary beats, milestone regression, and pacing harm. `FORMAT_PICK` plus `FORMAT_RESOLVE` is only the proving slice; it is not the full-cadence gate.
+
+The final cache-isolated 2026-08-19 current-meta Flex comparison did **not** pass R21. The independent round-only baseline made 2 calls, used 11,348 total tokens, had zero cached input tokens, and cost `$0.0017157`. Full runtime cadence made 24 calls for 23 materially eligible boundaries, used 16,720 total tokens, emitted 16/23 beats (`69.57%`), achieved selected-fact specificity on 14/23 (`60.87%`), and cost `$0.0023335`, or `1.360086x` baseline. It preserved identical authority fingerprints, 21/21 continuity coverage, unique prose (maximum pairwise word Jaccard `0.478261`), reconciled receipts, one total fact read, and zero calls for the preflight skip. It nevertheless failed the `1.25x`, 80% emission, and 80% specificity gates. The paid comparison cost `$0.0040492` across baseline and candidate. Offline audit also found unsupported “publicly signal” and “reject Eve's accusations” attributions; deterministic validators were hardened afterward without another provider run. R21 therefore remains open, and this artifact is failure evidence rather than completion proof.
+
+Earlier paid artifacts are retained only as invalid/failed development evidence: the reported `$0.0019694` candidate versus `$0.001731775` baseline (`1.137215x`, 22/22) predated exact baseline/evaluator and manual-review repairs; the `$0.0020805` versus `$0.00169665` run (`1.226240x`, 21/22) failed automatic and human review with factual contradictions and incomplete receipts; and the `$0.002756` versus `$0.001155515` run (`2.385084x`, 20/22) used a cache-hit fixed-ID baseline and failed quality gates. None establishes R21 acceptance. Deterministic tests remain the regression authority for mechanics and privacy.
+
 When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with high-contrast bright-white `thinking:` and bright-cyan `reasoning:` blocks. For local models, `reasoning:` is raw native metadata such as `reasoning_content`; for hosted OpenAI simulations, it may be a labeled `OpenAI reasoning summary (...)` when summaries are enabled. These are the primary human-readable artifacts for evaluating whether the model is producing legible, producer-visible strategic reasoning. For scripts, MCP inspection, or post-run scoring, read `game-N-turns.jsonl`; it records House room assignment, Mingle turns, named-alliance actions and huddles, votes, empower revotes, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, diary answers, strategy-operation results, and endgame decisions as clean JSON with `thinking`, `reasoningContext`, and producer/debug fields. Reasoning and strategy prose explain an attempted decision; they are never canonical game facts. Use `game-N-events.jsonl` when the question is board state, accepted outcomes, or deterministic replay.
 
 ### Selective context recall evaluation levels

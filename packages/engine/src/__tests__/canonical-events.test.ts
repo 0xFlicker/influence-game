@@ -460,6 +460,38 @@ describe("accepted action registry", () => {
 });
 
 describe("canonical event log", () => {
+  it("clones only events after a trusted sequence cursor", () => {
+    const log = new CanonicalEventLog();
+    log.append({
+      gameId: "game-fixed",
+      round: 0,
+      phase: Phase.INIT,
+      type: "game.roster_initialized",
+      timestamp: "2026-06-11T00:00:00.000Z",
+      visibility: "system",
+      payload: {
+        players: [
+          { id: "atlas", name: "Atlas", status: PlayerStatus.ALIVE, shielded: false },
+        ],
+      },
+    });
+    log.append({
+      gameId: "game-fixed",
+      round: 1,
+      phase: Phase.LOBBY,
+      type: "round.started",
+      timestamp: "2026-06-11T00:00:01.000Z",
+      visibility: "system",
+      payload: { round: 1 },
+    });
+
+    const tail = log.listAfter(1);
+
+    expect(tail.map((event) => event.sequence)).toEqual([2]);
+    expect(log.listAfter(2)).toEqual([]);
+    expect(log.listAfter(-1)).toHaveLength(2);
+  });
+
   it("replays existing events to new subscribers and then streams new events", () => {
     const log = new CanonicalEventLog();
     log.append({
