@@ -54,20 +54,23 @@ Startup is allowed to prove that a prior runner is absent and open a pending set
 
 ### Interrupted gameplay
 
-Add a startup recovery path that turns a safe suspended checkpoint into a real resumed run:
+After successfully claiming the API listener, add a startup recovery path that turns a safe suspended checkpoint into a real resumed run:
 
-1. Startup classifies pre-existing `in_progress` rows; the durable-gameplay branch is suspended before recovery.
-2. Recovery scans suspended games.
-3. The recovery selector loads the latest phase-boundary checkpoint, persisted canonical events, transcript replay, Runtime Snapshot payload, token cursor, and actor coordinate.
-4. Only implemented boundaries pass; unsupported states return a diagnostic skip reason and remain suspended.
-5. A fresh recovery owner claims the game at the checkpoint event head.
-6. `startGame` constructs a normal API-backed runner with `resumeFrom`.
-7. The runner hydrates game state, transcript replay, token cursor, Mingle inbox replay when needed, House continuity, and the phase actor coordinate.
-8. The same game appends contiguous events under the new owner and completes through the existing result/watch-state path.
+1. The process binds its HTTP/WebSocket listener. A competing process that cannot bind exits before ownership-changing startup work.
+2. Startup classifies pre-existing `in_progress` rows; the durable-gameplay branch is suspended before recovery.
+3. Recovery scans suspended games.
+4. The recovery selector loads the latest phase-boundary checkpoint, persisted canonical events, transcript replay, Runtime Snapshot payload, token cursor, and actor coordinate.
+5. Only implemented boundaries pass; unsupported states return a diagnostic skip reason and remain suspended.
+6. A fresh recovery owner claims the game at the checkpoint event head.
+7. `startGame` constructs a normal API-backed runner with `resumeFrom`.
+8. The runner hydrates game state, transcript replay, token cursor, Mingle inbox replay when needed, House continuity, and the phase actor coordinate.
+9. The same game appends contiguous events under the new owner and completes through the existing result/watch-state path.
 
-The startup wiring runs orphan classification before recovery:
+The startup wiring claims the listener before runtime activation; runtime activation then runs orphan classification before recovery:
 
 ```ts
+const server = Bun.serve({ ... });
+
 const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
 
 const startupRecoveryDisabled =
@@ -129,7 +132,7 @@ The system preserves single-writer durability. Recovery owner rows start at the 
 
 Fail-closed gating is the other half of the design. A checkpoint must be latest-at-head, phase-boundary, Runtime Snapshot v1-backed, transcript-replay-backed, token-cursor-backed, accumulator-safe, and targeted at an implemented actor coordinate. If any of those are missing, startup recovery reports a skip reason and leaves the game suspended instead of manufacturing a corrupted completion.
 
-The acceptance proof exercises the product seam. It is DB-backed and API-lifecycle-backed, not a pure engine unit test: interrupt after a durable phase-boundary checkpoint, run startup recovery, assert the same game completes, assert event sequences stay contiguous, assert post-interruption rows use exactly one fresh owner, and assert completed results are written once.
+The acceptance proof exercises the product seam. It is DB-backed and API-lifecycle-backed, not a pure engine unit test: interrupt after a durable phase-boundary checkpoint, run startup recovery, assert the same game completes, assert event sequences stay contiguous, assert post-interruption rows use exactly one fresh owner, and assert completed results are written once. For phase-boundary lifecycle hardening, it also waits for the recovered owner to cross the next lobby, rejects a competing listener before orphan classification can run, and proves the healthy owner continues to the next round and terminal completion without duplicate resolution/elimination events.
 
 ## Prevention
 
@@ -139,7 +142,7 @@ The acceptance proof exercises the product seam. It is DB-backed and API-lifecyc
 - Keep unsupported boundaries suspended with diagnostic evidence. Do not repair by replaying transcript text, skipping phase effects, or synthesizing terminal results.
 - Accusation Capsule V1 is now the pattern for accumulator-heavy phase-boundary resume: persist structured runtime state, seal it to the checkpoint boundary, validate IDs/names/content, and hydrate runner-local maps from that payload. Do not reconstruct accumulator truth from transcript prose or private trace text.
 - When a durability TODO lands, update `docs/statefulness-plan.md`, `docs/refactor-queue.md`, and any touched plan or solution note in the same branch so the queue points at the next real risk.
-- Preserve startup orphaning semantics in the single-API-process deployment. On a fresh process, old `in_progress` means no local runner exists here; durable evidence, not age, selects the failed-start, interrupted-gameplay, or sealed-completion branch.
+- Preserve startup orphaning semantics in the single-API-process deployment, but run them only after the process owns the API listener. Once a fresh listening process starts runtime activation, old `in_progress` means no local runner exists there; durable evidence, not age, selects the failed-start, interrupted-gameplay, or sealed-completion branch. A process that loses listener contention must never classify another process's live runner.
 - Keep recovery owner claim separate from normal waiting-game start. Recovery has different invariants: suspended source state, checkpoint event head, no active owner, and `lastPersistedEventSequence` seeded to the boundary.
 - Treat current support as phase-boundary startup resume only. Mid-phase interruption, in-flight model call recovery, arbitrary historical repair, and multi-worker or spot-fleet coordination are still unsupported.
 - Keep the three restart branches mutually exclusive in DB-backed tests: exact zero-event cleanup returns to waiting, durable gameplay uses supported checkpoint resume, and sealed completion never re-enters gameplay.

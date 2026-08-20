@@ -31,6 +31,7 @@ import { getDurableRunInspection } from "../services/game-durable-run.js";
 import { preparePendingCompletionSettlementsOnStartup } from "../services/game-completion-settlement.js";
 import { abortAllGames, recoverGamesOnStartup } from "../services/game-lifecycle.js";
 import { markGameSuspended } from "../services/game-ownership.js";
+import { listenBeforeRuntimeInitialization } from "../services/listening-runtime.js";
 import {
   findStartupRecoverableGameIds,
   getSupportedRecovery,
@@ -78,6 +79,13 @@ const recoveryConfigWithMingle: GameConfig & Record<string, unknown> = {
   maxRounds: 2,
   minPlayers: 6,
   maxPlayers: 6,
+};
+
+const recoveryConfigAcrossNextLobby: GameConfig & Record<string, unknown> = {
+  ...recoveryConfigWithMingle,
+  // Keep the recovered owner observably active after it seals the next LOBBY
+  // checkpoint so the competing-listener regression can inspect its lease.
+  lobbyMessagesPerPlayer: 10,
 };
 
 const recoveryConfigWithEndgame: GameConfig & Record<string, unknown> = {
@@ -255,6 +263,29 @@ async function waitForCompletedGame(db: DrizzleDB, gameId: string) {
     await new Promise((resolve) => setTimeout(resolve, 20));
   }
   throw new Error(`Timed out waiting for recovered game ${gameId} to complete`);
+}
+
+async function waitForCheckpointBeyond(
+  db: DrizzleDB,
+  gameId: string,
+  actorCoordinate: string,
+  sequence: number,
+) {
+  for (let attempt = 0; attempt < 150; attempt++) {
+    const checkpoint = (await db
+      .select()
+      .from(schema.gameCheckpoints)
+      .where(and(
+        eq(schema.gameCheckpoints.gameId, gameId),
+        eq(schema.gameCheckpoints.actorCoordinate, actorCoordinate),
+      )))
+      .find((entry) => entry.lastEventSequence > sequence);
+    if (checkpoint) return checkpoint;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  throw new Error(
+    `Timed out waiting for ${actorCoordinate} checkpoint after event ${sequence} in ${gameId}`,
+  );
 }
 
 async function interruptGameAtBoundary(
@@ -462,7 +493,7 @@ describe("game startup recovery", () => {
     { actorCoordinate: "format_menu", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "format_pick", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "format_mingle", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
-    { actorCoordinate: "format_resolve", config: recoveryConfigWithMingle, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
+    { actorCoordinate: "format_resolve", config: recoveryConfigAcrossNextLobby, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_lobby", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_plea", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
     { actorCoordinate: "reckoning_vote", config: recoveryConfigWithEndgame, playerCount: 6, expectedIntroductionCount: 6, timeoutMs: 60000 },
@@ -521,6 +552,62 @@ describe("game startup recovery", () => {
       const recovery = await recoverGamesOnStartup(db);
       expect(recovery).toEqual({ attempted: 1, recovered: 1, skipped: [] });
 
+      let postRecoveryLobbyCheckpoint: typeof schema.gameCheckpoints.$inferSelect | null = null;
+      let recoveryOwnerEpoch: string | null = null;
+      if (actorCoordinate === "format_resolve") {
+        postRecoveryLobbyCheckpoint = await waitForCheckpointBeyond(
+          db,
+          gameId,
+          "lobby",
+          interruptedAtSequence,
+        );
+        recoveryOwnerEpoch = postRecoveryLobbyCheckpoint.ownerEpoch;
+
+        const healthyOwner = (await db
+          .select()
+          .from(schema.gameRunOwners)
+          .where(and(
+            eq(schema.gameRunOwners.gameId, gameId),
+            eq(schema.gameRunOwners.ownerEpoch, recoveryOwnerEpoch),
+          )))[0];
+        expect(healthyOwner).toMatchObject({
+          status: "active",
+          kernelHealth: "healthy",
+          failureReason: null,
+        });
+        expect(healthyOwner!.lastPersistedEventSequence).toBeGreaterThanOrEqual(
+          postRecoveryLobbyCheckpoint.lastEventSequence,
+        );
+        expect(new Date(healthyOwner!.expiresAt!).getTime()).toBeGreaterThan(Date.now());
+
+        let competingRuntimeInitialized = false;
+        await expect(listenBeforeRuntimeInitialization({
+          listen: (): { stop(force?: boolean): Promise<void> } => {
+            throw new Error("EADDRINUSE: address already in use");
+          },
+          initializeRuntime: async () => {
+            competingRuntimeInitialized = true;
+            await markGameSuspended(db, gameId, "startup_orphaned", {
+              reason: "competing_startup_reached_ownership",
+            });
+          },
+        })).rejects.toThrow("EADDRINUSE");
+        expect(competingRuntimeInitialized).toBeFalse();
+
+        const ownerAfterRejectedListen = (await db
+          .select()
+          .from(schema.gameRunOwners)
+          .where(and(
+            eq(schema.gameRunOwners.gameId, gameId),
+            eq(schema.gameRunOwners.ownerEpoch, recoveryOwnerEpoch),
+          )))[0];
+        expect(ownerAfterRejectedListen).toMatchObject({
+          status: "active",
+          kernelHealth: "healthy",
+          failureReason: null,
+        });
+      }
+
       await assertRecoveredGameCompleted({
         db,
         gameId,
@@ -547,6 +634,44 @@ describe("game startup recovery", () => {
         expect(selectedCount).toBeGreaterThanOrEqual(1);
         // No pre-boundary duplication: each completed round has at most one menu/selection pair.
         expect(menuCount).toBe(selectedCount);
+      }
+
+      if (actorCoordinate === "format_resolve") {
+        if (!postRecoveryLobbyCheckpoint || !recoveryOwnerEpoch) {
+          throw new Error("Expected the recovered format-resolve run to cross a later lobby");
+        }
+        const eventRows = await db
+          .select()
+          .from(schema.gameEvents)
+          .where(eq(schema.gameEvents.gameId, gameId))
+          .orderBy(asc(schema.gameEvents.sequence));
+        const nextRoundStarted = eventRows.find((row) => {
+          const envelope = row.envelope as { round?: number };
+          return row.eventType === "round.started"
+            && envelope.round === 2
+            && row.sequence > postRecoveryLobbyCheckpoint.lastEventSequence;
+        });
+        expect(nextRoundStarted?.ownerEpoch).toBe(recoveryOwnerEpoch);
+
+        for (const eventType of ["format.resolved", "player.eliminated"] as const) {
+          const firstRoundEvents = eventRows.filter((row) => {
+            const envelope = row.envelope as { round?: number };
+            return row.eventType === eventType && envelope.round === 1;
+          });
+          expect(firstRoundEvents).toHaveLength(1);
+          expect(firstRoundEvents[0]!.ownerEpoch).toBe(recoveryOwnerEpoch);
+        }
+
+        const owners = await db
+          .select()
+          .from(schema.gameRunOwners)
+          .where(eq(schema.gameRunOwners.gameId, gameId));
+        expect(owners.some((owner) => owner.failureReason === "startup_orphaned")).toBeFalse();
+        expect(owners.find((owner) => owner.ownerEpoch === recoveryOwnerEpoch)).toMatchObject({
+          status: "closed",
+          kernelHealth: "healthy",
+          failureReason: null,
+        });
       }
 
       if (actorCoordinate === "tribunal_defense") {
