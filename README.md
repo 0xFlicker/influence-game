@@ -26,7 +26,7 @@ That split makes the system useful to inspect:
 
 | Area | What exists in the repository |
 |---|---|
-| Agent orchestration | `packages/engine` runs agent turns across Mingle, empower voting, format pick/ballot/pointer/tiebreak actions, diary, jury, and endgame flows. Private compact strategy rides those calls: ordinary deltas are reserved for exceptional actionable changes, while null/omission preserves the current plan. Classic Power/Council code remains a labeled legacy lane. |
+| Agent orchestration | `packages/engine` runs agent turns across Mingle, empower voting, format pick/ballot/pointer/tiebreak actions, diary, jury, and endgame flows. Private compact strategy rides those calls: ordinary deltas are reserved for exceptional actionable changes, while null, the exact string `"null"`, or omission preserves the current plan. Classic Power/Council code remains a labeled legacy lane. |
 | Multiplayer runtime | The engine owns players, rounds, phases, alliances, rooms, votes, formats, eliminations, legacy shields, jurors, and win conditions. |
 | Durable event history | API-backed games persist canonical game events in PostgreSQL and rebuild read models from those events. CLI simulations write the same event envelope to JSONL artifacts. |
 | Replay and inspection | Simulation artifacts include events, turns, progress, transcripts, structural prompt-reuse and Recall Plan receipt aggregates, and projections; the Game MCP can list sessions, filter events, read timelines, and return linked records. |

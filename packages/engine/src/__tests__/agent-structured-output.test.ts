@@ -614,6 +614,41 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
+  it("keeps a legal action and records no change for a literal-null delta", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "cast_votes", {
+        thinking: "Mira remains the best chooser, so the current plan still applies.",
+        empower: "Mira",
+        strategyDelta: "null",
+      }),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const votes = await agent.getVotes(makeContext(Phase.VOTE));
+    const result = resolveActionStrategyCandidate(agent, votes, true);
+
+    expect(votes.empowerTarget).toBe("mira-id");
+    expect(votes.strategyDelta).toBe("null");
+    expect(votes.strategyCandidateProposed).toBeUndefined();
+    expect(requests).toHaveLength(1);
+    expect(result).toMatchObject({
+      status: "no_change",
+      reason: "optional_value_absent",
+      previousRevision: 0,
+      resultingRevision: 0,
+    });
+    expect(agent.getCompactStrategyState()).toMatchObject({
+      lifecycle: "opening",
+      revision: 0,
+      deltas: [],
+    });
+  });
+
   it("keeps a legal action when its strategy delta is oversized and does not retry", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(

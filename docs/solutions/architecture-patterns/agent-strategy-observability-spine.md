@@ -165,7 +165,7 @@ bun run check
 ## Validation Checklist
 
 - Ordinary living-player schemas keep mechanic fields plus `thinking` and nullable `strategyDelta`.
-- Strict structured schemas represent the optional delta with a required nullable key; `null` is expected when current strategy still applies, while compatible non-strict outputs may omit it. Both produce `no_change` without a revision.
+- Strict structured schemas represent the optional delta with a required nullable key; JSON `null` is expected when current strategy still applies, while compatible non-strict outputs may omit it. The exact string `"null"` is normalized to the same `no_change` result without a revision; at a required full-strategy boundary it remains a missing value and follows rejection/repair.
 - First post-eviction and repair schemas request full `strategy` without a fixed sentence count.
 - Legal gameplay survives an unusable strategy operation without retry.
 - Illegal/fallback/stale gameplay does not mutate compact strategy.

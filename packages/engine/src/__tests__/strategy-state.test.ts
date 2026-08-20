@@ -30,6 +30,7 @@ describe("compact strategy decision envelope", () => {
 
     expect(STRATEGY_DELTA_GUIDANCE).toContain("material, actionable change");
     expect(STRATEGY_DELTA_GUIDANCE).toContain("targets, alliance posture, commitments");
+    expect(STRATEGY_DELTA_GUIDANCE).toContain('Use JSON null, never the string "null"');
     expect(STRATEGY_DELTA_GUIDANCE).toContain("Do not summarize the action");
     expect(STRATEGY_DELTA_GUIDANCE).toContain("repeat the baseline");
   });
@@ -43,14 +44,39 @@ describe("compact strategy decision envelope", () => {
 });
 
 describe("compact strategy lifecycle", () => {
-  it("normalizes null, missing, and whitespace deltas to no change", () => {
+  it("normalizes null, the literal string null, missing, and whitespace deltas to no change", () => {
     const opening = createOpeningStrategyState();
 
-    for (const candidate of [{}, { strategyDelta: null }, { strategyDelta: "  \n " }]) {
+    for (const candidate of [
+      {},
+      { strategyDelta: null },
+      { strategyDelta: "null" },
+      { strategyDelta: "  \n " },
+    ]) {
       const result = applyStrategyCandidate(opening, "ordinary_action", candidate);
       expect(result.status).toBe("no_change");
       expect(result.state).toEqual(opening);
       expect(result.resultingRevision).toBe(0);
+    }
+  });
+
+  it("keeps near-miss null strings as mechanically valid strategy text", () => {
+    for (const candidate of ["NULL", " null "]) {
+      const delta = applyStrategyCandidate(
+        createOpeningStrategyState(),
+        "ordinary_action",
+        { strategyDelta: candidate },
+      );
+      expect(delta.status).toBe("accepted");
+      expect(delta.state.deltas).toEqual([candidate.trim()]);
+
+      const replacement = applyStrategyCandidate(
+        markStrategyReconciliationRequired(createOpeningStrategyState()),
+        "post_eviction_diary",
+        { strategy: candidate },
+      );
+      expect(replacement.status).toBe("accepted");
+      expect(replacement.state.baseline).toBe(candidate.trim());
     }
   });
 
@@ -256,16 +282,27 @@ describe("compact strategy lifecycle", () => {
 
   it("moves an unusable first post-eviction update to repair-required", () => {
     const reconciliation = markStrategyReconciliationRequired(createOpeningStrategyState());
-    const result = applyStrategyCandidate(reconciliation, "post_eviction_diary", {
-      strategy: "   ",
-    });
+    for (const strategy of ["   ", "null"]) {
+      const result = applyStrategyCandidate(reconciliation, "post_eviction_diary", {
+        strategy,
+      });
 
-    expect(result).toMatchObject({
-      status: "rejected",
-      reason: "required_value_missing",
-      state: { lifecycle: "repair_required" },
-    });
-    expect(result.state.priorEpoch).toEqual(reconciliation.priorEpoch);
+      expect(result).toMatchObject({
+        status: "rejected",
+        reason: "required_value_missing",
+        state: { lifecycle: "repair_required" },
+      });
+      expect(result.state.priorEpoch).toEqual(reconciliation.priorEpoch);
+
+      const repeated = applyStrategyCandidate(result.state, "action_repair", { strategy });
+      expect(repeated).toMatchObject({
+        status: "rejected",
+        reason: "required_value_missing",
+        state: { lifecycle: "repair_required" },
+        previousRevision: result.state.revision,
+        resultingRevision: result.state.revision,
+      });
+    }
   });
 
   it("allows the next accepted action to repair a missing post-eviction baseline", () => {

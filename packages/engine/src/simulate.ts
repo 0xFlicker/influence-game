@@ -131,8 +131,9 @@
  * Private decision turns carry compact strategy candidates on existing gameplay
  * and diary calls; there is no separate strategic-reflection cadence. Ordinary
  * `strategyDelta` values are reserved for exceptional actionable changes to
- * future posture. Strict schemas use null, and compatible non-strict outputs may
- * omit the field, when current strategy still applies. Producer review should
+ * future posture. Strict schemas use JSON null, and compatible non-strict outputs
+ * may omit the field, when current strategy still applies. The exact string
+ * `"null"` is normalized to the same no-change outcome. Producer review should
  * retain accepted/rejected/no-change diagnostics and group strategy-candidate
  * counts plus output tokens by action family without treating prose as canonical
  * fact or alliance obligation. In

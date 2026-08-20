@@ -295,7 +295,11 @@ export function applyStrategyCandidate(
   }
 
   const rawValue = candidate[field];
-  if (rawValue == null || (typeof rawValue === "string" && rawValue.trim().length === 0)) {
+  if (
+    rawValue == null
+    || rawValue === "null"
+    || (typeof rawValue === "string" && rawValue.trim().length === 0)
+  ) {
     if (operation === "delta") {
       const unchanged = cloneCompactStrategyState(state);
       return {
