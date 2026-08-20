@@ -142,15 +142,15 @@ describe("post-eviction diary compact strategy", () => {
       },
     };
 
-    expect(schemaProbe.strategySchemaFragment(playerTrace)).toMatchObject({
-      properties: { strategyDelta: expect.any(Object) },
-      required: ["strategyDelta"],
-    });
+    const ordinaryFragment = schemaProbe.strategySchemaFragment(playerTrace);
+    expect(ordinaryFragment?.properties).toHaveProperty("strategyDelta");
+    expect(ordinaryFragment?.properties).not.toHaveProperty("strategy");
+    expect(ordinaryFragment?.required).toEqual(["strategyDelta"]);
     agent.markCompactStrategyReconciliationRequired();
-    expect(schemaProbe.strategySchemaFragment(playerTrace)).toMatchObject({
-      properties: { strategy: expect.any(Object) },
-      required: ["strategy"],
-    });
+    const repairFragment = schemaProbe.strategySchemaFragment(playerTrace);
+    expect(repairFragment?.properties).toHaveProperty("strategy");
+    expect(repairFragment?.properties).not.toHaveProperty("strategyDelta");
+    expect(repairFragment?.required).toEqual(["strategy"]);
     expect(schemaProbe.strategySchemaFragment({
       privateTrace: {
         action: "diary",
