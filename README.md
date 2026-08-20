@@ -76,6 +76,7 @@ flowchart LR
 ## Key Design Decisions
 
 - **Deterministic runtime, model-authored decisions.** Models decide what agents say and attempt, but phase runners validate and apply those choices against rule-owned state.
+- **The House curates alliance access, not alliance facts.** Once per post-pick alliance window, The House selects `ceil(alive / 4)` living players for proposer opportunities, preferring players underrepresented in active alliances. The engine repairs the access set; selected agents still author or decline their own proposals, and invitee response, consent, and activation remain player-owned and event-authoritative.
 - **Canonical events before presentation.** Accepted facts are recorded as canonical events, then replayed into projections, summaries, timelines, and postgame views.
 - **Private evidence stays scoped.** Reasoning traces, producer evidence, hidden ratings, and competition-quality details are separated from public/player-safe surfaces and require producer scope.
 - **OAuth scopes map to product boundaries.** Agent reads, agent writes, game reads, and producer tools are separate MCP permissions rather than one broad integration token.

@@ -6,6 +6,11 @@
 import type { AgentResponse, AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction, CandidateChoiceRequest, CandidateSelectionDecision, IAgent, MingleIntentAction, MingleTurnAction, PhaseContext, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, RecallContinuitySnapshot, TargetDecision } from "../game-runner";
 import type { CompactStrategyCandidate, CompactStrategyDecisionBoundary, FormatDecisionProvenance } from "../game-runner.types";
 import type { LaunchFormatId } from "../formats";
+import {
+  TemplateHouseInterviewer,
+  type HouseAllianceProposerSelectionContext,
+  type HouseAllianceProposerSelectionResult,
+} from "../house-interviewer";
 import type { UUID } from "../types";
 import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
 import { applyStrategyCandidate, cloneCompactStrategyState, createOpeningStrategyState, markStrategyReconciliationRequired } from "../strategy-state";
@@ -21,6 +26,26 @@ function respond(message: string, thinking = "", reasoningContext?: string): Age
   return { thinking, message, ...(reasoningContext && { reasoningContext }) };
 }
 
+export class ScriptedHouseInterviewer extends TemplateHouseInterviewer {
+  readonly allianceProposerSelectionContexts: HouseAllianceProposerSelectionContext[] = [];
+  private readonly allianceProposerSelections: HouseAllianceProposerSelectionResult[];
+
+  constructor(allianceProposerSelections: HouseAllianceProposerSelectionResult[] = []) {
+    super();
+    this.allianceProposerSelections = [...allianceProposerSelections];
+  }
+
+  override async selectAllianceProposers(
+    context: HouseAllianceProposerSelectionContext,
+  ): Promise<HouseAllianceProposerSelectionResult> {
+    this.allianceProposerSelectionContexts.push({
+      ...context,
+      candidates: context.candidates.map((candidate) => ({ ...candidate })),
+    });
+    return this.allianceProposerSelections.shift() ?? super.selectAllianceProposers(context);
+  }
+}
+
 export class MockAgent implements IAgent {
   readonly id: UUID;
   readonly name: string;
@@ -33,6 +58,8 @@ export class MockAgent implements IAgent {
   /** Optional override for jury vote target */
   juryVoteTarget?: UUID;
   allianceActions: AllianceAction[] = [];
+  allianceActionErrors: Error[] = [];
+  allianceOpportunities: AllianceActionOpportunity[] = [];
   huddleTurns: AllianceHuddleTurnAction[] = [];
 
   constructor(id: UUID, name: string) {
@@ -120,7 +147,10 @@ export class MockAgent implements IAgent {
     };
   }
 
-  async getAllianceAction(_ctx: PhaseContext, _opportunity: AllianceActionOpportunity): Promise<AllianceAction> {
+  async getAllianceAction(_ctx: PhaseContext, opportunity: AllianceActionOpportunity): Promise<AllianceAction> {
+    this.allianceOpportunities.push(opportunity);
+    const scriptedError = this.allianceActionErrors.shift();
+    if (scriptedError) throw scriptedError;
     return this.allianceActions.shift() ?? {
       action: "pass",
       thinking: "mock: no alliance action queued",
