@@ -600,6 +600,7 @@ export class ProductionGameMcpJsonRpcServer {
           requiredString(args, "gameIdOrSlug"),
           auth,
           optionalNumber(args, "limit"),
+          optionalString(args, "cursor"),
         ));
       }
       if (name === "read_trace_content") {
@@ -928,17 +929,22 @@ function productionGameMcpTools(
     tool({
       name: "list_cognitive_artifacts",
       description: includeProducerVariant
-        ? "List split reasoning, thinking, and strategy artifact metadata for one deployed game without returning payload bodies."
-        : "List authorized reasoning, thinking, and strategy artifact metadata for one game you participated in.",
+        ? "List a stable cursor page of split reasoning, thinking, and strategy artifact metadata for one deployed game without returning payload bodies. Keep the game and filters fixed, and pass nextCursor back as cursor until it is null."
+        : "List a stable cursor page of authorized reasoning, thinking, and strategy artifact metadata for one game you participated in. Keep the game and filters fixed, and pass nextCursor back as cursor until it is null.",
       properties: {
         gameIdOrSlug: { type: "string" },
         artifactType: { type: "string", enum: ["reasoning", "thinking", "strategy"] },
         actorPlayerId: { type: "string" },
         limit: { type: "number" },
+        cursor: {
+          type: "string",
+          description: "Opaque nextCursor from the preceding list_cognitive_artifacts page for the same game and filters.",
+        },
       },
       required: ["gameIdOrSlug"],
       scopes: gameReadScopes,
       readOnlyHint: true,
+      outputSchema: cognitiveArtifactListOutputSchema(),
     }),
     tool({
       name: "read_cognitive_artifact",
@@ -989,7 +995,7 @@ function productionGameMcpTools(
     }),
     tool({
       name: "read_producer_game_analysis",
-      description: "Read producer-only postgame analysis with derived vote cohorts, strategic-grade signals, private artifact indexes, trace-manifest indexes, and tuning diagnostics.",
+      description: "Read producer-only postgame analysis with derived vote cohorts, strategic-grade signals, honest first-page metadata and continuation cursors for private indexes, and tuning diagnostics. Continue developerEvidence.cognitiveArtifacts.nextCursor with list_cognitive_artifacts and developerEvidence.traceManifests.nextCursor with list_trace_manifests, keeping the same game and filters until each cursor is null.",
       properties: {
         gameIdOrSlug: { type: "string" },
         detailLevel: { type: "string", enum: ["brief", "standard", "full"] },
@@ -1017,14 +1023,19 @@ function productionGameMcpTools(
     }),
     tool({
       name: "list_trace_manifests",
-      description: "List private trace manifests for one game without returning raw trace content.",
+      description: "List a stable cursor page of private trace manifests for one game without returning raw trace content. Keep the game fixed and pass nextCursor back as cursor until it is null.",
       properties: {
         gameIdOrSlug: { type: "string" },
         limit: { type: "number" },
+        cursor: {
+          type: "string",
+          description: "Opaque nextCursor from the preceding list_trace_manifests page for the same game.",
+        },
       },
       required: ["gameIdOrSlug"],
       scopes: ["producer"],
       readOnlyHint: true,
+      outputSchema: traceManifestListOutputSchema(),
     }),
     tool({
       name: "read_trace_content",
@@ -1571,6 +1582,112 @@ function roundFactsOutputSchema(): Record<string, unknown> {
   };
 }
 
+function indexErrorOutputSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["ok", "status", "error"],
+    properties: {
+      ok: { type: "boolean", const: false },
+      status: { type: "string" },
+      error: { type: "string" },
+    },
+    additionalProperties: true,
+  };
+}
+
+function cognitiveArtifactIndexResultOutputSchema(): Record<string, unknown> {
+  return {
+    anyOf: [
+      {
+        type: "object",
+        required: ["ok", "game", "artifacts", "pageSize", "totalCount", "nextCursor"],
+        properties: {
+          ok: { type: "boolean", const: true },
+          game: { type: "object", additionalProperties: true },
+          artifacts: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+          pageSize: { type: "number" },
+          totalCount: { type: "number" },
+          nextCursor: nullableStringSchema(),
+        },
+        additionalProperties: true,
+      },
+      indexErrorOutputSchema(),
+    ],
+  };
+}
+
+function traceManifestIndexResultOutputSchema(): Record<string, unknown> {
+  return {
+    anyOf: [
+      {
+        type: "object",
+        required: [
+          "ok",
+          "gameId",
+          "linkageSummary",
+          "manifests",
+          "pageSize",
+          "totalCount",
+          "nextCursor",
+        ],
+        properties: {
+          ok: { type: "boolean", const: true },
+          gameId: { type: "string" },
+          linkageSummary: { type: "object", additionalProperties: true },
+          manifests: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+          pageSize: { type: "number" },
+          totalCount: { type: "number" },
+          nextCursor: nullableStringSchema(),
+        },
+        additionalProperties: true,
+      },
+      indexErrorOutputSchema(),
+    ],
+  };
+}
+
+function cognitiveArtifactListOutputSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["schemaVersion", "cognitiveArtifacts"],
+    properties: {
+      schemaVersion: { type: "number", const: 2 },
+      cognitiveArtifacts: cognitiveArtifactIndexResultOutputSchema(),
+    },
+    additionalProperties: true,
+  };
+}
+
+function traceManifestListOutputSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["schemaVersion", "developerEvidence"],
+    properties: {
+      schemaVersion: { type: "number", const: 2 },
+      developerEvidence: traceManifestIndexResultOutputSchema(),
+    },
+    additionalProperties: true,
+  };
+}
+
+function producerDeveloperEvidenceOutputSchema(): Record<string, unknown> {
+  return {
+    type: "object",
+    required: ["cognitiveArtifacts", "traceManifests"],
+    properties: {
+      cognitiveArtifacts: cognitiveArtifactIndexResultOutputSchema(),
+      traceManifests: traceManifestIndexResultOutputSchema(),
+    },
+    additionalProperties: true,
+  };
+}
+
 function postgameOutputSchema(kind: string): Record<string, unknown> {
   const voteCountSchema = {
     type: "object",
@@ -1913,7 +2030,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
           },
           additionalProperties: true,
         },
-        developerEvidence: { type: "object", additionalProperties: true },
+        developerEvidence: producerDeveloperEvidenceOutputSchema(),
       },
     },
   };
@@ -1997,7 +2114,7 @@ function summarizePostgameContent(value: unknown): string {
     return `Returned ${root.turningPoints.length} deterministic turning point(s). See structuredContent.turningPoints for typed evidence.`;
   }
   if (root.producerAnalysis) {
-    return "Returned producer-only postgame analysis with public executive summary, momentum, and private evidence indexes. See structuredContent.producerAnalysis and structuredContent.developerEvidence.";
+    return "Returned producer-only postgame analysis with public executive summary, momentum, and private evidence index first pages. Continue structuredContent.developerEvidence.cognitiveArtifacts.nextCursor with list_cognitive_artifacts and traceManifests.nextCursor with list_trace_manifests, keeping the same game and filters until each cursor is null.";
   }
   return "Returned structured postgame result. See structuredContent for fields.";
 }
@@ -2237,6 +2354,7 @@ function cognitiveArtifactListArgs(args: Record<string, unknown>) {
     artifactType: optionalCognitiveArtifactType(args),
     actorPlayerId: optionalString(args, "actorPlayerId"),
     limit: optionalNumber(args, "limit"),
+    cursor: optionalString(args, "cursor"),
   };
 }
 
