@@ -74,6 +74,10 @@ describe("buildPostgameAnalysisProjection", () => {
         { round: 2, formatId: "vote_bomb", target: { id: "dave", name: "Dave" }, polarity: null },
         { round: 3, formatId: "vote_bomb", target: { id: "charlie", name: "Charlie" }, polarity: null },
       ]);
+    expect(projection.playerSummaries.find((entry) => entry.player.id === "alice")
+      ?.majorityAlignmentByRound.map((entry) => entry.aligned)).toEqual([null, null, null]);
+    expect(projection.playerSummaries.find((entry) => entry.player.id === "bob")
+      ?.majorityAlignmentByRound.map((entry) => entry.aligned)).toEqual([null, null, null]);
   });
 
   it("summarizes edge-smoke-dusk without raw event reconstruction", () => {
@@ -251,6 +255,99 @@ describe("buildPostgameAnalysisProjection", () => {
     )).toBe(true);
     expect(projection.turningPoints.some((point) => point.type === "jury_split")).toBe(true);
     expect(projection.turningPoints.some((point) => point.evidence.eventRefs?.length)).toBe(true);
+  });
+
+  it("scores majority alignment only when canonical ledgers prove player participation", () => {
+    const completed = buildCompletedGameResults({
+      events: createEdgeSmokeDuskEvents(),
+      terminalResult: {
+        winnerId: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
+        winnerName: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
+        roundsPlayed: EDGE_SMOKE_DUSK_EXPECTED.roundsPlayed,
+      },
+    });
+    const projection = buildPostgameAnalysisProjection({ completedResults: completed });
+    const alignmentFor = (playerId: string) => projection.playerSummaries
+      .find((entry) => entry.player.id === playerId)
+      ?.majorityAlignmentByRound.map((entry) => ({
+        round: entry.round,
+        aligned: entry.aligned,
+        basis: entry.basis,
+      }));
+
+    expect(alignmentFor(EDGE_SMOKE_DUSK_PLAYERS.ash.id)).toEqual([
+      { round: 1, aligned: false, basis: ["council"] },
+      { round: 2, aligned: null, basis: ["council"] },
+      { round: 3, aligned: null, basis: ["council"] },
+      { round: 4, aligned: null, basis: ["council"] },
+      { round: 5, aligned: null, basis: ["council"] },
+      { round: 6, aligned: null, basis: [] },
+      { round: 7, aligned: null, basis: [] },
+      { round: 8, aligned: null, basis: [] },
+    ]);
+    expect(alignmentFor(EDGE_SMOKE_DUSK_PLAYERS.willow.id)?.map((entry) => entry.aligned)).toEqual([
+      true,
+      false,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
+    expect(alignmentFor(EDGE_SMOKE_DUSK_PLAYERS.lilith.id)?.map((entry) => entry.aligned)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+    ]);
+    expect(alignmentFor(EDGE_SMOKE_DUSK_PLAYERS.kestrel.id)?.map((entry) => entry.aligned)).toEqual([
+      true,
+      true,
+      true,
+      true,
+      true,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("scores empower-vote alignment only for players in the canonical standard-vote ledger", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "charlie", name: "Charlie" },
+        { id: "dave", name: "Dave" },
+      ],
+      { gameId: "postgame-empower-alignment", now: () => 1_700_300_000_000 },
+    );
+    state.startRound();
+    state.recordVote("alice", "bob");
+    state.recordVote("bob", "bob");
+    state.recordVote("charlie", "alice");
+    state.tallyEmpowerVotes();
+
+    const completed = buildCompletedGameResults({ events: state.getCanonicalEvents() });
+    const projection = buildPostgameAnalysisProjection({ completedResults: completed });
+    const round = completed.rounds[0];
+    const alignmentFor = (playerId: string) => projection.playerSummaries
+      .find((entry) => entry.player.id === playerId)
+      ?.majorityAlignmentByRound[0];
+
+    expect(round?.canonicalFacts.roundFacts.standardVote.ledger.map((entry) => entry.voter.id))
+      .toEqual(["alice", "bob", "charlie"]);
+    expect(round?.canonicalFacts.roundFacts.council?.ledger).toEqual([]);
+    expect(projection.roundSummaries[0]?.majorityCohort.basis).toBe("empower_vote");
+    expect(alignmentFor("alice")).toMatchObject({ aligned: true, basis: ["empower"] });
+    expect(alignmentFor("bob")).toMatchObject({ aligned: true, basis: ["empower"] });
+    expect(alignmentFor("charlie")).toMatchObject({ aligned: false, basis: ["empower"] });
+    expect(alignmentFor("dave")).toMatchObject({ aligned: null, basis: ["empower"] });
   });
 
   it("threads compact named-alliance arcs into postgame summaries", () => {

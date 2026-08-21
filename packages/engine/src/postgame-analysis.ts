@@ -208,8 +208,11 @@ export interface PostgamePlayerFormatBallotByRound {
 
 export interface PostgamePlayerMajorityAlignment {
   round: number;
+  /** Null unless the canonical standard-vote ledger proves this player cast the scored empower decision. */
   empowerAligned: boolean | null;
+  /** Null unless the canonical Council ledger proves this player cast the scored elimination decision. */
   councilAligned: boolean | null;
+  /** True/false only for a proved participant; null means the round is not scored for this player. */
   aligned: boolean | null;
   basis: Array<"empower" | "council">;
 }
@@ -967,7 +970,7 @@ function buildPlayerSummary(input: {
         note: `${player.name} led expose pressure with ${exposureLeader.votes} votes.`,
       });
     }
-    majorityAlignmentByRound.push(alignmentForPlayer(roundSummary, player.id));
+    majorityAlignmentByRound.push(alignmentForPlayer(round, roundSummary, player.id));
     for (const endgame of round.endgameEliminations) {
       const cast = endgame.ledger.find((entry) => entry.voter.id === player.id);
       if (cast) endgameVotesCast.push({ round: endgame.round, target: cast.target });
@@ -2591,22 +2594,33 @@ function didPlayerVoteToEliminate(
 }
 
 function alignmentForPlayer(
+  round: CompletedGameResultsRound,
   roundSummary: PostgameRoundSummary | undefined,
   playerId: UUID,
 ): PostgamePlayerMajorityAlignment {
   if (!roundSummary) {
-    return { round: 0, empowerAligned: null, councilAligned: null, aligned: null, basis: [] };
+    return { round: round.round, empowerAligned: null, councilAligned: null, aligned: null, basis: [] };
   }
   const basis: Array<"empower" | "council"> = [];
   let councilAligned: boolean | null = null;
   let empowerAligned: boolean | null = null;
   if (roundSummary.majorityCohort.basis === "council_vote") {
     basis.push("council");
-    councilAligned = roundSummary.majorityCohort.alignedPlayers.some((player) => player.id === playerId);
+    const participated = round.canonicalFacts.roundFacts.council?.ledger.some((entry) =>
+      entry.voter.id === playerId
+    ) ?? false;
+    councilAligned = participated
+      ? roundSummary.majorityCohort.alignedPlayers.some((player) => player.id === playerId)
+      : null;
   }
   if (roundSummary.majorityCohort.basis === "empower_vote") {
     basis.push("empower");
-    empowerAligned = roundSummary.majorityCohort.alignedPlayers.some((player) => player.id === playerId);
+    const participated = round.canonicalFacts.roundFacts.standardVote.ledger.some((entry) =>
+      entry.voter.id === playerId
+    );
+    empowerAligned = participated
+      ? roundSummary.majorityCohort.alignedPlayers.some((player) => player.id === playerId)
+      : null;
   }
   const alignedValues = [empowerAligned, councilAligned].filter((value): value is boolean => value !== null);
   return {
