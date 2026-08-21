@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { createDB } from "../db/index.js";
+import type { DrizzleDB } from "../db/index.js";
 import { PrivateTraceReadModel } from "./read-model.js";
 
 export interface JsonRpcRequest {
@@ -28,6 +29,63 @@ function content(value: unknown): { content: Array<{ type: "text"; text: string 
       {
         type: "text",
         text: JSON.stringify(value, null, 2),
+      },
+    ],
+  };
+}
+
+function indexContent(value: unknown): {
+  content: Array<{ type: "text"; text: string }>;
+  structuredContent: Record<string, unknown>;
+} {
+  return {
+    ...content(value),
+    structuredContent: asRecord(value),
+  };
+}
+
+function traceManifestIndexOutputSchema(): Record<string, unknown> {
+  return {
+    anyOf: [
+      {
+        type: "object",
+        required: [
+          "ok",
+          "gameId",
+          "linkageSummary",
+          "manifests",
+          "pageSize",
+          "totalCount",
+          "nextCursor",
+        ],
+        properties: {
+          ok: { type: "boolean", const: true },
+          gameId: { type: "string" },
+          linkageSummary: { type: "object", additionalProperties: true },
+          manifests: {
+            type: "array",
+            items: { type: "object", additionalProperties: true },
+          },
+          pageSize: { type: "number" },
+          totalCount: { type: "number" },
+          nextCursor: {
+            anyOf: [
+              { type: "string" },
+              { type: "null" },
+            ],
+          },
+        },
+        additionalProperties: true,
+      },
+      {
+        type: "object",
+        required: ["ok", "status", "error"],
+        properties: {
+          ok: { type: "boolean", const: false },
+          status: { type: "string" },
+          error: { type: "string" },
+        },
+        additionalProperties: true,
       },
     ],
   };
@@ -120,15 +178,20 @@ export class TraceMcpJsonRpcServer {
           },
           {
             name: "list_manifests",
-            description: "List private trace manifests for one game id or slug without returning raw trace content.",
+            description: "List a stable cursor page of private trace manifests for one game id or slug without returning raw trace content. Keep the game fixed and pass nextCursor back as cursor until it is null.",
             inputSchema: {
               type: "object",
               properties: {
                 gameIdOrSlug: { type: "string" },
                 limit: { type: "number" },
+                cursor: {
+                  type: "string",
+                  description: "Opaque nextCursor from the preceding list_manifests page for the same game.",
+                },
               },
               required: ["gameIdOrSlug"],
             },
+            outputSchema: traceManifestIndexOutputSchema(),
           },
           {
             name: "read_content",
@@ -177,9 +240,12 @@ export class TraceMcpJsonRpcServer {
         return content(await this.readModel.inspectDurableRun(requiredString(args, "gameIdOrSlug")));
       }
       if (name === "list_manifests") {
-        return content(await this.readModel.listManifests(
+        return indexContent(await this.readModel.listManifests(
           requiredString(args, "gameIdOrSlug"),
-          optionalNumber(args, "limit"),
+          {
+            limit: optionalNumber(args, "limit"),
+            cursor: optionalString(args, "cursor"),
+          },
         ));
       }
       if (name === "read_content") {
@@ -207,8 +273,21 @@ export class TraceMcpJsonRpcServer {
   }
 }
 
-export function createTraceMcpServer(): TraceMcpJsonRpcServer {
-  return new TraceMcpJsonRpcServer(new PrivateTraceReadModel(createDB()));
+export function createTraceMcpServer(
+  db: DrizzleDB = createDB(),
+  cursorSecret = requiredLocalCursorSecret(),
+): TraceMcpJsonRpcServer {
+  return new TraceMcpJsonRpcServer(new PrivateTraceReadModel(db, undefined, cursorSecret));
+}
+
+function requiredLocalCursorSecret(): string {
+  const value = process.env.INFLUENCE_TRACE_MCP_CURSOR_SECRET;
+  if (!value || value.length < 32) {
+    throw new Error(
+      "INFLUENCE_TRACE_MCP_CURSOR_SECRET must contain at least 32 characters for stable local Trace MCP pagination",
+    );
+  }
+  return value;
 }
 
 export async function runStdioTraceMcpServer(): Promise<void> {

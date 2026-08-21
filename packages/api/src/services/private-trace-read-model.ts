@@ -1,4 +1,4 @@
-import { and, desc, eq, or } from "drizzle-orm";
+import { and, desc, eq, or, sql, type SQL } from "drizzle-orm";
 import { createHash } from "crypto";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -16,13 +16,33 @@ import {
   type PrivateTraceStorageAdapter,
 } from "./private-trace-storage.js";
 import { PRIVATE_TRACE_EVIDENCE_TYPE } from "./private-trace-writer.js";
+import {
+  bindProducerIndexCursor,
+  decodeProducerIndexCursor,
+  issueProducerIndexCursor,
+  type ProducerIndexCursorClaims,
+  type ProducerIndexCursorPosition,
+  type ProducerIndexTraceLinkageSummary,
+} from "./producer-index-cursor.js";
+import { sha256StableJson } from "./stable-hash.js";
 
 const LOCAL_PRODUCER_ACCESSOR: EvidenceAccessor = {
   roles: ["producer"],
 };
 
+type PrivateTraceIndexDB = Pick<DrizzleDB, "select" | "execute">;
+
 const DEFAULT_TRACE_SEARCH_SCAN_BYTES = 8 * 1024 * 1024;
 export const MAX_TRACE_MANIFEST_LIMIT = 500;
+
+const PRIVATE_TRACE_CURSOR_FILTERS = {
+  artifactType: null,
+  actorPlayerId: null,
+} as const;
+const LOCAL_TRACE_CURSOR_BINDING = sha256StableJson({
+  domain: "influence.private_trace.index_binding.v1",
+  surface: "local_producer",
+});
 
 export interface PrivateTraceManifestIndexEntry {
   id: string;
@@ -51,20 +71,31 @@ export interface PrivateTraceManifestIndexEntry {
   boundary?: unknown;
 }
 
-export interface PrivateTraceLinkageSummary {
-  trustedCanonicalPrefixStatus: "empty" | "complete" | "invalid";
-  eligibleAcceptedDecisionCount: number;
-  linkedAcceptedDecisionCount: number;
-  degradedAcceptedDecisionCount: number;
-  intentionallyUnlinkedTraceCount: number;
-  unclassifiedTraceCount: number;
-}
+export type PrivateTraceLinkageSummary = ProducerIndexTraceLinkageSummary;
 
 export interface PrivateTraceManifestIndex {
+  ok: true;
   gameId: string;
   totalCount: number;
+  pageSize: number;
+  nextCursor: string | null;
   linkageSummary: PrivateTraceLinkageSummary;
   manifests: PrivateTraceManifestIndexEntry[];
+}
+
+export type PrivateTraceManifestIndexResult =
+  | PrivateTraceManifestIndex
+  | {
+    ok: false;
+    status: "cursor_invalid_or_stale";
+    error: string;
+  };
+
+export interface ListPrivateTraceManifestsOptions {
+  limit?: number;
+  cursor?: string;
+  /** Authorization/surface fingerprint supplied by the producer transport. */
+  cursorBinding?: string;
 }
 
 export interface PrivateTraceContentRead {
@@ -218,6 +249,7 @@ export class PrivateTraceReadModel {
   constructor(
     private readonly db: DrizzleDB,
     private readonly storageFactory: () => PrivateTraceStorageAdapter = createPrivateTraceStorageAdapter,
+    private readonly cursorSecret?: string,
   ) {}
 
   async resolveGameId(idOrSlug: string): Promise<string | null> {
@@ -253,7 +285,8 @@ export class PrivateTraceReadModel {
 
     const result = [];
     for (const game of games) {
-      const traceManifestCount = (await this.listManifests(game.id, 1)).totalCount;
+      const traceManifestIndex = await this.listManifests(game.id, { limit: 1 });
+      const traceManifestCount = traceManifestIndex.ok ? traceManifestIndex.totalCount : 0;
       result.push({
         id: game.id,
         slug: game.slug,
@@ -274,49 +307,160 @@ export class PrivateTraceReadModel {
 
   async listManifests(
     gameIdOrSlug: string,
-    limit = 50,
-  ): Promise<PrivateTraceManifestIndex> {
+    options: ListPrivateTraceManifestsOptions = {},
+  ): Promise<PrivateTraceManifestIndexResult> {
     const gameId = await this.resolveGameId(gameIdOrSlug);
     if (!gameId) {
+      if (options.cursor) return invalidManifestCursor();
       return {
+        ok: true,
         gameId: gameIdOrSlug,
         totalCount: 0,
+        pageSize: 0,
+        nextCursor: null,
         linkageSummary: emptyLinkageSummary(),
         manifests: [],
       };
     }
 
-    const conditions = and(
+    const decodedCursor = options.cursor
+      ? decodeProducerIndexCursor(options.cursor, {
+          expectedKind: "private_trace",
+          secretMaterial: this.cursorSecret,
+        })
+      : null;
+    if (decodedCursor?.status === "invalid") return invalidManifestCursor();
+
+    const cursorBinding = options.cursorBinding ?? LOCAL_TRACE_CURSOR_BINDING;
+    if (decodedCursor?.status === "ok" && !bindProducerIndexCursor({
+      claims: decodedCursor.claims,
+      kind: "private_trace",
+      bindingFingerprint: cursorBinding,
+      gameId,
+      filters: PRIVATE_TRACE_CURSOR_FILTERS,
+    })) {
+      return invalidManifestCursor();
+    }
+
+    if (decodedCursor?.status === "ok") {
+      return this.listManifestPage(
+        this.db,
+        gameId,
+        options,
+        cursorBinding,
+        decodedCursor.claims,
+        decodedCursor.claims.databaseSnapshot,
+      );
+    }
+
+    return this.db.transaction(async (tx) => {
+      const databaseSnapshot = await readCurrentDatabaseSnapshot(tx);
+      return this.listManifestPage(
+        tx,
+        gameId,
+        options,
+        cursorBinding,
+        null,
+        databaseSnapshot,
+      );
+    }, {
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
+  }
+
+  private async listManifestPage(
+    db: PrivateTraceIndexDB,
+    gameId: string,
+    options: ListPrivateTraceManifestsOptions,
+    cursorBinding: string,
+    cursor: ProducerIndexCursorClaims | null,
+    databaseSnapshot: string,
+  ): Promise<PrivateTraceManifestIndexResult> {
+    const baseConditions: SQL[] = [
       eq(schema.gameEvidenceManifests.gameId, gameId),
       eq(schema.gameEvidenceManifests.evidenceType, PRIVATE_TRACE_EVIDENCE_TYPE),
-    );
-    const [rows, identityRows, trustedPrefix] = await Promise.all([
-      this.db
-        .select()
-        .from(schema.gameEvidenceManifests)
-        .where(conditions)
-        .orderBy(desc(schema.gameEvidenceManifests.createdAt))
-        .limit(Math.max(1, Math.min(limit, MAX_TRACE_MANIFEST_LIMIT))),
-      this.db
+    ];
+    addTraceDatabaseSnapshotCondition(baseConditions, databaseSnapshot);
+    const pageConditions = [...baseConditions];
+    if (cursor) {
+      addTraceReadThroughCondition(pageConditions, cursor.readThrough);
+      addTraceKeysetCondition(pageConditions, cursor.keyset);
+    }
+    const limit = Math.max(1, Math.min(options.limit ?? 50, MAX_TRACE_MANIFEST_LIMIT));
+    const rows = await db
+      .select()
+      .from(schema.gameEvidenceManifests)
+      .where(and(...pageConditions))
+      .orderBy(
+        desc(schema.gameEvidenceManifests.createdAt),
+        desc(schema.gameEvidenceManifests.id),
+      )
+      .limit(limit + 1);
+
+    const readThrough = cursor
+      ? cursor.readThrough
+      : tracePositionFor(rows[0]);
+    const snapshot = cursor
+      ? {
+          totalCount: cursor.totalCount,
+          linkageSummary: cursor.traceLinkageSummary!,
+        }
+      : await this.readTraceSnapshotMetadata(db, gameId, baseConditions, readThrough);
+    const hasMore = rows.length > limit;
+    const pageRows = rows.slice(0, limit);
+    const last = pageRows[pageRows.length - 1];
+    const nextCursor = hasMore && last
+      ? issueProducerIndexCursor({
+          kind: "private_trace",
+          bindingFingerprint: cursorBinding,
+          gameId,
+          filters: PRIVATE_TRACE_CURSOR_FILTERS,
+          databaseSnapshot,
+          readThrough,
+          keyset: tracePositionFor(last),
+          totalCount: snapshot.totalCount,
+          traceLinkageSummary: snapshot.linkageSummary,
+        }, this.cursorSecret)
+      : null;
+
+    return {
+      ok: true,
+      gameId,
+      totalCount: snapshot.totalCount,
+      pageSize: pageRows.length,
+      nextCursor,
+      linkageSummary: snapshot.linkageSummary,
+      manifests: pageRows.map(manifestIndexEntry),
+    };
+  }
+
+  private async readTraceSnapshotMetadata(
+    db: PrivateTraceIndexDB,
+    gameId: string,
+    baseConditions: SQL[],
+    readThrough: ProducerIndexCursorPosition,
+  ): Promise<{ totalCount: number; linkageSummary: PrivateTraceLinkageSummary }> {
+    const snapshotConditions = [...baseConditions];
+    addTraceReadThroughCondition(snapshotConditions, readThrough);
+    const [identityRows, trustedPrefix] = await Promise.all([
+      db
         .select({
           ownerEpoch: schema.gameEvidenceManifests.ownerEpoch,
           decisionId: schema.gameEvidenceManifests.decisionId,
           eventSequence: schema.gameEvidenceManifests.eventSequence,
         })
         .from(schema.gameEvidenceManifests)
-        .where(conditions),
-      getTrustedCanonicalEventPrefix(this.db, gameId),
+        .where(and(...snapshotConditions)),
+      getTrustedCanonicalEventPrefix(db, gameId),
     ]);
-
     return {
-      gameId,
       totalCount: identityRows.length,
       linkageSummary: summarizePrivateTraceLinkage(
         identityRows,
         acceptedActionDecisionRefs(trustedPrefix.events),
         trustedPrefix.status,
       ),
-      manifests: rows.map(manifestIndexEntry),
     };
   }
 
@@ -449,7 +593,10 @@ export class PrivateTraceReadModel {
   }
 
   async searchReasoningTraces(options: PrivateTraceSearchOptions): Promise<PrivateTraceSearchResult> {
-    const listed = await this.listManifests(options.gameIdOrSlug, MAX_TRACE_MANIFEST_LIMIT);
+    const listed = await this.listManifests(options.gameIdOrSlug, { limit: MAX_TRACE_MANIFEST_LIMIT });
+    if (!listed.ok) {
+      return { gameId: options.gameIdOrSlug, matches: [] };
+    }
     const query = options.query.trim().toLowerCase();
     if (!query) return { gameId: listed.gameId, matches: [] };
 
@@ -520,6 +667,74 @@ function emptyLinkageSummary(): PrivateTraceLinkageSummary {
     intentionallyUnlinkedTraceCount: 0,
     unclassifiedTraceCount: 0,
   };
+}
+
+function invalidManifestCursor(): Extract<PrivateTraceManifestIndexResult, { ok: false }> {
+  return {
+    ok: false,
+    status: "cursor_invalid_or_stale",
+    error: "Private trace manifest cursor is invalid or stale",
+  };
+}
+
+function addTraceReadThroughCondition(
+  conditions: SQL[],
+  readThrough: ProducerIndexCursorPosition,
+): void {
+  if (readThrough.createdAt === null || readThrough.id === null) {
+    conditions.push(sql`false`);
+    return;
+  }
+  conditions.push(sql`(
+    ${schema.gameEvidenceManifests.createdAt} < ${readThrough.createdAt}
+    OR (
+      ${schema.gameEvidenceManifests.createdAt} = ${readThrough.createdAt}
+      AND ${schema.gameEvidenceManifests.id} <= ${readThrough.id}
+    )
+  )`);
+}
+
+function addTraceDatabaseSnapshotCondition(
+  conditions: SQL[],
+  databaseSnapshot: string,
+): void {
+  conditions.push(sql`(
+    ${schema.gameEvidenceManifests.indexInsertXid} IS NULL
+    OR pg_visible_in_snapshot(
+      ${schema.gameEvidenceManifests.indexInsertXid}::xid8,
+      ${databaseSnapshot}::pg_snapshot
+    )
+  )`);
+}
+
+async function readCurrentDatabaseSnapshot(db: PrivateTraceIndexDB): Promise<string> {
+  const [row] = await db.execute<{ snapshot: string }>(sql`
+    SELECT pg_current_snapshot()::text AS snapshot
+  `);
+  if (!row?.snapshot) throw new Error("Could not capture producer index database snapshot");
+  return row.snapshot;
+}
+
+function addTraceKeysetCondition(
+  conditions: SQL[],
+  keyset: ProducerIndexCursorPosition,
+): void {
+  if (keyset.createdAt === null || keyset.id === null) return;
+  conditions.push(sql`(
+    ${schema.gameEvidenceManifests.createdAt} < ${keyset.createdAt}
+    OR (
+      ${schema.gameEvidenceManifests.createdAt} = ${keyset.createdAt}
+      AND ${schema.gameEvidenceManifests.id} < ${keyset.id}
+    )
+  )`);
+}
+
+function tracePositionFor(
+  row: Pick<typeof schema.gameEvidenceManifests.$inferSelect, "createdAt" | "id"> | undefined,
+): ProducerIndexCursorPosition {
+  return row
+    ? { createdAt: row.createdAt, id: row.id }
+    : { createdAt: null, id: null };
 }
 
 function summarizePrivateTraceLinkage(

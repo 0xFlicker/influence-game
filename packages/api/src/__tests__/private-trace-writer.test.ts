@@ -289,6 +289,8 @@ describe("private trace writer", () => {
 
     const readModel = new PrivateTraceReadModel(db, () => storage);
     const index = await readModel.listManifests(gameId);
+    expect(index.ok).toBe(true);
+    if (!index.ok) throw new Error(index.error);
     expect(index.manifests[0]).toMatchObject({
       id: result.manifestId,
       decisionId,

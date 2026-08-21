@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, or, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, inArray, or, sql, type SQL } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import type {
@@ -15,12 +15,41 @@ import {
   type CognitiveArtifactAccessor,
 } from "./cognitive-artifact-policy.js";
 import { COGNITIVE_ARTIFACT_CAPTURE_VERSION } from "./cognitive-artifact-writer.js";
+import {
+  bindProducerIndexCursor,
+  decodeProducerIndexCursor,
+  issueProducerIndexCursor,
+  type ProducerIndexCursorClaims,
+  type ProducerIndexCursorFilters,
+  type ProducerIndexCursorPosition,
+} from "./producer-index-cursor.js";
+import { sha256StableJson } from "./stable-hash.js";
 
 const DEFAULT_LIST_LIMIT = 50;
 const MAX_LIST_LIMIT = 100;
 const USER_LIST_SCAN_LIMIT = 500;
 
 type CognitiveArtifactRow = typeof schema.gameCognitiveArtifacts.$inferSelect;
+type CognitiveArtifactIndexRow = Pick<
+  CognitiveArtifactRow,
+  | "id"
+  | "indexInsertXid"
+  | "gameId"
+  | "artifactType"
+  | "actorRole"
+  | "actorPlayerId"
+  | "actorUserId"
+  | "actorAgentProfileId"
+  | "action"
+  | "phase"
+  | "round"
+  | "eventSequence"
+  | "visibilityStatus"
+  | "redactionStatus"
+  | "payloadByteLength"
+  | "diagnostics"
+  | "createdAt"
+>;
 
 export interface CognitiveArtifactGameIdentity {
   id: string;
@@ -53,15 +82,33 @@ export interface CognitiveArtifactPayloadRead extends CognitiveArtifactIndexEntr
   payload: Record<string, unknown>;
 }
 
+interface CognitiveArtifactPage {
+  artifacts: CognitiveArtifactIndexEntry[];
+  pageSize: number;
+  totalCount: number;
+  nextCursor: string | null;
+}
+
 export type CognitiveArtifactListResult =
   | {
     ok: true;
     game: CognitiveArtifactGameIdentity;
     artifacts: CognitiveArtifactIndexEntry[];
+    pageSize: number;
+    totalCount: number;
+    nextCursor: string | null;
+  }
+  | {
+    ok: true;
+    game: CognitiveArtifactGameIdentity;
+    artifacts: CognitiveArtifactIndexEntry[];
+    pageSize?: never;
+    totalCount?: never;
+    nextCursor?: never;
   }
   | {
     ok: false;
-    status: "denied" | "not_found" | "not_captured_for_game";
+    status: "denied" | "not_found" | "not_captured_for_game" | "cursor_invalid_or_stale";
     error: string;
   };
 
@@ -85,6 +132,7 @@ export interface ListCognitiveArtifactsParams {
   artifactType?: CognitiveArtifactType;
   actorPlayerId?: string;
   limit?: number;
+  cursor?: string;
 }
 
 export interface ReadCognitiveArtifactParams {
@@ -97,7 +145,10 @@ export interface ReadCognitiveArtifactParams {
 }
 
 export class CognitiveArtifactReadModel {
-  constructor(private readonly db: DrizzleDB) {}
+  constructor(
+    private readonly db: DrizzleDB,
+    private readonly cursorSecret?: string,
+  ) {}
 
   async listArtifacts(
     params: ListCognitiveArtifactsParams,
@@ -123,15 +174,28 @@ export class CognitiveArtifactReadModel {
       };
     }
 
+    const decodedCursor = params.cursor
+      ? decodeProducerIndexCursor(params.cursor, {
+          expectedKind: "cognitive_artifact",
+          secretMaterial: this.cursorSecret,
+        })
+      : null;
+    if (decodedCursor?.status === "invalid") {
+      return invalidCursor();
+    }
+
+    const filters = effectiveCognitiveFilters(params, decodedCursor?.claims ?? null);
+    if (!filters) return invalidCursor();
+
     const limit = clamp(params.limit ?? DEFAULT_LIST_LIMIT, 1, MAX_LIST_LIMIT);
     const conditions: SQL[] = [
       eq(schema.gameCognitiveArtifacts.gameId, game.id),
     ];
-    if (params.artifactType) {
-      conditions.push(eq(schema.gameCognitiveArtifacts.artifactType, params.artifactType));
+    if (filters.artifactType) {
+      conditions.push(eq(schema.gameCognitiveArtifacts.artifactType, filters.artifactType));
     }
-    if (params.actorPlayerId) {
-      conditions.push(eq(schema.gameCognitiveArtifacts.actorPlayerId, params.actorPlayerId));
+    if (filters.actorPlayerId) {
+      conditions.push(eq(schema.gameCognitiveArtifacts.actorPlayerId, filters.actorPlayerId));
     }
 
     const producer = hasProducerCognitiveArtifactAccess(access);
@@ -142,30 +206,129 @@ export class CognitiveArtifactReadModel {
     if (subjectOwner && !producer) {
       const ownership = ownershipSqlConditions(access);
       if (!ownership) {
-        return { ok: true, game, artifacts: [] };
+        return {
+          ok: true,
+          game,
+          artifacts: [],
+          pageSize: 0,
+          totalCount: 0,
+          nextCursor: null,
+        };
       }
       conditions.push(ownership);
       conditions.push(inArray(schema.gameCognitiveArtifacts.actorRole, ["player", "juror"]));
     }
 
-    const fetchLimit = producer || subjectOwner ? limit : USER_LIST_SCAN_LIMIT;
+    if (!producer && !subjectOwner) {
+      if (params.cursor) return invalidCursor();
+      const rows = await this.db
+        .select(cognitiveArtifactIndexSelection(false))
+        .from(schema.gameCognitiveArtifacts)
+        .where(and(...conditions))
+        .orderBy(
+          desc(schema.gameCognitiveArtifacts.createdAt),
+          desc(schema.gameCognitiveArtifacts.id),
+        )
+        .limit(USER_LIST_SCAN_LIMIT);
+      const artifacts = rows
+        .filter((row) => canReadCognitiveArtifact(access, artifactPolicyContext(row)))
+        .slice(0, limit)
+        .map((row) => indexEntry(row, false));
+      return {
+        ok: true,
+        game,
+        artifacts,
+      };
+    }
 
-    const rows = await this.db
-      .select()
-      .from(schema.gameCognitiveArtifacts)
-      .where(and(...conditions))
-      .orderBy(desc(schema.gameCognitiveArtifacts.createdAt))
-      .limit(fetchLimit);
+    const bindingFingerprint = cognitiveCursorBinding(access, producer);
+    if (decodedCursor?.status === "ok" && !bindProducerIndexCursor({
+      claims: decodedCursor.claims,
+      kind: "cognitive_artifact",
+      bindingFingerprint,
+      gameId: game.id,
+      filters,
+    })) {
+      return invalidCursor();
+    }
 
-    const artifacts = rows
-      .filter((row) => canReadCognitiveArtifact(access, artifactPolicyContext(row)))
-      .slice(0, limit)
-      .map((row) => indexEntry(row, producer));
+    const page = await this.listSqlAuthorizedPage({
+      conditions,
+      access,
+      producer,
+      gameId: game.id,
+      filters,
+      bindingFingerprint,
+      cursor: decodedCursor?.status === "ok" ? decodedCursor.claims : null,
+      limit,
+    });
 
     return {
       ok: true,
       game,
-      artifacts,
+      ...page,
+    };
+  }
+
+  private async listSqlAuthorizedPage(params: {
+    conditions: SQL[];
+    access: CognitiveArtifactAccessor;
+    producer: boolean;
+    gameId: string;
+    filters: ProducerIndexCursorFilters;
+    bindingFingerprint: string;
+    cursor: ProducerIndexCursorClaims | null;
+    limit: number;
+  }): Promise<CognitiveArtifactPage> {
+    const databaseSnapshot = params.cursor?.databaseSnapshot
+      ?? await readCurrentDatabaseSnapshot(this.db);
+    const pageConditions = [...params.conditions];
+    addDatabaseSnapshotCondition(pageConditions, databaseSnapshot);
+    if (params.cursor) {
+      addReadThroughCondition(pageConditions, params.cursor.readThrough);
+      addKeysetCondition(pageConditions, params.cursor.keyset);
+    }
+
+    const rows = await this.db
+      .select(cognitiveArtifactIndexSelection(params.producer))
+      .from(schema.gameCognitiveArtifacts)
+      .where(and(...pageConditions))
+      .orderBy(
+        desc(schema.gameCognitiveArtifacts.createdAt),
+        desc(schema.gameCognitiveArtifacts.id),
+      )
+      .limit(params.limit + 1);
+
+    const readThrough = params.cursor?.readThrough ?? positionFor(rows[0]);
+    const snapshotConditions = [...params.conditions];
+    addDatabaseSnapshotCondition(snapshotConditions, databaseSnapshot);
+    addReadThroughCondition(snapshotConditions, readThrough);
+    const totalCount = params.cursor?.totalCount ?? (await this.db
+      .select({ value: count() })
+      .from(schema.gameCognitiveArtifacts)
+      .where(and(...snapshotConditions)))[0]?.value ?? 0;
+    const hasMore = rows.length > params.limit;
+    const pageRows = rows.slice(0, params.limit)
+      .filter((row) => canReadCognitiveArtifact(params.access, artifactPolicyContext(row)));
+    const last = pageRows[pageRows.length - 1];
+    const nextCursor = hasMore && last
+      ? issueProducerIndexCursor({
+          kind: "cognitive_artifact",
+          bindingFingerprint: params.bindingFingerprint,
+          gameId: params.gameId,
+          filters: params.filters,
+          databaseSnapshot,
+          readThrough,
+          keyset: positionFor(last),
+          totalCount,
+        }, this.cursorSecret)
+      : null;
+
+    return {
+      artifacts: pageRows.map((row) => indexEntry(row, params.producer)),
+      pageSize: pageRows.length,
+      totalCount,
+      nextCursor,
     };
   }
 
@@ -464,7 +627,108 @@ function ownershipSqlConditions(access: CognitiveArtifactAccessor): SQL | null {
   return or(...clauses) ?? null;
 }
 
-function artifactPolicyContext(row: CognitiveArtifactRow) {
+function effectiveCognitiveFilters(
+  params: ListCognitiveArtifactsParams,
+  cursor: ProducerIndexCursorClaims | null,
+): ProducerIndexCursorFilters | null {
+  if (!cursor) {
+    return {
+      artifactType: params.artifactType ?? null,
+      actorPlayerId: params.actorPlayerId ?? null,
+    };
+  }
+  if (params.artifactType !== undefined && params.artifactType !== cursor.filters.artifactType) {
+    return null;
+  }
+  if (params.actorPlayerId !== undefined && params.actorPlayerId !== cursor.filters.actorPlayerId) {
+    return null;
+  }
+  return cursor.filters;
+}
+
+function cognitiveCursorBinding(
+  access: CognitiveArtifactAccessor,
+  producer: boolean,
+): string {
+  return sha256StableJson({
+    domain: "influence.cognitive_artifact.index_binding.v1",
+    surface: producer ? "producer" : access.surfaceCapability ?? "participant_web",
+    userId: access.userId ?? null,
+    ownershipFingerprint: access.matchAccess?.ownershipFingerprint ?? null,
+    claimPlayerIds: [...(access.claims?.playerIds ?? [])].sort(),
+    claimAgentProfileIds: [...(access.claims?.agentProfileIds ?? [])].sort(),
+  });
+}
+
+function invalidCursor(): Extract<CognitiveArtifactListResult, { ok: false }> {
+  return {
+    ok: false,
+    status: "cursor_invalid_or_stale",
+    error: "Cognitive artifact cursor is invalid or stale",
+  };
+}
+
+function addReadThroughCondition(
+  conditions: SQL[],
+  readThrough: ProducerIndexCursorPosition,
+): void {
+  if (readThrough.createdAt === null || readThrough.id === null) {
+    conditions.push(sql`false`);
+    return;
+  }
+  conditions.push(sql`(
+    ${schema.gameCognitiveArtifacts.createdAt} < ${readThrough.createdAt}
+    OR (
+      ${schema.gameCognitiveArtifacts.createdAt} = ${readThrough.createdAt}
+      AND ${schema.gameCognitiveArtifacts.id} <= ${readThrough.id}
+    )
+  )`);
+}
+
+function addDatabaseSnapshotCondition(
+  conditions: SQL[],
+  databaseSnapshot: string,
+): void {
+  conditions.push(sql`(
+    ${schema.gameCognitiveArtifacts.indexInsertXid} IS NULL
+    OR pg_visible_in_snapshot(
+      ${schema.gameCognitiveArtifacts.indexInsertXid}::xid8,
+      ${databaseSnapshot}::pg_snapshot
+    )
+  )`);
+}
+
+async function readCurrentDatabaseSnapshot(db: DrizzleDB): Promise<string> {
+  const [row] = await db.execute<{ snapshot: string }>(sql`
+    SELECT pg_current_snapshot()::text AS snapshot
+  `);
+  if (!row?.snapshot) throw new Error("Could not capture producer index database snapshot");
+  return row.snapshot;
+}
+
+function addKeysetCondition(
+  conditions: SQL[],
+  keyset: ProducerIndexCursorPosition,
+): void {
+  if (keyset.createdAt === null || keyset.id === null) return;
+  conditions.push(sql`(
+    ${schema.gameCognitiveArtifacts.createdAt} < ${keyset.createdAt}
+    OR (
+      ${schema.gameCognitiveArtifacts.createdAt} = ${keyset.createdAt}
+      AND ${schema.gameCognitiveArtifacts.id} < ${keyset.id}
+    )
+  )`);
+}
+
+function positionFor(
+  row: Pick<CognitiveArtifactIndexRow, "createdAt" | "id"> | undefined,
+): ProducerIndexCursorPosition {
+  return row
+    ? { createdAt: row.createdAt, id: row.id }
+    : { createdAt: null, id: null };
+}
+
+function artifactPolicyContext(row: CognitiveArtifactIndexRow) {
   return {
     gameId: row.gameId,
     artifactType: row.artifactType,
@@ -477,11 +741,11 @@ function artifactPolicyContext(row: CognitiveArtifactRow) {
   };
 }
 
-function artifactUri(row: CognitiveArtifactRow): string {
+function artifactUri(row: CognitiveArtifactIndexRow): string {
   return `influence-game://deployed/games/${row.gameId}/cognitive-artifacts/${row.id}`;
 }
 
-function indexEntry(row: CognitiveArtifactRow, includeDiagnostics: boolean): CognitiveArtifactIndexEntry {
+function indexEntry(row: CognitiveArtifactIndexRow, includeDiagnostics: boolean): CognitiveArtifactIndexEntry {
   return {
     id: row.id,
     uri: artifactUri(row),
@@ -500,6 +764,30 @@ function indexEntry(row: CognitiveArtifactRow, includeDiagnostics: boolean): Cog
     payloadByteLength: row.payloadByteLength,
     ...(includeDiagnostics && row.diagnostics && { diagnostics: row.diagnostics }),
     createdAt: row.createdAt,
+  };
+}
+
+function cognitiveArtifactIndexSelection(includeDiagnostics: boolean) {
+  return {
+    id: schema.gameCognitiveArtifacts.id,
+    indexInsertXid: schema.gameCognitiveArtifacts.indexInsertXid,
+    gameId: schema.gameCognitiveArtifacts.gameId,
+    artifactType: schema.gameCognitiveArtifacts.artifactType,
+    actorRole: schema.gameCognitiveArtifacts.actorRole,
+    actorPlayerId: schema.gameCognitiveArtifacts.actorPlayerId,
+    actorUserId: schema.gameCognitiveArtifacts.actorUserId,
+    actorAgentProfileId: schema.gameCognitiveArtifacts.actorAgentProfileId,
+    action: schema.gameCognitiveArtifacts.action,
+    phase: schema.gameCognitiveArtifacts.phase,
+    round: schema.gameCognitiveArtifacts.round,
+    eventSequence: schema.gameCognitiveArtifacts.eventSequence,
+    visibilityStatus: schema.gameCognitiveArtifacts.visibilityStatus,
+    redactionStatus: schema.gameCognitiveArtifacts.redactionStatus,
+    payloadByteLength: schema.gameCognitiveArtifacts.payloadByteLength,
+    diagnostics: includeDiagnostics
+      ? schema.gameCognitiveArtifacts.diagnostics
+      : sql<Record<string, unknown> | null>`null`,
+    createdAt: schema.gameCognitiveArtifacts.createdAt,
   };
 }
 
