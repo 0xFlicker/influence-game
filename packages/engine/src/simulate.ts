@@ -95,10 +95,13 @@
  * with source/repair metadata. They do not request per-player `mingle-intent`;
  * historical traces and isolated prompt-lab fixtures may still contain it.
  * Named-alliance records are inspectable through both turns and canonical
- * events: post-pick `alliance-action` turns capture proposal/accept/decline/
- * counter/amend behavior. Each call exposes only its current legal opportunity;
- * the engine binds proposal/version identity and maps request-local amendment
- * handles. `alliance-huddle-schedule` turns capture private House
+ * events: one private `alliance-proposer-selection` House turn records the
+ * `ceil(alive / 4)` access set, underrepresentation preference, and engine
+ * repair notes without creating alliance facts. Only finalized players receive
+ * proposer `alliance-action` calls; invitee response/counter calls remain
+ * demand-driven. Each call exposes only its current legal opportunity, selected
+ * agents retain propose/amend/pass ownership, and the engine binds proposal/version
+ * identity and maps request-local amendment handles. `alliance-huddle-schedule` turns capture private House
  * grant/skip rationale, `alliance-huddle-turn` records capture member speech
  * plus structured target/action/commitment/contingency/dissent facts, and
  * `alliance-huddle-outcome` records carry those facts forward alongside a

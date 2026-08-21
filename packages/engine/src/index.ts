@@ -452,7 +452,16 @@ export type { InfluenceAgentOptions, Personality } from "./agent";
 
 // House interviewer
 export { LLMHouseInterviewer, TemplateHouseInterviewer } from "./house-interviewer";
-export type { IHouseInterviewer, DiaryRoomContext, FollowUpResult, LLMHouseInterviewerOptions } from "./house-interviewer";
+export type {
+  IHouseInterviewer,
+  DiaryRoomContext,
+  FollowUpResult,
+  HouseAllianceProposerCandidate,
+  HouseAllianceProposerSelectionContext,
+  HouseAllianceProposerSelectionItem,
+  HouseAllianceProposerSelectionResult,
+  LLMHouseInterviewerOptions,
+} from "./house-interviewer";
 
 // House personas
 export {
