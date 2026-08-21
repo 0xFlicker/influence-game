@@ -207,6 +207,10 @@ A retired hidden decision artifact from the pre-format Mingle experiment. Live s
 
 The producer-side placement of alive agents into initial Format Mingle rooms using one House call with the living roster and locked format rule sheet. The House can propose strategically useful vote-bloc groupings, but deterministic validation owns final placement and repair diagnostics; later movement belongs to agents through room actions, not hidden reshuffling.
 
+## House alliance proposer plan
+
+A private producer access decision made once per Format Mingle alliance-action window. The House selects a scarce set of eligible living players to receive the existing propose, amend, or pass opportunity, preferring players underrepresented in active alliances. The engine validates and repairs the exact access quota; selected agents still own members and terms and may decline, while invitee response and consent remain independent. The plan creates no canonical alliance facts and gives The House no power to create, rewrite, activate, dissolve, or enforce an alliance.
+
 ## Strategy signal
 
 A private-room behavior during Mingle that reveals or advances game posture, such as naming a target or ally, asking for a commitment, trading information, offering protection, planting doubt, coordinating a public story, testing trust through social questions, or moving rooms for a stated purpose. Strategy signals are producer/debug evidence that Mingle made game talk available; they are not a mandatory action every agent must perform on every turn.
@@ -610,6 +614,10 @@ A producer/debug metadata record that points to raw LLM evidence such as prompts
 ## Producer private trace data
 
 The maintainer/debug evidence lane that can include full prompt requests, raw model responses, tool calls, provider profile, model ID, requested reasoning effort, observed reasoning metadata, token or usage counts, router billing fields, storage pointers, and normalized decision records. Producer private trace data may contain the same reasoning and strategy material that later feeds player-private reasoning artifacts, but it also contains operational and provider evidence that is not part of the player-private product lane.
+
+## Producer evidence index page
+
+A bounded, newest-first page over authorized cognitive-artifact metadata or private-trace manifest metadata. The first read pins a PostgreSQL insertion-visibility snapshot plus the newest `(createdAt, id)` boundary, then returns the number of rows emitted as `pageSize`, that snapshot's authorized `totalCount`, and an opaque `nextCursor`; terminal pages return `nextCursor: null`. Historical rows without insertion-XID metadata remain visible, while newly written rows record an immutable insertion XID so evidence arriving after page one cannot enter the sealed snapshot even at an equal timestamp. The cursor binds the game, index kind, normalized filters, and caller/surface authorization while allowing page size to change. It is pagination state, not evidence identity, canonical game authority, a privacy capability, or a raw trace-content reference.
 
 ## Private trace content
 

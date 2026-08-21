@@ -1,6 +1,10 @@
 import { Phase } from "../types";
 import type { AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
 import { createUUID } from "../game-state";
+import type {
+  HouseAllianceProposerCandidate,
+  HouseAllianceProposerSelectionResult,
+} from "../house-interviewer";
 import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
 import {
   formatAllianceActionOperatorText,
@@ -761,8 +765,97 @@ export async function runAllianceFormationPhase(
   await assertCanAcceptCommit(ctx);
   gameState.closeUniversalAlliancesBeforeMingle(phase);
 
+  const livingPlayers = gameState.getAlivePlayers();
+  const proposerBudget = Math.ceil(livingPlayers.length / 4);
+  const activeAlliances = gameState.getAllianceRecords().filter((alliance) => alliance.status === "active");
+  const candidates: HouseAllianceProposerCandidate[] = livingPlayers.map((player) => ({
+    playerId: player.id,
+    playerName: player.name,
+    activeAllianceCount: activeAlliances.filter((alliance) => alliance.memberIds.includes(player.id)).length,
+  }));
+  const candidateById = new Map(candidates.map((candidate) => [candidate.playerId, candidate]));
+  let housePlan: HouseAllianceProposerSelectionResult;
+  try {
+    housePlan = await ctx.houseInterviewer.selectAllianceProposers({
+      round: gameState.round,
+      phase,
+      budget: proposerBudget,
+      candidates,
+    });
+  } catch (error) {
+    housePlan = {
+      selected: [],
+      rationale: `House proposer selection failed; deterministic repair applied (${error instanceof Error ? error.message : String(error)}).`,
+    };
+  }
+
+  const repairNotes: string[] = [];
+  const finalizedRationaleById = new Map<UUID, string>();
+  for (const item of housePlan.selected) {
+    const candidate = candidateById.get(item.playerId);
+    if (!candidate) {
+      const knownPlayer = gameState.getPlayer(item.playerId);
+      repairNotes.push(knownPlayer
+        ? `Eliminated or otherwise ineligible House selection dropped: ${item.playerId}.`
+        : `Unknown House selection dropped: ${item.playerId}.`);
+      continue;
+    }
+    if (finalizedRationaleById.has(item.playerId)) {
+      repairNotes.push(`Duplicate House selection dropped: ${item.playerId}.`);
+      continue;
+    }
+    if (finalizedRationaleById.size >= proposerBudget) {
+      repairNotes.push(`Excess House selection dropped after the ${proposerBudget}-player budget was filled: ${item.playerId}.`);
+      continue;
+    }
+    finalizedRationaleById.set(item.playerId, item.rationale);
+  }
+
+  if (finalizedRationaleById.size < proposerBudget) {
+    const repairCandidates = candidates
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(({ candidate }) => !finalizedRationaleById.has(candidate.playerId))
+      .sort((left, right) =>
+        left.candidate.activeAllianceCount - right.candidate.activeAllianceCount || left.index - right.index,
+      );
+    for (const { candidate } of repairCandidates) {
+      if (finalizedRationaleById.size >= proposerBudget) break;
+      finalizedRationaleById.set(
+        candidate.playerId,
+        `Deterministic repair selected ${candidate.playerName} with ${candidate.activeAllianceCount} active alliance${candidate.activeAllianceCount === 1 ? "" : "s"}.`,
+      );
+      repairNotes.push(`Underrepresentation-first repair added ${candidate.playerId}.`);
+    }
+  }
+
+  const finalizedPlayers = livingPlayers.filter((player) => finalizedRationaleById.has(player.id));
+  await assertCanAcceptCommit(ctx);
+  logger.emitAgentTurn({
+    phase,
+    action: "alliance-proposer-selection",
+    actor: { name: "The House", role: "house" },
+    visibility: "private",
+    response: {
+      budget: proposerBudget,
+      selected: finalizedPlayers.map((player) => {
+        const candidate = candidateById.get(player.id)!;
+        return {
+          playerId: player.id,
+          playerName: player.name,
+          activeAllianceCount: candidate.activeAllianceCount,
+          rationale: finalizedRationaleById.get(player.id)!,
+        };
+      }),
+      rationale: housePlan.rationale ?? "The House selected scarce proposer access for this alliance-action window.",
+      repairNotes,
+    },
+    thinking: housePlan.thinking,
+    reasoningContext: housePlan.reasoningContext,
+    text: `The House selected ${finalizedPlayers.map((player) => player.name).join(", ") || "no players"} for ${proposerBudget} proposer opportunit${proposerBudget === 1 ? "y" : "ies"}.`,
+  });
+
   const step = { value: 1 };
-  for (const player of gameState.getAlivePlayers()) {
+  for (const player of finalizedPlayers) {
     const action = await collectAllianceAction(ctx, player.id, phase, { kind: "proposer" });
     const modeError = validateProposerAction(action);
     if (modeError) {

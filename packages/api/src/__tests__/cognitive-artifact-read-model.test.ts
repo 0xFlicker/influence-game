@@ -12,6 +12,7 @@ const PRODUCER_ACCESS = {
   authProfile: "producer" as const,
   surfaceCapability: "producer" as const,
 };
+const CURSOR_SECRET = "test-jwt-secret-producer-index-pagination";
 
 describe("CognitiveArtifactReadModel", () => {
   let db: DrizzleDB;
@@ -19,8 +20,115 @@ describe("CognitiveArtifactReadModel", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+    process.env.JWT_SECRET = CURSOR_SECRET;
     await db.insert(schema.users).values({ id: PRODUCER_ACCESS.userId });
     readModel = new CognitiveArtifactReadModel(db);
+  });
+
+  test("producer pagination exhausts one filtered equal-timestamp snapshot exactly once", async () => {
+    const gameId = randomUUID();
+    const otherGameId = randomUUID();
+    const ownerUserId = randomUUID();
+    const ownerPlayerId = randomUUID();
+    const otherPlayerId = randomUUID();
+    await insertUsers(ownerUserId);
+    await insertGame(gameId, { captureVersion: 1 });
+    await insertGame(otherGameId, { captureVersion: 1 });
+    await insertPlayer(gameId, ownerPlayerId, ownerUserId);
+    await insertPlayer(gameId, otherPlayerId, ownerUserId);
+
+    const expectedIds: string[] = [];
+    for (let index = 0; index < 17; index++) {
+      const id = randomUUID();
+      const matches = index % 2 === 0;
+      if (matches) expectedIds.push(id);
+      await insertArtifact({
+        id,
+        gameId,
+        actorPlayerId: matches ? ownerPlayerId : otherPlayerId,
+        actorUserId: ownerUserId,
+        artifactType: matches ? "thinking" : "strategy",
+        payload: { index },
+        createdAt: "2026-08-19T12:00:00.000Z",
+      });
+    }
+
+    const first = await readModel.listArtifacts({
+      gameIdOrSlug: gameId,
+      artifactType: "thinking",
+      actorPlayerId: ownerPlayerId,
+      limit: 2,
+    }, PRODUCER_ACCESS);
+    expect(first.ok).toBe(true);
+    if (!first.ok) throw new Error(first.error);
+    expect(first.pageSize).toBe(first.artifacts.length);
+    expect(first.totalCount).toBe(expectedIds.length);
+    expect(first.nextCursor).toBeString();
+
+    const lateArtifactId = "00000000-0000-4000-8000-000000000001";
+    await insertArtifact({
+      id: lateArtifactId,
+      gameId,
+      actorPlayerId: ownerPlayerId,
+      actorUserId: ownerUserId,
+      artifactType: "thinking",
+      payload: { insertedAfterFirstPage: true },
+      createdAt: "2026-08-19T12:00:00.000Z",
+    });
+
+    const tamperedCursor = `${first.nextCursor!.slice(0, -1)}${first.nextCursor!.endsWith("a") ? "b" : "a"}`;
+    expect(await readModel.listArtifacts({
+      gameIdOrSlug: gameId,
+      cursor: tamperedCursor,
+    }, PRODUCER_ACCESS)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(await readModel.listArtifacts({
+      gameIdOrSlug: otherGameId,
+      cursor: first.nextCursor!,
+    }, PRODUCER_ACCESS)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(await readModel.listArtifacts({
+      gameIdOrSlug: gameId,
+      artifactType: "strategy",
+      cursor: first.nextCursor!,
+    }, PRODUCER_ACCESS)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(await readModel.listArtifacts({
+      gameIdOrSlug: gameId,
+      cursor: first.nextCursor!,
+    }, {
+      ...PRODUCER_ACCESS,
+      userId: "another-producer",
+    })).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(await readModel.listArtifacts({
+      gameIdOrSlug: gameId,
+      cursor: first.nextCursor!,
+    }, {
+      userId: ownerUserId,
+      authProfile: "subject",
+      surfaceCapability: "participant_web",
+    })).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+
+    const seen = [...first.artifacts.map((artifact) => artifact.id)];
+    let cursor = first.nextCursor;
+    let pageIndex = 0;
+    const pageSizes = [1, 4, 3];
+    while (cursor) {
+      const page = await readModel.listArtifacts({
+        gameIdOrSlug: gameId,
+        cursor,
+        limit: pageSizes[pageIndex % pageSizes.length],
+      }, PRODUCER_ACCESS);
+      expect(page.ok).toBe(true);
+      if (!page.ok) throw new Error(page.error);
+      expect(page.pageSize).toBe(page.artifacts.length);
+      expect(page.totalCount).toBe(expectedIds.length);
+      seen.push(...page.artifacts.map((artifact) => artifact.id));
+      cursor = page.nextCursor;
+      pageIndex += 1;
+    }
+
+    expect(seen).toHaveLength(expectedIds.length);
+    expect(new Set(seen).size).toBe(expectedIds.length);
+    expect([...seen].sort()).toEqual([...expectedIds].sort());
+    expect(seen).not.toContain(lateArtifactId);
   });
 
   test("allows own reasoning and participant-visible thinking/strategy only", async () => {
@@ -448,11 +556,24 @@ describe("CognitiveArtifactReadModel", () => {
       matchAccess,
     };
 
-    const listed = await readModel.listArtifacts({ gameIdOrSlug: gameId, limit: 10 }, subjectOwnerAccess);
-    expect(listed.ok).toBe(true);
-    if (!listed.ok) throw new Error(listed.error);
-    const listedIds = listed.artifacts.map((a) => a.id).sort();
+    const listedIds: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const listed = await readModel.listArtifacts({
+        gameIdOrSlug: gameId,
+        limit: 1,
+        ...(cursor && { cursor }),
+      }, subjectOwnerAccess);
+      expect(listed.ok).toBe(true);
+      if (!listed.ok) throw new Error(listed.error);
+      expect(listed.totalCount).toBe(3);
+      expect(listed.pageSize).toBe(listed.artifacts.length);
+      listedIds.push(...listed.artifacts.map((artifact) => artifact.id));
+      cursor = listed.nextCursor ?? null;
+    } while (cursor);
+    listedIds.sort();
     expect(listedIds).toEqual([ownedReasoningId, ownedStrategyId, ownedThinkingId].sort());
+    expect(new Set(listedIds).size).toBe(3);
     for (const noiseId of nonOwnedIds.slice(0, 5)) {
       expect(listedIds).not.toContain(noiseId);
     }

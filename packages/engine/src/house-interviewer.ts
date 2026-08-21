@@ -109,6 +109,31 @@ export interface HouseMingleAssignmentResult {
   reasoningContext?: string;
 }
 
+export interface HouseAllianceProposerCandidate {
+  playerId: UUID;
+  playerName: string;
+  activeAllianceCount: number;
+}
+
+export interface HouseAllianceProposerSelectionContext {
+  round: number;
+  phase: Phase.FORMAT_MINGLE;
+  budget: number;
+  candidates: HouseAllianceProposerCandidate[];
+}
+
+export interface HouseAllianceProposerSelectionItem {
+  playerId: UUID;
+  rationale: string;
+}
+
+export interface HouseAllianceProposerSelectionResult {
+  selected: HouseAllianceProposerSelectionItem[];
+  rationale?: string;
+  thinking?: string;
+  reasoningContext?: string;
+}
+
 export interface HouseAllianceHuddleCandidate {
   allianceId: UUID;
   name: string;
@@ -180,6 +205,10 @@ export type FollowUpResult =
 export interface IHouseInterviewer {
   /** Assign initial Mingle rooms from the roster and locked format. The phase validator repairs/finalizes output. */
   assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult>;
+  /** Select scarce proposer access from living candidates. The engine validates and repairs output. */
+  selectAllianceProposers(
+    context: HouseAllianceProposerSelectionContext,
+  ): Promise<HouseAllianceProposerSelectionResult>;
   /** Recommend scarce named-alliance huddles from active eligible alliances. The engine validates and repairs output. */
   planAllianceHuddles(context: HouseAllianceHuddleScheduleContext): Promise<HouseAllianceHuddleScheduleResult>;
   /** Summarize a completed named-alliance huddle into the official compact outcome memory. */
@@ -286,6 +315,46 @@ function parseHouseMingleAssignmentRecord(parsed: Record<string, unknown>): Hous
     thinking: typeof parsed.thinking === "string" ? parsed.thinking : undefined,
     reasoningContext: typeof parsed.reasoningContext === "string" ? parsed.reasoningContext : undefined,
   };
+}
+
+function normalizeAllianceProposerSelectionItems(value: unknown): HouseAllianceProposerSelectionItem[] {
+  return readRecordArray(value)
+    .map((record) => {
+      const playerId = readString(record.playerId);
+      if (!playerId) return null;
+      return {
+        playerId,
+        rationale: readString(record.rationale, "The House did not provide a detailed rationale."),
+      };
+    })
+    .filter((item): item is HouseAllianceProposerSelectionItem => item !== null);
+}
+
+function parseHouseAllianceProposerSelectionRecord(
+  parsed: Record<string, unknown>,
+): HouseAllianceProposerSelectionResult {
+  return {
+    selected: normalizeAllianceProposerSelectionItems(parsed.selected),
+    rationale: readNullableString(parsed.rationale) ?? undefined,
+    thinking: readNullableString(parsed.thinking) ?? undefined,
+    reasoningContext: readNullableString(parsed.reasoningContext) ?? undefined,
+  };
+}
+
+function deterministicAllianceProposerSelection(
+  context: HouseAllianceProposerSelectionContext,
+  rationalePrefix: string,
+): HouseAllianceProposerSelectionItem[] {
+  return context.candidates
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((left, right) =>
+      left.candidate.activeAllianceCount - right.candidate.activeAllianceCount || left.index - right.index,
+    )
+    .slice(0, context.budget)
+    .map(({ candidate }) => ({
+      playerId: candidate.playerId,
+      rationale: `${rationalePrefix} ${candidate.playerName} with ${candidate.activeAllianceCount} active alliance${candidate.activeAllianceCount === 1 ? "" : "s"}.`,
+    }));
 }
 
 function normalizeHuddleScheduleItems(value: unknown): HouseAllianceHuddleScheduleItem[] {
@@ -1008,6 +1077,93 @@ Respond with JSON only:
       return {
         rooms: [],
         rationale: `House assignment failed; deterministic fallback will assign rooms (${message}).`,
+      };
+    }
+  }
+
+  async selectAllianceProposers(
+    context: HouseAllianceProposerSelectionContext,
+  ): Promise<HouseAllianceProposerSelectionResult> {
+    const candidates = context.candidates
+      .map((candidate, index) =>
+        `${index + 1}. ${candidate.playerName} (${candidate.playerId}); activeAlliances=${candidate.activeAllianceCount}`,
+      )
+      .join("\n");
+    const prompt = `Select scarce named-alliance proposer access for Influence.
+
+Round: ${context.round}
+Phase: ${context.phase}
+Proposer budget: ${context.budget}
+Eligible living players:
+${candidates || "(none)"}
+
+Your job:
+- Select exactly ${context.budget} unique eligible living players to receive a propose, amend, or pass opportunity.
+- Prefer players with fewer active alliances so underrepresented players receive access before already well-connected players.
+- Use only the exact player IDs listed above.
+- Select access only. Do not choose alliance members or terms, create or rewrite alliances, dissolve alliances, enforce promises, or assume a selected player will propose.
+- Supply a short private producer rationale for every selection and for the plan overall.
+
+Respond with JSON only.`;
+
+    try {
+      const messages = [
+        {
+          role: "system" as const,
+          content: "You are The House producer selecting scarce named-alliance proposer access. Return JSON only.",
+        },
+        { role: "user" as const, content: prompt },
+      ];
+      const { parsed, response } = await this.callHouseJsonSchema({
+        action: "house-alliance-proposer-selection",
+        source: "House/alliance-proposer-selection",
+        round: context.round,
+        phase: context.phase,
+        messages,
+        schemaName: "house_alliance_proposer_selection",
+        schema: {
+          type: "object",
+          properties: {
+            selected: {
+              type: "array",
+              maxItems: context.budget,
+              items: {
+                type: "object",
+                properties: {
+                  playerId: { type: "string" },
+                  rationale: { type: "string" },
+                },
+                required: ["playerId", "rationale"],
+                additionalProperties: false,
+              },
+            },
+            rationale: { type: "string" },
+            thinking: { type: ["string", "null"] },
+          },
+          required: ["selected", "rationale", "thinking"],
+          additionalProperties: false,
+        },
+        maxTokens: 1200,
+        temperature: 0.3,
+      });
+      const output = parseHouseAllianceProposerSelectionRecord({
+        ...parsed,
+        reasoningContext:
+          readString(parsed.reasoningContext) ||
+          LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
+      });
+      await this.emitPrivateDecisionTrace({
+        context: this.privateTraceContext("house-alliance-proposer-selection", context.round, context.phase),
+        messages,
+        response,
+        output,
+      });
+      return output;
+    } catch (err) {
+      const selected = deterministicAllianceProposerSelection(context, "Fallback selected");
+      return {
+        selected,
+        rationale: `House proposer selection failed; deterministic underrepresentation-first fallback selected ${selected.length} of ${context.budget} proposer opportunities (${err instanceof Error ? err.message : String(err)}).`,
       };
     }
   }
@@ -1922,6 +2078,16 @@ export class TemplateHouseInterviewer implements IHouseInterviewer {
     return {
       rooms,
       rationale: "Template House assigned players by deterministic player order.",
+    };
+  }
+
+  async selectAllianceProposers(
+    context: HouseAllianceProposerSelectionContext,
+  ): Promise<HouseAllianceProposerSelectionResult> {
+    return {
+      selected: deterministicAllianceProposerSelection(context, "Template House selected"),
+      rationale:
+        "Template House selected proposer access by lowest active-alliance count, breaking ties by living-player order.",
     };
   }
 

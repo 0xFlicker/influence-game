@@ -1404,6 +1404,8 @@ export const gameCheckpoints = pgTable("game_checkpoints", {
 
 export const gameEvidenceManifests = pgTable("game_evidence_manifests", {
   id: text("id").primaryKey(), // UUID
+  /** Immutable insertion XID for cursor snapshot visibility; historical rows remain null. */
+  indexInsertXid: text("index_insert_xid").default(sql`pg_current_xact_id()::text`),
   gameId: text("game_id")
     .notNull()
     .references(() => games.id),
@@ -1838,6 +1840,8 @@ export const gamePostgameMediaAuditEvents = pgTable("game_postgame_media_audit_e
 
 export const gameCognitiveArtifacts = pgTable("game_cognitive_artifacts", {
   id: text("id").primaryKey(), // UUID
+  /** Immutable insertion XID for cursor snapshot visibility; historical rows remain null. */
+  indexInsertXid: text("index_insert_xid").default(sql`pg_current_xact_id()::text`),
   gameId: text("game_id")
     .notNull()
     .references(() => games.id),

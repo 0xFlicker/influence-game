@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { createHash, randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import {
   GameState,
   Phase,
@@ -96,6 +96,7 @@ describe("ProductionGameMcpReadModel", () => {
 
   beforeEach(async () => {
     db = await setupTestDB();
+    process.env.JWT_SECRET = CURSOR_SECRET;
   });
 
   test("reads deployed game summaries, projections, filters, and player timelines from DB state", async () => {
@@ -479,6 +480,104 @@ describe("ProductionGameMcpReadModel", () => {
       majorityAlignmentRate: 0.5,
     });
     expect(producer.developerEvidence).toHaveProperty("cognitiveArtifacts");
+  });
+
+  test("producer game analysis exposes honest first-page metadata for private indexes", async () => {
+    await insertEdgeSmokeDuskFixture(db);
+    await db.update(schema.games)
+      .set({ cognitiveArtifactCaptureVersion: 1 })
+      .where(eq(schema.games.id, EDGE_SMOKE_DUSK_GAME_ID));
+    const owner = (await db.select({ ownerEpoch: schema.gameRunOwners.ownerEpoch })
+      .from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, EDGE_SMOKE_DUSK_GAME_ID)))[0];
+    if (!owner) throw new Error("expected edge-smoke-dusk owner epoch");
+
+    const cognitiveIds = Array.from({ length: 52 }, () => randomUUID());
+    await db.insert(schema.gameCognitiveArtifacts).values(cognitiveIds.map((id, index) => ({
+      id,
+      gameId: EDGE_SMOKE_DUSK_GAME_ID,
+      artifactType: index % 2 === 0 ? "thinking" as const : "strategy" as const,
+      actorRole: "player" as const,
+      actorPlayerId: EDGE_SMOKE_DUSK_PLAYERS.lilith.id,
+      actorUserId: "user-lilith",
+      action: "vote",
+      payloadByteLength: 2,
+      payload: {},
+      createdAt: "2026-08-19T12:00:00.000Z",
+    })));
+    const traceIds = Array.from({ length: 53 }, () => randomUUID());
+    await db.insert(schema.gameEvidenceManifests).values(traceIds.map((id) => ({
+      id,
+      gameId: EDGE_SMOKE_DUSK_GAME_ID,
+      ownerEpoch: owner.ownerEpoch,
+      evidenceType: PRIVATE_TRACE_EVIDENCE_TYPE,
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      redactionStatus: "active" as const,
+      metadata: {},
+      createdAt: "2026-08-19T12:00:00.000Z",
+    })));
+
+    const readModel = new ProductionGameMcpReadModel(db);
+    const producer = await readModel.readProducerGameAnalysis({
+      gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+    }, PRODUCER_ACCESS);
+    expect(producer.ok).toBe(true);
+    if (!producer.ok) return;
+    const cognitiveFirst = asRecord(producer.developerEvidence.cognitiveArtifacts);
+    const traceFirst = asRecord(producer.developerEvidence.traceManifests);
+    const cognitiveCursor = cognitiveFirst.nextCursor;
+    const traceCursor = traceFirst.nextCursor;
+    expect(producer.schemaVersion).toBe(2);
+    expect(cognitiveFirst).toMatchObject({
+      ok: true,
+      pageSize: 50,
+      totalCount: 52,
+    });
+    expect(traceFirst).toMatchObject({
+      ok: true,
+      pageSize: 50,
+      totalCount: 53,
+    });
+    expect(typeof cognitiveCursor).toBe("string");
+    expect(typeof traceCursor).toBe("string");
+    if (typeof cognitiveCursor !== "string" || typeof traceCursor !== "string") {
+      throw new Error("Expected producer analysis continuation cursors");
+    }
+
+    const seenCognitiveIds = (cognitiveFirst.artifacts as Array<{ id: string }>).map(({ id }) => id);
+    let nextCognitiveCursor: string | null = cognitiveCursor;
+    while (nextCognitiveCursor) {
+      const response = await readModel.listCognitiveArtifacts({
+        gameIdOrSlug: EDGE_SMOKE_DUSK_GAME_ID,
+        limit: 17,
+        cursor: nextCognitiveCursor,
+      }, PRODUCER_ACCESS);
+      const page = asRecord(response.cognitiveArtifacts);
+      seenCognitiveIds.push(...(page.artifacts as Array<{ id: string }>).map(({ id }) => id));
+      nextCognitiveCursor = typeof page.nextCursor === "string" ? page.nextCursor : null;
+    }
+
+    const seenTraceIds = (traceFirst.manifests as Array<{ id: string }>).map(({ id }) => id);
+    let nextTraceCursor: string | null = traceCursor;
+    while (nextTraceCursor) {
+      const response = await readModel.listTraceManifests(
+        EDGE_SMOKE_DUSK_GAME_ID,
+        PRODUCER_ACCESS,
+        17,
+        nextTraceCursor,
+      );
+      const page = asRecord(response.developerEvidence);
+      seenTraceIds.push(...(page.manifests as Array<{ id: string }>).map(({ id }) => id));
+      nextTraceCursor = typeof page.nextCursor === "string" ? page.nextCursor : null;
+    }
+
+    expect(seenCognitiveIds).toHaveLength(cognitiveIds.length);
+    expect(new Set(seenCognitiveIds).size).toBe(cognitiveIds.length);
+    expect([...seenCognitiveIds].sort()).toEqual([...cognitiveIds].sort());
+    expect(seenTraceIds).toHaveLength(traceIds.length);
+    expect(new Set(seenTraceIds).size).toBe(traceIds.length);
+    expect([...seenTraceIds].sort()).toEqual([...traceIds].sort());
   });
 
   test("persists every launch format through sanitized MCP facts and viewer events", async () => {
@@ -1904,7 +2003,195 @@ describe("ProductionGameMcpReadModel", () => {
       status: "not_found",
     });
   });
+
+  test("producer trace pagination exhausts equal timestamps exactly once and rejects foreign cursors", async () => {
+    const gameId = await insertGame(db, { slug: "mcp-private-trace-pages" });
+    const otherGameId = await insertGame(db, { slug: "mcp-private-trace-pages-other" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    await insertOwner(db, otherGameId);
+    const storage = new FakePrivateTraceStorage();
+    const expectedIds: string[] = [];
+    for (let index = 0; index < 13; index++) {
+      expectedIds.push(await insertPrivateTraceManifest(db, storage, {
+        gameId,
+        ownerEpoch,
+        decisionId: randomUUID(),
+        body: JSON.stringify({ index }),
+        createdAt: "2026-08-19T12:00:00.000Z",
+      }));
+    }
+
+    const readModel = new ProductionGameMcpReadModel(
+      db,
+      new PrivateTraceReadModel(db, () => storage),
+    );
+    const first = await readModel.listTraceManifests(gameId, PRODUCER_ACCESS, 2);
+    const firstPage = asRecord(first.developerEvidence);
+    const firstCursor = firstPage.nextCursor;
+    expect(first.schemaVersion).toBe(2);
+    expect(firstPage).toMatchObject({
+      ok: true,
+      pageSize: 2,
+      totalCount: expectedIds.length,
+    });
+    expect(typeof firstCursor).toBe("string");
+    if (typeof firstCursor !== "string") throw new Error("Expected trace pagination cursor");
+    const firstLinkageSummary = firstPage.linkageSummary;
+
+    const lateManifestId = "00000000-0000-4000-8000-000000000002";
+    await insertPrivateTraceManifest(db, storage, {
+      id: lateManifestId,
+      gameId,
+      ownerEpoch,
+      decisionId: randomUUID(),
+      body: JSON.stringify({ insertedAfterFirstPage: true }),
+      createdAt: "2026-08-19T12:00:00.000Z",
+    });
+
+    const tampered = `${firstCursor.slice(0, -1)}${firstCursor.endsWith("a") ? "b" : "a"}`;
+    expect(asRecord((await readModel.listTraceManifests(
+      gameId,
+      PRODUCER_ACCESS,
+      2,
+      tampered,
+    )).developerEvidence)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(asRecord((await readModel.listTraceManifests(
+      otherGameId,
+      PRODUCER_ACCESS,
+      2,
+      firstCursor,
+    )).developerEvidence)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(asRecord((await readModel.listTraceManifests(
+      randomUUID(),
+      PRODUCER_ACCESS,
+      2,
+      firstCursor,
+    )).developerEvidence)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    expect(asRecord((await readModel.listTraceManifests(
+      gameId,
+      { userId: "another-producer", authProfile: "producer" },
+      2,
+      firstCursor,
+    )).developerEvidence)).toMatchObject({ ok: false, status: "cursor_invalid_or_stale" });
+    await expect(readModel.listTraceManifests(gameId, {
+      userId: randomUUID(),
+      authProfile: "subject",
+    }, 2, firstCursor)).rejects.toThrow("Producer-only MCP evidence requires MCP scope: producer");
+
+    const seen = (firstPage.manifests as Array<{ id: string }>).map((manifest) => manifest.id);
+    let cursor: string | null = firstCursor;
+    let pageIndex = 0;
+    const pageSizes = [1, 5, 3];
+    while (cursor) {
+      const response = await readModel.listTraceManifests(
+        gameId,
+        PRODUCER_ACCESS,
+        pageSizes[pageIndex % pageSizes.length],
+        cursor,
+      );
+      const page = asRecord(response.developerEvidence);
+      expect(page).toMatchObject({ ok: true, totalCount: expectedIds.length });
+      expect(page.linkageSummary).toEqual(firstLinkageSummary);
+      const manifests = page.manifests as Array<{ id: string }>;
+      expect(page.pageSize).toBe(manifests.length);
+      seen.push(...manifests.map((manifest) => manifest.id));
+      cursor = typeof page.nextCursor === "string" ? page.nextCursor : null;
+      pageIndex += 1;
+    }
+
+    expect(seen).toHaveLength(expectedIds.length);
+    expect(new Set(seen).size).toBe(expectedIds.length);
+    expect([...seen].sort()).toEqual([...expectedIds].sort());
+    expect(seen).not.toContain(lateManifestId);
+  });
+
+  test("trace linkage summary excludes canonical events committed after its manifest snapshot", async () => {
+    const gameId = await insertGame(db, { slug: "mcp-private-trace-linkage-snapshot" });
+    const ownerEpoch = await insertOwner(db, gameId);
+    const lockAcquired = Promise.withResolvers<void>();
+    const releaseLock = Promise.withResolvers<void>();
+    const locker = db.transaction(async (tx) => {
+      await tx.execute(sql`LOCK TABLE game_evidence_manifests IN ACCESS EXCLUSIVE MODE`);
+      lockAcquired.resolve();
+      await releaseLock.promise;
+    });
+    await lockAcquired.promise;
+
+    const readModel = new PrivateTraceReadModel(db, () => new FakePrivateTraceStorage());
+    const listing = readModel.listManifests(gameId);
+    await waitForBlockedTraceManifestRead(db);
+    const decisionId = randomUUID();
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch,
+      events: [{
+        sequence: 1,
+        gameId,
+        round: 1,
+        phase: Phase.VOTE,
+        type: "vote.cast",
+        timestamp: "2026-08-19T12:00:00.000Z",
+        source: "engine",
+        visibility: "producer",
+        payloadVersion: 1,
+        sourcePointers: [{
+          kind: "agent_turn",
+          actorId: "atlas",
+          action: "vote",
+          round: 1,
+          phase: Phase.VOTE,
+          decisionId,
+        }],
+        payload: {
+          voterId: "atlas",
+          empowerTarget: "mira",
+          exposeTarget: "echo",
+        },
+      }],
+    });
+    releaseLock.resolve();
+    await locker;
+
+    const sealed = await listing;
+    expect(sealed).toMatchObject({
+      ok: true,
+      totalCount: 0,
+      linkageSummary: {
+        trustedCanonicalPrefixStatus: "empty",
+        eligibleAcceptedDecisionCount: 0,
+        degradedAcceptedDecisionCount: 0,
+      },
+    });
+    const fresh = await readModel.listManifests(gameId);
+    expect(fresh).toMatchObject({
+      ok: true,
+      totalCount: 0,
+      linkageSummary: {
+        trustedCanonicalPrefixStatus: "complete",
+        eligibleAcceptedDecisionCount: 1,
+        degradedAcceptedDecisionCount: 1,
+      },
+    });
+  });
 });
+
+async function waitForBlockedTraceManifestRead(db: DrizzleDB): Promise<void> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const [row] = await db.execute<{ waiting: boolean }>(sql`
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_stat_activity
+        WHERE datname = current_database()
+          AND wait_event_type = 'Lock'
+          AND query LIKE '%game_evidence_manifests%'
+          AND query LIKE 'select%'
+      ) AS waiting
+    `);
+    if (row?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("Timed out waiting for the trace manifest read to block on the table lock");
+}
 
 async function insertEdgeSmokeDuskFixture(db: DrizzleDB): Promise<void> {
   const userId = "user-lilith";
@@ -2171,13 +2458,15 @@ async function insertPrivateTraceManifest(
   db: DrizzleDB,
   storage: FakePrivateTraceStorage,
   params: {
+    id?: string;
     gameId: string;
     ownerEpoch: string;
     decisionId?: string;
     body: string;
+    createdAt?: string;
   },
 ): Promise<string> {
-  const manifestId = randomUUID();
+  const manifestId = params.id ?? randomUUID();
   const bucket = "private-trace-bucket";
   const key = `content/${params.gameId}/private-traces/test-${manifestId}.json`;
   const byteLength = Buffer.byteLength(params.body, "utf8");
@@ -2207,6 +2496,7 @@ async function insertPrivateTraceManifest(
       round: 1,
       modelName: "gpt-5-nano",
     },
+    ...(params.createdAt && { createdAt: params.createdAt }),
   });
 
   return manifestId;

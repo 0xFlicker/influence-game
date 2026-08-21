@@ -63,6 +63,7 @@ import {
   type AcceptedRuntimeIdentity,
   type RuntimeStartupMode,
 } from "./services/runtime-activation.js";
+import { listenBeforeRuntimeInitialization } from "./services/listening-runtime.js";
 import {
   createServerShutdownController,
   installServerShutdownSignalHandlers,
@@ -209,7 +210,6 @@ const runtimeActivation = createRuntimeActivationController({
   validateIdentity: validateAcceptedRuntimeIdentity,
   startRuntime: startBackgroundRuntime,
 });
-await runtimeActivation.initialize();
 
 function validateAcceptedRuntimeIdentity(identity: AcceptedRuntimeIdentity) {
   const expected = {
@@ -471,102 +471,108 @@ app.route("/", profileRoutes);
 
 const port = parseInt(process.env.PORT ?? "3000", 10);
 const hostname = process.env.HOST ?? "127.0.0.1";
-let acceptingRequests = true;
+let acceptingRequests = false;
+let unavailableMessage = "Server starting";
 
-const server = Bun.serve<WsConnectionData>({
-  port,
-  hostname,
-  async fetch(req, server) {
-    if (!acceptingRequests) {
-      return new Response("Server shutting down", {
-        status: 503,
-        headers: { Connection: "close" },
-      });
-    }
-
-    const url = new URL(req.url);
-
-    // Canonical release probes need a real WebSocket upgrade that does not
-    // depend on mutable game data or subscribe to a game stream.
-    if (url.pathname === "/ws/health") {
-      const upgraded = server.upgrade(req, {
-        data: { gameId: "", releaseProbe: true },
-      });
-      if (upgraded) {
-        return undefined as unknown as Response;
-      }
-      return new Response("WebSocket upgrade failed", { status: 400 });
-    }
-
-    // WebSocket upgrade for /ws/games/:id (accepts UUID or slug)
-    if (url.pathname.startsWith("/ws/games/")) {
-      const slugOrId = url.pathname.split("/ws/games/")[1]?.split("/")[0];
-      if (!slugOrId) {
-        return new Response("Missing game ID", { status: 400 });
-      }
-
-      // Resolve slug to canonical UUID so WS topics match broadcastGameEvent
-      const gameRow = (await db
-        .select({ id: schema.games.id, status: schema.games.status })
-        .from(schema.games)
-        .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId))))[0];
-
-      if (!gameRow) {
-        return new Response("Game not found", { status: 404 });
-      }
-
-      const gameId = gameRow.id;
-
-      const upgraded = server.upgrade(req, {
-        data: { gameId },
-      });
-      if (upgraded) {
-        return undefined as unknown as Response; // Bun handles the rest
-      }
-      return new Response("WebSocket upgrade failed", { status: 400 });
-    }
-
-    // Delegate everything else to Hono
-    return app.fetch(req, { env: {} });
-  },
-  websocket: {
-    open(ws) {
-      if (ws.data.releaseProbe) {
-        ws.send("ok");
-        ws.close(1000, "Release probe complete");
-        return;
-      }
-      handleOpen(ws);
-
-      // Send persisted viewer-safe watch state for catch-up.
-      const { gameId } = ws.data;
-      void getGameWatchState(db, gameId)
-        .then((state) => {
-          if (state) sendWatchState(ws, state);
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : String(error);
-          console.warn(`[ws] Failed to send watch-state catch-up for ${gameId}:`, message);
-          ws.close(1011, "Watch state is unavailable");
+const server = await listenBeforeRuntimeInitialization({
+  listen: () => Bun.serve<WsConnectionData>({
+    port,
+    hostname,
+    async fetch(req, server) {
+      if (!acceptingRequests) {
+        return new Response(unavailableMessage, {
+          status: 503,
+          headers: { Connection: "close" },
         });
+      }
+
+      const url = new URL(req.url);
+
+      // Canonical release probes need a real WebSocket upgrade that does not
+      // depend on mutable game data or subscribe to a game stream.
+      if (url.pathname === "/ws/health") {
+        const upgraded = server.upgrade(req, {
+          data: { gameId: "", releaseProbe: true },
+        });
+        if (upgraded) {
+          return undefined as unknown as Response;
+        }
+        return new Response("WebSocket upgrade failed", { status: 400 });
+      }
+
+      // WebSocket upgrade for /ws/games/:id (accepts UUID or slug)
+      if (url.pathname.startsWith("/ws/games/")) {
+        const slugOrId = url.pathname.split("/ws/games/")[1]?.split("/")[0];
+        if (!slugOrId) {
+          return new Response("Missing game ID", { status: 400 });
+        }
+
+        // Resolve slug to canonical UUID so WS topics match broadcastGameEvent
+        const gameRow = (await db
+          .select({ id: schema.games.id, status: schema.games.status })
+          .from(schema.games)
+          .where(or(eq(schema.games.id, slugOrId), eq(schema.games.slug, slugOrId))))[0];
+
+        if (!gameRow) {
+          return new Response("Game not found", { status: 404 });
+        }
+
+        const gameId = gameRow.id;
+
+        const upgraded = server.upgrade(req, {
+          data: { gameId },
+        });
+        if (upgraded) {
+          return undefined as unknown as Response; // Bun handles the rest
+        }
+        return new Response("WebSocket upgrade failed", { status: 400 });
+      }
+
+      // Delegate everything else to Hono
+      return app.fetch(req, { env: {} });
     },
-    close(ws) {
-      if (ws.data.releaseProbe) return;
-      handleClose(ws);
+    websocket: {
+      open(ws) {
+        if (ws.data.releaseProbe) {
+          ws.send("ok");
+          ws.close(1000, "Release probe complete");
+          return;
+        }
+        handleOpen(ws);
+
+        // Send persisted viewer-safe watch state for catch-up.
+        const { gameId } = ws.data;
+        void getGameWatchState(db, gameId)
+          .then((state) => {
+            if (state) sendWatchState(ws, state);
+          })
+          .catch((error) => {
+            const message = error instanceof Error ? error.message : String(error);
+            console.warn(`[ws] Failed to send watch-state catch-up for ${gameId}:`, message);
+            ws.close(1011, "Watch state is unavailable");
+          });
+      },
+      close(ws) {
+        if (ws.data.releaseProbe) return;
+        handleClose(ws);
+      },
+      message(_ws, _message) {
+        // Observers are read-only — no inbound messages expected
+      },
     },
-    message(_ws, _message) {
-      // Observers are read-only — no inbound messages expected
-    },
+  }),
+  onListening: (listeningServer) => setServer(listeningServer),
+  initializeRuntime: () => runtimeActivation.initialize(),
+  onReady: () => {
+    acceptingRequests = true;
   },
 });
-
-// Register server instance with WS manager for pub/sub broadcasting
-setServer(server);
 
 const shutdown = createServerShutdownController({
   server,
   worker: { stop: () => runtimeActivation.stop() },
   stopAcceptingRequests: () => {
+    unavailableMessage = "Server shutting down";
     acceptingRequests = false;
   },
   exit: (code) => process.exit(code),

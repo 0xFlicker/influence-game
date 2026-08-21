@@ -27,7 +27,7 @@ describe("release migration identity", () => {
   });
 
   test("the current admission migration remains additive", () => {
-    const migration = path.resolve(import.meta.dir, "../../drizzle/0055_gifted_starjammers.sql");
+    const migration = path.resolve(import.meta.dir, "../../drizzle/0057_married_mojo.sql");
     expect(readFileSync(migration, "utf8").length).toBeGreaterThan(0);
     expect(inspectReleaseMigrationFiles([migration])).toEqual([]);
   });
