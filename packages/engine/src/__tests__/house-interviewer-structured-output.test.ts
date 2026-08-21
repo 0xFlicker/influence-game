@@ -1,6 +1,13 @@
 import { describe, expect, it } from "bun:test";
 import type OpenAI from "openai";
-import { LLMHouseInterviewer, TemplateHouseInterviewer, type HouseAllianceHuddleOutcomeContext, type HouseAllianceHuddleScheduleContext, type HouseMingleAssignmentContext } from "../house-interviewer";
+import {
+  LLMHouseInterviewer,
+  TemplateHouseInterviewer,
+  type HouseAllianceHuddleOutcomeContext,
+  type HouseAllianceHuddleScheduleContext,
+  type HouseAllianceProposerSelectionContext,
+  type HouseMingleAssignmentContext,
+} from "../house-interviewer";
 import type { PrivateDecisionTrace } from "../game-runner";
 import { modelCatalogEntryById } from "../model-catalog";
 import { Phase } from "../types";
@@ -8,6 +15,7 @@ import { Phase } from "../types";
 type StubResponse = {
   content?: string | null;
   finishReason?: string;
+  reasoningContext?: string;
   refusal?: string;
 };
 
@@ -49,6 +57,7 @@ function makeOpenAIStub(
                 message: {
                   role: "assistant",
                   content: response.content ?? null,
+                  ...(response.reasoningContext && { reasoning_content: response.reasoningContext }),
                   ...(response.refusal && { refusal: response.refusal }),
                 },
               },
@@ -136,6 +145,35 @@ function huddleScheduleContent(overrides: Record<string, unknown> = {}): string 
     ],
     rationale: "Spend scarce time where the locked-format decision is most relevant.",
     thinking: "Glass Table has the sharper immediate choice.",
+    ...overrides,
+  });
+}
+
+function makeAllianceProposerSelectionContext(
+  candidates: HouseAllianceProposerSelectionContext["candidates"] = [
+    { playerId: "atlas-id", playerName: "Atlas", activeAllianceCount: 2 },
+    { playerId: "nyx-id", playerName: "Nyx", activeAllianceCount: 0 },
+    { playerId: "mira-id", playerName: "Mira", activeAllianceCount: 1 },
+    { playerId: "vera-id", playerName: "Vera", activeAllianceCount: 0 },
+    { playerId: "sage-id", playerName: "Sage", activeAllianceCount: 3 },
+  ],
+): HouseAllianceProposerSelectionContext {
+  return {
+    round: 2,
+    phase: Phase.FORMAT_MINGLE,
+    budget: Math.ceil(candidates.length / 4),
+    candidates,
+  };
+}
+
+function allianceProposerSelectionContent(overrides: Record<string, unknown> = {}): string {
+  return JSON.stringify({
+    selected: [
+      { playerId: "nyx-id", rationale: "Nyx has no active alliance access yet." },
+      { playerId: "vera-id", rationale: "Vera is likewise underrepresented." },
+    ],
+    rationale: "Give the least-connected players the scarce openings.",
+    thinking: "Nyx and Vera each have zero active alliances.",
     ...overrides,
   });
 }
@@ -248,6 +286,118 @@ describe("LLMHouseInterviewer structured alliance huddles", () => {
         strict: true,
       },
     });
+  });
+});
+
+describe("House alliance proposer selection", () => {
+  it("returns the exact ceiling budget without duplicates across cast sizes", async () => {
+    const house = new TemplateHouseInterviewer();
+
+    for (const castSize of [1, 4, 5, 8, 9, 12]) {
+      const candidates = Array.from({ length: castSize }, (_, index) => ({
+        playerId: `player-${index + 1}`,
+        playerName: `Player ${index + 1}`,
+        activeAllianceCount: index % 3,
+      }));
+
+      const result = await house.selectAllianceProposers(makeAllianceProposerSelectionContext(candidates));
+      const selectedIds = result.selected.map((item) => item.playerId);
+
+      expect(selectedIds).toHaveLength(Math.ceil(castSize / 4));
+      expect(new Set(selectedIds).size).toBe(selectedIds.length);
+    }
+  });
+
+  it("prefers underrepresented candidates and preserves input order for ties", async () => {
+    const house = new TemplateHouseInterviewer();
+    const context = makeAllianceProposerSelectionContext();
+    context.budget = 4;
+
+    const result = await house.selectAllianceProposers(context);
+
+    expect(result.selected.map((item) => item.playerId)).toEqual([
+      "nyx-id",
+      "vera-id",
+      "mira-id",
+      "atlas-id",
+    ]);
+    expect(result.rationale).toContain("lowest active-alliance count");
+  });
+
+  it("uses strict structured output and preserves private producer rationale", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{
+        content: allianceProposerSelectionContent(),
+        reasoningContext: "Native provider reasoning about representation.",
+      }]),
+      "test-model",
+      {
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+      },
+    );
+
+    const result = await house.selectAllianceProposers(makeAllianceProposerSelectionContext());
+
+    expect(result).toEqual({
+      selected: [
+        { playerId: "nyx-id", rationale: "Nyx has no active alliance access yet." },
+        { playerId: "vera-id", rationale: "Vera is likewise underrepresented." },
+      ],
+      rationale: "Give the least-connected players the scarce openings.",
+      thinking: "Nyx and Vera each have zero active alliances.",
+      reasoningContext: "Native provider reasoning about representation.",
+    });
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: {
+        name: "house_alliance_proposer_selection",
+        strict: true,
+        schema: {
+          properties: {
+            selected: { maxItems: 2 },
+          },
+          additionalProperties: false,
+        },
+      },
+    });
+    expect(traces[0]).toMatchObject({
+      action: "house-alliance-proposer-selection",
+      output: result,
+      emittedThinking: "Nyx and Vera each have zero active alliances.",
+      reasoningContext: "Native provider reasoning about representation.",
+    });
+  });
+
+  it("falls back underrepresentation-first after malformed or refused output", async () => {
+    const cases: Array<{ response: StubResponse[]; expectedRequests: number; error: string }> = [
+      {
+        response: [{ content: "not json" }, { content: "" }],
+        expectedRequests: 2,
+        error: "invalid_json",
+      },
+      {
+        response: [{ content: "", refusal: "Cannot comply." }],
+        expectedRequests: 1,
+        error: "model_refusal",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const requests: Array<Record<string, unknown>> = [];
+      const house = new LLMHouseInterviewer(makeOpenAIStub(requests, testCase.response), "test-model");
+
+      const result = await house.selectAllianceProposers(makeAllianceProposerSelectionContext());
+
+      expect(result.selected.map((item) => item.playerId)).toEqual(["nyx-id", "vera-id"]);
+      expect(result.selected.every((item) => item.rationale.startsWith("Fallback selected"))).toBe(true);
+      expect(result.rationale).toContain("deterministic underrepresentation-first fallback");
+      expect(result.rationale).toContain(`(${testCase.error})`);
+      expect(requests).toHaveLength(testCase.expectedRequests);
+    }
   });
 });
 

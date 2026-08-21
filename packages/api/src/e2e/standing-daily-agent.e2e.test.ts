@@ -423,12 +423,16 @@ async function waitForSuppression(userId: string, timeout = 10_000) {
 }
 
 async function reloadAndReadQueueStatus(page: Page): Promise<QueueStatusResponse> {
-  const statusResponse = page.waitForResponse((response) => {
-    const url = new URL(response.url());
-    return url.pathname === "/api/free-queue" && response.request().method() === "GET";
-  }, { timeout: 30_000 });
-  await page.reload({ waitUntil: "domcontentloaded" });
-  return (await (await statusResponse).json()) as QueueStatusResponse;
+  const [queueStatus] = await Promise.all([
+    page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/free-queue" && response.request().method() === "GET";
+    }, { timeout: 30_000 }).then(async (response) => (
+      await response.json()
+    ) as QueueStatusResponse),
+    page.reload({ waitUntil: "domcontentloaded" }),
+  ]);
+  return queueStatus;
 }
 
 async function reloadAndMeasurePrompt(page: Page): Promise<number> {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { EventEmitter } from "node:events";
+import { listenBeforeRuntimeInitialization } from "../services/listening-runtime.js";
 import {
   createServerShutdownController,
   installServerShutdownSignalHandlers,
@@ -167,5 +168,94 @@ describe("server shutdown", () => {
 
     expect(harness.stopCalls).toEqual([false, true]);
     expect(harness.exits).toEqual([1]);
+  });
+});
+
+describe("server startup", () => {
+  test("claims the listener before initializing ownership-changing runtime work", async () => {
+    const events: string[] = [];
+    const server = {
+      stop() {
+        events.push("server.stop");
+      },
+    };
+
+    const listeningServer = await listenBeforeRuntimeInitialization({
+      listen: () => {
+        events.push("server.listen");
+        return server;
+      },
+      onListening: () => {
+        events.push("server.register");
+      },
+      initializeRuntime: async () => {
+        events.push("runtime.initialize");
+      },
+      onReady: () => {
+        events.push("server.ready");
+      },
+    });
+
+    expect(listeningServer).toBe(server);
+    expect(events).toEqual([
+      "server.listen",
+      "server.register",
+      "runtime.initialize",
+      "server.ready",
+    ]);
+  });
+
+  test("does not initialize runtime work when listener binding fails", async () => {
+    let runtimeInitialized = false;
+
+    await expect(listenBeforeRuntimeInitialization({
+      listen: (): { stop(force?: boolean): void } => {
+        throw new Error("EADDRINUSE: address already in use");
+      },
+      initializeRuntime: async () => {
+        runtimeInitialized = true;
+      },
+    })).rejects.toThrow("EADDRINUSE");
+
+    expect(runtimeInitialized).toBeFalse();
+  });
+
+  test("force-closes the claimed listener when runtime initialization fails", async () => {
+    const stopCalls: Array<boolean | undefined> = [];
+
+    await expect(listenBeforeRuntimeInitialization({
+      listen: () => ({
+        stop(force?: boolean) {
+          stopCalls.push(force);
+        },
+      }),
+      initializeRuntime: async () => {
+        throw new Error("runtime initialization failed");
+      },
+    })).rejects.toThrow("runtime initialization failed");
+
+    expect(stopCalls).toEqual([true]);
+  });
+
+  test("preserves both runtime and listener-cleanup failures", async () => {
+    const startupError = new Error("runtime initialization failed");
+    const cleanupError = new Error("listener cleanup failed");
+
+    try {
+      await listenBeforeRuntimeInitialization({
+        listen: () => ({
+          stop() {
+            throw cleanupError;
+          },
+        }),
+        initializeRuntime: async () => {
+          throw startupError;
+        },
+      });
+      throw new Error("Expected startup to reject");
+    } catch (error) {
+      expect(error).toBeInstanceOf(AggregateError);
+      expect((error as AggregateError).errors).toEqual([startupError, cleanupError]);
+    }
   });
 });

@@ -69,7 +69,7 @@ This is now partially crash-recoverable at implemented completed phase boundarie
 
 ### Existing Recovery Mechanisms
 
-1. **Orphaned game classification** (`index.ts`, `startup-orphaned-games.ts`) — On startup, pre-existing `in_progress` games are classified from durable evidence. Exact zero-event starts return to `waiting`; durable gameplay is suspended for configured recovery; sealed terminal completions are suspended outside gameplay recovery.
+1. **Listener-first runtime activation** (`index.ts`, `listening-runtime.ts`, `startup-orphaned-games.ts`) — The API binds its HTTP/WebSocket listener before ownership-changing runtime initialization. Only the process that wins listener contention classifies pre-existing `in_progress` games from durable evidence. Exact zero-event starts return to `waiting`; durable gameplay is suspended for configured recovery; sealed terminal completions are suspended outside gameplay recovery.
 2. **Durable event append** (`game-events.ts`) — API canonical events are appended in sequence under the active owner epoch and suspend on owner/identity/sequence/hash failure.
 3. **Forensic checkpoint/evidence rows** (`game-checkpoints.ts`, `game-evidence.ts`) — Checkpoint capsules and private evidence manifests provide debug boundaries without making raw evidence public or claiming hydration.
 4. **Durable truth read model** (`game-event-read-model.ts`, `game-projection-read-model.ts`, `game-durable-run.ts`) — Admin-only inspection can explain event-log integrity, replay status, board projection summary, checkpoint readiness, and redacted evidence counts from Postgres.
@@ -107,7 +107,8 @@ Any owner ambiguity, owner/event disagreement, settlement inconsistency, or fail
 **Working now**
 
 - Startup recovery is enabled by default. Set `INFLUENCE_API_STARTUP_RECOVERY=false` only to explicitly disable it.
-- On API startup, every pre-existing `in_progress` row is treated as having no local runner; there is no "recent game may still be finishing" grace window. Exact zero-event failed starts return to `waiting`, while durable gameplay and sealed completions are suspended into their separate recovery branches.
+- API startup claims the listener before runtime activation. A competing launch that receives `EADDRINUSE` does not classify, recover, or fence durable owners; if initialization fails after a successful bind, startup force-closes the listener and fails.
+- Once a listening API process begins runtime activation, every pre-existing `in_progress` row is treated as having no local runner in that process; there is no "recent game may still be finishing" grace window. Exact zero-event failed starts return to `waiting`, while durable gameplay and sealed completions are suspended into their separate recovery branches.
 - Recovery can claim a fresh owner epoch, hydrate the runner from persisted canonical events plus checkpoint resume inputs, append contiguous post-restart canonical events, and finish through the normal completed-results path.
 - Supported actor coordinates: `lobby`, `vote`, `format_menu`, `format_pick`, `format_mingle`, `format_resolve`, `reckoning_lobby`, `reckoning_plea`, `reckoning_vote`, `tribunal_lobby`, `tribunal_accusation`, `tribunal_defense`, `tribunal_vote`, `judgment_opening`, `judgment_jury_questions`, `judgment_closing`, and `judgment_jury_vote`.
 - Phase-boundary checkpoints store `actor_coordinate` so multiple transcript-only boundaries at the same event sequence can be ordered and recovered honestly.
@@ -116,6 +117,7 @@ Any owner ambiguity, owner/event disagreement, settlement inconsistency, or fail
 - Terminal completion capture is durable before settlement. Settlement is atomic and idempotent across results, season points, hidden ratings, profile/account counters, transcript, postgame initialization, and owner closure.
 - Transient settlement failures are visibly pending. Startup only marks an abandoned settlement retry-ready; it does not redrive it. The dedicated admin action is permission-gated, reasoned, audited, and safe to repeat without duplicate awards.
 - Live local proof: `punk-khaki-bolt` recovered from round-2 `vote`, later recovered again from `reckoning_lobby`, appended canonical events through sequence 64 under fresh owners, closed the final owner healthy, wrote one completed result, and ended with Sage as winner.
+- Format-lifecycle regression: historical `free-blue-wire` inspection showed that a single healthy owner resumed from event-62 `FORMAT_RESOLVE`, appended resolution/elimination through event 78, sealed a post-round `LOBBY` checkpoint, and was then incorrectly orphaned by a competing startup before its listener collision surfaced. DB-backed automation now proves listener contention cannot reach orphan classification and the recovered owner crosses that lobby into the next round, completes normally, and does not duplicate first-round resolution/elimination events. This is automated lifecycle proof, not a new provider-backed live run.
 
 **Known gaps**
 
