@@ -495,7 +495,7 @@ A conservative deterministic label on a postgame player summary, such as `power 
 
 ## Compact round summary
 
-The round-level row inside the postgame analysis projection. It summarizes the headline, empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes. The headline is a short deterministic sentence from round facts, not narrator prose.
+The round-level row inside the postgame analysis projection. It summarizes the headline, empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes. The headline is a short deterministic sentence from round facts, not narrator prose. Player majority alignment is tri-state: `true` means a canonical ledger proves the player participated with the scored cohort, `false` means that proved participant cast a genuine minority decision, and `null` means the canonical round evidence does not prove participation or does not expose a supported cohort. Null rows are not losses and are excluded from alignment rates and strategic grades.
 
 ## MCP scopes
 
