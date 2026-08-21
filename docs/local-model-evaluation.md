@@ -155,7 +155,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --variant mingle --chatty --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Add `--diary` when the run is specifically validating post-eviction strategy replacement, optional follow-up refinement, or repair on the next eligible action. Compact strategy rides the diary/gameplay calls already being purchased; there is no strategic-reflection flag or reflection-only cadence.
+Add `--diary` when the run is specifically validating post-eviction strategy replacement, optional follow-up refinement, or repair on the next eligible action. Compact strategy rides the diary/gameplay calls already being purchased; there is no strategic-reflection flag or reflection-only cadence. On ordinary decisions, a non-null delta should be exceptional and actionable: a changed target, alliance posture, commitment, threat assessment, priority, or contingency. Strict schemas should return JSON `null` when current strategy still applies; compatible outputs may omit the field. The engine normalizes the exact string `"null"` to the same no-change result. Action summaries, baseline restatements, unchanged intent, and proof-of-consideration filler are quality failures even when mechanically valid.
 
 Use `--house-summaries` when you want the same terminal to print only concise `[House MC]` summary lines without turning on the full `--chatty` transcript or hidden reasoning output. `house-mc-summary.response.roundFacts` remains a House/operator narration helper (including omniscient `formatResolution` ballots for House MC). For durable public format proof prefer canonical events / MCP:
 
@@ -172,6 +172,8 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
 ```
 
 Use `--diary` when you need bounded diary sessions after the format kernel resolves; legacy/classic runs also retain the post-Council boundary. Use `--rich-producer` when the run is validating House strategy carry-forward and diary-room production quality. It enables format-resolution diaries, legacy/classic Council diaries where exercised, private `house-strategy-bible` packet updates, `house-long-form-summary` records, and per-player `house-producer-brief` records. The ordinary `house-mc-summary` record and clean House system transcript entry are emitted by default in simulation config so you can follow the game between rounds even without `--chatty`.
+
+For compact-delta validation, report each exercised action family with total decision calls, non-null strategy candidates, accepted/rejected/no-change strategy results, and provider output tokens. Review retained deltas for future usefulness, not obedience: pivots and betrayals remain valid, alliance prose is not an obligation, and the accepted action/event remains authoritative. Preserve rejected/no-change diagnostics in producer artifacts rather than filtering them out of the evidence set.
 
 ```bash
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
@@ -269,7 +271,8 @@ Create a dated note in `docs/simulations/` or near the generated batch artifacts
 - whether hidden `mingle-intent` records and House `mingle-room-assignment` records show varied initial rooms, assignment sources, repair notes, and a range of guarded, social, and explicit strategic choices
 - whether post-pick Format Mingle emits one private House proposer-selection artifact at the exact ceiling budget; repairs favor underrepresented players; only finalized players receive proposer calls; unselected invitees still respond; opportunity-specific alliance schemas avoid rejected actions; response identity is engine-bound rather than UUID-transcribed; amendment consent completes; overlapping memberships stay coherent; universal alliances close before huddle eligibility; and House-scheduled huddles produce useful compact outcomes without leaking hidden huddle transcript to public/player-safe surfaces
 - whether legacy Council diary questions remain role-correct when that classic lane is deliberately exercised, and whether Judgment juror questions avoid repeating prior questions without exposing finalist answers inside question prompts
-- whether compact strategy replacements and deltas show real changes in coalition, target, and contingency posture rather than paraphrasing the current action
+- whether non-null compact strategy deltas are exceptional, actionable changes in targets, alliance posture, commitments, threat assessment, priorities, or contingencies rather than paraphrases of the current action or baseline
+- whether action-family counts distinguish non-null, accepted, rejected, and no-change candidates and pair them with output tokens without treating strategy prose as canonical or alliance compliance as a quality metric
 - whether the first diary answer after an eviction reconciles the old epoch and whether an optional follow-up refines rather than replaces that accepted baseline
 - whether House summaries help keep up with teams forming, leverage shifts, and unresolved questions without treating the currently legacy-shaped `roundFacts` payload as format proof
 - when using `--rich-producer`, whether House Strategy Bible revisions carry alliance hypotheses forward instead of silently forgetting them, and whether diary producer briefs sharpen questions without leaking private producer reads as fact
