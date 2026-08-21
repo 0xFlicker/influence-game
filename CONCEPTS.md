@@ -241,7 +241,7 @@ A producer/debug record of one agent decision, message, or hidden assessment. Ag
 
 ## Compact strategy state
 
-Engine-owned private cognition carried across agent decisions without a separate reflection call. It has an implicit `opening` posture, an `active` concise baseline plus ordered accepted deltas, and explicit `reconciliation_required` / `repair_required` lifecycle states after an eviction or unusable replacement. The first valid survivor diary answer after an eviction replaces the old epoch with a full baseline; an optional diary follow-up and ordinary strategic actions may append the same nullable delta. Canonical board facts always override this fallible prose. Capsule v2 restores the lifecycle, baseline, deltas, prior reconciliation epoch when needed, and engine-owned revision without parsing transcripts or `MemoryStore`.
+Engine-owned private cognition carried across agent decisions without a separate reflection call. It has an implicit `opening` posture, an `active` concise baseline plus ordered accepted deltas, and explicit `reconciliation_required` / `repair_required` lifecycle states after an eviction or unusable replacement. The first valid survivor diary answer after an eviction replaces the old epoch with a full baseline. An optional diary follow-up or ordinary strategic action appends a delta only for an exceptional, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies; null or omission means the current strategy still applies. A delta does not summarize its action or restate unchanged intent. Canonical board facts always override this fallible prose. Capsule v2 restores the lifecycle, baseline, deltas, prior reconciliation epoch when needed, and engine-owned revision without parsing transcripts or `MemoryStore`.
 
 ## Recall Plan
 
@@ -511,7 +511,7 @@ A conservative deterministic label on a postgame player summary, such as `power 
 
 ## Compact round summary
 
-The round-level row inside the postgame analysis projection. It summarizes the headline, empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes. The headline is a short deterministic sentence from round facts, not narrator prose.
+The round-level row inside the postgame analysis projection. It summarizes the headline, empowered player, vote outcome, expose pressure, power action, Council candidates, eliminated player, majority-alignment signal, risk moments, and diagnostics for one round without returning raw event envelopes. The headline is a short deterministic sentence from round facts, not narrator prose. Player majority alignment is tri-state: `true` means a canonical ledger proves the player participated with the scored cohort, `false` means that proved participant cast a genuine minority decision, and `null` means the canonical round evidence does not prove participation or does not expose a supported cohort. Null rows are not losses and are excluded from alignment rates and strategic grades.
 
 ## MCP scopes
 

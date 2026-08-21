@@ -136,7 +136,14 @@
  * `candidate-selection`, `power-action`, and Council records remain readable
  * for legacy/classic runs but are not the expected standard-round lane.
  * Private decision turns carry compact strategy candidates on existing gameplay
- * and diary calls; there is no separate strategic-reflection cadence. In
+ * and diary calls; there is no separate strategic-reflection cadence. Ordinary
+ * `strategyDelta` values are reserved for exceptional actionable changes to
+ * future posture. Strict schemas use JSON null, and compatible non-strict outputs
+ * may omit the field, when current strategy still applies. The exact string
+ * `"null"` is normalized to the same no-change outcome. Producer review should
+ * retain accepted/rejected/no-change diagnostics and group strategy-candidate
+ * counts plus output tokens by action family without treating prose as canonical
+ * fact or alliance obligation. In
  * API-backed games, versioned player continuity capsules carry compact strategy
  * state across supported phase-boundary startup recovery;
  * local CLI simulations remain uninterrupted-run artifacts unless an API path

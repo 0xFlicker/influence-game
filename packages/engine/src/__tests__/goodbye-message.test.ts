@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import { ContextBuilder } from "../context-builder";
+import { STRATEGY_DELTA_GUIDANCE } from "../formats/agent-surface";
 import { GameState, createUUID } from "../game-state";
 import type {
   AgentCallOptions,
@@ -1005,6 +1006,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       action: "eliminate",
       target: "mira-id",
       thinking: "Take the shot before the council can scatter.",
+      reasoningContext: undefined,
+      strategyCandidateProposed: true,
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]?.max_completion_tokens).toBeGreaterThan(calls[0]?.max_completion_tokens as number);
@@ -1032,6 +1035,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       action: "eliminate",
       target: "mira-id",
       thinking: "Take the shot before the council can scatter.",
+      reasoningContext: undefined,
+      strategyCandidateProposed: true,
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]?.response_format).toEqual({
@@ -1056,7 +1061,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
             },
             strategyDelta: {
               type: ["string", "null"],
-              description: "A concise private refinement to your current strategy. Use null when the decision does not materially change it.",
+              description: STRATEGY_DELTA_GUIDANCE,
             },
           },
           required: ["thinking", "action", "target", "shieldPullUpCandidates", "strategyDelta"],

@@ -26,7 +26,7 @@ The current strategy contract removes standalone reflection inference. Living-pl
 
 - their existing action or message fields
 - concise private `thinking`
-- nullable `strategyDelta` on ordinary strategic boundaries
+- nullable `strategyDelta` on ordinary strategic boundaries, used only for exceptional actionable changes
 - required full `strategy` on the first survivor diary answer after an eviction or on a later repair boundary
 
 This reduces calls while keeping strategy inspectable. It also preserves the authority split: canonical events say what happened; compact strategy and rationale explain what the agent intended.
@@ -75,6 +75,7 @@ interface CompactStrategyState {
 
 - `opening` derives posture from authored personality/strategy plus current evidence; accepted deltas may refine it.
 - `active` contains one concise baseline and ordered accepted deltas.
+- Ordinary decisions should return no change when that state still applies. A delta is reserved for a material, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies; it must not summarize the action, repeat the baseline, narrate unchanged intent, or merely prove consideration.
 - canonical eviction moves living survivors to `reconciliation_required` and preserves the immediately prior valid epoch as historical evidence.
 - a valid first survivor diary `strategy` replaces the old epoch and returns to `active` with no deltas.
 - an optional House follow-up may append the shared `strategyDelta`; if replacement failed, the same follow-up is a full-strategy repair boundary.
@@ -164,6 +165,7 @@ bun run check
 ## Validation Checklist
 
 - Ordinary living-player schemas keep mechanic fields plus `thinking` and nullable `strategyDelta`.
+- Strict structured schemas represent the optional delta with a required nullable key; JSON `null` is expected when current strategy still applies, while compatible non-strict outputs may omit it. The exact string `"null"` is normalized to the same `no_change` result without a revision; at a required full-strategy boundary it remains a missing value and follows rejection/repair.
 - First post-eviction and repair schemas request full `strategy` without a fixed sentence count.
 - Legal gameplay survives an unusable strategy operation without retry.
 - Illegal/fallback/stale gameplay does not mutate compact strategy.

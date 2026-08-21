@@ -950,14 +950,14 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         nextCursor: null,
       },
     }, traceIndexTool.outputSchema)).toThrow("did not match anyOf");
-    const producerAnalysisTool = tools.find(
+    const paginatedProducerAnalysisTool = tools.find(
       (tool) => (tool as { name: string }).name === "read_producer_game_analysis",
     ) as { description: string; outputSchema: Record<string, unknown> };
-    expect(producerAnalysisTool.description).toContain("developerEvidence.cognitiveArtifacts.nextCursor");
-    expect(producerAnalysisTool.description).toContain("developerEvidence.traceManifests.nextCursor");
-    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("cognitiveArtifacts");
-    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("traceManifests");
-    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("nextCursor");
+    expect(paginatedProducerAnalysisTool.description).toContain("developerEvidence.cognitiveArtifacts.nextCursor");
+    expect(paginatedProducerAnalysisTool.description).toContain("developerEvidence.traceManifests.nextCursor");
+    expect(JSON.stringify(paginatedProducerAnalysisTool.outputSchema)).toContain("cognitiveArtifacts");
+    expect(JSON.stringify(paginatedProducerAnalysisTool.outputSchema)).toContain("traceManifests");
+    expect(JSON.stringify(paginatedProducerAnalysisTool.outputSchema)).toContain("nextCursor");
     const producerAnalysisResponse = {
       schemaVersion: 2,
       ok: true,
@@ -996,18 +996,18 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         },
       },
     };
-    expectMatchesJsonSchema(producerAnalysisResponse, producerAnalysisTool.outputSchema);
+    expectMatchesJsonSchema(producerAnalysisResponse, paginatedProducerAnalysisTool.outputSchema);
     expect(() => expectMatchesJsonSchema({
       ...producerAnalysisResponse,
       schemaVersion: 1,
-    }, producerAnalysisTool.outputSchema)).toThrow("oneOf");
+    }, paginatedProducerAnalysisTool.outputSchema)).toThrow("oneOf");
     for (const indexKey of ["cognitiveArtifacts", "traceManifests"] as const) {
       for (const metadataKey of ["pageSize", "totalCount", "nextCursor"] as const) {
         const invalidResponse = structuredClone(producerAnalysisResponse);
         delete (invalidResponse.developerEvidence[indexKey] as Record<string, unknown>)[metadataKey];
         expect(() => expectMatchesJsonSchema(
           invalidResponse,
-          producerAnalysisTool.outputSchema,
+          paginatedProducerAnalysisTool.outputSchema,
         )).toThrow("oneOf");
       }
     }
@@ -1165,12 +1165,82 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(juryTool.outputSchema)).toContain("runnerUpSupporters");
     const playerSummaryTool = tools.find((tool) => (tool as { name: string }).name === "read_player_game_summary") as {
       inputSchema: { properties: Record<string, unknown> };
-      outputSchema: unknown;
+      outputSchema: {
+        oneOf: Array<{
+          properties?: {
+            player?: {
+              properties?: {
+                majorityAlignmentByRound?: {
+                  items?: unknown;
+                };
+              };
+            };
+          };
+        }>;
+      };
     };
     expect(playerSummaryTool.inputSchema.properties).not.toHaveProperty("detailLevel");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("formatBallotsCastByRound");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("majorityAlignmentByRound");
     expect(JSON.stringify(playerSummaryTool.outputSchema)).toContain("overallGameShape");
+    const majorityAlignmentItem = playerSummaryTool.outputSchema.oneOf[0]?.properties
+      ?.player?.properties?.majorityAlignmentByRound?.items;
+    expect(majorityAlignmentItem).toMatchObject({
+      required: ["round", "empowerAligned", "councilAligned", "aligned", "basis"],
+      properties: {
+        round: { type: "number" },
+        empowerAligned: {
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+        },
+        councilAligned: {
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+        },
+        aligned: {
+          description: "Null means canonical evidence did not prove participation in that scored decision.",
+          anyOf: [{ type: "boolean" }, { type: "null" }],
+        },
+        basis: {
+          type: "array",
+          items: { type: "string", enum: ["empower", "council"] },
+        },
+      },
+    });
+    const producerAnalysisTool = tools.find(
+      (tool) => (tool as { name: string }).name === "read_producer_game_analysis",
+    ) as {
+      outputSchema: {
+        oneOf: Array<{
+          properties?: {
+            producerAnalysis?: {
+              properties?: {
+                playerByPlayerStrategicGrades?: {
+                  items?: {
+                    properties?: {
+                      signals?: {
+                        properties?: Record<string, unknown>;
+                      };
+                    };
+                  };
+                };
+              };
+            };
+          };
+        }>;
+      };
+    };
+    const strategicGradeSignals = producerAnalysisTool.outputSchema.oneOf[0]?.properties
+      ?.producerAnalysis?.properties?.playerByPlayerStrategicGrades?.items
+      ?.properties?.signals?.properties;
+    expect(strategicGradeSignals).toMatchObject({
+      majorityAlignmentRoundsScored: {
+        type: "number",
+        description: "Rounds where canonical evidence proved participation in the scored majority decision.",
+      },
+      majorityAlignmentRate: {
+        type: "number",
+        description: "Majority-aligned rounds divided by majorityAlignmentRoundsScored; null non-participation is excluded.",
+      },
+    });
     const turningPointsTool = tools.find((tool) => (tool as { name: string }).name === "read_game_turning_points") as {
       inputSchema: { properties: Record<string, unknown> };
     };

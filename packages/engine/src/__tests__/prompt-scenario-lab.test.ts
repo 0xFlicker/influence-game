@@ -159,6 +159,37 @@ describe("prompt scenario lab", () => {
     expect(privatePack.canonicalEvents.some((event) => event.type === "player.eliminated")).toBe(true);
     expect(privatePack.canonicalEvents.filter((event) => event.type === "player.eliminated")).toHaveLength(2);
     expect(privatePack.providerRequests).toHaveLength(4);
+    for (const request of privatePack.providerRequests) {
+      const messages = request.messages as Array<{ role?: unknown; content?: unknown }>;
+      const systemPrompt = messages.find((message) => message.role === "system")?.content;
+      expect(systemPrompt).toBeString();
+      expect(systemPrompt).toContain("## Strategy Carry-Forward");
+      expect(systemPrompt).toContain("material, actionable change");
+      expect(systemPrompt).toContain("Do not summarize the action");
+    }
+
+    for (const request of privatePack.providerRequests.slice(1, 3)) {
+      const responseFormat = request.response_format as {
+        json_schema?: {
+          schema?: {
+            properties?: Record<string, { description?: unknown }>;
+          };
+        };
+      };
+      const description = responseFormat.json_schema?.schema?.properties?.strategyDelta?.description;
+      expect(description).toContain("material, actionable change");
+      expect(description).toContain("Do not summarize the action");
+    }
+    const voteTools = privatePack.providerRequests[3]?.tools as Array<{
+      function?: {
+        parameters?: {
+          properties?: Record<string, { description?: unknown }>;
+        };
+      };
+    }>;
+    const voteDescription = voteTools[0]?.function?.parameters?.properties?.strategyDelta?.description;
+    expect(voteDescription).toContain("material, actionable change");
+    expect(voteDescription).toContain("Do not summarize the action");
     expect(privatePack.decisionTraces.map((trace) => trace.action)).toEqual(["diary", "diary", "lobby", "vote"]);
     expect(privatePack.nextLobbyResponse.message).toContain("living choices matter");
     expect(privatePack.nextVoteResponse.empowerTarget).toBe("1e846a8f-4df7-4cc4-a94e-c74452769080");
