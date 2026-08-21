@@ -950,14 +950,14 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         nextCursor: null,
       },
     }, traceIndexTool.outputSchema)).toThrow("did not match anyOf");
-    const producerAnalysisTool = tools.find(
+    const paginatedProducerAnalysisTool = tools.find(
       (tool) => (tool as { name: string }).name === "read_producer_game_analysis",
     ) as { description: string; outputSchema: Record<string, unknown> };
-    expect(producerAnalysisTool.description).toContain("developerEvidence.cognitiveArtifacts.nextCursor");
-    expect(producerAnalysisTool.description).toContain("developerEvidence.traceManifests.nextCursor");
-    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("cognitiveArtifacts");
-    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("traceManifests");
-    expect(JSON.stringify(producerAnalysisTool.outputSchema)).toContain("nextCursor");
+    expect(paginatedProducerAnalysisTool.description).toContain("developerEvidence.cognitiveArtifacts.nextCursor");
+    expect(paginatedProducerAnalysisTool.description).toContain("developerEvidence.traceManifests.nextCursor");
+    expect(JSON.stringify(paginatedProducerAnalysisTool.outputSchema)).toContain("cognitiveArtifacts");
+    expect(JSON.stringify(paginatedProducerAnalysisTool.outputSchema)).toContain("traceManifests");
+    expect(JSON.stringify(paginatedProducerAnalysisTool.outputSchema)).toContain("nextCursor");
     const producerAnalysisResponse = {
       schemaVersion: 2,
       ok: true,
@@ -996,18 +996,18 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         },
       },
     };
-    expectMatchesJsonSchema(producerAnalysisResponse, producerAnalysisTool.outputSchema);
+    expectMatchesJsonSchema(producerAnalysisResponse, paginatedProducerAnalysisTool.outputSchema);
     expect(() => expectMatchesJsonSchema({
       ...producerAnalysisResponse,
       schemaVersion: 1,
-    }, producerAnalysisTool.outputSchema)).toThrow("oneOf");
+    }, paginatedProducerAnalysisTool.outputSchema)).toThrow("oneOf");
     for (const indexKey of ["cognitiveArtifacts", "traceManifests"] as const) {
       for (const metadataKey of ["pageSize", "totalCount", "nextCursor"] as const) {
         const invalidResponse = structuredClone(producerAnalysisResponse);
         delete (invalidResponse.developerEvidence[indexKey] as Record<string, unknown>)[metadataKey];
         expect(() => expectMatchesJsonSchema(
           invalidResponse,
-          producerAnalysisTool.outputSchema,
+          paginatedProducerAnalysisTool.outputSchema,
         )).toThrow("oneOf");
       }
     }
