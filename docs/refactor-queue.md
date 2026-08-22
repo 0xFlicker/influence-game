@@ -24,6 +24,8 @@ Last failed-provider evidence storage gap added: 2026-08-21
 
 Last synthetic no-response output gap added: 2026-08-21
 
+Last game provider-waterfall gap added: 2026-08-22
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -84,6 +86,19 @@ Items are ordered by current priority.
 - Runtime parity: apply the same semantics to local simulations and API-backed gameplay, including Responses, Chat Completions, local OpenAI-compatible providers, House calls, tool/structured-output calls, and retry exhaustion. Keep this item separate from R27: R27 preserves complete producer-debugging evidence; R28 defines gameplay behavior after a call does not yield usable model output.
 - Validation path: deterministic coverage enumerates every former constructor and consumer of `[No response]`; asserts the literal never appears in turns, transcript rows, House events, public events, decisions, strategy state, or simulation text; and proves the intended retry, optional-speech skip, required-decision fallback, cancellation, and fatal-failure semantics in both simulation and API-backed execution.
 - Suggested slice: begin with ordinary player speech across Responses and Chat Completions, replacing string fallback with a typed absent/failed result through the real phase runner and proving that the phase continues without publishing fake dialogue. Then migrate structured decisions, House narration, local-provider retries, and remaining literal consumers until a repository-wide assertion shows no synthetic gameplay output remains.
+
+### R29. Game-sealed provider fallback manifest
+
+- Status: `ready`
+- Priority: **high**
+- Sources: repeated hosted OpenAI `invalid_prompt` rejections during local `gpt-5.6-luna` games; the existing model catalog and provider profiles in `packages/engine/src/model-catalog.ts`; provider construction in `packages/engine/src/llm-client.ts` and `packages/api/src/services/game-lifecycle.ts`; simulation launch/configuration; R27 failed-request evidence; and R28 typed provider-failure outcomes.
+- Signal: a game currently seals one model/provider selection. A nonretryable provider refusal during required gameplay can therefore fail or suspend an otherwise healthy game even when another configured, game-ready provider could execute the same logical call. In the observed evening sample, two of four local games ended on OpenAI HTTP 400 `invalid_prompt` responses after substantial prior paid gameplay, while equivalent failures appear uncommon but possible across the larger live-game history.
+- Required direction: replace the single game model selection with an ordered, bounded provider manifest sealed into the game before it starts, for example `openai:gpt-5.6-luna` followed by `katana:grok-4-3`. Validate every entry's provider credentials, game-ready catalog status, action capabilities, reasoning policy, and request-shape compatibility before admitting the game. Local simulation and API-backed gameplay must execute the same manifest.
+- Failover semantics: one logical gameplay call starts at the primary manifest entry. A typed, nonretryable provider refusal such as OpenAI `invalid_prompt` must not resend the unchanged request to that provider; it advances once to the next compatible manifest entry. Existing bounded same-provider handling for genuinely retryable capacity or transport failures completes before provider failover. Successful primary calls never contact a fallback. Exhausting the manifest returns one explicit typed call failure to the phase policy defined by R28.
+- Gameplay integrity: failover preserves the actor, action, canonical boundary, player memory, strategy state, authorized evidence, semantic prompt content, output contract, and acceptance rules. Provider adapters may translate only the transport/schema envelope required by the selected model's declared capabilities. They must not replay already accepted actions, restart the phase, weaken validation, fabricate dialogue, or parse transcript prose into authority. Exactly one accepted result may commit for the logical call.
+- Durability and observability: persist the sealed manifest and current logical-call attempt chain through checkpoints and startup recovery. Record every provider attempt, fallback reason, request/response identity, usage, service tier, latency, and actual or estimated cost as producer evidence, using R27's complete failure evidence rather than a parallel reduced receipt. Public dialogue may identify the producing agent but must not expose provider credentials or private failure evidence.
+- Validation path: deterministic Responses-to-Katana and Chat-Completions-to-Katana tests prove an OpenAI `invalid_prompt` receives no unchanged OpenAI retry, the next provider receives exactly one semantically equivalent request, and one result commits once. Additional cases prove primary success makes zero fallback calls; retryable 429/transport handling remains bounded; incompatible or unavailable manifest entries fail admission before paid gameplay; all-provider failure stays typed and non-synthetic; recovery resumes the same manifest/attempt boundary without duplicate effects; and per-provider/per-game accounting reconciles every attempted call.
+- Suggested slice: support the sealed two-entry manifest `openai:gpt-5.6-luna` → `katana:grok-4-3` for ordinary player speech in both the simulator and API lifecycle. Drive an exact captured OpenAI `invalid_prompt` into one Katana request, publish only Katana's validated speech, preserve both provider evidence records, and prove the primary-success zero-fallback path. Expand to structured decisions and House calls only after that end-to-end slice is green.
 
 ### R15. Format-kernel phase-boundary startup recovery
 
