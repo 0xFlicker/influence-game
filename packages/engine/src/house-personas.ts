@@ -76,7 +76,7 @@ const DEFAULT_BLURBS: Record<Personality, { personality: string; strategy: strin
   },
   martyr: {
     personality: "A selfless protector who sacrifices position and safety to shield their allies.",
-    strategy: "Absorb votes, volunteer as scapegoat, accumulate moral capital that makes you impossible to vote against at the jury.",
+    strategy: "Absorb votes, take blame for allies, and accumulate moral capital that makes you difficult to vote against at the jury.",
   },
   broker: {
     personality: "A transactional power broker who trades information and favors, treating every interaction as an exchange.",

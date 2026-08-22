@@ -586,6 +586,10 @@ export class GameState {
     return this.canonicalEvents.list();
   }
 
+  getCanonicalEventsAfter(sequence: number): readonly CanonicalGameEvent[] {
+    return this.canonicalEvents.listAfter(sequence);
+  }
+
   subscribeCanonicalEvents(
     listener: CanonicalEventListener,
     options: CanonicalEventSubscriptionOptions = {},

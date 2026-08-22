@@ -80,6 +80,17 @@ describe("TranscriptLogger", () => {
     expect(logger.transcript[0]!.from).toBe("House");
   });
 
+  it("returns only dialogue after a cursor without scanning non-dialogue rows", () => {
+    const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
+    logger.logPublic(alice.id, "First", Phase.LOBBY);
+    logger.logDiary("Alice", "Private");
+    logger.logSystem("Second", Phase.VOTE);
+
+    expect(logger.dialogueHead).toBe(2);
+    expect(logger.dialogueEntriesAfter(1).map((entry) => entry.text)).toEqual(["Second"]);
+    expect(logger.dialogueEntriesAfter(2)).toEqual([]);
+  });
+
   it("logDiary adds diary transcript entry", () => {
     logger.logDiary("Alice", "My strategic thoughts...");
 

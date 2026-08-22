@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import type { TranscriptEntry } from "../game-runner.types";
+import type { HouseSummaryPhaseReceipt } from "../house-summary-frontier";
 import { aggregateInstrumentation, instrumentGame } from "../simulation-instrumentation";
 import type { TokenUsage } from "../token-tracker";
 import { Phase } from "../types";
@@ -156,6 +157,83 @@ describe("simulation instrumentation", () => {
     expect(aggregate.houseProducer.producerBriefCalls).toBe(6);
     expect(aggregate.houseProducer.mcSummaryTranscriptEntries).toBe(4);
     expect(aggregate.houseProducer.totalHouseProducerCalls).toBe(12);
+  });
+
+  it("reconciles content-free House cadence receipts to TokenTracker usage", () => {
+    const receipts: HouseSummaryPhaseReceipt[] = [
+      {
+        version: 1,
+        boundaryId: "house-beat/v1:1:format_pick:8:12",
+        actorCoordinate: "format_pick",
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        beatClass: "ordinary",
+        status: "emitted",
+        providerCalls: 1,
+        factCalls: 0,
+        requestedCategories: [],
+        returnedBytes: 0,
+        selectedSourceCount: 1,
+        usageAvailable: true,
+        usage: [{
+          callId: "call-1",
+          responseId: "response-1",
+          serviceTier: "flex",
+          promptTokens: 80,
+          cachedTokens: 0,
+          cacheWriteTokens: 0,
+          completionTokens: 20,
+          reasoningTokens: 0,
+          totalTokens: 100,
+        }],
+        pendingDelta: "none",
+      },
+      {
+        version: 1,
+        boundaryId: "house-beat/v1:1:format_mingle:8:12",
+        actorCoordinate: "format_mingle",
+        round: 1,
+        phase: Phase.FORMAT_MINGLE,
+        beatClass: "ordinary",
+        status: "preflight_skipped",
+        providerCalls: 0,
+        factCalls: 0,
+        requestedCategories: [],
+        returnedBytes: 0,
+        selectedSourceCount: 0,
+        usageAvailable: true,
+        usage: [],
+        pendingDelta: "none",
+      },
+    ];
+    const game = instrumentGame(
+      [{
+        ...systemEntry(1, Phase.FORMAT_PICK, "Ada locked Vote Bomb."),
+        dialogueKind: "house_summary",
+      }],
+      { "House/mc-summary": usage({ callCount: 1, promptTokens: 80, completionTokens: 20, totalTokens: 100 }) },
+      {},
+      receipts,
+    );
+
+    expect(game.houseSummaryCadence).toMatchObject({
+      boundaries: 2,
+      materiallyEligibleBoundaries: 1,
+      emitted: 1,
+      preflightSkipped: 1,
+      eligibleEmissionRate: 1,
+      providerCalls: 1,
+      uniqueProviderCallIds: 1,
+      knownTokenSubtotal: 100,
+      trackerCallCount: 1,
+      trackerTokenSubtotal: 100,
+      usageAvailable: true,
+      callIdentitiesReconciled: true,
+      tokenSubtotalReconciled: true,
+      accountingReconciled: true,
+    });
+    expect(game.houseProducer.mcSummaryTranscriptEntries).toBe(1);
+    expect(aggregateInstrumentation([game]).houseSummaryCadence.accountingReconciled).toBe(true);
   });
 
   it("preserves Mingle request diagnostics and aggregates audit flags", () => {

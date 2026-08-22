@@ -215,27 +215,27 @@ describe("GameRunner stream listener", () => {
       });
     }
 
-    const summary = events.find((event) => event.type === "agent_turn" && event.action === "house-mc-summary");
-    expect(summary).toBeDefined();
-    if (summary?.type === "agent_turn") {
+    const summaries = events.filter((event) => event.type === "agent_turn" && event.action === "house-mc-summary");
+    expect(summaries.length).toBeGreaterThanOrEqual(2);
+    for (const summary of summaries) {
+      if (summary.type !== "agent_turn") continue;
       expect(summary.visibility).toBe("system");
-      expect(summary.response).toHaveProperty("packetRevisionId");
-      expect(summary.response).toHaveProperty("summary");
-      expect(summary.response).toHaveProperty("roundFacts");
+      expect(summary.response).toEqual({ summary: expect.any(String) });
       expect(summary.response.summary).not.toContain("[House MC]");
       expect(summary.response.summary).not.toContain("Round facts:");
       expect(summary.response.summary).not.toContain("power=pass;");
-      expect(summary.response.roundFacts).toMatchObject({
-        round: expect.any(Number),
-        empoweredName: expect.any(String),
-        empowerVoteCounts: expect.any(Array),
-        exposeVoteCounts: expect.any(Array),
-        powerAction: null,
-        councilCandidates: null,
-        councilVoteCounts: [],
-        eliminatedName: expect.any(String),
-      });
     }
+    const receipts = events.filter(
+      (event) => event.type === "agent_turn" && event.action === "house-summary-phase-receipt",
+    );
+    expect(receipts.some(
+      (event) => event.type === "agent_turn"
+        && (event.response.receipt as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_pick",
+    )).toBe(true);
+    expect(receipts.some(
+      (event) => event.type === "agent_turn"
+        && (event.response.receipt as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_resolve",
+    )).toBe(true);
     expect(runner.transcriptLog.some((entry) => entry.text.includes("[House MC]"))).toBe(false);
     expect(runner.transcriptLog.some((entry) => entry.text.includes("Round facts:"))).toBe(false);
 

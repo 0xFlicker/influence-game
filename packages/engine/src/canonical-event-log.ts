@@ -93,6 +93,11 @@ export class CanonicalEventLog {
     return this.events.map(cloneCanonicalEvent);
   }
 
+  listAfter(sequence: number): readonly CanonicalGameEvent[] {
+    const startIndex = Math.max(0, Math.trunc(sequence));
+    return this.events.slice(startIndex).map(cloneCanonicalEvent);
+  }
+
   replaceAll(events: readonly CanonicalGameEvent[]): void {
     this.events.length = 0;
     let expectedSequence = 1;

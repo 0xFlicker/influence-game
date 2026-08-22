@@ -664,6 +664,26 @@ describe("Game lifecycle integration", () => {
     expect(row.safeContext).toEqual({ version: 1 });
   });
 
+  test("serializeTranscriptEntry accepts viewer-safe House summaries", () => {
+    const row = serializeTranscriptEntry("game-house-summary", {
+      round: 1,
+      phase: Phase.FORMAT_PICK,
+      timestamp: 123,
+      from: "House",
+      scope: "system",
+      text: "Ada chose Vote Bomb.",
+      speakerPlayerId: null,
+      entrySequence: 2,
+      dialogueKind: "house_summary",
+      audiencePlayerIds: [],
+      dialogueContext: { version: 1 },
+    }, { transcriptCaptureVersion: 1 });
+
+    expect(row.dialogueKind).toBe("house_summary");
+    expect(row.entrySequence).toBe(2);
+    expect(row.audiencePlayerIds).toEqual([]);
+  });
+
   test("serializeTranscriptEntry rejects legacy-shaped dialogue in current-capture games", () => {
     expect(() => serializeTranscriptEntry("game-modern", {
       round: 1,

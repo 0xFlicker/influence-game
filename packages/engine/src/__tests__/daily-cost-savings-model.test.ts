@@ -130,9 +130,15 @@ describe("daily token-cost savings model", () => {
     // Every selected mock passes, so no proposal exists and no responder/counter
     // demand is created beyond the two proposer calls.
 
-    // Room-assignment and proposer-selection turns are producer artifacts; each
-    // set is backed by one House request rather than one request per turn.
+    // Selective House narration has its own exact receipt accounting and is not
+    // part of this historical social-cadence model. Room-assignment and
+    // proposer-selection turns are producer artifacts; each set is backed by
+    // one House request rather than one request per turn.
+    const houseCadenceTurns = firstRoundTurns.filter((turn) => (
+      turn.action === "house-mc-summary" || turn.action === "house-summary-phase-receipt"
+    ));
     const compactEnvelopeProviderCalls = firstRoundTurns.length
+      - houseCadenceTurns.length
       - (counts.get("mingle-room-assignment") ?? 0)
       - (counts.get("alliance-proposer-selection") ?? 0)
       + house.mingleAssignmentCalls
@@ -141,20 +147,20 @@ describe("daily token-cost savings model", () => {
     // reflection calls removed by that independent change so the historical
     // social-cadence comparison remains scoped to its original 49 calls.
     const preCompactProviderCalls = compactEnvelopeProviderCalls + 32;
-    expect(preCompactProviderCalls).toBeGreaterThanOrEqual(103);
+    expect(preCompactProviderCalls).toBeGreaterThanOrEqual(102);
     expect(preCompactProviderCalls).toBeLessThanOrEqual(110);
 
     // Before House-selected access, all 8 living players received proposer
     // calls. R22 replaces those 8 calls with 2 proposer calls plus one House call.
     const preHouseSelectionProviderCalls = preCompactProviderCalls + 5;
-    expect(preHouseSelectionProviderCalls).toBeGreaterThanOrEqual(108);
+    expect(preHouseSelectionProviderCalls).toBeGreaterThanOrEqual(107);
     expect(preHouseSelectionProviderCalls).toBeLessThanOrEqual(115);
 
     // Removed from the previous cadence: 8 extra Lobby turns, 16 intent calls,
     // 24 pre-format room turns, and one pre-format House room assignment.
     const previousProviderCalls = preHouseSelectionProviderCalls + 8 + 16 + 24 + 1;
     expect(previousProviderCalls - preHouseSelectionProviderCalls).toBe(49);
-    expect(previousProviderCalls).toBeGreaterThanOrEqual(157);
+    expect(previousProviderCalls).toBeGreaterThanOrEqual(156);
     expect(previousProviderCalls).toBeLessThanOrEqual(164);
 
     const formatRoomIndex = firstRoundTurns.findIndex(

@@ -558,6 +558,7 @@ export type TranscriptDialogueKind =
   | "system_phase_banner"
   | "system_room_allocation"
   | "system_elimination"
+  | "house_summary"
   | "system_announcement";
 
 export type GameTranscriptTerminalState =

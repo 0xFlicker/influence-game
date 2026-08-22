@@ -27,6 +27,8 @@ Project-specific variables win over aliases. If a base URL is configured without
 
 Local OpenAI-compatible providers are not perfectly identical to OpenAI's hosted API. LM Studio may reject `tool_choice` objects like `{ type: "function", function: { name } }`; the default local mode sends `tool_choice: "required"` with one available tool instead. Local structured decision schemas keep the emitted `thinking` field, while raw provider reasoning metadata such as `reasoning_content` is stored separately as `reasoningContext`. Hosted OpenAI reasoning summaries are a separate Responses API feature; they default to `auto` for hosted OpenAI but remain off for local base URLs. Structured decisions use a global 8192-token completion floor, and public message calls use a global 4096-token completion floor with one doubled retry when visible content is empty. House Mingle room assignment, House alliance proposer selection, and House alliance-huddle scheduling/outcome summarization use the same structured floor before falling back to deterministic repair behavior. If a model/server still struggles with tools, try `INFLUENCE_LLM_TOOL_CHOICE_MODE=json_schema` to skip tool calls and request the tool argument schema as JSON response format. Known quirk: Qwen3-style thinking models served by LM Studio (e.g. `qwen3.8-27b-mlx`) route the entire `json_schema` completion into `reasoning_content`, leaving `content` empty even with `enable_thinking: false`; the model is generating valid schema JSON, but it never reaches `content`. For those models keep the default `required` tool mode and avoid `json_schema` — see `docs/simulations/2026-08-16-qwen3.8-27b-capability-probe.md`.
 
+Player and House requests share a provider-independent system context that identifies Influence as a fictional, text-only social-strategy competition among AI characters. It defines targeting, elimination, survival, and format names as voting/removal mechanics rather than physical harm. When reviewing captured prompts, require this context on both hosted and local request shapes; do not treat it as permission to retry a provider `invalid_prompt` rejection unchanged.
+
 Local public messages skip the hosted-provider `{ thinking, message }` response schema and request visible speech in `message.content`. When a local server returns native reasoning metadata such as LM Studio's `reasoning_content`, the engine stores that value as transcript `reasoningContext`. This keeps malformed hidden reasoning out of public speech while still preserving local model reasoning for viewer/debug surfaces.
 
 API-backed game start performs a provider/model preflight before moving a waiting game into `in_progress`. This catches missing credentials, unavailable model IDs, and incompatible model metadata endpoints before the durable owner claim is created. If a local OpenAI-compatible server can generate normally but does not implement model metadata retrieval, set `INFLUENCE_LLM_PREFLIGHT=off` for that local API process and validate the model with a small simulator run first.
@@ -276,6 +278,45 @@ Create a dated note in `docs/simulations/` or near the generated batch artifacts
 - whether the first diary answer after an eviction reconciles the old epoch and whether an optional follow-up refines rather than replaces that accepted baseline
 - whether House summaries help keep up with teams forming, leverage shifts, and unresolved questions without treating the currently legacy-shaped `roundFacts` payload as format proof
 - when using `--rich-producer`, whether House Strategy Bible revisions carry alliance hypotheses forward instead of silently forgetting them, and whether diary producer briefs sharpen questions without leaking private producer reads as fact
+
+## House summary cadence evaluation
+
+House MC narration now uses a selective frontier after meaningful actor-coordinate boundaries rather than replaying the accumulated transcript and round evidence into every concise call. Run the provider-free mechanics first:
+
+```bash
+bun test packages/engine/src/__tests__/house-summary-frontier.test.ts \
+  packages/engine/src/__tests__/house-interviewer-structured-output.test.ts \
+  packages/engine/src/__tests__/house-summary-cadence.test.ts \
+  packages/engine/src/__tests__/house-summary-accounting.test.ts \
+  packages/engine/src/__tests__/evaluate-house-summary-cadence.test.ts
+bun run --cwd packages/engine typecheck
+```
+
+Those tests prove authorization, bounded tool behavior, source receipts, continuity, preflight/model/failure paths, actor-coordinate scheduling, nonfatal gameplay, and exact/inconclusive accounting. They do not prove current-model prose quality or realized provider cost.
+
+After the deterministic gate, the opt-in hosted comparison is:
+
+```bash
+cd packages/engine
+doppler run --project social-strategy-agent --config dev -- \
+  bun run src/scripts/evaluate-house-summary-cadence.ts \
+    --scope=full \
+    --output=/tmp/house-summary-cadence-unreviewed.json
+
+# The paid command intentionally exits nonzero until its saved prose is reviewed.
+# This second command is offline and makes no provider calls.
+bun run src/scripts/evaluate-house-summary-cadence.ts \
+  --review-report=/tmp/house-summary-cadence-unreviewed.json \
+  --quality-reviewed \
+  --reviewer=<local-reviewer-id> \
+  --output=/tmp/house-summary-cadence-reviewed.json
+```
+
+This is paid provider validation. Each invocation creates a fresh canonical game UUID and uses it for both the candidate and narration-free baseline, while retaining the fixed seed and player roster. The identity appears near the start of both request families, so an earlier evaluator run cannot supply a cached fixed-ID prompt prefix; the evaluator still requires identical baseline/candidate canonical fingerprints. Real success/failure continuity determines each next frontier, and later baseline prompts carry only earlier baseline outputs. A conclusive result requires returned usage, response identity, effective service tier, and frozen rate-card pricing for every provider response. Its automatic gate requires at least 80% emitted eligible beats, at least 80% fresh selected-fact-specific beats, supported source receipts, continuity coverage, unique/non-repetitive output, reconciled receipts and calls, zero provider calls for preflight skips, and candidate realized cost at or below `1.25x` the same game's round-only baseline. The saved-report review then fails closed on canonical contradiction, unsupported aliases, continuity breaks, repetitive or low-value ordinary beats, milestone regression, and pacing harm. `FORMAT_PICK` plus `FORMAT_RESOLVE` is only the proving slice; it is not the full-cadence gate.
+
+The final cache-isolated 2026-08-19 current-meta Flex comparison did **not** pass R21. The independent round-only baseline made 2 calls, used 11,348 total tokens, had zero cached input tokens, and cost `$0.0017157`. Full runtime cadence made 24 calls for 23 materially eligible boundaries, used 16,720 total tokens, emitted 16/23 beats (`69.57%`), achieved selected-fact specificity on 14/23 (`60.87%`), and cost `$0.0023335`, or `1.360086x` baseline. It preserved identical authority fingerprints, 21/21 continuity coverage, unique prose (maximum pairwise word Jaccard `0.478261`), reconciled receipts, one total fact read, and zero calls for the preflight skip. It nevertheless failed the `1.25x`, 80% emission, and 80% specificity gates. The paid comparison cost `$0.0040492` across baseline and candidate. Offline audit also found unsupported “publicly signal” and “reject Eve's accusations” attributions; deterministic validators were hardened afterward without another provider run. R21 therefore remains open, and this artifact is failure evidence rather than completion proof.
+
+Earlier paid artifacts are retained only as invalid/failed development evidence: the reported `$0.0019694` candidate versus `$0.001731775` baseline (`1.137215x`, 22/22) predated exact baseline/evaluator and manual-review repairs; the `$0.0020805` versus `$0.00169665` run (`1.226240x`, 21/22) failed automatic and human review with factual contradictions and incomplete receipts; and the `$0.002756` versus `$0.001155515` run (`2.385084x`, 20/22) used a cache-hit fixed-ID baseline and failed quality gates. None establishes R21 acceptance. Deterministic tests remain the regression authority for mechanics and privacy.
 
 When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with high-contrast bright-white `thinking:` and bright-cyan `reasoning:` blocks. For local models, `reasoning:` is raw native metadata such as `reasoning_content`; for hosted OpenAI simulations, it may be a labeled `OpenAI reasoning summary (...)` when summaries are enabled. These are the primary human-readable artifacts for evaluating whether the model is producing legible, producer-visible strategic reasoning. For scripts, MCP inspection, or post-run scoring, read `game-N-turns.jsonl`; it records House room assignment, Mingle turns, named-alliance actions and huddles, votes, empower revotes, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, diary answers, strategy-operation results, and endgame decisions as clean JSON with `thinking`, `reasoningContext`, and producer/debug fields. Reasoning and strategy prose explain an attempted decision; they are never canonical game facts. Use `game-N-events.jsonl` when the question is board state, accepted outcomes, or deterministic replay.
 
