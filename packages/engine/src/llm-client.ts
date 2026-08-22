@@ -36,6 +36,7 @@ export interface CreateLlmClientOptions {
 const FLEX_429_RETRY_LIMIT = 3;
 const FLEX_RETRY_BASE_DELAY_MS = 1_000;
 const FLEX_RETRY_MAX_DELAY_MS = 30_000;
+export const NO_FLEX_TRANSPORT_RETRY_HEADER = "x-influence-no-flex-transport-retry";
 
 type Sleep = (ms: number, signal?: AbortSignal) => Promise<void>;
 type FlexFetch = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -106,6 +107,7 @@ async function requestWithServiceTier(request: Request, serviceTier: "flex" | "a
     if (!body || typeof body !== "object" || Array.isArray(body)) return null;
     const headers = new Headers(request.headers);
     headers.delete("content-length");
+    headers.delete(NO_FLEX_TRANSPORT_RETRY_HEADER);
     return new Request(request.url, {
       method: request.method,
       headers,
@@ -158,6 +160,8 @@ export function createFlexProcessingFetch(
       return await baseFetch(originalRequest);
     }
 
+    const disableTransportRetry = originalRequest.headers.get(NO_FLEX_TRANSPORT_RETRY_HEADER) === "1";
+
     const resume = options.resume;
     let serviceTier: "flex" | "auto" = resume?.nextTier ?? "flex";
     let flex429s = resume?.flex429Count ?? 0;
@@ -197,6 +201,8 @@ export function createFlexProcessingFetch(
         throw error;
       }
       if (response.status !== 429) return response;
+
+      if (disableTransportRetry) return response;
 
       if (serviceTier === "auto") return response;
 

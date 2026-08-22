@@ -24,7 +24,29 @@ import type { PostVotePressureProjection } from "./post-vote-pressure";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
 import type { ModelReasoningEffort, ModelReasoningPolicy, ProviderProfileId } from "./model-catalog";
+import type {
+  HouseFactCategory,
+  HouseNarrativeContinuity,
+  HouseProviderUsage,
+  HouseSourceCoordinate,
+  HouseSummaryBoundary,
+  HouseSummaryFrontier,
+} from "./house-summary-frontier";
 export type { TokenCostCursor };
+export type {
+  HouseBeatClass,
+  HouseBeatStatus,
+  HouseFactCategory,
+  HouseFactRow,
+  HouseFactSlice,
+  HouseNarrativeContinuity,
+  HouseProviderUsage,
+  HouseSalienceItem,
+  HouseSourceCoordinate,
+  HouseSummaryBoundary,
+  HouseSummaryFrontier,
+  HouseSummaryPhaseReceipt,
+} from "./house-summary-frontier";
 
 export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
 
@@ -397,6 +419,8 @@ export interface PrivateDecisionTraceMessage {
   role: string;
   content: unknown;
   name?: string;
+  toolCallId?: string;
+  toolCalls?: PrivateDecisionTraceToolCall[];
 }
 
 export interface PrivateDecisionTraceToolCall {
@@ -805,6 +829,7 @@ export interface HouseStrategyBibleUpdateResult {
 export type HouseSummaryKind = "round" | "phase" | "long-form";
 
 export interface HouseGameplaySummaryContext {
+  gameId: UUID;
   round: number;
   phase: Phase;
   kind: HouseSummaryKind;
@@ -824,6 +849,47 @@ export interface HouseGameplaySummaryResult {
   thinking?: string;
   reasoningContext?: string;
 }
+
+export interface HouseSelectiveSummaryContext {
+  frontier: HouseSummaryFrontier;
+  continuity: HouseNarrativeContinuity;
+  factReadAllowed: boolean;
+}
+
+interface HouseSummaryAttemptBase {
+  boundary: HouseSummaryBoundary;
+  providerCalls: number;
+  factCalls: number;
+  requestedCategories: HouseFactCategory[];
+  returnedBytes: number;
+  usage: HouseProviderUsage[];
+  thinking?: string;
+  reasoningContext?: string;
+}
+
+export interface HouseSummaryEmittedResult extends HouseSummaryAttemptBase {
+  status: "emitted";
+  summary: string;
+  sourceAliases: string[];
+  sources: HouseSourceCoordinate[];
+  openQuestions: string[];
+  threadIds: string[];
+}
+
+export interface HouseSummaryModelSkippedResult extends HouseSummaryAttemptBase {
+  status: "model_skipped";
+  reason: string;
+}
+
+export interface HouseSummaryFailedResult extends HouseSummaryAttemptBase {
+  status: "failed";
+  reason: string;
+}
+
+export type HouseSummaryAttemptResult =
+  | HouseSummaryEmittedResult
+  | HouseSummaryModelSkippedResult
+  | HouseSummaryFailedResult;
 
 export interface HouseProducerBrief {
   playerName: string;
@@ -1457,6 +1523,7 @@ export type TranscriptDialogueKind =
   | "system_phase_banner"
   | "system_room_allocation"
   | "system_elimination"
+  | "house_summary"
   | "system_announcement";
 
 /**

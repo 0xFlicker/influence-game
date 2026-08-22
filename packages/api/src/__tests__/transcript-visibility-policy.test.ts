@@ -84,6 +84,14 @@ describe("transcript visibility policy", () => {
       captureVersion: 1,
       entrySequence: 3,
       audiencePlayerIds: [],
+      dialogueKind: "house_summary",
+    }), evidence)).toBe("system");
+
+    expect(classifyAuthorizedTranscriptRow(baseRow({
+      scope: "system",
+      captureVersion: 1,
+      entrySequence: 4,
+      audiencePlayerIds: [],
       dialogueKind: "not_a_real_kind",
     }), evidence)).toBeNull();
 

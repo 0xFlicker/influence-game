@@ -21,6 +21,7 @@
  * clean worktree, choose one provider, and keep every batch capped at two rounds.
  *
  * Hosted OpenAI (Doppler dev may set a local base URL; the catalog forces hosted):
+ * Player and House requests include the shared fictional, text-only game-context contract.
  *   doppler run --project social-strategy-agent --config dev -- \
  *     bun run simulate -- \
  *     --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
@@ -86,6 +87,10 @@
  *   for the two real Mingle-intent contexts, not model use or behavior. The probe's
  *   evaluation-only output includes content-free rank, score, target/current-round
  *   match, serialized-cost, and terminal-reason diagnostics.
+ * - Batch/game instrumentation also includes content-free `houseSummaryCadence`
+ *   totals by actor coordinate: eligible/emitted/preflight/model-skip/failure counts,
+ *   provider/fact calls, returned bytes, selected sources, unique call identities,
+ *   and known-token reconciliation. Exact fact/source payloads remain private traces.
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.
@@ -168,8 +173,9 @@
  * outcome lines, and House MC summaries — without thinking/reasoning spam.
  * Use `--chatty` for full transcript + thinking/reasoning. Use
  * `--no-operator-feed` / `--quiet` for phase-progress-only. Use
- * `--no-house-summaries` to suppress the between-round House MC block.
- * Structured round facts remain in the house-mc-summary turns JSONL payload.
+ * `--no-house-summaries` to suppress the complete phase-cadence House MC path.
+ * House prose is a system transcript row with `dialogueKind: "house_summary"`;
+ * canonical events/projections, never that prose, remain game-state authority.
  */
 
 import type OpenAI from "openai";
@@ -1871,7 +1877,12 @@ async function main() {
 
       const gameTotalUsage = gameTracker.getTotalUsage();
       const perAgentUsage = gameTracker.getAllUsage();
-      const instrumentation = instrumentGame(result.transcript, perAgentUsage, playerNameById);
+      const instrumentation = instrumentGame(
+        result.transcript,
+        perAgentUsage,
+        playerNameById,
+        runner.houseSummaryPhaseReceipts,
+      );
       const gameResult: GameResult = {
         gameNumber: g,
         status: "completed",
@@ -1932,7 +1943,12 @@ async function main() {
       console.error(`  Game ${g} FAILED after ${(durationMs / 1000).toFixed(0)}s: ${err}`);
       const transcript = [...runner.transcriptLog];
       const perAgentUsage = gameTracker.getAllUsage();
-      const instrumentation = instrumentGame(transcript, perAgentUsage, playerNameById);
+      const instrumentation = instrumentGame(
+        transcript,
+        perAgentUsage,
+        playerNameById,
+        runner.houseSummaryPhaseReceipts,
+      );
       const gameResult: GameResult = {
         gameNumber: g,
         status: "failed",

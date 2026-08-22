@@ -38,6 +38,7 @@ export const VIEWER_SAFE_DIALOGUE_KINDS = [
   "system_phase_banner",
   "system_room_allocation",
   "system_elimination",
+  "house_summary",
   "system_announcement",
 ] as const;
 

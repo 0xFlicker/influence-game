@@ -585,7 +585,7 @@ describe("Format kernel integration (MockAgent)", () => {
     ]);
   });
 
-  it("feeds House MC omniscient sealed format ballots via roundFacts.formatResolution", async () => {
+  it("keeps sealed ballots out of public House beats while privately receipting canonical sources", async () => {
     const agents = ["A", "B", "C", "D", "E"].map((name) => new MockAgent(createUUID(), name));
     for (const agent of agents) {
       agent.pickRoundFormat = async (_ctx, offered) => ({
@@ -614,22 +614,33 @@ describe("Format kernel integration (MockAgent)", () => {
     );
     expect(houseMc).toBeDefined();
     if (!houseMc || houseMc.type !== "agent_turn") throw new Error("expected house-mc-summary");
-    const roundFacts = houseMc.response.roundFacts as {
-      eliminationPath?: string;
-      formatResolution?: {
-        formatId: string;
-        ballots: Array<{ voterName: string; targetName: string }>;
-        bouncePointers?: Array<{ actorName: string; targetName: string }>;
-        scores: Array<{ playerName: string; value: number }>;
-        eliminatedName: string;
-      } | null;
-    };
-    expect(roundFacts.eliminationPath).toBe("format");
-    const resolution = roundFacts.formatResolution;
-    expect(resolution).toBeTruthy();
-    if (!resolution) throw new Error("expected formatResolution");
+    expect(houseMc.visibility).toBe("system");
+    expect(houseMc.response).toEqual({ summary: expect.any(String) });
+    expect(houseMc.response).not.toHaveProperty("roundFacts");
+    expect(JSON.stringify(houseMc.response)).not.toContain("ballots");
+    const resolutionReceipt = events.find(
+      (event) => event.type === "agent_turn"
+        && event.action === "house-summary-phase-receipt"
+        && (event.response.receipt as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_resolve",
+    );
+    expect(resolutionReceipt).toBeDefined();
+    if (!resolutionReceipt || resolutionReceipt.type !== "agent_turn") throw new Error("expected format_resolve receipt");
+    expect(resolutionReceipt.visibility).toBe("private");
+    expect(resolutionReceipt.response.receipt).toMatchObject({
+      status: "emitted",
+      selectedSourceCount: expect.any(Number),
+    });
+    expect(resolutionReceipt.response.receipt).not.toHaveProperty("sources");
+
+    const resolution = buildHouseFormatResolutionFacts(
+      runner.getCanonicalEvents(),
+      1,
+      (playerId) => runner.getDomainProjection().players[playerId]?.name ?? playerId,
+    );
+    expect(resolution).not.toBeNull();
+    if (!resolution) throw new Error("expected canonical format resolution");
     expect(["save_or_eliminate", "vote_bomb", "safety_bounce"]).toContain(resolution.formatId);
-    // House omniscient: sealed ballots (or bounce chain) fully present for MC.
+    // The canonical producer read can still reconstruct sealed detail without placing it in public narration.
     const ballotCount = resolution.ballots.length;
     const bounceCount = resolution.bouncePointers?.length ?? 0;
     expect(ballotCount + bounceCount).toBeGreaterThan(0);
@@ -640,7 +651,7 @@ describe("Format kernel integration (MockAgent)", () => {
       expect(voters.size).toBe(5);
     }
 
-    // R14 option A: House facts rebuild from durable events with no in-memory bag.
+    // The producer facts rebuild from durable events with no in-memory bag.
     const rebuilt = buildHouseFormatResolutionFacts(
       runner.getCanonicalEvents(),
       1,

@@ -211,6 +211,22 @@ The producer-side placement of alive agents into initial Format Mingle rooms usi
 
 A private producer access decision made once per Format Mingle alliance-action window. The House selects a scarce set of eligible living players to receive the existing propose, amend, or pass opportunity, preferring players underrepresented in active alliances. The engine validates and repairs the exact access quota; selected agents still own members and terms and may decline, while invitee response and consent remain independent. The plan creates no canonical alliance facts and gives The House no power to create, rewrite, activate, dissolve, or enforce an alliance.
 
+## Selective House beat
+
+A concise audience-visible House narration opportunity scheduled after a meaningful actor-coordinate boundary. The runner decides whether a boundary has an audience-safe material delta before provider I/O. An emitted beat is supported by current-loop source aliases from canonical events, audience-safe projections, or explicitly public player dialogue. A preflight skip, model-selected no-material-change result, or provider failure emits no filler and never blocks canonical gameplay.
+
+## House summary frontier
+
+The bounded, server-authored input to a selective House beat: one phase boundary, a compact salience catalog, a read-only typed fact store, and compact prior narrative continuity. Canonical event and projection rows remain game-state authority. Dialogue rows are quotation evidence only and cannot establish a selection, tally, elimination, phase, or result. Private, diary, thinking, huddle, producer, and prior House/system rows are absent rather than merely labeled unavailable.
+
+## House narrative continuity
+
+Compact versioned in-memory narration state carried between selective House beats. It may remember the last public beat, a bounded open thread at milestone cadence, prior supporting source lineage, and examined/emitted heads. It improves narrative flow but is not canonical game state, a fact source, Strategy Bible state, or checkpoint-resume continuity. A failed beat may carry one unseen delta to the next boundary once; success, skip, or a second failure clears it.
+
+## House summary phase receipt
+
+A content-free private accounting record for one scheduled House beat. It records boundary/status, provider and fact-call counts, returned-byte and selected-source counts, call identities, and provider-reported usage availability. Exact source coordinates, fact bodies, prompts, tool payloads, outputs, and diagnostics stay in producer-private traces. Simulation instrumentation reconciles receipt call identities and known token subtotals with `TokenTracker`; missing usage, effective tier, or pricing makes realized-cost proof inconclusive rather than zero.
+
 ## Strategy signal
 
 A private-room behavior during Mingle that reveals or advances game posture, such as naming a target or ally, asking for a commitment, trading information, offering protection, planting doubt, coordinating a public story, testing trust through social questions, or moving rooms for a stated purpose. Strategy signals are producer/debug evidence that Mingle made game talk available; they are not a mandatory action every agent must perform on every turn.

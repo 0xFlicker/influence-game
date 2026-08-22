@@ -7,6 +7,23 @@
 // Core types
 export * from "./types";
 export {
+  HOUSE_SUMMARY_NEAR_BUDGET_RATIO,
+  costHouseProviderUsage,
+  costHouseSummaryGame,
+  isHouseSummaryCostWithinEnvelope,
+} from "./house-summary-accounting";
+export type {
+  HouseSummaryBoundaryCost,
+  HouseSummaryCostLine,
+  HouseSummaryCostResult,
+  HouseSummaryGameCost,
+} from "./house-summary-accounting";
+export {
+  HOUSE_SUMMARY_ACTOR_COORDINATES,
+  isHouseSummaryActorCoordinate,
+} from "./house-summary-frontier";
+export type { HouseSummaryActorCoordinate } from "./house-summary-frontier";
+export {
   COMPACT_STRATEGY_LIMITS,
   applyStrategyCandidate,
   cloneCompactStrategyState,
@@ -372,6 +389,35 @@ export type {
 // Game runner
 export { GameRunner } from "./game-runner";
 export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, HouseContinuityRequirement, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type {
+  HouseSelectiveSummaryContext,
+  HouseSummaryAttemptResult,
+  HouseSummaryEmittedResult,
+  HouseSummaryFailedResult,
+  HouseSummaryModelSkippedResult,
+} from "./game-runner";
+export {
+  HOUSE_FACT_CATEGORIES,
+  HOUSE_SUMMARY_FRONTIER_VERSION,
+  compileHouseSummaryFrontier,
+  createEmptyHouseNarrativeContinuity,
+  isHouseFactCategory,
+  readHouseFactSlice,
+} from "./house-summary-frontier";
+export type {
+  HouseBeatClass,
+  HouseBeatStatus,
+  HouseFactCategory,
+  HouseFactRow,
+  HouseFactSlice,
+  HouseNarrativeContinuity,
+  HouseProviderUsage,
+  HouseSalienceItem,
+  HouseSourceCoordinate,
+  HouseSummaryBoundary,
+  HouseSummaryFrontier,
+  HouseSummaryPhaseReceipt,
+} from "./house-summary-frontier";
 export type {
   CompactStrategyAccepted,
   CompactStrategyApplicationResult,
