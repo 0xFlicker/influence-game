@@ -415,6 +415,11 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     expect(result.rationale).toBe("Put reciprocal seekers together.");
     expect(result.thinking).toBe("Atlas and Nyx both asked for each other.");
     expect(requests).toHaveLength(1);
+    const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+    expect(messages[0]).toMatchObject({ role: "system" });
+    expect(messages[0]?.content).toContain("fictional, text-only social-strategy competition");
+    expect(messages[0]?.content).toContain("removal from the competition only");
+    expect(messages[0]?.content).toContain("never refer to physical harm, weapons, real-world threats, or real people");
     expect(requests[0]?.response_format).toEqual({
       type: "json_schema",
       json_schema: {

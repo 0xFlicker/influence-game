@@ -9,6 +9,7 @@
 import { randomUUID } from "crypto";
 import type OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
+import { withInfluenceGamePromptContext } from "./game-prompt-context";
 import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { UUID } from "./types";
@@ -1023,7 +1024,7 @@ Respond with JSON only:
 
     try {
       const messages = [
-        { role: "system" as const, content: "You are the House producer assigning private Mingle rooms. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are the House producer assigning private Mingle rooms. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
       const { parsed, response } = await this.callHouseJsonSchema({
@@ -1110,7 +1111,7 @@ Respond with JSON only.`;
       const messages = [
         {
           role: "system" as const,
-          content: "You are The House producer selecting scarce named-alliance proposer access. Return JSON only.",
+          content: withInfluenceGamePromptContext("You are The House producer selecting scarce named-alliance proposer access. Return JSON only."),
         },
         { role: "user" as const, content: prompt },
       ];
@@ -1201,7 +1202,7 @@ Respond with JSON only.`;
 
     try {
       const messages = [
-        { role: "system" as const, content: "You are The House producer scheduling scarce named-alliance huddles. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer scheduling scarce named-alliance huddles. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
       const { parsed, response } = await this.callHouseJsonSchema({
@@ -1308,7 +1309,7 @@ Respond with JSON only.`;
 
     try {
       const messages = [
-        { role: "system" as const, content: "You are The House producer summarizing named-alliance huddles. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer summarizing named-alliance huddles. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
       const { parsed, response } = await this.callHouseJsonSchema({
@@ -1418,7 +1419,7 @@ Respond with JSON only:
 
     try {
       const messages = [
-        { role: "system" as const, content: "You are The House producer maintaining a private Strategy Bible. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer maintaining a private Strategy Bible. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
       const response = await this.openai.chat.completions.create({
@@ -1449,7 +1450,7 @@ Respond with JSON only:
     const prompt = this.buildSummaryPrompt(context, "Generate a concise, watchable 3-5 sentence House MC summary for the audience.");
     try {
       const messages = [
-        { role: "system" as const, content: "You are the House MC — omniscient, dramatic reality TV narrator. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are the House MC — omniscient, dramatic reality TV narrator. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
       const response = await this.openai.chat.completions.create({
@@ -1479,7 +1480,7 @@ Respond with JSON only:
     );
     try {
       const messages = [
-        { role: "system" as const, content: "You are The House showrunner writing a private/audience catch-up for producer review. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are The House showrunner writing a private/audience catch-up for producer review. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
       const response = await this.openai.chat.completions.create({
@@ -1540,7 +1541,7 @@ Respond with JSON only:
 
     try {
       const messages = [
-        { role: "system" as const, content: "You are The House producer preparing a private diary-room brief. Return JSON only." },
+        { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer preparing a private diary-room brief. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
       const response = await this.openai.chat.completions.create({
@@ -1566,7 +1567,7 @@ Respond with JSON only:
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
     const gameStatePrompt = this.buildGameStatePrompt(context);
     const messages = [
-      { role: "system" as const, content: HOUSE_PERSONALITY },
+      { role: "system" as const, content: withInfluenceGamePromptContext(HOUSE_PERSONALITY) },
       { role: "user" as const, content: gameStatePrompt },
     ];
 
@@ -1628,7 +1629,7 @@ Respond with EXACTLY one of these formats:
 FOLLOW_UP: <your next question>
 CLOSE: <your brief closing remark to the player, 1 sentence>`;
     const messages = [
-      { role: "system" as const, content: HOUSE_PERSONALITY },
+      { role: "system" as const, content: withInfluenceGamePromptContext(HOUSE_PERSONALITY) },
       { role: "user" as const, content: followUpPrompt },
     ];
 
@@ -2035,7 +2036,7 @@ Focus on:
 
 Respond with ONLY the summary paragraph, no intro or labels.`;
     const messages = [
-      { role: "system" as const, content: "You are the House MC — omniscient, dramatic reality TV narrator." },
+      { role: "system" as const, content: withInfluenceGamePromptContext("You are the House MC — omniscient, dramatic reality TV narrator.") },
       { role: "user" as const, content: summaryPrompt },
     ];
 

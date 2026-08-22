@@ -1587,6 +1587,9 @@ describe("InfluenceAgent structured output mode", () => {
     });
     expect(requests[0]?.parallel_tool_calls).toBe(false);
     const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+    expect(messages[0]?.content).toContain("fictional, text-only social-strategy competition");
+    expect(messages[0]?.content).toContain("removal from the competition only");
+    expect(messages[0]?.content).toContain("never refer to physical harm, weapons, real-world threats, or real people");
     expect(messages[0]?.content).toContain("In player-visible speech");
     expect(messages[0]?.content).toContain("In hidden thinking, private reasoning, and producer/debug traces");
     expect(messages[0]?.content).toContain("you can and should use precise technical game terms");
@@ -1596,6 +1599,28 @@ describe("InfluenceAgent structured output mode", () => {
     expect(messages[0]?.content).toContain("Do not force strategy every turn");
     expect(messages[0]?.content).toContain("You are not being evaluated for honesty; you are being evaluated for playing to win while remaining believable.");
     expect(messages[0]?.content).not.toContain("NEVER use these phrases or concepts");
+  });
+
+  it("frames the martyr as game sacrifice without physical-harm metaphors", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "wren-id",
+      "Wren",
+      "martyr",
+      makeOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext());
+
+    const messages = requests[0]?.messages as Array<{ role: string; content: string }>;
+    const systemPrompt = messages[0]?.content ?? "";
+    expect(systemPrompt).toContain("put your own game at risk");
+    expect(systemPrompt).toContain("gave up leverage for them");
+    expect(systemPrompt).not.toContain("step in front of the bullet");
+    expect(systemPrompt).not.toContain("bled for them");
+    expect(systemPrompt).not.toContain("looks like a monster");
   });
 
   it("emits private decision traces for tool-call decisions", async () => {
