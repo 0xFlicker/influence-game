@@ -20,6 +20,10 @@ Last House summary cost architecture added: 2026-08-15
 
 Last CI test-discovery gap added: 2026-08-14
 
+Last failed-provider evidence storage gap added: 2026-08-21
+
+Last synthetic no-response output gap added: 2026-08-21
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -57,6 +61,29 @@ Items are ordered by current priority.
 - Implemented foundation: bounded canonical/projection/public-dialogue frontier; compact adjacent and same-coordinate narrative state; typed source receipts; one milestone-only fact read per game; nonfatal skip/failure handling; durable-before-narration ordering; and the reviewed normal/endgame actor-coordinate matrix. `FORMAT_PICK` plus `FORMAT_RESOLVE` remains the proving slice, not completion evidence.
 - Remaining signal: the final cache-isolated `gpt-5.6-luna` Flex comparison preserved identical authority, exact accounting, 21/21 continuity, one fact read, unique prose, and zero-call preflight, but emitted only 16/23 eligible beats (`69.57%`), achieved selected-fact specificity on 14/23 (`60.87%`), and cost `$0.0023335` versus `$0.0017157` for the complete round-only baseline (`1.360086x`). This fails the 80% emission, 80% specificity, and `1.25x` cost gates. Offline audit found two additional attribution bypasses, which deterministic validation now rejects; no later provider proof was authorized.
 - Validation path: retain the current authority, privacy, continuity, failure, and accounting guarantees; improve one-call catalog usefulness and attribution success without weakening receipt checks; then run a fresh cache-isolated full comparison. Keep R21 open until automatic and offline human quality review both pass.
+
+### R27. Complete failed-provider request evidence for producer debugging
+
+- Status: `ready`
+- Priority: **high**
+- Sources: the failed local `gpt-5.6-luna` simulation batch from 2026-08-21, `packages/engine/src/agent.ts`, simulation artifact writing, API-backed private decision evidence, and producer game-debugging reads.
+- Signal: an OpenAI Responses request was rejected with HTTP 400 after Round 1, but the saved simulation contained neither the rejected request nor its provider request ID or complete error response. The same gap prevents a producer from inspecting an equivalent failure after API-backed gameplay. Aggregate token, prompt-reuse, and recall receipts cannot explain why a specific provider request failed.
+- Required evidence contract: preserve the complete failed request exactly as submitted, including system and user prompts, strategy context, dialogue context, reasoning settings, schemas and tools, provider/model configuration, and request parameters. Preserve the complete provider error response and headers exactly as received, including the provider request ID. Attach game, round, phase, action, actor, attempt, and timestamps. Do not replace the request or error with a hash, summary, sanitized receipt, reduced field set, or redacted producer view.
+- Storage and access: local simulations write the complete evidence into their batch artifacts. API-backed games store the complete evidence through the existing private gameplay-evidence authority and make it retrievable by the producer. Public/player events, transcripts, and viewer APIs remain separate from producer evidence.
+- Validation path: deterministic failed Responses and Chat Completions requests round-trip every request field, error field, header, and request ID byte-for-byte; simulation artifacts retain the evidence after a failed or recovered call; API-backed tests prove producer retrieval for the correct game and reject non-producer access; successful requests and canonical gameplay remain unchanged.
+- Suggested slice: first persist and retrieve one failed ordinary-speech Responses request end to end in both a local batch and an API-backed game, using the same complete evidence schema. Then cover structured tool calls, retry attempts, and other providers without weakening the evidence contract.
+
+### R28. Eliminate synthetic `[No response]` gameplay outputs
+
+- Status: `ready`
+- Priority: **high**
+- Sources: every provider adapter, agent decision method, House narration path, phase runner, retry path, and transcript/publication seam that constructs, returns, accepts, or publishes the literal `[No response]` after a provider failure, timeout, empty result, or malformed result.
+- Signal: `[No response]` is fabricated prose. When it is returned through a normal player or House response type, downstream code can mistake an absent or failed model result for dialogue that the agent actually produced. Retrying a request, skipping optional speech, failing a required decision, and applying a legal deterministic decision fallback are materially different outcomes and must not collapse into the same synthetic text.
+- Required direction: inventory and remove every synthetic `[No response]` path. Represent provider rejection, timeout/network failure, auth or configuration failure, successful-but-empty output, malformed or undecodable structured output, and cancellation as explicit typed outcomes with their original failure provenance. The phase policy—not the provider adapter—decides whether a given outcome retries, skips optional speech, or aborts the action/game. No synthetic placeholder may be published as player speech, House narration, transcript dialogue, or an accepted decision.
+- Decision integrity: optional speech may be absent without inventing dialogue. Required structured decisions must either succeed or use an explicit, deterministic, rules-legal fallback whose provenance is recorded as a fallback rather than model output. Failed or absent calls must not create or update strategy, commitments, diary content, or other agent-authored state.
+- Runtime parity: apply the same semantics to local simulations and API-backed gameplay, including Responses, Chat Completions, local OpenAI-compatible providers, House calls, tool/structured-output calls, and retry exhaustion. Keep this item separate from R27: R27 preserves complete producer-debugging evidence; R28 defines gameplay behavior after a call does not yield usable model output.
+- Validation path: deterministic coverage enumerates every former constructor and consumer of `[No response]`; asserts the literal never appears in turns, transcript rows, House events, public events, decisions, strategy state, or simulation text; and proves the intended retry, optional-speech skip, required-decision fallback, cancellation, and fatal-failure semantics in both simulation and API-backed execution.
+- Suggested slice: begin with ordinary player speech across Responses and Chat Completions, replacing string fallback with a typed absent/failed result through the real phase runner and proving that the phase continues without publishing fake dialogue. Then migrate structured decisions, House narration, local-provider retries, and remaining literal consumers until a repository-wide assertion shows no synthetic gameplay output remains.
 
 ### R15. Format-kernel phase-boundary startup recovery
 

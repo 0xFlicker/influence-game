@@ -21,6 +21,7 @@
  * clean worktree, choose one provider, and keep every batch capped at two rounds.
  *
  * Hosted OpenAI (Doppler dev may set a local base URL; the catalog forces hosted):
+ * Player and House requests include the shared fictional, text-only game-context contract.
  *   doppler run --project social-strategy-agent --config dev -- \
  *     bun run simulate -- \
  *     --games 1 --players 8 --max-rounds 2 --variant mingle --chatty \
