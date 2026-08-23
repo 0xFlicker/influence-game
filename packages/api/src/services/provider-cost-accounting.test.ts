@@ -1,5 +1,6 @@
 import { beforeAll, describe, expect, test } from "bun:test";
 import { randomUUID } from "crypto";
+import { eq, sql } from "drizzle-orm";
 import { Phase, type PrivateDecisionTrace } from "@influence/engine";
 import { schema } from "../db/index.js";
 import { setupTestDB } from "../__tests__/test-utils.js";
@@ -9,6 +10,7 @@ import {
   getGameCostDetail,
   quoteProviderUsageCeiling,
   priceOwnerLearningTokenReceipt,
+  recordProviderSpendForAttempt,
   recordProviderSpendForTrace,
 } from "./provider-cost-accounting.js";
 
@@ -51,6 +53,35 @@ function createTrace(overrides: Partial<PrivateDecisionTrace> = {}): PrivateDeci
       content: "public-ish output",
     },
     ...overrides,
+  };
+}
+
+function attemptSpendInput(
+  gameId: string,
+  ownerEpoch: string,
+  id: string,
+  accounting?: Parameters<typeof recordProviderSpendForAttempt>[1]["accounting"],
+): Parameters<typeof recordProviderSpendForAttempt>[1] {
+  return {
+    id,
+    logicalCallId: `logical-${id}`,
+    gameId,
+    ownerEpoch,
+    attemptOrdinal: 1,
+    actorId: "atlas",
+    actorName: "Atlas",
+    actorRole: "player",
+    action: "vote",
+    phase: Phase.VOTE,
+    round: 2,
+    requestShape: "chat_completions",
+    providerProfileId: "openai",
+    catalogId: "openai:gpt-5-nano",
+    modelName: "gpt-5-nano",
+    completedAt: "2026-07-03T12:00:01.000Z",
+    latencyMs: 1_000,
+    outcomeKind: "usable",
+    accounting,
   };
 }
 
@@ -930,6 +961,185 @@ describe("provider cost accounting", () => {
     expect(detail.detail.callCount).toBe(1);
     expect(detail.detail.backfill.traceBackfilledEntries).toBe(0);
     expect(detail.detail.backfill.terminalBackfilledEntries).toBe(0);
+  });
+
+  test("keeps successful traces as evidence when an owner epoch has journal-authoritative spend", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await db.insert(schema.gameEvidenceManifests).values({
+      id: "manifest-journal-authority-test",
+      gameId,
+      ownerEpoch,
+      evidenceType: "private_decision_trace",
+      retentionClass: "debug",
+      accessScope: "producer_admin",
+      metadata: {
+        actor: { id: "atlas", name: "Atlas", role: "player" },
+        action: "vote",
+        model: { provider: "openai", name: "gpt-5-nano" },
+        usage: { promptTokens: 400, completionTokens: 100, totalTokens: 500 },
+      },
+    });
+    await db.insert(schema.providerLogicalCalls).values({
+      id: "journal-logical-call-test",
+      gameId,
+      actorId: "atlas",
+      actorName: "Atlas",
+      actorRole: "player",
+      action: "vote",
+      phase: Phase.VOTE,
+      round: 2,
+      logicalCallOrdinal: 1,
+      nextAttemptOrdinal: 2,
+    });
+    await db.insert(schema.providerCallAttempts).values({
+      id: "journal-attempt-cost-test",
+      logicalCallId: "journal-logical-call-test",
+      gameId,
+      ownerEpoch,
+      attemptOrdinal: 1,
+      transportAttemptId: "journal-attempt-cost-transport",
+      reservationHash: "reservation-hash",
+      terminalHash: "terminal-hash",
+      status: "terminal",
+      requestShape: "chat_completions",
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5-nano",
+      modelName: "gpt-5-nano",
+      startedAt: "2026-07-03T12:00:00.000Z",
+      completedAt: "2026-07-03T12:00:01.000Z",
+      latencyMs: 1_000,
+      outcomeKind: "usable",
+      disposition: "accepted",
+      evidenceState: "not_required",
+    });
+    await recordProviderSpendForAttempt(db, {
+      id: "journal-attempt-cost-test",
+      logicalCallId: "journal-logical-call-test",
+      gameId,
+      ownerEpoch,
+      attemptOrdinal: 1,
+      actorId: "atlas",
+      actorName: "Atlas",
+      actorRole: "player",
+      action: "vote",
+      phase: Phase.VOTE,
+      round: 2,
+      requestShape: "chat_completions",
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5-nano",
+      modelName: "gpt-5-nano",
+      completedAt: "2026-07-03T12:00:01.000Z",
+      latencyMs: 1_000,
+      outcomeKind: "usable",
+      accounting: {
+        usage: { promptTokens: 400, completionTokens: 100, totalTokens: 500 },
+      },
+    });
+
+    const result = await backfillGameCostAccounting(db, gameId);
+    expect(result.inserted).toBe(0);
+    const spend = await db.select().from(schema.gameProviderSpendEntries);
+    expect(spend).toHaveLength(1);
+    expect(spend[0]!.captureSource).toBe("live_trace");
+  });
+
+  test("distinguishes missing usage from provider-reported zero usage", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+
+    await recordProviderSpendForAttempt(
+      db,
+      attemptSpendInput(gameId, ownerEpoch, "missing-usage"),
+    );
+    await recordProviderSpendForAttempt(
+      db,
+      attemptSpendInput(gameId, ownerEpoch, "empty-usage", { usage: {} }),
+    );
+    await recordProviderSpendForAttempt(
+      db,
+      attemptSpendInput(gameId, ownerEpoch, "zero-usage", {
+        usage: {
+          promptTokens: 0,
+          cachedTokens: 0,
+          completionTokens: 0,
+          reasoningTokens: 0,
+          totalTokens: 0,
+        },
+      }),
+    );
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    const bySource = new Map(rows.map((row) => [row.sourceKey, row]));
+    expect(bySource.get("provider-attempt:missing-usage")).toMatchObject({
+      costSource: "unavailable",
+      estimatedCostMicrousd: null,
+    });
+    expect(bySource.get("provider-attempt:empty-usage")).toMatchObject({
+      costSource: "unavailable",
+      estimatedCostMicrousd: null,
+    });
+    expect(bySource.get("provider-attempt:zero-usage")).toMatchObject({
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 0,
+    });
+  });
+
+  test("atomically retries the spend row and rollup after rollup failure", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const input = attemptSpendInput(gameId, ownerEpoch, "atomic-rollup", {
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+    });
+
+    await db.execute(sql`
+      CREATE OR REPLACE FUNCTION fail_provider_attempt_rollup_insert()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        RAISE EXCEPTION 'injected rollup failure';
+      END;
+      $$
+    `);
+    await db.execute(sql`
+      CREATE TRIGGER fail_provider_attempt_rollup_insert
+      BEFORE INSERT ON game_cost_rollups
+      FOR EACH ROW EXECUTE FUNCTION fail_provider_attempt_rollup_insert()
+    `);
+    try {
+      await expect(recordProviderSpendForAttempt(db, input)).rejects.toThrow(
+        "Failed query",
+      );
+      expect(await db.select().from(schema.gameProviderSpendEntries)
+        .where(eq(schema.gameProviderSpendEntries.gameId, gameId))).toHaveLength(0);
+      expect(await db.select().from(schema.gameCostRollups)
+        .where(eq(schema.gameCostRollups.gameId, gameId))).toHaveLength(0);
+    } finally {
+      await db.execute(sql`
+        DROP TRIGGER IF EXISTS fail_provider_attempt_rollup_insert
+        ON game_cost_rollups
+      `);
+      await db.execute(sql`DROP FUNCTION IF EXISTS fail_provider_attempt_rollup_insert()`);
+    }
+
+    expect(await recordProviderSpendForAttempt(db, input)).toMatchObject({
+      inserted: true,
+    });
+    expect(await recordProviderSpendForAttempt(db, input)).toMatchObject({
+      inserted: false,
+    });
+    expect(await db.select().from(schema.gameProviderSpendEntries)
+      .where(eq(schema.gameProviderSpendEntries.gameId, gameId))).toHaveLength(1);
+    const rollups = await db.select().from(schema.gameCostRollups)
+      .where(eq(schema.gameCostRollups.gameId, gameId));
+    expect(rollups).toHaveLength(2);
+    expect(rollups.find((row) => row.rollupScope === "game")).toMatchObject({
+      callCount: 1,
+      totalTokens: 15,
+    });
   });
 
   test("omits private manifest IDs from backfill diagnostics", async () => {

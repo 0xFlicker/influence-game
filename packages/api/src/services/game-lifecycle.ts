@@ -67,7 +67,6 @@ import {
 } from "./game-ownership.js";
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
 import { writeCognitiveArtifactsForTrace } from "./cognitive-artifact-writer.js";
-import { recordProviderSpendForTrace } from "./provider-cost-accounting.js";
 import { recordPromptReuseForTrace } from "./prompt-reuse-accounting.js";
 import {
   findStartupRecoverableGameIds,
@@ -90,6 +89,7 @@ import {
 } from "./game-completion-settlement.js";
 import { serializeTranscriptEntry } from "./transcript-serialization.js";
 import { tryReconcileAcceptedActionCorrelations } from "./accepted-action-correlation.js";
+import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
 
 export { serializeTranscriptEntry } from "./transcript-serialization.js";
 
@@ -163,7 +163,6 @@ function createPrivateTraceSink(
       gameId,
       ownerEpoch,
     };
-    let traceManifestId: string | undefined;
     try {
       const cognitiveResult = await writeCognitiveArtifactsForTrace(db, {
         gameId,
@@ -189,8 +188,6 @@ function createPrivateTraceSink(
       });
       if (!result.ok) {
         console.warn(`[game-lifecycle] Private trace degraded for game ${gameId}: ${result.error}`);
-      } else {
-        traceManifestId = result.manifestId;
       }
     } catch (error) {
       console.warn(`[game-lifecycle] Private trace sink failed for game ${gameId}:`, error);
@@ -202,18 +199,6 @@ function createPrivateTraceSink(
       console.warn(`[game-lifecycle] Prompt reuse capture failed for game ${gameId}:`, error);
     }
 
-    try {
-      await recordProviderSpendForTrace(db, {
-        gameId,
-        ownerEpoch,
-        trace: enrichedTrace,
-        eventSequence: trace.boundary?.finalEventSequence,
-        ...(traceManifestId && { traceManifestId }),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[game-lifecycle] Cost accounting capture failed for game ${gameId}: ${message}`);
-    }
   };
 }
 
@@ -713,6 +698,9 @@ export async function startGame(
   const privateTraceSink = ownerEpoch
     ? createPrivateTraceSink(db, gameId, ownerEpoch, game.cognitiveArtifactCaptureVersion)
     : undefined;
+  const providerExecutionHooks = ownerEpoch
+    ? createApiProviderExecutionHooks(db, { gameId, ownerEpoch })
+    : undefined;
   const toolChoiceMode = resolvedModelSelection.model.preferredToolChoiceMode ?? llmConfig?.toolChoiceMode;
 
   // Construct agents from player records
@@ -766,6 +754,7 @@ export async function startGame(
         ...(player.agentProfileId && persona.strategyHints && { strategyInstructions: persona.strategyHints }),
         ...(agentCfg.temperature !== undefined && { temperature: agentCfg.temperature }),
         ...(privateTraceSink && { privateTraceSink }),
+        ...(providerExecutionHooks && { providerExecutionHooks }),
       },
     );
     agent.setTokenTracker(tokenTracker);
@@ -787,6 +776,7 @@ export async function startGame(
           reasoningPolicy: resolvedModelSelection.reasoningPolicy,
           ...(ownerEpoch && { ownerEpoch }),
           ...(privateTraceSink && { privateTraceSink }),
+          ...(providerExecutionHooks && { providerExecutionHooks }),
         },
       )
     : undefined;

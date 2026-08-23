@@ -71,6 +71,8 @@
  *   evidence across the manifest, actor witness, accumulators, transcript
  *   watermark, token cursor, and continuity capsules; it is not runtime resume.
  * - `game-{N}-prompt-reuse.json`: structural prompt-prefix reuse rollup (hashes/counts only).
+ * - `game-{N}-provider-attempts.json`: exact coordinator-sanitized non-429
+ *   failure envelopes plus compact recovered/exhausted rate-limit aggregates.
  * - `game-{N}-recall-plan.json`: **safe structural Recall Plan receipt aggregate** for
  *   selective-context-recall evaluation (R16/R17). Contains prompt-class counts,
  *   budget token estimates, selected lane/source-class counts, and an actor-authorized
@@ -179,7 +181,7 @@
  */
 
 import type OpenAI from "openai";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { execFileSync } from "child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -211,6 +213,11 @@ import {
 } from "./simulation-instrumentation";
 import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
 import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
+import type {
+  ProviderAttemptIntent,
+  ProviderAttemptRecord,
+  ProviderExecutionHooks,
+} from "./provider-execution";
 import {
   DEFAULT_MODEL_ID,
   inferModelCapabilities,
@@ -592,6 +599,7 @@ function selectCast(
   toolChoiceMode: LlmToolChoiceMode = "named",
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
   privateTraceSink?: import("./game-runner").PrivateTraceSink,
+  providerExecutionHooks?: ProviderExecutionHooks,
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -623,8 +631,139 @@ function selectCast(
       modelCapabilities: modelRuntime.capabilities,
       reasoningPolicy: modelRuntime.reasoningPolicy,
       privateTraceSink,
+      ...(providerExecutionHooks && { providerExecutionHooks }),
     });
   });
+}
+
+export interface LocalProviderAttemptArtifact {
+  formatVersion: 1;
+  gameId: string;
+  ownerEpoch: string;
+  failures: Array<{
+    gameId: string;
+    ownerEpoch: string;
+    logicalCallId: string;
+    attemptJournalId: string;
+    attempt: ProviderAttemptRecord;
+  }>;
+  rateLimits: Array<{
+    logicalCallId: string;
+    count: number;
+    outcome: "pending" | "recovered" | "exhausted";
+    terminalReason?: string;
+  }>;
+}
+
+function stableSimulationJson(value: unknown): string {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableSimulationJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).filter((key) => record[key] !== undefined).sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSimulationJson(record[key])}`).join(",")}}`;
+}
+
+function simulationHash(value: unknown): string {
+  return `sha256:${createHash("sha256").update(stableSimulationJson(value)).digest("hex")}`;
+}
+
+/** Local counterpart of the API journal: exact sanitized failures, compact 429s. */
+export function createLocalProviderExecutionJournal(input: {
+  gameId: string;
+  ownerEpoch: string;
+  onChange?: (artifact: LocalProviderAttemptArtifact) => void;
+}): { hooks: ProviderExecutionHooks; snapshot: () => LocalProviderAttemptArtifact } {
+  const reservations = new Map<string, string>();
+  const terminals = new Map<string, string>();
+  const failures: LocalProviderAttemptArtifact["failures"] = [];
+  const rateLimits = new Map<string, LocalProviderAttemptArtifact["rateLimits"][number]>();
+  const logicalId = (intent: ProviderAttemptIntent) => simulationHash({
+    domain: "influence.provider.logical-call.v1",
+    coordinate: {
+      gameId: input.gameId,
+      actor: intent.coordinate.actor,
+      action: intent.coordinate.action,
+      phase: intent.coordinate.phase,
+      round: intent.coordinate.round,
+      logicalCallOrdinal: intent.coordinate.logicalCallOrdinal,
+    },
+  });
+  const attemptId = (intent: ProviderAttemptIntent) => simulationHash({
+    domain: "influence.provider.attempt.v1",
+    logicalCallId: logicalId(intent),
+    attemptOrdinal: intent.attemptOrdinal,
+  });
+  const snapshot = (): LocalProviderAttemptArtifact => ({
+    formatVersion: 1,
+    gameId: input.gameId,
+    ownerEpoch: input.ownerEpoch,
+    failures: [...failures],
+    rateLimits: [...rateLimits.values()],
+  });
+  const publish = () => {
+    try {
+      input.onChange?.(snapshot());
+    } catch (error) {
+      // The in-memory reservation remains authoritative for an uninterrupted
+      // local run; a diagnostics-artifact failure must not alter gameplay.
+      console.warn("Local provider-attempt artifact degraded:", error);
+    }
+  };
+
+  return {
+    hooks: {
+      onReserve(intent) {
+        if (
+          (intent.coordinate.gameId !== undefined && intent.coordinate.gameId !== input.gameId) ||
+          (intent.coordinate.ownerEpoch !== undefined && intent.coordinate.ownerEpoch !== input.ownerEpoch)
+        ) {
+          throw new Error("Local provider attempt is outside this simulation journal");
+        }
+        const id = attemptId(intent);
+        if (reservations.has(id)) throw new Error(`Provider attempt ${id} is already reserved`);
+        reservations.set(id, simulationHash(intent));
+        publish();
+      },
+      onTerminal(record) {
+        const id = attemptId(record);
+        if (!reservations.has(id)) throw new Error("Provider attempt was not reserved");
+        const terminalHash = simulationHash(record);
+        const existing = terminals.get(id);
+        if (existing && existing !== terminalHash) {
+          throw new Error("Provider attempt terminal facts conflict with the local journal");
+        }
+        if (existing) return;
+        terminals.set(id, terminalHash);
+        const callId = logicalId(record);
+        if (record.outcome.kind === "rate_limit") {
+          const aggregate = rateLimits.get(callId) ?? {
+            logicalCallId: callId,
+            count: 0,
+            outcome: "pending" as const,
+          };
+          aggregate.count += 1;
+          aggregate.outcome = record.disposition === "exhausted" ? "exhausted" : "pending";
+          if (record.disposition === "exhausted") aggregate.terminalReason = record.outcome.message;
+          rateLimits.set(callId, aggregate);
+        } else {
+          const aggregate = rateLimits.get(callId);
+          if (aggregate?.outcome === "pending") aggregate.outcome = "recovered";
+          if (record.outcome.kind !== "usable") {
+            failures.push({
+              gameId: input.gameId,
+              ownerEpoch: input.ownerEpoch,
+              logicalCallId: callId,
+              attemptJournalId: id,
+              attempt: record,
+            });
+          }
+        }
+        publish();
+      },
+    },
+    snapshot,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1770,6 +1909,15 @@ async function main() {
   for (let g = 1; g <= args.games; g++) {
     console.log(`--- Game ${g}/${args.games} ---`);
     const startTime = Date.now();
+    const localGameId: UUID = randomUUID();
+    const localOwnerEpoch = `local-simulation:${runTimestamp}:${g}`;
+    const providerAttemptsPath = join(batchDir, `game-${g}-provider-attempts.json`);
+    const providerJournal = createLocalProviderExecutionJournal({
+      gameId: localGameId,
+      ownerEpoch: localOwnerEpoch,
+      onChange: (artifact) => writeFileSync(providerAttemptsPath, JSON.stringify(artifact, null, 2)),
+    });
+    writeFileSync(providerAttemptsPath, JSON.stringify(providerJournal.snapshot(), null, 2));
 
     // Create fresh agents for each game
     const toolChoiceMode = modelRuntime.preferredToolChoiceMode ?? llmConfig.toolChoiceMode;
@@ -1780,7 +1928,16 @@ async function main() {
       // Safe structural aggregate only — never the full private-trace payload (R16/R17).
       recallPlanReceipts.add(trace.recallPlanReceipt);
     };
-    const agents = selectCast(args.players, args.personas, openai, modelRuntime, toolChoiceMode, openAIReasoningSummary, privateTraceSink);
+    const agents = selectCast(
+      args.players,
+      args.personas,
+      openai,
+      modelRuntime,
+      toolChoiceMode,
+      openAIReasoningSummary,
+      privateTraceSink,
+      providerJournal.hooks,
+    );
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
@@ -1799,9 +1956,11 @@ async function main() {
       modelCapabilities: modelRuntime.capabilities,
       reasoningPolicy: modelRuntime.reasoningPolicy,
       privateTraceSink,
+      providerExecutionHooks: providerJournal.hooks,
     });
     houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer, {
+      gameId: localGameId,
       maxRoundsMode: "exact",
     });
     const transcriptPath = join(batchDir, `game-${g}.txt`);

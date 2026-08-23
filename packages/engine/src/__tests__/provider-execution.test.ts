@@ -71,6 +71,141 @@ describe("ProviderExecutionCoordinator", () => {
       "service_error",
       "usable",
     ]);
+    expect(records.map((record) => record.disposition)).toEqual([
+      "retry_scheduled",
+      "accepted",
+    ]);
+  });
+
+  it("uses durable attempt ordinals when a logical call is reconstructed", async () => {
+    const allocated = [3, 4];
+    const preparedOrdinals: number[] = [];
+    const dispatchOrdinals: number[] = [];
+    const records: ProviderAttemptRecord[] = [];
+    const coordinator = new ProviderExecutionCoordinator({
+      hooks: {
+        onAllocateAttemptOrdinal: () => allocated.shift()!,
+        onTerminal: (record) => {
+          records.push(record);
+        },
+      },
+      wait: async () => undefined,
+    });
+
+    await expect(coordinator.startCall(coordinate).execute({
+      preparedRequest: (attemptOrdinal) => {
+        preparedOrdinals.push(attemptOrdinal);
+        return {
+          requestShape: "chat_completions",
+          providerProfileId: "openai",
+          model: "gpt-test",
+          body: { model: "gpt-test", attemptOrdinal },
+        };
+      },
+      maxAttempts: 2,
+      dispatch: async ({ attemptOrdinal }) => {
+        dispatchOrdinals.push(attemptOrdinal);
+        if (attemptOrdinal === 3) {
+          throw Object.assign(new Error("temporarily unavailable"), {
+            status: 503,
+          });
+        }
+        return { choices: [{ message: { content: "ok" } }] };
+      },
+      validate: (response) => ({
+        status: "usable",
+        value: response.choices[0]!.message.content,
+      }),
+    })).resolves.toBe("ok");
+
+    expect(preparedOrdinals).toEqual([3, 4]);
+    expect(dispatchOrdinals).toEqual([3, 4]);
+    expect(records.map((record) => record.attemptOrdinal)).toEqual([3, 4]);
+  });
+
+  it("captures safe usage and router billing facts before terminal hooks run", async () => {
+    const records: ProviderAttemptRecord[] = [];
+    const value = await new ProviderExecutionCoordinator({
+      hooks: { onTerminal: (record) => { records.push(record); } },
+    })
+      .startCall(coordinate)
+      .execute({
+        preparedRequest: {
+          requestShape: "chat_completions",
+          providerProfileId: "katana",
+          catalogId: "katana:glm-5-2",
+          model: "glm-5-2",
+          body: { model: "glm-5-2", messages: [{ role: "user", content: "Vote." }] },
+        },
+        maxAttempts: 1,
+        dispatch: async () => ({
+          id: "chatcmpl-katana",
+          choices: [{ finish_reason: "stop", message: { content: "Maya" } }],
+          usage: {
+            prompt_tokens: 100,
+            completion_tokens: 20,
+            total_tokens: 120,
+            prompt_tokens_details: { cached_tokens: 25 },
+            completion_tokens_details: { reasoning_tokens: 5 },
+            imgnai: {
+              credits_charged: 0.1,
+              provider_cost_usd: 0.0042,
+              prompt: "must not enter accounting facts",
+            },
+          },
+        }),
+        validate: (response) => ({
+          status: "usable",
+          value: response.choices[0]!.message.content,
+        }),
+      });
+
+    expect(value).toBe("Maya");
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      disposition: "accepted",
+      accounting: {
+        usage: {
+          promptTokens: 100,
+          cachedTokens: 25,
+          completionTokens: 20,
+          reasoningTokens: 5,
+          totalTokens: 120,
+        },
+        actualCostMicrousd: 4_200,
+        providerNativeUnit: "katana_credit",
+        providerNativeAmount: "0.1",
+      },
+    });
+    expect(JSON.stringify(records[0]!.accounting)).not.toContain("must not enter accounting facts");
+    expect(records[0]!.rawResponse).toBeUndefined();
+  });
+
+  it("does not dispatch when authoritative reservation fails", async () => {
+    let dispatches = 0;
+    const call = new ProviderExecutionCoordinator({
+      hooks: {
+        onReserve: () => {
+          throw new Error("journal unavailable");
+        },
+      },
+    }).startCall(coordinate);
+
+    await expect(call.execute({
+      preparedRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: "openai",
+        model: "gpt-test",
+        body: { model: "gpt-test" },
+      },
+      maxAttempts: 1,
+      dispatch: async () => {
+        dispatches += 1;
+        return { choices: [{ message: { content: "must not happen" } }] };
+      },
+      validate: (response) => ({ status: "usable", value: response }),
+    })).rejects.toThrow("journal unavailable");
+    expect(dispatches).toBe(0);
   });
 
   it.each([
@@ -232,6 +367,43 @@ describe("ProviderExecutionCoordinator", () => {
       },
     });
     expect(JSON.stringify(records[0])).not.toContain("secret-token");
+  });
+
+  it("sanitizes reflected credentials in the persisted outcome message", async () => {
+    const records: ProviderAttemptRecord[] = [];
+    const secret = "sk-private-outcome-secret";
+    const call = new ProviderExecutionCoordinator({
+      hooks: { onTerminal: (record) => { records.push(record); } },
+    }).startCall(coordinate);
+
+    await expect(call.execute({
+      preparedRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: "openai",
+        model: "gpt-test",
+        body: { model: "gpt-test" },
+        credentialValues: [secret],
+      },
+      maxAttempts: 1,
+      dispatch: async () => {
+        throw Object.assign(new Error(
+          `bad key ${secret} at https://provider.test/v1?api_key=url-secret`,
+        ), {
+          status: 400,
+          request_id: `${secret}?api_key=url-secret&trace=${"x".repeat(400)}`,
+        });
+      },
+      validate: (response: unknown) => ({ status: "usable", value: response }),
+    })).rejects.toBeInstanceOf(ProviderAttemptError);
+
+    expect(records[0]!.outcome).toMatchObject({
+      message:
+        "bad key [REDACTED] at https://provider.test/v1?api_key=%5BREDACTED%5D",
+    });
+    expect(JSON.stringify(records[0])).not.toContain(secret);
+    expect(JSON.stringify(records[0])).not.toContain("url-secret");
+    expect(records[0]!.requestId?.length).toBeLessThanOrEqual(256);
+    expect(records[0]!.requestId).toContain("[REDACTED]");
   });
 
   it("captures the exact sanitized HTTP request and raw response before parsing", async () => {

@@ -15,7 +15,10 @@ import {
   PRIVATE_TRACE_STORAGE_PROVIDER,
   type PrivateTraceStorageAdapter,
 } from "./private-trace-storage.js";
-import { PRIVATE_TRACE_EVIDENCE_TYPE } from "./private-trace-writer.js";
+import {
+  PRIVATE_TRACE_EVIDENCE_TYPE,
+  PROVIDER_ATTEMPT_EVIDENCE_TYPE,
+} from "./private-trace-writer.js";
 import {
   bindProducerIndexCursor,
   decodeProducerIndexCursor,
@@ -476,6 +479,26 @@ export class PrivateTraceReadModel {
     return this.readContentInternal(manifestId, params, false);
   }
 
+  async readProviderAttemptContent(
+    manifestId: string,
+    params: {
+      gameId?: string;
+      purpose?: string;
+      accessor?: EvidenceAccessor;
+      maxBytes?: number;
+    } = {},
+  ): Promise<PrivateTraceContentReadResult> {
+    return this.readContentInternal(
+      manifestId,
+      {
+        ...params,
+        purpose: params.purpose ?? "local_provider_attempt_mcp_read_content",
+      },
+      false,
+      PROVIDER_ATTEMPT_EVIDENCE_TYPE,
+    );
+  }
+
   /**
    * Full-object producer read for immutable experiment materialization.
    * The source database is not mutated; the caller must retain the returned
@@ -507,6 +530,7 @@ export class PrivateTraceReadModel {
       maxBytes?: number;
     },
     experimentNoAudit: boolean,
+    expectedEvidenceType?: string,
   ): Promise<PrivateTraceContentReadResult> {
     const read = experimentNoAudit
       ? await readEvidenceManifestForExperiment(this.db, {
@@ -530,6 +554,9 @@ export class PrivateTraceReadModel {
     }
 
     const manifest = read.manifest;
+    if (expectedEvidenceType && manifest.evidenceType !== expectedEvidenceType) {
+      return { ok: false, status: "not_found", error: "Provider attempt evidence not found" };
+    }
     if (
       manifest.storageProvider !== PRIVATE_TRACE_STORAGE_PROVIDER ||
       !manifest.storageBucket ||

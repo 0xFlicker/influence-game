@@ -7,6 +7,7 @@ import type { PrivateTracePutObjectInput, PrivateTraceStorageAdapter } from "../
 import { PRIVATE_TRACE_CONTENT_TYPE, PRIVATE_TRACE_STORAGE_PROVIDER } from "../services/private-trace-storage.js";
 import { PRIVATE_TRACE_EVIDENCE_TYPE, writePrivateDecisionTrace } from "../services/private-trace-writer.js";
 import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import { createEvidenceManifest } from "../services/game-evidence.js";
 import { insertGame, insertOwner } from "./durable-run-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
@@ -508,5 +509,49 @@ describe("private trace writer", () => {
     expect(storage.puts).toHaveLength(1);
     expect(storage.puts[0]!.body).toContain("large prompt survives");
     expect(result.metadata.byteLength).toBeGreaterThan(100_000);
+  });
+
+  test("reuses an explicitly deterministic evidence manifest id only for identical immutable content", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const manifestId = "provider-attempt-manifest-deterministic";
+    const input = {
+      manifestId,
+      gameId,
+      ownerEpoch,
+      evidenceType: "provider_attempt_failure",
+      storage: {
+        provider: PRIVATE_TRACE_STORAGE_PROVIDER,
+        bucket: "private-content-bucket",
+        key: `content/${gameId}/provider-attempts/call/attempt-1.json`,
+      },
+      sourcePointers: [{ kind: "provider_attempt", attemptOrdinal: 1 }],
+      metadata: {
+        formatVersion: 1,
+        byteLength: 42,
+        sha256: `sha256:${"a".repeat(64)}`,
+      },
+    } as const;
+
+    expect(await createEvidenceManifest(db, input)).toEqual({
+      ok: true,
+      manifestId,
+    });
+    expect(await createEvidenceManifest(db, input)).toEqual({
+      ok: true,
+      manifestId,
+    });
+    expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(1);
+
+    const conflict = await createEvidenceManifest(db, {
+      ...input,
+      metadata: {
+        ...input.metadata,
+        sha256: `sha256:${"b".repeat(64)}`,
+      },
+    });
+    expect(conflict.ok).toBeFalse();
+    if (conflict.ok) throw new Error("expected deterministic manifest conflict");
+    expect(conflict.error).toContain("conflicting immutable identity");
   });
 });

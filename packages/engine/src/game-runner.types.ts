@@ -36,9 +36,12 @@ export type { TokenCostCursor };
 export type {
   ProviderAttemptFailureKind,
   ProviderAttemptFailureOutcome,
+  ProviderAttemptAccountingFacts,
+  ProviderAttemptDisposition,
   ProviderAttemptIntent,
   ProviderAttemptOutcome,
   ProviderAttemptRecord,
+  ProviderAttemptUsageFacts,
   ProviderExecutionHooks,
   ProviderLogicalCallCoordinate,
   ProviderPreparedRequest,

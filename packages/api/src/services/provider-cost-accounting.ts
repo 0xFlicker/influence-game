@@ -4,6 +4,7 @@ import {
   estimateCostForKnownModel,
   estimateTierAwareOpenAICost,
   type PrivateDecisionTrace,
+  type ProviderAttemptAccountingFacts,
   type TokenUsage,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -39,6 +40,32 @@ export interface RecordProviderSpendForTraceInput {
 export interface RecordProviderSpendResult {
   inserted: boolean;
   sourceKey: string;
+}
+
+export interface RecordProviderSpendForAttemptInput {
+  id: string;
+  logicalCallId: string;
+  gameId: string;
+  ownerEpoch: string;
+  attemptOrdinal: number;
+  actorId?: string | null;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  phase?: string | null;
+  round?: number | null;
+  requestShape: "chat_completions" | "responses";
+  providerProfileId: string;
+  catalogId?: string | null;
+  modelName: string;
+  completedAt: string;
+  latencyMs?: number;
+  outcomeKind: string;
+  attemptStatus?: "terminal" | "indeterminate";
+  indeterminateReason?: string;
+  providerRequestId?: string | null;
+  accounting?: ProviderAttemptAccountingFacts | null;
+  now?: Date;
 }
 
 export interface BackfillGameCostResult {
@@ -765,6 +792,117 @@ export async function recordProviderSpendForTrace(
   return { inserted: inserted.length > 0, sourceKey };
 }
 
+/** Idempotent projection from the authoritative provider-attempt journal. */
+export async function recordProviderSpendForAttempt(
+  db: DrizzleDB,
+  input: RecordProviderSpendForAttemptInput,
+): Promise<RecordProviderSpendResult> {
+  const usage = input.accounting?.usage ?? {};
+  const hasReportedUsage = Object.values(usage).some(
+    (value) => value !== undefined,
+  );
+  const actualCostMicrousd = input.accounting?.actualCostMicrousd;
+  const estimatedCostMicrousd = actualCostMicrousd === undefined && hasReportedUsage
+    ? estimateMicrousd(usage, input.modelName, input.accounting?.effectiveServiceTier)
+    : undefined;
+  const costSource: SpendInsert["costSource"] = actualCostMicrousd !== undefined
+    ? input.accounting?.actualCostSource ?? "provider_actual"
+    : estimatedCostMicrousd !== undefined
+      ? "static_estimate"
+      : "unavailable";
+  const sourceKey = `provider-attempt:${input.id}`;
+  const now = input.now ?? new Date();
+  const isIndeterminate = input.attemptStatus === "indeterminate";
+  return db.transaction(async (tx) => {
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('game_cost_rollups'), hashtext(${input.gameId}))`);
+    const existing = (await tx.select({
+      id: schema.gameProviderSpendEntries.id,
+      safeMetadata: schema.gameProviderSpendEntries.safeMetadata,
+    })
+      .from(schema.gameProviderSpendEntries)
+      .where(eq(schema.gameProviderSpendEntries.sourceKey, sourceKey)))[0];
+    const values = {
+      gameId: input.gameId,
+      ownerEpoch: input.ownerEpoch,
+      sourceKey,
+      captureSource: "live_trace" as const,
+      costSource,
+      callStatus: isIndeterminate
+        ? "unknown" as const
+        : input.outcomeKind === "usable"
+          ? "succeeded" as const
+          : "failed" as const,
+      callId: input.logicalCallId,
+      attemptOrdinal: input.attemptOrdinal,
+      providerResponseId: input.providerRequestId ?? undefined,
+      actorId: input.actorId ?? undefined,
+      actorName: input.actorName,
+      actorRole: input.actorRole,
+      action: input.action,
+      phase: input.phase ?? undefined,
+      round: input.round ?? undefined,
+      provider: input.providerProfileId,
+      providerProfileId: input.providerProfileId,
+      catalogId: input.catalogId ?? undefined,
+      modelName: input.modelName,
+      apiSurface: input.requestShape === "responses" ? "openai_responses" : "chat_completions",
+      promptTokens: usage.promptTokens ?? 0,
+      cachedTokens: usage.cachedTokens ?? 0,
+      completionTokens: usage.completionTokens ?? 0,
+      reasoningTokens: usage.reasoningTokens ?? 0,
+      totalTokens: usage.totalTokens ?? ((usage.promptTokens ?? 0) + (usage.completionTokens ?? 0)),
+      actualCostMicrousd,
+      estimatedCostMicrousd,
+      providerNativeUnit: input.accounting?.providerNativeUnit,
+      providerNativeAmount: input.accounting?.providerNativeAmount,
+      pricingSourceId: estimatedCostMicrousd !== undefined
+        ? pricingSourceIdFor(input.accounting?.effectiveServiceTier)
+        : undefined,
+      rateCardVersion: estimatedCostMicrousd !== undefined ? RATE_CARD_VERSION : undefined,
+      pricedAt: estimatedCostMicrousd !== undefined ? now.toISOString() : undefined,
+      latencyMs: input.latencyMs,
+      diagnostics: {
+        items: [
+          ...(costSource === "unavailable" ? ["cost_unavailable"] : []),
+          ...(isIndeterminate ? ["indeterminate_provider_attempt"] : []),
+        ],
+      },
+      safeMetadata: safeSpendMetadata({
+        outcomeKind: input.outcomeKind,
+        attemptStatus: input.attemptStatus ?? "terminal",
+        ...(input.indeterminateReason && {
+          indeterminateReason: input.indeterminateReason,
+        }),
+        ...(input.accounting?.effectiveServiceTier && {
+          effectiveServiceTier: input.accounting.effectiveServiceTier,
+        }),
+      }, usage.cacheWriteTokens),
+      observedAt: input.completedAt,
+      updatedAt: now.toISOString(),
+    };
+    const existingAttemptStatus = asRecord(existing?.safeMetadata)?.attemptStatus;
+    const staleIndeterminate = isIndeterminate && existingAttemptStatus === "terminal";
+    const inserted = staleIndeterminate
+      ? []
+      : await tx
+        .insert(schema.gameProviderSpendEntries)
+        .values({
+          id: randomUUID(),
+          ...values,
+        })
+        .onConflictDoUpdate({
+          target: schema.gameProviderSpendEntries.sourceKey,
+          set: values,
+        })
+        .returning({ id: schema.gameProviderSpendEntries.id });
+
+    // Always rebuild on idempotent replay. This repairs a pre-existing row
+    // whose rollup was not completed by an older non-atomic projection.
+    await rebuildGameCostRollupsInTransaction(tx, input.gameId, false);
+    return { inserted: !existing && inserted.length > 0, sourceKey };
+  });
+}
+
 async function repriceExistingCallLevelRows(
   tx: CostAccountingTx,
   gameId: string,
@@ -883,8 +1021,24 @@ export async function backfillGameCostAccounting(
         .map((row) => row.traceManifestId)
         .filter((id): id is string => Boolean(id)),
     );
+    const journalOwnerRows = await tx
+      .select({ ownerEpoch: schema.providerCallAttempts.ownerEpoch })
+      .from(schema.providerCallAttempts)
+      .where(and(
+        eq(schema.providerCallAttempts.gameId, gameId),
+        eq(schema.providerCallAttempts.status, "terminal"),
+      ));
+    const journalOwnerEpochs = new Set(
+      journalOwnerRows.map((row) => row.ownerEpoch).filter((value): value is string => Boolean(value)),
+    );
 
     for (const manifest of manifests) {
+      // The attempt journal is complete for an owner epoch and is the accounting
+      // authority. Successful traces remain evidence, not a second spend source.
+      if (journalOwnerEpochs.has(manifest.ownerEpoch)) {
+        skipped += 1;
+        continue;
+      }
       if (representedManifestIds.has(manifest.id)) {
         skipped += 1;
         continue;

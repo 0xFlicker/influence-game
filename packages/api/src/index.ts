@@ -58,6 +58,10 @@ import {
 } from "./services/deployment-admission.js";
 import { runPendingDeploymentRecoveryReconciliation } from "./services/deployment-recovery-reconciliation.js";
 import {
+  finishRuntimeStartupWithProviderAttemptReconciliation,
+  startProviderAttemptReconciliationRuntime,
+} from "./services/provider-call-journal.js";
+import {
   createRuntimeActivationController,
   readRuntimeStartupMode,
   type AcceptedRuntimeIdentity,
@@ -238,6 +242,35 @@ async function startBackgroundRuntime(context: {
   assertNotAborted();
   await seedRBAC(db);
   assertNotAborted();
+  // startBackgroundRuntime is invoked only for the active process or after a
+  // validation candidate passes durable acceptance. Merely activating a
+  // private candidate never starts this shared-state sweep.
+  const providerAttemptReconciliation =
+    await startProviderAttemptReconciliationRuntime(db, {
+      signal: context.signal,
+    });
+  return finishRuntimeStartupWithProviderAttemptReconciliation(
+    providerAttemptReconciliation,
+    () => finishBackgroundRuntimeStartup(
+      context,
+      activationFence,
+      providerAttemptReconciliation,
+    ),
+  );
+}
+
+async function finishBackgroundRuntimeStartup(
+  context: {
+    fence?: { leaseId: string; fencingToken: number };
+    signal: AbortSignal;
+  },
+  activationFence: { leaseId: string; fencingToken: number } | undefined,
+  providerAttemptReconciliation: Awaited<
+    ReturnType<typeof startProviderAttemptReconciliationRuntime>
+  >,
+) {
+  const assertNotAborted = () => context.signal.throwIfAborted();
+  assertNotAborted();
   try {
     const reconciliation = await reconcileCompletedPostgameMedia(db);
     if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
@@ -333,6 +366,7 @@ async function startBackgroundRuntime(context: {
   return {
     async stop() {
       clearInterval(reconciliationTimer);
+      await providerAttemptReconciliation.stop();
       await ownerLearningWorker?.stop();
     },
   };

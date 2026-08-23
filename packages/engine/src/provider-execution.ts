@@ -107,6 +107,33 @@ export interface ProviderAttemptFailureOutcome {
 export type ProviderAttemptOutcome =
   ProviderAttemptUsableOutcome | ProviderAttemptFailureOutcome;
 
+export type ProviderAttemptDisposition =
+  | "accepted"
+  | "retry_scheduled"
+  | "exhausted";
+
+export interface ProviderAttemptUsageFacts {
+  promptTokens?: number;
+  cachedTokens?: number;
+  cacheWriteTokens?: number;
+  completionTokens?: number;
+  reasoningTokens?: number;
+  totalTokens?: number;
+}
+
+/**
+ * Safe accounting facts captured before terminal hooks run. Raw prompts,
+ * responses, tool arguments, and provider reasoning never enter this envelope.
+ */
+export interface ProviderAttemptAccountingFacts {
+  usage?: ProviderAttemptUsageFacts;
+  actualCostMicrousd?: number;
+  actualCostSource?: "provider_actual" | "router_actual";
+  providerNativeUnit?: string;
+  providerNativeAmount?: string;
+  effectiveServiceTier?: string;
+}
+
 export interface ProviderAttemptIntent {
   coordinate: ProviderLogicalCallCoordinate;
   attemptOrdinal: number;
@@ -119,11 +146,20 @@ export interface ProviderAttemptRecord extends ProviderAttemptIntent {
   completedAt: string;
   latencyMs: number;
   outcome: ProviderAttemptOutcome;
+  disposition: ProviderAttemptDisposition;
+  accounting?: ProviderAttemptAccountingFacts;
   requestId?: string;
   rawResponse?: SanitizedProviderResponseEvidence;
 }
 
 export interface ProviderExecutionHooks {
+  /**
+   * Durable authorities allocate ordinals before request preparation so a
+   * reconstructed logical call continues its existing attempt chain.
+   */
+  onAllocateAttemptOrdinal?(
+    coordinate: ProviderLogicalCallCoordinate,
+  ): Promise<number> | number;
   /** Future durable authority hook. Throwing prevents the network dispatch. */
   onReserve?(intent: ProviderAttemptIntent): Promise<void> | void;
   /** Future durable terminal journal hook. */
@@ -244,7 +280,17 @@ export class ProviderLogicalCallExecution {
     let lastError: ProviderAttemptError | null = null;
 
     for (let localAttempt = 1; localAttempt <= maxAttempts; localAttempt++) {
-      const attemptOrdinal = this.nextAttemptOrdinal++;
+      const localAttemptOrdinal = this.nextAttemptOrdinal++;
+      const attemptOrdinal = await this.hooks?.onAllocateAttemptOrdinal?.(
+        this.coordinate,
+      ) ?? localAttemptOrdinal;
+      if (!Number.isSafeInteger(attemptOrdinal) || attemptOrdinal < 1) {
+        throw new Error("Provider attempt ordinal authority returned an invalid value");
+      }
+      this.nextAttemptOrdinal = Math.max(
+        this.nextAttemptOrdinal,
+        attemptOrdinal + 1,
+      );
       const attemptId = randomUUID();
       const startedAtMs = this.now();
       const preparedRequest =
@@ -266,7 +312,7 @@ export class ProviderLogicalCallExecution {
       await this.hooks?.onReserve?.(intent);
       activeTransportCaptures.set(attemptId, transportCapture);
 
-      let record: ProviderAttemptRecord;
+      let capturedRecord: Omit<ProviderAttemptRecord, "disposition">;
       let usableResult: { value: TValue } | undefined;
       try {
         const response = await options.dispatch({
@@ -285,8 +331,16 @@ export class ProviderLogicalCallExecution {
         });
         const validation = options.validate(response);
         const completedAtMs = this.now();
+        const requestId = sanitizeProviderRequestId(
+          requestIdFromResponse(response, transportCapture.response),
+          preparedRequest.credentialValues ?? [],
+        );
         if (validation.status === "usable") {
-          record = {
+          const accounting = extractProviderAttemptAccounting(
+            response,
+            transportCapture.response?.body,
+          );
+          capturedRecord = {
             ...intent,
             ...(transportCapture.request && {
               preparedRequest: transportCapture.request,
@@ -294,12 +348,8 @@ export class ProviderLogicalCallExecution {
             completedAt: new Date(completedAtMs).toISOString(),
             latencyMs: Math.max(0, Math.round(completedAtMs - startedAtMs)),
             outcome: { kind: "usable" },
-            ...(requestIdFromResponse(response, transportCapture.response) && {
-              requestId: requestIdFromResponse(
-                response,
-                transportCapture.response,
-              ),
-            }),
+            ...(accounting && { accounting }),
+            ...(requestId && { requestId }),
           };
           usableResult = { value: validation.value };
         } else {
@@ -309,7 +359,11 @@ export class ProviderLogicalCallExecution {
             retryable:
               validation.retryable ?? defaultRetryable(validation.kind),
           };
-          record = {
+          const accounting = extractProviderAttemptAccounting(
+            response,
+            transportCapture.response?.body,
+          );
+          capturedRecord = {
             ...intent,
             ...(transportCapture.request && {
               preparedRequest: transportCapture.request,
@@ -317,12 +371,8 @@ export class ProviderLogicalCallExecution {
             completedAt: new Date(completedAtMs).toISOString(),
             latencyMs: Math.max(0, Math.round(completedAtMs - startedAtMs)),
             outcome,
-            ...(requestIdFromResponse(response, transportCapture.response) && {
-              requestId: requestIdFromResponse(
-                response,
-                transportCapture.response,
-              ),
-            }),
+            ...(accounting && { accounting }),
+            ...(requestId && { requestId }),
             rawResponse: transportCapture.response ?? {
               body: sanitizeProviderEvidence(
                 response,
@@ -338,7 +388,18 @@ export class ProviderLogicalCallExecution {
           error,
           options.cancellationSignal,
         );
-        record = {
+        const rawResponse =
+          transportCapture.response ??
+          rawResponseFromError(error, preparedRequest.credentialValues);
+        const accounting = extractProviderAttemptAccounting(
+          rawResponse.body,
+          error,
+        );
+        const requestId = sanitizeProviderRequestId(
+          requestIdFromError(error, transportCapture.response),
+          preparedRequest.credentialValues ?? [],
+        );
+        capturedRecord = {
           ...intent,
           ...(transportCapture.request && {
             preparedRequest: transportCapture.request,
@@ -346,16 +407,36 @@ export class ProviderLogicalCallExecution {
           completedAt: new Date(completedAtMs).toISOString(),
           latencyMs: Math.max(0, Math.round(completedAtMs - startedAtMs)),
           outcome,
-          ...(requestIdFromError(error, transportCapture.response) && {
-            requestId: requestIdFromError(error, transportCapture.response),
-          }),
-          rawResponse:
-            transportCapture.response ??
-            rawResponseFromError(error, preparedRequest.credentialValues),
+          ...(accounting && { accounting }),
+          ...(requestId && { requestId }),
+          rawResponse,
         };
       } finally {
         activeTransportCaptures.delete(attemptId);
       }
+
+      const willRetry =
+        capturedRecord.outcome.kind !== "usable" &&
+        capturedRecord.outcome.retryable &&
+        localAttempt < maxAttempts;
+      const record: ProviderAttemptRecord = {
+        ...capturedRecord,
+        ...(capturedRecord.outcome.kind !== "usable" && {
+          outcome: {
+            ...capturedRecord.outcome,
+            message: sanitizeProviderOutcomeMessage(
+              capturedRecord.outcome.message,
+              preparedRequest.credentialValues ?? [],
+            ),
+          },
+        }),
+        disposition:
+          capturedRecord.outcome.kind === "usable"
+            ? "accepted"
+            : willRetry
+              ? "retry_scheduled"
+              : "exhausted",
+      };
 
       await this.hooks?.onTerminal?.(record);
       if (usableResult) return usableResult.value;
@@ -365,7 +446,7 @@ export class ProviderLogicalCallExecution {
           "Failed provider attempt produced a usable terminal record",
         );
       }
-      if (!record.outcome.retryable || localAttempt >= maxAttempts) {
+      if (!willRetry) {
         throw lastError;
       }
       await options.onRetry?.(record);
@@ -379,6 +460,42 @@ export class ProviderLogicalCallExecution {
   }
 }
 
+function sanitizeProviderOutcomeMessage(
+  message: string,
+  credentialValues: readonly string[],
+): string {
+  const withoutKnownCredentials = sanitizeProviderEvidence(
+    message,
+    credentialValues,
+  ) as string;
+  return withoutKnownCredentials
+    .replace(
+      /([?&](?:api[-_]?key|access[-_]?token|token|key|secret|signature|sig)=)[^&#\s]*/gi,
+      "$1[REDACTED]",
+    )
+    .replace(/https?:\/\/[^\s"'<>]+/gi, (candidate) => {
+      try {
+        return sanitizeUrl(candidate, credentialValues);
+      } catch {
+        return candidate;
+      }
+    });
+}
+
+const MAX_PROVIDER_REQUEST_ID_LENGTH = 256;
+
+function sanitizeProviderRequestId(
+  requestId: string | undefined,
+  credentialValues: readonly string[],
+): string | undefined {
+  if (!requestId) return undefined;
+  const sanitized = sanitizeProviderOutcomeMessage(requestId, credentialValues)
+    .replace(/[\u0000-\u001f\u007f]+/g, " ")
+    .trim()
+    .slice(0, MAX_PROVIDER_REQUEST_ID_LENGTH);
+  return sanitized || undefined;
+}
+
 export function sanitizeProviderEvidence(
   value: unknown,
   credentialValues: readonly string[] = [],
@@ -388,9 +505,13 @@ export function sanitizeProviderEvidence(
 
   const sanitize = (input: unknown): unknown => {
     if (typeof input === "string") {
-      return secrets.reduce(
+      const withoutKnownCredentials = secrets.reduce(
         (text, secret) => text.split(secret).join("[REDACTED]"),
         input,
+      );
+      return withoutKnownCredentials.replace(
+        /([?&](?:api[-_]?key|access[-_]?token|token|key|secret|signature|sig)=)[^&#\s]*/gi,
+        "$1[REDACTED]",
       );
     }
     if (input === null || typeof input !== "object") return input;
@@ -406,6 +527,124 @@ export function sanitizeProviderEvidence(
   };
 
   return sanitize(value);
+}
+
+function extractProviderAttemptAccounting(
+  ...candidates: unknown[]
+): ProviderAttemptAccountingFacts | undefined {
+  for (const candidate of candidates) {
+    const record = asRecord(candidate);
+    const body = asRecord(record.body);
+    const response = Object.keys(body).length > 0 ? body : record;
+    const usage = asRecord(response.usage);
+    if (Object.keys(usage).length === 0) continue;
+
+    const promptDetails = asRecord(usage.prompt_tokens_details);
+    const inputDetails = asRecord(usage.input_tokens_details);
+    const completionDetails = asRecord(usage.completion_tokens_details);
+    const outputDetails = asRecord(usage.output_tokens_details);
+    const promptTokens = nonnegativeInteger(
+      usage.prompt_tokens ?? usage.input_tokens,
+    );
+    const cachedTokens = nonnegativeInteger(
+      promptDetails.cached_tokens ?? inputDetails.cached_tokens,
+    );
+    const cacheWriteTokens = nonnegativeInteger(
+      promptDetails.cache_write_tokens ?? inputDetails.cache_write_tokens,
+    );
+    const completionTokens = nonnegativeInteger(
+      usage.completion_tokens ?? usage.output_tokens,
+    );
+    const reasoningTokens = nonnegativeInteger(
+      completionDetails.reasoning_tokens ?? outputDetails.reasoning_tokens,
+    );
+    const totalTokens = nonnegativeInteger(usage.total_tokens) ??
+      (promptTokens !== undefined || completionTokens !== undefined
+        ? (promptTokens ?? 0) + (completionTokens ?? 0)
+        : undefined);
+    const normalizedUsage: ProviderAttemptUsageFacts = {
+      ...(promptTokens !== undefined && { promptTokens }),
+      ...(cachedTokens !== undefined && { cachedTokens }),
+      ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
+      ...(completionTokens !== undefined && { completionTokens }),
+      ...(reasoningTokens !== undefined && { reasoningTokens }),
+      ...(totalTokens !== undefined && { totalTokens }),
+    };
+    const routerBilling = asRecord(usage.imgnai ?? usage.routerBilling);
+    const directMicrousd = nonnegativeInteger(
+      routerBilling.cost_microusd ?? routerBilling.costMicrousd,
+    );
+    const costUsd = firstFiniteNumber(
+      routerBilling.providerCostUsd,
+      routerBilling.provider_cost_usd,
+      routerBilling.cost_usd,
+      routerBilling.costUsd,
+      routerBilling.total_usd,
+      routerBilling.totalUsd,
+      routerBilling.amount_usd,
+      routerBilling.amountUsd,
+      routerBilling.usd,
+    );
+    const actualCostMicrousd = directMicrousd ??
+      (costUsd === undefined
+        ? undefined
+        : Math.max(0, Math.round(costUsd * 1_000_000)));
+    const nativeCredits = firstFiniteNumber(
+      routerBilling.credits_charged,
+      routerBilling.creditsCharged,
+      routerBilling.credits,
+    );
+    const nativeAmount = firstFiniteNumber(routerBilling.amount);
+    const nativeUnit = readString(routerBilling.unit).slice(0, 40);
+    const effectiveServiceTier = readString(response.service_tier).slice(0, 40);
+
+    const accounting: ProviderAttemptAccountingFacts = {
+      ...(Object.keys(normalizedUsage).length > 0 && {
+        usage: normalizedUsage,
+      }),
+      ...(actualCostMicrousd !== undefined && {
+        actualCostMicrousd,
+        actualCostSource: "router_actual" as const,
+      }),
+      ...(nativeCredits !== undefined
+        ? {
+            providerNativeUnit: "katana_credit",
+            providerNativeAmount: String(nativeCredits),
+          }
+        : nativeAmount !== undefined && nativeUnit
+          ? {
+              providerNativeUnit: nativeUnit,
+              providerNativeAmount: String(nativeAmount),
+            }
+          : {}),
+      ...(effectiveServiceTier && { effectiveServiceTier }),
+    };
+    return Object.keys(accounting).length > 0 ? accounting : undefined;
+  }
+  return undefined;
+}
+
+function nonnegativeInteger(value: unknown): number | undefined {
+  const number = typeof value === "number"
+    ? value
+    : typeof value === "string" && value.trim()
+      ? Number(value)
+      : Number.NaN;
+  if (!Number.isFinite(number) || number < 0) return undefined;
+  const rounded = Math.round(number);
+  return Number.isSafeInteger(rounded) ? rounded : undefined;
+}
+
+function firstFiniteNumber(...values: unknown[]): number | undefined {
+  for (const value of values) {
+    const number = typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : Number.NaN;
+    if (Number.isFinite(number) && number >= 0) return number;
+  }
+  return undefined;
 }
 
 export function createProviderEvidenceFetch(
