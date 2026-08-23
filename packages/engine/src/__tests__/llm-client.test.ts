@@ -25,6 +25,16 @@ describe("LLM client env config", () => {
     expect(config?.openAIReasoningSummary).toBe("auto");
     expect(config?.openAIServiceTier).toBe("flex");
     expect(config?.flexProcessingEnabled).toBe(true);
+    expect(config?.client.maxRetries).toBe(2);
+  });
+
+  it("preserves explicit client retry configuration for non-coordinated consumers", () => {
+    const config = createLlmClientFromEnv(
+      { OPENAI_API_KEY: "sk-test" },
+      { maxRetries: 0 },
+    );
+
+    expect(config?.client.maxRetries).toBe(0);
   });
 
   it("uses a local dummy API key for LM Studio-compatible endpoints", () => {

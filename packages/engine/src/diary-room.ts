@@ -21,6 +21,7 @@ import type {
 import { emptyRecallContinuitySnapshot } from "./context-recall-plan";
 import { formatHouseProducerBriefOperatorText } from "./operator-turn-text";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
+import { pairProviderLogicalCallOrdinals } from "./provider-execution";
 
 export class DiaryRoom {
   /** Diary room entries: question/answer pairs per agent per phase */
@@ -98,8 +99,13 @@ export class DiaryRoom {
     const agent = this.agents.get(playerId)!;
     const label = isJuror ? `${playerName} (juror)` : playerName;
     const houseLabel = isJuror ? `House -> ${playerName} (juror)` : `House -> ${playerName}`;
+    const providerInterviewOrdinal = this.providerInterviewOrdinal(playerId);
 
-    const diaryContext = this.buildDiaryRoomContext(precedingPhase, playerName);
+    const diaryContext = this.buildDiaryRoomContext(
+      precedingPhase,
+      playerName,
+      providerInterviewOrdinal,
+    );
     const sessionExchanges: Array<{ question: string; answer: string }> = [];
     const producerBrief = await this.generateProducerBrief(diaryContext);
     if (producerBrief) {
@@ -111,6 +117,7 @@ export class DiaryRoom {
     this.logger.logDiary(houseLabel, firstQuestion);
 
     const ctx = this.buildAgentDiaryContext(agent, playerId, isJuror);
+    ctx.providerLogicalCallOrdinal = 1;
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
     await this.beforeAcceptedCommit?.();
     const firstTranscriptThinking = transcriptThinkingFor(agent, firstResponse.thinking, firstResponse.reasoningContext);
@@ -147,7 +154,11 @@ export class DiaryRoom {
 
     // Follow-up loop
     for (let i = 1; i < MAX_QUESTIONS; i++) {
-      const updatedContext = this.buildDiaryRoomContext(precedingPhase, playerName);
+      const updatedContext = this.buildDiaryRoomContext(
+        precedingPhase,
+        playerName,
+        providerInterviewOrdinal,
+      );
       const result = await this.houseInterviewer.generateFollowUpOrClose(updatedContext, sessionExchanges);
 
       if (result.type === "close") {
@@ -157,6 +168,7 @@ export class DiaryRoom {
       this.logger.logDiary(houseLabel, result.question);
 
       const followUpContext = this.buildAgentDiaryContext(agent, playerId, isJuror);
+      followUpContext.providerLogicalCallOrdinal = i + 1;
       const followUpResponse = await agent.getDiaryEntry(followUpContext, result.question, sessionExchanges);
       await this.beforeAcceptedCommit?.();
       const followUpTranscriptThinking = transcriptThinkingFor(agent, followUpResponse.thinking, followUpResponse.reasoningContext);
@@ -246,7 +258,11 @@ export class DiaryRoom {
   /**
    * Build the context object passed to the House interviewer.
    */
-  private buildDiaryRoomContext(precedingPhase: Phase, agentName: string): DiaryRoomContext {
+  private buildDiaryRoomContext(
+    precedingPhase: Phase,
+    agentName: string,
+    providerInterviewOrdinal: number,
+  ): DiaryRoomContext {
     const allPlayers = this.gameState.getAllPlayers();
     const alivePlayers = this.gameState.getAlivePlayers();
     const eliminatedPlayers = allPlayers
@@ -269,6 +285,7 @@ export class DiaryRoom {
     return {
       precedingPhase,
       round: this.gameState.round,
+      providerInterviewOrdinal,
       agentName,
       alivePlayers: alivePlayers.map((p) => p.name),
       activeShieldNames: alivePlayers.filter((p) => p.shielded).map((p) => p.name),
@@ -284,6 +301,21 @@ export class DiaryRoom {
       roundFacts,
       councilRole: roundFacts?.councilRoles.find((role) => role.playerName === agentName) ?? null,
     };
+  }
+
+  private providerInterviewOrdinal(playerId: UUID): number {
+    const allPlayers = this.gameState.getAllPlayers();
+    const playerOrdinal =
+      allPlayers.findIndex((player) => player.id === playerId) + 1;
+    if (playerOrdinal < 1) {
+      throw new Error(`Diary interview player ${playerId} is not in the game roster`);
+    }
+    const sessionBoundaryOrdinal =
+      (this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0) + 1;
+    return pairProviderLogicalCallOrdinals(
+      sessionBoundaryOrdinal,
+      playerOrdinal,
+    );
   }
 
   private async generateProducerBrief(context: DiaryRoomContext): Promise<HouseProducerBrief | null> {

@@ -1,8 +1,6 @@
 import OpenAI from "openai";
-import {
-  PROVIDER_PROFILES,
-  type ProviderProfileId,
-} from "./model-catalog";
+import { PROVIDER_PROFILES, type ProviderProfileId } from "./model-catalog";
+import { createProviderEvidenceFetch } from "./provider-execution";
 
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
@@ -358,6 +356,15 @@ export function createLlmClientFromEnv(
       ?? (options.flexProcessing === false ? "auto" : "flex")
     : undefined;
   const flexProcessingEnabled = openAIServiceTier === "flex";
+  const evidenceFetch = createProviderEvidenceFetch(
+    fetch,
+    [apiKey, katanaKey, katanaSecret].filter((value): value is string =>
+      Boolean(value),
+    ),
+  );
+  const providerFetch = flexProcessingEnabled
+    ? createFlexProcessingFetch(evidenceFetch)
+    : evidenceFetch;
 
   return {
     client: new OpenAI({
@@ -365,7 +372,7 @@ export function createLlmClientFromEnv(
       ...(baseURL && { baseURL }),
       ...(options.timeout !== undefined && { timeout: options.timeout }),
       ...(options.maxRetries !== undefined && { maxRetries: options.maxRetries }),
-      ...(flexProcessingEnabled && { fetch: createFlexProcessingFetch() }),
+      fetch: providerFetch,
     }),
     apiKeySource: apiKeyConfig?.key ?? "local-default",
     baseURL,

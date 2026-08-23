@@ -15,11 +15,19 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import { withInfluenceGamePromptContext } from "./game-prompt-context";
-import { NO_FLEX_TRANSPORT_RETRY_HEADER, type LlmToolChoiceMode } from "./llm-client";
+import type { LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import { PromptReuseCollector } from "./prompt-reuse";
+import {
+  pairProviderLogicalCallOrdinals,
+  ProviderAttemptError,
+  ProviderExecutionCoordinator,
+  type ProviderCandidateValidation,
+  type ProviderExecutionHooks,
+  type ProviderLogicalCallExecution,
+} from "./provider-execution";
 import {
   HOUSE_FACT_CATEGORIES,
   isHouseFactCategory,
@@ -72,6 +80,8 @@ export interface DiaryRoomContext {
   precedingPhase: Phase;
   /** Current round number */
   round: number;
+  /** Stable one-based roster ordinal for this interview session. */
+  providerInterviewOrdinal: number;
   /** The agent being interviewed */
   agentName: string;
   /** All alive players */
@@ -265,6 +275,8 @@ export interface LLMHouseInterviewerOptions {
   catalogId?: string;
   /** Test-only/runtime override; production defaults to the beat-class hard limit. */
   houseSummaryTimeoutMs?: number;
+  /** Observable provider-attempt hooks used by durable API and simulation adapters. */
+  providerExecutionHooks?: ProviderExecutionHooks;
 }
 
 export const HOUSE_SUMMARY_LIMITS = {
@@ -1060,6 +1072,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly toolChoiceMode: LlmToolChoiceMode;
   private readonly structuredOutputTimeoutMs: number;
   private readonly houseSummaryTimeoutMs?: number;
+  private readonly providerExecution: ProviderExecutionCoordinator;
   private tokenTracker: TokenTracker | null = null;
 
   constructor(openaiClient: OpenAI, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
@@ -1075,11 +1088,229 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.structuredOutputTimeoutMs = options.structuredOutputTimeoutMs ?? 45_000;
     this.houseSummaryTimeoutMs = options.houseSummaryTimeoutMs;
+    this.providerExecution = new ProviderExecutionCoordinator({
+      hooks: options.providerExecutionHooks,
+    });
   }
 
   /** Attach a token tracker to record LLM usage. */
   setTokenTracker(tracker: TokenTracker): void {
     this.tokenTracker = tracker;
+  }
+
+  private startProviderCall(
+    context: PrivateDecisionTraceContext,
+  ): ProviderLogicalCallExecution {
+    return this.providerExecution.startCall({
+      ...(context.gameId && { gameId: context.gameId }),
+      ...(context.ownerEpoch && { ownerEpoch: context.ownerEpoch }),
+      actor: context.actor,
+      action: context.action,
+      ...(context.phase && { phase: context.phase }),
+      ...(context.round !== undefined && { round: context.round }),
+      logicalCallOrdinal: context.logicalCallOrdinal ?? 1,
+    });
+  }
+
+  private executeChatCompletion<T>(params: {
+    call: ProviderLogicalCallExecution;
+    body: ChatCompletionCreateParamsNonStreaming;
+    maxAttempts: number;
+    requestSignal?: AbortSignal;
+    cancellationSignal?: AbortSignal;
+    validate(response: ChatCompletion): ProviderCandidateValidation<T>;
+    onRetry?: () => void;
+  }): Promise<T> {
+    return params.call.execute({
+      preparedRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: this.providerProfileId,
+        ...(this.catalogId && { catalogId: this.catalogId }),
+        model: this.model,
+        body: params.body,
+      },
+      maxAttempts: params.maxAttempts,
+      ...(params.cancellationSignal && {
+        cancellationSignal: params.cancellationSignal,
+      }),
+      dispatch: ({ requestOptions }) =>
+        this.openai.chat.completions.create(params.body, {
+          ...requestOptions,
+          ...(params.requestSignal && { signal: params.requestSignal }),
+        }),
+      validate: params.validate,
+      ...(params.onRetry && { onRetry: params.onRetry }),
+    });
+  }
+
+  private executeHouseChatTransport(
+    context: PrivateDecisionTraceContext,
+    body: ChatCompletionCreateParamsNonStreaming,
+    options: {
+      maxAttempts?: number;
+      requestSignal?: AbortSignal;
+      validate?: (response: ChatCompletion) => ProviderCandidateValidation<ChatCompletion>;
+    } = {},
+  ): Promise<ChatCompletion> {
+    return this.executeChatCompletion({
+      call: this.startProviderCall(context),
+      body,
+      maxAttempts: options.maxAttempts ?? 2,
+      ...(options.requestSignal && { requestSignal: options.requestSignal }),
+      validate: (response) => {
+        let choice: ChatCompletion["choices"][number] | undefined;
+        try {
+          choice = response.choices[0];
+        } catch {
+          if (options.validate) return options.validate(response);
+          throw new Error("unreadable_house_response");
+        }
+        if (
+          choice?.message?.refusal ||
+          choice?.finish_reason === "content_filter"
+        ) {
+          return {
+            status: "unusable",
+            kind: "refusal",
+            message: choice?.message?.refusal ?? "content_filter",
+            retryable: false,
+          };
+        }
+        if (choice?.finish_reason === "length") {
+          return {
+            status: "unusable",
+            kind: "undecodable_structured_output",
+            message: "length",
+            retryable: true,
+          };
+        }
+        if (!choice?.message) {
+          return {
+            status: "unusable",
+            kind: "empty_output",
+            message: "missing_assistant_message",
+            retryable: true,
+          };
+        }
+        return options.validate?.(response) ?? this.validateHouseTextResponse(response);
+      },
+    });
+  }
+
+  private validateHouseTextResponse(
+    response: ChatCompletion,
+  ): ProviderCandidateValidation<ChatCompletion> {
+    const content = response.choices[0]?.message?.content?.trim();
+    return content
+      ? { status: "usable", value: response }
+      : {
+          status: "unusable",
+          kind: "empty_output",
+          message: "empty_house_text",
+          retryable: true,
+        };
+  }
+
+  private validateHouseJsonResponse(
+    response: ChatCompletion,
+  ): ProviderCandidateValidation<ChatCompletion> {
+    const content = response.choices[0]?.message?.content?.trim();
+    if (!content) {
+      return {
+        status: "unusable",
+        kind: "empty_output",
+        message: "empty_house_json",
+        retryable: true,
+      };
+    }
+    return parseToolArguments(content)
+      ? { status: "usable", value: response }
+      : {
+          status: "unusable",
+          kind: "malformed_output",
+          message: "malformed_house_json",
+          retryable: true,
+        };
+  }
+
+  private validateHouseFollowUpResponse(
+    response: ChatCompletion,
+  ): ProviderCandidateValidation<ChatCompletion> {
+    const content = response.choices[0]?.message?.content?.trim();
+    if (!content) {
+      return {
+        status: "unusable",
+        kind: "empty_output",
+        message: "empty_house_followup",
+        retryable: true,
+      };
+    }
+    const separator = content.indexOf(":");
+    const prefix = separator >= 0 ? content.slice(0, separator) : "";
+    const value = separator >= 0 ? content.slice(separator + 1).trim() : "";
+    return (prefix === "FOLLOW_UP" || prefix === "CLOSE") && value
+      ? { status: "usable", value: response }
+      : {
+          status: "unusable",
+          kind: "malformed_output",
+          message: "malformed_house_followup",
+          retryable: true,
+        };
+  }
+
+  private validateHouseSummaryToolResponse(
+    response: ChatCompletion,
+    terminalOnly: boolean,
+  ): ProviderCandidateValidation<ChatCompletion> {
+    let calls: ParsedHouseToolCall[];
+    try {
+      calls = parseHouseToolCalls(response);
+    } catch {
+      // Unexpected local processing faults belong to the summary loop's
+      // post-response failure path, where charged usage is still accounted.
+      return { status: "usable", value: response };
+    }
+    if (calls.length === 0) {
+      const rawCalls = response.choices[0]?.message?.tool_calls;
+      return {
+        status: "unusable",
+        kind: rawCalls && rawCalls.length > 0 ? "undecodable_structured_output" : "empty_output",
+        message: rawCalls && rawCalls.length > 0
+          ? "undecodable_house_summary_tool_call"
+          : "missing_house_summary_tool_call",
+        retryable: true,
+      };
+    }
+    if (calls.length !== 1) {
+      return {
+        status: "unusable",
+        kind: "wrong_tool",
+        message: "parallel_house_summary_tool_calls",
+        retryable: true,
+      };
+    }
+    const call = calls[0]!;
+    const allowed = terminalOnly
+      ? call.name === "emit_house_summary" || call.name === "skip_house_summary"
+      : call.name === "read_house_facts"
+        || call.name === "emit_house_summary"
+        || call.name === "skip_house_summary";
+    if (!allowed) {
+      return {
+        status: "unusable",
+        kind: "wrong_tool",
+        message: `unexpected_house_summary_tool:${call.name}`,
+        retryable: true,
+      };
+    }
+    return parseToolArguments(call.argumentsText)
+      ? { status: "usable", value: response }
+      : {
+          status: "unusable",
+          kind: "undecodable_structured_output",
+          message: "undecodable_house_summary_tool_arguments",
+          retryable: true,
+        };
   }
 
   private recordUsage(source: string, response: ChatCompletion): void {
@@ -1113,7 +1344,12 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     };
   }
 
-  private privateTraceContext(action: string, round: number, phase: Phase): PrivateDecisionTraceContext {
+  private privateTraceContext(
+    action: string,
+    round: number,
+    phase: Phase,
+    logicalCallOrdinal = 1,
+  ): PrivateDecisionTraceContext {
     return {
       ...(this.privateTraceGameId && { gameId: this.privateTraceGameId }),
       ...(this.privateTraceOwnerEpoch && { ownerEpoch: this.privateTraceOwnerEpoch }),
@@ -1124,7 +1360,24 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       },
       phase,
       round,
+      logicalCallOrdinal,
     };
+  }
+
+  private diaryPrivateTraceContext(
+    action: "house-producer-brief" | "house-question" | "house-followup",
+    context: DiaryRoomContext,
+    exchangeOrdinal = 1,
+  ): PrivateDecisionTraceContext {
+    return this.privateTraceContext(
+      action,
+      context.round,
+      Phase.DIARY_ROOM,
+      pairProviderLogicalCallOrdinals(
+        context.providerInterviewOrdinal,
+        exchangeOrdinal,
+      ),
+    );
   }
 
   private static privateTraceMessages(
@@ -1421,74 +1674,98 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   }): Promise<{ parsed: Record<string, unknown>; response: ChatCompletion }> {
     let effectiveMaxTokens = this.applyStructuredTokenFloor(params.maxTokens);
     const maxAttempts = 2;
-    let lastError: Error | null = null;
-    let lastResponse: ChatCompletion | null = null;
+    const traceContext = this.privateTraceContext(
+      params.action,
+      params.round,
+      params.phase,
+    );
+    const providerCall = this.startProviderCall(traceContext);
+    const requestBody = (): ChatCompletionCreateParamsNonStreaming => ({
+      model: this.model,
+      messages: params.messages,
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: params.schemaName,
+          strict: true,
+          schema: params.schema,
+        },
+      },
+      ...this.modelParams(effectiveMaxTokens, params.temperature),
+    });
 
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      try {
-        const response = await this.openai.chat.completions.create(
-          {
-            model: this.model,
-            messages: params.messages,
-            response_format: {
-              type: "json_schema",
-              json_schema: {
-                name: params.schemaName,
-                strict: true,
-                schema: params.schema,
-              },
-            },
-            ...this.modelParams(effectiveMaxTokens, params.temperature),
-          },
-          { signal: this.structuredOutputSignal() },
-        );
-        lastResponse = response;
-        this.recordUsage(params.source, response);
-
-        const choice = response.choices[0];
-        if (choice?.message?.refusal) {
-          throw new Error("model_refusal");
-        }
-        if (choice?.finish_reason === "content_filter") {
-          throw new Error("content_filter");
-        }
-        if (choice?.finish_reason === "length") {
-          throw new Error("length");
-        }
-
-        const parsed = this.parseStructuredJsonContent(choice?.message?.content);
-        if (!parsed) {
-          throw new Error("invalid_json");
-        }
-        return { parsed, response };
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-        const isNonRetryable =
-          lastError.message === "model_refusal" ||
-          lastError.message === "content_filter" ||
-          lastError.message === "request_aborted" ||
-          lastError.name === "APIUserAbortError" ||
-          lastError.name === "AbortError";
-        const shouldRetry = attempt < maxAttempts && !isNonRetryable;
-        if (!shouldRetry) break;
-        if (lastError.message === "length" || lastError.message === "invalid_json") {
-          effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
-        }
-        console.warn(`[house-structured-output] action=${params.action} attempt ${attempt} failed, retrying: ${lastError.message}`);
-      }
-    }
-
-    const failure = lastError ?? new Error("unknown_failure");
-    if (lastResponse) {
-      await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext(params.action, params.round, params.phase),
-        messages: params.messages,
-        response: lastResponse,
-        output: { error: failure.message },
+    try {
+      const result = await providerCall.execute({
+        preparedRequest: () => ({
+          requestShape: "chat_completions",
+          providerProfileId: this.providerProfileId,
+          ...(this.catalogId && { catalogId: this.catalogId }),
+          model: this.model,
+          body: requestBody(),
+        }),
+        maxAttempts,
+        dispatch: ({ requestOptions }) =>
+          this.openai.chat.completions.create(requestBody(), {
+            ...requestOptions,
+            signal: this.structuredOutputSignal(),
+          }),
+        validate: (response) => {
+          const choice = response.choices[0];
+          if (choice?.message?.refusal) {
+            return {
+              status: "unusable",
+              kind: "refusal",
+              message: "model_refusal",
+              retryable: false,
+            };
+          }
+          if (choice?.finish_reason === "content_filter") {
+            return {
+              status: "unusable",
+              kind: "refusal",
+              message: "content_filter",
+              retryable: false,
+            };
+          }
+          if (choice?.finish_reason === "length") {
+            return {
+              status: "unusable",
+              kind: "undecodable_structured_output",
+              message: "length",
+            };
+          }
+          const parsed = this.parseStructuredJsonContent(
+            choice?.message?.content,
+          );
+          return parsed
+            ? { status: "usable", value: { parsed, response } }
+            : {
+                status: "unusable",
+                kind: "malformed_output",
+                message: "invalid_json",
+              };
+        },
+        onRetry: (record) => {
+          if (
+            record.outcome.kind === "undecodable_structured_output" ||
+            record.outcome.kind === "malformed_output"
+          ) {
+            effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
+          }
+          console.warn(
+            `[house-structured-output] action=${params.action} attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
+          );
+        },
       });
+      this.recordUsage(params.source, result.response);
+      return result;
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      console.warn(
+        `[house-structured-output] action=${params.action} failed: ${failure.message}`,
+      );
+      throw failure;
     }
-    console.warn(`[house-structured-output] action=${params.action} failed: ${failure.message}`);
-    throw failure;
   }
 
   async assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult> {
@@ -1921,12 +2198,22 @@ Respond with JSON only:
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer maintaining a private Strategy Bible. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
-        messages,
-        response_format: this.jsonObjectResponseFormat("house_strategy_bible"),
-        ...this.modelParams(5000, 0.35),
-      });
+      const response = await this.executeHouseChatTransport(
+        this.privateTraceContext(
+          "house-strategy-bible",
+          context.round,
+          context.phase,
+        ),
+        {
+          model: this.model,
+          messages,
+          response_format: this.jsonObjectResponseFormat(
+            "house_strategy_bible",
+          ),
+          ...this.modelParams(5000, 0.35),
+        },
+        { validate: (candidate) => this.validateHouseJsonResponse(candidate) },
+      );
       this.recordUsage("House/strategy-bible", response);
 
       const output = parseHouseStrategyBible(response.choices[0]?.message?.content?.trim() ?? "", context);
@@ -2067,20 +2354,40 @@ Respond with JSON only:
           ...this.houseSummaryModelParams(limits.maxCompletionTokens),
         };
         // The installed SDK predates Luna's documented `none` tool-effort value.
-        const response = await this.openai.chat.completions.create(
+        const response = await this.executeHouseChatTransport(
+          {
+            ...this.privateTraceContext(
+              terminalOnly
+                ? "house-summary-terminal"
+                : "house-summary-fact-read",
+              context.frontier.boundary.round,
+              context.frontier.boundary.phase,
+              Math.max(1, context.frontier.boundary.canonicalHead),
+            ),
+            boundary: {
+              currentEventSequence: context.frontier.boundary.canonicalHead,
+            },
+          },
           requestBody as unknown as ChatCompletionCreateParamsNonStreaming,
           {
-          maxRetries: 0,
-          signal: AbortSignal.timeout(remainingMs),
-          ...(this.providerProfileId === "openai" && {
-            headers: { [NO_FLEX_TRANSPORT_RETRY_HEADER]: "1" },
-          }),
+            maxAttempts: 1,
+            requestSignal: AbortSignal.timeout(remainingMs),
+            validate: (candidate) => this.validateHouseSummaryToolResponse(candidate, terminalOnly),
           },
         );
         this.recordUsage("House/mc-summary", response);
         usage[usageIndex] = LLMHouseInterviewer.providerUsage(response, callId);
         return { response, callId };
       } catch (error) {
+        if (error instanceof ProviderAttemptError) {
+          const body = error.record.rawResponse?.body;
+          if (body && typeof body === "object" && !Array.isArray(body)) {
+            usage[usageIndex] = LLMHouseInterviewer.providerUsage(
+              body as ChatCompletion,
+              callId,
+            );
+          }
+        }
         const { status, code, type } = contentFreeHouseFailureFields(error);
         console.warn(
           `[house-summary] provider_failure call=${callId} status=${status} code=${code} type=${type}`,
@@ -2241,12 +2548,22 @@ Respond with JSON only:
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House showrunner writing a private/audience catch-up for producer review. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
-        messages,
-        response_format: this.jsonObjectResponseFormat("house_long_form_summary"),
-        ...this.modelParams(4000, 0.75),
-      });
+      const response = await this.executeHouseChatTransport(
+        this.privateTraceContext(
+          "house-long-form-summary",
+          context.round,
+          context.phase,
+        ),
+        {
+          model: this.model,
+          messages,
+          response_format: this.jsonObjectResponseFormat(
+            "house_long_form_summary",
+          ),
+          ...this.modelParams(4000, 0.75),
+        },
+        { validate: (candidate) => this.validateHouseJsonResponse(candidate) },
+      );
       this.recordUsage("House/long-form-summary", response);
       const output = parseHouseSummary(response.choices[0]?.message?.content?.trim() ?? "", context);
       await this.emitPrivateDecisionTrace({
@@ -2302,16 +2619,22 @@ Respond with JSON only:
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer preparing a private diary-room brief. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const response = await this.openai.chat.completions.create({
-        model: this.model,
-        messages,
-        response_format: this.jsonObjectResponseFormat("house_producer_brief"),
-        ...this.modelParams(1800, 0.55),
-      });
+      const response = await this.executeHouseChatTransport(
+        this.diaryPrivateTraceContext("house-producer-brief", context),
+        {
+          model: this.model,
+          messages,
+          response_format: this.jsonObjectResponseFormat(
+            "house_producer_brief",
+          ),
+          ...this.modelParams(1800, 0.55),
+        },
+        { validate: (candidate) => this.validateHouseJsonResponse(candidate) },
+      );
       this.recordUsage("House/producer-brief", response);
       const output = parseHouseProducerBrief(response.choices[0]?.message?.content?.trim() ?? "", context, packet);
       await this.emitPrivateDecisionTrace({
-        context: this.privateTraceContext("house-producer-brief", context.round, Phase.DIARY_ROOM),
+        context: this.diaryPrivateTraceContext("house-producer-brief", context),
         messages,
         response,
         output,
@@ -2329,11 +2652,14 @@ Respond with JSON only:
       { role: "user" as const, content: gameStatePrompt },
     ];
 
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
-      messages,
-      ...this.modelParams(150, 0.9),
-    });
+    const response = await this.executeHouseChatTransport(
+      this.diaryPrivateTraceContext("house-question", context),
+      {
+        model: this.model,
+        messages,
+        ...this.modelParams(150, 0.9),
+      },
+    );
 
     this.recordUsage("House/question", response);
 
@@ -2342,7 +2668,7 @@ Respond with JSON only:
       ? question
       : `${context.agentName}, what's on your mind right now?`;
     await this.emitPrivateDecisionTrace({
-      context: this.privateTraceContext("house-question", context.round, Phase.DIARY_ROOM),
+      context: this.diaryPrivateTraceContext("house-question", context),
       messages,
       response,
       output: { question: output },
@@ -2391,11 +2717,19 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
       { role: "user" as const, content: followUpPrompt },
     ];
 
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
-      messages,
-      ...this.modelParams(200, 0.8),
-    });
+    const response = await this.executeHouseChatTransport(
+      this.diaryPrivateTraceContext(
+        "house-followup",
+        context,
+        exchangeCount + 1,
+      ),
+      {
+        model: this.model,
+        messages,
+        ...this.modelParams(200, 0.8),
+      },
+      { validate: (candidate) => this.validateHouseFollowUpResponse(candidate) },
+    );
 
     this.recordUsage("House/followup", response);
 
@@ -2412,7 +2746,11 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
     }
 
     await this.emitPrivateDecisionTrace({
-      context: this.privateTraceContext("house-followup", context.round, Phase.DIARY_ROOM),
+      context: this.diaryPrivateTraceContext(
+        "house-followup",
+        context,
+        exchangeCount + 1,
+      ),
       messages,
       response,
       output,
@@ -2799,11 +3137,14 @@ Respond with ONLY the summary paragraph, no intro or labels.`;
       { role: "user" as const, content: summaryPrompt },
     ];
 
-    const response = await this.openai.chat.completions.create({
-      model: this.model,
-      messages,
-      ...this.modelParams(32768, 0.9),
-    });
+    const response = await this.executeHouseChatTransport(
+      this.privateTraceContext("house-gameplay-summary", round, phase),
+      {
+        model: this.model,
+        messages,
+        ...this.modelParams(32768, 0.9),
+      },
+    );
 
     const summary = response.choices[0]?.message?.content?.trim();
     const output = summary && summary.length > 0

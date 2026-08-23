@@ -28,6 +28,7 @@ import { MockAgent } from "./mock-agent";
 import { resolveActionStrategyCandidate } from "../phases/phase-runner-context";
 import { COMPACT_STRATEGY_LIMITS } from "../strategy-state";
 import { STRATEGY_DELTA_GUIDANCE } from "../formats/agent-surface";
+import type { ProviderAttemptRecord } from "../provider-execution";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -276,12 +277,20 @@ function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): Op
   } as unknown as OpenAI;
 }
 
-function makeRejectingOpenAIStub(requests: Array<Record<string, unknown>>, error = new Error("forced failure")): OpenAI {
+function makeRejectingOpenAIStub(
+  requests: Array<Record<string, unknown>>,
+  error = new Error("forced failure"),
+  requestOptions?: Array<Record<string, unknown>>,
+): OpenAI {
   return {
     chat: {
       completions: {
-        create: async (params: Record<string, unknown>) => {
+        create: async (
+          params: Record<string, unknown>,
+          options?: Record<string, unknown>,
+        ) => {
           requests.push(params);
+          if (requestOptions) requestOptions.push(options ?? {});
           throw error;
         },
       },
@@ -820,6 +829,103 @@ describe("InfluenceAgent structured output mode", () => {
       baseline: null,
       revision: 1,
     });
+  });
+
+  it("emits the shared typed refusal contract without hidden SDK retries", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const requestOptions: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const error = Object.assign(new Error("request rejected"), {
+      status: 400,
+      request_id: "req-player-invalid-prompt",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-player-invalid-prompt",
+        authorization: "Bearer player-secret",
+      },
+      error: {
+        code: "invalid_prompt",
+        message: "request rejected",
+      },
+    });
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeRejectingOpenAIStub(requests, error, requestOptions),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        structuredCallMaxAttempts: 2,
+        providerExecutionHooks: {
+          onTerminal: (record) => {
+            attempts.push(record);
+          },
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+
+    expect(requests).toHaveLength(1);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      requestId: "req-player-invalid-prompt",
+      outcome: { kind: "refusal", retryable: false },
+      rawResponse: {
+        status: 400,
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": "req-player-invalid-prompt",
+        },
+        body: {
+          code: "invalid_prompt",
+          message: "request rejected",
+        },
+      },
+    });
+    expect(attempts[0]?.preparedRequest.body).toEqual(requests[0]);
+    expect(requestOptions[0]?.maxRetries).toBe(0);
+    expect(requestOptions[0]?.headers).toMatchObject({
+      "x-influence-no-flex-transport-retry": "1",
+    });
+    expect(JSON.stringify(attempts[0])).not.toContain("player-secret");
+  });
+
+  it("reconstructs the same phase-owned provider coordinate without reusing the next boundary", async () => {
+    const run = async (logicalCallOrdinal: number) => {
+      const attempts: ProviderAttemptRecord[] = [];
+      const agent = new InfluenceAgent(
+        "atlas-id",
+        "Atlas",
+        "strategic",
+        makeOpenAIStub([]),
+        "gpt-5-nano",
+        undefined,
+        undefined,
+        {
+          providerExecutionHooks: {
+            onTerminal: (record) => { attempts.push(record); },
+          },
+        },
+      );
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      await agent.getVotes({
+        ...makeContext(Phase.VOTE),
+        providerLogicalCallOrdinal: logicalCallOrdinal,
+      });
+      return attempts[0]!.coordinate;
+    };
+
+    const beforeReconstruction = await run(7);
+    const afterReconstruction = await run(7);
+    const nextBoundary = await run(8);
+
+    expect(afterReconstruction).toEqual(beforeReconstruction);
+    expect(nextBoundary).not.toEqual(beforeReconstruction);
+    expect(nextBoundary.logicalCallOrdinal).toBe(8);
   });
 
   it("uses strict active-format tools and accepts legal decisions with LLM provenance", async () => {
@@ -3984,6 +4090,7 @@ describe("InfluenceAgent structured output mode", () => {
     const question = await house.generateQuestion({
       precedingPhase: Phase.COUNCIL,
       round: 6,
+      providerInterviewOrdinal: 1,
       agentName: "Wren",
       alivePlayers: ["Wren", "Vex", "Nyx"],
       activeShieldNames: [],
@@ -4013,6 +4120,7 @@ describe("InfluenceAgent structured output mode", () => {
     const question = await house.generateQuestion({
       precedingPhase: Phase.COUNCIL,
       round: 3,
+      providerInterviewOrdinal: 1,
       agentName: "Finn",
       alivePlayers: ["Arden", "Nyx", "Cyrus", "Mira", "Finn", "Dax"],
       activeShieldNames: [],

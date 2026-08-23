@@ -538,6 +538,29 @@ export type {
   OpenAIRequestServiceTier,
 } from "./llm-client";
 export {
+  PROVIDER_ATTEMPT_HEADER,
+  ProviderAttemptError,
+  ProviderExecutionCoordinator,
+  createProviderEvidenceFetch,
+  sanitizeProviderEvidence,
+} from "./provider-execution";
+export type {
+  ExecuteProviderCallOptions,
+  ProviderAttemptFailureKind,
+  ProviderAttemptFailureOutcome,
+  ProviderAttemptIntent,
+  ProviderAttemptOutcome,
+  ProviderAttemptRecord,
+  ProviderCandidateValidation,
+  ProviderDispatchRequestOptions,
+  ProviderExecutionCoordinatorOptions,
+  ProviderExecutionHooks,
+  ProviderLogicalCallCoordinate,
+  ProviderPreparedRequest,
+  SanitizedProviderRequestEvidence,
+  SanitizedProviderResponseEvidence,
+} from "./provider-execution";
+export {
   MODEL_CATALOG,
   DEFAULT_MODEL_CATALOG_ID,
   DEFAULT_MODEL_ID,

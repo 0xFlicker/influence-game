@@ -34,6 +34,18 @@ import type {
 } from "./house-summary-frontier";
 export type { TokenCostCursor };
 export type {
+  ProviderAttemptFailureKind,
+  ProviderAttemptFailureOutcome,
+  ProviderAttemptIntent,
+  ProviderAttemptOutcome,
+  ProviderAttemptRecord,
+  ProviderExecutionHooks,
+  ProviderLogicalCallCoordinate,
+  ProviderPreparedRequest,
+  SanitizedProviderRequestEvidence,
+  SanitizedProviderResponseEvidence,
+} from "./provider-execution";
+export type {
   HouseBeatClass,
   HouseBeatStatus,
   HouseFactCategory,
@@ -454,6 +466,8 @@ export interface PrivateDecisionTraceContext {
   actor: PrivateDecisionTraceActor;
   phase?: Phase;
   round?: number;
+  /** Durable phase-owned ordinal for repeated calls at this actor/action boundary. */
+  logicalCallOrdinal?: number;
   boundary?: PrivateDecisionTraceBoundary;
   /**
    * Structural-only Recall Plan receipt for this call (KTD5 / R16).
@@ -1379,6 +1393,8 @@ export interface PhaseContext {
   gameId: UUID;
   round: number;
   phase: Phase;
+  /** Durable phase-owned ordinal for repeated provider calls at this boundary. */
+  providerLogicalCallOrdinal?: number;
   selfId: UUID;
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string; shielded?: boolean }>;
