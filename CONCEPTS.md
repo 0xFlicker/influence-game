@@ -639,6 +639,18 @@ A bounded, newest-first page over authorized cognitive-artifact metadata or priv
 
 The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, checkpoint resume authority, or unsanitized player-private product data.
 
+## Engine fallback decision
+
+A deterministic, rules-legal gameplay decision accepted when provider execution is exhausted or disallowed. It commits through the normal canonical action path and carries the same tally, history, and strategic consequences as any other accepted decision, while recording engine-fallback provenance and never inventing model-authored rationale, thinking, or prose.
+
+## Game-sealed provider manifest
+
+The ordered provider/model entries, compatible settings, and per-entry fallback-call budgets frozen into a game before it starts. Web and CLI creators may configure the manifest before launch, and the Daily queue may supply a default, but later default changes cannot alter a running game's execution or checkpoint recovery.
+
+## Provider circuit breaker
+
+Durable provider-wide health state for containing systemic authentication, configuration, service, or transport failures. It is distinct from a request-specific refusal: an open primary breaker pauses new Daily admission instead of silently shifting the workload to expensive fallbacks, and it closes only through the configured cooldown probe or a successful admin/sysop test-and-reset probe.
+
 ## Provider spend ledger
 
 A producer/admin operational accounting trail with one safe metadata row per captured provider call attempt in a live game run. It stores game/owner epoch, actor/action/phase/model identifiers, token usage, provider-native billing facts, normalized cost fields, pricing provenance, capture source, and cost confidence. It does not store raw prompts, raw responses, reasoning, tool arguments, storage pointers, presigned URLs, or public gameplay facts.
