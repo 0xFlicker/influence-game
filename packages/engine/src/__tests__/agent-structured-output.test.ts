@@ -28,7 +28,7 @@ import { MockAgent } from "./mock-agent";
 import { resolveActionStrategyCandidate } from "../phases/phase-runner-context";
 import { COMPACT_STRATEGY_LIMITS } from "../strategy-state";
 import { STRATEGY_DELTA_GUIDANCE } from "../formats/agent-surface";
-import type { ProviderAttemptRecord } from "../provider-execution";
+import { ProviderAttemptError, type ProviderAttemptRecord } from "../provider-execution";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -322,6 +322,24 @@ describe("sealed-elim agent decision surface", () => {
     expect(ballot.targetId).not.toBe(agent.id);
   });
 
+  it("leaves format tool exhaustion for the phase to repair", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeRejectingOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await expect(agent.getMajorityEliminationBallot(
+      makeContext(Phase.FORMAT_RESOLVE),
+      ["atlas-id", "mira-id", "vera-id"],
+    )).rejects.toBeInstanceOf(ProviderAttemptError);
+    expect(requests).toHaveLength(2);
+  });
+
   it("uses a distinct strict Majority Elimination tool and most-votes rule sheet", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const traces: PrivateDecisionTrace[] = [];
@@ -568,17 +586,17 @@ describe("sealed-elim agent decision surface", () => {
     const evenVotes = await agent.getEvenVotesBallot(context, aliveIds);
 
     expect(majority).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_majority_elimination_target",
     });
     expect(voteBomb).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_vote_bomb_target",
     });
     expect(evenVotes).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_even_votes_target",
     });
@@ -799,7 +817,7 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
-  it("preserves pending reconciliation when a provider failure supplies only a fallback action", async () => {
+  it("leaves provider-exhausted votes to the phase without changing strategy state", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -814,16 +832,9 @@ describe("InfluenceAgent structured output mode", () => {
     agent.onGameStart("game-1", makeContext().alivePlayers);
     agent.markCompactStrategyReconciliationRequired();
 
-    const votes = await agent.getVotes(makeContext(Phase.VOTE));
-    const result = resolveActionStrategyCandidate(
-      agent,
-      votes,
-      votes.strategyGameplayAccepted !== false,
-    );
+    await expect(agent.getVotes(makeContext(Phase.VOTE))).rejects.toThrow("forced failure");
 
     expect(requests).toHaveLength(1);
-    expect(votes.strategyCandidateProposed).toBeUndefined();
-    expect(result).toBeUndefined();
     expect(agent.getCompactStrategyState()).toMatchObject({
       lifecycle: "reconciliation_required",
       baseline: null,
@@ -867,7 +878,7 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    await agent.getVotes(makeContext(Phase.VOTE));
+    await expect(agent.getVotes(makeContext(Phase.VOTE))).rejects.toThrow("request rejected");
 
     expect(requests).toHaveLength(1);
     expect(attempts).toHaveLength(1);
@@ -1213,7 +1224,7 @@ describe("InfluenceAgent structured output mode", () => {
     }
   });
 
-  it("deterministically repairs invalid format tool output with stable provenance", async () => {
+  it("returns invalid format tool output for canonical phase repair", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1273,33 +1284,33 @@ describe("InfluenceAgent structured output mode", () => {
     const tiebreak = await agent.breakFormatEliminationTie(formatContext, ["mira-id", "vera-id"]);
 
     expect(pick).toMatchObject({
-      formatId: "vote_bomb",
+      formatId: "classic",
       decisionSource: "fallback",
       fallbackReason: "invalid_format_choice",
     });
     expect(saveOrEliminate).toMatchObject({
-      polarity: "eliminate",
-      targetId: "mira-id",
+      polarity: "banish",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_save_or_eliminate_ballot",
     });
     expect(voteBomb).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_vote_bomb_target",
     });
     expect(bouncePointer).toMatchObject({
-      targetId: "vera-id",
+      targetId: "Mira",
       decisionSource: "fallback",
       fallbackReason: "invalid_bounce_pointer",
     });
     expect(safetyVote).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Atlas",
       decisionSource: "fallback",
       fallbackReason: "invalid_safety_bounce_target",
     });
     expect(tiebreak).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Atlas",
       decisionSource: "fallback",
       fallbackReason: "invalid_format_tiebreak_target",
     });
@@ -1341,7 +1352,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(empowerEnum).toContain("Mira");
   });
 
-  it("rejects self-empower and falls back to another living player", async () => {
+  it("returns self-empower unchanged for the vote phase to repair", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1357,8 +1368,9 @@ describe("InfluenceAgent structured output mode", () => {
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
     const votes = await agent.getVotes(makeContext(Phase.VOTE));
-    expect(votes.empowerTarget).not.toBe("atlas-id");
-    expect(["mira-id", "vera-id"]).toContain(votes.empowerTarget);
+    expect(votes.empowerTarget).toBe("Atlas");
+    expect(votes.decisionId).toBeUndefined();
+    expect(votes.strategyGameplayAccepted).toBe(false);
   });
 
   it("keeps pre-pick format guidance contingent and does not invent a locked format", async () => {
@@ -2217,7 +2229,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("the wheel randomly chooses");
   });
 
-  it("falls back to a tied candidate when empower-revote tooling fails", async () => {
+  it("leaves empower-revote legality to the phase when provider execution exhausts", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2228,17 +2240,11 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const revote = await agent.getEmpowerRevote(
+    await expect(agent.getEmpowerRevote(
       makeContext(Phase.VOTE),
       ["mira-id", "vera-id"],
       { empowerTarget: "vera-id" },
-    );
-
-    expect(revote).toEqual({
-      empowerTarget: "mira-id",
-      thinking: "fallback empower revote due to error",
-      reasoningContext: undefined,
-    });
+    )).rejects.toThrow("forced failure");
   });
 
   it("preserves private candidate-selection reasoning and eligible-set constraints", async () => {
@@ -3302,7 +3308,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).not.toContain("Standard Vote has two named ballots");
   });
 
-  it("falls back cleanly when Council tool args omit eliminate", async () => {
+  it("returns malformed Council output for the phase to repair", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -3322,7 +3328,7 @@ describe("InfluenceAgent structured output mode", () => {
       councilCandidates: ["mira-id", "vera-id"],
     }, ["mira-id", "vera-id"]);
 
-    expect(["mira-id", "vera-id"]).toContain(result.target);
+    expect(result.target).toBeUndefined();
     expect(result.thinking).toBe("I want to vote, but the choice field is malformed.");
   });
 
@@ -4183,6 +4189,33 @@ describe("InfluenceAgent structured output mode", () => {
     }>;
     expect(tools[0]!.function.parameters.properties.strategyDelta).toBeUndefined();
     expect(tools[0]!.function.parameters.required).not.toContain("strategyDelta");
+  });
+
+  it("returns typed absence instead of fabricated speech when optional provider calls exhaust", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeRejectingOpenAIStub(requests),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
+
+    expect(response).toEqual({
+      thinking: "",
+      message: "",
+      providerAbsence: {
+        kind: "provider_exhausted",
+        outcome: "service_error",
+      },
+    });
+    expect(requests).toHaveLength(2);
   });
 
   it("uses plain visible messages with the global message token floor in local mode", async () => {

@@ -53,6 +53,12 @@ export interface CanonicalSourcePointer {
    * Forward-path only; not a public narrative of thought content.
    */
   decisionId?: UUID;
+  /** Engine-owned provenance for a required action accepted without model authorship. */
+  engineFallback?: {
+    source: "engine";
+    reason: string;
+    seed: string;
+  };
 }
 
 export type AcceptedActionCardinality = "one_to_one" | "many_to_one";

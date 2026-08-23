@@ -645,7 +645,7 @@ export async function runPromptScenarioChain(
     { publicMessages: [] },
   );
   const nextLobbyResponse = await agent.getLobbyMessage(nextLobbyContext);
-  if (!nextLobbyResponse.message.trim() || nextLobbyResponse.message === "[No response]") {
+  if (!nextLobbyResponse.message.trim()) {
     throw new Error("Prompt scenario chain requires a model-authored next-lobby message.");
   }
   const nextLobbyStrategyResult = agent.commitCompactStrategyCandidate(

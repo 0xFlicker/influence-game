@@ -33,6 +33,7 @@ async function runLobbyMessages(
       phaseCtx.lobbyTotalSubRounds = messagesPerPlayer;
       const response = await agent.getLobbyMessage(phaseCtx);
       const { message, thinking, reasoningContext } = response;
+      if (response.providerAbsence || !message.trim()) continue;
       await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.LOBBY, transcriptThinking);

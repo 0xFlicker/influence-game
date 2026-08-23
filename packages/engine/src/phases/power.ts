@@ -1,7 +1,12 @@
 import type { UUID, PowerAction } from "../types";
 import { Phase } from "../types";
-import type { CandidateChoiceRequest, PowerLobbyExposure } from "../game-runner.types";
+import type { CandidateChoiceRequest, PowerActionDecision, PowerLobbyExposure } from "../game-runner.types";
+import {
+  deterministicEngineFallback,
+  engineFallbackMetadata,
+} from "../engine-fallback";
 import type { ShieldReplacementResolution } from "../exposure-bench";
+import { ProviderAttemptError } from "../provider-execution";
 import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
@@ -45,6 +50,8 @@ function shieldReplacementChoiceRequest(resolution: ShieldReplacementResolution)
 
 function resolveBundledShieldPullUp(
   request: CandidateChoiceRequest,
+  phaseContext: Parameters<typeof engineFallbackMetadata>[0],
+  actorId: UUID,
   selectedCandidateIds: UUID[] = [],
 ): { selectedCandidateIds: UUID[]; fallbackApplied: boolean } {
   const eligibleSet = new Set(request.eligibleCandidateIds);
@@ -62,8 +69,14 @@ function resolveBundledShieldPullUp(
 
   const pool = request.eligibleCandidateIds.filter((id) => !selected.includes(id));
   while (selected.length < request.requiredCount && pool.length > 0) {
-    const index = Math.floor(Math.random() * pool.length);
-    const [id] = pool.splice(index, 1);
+    const id = deterministicEngineFallback(
+      pool,
+      phaseContext,
+      actorId,
+      `shield-replacement-${selected.length}`,
+    );
+    const index = pool.indexOf(id);
+    pool.splice(index, 1);
     if (id) selected.push(id);
   }
 
@@ -109,6 +122,7 @@ async function runPowerLobbyMessages(
         provisionalCandidates,
         exposePressure,
       );
+      if (response.providerAbsence || !response.message.trim()) return;
       const { message, thinking, reasoningContext } = response;
       await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
@@ -185,7 +199,62 @@ export async function runPowerPhase(
     .filter((resolution): resolution is ShieldReplacementResolution => Boolean(resolution))
     .filter(shouldRequestShieldReplacementChoice)
     .map(shieldReplacementChoiceRequest);
-  const powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim, { shieldReplacementRequests });
+  let powerActionResult: PowerActionDecision;
+  try {
+    powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim, { shieldReplacementRequests });
+  } catch (error) {
+    if (!(error instanceof ProviderAttemptError)) throw error;
+    powerActionResult = {
+      action: "pass" as const,
+      target: prelim[0],
+      ...engineFallbackMetadata(
+        phaseCtx,
+        empoweredId,
+        "power",
+        "provider_exhausted",
+      ),
+    };
+  }
+  const legalPowerAction = (powerActionResult.action === "pass" && prelim.includes(powerActionResult.target))
+    || (powerActionResult.action === "eliminate" && prelim.includes(powerActionResult.target))
+    || (powerActionResult.action === "protect" && gameState.getAlivePlayerIds().includes(powerActionResult.target));
+  if (!legalPowerAction) {
+    powerActionResult = {
+      action: "pass" as const,
+      target: deterministicEngineFallback(prelim, phaseCtx, empoweredId, "power"),
+      ...engineFallbackMetadata(phaseCtx, empoweredId, "power", "invalid_model_output"),
+    };
+  }
+  let replacementCandidateIds: UUID[] = [];
+  let replacementSelectionFallback = false;
+  if (powerActionResult.action === "protect" && prelim.includes(powerActionResult.target)) {
+    const request = shieldReplacementRequests.find(
+      (candidateRequest) => candidateRequest.protectedCandidateId === powerActionResult.target,
+    );
+    if (request) {
+      const selection = resolveBundledShieldPullUp(
+        request,
+        phaseCtx,
+        empoweredId,
+        powerActionResult.shieldPullUpCandidateIds,
+      );
+      replacementCandidateIds = selection.selectedCandidateIds;
+      replacementSelectionFallback = selection.fallbackApplied;
+      if (selection.fallbackApplied) {
+        powerActionResult = {
+          action: powerActionResult.action,
+          target: powerActionResult.target,
+          shieldPullUpCandidateIds: replacementCandidateIds,
+          ...engineFallbackMetadata(
+            phaseCtx,
+            empoweredId,
+            "power",
+            "invalid_model_output",
+          ),
+        };
+      }
+    }
+  }
   const powerAction: PowerAction = { action: powerActionResult.action, target: powerActionResult.target };
   await assertCanAcceptCommit(ctx);
   gameState.setPowerAction(powerAction, [
@@ -195,7 +264,10 @@ export async function runPowerPhase(
       gameState.round,
       Phase.POWER,
       undefined,
-      powerAction.action === "pass" ? undefined : powerActionResult.decisionId,
+      powerAction.action === "pass" || powerActionResult.engineFallback
+        ? undefined
+        : powerActionResult.decisionId,
+      powerActionResult.engineFallback,
     ),
   ]);
   resolveActionStrategyCandidate(
@@ -203,15 +275,12 @@ export async function runPowerPhase(
     powerActionResult,
     powerActionResult.strategyGameplayAccepted !== false,
   );
-  let replacementCandidateIds: UUID[] = [];
   let shieldPullUpResponse: Record<string, unknown> | null = null;
   if (powerAction.action === "protect" && prelim.includes(powerAction.target)) {
     const request = shieldReplacementRequests.find(
       (candidateRequest) => candidateRequest.protectedCandidateId === powerAction.target,
     );
     if (request) {
-      const selection = resolveBundledShieldPullUp(request, powerActionResult.shieldPullUpCandidateIds);
-      replacementCandidateIds = selection.selectedCandidateIds;
       const resolvedPreview = gameState.previewShieldReplacement(powerAction.target, replacementCandidateIds);
       shieldPullUpResponse = {
         mode: resolvedPreview?.mode ?? request.mode,
@@ -220,12 +289,17 @@ export async function runPowerPhase(
         eligibleChoices: request.eligibleCandidateIds.map((id) => ({ id, name: gameState.getPlayerName(id) })),
         selectedCandidates: (resolvedPreview?.selectedCandidateIds ?? replacementCandidateIds).map((id) => ({ id, name: gameState.getPlayerName(id) })),
         resolvedCandidates: resolvedPreview?.candidates?.map((id) => ({ id, name: gameState.getPlayerName(id) })) ?? null,
-        fallbackApplied: selection.fallbackApplied || (resolvedPreview?.fallbackApplied ?? false),
-        fallbackReason: selection.fallbackApplied ? "random_selection" : resolvedPreview?.fallbackReason ?? null,
+        fallbackApplied: replacementSelectionFallback || (resolvedPreview?.fallbackApplied ?? false),
+        fallbackReason: replacementSelectionFallback ? "deterministic_selection" : resolvedPreview?.fallbackReason ?? null,
       };
     }
   }
-  const transcriptThinking = transcriptThinkingFor(empoweredAgent, powerActionResult.thinking, powerActionResult.reasoningContext);
+  const transcriptThinking = transcriptThinkingFor(
+    empoweredAgent,
+    powerActionResult.thinking,
+    powerActionResult.reasoningContext,
+    powerActionResult,
+  );
   logger.logSystem(
     `${gameState.getPlayerName(empoweredId)} power action: ${powerAction.action} -> ${gameState.getPlayerName(powerAction.target)}`,
     Phase.POWER,

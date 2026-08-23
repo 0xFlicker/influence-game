@@ -1152,23 +1152,6 @@ function normalizeStringArray(value: unknown): string[] {
   return value.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.trim()).filter(Boolean);
 }
 
-function randomFillIds(
-  selectedIds: UUID[],
-  eligibleIds: UUID[],
-  requiredCount: number,
-): UUID[] {
-  const selected = [...selectedIds];
-  const pool = eligibleIds.filter((id) => !selected.includes(id));
-
-  while (selected.length < requiredCount && pool.length > 0) {
-    const index = Math.floor(Math.random() * pool.length);
-    const [id] = pool.splice(index, 1);
-    if (id) selected.push(id);
-  }
-
-  return selected;
-}
-
 function normalizeNullableString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
 }
@@ -1578,6 +1561,17 @@ export class InfluenceAgent implements IAgent {
 
   private static isAbortError(error: unknown): boolean {
     return error instanceof Error && error.name === "AbortError";
+  }
+
+  private static providerAbsentResponse(error: ProviderAttemptError): AgentResponse {
+    return {
+      thinking: "",
+      message: "",
+      providerAbsence: {
+        kind: "provider_exhausted",
+        outcome: error.outcome.kind,
+      },
+    };
   }
 
   private static abortError(): Error {
@@ -2317,8 +2311,7 @@ ${opportunity.kind === "proposer"
         },
       }
       : ctx;
-    try {
-      const result = await this.callTool<{
+    const result = await this.callTool<{
         thinking?: string;
         action?: unknown;
         name?: unknown;
@@ -2400,14 +2393,6 @@ ${opportunity.kind === "proposer"
       }
 
       return action === "pass" ? { action, ...base } : invalidPass();
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAllianceAction error="${err instanceof Error ? err.message : err}" fallback=pass`);
-      return {
-        action: "pass",
-        thinking: "Alliance action failed; passing.",
-        reasoningContext: err instanceof Error ? err.message : String(err),
-      };
-    }
   }
 
   async getAllianceHuddleTurn(
@@ -2487,14 +2472,14 @@ Use the alliance_huddle_turn tool.`;
         ...metadata,
       };
     } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAllianceHuddleTurn error="${err instanceof Error ? err.message : err}" fallback=no_reply`);
-      return {
-        thinking: "Alliance huddle turn failed; no reply.",
-        reasoningContext: err instanceof Error ? err.message : String(err),
-        message: null,
-        noReply: true,
-        commitment: normalizeHuddleCommitment({}, ctx),
-      };
+      if (err instanceof ProviderAttemptError) {
+        return {
+          message: null,
+          noReply: true,
+          providerAbsence: InfluenceAgent.providerAbsentResponse(err).providerAbsence,
+        };
+      }
+      throw err;
     }
   }
 
@@ -2538,18 +2523,13 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       );
       if (result.pass) return null;
       const msg = result.message?.trim();
-      if (!msg) {
-        const fallbackMsg = isFirstMessage
-          ? `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.`
-          : null;
-        return fallbackMsg ? { thinking: result.thinking ?? "", message: fallbackMsg, reasoningContext: result.reasoningContext } : null;
-      }
+      if (!msg) return null;
       return { thinking: result.thinking ?? "", message: msg, reasoningContext: result.reasoningContext };
-    } catch {
-      if (isFirstMessage) {
-        return { thinking: "", message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.` };
+    } catch (error) {
+      if (error instanceof ProviderAttemptError) {
+        return InfluenceAgent.providerAbsentResponse(error);
       }
-      return null;
+      throw error;
     }
   }
 
@@ -2683,22 +2663,20 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
       };
     } catch (error) {
       if (this.evaluationFailFast) throw error;
-      if (otherRoomMates.length > 0 && history.length === 0) {
+      if (error instanceof ProviderAttemptError) {
         return {
           thinking: "",
-          message: `${otherRoomMates.join(", ")}, let's compare notes and watch the vote together.`,
-          noReply: false,
+          message: null,
+          noReply: true,
           gotoRoomId: null,
           gotoPlayerName: null,
+          providerAbsence: {
+            kind: "provider_exhausted",
+            outcome: error.outcome.kind,
+          },
         };
       }
-      return {
-        thinking: "",
-        message: null,
-        noReply: true,
-        gotoRoomId: null,
-        gotoPlayerName: null,
-      };
+      throw error;
     }
   }
 
@@ -2767,13 +2745,10 @@ Use the spread_rumor tool.`;
         ...metadata,
       };
     } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getRumorMessage error="${err instanceof Error ? err.message : err}" fallback=generic-rumor`);
-      return {
-        thinking: "",
-        message: "Someone is quieter than their position should allow.",
-        strategicLens: "broad_read",
-        strategicLensRationale: "Fallback rumor after structured rumor generation failed.",
-      };
+      if (err instanceof ProviderAttemptError) {
+        return InfluenceAgent.providerAbsentResponse(err);
+      }
+      throw err;
     }
   }
 
@@ -2787,12 +2762,6 @@ Use the spread_rumor tool.`;
     // Empower is always cast for another living player — never self.
     const others = ctx.alivePlayers.filter((p) => p.id !== this.id);
     const legalEmpowerNames = others.map((p) => p.name);
-
-    const randomOther = () => {
-      const picked = others[Math.floor(Math.random() * others.length)];
-      if (!picked) throw new Error("No other players available for empower vote");
-      return picked;
-    };
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -2811,8 +2780,7 @@ Cast your empower vote for this round.
 
 Use the cast_votes tool. The empower field must be exactly one name from the legal list above.`;
 
-    try {
-      const result = await this.callTool<{ thinking?: string; empower: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
+    const result = await this.callTool<{ thinking?: string; empower: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt,
         buildCastVotesTool(legalEmpowerNames),
         100,
@@ -2826,19 +2794,8 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
         normalizeName(result.empower) === normalizeName(this.name);
       const empowerPlayer = isSelf ? undefined : findByName(others, result.empower);
 
-      let empowerTarget: UUID;
-      let empowerName: string;
-      if (empowerPlayer) {
-        empowerTarget = empowerPlayer.id;
-        empowerName = empowerPlayer.name;
-      } else {
-        const fallback = randomOther();
-        console.warn(
-          `[vote-fallback] agent="${this.name}" method=getVotes vote=empower returned="${result.empower}"${isSelf ? " (self-empower illegal)" : ""} available=[${legalEmpowerNames.join(", ")}] fallback="${fallback.name}"`,
-        );
-        empowerTarget = fallback.id;
-        empowerName = fallback.name;
-      }
+      const empowerTarget = empowerPlayer?.id ?? (result.empower as UUID);
+      const empowerName = empowerPlayer?.name ?? result.empower;
 
       const voteEntry = {
         round: ctx.round,
@@ -2846,16 +2803,18 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
           empower: empowerName,
         },
       };
-      const existingRoundIndex = this.memory.roundHistory.findIndex((entry) => entry.round === ctx.round);
-      if (existingRoundIndex >= 0) {
-        this.memory.roundHistory[existingRoundIndex] = {
-          ...this.memory.roundHistory[existingRoundIndex]!,
-          ...voteEntry,
-        };
-      } else {
-        this.memory.roundHistory.push(voteEntry);
+      if (empowerPlayer) {
+        const existingRoundIndex = this.memory.roundHistory.findIndex((entry) => entry.round === ctx.round);
+        if (existingRoundIndex >= 0) {
+          this.memory.roundHistory[existingRoundIndex] = {
+            ...this.memory.roundHistory[existingRoundIndex]!,
+            ...voteEntry,
+          };
+        } else {
+          this.memory.roundHistory.push(voteEntry);
+        }
+        this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
       }
-      this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
       const metadata = this.strategicDecisionMetadata(result, "vote");
       return {
@@ -2864,15 +2823,6 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
         reasoningContext: result.reasoningContext,
         ...acceptedActionMetadata(metadata, Boolean(empowerPlayer)),
       };
-    } catch (err) {
-      const empFallback = randomOther();
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getVotes error="${err instanceof Error ? err.message : err}" fallback=empower:"${empFallback.name}"`);
-      return {
-        empowerTarget: empFallback.id,
-        thinking: undefined,
-        reasoningContext: undefined,
-      };
-    }
   }
 
   async getEmpowerRevote(
@@ -2883,10 +2833,7 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
     const tiedPlayers = tiedCandidates
       .map((id) => ctx.alivePlayers.find((player) => player.id === id))
       .filter((player): player is { id: UUID; name: string } => player !== undefined);
-    const fallbackTarget = tiedPlayers[0] ?? ctx.alivePlayers.find((player) => player.id !== this.id);
-    if (!fallbackTarget) {
-      return { empowerTarget: this.id, thinking: "No eligible revote target available.", reasoningContext: undefined };
-    }
+    if (tiedPlayers.length === 0) throw new Error("No eligible revote target available");
 
     const originalEmpowerName = ctx.alivePlayers.find((player) => player.id === originalVote.empowerTarget)?.name ?? originalVote.empowerTarget;
 
@@ -2905,32 +2852,19 @@ Choose exactly one eligible tied candidate to empower. If this revote is still t
 
 Use the cast_empower_revote tool. Return only an empower target from the eligible tied candidates.`;
 
-    try {
-      const result = await this.callTool<{ thinking?: string; empower: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
+    const result = await this.callTool<{ thinking?: string; empower: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt, TOOL_EMPOWER_REVOTE, 100, sys,
         this.traceOptions(ctx, { action: "empower-revote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
 
       const empowerPlayer = findByName(tiedPlayers, result.empower);
-      if (!empowerPlayer) {
-        console.warn(`[vote-fallback] agent="${this.name}" method=getEmpowerRevote returned="${result.empower}" eligible=[${tiedPlayers.map((p) => p.name).join(", ")}] fallback="${fallbackTarget.name}"`);
-      }
-
       const metadata = this.strategicDecisionMetadata(result, "empower-revote");
       return {
-        empowerTarget: empowerPlayer?.id ?? fallbackTarget.id,
+        empowerTarget: empowerPlayer?.id ?? (result.empower as UUID),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...acceptedActionMetadata(metadata, Boolean(empowerPlayer)),
       };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEmpowerRevote error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
-      return {
-        empowerTarget: fallbackTarget.id,
-        thinking: "fallback empower revote due to error",
-        reasoningContext: undefined,
-      };
-    }
   }
 
   async getCandidateSelection(
@@ -2963,8 +2897,7 @@ Choose exactly ${request.requiredCount} player${request.requiredCount === 1 ? ""
 
 Use the select_council_candidates tool.`;
 
-    try {
-      const result = await this.callTool<{ thinking?: string; candidates: unknown; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
+    const result = await this.callTool<{ thinking?: string; candidates: unknown; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt, TOOL_CANDIDATE_SELECTION, 120, sys,
         this.traceOptions(ctx, { action: "candidate-selection", reasoningEffort: "medium" }),
       );
@@ -2990,14 +2923,6 @@ Use the select_council_candidates tool.`;
         reasoningContext: result.reasoningContext,
         ...metadata,
       };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getCandidateSelection error="${err instanceof Error ? err.message : err}" fallback=[${fallbackIds.join(",")}]`);
-      return {
-        selectedCandidateIds: fallbackIds,
-        thinking: "fallback candidate selection due to error",
-        reasoningContext: undefined,
-      };
-    }
   }
 
   async getPowerLobbyMessage(
@@ -3126,25 +3051,15 @@ Anti-repeat power guidance:
 Before using the tool, decide what future debt or backlash your action creates. Prefer pass or protect when they create a callable ally, a sharper council fight, or a betrayal hook for later.
 Use the use_power tool to declare your final hidden action.`;
 
-    try {
-      const result = await this.callTool<{ thinking?: string; action: string; target: string; shieldPullUpCandidates?: unknown; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
+    const result = await this.callTool<{ thinking?: string; action: string; target: string; shieldPullUpCandidates?: unknown; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
         prompt, TOOL_POWER_ACTION, 100, sys,
         this.traceOptions(ctx, { action: "power", reasoningEffort: "medium" }),
       );
 
-      const targetPlayer =
-        findByName(ctx.alivePlayers, result.target) ??
-        ctx.alivePlayers.find((p) => candidates.includes(p.id));
+      const targetPlayer = findByName(ctx.alivePlayers, result.target);
 
-      const validAction: PowerAction["action"] =
-        result.action === "eliminate" || result.action === "protect" || result.action === "pass"
-          ? result.action
-          : "pass";
-
-      if (!targetPlayer) {
-        console.warn(`[vote-fallback] agent="${this.name}" method=getPowerAction returned="${result.target}" available=[${ctx.alivePlayers.map((p) => p.name).join(", ")}] fallback=candidates[0]`);
-      }
-      const targetId = targetPlayer?.id ?? candidates[0];
+      const validAction = result.action as PowerAction["action"];
+      const targetId = targetPlayer?.id ?? (result.target as UUID);
       const replacementRequest = validAction === "protect" ? shieldReplacementByProtectedId.get(targetId) : undefined;
       let shieldPullUpCandidateIds: UUID[] = [];
       let shieldSelectionRepaired = false;
@@ -3164,41 +3079,32 @@ Use the use_power tool to declare your final hidden action.`;
           if (selectedCandidateIds.length === replacementRequest.requiredCount) break;
         }
         const missingSelection = selectedCandidateIds.length < replacementRequest.requiredCount;
-        shieldPullUpCandidateIds = randomFillIds(
-          selectedCandidateIds,
-          replacementRequest.eligibleCandidateIds,
-          replacementRequest.requiredCount,
-        );
+        shieldPullUpCandidateIds = selectedCandidateIds;
         if (invalidSelection || missingSelection) {
           shieldSelectionRepaired = true;
           console.warn(`[vote-fallback] agent="${this.name}" method=getPowerAction shieldPullUpCandidates invalidOrMissing required=${replacementRequest.requiredCount} selected=${selectedCandidateIds.length} fallback=[${shieldPullUpCandidateIds.join(",")}]`);
         }
       }
-      this.memory.powerActions.push({
-        round: ctx.round,
-        action: validAction,
-        target: targetPlayer?.name ?? candidateNames[0] ?? "unknown",
-      });
       const metadata = this.strategicDecisionMetadata(result, "power");
       const directModelChoice =
         validAction === result.action
         && (validAction === "pass" || Boolean(targetPlayer))
         && !shieldSelectionRepaired;
+      if (directModelChoice) {
+        this.memory.powerActions.push({
+          round: ctx.round,
+          action: validAction,
+          target: targetPlayer?.name ?? candidateNames[0] ?? "unknown",
+        });
+      }
       return {
         action: validAction,
-        target: targetPlayer?.id ?? candidates[0],
+        target: targetPlayer?.id ?? (result.target as UUID),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...acceptedActionMetadata(metadata, directModelChoice),
         ...(shieldPullUpCandidateIds.length > 0 ? { shieldPullUpCandidateIds } : {}),
       };
-    } catch {
-      return {
-        action: "pass",
-        target: candidates[0],
-        thinking: "fallback to pass under pressure",
-      };
-    }
   }
 
   async getCouncilVote(
@@ -3224,8 +3130,7 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 
 Use the council_vote tool to cast your vote.`;
 
-    try {
-      const result = await this.callTool<{ thinking?: string; eliminate: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
+    const result = await this.callTool<{ thinking?: string; eliminate: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
       const metadata = this.strategicDecisionMetadata(result, "council-vote");
       const eliminationName = typeof result.eliminate === "string" ? result.eliminate : "";
       const target = normalizeName(eliminationName) === normalizeName(c1Name) ? c1
@@ -3234,32 +3139,18 @@ Use the council_vote tool to cast your vote.`;
       if (target) {
         return { target, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
       }
-      const fallback = candidates[Math.floor(Math.random() * 2)]!;
-      const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
-      console.warn(`[vote-fallback] agent="${this.name}" method=getCouncilVote returned="${eliminationName || String(result.eliminate)}" available=[${c1Name}, ${c2Name}] fallback="${fallbackName}"`);
       return {
-        target: fallback,
+        target: result.eliminate as UUID,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...acceptedActionMetadata(metadata, false),
       };
-    } catch (err) {
-      const fallback = candidates[Math.floor(Math.random() * 2)]!;
-      const fallbackName = ctx.alivePlayers.find((p) => p.id === fallback)?.name ?? fallback;
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getCouncilVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
-      return {
-        target: fallback,
-        thinking: "fallback council decision due to error",
-        reasoningContext: undefined,
-      };
-    }
   }
 
   async pickRoundFormat(
     ctx: PhaseContext,
     offeredFormats: [LaunchFormatId, LaunchFormatId],
   ): Promise<FormatDecisionResult<{ formatId: string }>> {
-    const fallbackFormat = offeredFormats[0];
     const offeredRules = offeredFormats.map((formatId) => {
       const label = displayNameForFormat(formatId);
       const rule = isLaunchFormatId(formatId)
@@ -3281,7 +3172,6 @@ Choose the format that best serves your current relationships, threat map, and a
 Use the pick_round_format tool with exactly one offered format id.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-    try {
       const result = await this.callTool<{
         thinking?: string;
         formatId?: unknown;
@@ -3304,21 +3194,12 @@ Use the pick_round_format tool with exactly one offered format id.`;
         ? pickFormatFromMenu(offeredFormats, result.formatId)
         : null;
       return {
-        formatId: selected ?? fallbackFormat,
+        formatId: selected ?? String(result.formatId),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
         ...formatDecisionProvenance(Boolean(selected), "invalid_format_choice"),
       };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=pickRoundFormat error="${err instanceof Error ? err.message : err}" fallback="${fallbackFormat}"`);
-      return {
-        formatId: fallbackFormat,
-        thinking: "fallback to first offered format after tool failure",
-        decisionSource: "fallback",
-        fallbackReason: "tool_call_failed",
-      };
-    }
   }
 
   async getSaveOrEliminateBallot(
@@ -3326,7 +3207,6 @@ Use the pick_round_format tool with exactly one offered format id.`;
     aliveIds: UUID[],
   ): Promise<FormatDecisionResult<{ polarity: "save" | "eliminate"; targetId: UUID }>> {
     const legalTargets = formatPlayersForIds(ctx, aliveIds, { excludeSelf: true });
-    const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
     const prompt = this.buildUserPrompt(ctx) + `
 ## Save-or-Eliminate Ballot
 ${supplementalActiveFormatRule(ctx, "save_or_eliminate")}
@@ -3337,7 +3217,6 @@ Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
 Use the save_or_eliminate_ballot tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-    try {
       const result = await this.callTool<{
         thinking?: string;
         polarity?: unknown;
@@ -3366,23 +3245,13 @@ Use the save_or_eliminate_ballot tool.`;
       );
       const accepted = Boolean(polarity && target);
       return {
-        polarity: polarity ?? "eliminate",
-        targetId: target?.id ?? fallbackTarget.id,
+        polarity: polarity ?? (String(result.polarity) as "save" | "eliminate"),
+        targetId: target?.id ?? (result.target as UUID),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
         ...formatDecisionProvenance(accepted, "invalid_save_or_eliminate_ballot"),
       };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getSaveOrEliminateBallot error="${err instanceof Error ? err.message : err}" fallback="eliminate:${fallbackTarget.name}"`);
-      return {
-        polarity: "eliminate",
-        targetId: fallbackTarget.id,
-        thinking: "fallback sealed eliminate ballot after tool failure",
-        decisionSource: "fallback",
-        fallbackReason: "tool_call_failed",
-      };
-    }
   }
 
   private async getSealedElimBallot(
@@ -3449,7 +3318,6 @@ Use the save_or_eliminate_ballot tool.`;
     board: { safe: UUID[]; vulnerable: UUID[]; unclassified: UUID[]; nextActorId: UUID | null },
   ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
     const legalTargets = formatPlayersForIds(ctx, board.unclassified);
-    const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
     const safeNames = formatPlayersForIds(ctx, board.safe).map((player) => player.name);
     const vulnerableNames = formatPlayersForIds(ctx, board.vulnerable).map((player) => player.name);
     const nextActorName = ctx.alivePlayers.find((player) => player.id === board.nextActorId)?.name ?? "none";
@@ -3482,7 +3350,6 @@ Point to exactly one unclassified player based on that exact consequence.
 Use the bounce_pointer tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-    try {
       const result = await this.callTool<{
         thinking?: string;
         target?: unknown;
@@ -3511,21 +3378,12 @@ Use the bounce_pointer tool.`;
         typeof result.target === "string" ? result.target : undefined,
       );
       return {
-        targetId: target?.id ?? fallbackTarget.id,
+        targetId: target?.id ?? (result.target as UUID),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
         ...formatDecisionProvenance(Boolean(target), "invalid_bounce_pointer"),
       };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getBouncePointer error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
-      return {
-        targetId: fallbackTarget.id,
-        thinking: "fallback to first unclassified player after tool failure",
-        decisionSource: "fallback",
-        fallbackReason: "tool_call_failed",
-      };
-    }
   }
 
   async getSafetyBounceVote(
@@ -3533,7 +3391,6 @@ Use the bounce_pointer tool.`;
     vulnerableIds: UUID[],
   ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
     const legalTargets = formatPlayersForIds(ctx, vulnerableIds);
-    const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
     const prompt = this.buildUserPrompt(ctx) + `
 ## Safety Bounce Vote
 ${supplementalActiveFormatRule(ctx, "safety_bounce")}
@@ -3544,7 +3401,6 @@ Legal vulnerable targets: ${legalTargets.map((player) => player.name).join(", ")
 Use the safety_bounce_vote tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-    try {
       const result = await this.callTool<{
         thinking?: string;
         target?: unknown;
@@ -3573,21 +3429,12 @@ Use the safety_bounce_vote tool.`;
         typeof result.target === "string" ? result.target : undefined,
       );
       return {
-        targetId: target?.id ?? fallbackTarget.id,
+        targetId: target?.id ?? (result.target as UUID),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
         ...formatDecisionProvenance(Boolean(target), "invalid_safety_bounce_target"),
       };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getSafetyBounceVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
-      return {
-        targetId: fallbackTarget.id,
-        thinking: "fallback to first vulnerable player after tool failure",
-        decisionSource: "fallback",
-        fallbackReason: "tool_call_failed",
-      };
-    }
   }
 
   async breakFormatEliminationTie(
@@ -3595,7 +3442,6 @@ Use the safety_bounce_vote tool.`;
     tiedSet: UUID[],
   ): Promise<FormatDecisionResult<{ targetId: UUID }>> {
     const legalTargets = formatPlayersForIds(ctx, tiedSet);
-    const fallbackTarget = legalTargets[0] ?? { id: ctx.selfId, name: ctx.selfName };
     const prompt = this.buildUserPrompt(ctx) + `
 ## Empowered Format Tiebreak
 ${supplementalLockedFormatRule(ctx)}
@@ -3606,7 +3452,6 @@ Legal tied targets: ${legalTargets.map((player) => player.name).join(", ")}
 Use the format_tiebreak tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-    try {
       const result = await this.callTool<{
         thinking?: string;
         target?: unknown;
@@ -3635,21 +3480,12 @@ Use the format_tiebreak tool.`;
         typeof result.target === "string" ? result.target : undefined,
       );
       return {
-        targetId: target?.id ?? fallbackTarget.id,
+        targetId: target?.id ?? (result.target as UUID),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
         ...formatDecisionProvenance(Boolean(target), "invalid_format_tiebreak_target"),
       };
-    } catch (err) {
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=breakFormatEliminationTie error="${err instanceof Error ? err.message : err}" fallback="${fallbackTarget.name}"`);
-      return {
-        targetId: fallbackTarget.id,
-        thinking: "fallback to first tied player after tool failure",
-        decisionSource: "fallback",
-        fallbackReason: "tool_call_failed",
-      };
-    }
   }
 
   async getEliminationMessage(
@@ -3716,18 +3552,24 @@ Use the elimination_message tool. Keep the public message to 1-2 sentences.`;
         }),
       );
       const message = normalizeRequiredString(result.message);
+      if (!message) {
+        return {
+          thinking: "",
+          message: "",
+          providerAbsence: { kind: "provider_exhausted", outcome: "empty_output" },
+        };
+      }
       return {
         thinking: result.thinking ?? "",
-        message: message || "I have no final words.",
+        message,
         reasoningContext: result.reasoningContext,
       };
     } catch (err) {
-      if (options?.signal?.aborted) throw err;
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEliminationMessage error="${err instanceof Error ? err.message : err}"`);
-      return {
-        thinking: "House fallback after elimination-message tool failure.",
-        message: "I have no final words.",
-      };
+      if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) throw err;
+      if (err instanceof ProviderAttemptError) {
+        return InfluenceAgent.providerAbsentResponse(err);
+      }
+      throw err;
     }
   }
 
@@ -3810,11 +3652,8 @@ Use the elimination_vote tool to cast your vote.`;
       const metadata = this.strategicDecisionMetadata(result, traceAction);
       const target = findByName(others, result.eliminate);
       if (target) return { target: target.id, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
-      const fallback = others[Math.floor(Math.random() * others.length)];
-      if (!fallback) throw new Error("No other players available for elimination vote");
-      console.warn(`[vote-fallback] agent="${this.name}" method=getEndgameEliminationVote returned="${result.eliminate}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallback.name}"`);
       return {
-        target: fallback.id,
+        target: result.eliminate as UUID,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...acceptedActionMetadata(metadata, false),
@@ -3823,14 +3662,7 @@ Use the elimination_vote tool to cast your vote.`;
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
         throw err;
       }
-      const fallback = others[Math.floor(Math.random() * others.length)];
-      if (!fallback) throw new Error("No other players available for elimination vote");
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getEndgameEliminationVote error="${err instanceof Error ? err.message : err}" fallback="${fallback.name}"`);
-      return {
-        target: fallback.id,
-        thinking: "fallback endgame elimination vote due to error",
-        reasoningContext: undefined,
-      };
+      throw err;
     }
   }
 
@@ -3855,15 +3687,10 @@ Use the make_accusation tool to submit your accusation.`;
         this.traceOptions(ctx, { action: "accusation", reasoningEffort: "medium", signal: options?.signal }),
       );
       const target = findByName(others, result.target);
-      const fallbackOther = others[0];
-      if (!fallbackOther) throw new Error("No other players available for accusation");
-      if (!target) {
-        console.warn(`[vote-fallback] agent="${this.name}" method=getAccusation returned="${result.target}" available=[${others.map((p) => p.name).join(", ")}] fallback="${fallbackOther.name}"`);
-      }
       const metadata = this.strategicDecisionMetadata(result, "accusation");
       return {
-        targetId: target?.id ?? fallbackOther.id,
-        text: result.accusation ?? `I accuse ${target?.name ?? fallbackOther.name}.`,
+        targetId: target?.id ?? (result.target as UUID),
+        text: typeof result.accusation === "string" ? result.accusation : "",
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...acceptedActionMetadata(metadata, Boolean(target)),
@@ -3872,13 +3699,7 @@ Use the make_accusation tool to submit your accusation.`;
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
         throw err;
       }
-      const fallbackOther = others[0];
-      if (!fallbackOther) throw new Error("No other players available for accusation");
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getAccusation error="${err instanceof Error ? err.message : err}" fallback="${fallbackOther.name}"`);
-      return {
-        targetId: fallbackOther.id,
-        text: `I believe ${fallbackOther.name} should go.`,
-      };
+      throw err;
     }
   }
 
@@ -3941,8 +3762,8 @@ Use the ask_jury_question tool to submit your question.`;
       );
       const target = findByName(finalists, result.target);
       return {
-        targetFinalistId: target?.id ?? finalistId0,
-        question: result.question ?? "Why do you deserve to win?",
+        targetFinalistId: target?.id ?? (result.target as UUID),
+        question: typeof result.question === "string" ? result.question : "",
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
       };
@@ -3950,11 +3771,7 @@ Use the ask_jury_question tool to submit your question.`;
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
         throw err;
       }
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getJuryQuestion error="${err instanceof Error ? err.message : err}" fallback=target:"${finalist0.name}"`);
-      return {
-        targetFinalistId: finalistId0,
-        question: `${finalist0.name}, why do you deserve to win?`,
-      };
+      throw err;
     }
   }
 
@@ -4022,13 +3839,8 @@ Use the jury_vote tool to cast your vote.`;
       const result = await this.callTool<{ thinking?: string; winner: string; reasoningContext?: string }>(prompt, TOOL_JURY_VOTE, 80, sys, this.traceOptions(ctx, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
       const metadata = this.strategicDecisionMetadata(result, "jury-vote");
       const target = findByName(finalists, result.winner);
-      const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
-      if (!randomFinalist) throw new Error("No finalist available for jury vote");
-      if (!target) {
-        console.warn(`[vote-fallback] agent="${this.name}" method=getJuryVote returned="${result.winner}" available=[${finalists.map((f) => f.name).join(", ")}] fallback="${finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist}"`);
-      }
       return {
-        target: target?.id ?? randomFinalist,
+        target: target?.id ?? (result.winner as UUID),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...acceptedActionMetadata(metadata, Boolean(target)),
@@ -4037,11 +3849,7 @@ Use the jury_vote tool to cast your vote.`;
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
         throw err;
       }
-      const randomFinalist = finalistIds[Math.floor(Math.random() * 2)];
-      if (!randomFinalist) throw new Error("No finalist available for jury vote");
-      const fallbackName = finalists.find((f) => f.id === randomFinalist)?.name ?? randomFinalist;
-      console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getJuryVote error="${err instanceof Error ? err.message : err}" fallback="${fallbackName}"`);
-      return { target: randomFinalist, thinking: "fallback jury vote due to error", reasoningContext: undefined };
+      throw err;
     }
   }
 
@@ -4879,7 +4687,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
    * GPT-5 reasoning models consume completion tokens for internal reasoning before
    * producing visible output. Without sufficient headroom the entire budget is
    * consumed by reasoning, the API returns an empty response or throws a length error,
-   * and the caller falls back to "[No response]".
+   * and the call is classified as provider exhaustion.
    *
    * With reasoning_effort parameter support (low/medium/high), overheads vary by
    * prompt complexity: low-effort uses ~256-1000 reasoning tokens for simple prompts,
@@ -5306,7 +5114,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
 
     const trimmed = content.trim();
     if (/^\{[\s\S]*"thinking"\s*:/i.test(trimmed)) {
-      return "[No response]";
+      return "";
     }
     return trimmed.replace(/^message\s*:\s*/i, "").trim();
   }
@@ -5384,10 +5192,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     if (!content) {
       console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty Responses output`);
       if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      const traceOutput = { thinking: "", message: "[No response]" };
-      const output = InfluenceAgent.withProviderReasoningSummaryDisplay(traceOutput, providerReasoningSummary);
-      await this.emitPrivateDecisionTrace({ options, messages, response, output: traceOutput, providerReasoningSummary });
-      return output;
+      throw new Error("Responses output passed validation without visible content");
     }
 
     const parsed = InfluenceAgent.parseAgentResponseContent(content);
@@ -5534,7 +5339,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
           const message = parsed
             ? parsed.message
             : InfluenceAgent.cleanVisibleMessage(rawContent);
-          return message && message !== "[No response]"
+          return message
             ? { status: "usable", value: candidate }
             : {
                 status: "unusable",
@@ -5602,7 +5407,10 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         error,
       );
       if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      return { thinking: "", message: "[No response]" };
+      if (error instanceof ProviderAttemptError) {
+        return InfluenceAgent.providerAbsentResponse(error);
+      }
+      throw error;
     }
   }
 
@@ -5838,7 +5646,7 @@ ${JSON.stringify(tool.function.parameters)}`,
         error,
       );
       if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      return "[No response]";
+      throw error;
     }
   }
 
@@ -5867,12 +5675,25 @@ ${JSON.stringify(tool.function.parameters)}`,
     }
 
     if (this.shouldUseOpenAIResponsesForSummary(options)) {
-      return await this.callOpenAIResponsesWithThinking(
-        prompt,
-        maxTokens,
-        systemPrompt,
-        options,
-      );
+      try {
+        return await this.callOpenAIResponsesWithThinking(
+          prompt,
+          maxTokens,
+          systemPrompt,
+          options,
+        );
+      } catch (error) {
+        if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
+          throw error;
+        }
+        if (error instanceof ProviderAttemptError) {
+          if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(
+            options?.action ? `${this.name}/${options.action}` : this.name,
+          );
+          return InfluenceAgent.providerAbsentResponse(error);
+        }
+        throw error;
+      }
     }
 
     const reasoning = this.usesReasoningBudget();
@@ -5978,7 +5799,10 @@ ${JSON.stringify(tool.function.parameters)}`,
         error,
       );
       if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      return { thinking: "", message: "[No response]" };
+      if (error instanceof ProviderAttemptError) {
+        return InfluenceAgent.providerAbsentResponse(error);
+      }
+      throw error;
     }
   }
 

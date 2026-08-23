@@ -761,7 +761,7 @@ describe("Format Mingle alliance action runner", () => {
     expect(turns).toEqual(["pass"]);
   });
 
-  it("consumes a selected proposer opportunity when agent generation fails", async () => {
+  it("rethrows non-provider alliance action failures without accepting a fallback action", async () => {
     const { logger, agents, ctx } = createActionHarness();
     const alice = agents.get("alice")!;
     alice.allianceActionErrors.push(new Error("scripted proposer failure"));
@@ -775,9 +775,9 @@ describe("Format Mingle alliance action runner", () => {
       }
     });
 
-    await runAllianceFormationPhase(ctx);
+    await expect(runAllianceFormationPhase(ctx)).rejects.toThrow("scripted proposer failure");
 
     expect(alice.allianceOpportunities.map((opportunity) => opportunity.kind)).toEqual(["proposer"]);
-    expect(turns).toEqual([{ action: "pass", result: "passed" }]);
+    expect(turns).toEqual([]);
   });
 });

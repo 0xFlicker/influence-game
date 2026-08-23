@@ -22,6 +22,8 @@ import {
   type PhaseActor,
   type PhaseRunnerContext,
 } from "./phase-runner-context";
+import { engineFallbackMetadata } from "../engine-fallback";
+import { ProviderAttemptError } from "../provider-execution";
 
 const MAX_HUDDLE_SESSIONS_PER_ALLIANCE = 2;
 
@@ -81,16 +83,32 @@ async function collectAllianceAction(
   opportunity: AllianceActionOpportunity,
 ): Promise<AllianceAction> {
   const agent = ctx.agents.get(playerId)!;
+  const phaseCtx = prepareAgentPhaseContext(ctx, agent, playerId, phase, "strategic_decision");
   if (!agent.getAllianceAction) {
     return {
       action: "pass",
-      thinking: "No alliance action method is available.",
+      ...engineFallbackMetadata(
+        phaseCtx,
+        playerId,
+        "alliance-action",
+        "agent_method_unavailable",
+      ),
     };
   }
 
-  const phaseCtx = prepareAgentPhaseContext(ctx, agent, playerId, phase, "strategic_decision");
   try {
-    const action = await agent.getAllianceAction(phaseCtx, opportunity);
+    let action = await agent.getAllianceAction(phaseCtx, opportunity);
+    if (action.action === "pass" && action.strategyGameplayAccepted === false) {
+      action = {
+        action: "pass",
+        ...engineFallbackMetadata(
+          phaseCtx,
+          playerId,
+          "alliance-action",
+          "invalid_model_output",
+        ),
+      };
+    }
     if (opportunity.kind !== "response") return action;
     if (
       action.action === "accept"
@@ -113,10 +131,15 @@ async function collectAllianceAction(
     }
     return action;
   } catch (error) {
+    if (!(error instanceof ProviderAttemptError)) throw error;
     return {
       action: "pass",
-      thinking: "Alliance action generation failed; passing.",
-      reasoningContext: error instanceof Error ? error.message : String(error),
+      ...engineFallbackMetadata(
+        phaseCtx,
+        playerId,
+        "alliance-action",
+        "provider_exhausted",
+      ),
     };
   }
 }
@@ -137,7 +160,8 @@ async function applyAllianceAction(
       ctx.gameState.round,
       phase,
       pass,
-      decisionId,
+      action.engineFallback ? undefined : decisionId,
+      action.engineFallback,
     ),
   ];
 
@@ -572,14 +596,10 @@ async function collectAllianceHuddleTurn(
   speakerId: UUID,
   huddle: AllianceHuddlePromptContext,
   conversationHistory: Array<{ from: string; text: string }>,
-): Promise<AllianceHuddleTurnAction> {
+): Promise<AllianceHuddleTurnAction | null> {
   const agent = ctx.agents.get(speakerId)!;
   if (!agent.getAllianceHuddleTurn) {
-    return {
-      thinking: "No alliance huddle method is available.",
-      message: null,
-      noReply: true,
-    };
+    return null;
   }
 
   const phase = huddle.window === "format"
@@ -591,11 +611,14 @@ async function collectAllianceHuddleTurn(
   try {
     return await agent.getAllianceHuddleTurn(phaseCtx, huddle, conversationHistory);
   } catch (error) {
+    if (!(error instanceof ProviderAttemptError)) throw error;
     return {
-      thinking: "Alliance huddle turn failed; no reply.",
-      reasoningContext: error instanceof Error ? error.message : String(error),
       message: null,
       noReply: true,
+      providerAbsence: {
+        kind: "provider_exhausted",
+        outcome: error.outcome.kind,
+      },
     };
   }
 }
@@ -631,6 +654,7 @@ async function completeHuddleSession(
   };
   for (const speakerId of speakerIds) {
     const turn = await collectAllianceHuddleTurn(ctx, speakerId, huddle, conversationHistory);
+    if (!turn || turn.providerAbsence) continue;
     await assertCanAcceptCommit(ctx);
     const message = turn.noReply ? null : (turn.message?.trim() || null);
     if (turn.commitment) {

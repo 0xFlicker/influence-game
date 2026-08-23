@@ -25,6 +25,7 @@ export async function runIntroductionPhase(
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.INTRODUCTION, "ordinary_speech");
       const response = await agent.getIntroduction(phaseCtx);
       const { message, thinking, reasoningContext } = response;
+      if (response.providerAbsence || !message.trim()) return;
       await assertCanAcceptCommit(ctx);
       const transcriptThinking = transcriptThinkingFor(agent, thinking, reasoningContext);
       logger.logPublic(player.id, message, Phase.INTRODUCTION, transcriptThinking);

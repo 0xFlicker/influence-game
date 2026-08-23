@@ -1,4 +1,9 @@
 import { Phase } from "../types";
+import { ProviderAttemptError } from "../provider-execution";
+import {
+  deterministicEngineFallback,
+  engineFallbackMetadata,
+} from "../engine-fallback";
 import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
@@ -80,7 +85,42 @@ export async function runCouncilPhase(
         councilCandidates: candidates,
       },
     );
-    const voteResult = await agent.getCouncilVote(phaseCtx, candidates);
+    let voteResult;
+    try {
+      voteResult = await agent.getCouncilVote(phaseCtx, candidates);
+    } catch (error) {
+      if (!(error instanceof ProviderAttemptError)) throw error;
+      voteResult = {
+        target: deterministicEngineFallback(
+          candidates,
+          phaseCtx,
+          player.id,
+          "council-vote",
+        ),
+        ...engineFallbackMetadata(
+          phaseCtx,
+          player.id,
+          "council-vote",
+          "provider_exhausted",
+        ),
+      };
+    }
+    if (!candidates.includes(voteResult.target)) {
+      voteResult = {
+        target: deterministicEngineFallback(
+          candidates,
+          phaseCtx,
+          player.id,
+          "council-vote",
+        ),
+        ...engineFallbackMetadata(
+          phaseCtx,
+          player.id,
+          "council-vote",
+          "invalid_model_output",
+        ),
+      };
+    }
     const vote = voteResult.target;
     await assertCanAcceptCommit(ctx);
     gameState.recordCouncilVote(player.id, vote, [
@@ -90,7 +130,8 @@ export async function runCouncilPhase(
         gameState.round,
         Phase.COUNCIL,
         undefined,
-        voteResult.decisionId,
+        voteResult.engineFallback ? undefined : voteResult.decisionId,
+        voteResult.engineFallback,
       ),
     ]);
     resolveActionStrategyCandidate(
@@ -102,7 +143,7 @@ export async function runCouncilPhase(
     const votedAgainstName = gameState.getPlayerName(vote);
     agent.addNote(votedAgainstName, `Voted against in council R${gameState.round}`);
 
-    const transcriptThinking = transcriptThinkingFor(agent, voteResult.thinking, voteResult.reasoningContext);
+    const transcriptThinking = transcriptThinkingFor(agent, voteResult.thinking, voteResult.reasoningContext, voteResult);
     logger.logSystem(
       `${player.name} council vote -> ${votedAgainstName}`,
       Phase.COUNCIL,

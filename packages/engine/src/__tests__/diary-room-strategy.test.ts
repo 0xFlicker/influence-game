@@ -427,6 +427,26 @@ describe("post-eviction diary compact strategy", () => {
     ]);
   });
 
+  it("omits an exhausted diary answer without writing transcript, strategy, turn, or history", async () => {
+    const { agent, diary, logger } = createDiaryHarness({ maxFollowUps: 0 });
+    const turns: GameStreamEvent[] = [];
+    logger.setStreamListener((event) => {
+      if (event.type === "agent_turn" && event.action === "diary-answer") turns.push(event);
+    });
+    agent.answers.push({
+      message: "",
+      thinking: "",
+      providerAbsence: { kind: "provider_exhausted", outcome: "refusal" },
+    });
+
+    await diary.runDiaryRoom(Phase.INTRODUCTION);
+
+    expect(diary.diaryEntries).toEqual([]);
+    expect(agent.boundaries).toEqual([]);
+    expect(turns).toEqual([]);
+    expect(logger.transcript.some((entry) => entry.from === agent.name)).toBe(false);
+  });
+
   it("does not mutate survivor strategy during a juror interview", async () => {
     const { agent, diary, playerId } = createDiaryHarness({ maxFollowUps: 0 });
     agent.answers.push({ message: "From jury, Vera has the best case.", thinking: "Jury read.", strategy: "This must be ignored." });

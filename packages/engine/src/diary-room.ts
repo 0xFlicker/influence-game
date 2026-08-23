@@ -119,8 +119,14 @@ export class DiaryRoom {
     const ctx = this.buildAgentDiaryContext(agent, playerId, isJuror);
     ctx.providerLogicalCallOrdinal = 1;
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
+    if (firstResponse.providerAbsence) return;
     await this.beforeAcceptedCommit?.();
-    const firstTranscriptThinking = transcriptThinkingFor(agent, firstResponse.thinking, firstResponse.reasoningContext);
+    const firstTranscriptThinking = transcriptThinkingFor(
+      agent,
+      firstResponse.thinking,
+      firstResponse.reasoningContext,
+      firstResponse,
+    );
     this.logger.logDiary(label, firstResponse.message, firstTranscriptThinking.thinking, firstTranscriptThinking.reasoningContext);
     const firstStrategyResult = this.commitDiaryStrategy(agent, firstResponse, isJuror);
     this.logger.emitAgentTurn({
@@ -170,8 +176,14 @@ export class DiaryRoom {
       const followUpContext = this.buildAgentDiaryContext(agent, playerId, isJuror);
       followUpContext.providerLogicalCallOrdinal = i + 1;
       const followUpResponse = await agent.getDiaryEntry(followUpContext, result.question, sessionExchanges);
+      if (followUpResponse.providerAbsence) break;
       await this.beforeAcceptedCommit?.();
-      const followUpTranscriptThinking = transcriptThinkingFor(agent, followUpResponse.thinking, followUpResponse.reasoningContext);
+      const followUpTranscriptThinking = transcriptThinkingFor(
+        agent,
+        followUpResponse.thinking,
+        followUpResponse.reasoningContext,
+        followUpResponse,
+      );
       this.logger.logDiary(label, followUpResponse.message, followUpTranscriptThinking.thinking, followUpTranscriptThinking.reasoningContext);
       const followUpStrategyResult = this.commitDiaryStrategy(agent, followUpResponse, isJuror);
       this.logger.emitAgentTurn({

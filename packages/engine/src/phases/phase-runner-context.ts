@@ -63,6 +63,7 @@ export function agentTurnSourcePointer(
   phase: Phase,
   turnPass?: number,
   decisionId?: UUID,
+  engineFallback?: StrategicDecisionMetadata["engineFallback"],
 ): CanonicalSourcePointer {
   return {
     kind: "agent_turn",
@@ -72,6 +73,7 @@ export function agentTurnSourcePointer(
     phase,
     ...(turnPass != null ? { turnPass } : {}),
     ...(decisionId ? { decisionId } : {}),
+    ...(engineFallback ? { engineFallback } : {}),
   };
 }
 
@@ -83,8 +85,11 @@ export function transcriptThinkingFor(
   agent: IAgent,
   thinking?: string,
   reasoningContext?: string,
+  metadata?: StrategicDecisionMetadata,
 ): { thinking?: string; reasoningContext?: string; decisionId?: string } {
-  const decisionId = agent.getLastPrivateDecisionId?.();
+  const decisionId = metadata?.engineFallback
+    ? undefined
+    : metadata?.decisionId ?? agent.getLastPrivateDecisionId?.();
   return {
     ...(thinking && { thinking }),
     ...(reasoningContext && { reasoningContext }),
@@ -96,11 +101,16 @@ const strategyResultsByCandidate = new WeakMap<object, CompactStrategyApplicatio
 
 export function strategicDecisionResponse(
   metadata?: StrategicDecisionMetadata,
-): { decisionId?: UUID; strategyResult?: CompactStrategyApplicationResult } {
+): {
+  decisionId?: UUID;
+  engineFallback?: StrategicDecisionMetadata["engineFallback"];
+  strategyResult?: CompactStrategyApplicationResult;
+} {
   if (!metadata) return {};
   const strategyResult = strategyResultsByCandidate.get(metadata);
   return {
     ...(metadata.decisionId ? { decisionId: metadata.decisionId } : {}),
+    ...(metadata.engineFallback ? { engineFallback: metadata.engineFallback } : {}),
     ...(strategyResult ? { strategyResult } : {}),
   };
 }
