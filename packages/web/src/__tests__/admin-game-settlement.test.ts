@@ -7,7 +7,7 @@ import {
   settlementRetryIsAvailable,
   settlementRetryIsTerminalConflict,
   settlementRetrySuccessMessage,
-} from "../app/admin/games/game-history-browser";
+} from "../app/admin/admin-game-settlement";
 import {
   ApiError,
   retryGameSettlement,

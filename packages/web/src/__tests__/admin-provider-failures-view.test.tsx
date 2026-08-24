@@ -6,7 +6,7 @@ import { setApiBase, type AdminGameSummary } from "@/lib/api";
 import {
   AdminProviderFailuresPanel,
   AdminProviderFailuresPill,
-} from "../admin-provider-failures-view";
+} from "../app/admin/admin-provider-failures-view";
 
 const originalFetch = globalThis.fetch;
 const originalWindow = globalThis.window;
@@ -27,7 +27,7 @@ afterEach(() => {
   activeWindow = null;
 });
 
-describe("admin provider failure history", () => {
+describe("admin provider failure evidence", () => {
   test("distinguishes empty and unavailable summaries from inspectable recovered evidence", () => {
     installDom();
     const empty = render(
