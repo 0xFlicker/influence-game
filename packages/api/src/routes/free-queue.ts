@@ -68,6 +68,19 @@ const DAILY_FREE_MODEL_SELECTION = {
   catalogId: `openai:${DAILY_FREE_MODEL}`,
   reasoningPolicy: "action-policy",
 } as const;
+const DAILY_FREE_PROVIDER_MANIFEST = [
+  DAILY_FREE_MODEL_SELECTION,
+  {
+    catalogId: "katana:grok-4-5",
+    reasoningPolicy: "action-policy",
+    maxCallsPerGame: 12,
+  },
+  {
+    catalogId: "katana:glm-5-2",
+    reasoningPolicy: "action-policy",
+    maxCallsPerGame: 24,
+  },
+] as const;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -289,9 +302,10 @@ export function createFreeQueueRoutes(
       minPlayers,
       maxPlayers,
       modelSelection: DAILY_FREE_MODEL_SELECTION,
-      // Daily fallback activation remains gated on provider qualification, but
-      // every new game seals the manifest authority from creation onward.
-      providerManifest: [DAILY_FREE_MODEL_SELECTION],
+      // Exact Katana qualification measured 0.8 credits for three bounded
+      // Grok calls and 0.4 for three GLM calls. The 12/24 caps keep the two
+      // fallback entries within an approximately equal per-game credit guard.
+      providerManifest: DAILY_FREE_PROVIDER_MANIFEST,
       personaPool: [],
       fillStrategy: "balanced",
       visibility: "public",
@@ -536,8 +550,10 @@ export function createFreeQueueRoutes(
         ...(readiness.code && { code: readiness.code }),
         ...(readiness.retryable !== undefined && { retryable: readiness.retryable }),
       }, readiness.code === "deployment_admission_closed"
+        || readiness.code === "provider_admission_closed"
         ? 409
         : readiness.code === "deployment_admission_unavailable"
+          || readiness.code === "provider_admission_unavailable"
           ? 503
           : 500);
     }

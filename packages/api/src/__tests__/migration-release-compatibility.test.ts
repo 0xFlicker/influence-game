@@ -34,6 +34,18 @@ describe("release migration identity", () => {
     expect(readFileSync(migration, "utf8").length).toBeGreaterThan(0);
     expect(inspectReleaseMigrationFiles([migration])).toEqual([]);
   });
+
+  test("the provider-resilience runtime migrations remain additive", () => {
+    const migrations = [
+      "0058_gorgeous_infant_terrible.sql",
+      "0059_sealed_provider_manifest.sql",
+      "0060_provider_health.sql",
+    ].map((file) => path.resolve(import.meta.dir, "../../drizzle", file));
+    for (const migration of migrations) {
+      expect(readFileSync(migration, "utf8").length).toBeGreaterThan(0);
+    }
+    expect(inspectReleaseMigrationFiles(migrations)).toEqual([]);
+  });
 });
 
 describe("expand-contract release migration policy", () => {

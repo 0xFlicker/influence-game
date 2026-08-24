@@ -26,9 +26,11 @@ describe("create game Influence selection", () => {
     expect(adminCreatePageSource).toContain("Create {ACTIVE_GAME.name} Game");
   });
 
-  it("defaults new public games to GPT-5.6 Luna", () => {
-    expect(createFormSource).toContain("modelCatalogId: DEFAULT_MODEL_CATALOG_ID");
-    expect(createFormSource).toContain('DEFAULT_MODEL_CATALOG_ID');
+  it("defaults new public games to a GPT-5.6 Luna primary route", () => {
+    expect(createFormSource).toContain(
+      '{ catalogId: DEFAULT_MODEL_CATALOG_ID, reasoningPolicy: "medium" }',
+    );
+    expect(createFormSource).toContain("providerRoute: DEFAULT_PROVIDER_MANIFEST.map");
     expect(createFormSource).toContain('visibility: "public"');
     expect(createFormSource).toContain('reasoningPolicy: "medium"');
     expect(createFormSource).not.toContain("modelTier");

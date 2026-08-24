@@ -97,6 +97,7 @@ export type PrivateTraceManifestIndexResult =
 export interface ListPrivateTraceManifestsOptions {
   limit?: number;
   cursor?: string;
+  evidenceType?: typeof PRIVATE_TRACE_EVIDENCE_TYPE | typeof PROVIDER_ATTEMPT_EVIDENCE_TYPE;
   /** Authorization/surface fingerprint supplied by the producer transport. */
   cursorBinding?: string;
 }
@@ -108,8 +109,11 @@ export interface PrivateTraceContentRead {
   byteLength: number;
   returnedByteLength: number;
   totalByteLength?: number;
+  offsetBytes: number;
+  nextOffsetBytes?: number;
   truncated: boolean;
   sha256: string;
+  hashScope: "complete_object" | "chunk";
 }
 
 export type PrivateTraceContentReadResult =
@@ -161,7 +165,7 @@ export interface PrivateTraceSearchOptions {
   maxBytes?: number;
 }
 
-function sha256Text(body: string): string {
+function sha256Bytes(body: Uint8Array): string {
   return `sha256:${createHash("sha256").update(body).digest("hex")}`;
 }
 
@@ -334,7 +338,12 @@ export class PrivateTraceReadModel {
       : null;
     if (decodedCursor?.status === "invalid") return invalidManifestCursor();
 
-    const cursorBinding = options.cursorBinding ?? LOCAL_TRACE_CURSOR_BINDING;
+    const evidenceType = options.evidenceType ?? PRIVATE_TRACE_EVIDENCE_TYPE;
+    const cursorBinding = sha256StableJson({
+      domain: "influence.private_trace.index_binding.v2",
+      binding: options.cursorBinding ?? LOCAL_TRACE_CURSOR_BINDING,
+      evidenceType,
+    });
     if (decodedCursor?.status === "ok" && !bindProducerIndexCursor({
       claims: decodedCursor.claims,
       kind: "private_trace",
@@ -382,7 +391,10 @@ export class PrivateTraceReadModel {
   ): Promise<PrivateTraceManifestIndexResult> {
     const baseConditions: SQL[] = [
       eq(schema.gameEvidenceManifests.gameId, gameId),
-      eq(schema.gameEvidenceManifests.evidenceType, PRIVATE_TRACE_EVIDENCE_TYPE),
+      eq(
+        schema.gameEvidenceManifests.evidenceType,
+        options.evidenceType ?? PRIVATE_TRACE_EVIDENCE_TYPE,
+      ),
     ];
     addTraceDatabaseSnapshotCondition(baseConditions, databaseSnapshot);
     const pageConditions = [...baseConditions];
@@ -474,6 +486,7 @@ export class PrivateTraceReadModel {
       purpose?: string;
       accessor?: EvidenceAccessor;
       maxBytes?: number;
+      offsetBytes?: number;
     } = {},
   ): Promise<PrivateTraceContentReadResult> {
     return this.readContentInternal(manifestId, params, false);
@@ -486,6 +499,7 @@ export class PrivateTraceReadModel {
       purpose?: string;
       accessor?: EvidenceAccessor;
       maxBytes?: number;
+      offsetBytes?: number;
     } = {},
   ): Promise<PrivateTraceContentReadResult> {
     return this.readContentInternal(
@@ -528,6 +542,7 @@ export class PrivateTraceReadModel {
       purpose?: string;
       accessor?: EvidenceAccessor;
       maxBytes?: number;
+      offsetBytes?: number;
     },
     experimentNoAudit: boolean,
     expectedEvidenceType?: string,
@@ -577,24 +592,39 @@ export class PrivateTraceReadModel {
       }
 
       const maxBytes = normalizeMaxBytes(params.maxBytes);
+      const offsetBytes = normalizeOffsetBytes(params.offsetBytes);
       const object = await storage.getObject({
         bucket: manifest.storageBucket,
         key: manifest.storageKey,
-        maxBytes,
+        offsetBytes,
+        // Read up to three look-ahead bytes so a nominal byte limit that lands
+        // inside a UTF-8 code point can return that character losslessly.
+        maxBytes: maxBytes === undefined ? undefined : maxBytes + 3,
       });
-      const returnedByteLength = object.contentLength ?? Buffer.byteLength(object.body, "utf8");
+      const fetchedBytes = object.bodyBytes
+        ?? (object.body !== undefined ? new TextEncoder().encode(object.body) : undefined);
+      if (!fetchedBytes) {
+        throw new Error("private trace object body missing");
+      }
+      const chunkBytes = maxBytes === undefined
+        ? validateUtf8Chunk(fetchedBytes, offsetBytes)
+        : boundedUtf8Chunk(fetchedBytes, maxBytes, offsetBytes);
+      const content = new TextDecoder("utf-8", { fatal: true }).decode(chunkBytes);
+      const returnedByteLength = chunkBytes.byteLength;
       const totalByteLength = expectedBytes ?? head.contentLength;
-      const truncated = maxBytes !== undefined && (
+      const nextOffsetBytes = offsetBytes + returnedByteLength;
+      const truncated = (
         totalByteLength !== undefined
-          ? returnedByteLength < totalByteLength
-          : returnedByteLength >= maxBytes
+          ? nextOffsetBytes < totalByteLength
+          : maxBytes !== undefined && returnedByteLength >= maxBytes
       );
-      const sha256 = sha256Text(object.body);
-      if (!truncated && expectedBytes !== undefined && returnedByteLength !== expectedBytes) {
+      const sha256 = sha256Bytes(chunkBytes);
+      const completeObject = offsetBytes === 0 && !truncated;
+      if (completeObject && expectedBytes !== undefined && returnedByteLength !== expectedBytes) {
         return { ok: false, status: "integrity_mismatch", error: "Private trace content size does not match manifest metadata" };
       }
       const expectedHash = typeof manifest.metadata.sha256 === "string" ? manifest.metadata.sha256 : undefined;
-      if (!truncated && expectedHash && sha256 !== expectedHash) {
+      if (completeObject && expectedHash && sha256 !== expectedHash) {
         return { ok: false, status: "integrity_mismatch", error: "Private trace content hash does not match manifest metadata" };
       }
 
@@ -605,13 +635,16 @@ export class PrivateTraceReadModel {
             ...manifest,
             redactedAt: null,
           } as typeof schema.gameEvidenceManifests.$inferSelect),
-          content: object.body,
+          content,
           contentType: object.contentType ?? head.contentType,
           byteLength: totalByteLength ?? returnedByteLength,
           returnedByteLength,
           ...(totalByteLength !== undefined && { totalByteLength }),
+          offsetBytes,
+          ...(truncated && { nextOffsetBytes }),
           truncated,
           sha256,
+          hashScope: completeObject ? "complete_object" : "chunk",
         },
       };
     } catch (error) {
@@ -683,6 +716,46 @@ export class PrivateTraceReadModel {
     this.storage ??= this.storageFactory();
     return this.storage;
   }
+}
+
+function validateUtf8Chunk(bytes: Uint8Array, offsetBytes: number): Uint8Array {
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return bytes;
+  } catch {
+    throw new Error(`Private trace offset ${offsetBytes} is not aligned to UTF-8 content`);
+  }
+}
+
+function boundedUtf8Chunk(
+  bytes: Uint8Array,
+  requestedMaxBytes: number,
+  offsetBytes: number,
+): Uint8Array {
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+  const preferredEnd = Math.min(requestedMaxBytes, bytes.byteLength);
+  for (let end = preferredEnd; end > 0; end -= 1) {
+    try {
+      decoder.decode(bytes.subarray(0, end));
+      return bytes.subarray(0, end);
+    } catch {
+      // Try the previous byte boundary.
+    }
+  }
+  for (let end = preferredEnd + 1; end <= bytes.byteLength; end += 1) {
+    try {
+      decoder.decode(bytes.subarray(0, end));
+      return bytes.subarray(0, end);
+    } catch {
+      // A single UTF-8 code point may exceed the caller's nominal byte cap.
+    }
+  }
+  throw new Error(`Private trace offset ${offsetBytes} is not aligned to UTF-8 content`);
+}
+
+function normalizeOffsetBytes(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.floor(value));
 }
 
 function emptyLinkageSummary(): PrivateTraceLinkageSummary {

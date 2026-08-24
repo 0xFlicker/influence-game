@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { Phase, type ProviderAttemptIntent, type ProviderAttemptRecord } from "../index";
+import {
+  Phase,
+  ProviderCallBudgetExhaustedError,
+  type ProviderAttemptIntent,
+  type ProviderAttemptRecord,
+} from "../index";
 import { createLocalProviderExecutionJournal } from "../simulate";
 
 function intent(attemptOrdinal: number): ProviderAttemptIntent {
@@ -81,6 +86,45 @@ describe("local provider attempt journal", () => {
     const first = intent(1);
     await journal.hooks.onReserve?.(first);
     expect(() => journal.hooks.onReserve?.(first)).toThrow("already reserved");
+  });
+
+  test("enforces sealed fallback call caps without a remote API journal", async () => {
+    const journal = createLocalProviderExecutionJournal({
+      gameId: "game-id",
+      ownerEpoch: "owner-id",
+      providerManifest: [
+        {
+          catalogId: "openai:gpt-5.6-luna",
+          providerProfileId: "openai",
+          modelId: "gpt-5.6-luna",
+        },
+        {
+          catalogId: "katana:glm-5-2",
+          providerProfileId: "katana",
+          modelId: "glm-5-2",
+          maxCallsPerGame: 1,
+        },
+      ],
+    });
+    const fallback = (attemptOrdinal: number): ProviderAttemptIntent => ({
+      ...intent(attemptOrdinal),
+      coordinate: {
+        ...intent(attemptOrdinal).coordinate,
+        logicalCallOrdinal: attemptOrdinal,
+      },
+      preparedRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: "katana",
+        catalogId: "katana:glm-5-2",
+        model: "glm-5-2",
+        body: { messages: [{ role: "user", content: "Vote" }] },
+      },
+    });
+
+    await journal.hooks.onReserve?.(fallback(1));
+    expect(() => journal.hooks.onReserve?.(fallback(2))).toThrow(
+      ProviderCallBudgetExhaustedError,
+    );
   });
 
   test("keeps artifact writer failures nonfatal", async () => {

@@ -37,7 +37,7 @@ import type {
   StrategicDecisionMetadata,
 } from "../game-runner.types";
 import { deterministicEngineFallback, engineFallbackMetadata } from "../engine-fallback";
-import { ProviderAttemptError } from "../provider-execution";
+import { ProviderUnavailableError } from "../provider-execution";
 import { Phase, type UUID } from "../types";
 import { handleElimination } from "./elimination";
 import {
@@ -107,7 +107,7 @@ async function withFormatAgentTimeout<T>(
     try {
       return await operation();
     } catch (error) {
-      if (!(error instanceof ProviderAttemptError)) throw error;
+      if (!(error instanceof ProviderUnavailableError)) throw error;
       return fallback("provider_exhausted");
     }
   }
@@ -124,7 +124,7 @@ async function withFormatAgentTimeout<T>(
   });
 
   return Promise.race([operation().catch((error) => {
-    if (!(error instanceof ProviderAttemptError)) throw error;
+    if (!(error instanceof ProviderUnavailableError)) throw error;
     return fallback("provider_exhausted");
   }), timeoutPromise]).finally(() => {
     if (timeout) clearTimeout(timeout);

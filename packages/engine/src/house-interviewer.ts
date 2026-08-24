@@ -15,16 +15,18 @@ import type {
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
 import { withInfluenceGamePromptContext } from "./game-prompt-context";
-import type { LlmToolChoiceMode } from "./llm-client";
+import type { LlmProviderRuntime, LlmToolChoiceMode } from "./llm-client";
 import { Phase } from "./types";
 import type { UUID } from "./types";
 import { parseOpenAIServiceTier, type TokenTracker } from "./token-tracker";
 import { PromptReuseCollector } from "./prompt-reuse";
 import {
   pairProviderLogicalCallOrdinals,
+  providerAcceptedDecisionId,
   ProviderAttemptError,
   ProviderExecutionCoordinator,
   type ProviderCandidateValidation,
+  type ProviderAttemptRecord,
   type ProviderExecutionHooks,
   type ProviderLogicalCallExecution,
 } from "./provider-execution";
@@ -277,6 +279,8 @@ export interface LLMHouseInterviewerOptions {
   houseSummaryTimeoutMs?: number;
   /** Observable provider-attempt hooks used by durable API and simulation adapters. */
   providerExecutionHooks?: ProviderExecutionHooks;
+  /** Ordered, sealed runtime entries. The constructor client/model remain the primary projection. */
+  providerManifest?: readonly LlmProviderRuntime[];
 }
 
 export const HOUSE_SUMMARY_LIMITS = {
@@ -1073,6 +1077,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly structuredOutputTimeoutMs: number;
   private readonly houseSummaryTimeoutMs?: number;
   private readonly providerExecution: ProviderExecutionCoordinator;
+  private readonly providerManifest: readonly LlmProviderRuntime[];
+  private readonly responseProviderRuntime = new WeakMap<object, LlmProviderRuntime>();
+  private readonly responseProviderAttemptId = new WeakMap<object, string>();
   private tokenTracker: TokenTracker | null = null;
 
   constructor(openaiClient: OpenAI, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
@@ -1091,6 +1098,19 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.providerExecution = new ProviderExecutionCoordinator({
       hooks: options.providerExecutionHooks,
     });
+    this.providerManifest = options.providerManifest?.length
+      ? options.providerManifest.map((entry) => ({ ...entry }))
+      : [{
+          client: openaiClient,
+          catalogId: options.catalogId ?? `${this.providerProfileId}:${model}`,
+          providerProfileId: this.providerProfileId,
+          modelId: model,
+          modelCapabilities: this.modelCapabilities,
+          reasoningPolicy: this.reasoningPolicy,
+          toolChoiceMode: this.toolChoiceMode,
+          position: 0,
+          role: "primary",
+        }];
   }
 
   /** Attach a token tracker to record LLM usage. */
@@ -1114,33 +1134,90 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
 
   private executeChatCompletion<T>(params: {
     call: ProviderLogicalCallExecution;
-    body: ChatCompletionCreateParamsNonStreaming;
+    body:
+      | ChatCompletionCreateParamsNonStreaming
+      | ((runtime: LlmProviderRuntime) => ChatCompletionCreateParamsNonStreaming);
     maxAttempts: number;
     requestSignal?: AbortSignal;
     cancellationSignal?: AbortSignal;
     validate(response: ChatCompletion): ProviderCandidateValidation<T>;
-    onRetry?: () => void;
+    onRetry?: (record: ProviderAttemptRecord) => void;
   }): Promise<T> {
-    return params.call.execute({
-      preparedRequest: {
-        requestShape: "chat_completions",
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        model: this.model,
-        body: params.body,
-      },
-      maxAttempts: params.maxAttempts,
+    const requestBody = (runtime: LlmProviderRuntime) =>
+      this.adaptChatCompletionBody(
+        typeof params.body === "function" ? params.body(runtime) : params.body,
+        runtime,
+      );
+    return params.call.executeManifest({
+      entries: this.providerManifest.map((runtime) => ({
+        catalogId: runtime.catalogId,
+        preparedRequest: {
+          requestShape: "chat_completions" as const,
+          providerProfileId: runtime.providerProfileId,
+          catalogId: runtime.catalogId,
+          model: runtime.modelId,
+          body: requestBody(runtime),
+        },
+        maxAttempts: params.maxAttempts,
+        dispatch: ({ requestOptions }) =>
+          runtime.client.chat.completions.create(requestBody(runtime), {
+            ...requestOptions,
+            ...(params.requestSignal && { signal: params.requestSignal }),
+          }),
+        validate: params.validate,
+        ...(params.onRetry && { onRetry: params.onRetry }),
+      })),
       ...(params.cancellationSignal && {
         cancellationSignal: params.cancellationSignal,
       }),
-      dispatch: ({ requestOptions }) =>
-        this.openai.chat.completions.create(params.body, {
-          ...requestOptions,
-          ...(params.requestSignal && { signal: params.requestSignal }),
-        }),
-      validate: params.validate,
-      ...(params.onRetry && { onRetry: params.onRetry }),
+    }).then(({ value, manifestPosition, acceptedAttemptId }) => {
+      if (value && typeof value === "object") {
+        this.responseProviderRuntime.set(
+          value as object,
+          this.providerManifest[manifestPosition]!,
+        );
+        if (acceptedAttemptId) {
+          this.responseProviderAttemptId.set(value as object, acceptedAttemptId);
+        }
+      }
+      return value;
     });
+  }
+
+  private adaptChatCompletionBody(
+    body: ChatCompletionCreateParamsNonStreaming,
+    runtime: LlmProviderRuntime,
+  ): ChatCompletionCreateParamsNonStreaming {
+    const next = { ...body, model: runtime.modelId } as Record<string, unknown>;
+    const tokenBudget = typeof next.max_completion_tokens === "number"
+      ? next.max_completion_tokens
+      : typeof next.max_tokens === "number"
+        ? next.max_tokens
+        : undefined;
+    delete next.max_completion_tokens;
+    delete next.max_tokens;
+    if (tokenBudget !== undefined) {
+      next[runtime.modelCapabilities.usesMaxCompletionTokens
+        ? "max_completion_tokens"
+        : "max_tokens"] = tokenBudget;
+    }
+    if (!runtime.modelCapabilities.supportsTemperature) delete next.temperature;
+    const configuredEffort = runtime.reasoningPolicy === "low"
+      || runtime.reasoningPolicy === "medium"
+      || runtime.reasoningPolicy === "high"
+      ? runtime.reasoningPolicy
+      : undefined;
+    const reasoningEffort = runtime.modelCapabilities.supportsReasoningEffort
+      ? configuredEffort
+      : undefined;
+    if (reasoningEffort) next.reasoning_effort = reasoningEffort;
+    else delete next.reasoning_effort;
+    return next as unknown as ChatCompletionCreateParamsNonStreaming;
+  }
+
+  private runtimeForResponse(response: ChatCompletion): LlmProviderRuntime {
+    return this.responseProviderRuntime.get(response as object)
+      ?? this.providerManifest[0]!;
   }
 
   private executeHouseChatTransport(
@@ -1513,19 +1590,26 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       LLMHouseInterviewer.extractReasoningContext(message);
     const toolCalls = LLMHouseInterviewer.privateTraceToolCalls(message);
     const content = typeof message?.content === "string" ? message.content : null;
-    const requestReasoningEffort = params.toolRequest
-      ? this.houseSummaryReasoningEffort()
-      : this.requestedReasoningEffort();
-    const requestedReasoningEffort = requestReasoningEffort === "none"
-      ? undefined
-      : requestReasoningEffort;
+    const runtime = this.runtimeForResponse(params.response);
+    const configuredEffort = runtime.reasoningPolicy === "low"
+      || runtime.reasoningPolicy === "medium"
+      || runtime.reasoningPolicy === "high"
+      ? runtime.reasoningPolicy
+      : undefined;
+    const requestReasoningEffort = runtime.modelCapabilities.supportsReasoningEffort
+      ? configuredEffort
+      : undefined;
+    const requestedReasoningEffort = requestReasoningEffort;
     const privateTraceMessages = LLMHouseInterviewer.privateTraceMessages(params.messages);
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: params.context.actor.id ?? "house",
       requestShape: "chat_completions",
       usage: LLMHouseInterviewer.providerUsageMetadata(params.response),
     });
-    const decisionId = randomUUID();
+    const acceptedAttemptId = this.responseProviderAttemptId.get(params.response as object);
+    const decisionId = acceptedAttemptId
+      ? providerAcceptedDecisionId(acceptedAttemptId)
+      : randomUUID();
     const trace: PrivateDecisionTrace = {
       version: 2,
       ...(params.context.gameId && { gameId: params.context.gameId }),
@@ -1537,23 +1621,23 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       ...(params.context.round !== undefined && { round: params.context.round }),
       createdAt: new Date().toISOString(),
       model: {
-        provider: this.providerProfileId,
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        name: this.model,
+        provider: runtime.providerProfileId,
+        providerProfileId: runtime.providerProfileId,
+        catalogId: runtime.catalogId,
+        name: runtime.modelId,
       },
       ...(requestedReasoningEffort && { requestedReasoningEffort }),
-      reasoningPolicy: this.reasoningPolicy,
+      reasoningPolicy: runtime.reasoningPolicy,
       prompt: {
         messages: privateTraceMessages,
       },
       request: {
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        model: this.model,
+        providerProfileId: runtime.providerProfileId,
+        catalogId: runtime.catalogId,
+        model: runtime.modelId,
         messages: privateTraceMessages,
         ...(requestReasoningEffort && { reasoning_effort: requestReasoningEffort }),
-        reasoningPolicy: this.reasoningPolicy,
+        reasoningPolicy: runtime.reasoningPolicy,
       },
       response: {
         raw: params.response,
@@ -1695,20 +1779,13 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     });
 
     try {
-      const result = await providerCall.execute({
-        preparedRequest: () => ({
-          requestShape: "chat_completions",
-          providerProfileId: this.providerProfileId,
-          ...(this.catalogId && { catalogId: this.catalogId }),
-          model: this.model,
-          body: requestBody(),
-        }),
+      const result = await this.executeChatCompletion({
+        call: providerCall,
+        body: requestBody,
         maxAttempts,
-        dispatch: ({ requestOptions }) =>
-          this.openai.chat.completions.create(requestBody(), {
-            ...requestOptions,
-            signal: this.structuredOutputSignal(),
-          }),
+        ...(this.structuredOutputSignal() && {
+          requestSignal: this.structuredOutputSignal(),
+        }),
         validate: (response) => {
           const choice = response.choices[0];
           if (choice?.message?.refusal) {

@@ -85,7 +85,11 @@ import {
   markStrategyReconciliationRequired,
 } from "./strategy-state";
 import { ruleSheetForFormat } from "./format-pressure";
-import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
+import type {
+  LlmProviderRuntime,
+  LlmToolChoiceMode,
+  OpenAIReasoningSummaryMode,
+} from "./llm-client";
 import {
   DEFAULT_MODEL_ID,
   inferModelCapabilities,
@@ -107,7 +111,9 @@ import {
 import {
   ProviderAttemptError,
   ProviderExecutionCoordinator,
+  ProviderUnavailableError,
   classifyResponsesTerminalOutcome,
+  providerAcceptedDecisionId,
   type ProviderCandidateValidation,
   type ProviderAttemptRecord,
   type ProviderExecutionHooks,
@@ -1360,6 +1366,8 @@ export interface InfluenceAgentOptions {
   structuredCallMaxAttempts?: number;
   /** Observable provider-attempt hooks used by durable API and simulation adapters. */
   providerExecutionHooks?: ProviderExecutionHooks;
+  /** Ordered, sealed runtime entries. The constructor client/model remain the primary projection. */
+  providerManifest?: readonly LlmProviderRuntime[];
 }
 
 type LlmCallOptions = {
@@ -1400,6 +1408,9 @@ export class InfluenceAgent implements IAgent {
   private readonly evaluationFailFast: boolean;
   private readonly structuredCallMaxAttempts?: number;
   private readonly providerExecution: ProviderExecutionCoordinator;
+  private readonly providerManifest: readonly LlmProviderRuntime[];
+  private readonly responseProviderRuntime = new WeakMap<object, LlmProviderRuntime>();
+  private readonly responseProviderAttemptId = new WeakMap<object, string>();
   private tokenTracker: TokenTracker | null = null;
   /** Most recent private-decision id minted while emitting a private decision trace. */
   private lastPrivateDecisionId: string | undefined;
@@ -1447,6 +1458,22 @@ export class InfluenceAgent implements IAgent {
     this.personalityPrompt = options.personalityPrompt?.trim() || undefined;
     this.strategyInstructions = options.strategyInstructions?.trim() || undefined;
     this.temperature = options.temperature ?? 0.7;
+    this.providerManifest = options.providerManifest?.length
+      ? options.providerManifest.map((entry) => ({ ...entry }))
+      : [{
+          client: openaiClient,
+          catalogId: options.catalogId ?? `${this.providerProfileId}:${model}`,
+          providerProfileId: this.providerProfileId,
+          modelId: model,
+          modelCapabilities: this.modelCapabilities,
+          reasoningPolicy: this.reasoningPolicy,
+          toolChoiceMode: this.toolChoiceMode,
+          ...(options.openAIReasoningSummary && {
+            openAIReasoningSummary: options.openAIReasoningSummary,
+          }),
+          position: 0,
+          role: "primary",
+        }];
     this.backstory = backstory ?? AGENT_BACKSTORIES[name] ?? "";
     this.memoryStore = memoryStore ?? null;
   }
@@ -1500,31 +1527,101 @@ export class InfluenceAgent implements IAgent {
     call: ProviderLogicalCallExecution;
     body:
       | ChatCompletionCreateParamsNonStreaming
-      | (() => ChatCompletionCreateParamsNonStreaming);
+      | ((runtime: LlmProviderRuntime) => ChatCompletionCreateParamsNonStreaming);
     options?: LlmCallOptions;
     maxAttempts: number;
     validate(response: ChatCompletion): ProviderCandidateValidation<T>;
     onRetry?: (record: ProviderAttemptRecord) => void;
   }): Promise<T> {
-    const requestBody = () =>
-      typeof params.body === "function" ? params.body() : params.body;
-    return params.call.execute({
-      preparedRequest: () => ({
-        requestShape: "chat_completions",
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        model: this.model,
-        body: requestBody(),
-      }),
-      maxAttempts: params.maxAttempts,
+    const requestBody = (runtime: LlmProviderRuntime) =>
+      this.adaptChatCompletionBody(
+        typeof params.body === "function" ? params.body(runtime) : params.body,
+        runtime,
+        params.options,
+      );
+    return params.call.executeManifest({
+      entries: this.providerManifest.map((runtime) => ({
+        catalogId: runtime.catalogId,
+        preparedRequest: () => ({
+          requestShape: "chat_completions" as const,
+          providerProfileId: runtime.providerProfileId,
+          catalogId: runtime.catalogId,
+          model: runtime.modelId,
+          body: requestBody(runtime),
+        }),
+        maxAttempts: params.maxAttempts,
+        dispatch: ({ requestOptions }) =>
+          runtime.client.chat.completions.create(
+            requestBody(runtime),
+            requestOptions,
+          ),
+        validate: params.validate,
+        ...(params.onRetry && { onRetry: params.onRetry }),
+      })),
       ...(params.options?.signal && {
         cancellationSignal: params.options.signal,
       }),
-      dispatch: ({ requestOptions }) =>
-        this.openai.chat.completions.create(requestBody(), requestOptions),
-      validate: params.validate,
-      ...(params.onRetry && { onRetry: params.onRetry }),
+    }).then(({ value, manifestPosition, acceptedAttemptId }) => {
+      if (value && typeof value === "object") {
+        this.responseProviderRuntime.set(
+          value as object,
+          this.providerManifest[manifestPosition]!,
+        );
+        if (acceptedAttemptId) {
+          this.responseProviderAttemptId.set(value as object, acceptedAttemptId);
+        }
+      }
+      return value;
     });
+  }
+
+  private adaptChatCompletionBody(
+    body: ChatCompletionCreateParamsNonStreaming,
+    runtime: LlmProviderRuntime,
+    options?: LlmCallOptions,
+  ): ChatCompletionCreateParamsNonStreaming {
+    const next = { ...body, model: runtime.modelId } as Record<string, unknown>;
+    const tokenBudget = typeof next.max_completion_tokens === "number"
+      ? next.max_completion_tokens
+      : typeof next.max_tokens === "number"
+        ? next.max_tokens
+        : undefined;
+    delete next.max_completion_tokens;
+    delete next.max_tokens;
+    if (tokenBudget !== undefined) {
+      next[runtime.modelCapabilities.usesMaxCompletionTokens
+        ? "max_completion_tokens"
+        : "max_tokens"] = tokenBudget;
+    }
+    if (!runtime.modelCapabilities.supportsTemperature) {
+      delete next.temperature;
+    } else if (next.temperature === undefined) {
+      next.temperature = this.temperature;
+    }
+    const reasoningEffort = this.requestedReasoningEffortFor(runtime, options);
+    if (reasoningEffort) next.reasoning_effort = reasoningEffort;
+    else delete next.reasoning_effort;
+    return next as unknown as ChatCompletionCreateParamsNonStreaming;
+  }
+
+  private requestedReasoningEffortFor(
+    runtime: LlmProviderRuntime,
+    options?: LlmCallOptions,
+  ): ModelReasoningEffort | undefined {
+    if (!runtime.modelCapabilities.supportsReasoningEffort) return undefined;
+    if (
+      runtime.reasoningPolicy === "low"
+      || runtime.reasoningPolicy === "medium"
+      || runtime.reasoningPolicy === "high"
+    ) {
+      return runtime.reasoningPolicy;
+    }
+    return options?.reasoningEffort;
+  }
+
+  private runtimeForResponse(response: ModelCallResponse): LlmProviderRuntime {
+    return this.responseProviderRuntime.get(response as object)
+      ?? this.providerManifest[0]!;
   }
 
   private executeOpenAIResponse<T>(params: {
@@ -1556,6 +1653,15 @@ export class InfluenceAgent implements IAgent {
           : params.validate(response);
       },
       ...(params.onRetry && { onRetry: params.onRetry }),
+    }).then((value) => {
+      if (value && typeof value === "object") {
+        this.responseProviderRuntime.set(value as object, this.providerManifest[0]!);
+        const accepted = params.call.getAcceptedResult();
+        if (accepted?.attemptId) {
+          this.responseProviderAttemptId.set(value as object, accepted.attemptId);
+        }
+      }
+      return value;
     });
   }
 
@@ -1563,7 +1669,25 @@ export class InfluenceAgent implements IAgent {
     return error instanceof Error && error.name === "AbortError";
   }
 
-  private static providerAbsentResponse(error: ProviderAttemptError): AgentResponse {
+  private static logProviderFailureOrError(
+    message: string,
+    error: unknown,
+  ): void {
+    if (error instanceof ProviderUnavailableError) {
+      console.error(message, {
+        type: "provider_unavailable",
+        outcome: error.outcome.kind,
+        ...(error instanceof ProviderAttemptError && {
+          retryable: error.outcome.retryable,
+          disposition: error.record.disposition,
+        }),
+      });
+      return;
+    }
+    console.error(message, error);
+  }
+
+  private static providerAbsentResponse(error: ProviderUnavailableError): AgentResponse {
     return {
       thinking: "",
       message: "",
@@ -1943,9 +2067,16 @@ export class InfluenceAgent implements IAgent {
     toolArguments?: unknown;
     providerReasoningSummary?: ProviderReasoningSummary;
   }): Promise<string | undefined> {
-    if (!this.privateTraceSink || !params.options?.privateTrace) return undefined;
+    const acceptedAttemptId = params.response && typeof params.response === "object"
+      ? this.responseProviderAttemptId.get(params.response as object)
+      : undefined;
+    const decisionId = acceptedAttemptId
+      ? providerAcceptedDecisionId(acceptedAttemptId)
+      : randomUUID();
+    if (!this.privateTraceSink || !params.options?.privateTrace) {
+      return acceptedAttemptId ? decisionId : undefined;
+    }
 
-    const decisionId = randomUUID();
     this.lastPrivateDecisionId = decisionId;
 
     const response = params.response;
@@ -1981,7 +2112,11 @@ export class InfluenceAgent implements IAgent {
         ? { operation: "delta" as const, submittedValue: outputRecord.strategyDelta }
         : undefined;
     const traceContext = params.options.privateTrace;
-    const requestedReasoningEffort = this.requestedReasoningEffort(params.options);
+    const runtime = this.runtimeForResponse(response);
+    const requestedReasoningEffort = this.requestedReasoningEffortFor(
+      runtime,
+      params.options,
+    );
     const privateTraceMessages = InfluenceAgent.privateTraceMessages(params.messages);
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: traceContext.actor.id ?? traceContext.actor.role,
@@ -1999,23 +2134,23 @@ export class InfluenceAgent implements IAgent {
       ...(traceContext.round !== undefined && { round: traceContext.round }),
       createdAt: new Date().toISOString(),
       model: {
-        provider: this.providerProfileId,
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        name: this.model,
+        provider: runtime.providerProfileId,
+        providerProfileId: runtime.providerProfileId,
+        catalogId: runtime.catalogId,
+        name: runtime.modelId,
       },
       ...(requestedReasoningEffort && { requestedReasoningEffort }),
-      reasoningPolicy: this.reasoningPolicy,
+      reasoningPolicy: runtime.reasoningPolicy,
       prompt: {
         messages: privateTraceMessages,
       },
       request: {
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        model: this.model,
+        providerProfileId: runtime.providerProfileId,
+        catalogId: runtime.catalogId,
+        model: runtime.modelId,
         messages: privateTraceMessages,
         ...(requestedReasoningEffort && { reasoning_effort: requestedReasoningEffort }),
-        reasoningPolicy: this.reasoningPolicy,
+        reasoningPolicy: runtime.reasoningPolicy,
       },
       response: {
         raw: response,
@@ -2472,7 +2607,7 @@ Use the alliance_huddle_turn tool.`;
         ...metadata,
       };
     } catch (err) {
-      if (err instanceof ProviderAttemptError) {
+      if (err instanceof ProviderUnavailableError) {
         return {
           message: null,
           noReply: true,
@@ -2526,7 +2661,7 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       if (!msg) return null;
       return { thinking: result.thinking ?? "", message: msg, reasoningContext: result.reasoningContext };
     } catch (error) {
-      if (error instanceof ProviderAttemptError) {
+      if (error instanceof ProviderUnavailableError) {
         return InfluenceAgent.providerAbsentResponse(error);
       }
       throw error;
@@ -2663,7 +2798,7 @@ Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
       };
     } catch (error) {
       if (this.evaluationFailFast) throw error;
-      if (error instanceof ProviderAttemptError) {
+      if (error instanceof ProviderUnavailableError) {
         return {
           thinking: "",
           message: null,
@@ -2745,7 +2880,7 @@ Use the spread_rumor tool.`;
         ...metadata,
       };
     } catch (err) {
-      if (err instanceof ProviderAttemptError) {
+      if (err instanceof ProviderUnavailableError) {
         return InfluenceAgent.providerAbsentResponse(err);
       }
       throw err;
@@ -3566,7 +3701,7 @@ Use the elimination_message tool. Keep the public message to 1-2 sentences.`;
       };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) throw err;
-      if (err instanceof ProviderAttemptError) {
+      if (err instanceof ProviderUnavailableError) {
         return InfluenceAgent.providerAbsentResponse(err);
       }
       throw err;
@@ -4855,6 +4990,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
   private shouldUseOpenAIResponsesForSummary(options?: LlmCallOptions): boolean {
     if (this.requireOpenAIResponses) return true;
     return Boolean(
+      this.providerManifest.length === 1 &&
       this.resolvedReasoningSummaryMode(options) &&
         this.modelCapabilities.supportsOpenAIResponses &&
         !this.usesLocalStructuredCompatibility(),
@@ -5402,12 +5538,12 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
         throw error;
       }
-      console.error(
+      InfluenceAgent.logProviderFailureOrError(
         `[${this.name}] callLLMWithThinking local failed after ${maxAttempts} attempts:`,
         error,
       );
       if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      if (error instanceof ProviderAttemptError) {
+      if (error instanceof ProviderUnavailableError) {
         return InfluenceAgent.providerAbsentResponse(error);
       }
       throw error;
@@ -5641,7 +5777,7 @@ ${JSON.stringify(tool.function.parameters)}`,
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
         throw error;
       }
-      console.error(
+      InfluenceAgent.logProviderFailureOrError(
         `[${this.name}] callLLM failed after ${maxAttempts} attempts:`,
         error,
       );
@@ -5686,7 +5822,7 @@ ${JSON.stringify(tool.function.parameters)}`,
         if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
           throw error;
         }
-        if (error instanceof ProviderAttemptError) {
+        if (error instanceof ProviderUnavailableError) {
           if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(
             options?.action ? `${this.name}/${options.action}` : this.name,
           );
@@ -5794,12 +5930,12 @@ ${JSON.stringify(tool.function.parameters)}`,
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
         throw error;
       }
-      console.error(
+      InfluenceAgent.logProviderFailureOrError(
         `[${this.name}] callLLMWithThinking failed after ${maxAttempts} attempts:`,
         error,
       );
       if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      if (error instanceof ProviderAttemptError) {
+      if (error instanceof ProviderUnavailableError) {
         return InfluenceAgent.providerAbsentResponse(error);
       }
       throw error;

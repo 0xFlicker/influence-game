@@ -11,6 +11,7 @@ import { AdminCostPanel, AdminCostPill } from "./admin-cost-view";
 import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "./admin-highlights-diagnostics";
 import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "./admin-postgame-media";
 import { AdminDeploymentAdmission } from "./admin-deployment-admission";
+import { AdminProviderHealth } from "./admin-provider-health-view";
 
 function phaseLabel(phase: string): string {
   const labels: Record<string, string> = {
@@ -576,6 +577,7 @@ export function AdminPanel() {
       )}
 
       <AdminDeploymentAdmission />
+      <AdminProviderHealth />
 
       {/* Active games */}
       <section className="mb-8">

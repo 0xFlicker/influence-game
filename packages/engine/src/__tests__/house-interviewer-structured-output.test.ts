@@ -984,6 +984,69 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
   });
 });
 
+describe("LLMHouseInterviewer sealed provider manifest", () => {
+  it("falls through for House calls and attributes private evidence to the accepted runtime", async () => {
+    const primaryRequests: Array<Record<string, unknown>> = [];
+    const fallbackRequests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const primary = modelCatalogEntryById("openai:gpt-5.6-luna")!;
+    const fallback = modelCatalogEntryById("katana:glm-5-2")!;
+    const primaryClient = makeOpenAIStub(primaryRequests, [
+      { error: Object.assign(new Error("invalid prompt"), { status: 400 }) },
+    ]);
+    const fallbackClient = makeOpenAIStub(fallbackRequests, [
+      { content: "Atlas, who do you trust enough to risk your game for?" },
+    ]);
+    const house = new LLMHouseInterviewer(
+      primaryClient,
+      primary.modelId,
+      {
+        providerProfileId: "openai",
+        catalogId: primary.id,
+        modelCapabilities: primary.capabilities,
+        reasoningPolicy: "action-policy",
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+        providerManifest: [
+          {
+            client: primaryClient,
+            catalogId: primary.id,
+            providerProfileId: "openai",
+            modelId: primary.modelId,
+            modelCapabilities: primary.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 0,
+            role: "primary",
+          },
+          {
+            client: fallbackClient,
+            catalogId: fallback.id,
+            providerProfileId: "katana",
+            modelId: fallback.modelId,
+            modelCapabilities: fallback.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 1,
+            role: "fallback",
+            maxCallsPerGame: 3,
+          },
+        ],
+      },
+    );
+
+    expect(await house.generateQuestion(makeDiaryContext())).toContain("who do you trust");
+    expect(primaryRequests).toHaveLength(1);
+    expect(fallbackRequests[0]).toMatchObject({ model: "glm-5-2" });
+    expect(traces[0]?.model).toMatchObject({
+      providerProfileId: "katana",
+      catalogId: "katana:glm-5-2",
+      name: "glm-5-2",
+    });
+  });
+});
+
 describe("LLMHouseInterviewer selective House summary loop", () => {
   it("journals empty, malformed, and wrong-tool summary responses through the shared coordinator", async () => {
     const cases: Array<{

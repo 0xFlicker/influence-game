@@ -2,13 +2,22 @@ import { beforeEach, describe, expect, test } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import {
   Phase,
+  ProviderAttemptError,
+  ProviderCallBudgetExhaustedError,
+  ProviderCircuitOpenError,
   ProviderExecutionCoordinator,
+  createProviderEvidenceFetch,
+  providerAcceptedDecisionId,
   type ProviderAttemptIntent,
   type ProviderAttemptRecord,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
-import { insertGame, insertOwner } from "../__tests__/durable-run-test-utils.js";
+import {
+  createCanonicalEventFixture,
+  insertGame,
+  insertOwner,
+} from "../__tests__/durable-run-test-utils.js";
 import { setupTestDB } from "../__tests__/test-utils.js";
 import type {
   PrivateTracePutObjectInput,
@@ -24,6 +33,7 @@ import {
   startProviderAttemptReconciliationRuntime,
 } from "./provider-call-journal.js";
 import { backfillGameCostAccounting } from "./provider-cost-accounting.js";
+import { appendGameEvents } from "./game-events.js";
 
 class FakeProviderEvidenceStorage implements PrivateTraceStorageAdapter {
   readonly puts: PrivateTracePutObjectInput[] = [];
@@ -106,7 +116,7 @@ function makeRecord(
   intent: ProviderAttemptIntent,
   overrides: Partial<ProviderAttemptRecord> = {},
 ): ProviderAttemptRecord {
-  return {
+  const record: ProviderAttemptRecord = {
     ...intent,
     completedAt: "2026-08-23T00:00:10.000Z",
     latencyMs: 1_000,
@@ -129,6 +139,13 @@ function makeRecord(
     },
     ...overrides,
   };
+  if (record.outcome.kind === "usable" && record.acceptedValue === undefined) {
+    record.acceptedValue = {
+      id: `accepted-${intent.attemptOrdinal}`,
+      choices: [{ message: { content: "accepted" } }],
+    };
+  }
+  return record;
 }
 
 async function allocateAndReserve(
@@ -177,6 +194,199 @@ describe("provider call journal", () => {
       transportAttemptId: `transport-${gameId}-1`,
       status: "reserved",
     });
+  });
+
+  test("keeps reservation identity immutable while transport evidence captures the exact HTTP request", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const evidenceStorage = new FakeProviderEvidenceStorage();
+    const hooks = createApiProviderExecutionHooks(db, {
+      gameId,
+      ownerEpoch,
+      evidenceStorage,
+    });
+    const credential = "katana-secret-value";
+    const evidenceFetch = createProviderEvidenceFetch(
+      async () => Response.json(
+        { error: { code: "invalid_prompt", message: "Prompt rejected" } },
+        {
+          status: 400,
+          headers: { "x-request-id": "req-transport-capture" },
+        },
+      ),
+      [credential],
+    );
+    const preparedRequest = makeIntent(gameId, ownerEpoch).preparedRequest;
+    const call = new ProviderExecutionCoordinator({ hooks }).startCall(
+      makeIntent(gameId, ownerEpoch).coordinate,
+    );
+
+    await expect(call.execute({
+      preparedRequest: {
+        ...preparedRequest,
+        credentialValues: [credential],
+      },
+      maxAttempts: 1,
+      dispatch: async ({ requestOptions }) => {
+        const response = await evidenceFetch(
+          "https://kat.imgnai.com/v1/chat/completions?api_key=reflected",
+          {
+            method: "POST",
+            headers: {
+              ...requestOptions.headers,
+              authorization: `Bearer ${credential}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify(preparedRequest.body),
+          },
+        );
+        return {
+          status: response.status,
+          body: await response.json(),
+        };
+      },
+      validate: () => ({
+        status: "unusable" as const,
+        kind: "refusal" as const,
+        message: "Prompt rejected",
+        retryable: false,
+      }),
+    })).rejects.toBeInstanceOf(ProviderAttemptError);
+
+    expect(await reconcileProviderAttemptEvidence(db, {
+      evidenceStorage,
+    })).toEqual({ attempted: 1, stored: 1, failed: 0 });
+
+    const attempt = (await db.select().from(schema.providerCallAttempts))[0]!;
+    expect(attempt).toMatchObject({
+      status: "terminal",
+      outcomeKind: "refusal",
+      providerRequestId: "req-transport-capture",
+    });
+    expect(evidenceStorage.puts).toHaveLength(1);
+    const evidence = JSON.parse(evidenceStorage.puts[0]!.body) as {
+      attempt: {
+        preparedRequest: { catalogId?: string; url?: string };
+        rawRequest?: { catalogId?: string; url?: string; headers?: Record<string, string> };
+      };
+    };
+    expect(evidence.attempt.preparedRequest).toMatchObject({
+      catalogId: "katana:glm-5-2",
+    });
+    expect(evidence.attempt.rawRequest).toMatchObject({
+      catalogId: "katana:glm-5-2",
+      url: "https://kat.imgnai.com/v1/chat/completions?api_key=%5BREDACTED%5D",
+    });
+    expect(evidence.attempt.rawRequest?.headers).not.toHaveProperty("authorization");
+    expect(evidenceStorage.puts[0]!.body).not.toContain(credential);
+  });
+
+  test("atomically permits only one concurrent dispatch for the final fallback budget unit", async () => {
+    const gameId = await insertGame(db);
+    await db.update(schema.games).set({
+      config: JSON.stringify({
+        providerManifest: [
+          {
+            catalogId: "openai:gpt-5.6-luna",
+            reasoningPolicy: "action-policy",
+          },
+          {
+            catalogId: "katana:glm-5-2",
+            reasoningPolicy: "action-policy",
+            maxCallsPerGame: 1,
+          },
+        ],
+        modelSelection: {
+          catalogId: "openai:gpt-5.6-luna",
+          reasoningPolicy: "action-policy",
+        },
+      }),
+    }).where(eq(schema.games.id, gameId));
+    const ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const first = makeIntent(gameId, ownerEpoch);
+    const second: ProviderAttemptIntent = {
+      ...makeIntent(gameId, ownerEpoch),
+      coordinate: {
+        ...makeIntent(gameId, ownerEpoch).coordinate,
+        logicalCallOrdinal: 4,
+      },
+      attemptId: `transport-${gameId}-second-call`,
+    };
+
+    expect(await hooks.onAllocateAttemptOrdinal?.(first.coordinate)).toBe(1);
+    expect(await hooks.onAllocateAttemptOrdinal?.(second.coordinate)).toBe(1);
+    const outcomes = await Promise.allSettled([
+      hooks.onReserve?.(first),
+      hooks.onReserve?.(second),
+    ]);
+    expect(outcomes.filter((outcome) => outcome.status === "fulfilled")).toHaveLength(1);
+    const rejected = outcomes.find(
+      (outcome): outcome is PromiseRejectedResult => outcome.status === "rejected",
+    );
+    expect(rejected?.reason).toBeInstanceOf(ProviderCallBudgetExhaustedError);
+    expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(1);
+  });
+
+  test("opens provider health atomically while allowing calls reserved before the open to finish", async () => {
+    const gameId = await insertGame(db);
+    await db.update(schema.games).set({
+      config: JSON.stringify({
+        modelSelection: {
+          catalogId: "openai:gpt-5.6-luna",
+          reasoningPolicy: "action-policy",
+        },
+        providerManifest: [
+          {
+            catalogId: "openai:gpt-5.6-luna",
+            reasoningPolicy: "action-policy",
+          },
+          {
+            catalogId: "katana:glm-5-2",
+            reasoningPolicy: "action-policy",
+            maxCallsPerGame: 8,
+          },
+        ],
+      }),
+    }).where(eq(schema.games.id, gameId));
+    const ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const opensCircuit = makeIntent(gameId, ownerEpoch);
+    const alreadyReserved: ProviderAttemptIntent = {
+      ...makeIntent(gameId, ownerEpoch),
+      coordinate: {
+        ...makeIntent(gameId, ownerEpoch).coordinate,
+        logicalCallOrdinal: 4,
+      },
+      attemptId: `transport-${gameId}-already-reserved`,
+    };
+    await allocateAndReserve(hooks, opensCircuit);
+    await allocateAndReserve(hooks, alreadyReserved);
+
+    await expect(hooks.onTerminal?.(makeRecord(opensCircuit, {
+      outcome: { kind: "authentication", message: "expired key", retryable: false },
+    }))).rejects.toBeInstanceOf(ProviderCircuitOpenError);
+    await expect(hooks.onTerminal?.(makeRecord(alreadyReserved, {
+      outcome: { kind: "usable" },
+      disposition: "accepted",
+      rawResponse: undefined,
+    }))).resolves.toMatchObject({ acceptedAttemptId: expect.any(String) });
+
+    const future: ProviderAttemptIntent = {
+      ...makeIntent(gameId, ownerEpoch),
+      coordinate: {
+        ...makeIntent(gameId, ownerEpoch).coordinate,
+        logicalCallOrdinal: 5,
+      },
+      attemptId: `transport-${gameId}-future`,
+    };
+    expect(await hooks.onAllocateAttemptOrdinal?.(future.coordinate)).toBe(1);
+    await expect(hooks.onReserve?.(future)).rejects.toMatchObject({
+      name: "ProviderCircuitOpenError",
+      scopeKey: "provider:katana",
+      haltManifest: true,
+    });
+    expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(2);
   });
 
   test("continues one logical call with a monotonic attempt ordinal after owner recovery", async () => {
@@ -240,27 +450,168 @@ describe("provider call journal", () => {
       sourceKey: `provider-attempt:${attempts[0]!.id}`,
     });
 
-    await firstHooks.onTerminal?.(makeRecord(firstIntent, {
+    await expect(firstHooks.onTerminal?.(makeRecord(firstIntent, {
       accounting: {
         actualCostMicrousd: 4_200,
         actualCostSource: "router_actual",
       },
-    }));
+    }))).rejects.toThrow(/owner/i);
     attempts = await db.select().from(schema.providerCallAttempts)
       .orderBy(schema.providerCallAttempts.attemptOrdinal);
     expect(attempts[0]).toMatchObject({
-      status: "terminal",
+      status: "indeterminate",
       indeterminateReason: "owner_lost_before_terminal",
       spendProjectionState: "projected",
     });
     expect((await db.select().from(schema.gameProviderSpendEntries))[0]).toMatchObject({
-      callStatus: "failed",
-      actualCostMicrousd: 4_200,
-      costSource: "router_actual",
+      callStatus: "unknown",
+      costSource: "unavailable",
     });
   });
 
-  test("terminal spend wins over a stale indeterminate reconciliation snapshot", async () => {
+  test("replays one accepted validated result after owner recovery without redispatch", async () => {
+    const gameId = await insertGame(db);
+    const firstOwnerEpoch = await insertOwner(db, gameId);
+    const coordinate = makeIntent(gameId, firstOwnerEpoch).coordinate;
+    let dispatches = 0;
+    const first = await new ProviderExecutionCoordinator({
+      hooks: createApiProviderExecutionHooks(db, {
+        gameId,
+        ownerEpoch: firstOwnerEpoch,
+      }),
+    }).startCall(coordinate).executeManifest({
+      entries: [{
+        catalogId: "katana:glm-5-2",
+        preparedRequest: {
+          requestShape: "chat_completions",
+          providerProfileId: "katana",
+          catalogId: "katana:glm-5-2",
+          model: "glm-5-2",
+          body: { model: "glm-5-2", messages: [{ role: "user", content: "Vote." }] },
+        },
+        maxAttempts: 1,
+        dispatch: async () => {
+          dispatches += 1;
+          return { target: "maya", rationale: "best move" };
+        },
+        validate: (response) => ({ status: "usable", value: response }),
+      }],
+    });
+    expect(first.value).toEqual({ target: "maya", rationale: "best move" });
+    expect(first.acceptedAttemptId).toBeString();
+    expect(dispatches).toBe(1);
+
+    const decisionId = providerAcceptedDecisionId(first.acceptedAttemptId!);
+    let linkedSequence = 0;
+    const committedEvents = createCanonicalEventFixture(gameId).map((event) => {
+      if (linkedSequence === 0 && event.type === "vote.cast") {
+        linkedSequence = event.sequence;
+        return {
+          ...event,
+          sourcePointers: [{
+            kind: "agent_turn" as const,
+            actorId: "atlas-id",
+            action: "vote",
+            round: event.round,
+            phase: Phase.VOTE,
+            decisionId,
+          }],
+        };
+      }
+      return event;
+    });
+    await appendGameEvents(db, {
+      gameId,
+      ownerEpoch: firstOwnerEpoch,
+      events: committedEvents,
+    });
+    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+      canonicalEventSequence: linkedSequence,
+    });
+
+    await db.update(schema.gameRunOwners).set({ status: "closed" }).where(and(
+      eq(schema.gameRunOwners.gameId, gameId),
+      eq(schema.gameRunOwners.ownerEpoch, firstOwnerEpoch),
+    ));
+    const secondOwnerEpoch = await insertOwner(db, gameId);
+    const recoveredCoordinate = {
+      ...coordinate,
+      ownerEpoch: secondOwnerEpoch,
+    };
+    const recovered = await new ProviderExecutionCoordinator({
+      hooks: createApiProviderExecutionHooks(db, {
+        gameId,
+        ownerEpoch: secondOwnerEpoch,
+      }),
+    }).startCall(recoveredCoordinate).executeManifest({
+      entries: [{
+        catalogId: "katana:glm-5-2",
+        preparedRequest: {
+          requestShape: "chat_completions",
+          providerProfileId: "katana",
+          catalogId: "katana:glm-5-2",
+          model: "glm-5-2",
+          body: { model: "glm-5-2", messages: [{ role: "user", content: "Vote." }] },
+        },
+        maxAttempts: 1,
+        dispatch: async () => {
+          dispatches += 1;
+          return { target: "orion" };
+        },
+        validate: (response) => ({ status: "usable", value: response }),
+      }],
+    });
+
+    expect(recovered).toMatchObject({
+      value: { target: "maya", rationale: "best move" },
+      catalogId: "katana:glm-5-2",
+      manifestPosition: 0,
+    });
+    expect(dispatches).toBe(1);
+    expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(1);
+  });
+
+  test("commits accepted provider provenance with the canonical event transaction", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const intent = makeIntent(gameId, ownerEpoch);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    await allocateAndReserve(hooks, intent);
+    const receipt = await hooks.onTerminal?.(makeRecord(intent, {
+      outcome: { kind: "usable" },
+      disposition: "accepted",
+      rawResponse: undefined,
+    }));
+    expect(receipt?.acceptedAttemptId).toBeString();
+    const decisionId = providerAcceptedDecisionId(receipt!.acceptedAttemptId!);
+    let linkedSequence = 0;
+    const events = createCanonicalEventFixture(gameId).map((event) => {
+      if (linkedSequence === 0 && event.type === "vote.cast") {
+        linkedSequence = event.sequence;
+        return {
+          ...event,
+          sourcePointers: [{
+            kind: "agent_turn" as const,
+            actorId: "atlas",
+            action: "vote",
+            round: event.round,
+            phase: Phase.VOTE,
+            decisionId,
+          }],
+        };
+      }
+      return event;
+    });
+
+    await appendGameEvents(db, { gameId, ownerEpoch, events });
+    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+      acceptedAttemptId: receipt!.acceptedAttemptId,
+      canonicalEventSequence: linkedSequence,
+      canonicalCommittedAt: events[linkedSequence - 1]!.timestamp,
+    });
+  });
+
+  test("a stale owner cannot replace indeterminate spend with a late terminal result", async () => {
     const gameId = await insertGame(db);
     const firstOwnerEpoch = await insertOwner(db, gameId);
     const firstHooks = createApiProviderExecutionHooks(db, {
@@ -298,12 +649,12 @@ describe("provider call journal", () => {
     });
     await snapshotWasCaptured;
 
-    await firstHooks.onTerminal?.(makeRecord(firstIntent, {
+    await expect(firstHooks.onTerminal?.(makeRecord(firstIntent, {
       accounting: {
         actualCostMicrousd: 9_100,
         actualCostSource: "router_actual",
       },
-    }));
+    }))).rejects.toThrow(/owner/i);
     releaseStaleProjection();
     expect(await staleReconciliation).toEqual({
       attempted: 1,
@@ -313,9 +664,8 @@ describe("provider call journal", () => {
 
     expect((await db.select().from(schema.gameProviderSpendEntries))[0]).toMatchObject({
       sourceKey: expect.stringContaining("provider-attempt:"),
-      callStatus: "failed",
-      actualCostMicrousd: 9_100,
-      costSource: "router_actual",
+      callStatus: "unknown",
+      costSource: "unavailable",
     });
   });
 
@@ -354,6 +704,7 @@ describe("provider call journal", () => {
       intervalMs: 60_000,
     });
     try {
+      await runtime.runOnce();
       const startupAttempt = (await db.select().from(schema.providerCallAttempts)
         .where(eq(schema.providerCallAttempts.gameId, startupGameId)))[0]!;
       expect(startupAttempt).toMatchObject({
@@ -415,6 +766,9 @@ describe("provider call journal", () => {
     await allocateAndReserve(hooks, intent);
     await hooks.onTerminal?.(record);
     await hooks.onTerminal?.(record);
+    expect(await reconcileProviderAttemptEvidence(db, {
+      evidenceStorage: storage,
+    })).toEqual({ attempted: 1, stored: 1, failed: 0 });
 
     expect(storage.puts).toHaveLength(1);
     expect(storage.puts[0]!.key).toMatch(
@@ -492,20 +846,25 @@ describe("provider call journal", () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakeProviderEvidenceStorage();
+    const evidenceDependencies = {
+      createManifest: async () => {
+        throw new Error("manifest unavailable");
+      },
+    };
     const hooks = createApiProviderExecutionHooks(db, {
       gameId,
       ownerEpoch,
       evidenceStorage: storage,
-      evidenceDependencies: {
-        createManifest: async () => {
-          throw new Error("manifest unavailable");
-        },
-      },
+      evidenceDependencies,
     });
     const intent = makeIntent(gameId, ownerEpoch);
     await allocateAndReserve(hooks, intent);
 
     await expect(hooks.onTerminal?.(makeRecord(intent))).resolves.toBeUndefined();
+    expect(await reconcileProviderAttemptEvidence(db, {
+      evidenceStorage: storage,
+      dependencies: evidenceDependencies,
+    })).toEqual({ attempted: 1, stored: 0, failed: 1 });
     expect(storage.puts).toHaveLength(1);
     expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(0);
     expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(1);
@@ -527,20 +886,25 @@ describe("provider call journal", () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakeProviderEvidenceStorage();
+    const evidenceDependencies = {
+      finalize: async () => {
+        throw new Error("attempt state unavailable");
+      },
+    };
     const hooks = createApiProviderExecutionHooks(db, {
       gameId,
       ownerEpoch,
       evidenceStorage: storage,
-      evidenceDependencies: {
-        finalize: async () => {
-          throw new Error("attempt state unavailable");
-        },
-      },
+      evidenceDependencies,
     });
     const intent = makeIntent(gameId, ownerEpoch);
     await allocateAndReserve(hooks, intent);
 
     await expect(hooks.onTerminal?.(makeRecord(intent))).resolves.toBeUndefined();
+    expect(await reconcileProviderAttemptEvidence(db, {
+      evidenceStorage: storage,
+      dependencies: evidenceDependencies,
+    })).toEqual({ attempted: 1, stored: 0, failed: 1 });
     expect(storage.puts).toHaveLength(1);
     expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(1);
     expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(1);
@@ -557,17 +921,21 @@ describe("provider call journal", () => {
   test("keeps raw evidence degradation nonfatal and marks the attempt", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
+    const storage = new FakeProviderEvidenceStorage(
+      new Error("object storage unavailable"),
+    );
     const hooks = createApiProviderExecutionHooks(db, {
       gameId,
       ownerEpoch,
-      evidenceStorage: new FakeProviderEvidenceStorage(
-        new Error("object storage unavailable"),
-      ),
+      evidenceStorage: storage,
     });
     const intent = makeIntent(gameId, ownerEpoch);
 
     await allocateAndReserve(hooks, intent);
     await expect(hooks.onTerminal?.(makeRecord(intent))).resolves.toBeUndefined();
+    expect(await reconcileProviderAttemptEvidence(db, {
+      evidenceStorage: storage,
+    })).toEqual({ attempted: 1, stored: 0, failed: 1 });
 
     const attempt = (await db.select().from(schema.providerCallAttempts))[0]!;
     expect(attempt).toMatchObject({
@@ -656,6 +1024,47 @@ describe("provider call journal", () => {
     expect(storage.puts).toHaveLength(0);
   });
 
+  test("does not report a pending rate limit as recovered after unrelated failures", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const rateLimitedIntent = makeIntent(gameId, ownerEpoch, 1);
+    const retryFailureIntent = makeIntent(gameId, ownerEpoch, 2);
+    const terminalFailureIntent = makeIntent(gameId, ownerEpoch, 3);
+
+    await allocateAndReserve(hooks, rateLimitedIntent);
+    await hooks.onTerminal?.(makeRecord(rateLimitedIntent, {
+      outcome: { kind: "rate_limit", message: "slow down", retryable: true },
+      disposition: "retry_scheduled",
+      rawResponse: { status: 429, body: { error: "slow down" } },
+    }));
+    await allocateAndReserve(hooks, retryFailureIntent);
+    await hooks.onTerminal?.(makeRecord(retryFailureIntent, {
+      outcome: { kind: "service_error", message: "upstream unavailable", retryable: true },
+      disposition: "retry_scheduled",
+      rawResponse: { status: 503, body: { error: "unavailable" } },
+    }));
+
+    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+      rateLimitCount: 1,
+      rateLimitOutcome: "pending",
+      rateLimitTerminalReason: null,
+    });
+
+    await allocateAndReserve(hooks, terminalFailureIntent);
+    await hooks.onTerminal?.(makeRecord(terminalFailureIntent, {
+      outcome: { kind: "refusal", message: "invalid prompt", retryable: false },
+      disposition: "exhausted",
+      rawResponse: { status: 400, body: { error: "invalid prompt" } },
+    }));
+
+    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+      rateLimitCount: 1,
+      rateLimitOutcome: "exhausted",
+      rateLimitTerminalReason: "invalid prompt",
+    });
+  });
+
   test("concurrent identical terminalization is idempotent and aggregates a rate limit once", async () => {
     const gameId = await insertGame(db);
     const ownerEpoch = await insertOwner(db, gameId);
@@ -701,17 +1110,16 @@ describe("provider call journal", () => {
     await allocateAndReserve(hooks, intent);
     await hooks.onTerminal?.(makeRecord(intent));
 
-    let releaseWrites!: () => void;
-    const bothWritesMayContinue = new Promise<void>((resolve) => {
-      releaseWrites = resolve;
+    let releaseWrite!: () => void;
+    const writeMayContinue = new Promise<void>((resolve) => {
+      releaseWrite = resolve;
     });
     let writes = 0;
     const delayedWrite: NonNullable<
       import("./provider-call-journal.js").ProviderEvidenceReconciliationDependencies["write"]
     > = async (writeDb, prepared) => {
       writes += 1;
-      if (writes === 2) releaseWrites();
-      await bothWritesMayContinue;
+      await writeMayContinue;
       return writePreparedProviderAttemptObject(writeDb, prepared, { storage });
     };
 
@@ -724,10 +1132,12 @@ describe("provider call journal", () => {
       evidenceStorage: storage,
       dependencies: { write: delayedWrite },
     });
-    while (writes < 2) await Bun.sleep(1);
+    await Bun.sleep(10);
+    expect(writes).toBe(1);
+    releaseWrite();
     expect(await Promise.all([first, second])).toEqual([
       { attempted: 1, stored: 1, failed: 0 },
-      { attempted: 1, stored: 1, failed: 0 },
+      { attempted: 0, stored: 0, failed: 0 },
     ]);
 
     expect((await db.select().from(schema.providerCallAttempts))[0]).toMatchObject({
@@ -735,6 +1145,124 @@ describe("provider call journal", () => {
       evidenceError: null,
     });
     expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(0);
+  });
+
+  test("rejects corrupt evidence metadata before storage and backs the row off", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const storage = new FakeProviderEvidenceStorage();
+    const intent = makeIntent(gameId, ownerEpoch);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    await allocateAndReserve(hooks, intent);
+    await hooks.onTerminal?.(makeRecord(intent));
+    await db.update(schema.providerAttemptEvidenceOutbox).set({
+      manifestMetadata: { formatVersion: 1 },
+    }).where(eq(schema.providerAttemptEvidenceOutbox.gameId, gameId));
+
+    expect(await reconcileProviderAttemptEvidence(db, {
+      evidenceStorage: storage,
+    })).toEqual({ attempted: 1, stored: 0, failed: 1 });
+    expect(storage.puts).toHaveLength(0);
+    const outbox = (await db.select().from(schema.providerAttemptEvidenceOutbox))[0]!;
+    expect(outbox).toMatchObject({
+      reconciliationAttemptCount: 1,
+      claimToken: null,
+      claimExpiresAt: null,
+    });
+    expect(Date.parse(outbox.nextReconciliationAt)).toBeGreaterThan(Date.now());
+    expect((await db.select().from(schema.providerCallAttempts))[0]).toMatchObject({
+      evidenceState: "degraded",
+      evidenceError: expect.stringContaining("manifest actor"),
+    });
+  });
+
+  test("backs off a failing oldest row so newer evidence is not starved", async () => {
+    const firstGameId = await insertGame(db);
+    const firstOwnerEpoch = await insertOwner(db, firstGameId);
+    const firstIntent = makeIntent(firstGameId, firstOwnerEpoch);
+    const firstHooks = createApiProviderExecutionHooks(db, {
+      gameId: firstGameId,
+      ownerEpoch: firstOwnerEpoch,
+    });
+    await allocateAndReserve(firstHooks, firstIntent);
+    await firstHooks.onTerminal?.(makeRecord(firstIntent));
+
+    const secondGameId = await insertGame(db);
+    const secondOwnerEpoch = await insertOwner(db, secondGameId);
+    const secondIntent = makeIntent(secondGameId, secondOwnerEpoch);
+    const secondHooks = createApiProviderExecutionHooks(db, {
+      gameId: secondGameId,
+      ownerEpoch: secondOwnerEpoch,
+    });
+    await allocateAndReserve(secondHooks, secondIntent);
+    await secondHooks.onTerminal?.(makeRecord(secondIntent));
+    const storage = new FakeProviderEvidenceStorage();
+
+    expect(await reconcileProviderAttemptEvidence(db, {
+      limit: 1,
+      evidenceStorage: storage,
+      dependencies: {
+        write: async () => ({ ok: false, error: "first object unavailable" }),
+      },
+    })).toEqual({ attempted: 1, stored: 0, failed: 1 });
+    expect(await reconcileProviderAttemptEvidence(db, {
+      limit: 1,
+      evidenceStorage: storage,
+    })).toEqual({ attempted: 1, stored: 1, failed: 0 });
+    expect((await db.select().from(schema.providerCallAttempts)
+      .where(eq(schema.providerCallAttempts.gameId, secondGameId)))[0])
+      .toMatchObject({ evidenceState: "stored" });
+  });
+
+  test("reclaims an expired evidence worker claim", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const intent = makeIntent(gameId, ownerEpoch);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    await allocateAndReserve(hooks, intent);
+    await hooks.onTerminal?.(makeRecord(intent));
+    await db.update(schema.providerAttemptEvidenceOutbox).set({
+      claimToken: "abandoned-worker",
+      claimExpiresAt: "2020-01-01T00:00:00.000Z",
+      nextReconciliationAt: "2020-01-01T00:00:00.000Z",
+    });
+
+    expect(await reconcileProviderAttemptEvidence(db, {
+      evidenceStorage: new FakeProviderEvidenceStorage(),
+    })).toEqual({ attempted: 1, stored: 1, failed: 0 });
+    expect(await db.select().from(schema.providerAttemptEvidenceOutbox)).toHaveLength(0);
+  });
+
+  test("runtime startup does not wait for stalled evidence storage", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const intent = makeIntent(gameId, ownerEpoch);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    await allocateAndReserve(hooks, intent);
+    await hooks.onTerminal?.(makeRecord(intent));
+    const stalledStorage: PrivateTraceStorageAdapter = {
+      putObject: (input) => new Promise((_resolve, reject) => {
+        input.abortSignal?.addEventListener("abort", () => {
+          reject(input.abortSignal?.reason ?? new Error("aborted"));
+        }, { once: true });
+      }),
+      getObject: async () => ({ body: "" }),
+      headObject: async () => ({}),
+    };
+    const startedAt = Date.now();
+    const runtime = await startProviderAttemptReconciliationRuntime(db, {
+      intervalMs: 60_000,
+      evidenceWriteTimeoutMs: 5,
+      evidenceStorage: stalledStorage,
+    });
+    expect(Date.now() - startedAt).toBeLessThan(100);
+    try {
+      await Bun.sleep(20);
+      const outbox = (await db.select().from(schema.providerAttemptEvidenceOutbox))[0];
+      expect(outbox?.claimToken).toBeNull();
+    } finally {
+      await runtime.stop();
+    }
   });
 
   test("reconciles failed spend projection idempotently from journaled facts", async () => {
@@ -861,6 +1389,10 @@ describe("provider call journal", () => {
         },
         validate: (response: unknown) => ({ status: "usable", value: response }),
       })).rejects.toThrow("[REDACTED]");
+
+    expect(await reconcileProviderAttemptEvidence(db, {
+      evidenceStorage: storage,
+    })).toEqual({ attempted: 1, stored: 1, failed: 0 });
 
     const attempt = (await db.select().from(schema.providerCallAttempts))[0]!;
     expect(attempt.outcomeMessage).not.toContain(secret);

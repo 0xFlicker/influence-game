@@ -9,9 +9,21 @@ CREATE TABLE "provider_attempt_evidence_outbox" (
 	"storage_key" text NOT NULL,
 	"manifest_id" text NOT NULL,
 	"manifest_metadata" jsonb NOT NULL,
+	"reconciliation_attempt_count" integer DEFAULT 0 NOT NULL,
+	"next_reconciliation_at" text DEFAULT now()::text NOT NULL,
+	"claim_token" text,
+	"claim_expires_at" text,
 	"created_at" text DEFAULT now()::text NOT NULL,
 	"updated_at" text DEFAULT now()::text NOT NULL,
-	CONSTRAINT "provider_attempt_evidence_outbox_shape_check" CHECK ("provider_attempt_evidence_outbox"."byte_length" > 0 AND "provider_attempt_evidence_outbox"."body_sha256" LIKE 'sha256:%')
+	CONSTRAINT "provider_attempt_evidence_outbox_shape_check" CHECK (
+      "provider_attempt_evidence_outbox"."byte_length" > 0
+      AND "provider_attempt_evidence_outbox"."body_sha256" LIKE 'sha256:%'
+      AND "provider_attempt_evidence_outbox"."reconciliation_attempt_count" >= 0
+      AND (
+        ("provider_attempt_evidence_outbox"."claim_token" IS NULL AND "provider_attempt_evidence_outbox"."claim_expires_at" IS NULL)
+        OR ("provider_attempt_evidence_outbox"."claim_token" IS NOT NULL AND "provider_attempt_evidence_outbox"."claim_expires_at" IS NOT NULL)
+      )
+    )
 );
 --> statement-breakpoint
 CREATE TABLE "provider_call_attempts" (
@@ -52,7 +64,7 @@ CREATE TABLE "provider_call_attempts" (
 	CONSTRAINT "provider_call_attempts_outcome_check" CHECK ("provider_call_attempts"."outcome_kind" IS NULL OR "provider_call_attempts"."outcome_kind" IN (
       'usable', 'refusal', 'rate_limit', 'service_error',
       'transport_timeout', 'transport_error', 'authentication',
-      'configuration', 'cancellation', 'empty_output', 'malformed_output',
+      'configuration', 'request_error', 'cancellation', 'empty_output', 'malformed_output',
       'wrong_tool', 'undecodable_structured_output'
     )),
 	CONSTRAINT "provider_call_attempts_disposition_check" CHECK ("provider_call_attempts"."disposition" IS NULL OR "provider_call_attempts"."disposition" IN ('accepted', 'retry_scheduled', 'exhausted')),
@@ -102,6 +114,13 @@ CREATE TABLE "provider_logical_calls" (
 	"rate_limit_terminal_reason" text,
 	"diagnostics_degraded" boolean DEFAULT false NOT NULL,
 	"evidence_failure_count" integer DEFAULT 0 NOT NULL,
+	"accepted_attempt_id" text,
+	"accepted_catalog_id" text,
+	"accepted_value" jsonb,
+	"accepted_value_sha256" text,
+	"accepted_at" text,
+	"canonical_event_sequence" integer,
+	"canonical_committed_at" text,
 	"created_at" text DEFAULT now()::text NOT NULL,
 	"updated_at" text DEFAULT now()::text NOT NULL,
 	CONSTRAINT "provider_logical_calls_actor_role_check" CHECK ("provider_logical_calls"."actor_role" IN ('player', 'juror', 'house', 'system', 'producer')),
@@ -115,6 +134,27 @@ CREATE TABLE "provider_logical_calls" (
         OR ("provider_logical_calls"."rate_limit_count" > 0 AND "provider_logical_calls"."rate_limit_outcome" IN ('pending', 'recovered', 'exhausted'))
       )
       AND ("provider_logical_calls"."rate_limit_outcome" = 'exhausted' OR "provider_logical_calls"."rate_limit_terminal_reason" IS NULL)
+    ),
+	CONSTRAINT "provider_logical_calls_accepted_shape_check" CHECK (
+      (
+        "accepted_attempt_id" IS NULL
+        AND "accepted_catalog_id" IS NULL
+        AND "accepted_value" IS NULL
+        AND "accepted_value_sha256" IS NULL
+        AND "accepted_at" IS NULL
+        AND "canonical_event_sequence" IS NULL
+        AND "canonical_committed_at" IS NULL
+      ) OR (
+        "accepted_attempt_id" IS NOT NULL
+        AND "accepted_catalog_id" IS NOT NULL
+        AND "accepted_value" IS NOT NULL
+        AND "accepted_value_sha256" LIKE 'sha256:%'
+        AND "accepted_at" IS NOT NULL
+        AND (
+          ("canonical_event_sequence" IS NULL AND "canonical_committed_at" IS NULL)
+          OR ("canonical_event_sequence" > 0 AND "canonical_committed_at" IS NOT NULL)
+        )
+      )
     )
 );
 --> statement-breakpoint
@@ -128,7 +168,7 @@ ALTER TABLE "provider_call_attempts" ADD CONSTRAINT "provider_call_attempts_evid
 ALTER TABLE "provider_call_attempts" ADD CONSTRAINT "provider_call_attempts_logical_call_game_fk" FOREIGN KEY ("logical_call_id","game_id") REFERENCES "public"."provider_logical_calls"("id","game_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "provider_call_attempts" ADD CONSTRAINT "provider_call_attempts_game_owner_fk" FOREIGN KEY ("game_id","owner_epoch") REFERENCES "public"."game_run_owners"("game_id","owner_epoch") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "provider_logical_calls" ADD CONSTRAINT "provider_logical_calls_game_id_games_id_fk" FOREIGN KEY ("game_id") REFERENCES "public"."games"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "provider_attempt_evidence_outbox_created_idx" ON "provider_attempt_evidence_outbox" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX "provider_attempt_evidence_outbox_ready_idx" ON "provider_attempt_evidence_outbox" USING btree ("next_reconciliation_at","claim_expires_at","created_at");--> statement-breakpoint
 CREATE UNIQUE INDEX "provider_call_attempts_call_ordinal_unique" ON "provider_call_attempts" USING btree ("logical_call_id","attempt_ordinal");--> statement-breakpoint
 CREATE UNIQUE INDEX "provider_call_attempts_transport_id_unique" ON "provider_call_attempts" USING btree ("transport_attempt_id");--> statement-breakpoint
 CREATE INDEX "provider_call_attempts_game_idx" ON "provider_call_attempts" USING btree ("game_id","created_at");--> statement-breakpoint

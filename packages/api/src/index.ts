@@ -62,6 +62,7 @@ import {
   finishRuntimeStartupWithProviderAttemptReconciliation,
   startProviderAttemptReconciliationRuntime,
 } from "./services/provider-call-journal.js";
+import { startProviderHealthProbeRuntime } from "./services/provider-health-probe.js";
 import {
   createRuntimeActivationController,
   readRuntimeStartupMode,
@@ -326,6 +327,9 @@ async function finishBackgroundRuntimeStartup(
     }
   }
 
+  const providerHealthProbeRuntime = activationFence
+    ? null
+    : await startProviderHealthProbeRuntime(db);
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
   assertNotAborted();
   const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
@@ -367,6 +371,7 @@ async function finishBackgroundRuntimeStartup(
   return {
     async stop() {
       clearInterval(reconciliationTimer);
+      providerHealthProbeRuntime?.stop();
       await providerAttemptReconciliation.stop();
       await ownerLearningWorker?.stop();
     },

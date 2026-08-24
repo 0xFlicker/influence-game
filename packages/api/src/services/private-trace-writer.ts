@@ -30,6 +30,7 @@ export interface WritePrivateTraceInput {
 export interface PrivateTraceWriteOptions {
   storage?: PrivateTraceStorageAdapter;
   now?: () => Date;
+  abortSignal?: AbortSignal;
 }
 
 export interface WriteProviderAttemptEvidenceInput {
@@ -463,6 +464,7 @@ export async function writePreparedProviderAttemptObject(
       key: prepared.storageKey,
       body: prepared.body,
       contentType: PRIVATE_TRACE_CONTENT_TYPE,
+      ...(options.abortSignal && { abortSignal: options.abortSignal }),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

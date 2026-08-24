@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import type { ProviderProfileId } from "./model-catalog";
 import type { Phase, UUID } from "./types";
 
@@ -23,6 +23,7 @@ export type ProviderAttemptFailureKind =
   | "transport_error"
   | "authentication"
   | "configuration"
+  | "request_error"
   | "cancellation"
   | "empty_output"
   | "malformed_output"
@@ -149,10 +150,34 @@ export interface ProviderAttemptRecord extends ProviderAttemptIntent {
   disposition: ProviderAttemptDisposition;
   accounting?: ProviderAttemptAccountingFacts;
   requestId?: string;
+  /** Exact sanitized HTTP request captured at the transport seam for evidence only. */
+  rawRequest?: SanitizedProviderRequestEvidence;
   rawResponse?: SanitizedProviderResponseEvidence;
+  /**
+   * Bounded, JSON-safe value that validation accepted for gameplay. Durable
+   * authorities use this to finish the logical call after owner recovery
+   * without repeating an already accepted remote execution.
+   */
+  acceptedValue?: unknown;
+}
+
+export interface ProviderAcceptedResult<TValue = unknown> {
+  /** Present only when a durable terminal hook owns the accepted receipt. */
+  attemptId?: string;
+  attemptOrdinal: number;
+  catalogId?: string;
+  value: TValue;
+}
+
+export interface ProviderTerminalReceipt {
+  acceptedAttemptId?: string;
 }
 
 export interface ProviderExecutionHooks {
+  /** Return the previously accepted value for this stable logical call. */
+  onReadAccepted?(
+    coordinate: ProviderLogicalCallCoordinate,
+  ): Promise<ProviderAcceptedResult | undefined> | ProviderAcceptedResult | undefined;
   /**
    * Durable authorities allocate ordinals before request preparation so a
    * reconstructed logical call continues its existing attempt chain.
@@ -163,7 +188,9 @@ export interface ProviderExecutionHooks {
   /** Future durable authority hook. Throwing prevents the network dispatch. */
   onReserve?(intent: ProviderAttemptIntent): Promise<void> | void;
   /** Future durable terminal journal hook. */
-  onTerminal?(record: ProviderAttemptRecord): Promise<void> | void;
+  onTerminal?(
+    record: ProviderAttemptRecord,
+  ): Promise<ProviderTerminalReceipt | void> | ProviderTerminalReceipt | void;
 }
 
 export type ProviderCandidateValidation<T> =
@@ -196,6 +223,24 @@ export interface ExecuteProviderCallOptions<TResponse, TValue> {
   onRetry?(record: ProviderAttemptRecord): Promise<void> | void;
 }
 
+export interface ProviderManifestCallEntry<TResponse, TValue>
+  extends ExecuteProviderCallOptions<TResponse, TValue> {
+  catalogId: string;
+}
+
+export interface ExecuteProviderManifestCallOptions<TResponse, TValue> {
+  entries: readonly ProviderManifestCallEntry<TResponse, TValue>[];
+  cancellationSignal?: AbortSignal;
+}
+
+export interface ProviderManifestCallResult<TValue> {
+  value: TValue;
+  catalogId: string;
+  manifestPosition: number;
+  acceptedAttemptId?: string;
+  acceptedAttemptOrdinal: number;
+}
+
 export interface ProviderExecutionCoordinatorOptions {
   hooks?: ProviderExecutionHooks;
   wait?: (milliseconds: number, signal?: AbortSignal) => Promise<void>;
@@ -215,22 +260,85 @@ interface MutableTransportCapture {
 
 const activeTransportCaptures = new Map<string, MutableTransportCapture>();
 
-export class ProviderAttemptError extends Error {
+/** Stable canonical/private-decision correlation for one accepted attempt. */
+export function providerAcceptedDecisionId(acceptedAttemptId: string): UUID {
+  const bytes = createHash("sha256")
+    .update("influence.provider.accepted-decision.v1\0")
+    .update(acceptedAttemptId)
+    .digest()
+    .subarray(0, 16);
+  bytes[6] = (bytes[6]! & 0x0f) | 0x50;
+  bytes[8] = (bytes[8]! & 0x3f) | 0x80;
+  const hex = bytes.toString("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+export type ProviderUnavailableKind =
+  | ProviderAttemptFailureKind
+  | "budget_exhausted"
+  | "circuit_open";
+
+/** Gameplay-facing exhaustion shared by failed, disallowed, and over-budget manifests. */
+export class ProviderUnavailableError extends Error {
+  readonly outcome: { kind: ProviderUnavailableKind };
+
+  constructor(message: string, kind: ProviderUnavailableKind) {
+    super(message);
+    this.name = "ProviderUnavailableError";
+    this.outcome = { kind };
+  }
+}
+
+export class ProviderAttemptError extends ProviderUnavailableError {
   readonly record: ProviderAttemptRecord;
-  readonly outcome: ProviderAttemptFailureOutcome;
+  declare readonly outcome: ProviderAttemptFailureOutcome;
 
   constructor(record: ProviderAttemptRecord) {
-    super(
+    const message =
       record.outcome.kind === "usable"
         ? "Provider attempt unexpectedly failed"
-        : record.outcome.message,
-    );
+        : record.outcome.message;
+    const kind = record.outcome.kind === "usable"
+      ? "service_error"
+      : record.outcome.kind;
+    super(message, kind);
     this.name = "ProviderAttemptError";
     this.record = record;
     if (record.outcome.kind === "usable") {
       throw new Error("ProviderAttemptError requires a failed outcome");
     }
     this.outcome = record.outcome;
+  }
+}
+
+/**
+ * Durable reservation authorities throw this before a network dispatch when a
+ * sealed fallback entry has spent its per-game call budget.
+ */
+export class ProviderCallBudgetExhaustedError extends ProviderUnavailableError {
+  constructor(
+    readonly catalogId: string,
+    readonly usedCalls: number,
+    readonly maxCallsPerGame: number,
+  ) {
+    super(
+      `Provider call budget exhausted for ${catalogId}: ${usedCalls}/${maxCallsPerGame}`,
+      "budget_exhausted",
+    );
+    this.name = "ProviderCallBudgetExhaustedError";
+  }
+}
+
+/** A durable health authority rejected dispatch before network I/O. */
+export class ProviderCircuitOpenError extends ProviderUnavailableError {
+  constructor(
+    readonly catalogId: string,
+    readonly scopeKey: string,
+    readonly revision: number,
+    readonly haltManifest: boolean,
+  ) {
+    super(`Provider circuit is open for ${scopeKey}`, "circuit_open");
+    this.name = "ProviderCircuitOpenError";
   }
 }
 
@@ -262,6 +370,7 @@ export class ProviderExecutionCoordinator {
 
 export class ProviderLogicalCallExecution {
   private nextAttemptOrdinal = 1;
+  private acceptedResult?: ProviderAcceptedResult;
 
   constructor(
     readonly coordinate: ProviderLogicalCallCoordinate,
@@ -273,7 +382,104 @@ export class ProviderLogicalCallExecution {
     private readonly now: () => number,
   ) {}
 
+  /**
+   * Traverse one game's sealed provider manifest. Each entry owns its bounded
+   * retry/repair loop; an exhausted or rejected entry advances to the next
+   * entry, while cancellation and local programming faults still fail fast.
+   */
+  async executeManifest<TResponse, TValue>(
+    options: ExecuteProviderManifestCallOptions<TResponse, TValue>,
+  ): Promise<ProviderManifestCallResult<TValue>> {
+    if (options.entries.length === 0) {
+      throw new Error("Provider manifest execution requires at least one entry");
+    }
+
+    const accepted = await this.readAccepted<TValue>();
+    if (accepted) {
+      const manifestPosition = options.entries.findIndex(
+        (entry) => entry.catalogId === accepted.catalogId,
+      );
+      if (manifestPosition < 0) {
+        throw new Error(
+          `Accepted provider result references missing sealed entry ${accepted.catalogId ?? "unknown"}`,
+        );
+      }
+      return {
+        value: accepted.value,
+        catalogId: options.entries[manifestPosition]!.catalogId,
+        manifestPosition,
+        ...(accepted.attemptId && { acceptedAttemptId: accepted.attemptId }),
+        acceptedAttemptOrdinal: accepted.attemptOrdinal,
+      };
+    }
+
+    let lastAttemptError: ProviderAttemptError | undefined;
+    let lastBudgetError: ProviderCallBudgetExhaustedError | undefined;
+    let lastCircuitError: ProviderCircuitOpenError | undefined;
+    for (const [manifestPosition, entry] of options.entries.entries()) {
+      options.cancellationSignal?.throwIfAborted();
+      try {
+        const value = await this.executeWithoutAcceptedReplay({
+          ...entry,
+          ...(options.cancellationSignal && {
+            cancellationSignal: options.cancellationSignal,
+          }),
+        });
+        const accepted = this.acceptedResult;
+        if (!accepted) {
+          throw new Error("Usable provider call did not retain its acceptance receipt");
+        }
+        return {
+          value,
+          catalogId: entry.catalogId,
+          manifestPosition,
+          ...(accepted.attemptId && { acceptedAttemptId: accepted.attemptId }),
+          acceptedAttemptOrdinal: accepted.attemptOrdinal,
+        };
+      } catch (error) {
+        if (error instanceof ProviderAttemptError) {
+          lastAttemptError = error;
+          continue;
+        }
+        if (error instanceof ProviderCallBudgetExhaustedError) {
+          lastBudgetError = error;
+          continue;
+        }
+        if (error instanceof ProviderCircuitOpenError) {
+          if (error.haltManifest) throw error;
+          lastCircuitError = error;
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    // A primary entry is intentionally uncapped, so a normal exhausted
+    // manifest always has an attempt error. Preserve that gameplay-facing
+    // typed outcome rather than replacing it with a later budget skip.
+    throw lastAttemptError ?? lastCircuitError ?? lastBudgetError ??
+      new Error("Provider manifest exhausted without an attempt");
+  }
+
   async execute<TResponse, TValue>(
+    options: ExecuteProviderCallOptions<TResponse, TValue>,
+  ): Promise<TValue> {
+    const accepted = await this.readAccepted<TValue>();
+    if (accepted) return accepted.value;
+    return this.executeWithoutAcceptedReplay(options);
+  }
+
+  private async readAccepted<TValue>(): Promise<ProviderAcceptedResult<TValue> | undefined> {
+    const accepted = await this.hooks?.onReadAccepted?.(this.coordinate);
+    this.acceptedResult = accepted;
+    return accepted as ProviderAcceptedResult<TValue> | undefined;
+  }
+
+  getAcceptedResult(): ProviderAcceptedResult | undefined {
+    return this.acceptedResult;
+  }
+
+  private async executeWithoutAcceptedReplay<TResponse, TValue>(
     options: ExecuteProviderCallOptions<TResponse, TValue>,
   ): Promise<TValue> {
     const maxAttempts = Math.max(1, Math.floor(options.maxAttempts));
@@ -314,6 +520,12 @@ export class ProviderLogicalCallExecution {
 
       let capturedRecord: Omit<ProviderAttemptRecord, "disposition">;
       let usableResult: { value: TValue } | undefined;
+      let dispatchResult!:
+        | { status: "success"; response: TResponse }
+        | {
+            status: "failure";
+            record: Omit<ProviderAttemptRecord, "disposition">;
+          };
       try {
         const response = await options.dispatch({
           attemptOrdinal,
@@ -329,21 +541,66 @@ export class ProviderLogicalCallExecution {
             },
           },
         });
-        const validation = options.validate(response);
+        dispatchResult = { status: "success", response };
+      } catch (error) {
+        if (error instanceof ProviderAttemptError) throw error;
+        const completedAtMs = this.now();
+        const outcome = classifyProviderError(
+          error,
+          options.cancellationSignal,
+        );
+        const rawResponse =
+          transportCapture.response ??
+          rawResponseFromError(error, transportCapture.credentialValues);
+        const accounting = extractProviderAttemptAccounting(
+          rawResponse.body,
+          error,
+        );
+        const requestId = sanitizeProviderRequestId(
+          requestIdFromError(error, transportCapture.response),
+          transportCapture.credentialValues,
+        );
+        dispatchResult = {
+          status: "failure",
+          record: {
+            ...intent,
+            ...(transportCapture.request && {
+              rawRequest: transportCapture.request,
+            }),
+            completedAt: new Date(completedAtMs).toISOString(),
+            latencyMs: Math.max(0, Math.round(completedAtMs - startedAtMs)),
+            outcome,
+            ...(accounting && { accounting }),
+            ...(requestId && { requestId }),
+            rawResponse,
+          },
+        };
+      } finally {
+        activeTransportCaptures.delete(attemptId);
+      }
+
+      if (dispatchResult.status === "success") {
+        // Validation is local application code, not a provider dispatch. Let
+        // validator bugs fail fast instead of turning them into retries or
+        // manifest failover.
+        const validation = options.validate(dispatchResult.response);
         const completedAtMs = this.now();
         const requestId = sanitizeProviderRequestId(
-          requestIdFromResponse(response, transportCapture.response),
-          preparedRequest.credentialValues ?? [],
+          requestIdFromResponse(
+            dispatchResult.response,
+            transportCapture.response,
+          ),
+          transportCapture.credentialValues,
         );
         if (validation.status === "usable") {
           const accounting = extractProviderAttemptAccounting(
-            response,
+            dispatchResult.response,
             transportCapture.response?.body,
           );
           capturedRecord = {
             ...intent,
             ...(transportCapture.request && {
-              preparedRequest: transportCapture.request,
+              rawRequest: transportCapture.request,
             }),
             completedAt: new Date(completedAtMs).toISOString(),
             latencyMs: Math.max(0, Math.round(completedAtMs - startedAtMs)),
@@ -360,13 +617,13 @@ export class ProviderLogicalCallExecution {
               validation.retryable ?? defaultRetryable(validation.kind),
           };
           const accounting = extractProviderAttemptAccounting(
-            response,
+            dispatchResult.response,
             transportCapture.response?.body,
           );
           capturedRecord = {
             ...intent,
             ...(transportCapture.request && {
-              preparedRequest: transportCapture.request,
+              rawRequest: transportCapture.request,
             }),
             completedAt: new Date(completedAtMs).toISOString(),
             latencyMs: Math.max(0, Math.round(completedAtMs - startedAtMs)),
@@ -375,50 +632,23 @@ export class ProviderLogicalCallExecution {
             ...(requestId && { requestId }),
             rawResponse: transportCapture.response ?? {
               body: sanitizeProviderEvidence(
-                response,
-                preparedRequest.credentialValues,
+                dispatchResult.response,
+                transportCapture.credentialValues,
               ),
             },
           };
         }
-      } catch (error) {
-        if (error instanceof ProviderAttemptError) throw error;
-        const completedAtMs = this.now();
-        const outcome = classifyProviderError(
-          error,
-          options.cancellationSignal,
-        );
-        const rawResponse =
-          transportCapture.response ??
-          rawResponseFromError(error, preparedRequest.credentialValues);
-        const accounting = extractProviderAttemptAccounting(
-          rawResponse.body,
-          error,
-        );
-        const requestId = sanitizeProviderRequestId(
-          requestIdFromError(error, transportCapture.response),
-          preparedRequest.credentialValues ?? [],
-        );
-        capturedRecord = {
-          ...intent,
-          ...(transportCapture.request && {
-            preparedRequest: transportCapture.request,
-          }),
-          completedAt: new Date(completedAtMs).toISOString(),
-          latencyMs: Math.max(0, Math.round(completedAtMs - startedAtMs)),
-          outcome,
-          ...(accounting && { accounting }),
-          ...(requestId && { requestId }),
-          rawResponse,
-        };
-      } finally {
-        activeTransportCaptures.delete(attemptId);
+      } else {
+        capturedRecord = dispatchResult.record;
       }
 
       const willRetry =
         capturedRecord.outcome.kind !== "usable" &&
         capturedRecord.outcome.retryable &&
         localAttempt < maxAttempts;
+      const acceptedValue = usableResult && this.hooks?.onTerminal
+        ? boundedAcceptedValue(usableResult.value)
+        : undefined;
       const record: ProviderAttemptRecord = {
         ...capturedRecord,
         ...(capturedRecord.outcome.kind !== "usable" && {
@@ -426,7 +656,7 @@ export class ProviderLogicalCallExecution {
             ...capturedRecord.outcome,
             message: sanitizeProviderOutcomeMessage(
               capturedRecord.outcome.message,
-              preparedRequest.credentialValues ?? [],
+              transportCapture.credentialValues,
             ),
           },
         }),
@@ -436,10 +666,25 @@ export class ProviderLogicalCallExecution {
             : willRetry
               ? "retry_scheduled"
               : "exhausted",
+        ...(acceptedValue !== undefined && {
+          acceptedValue,
+        }),
       };
 
-      await this.hooks?.onTerminal?.(record);
-      if (usableResult) return usableResult.value;
+      const terminalReceipt = await this.hooks?.onTerminal?.(record);
+      if (usableResult) {
+        this.acceptedResult = {
+          ...(terminalReceipt?.acceptedAttemptId && {
+            attemptId: terminalReceipt.acceptedAttemptId,
+          }),
+          attemptOrdinal: record.attemptOrdinal,
+          ...(record.preparedRequest.catalogId && {
+            catalogId: record.preparedRequest.catalogId,
+          }),
+          value: usableResult.value,
+        };
+        return usableResult.value;
+      }
       lastError = new ProviderAttemptError(record);
       if (record.outcome.kind === "usable") {
         throw new Error(
@@ -458,6 +703,29 @@ export class ProviderLogicalCallExecution {
       new Error("Provider call exhausted without a terminal outcome")
     );
   }
+}
+
+const MAX_ACCEPTED_PROVIDER_VALUE_BYTES = 1_048_576;
+
+function boundedAcceptedValue(value: unknown): unknown {
+  let serialized: string | undefined;
+  try {
+    serialized = JSON.stringify(value);
+  } catch (error) {
+    throw new Error("Accepted provider value is not JSON serializable", {
+      cause: error,
+    });
+  }
+  if (serialized === undefined) {
+    throw new Error("Accepted provider value cannot be undefined");
+  }
+  const byteLength = new TextEncoder().encode(serialized).byteLength;
+  if (byteLength > MAX_ACCEPTED_PROVIDER_VALUE_BYTES) {
+    throw new Error(
+      `Accepted provider value exceeds ${MAX_ACCEPTED_PROVIDER_VALUE_BYTES} bytes`,
+    );
+  }
+  return JSON.parse(serialized) as unknown;
 }
 
 function sanitizeProviderOutcomeMessage(
@@ -669,16 +937,18 @@ export function createProviderEvidenceFetch(
     const outgoing = new Request(incoming, { headers: outgoingHeaders });
 
     if (capture) {
-      const actualCredentialValues = [
+      const actualCredentialValues = uniqueCredentialValues([
         ...credentialValues,
         ...capture.credentialValues,
-      ];
+      ]);
+      capture.credentialValues = actualCredentialValues;
       capture.request = {
         requestShape: new URL(outgoing.url).pathname.endsWith("/responses")
           ? "responses"
           : "chat_completions",
         providerProfileId:
           capture.request?.providerProfileId ?? "custom-openai-compatible",
+        ...(capture.request?.catalogId && { catalogId: capture.request.catalogId }),
         model: capture.request?.model ?? "unknown",
         url: sanitizeUrl(outgoing.url, actualCredentialValues),
         headers: sanitizeHeaders(outgoing.headers, actualCredentialValues),
@@ -691,10 +961,11 @@ export function createProviderEvidenceFetch(
 
     const response = await baseFetch(outgoing);
     if (capture) {
-      const actualCredentialValues = [
+      const actualCredentialValues = uniqueCredentialValues([
         ...credentialValues,
         ...capture.credentialValues,
-      ];
+      ]);
+      capture.credentialValues = actualCredentialValues;
       capture.response = {
         status: response.status,
         headers: sanitizeHeaders(response.headers, actualCredentialValues),
@@ -706,6 +977,10 @@ export function createProviderEvidenceFetch(
     }
     return response;
   }) as typeof fetch;
+}
+
+function uniqueCredentialValues(values: readonly string[]): readonly string[] {
+  return [...new Set(values.filter((value) => value.length > 0))];
 }
 
 /**
@@ -926,13 +1201,20 @@ function classifyProviderFailureDetails(input: {
   }
   if (
     code.includes("model_not_found") ||
+    code.includes("unknown_model") ||
     code.includes("unsupported") ||
     code.includes("invalid_parameter") ||
-    input.status === 400 ||
-    input.status === 404 ||
-    input.status === 422
+    code.includes("invalid_schema") ||
+    code.includes("invalid_tool")
   ) {
     return { kind: "configuration", message: input.message, retryable: false };
+  }
+  if (
+    input.status !== undefined
+    && input.status >= 400
+    && input.status < 500
+  ) {
+    return { kind: "request_error", message: input.message, retryable: false };
   }
   return { kind: "service_error", message: input.message, retryable: true };
 }

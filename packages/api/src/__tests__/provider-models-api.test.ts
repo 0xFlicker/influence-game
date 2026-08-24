@@ -134,4 +134,42 @@ describe("provider model inventory", () => {
     expect(body.models.find((model) => model.catalogId === "katana:glm-5-2"))
       .toMatchObject({ configured: true, available: false });
   });
+
+  test("includes dynamically listed OpenAI and Katana models without reviving disabled catalog entries", async () => {
+    const db = await setupTestDB();
+    await db.insert(schema.users).values({
+      id: USER_ID,
+      walletAddress: "0x9999999999999999999999999999999999999999",
+      displayName: "Provider Inventory User",
+    });
+    const app = new Hono().route("/", createProviderModelRoutes(
+      db,
+      {
+        OPENAI_API_KEY: "configured-openai",
+        API_KAT_IMGNAI_KEY: "configured-katana",
+        API_KAT_IMGNAI_SECRET: "configured-katana-secret",
+      } as NodeJS.ProcessEnv,
+      {
+        async listModelIds(providerProfileId) {
+          return providerProfileId === "openai"
+            ? ["gpt-5.6-luna", "gpt-5.7-test"]
+            : ["grok-4-5", "deepseek-v3", "q-naifu-a3b"];
+        },
+      },
+    ));
+    const token = await createSessionToken(USER_ID, { roles: ["sysop"], permissions: [] });
+    const response = await app.request("/api/provider-models", {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = (await response.json()) as {
+      models: Array<{ catalogId: string; available: boolean | null }>;
+    };
+
+    expect(body.models).toEqual(expect.arrayContaining([
+      expect.objectContaining({ catalogId: "openai:gpt-5.7-test", available: true }),
+      expect.objectContaining({ catalogId: "katana:deepseek-v3", available: true }),
+    ]));
+    expect(body.models.some((model) => model.catalogId === "katana:q-naifu-a3b"))
+      .toBe(false);
+  });
 });

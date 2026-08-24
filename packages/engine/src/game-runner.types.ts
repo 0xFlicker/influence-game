@@ -438,11 +438,14 @@ export interface ProviderSpeechAbsence {
     | "transport_timeout"
     | "authentication"
     | "configuration"
+    | "request_error"
     | "cancellation"
     | "empty_output"
     | "malformed_output"
     | "wrong_tool"
-    | "undecodable_structured_output";
+    | "undecodable_structured_output"
+    | "budget_exhausted"
+    | "circuit_open";
 }
 
 export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "system" | "producer";

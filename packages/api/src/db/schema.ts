@@ -29,6 +29,7 @@ import {
   MAX_NEW_GAME_PLAYERS,
   MIN_NEW_GAME_PLAYERS,
   type ProviderAttemptAccountingFacts,
+  type ProviderAttemptRecord,
 } from "@influence/engine";
 import type { AgentGender } from "../lib/agent-gender.js";
 import type {
@@ -1505,6 +1506,22 @@ export type ProviderAttemptSpendProjectionState =
   | "pending"
   | "projected"
   | "failed";
+export type ProviderHealthScopeKind = "provider" | "entry";
+export type ProviderHealthState = "closed" | "open" | "probing";
+export type ProviderHealthReason =
+  | "authentication"
+  | "configuration"
+  | "service_error"
+  | "transport_timeout"
+  | "transport_error";
+export type ProviderHealthEventKind =
+  | "failure_recorded"
+  | "success_recorded"
+  | "opened"
+  | "probe_started"
+  | "probe_expired"
+  | "probe_succeeded"
+  | "probe_failed";
 
 /** One stable phase-owned logical call. Its id is a deterministic coordinate hash. */
 export const providerLogicalCalls = pgTable("provider_logical_calls", {
@@ -1525,6 +1542,13 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
   rateLimitTerminalReason: text("rate_limit_terminal_reason"),
   diagnosticsDegraded: boolean("diagnostics_degraded").notNull().default(false),
   evidenceFailureCount: integer("evidence_failure_count").notNull().default(0),
+  acceptedAttemptId: text("accepted_attempt_id"),
+  acceptedCatalogId: text("accepted_catalog_id"),
+  acceptedValue: jsonb("accepted_value").$type<unknown>(),
+  acceptedValueSha256: text("accepted_value_sha256"),
+  acceptedAt: text("accepted_at"),
+  canonicalEventSequence: integer("canonical_event_sequence"),
+  canonicalCommittedAt: text("canonical_committed_at"),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
@@ -1552,6 +1576,30 @@ export const providerLogicalCalls = pgTable("provider_logical_calls", {
         OR (${table.rateLimitCount} > 0 AND ${table.rateLimitOutcome} IN ('pending', 'recovered', 'exhausted'))
       )
       AND (${table.rateLimitOutcome} = 'exhausted' OR ${table.rateLimitTerminalReason} IS NULL)
+    `,
+  ),
+  check(
+    "provider_logical_calls_accepted_shape_check",
+    sql`
+      (
+        ${table.acceptedAttemptId} IS NULL
+        AND ${table.acceptedCatalogId} IS NULL
+        AND ${table.acceptedValue} IS NULL
+        AND ${table.acceptedValueSha256} IS NULL
+        AND ${table.acceptedAt} IS NULL
+        AND ${table.canonicalEventSequence} IS NULL
+        AND ${table.canonicalCommittedAt} IS NULL
+      ) OR (
+        ${table.acceptedAttemptId} IS NOT NULL
+        AND ${table.acceptedCatalogId} IS NOT NULL
+        AND ${table.acceptedValue} IS NOT NULL
+        AND ${table.acceptedValueSha256} LIKE 'sha256:%'
+        AND ${table.acceptedAt} IS NOT NULL
+        AND (
+          (${table.canonicalEventSequence} IS NULL AND ${table.canonicalCommittedAt} IS NULL)
+          OR (${table.canonicalEventSequence} > 0 AND ${table.canonicalCommittedAt} IS NOT NULL)
+        )
+      )
     `,
   ),
 ]);
@@ -1636,7 +1684,7 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
     sql`${table.outcomeKind} IS NULL OR ${table.outcomeKind} IN (
       'usable', 'refusal', 'rate_limit', 'service_error',
       'transport_timeout', 'transport_error', 'authentication',
-      'configuration', 'cancellation', 'empty_output', 'malformed_output',
+      'configuration', 'request_error', 'cancellation', 'empty_output', 'malformed_output',
       'wrong_tool', 'undecodable_structured_output'
     )`,
   ),
@@ -1700,10 +1748,15 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   manifestMetadata: jsonb("manifest_metadata")
     .$type<Record<string, unknown>>()
     .notNull(),
+  reconciliationAttemptCount: integer("reconciliation_attempt_count").notNull().default(0),
+  nextReconciliationAt: text("next_reconciliation_at").notNull().default(sql`now()::text`),
+  claimToken: text("claim_token"),
+  claimExpiresAt: text("claim_expires_at"),
   createdAt: text("created_at").notNull().default(sql`now()::text`),
   updatedAt: text("updated_at").notNull().default(sql`now()::text`),
 }, (table) => [
-  index("provider_attempt_evidence_outbox_created_idx").on(table.createdAt),
+  index("provider_attempt_evidence_outbox_ready_idx")
+    .on(table.nextReconciliationAt, table.claimExpiresAt, table.createdAt),
   foreignKey({
     name: "provider_attempt_evidence_outbox_attempt_game_fk",
     columns: [table.attemptId, table.gameId],
@@ -1721,8 +1774,114 @@ export const providerAttemptEvidenceOutbox = pgTable("provider_attempt_evidence_
   }),
   check(
     "provider_attempt_evidence_outbox_shape_check",
-    sql`${table.byteLength} > 0 AND ${table.bodySha256} LIKE 'sha256:%'`,
+    sql`
+      ${table.byteLength} > 0
+      AND ${table.bodySha256} LIKE 'sha256:%'
+      AND ${table.reconciliationAttemptCount} >= 0
+      AND (
+        (${table.claimToken} IS NULL AND ${table.claimExpiresAt} IS NULL)
+        OR (${table.claimToken} IS NOT NULL AND ${table.claimExpiresAt} IS NOT NULL)
+      )
+    `,
   ),
+]);
+
+// ---------------------------------------------------------------------------
+// Provider health (durable circuit-breaker authority)
+// ---------------------------------------------------------------------------
+
+export const providerHealthStates = pgTable("provider_health_states", {
+  scopeKey: text("scope_key").primaryKey(),
+  scopeKind: text("scope_kind").notNull().$type<ProviderHealthScopeKind>(),
+  providerProfileId: text("provider_profile_id").notNull(),
+  catalogId: text("catalog_id"),
+  state: text("state").notNull().$type<ProviderHealthState>().default("closed"),
+  reason: text("reason").$type<ProviderHealthReason>(),
+  revision: integer("revision").notNull().default(1),
+  consecutiveFailureCount: integer("consecutive_failure_count").notNull().default(0),
+  windowStartedAt: text("window_started_at"),
+  openedAt: text("opened_at"),
+  cooldownUntil: text("cooldown_until"),
+  lastFailureAt: text("last_failure_at"),
+  lastSuccessAt: text("last_success_at"),
+  lastAttemptId: text("last_attempt_id").references(() => providerCallAttempts.id),
+  lastProbeEvidenceId: text("last_probe_evidence_id"),
+  probeLeaseToken: text("probe_lease_token"),
+  probeLeaseOwner: text("probe_lease_owner"),
+  probeLeaseExpiresAt: text("probe_lease_expires_at"),
+  lastProbeAt: text("last_probe_at"),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+  updatedAt: text("updated_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("provider_health_states_provider_idx").on(table.providerProfileId, table.state),
+  index("provider_health_states_catalog_idx").on(table.catalogId, table.state),
+  check("provider_health_states_scope_check", sql`${table.scopeKind} IN ('provider', 'entry')`),
+  check("provider_health_states_state_check", sql`${table.state} IN ('closed', 'open', 'probing')`),
+  check("provider_health_states_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error')`),
+  check("provider_health_states_counts_check", sql`${table.revision} > 0 AND ${table.consecutiveFailureCount} >= 0`),
+  check("provider_health_states_scope_shape_check", sql`
+    (${table.scopeKind} = 'provider' AND ${table.catalogId} IS NULL)
+    OR (${table.scopeKind} = 'entry' AND ${table.catalogId} IS NOT NULL)
+  `),
+  check("provider_health_states_probe_shape_check", sql`
+    (
+      ${table.state} = 'probing'
+      AND ${table.probeLeaseToken} IS NOT NULL
+      AND ${table.probeLeaseOwner} IS NOT NULL
+      AND ${table.probeLeaseExpiresAt} IS NOT NULL
+    ) OR (
+      ${table.state} <> 'probing'
+      AND ${table.probeLeaseToken} IS NULL
+      AND ${table.probeLeaseOwner} IS NULL
+      AND ${table.probeLeaseExpiresAt} IS NULL
+    )
+  `),
+]);
+
+/**
+ * Exact coordinator-sanitized evidence for one fenced health probe. This is
+ * operationally private and is exposed only through current admin/sysop or
+ * producer MCP authority; public game surfaces never join this table.
+ */
+export const providerHealthProbeEvidence = pgTable("provider_health_probe_evidence", {
+  id: text("id").primaryKey(),
+  scopeKey: text("scope_key")
+    .notNull()
+    .references(() => providerHealthStates.scopeKey),
+  leaseRevision: integer("lease_revision").notNull(),
+  recordSha256: text("record_sha256").notNull(),
+  record: jsonb("record").notNull().$type<ProviderAttemptRecord>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  uniqueIndex("provider_health_probe_evidence_scope_revision_idx")
+    .on(table.scopeKey, table.leaseRevision),
+  check("provider_health_probe_evidence_revision_check", sql`${table.leaseRevision} > 0`),
+  check("provider_health_probe_evidence_hash_check", sql`${table.recordSha256} LIKE 'sha256:%'`),
+]);
+
+export const providerHealthEvents = pgTable("provider_health_events", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  scopeKey: text("scope_key")
+    .notNull()
+    .references(() => providerHealthStates.scopeKey),
+  eventKind: text("event_kind").notNull().$type<ProviderHealthEventKind>(),
+  fromState: text("from_state").$type<ProviderHealthState>(),
+  toState: text("to_state").notNull().$type<ProviderHealthState>(),
+  reason: text("reason").$type<ProviderHealthReason>(),
+  revision: integer("revision").notNull(),
+  attemptId: text("attempt_id").references(() => providerCallAttempts.id),
+  actor: text("actor"),
+  safeMetadata: jsonb("safe_metadata").$type<Record<string, unknown>>(),
+  createdAt: text("created_at").notNull().default(sql`now()::text`),
+}, (table) => [
+  index("provider_health_events_scope_idx").on(table.scopeKey, table.createdAt),
+  check("provider_health_events_kind_check", sql`${table.eventKind} IN ('failure_recorded', 'success_recorded', 'opened', 'probe_started', 'probe_expired', 'probe_succeeded', 'probe_failed')`),
+  check("provider_health_events_state_check", sql`
+    (${table.fromState} IS NULL OR ${table.fromState} IN ('closed', 'open', 'probing'))
+    AND ${table.toState} IN ('closed', 'open', 'probing')
+  `),
+  check("provider_health_events_reason_check", sql`${table.reason} IS NULL OR ${table.reason} IN ('authentication', 'configuration', 'service_error', 'transport_timeout', 'transport_error')`),
+  check("provider_health_events_revision_check", sql`${table.revision} > 0`),
 ]);
 
 // ---------------------------------------------------------------------------

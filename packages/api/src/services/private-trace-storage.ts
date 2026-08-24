@@ -14,6 +14,7 @@ export interface PrivateTracePutObjectInput {
   key: string;
   body: string;
   contentType: string;
+  abortSignal?: AbortSignal;
 }
 
 export interface PrivateTracePutObjectResult {
@@ -25,8 +26,15 @@ export interface PrivateTraceStorageAdapter {
   getObject(input: {
     bucket: string;
     key: string;
+    offsetBytes?: number;
     maxBytes?: number;
-  }): Promise<{ body: string; contentLength?: number; contentRange?: string; contentType?: string }>;
+  }): Promise<{
+    body?: string;
+    bodyBytes?: Uint8Array;
+    contentLength?: number;
+    contentRange?: string;
+    contentType?: string;
+  }>;
   headObject(input: { bucket: string; key: string }): Promise<{ contentLength?: number; contentType?: string }>;
 }
 
@@ -100,7 +108,7 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
       Key: input.key,
       Body: input.body,
       ContentType: input.contentType,
-    }));
+    }), input.abortSignal ? { abortSignal: input.abortSignal } : undefined);
 
     return {
       ...(response.ETag && { etag: response.ETag }),
@@ -110,21 +118,32 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
   async getObject(input: {
     bucket: string;
     key: string;
+    offsetBytes?: number;
     maxBytes?: number;
-  }): Promise<{ body: string; contentLength?: number; contentRange?: string; contentType?: string }> {
+  }): Promise<{
+    bodyBytes: Uint8Array;
+    contentLength?: number;
+    contentRange?: string;
+    contentType?: string;
+  }> {
+    const offsetBytes = normalizeOffsetBytes(input.offsetBytes);
     const maxBytes = normalizeMaxBytes(input.maxBytes);
     const command: GetObjectCommandInput = {
       Bucket: input.bucket,
       Key: input.key,
-      ...(maxBytes !== undefined && { Range: `bytes=0-${maxBytes - 1}` }),
+      ...((offsetBytes > 0 || maxBytes !== undefined) && {
+        Range: maxBytes === undefined
+          ? `bytes=${offsetBytes}-`
+          : `bytes=${offsetBytes}-${offsetBytes + maxBytes - 1}`,
+      }),
     };
     const response = await this.client.send(new GetObjectCommand(command));
-    const body = await response.Body?.transformToString();
-    if (body === undefined) {
+    const bodyBytes = await response.Body?.transformToByteArray();
+    if (bodyBytes === undefined) {
       throw new Error("private trace object body missing");
     }
     return {
-      body,
+      bodyBytes,
       ...(response.ContentLength !== undefined && { contentLength: response.ContentLength }),
       ...(response.ContentRange && { contentRange: response.ContentRange }),
       ...(response.ContentType && { contentType: response.ContentType }),
@@ -150,4 +169,9 @@ export function createPrivateTraceStorageAdapter(): PrivateTraceStorageAdapter {
 function normalizeMaxBytes(value: number | undefined): number | undefined {
   if (value === undefined || !Number.isFinite(value)) return undefined;
   return Math.max(1, Math.floor(value));
+}
+
+function normalizeOffsetBytes(value: number | undefined): number {
+  if (value === undefined || !Number.isFinite(value)) return 0;
+  return Math.max(0, Math.floor(value));
 }

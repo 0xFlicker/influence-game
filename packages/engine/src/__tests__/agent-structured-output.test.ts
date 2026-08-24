@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import type { AllianceActionOpportunity as PublicAllianceActionOpportunity } from "../index";
@@ -28,7 +28,12 @@ import { MockAgent } from "./mock-agent";
 import { resolveActionStrategyCandidate } from "../phases/phase-runner-context";
 import { COMPACT_STRATEGY_LIMITS } from "../strategy-state";
 import { STRATEGY_DELTA_GUIDANCE } from "../formats/agent-surface";
-import { ProviderAttemptError, type ProviderAttemptRecord } from "../provider-execution";
+import {
+  ProviderAttemptError,
+  ProviderCallBudgetExhaustedError,
+  ProviderCircuitOpenError,
+  type ProviderAttemptRecord,
+} from "../provider-execution";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -4218,6 +4223,192 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests).toHaveLength(2);
   });
 
+  it("keeps private provider evidence out of exhaustion logs", async () => {
+    const rawRequestSentinel = "PRIVATE_REQUEST_SENTINEL";
+    const rawResponseSentinel = "PRIVATE_RESPONSE_SENTINEL";
+    const providerError = new ProviderAttemptError({
+      coordinate: {
+        gameId: "game-1",
+        ownerEpoch: "owner-1",
+        actor: {
+          id: "atlas-id",
+          name: "Atlas",
+          role: "player",
+        },
+        action: "introduction",
+        phase: Phase.INTRODUCTION,
+        round: 1,
+        logicalCallOrdinal: 1,
+      },
+      attemptOrdinal: 1,
+      attemptId: "attempt-private-evidence",
+      preparedRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: "katana",
+        model: "private-model",
+        body: { redacted: true },
+      },
+      startedAt: "2026-08-23T00:00:00.000Z",
+      completedAt: "2026-08-23T00:00:01.000Z",
+      latencyMs: 1_000,
+      outcome: {
+        kind: "service_error",
+        message: "Provider request failed",
+        retryable: false,
+      },
+      disposition: "exhausted",
+      rawRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: "katana",
+        model: "private-model",
+        body: { prompt: rawRequestSentinel },
+      },
+      rawResponse: {
+        status: 500,
+        body: { error: rawResponseSentinel },
+      },
+    } satisfies ProviderAttemptRecord);
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(requests),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      {
+        toolChoiceMode: "required",
+        providerExecutionHooks: {
+          onReserve: () => {
+            throw providerError;
+          },
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const originalError = console.error;
+    const loggedError = mock((..._args: unknown[]) => undefined);
+    console.error = loggedError;
+
+    try {
+      expect(await agent.getIntroduction(makeContext(Phase.INTRODUCTION))).toEqual({
+        thinking: "",
+        message: "",
+        providerAbsence: {
+          kind: "provider_exhausted",
+          outcome: "service_error",
+        },
+      });
+    } finally {
+      console.error = originalError;
+    }
+
+    const serializedLogs = JSON.stringify(loggedError.mock.calls);
+    expect(serializedLogs).not.toContain(rawRequestSentinel);
+    expect(serializedLogs).not.toContain(rawResponseSentinel);
+    expect(loggedError.mock.calls).toEqual([
+      [
+        "[Atlas] callLLMWithThinking local failed after 2 attempts:",
+        {
+          type: "provider_unavailable",
+          outcome: "service_error",
+          retryable: false,
+          disposition: "exhausted",
+        },
+      ],
+    ]);
+    expect(requests).toHaveLength(0);
+  });
+
+  it("retains full error logging for non-provider faults", async () => {
+    const programmingError = new Error("programming fault sentinel");
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub([]),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      {
+        toolChoiceMode: "required",
+        providerExecutionHooks: {
+          onReserve: () => {
+            throw programmingError;
+          },
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const originalError = console.error;
+    const loggedError = mock((..._args: unknown[]) => undefined);
+    console.error = loggedError;
+
+    try {
+      await expect(
+        agent.getIntroduction(makeContext(Phase.INTRODUCTION)),
+      ).rejects.toBe(programmingError);
+    } finally {
+      console.error = originalError;
+    }
+
+    expect(loggedError.mock.calls).toEqual([
+      [
+        "[Atlas] callLLMWithThinking local failed after 2 attempts:",
+        programmingError,
+      ],
+    ]);
+  });
+
+  it("omits optional speech when dispatch is blocked by provider health or budget", async () => {
+    const scenarios = [
+      {
+        outcome: "circuit_open",
+        error: new ProviderCircuitOpenError(
+          "openai:gpt-5.6-luna",
+          "provider:openai",
+          4,
+          true,
+        ),
+      },
+      {
+        outcome: "budget_exhausted",
+        error: new ProviderCallBudgetExhaustedError("katana:grok-4-5", 3, 3),
+      },
+    ] as const;
+
+    for (const scenario of scenarios) {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent(
+        "atlas-id",
+        "Atlas",
+        "strategic",
+        makeOpenAIStub(requests),
+        "gpt-5.6-luna",
+        undefined,
+        undefined,
+        {
+          toolChoiceMode: "required",
+          providerExecutionHooks: {
+            onReserve: () => { throw scenario.error; },
+          },
+        },
+      );
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+
+      expect(await agent.getIntroduction(makeContext(Phase.INTRODUCTION))).toEqual({
+        thinking: "",
+        message: "",
+        providerAbsence: {
+          kind: "provider_exhausted",
+          outcome: scenario.outcome,
+        },
+      });
+      expect(requests).toHaveLength(0);
+    }
+  });
+
   it("uses plain visible messages with the global message token floor in local mode", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
@@ -4330,6 +4521,80 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: "I should build rapport while noting Finn's evasiveness.",
       message: "Finn, your stories are always so vivid.",
       reasoningContext: "Deep hidden CoT: Finn is dodging; Vera might be an ally here.",
+    });
+  });
+
+  it("falls through to the next sealed runtime and attributes the accepted trace to that model", async () => {
+    const primaryRequests: Array<Record<string, unknown>> = [];
+    const fallbackRequests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const primary = modelCatalogEntryById("openai:gpt-5.6-luna")!;
+    const fallback = modelCatalogEntryById("katana:glm-5-2")!;
+    const primaryClient = makeRejectingOpenAIStub(primaryRequests);
+    const fallbackClient = makeTextOpenAIStub(
+      fallbackRequests,
+      JSON.stringify({
+        thinking: "The first provider failed, so I will still introduce myself cleanly.",
+        message: "I am Atlas, and I am here to learn how everyone plays.",
+      }),
+    );
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      primaryClient,
+      primary.modelId,
+      undefined,
+      undefined,
+      {
+        providerProfileId: "openai",
+        catalogId: primary.id,
+        modelCapabilities: primary.capabilities,
+        reasoningPolicy: "action-policy",
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+        providerManifest: [
+          {
+            client: primaryClient,
+            catalogId: primary.id,
+            providerProfileId: "openai",
+            modelId: primary.modelId,
+            modelCapabilities: primary.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 0,
+            role: "primary",
+          },
+          {
+            client: fallbackClient,
+            catalogId: fallback.id,
+            providerProfileId: "katana",
+            modelId: fallback.modelId,
+            modelCapabilities: fallback.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 1,
+            role: "fallback",
+            maxCallsPerGame: 3,
+          },
+        ],
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
+
+    expect(response.message).toContain("I am Atlas");
+    expect(primaryRequests).toHaveLength(2);
+    expect(fallbackRequests).toHaveLength(1);
+    expect(fallbackRequests[0]).toMatchObject({ model: "glm-5-2" });
+    expect(typeof fallbackRequests[0]?.max_tokens).toBe("number");
+    expect(fallbackRequests[0]?.max_completion_tokens).toBeUndefined();
+    expect(traces[0]?.model).toMatchObject({
+      providerProfileId: "katana",
+      catalogId: "katana:glm-5-2",
+      name: "glm-5-2",
     });
   });
 });

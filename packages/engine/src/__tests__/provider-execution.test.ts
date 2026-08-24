@@ -2,6 +2,8 @@ import { describe, expect, it } from "bun:test";
 import { APIUserAbortError } from "openai";
 import {
   ProviderAttemptError,
+  ProviderCallBudgetExhaustedError,
+  ProviderCircuitOpenError,
   ProviderExecutionCoordinator,
   classifyResponsesTerminalOutcome,
   createProviderEvidenceFetch,
@@ -21,6 +23,264 @@ const coordinate: ProviderLogicalCallCoordinate = {
 };
 
 describe("ProviderExecutionCoordinator", () => {
+  it("returns a durably accepted manifest value without allocating or dispatching", async () => {
+    let allocations = 0;
+    let dispatches = 0;
+    const coordinator = new ProviderExecutionCoordinator({
+      hooks: {
+        onReadAccepted: () => ({
+          attemptId: "attempt-accepted",
+          attemptOrdinal: 2,
+          catalogId: "katana:glm-5-2",
+          value: { target: "maya" },
+        }),
+        onAllocateAttemptOrdinal: () => {
+          allocations += 1;
+          return 3;
+        },
+      },
+    });
+
+    const result = await coordinator.startCall(coordinate).executeManifest({
+      entries: [{
+        catalogId: "katana:glm-5-2",
+        preparedRequest: {
+          requestShape: "chat_completions",
+          providerProfileId: "katana",
+          catalogId: "katana:glm-5-2",
+          model: "glm-5-2",
+          body: { model: "glm-5-2" },
+        },
+        maxAttempts: 1,
+        dispatch: async () => {
+          dispatches += 1;
+          return { target: "orion" };
+        },
+        validate: (response) => ({ status: "usable", value: response }),
+      }],
+    });
+
+    expect(result).toEqual({
+      value: { target: "maya" },
+      catalogId: "katana:glm-5-2",
+      manifestPosition: 0,
+      acceptedAttemptId: "attempt-accepted",
+      acceptedAttemptOrdinal: 2,
+    });
+    expect(allocations).toBe(0);
+    expect(dispatches).toBe(0);
+  });
+
+  it("traverses the sealed manifest after refusal and starts the next logical call at primary", async () => {
+    const dispatches: string[] = [];
+    const coordinator = new ProviderExecutionCoordinator({
+      wait: async () => undefined,
+    });
+    const entry = (
+      catalogId: string,
+      response: { ok: boolean },
+    ) => ({
+      catalogId,
+      preparedRequest: {
+        requestShape: "chat_completions" as const,
+        providerProfileId: catalogId.startsWith("openai:")
+          ? "openai" as const
+          : "katana" as const,
+        catalogId,
+        model: catalogId.split(":")[1]!,
+        body: { model: catalogId.split(":")[1] },
+      },
+      maxAttempts: 2,
+      dispatch: async () => {
+        dispatches.push(catalogId);
+        return response;
+      },
+      validate: (candidate: { ok: boolean }) => candidate.ok
+        ? { status: "usable" as const, value: candidate }
+        : {
+            status: "unusable" as const,
+            kind: "refusal" as const,
+            message: "invalid prompt",
+            retryable: false,
+          },
+    });
+
+    const first = await coordinator.startCall(coordinate).executeManifest({
+      entries: [
+        entry("openai:gpt-primary", { ok: false }),
+        entry("katana:grok-fallback", { ok: true }),
+      ],
+    });
+    expect(first).toMatchObject({
+      catalogId: "katana:grok-fallback",
+      manifestPosition: 1,
+      value: { ok: true },
+    });
+
+    const second = await coordinator.startCall({
+      ...coordinate,
+      logicalCallOrdinal: 2,
+    }).executeManifest({
+      entries: [
+        entry("openai:gpt-primary", { ok: true }),
+        entry("katana:grok-fallback", { ok: true }),
+      ],
+    });
+    expect(second.catalogId).toBe("openai:gpt-primary");
+    expect(dispatches).toEqual([
+      "openai:gpt-primary",
+      "katana:grok-fallback",
+      "openai:gpt-primary",
+    ]);
+  });
+
+  it("skips a fallback whose durable dispatch budget is exhausted", async () => {
+    const dispatches: string[] = [];
+    const coordinator = new ProviderExecutionCoordinator({
+      hooks: {
+        onReserve: (intent) => {
+          if (intent.preparedRequest.catalogId === "katana:grok") {
+            throw new ProviderCallBudgetExhaustedError("katana:grok", 1, 1);
+          }
+        },
+      },
+      wait: async () => undefined,
+    });
+    const makeEntry = (catalogId: string, usable: boolean) => ({
+      catalogId,
+      preparedRequest: {
+        requestShape: "chat_completions" as const,
+        providerProfileId: catalogId.startsWith("openai:")
+          ? "openai" as const
+          : "katana" as const,
+        catalogId,
+        model: catalogId,
+        body: { model: catalogId },
+      },
+      maxAttempts: 1,
+      dispatch: async () => {
+        dispatches.push(catalogId);
+        return { usable };
+      },
+      validate: (candidate: { usable: boolean }) => candidate.usable
+        ? { status: "usable" as const, value: candidate }
+        : {
+            status: "unusable" as const,
+            kind: "service_error" as const,
+            message: "unavailable",
+            retryable: true,
+          },
+    });
+
+    const result = await coordinator.startCall(coordinate).executeManifest({
+      entries: [
+        makeEntry("openai:primary", false),
+        makeEntry("katana:grok", true),
+        makeEntry("katana:glm", true),
+      ],
+    });
+    expect(result.catalogId).toBe("katana:glm");
+    expect(dispatches).toEqual(["openai:primary", "katana:glm"]);
+  });
+
+  it("halts the manifest when the primary provider circuit is open", async () => {
+    const dispatches: string[] = [];
+    const coordinator = new ProviderExecutionCoordinator({
+      hooks: {
+        onReserve: (intent) => {
+          if (intent.preparedRequest.catalogId === "openai:primary") {
+            throw new ProviderCircuitOpenError(
+              "openai:primary",
+              "provider:openai",
+              4,
+              true,
+            );
+          }
+        },
+      },
+    });
+    const entry = (catalogId: string) => ({
+      catalogId,
+      preparedRequest: {
+        requestShape: "chat_completions" as const,
+        providerProfileId: catalogId.startsWith("openai:")
+          ? "openai" as const
+          : "katana" as const,
+        catalogId,
+        model: catalogId,
+        body: { model: catalogId },
+      },
+      maxAttempts: 1,
+      dispatch: async () => {
+        dispatches.push(catalogId);
+        return { usable: true };
+      },
+      validate: (value: { usable: boolean }) => ({ status: "usable" as const, value }),
+    });
+
+    await expect(coordinator.startCall(coordinate).executeManifest({
+      entries: [entry("openai:primary"), entry("katana:grok")],
+    })).rejects.toMatchObject({
+      name: "ProviderCircuitOpenError",
+      scopeKey: "provider:openai",
+      haltManifest: true,
+    });
+    expect(dispatches).toEqual([]);
+  });
+
+  it("skips an entry-scoped circuit and reaches the next fallback", async () => {
+    const dispatches: string[] = [];
+    const coordinator = new ProviderExecutionCoordinator({
+      hooks: {
+        onReserve: (intent) => {
+          if (intent.preparedRequest.catalogId === "katana:grok") {
+            throw new ProviderCircuitOpenError(
+              "katana:grok",
+              "entry:katana:grok",
+              2,
+              false,
+            );
+          }
+        },
+      },
+    });
+    const entry = (catalogId: string, usable: boolean) => ({
+      catalogId,
+      preparedRequest: {
+        requestShape: "chat_completions" as const,
+        providerProfileId: catalogId.startsWith("openai:")
+          ? "openai" as const
+          : "katana" as const,
+        catalogId,
+        model: catalogId,
+        body: { model: catalogId },
+      },
+      maxAttempts: 1,
+      dispatch: async () => {
+        dispatches.push(catalogId);
+        return { usable };
+      },
+      validate: (value: { usable: boolean }) => value.usable
+        ? { status: "usable" as const, value }
+        : {
+            status: "unusable" as const,
+            kind: "refusal" as const,
+            message: "request-specific refusal",
+            retryable: false,
+          },
+    });
+
+    const result = await coordinator.startCall(coordinate).executeManifest({
+      entries: [
+        entry("openai:primary", false),
+        entry("katana:grok", true),
+        entry("katana:glm", true),
+      ],
+    });
+    expect(result.catalogId).toBe("katana:glm");
+    expect(dispatches).toEqual(["openai:primary", "katana:glm"]);
+  });
+
   it("records one visible ordinal per dispatch and owns bounded retries", async () => {
     const records: ProviderAttemptRecord[] = [];
     const waits: number[] = [];
@@ -75,6 +335,57 @@ describe("ProviderExecutionCoordinator", () => {
       "retry_scheduled",
       "accepted",
     ]);
+  });
+
+  it("fails fast when local validation throws instead of retrying or advancing the manifest", async () => {
+    const records: ProviderAttemptRecord[] = [];
+    const dispatches: string[] = [];
+    const call = new ProviderExecutionCoordinator({
+      hooks: { onTerminal: (record) => { records.push(record); } },
+      wait: async () => undefined,
+    }).startCall(coordinate);
+
+    await expect(call.executeManifest({
+      entries: [
+        {
+          catalogId: "openai:primary",
+          preparedRequest: {
+            requestShape: "chat_completions",
+            providerProfileId: "openai",
+            catalogId: "openai:primary",
+            model: "primary",
+            body: { model: "primary" },
+          },
+          maxAttempts: 3,
+          dispatch: async () => {
+            dispatches.push("openai:primary");
+            return { choices: [] };
+          },
+          validate: () => {
+            throw new TypeError("validator contract bug");
+          },
+        },
+        {
+          catalogId: "katana:fallback",
+          preparedRequest: {
+            requestShape: "chat_completions",
+            providerProfileId: "katana",
+            catalogId: "katana:fallback",
+            model: "fallback",
+            body: { model: "fallback" },
+          },
+          maxAttempts: 1,
+          dispatch: async () => {
+            dispatches.push("katana:fallback");
+            return { choices: [{ message: { content: "fallback" } }] };
+          },
+          validate: (response) => ({ status: "usable", value: response }),
+        },
+      ],
+    })).rejects.toThrow("validator contract bug");
+
+    expect(dispatches).toEqual(["openai:primary"]);
+    expect(records).toEqual([]);
   });
 
   it("uses durable attempt ordinals when a logical call is reconstructed", async () => {
@@ -252,6 +563,30 @@ describe("ProviderExecutionCoordinator", () => {
     expect(records[0]?.outcome.kind).toBe(expectedKind);
   });
 
+  it("keeps ambiguous client errors call-scoped", async () => {
+    const records: ProviderAttemptRecord[] = [];
+    await expect(new ProviderExecutionCoordinator({
+      hooks: { onTerminal: (record) => { records.push(record); } },
+    }).startCall(coordinate).execute({
+      preparedRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: "openai",
+        model: "gpt-test",
+        body: { model: "gpt-test" },
+      },
+      maxAttempts: 1,
+      dispatch: async () => {
+        throw Object.assign(new Error("unprocessable request"), { status: 422 });
+      },
+      validate: (response: unknown) => ({ status: "usable", value: response }),
+    })).rejects.toBeInstanceOf(ProviderAttemptError);
+
+    expect(records[0]?.outcome).toMatchObject({
+      kind: "request_error",
+      retryable: false,
+    });
+  });
+
   it.each([
     ["empty_output", "empty_output"],
     ["malformed_output", "malformed_output"],
@@ -406,6 +741,69 @@ describe("ProviderExecutionCoordinator", () => {
     expect(records[0]!.requestId).toContain("[REDACTED]");
   });
 
+  it("uses runtime evidence-fetch credentials to sanitize reflected failure metadata", async () => {
+    const records: ProviderAttemptRecord[] = [];
+    const secret = "runtime-only-provider-secret";
+    const evidenceFetch = createProviderEvidenceFetch(
+      async () => new Response(
+        JSON.stringify({ error: { message: `provider reflected ${secret}` } }),
+        {
+          status: 400,
+          headers: {
+            "content-type": "application/json",
+            "x-request-id": `request-${secret}`,
+          },
+        },
+      ),
+      [secret],
+    );
+    const call = new ProviderExecutionCoordinator({
+      hooks: { onTerminal: (record) => { records.push(record); } },
+    }).startCall(coordinate);
+
+    await expect(call.execute({
+      preparedRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: "openai",
+        model: "gpt-test",
+        body: { model: "gpt-test" },
+      },
+      maxAttempts: 1,
+      dispatch: async ({ requestOptions }) => {
+        const response = await evidenceFetch(
+          "https://api.openai.test/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              ...requestOptions.headers,
+              authorization: `Bearer ${secret}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ model: "gpt-test" }),
+          },
+        );
+        throw Object.assign(new Error(`provider reflected ${secret}`), {
+          status: response.status,
+          request_id: response.headers.get("x-request-id"),
+        });
+      },
+      validate: (response: unknown) => ({ status: "usable", value: response }),
+    })).rejects.toBeInstanceOf(ProviderAttemptError);
+
+    expect(records).toHaveLength(1);
+    expect(records[0]).toMatchObject({
+      requestId: "request-[REDACTED]",
+      outcome: {
+        message: "provider reflected [REDACTED]",
+      },
+      rawResponse: {
+        status: 400,
+        body: { error: { message: "provider reflected [REDACTED]" } },
+      },
+    });
+    expect(JSON.stringify(records[0])).not.toContain(secret);
+  });
+
   it("captures the exact sanitized HTTP request and raw response before parsing", async () => {
     const records: ProviderAttemptRecord[] = [];
     let outboundRequest: Request | undefined;
@@ -482,6 +880,15 @@ describe("ProviderExecutionCoordinator", () => {
     expect(records[0]).toMatchObject({
       requestId: "req-http",
       preparedRequest: {
+        requestShape: "chat_completions",
+        providerProfileId: "openai",
+        model: "gpt-test",
+        body: {
+          model: "gpt-test",
+          messages: [{ role: "user", content: "exact prompt" }],
+        },
+      },
+      rawRequest: {
         url: "https://api.openai.test/v1/chat/completions?trace=%5BREDACTED%5D",
         headers: { "content-type": "application/json" },
         body: {

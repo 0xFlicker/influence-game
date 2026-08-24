@@ -596,6 +596,29 @@ describe("Game REST API", () => {
       expect(JSON.parse(game.config).serviceTier).toBe("auto");
     });
 
+    test("retains the OpenAI tier when OpenAI is a fallback entry", async () => {
+      const res = await app.request(
+        "/api/games",
+        json({
+          playerCount: 6,
+          providerManifest: [
+            { catalogId: "katana:grok-4-5", reasoningPolicy: "medium" },
+            {
+              catalogId: "openai:gpt-5.6-luna",
+              reasoningPolicy: "action-policy",
+              maxCallsPerGame: 12,
+            },
+          ],
+          serviceTier: "auto",
+        }, adminToken),
+      );
+      expect(res.status).toBe(201);
+      const body = await res.json() as { id: string };
+      const game = (await db.select().from(schema.games)
+        .where(eq(schema.games.id, body.id)))[0]!;
+      expect(JSON.parse(game.config).serviceTier).toBe("auto");
+    });
+
     test("rejects invalid reasoning policy", async () => {
       const res = await app.request(
         "/api/games",

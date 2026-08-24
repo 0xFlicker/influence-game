@@ -162,11 +162,15 @@ function apiErrorFromResponse(status: number, body: string): ApiError {
     const parsed = JSON.parse(body) as unknown;
     if (parsed && typeof parsed === "object") {
       const error = parsed as Record<string, unknown>;
-      if (typeof error.error === "string" && typeof error.code === "string") {
+      if (typeof error.error === "string") {
         return new ApiError(
           status,
           error.error,
-          error.code,
+          typeof error.code === "string"
+            ? error.code
+            : typeof error.status === "string"
+              ? error.status
+              : undefined,
           typeof error.retryable === "boolean" ? error.retryable : undefined,
           error,
         );
@@ -530,6 +534,112 @@ export interface AdminGameSummary extends GameSummary {
   hiddenAt?: string;
   cost?: AdminGameCostSummary | null;
   completionSettlement: GameCompletionSettlementSummary;
+  providerFailures: AdminProviderFailureSummary | AdminProviderFailureSummaryUnavailable;
+}
+
+export type AdminProviderFailureState = "recovered" | "terminal" | "degraded" | "transitioned";
+
+export interface AdminProviderFailureSummary {
+  schemaVersion: 1;
+  state: "empty" | AdminProviderFailureState;
+  failureCount: number;
+  exactFailureCount: number;
+  rateLimitCount: number;
+  recoveredCount: number;
+  terminalCount: number;
+  degradedCount: number;
+  transitionedCount: number;
+  lastFailureAt: string | null;
+}
+
+export interface AdminProviderFailureSummaryUnavailable {
+  schemaVersion: 1;
+  state: "unavailable";
+  error: string;
+  retryable: boolean;
+}
+
+export interface AdminProviderFailureAttempt {
+  kind: "attempt";
+  id: string;
+  logicalCallId: string;
+  occurredAt: string;
+  state: AdminProviderFailureState;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  phase: string | null;
+  round: number | null;
+  providerProfileId: string;
+  modelName: string;
+  attemptOrdinal: number;
+  outcomeKind: string;
+  outcomeMessage: string | null;
+  retryable: boolean | null;
+  disposition: string | null;
+  providerRequestId: string | null;
+  evidence: {
+    state: "available" | "degraded" | "unavailable";
+    manifestId: string | null;
+    error: string | null;
+  };
+}
+
+export interface AdminProviderFailureRateLimit {
+  kind: "rate_limit";
+  id: string;
+  logicalCallId: string;
+  occurredAt: string;
+  state: AdminProviderFailureState;
+  actorName: string;
+  actorRole: string;
+  action: string;
+  phase: string | null;
+  round: number | null;
+  count: number;
+  outcome: "pending" | "recovered" | "exhausted";
+  terminalReason: string | null;
+}
+
+export interface AdminProviderFailureDetail {
+  schemaVersion: 1;
+  gameId: string;
+  summary: AdminProviderFailureSummary;
+  budgets: AdminProviderFailureBudget[];
+  failures: Array<AdminProviderFailureAttempt | AdminProviderFailureRateLimit>;
+}
+
+export interface AdminProviderFailureBudget {
+  catalogId: string;
+  providerProfileId: string;
+  modelName: string;
+  role: "primary" | "fallback";
+  usedCalls: number;
+  maxCallsPerGame: number | null;
+  remainingCalls: number | null;
+  state: "unbounded" | "available" | "exhausted";
+  cost: {
+    state: "no_calls" | "actual" | "estimated" | "unavailable";
+    callCount: number;
+    actualCostMicrousd: number;
+    estimatedCostMicrousd: number;
+    unpricedCallCount: number;
+  };
+}
+
+export interface AdminProviderFailureContent {
+  schemaVersion: 1;
+  state: "partial" | "complete" | "final_chunk";
+  content: string;
+  contentType?: string;
+  byteLength: number;
+  returnedByteLength: number;
+  totalByteLength?: number;
+  offsetBytes: number;
+  nextOffsetBytes?: number;
+  truncated: boolean;
+  sha256: string;
+  hashScope: "complete_object" | "chunk";
 }
 
 export interface GameCompletionSettlementSummary {
@@ -630,7 +740,27 @@ export interface AdminGameCostDetail extends AdminGameCostSummary {
 }
 
 export async function listAdminGames(): Promise<AdminGameSummary[]> {
-  return apiFetch("/api/admin/games");
+  return apiFetch("/api/admin/games", { cache: "no-store" });
+}
+
+export async function getAdminProviderFailures(idOrSlug: string): Promise<AdminProviderFailureDetail> {
+  return apiFetch(`/api/admin/games/${encodeURIComponent(idOrSlug)}/provider-failures`, {
+    cache: "no-store",
+  });
+}
+
+export async function getAdminProviderFailureContent(
+  idOrSlug: string,
+  manifestId: string,
+  options: { offsetBytes?: number; maxBytes?: number } = {},
+): Promise<AdminProviderFailureContent> {
+  const query = new URLSearchParams();
+  if (options.offsetBytes !== undefined) query.set("offsetBytes", String(options.offsetBytes));
+  if (options.maxBytes !== undefined) query.set("maxBytes", String(options.maxBytes));
+  return apiFetch(
+    `/api/admin/games/${encodeURIComponent(idOrSlug)}/provider-failures/${encodeURIComponent(manifestId)}/content?${query}`,
+    { cache: "no-store" },
+  );
 }
 
 export async function retryGameSettlement(
@@ -2845,6 +2975,54 @@ export interface AdminDeploymentAdmissionResumeResult {
   revision: number;
 }
 
+export type AdminProviderHealthState = "closed" | "open" | "probing";
+export type AdminProviderHealthReason =
+  | "authentication"
+  | "configuration"
+  | "service_error"
+  | "transport_timeout"
+  | "transport_error";
+
+export interface AdminProviderHealthStatus {
+  scopeKey: string;
+  scopeKind: "provider" | "entry";
+  providerProfileId: string;
+  catalogId: string | null;
+  state: AdminProviderHealthState;
+  reason: AdminProviderHealthReason | null;
+  revision: number;
+  consecutiveFailureCount: number;
+  windowStartedAt: string | null;
+  openedAt: string | null;
+  cooldownUntil: string | null;
+  lastFailureAt: string | null;
+  lastSuccessAt: string | null;
+  lastAttemptId: string | null;
+  lastProbeEvidenceId: string | null;
+  probeLeaseOwner: string | null;
+  probeLeaseExpiresAt: string | null;
+  lastProbeAt: string | null;
+  updatedAt: string;
+}
+
+export interface AdminProviderHealthResponse {
+  schemaVersion: 1;
+  dailyAdmissionPaused: boolean;
+  providers: AdminProviderHealthStatus[];
+}
+
+export interface AdminProviderHealthProbeResponse {
+  schemaVersion: 1;
+  target: {
+    scopeKey: string;
+    providerProfileId: string;
+    catalogId: string;
+    modelId: string;
+  };
+  outcome: { kind: string; message?: string; retryable?: boolean };
+  status: AdminProviderHealthStatus;
+}
+
 // ---------------------------------------------------------------------------
 // Admin RBAC API calls
 // ---------------------------------------------------------------------------
@@ -2893,6 +3071,18 @@ export async function resumeAdminDeploymentAdmission(
   return apiFetch(`/api/admin/deployment-admission/${encodeURIComponent(leaseId)}/resume`, {
     method: "POST",
     body: JSON.stringify({ revision, reason }),
+  });
+}
+
+export async function getAdminProviderHealth(): Promise<AdminProviderHealthResponse> {
+  return apiFetch("/api/admin/provider-health");
+}
+
+export async function probeAdminProviderHealth(
+  scopeKey: string,
+): Promise<AdminProviderHealthProbeResponse> {
+  return apiFetch(`/api/admin/provider-health/${encodeURIComponent(scopeKey)}/probe`, {
+    method: "POST",
   });
 }
 

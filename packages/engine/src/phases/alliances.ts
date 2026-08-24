@@ -23,7 +23,7 @@ import {
   type PhaseRunnerContext,
 } from "./phase-runner-context";
 import { engineFallbackMetadata } from "../engine-fallback";
-import { ProviderAttemptError } from "../provider-execution";
+import { ProviderUnavailableError } from "../provider-execution";
 
 const MAX_HUDDLE_SESSIONS_PER_ALLIANCE = 2;
 
@@ -131,7 +131,7 @@ async function collectAllianceAction(
     }
     return action;
   } catch (error) {
-    if (!(error instanceof ProviderAttemptError)) throw error;
+    if (!(error instanceof ProviderUnavailableError)) throw error;
     return {
       action: "pass",
       ...engineFallbackMetadata(
@@ -611,7 +611,7 @@ async function collectAllianceHuddleTurn(
   try {
     return await agent.getAllianceHuddleTurn(phaseCtx, huddle, conversationHistory);
   } catch (error) {
-    if (!(error instanceof ProviderAttemptError)) throw error;
+    if (!(error instanceof ProviderUnavailableError)) throw error;
     return {
       message: null,
       noReply: true,

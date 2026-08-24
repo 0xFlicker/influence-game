@@ -214,13 +214,22 @@ import {
   type GitMetadata,
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
-import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
-import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
+import {
+  createLlmClientFromEnv,
+  createLlmProviderRuntimesFromEnv,
+  describeLlmProvider,
+} from "./llm-client";
+import type {
+  LlmProviderRuntime,
+  LlmToolChoiceMode,
+  OpenAIReasoningSummaryMode,
+} from "./llm-client";
 import type {
   ProviderAttemptIntent,
   ProviderAttemptRecord,
   ProviderExecutionHooks,
 } from "./provider-execution";
+import { ProviderCallBudgetExhaustedError } from "./provider-execution";
 import {
   DEFAULT_MODEL_ID,
   inferModelCapabilities,
@@ -229,6 +238,7 @@ import {
   parseProviderManifestEntry,
   resolveCatalogIdForModel,
   resolveModelSelection,
+  resolveProviderManifest,
   type ModelReasoningPolicy,
   type ModelRequestCapabilities,
   type GameProviderManifest,
@@ -250,7 +260,7 @@ export interface SimArgs {
   personas: string[] | null;
   model: string;
   modelCatalogId?: string;
-  /** Ordered route sealed into simulation evidence; U6 executes fallback traversal. */
+  /** Ordered provider route sealed into simulation evidence and used for bounded fallback traversal. */
   providerManifest?: GameProviderManifest;
   reasoningPolicy?: ModelReasoningPolicy;
   variant: string;
@@ -653,6 +663,7 @@ function selectCast(
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
   privateTraceSink?: import("./game-runner").PrivateTraceSink,
   providerExecutionHooks?: ProviderExecutionHooks,
+  providerManifest?: readonly LlmProviderRuntime[],
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -685,6 +696,7 @@ function selectCast(
       reasoningPolicy: modelRuntime.reasoningPolicy,
       privateTraceSink,
       ...(providerExecutionHooks && { providerExecutionHooks }),
+      ...(providerManifest && { providerManifest }),
     });
   });
 }
@@ -725,12 +737,17 @@ function simulationHash(value: unknown): string {
 export function createLocalProviderExecutionJournal(input: {
   gameId: string;
   ownerEpoch: string;
+  providerManifest?: readonly Pick<
+    LlmProviderRuntime,
+    "catalogId" | "providerProfileId" | "modelId" | "maxCallsPerGame"
+  >[];
   onChange?: (artifact: LocalProviderAttemptArtifact) => void;
 }): { hooks: ProviderExecutionHooks; snapshot: () => LocalProviderAttemptArtifact } {
   const reservations = new Map<string, string>();
   const terminals = new Map<string, string>();
   const failures: LocalProviderAttemptArtifact["failures"] = [];
   const rateLimits = new Map<string, LocalProviderAttemptArtifact["rateLimits"][number]>();
+  const usedCallsByCatalog = new Map<string, number>();
   const logicalId = (intent: ProviderAttemptIntent) => simulationHash({
     domain: "influence.provider.logical-call.v1",
     coordinate: {
@@ -775,6 +792,33 @@ export function createLocalProviderExecutionJournal(input: {
         }
         const id = attemptId(intent);
         if (reservations.has(id)) throw new Error(`Provider attempt ${id} is already reserved`);
+        if (input.providerManifest) {
+          const catalogId = intent.preparedRequest.catalogId;
+          const entry = input.providerManifest.find(
+            (candidate) => candidate.catalogId === catalogId,
+          );
+          if (!catalogId || !entry) {
+            throw new Error(`Provider entry ${catalogId ?? "<missing>"} is not sealed for this simulation`);
+          }
+          if (
+            entry.providerProfileId !== intent.preparedRequest.providerProfileId
+            || entry.modelId !== intent.preparedRequest.model
+          ) {
+            throw new Error(`Provider entry ${catalogId} does not match its sealed simulation runtime`);
+          }
+          const usedCalls = usedCallsByCatalog.get(catalogId) ?? 0;
+          if (
+            entry.maxCallsPerGame !== undefined
+            && usedCalls >= entry.maxCallsPerGame
+          ) {
+            throw new ProviderCallBudgetExhaustedError(
+              catalogId,
+              usedCalls,
+              entry.maxCallsPerGame,
+            );
+          }
+          usedCallsByCatalog.set(catalogId, usedCalls + 1);
+        }
         reservations.set(id, simulationHash(intent));
         publish();
       },
@@ -1884,7 +1928,27 @@ async function main() {
     process.exit(1);
   }
 
-  const openai = llmConfig.client;
+  const resolvedProviderManifest = args.providerManifest
+    ? resolveProviderManifest(args.providerManifest)
+    : undefined;
+  const providerRuntimes = resolvedProviderManifest
+    ? createLlmProviderRuntimesFromEnv(
+        resolvedProviderManifest,
+        process.env,
+        {
+          timeout: args.llmTimeoutMs,
+          flexProcessing: args.flex,
+        },
+      )
+    : undefined;
+  if (resolvedProviderManifest && !providerRuntimes) {
+    console.error(
+      "Error: one or more sealed provider manifest entries are not configured.",
+    );
+    process.exit(1);
+  }
+
+  const openai = providerRuntimes?.[0]?.client ?? llmConfig.client;
   const modelRuntime = catalogModelRuntime ?? resolveLegacySimulationModel(args, llmConfig.providerProfileId);
   args.model = modelRuntime.modelId;
   const openAIReasoningSummary = args.openAIReasoningSummary !== undefined
@@ -1968,12 +2032,15 @@ async function main() {
     const providerJournal = createLocalProviderExecutionJournal({
       gameId: localGameId,
       ownerEpoch: localOwnerEpoch,
+      ...(providerRuntimes && { providerManifest: providerRuntimes }),
       onChange: (artifact) => writeFileSync(providerAttemptsPath, JSON.stringify(artifact, null, 2)),
     });
     writeFileSync(providerAttemptsPath, JSON.stringify(providerJournal.snapshot(), null, 2));
 
     // Create fresh agents for each game
-    const toolChoiceMode = modelRuntime.preferredToolChoiceMode ?? llmConfig.toolChoiceMode;
+    const toolChoiceMode = providerRuntimes?.[0]?.toolChoiceMode
+      ?? modelRuntime.preferredToolChoiceMode
+      ?? llmConfig.toolChoiceMode;
     const promptReuse = new PromptReuseAggregate();
     const recallPlanReceipts = new RecallPlanReceiptAggregate();
     const privateTraceSink: import("./game-runner").PrivateTraceSink = (trace) => {
@@ -1990,6 +2057,7 @@ async function main() {
       openAIReasoningSummary,
       privateTraceSink,
       providerJournal.hooks,
+      providerRuntimes ?? undefined,
     );
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
@@ -2010,6 +2078,7 @@ async function main() {
       reasoningPolicy: modelRuntime.reasoningPolicy,
       privateTraceSink,
       providerExecutionHooks: providerJournal.hooks,
+      ...(providerRuntimes && { providerManifest: providerRuntimes }),
     });
     houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer, {

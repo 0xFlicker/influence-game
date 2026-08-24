@@ -46,6 +46,7 @@ describe("new game provider route", () => {
       .map((option) => option.textContent);
     expect(options).toContain("xAI Grok 4.5");
     expect(options).toContain("Katana GLM 5.2");
+    expect(options).toContain("Katana deepseek-v3");
   });
 
   test("reorders the route and submits only the sealed provider manifest", async () => {
@@ -189,6 +190,15 @@ function providerInventory() {
         providerProfileId: "katana",
         modelId: "glm-5-2",
         displayName: "Katana GLM 5.2",
+        defaultReasoningPolicy: "action-policy",
+        allowedReasoningPolicies: ["action-policy"],
+      },
+      {
+        ...base,
+        catalogId: "katana:deepseek-v3",
+        providerProfileId: "katana",
+        modelId: "deepseek-v3",
+        displayName: "Katana deepseek-v3",
         defaultReasoningPolicy: "action-policy",
         allowedReasoningPolicies: ["action-policy"],
       },

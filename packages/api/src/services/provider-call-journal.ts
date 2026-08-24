@@ -1,4 +1,10 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { createHash, randomUUID } from "crypto";
+import {
+  ProviderCallBudgetExhaustedError,
+  ProviderCircuitOpenError,
+  resolveProviderManifestFromGameConfig,
+} from "@influence/engine";
 import type {
   ProviderAttemptIntent,
   ProviderAttemptRecord,
@@ -18,6 +24,11 @@ import {
 } from "./private-trace-writer.js";
 import type { PrivateTraceStorageAdapter } from "./private-trace-storage.js";
 import { sha256StableJson, stableJson } from "./stable-hash.js";
+import {
+  assertProviderDispatchHealthInTransaction,
+  getProviderCircuitForOutcomeInTransaction,
+  recordProviderHealthOutcomeInTransaction,
+} from "./provider-health.js";
 
 type AttemptRow = typeof schema.providerCallAttempts.$inferSelect;
 type LogicalCallRow = typeof schema.providerLogicalCalls.$inferSelect;
@@ -31,7 +42,7 @@ export interface ProviderEvidenceReconciliationDependencies {
   write?: (
     db: DrizzleDB,
     prepared: PreparedProviderAttemptEvidence,
-    options: { storage?: PrivateTraceStorageAdapter },
+    options: { storage?: PrivateTraceStorageAdapter; abortSignal?: AbortSignal },
   ) => Promise<WriteProviderAttemptEvidenceResult>;
   createManifest?: (
     db: DrizzleDB,
@@ -67,6 +78,8 @@ export interface ProviderSpendReconciliationResult {
   projected: number;
   failed: number;
 }
+
+const PROVIDER_EVIDENCE_WRITE_TIMEOUT_MS = 10_000;
 
 export interface ProviderSpendReconciliationDependencies {
   beforeProject?: (attempt: AttemptRow) => Promise<void> | void;
@@ -163,6 +176,70 @@ async function assertActiveOwner(
   }
 }
 
+async function assertProviderDispatchPolicy(
+  tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
+  options: CreateApiProviderExecutionHooksOptions,
+  intent: ProviderAttemptIntent,
+): Promise<void> {
+  const catalogId = intent.preparedRequest.catalogId;
+  if (!catalogId) {
+    await assertProviderDispatchHealthInTransaction(tx, {
+      providerProfileId: intent.preparedRequest.providerProfileId,
+      catalogId: `${intent.preparedRequest.providerProfileId}:${intent.preparedRequest.model}`,
+    });
+    return;
+  }
+
+  const game = (await tx.select({ config: schema.games.config })
+    .from(schema.games)
+    .where(eq(schema.games.id, options.gameId)))[0];
+  if (!game) throw new Error("Provider journal game not found");
+  const config = JSON.parse(game.config) as Record<string, unknown>;
+  // Pre-manifest games remain primary-only during the bounded restoration
+  // window. They have no fallback cap to reserve against.
+  if (config.providerManifest === undefined) {
+    await assertProviderDispatchHealthInTransaction(tx, {
+      providerProfileId: intent.preparedRequest.providerProfileId,
+      catalogId,
+    });
+    return;
+  }
+
+  const entry = resolveProviderManifestFromGameConfig(config)
+    .find((candidate) => candidate.catalogId === catalogId);
+  if (!entry) {
+    throw new Error(`Provider entry ${catalogId} is not sealed for this game`);
+  }
+  if (
+    entry.providerProfile.id !== intent.preparedRequest.providerProfileId
+    || entry.modelId !== intent.preparedRequest.model
+  ) {
+    throw new Error(`Provider entry ${catalogId} does not match its sealed runtime`);
+  }
+  await assertProviderDispatchHealthInTransaction(tx, {
+    providerProfileId: intent.preparedRequest.providerProfileId,
+    catalogId,
+  });
+  if (entry.maxCallsPerGame === undefined) return;
+
+  // assertActiveOwner holds the game-owner row FOR UPDATE, serializing every
+  // reservation for this game. Counting existing rows therefore atomically
+  // consumes the final permitted fallback unit without a refundable counter.
+  const used = (await tx.select({
+    count: sql<number>`count(*)::int`,
+  }).from(schema.providerCallAttempts).where(and(
+    eq(schema.providerCallAttempts.gameId, options.gameId),
+    eq(schema.providerCallAttempts.catalogId, catalogId),
+  )))[0]?.count ?? 0;
+  if (used >= entry.maxCallsPerGame) {
+    throw new ProviderCallBudgetExhaustedError(
+      catalogId,
+      used,
+      entry.maxCallsPerGame,
+    );
+  }
+}
+
 async function allocateAttemptOrdinal(
   db: DrizzleDB,
   options: CreateApiProviderExecutionHooksOptions,
@@ -238,6 +315,7 @@ async function reserveAttempt(
 
   await db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
+    await assertProviderDispatchPolicy(tx, options, intent);
     const existingCall = (await tx.select().from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId)))[0];
     if (!existingCall) {
@@ -269,43 +347,79 @@ async function reserveAttempt(
   });
 }
 
-async function loadAttemptWithCall(
+async function readAcceptedResult(
   db: DrizzleDB,
-  attemptId: string,
-): Promise<{ attempt: AttemptRow; logicalCall: LogicalCallRow }> {
-  const row = (await db
-    .select({
-      attempt: schema.providerCallAttempts,
-      logicalCall: schema.providerLogicalCalls,
-    })
-    .from(schema.providerCallAttempts)
-    .innerJoin(
-      schema.providerLogicalCalls,
-      eq(schema.providerCallAttempts.logicalCallId, schema.providerLogicalCalls.id),
-    )
-    .where(eq(schema.providerCallAttempts.id, attemptId)))[0];
-  if (!row) throw new Error("Provider attempt was not reserved");
-  return row;
+  options: CreateApiProviderExecutionHooksOptions,
+  coordinate: ProviderLogicalCallCoordinate,
+): Promise<{
+  attemptId: string;
+  attemptOrdinal: number;
+  catalogId: string;
+  value: unknown;
+} | undefined> {
+  assertCoordinate({ coordinate }, options);
+  const callId = logicalCallId(coordinate, options);
+  return db.transaction(async (tx) => {
+    await assertActiveOwner(tx, options);
+    const call = (await tx.select().from(schema.providerLogicalCalls)
+      .where(eq(schema.providerLogicalCalls.id, callId)))[0];
+    if (!call?.acceptedAttemptId) return undefined;
+    if (
+      call.acceptedCatalogId == null
+      || call.acceptedValue === undefined
+      || call.acceptedValueSha256 == null
+      || call.acceptedAt == null
+    ) {
+      throw new Error("Accepted provider result is incomplete");
+    }
+    if (call.acceptedValueSha256 !== sha256StableJson(call.acceptedValue)) {
+      throw new Error("Accepted provider result failed its integrity check");
+    }
+    const attempt = (await tx.select({
+      id: schema.providerCallAttempts.id,
+      attemptOrdinal: schema.providerCallAttempts.attemptOrdinal,
+      status: schema.providerCallAttempts.status,
+      disposition: schema.providerCallAttempts.disposition,
+      outcomeKind: schema.providerCallAttempts.outcomeKind,
+    }).from(schema.providerCallAttempts).where(and(
+      eq(schema.providerCallAttempts.id, call.acceptedAttemptId),
+      eq(schema.providerCallAttempts.logicalCallId, callId),
+    )))[0];
+    if (
+      !attempt
+      || attempt.status !== "terminal"
+      || attempt.disposition !== "accepted"
+      || attempt.outcomeKind !== "usable"
+    ) {
+      throw new Error("Accepted provider result has no matching terminal attempt");
+    }
+    return {
+      attemptId: attempt.id,
+      attemptOrdinal: attempt.attemptOrdinal,
+      catalogId: call.acceptedCatalogId,
+      value: call.acceptedValue,
+    };
+  });
 }
 
 async function terminalizeAttempt(
   db: DrizzleDB,
   options: CreateApiProviderExecutionHooksOptions,
   record: ProviderAttemptRecord,
-): Promise<{ attempt: AttemptRow; logicalCall: LogicalCallRow }> {
+): Promise<{
+  attempt: AttemptRow;
+  logicalCall: LogicalCallRow;
+  circuit?: { scopeKey: string; revision: number; haltManifest: boolean };
+}> {
   assertCoordinate(record, options);
   const callId = logicalCallId(record.coordinate, options);
   const attemptId = attemptJournalId(callId, record.attemptOrdinal);
   const hash = terminalHash(record);
-  const existing = await loadAttemptWithCall(db, attemptId);
-  if (existing.attempt.status === "terminal") {
-    if (existing.attempt.terminalHash !== hash) {
-      throw new Error("Provider attempt terminal facts conflict with the journal");
-    }
-    return existing;
+  if (record.outcome.kind === "usable" && record.acceptedValue === undefined) {
+    throw new Error("Usable provider attempt lacks its accepted value");
   }
-  if (existing.attempt.reservationHash !== reservationHash(record)) {
-    throw new Error("Provider attempt terminal facts do not match its reservation");
+  if (record.outcome.kind !== "usable" && record.acceptedValue !== undefined) {
+    throw new Error("Failed provider attempt cannot carry an accepted value");
   }
 
   const evidenceState = record.outcome.kind === "rate_limit"
@@ -324,6 +438,49 @@ async function terminalizeAttempt(
         })
       : undefined;
   return db.transaction(async (tx) => {
+    await assertActiveOwner(tx, options);
+    await tx.execute(sql`
+      SELECT id
+      FROM provider_call_attempts
+      WHERE id = ${attemptId}
+      FOR UPDATE
+    `);
+    const existing = (await tx.select({
+      attempt: schema.providerCallAttempts,
+      logicalCall: schema.providerLogicalCalls,
+    }).from(schema.providerCallAttempts).innerJoin(
+      schema.providerLogicalCalls,
+      eq(schema.providerCallAttempts.logicalCallId, schema.providerLogicalCalls.id),
+    ).where(eq(schema.providerCallAttempts.id, attemptId)))[0];
+    if (!existing) throw new Error("Provider attempt was not reserved");
+    if (existing.attempt.ownerEpoch !== options.ownerEpoch) {
+      throw new Error("Provider attempt belongs to a stale owner epoch");
+    }
+    if (existing.attempt.status === "terminal") {
+      if (existing.attempt.terminalHash !== hash) {
+        throw new Error("Provider attempt terminal facts conflict with the journal");
+      }
+      const circuit = await getProviderCircuitForOutcomeInTransaction(tx, {
+        providerProfileId: record.preparedRequest.providerProfileId,
+        catalogId: record.preparedRequest.catalogId ?? null,
+        outcome: record.outcome,
+      });
+      return { ...existing, ...(circuit && { circuit }) };
+    }
+    if (existing.attempt.status !== "reserved") {
+      throw new Error("Provider attempt lost ownership before terminalization");
+    }
+    if (existing.attempt.reservationHash !== reservationHash(record)) {
+      throw new Error("Provider attempt terminal facts do not match its reservation");
+    }
+    if (
+      record.outcome.kind === "usable"
+      && existing.logicalCall.acceptedAttemptId
+      && existing.logicalCall.acceptedAttemptId !== attemptId
+    ) {
+      throw new Error("Provider logical call already accepted another attempt");
+    }
+
     const rows = await tx.update(schema.providerCallAttempts).set({
       terminalHash: hash,
       status: "terminal",
@@ -341,23 +498,11 @@ async function terminalizeAttempt(
       updatedAt: record.completedAt,
     }).where(and(
       eq(schema.providerCallAttempts.id, attemptId),
-      inArray(schema.providerCallAttempts.status, ["reserved", "indeterminate"]),
+      eq(schema.providerCallAttempts.status, "reserved"),
+      eq(schema.providerCallAttempts.ownerEpoch, options.ownerEpoch),
     )).returning();
     if (rows.length === 0) {
-      const current = (await tx.select({
-        attempt: schema.providerCallAttempts,
-        logicalCall: schema.providerLogicalCalls,
-      }).from(schema.providerCallAttempts).innerJoin(
-        schema.providerLogicalCalls,
-        eq(schema.providerCallAttempts.logicalCallId, schema.providerLogicalCalls.id),
-      ).where(eq(schema.providerCallAttempts.id, attemptId)))[0];
-      if (!current || current.attempt.status !== "terminal") {
-        throw new Error("Provider attempt terminal update lost its reservation");
-      }
-      if (current.attempt.terminalHash !== hash) {
-        throw new Error("Provider attempt terminal facts conflict with the journal");
-      }
-      return current;
+      throw new Error("Provider attempt terminal update lost its active reservation");
     }
 
     if (preparedEvidence) {
@@ -376,7 +521,30 @@ async function terminalizeAttempt(
       });
     }
 
-    if (record.outcome.kind === "rate_limit") {
+    if (record.outcome.kind === "usable") {
+      const acceptedCatalogId = record.preparedRequest.catalogId
+        ?? `${record.preparedRequest.providerProfileId}:${record.preparedRequest.model}`;
+      const accepted = await tx.update(schema.providerLogicalCalls).set({
+        acceptedAttemptId: attemptId,
+        acceptedCatalogId,
+        acceptedValue: record.acceptedValue,
+        acceptedValueSha256: sha256StableJson(record.acceptedValue),
+        acceptedAt: record.completedAt,
+        rateLimitOutcome: sql`CASE
+          WHEN ${schema.providerLogicalCalls.rateLimitCount} > 0
+            AND ${schema.providerLogicalCalls.rateLimitOutcome} = 'pending'
+          THEN 'recovered'
+          ELSE ${schema.providerLogicalCalls.rateLimitOutcome}
+        END`,
+        updatedAt: record.completedAt,
+      }).where(and(
+        eq(schema.providerLogicalCalls.id, callId),
+        sql`(${schema.providerLogicalCalls.acceptedAttemptId} IS NULL OR ${schema.providerLogicalCalls.acceptedAttemptId} = ${attemptId})`,
+      )).returning();
+      if (accepted.length === 0) {
+        throw new Error("Provider logical call acceptance fence rejected the attempt");
+      }
+    } else if (record.outcome.kind === "rate_limit") {
       await tx.update(schema.providerLogicalCalls).set({
         rateLimitCount: sql`${schema.providerLogicalCalls.rateLimitCount} + 1`,
         rateLimitOutcome: record.disposition === "exhausted" ? "exhausted" : "pending",
@@ -388,8 +556,16 @@ async function terminalizeAttempt(
         rateLimitOutcome: sql`CASE
           WHEN ${schema.providerLogicalCalls.rateLimitCount} > 0
             AND ${schema.providerLogicalCalls.rateLimitOutcome} = 'pending'
-          THEN 'recovered'
+            AND ${record.disposition} = 'exhausted'
+          THEN 'exhausted'
           ELSE ${schema.providerLogicalCalls.rateLimitOutcome}
+        END`,
+        rateLimitTerminalReason: sql`CASE
+          WHEN ${schema.providerLogicalCalls.rateLimitCount} > 0
+            AND ${schema.providerLogicalCalls.rateLimitOutcome} = 'pending'
+            AND ${record.disposition} = 'exhausted'
+          THEN ${record.outcome.message}
+          ELSE ${schema.providerLogicalCalls.rateLimitTerminalReason}
         END`,
         updatedAt: record.completedAt,
       }).where(eq(schema.providerLogicalCalls.id, callId));
@@ -397,7 +573,13 @@ async function terminalizeAttempt(
     const logicalCall = (await tx.select().from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId)))[0];
     if (!logicalCall) throw new Error("Provider logical call disappeared during terminalization");
-    return { attempt: rows[0]!, logicalCall };
+    const health = await recordProviderHealthOutcomeInTransaction(tx, {
+      attemptId,
+      providerProfileId: record.preparedRequest.providerProfileId,
+      catalogId: record.preparedRequest.catalogId ?? null,
+      outcome: record.outcome,
+    });
+    return { attempt: rows[0]!, logicalCall, ...health };
   });
 }
 
@@ -492,19 +674,56 @@ async function loadEvidenceOutboxRows(
   db: DrizzleDB,
   input: { attemptId?: string; limit: number },
 ): Promise<EvidenceOutboxRow[]> {
-  const query = db.select().from(schema.providerAttemptEvidenceOutbox)
-    .where(input.attemptId
-      ? eq(schema.providerAttemptEvidenceOutbox.attemptId, input.attemptId)
-      : undefined)
-    .orderBy(schema.providerAttemptEvidenceOutbox.createdAt)
-    .limit(input.limit);
-  return query;
+  return db.transaction(async (tx) => {
+    const now = new Date();
+    const claimToken = randomUUID();
+    const claimExpiresAt = new Date(now.getTime() + 30_000).toISOString();
+    const eligible = await tx.select({
+      attemptId: schema.providerAttemptEvidenceOutbox.attemptId,
+    }).from(schema.providerAttemptEvidenceOutbox).where(and(
+      input.attemptId
+        ? eq(schema.providerAttemptEvidenceOutbox.attemptId, input.attemptId)
+        : undefined,
+      lte(schema.providerAttemptEvidenceOutbox.nextReconciliationAt, now.toISOString()),
+      or(
+        isNull(schema.providerAttemptEvidenceOutbox.claimExpiresAt),
+        lte(schema.providerAttemptEvidenceOutbox.claimExpiresAt, now.toISOString()),
+      ),
+    )).orderBy(
+      schema.providerAttemptEvidenceOutbox.nextReconciliationAt,
+      schema.providerAttemptEvidenceOutbox.createdAt,
+    ).limit(input.limit).for("update", { skipLocked: true });
+    if (eligible.length === 0) return [];
+    return tx.update(schema.providerAttemptEvidenceOutbox).set({
+      claimToken,
+      claimExpiresAt,
+      updatedAt: now.toISOString(),
+    }).where(and(
+      inArray(
+        schema.providerAttemptEvidenceOutbox.attemptId,
+        eligible.map((row) => row.attemptId),
+      ),
+      or(
+        isNull(schema.providerAttemptEvidenceOutbox.claimExpiresAt),
+        lte(schema.providerAttemptEvidenceOutbox.claimExpiresAt, now.toISOString()),
+      ),
+    )).returning();
+  });
+}
+
+function claimedOutboxCondition(row: EvidenceOutboxRow) {
+  return and(
+    eq(schema.providerAttemptEvidenceOutbox.attemptId, row.attemptId),
+    row.claimToken
+      ? eq(schema.providerAttemptEvidenceOutbox.claimToken, row.claimToken)
+      : undefined,
+  );
 }
 
 function preparedEvidenceFromOutbox(
   row: EvidenceOutboxRow,
 ): PreparedProviderAttemptEvidence {
-  const metadata = row.manifestMetadata as unknown as ProviderAttemptManifestMetadata;
+  const metadata = parseProviderAttemptManifestMetadata(row);
   return {
     gameId: row.gameId,
     ownerEpoch: row.ownerEpoch,
@@ -526,6 +745,24 @@ async function finalizeEvidenceOutbox(
   manifestId: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    const authority = (await tx.select({
+      attemptId: schema.providerAttemptEvidenceOutbox.attemptId,
+    }).from(schema.providerAttemptEvidenceOutbox)
+      .where(claimedOutboxCondition(row))
+      .for("update"))[0];
+    if (!authority) {
+      const current = (await tx.select({
+        evidenceState: schema.providerCallAttempts.evidenceState,
+        evidenceManifestId: schema.providerCallAttempts.evidenceManifestId,
+      }).from(schema.providerCallAttempts).where(and(
+        eq(schema.providerCallAttempts.id, row.attemptId),
+        eq(schema.providerCallAttempts.gameId, row.gameId),
+      )))[0];
+      if (current?.evidenceState === "stored" && current.evidenceManifestId === manifestId) {
+        return;
+      }
+      throw new Error("Provider evidence claim expired before finalization");
+    }
     const updated = await tx.update(schema.providerCallAttempts).set({
       evidenceState: "stored",
       evidenceManifestId: manifestId,
@@ -549,7 +786,7 @@ async function finalizeEvidenceOutbox(
       }
     }
     await tx.delete(schema.providerAttemptEvidenceOutbox)
-      .where(eq(schema.providerAttemptEvidenceOutbox.attemptId, row.attemptId));
+      .where(claimedOutboxCondition(row));
   });
 }
 
@@ -557,6 +794,7 @@ function providerAttemptManifestValues(
   row: EvidenceOutboxRow,
   written: Extract<WriteProviderAttemptEvidenceResult, { ok: true }>,
 ) {
+  const metadata = parseProviderAttemptManifestMetadata(row);
   return {
     id: row.manifestId,
     gameId: row.gameId,
@@ -571,11 +809,136 @@ function providerAttemptManifestValues(
       kind: "provider_attempt_failure",
       logicalCallId: row.logicalCallId,
       attemptJournalId: row.attemptId,
-      attemptOrdinal: (row.manifestMetadata as unknown as ProviderAttemptManifestMetadata)
-        .attemptOrdinal,
+      attemptOrdinal: metadata.attemptOrdinal,
     }],
-    metadata: row.manifestMetadata,
+    metadata: { ...metadata } as Record<string, unknown>,
   } as const;
+}
+
+function parseProviderAttemptManifestMetadata(
+  row: EvidenceOutboxRow,
+): ProviderAttemptManifestMetadata {
+  const metadata = asPlainRecord(row.manifestMetadata, "manifest metadata");
+  const actor = asPlainRecord(metadata.actor, "manifest actor");
+  const model = asPlainRecord(metadata.model, "manifest model");
+  const requireString = (value: unknown, label: string): string => {
+    if (typeof value !== "string" || value.length === 0) {
+      throw new Error(`Provider evidence ${label} must be a non-empty string`);
+    }
+    return value;
+  };
+  const optionalString = (value: unknown, label: string): string | undefined => {
+    if (value === undefined) return undefined;
+    return requireString(value, label);
+  };
+  const requirePositiveInteger = (value: unknown, label: string): number => {
+    if (!Number.isSafeInteger(value) || (value as number) < 1) {
+      throw new Error(`Provider evidence ${label} must be a positive safe integer`);
+    }
+    return value as number;
+  };
+  const outcomeKinds = new Set([
+    "usable",
+    "refusal",
+    "rate_limit",
+    "service_error",
+    "transport_timeout",
+    "transport_error",
+    "authentication",
+    "configuration",
+    "request_error",
+    "cancellation",
+    "empty_output",
+    "malformed_output",
+    "wrong_tool",
+    "undecodable_structured_output",
+  ]);
+  const dispositions = new Set(["accepted", "retry_scheduled", "exhausted"]);
+  const logicalCallId = requireString(metadata.logicalCallId, "logical call id");
+  const attemptOrdinal = requirePositiveInteger(metadata.attemptOrdinal, "attempt ordinal");
+  const body = asPlainRecord(JSON.parse(row.body) as unknown, "outbox body");
+  if (
+    logicalCallId !== row.logicalCallId
+    || body.logicalCallId !== row.logicalCallId
+    || body.attemptJournalId !== row.attemptId
+    || body.gameId !== row.gameId
+    || body.ownerEpoch !== row.ownerEpoch
+  ) {
+    throw new Error("Provider evidence outbox identity does not match its manifest metadata");
+  }
+  const byteLength = requirePositiveInteger(metadata.byteLength, "byte length");
+  if (byteLength !== row.byteLength || Buffer.byteLength(row.body, "utf8") !== row.byteLength) {
+    throw new Error("Provider evidence outbox byte length does not match its body");
+  }
+  const sha256 = requireString(metadata.sha256, "SHA-256");
+  const actualBodySha256 = `sha256:${createHash("sha256").update(row.body).digest("hex")}`;
+  if (sha256 !== row.bodySha256 || sha256 !== actualBodySha256) {
+    throw new Error("Provider evidence outbox SHA-256 does not match its manifest metadata");
+  }
+  const outcomeKind = requireString(metadata.outcomeKind, "outcome kind");
+  if (!outcomeKinds.has(outcomeKind)) {
+    throw new Error(`Provider evidence outcome kind is invalid: ${outcomeKind}`);
+  }
+  const disposition = requireString(metadata.disposition, "disposition");
+  if (!dispositions.has(disposition)) {
+    throw new Error(`Provider evidence disposition is invalid: ${disposition}`);
+  }
+  const modelName = requireString(metadata.modelName, "model name");
+  const nestedModelName = requireString(model.name, "nested model name");
+  if (modelName !== nestedModelName) {
+    throw new Error("Provider evidence model names do not match");
+  }
+  const round = metadata.round === undefined
+    ? undefined
+    : requirePositiveInteger(metadata.round, "round");
+  const createdAt = requireString(metadata.createdAt, "creation time");
+  if (!Number.isFinite(Date.parse(createdAt))) {
+    throw new Error("Provider evidence creation time is invalid");
+  }
+  if (
+    metadata.formatVersion !== 1
+    || metadata.contentType !== "application/json"
+    || metadata.recordCount !== 1
+  ) {
+    throw new Error("Provider evidence manifest version or content shape is invalid");
+  }
+  const actorId = optionalString(actor.id, "actor id");
+  const phase = optionalString(metadata.phase, "phase");
+  const catalogId = optionalString(model.catalogId, "catalog id");
+  const normalized = {
+    formatVersion: 1,
+    contentType: "application/json",
+    byteLength,
+    recordCount: 1,
+    sha256,
+    actor: {
+      ...(actorId && { id: actorId }),
+      name: requireString(actor.name, "actor name"),
+      role: requireString(actor.role, "actor role"),
+    },
+    action: requireString(metadata.action, "action"),
+    ...(phase && { phase }),
+    ...(round !== undefined && { round }),
+    model: {
+      name: nestedModelName,
+      providerProfileId: requireString(model.providerProfileId, "provider profile id"),
+      ...(catalogId && { catalogId }),
+    },
+    modelName,
+    outcomeKind: outcomeKind as ProviderAttemptManifestMetadata["outcomeKind"],
+    disposition: disposition as ProviderAttemptManifestMetadata["disposition"],
+    attemptOrdinal,
+    logicalCallId,
+    createdAt,
+  };
+  return normalized as ProviderAttemptManifestMetadata;
+}
+
+function asPlainRecord(value: unknown, label: string): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`Provider evidence ${label} must be an object`);
+  }
+  return value as Record<string, unknown>;
 }
 
 async function createEvidenceManifestFromOutbox(
@@ -587,7 +950,7 @@ async function createEvidenceManifestFromOutbox(
   await db.transaction(async (tx) => {
     const outbox = (await tx.select({ attemptId: schema.providerAttemptEvidenceOutbox.attemptId })
       .from(schema.providerAttemptEvidenceOutbox)
-      .where(eq(schema.providerAttemptEvidenceOutbox.attemptId, row.attemptId)))[0];
+      .where(claimedOutboxCondition(row)))[0];
     if (!outbox) {
       const attempt = (await tx.select({
         evidenceState: schema.providerCallAttempts.evidenceState,
@@ -656,6 +1019,23 @@ async function markEvidenceOutboxDegraded(
   error: string,
 ): Promise<void> {
   await db.transaction(async (tx) => {
+    const nextAttemptAt = sql<string>`(
+      now() + make_interval(secs => LEAST(
+        900,
+        (5 * power(2, LEAST(${schema.providerAttemptEvidenceOutbox.reconciliationAttemptCount}, 7)))::int
+          + (abs(hashtext(${schema.providerAttemptEvidenceOutbox.attemptId})) % 5)
+      ))
+    )::text`;
+    const released = await tx.update(schema.providerAttemptEvidenceOutbox).set({
+      reconciliationAttemptCount: sql`${schema.providerAttemptEvidenceOutbox.reconciliationAttemptCount} + 1`,
+      nextReconciliationAt: nextAttemptAt,
+      claimToken: null,
+      claimExpiresAt: null,
+      updatedAt: new Date().toISOString(),
+    }).where(claimedOutboxCondition(row)).returning({
+      attemptId: schema.providerAttemptEvidenceOutbox.attemptId,
+    });
+    if (released.length === 0) return;
     const updated = await tx.update(schema.providerCallAttempts).set({
       evidenceState: "degraded",
       evidenceError: error,
@@ -682,11 +1062,16 @@ export async function reconcileProviderAttemptEvidence(
   options: {
     attemptId?: string;
     limit?: number;
+    writeTimeoutMs?: number;
     evidenceStorage?: PrivateTraceStorageAdapter;
     dependencies?: ProviderEvidenceReconciliationDependencies;
   } = {},
 ): Promise<ProviderEvidenceReconciliationResult> {
   const limit = Math.max(1, Math.min(1_000, Math.floor(options.limit ?? 100)));
+  const writeTimeoutMs = Math.max(
+    1,
+    Math.floor(options.writeTimeoutMs ?? PROVIDER_EVIDENCE_WRITE_TIMEOUT_MS),
+  );
   const load = options.dependencies?.load ?? loadEvidenceOutboxRows;
   const write = options.dependencies?.write ?? writePreparedProviderAttemptObject;
   const createManifest = options.dependencies?.createManifest ??
@@ -704,9 +1089,27 @@ export async function reconcileProviderAttemptEvidence(
   let failed = 0;
   for (const row of rows) {
     try {
-      const result = await write(db, preparedEvidenceFromOutbox(row), {
-        storage: options.evidenceStorage,
-      });
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        controller.abort(new Error("Provider evidence storage deadline exceeded"));
+      }, writeTimeoutMs);
+      timeout.unref();
+      let result: WriteProviderAttemptEvidenceResult;
+      try {
+        result = await Promise.race([
+          write(db, preparedEvidenceFromOutbox(row), {
+            storage: options.evidenceStorage,
+            abortSignal: controller.signal,
+          }),
+          new Promise<never>((_resolve, reject) => {
+            controller.signal.addEventListener("abort", () => {
+              reject(controller.signal.reason ?? new Error("Provider evidence storage deadline exceeded"));
+            }, { once: true });
+          }),
+        ]);
+      } finally {
+        clearTimeout(timeout);
+      }
       if (!result.ok) {
         failed += 1;
         try {
@@ -740,19 +1143,12 @@ export function createApiProviderExecutionHooks(
   options: CreateApiProviderExecutionHooksOptions,
 ): ProviderExecutionHooks {
   return {
+    onReadAccepted: (coordinate) => readAcceptedResult(db, options, coordinate),
     onAllocateAttemptOrdinal: (coordinate) =>
       allocateAttemptOrdinal(db, options, coordinate),
     onReserve: (intent) => reserveAttempt(db, options, intent),
     onTerminal: async (record) => {
       const journaled = await terminalizeAttempt(db, options, record);
-      if (journaled.attempt.evidenceState !== "stored") {
-        await reconcileProviderAttemptEvidence(db, {
-          attemptId: journaled.attempt.id,
-          limit: 1,
-          evidenceStorage: options.evidenceStorage,
-          dependencies: options.evidenceDependencies,
-        });
-      }
       if (journaled.attempt.spendProjectionState !== "projected") {
         await projectAttemptSpend(
           db,
@@ -761,6 +1157,17 @@ export function createApiProviderExecutionHooks(
           options.projectSpend ?? defaultProjectSpend,
         );
       }
+      if (journaled.circuit) {
+        throw new ProviderCircuitOpenError(
+          record.preparedRequest.catalogId ?? `${record.preparedRequest.providerProfileId}:${record.preparedRequest.model}`,
+          journaled.circuit.scopeKey,
+          journaled.circuit.revision,
+          journaled.circuit.haltManifest,
+        );
+      }
+      return record.outcome.kind === "usable"
+        ? { acceptedAttemptId: journaled.attempt.id }
+        : undefined;
     },
   };
 }
@@ -833,6 +1240,7 @@ export async function startProviderAttemptReconciliationRuntime(
     limit?: number;
     signal?: AbortSignal;
     evidenceStorage?: PrivateTraceStorageAdapter;
+    evidenceWriteTimeoutMs?: number;
     logger?: Pick<Console, "warn">;
   } = {},
 ): Promise<ProviderAttemptReconciliationRuntime> {
@@ -857,6 +1265,7 @@ export async function startProviderAttemptReconciliationRuntime(
     inFlight = Promise.all([
       reconcileProviderAttemptEvidence(db, {
         limit,
+        writeTimeoutMs: options.evidenceWriteTimeoutMs,
         evidenceStorage: options.evidenceStorage,
       }).catch((error) => {
         logger.warn("[provider-journal] Evidence reconciliation deferred", error);
@@ -872,9 +1281,9 @@ export async function startProviderAttemptReconciliationRuntime(
     return inFlight;
   };
 
-  await runOnce();
   let timer: ReturnType<typeof setInterval> | null = null;
   if (!options.signal?.aborted) {
+    void runOnce();
     timer = setInterval(() => {
       void runOnce();
     }, intervalMs);

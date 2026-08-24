@@ -10,6 +10,11 @@ const MIGRATION_PATH = new URL(
 );
 
 describe("sealed provider manifest migration", () => {
+  test("does not take an explicit table-wide games lock", async () => {
+    const migration = await Bun.file(MIGRATION_PATH).text();
+    expect(migration).not.toMatch(/\bLOCK\s+TABLE\s+"games"\b/i);
+  });
+
   test("backfills the exact legacy selection and preserves an existing ordered manifest", async () => {
     const db = await setupTestDB();
     const testSchema = uniqueSchema("provider_manifest");

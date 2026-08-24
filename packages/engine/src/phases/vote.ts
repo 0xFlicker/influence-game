@@ -2,7 +2,7 @@ import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { TargetDecision } from "../game-runner.types";
 import type { EngineFallbackReason } from "../game-runner.types";
-import { ProviderAttemptError } from "../provider-execution";
+import { ProviderUnavailableError } from "../provider-execution";
 import {
   deterministicEngineFallback,
   engineFallbackMetadata,
@@ -33,7 +33,7 @@ async function withEndgameVoteTimeout(
     try {
       return await operation(new AbortController().signal);
     } catch (error) {
-      if (!(error instanceof ProviderAttemptError)) throw error;
+      if (!(error instanceof ProviderUnavailableError)) throw error;
       return fallback("provider_exhausted");
     }
   }
@@ -50,7 +50,7 @@ async function withEndgameVoteTimeout(
 
   return Promise.race([
     operation(controller.signal).catch((error) => {
-      if (!(error instanceof ProviderAttemptError)) throw error;
+      if (!(error instanceof ProviderUnavailableError)) throw error;
       return fallback("provider_exhausted");
     }),
     timeoutPromise,
@@ -136,7 +136,7 @@ export async function runVotePhase(
       try {
         votes = await agent.getVotes(phaseCtx);
       } catch (error) {
-        if (!(error instanceof ProviderAttemptError)) throw error;
+        if (!(error instanceof ProviderUnavailableError)) throw error;
         votes = {
           empowerTarget: deterministicEngineFallback(
             legalTargets,
@@ -247,7 +247,7 @@ export async function runVotePhase(
           try {
             revote = await agent.getEmpowerRevote(phaseCtx, tied, originalVote);
           } catch (error) {
-            if (!(error instanceof ProviderAttemptError)) throw error;
+            if (!(error instanceof ProviderUnavailableError)) throw error;
             revote = {
               empowerTarget: deterministicEngineFallback(
                 tied,

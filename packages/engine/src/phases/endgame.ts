@@ -11,7 +11,7 @@ import {
   deterministicEngineFallback,
   engineFallbackMetadata,
 } from "../engine-fallback";
-import { ProviderAttemptError } from "../provider-execution";
+import { ProviderUnavailableError } from "../provider-execution";
 import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
@@ -40,7 +40,7 @@ async function withEndgameActionTimeout<T>(
     try {
       return { value: await operation(new AbortController().signal), provenance: "agent" };
     } catch (error) {
-      if (!(error instanceof ProviderAttemptError)) throw error;
+      if (!(error instanceof ProviderUnavailableError)) throw error;
       return { value: fallback("provider_exhausted"), provenance: "provider_exhausted" };
     }
   }
@@ -51,7 +51,7 @@ async function withEndgameActionTimeout<T>(
   const operationTagged: Promise<Tagged> = operation(controller.signal)
     .then((value) => ({ source: "agent" as const, value }))
     .catch((error) => {
-      if (!(error instanceof ProviderAttemptError)) throw error;
+      if (!(error instanceof ProviderUnavailableError)) throw error;
       return { source: "provider_exhausted" as const, value: fallback("provider_exhausted") };
     });
   const timeoutTagged = new Promise<Tagged>((resolve) => {

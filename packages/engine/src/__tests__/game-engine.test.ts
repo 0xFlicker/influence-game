@@ -20,7 +20,11 @@ import type { GameConfig, RoomAllocation } from "../types";
 import type { CanonicalGameEvent } from "../canonical-events";
 import { MockAgent } from "./mock-agent";
 import { allocateRooms } from "../phases/mingle";
-import { ProviderAttemptError } from "../provider-execution";
+import {
+  ProviderAttemptError,
+  ProviderCallBudgetExhaustedError,
+  ProviderCircuitOpenError,
+} from "../provider-execution";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -245,6 +249,47 @@ describe("Mingle Rooms (current open-room phase)", () => {
         },
       });
       expect(pointer).not.toHaveProperty("decisionId");
+    }
+  });
+
+  it("keeps required votes legal when provider health or budget blocks dispatch", async () => {
+    const failures = [
+      new ProviderCircuitOpenError("openai:gpt-5.6-luna", "provider:openai", 4, true),
+      new ProviderCallBudgetExhaustedError("katana:grok-4-5", 3, 3),
+    ];
+
+    for (const failure of failures) {
+      class BlockedVoteAgent extends MockAgent {
+        override async getVotes(): Promise<never> {
+          throw failure;
+        }
+      }
+      const blocked = new BlockedVoteAgent(createUUID(), "Alpha");
+      const agents = [
+        blocked,
+        ...["Beta", "Gamma", "Delta", "Echo"].map(
+          (name) => new MockAgent(createUUID(), name),
+        ),
+      ];
+      const runner = new GameRunner(agents, TEST_CONFIG);
+
+      await runner.run();
+      const fallbackVotes = runner.getCanonicalEvents().filter(
+        (event) => event.type === "vote.cast" && event.payload.voterId === blocked.id,
+      );
+      expect(fallbackVotes.length).toBeGreaterThan(0);
+      for (const event of fallbackVotes) {
+        if (event.type !== "vote.cast") continue;
+        expect(event.payload.empowerTarget).not.toBe(blocked.id);
+        expect(agents.map((agent) => agent.id)).toContain(event.payload.empowerTarget);
+        expect(event.sourcePointers[0]).toMatchObject({
+          actorId: blocked.id,
+          engineFallback: {
+            source: "engine",
+            reason: "provider_exhausted",
+          },
+        });
+      }
     }
   });
 

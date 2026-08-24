@@ -251,7 +251,9 @@ export function createGameRoutes(
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
       },
       providerManifest: frozenProviderManifest,
-      ...(resolvedModelSelection.model.providerProfileId === "openai" && {
+      ...(frozenProviderManifest.some((entry) => (
+        resolveModelSelection(entry).model.providerProfileId === "openai"
+      )) && {
         serviceTier: normalizedServiceTier,
       }),
       personaPool: personaPool ?? [],
@@ -751,8 +753,10 @@ export function createGameRoutes(
         ...(readiness.code && { code: readiness.code }),
         ...(readiness.retryable !== undefined && { retryable: readiness.retryable }),
       }, readiness.code === "deployment_admission_closed"
+        || readiness.code === "provider_admission_closed"
         ? 409
         : readiness.code === "deployment_admission_unavailable"
+          || readiness.code === "provider_admission_unavailable"
           ? 503
           : 500);
     }

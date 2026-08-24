@@ -68,7 +68,6 @@ export interface ResolvedProviderManifestEntry extends ResolvedModelSelection {
 export const MAX_PROVIDER_MANIFEST_ENTRIES = 8;
 export const MAX_PROVIDER_ENTRY_CALLS_PER_GAME = 10_000;
 export const MAX_PROVIDER_MANIFEST_CALLS_PER_GAME = 25_000;
-export const DEFAULT_FALLBACK_CALL_CAP = 12;
 
 export const MODEL_REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export const MODEL_REASONING_POLICIES = ["action-policy", ...MODEL_REASONING_EFFORTS] as const;
@@ -265,13 +264,20 @@ const MODEL_BY_PROVIDER_AND_MODEL = new Map(
 
 function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEntry | undefined {
   const [profileId, ...modelParts] = catalogId.split(":");
-  if (profileId !== "katana" && profileId !== "lm-studio" && profileId !== "custom-openai-compatible") {
+  if (
+    profileId !== "openai"
+    && profileId !== "katana"
+    && profileId !== "lm-studio"
+    && profileId !== "custom-openai-compatible"
+  ) {
     return undefined;
   }
   const modelId = modelParts.join(":").trim();
   if (!modelId || modelId.includes(":")) return undefined;
   const providerProfileId = profileId;
-  const label = providerProfileId === "katana"
+  const label = providerProfileId === "openai"
+    ? "OpenAI"
+    : providerProfileId === "katana"
     ? "Katana"
     : providerProfileId === "lm-studio"
       ? "LM Studio"
@@ -283,7 +289,8 @@ function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEnt
     displayName: `${label} ${modelId}`,
     evaluationStatus: "game-ready",
     defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: providerProfileId === "katana" && modelId.startsWith("grok-")
+    allowedReasoningEfforts: inferModelCapabilities(modelId, providerProfileId)
+      .supportsReasoningEffort
       ? MODEL_REASONING_EFFORTS
       : [],
     capabilities: inferModelCapabilities(modelId, providerProfileId),
@@ -497,14 +504,6 @@ export function formatGameModelSelectionLabel(
   selection: GameModelSelection | null | undefined,
 ): string {
   return formatResolvedModelSelectionLabel(resolveModelSelection(selection));
-}
-
-export function formatProviderManifestLabel(
-  manifest: GameProviderManifest,
-): string {
-  return resolveProviderManifest(manifest)
-    .map((entry) => formatResolvedModelSelectionLabel(entry))
-    .join(" → ");
 }
 
 export function resolveModelSelection(

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { createHash } from "crypto";
 import { eq } from "drizzle-orm";
 import { Phase, type PrivateDecisionTrace } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -33,16 +34,20 @@ class FakePrivateTraceStorage implements PrivateTraceStorageAdapter {
   async getObject(input: {
     bucket: string;
     key: string;
+    offsetBytes?: number;
     maxBytes?: number;
-  }): Promise<{ body: string; contentLength?: number; contentType?: string }> {
+  }): Promise<{ bodyBytes: Uint8Array; contentLength?: number; contentType?: string }> {
     const found = this.puts.find((put) => put.bucket === input.bucket && put.key === input.key);
     if (!found) throw new Error("object not found");
-    const body = input.maxBytes === undefined
-      ? found.body
-      : Buffer.from(found.body, "utf8").subarray(0, Math.max(1, Math.floor(input.maxBytes))).toString("utf8");
+    const bytes = Buffer.from(found.body, "utf8");
+    const offsetBytes = Math.max(0, Math.floor(input.offsetBytes ?? 0));
+    const bodyBytes = bytes.subarray(
+      offsetBytes,
+      input.maxBytes === undefined ? undefined : offsetBytes + Math.max(1, Math.floor(input.maxBytes)),
+    );
     return {
-      body,
-      contentLength: Buffer.byteLength(body, "utf8"),
+      bodyBytes,
+      contentLength: bodyBytes.byteLength,
       contentType: found.contentType,
     };
   }
@@ -403,6 +408,67 @@ describe("private trace writer", () => {
     expect(cappedRead.response.byteLength).toBe(result.metadata.byteLength);
     expect(cappedRead.response.content.length).toBeGreaterThan(0);
     expect(cappedRead.response.manifest.decisionId).toBeUndefined();
+    expect(cappedRead.response.offsetBytes).toBe(0);
+    expect(cappedRead.response.nextOffsetBytes).toBe(64);
+    expect(cappedRead.response.hashScope).toBe("chunk");
+
+    const finalRead = await readModel.readContent(result.manifestId, {
+      gameId,
+      offsetBytes: cappedRead.response.nextOffsetBytes,
+      maxBytes: result.metadata.byteLength,
+    });
+    expect(finalRead.ok).toBeTrue();
+    if (!finalRead.ok) throw new Error(finalRead.error);
+    expect(finalRead.response.offsetBytes).toBe(64);
+    expect(finalRead.response.truncated).toBeFalse();
+    expect(finalRead.response.nextOffsetBytes).toBeUndefined();
+    expect(finalRead.response.hashScope).toBe("chunk");
+    expect(`${cappedRead.response.content}${finalRead.response.content}`).toBe(storage.puts[0]!.body);
+  });
+
+  test("pages multibyte evidence only on lossless UTF-8 boundaries", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const storage = new FakePrivateTraceStorage();
+    const result = await writePrivateDecisionTrace(
+      db,
+      {
+        gameId,
+        ownerEpoch,
+        trace: makeTrace({
+          gameId,
+          ownerEpoch,
+          prompt: { messages: [{ role: "user", content: "Vote for Maya 🌌 — 开始" }] },
+        }),
+      },
+      { storage },
+    );
+    expect(result.ok).toBeTrue();
+    if (!result.ok) throw new Error(result.error);
+
+    const readModel = new PrivateTraceReadModel(db, () => storage);
+    let offsetBytes = 0;
+    let reconstructed = "";
+    for (let page = 0; page < result.metadata.byteLength + 10; page += 1) {
+      const read = await readModel.readContent(result.manifestId, {
+        gameId,
+        offsetBytes,
+        maxBytes: 1,
+      });
+      expect(read.ok).toBeTrue();
+      if (!read.ok) throw new Error(read.error);
+      reconstructed += read.response.content;
+      offsetBytes += read.response.returnedByteLength;
+      expect(read.response.offsetBytes).toBe(offsetBytes - read.response.returnedByteLength);
+      if (!read.response.truncated) break;
+      expect(read.response.nextOffsetBytes).toBe(offsetBytes);
+    }
+
+    const stored = storage.puts[0]!.body;
+    expect(reconstructed).toBe(stored);
+    expect(offsetBytes).toBe(Buffer.byteLength(stored, "utf8"));
+    expect(`sha256:${createHash("sha256").update(reconstructed).digest("hex")}`)
+      .toBe(result.metadata.sha256);
   });
 
   test("searches within capped trace prefixes without treating larger objects as errors", async () => {
@@ -542,6 +608,16 @@ describe("private trace writer", () => {
       manifestId,
     });
     expect(await db.select().from(schema.gameEvidenceManifests)).toHaveLength(1);
+    const providerIndex = await new PrivateTraceReadModel(db).listManifests(gameId, {
+      evidenceType: "provider_attempt_failure",
+    });
+    expect(providerIndex.ok).toBeTrue();
+    if (!providerIndex.ok) throw new Error(providerIndex.error);
+    expect(providerIndex.manifests.map((manifest) => manifest.id)).toEqual([manifestId]);
+    const ordinaryIndex = await new PrivateTraceReadModel(db).listManifests(gameId);
+    expect(ordinaryIndex.ok).toBeTrue();
+    if (!ordinaryIndex.ok) throw new Error(ordinaryIndex.error);
+    expect(ordinaryIndex.manifests).toEqual([]);
 
     const conflict = await createEvidenceManifest(db, {
       ...input,

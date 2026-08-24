@@ -49,6 +49,10 @@ import {
   listOpenGames,
 } from "../services/queue-enrollment.js";
 import {
+  PRIVATE_TRACE_EVIDENCE_TYPE,
+  PROVIDER_ATTEMPT_EVIDENCE_TYPE,
+} from "../services/private-trace-writer.js";
+import {
   agentCommandOutputSchema,
 } from "./agent-tool-schemas.js";
 import {
@@ -577,6 +581,10 @@ export class ProductionGameMcpJsonRpcServer {
         requireScopes(auth, ["producer"]);
         return content(await this.readModel.inspectDurableRun(requiredString(args, "gameIdOrSlug"), auth));
       }
+      if (name === "read_provider_health") {
+        requireScopes(auth, ["producer"]);
+        return content(await this.readModel.readProviderHealth(auth));
+      }
       if (name === "read_producer_game_analysis") {
         requireScopes(auth, ["producer"]);
         return postgameContent(await this.readModel.readProducerGameAnalysis(postgameArgs(args), auth));
@@ -601,6 +609,7 @@ export class ProductionGameMcpJsonRpcServer {
           auth,
           optionalNumber(args, "limit"),
           optionalString(args, "cursor"),
+          providerEvidenceType(args, "evidenceType"),
         ));
       }
       if (name === "read_trace_content") {
@@ -610,6 +619,8 @@ export class ProductionGameMcpJsonRpcServer {
           gameId: optionalString(args, "gameId"),
           purpose: optionalString(args, "purpose"),
           maxBytes: optionalNumber(args, "maxBytes"),
+          offsetBytes: optionalNumber(args, "offsetBytes"),
+          evidenceType: providerEvidenceType(args, "evidenceType"),
         }, auth));
       }
       if (name === "search_reasoning_traces") {
@@ -994,6 +1005,14 @@ function productionGameMcpTools(
       readOnlyHint: true,
     }),
     tool({
+      name: "read_provider_health",
+      description: "Read durable provider circuit state, reasons, cooldown and probe status. Raw provider evidence remains available only through the existing producer trace manifest/content tools.",
+      properties: {},
+      required: [],
+      scopes: ["producer"],
+      readOnlyHint: true,
+    }),
+    tool({
       name: "read_producer_game_analysis",
       description: "Read producer-only postgame analysis with derived vote cohorts, strategic-grade signals, honest first-page metadata and continuation cursors for private indexes, and tuning diagnostics. Continue developerEvidence.cognitiveArtifacts.nextCursor with list_cognitive_artifacts and developerEvidence.traceManifests.nextCursor with list_trace_manifests, keeping the same game and filters until each cursor is null.",
       properties: {
@@ -1031,6 +1050,11 @@ function productionGameMcpTools(
           type: "string",
           description: "Opaque nextCursor from the preceding list_trace_manifests page for the same game.",
         },
+        evidenceType: {
+          type: "string",
+          enum: [PRIVATE_TRACE_EVIDENCE_TYPE, PROVIDER_ATTEMPT_EVIDENCE_TYPE],
+          description: "Filter to ordinary private reasoning traces or exact provider-attempt failure evidence.",
+        },
       },
       required: ["gameIdOrSlug"],
       scopes: ["producer"],
@@ -1045,6 +1069,12 @@ function productionGameMcpTools(
         gameId: { type: "string" },
         purpose: { type: "string" },
         maxBytes: { type: "number" },
+        offsetBytes: { type: "number", description: "Byte offset for bounded continuation reads." },
+        evidenceType: {
+          type: "string",
+          enum: [PRIVATE_TRACE_EVIDENCE_TYPE, PROVIDER_ATTEMPT_EVIDENCE_TYPE],
+          description: "Require the manifest to have this evidence type before reading raw content.",
+        },
       },
       required: ["manifestId"],
       scopes: ["producer"],
@@ -2275,6 +2305,18 @@ function requiredString(args: Record<string, unknown>, key: string): string {
 function optionalNumber(args: Record<string, unknown>, key: string): number | undefined {
   const value = args[key];
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function providerEvidenceType(
+  args: Record<string, unknown>,
+  key: string,
+): typeof PRIVATE_TRACE_EVIDENCE_TYPE | typeof PROVIDER_ATTEMPT_EVIDENCE_TYPE | undefined {
+  const value = optionalString(args, key);
+  if (value === undefined) return undefined;
+  if (value === PRIVATE_TRACE_EVIDENCE_TYPE || value === PROVIDER_ATTEMPT_EVIDENCE_TYPE) {
+    return value;
+  }
+  throw new Error(`${key} must identify a supported private evidence type`);
 }
 
 function optionalBoolean(args: Record<string, unknown>, key: string): boolean | undefined {

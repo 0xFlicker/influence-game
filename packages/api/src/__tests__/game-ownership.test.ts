@@ -25,6 +25,11 @@ import {
   advanceDeploymentAdmissionPhase,
   completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
+import {
+  checkDailyProviderAdmission,
+  recordProviderHealthOutcomeInTransaction,
+} from "../services/provider-health.js";
+import { resolveProviderManifestFromGameConfig } from "@influence/engine";
 
 describe("atomic game owner claim and roster freeze", () => {
   test("serializes update-before-freeze into one coherent new tuple and snapshot", async () => {
@@ -446,6 +451,42 @@ describe("atomic game owner claim and roster freeze", () => {
       statusCode: 409,
     });
     expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "suspended" });
+  });
+
+  test("rechecks Daily provider health inside the owner claim transaction", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const config = {
+      modelSelection: {
+        catalogId: "openai:gpt-5.6-luna",
+        reasoningPolicy: "action-policy",
+      },
+      providerManifest: [{
+        catalogId: "openai:gpt-5.6-luna",
+        reasoningPolicy: "action-policy",
+      }],
+    };
+    await fixture.db.update(schema.games).set({
+      trackType: "free",
+      config: JSON.stringify(config),
+    }).where(eq(schema.games.id, fixture.gameId));
+    expect(await checkDailyProviderAdmission(
+      fixture.db,
+      resolveProviderManifestFromGameConfig(config),
+    )).toEqual({ ok: true });
+
+    await fixture.db.transaction((tx) => recordProviderHealthOutcomeInTransaction(tx, {
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5.6-luna",
+      outcome: { kind: "authentication", message: "expired key", retryable: false },
+    }));
+    expect(await acquireGameRunOwner(fixture.db, fixture.gameId)).toMatchObject({
+      ok: false,
+      code: "provider_admission_closed",
+      statusCode: 409,
+    });
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "waiting" });
+    expect(await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, fixture.gameId))).toHaveLength(0);
   });
 
   test("accepting candidates cannot recover suspended work before terminal host acceptance", async () => {

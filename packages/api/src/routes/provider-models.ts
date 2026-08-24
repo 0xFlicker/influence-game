@@ -3,6 +3,7 @@ import {
   createLlmClientFromEnv,
   MODEL_REASONING_POLICIES,
   gameReadyCatalogEntries,
+  modelCatalogEntryById,
   type ProviderProfileId,
 } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
@@ -39,9 +40,9 @@ export function createProviderModelRoutes(
   const listModelIds = dependencies.listModelIds ?? listConfiguredProviderModelIds;
 
   app.get("/api/provider-models", requireAuth(db), async (c) => {
-    const catalog = gameReadyCatalogEntries();
+    const staticCatalog = gameReadyCatalogEntries();
     const configuredProviderIds = [...new Set(
-      catalog
+      staticCatalog
         .map((entry) => entry.providerProfileId)
         .filter((providerProfileId) => providerConfigured(providerProfileId, env)),
     )];
@@ -66,6 +67,21 @@ export function createProviderModelRoutes(
     const status = listings.some((listing) => !listing.available)
       ? "unavailable" as const
       : "complete" as const;
+    const catalogById = new Map(staticCatalog.map((entry) => [entry.id, entry]));
+    for (const listing of listings) {
+      if (!listing.available || !listing.modelIds) continue;
+      for (const modelId of listing.modelIds) {
+        const catalogId = `${listing.providerProfileId}:${modelId}`;
+        const entry = modelCatalogEntryById(catalogId);
+        // A static disabled/evaluation entry remains non-selectable even when
+        // the provider advertises it. New listed IDs use inferred capabilities
+        // so manual/test games retain the provider's complete model surface.
+        if (entry?.evaluationStatus === "game-ready") {
+          catalogById.set(catalogId, entry);
+        }
+      }
+    }
+    const catalog = [...catalogById.values()];
     const models = catalog.map((entry) => {
       const configured = providerConfigured(entry.providerProfileId, env);
       const listing = listingByProvider.get(entry.providerProfileId);

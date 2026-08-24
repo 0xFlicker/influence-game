@@ -15,6 +15,7 @@ import {
   Phase,
   TokenTracker,
   createLlmClientFromEnv,
+  createLlmProviderRuntimesFromEnv,
   estimateCostForKnownModel,
   normalizeOpenAIRequestServiceTier,
   resolveProviderManifestFromGameConfig,
@@ -90,6 +91,7 @@ import {
 import { serializeTranscriptEntry } from "./transcript-serialization.js";
 import { tryReconcileAcceptedActionCorrelations } from "./accepted-action-correlation.js";
 import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
+import { checkDailyProviderAdmission } from "./provider-health.js";
 
 export { serializeTranscriptEntry } from "./transcript-serialization.js";
 
@@ -615,7 +617,11 @@ export async function validateGameStartReadiness(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{
   error?: string;
-  code?: "deployment_admission_closed" | "deployment_admission_unavailable";
+  code?:
+    | "deployment_admission_closed"
+    | "deployment_admission_unavailable"
+    | "provider_admission_closed"
+    | "provider_admission_unavailable";
   retryable?: boolean;
 }> {
   const admission = await checkGameStartAdmission(db);
@@ -642,6 +648,11 @@ export async function validateGameStartReadiness(
     resolvedProviderManifest = resolveProviderManifestFromGameConfig(gameConfig);
   } catch (error) {
     return { error: publicProviderStartupError(error) };
+  }
+
+  if (game.trackType === "free") {
+    const providerAdmission = await checkDailyProviderAdmission(db, resolvedProviderManifest);
+    if (!providerAdmission.ok) return providerAdmission;
   }
 
   if (env.INFLUENCE_API_TEST_MOCK_RUNNER === "true") {
@@ -716,13 +727,17 @@ export async function startGame(
   const useTestMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true";
   const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
 
-  const llmConfig = useTestMockRunner
+  const providerRuntimes = useTestMockRunner
     ? null
-    : createLlmClientFromEnv(process.env, {
-        providerProfileId: resolvedModelSelection.providerProfile.id,
+    : createLlmProviderRuntimesFromEnv(
+        resolveProviderManifestFromGameConfig(gameConfig),
+        process.env,
+        {
         openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
-      });
-  if (!llmConfig) {
+        },
+      );
+  const primaryRuntime = providerRuntimes?.[0];
+  if (!primaryRuntime) {
     if (!useTestMockRunner) {
       return { error: "LLM provider not configured" };
     }
@@ -736,7 +751,7 @@ export async function startGame(
   const providerExecutionHooks = ownerEpoch
     ? createApiProviderExecutionHooks(db, { gameId, ownerEpoch })
     : undefined;
-  const toolChoiceMode = resolvedModelSelection.model.preferredToolChoiceMode ?? llmConfig?.toolChoiceMode;
+  const toolChoiceMode = primaryRuntime?.toolChoiceMode;
 
   // Construct agents from player records
   const agents: IAgent[] = players.map((player) => {
@@ -751,7 +766,7 @@ export async function startGame(
       return new ApiTestMockAgent(player.id, persona.name);
     }
 
-    if (!llmConfig) {
+    if (!primaryRuntime || !providerRuntimes) {
       throw new Error("LLM provider not configured");
     }
 
@@ -774,13 +789,13 @@ export async function startGame(
       player.id,
       persona.name,
       personality,
-      llmConfig.client,
+      primaryRuntime.client,
       model,
       persona.backstory,
       memoryStore,
       {
         ...(playerToolChoiceMode && { toolChoiceMode: playerToolChoiceMode }),
-        ...(llmConfig.openAIReasoningSummary && { openAIReasoningSummary: llmConfig.openAIReasoningSummary }),
+        ...(primaryRuntime.openAIReasoningSummary && { openAIReasoningSummary: primaryRuntime.openAIReasoningSummary }),
         providerProfileId: resolvedModelSelection.providerProfile.id,
         catalogId: resolvedModelSelection.catalogId,
         modelCapabilities: resolvedModelSelection.model.capabilities,
@@ -790,6 +805,7 @@ export async function startGame(
         ...(agentCfg.temperature !== undefined && { temperature: agentCfg.temperature }),
         ...(privateTraceSink && { privateTraceSink }),
         ...(providerExecutionHooks && { providerExecutionHooks }),
+        providerManifest: providerRuntimes,
       },
     );
     agent.setTokenTracker(tokenTracker);
@@ -798,9 +814,9 @@ export async function startGame(
 
   const engineConfig = buildEngineConfigFromGameRecord(gameConfig, game.minPlayers, game.maxPlayers);
 
-  const houseInterviewer = !useTestMockRunner && llmConfig
+  const houseInterviewer = !useTestMockRunner && primaryRuntime && providerRuntimes
     ? new LLMHouseInterviewer(
-        llmConfig.client,
+        primaryRuntime.client,
         resolvedModelSelection.modelId,
         {
           gameId,
@@ -812,6 +828,7 @@ export async function startGame(
           ...(ownerEpoch && { ownerEpoch }),
           ...(privateTraceSink && { privateTraceSink }),
           ...(providerExecutionHooks && { providerExecutionHooks }),
+          providerManifest: providerRuntimes,
         },
       )
     : undefined;

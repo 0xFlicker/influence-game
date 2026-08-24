@@ -16,6 +16,10 @@ import { gameDisplayName, gameHref } from "@/lib/game-identity";
 import { AdminCostPanel, AdminCostPill } from "../admin-cost-view";
 import { AdminHighlightsDiagnosticsPanel, AdminHighlightsPill } from "../admin-highlights-diagnostics";
 import { AdminPostgameMediaPanel, AdminPostgameMediaPill } from "../admin-postgame-media";
+import {
+  AdminProviderFailuresPanel,
+  AdminProviderFailuresPill,
+} from "../admin-provider-failures-view";
 
 // ---------------------------------------------------------------------------
 // Filter state
@@ -86,6 +90,7 @@ function GameRow({
   onOpenCosts,
   onOpenHighlights,
   onOpenMedia,
+  onOpenProviderFailures,
   onOpenRetry,
 }: {
   game: AdminGameSummary;
@@ -95,6 +100,7 @@ function GameRow({
   onOpenCosts: () => void;
   onOpenHighlights: () => void;
   onOpenMedia: () => void;
+  onOpenProviderFailures: () => void;
   onOpenRetry: () => void;
 }) {
   const router = useRouter();
@@ -173,6 +179,13 @@ function GameRow({
       </td>
       <td className="py-3 px-4">
         <AdminPostgameMediaPill game={game} onClick={onOpenMedia} />
+      </td>
+      <td className="py-3 px-4">
+        <AdminProviderFailuresPill
+          summary={game.providerFailures}
+          onClick={onOpenProviderFailures}
+          ariaLabel={`Open provider failures for game ${gameDisplayName(game)}`}
+        />
       </td>
       <td className="py-3 px-4">
         {settlementRetryIsAvailable(game, canRetrySettlement) && (
@@ -429,6 +442,7 @@ export function GameHistoryBrowser() {
   const [costGame, setCostGame] = useState<AdminGameSummary | null>(null);
   const [highlightsGame, setHighlightsGame] = useState<AdminGameSummary | null>(null);
   const [mediaGame, setMediaGame] = useState<AdminGameSummary | null>(null);
+  const [providerFailuresGame, setProviderFailuresGame] = useState<AdminGameSummary | null>(null);
   const [retryGame, setRetryGame] = useState<AdminGameSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -564,7 +578,7 @@ export function GameHistoryBrowser() {
           <table className="min-w-[72rem] w-full">
             <thead>
               <tr className="border-b border-white/10">
-                {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Settlement", "Cost", "Highlights", "Trailer", ""].map((h) => (
+                {["Slug", "Winner", "Players", "Rounds", "Model", "Date", "Status", "Settlement", "Cost", "Highlights", "Trailer", "Provider failures", ""].map((h) => (
                   <th
                     key={h}
                     className="text-left py-3 px-4 text-xs text-white/30 font-medium"
@@ -585,6 +599,7 @@ export function GameHistoryBrowser() {
                   onOpenCosts={() => setCostGame(g)}
                   onOpenHighlights={() => setHighlightsGame(g)}
                   onOpenMedia={() => setMediaGame(g)}
+                  onOpenProviderFailures={() => setProviderFailuresGame(g)}
                   onOpenRetry={() => setRetryGame(g)}
                 />
               ))}
@@ -611,6 +626,13 @@ export function GameHistoryBrowser() {
           game={mediaGame}
           canManage={canManagePostgameMedia}
           onClose={() => setMediaGame(null)}
+        />
+      )}
+      {providerFailuresGame && (
+        <AdminProviderFailuresPanel
+          key={providerFailuresGame.id}
+          game={providerFailuresGame}
+          onClose={() => setProviderFailuresGame(null)}
         />
       )}
       {retryGame && (

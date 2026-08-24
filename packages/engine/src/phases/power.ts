@@ -6,7 +6,7 @@ import {
   engineFallbackMetadata,
 } from "../engine-fallback";
 import type { ShieldReplacementResolution } from "../exposure-bench";
-import { ProviderAttemptError } from "../provider-execution";
+import { ProviderUnavailableError } from "../provider-execution";
 import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
@@ -203,7 +203,7 @@ export async function runPowerPhase(
   try {
     powerActionResult = await empoweredAgent.getPowerAction(phaseCtx, prelim, { shieldReplacementRequests });
   } catch (error) {
-    if (!(error instanceof ProviderAttemptError)) throw error;
+    if (!(error instanceof ProviderUnavailableError)) throw error;
     powerActionResult = {
       action: "pass" as const,
       target: prelim[0],

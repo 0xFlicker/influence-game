@@ -1,5 +1,5 @@
 import { Phase } from "../types";
-import { ProviderAttemptError } from "../provider-execution";
+import { ProviderUnavailableError } from "../provider-execution";
 import {
   deterministicEngineFallback,
   engineFallbackMetadata,
@@ -89,7 +89,7 @@ export async function runCouncilPhase(
     try {
       voteResult = await agent.getCouncilVote(phaseCtx, candidates);
     } catch (error) {
-      if (!(error instanceof ProviderAttemptError)) throw error;
+      if (!(error instanceof ProviderUnavailableError)) throw error;
       voteResult = {
         target: deterministicEngineFallback(
           candidates,

@@ -32,6 +32,11 @@ import {
   advanceDeploymentAdmissionPhase,
   getDeploymentAdmissionStatus,
 } from "../services/deployment-admission.js";
+import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import {
+  listProviderHealth,
+  recordProviderHealthOutcomeInTransaction,
+} from "../services/provider-health.js";
 
 const ADMIN_ADDRESS = "0xadmin000000000000000000000000000000000001";
 const GAMER_ADDRESS = "0xgamer000000000000000000000000000000000001";
@@ -253,6 +258,7 @@ describe("admin route RBAC", () => {
         "hide_game",
         "manage_postgame_media",
         "manage_deployment_admission",
+        "manage_provider_health",
         "retry_game_settlement",
       ],
     });
@@ -279,6 +285,7 @@ describe("admin route RBAC", () => {
         "manage_cost_accounting",
         "manage_postgame_media",
         "manage_deployment_admission",
+        "manage_provider_health",
         "retry_game_settlement",
         "schedule_free_game",
         "hide_game",
@@ -295,6 +302,227 @@ describe("admin route RBAC", () => {
     });
 
     expect(res.status).toBe(200);
+  });
+
+  test("exposes provider failure summaries and audited exact evidence only to current admin and sysop roles", async () => {
+    const gameId = await insertGame(db, { slug: "provider-failure-admin" });
+    const ownerEpoch = await insertOwner(db, gameId, { expiresAt: "2099-01-01T00:00:00.000Z" });
+    const manifestId = randomUUID();
+    const rawEvidence = JSON.stringify({
+      request: { messages: [{ role: "user", content: "<script>not instructions</script>" }] },
+      response: { status: 400, body: { error: { code: "invalid_prompt" } } },
+    });
+    const manifest = await createEvidenceManifest(db, {
+      manifestId,
+      gameId,
+      ownerEpoch,
+      evidenceType: "provider_attempt_failure",
+      storage: {
+        provider: "linode_object_storage",
+        bucket: "private-content",
+        key: `content/${gameId}/provider-attempts/${manifestId}.json`,
+      },
+      metadata: { contentType: "application/json", byteLength: Buffer.byteLength(rawEvidence) },
+    });
+    expect(manifest.ok).toBeTrue();
+    await db.insert(schema.providerLogicalCalls).values({
+      id: "provider-call-admin",
+      gameId,
+      actorName: "Atlas",
+      actorRole: "player",
+      action: "vote",
+      phase: "VOTE",
+      round: 2,
+      logicalCallOrdinal: 1,
+      nextAttemptOrdinal: 3,
+      rateLimitCount: 2,
+      rateLimitOutcome: "recovered",
+    });
+    await db.insert(schema.providerCallAttempts).values([
+      {
+        id: "provider-attempt-admin-refusal",
+        logicalCallId: "provider-call-admin",
+        gameId,
+        ownerEpoch,
+        attemptOrdinal: 1,
+        transportAttemptId: "transport-admin-refusal",
+        reservationHash: "sha256:reservation-refusal",
+        terminalHash: "sha256:terminal-refusal",
+        status: "terminal",
+        requestShape: "responses",
+        providerProfileId: "openai",
+        modelName: "gpt-5.6-luna",
+        startedAt: "2026-08-23T12:00:00.000Z",
+        completedAt: "2026-08-23T12:00:01.000Z",
+        latencyMs: 1000,
+        outcomeKind: "refusal",
+        outcomeMessage: "invalid_prompt",
+        retryable: false,
+        disposition: "retry_scheduled",
+        providerRequestId: "req_admin_refusal",
+        evidenceState: "stored",
+        evidenceManifestId: manifestId,
+      },
+      {
+        id: "provider-attempt-admin-usable",
+        logicalCallId: "provider-call-admin",
+        gameId,
+        ownerEpoch,
+        attemptOrdinal: 2,
+        transportAttemptId: "transport-admin-usable",
+        reservationHash: "sha256:reservation-usable",
+        terminalHash: "sha256:terminal-usable",
+        status: "terminal",
+        requestShape: "responses",
+        providerProfileId: "katana",
+        modelName: "grok-4.5",
+        startedAt: "2026-08-23T12:00:02.000Z",
+        completedAt: "2026-08-23T12:00:03.000Z",
+        latencyMs: 1000,
+        outcomeKind: "usable",
+        retryable: false,
+        disposition: "accepted",
+        evidenceState: "not_required",
+      },
+    ]);
+    await db.update(schema.games).set({ createdById: gamerUserId }).where(eq(schema.games.id, gameId));
+    await db.insert(schema.gamePlayers).values({
+      id: randomUUID(),
+      gameId,
+      userId: gamerUserId,
+      persona: JSON.stringify({ name: "Gamer Agent", personality: "private owner fixture" }),
+      agentConfig: JSON.stringify({ model: "gpt-5.6-luna" }),
+    });
+
+    const privateTraceReadModel = new PrivateTraceReadModel(db, () => ({
+      putObject: async () => ({}),
+      headObject: async () => ({ contentLength: Buffer.byteLength(rawEvidence), contentType: "application/json" }),
+      getObject: async ({ offsetBytes = 0, maxBytes }) => {
+        const bytes = Buffer.from(rawEvidence);
+        const body = bytes.subarray(offsetBytes, maxBytes ? offsetBytes + maxBytes : undefined).toString();
+        return { body, contentLength: Buffer.byteLength(body), contentType: "application/json" };
+      },
+    }));
+    const evidenceApp = new Hono();
+    evidenceApp.route("/", createAdminRoutes(db, { privateTraceReadModel }));
+
+    for (const token of [adminToken, sysopToken]) {
+      const list = await evidenceApp.request("/api/admin/games", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(list.status).toBe(200);
+      expect(list.headers.get("cache-control")).toContain("no-store");
+      const games = await list.json() as Array<{ id: string; providerFailures: Record<string, unknown> }>;
+      expect(games.find((game) => game.id === gameId)?.providerFailures).toMatchObject({
+        state: "recovered",
+        failureCount: 3,
+        exactFailureCount: 1,
+        rateLimitCount: 2,
+      });
+
+      const detail = await evidenceApp.request(`/api/admin/games/${gameId}/provider-failures`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(detail.status).toBe(200);
+      expect(detail.headers.get("cache-control")).toContain("no-store");
+      expect(await detail.json()).toMatchObject({
+        failures: [
+          { kind: "attempt", state: "recovered", evidence: { state: "available", manifestId } },
+          { kind: "rate_limit", state: "recovered", count: 2 },
+        ],
+      });
+    }
+
+    for (const token of [gamerToken, await createSessionToken(gamerUserId, {
+      roles: ["producer"],
+      permissions: ["view_admin"],
+    })]) {
+      expect((await evidenceApp.request(`/api/admin/games/${gameId}/provider-failures`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })).status).toBe(403);
+    }
+    expect((await evidenceApp.request(`/api/admin/games/${gameId}/provider-failures`)).status).toBe(401);
+
+    const firstChunk = await evidenceApp.request(
+      `/api/admin/games/${gameId}/provider-failures/${manifestId}/content?maxBytes=32&offsetBytes=0`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    expect(firstChunk.status).toBe(200);
+    expect(firstChunk.headers.get("cache-control")).toContain("no-store");
+    const firstBody = await firstChunk.json() as {
+      state: string;
+      content: string;
+      truncated: boolean;
+      offsetBytes: number;
+      nextOffsetBytes: number;
+      manifest: Record<string, unknown>;
+    };
+    expect(firstBody).toMatchObject({ state: "partial", truncated: true, offsetBytes: 0, nextOffsetBytes: 32 });
+    expect(JSON.stringify(firstBody.manifest)).not.toContain("private-content");
+    const secondChunk = await evidenceApp.request(
+      `/api/admin/games/${gameId}/provider-failures/${manifestId}/content?maxBytes=65536&offsetBytes=${firstBody.nextOffsetBytes}`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    const secondBody = await secondChunk.json() as { state: string; content: string; offsetBytes: number };
+    expect(secondBody.state).toBe("final_chunk");
+    expect(secondBody.offsetBytes).toBe(32);
+    expect(`${firstBody.content}${secondBody.content}`).toBe(rawEvidence);
+
+    const reads = await db.select().from(schema.gameEvidenceManifestReads);
+    expect(reads.filter((read) => read.manifestId === manifestId)).toHaveLength(2);
+    expect(reads.every((read) => read.purpose === "admin_provider_failure_read_content")).toBeTrue();
+
+    await db.delete(schema.addressRoles).where(eq(schema.addressRoles.walletAddress, ADMIN_ADDRESS.toLowerCase()));
+    expect((await evidenceApp.request(`/api/admin/games/${gameId}/provider-failures`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    })).status).toBe(403);
+  });
+
+  test("maps every provider evidence content failure without leaking storage identity", async () => {
+    const gameId = await insertGame(db, { slug: "provider-content-errors" });
+    const cases = [
+      ["not_found", 404, false],
+      ["denied", 403, false],
+      ["expired", 410, false],
+      ["redacted", 410, false],
+      ["storage_error", 503, true],
+    ] as const;
+
+    const invalidRange = await app.request(
+      `/api/admin/games/${gameId}/provider-failures/manifest/content?maxBytes=0`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    expect(invalidRange.status).toBe(400);
+    expect(invalidRange.headers.get("cache-control")).toContain("no-store");
+
+    for (const [status, expectedHttpStatus, retryable] of cases) {
+      const errorApp = new Hono();
+      errorApp.route("/", createAdminRoutes(db, {
+        privateTraceReadModel: {
+          readProviderAttemptContent: async () => ({
+            ok: false as const,
+            status,
+            error: `${status} provider evidence`,
+          }),
+        } as never,
+      }));
+      const response = await errorApp.request(
+        `/api/admin/games/${gameId}/provider-failures/manifest/content`,
+        { headers: { Authorization: `Bearer ${adminToken}` } },
+      );
+      expect(response.status).toBe(expectedHttpStatus);
+      expect(response.headers.get("cache-control")).toContain("no-store");
+      const body = await response.json() as Record<string, unknown>;
+      expect(body).toEqual({
+        schemaVersion: 1,
+        state: "unavailable",
+        status,
+        error: `${status} provider evidence`,
+        retryable,
+      });
+      expect(JSON.stringify(body)).not.toContain("private-content");
+      expect(JSON.stringify(body)).not.toContain("storageKey");
+    }
   });
 
   test("grants completion settlement retry only to admin and sysop seed roles", async () => {
@@ -315,6 +543,81 @@ describe("admin route RBAC", () => {
     expect(admin.permissions).toContain("manage_deployment_admission");
     expect(sysop.permissions).toContain("manage_deployment_admission");
     expect(gamer.permissions).not.toContain("manage_deployment_admission");
+  });
+
+  test("grants provider health probes only to current admin and sysop authority", async () => {
+    const admin = await getPermissionsForAddress(db, ADMIN_ADDRESS);
+    const sysop = await getPermissionsForAddress(db, SYSOP_ADDRESS);
+    const gamer = await getPermissionsForAddress(db, GAMER_ADDRESS);
+    expect(admin.permissions).toContain("manage_provider_health");
+    expect(sysop.permissions).toContain("manage_provider_health");
+    expect(gamer.permissions).not.toContain("manage_provider_health");
+
+    await db.transaction((tx) => recordProviderHealthOutcomeInTransaction(tx, {
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5.6-luna",
+      outcome: { kind: "authentication", message: "expired key", retryable: false },
+    }));
+    const probeApp = new Hono().route("/", createAdminRoutes(db, {
+      executeProviderHealthProbe: async (_probeDb, input) => {
+        const before = (await listProviderHealth(db))[0]!;
+        const status = {
+          ...before,
+          state: "closed" as const,
+          reason: null,
+          revision: before.revision + 1,
+        };
+        return {
+          target: {
+            scopeKey: input.scopeKey,
+            providerProfileId: "openai" as const,
+            catalogId: "openai:gpt-5.6-luna",
+            modelId: "gpt-5.6-luna",
+          },
+          outcome: { kind: "usable" as const },
+          status,
+        };
+      },
+    }));
+
+    for (const token of [adminToken, sysopToken]) {
+      const read = await probeApp.request("/api/admin/provider-health", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      expect(read.status).toBe(200);
+      expect(read.headers.get("cache-control")).toBe("private, no-store");
+      expect(await read.json()).toMatchObject({
+        dailyAdmissionPaused: true,
+        providers: [{ scopeKey: "provider:openai", state: "open" }],
+      });
+    }
+    expect((await probeApp.request("/api/admin/provider-health", {
+      headers: { Authorization: `Bearer ${gamerToken}` },
+    })).status).toBe(403);
+
+    const probe = await probeApp.request(
+      "/api/admin/provider-health/provider%3Aopenai/probe",
+      { method: "POST", headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    expect(probe.status).toBe(200);
+    expect(await probe.json()).toMatchObject({
+      outcome: { kind: "usable" },
+      status: { state: "closed" },
+    });
+    expect((await probeApp.request(
+      "/api/admin/provider-health/provider%3Aopenai/close",
+      { method: "POST", headers: { Authorization: `Bearer ${adminToken}` } },
+    )).status).toBe(404);
+
+    await db.delete(schema.addressRoles)
+      .where(eq(schema.addressRoles.walletAddress, ADMIN_ADDRESS.toLowerCase()));
+    expect((await probeApp.request("/api/admin/provider-health", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    })).status).toBe(403);
+    expect((await probeApp.request(
+      "/api/admin/provider-health/provider%3Aopenai/probe",
+      { method: "POST", headers: { Authorization: `Bearer ${adminToken}` } },
+    )).status).toBe(403);
   });
 
   test("exposes safe admission status and revokes a validating lease without its private fence", async () => {
@@ -859,7 +1162,7 @@ describe("admin route RBAC", () => {
 
     expect(response.status).toBe(400);
     expect(await response.json()).toEqual({
-      error: "Imported game requires a valid modelSelection",
+      error: "Imported game requires a valid provider manifest",
     });
   });
 
@@ -898,7 +1201,71 @@ describe("admin route RBAC", () => {
         catalogId: "openai:gpt-5.6-luna",
         reasoningPolicy: "action-policy",
       },
+      providerManifest: [{
+        catalogId: "openai:gpt-5.6-luna",
+        reasoningPolicy: "action-policy",
+      }],
       maxRounds: 5,
+    });
+  });
+
+  test("canonicalizes valid imported manifests and rejects contradictory legacy primaries", async () => {
+    const importBody = (config: Record<string, unknown>, slug: string) => ({
+      version: 1,
+      game: {
+        id: slug,
+        slug,
+        config: JSON.stringify(config),
+        status: "completed",
+        trackType: "custom",
+        minPlayers: 1,
+        maxPlayers: 1,
+      },
+      players: [],
+      transcripts: [],
+    });
+    const providerManifest = [
+      { catalogId: "katana:grok-4-5", reasoningPolicy: "medium" },
+      {
+        catalogId: "openai:gpt-5.6-luna",
+        reasoningPolicy: "action-policy",
+        maxCallsPerGame: 12,
+      },
+    ];
+    const accepted = await app.request("/api/admin/import-game", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(importBody({
+        providerManifest,
+        modelSelection: providerManifest[0],
+      }, "valid-provider-import")),
+    });
+    expect(accepted.status).toBe(201);
+    const acceptedBody = await accepted.json() as { gameId: string };
+    const acceptedGame = (await db.select().from(schema.games)
+      .where(eq(schema.games.id, acceptedBody.gameId)))[0]!;
+    expect(JSON.parse(acceptedGame.config)).toMatchObject({
+      providerManifest,
+      modelSelection: providerManifest[0],
+    });
+
+    const rejected = await app.request("/api/admin/import-game", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(importBody({
+        providerManifest,
+        modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+      }, "contradictory-provider-import")),
+    });
+    expect(rejected.status).toBe(400);
+    expect(await rejected.json()).toEqual({
+      error: "Imported game requires a valid provider manifest",
     });
   });
 
