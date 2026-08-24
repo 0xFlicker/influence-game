@@ -97,8 +97,10 @@ import {
 import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
 import {
   listProviderHealth,
+  projectDailyProviderAdmissionImpact,
   ProviderHealthOperationError,
 } from "../services/provider-health.js";
+import { resolveDailyFreeProviderManifest } from "../services/daily-provider-manifest.js";
 import {
   executeProviderHealthProbe,
   type ProviderHealthProbeResult,
@@ -269,15 +271,13 @@ export function createAdminRoutes(
   app.get("/api/admin/provider-health", requireCurrentProviderHealthRead, async (c) => {
     try {
       const providers = await listProviderHealth(db);
+      const dailyImpact = projectDailyProviderAdmissionImpact(
+        providers,
+        resolveDailyFreeProviderManifest(),
+      );
       return c.json({
         schemaVersion: 1 as const,
-        dailyAdmissionPaused: providers.some((provider) => (
-          provider.state !== "closed"
-          && (
-            provider.scopeKey === "provider:openai"
-            || provider.scopeKey === "entry:openai:gpt-5.6-luna"
-          )
-        )),
+        ...dailyImpact,
         providers,
       });
     } catch {
@@ -1011,17 +1011,34 @@ export function createAdminRoutes(
     }
   });
 
-  app.get("/api/admin/games", requireCurrentProviderFailureRead, async (c) => {
+  app.get("/api/admin/games", requireAdminRead, async (c) => {
     const rows = await db.select().from(schema.games);
     const gameIds = rows.map((game) => game.id);
+    let canReadProviderFailures = false;
+    let providerFailureAccessUnavailable = false;
+    try {
+      const walletAddress = c.get("user").walletAddress;
+      if (walletAddress) {
+        const current = await getPermissionsForAddress(db, walletAddress);
+        canReadProviderFailures = current.roles.some((role) => role === "admin" || role === "sysop");
+      }
+    } catch {
+      providerFailureAccessUnavailable = true;
+    }
+    if (canReadProviderFailures || providerFailureAccessUnavailable) {
+      c.header("Cache-Control", "private, no-store");
+      c.header("Pragma", "no-cache");
+    }
     const [kernelHealthByGameId, costSummaryByGameId, seasonById, settlementByGameId, providerFailureResult] = await Promise.all([
       getRedactedKernelHealthByGameId(db, gameIds),
       getGameCostSummaryMap(db, gameIds),
       getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId)),
       getGameCompletionSettlementSummaryMap(db, gameIds),
-      getProviderFailureSummaryMap(db, gameIds)
-        .then((summaries) => ({ ok: true as const, summaries }))
-        .catch(() => ({ ok: false as const })),
+      canReadProviderFailures
+        ? getProviderFailureSummaryMap(db, gameIds)
+          .then((summaries) => ({ ok: true as const, summaries }))
+          .catch(() => ({ ok: false as const }))
+        : Promise.resolve({ ok: false as const }),
     ]);
 
     const summaries = await Promise.all(rows.map(async (game) => {
@@ -1078,14 +1095,16 @@ export function createAdminRoutes(
         kernelHealth: kernelHealthByGameId.get(game.id),
         cost: costSummaryByGameId.get(game.id) ?? null,
         completionSettlement,
-        providerFailures: providerFailureResult.ok
-          ? providerFailureResult.summaries.get(game.id) ?? emptyProviderFailureSummary()
-          : {
-              schemaVersion: 1 as const,
-              state: "unavailable" as const,
-              error: "Provider failure summaries are temporarily unavailable",
-              retryable: true,
-            },
+        ...((canReadProviderFailures || providerFailureAccessUnavailable) && {
+          providerFailures: providerFailureResult.ok
+            ? providerFailureResult.summaries.get(game.id) ?? emptyProviderFailureSummary()
+            : {
+                schemaVersion: 1 as const,
+                state: "unavailable" as const,
+                error: "Provider failure summaries are temporarily unavailable",
+                retryable: true,
+              },
+        }),
       };
     }));
 

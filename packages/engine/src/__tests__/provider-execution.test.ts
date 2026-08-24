@@ -741,6 +741,40 @@ describe("ProviderExecutionCoordinator", () => {
     expect(records[0]!.requestId).toContain("[REDACTED]");
   });
 
+  it("sanitizes reflected credentials in durable accepted values", async () => {
+    for (const transport of ["openai.responses", "katana.chat_completions"]) {
+      const records: ProviderAttemptRecord[] = [];
+      const secret = `${transport}-private-secret`;
+      const call = new ProviderExecutionCoordinator({
+        hooks: { onTerminal: (record) => { records.push(record); } },
+      }).startCall(coordinate);
+      const value = {
+        text: `provider reflected ${secret}`,
+        nativeResponse: { id: "response-safe", output: secret },
+      };
+
+      expect(await call.execute({
+        preparedRequest: {
+          transport,
+          providerProfileId: transport.startsWith("openai") ? "openai" : "katana",
+          model: "model-test",
+          body: { model: "model-test" },
+          credentialValues: [secret],
+        },
+        maxAttempts: 1,
+        dispatch: async () => value,
+        validate: (response) => ({ status: "usable", value: response }),
+      })).toBe(value);
+
+      expect(records).toHaveLength(1);
+      expect(JSON.stringify(records[0]?.acceptedValue)).not.toContain(secret);
+      expect(records[0]?.acceptedValue).toMatchObject({
+        text: "provider reflected [REDACTED]",
+        nativeResponse: { id: "response-safe", output: "[REDACTED]" },
+      });
+    }
+  });
+
   it("uses runtime evidence-fetch credentials to sanitize reflected failure metadata", async () => {
     const records: ProviderAttemptRecord[] = [];
     const secret = "runtime-only-provider-secret";

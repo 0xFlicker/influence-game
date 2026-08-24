@@ -58,6 +58,35 @@ export interface ProviderHealthStatus extends ProviderHealthScope {
   updatedAt: string;
 }
 
+export interface DailyProviderAdmissionImpact {
+  dailyAdmissionPaused: boolean;
+  affectedDailyPrimaryScopeKeys: string[];
+}
+
+export function projectDailyProviderAdmissionImpact(
+  providers: readonly ProviderHealthStatus[],
+  manifest: readonly ResolvedProviderManifestEntry[],
+): DailyProviderAdmissionImpact {
+  const primary = manifest[0];
+  if (!primary) {
+    return {
+      dailyAdmissionPaused: true,
+      affectedDailyPrimaryScopeKeys: [],
+    };
+  }
+  const affectedDailyPrimaryScopeKeys = [
+    providerHealthProviderScope(primary.providerProfile.id).scopeKey,
+    providerHealthEntryScope(primary.providerProfile.id, primary.catalogId).scopeKey,
+  ];
+  return {
+    dailyAdmissionPaused: providers.some((provider) => (
+      provider.state !== "closed"
+      && affectedDailyPrimaryScopeKeys.includes(provider.scopeKey)
+    )),
+    affectedDailyPrimaryScopeKeys,
+  };
+}
+
 export type ProviderHealthAdmissionResult =
   | { ok: true }
   | {

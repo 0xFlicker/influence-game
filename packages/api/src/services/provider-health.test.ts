@@ -14,6 +14,7 @@ import {
   checkDailyProviderAdmission,
   completeProviderHealthProbe,
   listProviderHealth,
+  projectDailyProviderAdmissionImpact,
   providerHealthEntryScope,
   providerHealthProviderScope,
   recordProviderHealthOutcomeInTransaction,
@@ -292,6 +293,32 @@ describe("provider health circuit authority", () => {
       code: "provider_admission_closed",
       scopeKey: "provider:openai",
     });
+  });
+
+  test("Daily impact follows the sealed primary rather than fallback health", async () => {
+    await record(db, "configuration", {
+      providerProfileId: "katana",
+      catalogId: "katana:grok-4-5",
+    });
+    expect(projectDailyProviderAdmissionImpact(
+      await listProviderHealth(db),
+      dailyManifest,
+    )).toEqual({
+      dailyAdmissionPaused: false,
+      affectedDailyPrimaryScopeKeys: [
+        "provider:openai",
+        "entry:openai:gpt-5.6-luna",
+      ],
+    });
+
+    await record(db, "configuration", {
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5.6-luna",
+    });
+    expect(projectDailyProviderAdmissionImpact(
+      await listProviderHealth(db),
+      dailyManifest,
+    ).dailyAdmissionPaused).toBeTrue();
   });
 
   test("scope constructors keep provider and entry authority distinct", () => {

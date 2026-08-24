@@ -686,7 +686,10 @@ export class ProviderLogicalCallExecution {
         capturedRecord.outcome.retryable &&
         localAttempt < maxAttempts;
       const acceptedValue = usableResult && this.hooks?.onTerminal
-        ? boundedAcceptedValue(usableResult.value)
+        ? boundedAcceptedValue(sanitizeProviderEvidence(
+            usableResult.value,
+            transportCapture.credentialValues,
+          ))
         : undefined;
       const record: ProviderAttemptRecord = {
         ...capturedRecord,

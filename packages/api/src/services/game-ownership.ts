@@ -633,3 +633,36 @@ export async function markGameSuspended(
       .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "in_progress")));
   });
 }
+
+export async function suspendClaimedRecoveryOwner(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+  reason: string,
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  return db.transaction(async (tx) => {
+    const closed = await tx.update(schema.gameRunOwners)
+      .set({
+        status: "expired",
+        closedAt: now,
+        kernelHealth: "suspended",
+        failureReason: reason,
+      })
+      .where(and(
+        eq(schema.gameRunOwners.gameId, gameId),
+        eq(schema.gameRunOwners.ownerEpoch, ownerEpoch),
+        eq(schema.gameRunOwners.status, "active"),
+      ))
+      .returning({ ownerEpoch: schema.gameRunOwners.ownerEpoch });
+    if (closed.length === 0) return false;
+
+    await tx.update(schema.games)
+      .set({ status: "suspended", endedAt: now })
+      .where(and(
+        eq(schema.games.id, gameId),
+        eq(schema.games.status, "in_progress"),
+      ));
+    return true;
+  });
+}

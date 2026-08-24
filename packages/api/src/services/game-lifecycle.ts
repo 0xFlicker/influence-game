@@ -64,6 +64,7 @@ import {
   markGameSuspended,
   markOwnerStartupFailed,
   renewGameRunOwner,
+  suspendClaimedRecoveryOwner,
   type OwnerStartupFailureResult,
 } from "./game-ownership.js";
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
@@ -534,6 +535,21 @@ function providerPreflightTimeoutMs(env: NodeJS.ProcessEnv): number {
   return Number.isFinite(configured) && configured > 0 ? configured : 10_000;
 }
 
+const DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS = 45_000;
+const MIN_PROVIDER_REQUEST_TIMEOUT_MS = 1_000;
+const MAX_PROVIDER_REQUEST_TIMEOUT_MS = 5 * 60_000;
+
+export function providerRequestTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const configured = Number(env.INFLUENCE_LLM_REQUEST_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS;
+  }
+  return Math.max(
+    MIN_PROVIDER_REQUEST_TIMEOUT_MS,
+    Math.min(MAX_PROVIDER_REQUEST_TIMEOUT_MS, Math.floor(configured)),
+  );
+}
+
 function publicProviderStartupError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
@@ -733,7 +749,8 @@ export async function startGame(
         resolveProviderManifestFromGameConfig(gameConfig),
         process.env,
         {
-        openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
+          openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
+          timeout: providerRequestTimeoutMs(process.env),
         },
       );
   const primaryRuntime = providerRuntimes?.[0];
@@ -953,7 +970,17 @@ export async function recoverGame(
   if (!owner.ok) {
     return { error: owner.error };
   }
-  options.signal?.throwIfAborted();
+  try {
+    options.signal?.throwIfAborted();
+  } catch (error) {
+    await suspendClaimedRecoveryOwner(
+      db,
+      gameId,
+      owner.claim.ownerEpoch,
+      "recovery_cancelled_before_start",
+    );
+    throw error;
+  }
 
   let startupError: string | undefined;
   try {

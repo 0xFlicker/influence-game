@@ -845,7 +845,14 @@ export function createLocalProviderExecutionJournal(input: {
           rateLimits.set(callId, aggregate);
         } else {
           const aggregate = rateLimits.get(callId);
-          if (aggregate?.outcome === "pending") aggregate.outcome = "recovered";
+          if (aggregate?.outcome === "pending") {
+            if (record.outcome.kind === "usable") {
+              aggregate.outcome = "recovered";
+            } else if (record.disposition === "exhausted") {
+              aggregate.outcome = "exhausted";
+              aggregate.terminalReason = record.outcome.message;
+            }
+          }
           if (record.outcome.kind !== "usable") {
             failures.push({
               gameId: input.gameId,

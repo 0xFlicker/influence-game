@@ -11,6 +11,7 @@ import {
   acquireRecoveryGameRunOwner,
   markOwnerStartupFailed,
   revokeActiveGameRunOwner,
+  suspendClaimedRecoveryOwner,
 } from "../services/game-ownership.js";
 import { hashCanonicalEvent } from "../services/game-events.js";
 import { createSeason } from "../services/seasons.js";
@@ -425,6 +426,35 @@ describe("atomic game owner claim and roster freeze", () => {
 
     expect(recovery.ok).toBeTrue();
     expect(await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id)).toEqual(frozenSeat);
+  });
+
+  test("cancellation cleanup suspends only the recovery owner it claimed", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const original = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    expect(original.ok).toBeTrue();
+    await revokeActiveGameRunOwner(fixture.db, fixture.gameId, "test suspension");
+    await fixture.db.update(schema.games).set({ status: "suspended" })
+      .where(eq(schema.games.id, fixture.gameId));
+    const recovery = await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0);
+    if (!recovery.ok) throw new Error(recovery.error);
+
+    expect(await suspendClaimedRecoveryOwner(
+      fixture.db,
+      fixture.gameId,
+      "stale-owner",
+      "recovery_cancelled_before_start",
+    )).toBeFalse();
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "in_progress" });
+    expect(await suspendClaimedRecoveryOwner(
+      fixture.db,
+      fixture.gameId,
+      recovery.claim.ownerEpoch,
+      "recovery_cancelled_before_start",
+    )).toBeTrue();
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "suspended" });
+    expect((await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, recovery.claim.ownerEpoch)))[0])
+      .toMatchObject({ status: "expired", failureReason: "recovery_cancelled_before_start" });
   });
 
   test("suspended recovery obeys the deployment admission fence", async () => {

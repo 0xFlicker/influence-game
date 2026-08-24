@@ -1487,6 +1487,11 @@ describe("ProductionGameMcpJsonRpcServer", () => {
         reads += 1;
         return {
           schemaVersion: 1,
+          dailyAdmissionPaused: true,
+          affectedDailyPrimaryScopeKeys: [
+            "provider:openai",
+            "entry:openai:gpt-5.6-luna",
+          ],
           providers: [{
             scopeKey: "provider:openai",
             providerProfileId: "openai",
@@ -1506,6 +1511,15 @@ describe("ProductionGameMcpJsonRpcServer", () => {
 
     expect(success?.error).toBeUndefined();
     expect(JSON.stringify(success?.result)).toContain("provider:openai");
+    expect(success?.result).toMatchObject({
+      structuredContent: {
+        dailyAdmissionPaused: true,
+        affectedDailyPrimaryScopeKeys: [
+          "provider:openai",
+          "entry:openai:gpt-5.6-luna",
+        ],
+      },
+    });
     expect(reads).toBe(1);
 
     const gamesOnly = await producerServer.handle({

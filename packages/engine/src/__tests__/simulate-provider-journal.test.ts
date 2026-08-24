@@ -43,7 +43,7 @@ function failure(base: ProviderAttemptIntent): ProviderAttemptRecord {
 }
 
 describe("local provider attempt journal", () => {
-  test("writes the API evidence envelope shape and aggregates recovered 429s", async () => {
+  test("writes the API evidence envelope shape and marks terminal 429 exhaustion", async () => {
     const journal = createLocalProviderExecutionJournal({
       gameId: "game-id",
       ownerEpoch: "owner-id",
@@ -73,9 +73,40 @@ describe("local provider attempt journal", () => {
     });
     expect(artifact.rateLimits).toEqual([expect.objectContaining({
       count: 1,
-      outcome: "recovered",
+      outcome: "exhausted",
+      terminalReason: "invalid prompt",
     })]);
     expect(JSON.stringify(artifact.rateLimits)).not.toContain("secretNoise");
+  });
+
+  test("marks aggregated 429s recovered only after a usable result", async () => {
+    const journal = createLocalProviderExecutionJournal({
+      gameId: "game-id",
+      ownerEpoch: "owner-id",
+    });
+    const first = intent(1);
+    await journal.hooks.onReserve?.(first);
+    await journal.hooks.onTerminal?.({
+      ...failure(first),
+      outcome: { kind: "rate_limit", message: "slow down", retryable: true },
+      disposition: "retry_scheduled",
+      rawResponse: { status: 429, body: { error: "rate limited" } },
+    });
+    const second = intent(2);
+    await journal.hooks.onReserve?.(second);
+    await journal.hooks.onTerminal?.({
+      ...second,
+      completedAt: "2026-08-23T00:00:10.000Z",
+      latencyMs: 1_000,
+      outcome: { kind: "usable" },
+      disposition: "accepted",
+      acceptedValue: { target: "Atlas" },
+    });
+
+    expect(journal.snapshot().rateLimits).toEqual([expect.objectContaining({
+      count: 1,
+      outcome: "recovered",
+    })]);
   });
 
   test("prevents duplicate reservations", async () => {

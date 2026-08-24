@@ -293,4 +293,77 @@ describe("provider-native adapters", () => {
       error: { code: "invalid_prompt" },
     });
   });
+
+  it("creates a fresh request deadline for each manifest dispatch", async () => {
+    const seenSignals: Array<AbortSignal | undefined> = [];
+    const primaryClient = {
+      responses: {
+        create: async (_body: unknown, options?: { signal?: AbortSignal }) => {
+          seenSignals.push(options?.signal);
+          if (options?.signal?.aborted) {
+            throw Object.assign(new Error("Request was aborted."), { name: "APIUserAbortError" });
+          }
+          throw Object.assign(new Error("Request timed out."), { name: "APITimeoutError" });
+        },
+      },
+    } as unknown as OpenAI;
+    const fallbackClient = {
+      chat: {
+        completions: {
+          create: async (_body: unknown, options?: { signal?: AbortSignal }) => {
+            seenSignals.push(options?.signal);
+            if (options?.signal?.aborted) {
+              throw Object.assign(new Error("Request was aborted."), { name: "APIUserAbortError" });
+            }
+            return {
+              id: "chat_ok",
+              choices: [{
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant",
+                  content: null,
+                  tool_calls: [{
+                    id: "call_1",
+                    type: "function",
+                    function: { name: "cast_vote", arguments: '{"target":"Atlas"}' },
+                  }],
+                },
+              }],
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    let deadlineOrdinal = 0;
+    const call = new ProviderExecutionCoordinator({ wait: async () => {} }).startCall({
+      actor: { name: "Dax", role: "player" },
+      action: "vote",
+      logicalCallOrdinal: 2,
+    });
+
+    const result = await executeModelInvocation({
+      call,
+      runtimes: [
+        runtime("openai:gpt-5.6-luna", primaryClient),
+        runtime("katana:grok-4-5", fallbackClient, 1),
+      ],
+      invocation,
+      maxAttempts: 1,
+      requestSignalFactory: () => {
+        deadlineOrdinal += 1;
+        return deadlineOrdinal === 1
+          ? AbortSignal.abort(new DOMException("Timed out", "AbortError"))
+          : new AbortController().signal;
+      },
+      validate: (outcome) => outcome.toolCalls[0]?.name === "cast_vote"
+        ? { status: "usable", value: outcome }
+        : { status: "unusable", kind: "wrong_tool", message: "missing vote", retryable: false },
+    });
+
+    expect(result.catalogId).toBe("katana:grok-4-5");
+    expect(seenSignals).toHaveLength(2);
+    expect(seenSignals[0]?.aborted).toBeTrue();
+    expect(seenSignals[1]?.aborted).toBeFalse();
+    expect(seenSignals[0]).not.toBe(seenSignals[1]);
+  });
 });

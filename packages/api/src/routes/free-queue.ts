@@ -62,25 +62,11 @@ import {
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
-
-const DAILY_FREE_MODEL = "gpt-5.6-luna";
-const DAILY_FREE_MODEL_SELECTION = {
-  catalogId: `openai:${DAILY_FREE_MODEL}`,
-  reasoningPolicy: "action-policy",
-} as const;
-const DAILY_FREE_PROVIDER_MANIFEST = [
+import {
+  DAILY_FREE_MODEL,
   DAILY_FREE_MODEL_SELECTION,
-  {
-    catalogId: "katana:glm-5-2",
-    reasoningPolicy: "action-policy",
-    maxCallsPerGame: 24,
-  },
-  {
-    catalogId: "katana:grok-4-5",
-    reasoningPolicy: "action-policy",
-    maxCallsPerGame: 12,
-  },
-] as const;
+  DAILY_FREE_PROVIDER_MANIFEST,
+} from "../services/daily-provider-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Helpers

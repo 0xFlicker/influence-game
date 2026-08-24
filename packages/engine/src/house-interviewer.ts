@@ -1123,7 +1123,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     call: ProviderLogicalCallExecution;
     invocation: ModelInvocation | (() => ModelInvocation);
     maxAttempts: number;
-    requestSignal?: AbortSignal;
+    requestSignalFactory?: () => AbortSignal | undefined;
     cancellationSignal?: AbortSignal;
     validate(response: ProviderModelOutcome): ProviderCandidateValidation<T>;
     onRetry?: (record: ProviderAttemptRecord) => void;
@@ -1133,7 +1133,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       runtimes: this.providerManifest,
       invocation: params.invocation,
       maxAttempts: params.maxAttempts,
-      ...(params.requestSignal && { requestSignal: params.requestSignal }),
+      ...(params.requestSignalFactory && { requestSignalFactory: params.requestSignalFactory }),
       ...(params.cancellationSignal && {
         cancellationSignal: params.cancellationSignal,
       }),
@@ -1163,7 +1163,8 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     invocation: ModelInvocation,
     options: {
       maxAttempts?: number;
-      requestSignal?: AbortSignal;
+      requestSignalFactory?: () => AbortSignal | undefined;
+      cancellationSignal?: AbortSignal;
       validate?: (response: ProviderModelOutcome) => ProviderCandidateValidation<ProviderModelOutcome>;
     } = {},
   ): Promise<ProviderModelOutcome> {
@@ -1171,7 +1172,8 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       call: this.startProviderCall(context),
       invocation,
       maxAttempts: options.maxAttempts ?? 2,
-      ...(options.requestSignal && { requestSignal: options.requestSignal }),
+      ...(options.requestSignalFactory && { requestSignalFactory: options.requestSignalFactory }),
+      ...(options.cancellationSignal && { cancellationSignal: options.cancellationSignal }),
       validate: (response) => {
         if (response.refusal || response.stopReason === "content_filter") {
           return {
@@ -1635,45 +1637,6 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     };
   }
 
-  private requestedToolReasoningEffort(): ModelReasoningEffort | undefined {
-    return this.modelCapabilities.supportsToolReasoningEffort
-      ? this.requestedReasoningEffort()
-      : undefined;
-  }
-
-  private houseSummaryReasoningEffort(): ModelReasoningEffort | "none" | undefined {
-    const configured = this.requestedToolReasoningEffort();
-    if (configured) return configured;
-    if (this.providerProfileId === "openai" && this.modelCapabilities.supportsReasoningEffort) {
-      return "none";
-    }
-    return undefined;
-  }
-
-  private modelParams(maxTokens: number, temperature: number) {
-    const usesReasoningBudget = this.modelCapabilities.supportsReasoningEffort || this.modelCapabilities.usesMaxCompletionTokens;
-    const budget = this.applyMessageTokenFloor(usesReasoningBudget ? maxTokens + 4000 : maxTokens);
-    const reasoningEffort = this.requestedReasoningEffort();
-    return {
-      ...(this.modelCapabilities.usesMaxCompletionTokens
-        ? { max_completion_tokens: budget }
-        : { max_tokens: budget }),
-      ...(this.modelCapabilities.supportsTemperature && { temperature }),
-      ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-    };
-  }
-
-  private houseSummaryModelParams(maxCompletionTokens: number) {
-    const reasoningEffort = this.houseSummaryReasoningEffort();
-    return {
-      ...(this.modelCapabilities.usesMaxCompletionTokens
-        ? { max_completion_tokens: maxCompletionTokens }
-        : { max_tokens: maxCompletionTokens }),
-      ...(this.modelCapabilities.supportsTemperature && { temperature: 0.65 }),
-      ...(reasoningEffort && { reasoning_effort: reasoningEffort }),
-    };
-  }
-
   private applyMessageTokenFloor(maxTokens: number): number {
     return Math.max(maxTokens, 4096);
   }
@@ -1682,22 +1645,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     return Math.max(maxTokens, 8192);
   }
 
-  private jsonObjectResponseFormat(name: string) {
-    return {
-      type: "json_schema" as const,
-      json_schema: {
-        name,
-        schema: {
-          type: "object",
-          additionalProperties: true,
-        },
-      },
-    };
-  }
-
-  private structuredOutputSignal(): AbortSignal | undefined {
+  private structuredOutputSignalFactory(): (() => AbortSignal) | undefined {
     if (this.structuredOutputTimeoutMs < 1) return undefined;
-    return AbortSignal.timeout(this.structuredOutputTimeoutMs);
+    return () => AbortSignal.timeout(this.structuredOutputTimeoutMs);
   }
 
   private parseStructuredJsonContent(content: string | null | undefined): Record<string, unknown> | null {
@@ -1731,6 +1681,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       params.phase,
     );
     const providerCall = this.startProviderCall(traceContext);
+    const requestSignalFactory = this.structuredOutputSignalFactory();
     try {
       const result = await this.executeModelCall({
         call: providerCall,
@@ -1746,9 +1697,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
           params.temperature,
         ),
         maxAttempts,
-        ...(this.structuredOutputSignal() && {
-          requestSignal: this.structuredOutputSignal(),
-        }),
+        ...(requestSignalFactory && { requestSignalFactory }),
         validate: (response) => {
           if (response.refusal) {
             return {
@@ -2416,7 +2365,7 @@ Respond with JSON only:
           ),
           {
             maxAttempts: 1,
-            requestSignal: AbortSignal.timeout(remainingMs),
+            cancellationSignal: AbortSignal.timeout(remainingMs),
             validate: (candidate) => this.validateHouseSummaryToolResponse(candidate, terminalOnly),
           },
         );

@@ -99,7 +99,11 @@ import {
   PRIVATE_TRACE_EVIDENCE_TYPE,
   PROVIDER_ATTEMPT_EVIDENCE_TYPE,
 } from "../services/private-trace-writer.js";
-import { listProviderHealth } from "../services/provider-health.js";
+import {
+  listProviderHealth,
+  projectDailyProviderAdmissionImpact,
+} from "../services/provider-health.js";
+import { resolveDailyFreeProviderManifest } from "../services/daily-provider-manifest.js";
 
 const DEFAULT_EVENT_LIMIT = 50;
 const MAX_EVENT_LIMIT = 200;
@@ -1043,6 +1047,8 @@ export class ProductionGameMcpReadModel {
 
   async readProviderHealth(access: ProductionGameMcpAccess): Promise<{
     schemaVersion: 1;
+    dailyAdmissionPaused: boolean;
+    affectedDailyPrimaryScopeKeys: string[];
     providerHealth: Awaited<ReturnType<typeof listProviderHealth>>;
     evidenceAccess: {
       manifestTool: "list_trace_manifests";
@@ -1051,9 +1057,14 @@ export class ProductionGameMcpReadModel {
     };
   }> {
     requireProducerAccess(access);
+    const providerHealth = await listProviderHealth(this.db);
     return {
       schemaVersion: 1,
-      providerHealth: await listProviderHealth(this.db),
+      ...projectDailyProviderAdmissionImpact(
+        providerHealth,
+        resolveDailyFreeProviderManifest(),
+      ),
+      providerHealth,
       evidenceAccess: {
         manifestTool: "list_trace_manifests",
         contentTool: "read_trace_content",

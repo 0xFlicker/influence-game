@@ -99,7 +99,7 @@ function makeIntent(
     attemptOrdinal,
     attemptId: `transport-${gameId}-${attemptOrdinal}`,
     preparedRequest: {
-      transport: "openai.chat_completions",
+      transport: "katana.chat_completions",
       providerProfileId: "katana",
       catalogId: "katana:glm-5-2",
       model: "glm-5-2",
@@ -1344,7 +1344,10 @@ describe("provider call journal", () => {
     expect(spend[0]).toMatchObject({
       gameId,
       callStatus: "succeeded",
-      costSource: "unavailable",
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 175,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-08-24",
       providerNativeUnit: "katana_credit",
       providerNativeAmount: "0.1",
       promptTokens: 100,

@@ -41,7 +41,7 @@ export interface ExecuteModelInvocationOptions<TValue> {
   invocation: ModelInvocation | (() => ModelInvocation);
   maxAttempts: number;
   cancellationSignal?: AbortSignal;
-  requestSignal?: AbortSignal;
+  requestSignalFactory?: () => AbortSignal | undefined;
   validate(outcome: ProviderModelOutcome): ProviderCandidateValidation<TValue>;
   onRetry?(record: ProviderAttemptRecord): Promise<void> | void;
 }
@@ -90,12 +90,13 @@ export async function executeModelInvocation<TValue>(
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
           const prepared = compiledByAttempt.get(key) ?? compile(attemptOrdinal);
           compiledByAttempt.delete(key);
+          const requestSignal = options.requestSignalFactory?.();
           return adapterRuntime.adapter.dispatch(prepared, {
             ...requestOptions,
-            ...((requestOptions.signal || options.requestSignal) && {
-              signal: requestOptions.signal && options.requestSignal
-                ? AbortSignal.any([requestOptions.signal, options.requestSignal])
-                : requestOptions.signal ?? options.requestSignal,
+            ...((requestOptions.signal || requestSignal) && {
+              signal: requestOptions.signal && requestSignal
+                ? AbortSignal.any([requestOptions.signal, requestSignal])
+                : requestOptions.signal ?? requestSignal,
             }),
           });
         },

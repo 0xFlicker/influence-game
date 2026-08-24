@@ -489,13 +489,11 @@ describe("admin route RBAC", () => {
       });
     }
 
-    for (const token of [
-      gamerToken,
-      await createSessionToken(gamerUserId, {
-        roles: ["producer"],
-        permissions: ["view_admin"],
-      }),
-    ]) {
+    const viewAdminOnlyToken = await createSessionToken(gamerUserId, {
+      roles: ["producer"],
+      permissions: ["view_admin"],
+    });
+    for (const token of [gamerToken, viewAdminOnlyToken]) {
       expect(
         (
           await evidenceApp.request(
@@ -507,6 +505,12 @@ describe("admin route RBAC", () => {
         ).status,
       ).toBe(403);
     }
+    const viewAdminList = await evidenceApp.request("/api/admin/games", {
+      headers: { Authorization: `Bearer ${viewAdminOnlyToken}` },
+    });
+    expect(viewAdminList.status).toBe(200);
+    const viewAdminGames = (await viewAdminList.json()) as Array<Record<string, unknown>>;
+    expect(viewAdminGames.find((game) => game.id === gameId)).not.toHaveProperty("providerFailures");
     expect(
       (
         await evidenceApp.request(
@@ -698,6 +702,10 @@ describe("admin route RBAC", () => {
       expect(read.headers.get("cache-control")).toBe("private, no-store");
       expect(await read.json()).toMatchObject({
         dailyAdmissionPaused: true,
+        affectedDailyPrimaryScopeKeys: [
+          "provider:openai",
+          "entry:openai:gpt-5.6-luna",
+        ],
         providers: [{ scopeKey: "provider:openai", state: "open" }],
       });
     }

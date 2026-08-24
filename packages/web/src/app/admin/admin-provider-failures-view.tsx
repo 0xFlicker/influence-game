@@ -35,10 +35,11 @@ export function AdminProviderFailuresPill({
   onClick,
   ariaLabel,
 }: {
-  summary: AdminProviderFailureSummary | AdminProviderFailureSummaryUnavailable;
+  summary?: AdminProviderFailureSummary | AdminProviderFailureSummaryUnavailable;
   onClick: () => void;
   ariaLabel: string;
 }) {
+  if (!summary) return null;
   if (summary.state === "empty") return <span className="text-white/20">—</span>;
   const unavailable = summary.state === "unavailable";
   const tone = unavailable

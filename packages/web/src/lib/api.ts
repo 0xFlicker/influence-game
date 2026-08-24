@@ -534,7 +534,7 @@ export interface AdminGameSummary extends GameSummary {
   hiddenAt?: string;
   cost?: AdminGameCostSummary | null;
   completionSettlement: GameCompletionSettlementSummary;
-  providerFailures: AdminProviderFailureSummary | AdminProviderFailureSummaryUnavailable;
+  providerFailures?: AdminProviderFailureSummary | AdminProviderFailureSummaryUnavailable;
 }
 
 export type AdminProviderFailureState = "recovered" | "terminal" | "degraded" | "transitioned";
@@ -3009,6 +3009,7 @@ export interface AdminProviderHealthStatus {
 export interface AdminProviderHealthResponse {
   schemaVersion: 1;
   dailyAdmissionPaused: boolean;
+  affectedDailyPrimaryScopeKeys: string[];
   providers: AdminProviderHealthStatus[];
 }
 
