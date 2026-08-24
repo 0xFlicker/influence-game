@@ -1,3 +1,5 @@
+LOCK TABLE "games" IN SHARE ROW EXCLUSIVE MODE;
+--> statement-breakpoint
 CREATE OR REPLACE FUNCTION pg_temp.try_parse_provider_manifest_config(value text)
 RETURNS jsonb
 LANGUAGE plpgsql
