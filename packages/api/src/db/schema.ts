@@ -1617,7 +1617,7 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   reservationHash: text("reservation_hash").notNull(),
   terminalHash: text("terminal_hash"),
   status: text("status").notNull().$type<ProviderCallAttemptStatus>().default("reserved"),
-  requestShape: text("request_shape").notNull(),
+  transport: text("request_shape").notNull(),
   providerProfileId: text("provider_profile_id").notNull(),
   catalogId: text("catalog_id"),
   modelName: text("model_name").notNull(),
@@ -1677,7 +1677,11 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   ),
   check(
     "provider_call_attempts_request_shape_check",
-    sql`${table.requestShape} IN ('chat_completions', 'responses')`,
+    sql`${table.transport} IN ('chat_completions', 'responses')
+      OR (
+        char_length(${table.transport}) BETWEEN 3 AND 80
+        AND ${table.transport} ~ '^[a-z][a-z0-9-]*([.][a-z][a-z0-9_-]*)+$'
+      )`,
   ),
   check(
     "provider_call_attempts_outcome_check",

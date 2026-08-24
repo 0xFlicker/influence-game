@@ -550,6 +550,20 @@ export {
   providerAcceptedDecisionId,
   sanitizeProviderEvidence,
 } from "./provider-execution";
+export {
+  createProviderAdapter,
+  executeModelInvocation,
+} from "./provider-adapters";
+export type {
+  LlmProviderAdapter,
+  ModelInvocation,
+  ModelInvocationMessage,
+  ModelInvocationResult,
+  ModelInvocationTool,
+  ProviderModelOutcome,
+  ProviderNativeRequest,
+  ProviderRuntimeDescriptor,
+} from "./model-invocation";
 export type {
   ExecuteProviderCallOptions,
   ExecuteProviderManifestCallOptions,

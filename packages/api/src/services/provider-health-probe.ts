@@ -2,12 +2,16 @@ import {
   Phase,
   ProviderAttemptError,
   ProviderExecutionCoordinator,
+  createProviderAdapter,
   createLlmClientFromEnv,
+  executeModelInvocation,
   gameReadyCatalogEntries,
   modelCatalogEntryById,
   type LlmClientConfig,
   type ProviderAttemptOutcome,
   type ProviderAttemptRecord,
+  type LlmProviderRuntime,
+  type ModelInvocation,
   type ProviderProfileId,
 } from "@influence/engine";
 import { randomUUID } from "node:crypto";
@@ -182,12 +186,10 @@ async function runLiveProviderHealthProbe(
   env: NodeJS.ProcessEnv,
   createClient: NonNullable<ProviderHealthProbeDependencies["createClientFromEnv"]>,
 ): Promise<ProviderHealthProbeObservation> {
-  const body = {
-    model: target.modelId,
-    messages: [{ role: "user" as const, content: "Reply with OK." }],
-    ...(target.providerProfileId === "openai"
-      ? { max_completion_tokens: 16 }
-      : { max_tokens: 16 }),
+  const invocation: ModelInvocation = {
+    messages: [{ role: "user", content: "Reply with OK." }],
+    result: { kind: "text" },
+    outputTokenLimit: 16,
   };
   const config = createClient(env, {
     providerProfileId: target.providerProfileId,
@@ -203,9 +205,28 @@ async function runLiveProviderHealthProbe(
     } as const;
     return {
       outcome,
-      evidence: syntheticProbeEvidence(target, lease, body, outcome),
+      evidence: syntheticProbeEvidence(target, lease, invocation, outcome),
     };
   }
+  const catalog = modelCatalogEntryById(target.catalogId);
+  if (!catalog) throw new Error(`Provider health probe model ${target.catalogId} is unavailable`);
+  const runtime: LlmProviderRuntime = {
+    adapter: createProviderAdapter(target.providerProfileId, config.client),
+    catalogId: target.catalogId,
+    providerProfileId: target.providerProfileId,
+    modelId: target.modelId,
+    modelCapabilities: catalog.capabilities,
+    reasoningPolicy: catalog.defaultReasoningPolicy,
+    toolChoiceMode: catalog.preferredToolChoiceMode ?? config.toolChoiceMode,
+    ...(config.openAIReasoningSummary && {
+      openAIReasoningSummary: config.openAIReasoningSummary,
+    }),
+    ...(config.openAIServiceTier && {
+      openAIServiceTier: config.openAIServiceTier,
+    }),
+    position: 0,
+    role: "primary",
+  };
   let evidence: ProviderAttemptRecord | undefined;
   const call = new ProviderExecutionCoordinator({
     hooks: {
@@ -219,18 +240,12 @@ async function runLiveProviderHealthProbe(
     logicalCallOrdinal: lease.revision,
   });
   try {
-    await call.execute({
-      preparedRequest: {
-        requestShape: "chat_completions",
-        providerProfileId: target.providerProfileId,
-        catalogId: target.catalogId,
-        model: target.modelId,
-        body,
-      },
+    await executeModelInvocation({
+      call,
+      runtimes: [runtime],
+      invocation,
       maxAttempts: 1,
-      dispatch: async ({ requestOptions }) =>
-        config.client.chat.completions.create(body, requestOptions),
-      validate: (response) => response.choices[0]?.message?.content
+      validate: (response) => response.text?.trim()
         ? { status: "usable" as const, value: response }
         : {
             status: "unusable" as const,
@@ -257,16 +272,16 @@ function normalizeProbeObservation(
 function syntheticProbeEvidence(
   target: ProviderHealthProbeTarget,
   lease: ProviderHealthProbeLease,
-  body: Record<string, unknown>,
+  invocation: ModelInvocation,
   outcome: Exclude<ProviderAttemptOutcome, { kind: "usable" }>,
 ): ProviderAttemptRecord {
   const timestamp = new Date().toISOString();
   const preparedRequest = {
-    requestShape: "chat_completions" as const,
+    transport: `${target.providerProfileId}.configuration`,
     providerProfileId: target.providerProfileId,
     catalogId: target.catalogId,
     model: target.modelId,
-    body,
+    body: invocation,
   };
   return {
     coordinate: {

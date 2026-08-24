@@ -69,7 +69,8 @@ export function pairProviderLogicalCallOrdinals(
 }
 
 export interface ProviderPreparedRequest {
-  requestShape: "chat_completions" | "responses";
+  /** Bounded provider-owned transport identifier (for example openai.responses). */
+  transport: string;
   providerProfileId: ProviderProfileId;
   catalogId?: string;
   model: string;
@@ -80,7 +81,7 @@ export interface ProviderPreparedRequest {
 }
 
 export interface SanitizedProviderRequestEvidence {
-  requestShape: ProviderPreparedRequest["requestShape"];
+  transport: string;
   providerProfileId: ProviderProfileId;
   catalogId?: string;
   model: string;
@@ -220,12 +221,20 @@ export interface ExecuteProviderCallOptions<TResponse, TValue> {
     requestOptions: ProviderDispatchRequestOptions;
   }): Promise<TResponse>;
   validate(response: TResponse): ProviderCandidateValidation<TValue>;
+  classifyError?(
+    error: unknown,
+    signal?: AbortSignal,
+  ): ProviderAttemptFailureOutcome;
+  accounting?(response: TResponse): ProviderAttemptAccountingFacts | undefined;
+  requestId?(response: TResponse): string | undefined;
+  nativeResponse?(response: TResponse): unknown;
   onRetry?(record: ProviderAttemptRecord): Promise<void> | void;
 }
 
 export interface ProviderManifestCallEntry<TResponse, TValue>
   extends ExecuteProviderCallOptions<TResponse, TValue> {
   catalogId: string;
+  compatibility?: () => { compatible: boolean; reason?: string };
 }
 
 export interface ExecuteProviderManifestCallOptions<TResponse, TValue> {
@@ -342,6 +351,20 @@ export class ProviderCircuitOpenError extends ProviderUnavailableError {
   }
 }
 
+/** A manifest entry cannot satisfy this invocation and is skipped without I/O. */
+export class ProviderEntryIncompatibleError extends ProviderUnavailableError {
+  constructor(
+    readonly catalogId: string,
+    readonly incompatibility: string,
+  ) {
+    super(
+      `Provider entry ${catalogId} is incompatible: ${incompatibility}`,
+      "configuration",
+    );
+    this.name = "ProviderEntryIncompatibleError";
+  }
+}
+
 export class ProviderExecutionCoordinator {
   private readonly hooks?: ProviderExecutionHooks;
   private readonly wait: (
@@ -416,8 +439,17 @@ export class ProviderLogicalCallExecution {
     let lastAttemptError: ProviderAttemptError | undefined;
     let lastBudgetError: ProviderCallBudgetExhaustedError | undefined;
     let lastCircuitError: ProviderCircuitOpenError | undefined;
+    let lastCompatibilityError: ProviderEntryIncompatibleError | undefined;
     for (const [manifestPosition, entry] of options.entries.entries()) {
       options.cancellationSignal?.throwIfAborted();
+      const compatibility = entry.compatibility?.();
+      if (compatibility && !compatibility.compatible) {
+        lastCompatibilityError = new ProviderEntryIncompatibleError(
+          entry.catalogId,
+          compatibility.reason ?? "unsupported invocation",
+        );
+        continue;
+      }
       try {
         const value = await this.executeWithoutAcceptedReplay({
           ...entry,
@@ -458,6 +490,7 @@ export class ProviderLogicalCallExecution {
     // manifest always has an attempt error. Preserve that gameplay-facing
     // typed outcome rather than replacing it with a later budget skip.
     throw lastAttemptError ?? lastCircuitError ?? lastBudgetError ??
+      lastCompatibilityError ??
       new Error("Provider manifest exhausted without an attempt");
   }
 
@@ -545,15 +578,17 @@ export class ProviderLogicalCallExecution {
       } catch (error) {
         if (error instanceof ProviderAttemptError) throw error;
         const completedAtMs = this.now();
-        const outcome = classifyProviderError(
+        const outcome = options.classifyError?.(
           error,
           options.cancellationSignal,
-        );
+        ) ?? classifyProviderError(error, options.cancellationSignal);
         const rawResponse =
           transportCapture.response ??
           rawResponseFromError(error, transportCapture.credentialValues);
         const accounting = extractProviderAttemptAccounting(
           rawResponse.body,
+          asRecord(error).accounting,
+          asRecord(error).nativeResponse,
           error,
         );
         const requestId = sanitizeProviderRequestId(
@@ -586,17 +621,19 @@ export class ProviderLogicalCallExecution {
         const validation = options.validate(dispatchResult.response);
         const completedAtMs = this.now();
         const requestId = sanitizeProviderRequestId(
-          requestIdFromResponse(
-            dispatchResult.response,
-            transportCapture.response,
-          ),
+          options.requestId?.(dispatchResult.response) ??
+            requestIdFromResponse(
+              dispatchResult.response,
+              transportCapture.response,
+            ),
           transportCapture.credentialValues,
         );
         if (validation.status === "usable") {
-          const accounting = extractProviderAttemptAccounting(
-            dispatchResult.response,
-            transportCapture.response?.body,
-          );
+          const accounting = options.accounting?.(dispatchResult.response) ??
+            extractProviderAttemptAccounting(
+              dispatchResult.response,
+              transportCapture.response?.body,
+            );
           capturedRecord = {
             ...intent,
             ...(transportCapture.request && {
@@ -616,10 +653,11 @@ export class ProviderLogicalCallExecution {
             retryable:
               validation.retryable ?? defaultRetryable(validation.kind),
           };
-          const accounting = extractProviderAttemptAccounting(
-            dispatchResult.response,
-            transportCapture.response?.body,
-          );
+          const accounting = options.accounting?.(dispatchResult.response) ??
+            extractProviderAttemptAccounting(
+              dispatchResult.response,
+              transportCapture.response?.body,
+            );
           capturedRecord = {
             ...intent,
             ...(transportCapture.request && {
@@ -632,7 +670,8 @@ export class ProviderLogicalCallExecution {
             ...(requestId && { requestId }),
             rawResponse: transportCapture.response ?? {
               body: sanitizeProviderEvidence(
-                dispatchResult.response,
+                options.nativeResponse?.(dispatchResult.response) ??
+                  dispatchResult.response,
                 transportCapture.credentialValues,
               ),
             },
@@ -802,6 +841,17 @@ function extractProviderAttemptAccounting(
 ): ProviderAttemptAccountingFacts | undefined {
   for (const candidate of candidates) {
     const record = asRecord(candidate);
+    const normalizedAccountingUsage = asRecord(record.usage);
+    if (
+      Object.keys(normalizedAccountingUsage).length > 0 &&
+      (
+        "promptTokens" in normalizedAccountingUsage ||
+        "completionTokens" in normalizedAccountingUsage ||
+        "totalTokens" in normalizedAccountingUsage
+      )
+    ) {
+      return candidate as ProviderAttemptAccountingFacts;
+    }
     const body = asRecord(record.body);
     const response = Object.keys(body).length > 0 ? body : record;
     const usage = asRecord(response.usage);
@@ -943,9 +993,10 @@ export function createProviderEvidenceFetch(
       ]);
       capture.credentialValues = actualCredentialValues;
       capture.request = {
-        requestShape: new URL(outgoing.url).pathname.endsWith("/responses")
-          ? "responses"
-          : "chat_completions",
+        transport: capture.request?.transport ??
+          (new URL(outgoing.url).pathname.endsWith("/responses")
+            ? "openai.responses"
+            : "openai-compatible.chat_completions"),
         providerProfileId:
           capture.request?.providerProfileId ?? "custom-openai-compatible",
         ...(capture.request?.catalogId && { catalogId: capture.request.catalogId }),
@@ -1042,7 +1093,7 @@ function sanitizePreparedRequest(
       )
     : undefined;
   return {
-    requestShape: request.requestShape,
+    transport: request.transport,
     providerProfileId: request.providerProfileId,
     ...(request.catalogId && { catalogId: request.catalogId }),
     model: request.model,
@@ -1104,7 +1155,7 @@ function sanitizeUrl(
   return url.toString();
 }
 
-function classifyProviderError(
+export function classifyProviderError(
   error: unknown,
   cancellationSignal?: AbortSignal,
 ): ProviderAttemptFailureOutcome {
@@ -1238,23 +1289,57 @@ function rawResponseFromError(
 ): SanitizedProviderResponseEvidence {
   const record = asRecord(error);
   const response = asRecord(record.response);
+  const nativeResponse = record.nativeResponse;
   const status = readNumber(record.status) ?? readNumber(response.status);
   const headers = headersFromUnknown(
     record.headers ?? response.headers,
     credentialValues,
   );
-  const rawBody = record.body ??
+  const rawBody = nativeResponse ?? record.body ??
     record.error ??
     response.body ?? {
       name: readString(record.name),
       message: readString(record.message) || String(error),
       ...(readString(record.code) && { code: readString(record.code) }),
     };
+  let sanitizedBody: unknown;
+  try {
+    sanitizedBody = sanitizeProviderEvidence(rawBody, credentialValues);
+  } catch {
+    sanitizedBody = safeProviderEvidenceSnapshot(rawBody, credentialValues);
+  }
   return {
     ...(status !== undefined && { status }),
     ...(headers && Object.keys(headers).length > 0 && { headers }),
-    body: sanitizeProviderEvidence(rawBody, credentialValues),
+    body: sanitizedBody,
   };
+}
+
+function safeProviderEvidenceSnapshot(
+  value: unknown,
+  credentialValues: readonly string[],
+): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return sanitizeProviderEvidence(value, credentialValues);
+  }
+  const descriptors = Object.getOwnPropertyDescriptors(value);
+  const safe: Record<string, unknown> = {};
+  for (const [key, descriptor] of Object.entries(descriptors)) {
+    if (isCredentialField(key)) continue;
+    if (!("value" in descriptor)) {
+      safe[key] = "[Unavailable during native response decoding]";
+      continue;
+    }
+    try {
+      safe[key] = sanitizeProviderEvidence(
+        descriptor.value,
+        credentialValues,
+      );
+    } catch {
+      safe[key] = "[Unavailable during native response decoding]";
+    }
+  }
+  return safe;
 }
 
 function headersFromUnknown(

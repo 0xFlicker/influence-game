@@ -548,6 +548,8 @@ export interface PrivateDecisionTrace {
   };
   request?: unknown;
   response: {
+    /** Exact provider-native transport used for this accepted response. */
+    transport?: string;
     raw: unknown;
     finishReason?: string | null;
     content?: string | null;

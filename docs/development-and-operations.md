@@ -311,7 +311,8 @@ packages/
       game-state.ts     # Mutable game state + phase transitions
       phase-machine.ts  # xstate v5 FSM for round cycle
       game-runner.ts    # Orchestrates agents through each phase
-      agent.ts          # LLM-backed player (Chat Completions locally, Responses summaries for hosted OpenAI)
+      agent.ts          # Provider-neutral LLM-backed player
+      provider-adapters.ts # Native OpenAI Responses and Katana/local Chat transports
       simulate.ts       # CLI batch simulation runner
       __tests__/        # Unit + integration tests
 

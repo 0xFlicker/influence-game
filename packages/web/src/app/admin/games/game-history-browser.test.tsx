@@ -101,6 +101,7 @@ describe("admin provider failure history", () => {
     await waitFor(() => expect(mounted.getByRole("dialog", { name: "Provider failures" })).not.toBeNull());
     expect(mounted.getByRole("button", { name: "Close" }) === document.activeElement).toBeTrue();
     await waitFor(() => expect(mounted.container.textContent).toContain("invalid_prompt"));
+    expect(mounted.container.textContent).toContain("openai.responses");
     expect(mounted.container.textContent).toContain("2 rate-limit responses");
     expect(mounted.container.textContent).toContain("recovered");
     expect(mounted.container.textContent).toContain("terminal");
@@ -242,6 +243,7 @@ function detailFixture() {
         phase: "VOTE",
         round: 2,
         providerProfileId: "openai",
+        transport: "openai.responses",
         modelName: "gpt-5.6-luna",
         attemptOrdinal: 1,
         outcomeKind: "refusal",

@@ -12,6 +12,10 @@ const UPGRADE_MIGRATION_PATH = new URL(
   "../../drizzle/0061_provider_resilience_runtime_upgrade.sql",
   import.meta.url,
 );
+const NATIVE_TRANSPORT_MIGRATION_PATH = new URL(
+  "../../drizzle/0062_provider_native_transports.sql",
+  import.meta.url,
+);
 
 describe("provider call journal migration", () => {
   test("applies over populated pre-U2 game ownership data", async () => {
@@ -82,10 +86,26 @@ describe("provider call journal migration", () => {
         INSERT INTO "${testSchema}"."provider_logical_calls" (
           "id", "game_id", "actor_name", "actor_role", "action", "logical_call_ordinal"
         ) VALUES ('logical-upgrade', 'game-1', 'Atlas', 'player', 'vote', 1);
+        INSERT INTO "${testSchema}"."provider_call_attempts" (
+          "id", "logical_call_id", "game_id", "owner_epoch", "attempt_ordinal",
+          "transport_attempt_id", "reservation_hash", "status", "request_shape",
+          "provider_profile_id", "model_name", "started_at", "evidence_state"
+        ) VALUES (
+          'attempt-upgrade', 'logical-upgrade', 'game-1', 'owner-1', 1,
+          'transport-upgrade', 'reservation-upgrade', 'reserved', 'responses',
+          'openai', 'gpt-test', '2026-08-23T00:00:00.000Z', 'not_required'
+        );
       `),
       );
 
       await applyScopedMigration(db, testSchema, UPGRADE_MIGRATION_PATH);
+      await applyScopedMigration(db, testSchema, NATIVE_TRANSPORT_MIGRATION_PATH);
+
+      const transports = await db.execute<{ transport: string }>(sql.raw(`
+        SELECT "request_shape" AS "transport"
+        FROM "${testSchema}"."provider_call_attempts"
+      `));
+      expect(transports[0]).toEqual({ transport: "openai.responses" });
 
       const columns = await db.execute<{
         table_name: string;

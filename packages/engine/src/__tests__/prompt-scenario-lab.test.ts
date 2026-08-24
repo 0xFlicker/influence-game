@@ -68,7 +68,7 @@ describe("prompt scenario lab", () => {
     expect(report.renderedPrompt.characters).toBeGreaterThan(0);
     expect(report.renderedPrompt.rendererOverheadCharacters).toBeGreaterThan(0);
     expect(report.recallPlanReceipt.eventBoundary.authorizedCandidateCount).toBe(1);
-    expect(report.requestFingerprint?.requestShape).toBe("chat_completions");
+    expect(report.requestFingerprint?.requestShape).toBe("openai.responses");
     expect(report.scenarioKey).toMatch(/^[a-f0-9]{24}$/);
     expect(serialized).not.toContain("atlas-id");
     expect(serialized).not.toContain("Atlas");
@@ -160,8 +160,7 @@ describe("prompt scenario lab", () => {
     expect(privatePack.canonicalEvents.filter((event) => event.type === "player.eliminated")).toHaveLength(2);
     expect(privatePack.providerRequests).toHaveLength(4);
     for (const request of privatePack.providerRequests) {
-      const messages = request.messages as Array<{ role?: unknown; content?: unknown }>;
-      const systemPrompt = messages.find((message) => message.role === "system")?.content;
+      const systemPrompt = request.instructions;
       expect(systemPrompt).toBeString();
       expect(systemPrompt).toContain("## Strategy Carry-Forward");
       expect(systemPrompt).toContain("material, actionable change");
@@ -169,25 +168,23 @@ describe("prompt scenario lab", () => {
     }
 
     for (const request of privatePack.providerRequests.slice(1, 3)) {
-      const responseFormat = request.response_format as {
-        json_schema?: {
+      const text = request.text as {
+        format?: {
           schema?: {
             properties?: Record<string, { description?: unknown }>;
           };
         };
       };
-      const description = responseFormat.json_schema?.schema?.properties?.strategyDelta?.description;
+      const description = text.format?.schema?.properties?.strategyDelta?.description;
       expect(description).toContain("material, actionable change");
       expect(description).toContain("Do not summarize the action");
     }
     const voteTools = privatePack.providerRequests[3]?.tools as Array<{
-      function?: {
-        parameters?: {
-          properties?: Record<string, { description?: unknown }>;
-        };
+      parameters?: {
+        properties?: Record<string, { description?: unknown }>;
       };
     }>;
-    const voteDescription = voteTools[0]?.function?.parameters?.properties?.strategyDelta?.description;
+    const voteDescription = voteTools[0]?.parameters?.properties?.strategyDelta?.description;
     expect(voteDescription).toContain("material, actionable change");
     expect(voteDescription).toContain("Do not summarize the action");
     expect(privatePack.decisionTraces.map((trace) => trace.action)).toEqual(["diary", "diary", "lobby", "vote"]);

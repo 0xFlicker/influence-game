@@ -34,6 +34,7 @@ import {
   ProviderCircuitOpenError,
   type ProviderAttemptRecord,
 } from "../provider-execution";
+import { createProviderAdapter } from "../provider-adapters";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -71,6 +72,46 @@ function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
   });
 }
 
+function recordResponsesRequest(
+  requests: Array<Record<string, unknown>>,
+  params: Record<string, unknown>,
+): void {
+  const nativeTools = Array.isArray(params.tools)
+    ? params.tools as Array<Record<string, unknown>>
+    : [];
+  const nativeChoice = params.tool_choice as Record<string, unknown> | undefined;
+  requests.push({
+    ...params,
+    nativeRequest: params,
+    // Most tests in this file inspect semantic prompt/tool behavior. Preserve a
+    // stable inspection projection while provider-adapters.test.ts asserts the
+    // exact native Responses wire shape.
+    messages: [
+      ...(typeof params.instructions === "string"
+        ? [{ role: "system", content: params.instructions }]
+        : []),
+      ...(typeof params.input === "string"
+        ? [{ role: "user", content: params.input }]
+        : Array.isArray(params.input) ? params.input : []),
+    ],
+    tools: nativeTools.map((tool) => ({
+      type: "function",
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        strict: tool.strict,
+      },
+    })),
+    ...(nativeChoice?.type === "function" && {
+      tool_choice: {
+        type: "function",
+        function: { name: nativeChoice.name },
+      },
+    }),
+  });
+}
+
 function makeToolOpenAIStub(
   requests: Array<Record<string, unknown>>,
   toolName: string,
@@ -78,6 +119,31 @@ function makeToolOpenAIStub(
   reasoningContent?: string,
 ): OpenAI {
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        recordResponsesRequest(requests, params);
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output: [
+            ...(reasoningContent
+              ? [{
+                  id: `reasoning-${requests.length}`,
+                  type: "reasoning",
+                  summary: [{ type: "summary_text", text: reasoningContent }],
+                }]
+              : []),
+            {
+              type: "function_call",
+              call_id: "call-1",
+              name: toolName,
+              arguments: JSON.stringify(args),
+            },
+          ],
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
@@ -115,6 +181,33 @@ function makeToolSequenceOpenAIStub(
   responses: Array<{ toolName: string; args: Record<string, unknown>; reasoningContent?: string }>,
 ): OpenAI {
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        recordResponsesRequest(requests, params);
+        const response = responses[Math.min(requests.length - 1, responses.length - 1)];
+        if (!response) throw new Error("No tool response configured");
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output: [
+            ...(response.reasoningContent
+              ? [{
+                  id: `reasoning-${requests.length}`,
+                  type: "reasoning",
+                  summary: [{ type: "summary_text", text: response.reasoningContent }],
+                }]
+              : []),
+            {
+              type: "function_call",
+              call_id: `call-${requests.length}`,
+              name: response.toolName,
+              arguments: JSON.stringify(response.args),
+            },
+          ],
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
@@ -161,6 +254,36 @@ function makeTextSequenceOpenAIStub(
   contents: Array<string | { content: string; reasoningContent?: string }>,
 ): OpenAI {
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        recordResponsesRequest(requests, params);
+        const entry = contents[Math.min(requests.length - 1, contents.length - 1)] ?? "";
+        const content = typeof entry === "string" ? entry : entry.content;
+        const reasoningContent = typeof entry === "string" ? undefined : entry.reasoningContent;
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output_text: content,
+          output: [
+            ...(reasoningContent
+              ? [{
+                  id: `reasoning-${requests.length}`,
+                  type: "reasoning",
+                  summary: [{ type: "summary_text", text: reasoningContent }],
+                }]
+              : []),
+            {
+              id: `message-${requests.length}`,
+              type: "message",
+              role: "assistant",
+              status: "completed",
+              content: [{ type: "output_text", text: content }],
+            },
+          ],
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
@@ -247,6 +370,32 @@ function makeResponsesOpenAIStub(
 
 function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): OpenAI {
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        recordResponsesRequest(requests, params);
+        const content = requests.length === 1
+          ? ""
+          : JSON.stringify({
+              thinking: "Retry with enough room to choose targets.",
+              empower: "Mira",
+            });
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output_text: content,
+          output: content
+            ? [{
+                id: `message-${requests.length}`,
+                type: "message",
+                role: "assistant",
+                status: "completed",
+                content: [{ type: "output_text", text: content }],
+              }]
+            : [],
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
@@ -287,17 +436,21 @@ function makeRejectingOpenAIStub(
   error = new Error("forced failure"),
   requestOptions?: Array<Record<string, unknown>>,
 ): OpenAI {
+  const reject = async (
+    params: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ) => {
+    requests.push(params);
+    if (requestOptions) requestOptions.push(options ?? {});
+    throw error;
+  };
   return {
+    responses: {
+      create: reject,
+    },
     chat: {
       completions: {
-        create: async (
-          params: Record<string, unknown>,
-          options?: Record<string, unknown>,
-        ) => {
-          requests.push(params);
-          if (requestOptions) requestOptions.push(options ?? {});
-          throw error;
-        },
+        create: reject,
       },
     },
   } as unknown as OpenAI;
@@ -1789,7 +1942,11 @@ describe("InfluenceAgent structured output mode", () => {
       model: { name: "gpt-5-nano" },
       toolName: "cast_votes",
       emittedThinking: "I empower Mira as format chooser.",
-      reasoningContext: "Native hidden reasoning for vote.",
+      providerReasoningSummary: {
+        provider: "openai_responses",
+        mode: "auto",
+        text: "Native hidden reasoning for vote.",
+      },
       strategyCandidate: {
         operation: "delta",
         submittedValue: "Reward Mira and pressure Vera as the next coalition test.",
@@ -1798,17 +1955,16 @@ describe("InfluenceAgent structured output mode", () => {
     expect(trace.prompt.messages).toHaveLength(2);
     expect(trace.prompt.messages[0]).toMatchObject({ role: "system" });
     expect(trace.prompt.messages[1]).toMatchObject({ role: "user" });
-    expect(trace.response.finishReason).toBe("tool_calls");
+    expect(trace.response.finishReason).toBe("completed");
     expect(trace.response.toolCalls?.[0]).toMatchObject({
       id: "call-1",
-      type: "function",
+      type: "function_call",
       name: "cast_votes",
     });
     expect(trace.toolArguments).toMatchObject({
       thinking: "I empower Mira as format chooser.",
       empower: "Mira",
       strategyDelta: "Reward Mira and pressure Vera as the next coalition test.",
-      reasoningContext: "Native hidden reasoning for vote.",
     });
   });
 
@@ -1868,6 +2024,69 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
+  it("keeps Luna tool calls on Responses with configured reasoning", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const luna = modelCatalogEntryById("openai:gpt-5.6-luna");
+    const fallback = modelCatalogEntryById("katana:glm-5-2");
+    if (!luna) throw new Error("Missing OpenAI Luna catalog entry");
+    if (!fallback) throw new Error("Missing GLM catalog entry");
+    const primaryClient = makeOpenAIStub(requests);
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      primaryClient,
+      luna.modelId,
+      undefined,
+      undefined,
+      {
+        providerProfileId: "openai",
+        catalogId: luna.id,
+        modelCapabilities: luna.capabilities,
+        reasoningPolicy: "medium",
+        providerManifest: [
+          {
+            adapter: createProviderAdapter("openai", primaryClient),
+            catalogId: luna.id,
+            providerProfileId: "openai",
+            modelId: luna.modelId,
+            modelCapabilities: luna.capabilities,
+            reasoningPolicy: "medium",
+            toolChoiceMode: "named",
+            openAIReasoningSummary: "auto",
+            position: 0,
+            role: "primary",
+          },
+          {
+            adapter: createProviderAdapter("katana", {} as OpenAI),
+            catalogId: fallback.id,
+            providerProfileId: "katana",
+            modelId: fallback.modelId,
+            modelCapabilities: fallback.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 1,
+            role: "fallback",
+            maxCallsPerGame: 3,
+          },
+        ],
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.tools).toBeArray();
+    expect(requests[0]?.nativeRequest).toMatchObject({
+      model: luna.modelId,
+      store: false,
+      reasoning: { effort: "medium" },
+    });
+    expect(requests[0]?.nativeRequest).not.toHaveProperty("messages");
+    expect(requests[0]?.nativeRequest).not.toHaveProperty("reasoning_effort");
+  });
+
   it("uses OpenAI Responses reasoning summaries for structured decisions when enabled", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const traces: PrivateDecisionTrace[] = [];
@@ -1914,13 +2133,12 @@ describe("InfluenceAgent structured output mode", () => {
       store: false,
       prompt_cache_key: expect.stringMatching(/^influence:[a-f0-9]{24}$/),
       prompt_cache_options: { ttl: "30m" },
-      text: {
-        format: {
-          type: "json_schema",
-          name: "cast_votes_arguments",
-          strict: true,
-        },
-      },
+      tools: [{
+        type: "function",
+        name: "cast_votes",
+        strict: true,
+      }],
+      tool_choice: { type: "function", name: "cast_votes" },
     });
     expect(requests[0]).not.toHaveProperty("prompt_cache_retention");
     expect(traces).toHaveLength(1);
@@ -1960,7 +2178,6 @@ describe("InfluenceAgent structured output mode", () => {
       undefined,
       {
         promptCacheLineage: "opaque-run-arm-repetition",
-        requireOpenAIResponses: true,
         structuredCallMaxAttempts: 1,
         evaluationFailFast: true,
       },
@@ -2093,7 +2310,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      { providerProfileId: "lm-studio", toolChoiceMode: "required" },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -4243,7 +4460,7 @@ describe("InfluenceAgent structured output mode", () => {
       attemptOrdinal: 1,
       attemptId: "attempt-private-evidence",
       preparedRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "katana",
         model: "private-model",
         body: { redacted: true },
@@ -4258,7 +4475,7 @@ describe("InfluenceAgent structured output mode", () => {
       },
       disposition: "exhausted",
       rawRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "katana",
         model: "private-model",
         body: { prompt: rawRequestSentinel },
@@ -4309,7 +4526,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(serializedLogs).not.toContain(rawResponseSentinel);
     expect(loggedError.mock.calls).toEqual([
       [
-        "[Atlas] callLLMWithThinking local failed after 2 attempts:",
+        "[Atlas] callLLMWithThinking failed after 2 attempts:",
         {
           type: "provider_unavailable",
           outcome: "service_error",
@@ -4355,7 +4572,7 @@ describe("InfluenceAgent structured output mode", () => {
 
     expect(loggedError.mock.calls).toEqual([
       [
-        "[Atlas] callLLMWithThinking local failed after 2 attempts:",
+        "[Atlas] callLLMWithThinking failed after 2 attempts:",
         programmingError,
       ],
     ]);
@@ -4409,7 +4626,7 @@ describe("InfluenceAgent structured output mode", () => {
     }
   });
 
-  it("uses plain visible messages with the global message token floor in local mode", async () => {
+  it("uses the provider-neutral visible-message schema with the local token floor", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -4430,7 +4647,10 @@ describe("InfluenceAgent structured output mode", () => {
       message: "Glad to meet everyone. I ask too many questions, but I promise most of them are useful.",
     });
     expect(requests[0]?.max_tokens).toBe(4096);
-    expect(requests[0]?.response_format).toBeUndefined();
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { name: "agent_response", strict: true },
+    });
     // We no longer inject the old "LOCAL MODEL OUTPUT RULE" that forbade thinking.
     // Local models are now allowed to think freely on public messages (Master likes thick thinking).
     const messages = requests[0]?.messages as Array<{ content: string }>;
@@ -4467,7 +4687,10 @@ describe("InfluenceAgent structured output mode", () => {
       message: "I notice who dodges questions, and I remember.",
       reasoningContext: "Atlas wants to sound warm while signaling observation.",
     });
-    expect(requests[0]?.response_format).toBeUndefined();
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { name: "agent_response", strict: true },
+    });
   });
 
   it("retries empty local visible messages with a larger budget", async () => {
@@ -4556,7 +4779,7 @@ describe("InfluenceAgent structured output mode", () => {
         },
         providerManifest: [
           {
-            client: primaryClient,
+            adapter: createProviderAdapter("openai", primaryClient),
             catalogId: primary.id,
             providerProfileId: "openai",
             modelId: primary.modelId,
@@ -4567,7 +4790,7 @@ describe("InfluenceAgent structured output mode", () => {
             role: "primary",
           },
           {
-            client: fallbackClient,
+            adapter: createProviderAdapter("katana", fallbackClient),
             catalogId: fallback.id,
             providerProfileId: "katana",
             modelId: fallback.modelId,

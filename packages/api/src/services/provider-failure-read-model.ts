@@ -40,6 +40,7 @@ export interface ProviderFailureAttemptItem {
   phase: string | null;
   round: number | null;
   providerProfileId: string;
+  transport: string;
   modelName: string;
   attemptOrdinal: number;
   outcomeKind: string;
@@ -122,6 +123,7 @@ type AttemptRow = Pick<
   | "gameId"
   | "attemptOrdinal"
   | "providerProfileId"
+  | "transport"
   | "catalogId"
   | "modelName"
   | "status"
@@ -470,6 +472,7 @@ async function readProviderFailureRows(
       gameId: schema.providerCallAttempts.gameId,
       attemptOrdinal: schema.providerCallAttempts.attemptOrdinal,
       providerProfileId: schema.providerCallAttempts.providerProfileId,
+      transport: schema.providerCallAttempts.transport,
       catalogId: schema.providerCallAttempts.catalogId,
       modelName: schema.providerCallAttempts.modelName,
       status: schema.providerCallAttempts.status,
@@ -566,6 +569,7 @@ function providerFailureAttemptItem(
     phase: call.phase,
     round: call.round,
     providerProfileId: attempt.providerProfileId,
+    transport: attempt.transport,
     modelName: attempt.modelName,
     attemptOrdinal: attempt.attemptOrdinal,
     outcomeKind: attempt.outcomeKind ?? "indeterminate",
@@ -594,6 +598,7 @@ function orphanedProviderFailureAttemptItem(attempt: AttemptRow): ProviderFailur
     phase: null,
     round: null,
     providerProfileId: attempt.providerProfileId,
+    transport: attempt.transport,
     modelName: attempt.modelName,
     attemptOrdinal: attempt.attemptOrdinal,
     outcomeKind: attempt.outcomeKind ?? "indeterminate",

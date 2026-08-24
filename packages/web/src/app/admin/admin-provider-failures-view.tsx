@@ -213,7 +213,7 @@ export function AdminProviderFailuresPanel({
                         <p className="text-sm font-medium text-white">
                           {failure.kind === "rate_limit"
                             ? `${failure.count} rate-limit response${failure.count === 1 ? "" : "s"}`
-                            : `${failure.providerProfileId} · ${failure.modelName}`}
+                            : `${failure.providerProfileId} · ${failure.modelName} · ${failure.transport}`}
                         </p>
                         <p className="mt-1 text-xs text-white/45">
                           {failure.actorName} · {failure.action}

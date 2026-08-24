@@ -20,6 +20,7 @@ import { modelCatalogEntryById } from "../model-catalog";
 import { TokenTracker } from "../token-tracker";
 import { Phase } from "../types";
 import type { ProviderAttemptRecord } from "../provider-execution";
+import { createProviderAdapter, normalizeChatCompletion } from "../provider-adapters";
 
 type StubResponse = {
   content?: string | null;
@@ -53,14 +54,49 @@ function makeHouseSummaryOpenAIStub(
   requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }>,
   responses: HouseStubResponse[],
 ): OpenAI {
+  const nextConfigured = (
+    params: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ): HouseStubResponse => {
+    requests.push({ params, options });
+    const configured = responses[Math.min(requests.length - 1, responses.length - 1)];
+    if (!configured) throw new Error("No response configured");
+    if (configured.error) throw configured.error;
+    return configured;
+  };
   return {
+    responses: {
+      create: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
+        const configured = nextConfigured(params, options);
+        return {
+          id: configured.id ?? `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output: configured.rawToolCalls ?? configured.toolCalls?.map((call) => ({
+            type: "function_call",
+            call_id: call.id,
+            name: call.name,
+            arguments: typeof call.arguments === "string"
+              ? call.arguments
+              : JSON.stringify(call.arguments),
+          })) ?? [],
+          ...(configured.serviceTier && { service_tier: configured.serviceTier }),
+          ...(configured.usage && {
+            usage: {
+              input_tokens: configured.usage.promptTokens,
+              output_tokens: configured.usage.completionTokens,
+              total_tokens: configured.usage.promptTokens + configured.usage.completionTokens,
+              input_tokens_details: { cached_tokens: configured.usage.cachedTokens ?? 0 },
+              output_tokens_details: { reasoning_tokens: configured.usage.reasoningTokens ?? 0 },
+            },
+          }),
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
-          requests.push({ params, options });
-          const configured = responses[Math.min(requests.length - 1, responses.length - 1)];
-          if (!configured) throw new Error("No response configured");
-          if (configured.error) throw configured.error;
+          const configured = nextConfigured(params, options);
           return {
             id: configured.id ?? `response-${requests.length}`,
             choices: [{
@@ -238,14 +274,41 @@ function makeOpenAIStub(
   requests: Array<Record<string, unknown>>,
   responses: StubResponse[],
 ): OpenAI {
+  const nextResponse = (params: Record<string, unknown>): StubResponse => {
+    requests.push(params);
+    const response = responses[Math.min(requests.length - 1, responses.length - 1)];
+    if (!response) throw new Error("No response configured");
+    if (response.error) throw response.error;
+    return response;
+  };
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        const response = nextResponse(params);
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output_text: response.content ?? "",
+          output: [{
+            id: `message-${requests.length}`,
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: response.content ?? "" }],
+          }],
+          usage: {
+            input_tokens: 10,
+            output_tokens: 20,
+            total_tokens: 30,
+          },
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
-          requests.push(params);
-          const response = responses[Math.min(requests.length - 1, responses.length - 1)];
-          if (!response) throw new Error("No response configured");
-          if (response.error) throw response.error;
+          const response = nextResponse(params);
           return {
             choices: [
               {
@@ -841,7 +904,7 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
       "test-model",
       { providerExecutionHooks: { onTerminal: (record) => { emptyAttempts.push(record); } } },
     );
-    await expect(emptyHouse.generateQuestion(makeDiaryContext())).rejects.toThrow("empty_house_text");
+    await expect(emptyHouse.generateQuestion(makeDiaryContext())).rejects.toThrow("missing_assistant_message");
     expect(emptyAttempts.map((record) => record.outcome.kind)).toEqual([
       "empty_output",
       "empty_output",
@@ -1010,7 +1073,7 @@ describe("LLMHouseInterviewer sealed provider manifest", () => {
         },
         providerManifest: [
           {
-            client: primaryClient,
+            adapter: createProviderAdapter("openai", primaryClient),
             catalogId: primary.id,
             providerProfileId: "openai",
             modelId: primary.modelId,
@@ -1021,7 +1084,7 @@ describe("LLMHouseInterviewer sealed provider manifest", () => {
             role: "primary",
           },
           {
-            client: fallbackClient,
+            adapter: createProviderAdapter("katana", fallbackClient),
             catalogId: fallback.id,
             providerProfileId: "katana",
             modelId: fallback.modelId,
@@ -1048,6 +1111,63 @@ describe("LLMHouseInterviewer sealed provider manifest", () => {
 });
 
 describe("LLMHouseInterviewer selective House summary loop", () => {
+  it("keeps Luna House tool calls on Responses with native reasoning", async () => {
+    const requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
+    const luna = modelCatalogEntryById("openai:gpt-5.6-luna");
+    const fallback = modelCatalogEntryById("katana:glm-5-2");
+    if (!luna) throw new Error("Missing OpenAI Luna catalog entry");
+    if (!fallback) throw new Error("Missing GLM catalog entry");
+    const primaryClient = makeHouseSummaryOpenAIStub(requests, [{}]);
+    const house = new LLMHouseInterviewer(
+      primaryClient,
+      luna.modelId,
+      {
+        providerProfileId: "openai",
+        catalogId: luna.id,
+        modelCapabilities: luna.capabilities,
+        reasoningPolicy: "medium",
+        providerManifest: [
+          {
+            adapter: createProviderAdapter("openai", primaryClient),
+            catalogId: luna.id,
+            providerProfileId: "openai",
+            modelId: luna.modelId,
+            modelCapabilities: luna.capabilities,
+            reasoningPolicy: "medium",
+            toolChoiceMode: "named",
+            openAIReasoningSummary: "auto",
+            position: 0,
+            role: "primary",
+          },
+          {
+            adapter: createProviderAdapter("katana", {} as OpenAI),
+            catalogId: fallback.id,
+            providerProfileId: "katana",
+            modelId: fallback.modelId,
+            modelCapabilities: fallback.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 1,
+            role: "fallback",
+            maxCallsPerGame: 3,
+          },
+        ],
+      },
+    );
+
+    await house.generateHouseSummary(makeHouseSummaryContext());
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.params.tools).toBeArray();
+    expect(requests[0]?.params).toMatchObject({
+      model: luna.modelId,
+      store: false,
+      reasoning: { effort: "medium" },
+    });
+    expect(requests[0]?.params).not.toHaveProperty("messages");
+    expect(requests[0]?.params).not.toHaveProperty("reasoning_effort");
+  });
+
   it("journals empty, malformed, and wrong-tool summary responses through the shared coordinator", async () => {
     const cases: Array<{
       response: HouseStubResponse;
@@ -1095,7 +1215,7 @@ describe("LLMHouseInterviewer selective House summary loop", () => {
   });
 
   it("uses one strict provider-usage parser for runtime and evaluation accounting", () => {
-    const parsed = LLMHouseInterviewer.providerUsage({
+    const parsed = LLMHouseInterviewer.providerUsage(normalizeChatCompletion({
       id: "response-alternate-usage",
       service_tier: "future-tier",
       choices: [],
@@ -1106,7 +1226,7 @@ describe("LLMHouseInterviewer selective House summary loop", () => {
         input_tokens_details: { cached_tokens: 30, cache_write_tokens: 8 },
         output_tokens_details: { reasoning_tokens: 4 },
       },
-    } as unknown as ChatCompletion, "call-alternate-usage");
+    } as unknown as Parameters<typeof normalizeChatCompletion>[0], "openai.chat_completions"), "call-alternate-usage");
 
     expect(parsed).toMatchObject({
       callId: "call-alternate-usage",
@@ -1122,7 +1242,7 @@ describe("LLMHouseInterviewer selective House summary loop", () => {
   });
 
   it("preserves every unreported provider-usage metric as unknown", () => {
-    const parsed = LLMHouseInterviewer.providerUsage({
+    const parsed = LLMHouseInterviewer.providerUsage(normalizeChatCompletion({
       id: "response-partial-usage",
       service_tier: "flex",
       choices: [],
@@ -1130,7 +1250,7 @@ describe("LLMHouseInterviewer selective House summary loop", () => {
         prompt_tokens: 90,
         completion_tokens: 14,
       },
-    } as unknown as ChatCompletion, "call-partial-usage");
+    } as unknown as Parameters<typeof normalizeChatCompletion>[0], "openai.chat_completions"), "call-partial-usage");
 
     expect(parsed).toEqual({
       callId: "call-partial-usage",

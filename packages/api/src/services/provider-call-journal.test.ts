@@ -99,7 +99,7 @@ function makeIntent(
     attemptOrdinal,
     attemptId: `transport-${gameId}-${attemptOrdinal}`,
     preparedRequest: {
-      requestShape: "chat_completions",
+      transport: "openai.chat_completions",
       providerProfileId: "katana",
       catalogId: "katana:glm-5-2",
       model: "glm-5-2",
@@ -483,7 +483,7 @@ describe("provider call journal", () => {
       entries: [{
         catalogId: "katana:glm-5-2",
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "openai.chat_completions",
           providerProfileId: "katana",
           catalogId: "katana:glm-5-2",
           model: "glm-5-2",
@@ -547,7 +547,7 @@ describe("provider call journal", () => {
       entries: [{
         catalogId: "katana:glm-5-2",
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "openai.chat_completions",
           providerProfileId: "katana",
           catalogId: "katana:glm-5-2",
           model: "glm-5-2",
@@ -1372,7 +1372,7 @@ describe("provider call journal", () => {
       })
       .execute({
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "openai.chat_completions",
           providerProfileId: "openai",
           model: "gpt-test",
           body: { model: "gpt-test", apiKey: secret },

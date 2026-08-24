@@ -76,6 +76,7 @@ describe("provider failure read model", () => {
     ]);
     expect(detail.failures[0]).toMatchObject({
       kind: "attempt",
+      transport: "openai.responses",
       evidence: { state: "available", manifestId: "manifest-refusal" },
     });
     expect(detail.failures[3]).toMatchObject({
@@ -257,6 +258,7 @@ function attempt(overrides: Record<string, unknown> = {}) {
     gameId: "game-1",
     attemptOrdinal: 1,
     providerProfileId: "openai",
+    transport: "openai.responses",
     catalogId: "openai:gpt-5.6-luna",
     modelName: "gpt-5.6-luna",
     status: "terminal",

@@ -30,6 +30,7 @@ import {
 } from "../house-summary-frontier";
 import { LLMHouseInterviewer, TemplateHouseInterviewer } from "../house-interviewer";
 import { createLlmClientFromEnv, NO_FLEX_TRANSPORT_RETRY_HEADER } from "../llm-client";
+import { normalizeChatCompletion } from "../provider-adapters";
 import { TokenTracker } from "../token-tracker";
 import type { GameConfig, UUID } from "../types";
 import { Phase } from "../types";
@@ -1041,7 +1042,10 @@ async function main(): Promise<void> {
   }
 
   const baselineUsage = baselineResponses.map((response) => (
-    LLMHouseInterviewer.providerUsage(response, randomUUID())
+    LLMHouseInterviewer.providerUsage(
+      normalizeChatCompletion(response, "openai.chat_completions"),
+      randomUUID(),
+    )
   ));
   const attempts: CandidateAttempt[] = [];
   let candidateReceipts: HouseSummaryPhaseReceipt[] = [];

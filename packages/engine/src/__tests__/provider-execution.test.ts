@@ -45,7 +45,7 @@ describe("ProviderExecutionCoordinator", () => {
       entries: [{
         catalogId: "katana:glm-5-2",
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "chat_completions",
           providerProfileId: "katana",
           catalogId: "katana:glm-5-2",
           model: "glm-5-2",
@@ -82,7 +82,7 @@ describe("ProviderExecutionCoordinator", () => {
     ) => ({
       catalogId,
       preparedRequest: {
-        requestShape: "chat_completions" as const,
+        transport: "chat_completions" as const,
         providerProfileId: catalogId.startsWith("openai:")
           ? "openai" as const
           : "katana" as const,
@@ -149,7 +149,7 @@ describe("ProviderExecutionCoordinator", () => {
     const makeEntry = (catalogId: string, usable: boolean) => ({
       catalogId,
       preparedRequest: {
-        requestShape: "chat_completions" as const,
+        transport: "chat_completions" as const,
         providerProfileId: catalogId.startsWith("openai:")
           ? "openai" as const
           : "katana" as const,
@@ -202,7 +202,7 @@ describe("ProviderExecutionCoordinator", () => {
     const entry = (catalogId: string) => ({
       catalogId,
       preparedRequest: {
-        requestShape: "chat_completions" as const,
+        transport: "chat_completions" as const,
         providerProfileId: catalogId.startsWith("openai:")
           ? "openai" as const
           : "katana" as const,
@@ -247,7 +247,7 @@ describe("ProviderExecutionCoordinator", () => {
     const entry = (catalogId: string, usable: boolean) => ({
       catalogId,
       preparedRequest: {
-        requestShape: "chat_completions" as const,
+        transport: "chat_completions" as const,
         providerProfileId: catalogId.startsWith("openai:")
           ? "openai" as const
           : "katana" as const,
@@ -299,7 +299,7 @@ describe("ProviderExecutionCoordinator", () => {
 
     const value = await call.execute({
       preparedRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "openai",
         model: "gpt-test",
         body: {
@@ -350,7 +350,7 @@ describe("ProviderExecutionCoordinator", () => {
         {
           catalogId: "openai:primary",
           preparedRequest: {
-            requestShape: "chat_completions",
+            transport: "chat_completions",
             providerProfileId: "openai",
             catalogId: "openai:primary",
             model: "primary",
@@ -368,7 +368,7 @@ describe("ProviderExecutionCoordinator", () => {
         {
           catalogId: "katana:fallback",
           preparedRequest: {
-            requestShape: "chat_completions",
+            transport: "chat_completions",
             providerProfileId: "katana",
             catalogId: "katana:fallback",
             model: "fallback",
@@ -407,7 +407,7 @@ describe("ProviderExecutionCoordinator", () => {
       preparedRequest: (attemptOrdinal) => {
         preparedOrdinals.push(attemptOrdinal);
         return {
-          requestShape: "chat_completions",
+          transport: "chat_completions",
           providerProfileId: "openai",
           model: "gpt-test",
           body: { model: "gpt-test", attemptOrdinal },
@@ -442,7 +442,7 @@ describe("ProviderExecutionCoordinator", () => {
       .startCall(coordinate)
       .execute({
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "chat_completions",
           providerProfileId: "katana",
           catalogId: "katana:glm-5-2",
           model: "glm-5-2",
@@ -504,7 +504,7 @@ describe("ProviderExecutionCoordinator", () => {
 
     await expect(call.execute({
       preparedRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "openai",
         model: "gpt-test",
         body: { model: "gpt-test" },
@@ -544,7 +544,7 @@ describe("ProviderExecutionCoordinator", () => {
     await expect(
       call.execute({
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "chat_completions",
           providerProfileId: "openai",
           model: "gpt-test",
           body: { model: "gpt-test" },
@@ -569,7 +569,7 @@ describe("ProviderExecutionCoordinator", () => {
       hooks: { onTerminal: (record) => { records.push(record); } },
     }).startCall(coordinate).execute({
       preparedRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "openai",
         model: "gpt-test",
         body: { model: "gpt-test" },
@@ -613,7 +613,7 @@ describe("ProviderExecutionCoordinator", () => {
       await expect(
         call.execute({
           preparedRequest: {
-            requestShape: "chat_completions",
+            transport: "chat_completions",
             providerProfileId: "openai",
             model: "gpt-test",
             body: { model: "gpt-test" },
@@ -660,7 +660,7 @@ describe("ProviderExecutionCoordinator", () => {
     await expect(
       call.execute({
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "chat_completions",
           providerProfileId: "openai",
           model: "gpt-test",
           body: {
@@ -713,7 +713,7 @@ describe("ProviderExecutionCoordinator", () => {
 
     await expect(call.execute({
       preparedRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "openai",
         model: "gpt-test",
         body: { model: "gpt-test" },
@@ -763,7 +763,7 @@ describe("ProviderExecutionCoordinator", () => {
 
     await expect(call.execute({
       preparedRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "openai",
         model: "gpt-test",
         body: { model: "gpt-test" },
@@ -836,7 +836,7 @@ describe("ProviderExecutionCoordinator", () => {
     await expect(
       call.execute({
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "chat_completions",
           providerProfileId: "openai",
           model: "gpt-test",
           body: {
@@ -880,7 +880,7 @@ describe("ProviderExecutionCoordinator", () => {
     expect(records[0]).toMatchObject({
       requestId: "req-http",
       preparedRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "openai",
         model: "gpt-test",
         body: {
@@ -926,7 +926,7 @@ describe("ProviderExecutionCoordinator", () => {
     await expect(
       call.execute({
         preparedRequest: {
-          requestShape: "responses",
+          transport: "responses",
           providerProfileId: "openai",
           model: "gpt-test",
           body: { model: "gpt-test" },
@@ -957,7 +957,7 @@ describe("ProviderExecutionCoordinator", () => {
     await expect(
       call.execute({
         preparedRequest: {
-          requestShape: "chat_completions",
+          transport: "chat_completions",
           providerProfileId: "openai",
           model: "gpt-test",
           body: { model: "gpt-test" },
@@ -987,7 +987,7 @@ describe("ProviderExecutionCoordinator", () => {
         .startCall(coordinate)
         .execute({
           preparedRequest: {
-            requestShape: "chat_completions",
+            transport: "chat_completions",
             providerProfileId: "openai",
             model: "gpt-test",
             body: { model: "gpt-test" },

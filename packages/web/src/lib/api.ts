@@ -571,6 +571,7 @@ export interface AdminProviderFailureAttempt {
   phase: string | null;
   round: number | null;
   providerProfileId: string;
+  transport: string;
   modelName: string;
   attemptOrdinal: number;
   outcomeKind: string;

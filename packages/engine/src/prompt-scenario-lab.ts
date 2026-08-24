@@ -296,47 +296,19 @@ function makeReplayOpenAIStub(
   action: PromptScenarioAction,
 ): OpenAI {
   return {
-    chat: {
-      completions: {
-        create: async (params: Record<string, unknown>) => {
-          requests.push(params);
-          if (action.kind === "vote") {
-            return {
-              choices: [{
-                finish_reason: "tool_calls",
-                message: {
-                  role: "assistant",
-                  content: null,
-                  tool_calls: [{
-                    id: "scenario-vote",
-                    type: "function",
-                    function: {
-                      name: "cast_votes",
-                      arguments: JSON.stringify({
-                        thinking: action.response.thinking ?? "Fixture vote reasoning.",
-                        empower: action.response.empower,
-                        strategyDelta: action.response.strategyDelta ?? null,
-                      }),
-                    },
-                  }],
-                },
-              }],
-            };
-          }
-
-          return {
-            choices: [{
-              finish_reason: "stop",
-              message: {
-                role: "assistant",
-                content: JSON.stringify({
-                  thinking: action.response.thinking ?? "Fixture plea reasoning.",
-                  message: action.response.message,
-                }),
-              },
-            }],
-          };
-        },
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        requests.push(params);
+        return action.kind === "vote"
+          ? fakeResponsesToolCall("scenario-vote", "cast_votes", {
+              thinking: action.response.thinking ?? "Fixture vote reasoning.",
+              empower: action.response.empower,
+              strategyDelta: action.response.strategyDelta ?? null,
+            })
+          : fakeResponsesText({
+              thinking: action.response.thinking ?? "Fixture plea reasoning.",
+              message: action.response.message,
+            });
       },
     },
   } as unknown as OpenAI;
@@ -353,70 +325,49 @@ function makeChainReplayOpenAIStub(
 ): OpenAI {
   let stepIndex = 0;
   return {
-    chat: {
-      completions: {
-        create: async (params: Record<string, unknown>) => {
-          requests.push(params);
-          const step = steps[stepIndex];
-          stepIndex += 1;
-          if (!step) throw new Error("Prompt scenario chain received an unexpected provider retry or extra call.");
-          if (step.kind === "diary" || step.kind === "lobby") {
-            return {
-              choices: [{
-                finish_reason: "stop",
-                message: {
-                  role: "assistant",
-                  content: JSON.stringify({
-                    thinking: step.response.thinking ?? "Fixture diary reasoning.",
-                    message: step.response.message,
-                    ...(Object.prototype.hasOwnProperty.call(step.response, "strategy") && {
-                      strategy: step.response.strategy,
-                    }),
-                    ...(Object.prototype.hasOwnProperty.call(step.response, "strategyDelta") && {
-                      strategyDelta: step.response.strategyDelta,
-                    }),
-                  }),
-                },
-              }],
-            };
-          }
-          return {
-            choices: [{
-              finish_reason: "tool_calls",
-              message: {
-                role: "assistant",
-                content: null,
-                tool_calls: [{
-                  id: "scenario-chain-vote",
-                  type: "function",
-                  function: {
-                    name: "cast_votes",
-                    arguments: JSON.stringify({
-                      thinking: step.response.thinking ?? "Fixture next-vote reasoning.",
-                      empower: step.response.empower,
-                      ...(Object.prototype.hasOwnProperty.call(step.response, "strategy") && {
-                        strategy: step.response.strategy,
-                      }),
-                      ...(Object.prototype.hasOwnProperty.call(step.response, "strategyDelta") && {
-                        strategyDelta: step.response.strategyDelta,
-                      }),
-                    }),
-                  },
-                }],
-              },
-            }],
-          };
-        },
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        requests.push(params);
+        const step = steps[stepIndex];
+        stepIndex += 1;
+        if (!step) throw new Error("Prompt scenario chain received an unexpected provider retry or extra call.");
+        if (step.kind === "diary" || step.kind === "lobby") {
+          return fakeResponsesText({
+            thinking: step.response.thinking ?? "Fixture diary reasoning.",
+            message: step.response.message,
+            ...(Object.prototype.hasOwnProperty.call(step.response, "strategy") && {
+              strategy: step.response.strategy,
+            }),
+            ...(Object.prototype.hasOwnProperty.call(step.response, "strategyDelta") && {
+              strategyDelta: step.response.strategyDelta,
+            }),
+          });
+        }
+        return fakeResponsesToolCall(
+          "scenario-chain-vote",
+          "cast_votes",
+          {
+            thinking: step.response.thinking ?? "Fixture next-vote reasoning.",
+            empower: step.response.empower,
+            ...(Object.prototype.hasOwnProperty.call(step.response, "strategy") && {
+              strategy: step.response.strategy,
+            }),
+            ...(Object.prototype.hasOwnProperty.call(step.response, "strategyDelta") && {
+              strategyDelta: step.response.strategyDelta,
+            }),
+          },
+        );
       },
     },
   } as unknown as OpenAI;
 }
 
 function lastUserPrompt(request: Record<string, unknown>): string {
-  const messages = request.messages;
-  if (!Array.isArray(messages)) throw new Error("Prompt scenario replay expected a Chat Completions request.");
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
+  const input = request.input;
+  if (typeof input === "string") return input;
+  if (!Array.isArray(input)) throw new Error("Prompt scenario replay expected an OpenAI Responses request.");
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    const message = input[index];
     if (
       typeof message === "object"
       && message !== null
@@ -429,6 +380,44 @@ function lastUserPrompt(request: Record<string, unknown>): string {
     }
   }
   throw new Error("Prompt scenario replay did not capture a user prompt.");
+}
+
+function fakeResponsesText(value: Record<string, unknown>) {
+  return {
+    id: "resp_scenario_text",
+    object: "response",
+    status: "completed",
+    output: [{
+      id: "msg_scenario_text",
+      type: "message",
+      role: "assistant",
+      status: "completed",
+      content: [{
+        type: "output_text",
+        text: JSON.stringify(value),
+        annotations: [],
+      }],
+    }],
+  };
+}
+
+function fakeResponsesToolCall(
+  callId: string,
+  name: string,
+  value: Record<string, unknown>,
+) {
+  return {
+    id: `resp_${callId}`,
+    object: "response",
+    status: "completed",
+    output: [{
+      id: `fc_${callId}`,
+      type: "function_call",
+      call_id: callId,
+      name,
+      arguments: JSON.stringify(value),
+    }],
+  };
 }
 
 /**

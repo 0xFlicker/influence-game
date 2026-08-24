@@ -161,7 +161,6 @@ describe("LLM client env config", () => {
       modelId: runtime.modelId,
       role: runtime.role,
       maxCallsPerGame: runtime.maxCallsPerGame,
-      maxRetries: runtime.client.maxRetries,
     }))).toEqual([
       {
         catalogId: "openai:gpt-5.6-luna",
@@ -169,7 +168,6 @@ describe("LLM client env config", () => {
         modelId: "gpt-5.6-luna",
         role: "primary",
         maxCallsPerGame: undefined,
-        maxRetries: 0,
       },
       {
         catalogId: "katana:grok-4-5",
@@ -177,7 +175,6 @@ describe("LLM client env config", () => {
         modelId: "grok-4-5",
         role: "fallback",
         maxCallsPerGame: 3,
-        maxRetries: 0,
       },
       {
         catalogId: "katana:glm-5-2",
@@ -185,11 +182,10 @@ describe("LLM client env config", () => {
         modelId: "glm-5-2",
         role: "fallback",
         maxCallsPerGame: 5,
-        maxRetries: 0,
       },
     ]);
-    expect(runtimes?.[1]?.client).toBe(runtimes?.[2]?.client);
-    expect(runtimes?.[0]?.client).not.toBe(runtimes?.[1]?.client);
+    expect(runtimes?.[1]?.adapter).toBe(runtimes?.[2]?.adapter);
+    expect(runtimes?.[0]?.adapter).not.toBe(runtimes?.[1]?.adapter);
   });
 
   it("normalizes standard aliases and rejects invalid request tiers", () => {

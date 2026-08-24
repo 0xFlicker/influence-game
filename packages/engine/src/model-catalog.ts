@@ -13,6 +13,7 @@ export interface ModelRequestCapabilities {
   usesMaxCompletionTokens: boolean;
   supportsTemperature: boolean;
   supportsOpenAIResponses: boolean;
+  supportsPromptCacheRetention: boolean;
   supportsStructuredOutput: boolean;
   supportsTools: boolean;
 }
@@ -107,6 +108,7 @@ const OPENAI_GPT5_CAPABILITIES: ModelRequestCapabilities = {
   usesMaxCompletionTokens: true,
   supportsTemperature: false,
   supportsOpenAIResponses: true,
+  supportsPromptCacheRetention: false,
   supportsStructuredOutput: true,
   supportsTools: true,
 };
@@ -116,12 +118,18 @@ const OPENAI_GPT54_CAPABILITIES: ModelRequestCapabilities = {
   supportsToolReasoningEffort: false,
 };
 
+const OPENAI_GPT56_CAPABILITIES: ModelRequestCapabilities = {
+  ...OPENAI_GPT54_CAPABILITIES,
+  supportsPromptCacheRetention: true,
+};
+
 const STANDARD_CHAT_CAPABILITIES: ModelRequestCapabilities = {
   supportsReasoningEffort: false,
   supportsToolReasoningEffort: false,
   usesMaxCompletionTokens: false,
   supportsTemperature: true,
   supportsOpenAIResponses: false,
+  supportsPromptCacheRetention: false,
   supportsStructuredOutput: true,
   supportsTools: true,
 };
@@ -132,6 +140,7 @@ const KATANA_GROK_CAPABILITIES: ModelRequestCapabilities = {
   usesMaxCompletionTokens: false,
   supportsTemperature: true,
   supportsOpenAIResponses: false,
+  supportsPromptCacheRetention: false,
   supportsStructuredOutput: true,
   supportsTools: true,
 };
@@ -196,7 +205,7 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     evaluationStatus: "game-ready",
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: OPENAI_GPT54_CAPABILITIES,
+    capabilities: OPENAI_GPT56_CAPABILITIES,
     notes: "GPT-5.6 Luna — cost-sensitive high-volume tier ($1/$0.10/$6 per 1M tokens).",
   },
   {
@@ -474,7 +483,8 @@ export function inferModelCapabilities(
   const catalogEntry = MODEL_BY_PROVIDER_AND_MODEL.get(`${providerProfileId}:${modelId}`);
   if (catalogEntry) return catalogEntry.capabilities;
   if (providerProfileId === "katana" && modelId.startsWith("grok-")) return KATANA_GROK_CAPABILITIES;
-  if (/^gpt-5\.[4-9]/.test(modelId)) return OPENAI_GPT54_CAPABILITIES;
+  if (/^gpt-5\.[6-9]/.test(modelId)) return OPENAI_GPT56_CAPABILITIES;
+  if (/^gpt-5\.[4-5]/.test(modelId)) return OPENAI_GPT54_CAPABILITIES;
   if (/^o\d/.test(modelId) || modelId.startsWith("gpt-5")) return OPENAI_GPT5_CAPABILITIES;
   return STANDARD_CHAT_CAPABILITIES;
 }

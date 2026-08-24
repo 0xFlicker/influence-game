@@ -6,17 +6,10 @@
  */
 
 import { createHash, randomUUID } from "crypto";
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import type {
-  ChatCompletion,
-  ChatCompletionCreateParamsNonStreaming,
   ChatCompletionTool,
-  ChatCompletionMessageToolCall,
 } from "openai/resources/chat/completions";
-import type {
-  Response as OpenAIResponse,
-  ResponseCreateParamsNonStreaming,
-} from "openai/resources/responses/responses";
 import type {
   AgentCallOptions,
   AgentResponse,
@@ -39,7 +32,6 @@ import type {
   PrivateDecisionTrace,
   PrivateDecisionTraceContext,
   PrivateDecisionTraceMessage,
-  PrivateDecisionTraceToolCall,
   PrivateTraceSink,
   RecallContinuitySnapshot,
   RecallPlan,
@@ -112,18 +104,24 @@ import {
   ProviderAttemptError,
   ProviderExecutionCoordinator,
   ProviderUnavailableError,
-  classifyResponsesTerminalOutcome,
   providerAcceptedDecisionId,
   type ProviderCandidateValidation,
   type ProviderAttemptRecord,
   type ProviderExecutionHooks,
   type ProviderLogicalCallExecution,
 } from "./provider-execution";
-
-type CachedResponseCreateParams = ResponseCreateParamsNonStreaming & {
-  prompt_cache_key?: string;
-  prompt_cache_options?: { ttl: "30m" };
-};
+import {
+  createProviderAdapter,
+  executeModelInvocation,
+  isLlmProviderAdapter,
+} from "./provider-adapters";
+import type {
+  LlmProviderAdapter,
+  ModelInvocation,
+  ModelInvocationMessage,
+  ModelInvocationTool,
+  ProviderModelOutcome,
+} from "./model-invocation";
 
 // ---------------------------------------------------------------------------
 // Personality archetypes
@@ -1296,13 +1294,6 @@ function acceptedActionMetadata(
   return metadata;
 }
 
-class ToolCallRetryError extends Error {
-  constructor(message: string, readonly increaseTokenBudget = false) {
-    super(message);
-    this.name = "ToolCallRetryError";
-  }
-}
-
 class ToolCallFatalError extends Error {
   constructor(message: string) {
     super(message);
@@ -1359,7 +1350,6 @@ export interface InfluenceAgentOptions {
   /** Opaque evaluation lineage; production retains its game+actor cache lineage. */
   promptCacheLineage?: string;
   /** Evaluation requires the Responses API rather than silently selecting Chat Completions. */
-  requireOpenAIResponses?: boolean;
   /** Fail rather than producing game fallback dialogue after a provider/tool error. */
   evaluationFailFast?: boolean;
   /** Maximum structured provider attempts. Production retains the existing retry behavior. */
@@ -1379,7 +1369,7 @@ type LlmCallOptions = {
   privateTrace?: PrivateDecisionTraceContext;
 };
 
-type ModelCallResponse = ChatCompletion | OpenAIResponse;
+type ModelCallResponse = ProviderModelOutcome;
 
 // ---------------------------------------------------------------------------
 // InfluenceAgent
@@ -1390,7 +1380,6 @@ export class InfluenceAgent implements IAgent {
   readonly name: string;
   readonly personality: Personality;
   private readonly backstory: string;
-  private readonly openai: OpenAI;
   private readonly model: string;
   private readonly providerProfileId: ProviderProfileId;
   private readonly catalogId?: string;
@@ -1404,7 +1393,6 @@ export class InfluenceAgent implements IAgent {
   private readonly strategyInstructions?: string;
   private readonly temperature: number;
   private readonly promptCacheLineage?: string;
-  private readonly requireOpenAIResponses: boolean;
   private readonly evaluationFailFast: boolean;
   private readonly structuredCallMaxAttempts?: number;
   private readonly providerExecution: ProviderExecutionCoordinator;
@@ -1430,7 +1418,7 @@ export class InfluenceAgent implements IAgent {
     id: UUID,
     name: string,
     personality: Personality,
-    openaiClient: OpenAI,
+    provider: OpenAI | LlmProviderAdapter,
     model = DEFAULT_MODEL_ID,
     backstory?: string,
     memoryStore?: MemoryStore,
@@ -1439,7 +1427,6 @@ export class InfluenceAgent implements IAgent {
     this.id = id;
     this.name = name;
     this.personality = personality;
-    this.openai = openaiClient;
     this.model = model;
     this.providerProfileId = options.providerProfileId ?? "openai";
     this.catalogId = options.catalogId;
@@ -1448,7 +1435,6 @@ export class InfluenceAgent implements IAgent {
     this.toolChoiceMode = options.toolChoiceMode ?? "named";
     this.privateTraceSink = options.privateTraceSink;
     this.promptCacheLineage = options.promptCacheLineage;
-    this.requireOpenAIResponses = options.requireOpenAIResponses ?? false;
     this.evaluationFailFast = options.evaluationFailFast ?? false;
     this.structuredCallMaxAttempts = options.structuredCallMaxAttempts;
     this.providerExecution = new ProviderExecutionCoordinator({
@@ -1461,7 +1447,9 @@ export class InfluenceAgent implements IAgent {
     this.providerManifest = options.providerManifest?.length
       ? options.providerManifest.map((entry) => ({ ...entry }))
       : [{
-          client: openaiClient,
+          adapter: isLlmProviderAdapter(provider)
+            ? provider
+            : createProviderAdapter(this.providerProfileId, provider),
           catalogId: options.catalogId ?? `${this.providerProfileId}:${model}`,
           providerProfileId: this.providerProfileId,
           modelId: model,
@@ -1523,44 +1511,24 @@ export class InfluenceAgent implements IAgent {
     });
   }
 
-  private executeChatCompletion<T>(params: {
+  private executeModelCall<T>(params: {
     call: ProviderLogicalCallExecution;
-    body:
-      | ChatCompletionCreateParamsNonStreaming
-      | ((runtime: LlmProviderRuntime) => ChatCompletionCreateParamsNonStreaming);
+    invocation: ModelInvocation | (() => ModelInvocation);
     options?: LlmCallOptions;
     maxAttempts: number;
-    validate(response: ChatCompletion): ProviderCandidateValidation<T>;
+    validate(response: ProviderModelOutcome): ProviderCandidateValidation<T>;
     onRetry?: (record: ProviderAttemptRecord) => void;
   }): Promise<T> {
-    const requestBody = (runtime: LlmProviderRuntime) =>
-      this.adaptChatCompletionBody(
-        typeof params.body === "function" ? params.body(runtime) : params.body,
-        runtime,
-        params.options,
-      );
-    return params.call.executeManifest({
-      entries: this.providerManifest.map((runtime) => ({
-        catalogId: runtime.catalogId,
-        preparedRequest: () => ({
-          requestShape: "chat_completions" as const,
-          providerProfileId: runtime.providerProfileId,
-          catalogId: runtime.catalogId,
-          model: runtime.modelId,
-          body: requestBody(runtime),
-        }),
-        maxAttempts: params.maxAttempts,
-        dispatch: ({ requestOptions }) =>
-          runtime.client.chat.completions.create(
-            requestBody(runtime),
-            requestOptions,
-          ),
-        validate: params.validate,
-        ...(params.onRetry && { onRetry: params.onRetry }),
-      })),
+    return executeModelInvocation({
+      call: params.call,
+      runtimes: this.providerManifest,
+      invocation: params.invocation,
+      maxAttempts: params.maxAttempts,
+      validate: params.validate,
       ...(params.options?.signal && {
         cancellationSignal: params.options.signal,
       }),
+      ...(params.onRetry && { onRetry: params.onRetry }),
     }).then(({ value, manifestPosition, acceptedAttemptId }) => {
       if (value && typeof value === "object") {
         this.responseProviderRuntime.set(
@@ -1573,35 +1541,6 @@ export class InfluenceAgent implements IAgent {
       }
       return value;
     });
-  }
-
-  private adaptChatCompletionBody(
-    body: ChatCompletionCreateParamsNonStreaming,
-    runtime: LlmProviderRuntime,
-    options?: LlmCallOptions,
-  ): ChatCompletionCreateParamsNonStreaming {
-    const next = { ...body, model: runtime.modelId } as Record<string, unknown>;
-    const tokenBudget = typeof next.max_completion_tokens === "number"
-      ? next.max_completion_tokens
-      : typeof next.max_tokens === "number"
-        ? next.max_tokens
-        : undefined;
-    delete next.max_completion_tokens;
-    delete next.max_tokens;
-    if (tokenBudget !== undefined) {
-      next[runtime.modelCapabilities.usesMaxCompletionTokens
-        ? "max_completion_tokens"
-        : "max_tokens"] = tokenBudget;
-    }
-    if (!runtime.modelCapabilities.supportsTemperature) {
-      delete next.temperature;
-    } else if (next.temperature === undefined) {
-      next.temperature = this.temperature;
-    }
-    const reasoningEffort = this.requestedReasoningEffortFor(runtime, options);
-    if (reasoningEffort) next.reasoning_effort = reasoningEffort;
-    else delete next.reasoning_effort;
-    return next as unknown as ChatCompletionCreateParamsNonStreaming;
   }
 
   private requestedReasoningEffortFor(
@@ -1624,46 +1563,6 @@ export class InfluenceAgent implements IAgent {
       ?? this.providerManifest[0]!;
   }
 
-  private executeOpenAIResponse<T>(params: {
-    call: ProviderLogicalCallExecution;
-    body: ResponseCreateParamsNonStreaming;
-    options?: LlmCallOptions;
-    maxAttempts: number;
-    validate(response: OpenAIResponse): ProviderCandidateValidation<T>;
-    onRetry?: () => void;
-  }): Promise<T> {
-    return params.call.execute({
-      preparedRequest: {
-        requestShape: "responses",
-        providerProfileId: this.providerProfileId,
-        ...(this.catalogId && { catalogId: this.catalogId }),
-        model: this.model,
-        body: params.body,
-      },
-      maxAttempts: params.maxAttempts,
-      ...(params.options?.signal && {
-        cancellationSignal: params.options.signal,
-      }),
-      dispatch: ({ requestOptions }) =>
-        this.openai.responses.create(params.body, requestOptions),
-      validate: (response) => {
-        const terminalOutcome = classifyResponsesTerminalOutcome(response);
-        return terminalOutcome
-          ? { status: "unusable", ...terminalOutcome }
-          : params.validate(response);
-      },
-      ...(params.onRetry && { onRetry: params.onRetry }),
-    }).then((value) => {
-      if (value && typeof value === "object") {
-        this.responseProviderRuntime.set(value as object, this.providerManifest[0]!);
-        const accepted = params.call.getAcceptedResult();
-        if (accepted?.attemptId) {
-          this.responseProviderAttemptId.set(value as object, accepted.attemptId);
-        }
-      }
-      return value;
-    });
-  }
 
   private static isAbortError(error: unknown): boolean {
     return error instanceof Error && error.name === "AbortError";
@@ -1868,169 +1767,33 @@ export class InfluenceAgent implements IAgent {
     }));
   }
 
-  private static privateTraceToolCalls(message: unknown): PrivateDecisionTraceToolCall[] | undefined {
-    if (!message || typeof message !== "object" || Array.isArray(message)) return undefined;
-    const record = message as Record<string, unknown>;
-    if (!Array.isArray(record.tool_calls)) return undefined;
-
-    const toolCalls = record.tool_calls
-      .map((toolCall): PrivateDecisionTraceToolCall | null => {
-        if (!toolCall || typeof toolCall !== "object" || Array.isArray(toolCall)) return null;
-        const toolRecord = toolCall as Record<string, unknown>;
-        const functionRecord =
-          toolRecord.function && typeof toolRecord.function === "object" && !Array.isArray(toolRecord.function)
-            ? toolRecord.function as Record<string, unknown>
-            : {};
-        return {
-          ...(typeof toolRecord.id === "string" && { id: toolRecord.id }),
-          ...(typeof toolRecord.type === "string" && { type: toolRecord.type }),
-          ...(typeof functionRecord.name === "string" && { name: functionRecord.name }),
-          ...(typeof functionRecord.arguments === "string" && { arguments: functionRecord.arguments }),
-        };
-      })
-      .filter((toolCall): toolCall is PrivateDecisionTraceToolCall => toolCall !== null);
-
-    return toolCalls.length > 0 ? toolCalls : undefined;
-  }
-
-  private static readNumberField(value: unknown): number | undefined {
-    return typeof value === "number" && Number.isFinite(value) ? value : undefined;
-  }
-
   private static providerUsageMetadata(response: ModelCallResponse): PrivateDecisionTrace["usage"] | undefined {
-    const responseRecord = response as unknown as Record<string, unknown>;
-    const usage = responseRecord.usage;
-    if (!usage || typeof usage !== "object" || Array.isArray(usage)) return undefined;
-    const usageRecord = usage as Record<string, unknown>;
-    const completionDetails = usageRecord.completion_tokens_details &&
-      typeof usageRecord.completion_tokens_details === "object" &&
-      !Array.isArray(usageRecord.completion_tokens_details)
-      ? usageRecord.completion_tokens_details as Record<string, unknown>
-      : {};
-    const promptDetails = usageRecord.prompt_tokens_details &&
-      typeof usageRecord.prompt_tokens_details === "object" &&
-      !Array.isArray(usageRecord.prompt_tokens_details)
-      ? usageRecord.prompt_tokens_details as Record<string, unknown>
-      : {};
-    const inputDetails = usageRecord.input_tokens_details &&
-      typeof usageRecord.input_tokens_details === "object" &&
-      !Array.isArray(usageRecord.input_tokens_details)
-      ? usageRecord.input_tokens_details as Record<string, unknown>
-      : {};
-    const outputDetails = usageRecord.output_tokens_details &&
-      typeof usageRecord.output_tokens_details === "object" &&
-      !Array.isArray(usageRecord.output_tokens_details)
-      ? usageRecord.output_tokens_details as Record<string, unknown>
-      : {};
-    const routerBilling = usageRecord.imgnai &&
-      typeof usageRecord.imgnai === "object" &&
-      !Array.isArray(usageRecord.imgnai)
-      ? usageRecord.imgnai as Record<string, unknown>
-      : undefined;
-    const diagnostics: string[] = [];
-    if ("imgnai" in usageRecord && !routerBilling) diagnostics.push("malformed_router_billing");
-
-    const promptTokens = InfluenceAgent.readNumberField(usageRecord.prompt_tokens)
-      ?? InfluenceAgent.readNumberField(usageRecord.input_tokens);
-    const completionTokens = InfluenceAgent.readNumberField(usageRecord.completion_tokens)
-      ?? InfluenceAgent.readNumberField(usageRecord.output_tokens);
-    const cachedTokens = InfluenceAgent.readNumberField(promptDetails.cached_tokens)
-      ?? InfluenceAgent.readNumberField(inputDetails.cached_tokens);
-    const cacheWriteTokens = InfluenceAgent.readNumberField(promptDetails.cache_write_tokens)
-      ?? InfluenceAgent.readNumberField(inputDetails.cache_write_tokens);
-    const reasoningTokens = InfluenceAgent.readNumberField(completionDetails.reasoning_tokens)
-      ?? InfluenceAgent.readNumberField(outputDetails.reasoning_tokens);
+    const usage = response.accounting?.usage;
+    if (!usage) return undefined;
     const metadata: NonNullable<PrivateDecisionTrace["usage"]> = {
-      ...(promptTokens !== undefined && { promptTokens }),
-      ...(completionTokens !== undefined && { completionTokens }),
-      ...(cachedTokens !== undefined && { cachedTokens }),
-      ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
-      ...(reasoningTokens !== undefined && { reasoningTokens }),
-      ...(InfluenceAgent.readNumberField(usageRecord.total_tokens) !== undefined && { totalTokens: InfluenceAgent.readNumberField(usageRecord.total_tokens) }),
-      ...(routerBilling && { routerBilling }),
-      ...(diagnostics.length > 0 && { diagnostics }),
+      ...(usage.promptTokens !== undefined && { promptTokens: usage.promptTokens }),
+      ...(usage.completionTokens !== undefined && { completionTokens: usage.completionTokens }),
+      ...(usage.cachedTokens !== undefined && { cachedTokens: usage.cachedTokens }),
+      ...(usage.cacheWriteTokens !== undefined && { cacheWriteTokens: usage.cacheWriteTokens }),
+      ...(usage.reasoningTokens !== undefined && { reasoningTokens: usage.reasoningTokens }),
+      ...(usage.totalTokens !== undefined && { totalTokens: usage.totalTokens }),
     };
     return Object.keys(metadata).length > 0 ? metadata : undefined;
   }
 
-  private static isOpenAIResponse(response: ModelCallResponse): response is OpenAIResponse {
-    return (response as { object?: unknown }).object === "response";
-  }
-
-  private static outputItemRecord(item: unknown): Record<string, unknown> | null {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return null;
-    return item as Record<string, unknown>;
-  }
-
-  private static responseOutputText(response: OpenAIResponse): string {
-    if (typeof response.output_text === "string" && response.output_text.trim()) {
-      return response.output_text.trim();
-    }
-
-    for (const item of response.output) {
-      const record = InfluenceAgent.outputItemRecord(item);
-      if (!record) continue;
-      if (record.type !== "message" || !Array.isArray(record.content)) continue;
-      const text = record.content
-        .map((contentPart) => {
-          if (!contentPart || typeof contentPart !== "object" || Array.isArray(contentPart)) return "";
-          const partRecord = contentPart as unknown as Record<string, unknown>;
-          return typeof partRecord.text === "string" ? partRecord.text : "";
-        })
-        .filter(Boolean)
-        .join("\n");
-      if (text.trim()) return text.trim();
-    }
-
-    return "";
-  }
-
-  private static responseToolCalls(response: OpenAIResponse): PrivateDecisionTraceToolCall[] | undefined {
-    const toolCalls = response.output
-      .map((item): PrivateDecisionTraceToolCall | null => {
-        const record = InfluenceAgent.outputItemRecord(item);
-        if (!record) return null;
-        if (record.type !== "function_call") return null;
-        return {
-          ...(typeof record.id === "string" && { id: record.id }),
-          type: "function_call",
-          ...(typeof record.name === "string" && { name: record.name }),
-          ...(typeof record.arguments === "string" && { arguments: record.arguments }),
-        };
-      })
-      .filter((toolCall): toolCall is PrivateDecisionTraceToolCall => toolCall !== null);
-
-    return toolCalls.length > 0 ? toolCalls : undefined;
-  }
-
   private static extractProviderReasoningSummary(
-    response: OpenAIResponse,
-    mode: OpenAIReasoningSummaryMode,
+    response: ModelCallResponse,
   ): ProviderReasoningSummary | undefined {
-    const parts: string[] = [];
-    const outputItemIds: string[] = [];
-
-    for (const item of response.output) {
-      const record = InfluenceAgent.outputItemRecord(item);
-      if (!record) continue;
-      if (record.type !== "reasoning") continue;
-      if (typeof record.id === "string") outputItemIds.push(record.id);
-      if (!Array.isArray(record.summary)) continue;
-      for (const summaryPart of record.summary) {
-        if (!summaryPart || typeof summaryPart !== "object" || Array.isArray(summaryPart)) continue;
-        const partRecord = summaryPart as unknown as Record<string, unknown>;
-        const text = InfluenceAgent.readStringField(partRecord.text);
-        if (text) parts.push(text);
-      }
-    }
-
-    if (parts.length === 0) return undefined;
+    const summary = response.reasoning?.summary;
+    if (!summary) return undefined;
     return {
       provider: "openai_responses",
-      mode,
-      text: parts.join("\n\n"),
-      parts,
-      ...(outputItemIds.length > 0 && { outputItemIds }),
+      mode: summary.mode,
+      text: summary.text,
+      parts: [...summary.parts],
+      ...(summary.outputItemIds?.length && {
+        outputItemIds: [...summary.outputItemIds],
+      }),
     };
   }
 
@@ -2080,21 +1843,16 @@ export class InfluenceAgent implements IAgent {
     this.lastPrivateDecisionId = decisionId;
 
     const response = params.response;
-    let message: unknown;
-    let responseFinishReason: string | null;
-    let responseContent: string | null;
-    let responseToolCalls: PrivateDecisionTraceToolCall[] | undefined;
-    if (InfluenceAgent.isOpenAIResponse(response)) {
-      responseFinishReason = response.status ?? null;
-      responseContent = InfluenceAgent.responseOutputText(response);
-      responseToolCalls = InfluenceAgent.responseToolCalls(response);
-    } else {
-      const choice = response.choices[0];
-      message = choice?.message;
-      responseFinishReason = choice?.finish_reason ?? null;
-      responseContent = typeof choice?.message?.content === "string" ? choice.message.content : null;
-      responseToolCalls = InfluenceAgent.privateTraceToolCalls(message);
-    }
+    const responseFinishReason = response.stopReason ?? response.status ?? null;
+    const responseContent = response.text ?? null;
+    const responseToolCalls = response.toolCalls.length > 0
+      ? response.toolCalls.map((toolCall) => ({
+          ...(toolCall.id && { id: toolCall.id }),
+          type: "function_call",
+          name: toolCall.name,
+          arguments: toolCall.arguments,
+        }))
+      : undefined;
     const outputRecord =
       params.output && typeof params.output === "object" && !Array.isArray(params.output)
         ? params.output as Record<string, unknown>
@@ -2105,7 +1863,7 @@ export class InfluenceAgent implements IAgent {
       (InfluenceAgent.isProviderReasoningSummaryDisplay(outputReasoningContext, params.providerReasoningSummary)
         ? ""
         : outputReasoningContext) ||
-      InfluenceAgent.extractReasoningContext(message);
+      response.reasoning?.content;
     const strategyCandidate = Object.prototype.hasOwnProperty.call(outputRecord, "strategy")
       ? { operation: "replace" as const, submittedValue: outputRecord.strategy }
       : Object.prototype.hasOwnProperty.call(outputRecord, "strategyDelta")
@@ -2120,7 +1878,7 @@ export class InfluenceAgent implements IAgent {
     const privateTraceMessages = InfluenceAgent.privateTraceMessages(params.messages);
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: traceContext.actor.id ?? traceContext.actor.role,
-      requestShape: InfluenceAgent.isOpenAIResponse(response) ? "responses" : "chat_completions",
+      requestShape: response.transport,
       usage: InfluenceAgent.providerUsageMetadata(response),
     });
     const trace: PrivateDecisionTrace = {
@@ -2153,7 +1911,8 @@ export class InfluenceAgent implements IAgent {
         reasoningPolicy: runtime.reasoningPolicy,
       },
       response: {
-        raw: response,
+        transport: response.transport,
+        raw: response.nativeResponse,
         finishReason: responseFinishReason,
         content: responseContent,
         ...(responseToolCalls && { toolCalls: responseToolCalls }),
@@ -4797,24 +4556,12 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     return this.modelCapabilities.supportsReasoningEffort || this.modelCapabilities.usesMaxCompletionTokens;
   }
 
-  private usesCompletionTokensParam(): boolean {
-    return this.modelCapabilities.usesMaxCompletionTokens;
-  }
-
-  private supportsCustomTemperature(): boolean {
-    return this.modelCapabilities.supportsTemperature;
-  }
-
   private requestedReasoningEffort(options?: LlmCallOptions): ModelReasoningEffort | undefined {
     if (!this.modelCapabilities.supportsReasoningEffort) return undefined;
     if (this.reasoningPolicy === "low" || this.reasoningPolicy === "medium" || this.reasoningPolicy === "high") {
       return this.reasoningPolicy;
     }
     return options?.reasoningEffort;
-  }
-
-  private supportsToolReasoningEffort(): boolean {
-    return this.modelCapabilities.supportsToolReasoningEffort;
   }
 
   /**
@@ -4953,7 +4700,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     } as typeof InfluenceAgent.AGENT_RESPONSE_FORMAT;
   }
 
-  private recordTokenUsage(response: ChatCompletion, sourceKey: string): void {
+  private recordTokenUsage(response: ModelCallResponse, sourceKey: string): void {
     if (!this.tokenTracker) return;
     const usage = InfluenceAgent.providerUsageMetadata(response);
     if (!usage || usage.promptTokens === undefined || usage.completionTokens === undefined) return;
@@ -4963,22 +4710,8 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       usage.completionTokens,
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
-      parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
+      parseOpenAIServiceTier(response.serviceTier),
       usage.cacheWriteTokens ?? 0,
-    );
-  }
-
-  private recordResponseTokenUsage(response: OpenAIResponse, sourceKey: string): void {
-    if (!this.tokenTracker || !response.usage) return;
-    const inputDetails = response.usage.input_tokens_details as unknown as Record<string, unknown>;
-    this.tokenTracker.record(
-      sourceKey,
-      response.usage.input_tokens,
-      response.usage.output_tokens,
-      response.usage.input_tokens_details.cached_tokens ?? 0,
-      response.usage.output_tokens_details.reasoning_tokens ?? 0,
-      parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
-      InfluenceAgent.readNumberField(inputDetails.cache_write_tokens) ?? 0,
     );
   }
 
@@ -4987,46 +4720,73 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     return options?.reasoningSummary ?? this.openAIReasoningSummary;
   }
 
-  private shouldUseOpenAIResponsesForSummary(options?: LlmCallOptions): boolean {
-    if (this.requireOpenAIResponses) return true;
-    return Boolean(
-      this.providerManifest.length === 1 &&
-      this.resolvedReasoningSummaryMode(options) &&
-        this.modelCapabilities.supportsOpenAIResponses &&
-        !this.usesLocalStructuredCompatibility(),
-    );
-  }
-
-  private responseReasoningOptions(options?: LlmCallOptions): ResponseCreateParamsNonStreaming["reasoning"] | undefined {
+  private semanticInvocation(
+    prompt: string,
+    effectiveMaxTokens: number,
+    result: ModelInvocation["result"],
+    systemPrompt?: string,
+    options?: LlmCallOptions,
+    temperature = this.temperature,
+  ): ModelInvocation {
+    const messages: ModelInvocationMessage[] = [];
+    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
+    messages.push({ role: "user", content: prompt });
+    const effort = options?.reasoningEffort;
     const summary = this.resolvedReasoningSummaryMode(options);
-    if (!summary) return undefined;
-    const effort = this.requestedReasoningEffort(options);
     return {
-      ...(effort && { effort }),
-      summary,
+      messages,
+      result,
+      outputTokenLimit: effectiveMaxTokens,
+      ...(effort || summary ? {
+        reasoning: {
+          ...(effort && { effort }),
+          ...(summary && { summary }),
+        },
+      } : {}),
+      temperature,
+      // Adapters that support cache routing may consume this semantic hint.
+      promptCache: {
+        key: this.responsePromptCacheKey(),
+        ttl: "30m",
+      },
     };
   }
 
-  private responseBaseParams(
-    prompt: string,
-    effectiveMaxTokens: number,
-    systemPrompt?: string,
-    options?: LlmCallOptions,
-  ): CachedResponseCreateParams {
-    const reasoning = this.responseReasoningOptions(options);
+  private static modelTool(tool: ChatCompletionTool): ModelInvocationTool {
     return {
-      model: this.model,
-      input: prompt,
-      ...(systemPrompt && { instructions: systemPrompt }),
-      max_output_tokens: effectiveMaxTokens,
-      store: false,
-      // OpenAI uses this only to bucket similar prefixes. Hash IDs so the
-      // provider never receives a raw game or player identifier for caching.
-      prompt_cache_key: this.responsePromptCacheKey(),
-      ...(this.usesGpt56OrLaterPromptCaching() && {
-        prompt_cache_options: { ttl: "30m" as const },
+      name: tool.function.name,
+      ...(tool.function.description && { description: tool.function.description }),
+      parameters: (tool.function.parameters ?? {}) as Record<string, unknown>,
+      ...(typeof tool.function.strict === "boolean" && {
+        strict: tool.function.strict,
       }),
-      ...(reasoning && { reasoning }),
+    };
+  }
+
+  private semanticInvocationWithMessages(
+    messages: readonly ModelInvocationMessage[],
+    effectiveMaxTokens: number,
+    result: ModelInvocation["result"],
+    options?: LlmCallOptions,
+    temperature = this.temperature,
+  ): ModelInvocation {
+    const effort = options?.reasoningEffort;
+    const summary = this.resolvedReasoningSummaryMode(options);
+    return {
+      messages,
+      result,
+      outputTokenLimit: effectiveMaxTokens,
+      ...(effort || summary ? {
+        reasoning: {
+          ...(effort && { effort }),
+          ...(summary && { summary }),
+        },
+      } : {}),
+      temperature,
+      promptCache: {
+        key: this.responsePromptCacheKey(),
+        ttl: "30m",
+      },
     };
   }
 
@@ -5036,15 +4796,6 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       .update(`${lineage}:${this.id}`)
       .digest("hex")
       .slice(0, 24)}`;
-  }
-
-  private usesGpt56OrLaterPromptCaching(): boolean {
-    const match = /^gpt-(\d+)(?:\.(\d+))?/.exec(this.model);
-    if (!match) return false;
-
-    const major = Number(match[1]);
-    const minor = Number(match[2] ?? 0);
-    return major > 5 || (major === 5 && minor >= 6);
   }
 
   private static extractFirstJsonObject(text: string): string | null {
@@ -5228,22 +4979,6 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
    * or explicit {thinking, message} in free-text content). reasoningContext is the bonus
    * deep observability trace for --chatty and transcripts.
    */
-  private static extractReasoningContext(message: unknown): string {
-    if (!message || typeof message !== "object" || Array.isArray(message)) {
-      return "";
-    }
-
-    const record = message as unknown as Record<string, unknown>;
-    // Deliberately do not fall back to "thinking" — that is the agent's emitted field.
-    return InfluenceAgent.readStringField(record.reasoning_content)
-      || InfluenceAgent.readStringField(record.reasoning);
-  }
-
-  /** @deprecated Use extractReasoningContext instead. This old name was pulling reasoning_content into thinking, which we are fixing. */
-  private static extractNativeThinking(message: unknown): string {
-    return InfluenceAgent.extractReasoningContext(message);
-  }
-
   private static cleanVisibleMessage(content: string): string {
     const parsed = InfluenceAgent.parseAgentResponseContent(content);
     if (parsed) return parsed.message;
@@ -5255,438 +4990,6 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     return trimmed.replace(/^message\s*:\s*/i, "").trim();
   }
 
-  private static responseJsonSchemaFormat(name: string, schema: unknown): NonNullable<ResponseCreateParamsNonStreaming["text"]>["format"] {
-    return {
-      type: "json_schema",
-      name,
-      strict: true,
-      schema: schema && typeof schema === "object" && !Array.isArray(schema)
-        ? schema as Record<string, unknown>
-        : {
-          type: "object",
-          properties: {},
-          required: [],
-          additionalProperties: false,
-        },
-    };
-  }
-
-  private async callOpenAIResponsesWithThinking(
-    prompt: string,
-    maxTokens = 200,
-    systemPrompt?: string,
-    options?: LlmCallOptions,
-  ): Promise<AgentResponse> {
-    const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
-    const effectiveMaxTokens = this.applyMessageTokenFloor(maxTokens + overhead);
-    const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
-    const summaryMode = this.resolvedReasoningSummaryMode(options);
-    const messages: Array<{ role: "system" | "user"; content: string }> = [];
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
-    const responseFormat = this.agentResponseFormat(options);
-
-    const requestBody = {
-      ...this.responseBaseParams(
-        prompt,
-        effectiveMaxTokens,
-        systemPrompt,
-        options,
-      ),
-      text: {
-        format: InfluenceAgent.responseJsonSchemaFormat(
-          responseFormat.json_schema.name,
-          responseFormat.json_schema.schema,
-        ),
-      },
-    } satisfies ResponseCreateParamsNonStreaming;
-    const call = this.startProviderCall(options);
-    const response = await this.executeOpenAIResponse({
-      call,
-      body: requestBody,
-      options,
-      maxAttempts: 2,
-      validate: (candidate) => {
-        const content = InfluenceAgent.responseOutputText(candidate);
-        if (!content) {
-          return {
-            status: "unusable",
-            kind: "empty_output",
-            message: "Responses output was empty",
-          };
-        }
-        return { status: "usable", value: candidate };
-      },
-    });
-    this.recordResponseTokenUsage(response, sourceKey);
-
-    const content = InfluenceAgent.responseOutputText(response);
-    const providerReasoningSummary = summaryMode
-      ? InfluenceAgent.extractProviderReasoningSummary(response, summaryMode)
-      : undefined;
-
-    if (!content) {
-      console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned empty Responses output`);
-      if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      throw new Error("Responses output passed validation without visible content");
-    }
-
-    const parsed = InfluenceAgent.parseAgentResponseContent(content);
-    if (parsed) {
-      const normalized = this.normalizeAgentResponseForCall(parsed, options);
-      const output = InfluenceAgent.withProviderReasoningSummaryDisplay(normalized, providerReasoningSummary);
-      await this.emitPrivateDecisionTrace({ options, messages, response, output: normalized, providerReasoningSummary });
-      return output;
-    }
-
-    console.warn(`[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON Responses output, treating as plain message`);
-    const traceOutput = this.normalizeAgentResponseForCall({
-      thinking: "",
-      message: content,
-    }, options);
-    const output = InfluenceAgent.withProviderReasoningSummaryDisplay(traceOutput, providerReasoningSummary);
-    await this.emitPrivateDecisionTrace({ options, messages, response, output: traceOutput, providerReasoningSummary });
-    return output;
-  }
-
-  private async callOpenAIResponsesToolJsonSchema<T>(
-    prompt: string,
-    tool: ChatCompletionTool,
-    effectiveMaxTokens: number,
-    systemPrompt: string | undefined,
-    options: LlmCallOptions | undefined,
-    sourceKey: string,
-    providerCall: ProviderLogicalCallExecution = this.startProviderCall(
-      options,
-    ),
-    maxAttempts: number = this.structuredCallMaxAttempts ?? 2,
-  ): Promise<T & { decisionId?: UUID }> {
-    const messages: Array<{ role: "system" | "user"; content: string }> = [];
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
-
-    const requestBody = {
-      ...this.responseBaseParams(
-        prompt,
-        effectiveMaxTokens,
-        systemPrompt,
-        options,
-      ),
-      text: {
-        format: InfluenceAgent.responseJsonSchemaFormat(
-          `${tool.function.name}_arguments`,
-          tool.function.parameters,
-        ),
-      },
-    } satisfies ResponseCreateParamsNonStreaming;
-    const response = await this.executeOpenAIResponse({
-      call: providerCall,
-      body: requestBody,
-      options,
-      maxAttempts,
-      validate: (candidate) => {
-        const parsed = this.parseToolArgsFromContent<T>(
-          InfluenceAgent.responseOutputText(candidate),
-          tool.function.name,
-        );
-        return parsed
-          ? { status: "usable", value: candidate }
-          : {
-              status: "unusable",
-              kind: "undecodable_structured_output",
-              message: `Responses output returned invalid arguments for ${tool.function.name}`,
-            };
-      },
-    });
-    this.recordResponseTokenUsage(response, sourceKey);
-
-    const parsed = this.parseToolArgsFromContent<T>(
-      InfluenceAgent.responseOutputText(response),
-      tool.function.name,
-    );
-    if (!parsed) {
-      throw new Error(`Responses output returned invalid arguments for ${tool.function.name}`);
-    }
-
-    const summaryMode = this.resolvedReasoningSummaryMode(options);
-    const providerReasoningSummary = summaryMode
-      ? InfluenceAgent.extractProviderReasoningSummary(response, summaryMode)
-      : undefined;
-    const parsedRecord = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as T & object
-      : {} as T & object;
-    const withReasoning = InfluenceAgent.withProviderReasoningSummaryDisplay(parsedRecord, providerReasoningSummary) as T;
-    const decisionId = await this.emitPrivateDecisionTrace({
-      options,
-      messages,
-      response,
-      output: parsed,
-      toolName: tool.function.name,
-      toolArguments: parsed,
-      providerReasoningSummary,
-    });
-    return {
-      ...withReasoning,
-      ...(decisionId ? { decisionId } : {}),
-    };
-  }
-
-  private async callLocalLLMWithNativeThinking(
-    prompt: string,
-    maxTokens = 200,
-    systemPrompt?: string,
-    options?: LlmCallOptions,
-  ): Promise<AgentResponse> {
-    const useCompletionTokens = this.usesCompletionTokensParam();
-    let effectiveMaxTokens = this.applyMessageTokenFloor(maxTokens);
-    const maxAttempts = 2;
-    const sourceKey = options?.action
-      ? `${this.name}/${options.action}`
-      : this.name;
-    const providerCall = this.startProviderCall(options);
-
-    const messages: Array<{ role: "system" | "user"; content: string }> = [];
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
-
-    try {
-      const requestBody = (): ChatCompletionCreateParamsNonStreaming => ({
-        model: this.model,
-        messages,
-        ...(useCompletionTokens
-          ? { max_completion_tokens: effectiveMaxTokens }
-          : { max_tokens: effectiveMaxTokens }),
-        ...(this.supportsCustomTemperature() && {
-          temperature: this.temperature,
-        }),
-      });
-      const response = await this.executeChatCompletion({
-        call: providerCall,
-        body: requestBody,
-        options,
-        maxAttempts,
-        validate: (candidate) => {
-          const rawMessage = candidate.choices[0]?.message;
-          const rawContent =
-            typeof rawMessage?.content === "string"
-              ? rawMessage.content.trim()
-              : "";
-          const parsed = InfluenceAgent.parseAgentResponseContent(rawContent);
-          const message = parsed
-            ? parsed.message
-            : InfluenceAgent.cleanVisibleMessage(rawContent);
-          return message
-            ? { status: "usable", value: candidate }
-            : {
-                status: "unusable",
-                kind: "empty_output",
-                message: "Local message output was empty",
-              };
-        },
-        onRetry: (record) => {
-          if (record.outcome.kind === "empty_output") {
-            effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 2);
-          }
-          console.warn(
-            `[${this.name}] callLLMWithThinking local attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
-          );
-        },
-      });
-
-      this.recordTokenUsage(response, sourceKey);
-
-      const rawMessage = response.choices[0]?.message;
-      const rawContent =
-        typeof rawMessage?.content === "string"
-          ? rawMessage.content.trim()
-          : "";
-
-      // Parse explicit "thinking" the model emitted in its content (following the prompt
-      // or {thinking, message} format). This is the agent's "emitted" internal reasoning.
-      const parsed = InfluenceAgent.parseAgentResponseContent(rawContent);
-      const thinking = parsed ? parsed.thinking : "";
-      const message = parsed
-        ? parsed.message
-        : InfluenceAgent.cleanVisibleMessage(rawContent);
-
-      // Pure raw hidden channel only — never pollutes `thinking`.
-      const reasoningContext =
-        InfluenceAgent.extractReasoningContext(rawMessage);
-
-      const output: AgentResponse = {
-        thinking,
-        message,
-        ...(reasoningContext && { reasoningContext }),
-        ...(parsed
-          ? normalizeStrategicDecisionMetadata(
-              parsed as unknown as Record<string, unknown>,
-            )
-          : {}),
-      };
-      const normalizedOutput = this.normalizeAgentResponseForCall(
-        output,
-        options,
-      );
-      await this.emitPrivateDecisionTrace({
-        options,
-        messages,
-        response,
-        output: normalizedOutput,
-      });
-      return normalizedOutput;
-    } catch (error) {
-      if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
-        throw error;
-      }
-      InfluenceAgent.logProviderFailureOrError(
-        `[${this.name}] callLLMWithThinking local failed after ${maxAttempts} attempts:`,
-        error,
-      );
-      if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      if (error instanceof ProviderUnavailableError) {
-        return InfluenceAgent.providerAbsentResponse(error);
-      }
-      throw error;
-    }
-  }
-
-  private async callToolJsonFallback<T>(
-    prompt: string,
-    tool: ChatCompletionTool,
-    effectiveMaxTokens: number,
-    useCompletionTokens: boolean,
-    reasoning: boolean,
-    systemPrompt: string | undefined,
-    options: LlmCallOptions | undefined,
-    sourceKey: string,
-    providerCall: ProviderLogicalCallExecution = this.startProviderCall(
-      options,
-    ),
-    maxAttempts: number = this.structuredCallMaxAttempts ?? 2,
-  ): Promise<T & { decisionId?: UUID }> {
-    const messages: Array<{ role: "system" | "user"; content: string }> = [];
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({
-      role: "user",
-      content: `${prompt}
-
-The forced tool call did not produce a function call. Return one valid JSON object only.
-It must contain the arguments for the ${tool.function.name} tool and match this JSON schema:
-${JSON.stringify(tool.function.parameters)}`,
-    });
-
-    const requestBody = (): ChatCompletionCreateParamsNonStreaming => ({
-      model: this.model,
-      messages,
-      ...(useCompletionTokens
-        ? { max_completion_tokens: effectiveMaxTokens }
-        : { max_tokens: effectiveMaxTokens }),
-      ...(this.supportsCustomTemperature() && {
-        temperature: this.temperature,
-      }),
-      ...(reasoning &&
-        this.supportsToolReasoningEffort() &&
-        this.requestedReasoningEffort(options) && {
-          reasoning_effort: this.requestedReasoningEffort(options),
-        }),
-      response_format: {
-        type: "json_schema" as const,
-        json_schema: {
-          name: `${tool.function.name}_arguments`,
-          strict: true,
-          schema: tool.function.parameters ?? {
-            type: "object",
-            properties: {},
-            required: [],
-            additionalProperties: false,
-          },
-        },
-      },
-    });
-    const result = await this.executeChatCompletion({
-      call: providerCall,
-      body: requestBody,
-      options,
-      maxAttempts,
-      validate: (candidate) => {
-        const choice = candidate.choices[0];
-        const message = choice?.message;
-        if (message?.refusal || choice?.finish_reason === "content_filter") {
-          return {
-            status: "unusable",
-            kind: "refusal",
-            message: `Model refused JSON fallback for ${tool.function.name}`,
-            retryable: false,
-          };
-        }
-        if (choice?.finish_reason === "length") {
-          return {
-            status: "unusable",
-            kind: "undecodable_structured_output",
-            message: `JSON fallback incomplete for ${tool.function.name}`,
-          };
-        }
-        const parsed = this.parseToolArgsFromContent<T>(
-          message?.content,
-          tool.function.name,
-        );
-        return parsed
-          ? { status: "usable", value: { response: candidate, parsed } }
-          : {
-              status: "unusable",
-              kind: "malformed_output",
-              message: `JSON fallback returned invalid arguments for ${tool.function.name}`,
-            };
-      },
-      onRetry: (record) => {
-        if (
-          record.outcome.kind === "undecodable_structured_output" ||
-          record.outcome.kind === "malformed_output"
-        ) {
-          effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
-        }
-        console.warn(
-          `[${this.name}] JSON fallback attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
-        );
-      },
-    });
-    const { response, parsed } = result;
-
-    this.recordTokenUsage(response, sourceKey);
-
-    const choice = response.choices[0];
-    const message = choice?.message;
-    if (message?.refusal) {
-      throw new ToolCallFatalError(`Model refused JSON fallback for ${tool.function.name}`);
-    }
-    if (choice?.finish_reason === "content_filter") {
-      throw new ToolCallFatalError(`JSON fallback stopped by content filter for ${tool.function.name}`);
-    }
-    if (choice?.finish_reason === "length") {
-      throw new ToolCallRetryError(`JSON fallback incomplete for ${tool.function.name}`, true);
-    }
-
-    console.warn(
-      `[tool-fallback] agent="${this.name}" tool=${tool.function.name} source=json_response`,
-    );
-    const withReasoning = parsed as T & { reasoningContext?: string };
-    const reasoningContext = InfluenceAgent.extractReasoningContext(message);
-    if (reasoningContext) {
-      withReasoning.reasoningContext = reasoningContext;
-    }
-    const decisionId = await this.emitPrivateDecisionTrace({
-      options,
-      messages,
-      response,
-      output: withReasoning,
-      toolName: tool.function.name,
-      toolArguments: withReasoning,
-    });
-    return {
-      ...withReasoning,
-      ...(decisionId ? { decisionId } : {}),
-    };
-  }
 
   /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
   private async callLLM(
@@ -5696,7 +4999,6 @@ ${JSON.stringify(tool.function.parameters)}`,
     options?: LlmCallOptions,
   ): Promise<string> {
     const reasoning = this.usesReasoningBudget();
-    const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
     let effectiveMaxTokens = this.applyMessageTokenFloor(
       reasoning ? maxTokens + overhead : maxTokens,
@@ -5712,30 +5014,18 @@ ${JSON.stringify(tool.function.parameters)}`,
     messages.push({ role: "user", content: prompt });
 
     try {
-      const requestBody = (): ChatCompletionCreateParamsNonStreaming => ({
-        model: this.model,
-        messages,
-        ...(useCompletionTokens
-          ? { max_completion_tokens: effectiveMaxTokens }
-          : { max_tokens: effectiveMaxTokens }),
-        ...(this.supportsCustomTemperature() && {
-          temperature: this.temperature,
-        }),
-        ...(this.requestedReasoningEffort(options) && {
-          reasoning_effort: this.requestedReasoningEffort(options),
-        }),
-      });
-      const response = await this.executeChatCompletion({
+      const response = await this.executeModelCall({
         call: providerCall,
-        body: requestBody,
+        invocation: () => this.semanticInvocationWithMessages(
+          messages,
+          effectiveMaxTokens,
+          { kind: "text" },
+          options,
+        ),
         options,
         maxAttempts,
         validate: (candidate) => {
-          const choice = candidate.choices[0];
-          if (
-            choice?.message?.refusal ||
-            choice?.finish_reason === "content_filter"
-          ) {
+          if (candidate.refusal || candidate.stopReason === "content_filter") {
             return {
               status: "unusable",
               kind: "refusal",
@@ -5743,7 +5033,7 @@ ${JSON.stringify(tool.function.parameters)}`,
               retryable: false,
             };
           }
-          const text = choice?.message?.content?.trim() ?? "";
+          const text = candidate.text?.trim() ?? "";
           return text
             ? { status: "usable", value: candidate }
             : {
@@ -5767,7 +5057,7 @@ ${JSON.stringify(tool.function.parameters)}`,
 
       this.recordTokenUsage(response, sourceKey);
 
-      let text = response.choices[0]?.message?.content?.trim() ?? "";
+      let text = response.text?.trim() ?? "";
       // Strip wrapping double quotes that LLMs sometimes add
       if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) {
         text = text.slice(1, -1);
@@ -5796,46 +5086,9 @@ ${JSON.stringify(tool.function.parameters)}`,
     systemPrompt?: string,
     options?: LlmCallOptions,
   ): Promise<AgentResponse> {
-    if (this.usesLocalStructuredCompatibility()) {
-      // Local models (e.g. via LM Studio): route through the native-thinking path so we can
-      // capture any raw `reasoning_content` the server provides in the separate `reasoningContext`
-      // field. The agent's explicitly emitted "thinking" (from content JSON
-      // or tool args) populates `thinking`. We no longer conflate the raw channel into
-      // the emitted thinking, and we no longer strip "thinking" from tool schemas for local.
-      return await this.callLocalLLMWithNativeThinking(
-        prompt,
-        maxTokens,
-        systemPrompt,
-        options,
-      );
-    }
-
-    if (this.shouldUseOpenAIResponsesForSummary(options)) {
-      try {
-        return await this.callOpenAIResponsesWithThinking(
-          prompt,
-          maxTokens,
-          systemPrompt,
-          options,
-        );
-      } catch (error) {
-        if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
-          throw error;
-        }
-        if (error instanceof ProviderUnavailableError) {
-          if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(
-            options?.action ? `${this.name}/${options.action}` : this.name,
-          );
-          return InfluenceAgent.providerAbsentResponse(error);
-        }
-        throw error;
-      }
-    }
-
     const reasoning = this.usesReasoningBudget();
-    const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
-    const effectiveMaxTokens = this.applyMessageTokenFloor(
+    let effectiveMaxTokens = this.applyMessageTokenFloor(
       reasoning ? maxTokens + overhead : maxTokens,
     );
     const maxAttempts = 2;
@@ -5849,31 +5102,24 @@ ${JSON.stringify(tool.function.parameters)}`,
     messages.push({ role: "user", content: prompt });
 
     try {
-      const requestBody = {
-        model: this.model,
-        messages,
-        ...(useCompletionTokens
-          ? { max_completion_tokens: effectiveMaxTokens }
-          : { max_tokens: effectiveMaxTokens }),
-        ...(this.supportsCustomTemperature() && {
-          temperature: this.temperature,
-        }),
-        ...(this.requestedReasoningEffort(options) && {
-          reasoning_effort: this.requestedReasoningEffort(options),
-        }),
-        response_format: this.agentResponseFormat(options),
-      } satisfies ChatCompletionCreateParamsNonStreaming;
-      const response = await this.executeChatCompletion({
+      const responseFormat = this.agentResponseFormat(options);
+      const response = await this.executeModelCall({
         call: providerCall,
-        body: requestBody,
+        invocation: () => this.semanticInvocationWithMessages(
+          messages,
+          effectiveMaxTokens,
+          {
+            kind: "structured",
+            name: responseFormat.json_schema.name,
+            strict: true,
+            schema: responseFormat.json_schema.schema,
+          },
+          options,
+        ),
         options,
         maxAttempts,
         validate: (candidate) => {
-          const choice = candidate.choices[0];
-          if (
-            choice?.message?.refusal ||
-            choice?.finish_reason === "content_filter"
-          ) {
+          if (candidate.refusal || candidate.stopReason === "content_filter") {
             return {
               status: "unusable",
               kind: "refusal",
@@ -5881,7 +5127,7 @@ ${JSON.stringify(tool.function.parameters)}`,
               retryable: false,
             };
           }
-          const content = choice?.message?.content?.trim() ?? "";
+          const content = candidate.text?.trim() ?? "";
           return content
             ? { status: "usable", value: candidate }
             : {
@@ -5890,22 +5136,40 @@ ${JSON.stringify(tool.function.parameters)}`,
                 message: "Structured message output was empty",
               };
         },
+        onRetry: (record) => {
+          if (
+            record.outcome.kind === "empty_output" ||
+            record.outcome.kind === "undecodable_structured_output"
+          ) {
+            effectiveMaxTokens *= 2;
+          }
+        },
       });
 
       this.recordTokenUsage(response, sourceKey);
 
-      const content = response.choices[0]?.message?.content?.trim() ?? "";
+      const content = response.text?.trim() ?? "";
 
       const parsed = InfluenceAgent.parseAgentResponseContent(content);
       if (parsed) {
         const output = this.normalizeAgentResponseForCall(parsed, options);
+        const providerReasoningSummary =
+          InfluenceAgent.extractProviderReasoningSummary(response);
+        const summaryVisible = InfluenceAgent.withProviderReasoningSummaryDisplay(
+          output,
+          providerReasoningSummary,
+        );
+        const visible = response.reasoning?.content && !summaryVisible.reasoningContext
+          ? { ...summaryVisible, reasoningContext: response.reasoning.content }
+          : summaryVisible;
         await this.emitPrivateDecisionTrace({
           options,
           messages,
           response,
           output,
+          providerReasoningSummary,
         });
-        return output;
+        return visible;
       }
 
       // Fallback: treat entire content as message (model didn't return valid JSON)
@@ -5919,13 +5183,23 @@ ${JSON.stringify(tool.function.parameters)}`,
         },
         options,
       );
+      const providerReasoningSummary =
+        InfluenceAgent.extractProviderReasoningSummary(response);
+      const summaryVisible = InfluenceAgent.withProviderReasoningSummaryDisplay(
+        output,
+        providerReasoningSummary,
+      );
+      const visible = response.reasoning?.content && !summaryVisible.reasoningContext
+        ? { ...summaryVisible, reasoningContext: response.reasoning.content }
+        : summaryVisible;
       await this.emitPrivateDecisionTrace({
         options,
         messages,
         response,
         output,
+        providerReasoningSummary,
       });
-      return output;
+      return visible;
     } catch (error) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
         throw error;
@@ -5954,7 +5228,6 @@ ${JSON.stringify(tool.function.parameters)}`,
     options?: LlmCallOptions,
   ): Promise<T & { decisionId?: UUID }> {
     const reasoning = this.usesReasoningBudget();
-    const useCompletionTokens = this.usesCompletionTokensParam();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
     let effectiveMaxTokens = this.applyStructuredTokenFloor(
       reasoning ? maxTokens + overhead : maxTokens,
@@ -5968,261 +5241,112 @@ ${JSON.stringify(tool.function.parameters)}`,
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({ role: "user", content: prompt });
 
-    if (this.toolChoiceMode === "json_schema") {
-      return await this.callToolJsonFallback<T>(
-        prompt,
-        requestTool,
-        effectiveMaxTokens,
-        useCompletionTokens,
-        reasoning,
-        systemPrompt,
-        options,
-        sourceKey,
-        providerCall,
-        maxAttempts,
-      );
-    }
-
-    if (this.shouldUseOpenAIResponsesForSummary(options)) {
-      return await this.callOpenAIResponsesToolJsonSchema<T>(
-        prompt,
-        requestTool,
-        effectiveMaxTokens,
-        systemPrompt,
-        options,
-        sourceKey,
-        providerCall,
-      );
-    }
-
-    try {
-      const toolChoice =
-        this.toolChoiceMode === "named"
-          ? {
-              type: "function" as const,
-              function: { name: requestTool.function.name },
-            }
-          : this.toolChoiceMode;
-      const requestBody = (): ChatCompletionCreateParamsNonStreaming => ({
-        model: this.model,
+    const response = await this.executeModelCall({
+      call: providerCall,
+      invocation: () => this.semanticInvocationWithMessages(
         messages,
-        ...(useCompletionTokens
-          ? { max_completion_tokens: effectiveMaxTokens }
-          : { max_tokens: effectiveMaxTokens }),
-        ...(this.supportsCustomTemperature() && {
-          temperature: this.temperature,
-        }),
-        ...(reasoning &&
-          this.supportsToolReasoningEffort() &&
-          this.requestedReasoningEffort(options) && {
-            reasoning_effort: this.requestedReasoningEffort(options),
-          }),
-        tools: [requestTool],
-        tool_choice: toolChoice,
-        ...(this.toolChoiceMode === "named" && { parallel_tool_calls: false }),
-      });
-      const response = await this.executeChatCompletion({
-        call: providerCall,
-        body: requestBody,
+        effectiveMaxTokens,
+        {
+          kind: "tool",
+          tools: [InfluenceAgent.modelTool(requestTool)],
+          choice: { name: requestTool.function.name },
+          allowParallel: false,
+        },
         options,
-        maxAttempts,
-        validate: (candidate) => {
-          const choice = candidate.choices[0];
-          const message = choice?.message;
-          if (message?.refusal || choice?.finish_reason === "content_filter") {
-            return {
-              status: "unusable",
-              kind: "refusal",
-              message: `Model refused tool call for ${requestTool.function.name}`,
-              retryable: false,
-            };
-          }
-          if (choice?.finish_reason === "length") {
-            return {
-              status: "unusable",
-              kind: "undecodable_structured_output",
-              message: `Tool call incomplete for ${requestTool.function.name}`,
-            };
-          }
-          const toolCall = message?.tool_calls?.[0];
-          if (!toolCall) {
-            const parsedContent = this.parseToolArgsFromContent<T>(
-              message?.content,
-              requestTool.function.name,
-            );
-            return parsedContent
-              ? { status: "usable", value: candidate }
-              : {
-                  status: "unusable",
-                  kind: "wrong_tool",
-                  message: `Tool call missing for ${requestTool.function.name}`,
-                  retryable: false,
-                };
-          }
-          if (toolCall.function.name !== requestTool.function.name) {
-            return {
-              status: "unusable",
-              kind: "wrong_tool",
-              message: `Expected ${requestTool.function.name}, received ${toolCall.function.name}`,
-              retryable: false,
-            };
-          }
-          try {
-            JSON.parse(toolCall.function.arguments);
-          } catch {
-            return {
-              status: "unusable",
-              kind: "undecodable_structured_output",
-              message: `Tool arguments were not valid JSON for ${requestTool.function.name}`,
-            };
-          }
-          return { status: "usable", value: candidate };
-        },
-        onRetry: (record) => {
-          if (record.outcome.kind === "undecodable_structured_output") {
-            effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
-          }
-          console.warn(
-            `[${this.name}] callTool(${requestTool.function.name}) attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
-          );
-        },
-      });
-
-      this.recordTokenUsage(response, sourceKey);
-
-      const choice = response.choices[0];
-      const message = choice?.message;
-      const reasoningContext = InfluenceAgent.extractReasoningContext(message);
-      if (message?.refusal) {
-        throw new ToolCallFatalError(
-          `Model refused tool call for ${requestTool.function.name}`,
-        );
-      }
-      if (choice?.finish_reason === "content_filter") {
-        throw new ToolCallFatalError(
-          `Tool call stopped by content filter for ${requestTool.function.name}`,
-        );
-      }
-      if (choice?.finish_reason === "length") {
-        throw new ToolCallRetryError(
-          `Tool call incomplete for ${requestTool.function.name}`,
-          true,
-        );
-      }
-
-      const toolCall: ChatCompletionMessageToolCall | undefined =
-        message?.tool_calls?.[0];
-      if (!toolCall) {
-        const parsedContent = this.parseToolArgsFromContent<T>(
-          message?.content,
-          requestTool.function.name,
-        );
-        if (parsedContent) {
-          console.warn(
-            `[tool-fallback] agent="${this.name}" tool=${requestTool.function.name} source=message_content`,
-          );
-          const withReasoning = parsedContent as T & {
-            reasoningContext?: string;
-          };
-          if (reasoningContext) {
-            withReasoning.reasoningContext = reasoningContext;
-          }
-          const decisionId = await this.emitPrivateDecisionTrace({
-            options,
-            messages,
-            response,
-            output: withReasoning,
-            toolName: requestTool.function.name,
-            toolArguments: withReasoning,
-          });
+      ),
+      options,
+      maxAttempts,
+      validate: (candidate) => {
+        if (candidate.refusal || candidate.stopReason === "content_filter") {
           return {
-            ...withReasoning,
-            ...(decisionId ? { decisionId } : {}),
+            status: "unusable",
+            kind: "refusal",
+            message: `Model refused tool call for ${requestTool.function.name}`,
+            retryable: false,
           };
         }
-
-        const jsonFallback = await this.callToolJsonFallback<T>(
-          prompt,
-          requestTool,
-          effectiveMaxTokens,
-          useCompletionTokens,
-          reasoning,
-          systemPrompt,
-          options,
-          sourceKey,
-          providerCall,
-        );
-        const jsonWithReasoning = jsonFallback as T & {
-          reasoningContext?: string;
-        };
-        if (reasoningContext) {
-          jsonWithReasoning.reasoningContext = reasoningContext;
+        if (candidate.stopReason === "length") {
+          return {
+            status: "unusable",
+            kind: "undecodable_structured_output",
+            message: `Tool call incomplete for ${requestTool.function.name}`,
+          };
         }
-        return jsonWithReasoning;
-      }
-
-      if (toolCall.function.name !== requestTool.function.name) {
+        const toolCall = candidate.toolCalls[0];
+        if (!toolCall) {
+          const parsedContent = this.parseToolArgsFromContent<T>(
+            candidate.text,
+            requestTool.function.name,
+          );
+          return parsedContent
+            ? { status: "usable", value: candidate }
+            : {
+                status: "unusable",
+                kind: "wrong_tool",
+                message: `Tool call missing for ${requestTool.function.name}`,
+                retryable: false,
+              };
+        }
+        if (toolCall.name !== requestTool.function.name) {
+          return {
+            status: "unusable",
+            kind: "wrong_tool",
+            message: `Expected ${requestTool.function.name}, received ${toolCall.name}`,
+            retryable: false,
+          };
+        }
+        try {
+          JSON.parse(toolCall.arguments);
+        } catch {
+          return {
+            status: "unusable",
+            kind: "undecodable_structured_output",
+            message: `Tool arguments were not valid JSON for ${requestTool.function.name}`,
+          };
+        }
+        return { status: "usable", value: candidate };
+      },
+      onRetry: (record) => {
+        if (record.outcome.kind === "undecodable_structured_output") {
+          effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
+        }
         console.warn(
-          `[tool-fallback] agent="${this.name}" expected=${requestTool.function.name} got=${toolCall.function.name} source=tool_name_mismatch`,
+          `[${this.name}] callTool(${requestTool.function.name}) attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
         );
-        const mismatchFallback = await this.callToolJsonFallback<T>(
-          prompt,
-          requestTool,
-          effectiveMaxTokens,
-          useCompletionTokens,
-          reasoning,
-          systemPrompt,
-          options,
-          sourceKey,
-          providerCall,
-        );
-        const mismatchWithReasoning = mismatchFallback as T & {
-          reasoningContext?: string;
-        };
-        if (reasoningContext) {
-          mismatchWithReasoning.reasoningContext = reasoningContext;
-        }
-        return mismatchWithReasoning;
-      }
+      },
+    });
 
-      const args = JSON.parse(toolCall.function.arguments) as T & {
-        reasoningContext?: string;
-      };
-      if (reasoningContext) {
-        args.reasoningContext = reasoningContext;
-      }
-      const decisionId = await this.emitPrivateDecisionTrace({
-        options,
-        messages,
-        response,
-        output: args,
-        toolName: requestTool.function.name,
-        toolArguments: args,
-      });
-      return {
-        ...args,
-        ...(decisionId ? { decisionId } : {}),
-      };
-    } catch (error) {
-      if (
-        error instanceof ProviderAttemptError &&
-        error.outcome.kind === "wrong_tool"
-      ) {
-        return await this.callToolJsonFallback<T>(
-          prompt,
-          requestTool,
-          effectiveMaxTokens,
-          useCompletionTokens,
-          reasoning,
-          systemPrompt,
-          options,
-          sourceKey,
-          providerCall,
-          maxAttempts,
-        );
-      }
-      throw error;
+    this.recordTokenUsage(response, sourceKey);
+    const toolCall = response.toolCalls[0];
+    const parsed = toolCall
+      ? JSON.parse(toolCall.arguments) as T
+      : this.parseToolArgsFromContent<T>(response.text, requestTool.function.name);
+    if (!parsed) {
+      throw new ToolCallFatalError(
+        `Accepted result had no arguments for ${requestTool.function.name}`,
+      );
     }
+    const args = parsed as T & { reasoningContext?: string };
+    const providerReasoningSummary =
+      InfluenceAgent.extractProviderReasoningSummary(response);
+    const reasoningContext = response.reasoning?.content ||
+      (providerReasoningSummary
+        ? InfluenceAgent.providerReasoningSummaryDisplay(providerReasoningSummary)
+        : undefined);
+    if (reasoningContext) args.reasoningContext = reasoningContext;
+    const decisionId = await this.emitPrivateDecisionTrace({
+      options,
+      messages,
+      response,
+      output: args,
+      toolName: requestTool.function.name,
+      toolArguments: args,
+      providerReasoningSummary,
+    });
+    return {
+      ...args,
+      ...(decisionId ? { decisionId } : {}),
+    };
   }
 
   // ---------------------------------------------------------------------------

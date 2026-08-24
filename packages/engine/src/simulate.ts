@@ -1948,7 +1948,9 @@ async function main() {
     process.exit(1);
   }
 
-  const openai = providerRuntimes?.[0]?.client ?? llmConfig.client;
+  // Agent and House dispatch through providerRuntimes when a manifest is sealed.
+  // The legacy constructor client is used only when no adapter-backed runtime exists.
+  const openai = llmConfig.client;
   const modelRuntime = catalogModelRuntime ?? resolveLegacySimulationModel(args, llmConfig.providerProfileId);
   args.model = modelRuntime.modelId;
   const openAIReasoningSummary = args.openAIReasoningSummary !== undefined

@@ -21,7 +21,7 @@ function intent(attemptOrdinal: number): ProviderAttemptIntent {
     attemptOrdinal,
     attemptId: `transport-${attemptOrdinal}`,
     preparedRequest: {
-      requestShape: "chat_completions",
+      transport: "chat_completions",
       providerProfileId: "openai",
       model: "gpt-5.6-luna",
       body: { messages: [{ role: "user", content: "Vote" }] },
@@ -113,7 +113,7 @@ describe("local provider attempt journal", () => {
         logicalCallOrdinal: attemptOrdinal,
       },
       preparedRequest: {
-        requestShape: "chat_completions",
+        transport: "chat_completions",
         providerProfileId: "katana",
         catalogId: "katana:glm-5-2",
         model: "glm-5-2",

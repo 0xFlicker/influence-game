@@ -54,7 +54,7 @@ export interface RecordProviderSpendForAttemptInput {
   action: string;
   phase?: string | null;
   round?: number | null;
-  requestShape: "chat_completions" | "responses";
+  transport: string;
   providerProfileId: string;
   catalogId?: string | null;
   modelName: string;
@@ -757,7 +757,7 @@ export async function recordProviderSpendForTrace(
       providerProfileId: input.trace.model.providerProfileId,
       catalogId: input.trace.model.catalogId,
       modelName: input.trace.model.name,
-      apiSurface: asRecord(input.trace.response.raw)?.object === "response" ? "openai_responses" : "chat_completions",
+      apiSurface: input.trace.response.transport ?? "unknown",
       reasoningPolicy: input.trace.reasoningPolicy,
       requestedReasoningEffort: input.trace.requestedReasoningEffort,
       promptTokens: usage.promptTokens ?? 0,
@@ -845,7 +845,7 @@ export async function recordProviderSpendForAttempt(
       providerProfileId: input.providerProfileId,
       catalogId: input.catalogId ?? undefined,
       modelName: input.modelName,
-      apiSurface: input.requestShape === "responses" ? "openai_responses" : "chat_completions",
+      apiSurface: input.transport,
       promptTokens: usage.promptTokens ?? 0,
       cachedTokens: usage.cachedTokens ?? 0,
       completionTokens: usage.completionTokens ?? 0,

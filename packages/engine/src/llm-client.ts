@@ -7,6 +7,8 @@ import {
   type ResolvedProviderManifestEntry,
 } from "./model-catalog";
 import { createProviderEvidenceFetch } from "./provider-execution";
+import { createProviderAdapter } from "./provider-adapters";
+import type { LlmProviderAdapter } from "./model-invocation";
 
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
@@ -29,7 +31,7 @@ export interface LlmClientConfig {
 
 /** One credential-free sealed manifest entry paired with its runtime client. */
 export interface LlmProviderRuntime {
-  client: OpenAI;
+  adapter: LlmProviderAdapter;
   catalogId: string;
   providerProfileId: ProviderProfileId;
   modelId: string;
@@ -37,6 +39,7 @@ export interface LlmProviderRuntime {
   reasoningPolicy: ModelReasoningPolicy;
   toolChoiceMode: LlmToolChoiceMode;
   openAIReasoningSummary?: OpenAIReasoningSummaryMode;
+  openAIServiceTier?: OpenAIRequestServiceTier;
   position: number;
   role: "primary" | "fallback";
   maxCallsPerGame?: number;
@@ -414,6 +417,7 @@ export function createLlmProviderRuntimesFromEnv(
   options: Omit<CreateLlmClientOptions, "providerProfileId"> = {},
 ): LlmProviderRuntime[] | null {
   const clients = new Map<ProviderProfileId, LlmClientConfig>();
+  const adapters = new Map<ProviderProfileId, LlmProviderAdapter>();
   const runtimes: LlmProviderRuntime[] = [];
   for (const entry of manifest) {
     let config = clients.get(entry.providerProfile.id);
@@ -426,8 +430,13 @@ export function createLlmProviderRuntimesFromEnv(
       if (!config) return null;
       clients.set(entry.providerProfile.id, config);
     }
+    let adapter = adapters.get(entry.providerProfile.id);
+    if (!adapter) {
+      adapter = createProviderAdapter(entry.providerProfile.id, config.client);
+      adapters.set(entry.providerProfile.id, adapter);
+    }
     runtimes.push({
-      client: config.client,
+      adapter,
       catalogId: entry.catalogId,
       providerProfileId: entry.providerProfile.id,
       modelId: entry.modelId,
@@ -437,6 +446,9 @@ export function createLlmProviderRuntimesFromEnv(
         entry.model.preferredToolChoiceMode ?? config.toolChoiceMode,
       ...(config.openAIReasoningSummary && {
         openAIReasoningSummary: config.openAIReasoningSummary,
+      }),
+      ...(config.openAIServiceTier && {
+        openAIServiceTier: config.openAIServiceTier,
       }),
       position: entry.position,
       role: entry.role,

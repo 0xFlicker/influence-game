@@ -36,7 +36,7 @@ That split makes the system useful to inspect:
 | MCP and OAuth | The deployed `/mcp` surface separates `agents:read`, `agents:write`, `games:read`, and `producer` scopes. `games:read` includes owner match-completeness tools (manifest, authorized transcript, owned cognition). Local helpers support OAuth-gated MCP evaluation. |
 | Identity and permissions | Influence owns durable account/session identity; permanent first-class Privy login and managed Clerk email/password login resolve through provider-neutral credentials. Scoped MCP tokens and current roles protect sensitive tools. |
 | Persistence | PostgreSQL stores API game state and read models; local MinIO/S3-compatible storage is used for private trace-content development; media artifacts are published through API-owned storage paths. |
-| Model/provider abstraction | The engine uses a model catalog and provider profiles for hosted OpenAI, local OpenAI-compatible servers, and Katana/IMGNAI model routes. |
+| Model/provider abstraction | Agent and House code emit provider-neutral invocations. Native adapters compile OpenAI models to Responses and Katana/IMGNAI models to Chat Completions without changing a primary request when fallbacks are added. |
 | Provider resilience | Games seal an ordered provider manifest with bounded fallback-call budgets. Failed non-rate-limit attempts preserve private operator evidence; provider health can pause Daily admission without stopping running games. |
 | Postgame analysis | Completed-game APIs and MCP tools expose game briefs, jury breakdowns, player summaries, turning points, momentum, and structured vote cohorts derived from canonical events. |
 | Frontend, backend, workers | The monorepo includes a Next.js web app, Bun/Hono API, engine package, and House Highlights render worker. |
@@ -52,8 +52,10 @@ flowchart LR
   API --> Engine[Game engine]
   Engine --> Agents[LLM-backed agents]
   Engine --> House[House interviewer / producer]
-  Agents --> Providers[OpenAI, local OpenAI-compatible, Katana routes]
-  House --> Providers
+  Agents --> Coordinator[Retry / budget / fallback coordinator]
+  House --> Coordinator
+  Coordinator --> Adapters[Provider-native adapters]
+  Adapters --> Providers[OpenAI Responses, Katana Chat, local compatible routes]
   Engine --> Events[Canonical game events]
   Events --> DB
   Events --> Reads[Replay and postgame read models]

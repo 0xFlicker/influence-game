@@ -789,7 +789,7 @@ export async function startGame(
       player.id,
       persona.name,
       personality,
-      primaryRuntime.client,
+      primaryRuntime.adapter,
       model,
       persona.backstory,
       memoryStore,
@@ -816,7 +816,7 @@ export async function startGame(
 
   const houseInterviewer = !useTestMockRunner && primaryRuntime && providerRuntimes
     ? new LLMHouseInterviewer(
-        primaryRuntime.client,
+        primaryRuntime.adapter,
         resolvedModelSelection.modelId,
         {
           gameId,

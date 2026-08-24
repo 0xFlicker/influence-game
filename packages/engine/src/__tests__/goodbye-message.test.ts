@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import { ContextBuilder } from "../context-builder";
-import { STRATEGY_DELTA_GUIDANCE } from "../formats/agent-surface";
 import { GameState, createUUID } from "../game-state";
 import type {
   AgentCallOptions,
@@ -991,50 +990,56 @@ function makeOpenAIStub(responses: OpenAIStubResponse[]): { openai: OpenAI; call
   return {
     calls,
     openai: {
-      chat: {
-        completions: {
-          create: async (params: Record<string, unknown>) => {
-            calls.push(params);
-            const response = responses[Math.min(calls.length - 1, responses.length - 1)] ?? {};
-            const toolCalls = response.toolName && response.toolArguments
-              ? [
-                  {
-                    id: "call_test",
-                    type: "function",
-                    function: {
-                      name: response.toolName,
-                      arguments: response.toolArguments,
-                    },
-                  },
-                ]
-              : undefined;
-
-            return {
-              id: "chatcmpl_test",
-              object: "chat.completion",
-              created: 0,
-              model: "gpt-5-nano",
-              choices: [
-                {
-                  index: 0,
-                  finish_reason: response.finishReason ?? (toolCalls ? "tool_calls" : "stop"),
-                  message: {
+      responses: {
+        create: async (params: Record<string, unknown>) => {
+          calls.push(params);
+          const response = responses[Math.min(calls.length - 1, responses.length - 1)] ?? {};
+          const output = response.toolName && response.toolArguments
+            ? [{
+                id: "fc_test",
+                type: "function_call",
+                call_id: "call_test",
+                name: response.toolName,
+                arguments: response.toolArguments,
+              }]
+            : response.refusal
+              ? [{
+                  id: "msg_refusal",
+                  type: "message",
+                  role: "assistant",
+                  status: "completed",
+                  content: [{ type: "refusal", refusal: response.refusal }],
+                }]
+              : response.content !== undefined && response.content !== null
+                ? [{
+                    id: "msg_text",
+                    type: "message",
                     role: "assistant",
-                    content: response.content ?? null,
-                    refusal: response.refusal ?? null,
-                    tool_calls: toolCalls,
-                  },
-                },
-              ],
-              usage: {
-                prompt_tokens: 1,
-                completion_tokens: 1,
-                total_tokens: 2,
-                prompt_tokens_details: { cached_tokens: 0 },
-                completion_tokens_details: { reasoning_tokens: 0 },
-              },
-            };
-          },
+                    status: "completed",
+                    content: [{
+                      type: "output_text",
+                      text: response.content,
+                      annotations: [],
+                    }],
+                  }]
+                : [];
+          const incomplete = response.finishReason === "length";
+          return {
+            id: "resp_test",
+            object: "response",
+            status: incomplete ? "incomplete" : "completed",
+            ...(incomplete && {
+              incomplete_details: { reason: "max_output_tokens" },
+            }),
+            output,
+            usage: {
+              input_tokens: 1,
+              output_tokens: 1,
+              total_tokens: 2,
+              input_tokens_details: { cached_tokens: 0 },
+              output_tokens_details: { reasoning_tokens: 0 },
+            },
+          };
         },
       },
     } as unknown as OpenAI,
@@ -1060,8 +1065,10 @@ function makeAgentContext(phase: Phase = Phase.VOTE): PhaseContext {
 }
 
 function getUserPrompt(call: Record<string, unknown> | undefined): string {
-  const messages = call?.messages as Array<{ role: string; content: string }> | undefined;
-  return messages?.find((message) => message.role === "user")?.content ?? "";
+  const input = call?.input;
+  if (typeof input === "string") return input;
+  return (input as Array<{ role: string; content: string }> | undefined)
+    ?.find((message) => message.role === "user")?.content ?? "";
 }
 
 describe("InfluenceAgent tool-call fallbacks", () => {
@@ -1085,16 +1092,17 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     });
 
     const tool = (calls[0]?.tools as Array<{
-      function: { strict?: boolean; parameters?: { required?: string[]; additionalProperties?: unknown } };
+      strict?: boolean;
+      parameters?: { required?: string[]; additionalProperties?: unknown };
     }>)[0];
-    expect(tool?.function.strict).toBe(true);
-    expect(tool?.function.parameters?.required).toEqual([
+    expect(tool?.strict).toBe(true);
+    expect(tool?.parameters?.required).toEqual([
       "thinking",
       "message",
       "pass",
       "strategyDelta",
     ]);
-    expect(tool?.function.parameters?.additionalProperties).toBe(false);
+    expect(tool?.parameters?.additionalProperties).toBe(false);
   });
 
   test("getVotes accepts JSON arguments returned as assistant content", async () => {
@@ -1144,10 +1152,10 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       strategyCandidateProposed: true,
     });
     expect(calls).toHaveLength(2);
-    expect(calls[1]?.max_completion_tokens).toBeGreaterThan(calls[0]?.max_completion_tokens as number);
+    expect(calls[1]?.max_output_tokens).toBeGreaterThan(calls[0]?.max_output_tokens as number);
   });
 
-  test("getPowerAction retries with strict JSON schema when a completed response has no tool call", async () => {
+  test("getPowerAction does not rewrite a missing native tool call into another request shape", async () => {
     const { openai, calls } = makeOpenAIStub([
       { content: null, finishReason: "stop" },
       {
@@ -1160,49 +1168,13 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     ]);
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
-    const action = await agent.getPowerAction(
+    await expect(agent.getPowerAction(
       makeAgentContext(Phase.POWER),
       ["vera-id", "mira-id"],
-    );
-
-    expect(action).toEqual({
-      action: "eliminate",
-      target: "mira-id",
-      thinking: "Take the shot before the council can scatter.",
-      reasoningContext: undefined,
-      strategyCandidateProposed: true,
-    });
-    expect(calls).toHaveLength(2);
-    expect(calls[1]?.response_format).toEqual({
-      type: "json_schema",
-      json_schema: {
-        name: "use_power_arguments",
-        strict: true,
-        schema: {
-          type: "object",
-          properties: {
-            thinking: { type: "string", description: "Your internal reasoning for this decision (hidden from other players)" },
-            action: {
-              type: "string",
-              enum: ["eliminate", "protect", "pass"],
-              description: "The power action to take",
-            },
-            target: { type: "string", description: "Player name to target" },
-            shieldPullUpCandidates: {
-              type: "array",
-              items: { type: "string" },
-              description: "Replacement candidate names to pull up if protecting a current Council candidate creates an unresolved replacement slot; otherwise use an empty array",
-            },
-            strategyDelta: {
-              type: ["string", "null"],
-              description: STRATEGY_DELTA_GUIDANCE,
-            },
-          },
-          required: ["thinking", "action", "target", "shieldPullUpCandidates", "strategyDelta"],
-          additionalProperties: false,
-        },
-      },
-    });
+    )).rejects.toThrow("Tool call missing for use_power");
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toHaveProperty("tools");
+    expect(calls[0]).not.toHaveProperty("text");
   });
 
   test("getPowerAction does not retry a refusal through JSON fallback", async () => {

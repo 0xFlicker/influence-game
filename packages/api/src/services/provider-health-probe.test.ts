@@ -123,15 +123,18 @@ describe("provider health probes", () => {
     let receivedRequestOptions: Record<string, unknown> | undefined;
     const createClientFromEnv = (): LlmClientConfig => ({
       client: {
-        chat: {
-          completions: {
-            create: async (_body: unknown, requestOptions?: Record<string, unknown>) => {
-              receivedRequestOptions = requestOptions;
-              return {
-                _request_id: "probe-request-id",
-                choices: [{ message: { content: "OK" } }],
-              };
-            },
+        responses: {
+          create: async (_body: unknown, requestOptions?: Record<string, unknown>) => {
+            receivedRequestOptions = requestOptions;
+            return {
+              id: "probe-response-id",
+              _request_id: "probe-request-id",
+              status: "completed",
+              output: [{
+                type: "message",
+                content: [{ type: "output_text", text: "OK" }],
+              }],
+            };
           },
         },
       } as unknown as LlmClientConfig["client"],
@@ -167,6 +170,7 @@ describe("provider health probes", () => {
     const evidence = (await db.select().from(schema.providerHealthProbeEvidence))[0]!;
     expect(evidence.record).toMatchObject({
       requestId: "probe-request-id",
+      preparedRequest: { transport: "openai.responses" },
       outcome: { kind: "usable" },
       disposition: "accepted",
     });
@@ -257,14 +261,14 @@ function probeEvidence(
     attemptOrdinal: 1,
     attemptId: "probe-attempt",
     preparedRequest: {
-      requestShape: "chat_completions",
+      transport: "katana.chat_completions",
       providerProfileId: target.providerProfileId,
       catalogId: target.catalogId,
       model: target.modelId,
       body: { messages: [{ content: "Reply with OK." }] },
     },
     rawRequest: {
-      requestShape: "chat_completions",
+      transport: "katana.chat_completions",
       providerProfileId: target.providerProfileId,
       catalogId: target.catalogId,
       model: target.modelId,

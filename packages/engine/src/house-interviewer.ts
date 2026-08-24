@@ -9,8 +9,6 @@
 import { randomUUID } from "crypto";
 import type OpenAI from "openai";
 import type {
-  ChatCompletion,
-  ChatCompletionCreateParamsNonStreaming,
   ChatCompletionMessageParam,
   ChatCompletionTool,
 } from "openai/resources/chat/completions";
@@ -30,6 +28,18 @@ import {
   type ProviderExecutionHooks,
   type ProviderLogicalCallExecution,
 } from "./provider-execution";
+import {
+  createProviderAdapter,
+  executeModelInvocation,
+  isLlmProviderAdapter,
+} from "./provider-adapters";
+import type {
+  LlmProviderAdapter,
+  ModelInvocation,
+  ModelInvocationMessage,
+  ModelInvocationTool,
+  ProviderModelOutcome,
+} from "./model-invocation";
 import {
   HOUSE_FACT_CATEGORIES,
   isHouseFactCategory,
@@ -474,35 +484,12 @@ function houseSummaryTools(
   ];
 }
 
-function parseHouseToolCalls(response: ChatCompletion): ParsedHouseToolCall[] {
-  const responseRecord = response as unknown as Record<string, unknown>;
-  const choices = Array.isArray(responseRecord.choices) ? responseRecord.choices : [];
-  const firstChoice = choices[0];
-  if (!firstChoice || typeof firstChoice !== "object" || Array.isArray(firstChoice)) return [];
-  const message = (firstChoice as Record<string, unknown>).message;
-  if (!message || typeof message !== "object" || Array.isArray(message)) return [];
-  const calls = (message as Record<string, unknown>).tool_calls;
-  if (!Array.isArray(calls)) return [];
-  const parsed: ParsedHouseToolCall[] = [];
-  for (const call of calls) {
-    if (!call || typeof call !== "object" || Array.isArray(call)) return [];
-    const callRecord = call as Record<string, unknown>;
-    const functionValue = callRecord.function;
-    if (!functionValue || typeof functionValue !== "object" || Array.isArray(functionValue)) return [];
-    const functionRecord = functionValue as Record<string, unknown>;
-    if (
-      callRecord.type !== "function"
-      || typeof callRecord.id !== "string"
-      || typeof functionRecord.name !== "string"
-      || typeof functionRecord.arguments !== "string"
-    ) return [];
-    parsed.push({
-      id: callRecord.id,
-      name: functionRecord.name,
-      argumentsText: functionRecord.arguments,
-    });
-  }
-  return parsed;
+function parseHouseToolCalls(response: ProviderModelOutcome): ParsedHouseToolCall[] {
+  return response.toolCalls.map((call, index) => ({
+    id: call.id ?? `call_${index}`,
+    name: call.name,
+    argumentsText: call.arguments,
+  }));
 }
 
 function parseToolArguments(argumentsText: string): Record<string, unknown> | null {
@@ -1063,7 +1050,6 @@ function parseHouseProducerBrief(
 }
 
 export class LLMHouseInterviewer implements IHouseInterviewer {
-  private readonly openai: OpenAI;
   private readonly model: string;
   private readonly providerProfileId: ProviderProfileId;
   private readonly catalogId?: string;
@@ -1082,8 +1068,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   private readonly responseProviderAttemptId = new WeakMap<object, string>();
   private tokenTracker: TokenTracker | null = null;
 
-  constructor(openaiClient: OpenAI, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
-    this.openai = openaiClient;
+  constructor(provider: OpenAI | LlmProviderAdapter, model = DEFAULT_MODEL_ID, options: LLMHouseInterviewerOptions = {}) {
     this.model = model;
     this.providerProfileId = options.providerProfileId ?? "openai";
     this.catalogId = options.catalogId;
@@ -1101,7 +1086,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     this.providerManifest = options.providerManifest?.length
       ? options.providerManifest.map((entry) => ({ ...entry }))
       : [{
-          client: openaiClient,
+          adapter: isLlmProviderAdapter(provider)
+            ? provider
+            : createProviderAdapter(this.providerProfileId, provider),
           catalogId: options.catalogId ?? `${this.providerProfileId}:${model}`,
           providerProfileId: this.providerProfileId,
           modelId: model,
@@ -1132,44 +1119,26 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     });
   }
 
-  private executeChatCompletion<T>(params: {
+  private executeModelCall<T>(params: {
     call: ProviderLogicalCallExecution;
-    body:
-      | ChatCompletionCreateParamsNonStreaming
-      | ((runtime: LlmProviderRuntime) => ChatCompletionCreateParamsNonStreaming);
+    invocation: ModelInvocation | (() => ModelInvocation);
     maxAttempts: number;
     requestSignal?: AbortSignal;
     cancellationSignal?: AbortSignal;
-    validate(response: ChatCompletion): ProviderCandidateValidation<T>;
+    validate(response: ProviderModelOutcome): ProviderCandidateValidation<T>;
     onRetry?: (record: ProviderAttemptRecord) => void;
   }): Promise<T> {
-    const requestBody = (runtime: LlmProviderRuntime) =>
-      this.adaptChatCompletionBody(
-        typeof params.body === "function" ? params.body(runtime) : params.body,
-        runtime,
-      );
-    return params.call.executeManifest({
-      entries: this.providerManifest.map((runtime) => ({
-        catalogId: runtime.catalogId,
-        preparedRequest: {
-          requestShape: "chat_completions" as const,
-          providerProfileId: runtime.providerProfileId,
-          catalogId: runtime.catalogId,
-          model: runtime.modelId,
-          body: requestBody(runtime),
-        },
-        maxAttempts: params.maxAttempts,
-        dispatch: ({ requestOptions }) =>
-          runtime.client.chat.completions.create(requestBody(runtime), {
-            ...requestOptions,
-            ...(params.requestSignal && { signal: params.requestSignal }),
-          }),
-        validate: params.validate,
-        ...(params.onRetry && { onRetry: params.onRetry }),
-      })),
+    return executeModelInvocation({
+      call: params.call,
+      runtimes: this.providerManifest,
+      invocation: params.invocation,
+      maxAttempts: params.maxAttempts,
+      ...(params.requestSignal && { requestSignal: params.requestSignal }),
       ...(params.cancellationSignal && {
         cancellationSignal: params.cancellationSignal,
       }),
+      validate: params.validate,
+      ...(params.onRetry && { onRetry: params.onRetry }),
     }).then(({ value, manifestPosition, acceptedAttemptId }) => {
       if (value && typeof value === "object") {
         this.responseProviderRuntime.set(
@@ -1184,76 +1153,35 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     });
   }
 
-  private adaptChatCompletionBody(
-    body: ChatCompletionCreateParamsNonStreaming,
-    runtime: LlmProviderRuntime,
-  ): ChatCompletionCreateParamsNonStreaming {
-    const next = { ...body, model: runtime.modelId } as Record<string, unknown>;
-    const tokenBudget = typeof next.max_completion_tokens === "number"
-      ? next.max_completion_tokens
-      : typeof next.max_tokens === "number"
-        ? next.max_tokens
-        : undefined;
-    delete next.max_completion_tokens;
-    delete next.max_tokens;
-    if (tokenBudget !== undefined) {
-      next[runtime.modelCapabilities.usesMaxCompletionTokens
-        ? "max_completion_tokens"
-        : "max_tokens"] = tokenBudget;
-    }
-    if (!runtime.modelCapabilities.supportsTemperature) delete next.temperature;
-    const configuredEffort = runtime.reasoningPolicy === "low"
-      || runtime.reasoningPolicy === "medium"
-      || runtime.reasoningPolicy === "high"
-      ? runtime.reasoningPolicy
-      : undefined;
-    const reasoningEffort = runtime.modelCapabilities.supportsReasoningEffort
-      ? configuredEffort
-      : undefined;
-    if (reasoningEffort) next.reasoning_effort = reasoningEffort;
-    else delete next.reasoning_effort;
-    return next as unknown as ChatCompletionCreateParamsNonStreaming;
-  }
-
-  private runtimeForResponse(response: ChatCompletion): LlmProviderRuntime {
+  private runtimeForResponse(response: ProviderModelOutcome): LlmProviderRuntime {
     return this.responseProviderRuntime.get(response as object)
       ?? this.providerManifest[0]!;
   }
 
-  private executeHouseChatTransport(
+  private executeHouseModelTransport(
     context: PrivateDecisionTraceContext,
-    body: ChatCompletionCreateParamsNonStreaming,
+    invocation: ModelInvocation,
     options: {
       maxAttempts?: number;
       requestSignal?: AbortSignal;
-      validate?: (response: ChatCompletion) => ProviderCandidateValidation<ChatCompletion>;
+      validate?: (response: ProviderModelOutcome) => ProviderCandidateValidation<ProviderModelOutcome>;
     } = {},
-  ): Promise<ChatCompletion> {
-    return this.executeChatCompletion({
+  ): Promise<ProviderModelOutcome> {
+    return this.executeModelCall({
       call: this.startProviderCall(context),
-      body,
+      invocation,
       maxAttempts: options.maxAttempts ?? 2,
       ...(options.requestSignal && { requestSignal: options.requestSignal }),
       validate: (response) => {
-        let choice: ChatCompletion["choices"][number] | undefined;
-        try {
-          choice = response.choices[0];
-        } catch {
-          if (options.validate) return options.validate(response);
-          throw new Error("unreadable_house_response");
-        }
-        if (
-          choice?.message?.refusal ||
-          choice?.finish_reason === "content_filter"
-        ) {
+        if (response.refusal || response.stopReason === "content_filter") {
           return {
             status: "unusable",
             kind: "refusal",
-            message: choice?.message?.refusal ?? "content_filter",
+            message: response.refusal ?? "content_filter",
             retryable: false,
           };
         }
-        if (choice?.finish_reason === "length") {
+        if (response.stopReason === "length") {
           return {
             status: "unusable",
             kind: "undecodable_structured_output",
@@ -1261,7 +1189,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
             retryable: true,
           };
         }
-        if (!choice?.message) {
+        if (!response.text && response.toolCalls.length === 0) {
           return {
             status: "unusable",
             kind: "empty_output",
@@ -1275,9 +1203,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   }
 
   private validateHouseTextResponse(
-    response: ChatCompletion,
-  ): ProviderCandidateValidation<ChatCompletion> {
-    const content = response.choices[0]?.message?.content?.trim();
+    response: ProviderModelOutcome,
+  ): ProviderCandidateValidation<ProviderModelOutcome> {
+    const content = response.text?.trim();
     return content
       ? { status: "usable", value: response }
       : {
@@ -1289,9 +1217,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   }
 
   private validateHouseJsonResponse(
-    response: ChatCompletion,
-  ): ProviderCandidateValidation<ChatCompletion> {
-    const content = response.choices[0]?.message?.content?.trim();
+    response: ProviderModelOutcome,
+  ): ProviderCandidateValidation<ProviderModelOutcome> {
+    const content = response.text?.trim();
     if (!content) {
       return {
         status: "unusable",
@@ -1311,9 +1239,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   }
 
   private validateHouseFollowUpResponse(
-    response: ChatCompletion,
-  ): ProviderCandidateValidation<ChatCompletion> {
-    const content = response.choices[0]?.message?.content?.trim();
+    response: ProviderModelOutcome,
+  ): ProviderCandidateValidation<ProviderModelOutcome> {
+    const content = response.text?.trim();
     if (!content) {
       return {
         status: "unusable",
@@ -1336,9 +1264,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
   }
 
   private validateHouseSummaryToolResponse(
-    response: ChatCompletion,
+    response: ProviderModelOutcome,
     terminalOnly: boolean,
-  ): ProviderCandidateValidation<ChatCompletion> {
+  ): ProviderCandidateValidation<ProviderModelOutcome> {
     let calls: ParsedHouseToolCall[];
     try {
       calls = parseHouseToolCalls(response);
@@ -1348,7 +1276,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       return { status: "usable", value: response };
     }
     if (calls.length === 0) {
-      const rawCalls = response.choices[0]?.message?.tool_calls;
+      const rawCalls = response.toolCalls;
       return {
         status: "unusable",
         kind: rawCalls && rawCalls.length > 0 ? "undecodable_structured_output" : "empty_output",
@@ -1367,6 +1295,14 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       };
     }
     const call = calls[0]!;
+    if (!call.name || !call.argumentsText) {
+      return {
+        status: "unusable",
+        kind: "undecodable_structured_output",
+        message: "undecodable_house_summary_tool_call",
+        retryable: true,
+      };
+    }
     const allowed = terminalOnly
       ? call.name === "emit_house_summary" || call.name === "skip_house_summary"
       : call.name === "read_house_facts"
@@ -1390,7 +1326,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
         };
   }
 
-  private recordUsage(source: string, response: ChatCompletion): void {
+  private recordUsage(source: string, response: ProviderModelOutcome): void {
     if (!this.tokenTracker) return;
     const usage = LLMHouseInterviewer.providerUsageMetadata(response);
     if (!usage || usage.promptTokens === undefined || usage.completionTokens === undefined) return;
@@ -1400,18 +1336,17 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       usage.completionTokens,
       usage.cachedTokens ?? 0,
       usage.reasoningTokens ?? 0,
-      parseOpenAIServiceTier((response as unknown as Record<string, unknown>).service_tier),
+      parseOpenAIServiceTier(response.serviceTier),
       usage.cacheWriteTokens ?? 0,
     );
   }
 
-  static providerUsage(response: ChatCompletion, callId: string): HouseProviderUsage {
+  static providerUsage(response: ProviderModelOutcome, callId: string): HouseProviderUsage {
     const usage = LLMHouseInterviewer.providerUsageMetadata(response);
-    const responseRecord = response as unknown as Record<string, unknown>;
     return {
       callId,
-      responseId: typeof responseRecord.id === "string" ? responseRecord.id : null,
-      serviceTier: parseOpenAIServiceTier(responseRecord.service_tier) ?? null,
+      responseId: response.responseId ?? null,
+      serviceTier: parseOpenAIServiceTier(response.serviceTier) ?? null,
       promptTokens: usage?.promptTokens ?? null,
       cachedTokens: usage?.cachedTokens ?? null,
       cacheWriteTokens: usage?.cacheWriteTokens ?? null,
@@ -1511,55 +1446,16 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     return typeof value === "number" && Number.isFinite(value) ? value : undefined;
   }
 
-  private static providerUsageMetadata(response: ChatCompletion): PrivateDecisionTrace["usage"] | undefined {
-    const usage = (response as unknown as Record<string, unknown>).usage;
-    if (!usage || typeof usage !== "object" || Array.isArray(usage)) return undefined;
-    const usageRecord = usage as Record<string, unknown>;
-    const completionDetails = usageRecord.completion_tokens_details &&
-      typeof usageRecord.completion_tokens_details === "object" &&
-      !Array.isArray(usageRecord.completion_tokens_details)
-      ? usageRecord.completion_tokens_details as Record<string, unknown>
-      : {};
-    const promptDetails = usageRecord.prompt_tokens_details &&
-      typeof usageRecord.prompt_tokens_details === "object" &&
-      !Array.isArray(usageRecord.prompt_tokens_details)
-      ? usageRecord.prompt_tokens_details as Record<string, unknown>
-      : {};
-    const inputDetails = usageRecord.input_tokens_details &&
-      typeof usageRecord.input_tokens_details === "object" &&
-      !Array.isArray(usageRecord.input_tokens_details)
-      ? usageRecord.input_tokens_details as Record<string, unknown>
-      : {};
-    const outputDetails = usageRecord.output_tokens_details &&
-      typeof usageRecord.output_tokens_details === "object" &&
-      !Array.isArray(usageRecord.output_tokens_details)
-      ? usageRecord.output_tokens_details as Record<string, unknown>
-      : {};
-    const routerBilling = usageRecord.imgnai &&
-      typeof usageRecord.imgnai === "object" &&
-      !Array.isArray(usageRecord.imgnai)
-      ? usageRecord.imgnai as Record<string, unknown>
-      : undefined;
-    const diagnostics = "imgnai" in usageRecord && !routerBilling ? ["malformed_router_billing"] : [];
-    const promptTokens = LLMHouseInterviewer.readNumberField(usageRecord.prompt_tokens)
-      ?? LLMHouseInterviewer.readNumberField(usageRecord.input_tokens);
-    const completionTokens = LLMHouseInterviewer.readNumberField(usageRecord.completion_tokens)
-      ?? LLMHouseInterviewer.readNumberField(usageRecord.output_tokens);
-    const cachedTokens = LLMHouseInterviewer.readNumberField(promptDetails.cached_tokens)
-      ?? LLMHouseInterviewer.readNumberField(inputDetails.cached_tokens);
-    const cacheWriteTokens = LLMHouseInterviewer.readNumberField(promptDetails.cache_write_tokens)
-      ?? LLMHouseInterviewer.readNumberField(inputDetails.cache_write_tokens);
-    const reasoningTokens = LLMHouseInterviewer.readNumberField(completionDetails.reasoning_tokens)
-      ?? LLMHouseInterviewer.readNumberField(outputDetails.reasoning_tokens);
+  private static providerUsageMetadata(response: ProviderModelOutcome): PrivateDecisionTrace["usage"] | undefined {
+    const usage = response.accounting?.usage;
+    if (!usage) return undefined;
     const metadata: NonNullable<PrivateDecisionTrace["usage"]> = {
-      ...(promptTokens !== undefined && { promptTokens }),
-      ...(completionTokens !== undefined && { completionTokens }),
-      ...(cachedTokens !== undefined && { cachedTokens }),
-      ...(cacheWriteTokens !== undefined && { cacheWriteTokens }),
-      ...(reasoningTokens !== undefined && { reasoningTokens }),
-      ...(LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) !== undefined && { totalTokens: LLMHouseInterviewer.readNumberField(usageRecord.total_tokens) }),
-      ...(routerBilling && { routerBilling }),
-      ...(diagnostics.length > 0 && { diagnostics }),
+      ...(usage.promptTokens !== undefined && { promptTokens: usage.promptTokens }),
+      ...(usage.completionTokens !== undefined && { completionTokens: usage.completionTokens }),
+      ...(usage.cachedTokens !== undefined && { cachedTokens: usage.cachedTokens }),
+      ...(usage.cacheWriteTokens !== undefined && { cacheWriteTokens: usage.cacheWriteTokens }),
+      ...(usage.reasoningTokens !== undefined && { reasoningTokens: usage.reasoningTokens }),
+      ...(usage.totalTokens !== undefined && { totalTokens: usage.totalTokens }),
     };
     return Object.keys(metadata).length > 0 ? metadata : undefined;
   }
@@ -1573,13 +1469,11 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       tool_call_id?: string;
       tool_calls?: unknown;
     }[];
-    response: ChatCompletion;
+    response: ProviderModelOutcome;
     output?: unknown;
     toolRequest?: boolean;
   }): Promise<void> {
     if (!this.privateTraceSink) return;
-    const choice = params.response.choices[0];
-    const message = choice?.message;
     const outputRecord =
       params.output && typeof params.output === "object" && !Array.isArray(params.output)
         ? params.output as Record<string, unknown>
@@ -1587,9 +1481,16 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     const emittedThinking = readString(outputRecord.thinking);
     const reasoningContext =
       readString(outputRecord.reasoningContext) ||
-      LLMHouseInterviewer.extractReasoningContext(message);
-    const toolCalls = LLMHouseInterviewer.privateTraceToolCalls(message);
-    const content = typeof message?.content === "string" ? message.content : null;
+      params.response.reasoning?.content;
+    const toolCalls = params.response.toolCalls.length > 0
+      ? params.response.toolCalls.map((call) => ({
+          ...(call.id && { id: call.id }),
+          type: "function_call",
+          name: call.name,
+          arguments: call.arguments,
+        }))
+      : undefined;
+    const content = params.response.text ?? null;
     const runtime = this.runtimeForResponse(params.response);
     const configuredEffort = runtime.reasoningPolicy === "low"
       || runtime.reasoningPolicy === "medium"
@@ -1603,7 +1504,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     const privateTraceMessages = LLMHouseInterviewer.privateTraceMessages(params.messages);
     const promptReuse = this.promptReuseCollector.observe(privateTraceMessages, {
       lane: params.context.actor.id ?? "house",
-      requestShape: "chat_completions",
+      requestShape: params.response.transport,
       usage: LLMHouseInterviewer.providerUsageMetadata(params.response),
     });
     const acceptedAttemptId = this.responseProviderAttemptId.get(params.response as object);
@@ -1640,8 +1541,9 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
         reasoningPolicy: runtime.reasoningPolicy,
       },
       response: {
-        raw: params.response,
-        finishReason: choice?.finish_reason ?? null,
+        transport: params.response.transport,
+        raw: params.response.nativeResponse,
+        finishReason: params.response.stopReason ?? params.response.status ?? null,
         content,
         ...(toolCalls && { toolCalls }),
       },
@@ -1666,6 +1568,71 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       return this.reasoningPolicy;
     }
     return undefined;
+  }
+
+  private static modelTool(tool: ChatCompletionTool): ModelInvocationTool {
+    return {
+      name: tool.function.name,
+      ...(tool.function.description && { description: tool.function.description }),
+      parameters: (tool.function.parameters ?? {}) as Record<string, unknown>,
+      ...(typeof tool.function.strict === "boolean" && {
+        strict: tool.function.strict,
+      }),
+    };
+  }
+
+  private static modelMessages(
+    messages: readonly ChatCompletionMessageParam[],
+  ): ModelInvocationMessage[] {
+    return messages.map((message) => {
+      if (message.role === "tool") {
+        return {
+          role: "tool" as const,
+          content: typeof message.content === "string"
+            ? message.content
+            : JSON.stringify(message.content),
+          toolCallId: message.tool_call_id,
+        };
+      }
+      if (message.role === "assistant") {
+        return {
+          role: "assistant" as const,
+          content: typeof message.content === "string" ? message.content : null,
+          ...(message.tool_calls?.length && {
+            toolCalls: message.tool_calls.map((call) => ({
+              id: call.id,
+              name: call.function.name,
+              arguments: call.function.arguments,
+            })),
+          }),
+        };
+      }
+      if (message.role === "function") {
+        throw new Error("Legacy function messages are not supported by provider-native invocation adapters");
+      }
+      return {
+        role: message.role,
+        content: typeof message.content === "string"
+          ? message.content
+          : JSON.stringify(message.content),
+      };
+    });
+  }
+
+  private houseInvocation(
+    messages: readonly ChatCompletionMessageParam[],
+    result: ModelInvocation["result"],
+    outputTokenLimit: number,
+    temperature: number,
+  ): ModelInvocation {
+    const effort = this.requestedReasoningEffort();
+    return {
+      messages: LLMHouseInterviewer.modelMessages(messages),
+      result,
+      outputTokenLimit,
+      ...(effort && { reasoning: { effort } }),
+      temperature,
+    };
   }
 
   private requestedToolReasoningEffort(): ModelReasoningEffort | undefined {
@@ -1755,7 +1722,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
     schema: Record<string, unknown>;
     maxTokens: number;
     temperature: number;
-  }): Promise<{ parsed: Record<string, unknown>; response: ChatCompletion }> {
+  }): Promise<{ parsed: Record<string, unknown>; response: ProviderModelOutcome }> {
     let effectiveMaxTokens = this.applyStructuredTokenFloor(params.maxTokens);
     const maxAttempts = 2;
     const traceContext = this.privateTraceContext(
@@ -1764,31 +1731,26 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
       params.phase,
     );
     const providerCall = this.startProviderCall(traceContext);
-    const requestBody = (): ChatCompletionCreateParamsNonStreaming => ({
-      model: this.model,
-      messages: params.messages,
-      response_format: {
-        type: "json_schema",
-        json_schema: {
-          name: params.schemaName,
-          strict: true,
-          schema: params.schema,
-        },
-      },
-      ...this.modelParams(effectiveMaxTokens, params.temperature),
-    });
-
     try {
-      const result = await this.executeChatCompletion({
+      const result = await this.executeModelCall({
         call: providerCall,
-        body: requestBody,
+        invocation: () => this.houseInvocation(
+          params.messages,
+          {
+            kind: "structured",
+            name: params.schemaName,
+            strict: true,
+            schema: params.schema,
+          },
+          effectiveMaxTokens,
+          params.temperature,
+        ),
         maxAttempts,
         ...(this.structuredOutputSignal() && {
           requestSignal: this.structuredOutputSignal(),
         }),
         validate: (response) => {
-          const choice = response.choices[0];
-          if (choice?.message?.refusal) {
+          if (response.refusal) {
             return {
               status: "unusable",
               kind: "refusal",
@@ -1796,7 +1758,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
               retryable: false,
             };
           }
-          if (choice?.finish_reason === "content_filter") {
+          if (response.stopReason === "content_filter") {
             return {
               status: "unusable",
               kind: "refusal",
@@ -1804,7 +1766,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
               retryable: false,
             };
           }
-          if (choice?.finish_reason === "length") {
+          if (response.stopReason === "length") {
             return {
               status: "unusable",
               kind: "undecodable_structured_output",
@@ -1812,7 +1774,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
             };
           }
           const parsed = this.parseStructuredJsonContent(
-            choice?.message?.content,
+            response.text,
           );
           return parsed
             ? { status: "usable", value: { parsed, response } }
@@ -1917,7 +1879,7 @@ Respond with JSON only:
 
       const output = parseHouseMingleAssignmentRecord({
         ...parsed,
-        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
+        reasoningContext: readString(parsed.reasoningContext) || response.reasoning?.content,
       });
       await this.emitPrivateDecisionTrace({
         context: this.privateTraceContext("house-mingle-assignment", context.round, context.phase),
@@ -2004,7 +1966,7 @@ Respond with JSON only.`;
         ...parsed,
         reasoningContext:
           readString(parsed.reasoningContext) ||
-          LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
+          response.reasoning?.content,
       });
       await this.emitPrivateDecisionTrace({
         context: this.privateTraceContext("house-alliance-proposer-selection", context.round, context.phase),
@@ -2103,7 +2065,7 @@ Respond with JSON only.`;
       });
       const output = parseHouseAllianceHuddleScheduleRecord({
         ...parsed,
-        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
+        reasoningContext: readString(parsed.reasoningContext) || response.reasoning?.content,
       });
       await this.emitPrivateDecisionTrace({
         context: this.privateTraceContext("house-alliance-huddle-schedule", context.round, context.phase),
@@ -2192,7 +2154,7 @@ Respond with JSON only.`;
       });
       const output = parseHouseAllianceHuddleOutcome({
         ...parsed,
-        reasoningContext: readString(parsed.reasoningContext) || LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message),
+        reasoningContext: readString(parsed.reasoningContext) || response.reasoning?.content,
       }, context);
       await this.emitPrivateDecisionTrace({
         context: this.privateTraceContext("house-alliance-huddle-outcome", context.round, context.phase),
@@ -2275,25 +2237,30 @@ Respond with JSON only:
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer maintaining a private Strategy Bible. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const response = await this.executeHouseChatTransport(
+      const response = await this.executeHouseModelTransport(
         this.privateTraceContext(
           "house-strategy-bible",
           context.round,
           context.phase,
         ),
-        {
-          model: this.model,
+        this.houseInvocation(
           messages,
-          response_format: this.jsonObjectResponseFormat(
-            "house_strategy_bible",
+          {
+            kind: "structured",
+            name: "house_strategy_bible",
+            strict: true,
+            schema: { type: "object", additionalProperties: true },
+          },
+          this.applyMessageTokenFloor(
+            this.requestedReasoningEffort() ? 9_000 : 5_000,
           ),
-          ...this.modelParams(5000, 0.35),
-        },
+          0.35,
+        ),
         { validate: (candidate) => this.validateHouseJsonResponse(candidate) },
       );
       this.recordUsage("House/strategy-bible", response);
 
-      const output = parseHouseStrategyBible(response.choices[0]?.message?.content?.trim() ?? "", context);
+      const output = parseHouseStrategyBible(response.text?.trim() ?? "", context);
       await this.emitPrivateDecisionTrace({
         context: this.privateTraceContext("house-strategy-bible", context.round, context.phase),
         messages,
@@ -2395,7 +2362,7 @@ Respond with JSON only:
       ...baseResult(),
     });
 
-    const request = async (terminalOnly: boolean): Promise<{ response: ChatCompletion; callId: string } | null> => {
+    const request = async (terminalOnly: boolean): Promise<{ response: ProviderModelOutcome; callId: string } | null> => {
       if (providerCalls >= limits.maxProviderCalls) return null;
       const remainingMs = deadline - Date.now();
       if (remainingMs <= 0) return null;
@@ -2414,24 +2381,15 @@ Respond with JSON only:
         totalTokens: null,
       });
       try {
-        const requestBody = {
-          model: this.model,
-          messages,
-          tools: houseSummaryTools(
-            limits.maxCategories,
-            limits.maxContinuityItems,
-            limits.maxSources,
-            limits.maxProseCharacters,
-            allowFactRead,
-            terminalOnly,
-          ),
-          tool_choice: "required",
-          parallel_tool_calls: false,
-          stream: false,
-          ...this.houseSummaryModelParams(limits.maxCompletionTokens),
-        };
-        // The installed SDK predates Luna's documented `none` tool-effort value.
-        const response = await this.executeHouseChatTransport(
+        const tools = houseSummaryTools(
+          limits.maxCategories,
+          limits.maxContinuityItems,
+          limits.maxSources,
+          limits.maxProseCharacters,
+          allowFactRead,
+          terminalOnly,
+        );
+        const response = await this.executeHouseModelTransport(
           {
             ...this.privateTraceContext(
               terminalOnly
@@ -2445,7 +2403,17 @@ Respond with JSON only:
               currentEventSequence: context.frontier.boundary.canonicalHead,
             },
           },
-          requestBody as unknown as ChatCompletionCreateParamsNonStreaming,
+          this.houseInvocation(
+            messages,
+            {
+              kind: "tool",
+              tools: tools.map(LLMHouseInterviewer.modelTool),
+              choice: "required",
+              allowParallel: false,
+            },
+            limits.maxCompletionTokens,
+            0.65,
+          ),
           {
             maxAttempts: 1,
             requestSignal: AbortSignal.timeout(remainingMs),
@@ -2457,12 +2425,41 @@ Respond with JSON only:
         return { response, callId };
       } catch (error) {
         if (error instanceof ProviderAttemptError) {
-          const body = error.record.rawResponse?.body;
-          if (body && typeof body === "object" && !Array.isArray(body)) {
-            usage[usageIndex] = LLMHouseInterviewer.providerUsage(
-              body as ChatCompletion,
-              callId,
-            );
+          const accounting = error.record.accounting?.usage;
+          const rawBody = error.record.rawResponse?.body;
+          const rawRecord = rawBody && typeof rawBody === "object" && !Array.isArray(rawBody)
+            ? rawBody as Record<string, unknown>
+            : {};
+          const nativeRecord = rawRecord.nativeResponse &&
+              typeof rawRecord.nativeResponse === "object" &&
+              !Array.isArray(rawRecord.nativeResponse)
+            ? rawRecord.nativeResponse as Record<string, unknown>
+            : {};
+          const responseId = typeof rawRecord.responseId === "string"
+            ? rawRecord.responseId
+            : typeof rawRecord.id === "string"
+              ? rawRecord.id
+              : typeof nativeRecord.id === "string"
+                ? nativeRecord.id
+                : null;
+          usage[usageIndex] = {
+            callId,
+            responseId,
+            serviceTier: parseOpenAIServiceTier(
+              error.record.accounting?.effectiveServiceTier,
+            ) ?? null,
+            promptTokens: accounting?.promptTokens ?? null,
+            cachedTokens: accounting?.cachedTokens ?? null,
+            cacheWriteTokens: accounting?.cacheWriteTokens ?? null,
+            completionTokens: accounting?.completionTokens ?? null,
+            reasoningTokens: accounting?.reasoningTokens ?? null,
+            totalTokens: accounting?.totalTokens ?? null,
+          };
+          if (
+            error.record.outcome.kind === "undecodable_structured_output" &&
+            error.record.outcome.message === "provider_native_response_decode_failed"
+          ) {
+            throw error;
           }
         }
         const { status, code, type } = contentFreeHouseFailureFields(error);
@@ -2475,7 +2472,7 @@ Respond with JSON only:
 
     const processTerminal = (
       call: ParsedHouseToolCall,
-      response: ChatCompletion,
+      response: ProviderModelOutcome,
     ): HouseSummaryAttemptResult => {
       const args = parseToolArguments(call.argumentsText);
       if (!args) return failed("invalid_terminal_arguments");
@@ -2512,7 +2509,7 @@ Respond with JSON only:
         openQuestions,
         threadIds,
         ...baseResult(),
-        reasoningContext: LLMHouseInterviewer.extractReasoningContext(response.choices[0]?.message) || undefined,
+        reasoningContext: response.reasoning?.content,
       };
     };
 
@@ -2562,12 +2559,14 @@ Respond with JSON only:
       returnedBytes = slice.returnedBytes;
       for (const fact of slice.facts) allowedAliases.add(fact.alias);
 
-      const assistantMessage = first.response.choices[0]?.message;
-      if (!assistantMessage) return failed("missing_assistant_message");
       messages.push({
         role: "assistant",
-        content: assistantMessage.content ?? null,
-        tool_calls: assistantMessage.tool_calls,
+        content: first.response.text ?? null,
+        tool_calls: first.response.toolCalls.map((call, index) => ({
+          id: call.id ?? `call_${index}`,
+          type: "function" as const,
+          function: { name: call.name, arguments: call.arguments },
+        })),
       });
       messages.push({
         role: "tool",
@@ -2625,24 +2624,29 @@ Respond with JSON only:
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House showrunner writing a private/audience catch-up for producer review. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const response = await this.executeHouseChatTransport(
+      const response = await this.executeHouseModelTransport(
         this.privateTraceContext(
           "house-long-form-summary",
           context.round,
           context.phase,
         ),
-        {
-          model: this.model,
+        this.houseInvocation(
           messages,
-          response_format: this.jsonObjectResponseFormat(
-            "house_long_form_summary",
+          {
+            kind: "structured",
+            name: "house_long_form_summary",
+            strict: true,
+            schema: { type: "object", additionalProperties: true },
+          },
+          this.applyMessageTokenFloor(
+            this.requestedReasoningEffort() ? 8_000 : 4_000,
           ),
-          ...this.modelParams(4000, 0.75),
-        },
+          0.75,
+        ),
         { validate: (candidate) => this.validateHouseJsonResponse(candidate) },
       );
       this.recordUsage("House/long-form-summary", response);
-      const output = parseHouseSummary(response.choices[0]?.message?.content?.trim() ?? "", context);
+      const output = parseHouseSummary(response.text?.trim() ?? "", context);
       await this.emitPrivateDecisionTrace({
         context: this.privateTraceContext("house-long-form-summary", context.round, context.phase),
         messages,
@@ -2696,20 +2700,25 @@ Respond with JSON only:
         { role: "system" as const, content: withInfluenceGamePromptContext("You are The House producer preparing a private diary-room brief. Return JSON only.") },
         { role: "user" as const, content: prompt },
       ];
-      const response = await this.executeHouseChatTransport(
+      const response = await this.executeHouseModelTransport(
         this.diaryPrivateTraceContext("house-producer-brief", context),
-        {
-          model: this.model,
+        this.houseInvocation(
           messages,
-          response_format: this.jsonObjectResponseFormat(
-            "house_producer_brief",
+          {
+            kind: "structured",
+            name: "house_producer_brief",
+            strict: true,
+            schema: { type: "object", additionalProperties: true },
+          },
+          this.applyMessageTokenFloor(
+            this.requestedReasoningEffort() ? 5_800 : 1_800,
           ),
-          ...this.modelParams(1800, 0.55),
-        },
+          0.55,
+        ),
         { validate: (candidate) => this.validateHouseJsonResponse(candidate) },
       );
       this.recordUsage("House/producer-brief", response);
-      const output = parseHouseProducerBrief(response.choices[0]?.message?.content?.trim() ?? "", context, packet);
+      const output = parseHouseProducerBrief(response.text?.trim() ?? "", context, packet);
       await this.emitPrivateDecisionTrace({
         context: this.diaryPrivateTraceContext("house-producer-brief", context),
         messages,
@@ -2729,18 +2738,21 @@ Respond with JSON only:
       { role: "user" as const, content: gameStatePrompt },
     ];
 
-    const response = await this.executeHouseChatTransport(
+    const response = await this.executeHouseModelTransport(
       this.diaryPrivateTraceContext("house-question", context),
-      {
-        model: this.model,
+      this.houseInvocation(
         messages,
-        ...this.modelParams(150, 0.9),
-      },
+        { kind: "text" },
+        this.applyMessageTokenFloor(
+          this.requestedReasoningEffort() ? 4_150 : 150,
+        ),
+        0.9,
+      ),
     );
 
     this.recordUsage("House/question", response);
 
-    const question = response.choices[0]?.message?.content?.trim();
+    const question = response.text?.trim();
     const output = question && question.length > 0
       ? question
       : `${context.agentName}, what's on your mind right now?`;
@@ -2794,23 +2806,26 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
       { role: "user" as const, content: followUpPrompt },
     ];
 
-    const response = await this.executeHouseChatTransport(
+    const response = await this.executeHouseModelTransport(
       this.diaryPrivateTraceContext(
         "house-followup",
         context,
         exchangeCount + 1,
       ),
-      {
-        model: this.model,
+      this.houseInvocation(
         messages,
-        ...this.modelParams(200, 0.8),
-      },
+        { kind: "text" },
+        this.applyMessageTokenFloor(
+          this.requestedReasoningEffort() ? 4_200 : 200,
+        ),
+        0.8,
+      ),
       { validate: (candidate) => this.validateHouseFollowUpResponse(candidate) },
     );
 
     this.recordUsage("House/followup", response);
 
-    const raw = response.choices[0]?.message?.content?.trim() ?? "";
+    const raw = response.text?.trim() ?? "";
 
     let output: FollowUpResult;
     if (raw.startsWith("FOLLOW_UP:")) {
@@ -3214,16 +3229,12 @@ Respond with ONLY the summary paragraph, no intro or labels.`;
       { role: "user" as const, content: summaryPrompt },
     ];
 
-    const response = await this.executeHouseChatTransport(
+    const response = await this.executeHouseModelTransport(
       this.privateTraceContext("house-gameplay-summary", round, phase),
-      {
-        model: this.model,
-        messages,
-        ...this.modelParams(32768, 0.9),
-      },
+      this.houseInvocation(messages, { kind: "text" }, 32_768, 0.9),
     );
 
-    const summary = response.choices[0]?.message?.content?.trim();
+    const summary = response.text?.trim();
     const output = summary && summary.length > 0
       ? summary
       : `The latest room talk has turned private reads into public pressure, and the House is watching who converts that leverage into safety before the next cut.`;

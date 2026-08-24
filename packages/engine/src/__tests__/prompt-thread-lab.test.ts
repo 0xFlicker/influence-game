@@ -370,7 +370,7 @@ describe("real prompt-thread replay", () => {
     expect(returningTurnUser).not.toContain(
       "This is your final Mingle turn this phase.",
     );
-    expect(capture.traces[2]?.promptReuse?.requestShape).toBe("responses");
+    expect(capture.traces[2]?.promptReuse?.requestShape).toBe("openai.responses");
 
     const accepted = withCapturedSource(fixture, capture.traces);
     const acceptedCapture = await capturePromptThreadReplay(accepted);
