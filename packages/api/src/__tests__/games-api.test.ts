@@ -372,6 +372,57 @@ describe("Game REST API", () => {
   // =========================================================================
 
   describe("POST /api/games", () => {
+    test("seals an ordered provider manifest and projects its primary for restoration", async () => {
+      const providerManifest = [
+        { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+        { catalogId: "katana:grok-4-5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+        { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+      ];
+      const res = await app.request(
+        "/api/games",
+        json({ playerCount: 6, providerManifest }, adminToken),
+      );
+
+      expect(res.status).toBe(201);
+      const body = (await res.json()) as { id: string };
+      const game = (await db.select().from(schema.games).where(eq(schema.games.id, body.id)))[0]!;
+      const config = JSON.parse(game.config);
+      expect(config.providerManifest).toEqual(providerManifest);
+      expect(config.modelSelection).toEqual(providerManifest[0]);
+      expect(config.slotType).toBe("all_ai");
+    });
+
+    test("rejects malformed provider manifests with an actionable error", async () => {
+      const cases: Array<[string, unknown]> = [
+        ["empty", []],
+        ["duplicate", [
+          { catalogId: "openai:gpt-5.6-luna" },
+          { catalogId: "openai:gpt-5.6-luna", maxCallsPerGame: 1 },
+        ]],
+        ["missing fallback cap", [
+          { catalogId: "openai:gpt-5.6-luna" },
+          { catalogId: "katana:grok-4-5" },
+        ]],
+        ["incompatible reasoning", [
+          { catalogId: "katana:glm-5-2", reasoningPolicy: "high" },
+        ]],
+        ["unsafe cap", [
+          { catalogId: "openai:gpt-5.6-luna" },
+          { catalogId: "katana:grok-4-5", maxCallsPerGame: Number.MAX_SAFE_INTEGER + 1 },
+        ]],
+      ];
+
+      for (const [label, providerManifest] of cases) {
+        const res = await app.request(
+          "/api/games",
+          json({ playerCount: 6, providerManifest }, adminToken),
+        );
+        expect(res.status, label).toBe(400);
+        const body = (await res.json()) as { error: string };
+        expect(body.error, label).toStartWith("Invalid provider manifest:");
+      }
+    });
+
     test("creates a game and returns id + slug", async () => {
       const res = await app.request(
         "/api/games",

@@ -289,6 +289,9 @@ export function createFreeQueueRoutes(
       minPlayers,
       maxPlayers,
       modelSelection: DAILY_FREE_MODEL_SELECTION,
+      // Daily fallback activation remains gated on provider qualification, but
+      // every new game seals the manifest authority from creation onward.
+      providerManifest: [DAILY_FREE_MODEL_SELECTION],
       personaPool: [],
       fillStrategy: "balanced",
       visibility: "public",

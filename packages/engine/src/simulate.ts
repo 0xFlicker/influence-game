@@ -15,6 +15,9 @@
  *   bun run simulate -- --variant mingle --rich-producer
  *   bun run simulate -- --variant mingle --chatty --reasoning-summary auto
  *   bun run simulate -- --model-catalog katana:grok-4-3 --reasoning-policy high
+ *   bun run simulate -- --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \
+ *     --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12 \
+ *     --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24
  *
  * OPERATOR-ONLY format-kernel proof. Implementing agents document these commands
  * but must not run or wait on them. Start from the reported branch/HEAD with a
@@ -221,11 +224,14 @@ import type {
 import {
   DEFAULT_MODEL_ID,
   inferModelCapabilities,
+  normalizeProviderManifest,
   normalizeReasoningPolicy,
+  parseProviderManifestEntry,
   resolveCatalogIdForModel,
   resolveModelSelection,
   type ModelReasoningPolicy,
   type ModelRequestCapabilities,
+  type GameProviderManifest,
   type ProviderProfileId,
 } from "./model-catalog";
 
@@ -244,6 +250,8 @@ export interface SimArgs {
   personas: string[] | null;
   model: string;
   modelCatalogId?: string;
+  /** Ordered route sealed into simulation evidence; U6 executes fallback traversal. */
+  providerManifest?: GameProviderManifest;
   reasoningPolicy?: ModelReasoningPolicy;
   variant: string;
   /**
@@ -303,6 +311,8 @@ function parseReasoningSummaryArg(value: string | undefined): OpenAIReasoningSum
 
 export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+  let sawCliProviderEntry = false;
+  let sawCliLegacyModelSelection = false;
   const args: SimArgs = {
     games: 3,
     players: MIN_NEW_GAME_PLAYERS,
@@ -310,6 +320,9 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     personas: null,
     model: DEFAULT_MODEL_ID,
     ...(process.env.INFLUENCE_SIM_MODEL_CATALOG_ID && { modelCatalogId: process.env.INFLUENCE_SIM_MODEL_CATALOG_ID }),
+    ...(process.env.INFLUENCE_SIM_PROVIDER_MANIFEST && {
+      providerManifest: parseSimulationProviderManifestEnv(process.env.INFLUENCE_SIM_PROVIDER_MANIFEST),
+    }),
     ...(normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY) && {
       reasoningPolicy: normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY)!,
     }),
@@ -344,12 +357,34 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.personas = next.split(",").map((s) => s.trim());
       i++;
     } else if (arg === "--model" && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.model = next;
       i++;
     } else if ((arg === "--model-catalog" || arg === "--model-catalog-id") && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.modelCatalogId = next;
       i++;
+    } else if (arg === "--provider-entry" && next) {
+      if (sawCliLegacyModelSelection) {
+        throw new Error("Do not combine --provider-entry with legacy model flags");
+      }
+      if (!sawCliProviderEntry) {
+        args.providerManifest = [];
+        sawCliProviderEntry = true;
+      }
+      args.providerManifest = [
+        ...(args.providerManifest ?? []),
+        parseProviderManifestEntry(next),
+      ];
+      i++;
     } else if ((arg === "--reasoning-policy" || arg === "--thinking-depth") && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       const reasoningPolicy = normalizeReasoningPolicy(next);
       if (reasoningPolicy) {
         args.reasoningPolicy = reasoningPolicy;
@@ -415,6 +450,11 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
 
   if (args.richProducer === true) {
     args.enableDiary = true;
+  }
+  if (args.providerManifest) {
+    args.providerManifest = normalizeProviderManifest(args.providerManifest);
+    args.modelCatalogId = args.providerManifest[0]!.catalogId;
+    args.reasoningPolicy = args.providerManifest[0]!.reasoningPolicy;
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
@@ -483,6 +523,9 @@ function buildRunMetadata(
       ...(modelRuntime?.reasoningPolicy && { reasoningPolicy: modelRuntime.reasoningPolicy }),
       ...(args.modelCatalogId && { modelCatalogId: args.modelCatalogId }),
       ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
+      ...(args.providerManifest && {
+        providerManifest: args.providerManifest.map((entry) => ({ ...entry })),
+      }),
       variant: args.variant,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
@@ -494,6 +537,16 @@ function buildRunMetadata(
       flex: args.flex,
     },
   };
+}
+
+function parseSimulationProviderManifestEnv(value: string): GameProviderManifest {
+  try {
+    return normalizeProviderManifest(JSON.parse(value));
+  } catch (error) {
+    throw new Error(
+      `INFLUENCE_SIM_PROVIDER_MANIFEST is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 const POWER_LOBBY_VARIANTS = new Set([

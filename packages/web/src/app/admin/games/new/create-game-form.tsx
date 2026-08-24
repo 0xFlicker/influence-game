@@ -1,13 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { DEFAULT_MODEL_CATALOG_ID } from "@influence/engine/model-defaults";
 import {
   createGame,
+  getProviderModels,
   type CreateGameParams,
+  type GameProviderManifestEntry,
   type ModelReasoningPolicy,
   type PersonaKey,
+  type ProviderModelInventoryEntry,
 } from "@/lib/api";
 import { CREATE_GAME_PLAYER_COUNTS } from "@/lib/game-creation";
 import { ACTIVE_GAME, HOUSE_VENUE } from "@/lib/product-identity";
@@ -39,54 +42,128 @@ const PERSONAS: {
 
 const ALL_PERSONA_KEYS = PERSONAS.map((p) => p.key);
 
-type ModelCatalogId =
-  | "openai:gpt-5-nano"
-  | "openai:gpt-5-mini"
-  | "openai:gpt-5.4-mini"
-  | "openai:gpt-5.6-luna"
-  | "katana:grok-4-3";
+type GameModelOption = Pick<
+  ProviderModelInventoryEntry,
+  | "catalogId"
+  | "displayName"
+  | "configured"
+  | "available"
+  | "defaultReasoningPolicy"
+  | "allowedReasoningPolicies"
+> & { sublabel: string };
 
-const GAME_MODELS: Array<{
-  catalogId: ModelCatalogId;
-  label: string;
-  sublabel: string;
-}> = [
+const GAME_MODELS: GameModelOption[] = [
   {
     catalogId: "openai:gpt-5-nano",
-    label: "OpenAI gpt-5-nano",
+    displayName: "OpenAI gpt-5-nano",
     sublabel: "Fast baseline play",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "medium",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
   },
   {
     catalogId: "openai:gpt-5-mini",
-    label: "OpenAI gpt-5-mini",
+    displayName: "OpenAI gpt-5-mini",
     sublabel: "Stronger strategy",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "medium",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
   },
   {
     catalogId: "openai:gpt-5.4-mini",
-    label: "OpenAI gpt-5.4-mini",
+    displayName: "OpenAI gpt-5.4-mini",
     sublabel: "Most capable OpenAI 5.4 option",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "medium",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
   },
   {
     catalogId: "openai:gpt-5.6-luna",
-    label: "OpenAI gpt-5.6-luna",
+    displayName: "OpenAI gpt-5.6-luna",
     sublabel: "GPT-5.6 baseline play",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "medium",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
   },
   {
     catalogId: "katana:grok-4-3",
-    label: "xAI Grok 4.3",
+    displayName: "xAI Grok 4.3",
     sublabel: "Reasoning-heavy strategy test",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "medium",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
+  },
+  {
+    catalogId: "katana:grok-4-5",
+    displayName: "xAI Grok 4.5",
+    sublabel: "Capable secondary fallback",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningPolicies: ["action-policy", "low", "medium", "high"],
+  },
+  {
+    catalogId: "katana:glm-5-2",
+    displayName: "Katana GLM 5.2",
+    sublabel: "Low-cost tertiary fallback",
+    configured: true,
+    available: null,
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningPolicies: ["action-policy"],
   },
 ];
 
 const THINKING_DEPTHS: Array<{
-  value: Exclude<ModelReasoningPolicy, "action-policy">;
+  value: ModelReasoningPolicy;
   label: string;
   sublabel: string;
 }> = [
+  { value: "action-policy", label: "Adaptive", sublabel: "Matches effort to each action" },
   { value: "low", label: "Low", sublabel: "Lighter deliberation" },
   { value: "medium", label: "Medium", sublabel: "Default strategy depth" },
   { value: "high", label: "High", sublabel: "Heavier deliberation" },
 ];
+
+interface ProviderRouteEntry extends GameProviderManifestEntry {
+  uiId: string;
+}
+
+let nextProviderRouteId = 1;
+function providerRouteEntry(
+  entry: GameProviderManifestEntry,
+): ProviderRouteEntry {
+  return { ...entry, uiId: `provider-route-${nextProviderRouteId++}` };
+}
+
+export const DEFAULT_PROVIDER_MANIFEST: GameProviderManifestEntry[] = [
+  { catalogId: DEFAULT_MODEL_CATALOG_ID, reasoningPolicy: "medium" },
+];
+
+const RECOMMENDED_PROVIDER_FALLBACKS: GameProviderManifestEntry[] = [
+  { catalogId: "katana:grok-4-5", reasoningPolicy: "action-policy", maxCallsPerGame: 12 },
+  { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+];
+
+export function moveProviderRouteEntry(
+  entries: ProviderRouteEntry[],
+  from: number,
+  to: number,
+): ProviderRouteEntry[] {
+  if (from === to || from < 0 || to < 0 || from >= entries.length || to >= entries.length) {
+    return entries;
+  }
+  const next = [...entries];
+  const [moved] = next.splice(from, 1);
+  next.splice(to, 0, moved!);
+  return next.map((entry, index) => index === 0
+    ? { ...entry, maxCallsPerGame: undefined }
+    : { ...entry, maxCallsPerGame: entry.maxCallsPerGame ?? 12 });
+}
 
 // ---------------------------------------------------------------------------
 // Form state
@@ -94,9 +171,7 @@ const THINKING_DEPTHS: Array<{
 
 interface FormState {
   playerCount: CreateGameParams["playerCount"];
-  slotType: "all_ai" | "mixed";
-  modelCatalogId: ModelCatalogId;
-  reasoningPolicy: Exclude<ModelReasoningPolicy, "action-policy">;
+  providerRoute: ProviderRouteEntry[];
   personaPool: PersonaKey[];
   fillStrategy: "random" | "balanced";
   timingPreset: "fast" | "standard" | "slow" | "custom";
@@ -107,9 +182,7 @@ interface FormState {
 
 const DEFAULT_STATE: FormState = {
   playerCount: 6,
-  slotType: "all_ai",
-  modelCatalogId: DEFAULT_MODEL_CATALOG_ID,
-  reasoningPolicy: "medium",
+  providerRoute: DEFAULT_PROVIDER_MANIFEST.map(providerRouteEntry),
   personaPool: [...ALL_PERSONA_KEYS],
   fillStrategy: "balanced",
   timingPreset: "standard",
@@ -178,6 +251,281 @@ function SectionCard({ title, children }: { title: string; children: React.React
   );
 }
 
+function routeEntryError(
+  entry: ProviderRouteEntry,
+  index: number,
+  model?: GameModelOption,
+): string | null {
+  if (!entry.catalogId) return "Select a model.";
+  if (model?.configured === false) return "This provider is not configured.";
+  if (model?.available === false) return "This model is not currently available from its provider.";
+  if (
+    index > 0
+    && (!Number.isSafeInteger(entry.maxCallsPerGame) || (entry.maxCallsPerGame ?? 0) < 1)
+  ) {
+    return "Set a positive whole-number call limit for this fallback.";
+  }
+  return null;
+}
+
+function ProviderRouteEditor({
+  entries,
+  models,
+  inventoryUnavailable,
+  onChange,
+}: {
+  entries: ProviderRouteEntry[];
+  models: GameModelOption[];
+  inventoryUnavailable: boolean;
+  onChange: (entries: ProviderRouteEntry[]) => void;
+}) {
+  const modelSelectRefs = useRef<Record<string, HTMLSelectElement | null>>({});
+  const pendingFocusId = useRef<string | null>(null);
+
+  useEffect(() => {
+    const pending = pendingFocusId.current;
+    if (!pending) return;
+    pendingFocusId.current = null;
+    window.requestAnimationFrame(() => modelSelectRefs.current[pending]?.focus());
+  }, [entries]);
+
+  function updateEntry(index: number, update: Partial<ProviderRouteEntry>) {
+    onChange(entries.map((entry, entryIndex) => entryIndex === index
+      ? { ...entry, ...update }
+      : entry));
+  }
+
+  function selectModel(index: number, catalogId: string) {
+    const model = models.find((option) => option.catalogId === catalogId);
+    const currentPolicy = entries[index]!.reasoningPolicy;
+    updateEntry(index, {
+      catalogId,
+      reasoningPolicy: model?.allowedReasoningPolicies.includes(currentPolicy)
+        ? currentPolicy
+        : model?.defaultReasoningPolicy ?? "action-policy",
+    });
+  }
+
+  function move(index: number, nextIndex: number) {
+    pendingFocusId.current = entries[index]!.uiId;
+    onChange(moveProviderRouteEntry(entries, index, nextIndex));
+  }
+
+  function remove(index: number) {
+    if (entries.length === 1) return;
+    const nextEntries = entries
+      .filter((_, entryIndex) => entryIndex !== index)
+      .map((entry, entryIndex) => entryIndex === 0
+        ? { ...entry, maxCallsPerGame: undefined }
+        : entry);
+    pendingFocusId.current = nextEntries[Math.min(index, nextEntries.length - 1)]!.uiId;
+    onChange(nextEntries);
+  }
+
+  function addFallback() {
+    const used = new Set(entries.map((entry) => entry.catalogId));
+    const available = models.find((model) => !used.has(model.catalogId));
+    if (!available) return;
+    const next = providerRouteEntry({
+      catalogId: available.catalogId,
+      reasoningPolicy: available.defaultReasoningPolicy,
+      maxCallsPerGame: 12,
+    });
+    pendingFocusId.current = next.uiId;
+    onChange([...entries, next]);
+  }
+
+  const canAdd = models.some(
+    (model) => !entries.some((entry) => entry.catalogId === model.catalogId),
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-medium text-white">Provider route</p>
+          <p className="mt-1 max-w-2xl text-xs leading-5 text-white/45">
+            Every call starts with Primary. If it cannot return a usable result, the game follows
+            these fallbacks in order. This exact route is sealed when the game is created.
+          </p>
+        </div>
+        <span className="text-xs tabular-nums text-white/35">
+          {entries.length} {entries.length === 1 ? "model" : "models"}
+        </span>
+      </div>
+
+      {inventoryUnavailable && (
+        <p className="rounded-lg border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs leading-5 text-amber-100" role="status">
+          Live model inventory is unavailable. Known validated IDs remain selectable; retry by reopening this form.
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {entries.map((entry, index) => {
+          const selectedModel = models.find((model) => model.catalogId === entry.catalogId);
+          const allowedPolicies = selectedModel?.allowedReasoningPolicies ?? ["action-policy"];
+          const error = routeEntryError(entry, index, selectedModel);
+          return (
+            <fieldset
+              key={entry.uiId}
+              className={`rounded-xl border p-4 transition-colors ${
+                index === 0
+                  ? "border-indigo-500/45 bg-indigo-500/[0.08]"
+                  : "border-white/10 bg-white/[0.025]"
+              }`}
+            >
+              <legend className="sr-only">
+                {index === 0 ? "Primary model" : `Fallback ${index}`}
+              </legend>
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-sm px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] ${
+                    index === 0
+                      ? "bg-indigo-500/25 text-indigo-100"
+                      : "bg-white/[0.07] text-white/55"
+                  }`}>
+                    {index === 0 ? "Primary" : `Fallback ${index}`}
+                  </span>
+                  {selectedModel && !selectedModel.configured && (
+                    <span className="text-xs text-amber-200/70">Credentials not detected</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => move(index, index - 1)}
+                    disabled={index === 0}
+                    aria-label={`Move ${index === 0 ? "primary" : `fallback ${index}`} up`}
+                    className="rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-white/55 transition-colors hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
+                  >
+                    Up
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => move(index, index + 1)}
+                    disabled={index === entries.length - 1}
+                    aria-label={`Move ${index === 0 ? "primary" : `fallback ${index}`} down`}
+                    className="rounded-md border border-white/10 px-2.5 py-1.5 text-xs text-white/55 transition-colors hover:border-white/25 hover:text-white disabled:cursor-not-allowed disabled:opacity-25"
+                  >
+                    Down
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => remove(index)}
+                    disabled={entries.length === 1}
+                    aria-label={`Remove ${index === 0 ? "primary" : `fallback ${index}`}`}
+                    className="ml-1 rounded-md px-2.5 py-1.5 text-xs text-red-300/70 transition-colors hover:bg-red-500/10 hover:text-red-200 disabled:cursor-not-allowed disabled:opacity-25"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+
+              <div className={`grid gap-4 ${index === 0 ? "md:grid-cols-1" : "md:grid-cols-[minmax(0,1fr)_11rem]"}`}>
+                <label className="block">
+                  <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-white/40">
+                    Model
+                  </span>
+                  <select
+                    ref={(node) => { modelSelectRefs.current[entry.uiId] = node; }}
+                    value={entry.catalogId}
+                    onChange={(event) => selectModel(index, event.target.value)}
+                    className="w-full rounded-lg border border-white/10 bg-[#09090c] px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-indigo-500"
+                  >
+                    {models.map((model) => {
+                      const selectedElsewhere = entries.some(
+                        (other, otherIndex) => otherIndex !== index && other.catalogId === model.catalogId,
+                      );
+                      const unavailable = !model.configured || model.available === false;
+                      return (
+                        <option
+                          key={model.catalogId}
+                          value={model.catalogId}
+                          disabled={selectedElsewhere || unavailable}
+                        >
+                          {model.displayName}
+                          {selectedElsewhere
+                            ? " (already used)"
+                            : unavailable
+                              ? " (unavailable)"
+                              : ""}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  {selectedModel?.sublabel && (
+                    <span className="mt-1.5 block text-xs text-white/35">{selectedModel.sublabel}</span>
+                  )}
+                </label>
+
+                {index > 0 && (
+                  <label className="block">
+                    <span className="mb-2 block text-xs font-medium uppercase tracking-[0.14em] text-white/40">
+                      Max calls / game
+                    </span>
+                    <input
+                      type="number"
+                      aria-label={`Fallback ${index} max calls per game`}
+                      min={1}
+                      max={10000}
+                      step={1}
+                      value={entry.maxCallsPerGame ?? ""}
+                      onChange={(event) => updateEntry(index, {
+                        maxCallsPerGame: event.target.value === "" ? undefined : Number(event.target.value),
+                      })}
+                      className="w-full rounded-lg border border-white/10 bg-[#09090c] px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-indigo-500"
+                    />
+                    <span className="mt-1.5 block text-xs text-white/35">Hard fallback dispatch cap</span>
+                  </label>
+                )}
+              </div>
+
+              <div className="mt-4">
+                <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-white/40">
+                  Reasoning
+                </p>
+                <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={`${index === 0 ? "Primary" : `Fallback ${index}`} reasoning`}>
+                  {THINKING_DEPTHS.filter((option) => allowedPolicies.includes(option.value)).map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={entry.reasoningPolicy === option.value}
+                      onClick={() => updateEntry(index, { reasoningPolicy: option.value })}
+                      className={`rounded-lg border px-3 py-2 text-left text-xs transition-colors ${
+                        entry.reasoningPolicy === option.value
+                          ? "border-indigo-500 bg-indigo-600 text-white"
+                          : "border-white/10 text-white/55 hover:border-white/25 hover:text-white"
+                      }`}
+                    >
+                      <span className="font-medium">{option.label}</span>
+                      <span className="ml-2 opacity-55">{option.sublabel}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {error && <p className="mt-3 text-xs text-red-300" role="alert">{error}</p>}
+            </fieldset>
+          );
+        })}
+      </div>
+
+      <button
+        type="button"
+        onClick={addFallback}
+        disabled={!canAdd}
+        className="w-full rounded-lg border border-dashed border-white/15 px-4 py-3 text-sm text-white/50 transition-colors hover:border-indigo-400/50 hover:bg-indigo-500/[0.05] hover:text-indigo-200 disabled:cursor-not-allowed disabled:opacity-30"
+      >
+        + Add fallback
+      </button>
+      <p className="sr-only" aria-live="polite">
+        Provider route contains {entries.length} entries.
+      </p>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Create game form
 // ---------------------------------------------------------------------------
@@ -185,8 +533,48 @@ function SectionCard({ title, children }: { title: string; children: React.React
 export function CreateGameForm() {
   const router = useRouter();
   const [form, setForm] = useState<FormState>(DEFAULT_STATE);
+  const [models, setModels] = useState<GameModelOption[]>(GAME_MODELS);
+  const [inventoryUnavailable, setInventoryUnavailable] = useState(false);
+  const providerRouteEdited = useRef(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void getProviderModels().then((inventory) => {
+      if (!active) return;
+      const staticById = new Map(GAME_MODELS.map((model) => [model.catalogId, model]));
+      setModels(inventory.models.map((model) => ({
+        catalogId: model.catalogId,
+        displayName: model.displayName,
+        configured: model.configured,
+        available: model.available,
+        defaultReasoningPolicy: model.defaultReasoningPolicy,
+        allowedReasoningPolicies: model.allowedReasoningPolicies,
+        sublabel: staticById.get(model.catalogId)?.sublabel ?? model.notes ?? "Available for explicit testing",
+      })));
+      setInventoryUnavailable(inventory.status !== "complete");
+      if (!providerRouteEdited.current && inventory.status === "complete") {
+        const configuredModelIds = new Set(
+          inventory.models
+            .filter((model) => model.configured && model.available !== false)
+            .map((model) => model.catalogId),
+        );
+        setForm((current) => ({
+          ...current,
+          providerRoute: [
+            ...DEFAULT_PROVIDER_MANIFEST,
+            ...RECOMMENDED_PROVIDER_FALLBACKS.filter(
+              (entry) => configuredModelIds.has(entry.catalogId),
+            ),
+          ].map(providerRouteEntry),
+        }));
+      }
+    }).catch(() => {
+      if (active) setInventoryUnavailable(true);
+    });
+    return () => { active = false; };
+  }, []);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -209,16 +597,30 @@ export function CreateGameForm() {
       setError("Select at least 2 personas.");
       return;
     }
+    const routeError = form.providerRoute
+      .map((entry, index) => routeEntryError(
+        entry,
+        index,
+        models.find((model) => model.catalogId === entry.catalogId),
+      ))
+      .find((message): message is string => Boolean(message));
+    if (routeError) {
+      setError(routeError);
+      return;
+    }
     setError(null);
     setSubmitting(true);
     try {
-      const { modelCatalogId, reasoningPolicy, ...gameParams } = form;
+      const { providerRoute, ...gameParams } = form;
       const params: CreateGameParams = {
         ...gameParams,
-        modelSelection: {
-          catalogId: modelCatalogId,
-          reasoningPolicy,
-        },
+        providerManifest: providerRoute.map((entry) => ({
+          catalogId: entry.catalogId,
+          reasoningPolicy: entry.reasoningPolicy,
+          ...(entry.maxCallsPerGame === undefined
+            ? {}
+            : { maxCallsPerGame: entry.maxCallsPerGame }),
+        })),
       };
       const { slug } = await createGame(params);
       router.push(`/games/${slug}`);
@@ -259,34 +661,18 @@ export function CreateGameForm() {
           }))}
           onChange={(v) => set("playerCount", parseInt(v) as FormState["playerCount"])}
         />
-        <RadioGroup
-          label="Slot type"
-          value={form.slotType}
-          options={[
-            { value: "all_ai", label: "All AI" },
-            { value: "mixed", label: "Mixed (coming soon)", disabled: true },
-          ]}
-          onChange={(v) => set("slotType", v)}
-        />
       </SectionCard>
 
-      {/* Model */}
-      <SectionCard title="Model">
-        <RadioGroup
-          label="Select model"
-          value={form.modelCatalogId}
-          options={GAME_MODELS.map((model) => ({
-            value: model.catalogId,
-            label: model.label,
-            sublabel: model.sublabel,
-          }))}
-          onChange={(v) => set("modelCatalogId", v)}
-        />
-        <RadioGroup
-          label="Thinking depth"
-          value={form.reasoningPolicy}
-          options={THINKING_DEPTHS}
-          onChange={(v) => set("reasoningPolicy", v)}
+      {/* Provider route */}
+      <SectionCard title="Models">
+        <ProviderRouteEditor
+          entries={form.providerRoute}
+          models={models}
+          inventoryUnavailable={inventoryUnavailable}
+          onChange={(providerRoute) => {
+            providerRouteEdited.current = true;
+            set("providerRoute", providerRoute);
+          }}
         />
       </SectionCard>
 

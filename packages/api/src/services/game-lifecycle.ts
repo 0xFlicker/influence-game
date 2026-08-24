@@ -16,9 +16,8 @@ import {
   TokenTracker,
   createLlmClientFromEnv,
   estimateCostForKnownModel,
-  normalizeGameModelSelection,
   normalizeOpenAIRequestServiceTier,
-  resolveModelSelection,
+  resolveProviderManifestFromGameConfig,
   resolveFormatManifest,
 } from "@influence/engine";
 import type {
@@ -33,6 +32,7 @@ import type {
   PhaseContext,
   PlayerContinuityCapsule,
   ProviderProfileId,
+  ResolvedProviderManifestEntry,
   PrivateDecisionTrace,
   PrivateTraceSink,
   PowerAction,
@@ -439,9 +439,7 @@ async function captureCompletedGame(
     gameConfig: Record<string, unknown>;
   },
 ): Promise<void> {
-  const resolvedModelSelection = resolveModelSelection(
-    normalizeGameModelSelection(params.gameConfig.modelSelection),
-  );
+  const resolvedModelSelection = resolveProviderManifestFromGameConfig(params.gameConfig)[0]!;
   const model = resolvedModelSelection.modelId;
   const usage = params.tokenTracker.getTotalUsage();
   const cost = estimateCostForKnownModel(usage, model);
@@ -568,6 +566,49 @@ export async function preflightSelectedModel(
   await llmConfig.client.models.retrieve(modelId);
 }
 
+export async function preflightProviderManifest(
+  manifest: readonly ResolvedProviderManifestEntry[],
+  createClient: (providerProfileId: ProviderProfileId) => ModelPreflightClient | null,
+): Promise<void> {
+  const providerEntries = new Map<
+    ProviderProfileId,
+    { client: ModelPreflightClient; modelIds: string[] }
+  >();
+  for (const entry of manifest) {
+    const providerProfileId = entry.providerProfile.id;
+    let provider = providerEntries.get(providerProfileId);
+    if (!provider) {
+      const client = createClient(providerProfileId);
+      if (!client) {
+        throw new Error("LLM provider not configured");
+      }
+      provider = { client, modelIds: [] };
+      providerEntries.set(providerProfileId, provider);
+    }
+    provider.modelIds.push(entry.modelId);
+  }
+
+  await Promise.all([...providerEntries].map(async ([providerProfileId, provider]) => {
+    if (providerProfileId === "katana") {
+      const models = await provider.client.client.models.list();
+      const availableModelIds = new Set(models.data?.map((model) => model.id) ?? []);
+      const unavailableModelId = provider.modelIds.find(
+        (modelId) => !availableModelIds.has(modelId),
+      );
+      if (unavailableModelId) {
+        throw new Error(
+          `Model ${unavailableModelId} is not available from ${provider.client.providerLabel}`,
+        );
+      }
+      return;
+    }
+
+    await Promise.all(provider.modelIds.map(
+      (modelId) => preflightSelectedModel(provider.client, modelId, providerProfileId),
+    ));
+  }));
+}
+
 export async function validateGameStartReadiness(
   db: DrizzleDB,
   gameId: string,
@@ -596,11 +637,9 @@ export async function validateGameStartReadiness(
     return { error: "Invalid game configuration" };
   }
 
-  let resolvedModelSelection;
+  let resolvedProviderManifest;
   try {
-    resolvedModelSelection = resolveModelSelection(
-      normalizeGameModelSelection(gameConfig.modelSelection),
-    );
+    resolvedProviderManifest = resolveProviderManifestFromGameConfig(gameConfig);
   } catch (error) {
     return { error: publicProviderStartupError(error) };
   }
@@ -609,29 +648,27 @@ export async function validateGameStartReadiness(
     return {};
   }
 
-  const llmConfig = createLlmClientFromEnv(env, {
-    maxRetries: 0,
-    providerProfileId: resolvedModelSelection.providerProfile.id,
-    timeout: providerPreflightTimeoutMs(env),
-    openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
-  });
-  if (!llmConfig) {
-    return { error: "LLM provider not configured" };
-  }
-
   if (!providerPreflightEnabled(env)) {
     return {};
   }
 
   try {
-    await preflightSelectedModel(
-      llmConfig,
-      resolvedModelSelection.modelId,
-      resolvedModelSelection.providerProfile.id,
+    await preflightProviderManifest(
+      resolvedProviderManifest,
+      (providerProfileId) => createLlmClientFromEnv(env, {
+        maxRetries: 0,
+        providerProfileId,
+        timeout: providerPreflightTimeoutMs(env),
+        openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
+      }),
     );
   } catch (error) {
+    const message = publicProviderStartupError(error);
+    if (message === "LLM provider not configured") {
+      return { error: message };
+    }
     return {
-      error: `LLM provider preflight failed: ${publicProviderStartupError(error)}`,
+      error: `LLM provider preflight failed: ${message}`,
     };
   }
 
@@ -677,9 +714,7 @@ export async function startGame(
   const gameConfig = JSON.parse(game.config) as Record<string, unknown>;
 
   const useTestMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true";
-  const resolvedModelSelection = resolveModelSelection(
-    normalizeGameModelSelection(gameConfig.modelSelection),
-  );
+  const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
 
   const llmConfig = useTestMockRunner
     ? null

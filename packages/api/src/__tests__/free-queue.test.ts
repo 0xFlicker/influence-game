@@ -205,6 +205,7 @@ describe("free queue season admission", () => {
       catalogId: "openai:gpt-5.6-luna",
       reasoningPolicy: "action-policy",
     });
+    expect(gameConfig.providerManifest).toEqual([gameConfig.modelSelection]);
     expect(gameConfig).not.toHaveProperty("modelTier");
     expect(seats.filter((seat) => seat.userId === null).map((seat) => JSON.parse(seat.agentConfig).model))
       .toEqual(Array(10).fill("gpt-5.6-luna"));

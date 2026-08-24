@@ -501,6 +501,34 @@ describe("game completion settlement capture", () => {
       .toHaveLength(1);
   });
 
+  test("preserves provider authority backfilled after a legacy runner captured completion", async () => {
+    const fixture = await createCaptureFixture();
+    await captureGameCompletionSettlement(db, fixture.input);
+
+    const providerManifest = [{
+      catalogId: "openai:gpt-5.6-luna",
+      reasoningPolicy: "medium",
+    }];
+    await db.update(schema.games)
+      .set({
+        config: JSON.stringify({
+          ...fixture.input.completionConfig,
+          providerManifest,
+        }),
+      })
+      .where(eq(schema.games.id, fixture.gameId));
+
+    await settleCapturedGameCompletion(db, fixture.gameId, { source: "runner" });
+
+    const game = (await db.select({ config: schema.games.config })
+      .from(schema.games)
+      .where(eq(schema.games.id, fixture.gameId)))[0]!;
+    expect(JSON.parse(game.config)).toEqual({
+      ...fixture.input.completionConfig,
+      providerManifest,
+    });
+  });
+
   test("repeated and concurrent settlement attempts are exact-once no-ops", async () => {
     const fixture = await createCaptureFixture();
     await captureGameCompletionSettlement(db, fixture.input);

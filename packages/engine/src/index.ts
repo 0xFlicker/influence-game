@@ -569,7 +569,12 @@ export {
   DEFAULT_MODEL_ID,
   MODEL_REASONING_EFFORTS,
   MODEL_REASONING_POLICIES,
+  DEFAULT_FALLBACK_CALL_CAP,
+  MAX_PROVIDER_ENTRY_CALLS_PER_GAME,
+  MAX_PROVIDER_MANIFEST_CALLS_PER_GAME,
+  MAX_PROVIDER_MANIFEST_ENTRIES,
   PROVIDER_PROFILES,
+  formatProviderManifestLabel,
   gameReadyCatalogEntries,
   formatGameModelSelectionLabel,
   formatModelReasoningPolicy,
@@ -577,13 +582,19 @@ export {
   inferModelCapabilities,
   modelCatalogEntryById,
   normalizeGameModelSelection,
+  normalizeProviderManifest,
+  parseProviderManifestEntry,
   normalizeReasoningPolicy,
   providerProfileById,
   resolveCatalogIdForModel,
   resolveModelSelection,
+  resolveProviderManifest,
+  resolveProviderManifestFromGameConfig,
 } from "./model-catalog";
 export type {
   GameModelSelection,
+  GameProviderManifest,
+  GameProviderManifestEntry,
   ModelCatalogEntry,
   ModelEvaluationStatus,
   ModelReasoningEffort,
@@ -592,6 +603,7 @@ export type {
   ProviderProfile,
   ProviderProfileId,
   ResolvedModelSelection,
+  ResolvedProviderManifestEntry,
 } from "./model-catalog";
 
 // Memory store

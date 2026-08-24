@@ -421,8 +421,7 @@ export type GameWatchStateSummary = Omit<GameWatchState, "players">;
 
 export interface CreateGameParams {
   playerCount: CreateGamePlayerCount;
-  slotType: "all_ai" | "mixed";
-  modelSelection: GameModelSelection;
+  providerManifest: GameProviderManifestEntry[];
   personaPool: PersonaKey[];
   fillStrategy: FillStrategy;
   timingPreset: TimingPreset;
@@ -437,6 +436,36 @@ export type ModelReasoningPolicy = "action-policy" | "low" | "medium" | "high";
 export interface GameModelSelection {
   catalogId: string;
   reasoningPolicy: ModelReasoningPolicy;
+}
+
+export interface GameProviderManifestEntry extends GameModelSelection {
+  maxCallsPerGame?: number;
+}
+
+export interface ProviderModelInventoryEntry {
+  catalogId: string;
+  providerProfileId: "openai" | "katana" | "lm-studio" | "custom-openai-compatible";
+  modelId: string;
+  displayName: string;
+  configured: boolean;
+  available: boolean | null;
+  defaultReasoningPolicy: ModelReasoningPolicy;
+  allowedReasoningPolicies: ModelReasoningPolicy[];
+  capabilities: {
+    supportsReasoningEffort: boolean;
+    supportsToolReasoningEffort: boolean;
+    usesMaxCompletionTokens: boolean;
+    supportsTemperature: boolean;
+    supportsOpenAIResponses: boolean;
+    supportsStructuredOutput: boolean;
+    supportsTools: boolean;
+  };
+  notes: string | null;
+}
+
+export interface ProviderModelInventory {
+  status: "complete" | "unavailable";
+  models: ProviderModelInventoryEntry[];
 }
 
 export interface GameSummary {
@@ -481,6 +510,10 @@ export async function createGame(
     method: "POST",
     body: JSON.stringify(params),
   });
+}
+
+export async function getProviderModels(): Promise<ProviderModelInventory> {
+  return apiFetch("/api/provider-models", { cache: "no-store" });
 }
 
 export async function listGames(

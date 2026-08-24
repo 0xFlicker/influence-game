@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import {
-  normalizeGameModelSelection,
-  resolveModelSelection,
+  resolveProviderManifestFromGameConfig,
   resolveToolChoiceMode,
 } from "@influence/engine";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
@@ -138,8 +137,11 @@ export async function projectOwnedSeatInTransaction(
 
   const gameConfig = parseGameConfig(input.game.config);
   const temperature = normalizeTemperature(input.overrides?.temperature);
-  const modelSelection = normalizeGameModelSelection(gameConfig.modelSelection);
-  const resolvedModelSelection = resolveModelSelection(modelSelection);
+  const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
+  const modelSelection = {
+    catalogId: resolvedModelSelection.catalogId,
+    reasoningPolicy: resolvedModelSelection.reasoningPolicy,
+  };
   const effectiveRuntimeSnapshot = resolveFreeTrackEffectiveRuntimeSnapshot(profile, {
     modelSelection,
     temperature,
@@ -539,10 +541,11 @@ function personaName(persona: string): string {
   );
 }
 
-function parseGameConfig(value: string): { modelSelection?: unknown } {
+function parseGameConfig(value: string): { providerManifest?: unknown; modelSelection?: unknown } {
   try {
     const parsed = JSON.parse(value) as Record<string, unknown>;
     return {
+      providerManifest: parsed.providerManifest,
       modelSelection: parsed.modelSelection,
     };
   } catch {

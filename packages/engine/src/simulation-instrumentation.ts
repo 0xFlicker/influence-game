@@ -32,6 +32,11 @@ export interface SimulatorArgsSnapshot {
   modelCatalogId?: string;
   providerProfileId?: string;
   reasoningPolicy?: string;
+  providerManifest?: Array<{
+    catalogId: string;
+    reasoningPolicy?: string;
+    maxCallsPerGame?: number;
+  }>;
   variant: string;
   /** Whole-game timeout ms, or null when none was requested. */
   gameTimeoutMs: number | null;

@@ -13,6 +13,7 @@ import { createDB, schema } from "./db/index.js";
 import { calculateMigrationSet, runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
+import { createProviderModelRoutes } from "./routes/provider-models.js";
 import {
   createAuthRoutes,
   readManagedAuthMode,
@@ -451,6 +452,9 @@ app.route("/", mcpRoutes);
 // Game routes
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
+
+const providerModelRoutes = createProviderModelRoutes(db);
+app.route("/", providerModelRoutes);
 
 const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db, {
   canClaimWork: () => runtimeActivation.canClaimWork(),
