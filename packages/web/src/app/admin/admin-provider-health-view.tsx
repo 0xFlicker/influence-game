@@ -70,7 +70,7 @@ export function AdminProviderHealth() {
             Provider Health
           </h2>
           <p className="mt-1 text-sm text-white/40">
-            Provider circuits and probe-backed recovery. There is no manual force-close.
+            Provider circuits and recovery.
           </p>
         </div>
         {result?.dailyAdmissionPaused && (
