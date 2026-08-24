@@ -16,8 +16,8 @@
  *   bun run simulate -- --variant mingle --chatty --reasoning-summary auto
  *   bun run simulate -- --model-catalog katana:grok-4-3 --reasoning-policy high
  *   bun run simulate -- --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \
- *     --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12 \
- *     --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24
+ *     --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24 \
+ *     --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12
  *
  * OPERATOR-ONLY format-kernel proof. Implementing agents document these commands
  * but must not run or wait on them. Start from the reported branch/HEAD with a

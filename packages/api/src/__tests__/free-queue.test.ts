@@ -250,14 +250,14 @@ describe("free queue season admission", () => {
     expect(gameConfig.providerManifest).toEqual([
       gameConfig.modelSelection,
       {
-        catalogId: "katana:grok-4-5",
-        reasoningPolicy: "action-policy",
-        maxCallsPerGame: 12,
-      },
-      {
         catalogId: "katana:glm-5-2",
         reasoningPolicy: "action-policy",
         maxCallsPerGame: 24,
+      },
+      {
+        catalogId: "katana:grok-4-5",
+        reasoningPolicy: "action-policy",
+        maxCallsPerGame: 12,
       },
     ]);
     expect(gameConfig).not.toHaveProperty("modelTier");

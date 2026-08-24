@@ -103,6 +103,17 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
       { minTotalTokens: 200_001, inputPer1M: 2.75, cachedInputPer1M: 0.44, outputPer1M: 5.50 },
     ],
   },
+  // Katana catalog rates published August 2026.
+  "grok-4-5": {
+    inputPer1M: 2.02,
+    cachedInputPer1M: 0.303,
+    outputPer1M: 6.06,
+  },
+  "glm-5-2": {
+    inputPer1M: 0.98049,
+    cachedInputPer1M: 0.196098,
+    outputPer1M: 3.08154,
+  },
   // xAI native APIs use the dotted ID.
   "grok-4.3": { inputPer1M: 1.25, cachedInputPer1M: 0.20, outputPer1M: 2.50 },
 };

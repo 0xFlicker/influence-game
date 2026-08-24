@@ -59,7 +59,7 @@ The origin requirements remain authoritative. This plan preserves their IDs and 
 - R24. Accept complete ordered manifests from the models already available through the OpenAI and Katana provider paths in web, API, CLI, and simulation creation surfaces.
 - R25. Let creators add, remove, replace, and reorder entries before creation seals the game configuration.
 - R26. Seal resolved provider/model identity, compatible settings, and fallback-call budgets into the game and its checkpoints.
-- R27. Configure Daily with the current OpenAI primary, Katana `grok-4-5` secondary, and Katana `glm-5-2` tertiary.
+- R27. Configure Daily with the current OpenAI primary, Katana `glm-5-2` secondary, and Katana `grok-4-5` tertiary.
 - R28. Keep the exact `grok-4-5` and `glm-5-2` entries game-ready for Influence speech, structured decisions, and tools. Daily qualification is based on those capabilities and current price; model speed is not an admission criterion.
 - R29. Start each logical call at the primary unless health, compatibility, or the game's remaining budget disallows it.
 - R30. Advance immediately after a request-specific nonretryable refusal without resending the unchanged request to that provider.
@@ -363,7 +363,7 @@ The diagrams are behavioral guidance, not prescribed database enum names or meth
   - Retryable rate-limit/service/transport outcomes consume bounded same-provider attempts before transition.
   - Empty/malformed structured output uses bounded repair before transition.
   - Two concurrent workers racing the final budget unit permit one dispatch and send the other to engine policy.
-  - Exhausting Grok skips it and reaches the tertiary entry when that entry remains permitted; omission/engine fallback begins only after all permitted entries are unavailable.
+  - Exhausting GLM skips it and reaches the Grok tertiary entry when that entry remains permitted; omission/engine fallback begins only after all permitted entries are unavailable.
   - A crash before dispatch, after dispatch, after validated-command persistence, after acceptance claim, during canonical handoff, and after canonical commit each resumes correctly.
   - An indeterminate remote call may repeat after recovery, but late/stale responses and owner changes cannot create a second accepted action.
   - A failed evidence write does not duplicate or fail gameplay, a failed spend projection later reconciles from the journal, and failed authoritative reservation makes no provider call.
@@ -449,7 +449,7 @@ The diagrams are behavioral guidance, not prescribed database enum names or meth
   - `grok-4-5` completes representative optional speech, required legal decisions, and structured/tool calls through the production request shape.
   - `glm-5-2` completes the same Influence capability contracts; unavailable or incompatible entries fail validation rather than silently skipping.
   - Cost evidence distinguishes actual, estimated, and unavailable values and supports the chosen call caps.
-  - The selected Daily manifest is ordered OpenAI, `grok-4-5`, then `glm-5-2`, with bounded fallback caps.
+  - The selected Daily manifest is ordered OpenAI, `glm-5-2`, then `grok-4-5`, with bounded fallback caps.
   - Daily refuses to claim when its primary breaker is open; an explicit test game may still choose another healthy OpenAI/Katana manifest.
 - **Verification:** Provider-backed acceptance produces reproducible evidence for the exact model IDs and operating parameters; deterministic and DB tests remain separate and green before the Daily default is activated.
 
@@ -514,7 +514,7 @@ The diagrams are behavioral guidance, not prescribed database enum names or meth
 - AE7. All providers fail during a required vote, so the engine selects a legal deterministic target, commits it normally, and labels fallback provenance without rationale.
 - AE8. Invalid credentials open the breaker, pause new Daily games, leave running games live through engine behavior, and close only after a successful post-fix probe.
 - AE9. Repeated transient failures open the breaker, one cooldown probe succeeds, and ordinary traffic resumes.
-- AE10. A game exhausts its Grok call cap; later calls skip Grok, may use a permitted tertiary entry with remaining budget, and reach omission or engine fallback only when every permitted entry is exhausted or disallowed.
+- AE10. A game exhausts its GLM call cap; later calls skip GLM, may use the permitted Grok tertiary entry with remaining budget, and reach omission or engine fallback only when every permitted entry is exhausted or disallowed.
 - AE11. A process restarts during an indeterminate attempt; recovery may repeat the remote request but accepts neither a duplicate provider action nor a second fallback result.
 - AE12. Admin/sysop web and producer MCP can inspect private evidence, while public, player, owner-only, and ordinary viewer reads expose none of it.
 

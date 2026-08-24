@@ -81,7 +81,7 @@ A game currently depends on one selected provider/model. Request-specific refusa
 - R24. Web, API, and CLI game creation accept the complete ordered manifest of models available through the existing OpenAI and Katana provider paths rather than a hard-coded waterfall.
 - R25. Creators can add, remove, replace, and reorder manifest entries before launch.
 - R26. The selected manifest, provider-specific compatible settings, and fallback-call budgets are sealed into the game before it starts and survive checkpoint recovery.
-- R27. The Daily queue uses a configured default three-entry manifest: the current OpenAI primary, Katana `grok-4-5`, and Katana `glm-5-2`.
+- R27. The Daily queue uses a configured default three-entry manifest: the current OpenAI primary, Katana `glm-5-2`, and Katana `grok-4-5`.
 - R28. The exact `grok-4-5` and `glm-5-2` entries must retain game-ready compatibility with Influence speech, structured decisions, and tools. Daily qualification is based on those capabilities and current price; model speed is not an admission criterion.
 - R29. Each logical call starts with the manifest primary unless that entry is circuit-open, incompatible with the call, or unavailable under the game's remaining budget.
 - R30. A nonretryable request-specific refusal advances immediately to the next compatible entry without resending the unchanged request to the refusing provider.

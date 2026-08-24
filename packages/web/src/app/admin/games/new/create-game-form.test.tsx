@@ -42,6 +42,15 @@ describe("new game provider route", () => {
     expect(mounted.queryByText(/Mixed/)).toBeNull();
     expect(mounted.getAllByText("Adaptive").length).toBe(3);
 
+    const routeSelectors = Array.from(mounted.container.querySelectorAll<HTMLSelectElement>(
+      'select[aria-label$="model"]',
+    ));
+    expect(routeSelectors.map((select) => select.value)).toEqual([
+      "openai:gpt-5.6-luna",
+      "katana:glm-5-2",
+      "katana:grok-4-5",
+    ]);
+
     const options = Array.from(mounted.container.querySelectorAll("option"))
       .map((option) => option.textContent);
     expect(options).toContain("xAI Grok 4.5");
@@ -70,9 +79,9 @@ describe("new game provider route", () => {
     expect(createBody).not.toHaveProperty("slotType");
     expect(createBody).not.toHaveProperty("modelSelection");
     expect(createBody.providerManifest).toEqual([
-      { catalogId: "katana:grok-4-5", reasoningPolicy: "action-policy" },
+      { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy" },
       { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "medium", maxCallsPerGame: 12 },
-      { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+      { catalogId: "katana:grok-4-5", reasoningPolicy: "action-policy", maxCallsPerGame: 12 },
     ]);
   });
 

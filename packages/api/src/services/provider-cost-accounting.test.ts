@@ -129,7 +129,7 @@ describe("provider cost accounting", () => {
       estimatedCostUsd: 0.28,
       estimatedCostMicrousd: 280_000,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
   });
 
@@ -145,7 +145,7 @@ describe("provider cost accounting", () => {
       estimatedCostUsd: 0.14,
       estimatedCostMicrousd: 140_000,
       pricingSourceId: "engine.OPENAI_FLEX_MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
   });
 
@@ -190,7 +190,7 @@ describe("provider cost accounting", () => {
       providerNativeUnit: "katana_credit",
       providerNativeAmount: "1.25",
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(rows[0]!.estimatedCostMicrousd).toBeGreaterThan(0);
     expect(JSON.stringify(rows[0]!.routerBilling)).not.toContain("must redact");
@@ -201,7 +201,7 @@ describe("provider cost accounting", () => {
     expect(detail.detail.callCount).toBe(1);
     expect(detail.detail.ownerEpochBreakdowns).toHaveLength(1);
     expect(detail.detail.providerNativeTotals.katana_credit).toBe(1.25);
-    expect(detail.detail.pricing.rateCardVersions).toContain("2026-07-30");
+    expect(detail.detail.pricing.rateCardVersions).toContain("2026-08-24");
   });
 
   test("prices live Luna Responses by the effective Flex tier and cache-write usage", async () => {
@@ -251,7 +251,7 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 1_495,
       pricingSourceId: "engine.OPENAI_FLEX_MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
       safeMetadata: {
         effectiveServiceTier: "flex",
         cacheWriteTokens: 3_000,
@@ -517,7 +517,7 @@ describe("provider cost accounting", () => {
       totalTokens: 100_000,
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("aggregate_usage_estimate");
 
@@ -560,7 +560,7 @@ describe("provider cost accounting", () => {
       modelName: "grok-4-3",
       totalTokens: 250_000,
       estimatedCostMicrousd: 687500,
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
   });
 
@@ -622,7 +622,7 @@ describe("provider cost accounting", () => {
     expect(rows[0]!.estimatedCostMicrousd).toBeGreaterThan(0);
     expect(rows[0]).toMatchObject({
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(rows[0]!.pricedAt).not.toBe("2026-07-03T13:00:00.000Z");
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
@@ -762,7 +762,7 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("aggregate_usage_estimate");
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
@@ -827,7 +827,7 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 137500,
       pricingSourceId: "engine.MODEL_PRICING",
-      rateCardVersion: "2026-07-30",
+      rateCardVersion: "2026-08-24",
     });
     expect(JSON.stringify(rows[0]!.diagnostics)).toContain("repriced_existing_spend_entry");
     expect(JSON.stringify(rows[0]!.diagnostics)).not.toContain("cost_unavailable");
@@ -1087,6 +1087,54 @@ describe("provider cost accounting", () => {
       costSource: "static_estimate",
       estimatedCostMicrousd: 0,
     });
+  });
+
+  test("prices Katana Grok 4.5 and GLM 5.2 attempts when router cost is absent", async () => {
+    const db = await setupTestDB();
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const usage = {
+      promptTokens: 1_000,
+      cachedTokens: 0,
+      completionTokens: 500,
+      reasoningTokens: 0,
+      totalTokens: 1_500,
+    };
+
+    await recordProviderSpendForAttempt(db, {
+      ...attemptSpendInput(gameId, ownerEpoch, "katana-grok-4-5", { usage }),
+      transport: "katana.chat_completions",
+      providerProfileId: "katana",
+      catalogId: "katana:grok-4-5",
+      modelName: "grok-4-5",
+    });
+    await recordProviderSpendForAttempt(db, {
+      ...attemptSpendInput(gameId, ownerEpoch, "katana-glm-5-2", { usage }),
+      transport: "katana.chat_completions",
+      providerProfileId: "katana",
+      catalogId: "katana:glm-5-2",
+      modelName: "glm-5-2",
+    });
+
+    const rows = await db.select().from(schema.gameProviderSpendEntries);
+    const byModel = new Map(rows.map((row) => [row.modelName, row]));
+    expect(byModel.get("grok-4-5")).toMatchObject({
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 5_050,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-08-24",
+    });
+    expect(byModel.get("glm-5-2")).toMatchObject({
+      costSource: "static_estimate",
+      estimatedCostMicrousd: 2_521,
+      pricingSourceId: "engine.MODEL_PRICING",
+      rateCardVersion: "2026-08-24",
+    });
+
+    const detail = await getGameCostDetail(db, gameId);
+    expect(detail.ok).toBeTrue();
+    if (!detail.ok) throw new Error("expected cost detail");
+    expect(detail.detail.unpricedCallCount).toBe(0);
   });
 
   test("atomically retries the spend row and rollup after rollup failure", async () => {

@@ -47,8 +47,8 @@ Game-ready catalog entries:
 | `openai:gpt-5.4-mini` | OpenAI | `gpt-5.4-mini` | Legacy premium fallback |
 | `openai:gpt-5.6-luna` | OpenAI | `gpt-5.6-luna` | Product baseline; GPT-5.6 cost-sensitive tier ($1 / $0.10 cached / $6 per 1M) |
 | `katana:grok-4-3` | Katana / IMGNAI | `grok-4-3` | Router-backed Grok testing lane |
-| `katana:grok-4-5` | Katana / IMGNAI | `grok-4-5` | Qualified secondary Daily fallback; speech, strict JSON Schema, and named tools pass |
-| `katana:glm-5-2` | Katana / IMGNAI | `glm-5-2` | Qualified low-cost tertiary Daily fallback; speech, strict JSON Schema, and named tools pass |
+| `katana:glm-5-2` | Katana / IMGNAI | `glm-5-2` | Qualified preferred secondary Daily fallback; speech, strict JSON Schema, and named tools pass |
+| `katana:grok-4-5` | Katana / IMGNAI | `grok-4-5` | Qualified tertiary Daily fallback; speech, strict JSON Schema, and named tools pass |
 
 Known unsuitable catalog entries:
 

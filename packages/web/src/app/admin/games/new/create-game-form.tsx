@@ -101,7 +101,7 @@ const GAME_MODELS: GameModelOption[] = [
   {
     catalogId: "katana:grok-4-5",
     displayName: "xAI Grok 4.5",
-    sublabel: "Capable secondary fallback",
+    sublabel: "Capable tertiary fallback",
     configured: true,
     available: null,
     defaultReasoningPolicy: "action-policy",
@@ -110,7 +110,7 @@ const GAME_MODELS: GameModelOption[] = [
   {
     catalogId: "katana:glm-5-2",
     displayName: "Katana GLM 5.2",
-    sublabel: "Low-cost tertiary fallback",
+    sublabel: "Preferred secondary fallback",
     configured: true,
     available: null,
     defaultReasoningPolicy: "action-policy",
@@ -145,8 +145,8 @@ export const DEFAULT_PROVIDER_MANIFEST: GameProviderManifestEntry[] = [
 ];
 
 const RECOMMENDED_PROVIDER_FALLBACKS: GameProviderManifestEntry[] = [
-  { catalogId: "katana:grok-4-5", reasoningPolicy: "action-policy", maxCallsPerGame: 12 },
   { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+  { catalogId: "katana:grok-4-5", reasoningPolicy: "action-policy", maxCallsPerGame: 12 },
 ];
 
 export function moveProviderRouteEntry(
@@ -428,6 +428,7 @@ function ProviderRouteEditor({
                   </span>
                   <select
                     ref={(node) => { modelSelectRefs.current[entry.uiId] = node; }}
+                    aria-label={`${index === 0 ? "Primary" : `Fallback ${index}`} model`}
                     value={entry.catalogId}
                     onChange={(event) => selectModel(index, event.target.value)}
                     className="w-full rounded-lg border border-white/10 bg-[#09090c] px-3 py-2.5 text-sm text-white outline-none transition-colors focus:border-indigo-500"

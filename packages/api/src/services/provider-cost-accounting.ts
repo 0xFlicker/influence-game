@@ -16,7 +16,7 @@ import type {
 
 const PRICING_SOURCE_ID = "engine.MODEL_PRICING";
 const FLEX_PRICING_SOURCE_ID = "engine.OPENAI_FLEX_MODEL_PRICING";
-const RATE_CARD_VERSION = "2026-07-30";
+const RATE_CARD_VERSION = "2026-08-24";
 
 const PROVIDER_SNAPSHOT_RATE_CARDS = {
   "gpt-5.4-nano-2026-03-17": "gpt-5.4-nano",
