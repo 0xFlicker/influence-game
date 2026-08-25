@@ -20,6 +20,8 @@ Last House summary cost architecture added: 2026-08-15
 
 Last CI test-discovery gap added: 2026-08-14
 
+Last production compact-strategy and producer-tooling audit added: 2026-08-19
+
 Last failed-provider evidence storage gap added: 2026-08-21
 
 Last synthetic no-response output gap added: 2026-08-21
@@ -48,6 +50,7 @@ Status legend:
 
 - `ready`: good candidate for near-term planning.
 - `implementation_complete/runtime_proof_pending`: implementation and automated proof landed; one explicit live validation gate remains before `closed`.
+- `implementation_complete/operator_rollout_pending`: implementation and automated proof landed; one explicit repository or operational configuration step remains before `closed`.
 - `future`: coherent, but should not be in the active queue unless the pain becomes visible.
 - `closed`: already implemented, superseded, or not a coherent current ask.
 
@@ -63,6 +66,19 @@ Items are ordered by current priority.
 - Implemented foundation: bounded canonical/projection/public-dialogue frontier; compact adjacent and same-coordinate narrative state; typed source receipts; one milestone-only fact read per game; nonfatal skip/failure handling; durable-before-narration ordering; and the reviewed normal/endgame actor-coordinate matrix. `FORMAT_PICK` plus `FORMAT_RESOLVE` remains the proving slice, not completion evidence.
 - Remaining signal: the final cache-isolated `gpt-5.6-luna` Flex comparison preserved identical authority, exact accounting, 21/21 continuity, one fact read, unique prose, and zero-call preflight, but emitted only 16/23 eligible beats (`69.57%`), achieved selected-fact specificity on 14/23 (`60.87%`), and cost `$0.0023335` versus `$0.0017157` for the complete round-only baseline (`1.360086x`). This fails the 80% emission, 80% specificity, and `1.25x` cost gates. Offline audit found two additional attribution bypasses, which deterministic validation now rejects; no later provider proof was authorized.
 - Validation path: retain the current authority, privacy, continuity, failure, and accounting guarantees; improve one-call catalog usefulness and attribution success without weakening receipt checks; then run a fresh cache-isolated full comparison. Keep R21 open until automatic and offline human quality review both pass.
+
+### R23. Exceptional, actionable compact strategy diffs
+
+- Status: `implementation_complete/runtime_proof_pending` (implementation merged 2026-08-21 in PR #113)
+- Priority: **high**
+- Sources: production game `used-lilac-ash`, `packages/engine/src/strategy-state.ts`, `packages/engine/src/agent.ts`, `docs/reasoning-transcript-observability.md`, and `docs/plans/2026-08-14-001-perf-compact-decision-envelope-plan.md`.
+- Signal: the compact strategy lifecycle and mechanical validation behaved correctly in the reviewed game, but agents emitted strategy candidates across many ordinary Mingle, alliance-action, and huddle turns even when the text mostly restated the current posture. Frequent low-information deltas consume output tokens and make material changes harder for producers and future prompts to distinguish.
+- Product decision: keep `strategyDelta` optional and make omission the expected result when the current strategy still applies. A delta should record a material, actionable change to targets, alliance posture, commitments, threat assessment, priorities, or contingencies; it should not summarize the action, repeat the baseline, narrate unchanged intent, or prove that the agent considered strategy.
+- Authority boundary: strategy remains private, fallible cognition. Deltas never become canonical game facts, alliance obligations, or evidence that an agent must vote a particular way. Malformed or rejected strategy metadata must remain independent from acceptance of an otherwise legal gameplay action.
+- Concrete seam: shared strategic-decision guidance, tool-field descriptions, compact-strategy application diagnostics, prompt scenario fixtures, and producer strategy-result reads.
+- Validation path: focused scenario fixtures distinguish material changes from restatements and prove null/omitted deltas leave strategy unchanged. A current-meta API-backed game reports non-null, accepted, rejected, and no-change strategy candidates plus output tokens by action family; human review verifies retained deltas are materially useful without requiring alliance compliance or penalizing valid pivots.
+- Implemented shape: PR #113 tightened shared strategy-delta guidance and schemas, added explicit private `no_change` diagnostics for omitted and exact literal-null deltas, preserved legal gameplay acceptance independently from rejected strategy metadata, and retained the existing state machine and character limits.
+- Remaining proof: the reviewed production game predates literal-null normalization and the merged head. Keep R23 open until one authenticated current-meta API-backed game proves materially useful retained deltas and the exact no-change boundary without strategy leakage or provider retries.
 
 ### R27. Complete failed-provider request evidence for producer debugging
 
@@ -112,14 +128,13 @@ Items are ordered by current priority.
 
 ### R20. Complete CI test discovery without paid or external side effects
 
-- Status: `ready`
+- Status: `implementation_complete/operator_rollout_pending` (implementation merged 2026-08-20 in PR #117)
 - Priority: **high**
-- Sources: root and workspace `package.json` test scripts, `.github/workflows/ci.yml`, and the missed `format-presentation-metadata.test.ts` assertion found after PR #88 merged.
-- Signal: required CI runs hand-maintained `test:mock` file lists rather than all provider-free tests. PR #88 passed required checks even though a deterministic engine test was already red because that file was absent from the list. Adding individual files repairs known gaps but does not prove the lists are complete.
+- Sources: `docs/brainstorms/2026-08-16-ci-test-discovery-requirements.md`, `docs/plans/2026-08-16-001-test-complete-ci-discovery-plan.md`, root and workspace `package.json` test scripts, `.github/workflows/ci.yml`, and the missed `format-presentation-metadata.test.ts` assertion found after PR #88 merged.
+- Historical signal: required CI ran hand-maintained `test:mock` file lists rather than all provider-free tests. PR #88 passed required checks even though a deterministic engine test was already red because that file was absent from the list. Adding individual files repaired known gaps but did not prove the lists were complete.
 - Concrete seam: workspace test layout, provider/DB/browser dependency classification, `test:mock` scripts, and CI test jobs.
-- Validation path: inventory every test file; classify paid, credentialed, DB-backed, browser, and provider-free suites; prove every provider-free suite is discovered automatically; fail CI when a new test is unclassified; keep paid model simulations and external writes opt-in only.
-- Suggested slice: replace hand-maintained provider-free file lists with an automatic lane based on an explicit directory or naming contract, move exceptional suites into named opt-in lanes, and add a manifest/completeness check so newly added tests cannot silently miss required CI.
-- Implemented shape: ordinary provider-free and API/PostgreSQL tests use Bun discovery; exceptional suites use structural suffixes; `scripts/check-test-classification.ts` fails closed for unowned tests; deterministic browser coverage is isolated and visible but non-required; live-provider, external, real-Clerk, and staging execution remain opt-in.
+- Implemented shape: PR #117 made ordinary provider-free and API/PostgreSQL tests use Bun discovery; exceptional suites use structural suffixes; `scripts/check-test-classification.ts` fails closed for unowned tests; deterministic browser coverage is isolated and visible but non-required; live-provider, external, real-Clerk, and staging execution remain opt-in. The exact implementation head passed `check`, `Provider-free tests`, `API / PostgreSQL tests`, and all four Browser Coverage jobs.
+- Remaining operator step: as verified on 2026-08-25, the active `main` ruleset still requires only `check`. Add `Provider-free tests` and `API / PostgreSQL tests` after observing them on the exact protected `main` commit; keep Browser Coverage visible but non-required. Until that ruleset update lands, the plan remains `active` and R20 is not `closed`.
 
 ### R12. Player Strategy Thread checkpoint hydration
 
@@ -176,7 +191,7 @@ Items are ordered by current priority.
 - Validation path: preserve existing root simulation commands and artifact formats through the new package; keep deterministic engine and API tests passing; prove browser-safe engine subpaths with a production Next.js build; add an import-boundary test that rejects Node/provider/simulation dependencies from designated pure/browser entries.
 - Suggested slice: first move `simulate.ts`, `api-simulate.ts`, simulation instrumentation, local artifact writing, and the filesystem-backed simulation MCP into `@influence/simulation` without redesigning gameplay. Then inventory the remaining Node/OpenAI coupling and lift it behind injected runtime/provider/UUID/hash ports in bounded follow-ups. Do not claim the engine is environment-agnostic until those remaining imports are removed from its designated core boundary.
 
-### R20. Remove stale simulator variant aliases
+### R30. Remove stale simulator variant aliases
 
 - Status: `ready`
 - Priority: **low**
@@ -274,9 +289,10 @@ Items are ordered by current priority.
 - Status: `future`
 - Consolidates: named-alliance brainstorm deferred short-mode rule.
 - Sources: `docs/ideation/2026-07-02-named-alliances-ideation.html:406-413`
-- Signal: the current named-alliance rules keep the full-drama route and rely on existing token-maxing rules. A dedicated short-mode huddle design should wait until real simulations show which huddles are expensive without adding strategy.
+- Decision (2026-08-19): preserve House-scheduled huddles as the floor that lets an alliance coordinate. Reduce alliance formation/action volume through R22 before cutting huddle turns.
+- Signal: the current named-alliance rules keep the full-drama route and rely on existing token-maxing rules. The reviewed production game made `alliance-action`, not `alliance-huddle-turn`, the largest alliance-related cost family. A dedicated short-mode huddle design should wait until proposer gating lands and later games show which remaining huddles are expensive without adding strategy.
 - Concrete seam: alliance round cadence, House huddle scheduling, simulation token accounting, local model evaluation summaries.
-- Promotion trigger: named-alliance simulations show huddle windows dominate token spend or make large-cast games drag.
+- Promotion trigger: after R22, named-alliance simulations show huddle windows themselves dominate token spend or make large-cast games drag.
 - Suggested slice if promoted: design a compressed alliance-huddle mode that preserves post-vote fallout and cuts optional private coordination first.
 
 ### W7. Cross-alliance membership and appearance guardrails
@@ -284,9 +300,10 @@ Items are ordered by current priority.
 - Status: `future`
 - Consolidates: named-alliance brainstorm deferred membership-cap rule.
 - Sources: `docs/ideation/2026-07-02-named-alliances-ideation.html:406`, `docs/ideation/2026-07-02-named-alliances-ideation.html:447-459`
-- Signal: each alliance is already limited to two huddle sessions and each live member receives one turn per session. Overlapping alliances remain intentionally uncapped across the whole window, so repeated appearances can still crowd out other alliances or inflate prompt cost.
+- Decision (2026-08-19): do not add House deletion, alliance-compliance rules, or hard membership caps. First use R22 to make proposer access scarce and continue using House huddle selection as the soft attention filter.
+- Signal: each alliance is already limited to two huddle sessions and each live member receives one turn per session. Overlapping alliances remain intentionally uncapped across the whole window, so repeated appearances could still crowd out other alliances after proposer gating reduces formation volume.
 - Concrete seam: alliance roster context, House huddle scheduling, huddle-seat budgets, prompt context budgeting, simulation diagnostics for multi-alliance agents.
-- Promotion trigger: agents join too many alliances to reason coherently, repeat huddle appearances crowd out other scheduled alliances, or large overlapping alliances multiply speaking turns beyond the intended token budget.
+- Promotion trigger: after R22, agents still join too many alliances to reason coherently, repeat huddle appearances crowd out other scheduled alliances, or large overlapping alliances multiply speaking turns beyond the intended token budget.
 - Suggested slice if promoted: evaluate soft caps first, such as House fatigue penalties, per-window speaking appearance limits, huddle-seat budgets, or warning-only diagnostics before hard membership caps.
 
 ### W8. Universal-alliance resolution phase
@@ -385,6 +402,10 @@ Items are ordered by current priority.
 
 ## Closed / Removed
 
+- R22 House-selected alliance proposer opportunities: implemented by PR #116. One compact House selection now grants exact `ceil(alive / 4)` proposer access with deterministic repair, selected-only proposer calls, private producer rationale, and an unchanged agent-authored alliance transaction. Its current-meta comparison reduced normalized alliance-opportunity calls by 52.9%, tokens by 62.9%, and estimated spend by about 62% while retaining canonical alliance and huddle usefulness evidence.
+- R24 producer cognition/trace cursor pagination: implemented by PR #114 with opaque snapshot-bound cursors, honest producer-analysis page metadata, tamper/game/subject isolation, equal-timestamp and concurrent-append stability, and terminal count proof. Ranged trace-content reads and raw storage remain unchanged.
+- R25 producer MCP Admin Cost Detail read: implemented by PR #110 through the shared Admin Cost Detail composition service, with route/MCP parity across prompt reuse and every cost state plus subject-scope denial. It added no new metrics, persistence, accounting logic, mutation, backfill controls, or UI.
+- R26 participation-aware postgame strategic alignment: implemented by PR #111. Canonical evidence now gates scored participation, non-participation is nullable and excluded from rates/grades, genuine minority participation remains `false`, and API/MCP schemas preserve the scored-round contract.
 - R14 House format resolution from events only: implemented on the format-kernel branch (review findings #15/#17, option A). Pure `buildHouseFormatResolutionFacts` rebuilds omniscient House facts from durable events; `buildHouseRoundFacts` always uses it; `lastFormatResolution` dual-write bag removed. Live house-mc + `GameState.fromCanonicalEvents` resume parity covered in unit/integration tests.
 - W19 Domain projection cache during format resolve ballots: implemented on the format-kernel branch. `GameState.getDomainProjection()` memoizes by last canonical sequence and clears on append / event hydration; unit coverage in `canonical-event-replay.test.ts`. Sealed-ballot parallelization remains a separate product follow-up.
 
