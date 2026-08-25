@@ -407,6 +407,48 @@
       "when": 1787184214223,
       "tag": "0057_married_mojo",
       "breakpoints": true
+    },
+    {
+      "idx": 58,
+      "version": "7",
+      "when": 1787514253572,
+      "tag": "0058_gorgeous_infant_terrible",
+      "breakpoints": true
+    },
+    {
+      "idx": 59,
+      "version": "7",
+      "when": 1787540000000,
+      "tag": "0059_sealed_provider_manifest",
+      "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1787543600000,
+      "tag": "0060_provider_health",
+      "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1787582364000,
+      "tag": "0061_provider_resilience_runtime_upgrade",
+      "breakpoints": true
+    },
+    {
+      "idx": 62,
+      "version": "7",
+      "when": 1787592600000,
+      "tag": "0062_provider_native_transports",
+      "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1787615008839,
+      "tag": "0063_provider_call_attempts_game_catalog_index",
+      "breakpoints": true
     }
   ]
 }

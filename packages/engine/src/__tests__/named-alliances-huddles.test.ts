@@ -176,6 +176,31 @@ describe("named alliance huddle windows", () => {
     expect(gameState.getAllianceHuddleOutcomes()).toEqual([]);
   });
 
+  it("omits an exhausted optional huddle turn without transcript, agent turn, or commitment", async () => {
+    const { gameState, logger, actor, ctx } = createHuddleHarness();
+    activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");
+    const alice = ctx.agents.get("alice")!;
+    alice.getAllianceHuddleTurn = async () => ({
+      message: null,
+      noReply: true,
+      providerAbsence: { kind: "provider_exhausted", outcome: "refusal" },
+    });
+    const turns: string[] = [];
+    logger.setStreamListener((event) => {
+      if (event.type === "agent_turn" && event.action === "alliance-huddle-turn" && event.actor.id) {
+        turns.push(event.actor.id);
+      }
+    });
+
+    await runAllianceHuddleWindow(ctx, actor, Phase.FORMAT_MINGLE);
+
+    expect(logger.transcript.some((entry) => entry.scope === "huddle" && entry.from === "Alice")).toBe(false);
+    expect(turns).not.toContain("alice");
+    expect((gameState.getAllianceHuddleOutcomes()[0]?.commitments ?? []).some(
+      (commitment) => commitment.speakerId === "alice",
+    )).toBe(false);
+  });
+
   it("repairs invalid House picks and runs huddles pass-wise with max two sessions per alliance", async () => {
     const { gameState, logger, actor, ctx } = createHuddleHarness(LARGE_PLAYER_ROSTER);
     activatePair(gameState, "alliance-ab", "lineage-ab", "version-ab", "alice", "bob");

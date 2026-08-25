@@ -81,7 +81,6 @@ export interface SealedElimDecisionContract<
     | "invalid_majority_elimination_target"
     | "invalid_even_votes_target"
     | "invalid_restricted_history_target";
-  fallbackThinking: string;
 }
 
 export interface SealedElimAggregateAdapter {
@@ -219,7 +218,6 @@ export const FORMAT_CATALOG: FormatCatalog = {
       strategyGuidance:
         "Vote Bomb rewards deliberate placement: loading several votes onto one player can leave a different player holding the lethal fewest-positive total, while a single stray vote can put someone on the fewest-positive ledge. Zero votes is safe. Coordinate when useful, but do not assume the room kept its promises.",
       invalidTargetReason: "invalid_vote_bomb_target",
-      fallbackThinking: "fallback sealed Vote Bomb ballot after tool failure",
     },
     aggregate: sealedElimAggregateAdapter,
     presentation: {
@@ -260,7 +258,6 @@ export const FORMAT_CATALOG: FormatCatalog = {
       strategyGuidance:
         "Majority Elimination removes the player with the most votes. This is not Vote Bomb: zero votes is not a special safe class, and the fewest-positive rule does not apply. This is not Safety Bounce: every living non-self target is legal, not only a vulnerable pool. All living players, including the empowered player, can receive ballots and be eliminated.",
       invalidTargetReason: "invalid_majority_elimination_target",
-      fallbackThinking: "fallback sealed Majority Elimination ballot after tool failure",
     },
     aggregate: sealedElimAggregateAdapter,
     presentation: {
@@ -290,7 +287,6 @@ export const FORMAT_CATALOG: FormatCatalog = {
       strategyGuidance:
         "Even Votes rewards parity control, not simple pile-ons. Only even totals qualify, including zero, and the highest even total is lethal. An odd total is safe unless every living player finishes odd, which hands the empowered player the entire field. Use your ballot to flip a target between odd safety and even danger, and account for how allies or opponents may flip that parity after you.",
       invalidTargetReason: "invalid_even_votes_target",
-      fallbackThinking: "fallback sealed Even Votes ballot after tool failure",
     },
     aggregate: sealedElimAggregateAdapter,
     presentation: {
@@ -320,7 +316,6 @@ export const FORMAT_CATALOG: FormatCatalog = {
       strategyGuidance:
         "Restricted History removes the player with the most votes, but you cannot target anyone you previously targeted with an elimination-direction format ballot. SAVE ballots do not consume history. Your legal target list is authoritative; if it is empty, your ballot is forfeited without an agent call.",
       invalidTargetReason: "invalid_restricted_history_target",
-      fallbackThinking: "fallback sealed Restricted History ballot after tool failure",
     },
     aggregate: sealedElimAggregateAdapter,
     presentation: {

@@ -211,6 +211,47 @@ describe("simulation variant config", () => {
     expect(args.reasoningPolicy).toBe("high");
   });
 
+  it("parses the same ordered provider manifest as API-backed simulation", () => {
+    const args = parseArgs([
+      "--provider-entry", "openai:gpt-5.6-luna,reasoning=action-policy",
+      "--provider-entry", "katana:grok-4-5,reasoning=medium,max-calls=12",
+      "--provider-entry", "katana:glm-5-2,reasoning=action-policy,max-calls=24",
+    ]);
+
+    expect(args.providerManifest).toEqual([
+      { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+      { catalogId: "katana:grok-4-5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+      { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+    ]);
+    expect(args.modelCatalogId).toBe("openai:gpt-5.6-luna");
+    expect(args.reasoningPolicy).toBe("action-policy");
+  });
+
+  it("lets explicit legacy model flags override an environment manifest", () => {
+    const previousManifest = process.env.INFLUENCE_SIM_PROVIDER_MANIFEST;
+    process.env.INFLUENCE_SIM_PROVIDER_MANIFEST = JSON.stringify([
+      { catalogId: "katana:grok-4-5" },
+    ]);
+    try {
+      const args = parseArgs(["--model-catalog", "openai:gpt-5-nano"]);
+      expect(args.providerManifest).toBeUndefined();
+      expect(args.modelCatalogId).toBe("openai:gpt-5-nano");
+    } finally {
+      if (previousManifest === undefined) {
+        delete process.env.INFLUENCE_SIM_PROVIDER_MANIFEST;
+      } else {
+        process.env.INFLUENCE_SIM_PROVIDER_MANIFEST = previousManifest;
+      }
+    }
+  });
+
+  it("rejects mixing provider-entry with legacy model flags", () => {
+    expect(() => parseArgs([
+      "--model-catalog", "openai:gpt-5-nano",
+      "--provider-entry", "openai:gpt-5.6-luna",
+    ])).toThrow("Do not combine");
+  });
+
   it("supports the short summaries alias and explicit disable flag", () => {
     expect(parseArgs(["--summaries"]).houseSummaries).toBe(true);
     expect(parseArgs(["--summaries", "--no-house-summaries"]).houseSummaries).toBe(false);

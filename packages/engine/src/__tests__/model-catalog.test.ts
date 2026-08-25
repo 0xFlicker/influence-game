@@ -1,13 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import {
   MODEL_CATALOG,
+  MAX_PROVIDER_MANIFEST_ENTRIES,
+  MAX_PROVIDER_ENTRY_CALLS_PER_GAME,
   formatGameModelSelectionLabel,
   gameReadyCatalogEntries,
   inferModelCapabilities,
   modelCatalogEntryById,
   normalizeGameModelSelection,
+  normalizeProviderManifest,
   normalizeReasoningPolicy,
   resolveModelSelection,
+  resolveProviderManifest,
+  resolveProviderManifestFromGameConfig,
 } from "../model-catalog";
 
 describe("model catalog", () => {
@@ -21,6 +26,19 @@ describe("model catalog", () => {
     expect(entry?.capabilities.supportsReasoningEffort).toBe(true);
     expect(entry?.capabilities.usesMaxCompletionTokens).toBe(false);
     expect(entry?.capabilities.supportsOpenAIResponses).toBe(false);
+  });
+
+  it("offers the approved Katana fallback models as game-ready choices", () => {
+    const grok = modelCatalogEntryById("katana:grok-4-5");
+    const glm = modelCatalogEntryById("katana:glm-5-2");
+    const gameReadyIds = gameReadyCatalogEntries().map((entry) => entry.id);
+
+    expect(grok?.displayName).toBe("xAI Grok 4.5");
+    expect(grok?.allowedReasoningEfforts).toEqual(["low", "medium", "high"]);
+    expect(glm?.displayName).toBe("Katana GLM 5.2");
+    expect(glm?.allowedReasoningEfforts).toEqual([]);
+    expect(gameReadyIds).toContain("katana:grok-4-5");
+    expect(gameReadyIds).toContain("katana:glm-5-2");
   });
 
   it("lists openai:gpt-5.4-nano as game-ready with GPT-5.4 capabilities", () => {
@@ -70,7 +88,7 @@ describe("model catalog", () => {
     expect(gameReadyIds).toContain("katana:grok-4-3");
     expect(gameReadyIds).not.toContain("katana:q-naifu-a3b");
     expect(gameReadyIds).not.toContain("katana:grok-4-20-multi-agent");
-    expect(gameReadyIds).not.toContain("katana:glm-5-2");
+    expect(gameReadyIds).toContain("katana:glm-5-2");
     expect(MODEL_CATALOG.some((entry) => entry.modelId === "grok-build-0-1")).toBe(false);
     expect(qNaifu?.evaluationStatus).toBe("disabled");
     expect(qNaifu?.capabilities.supportsStructuredOutput).toBe(true);
@@ -102,7 +120,76 @@ describe("model catalog", () => {
     expect(resolved.reasoningPolicy).toBe("low");
   });
 
+  it("normalizes and resolves an ordered provider manifest", () => {
+    const manifest = normalizeProviderManifest([
+      { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+      { catalogId: "katana:grok-4-5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+      { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+    ]);
+
+    expect(manifest).toEqual([
+      { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+      { catalogId: "katana:grok-4-5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+      { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+    ]);
+    const resolved = resolveProviderManifest(manifest);
+    expect(resolved.map((entry) => entry.modelId)).toEqual([
+      "gpt-5.6-luna",
+      "grok-4-5",
+      "glm-5-2",
+    ]);
+  });
+
+  it("rejects empty, duplicate, oversized, incompatible, and unbounded manifests", () => {
+    expect(() => normalizeProviderManifest([])).toThrow("at least one entry");
+    expect(() => normalizeProviderManifest([
+      { catalogId: "openai:gpt-5.6-luna" },
+      { catalogId: "openai:gpt-5.6-luna", maxCallsPerGame: 1 },
+    ])).toThrow("duplicate");
+    expect(() => normalizeProviderManifest(
+      Array.from({ length: MAX_PROVIDER_MANIFEST_ENTRIES + 1 }, (_, index) => ({
+        catalogId: `katana:test-model-${index}`,
+        ...(index > 0 && { maxCallsPerGame: 1 }),
+      })),
+    )).toThrow(`at most ${MAX_PROVIDER_MANIFEST_ENTRIES}`);
+    expect(() => normalizeProviderManifest([
+      { catalogId: "katana:q-naifu-a3b" },
+    ])).toThrow("not game-ready");
+    expect(() => normalizeProviderManifest([
+      { catalogId: "katana:glm-5-2", reasoningPolicy: "high" },
+    ])).toThrow("does not support high reasoning");
+    expect(() => normalizeProviderManifest([
+      { catalogId: "openai:gpt-5.6-luna" },
+      { catalogId: "katana:grok-4-5" },
+    ])).toThrow("maxCallsPerGame");
+    expect(() => normalizeProviderManifest([
+      { catalogId: "openai:gpt-5.6-luna" },
+      { catalogId: "katana:grok-4-5", maxCallsPerGame: MAX_PROVIDER_ENTRY_CALLS_PER_GAME + 1 },
+    ])).toThrow(`at most ${MAX_PROVIDER_ENTRY_CALLS_PER_GAME}`);
+  });
+
+  it("treats the sealed manifest as authority while retaining stored-game restoration", () => {
+    expect(() => resolveProviderManifestFromGameConfig({
+      providerManifest: [{ catalogId: "katana:grok-4-5" }],
+      modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+    })).toThrow("does not match its legacy primary projection");
+    expect(resolveProviderManifestFromGameConfig({
+      providerManifest: [{ catalogId: "katana:grok-4-5" }],
+      modelSelection: { catalogId: "katana:grok-4-5" },
+    })[0]?.catalogId).toBe("katana:grok-4-5");
+    expect(resolveProviderManifestFromGameConfig({
+      modelSelection: { catalogId: "openai:gpt-5.6-luna" },
+    })[0]?.catalogId).toBe("openai:gpt-5.6-luna");
+  });
+
   it("supports dynamic OpenAI-compatible text model catalog entries", () => {
+    const openAI = resolveModelSelection(
+      { catalogId: "openai:gpt-5.7-test", reasoningPolicy: "medium" },
+    );
+    expect(openAI.providerProfile.id).toBe("openai");
+    expect(openAI.modelId).toBe("gpt-5.7-test");
+    expect(openAI.reasoningPolicy).toBe("medium");
+
     const katana = resolveModelSelection(
       { catalogId: "katana:grok-4-33", reasoningPolicy: "high" },
     );
@@ -116,6 +203,18 @@ describe("model catalog", () => {
     expect(lmStudio.providerProfile.id).toBe("lm-studio");
     expect(lmStudio.modelId).toBe("google/gemma-4-26b-a4b-qat");
     expect(lmStudio.model.capabilities.supportsOpenAIResponses).toBe(false);
+
+    expect(normalizeProviderManifest([
+      { catalogId: "openai:gpt-5.7-test" },
+      { catalogId: "katana:deepseek-v3", maxCallsPerGame: 3 },
+    ])).toEqual([
+      { catalogId: "openai:gpt-5.7-test", reasoningPolicy: "action-policy" },
+      {
+        catalogId: "katana:deepseek-v3",
+        reasoningPolicy: "action-policy",
+        maxCallsPerGame: 3,
+      },
+    ]);
   });
 
   it("infers capabilities for uncataloged provider models", () => {

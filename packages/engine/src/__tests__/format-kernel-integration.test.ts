@@ -15,6 +15,7 @@ import { GameState } from "../game-state";
 import { replayCanonicalEvents } from "../game-projection";
 import { ContextBuilder } from "../context-builder";
 import { TranscriptLogger } from "../transcript-logger";
+import { ProviderAttemptError } from "../provider-execution";
 
 const TEST_CONFIG: GameConfig = {
   timers: {
@@ -377,6 +378,56 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(fallbackSelected).toBeDefined();
     expect(fallbackSelected?.sourcePointers).toHaveLength(1);
     expect(fallbackSelected?.sourcePointers[0]).not.toHaveProperty("decisionId");
+  });
+
+  it("commits the seeded second format when provider exhaustion falls back", async () => {
+    const agents = [
+      new MockAgent("empowered-a", "A"),
+      new MockAgent("voter-b", "B"),
+      new MockAgent("voter-c", "C"),
+      new MockAgent("voter-d", "D"),
+      new MockAgent("voter-e", "E"),
+    ];
+    for (const agent of agents) {
+      agent.pickRoundFormat = async () => {
+        throw Object.setPrototypeOf(
+          new Error("provider exhausted"),
+          ProviderAttemptError.prototype,
+        );
+      };
+    }
+    const runner = new GameRunner(
+      agents,
+      {
+        ...TEST_CONFIG,
+        maxRounds: 1,
+        formatManifest: ["save_or_eliminate", "vote_bomb", "safety_bounce"],
+      },
+      undefined,
+      { gameId: "format-seed-1", maxRoundsMode: "exact" },
+    );
+
+    await runner.run();
+
+    const menu = runner.getCanonicalEvents().find(
+      (event) => event.type === "format.menu_offered",
+    );
+    const selected = runner.getCanonicalEvents().find(
+      (event) => event.type === "format.selected",
+    );
+    expect(menu?.payload.offeredFormatIds).toHaveLength(2);
+    expect(selected?.payload.formatId).toBe(menu?.payload.offeredFormatIds[1]);
+    expect(selected?.sourcePointers).toEqual([
+      expect.objectContaining({
+        actorId: "empowered-a",
+        action: "format-pick",
+        engineFallback: {
+          source: "engine",
+          reason: "provider_exhausted",
+          seed: "format-seed-1:1:FORMAT_PICK:empowered-a:format-pick",
+        },
+      }),
+    ]);
   });
 
   it("honors an exact two-round cap before an 8-player game reaches endgame", async () => {

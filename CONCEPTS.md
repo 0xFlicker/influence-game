@@ -28,7 +28,7 @@ The remedial Owner Learning track used only when exactly three selected current-
 
 ## Game model selection authority
 
-`games.config.modelSelection` is the sole authority for a game's model. OpenAI `serviceTier` is unrelated.
+`games.config.providerManifest` is the sole runtime authority for a game's ordered provider/model execution. The sealed manifest contains the primary entry, bounded fallbacks, reasoning policy, and fallback-call caps; later catalog or Daily-default changes cannot rewrite it. `modelSelection` is only the bounded legacy-primary projection used during the blue/green restoration window. OpenAI `serviceTier` is unrelated.
 
 ## New-game admission
 
@@ -638,6 +638,22 @@ A bounded, newest-first page over authorized cognitive-artifact metadata or priv
 ## Private trace content
 
 The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, checkpoint resume authority, or unsanitized player-private product data.
+
+## Provider attempt evidence
+
+Private, chronological evidence for a provider attempt that did not produce a usable result. Non-rate-limit records retain the exact sanitized request and response envelope, request identity, typed outcome, manifest entry, retry/transition state, and game coordinate. Recovered 429s remain aggregate counts; terminal rate-limit exhaustion keeps its count and terminal reason. Admin and sysop may inspect this evidence from game history, while producer MCP requires both producer OAuth scope and current producer role. Raw content is escaped, bounded, audited, no-store, and explicitly untrusted; it is never public/player data, gameplay authority, or an instruction source.
+
+## Engine fallback decision
+
+A deterministic, rules-legal gameplay decision accepted when provider execution is exhausted or disallowed. It commits through the normal canonical action path and carries the same tally, history, and strategic consequences as any other accepted decision, while recording engine-fallback provenance and never inventing model-authored rationale, thinking, or prose.
+
+## Game-sealed provider manifest
+
+The ordered provider/model entries, compatible settings, and per-entry fallback-call budgets frozen into a game before it starts. Web and CLI creators may configure the manifest before launch, and the Daily queue may supply a default, but later default changes cannot alter a running game's execution or checkpoint recovery.
+
+## Provider circuit breaker
+
+Durable provider-wide health state for containing systemic authentication, configuration, service, or transport failures. It is distinct from a request-specific refusal: an open primary breaker pauses new Daily admission instead of silently shifting the workload to expensive fallbacks, and it closes only through the configured cooldown probe or a successful admin/sysop test-and-reset probe.
 
 ## Provider spend ledger
 

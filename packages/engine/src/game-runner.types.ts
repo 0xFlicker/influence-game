@@ -34,6 +34,21 @@ import type {
 } from "./house-summary-frontier";
 export type { TokenCostCursor };
 export type {
+  ProviderAttemptFailureKind,
+  ProviderAttemptFailureOutcome,
+  ProviderAttemptAccountingFacts,
+  ProviderAttemptDisposition,
+  ProviderAttemptIntent,
+  ProviderAttemptOutcome,
+  ProviderAttemptRecord,
+  ProviderAttemptUsageFacts,
+  ProviderExecutionHooks,
+  ProviderLogicalCallCoordinate,
+  ProviderPreparedRequest,
+  SanitizedProviderRequestEvidence,
+  SanitizedProviderResponseEvidence,
+} from "./provider-execution";
+export type {
   HouseBeatClass,
   HouseBeatStatus,
   HouseFactCategory,
@@ -405,6 +420,32 @@ export interface AgentResponse extends StrategicDecisionMetadata {
    * Used to correlate dialogue with owned cognition; not board-fact authority.
    */
   decisionId?: UUID;
+  /**
+   * Explicit absence returned when an optional provider-backed utterance exhausts.
+   * Empty message/thinking fields remain non-authoritative compatibility fields;
+   * phase runners must omit the turn entirely when this marker is present.
+   */
+  providerAbsence?: ProviderSpeechAbsence;
+}
+
+export interface ProviderSpeechAbsence {
+  kind: "provider_exhausted";
+  outcome:
+    | "refusal"
+    | "rate_limit"
+    | "service_error"
+    | "transport_error"
+    | "transport_timeout"
+    | "authentication"
+    | "configuration"
+    | "request_error"
+    | "cancellation"
+    | "empty_output"
+    | "malformed_output"
+    | "wrong_tool"
+    | "undecodable_structured_output"
+    | "budget_exhausted"
+    | "circuit_open";
 }
 
 export type PrivateDecisionTraceActorRole = "player" | "juror" | "house" | "system" | "producer";
@@ -454,6 +495,8 @@ export interface PrivateDecisionTraceContext {
   actor: PrivateDecisionTraceActor;
   phase?: Phase;
   round?: number;
+  /** Durable phase-owned ordinal for repeated calls at this actor/action boundary. */
+  logicalCallOrdinal?: number;
   boundary?: PrivateDecisionTraceBoundary;
   /**
    * Structural-only Recall Plan receipt for this call (KTD5 / R16).
@@ -505,6 +548,8 @@ export interface PrivateDecisionTrace {
   };
   request?: unknown;
   response: {
+    /** Exact provider-native transport used for this accepted response. */
+    transport?: string;
     raw: unknown;
     finishReason?: string | null;
     content?: string | null;
@@ -643,6 +688,21 @@ export interface StrategicDecisionMetadata extends CompactStrategyCandidate {
    * Acceptance writers may use it only when the returned value is accepted directly.
    */
   decisionId?: UUID;
+  /** Engine-owned provenance for a legal required action chosen without a model result. */
+  engineFallback?: EngineFallbackProvenance;
+}
+
+export type EngineFallbackReason =
+  | "provider_exhausted"
+  | "action_timed_out"
+  | "invalid_model_output"
+  | "agent_method_unavailable";
+
+export interface EngineFallbackProvenance {
+  source: "engine";
+  reason: EngineFallbackReason;
+  /** Stable coordinate used to replay the same choice from the same legal set. */
+  seed: string;
 }
 
 export type HouseAllianceStatus = "speculative" | "forming" | "active" | "fracturing" | "retired";
@@ -1000,6 +1060,8 @@ export interface AllianceHuddlePromptContext {
 }
 
 export interface AllianceHuddleTurnAction extends StrategicDecisionMetadata {
+  /** Typed provider exhaustion for an optional huddle turn; omit the turn entirely. */
+  providerAbsence?: ProviderSpeechAbsence;
   thinking?: string;
   reasoningContext?: string;
   message: string | null;
@@ -1008,6 +1070,8 @@ export interface AllianceHuddleTurnAction extends StrategicDecisionMetadata {
 }
 
 export interface MingleTurnAction extends StrategicDecisionMetadata {
+  /** Typed provider exhaustion for an optional turn; never emit a transcript entry. */
+  providerAbsence?: ProviderSpeechAbsence;
   /** Agent's internal thinking (hidden from players, visible to viewers) */
   thinking?: string;
   /** Private room message. Empty/null means no TALK action. */
@@ -1379,6 +1443,8 @@ export interface PhaseContext {
   gameId: UUID;
   round: number;
   phase: Phase;
+  /** Durable phase-owned ordinal for repeated provider calls at this boundary. */
+  providerLogicalCallOrdinal?: number;
   selfId: UUID;
   selfName: string;
   alivePlayers: Array<{ id: UUID; name: string; shielded?: boolean }>;

@@ -13,6 +13,7 @@ export interface ModelRequestCapabilities {
   usesMaxCompletionTokens: boolean;
   supportsTemperature: boolean;
   supportsOpenAIResponses: boolean;
+  supportsPromptCacheRetention: boolean;
   supportsStructuredOutput: boolean;
   supportsTools: boolean;
 }
@@ -52,6 +53,23 @@ export interface GameModelSelection {
   reasoningPolicy?: ModelReasoningPolicy;
 }
 
+export interface GameProviderManifestEntry extends GameModelSelection {
+  /** Required for fallback entries; primary calls remain governed by the game lifecycle. */
+  maxCallsPerGame?: number;
+}
+
+export type GameProviderManifest = GameProviderManifestEntry[];
+
+export interface ResolvedProviderManifestEntry extends ResolvedModelSelection {
+  position: number;
+  role: "primary" | "fallback";
+  maxCallsPerGame?: number;
+}
+
+export const MAX_PROVIDER_MANIFEST_ENTRIES = 8;
+export const MAX_PROVIDER_ENTRY_CALLS_PER_GAME = 10_000;
+export const MAX_PROVIDER_MANIFEST_CALLS_PER_GAME = 25_000;
+
 export const MODEL_REASONING_EFFORTS = ["low", "medium", "high"] as const;
 export const MODEL_REASONING_POLICIES = ["action-policy", ...MODEL_REASONING_EFFORTS] as const;
 
@@ -90,6 +108,7 @@ const OPENAI_GPT5_CAPABILITIES: ModelRequestCapabilities = {
   usesMaxCompletionTokens: true,
   supportsTemperature: false,
   supportsOpenAIResponses: true,
+  supportsPromptCacheRetention: false,
   supportsStructuredOutput: true,
   supportsTools: true,
 };
@@ -99,12 +118,18 @@ const OPENAI_GPT54_CAPABILITIES: ModelRequestCapabilities = {
   supportsToolReasoningEffort: false,
 };
 
+const OPENAI_GPT56_CAPABILITIES: ModelRequestCapabilities = {
+  ...OPENAI_GPT54_CAPABILITIES,
+  supportsPromptCacheRetention: true,
+};
+
 const STANDARD_CHAT_CAPABILITIES: ModelRequestCapabilities = {
   supportsReasoningEffort: false,
   supportsToolReasoningEffort: false,
   usesMaxCompletionTokens: false,
   supportsTemperature: true,
   supportsOpenAIResponses: false,
+  supportsPromptCacheRetention: false,
   supportsStructuredOutput: true,
   supportsTools: true,
 };
@@ -115,6 +140,7 @@ const KATANA_GROK_CAPABILITIES: ModelRequestCapabilities = {
   usesMaxCompletionTokens: false,
   supportsTemperature: true,
   supportsOpenAIResponses: false,
+  supportsPromptCacheRetention: false,
   supportsStructuredOutput: true,
   supportsTools: true,
 };
@@ -179,7 +205,7 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     evaluationStatus: "game-ready",
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
-    capabilities: OPENAI_GPT54_CAPABILITIES,
+    capabilities: OPENAI_GPT56_CAPABILITIES,
     notes: "GPT-5.6 Luna — cost-sensitive high-volume tier ($1/$0.10/$6 per 1M tokens).",
   },
   {
@@ -192,6 +218,17 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
     capabilities: KATANA_GROK_CAPABILITIES,
     notes: "Initial router-backed Grok candidate for low/medium/high reasoning evaluation.",
+  },
+  {
+    id: "katana:grok-4-5",
+    providerProfileId: "katana",
+    modelId: "grok-4-5",
+    displayName: "xAI Grok 4.5",
+    evaluationStatus: "game-ready",
+    defaultReasoningPolicy: "action-policy",
+    allowedReasoningEfforts: MODEL_REASONING_EFFORTS,
+    capabilities: KATANA_GROK_CAPABILITIES,
+    notes: "Approved secondary fallback for provider-resilient Influence games.",
   },
   {
     id: "katana:grok-4-20-multi-agent",
@@ -221,11 +258,11 @@ export const MODEL_CATALOG: readonly ModelCatalogEntry[] = [
     providerProfileId: "katana",
     modelId: "glm-5-2",
     displayName: "Katana GLM 5.2",
-    evaluationStatus: "evaluation-candidate",
+    evaluationStatus: "game-ready",
     defaultReasoningPolicy: "action-policy",
     allowedReasoningEfforts: [],
     capabilities: KATANA_GENERAL_CAPABILITIES,
-    notes: "Back-burner record; not selectable until evaluated for Influence games.",
+    notes: "Approved low-cost tertiary fallback for provider-resilient Influence games.",
   },
 ];
 
@@ -236,13 +273,20 @@ const MODEL_BY_PROVIDER_AND_MODEL = new Map(
 
 function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEntry | undefined {
   const [profileId, ...modelParts] = catalogId.split(":");
-  if (profileId !== "katana" && profileId !== "lm-studio" && profileId !== "custom-openai-compatible") {
+  if (
+    profileId !== "openai"
+    && profileId !== "katana"
+    && profileId !== "lm-studio"
+    && profileId !== "custom-openai-compatible"
+  ) {
     return undefined;
   }
   const modelId = modelParts.join(":").trim();
   if (!modelId || modelId.includes(":")) return undefined;
   const providerProfileId = profileId;
-  const label = providerProfileId === "katana"
+  const label = providerProfileId === "openai"
+    ? "OpenAI"
+    : providerProfileId === "katana"
     ? "Katana"
     : providerProfileId === "lm-studio"
       ? "LM Studio"
@@ -254,7 +298,8 @@ function dynamicOpenAICompatibleCatalogEntry(catalogId: string): ModelCatalogEnt
     displayName: `${label} ${modelId}`,
     evaluationStatus: "game-ready",
     defaultReasoningPolicy: "action-policy",
-    allowedReasoningEfforts: providerProfileId === "katana" && modelId.startsWith("grok-")
+    allowedReasoningEfforts: inferModelCapabilities(modelId, providerProfileId)
+      .supportsReasoningEffort
       ? MODEL_REASONING_EFFORTS
       : [],
     capabilities: inferModelCapabilities(modelId, providerProfileId),
@@ -290,6 +335,132 @@ export function normalizeGameModelSelection(value: unknown): GameModelSelection 
   };
 }
 
+const PROVIDER_MANIFEST_ENTRY_KEYS = new Set([
+  "catalogId",
+  "reasoningPolicy",
+  "maxCallsPerGame",
+]);
+
+function providerManifestError(message: string): never {
+  throw new Error(`Invalid provider manifest: ${message}`);
+}
+
+/**
+ * Validate and freeze the provider/model route selected at game creation.
+ * Credentials and mutable provider-health state never belong in this value.
+ */
+export function normalizeProviderManifest(value: unknown): GameProviderManifest {
+  if (!Array.isArray(value) || value.length === 0) {
+    return providerManifestError("at least one entry is required");
+  }
+  if (value.length > MAX_PROVIDER_MANIFEST_ENTRIES) {
+    return providerManifestError(`at most ${MAX_PROVIDER_MANIFEST_ENTRIES} entries are allowed`);
+  }
+
+  const seen = new Set<string>();
+  let totalFallbackCalls = 0;
+  const normalized = value.map((rawEntry, index): GameProviderManifestEntry => {
+    if (!rawEntry || typeof rawEntry !== "object" || Array.isArray(rawEntry)) {
+      return providerManifestError(`entry ${index + 1} must be an object`);
+    }
+    const record = rawEntry as Record<string, unknown>;
+    const unknownKey = Object.keys(record).find((key) => !PROVIDER_MANIFEST_ENTRY_KEYS.has(key));
+    if (unknownKey) {
+      return providerManifestError(`entry ${index + 1} contains unsupported field ${unknownKey}`);
+    }
+    const selection = normalizeGameModelSelection(record);
+    if (!selection) {
+      return providerManifestError(`entry ${index + 1} has an invalid model selection`);
+    }
+    if (seen.has(selection.catalogId)) {
+      return providerManifestError(`duplicate model ${selection.catalogId}`);
+    }
+    seen.add(selection.catalogId);
+
+    const model = modelCatalogEntryById(selection.catalogId);
+    if (!model) {
+      return providerManifestError(`entry ${index + 1} references unknown model ${selection.catalogId}`);
+    }
+    if (model.evaluationStatus !== "game-ready") {
+      return providerManifestError(`model ${selection.catalogId} is not game-ready`);
+    }
+    if (!model.capabilities.supportsStructuredOutput || !model.capabilities.supportsTools) {
+      return providerManifestError(`model ${selection.catalogId} is incompatible with Influence decisions`);
+    }
+
+    const reasoningPolicy = selection.reasoningPolicy ?? model.defaultReasoningPolicy;
+    if (
+      reasoningPolicy !== "action-policy"
+      && !model.allowedReasoningEfforts.includes(reasoningPolicy)
+    ) {
+      return providerManifestError(
+        `model ${selection.catalogId} does not support ${reasoningPolicy} reasoning`,
+      );
+    }
+
+    if (index === 0) {
+      if (Object.prototype.hasOwnProperty.call(record, "maxCallsPerGame")) {
+        return providerManifestError("the primary entry cannot set maxCallsPerGame");
+      }
+      return {
+        catalogId: selection.catalogId,
+        reasoningPolicy,
+      };
+    }
+
+    const maxCallsPerGame = record.maxCallsPerGame;
+    if (!Number.isSafeInteger(maxCallsPerGame) || (maxCallsPerGame as number) < 1) {
+      return providerManifestError(
+        `fallback entry ${index + 1} requires a positive integer maxCallsPerGame`,
+      );
+    }
+    if ((maxCallsPerGame as number) > MAX_PROVIDER_ENTRY_CALLS_PER_GAME) {
+      return providerManifestError(
+        `maxCallsPerGame must be at most ${MAX_PROVIDER_ENTRY_CALLS_PER_GAME}`,
+      );
+    }
+    totalFallbackCalls += maxCallsPerGame as number;
+    if (!Number.isSafeInteger(totalFallbackCalls) || totalFallbackCalls > MAX_PROVIDER_MANIFEST_CALLS_PER_GAME) {
+      return providerManifestError(
+        `fallback call budget must total at most ${MAX_PROVIDER_MANIFEST_CALLS_PER_GAME}`,
+      );
+    }
+    return {
+      catalogId: selection.catalogId,
+      reasoningPolicy,
+      maxCallsPerGame: maxCallsPerGame as number,
+    };
+  });
+
+  return normalized;
+}
+
+/** Parse the repeatable CLI `catalog-id,key=value` provider-entry syntax. */
+export function parseProviderManifestEntry(value: string): GameProviderManifestEntry {
+  const [catalogIdPart, ...settings] = value.split(",");
+  const catalogId = catalogIdPart?.trim();
+  if (!catalogId) throw new Error("Provider entry requires a catalog id");
+  const entry: GameProviderManifestEntry = { catalogId };
+  for (const setting of settings) {
+    const [rawKey, rawValue] = setting.split("=", 2);
+    const key = rawKey?.trim();
+    const settingValue = rawValue?.trim();
+    if (!key || !settingValue) {
+      throw new Error(`Invalid provider entry setting: ${setting}`);
+    }
+    if (key === "reasoning" || key === "reasoning-policy") {
+      const reasoningPolicy = normalizeReasoningPolicy(settingValue);
+      if (!reasoningPolicy) throw new Error(`Invalid provider entry reasoning policy: ${settingValue}`);
+      entry.reasoningPolicy = reasoningPolicy;
+    } else if (key === "max-calls" || key === "maxCallsPerGame") {
+      entry.maxCallsPerGame = Number(settingValue);
+    } else {
+      throw new Error(`Unknown provider entry setting: ${key}`);
+    }
+  }
+  return entry;
+}
+
 export function modelCatalogEntryById(catalogId: string): ModelCatalogEntry | undefined {
   return MODEL_BY_ID.get(catalogId) ?? dynamicOpenAICompatibleCatalogEntry(catalogId);
 }
@@ -312,7 +483,8 @@ export function inferModelCapabilities(
   const catalogEntry = MODEL_BY_PROVIDER_AND_MODEL.get(`${providerProfileId}:${modelId}`);
   if (catalogEntry) return catalogEntry.capabilities;
   if (providerProfileId === "katana" && modelId.startsWith("grok-")) return KATANA_GROK_CAPABILITIES;
-  if (/^gpt-5\.[4-9]/.test(modelId)) return OPENAI_GPT54_CAPABILITIES;
+  if (/^gpt-5\.[6-9]/.test(modelId)) return OPENAI_GPT56_CAPABILITIES;
+  if (/^gpt-5\.[4-5]/.test(modelId)) return OPENAI_GPT54_CAPABILITIES;
   if (/^o\d/.test(modelId) || modelId.startsWith("gpt-5")) return OPENAI_GPT5_CAPABILITIES;
   return STANDARD_CHAT_CAPABILITIES;
 }
@@ -369,4 +541,46 @@ export function resolveModelSelection(
     modelId: entry.modelId,
     reasoningPolicy,
   };
+}
+
+export function resolveProviderManifest(
+  manifest: unknown,
+): ResolvedProviderManifestEntry[] {
+  return normalizeProviderManifest(manifest).map((entry, position) => ({
+    ...resolveModelSelection(entry),
+    position,
+    role: position === 0 ? "primary" : "fallback",
+    ...(entry.maxCallsPerGame !== undefined && {
+      maxCallsPerGame: entry.maxCallsPerGame,
+    }),
+  }));
+}
+
+/** Read the new manifest authority, falling back only for pre-migration stored games. */
+export function resolveProviderManifestFromGameConfig(
+  config: { providerManifest?: unknown; modelSelection?: unknown },
+): ResolvedProviderManifestEntry[] {
+  if (config.providerManifest !== undefined) {
+    const manifest = resolveProviderManifest(config.providerManifest);
+    if (config.modelSelection !== undefined) {
+      const legacySelection = normalizeGameModelSelection(config.modelSelection);
+      if (!legacySelection) {
+        throw new Error("Invalid legacy model selection projection");
+      }
+      const legacyPrimary = resolveModelSelection(legacySelection);
+      const manifestPrimary = manifest[0]!;
+      if (
+        legacyPrimary.catalogId !== manifestPrimary.catalogId
+        || legacyPrimary.reasoningPolicy !== manifestPrimary.reasoningPolicy
+      ) {
+        throw new Error("Game provider manifest does not match its legacy primary projection");
+      }
+    }
+    return manifest;
+  }
+  const legacySelection = normalizeGameModelSelection(config.modelSelection);
+  if (!legacySelection) {
+    throw new Error("Game provider manifest is required");
+  }
+  return resolveProviderManifest([legacySelection]);
 }

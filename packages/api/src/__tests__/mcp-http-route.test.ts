@@ -186,6 +186,33 @@ describe("/mcp Streamable HTTP route", () => {
     expect(JSON.stringify(auditEvents)).not.toContain("private-key-detail");
   });
 
+  test("marks private producer evidence responses no-store", async () => {
+    const app = createTestApp({
+      handle: async (request) => ({
+        jsonrpc: "2.0",
+        id: request.id ?? null,
+        result: { privateReasoning: { content: "private provider evidence" } },
+      }),
+    });
+    const response = await app.request("/mcp", {
+      method: "POST",
+      headers: jsonHeaders({ Authorization: "Bearer good-token" }),
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: "provider-evidence",
+        method: "tools/call",
+        params: {
+          name: "read_trace_content",
+          arguments: { manifestId: "provider-manifest", evidenceType: "provider_attempt_failure" },
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("pragma")).toBe("no-cache");
+  });
+
   test("audits insufficient-scope tool results as bounded failures", async () => {
     const auditEvents: GameMcpAuditEvent[] = [];
     const privateChallenge = [

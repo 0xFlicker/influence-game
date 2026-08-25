@@ -11,6 +11,7 @@ import type {
   CompactStrategyDecisionBoundary,
   CompactStrategyState,
   GameStreamEvent,
+  IAgent,
   PhaseContext,
 } from "../game-runner.types";
 import {
@@ -72,8 +73,10 @@ class ScriptedDiaryAgent extends MockAgent {
 class ScriptedHouse extends TemplateHouseInterviewer {
   readonly followUps: FollowUpResult[] = [];
   readonly followUpContexts: DiaryRoomContext[] = [];
+  readonly questionContexts: DiaryRoomContext[] = [];
 
-  override async generateQuestion(): Promise<string> {
+  override async generateQuestion(context: DiaryRoomContext): Promise<string> {
+    this.questionContexts.push(context);
     return "What changed after that eviction?";
   }
 
@@ -125,6 +128,59 @@ function createDiaryHarness(options: {
 }
 
 describe("post-eviction diary compact strategy", () => {
+  it("assigns stable distinct interview ordinals across concurrent reconstruction", async () => {
+    const players = [
+      { id: createUUID(), name: "Atlas" },
+      { id: createUUID(), name: "Nyx" },
+    ];
+    const runInterviews = async (gameState: GameState) => {
+      const agents = new Map<UUID, IAgent>();
+      for (const player of players) {
+        const agent = new ScriptedDiaryAgent(player.id, player.name, ACTIVE_STATE);
+        agent.answers.push({
+          message: `${player.name} is recalibrating.`,
+          thinking: "Reassessing the board.",
+          strategyDelta: null,
+        });
+        agents.set(player.id, agent);
+      }
+      const logger = new TranscriptLogger(gameState);
+      const contextBuilder = new ContextBuilder(gameState, logger, new Map(), players.length);
+      const house = new ScriptedHouse();
+      const diary = new DiaryRoom(
+        gameState,
+        logger,
+        contextBuilder,
+        agents,
+        {
+          ...DEFAULT_CONFIG,
+          diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE],
+          maxDiaryFollowUps: 0,
+        },
+        house,
+      );
+
+      await diary.runDiaryRoom(Phase.FORMAT_RESOLVE);
+
+      return Object.fromEntries(
+        house.questionContexts.map((context) => [
+          context.agentName,
+          context.providerInterviewOrdinal,
+        ]),
+      );
+    };
+
+    const gameState = new GameState(players, { gameId: "diary-coordinate-game" });
+    const beforeReconstruction = await runInterviews(gameState);
+    const reconstructedState = GameState.fromCanonicalEvents(
+      gameState.getCanonicalEvents(),
+    );
+    const afterReconstruction = await runInterviews(reconstructedState);
+
+    expect(new Set(Object.values(beforeReconstruction))).toHaveLength(2);
+    expect(afterReconstruction).toEqual(beforeReconstruction);
+  });
+
   it("uses delta, full-replacement, and no-strategy schemas for living, repair, and juror diary calls", () => {
     const agent = new InfluenceAgent(createUUID(), "Sage", "strategic", {} as OpenAI);
     const schemaProbe = agent as unknown as {
@@ -369,6 +425,26 @@ describe("post-eviction diary compact strategy", () => {
       ...ACTIVE_STATE.deltas,
       "Approach Mira before Atlas does.",
     ]);
+  });
+
+  it("omits an exhausted diary answer without writing transcript, strategy, turn, or history", async () => {
+    const { agent, diary, logger } = createDiaryHarness({ maxFollowUps: 0 });
+    const turns: GameStreamEvent[] = [];
+    logger.setStreamListener((event) => {
+      if (event.type === "agent_turn" && event.action === "diary-answer") turns.push(event);
+    });
+    agent.answers.push({
+      message: "",
+      thinking: "",
+      providerAbsence: { kind: "provider_exhausted", outcome: "refusal" },
+    });
+
+    await diary.runDiaryRoom(Phase.INTRODUCTION);
+
+    expect(diary.diaryEntries).toEqual([]);
+    expect(agent.boundaries).toEqual([]);
+    expect(turns).toEqual([]);
+    expect(logger.transcript.some((entry) => entry.from === agent.name)).toBe(false);
   });
 
   it("does not mutate survivor strategy during a juror interview", async () => {

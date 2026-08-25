@@ -1,4 +1,4 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import type OpenAI from "openai";
 import { InfluenceAgent } from "../agent";
 import type { AllianceActionOpportunity as PublicAllianceActionOpportunity } from "../index";
@@ -28,6 +28,13 @@ import { MockAgent } from "./mock-agent";
 import { resolveActionStrategyCandidate } from "../phases/phase-runner-context";
 import { COMPACT_STRATEGY_LIMITS } from "../strategy-state";
 import { STRATEGY_DELTA_GUIDANCE } from "../formats/agent-surface";
+import {
+  ProviderAttemptError,
+  ProviderCallBudgetExhaustedError,
+  ProviderCircuitOpenError,
+  type ProviderAttemptRecord,
+} from "../provider-execution";
+import { createProviderAdapter } from "../provider-adapters";
 
 function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   return {
@@ -65,6 +72,46 @@ function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
   });
 }
 
+function recordResponsesRequest(
+  requests: Array<Record<string, unknown>>,
+  params: Record<string, unknown>,
+): void {
+  const nativeTools = Array.isArray(params.tools)
+    ? params.tools as Array<Record<string, unknown>>
+    : [];
+  const nativeChoice = params.tool_choice as Record<string, unknown> | undefined;
+  requests.push({
+    ...params,
+    nativeRequest: params,
+    // Most tests in this file inspect semantic prompt/tool behavior. Preserve a
+    // stable inspection projection while provider-adapters.test.ts asserts the
+    // exact native Responses wire shape.
+    messages: [
+      ...(typeof params.instructions === "string"
+        ? [{ role: "system", content: params.instructions }]
+        : []),
+      ...(typeof params.input === "string"
+        ? [{ role: "user", content: params.input }]
+        : Array.isArray(params.input) ? params.input : []),
+    ],
+    tools: nativeTools.map((tool) => ({
+      type: "function",
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+        strict: tool.strict,
+      },
+    })),
+    ...(nativeChoice?.type === "function" && {
+      tool_choice: {
+        type: "function",
+        function: { name: nativeChoice.name },
+      },
+    }),
+  });
+}
+
 function makeToolOpenAIStub(
   requests: Array<Record<string, unknown>>,
   toolName: string,
@@ -72,6 +119,31 @@ function makeToolOpenAIStub(
   reasoningContent?: string,
 ): OpenAI {
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        recordResponsesRequest(requests, params);
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output: [
+            ...(reasoningContent
+              ? [{
+                  id: `reasoning-${requests.length}`,
+                  type: "reasoning",
+                  summary: [{ type: "summary_text", text: reasoningContent }],
+                }]
+              : []),
+            {
+              type: "function_call",
+              call_id: "call-1",
+              name: toolName,
+              arguments: JSON.stringify(args),
+            },
+          ],
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
@@ -109,6 +181,33 @@ function makeToolSequenceOpenAIStub(
   responses: Array<{ toolName: string; args: Record<string, unknown>; reasoningContent?: string }>,
 ): OpenAI {
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        recordResponsesRequest(requests, params);
+        const response = responses[Math.min(requests.length - 1, responses.length - 1)];
+        if (!response) throw new Error("No tool response configured");
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output: [
+            ...(response.reasoningContent
+              ? [{
+                  id: `reasoning-${requests.length}`,
+                  type: "reasoning",
+                  summary: [{ type: "summary_text", text: response.reasoningContent }],
+                }]
+              : []),
+            {
+              type: "function_call",
+              call_id: `call-${requests.length}`,
+              name: response.toolName,
+              arguments: JSON.stringify(response.args),
+            },
+          ],
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
@@ -155,6 +254,36 @@ function makeTextSequenceOpenAIStub(
   contents: Array<string | { content: string; reasoningContent?: string }>,
 ): OpenAI {
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        recordResponsesRequest(requests, params);
+        const entry = contents[Math.min(requests.length - 1, contents.length - 1)] ?? "";
+        const content = typeof entry === "string" ? entry : entry.content;
+        const reasoningContent = typeof entry === "string" ? undefined : entry.reasoningContent;
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output_text: content,
+          output: [
+            ...(reasoningContent
+              ? [{
+                  id: `reasoning-${requests.length}`,
+                  type: "reasoning",
+                  summary: [{ type: "summary_text", text: reasoningContent }],
+                }]
+              : []),
+            {
+              id: `message-${requests.length}`,
+              type: "message",
+              role: "assistant",
+              status: "completed",
+              content: [{ type: "output_text", text: content }],
+            },
+          ],
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
@@ -241,6 +370,32 @@ function makeResponsesOpenAIStub(
 
 function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): OpenAI {
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        recordResponsesRequest(requests, params);
+        const content = requests.length === 1
+          ? ""
+          : JSON.stringify({
+              thinking: "Retry with enough room to choose targets.",
+              empower: "Mira",
+            });
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output_text: content,
+          output: content
+            ? [{
+                id: `message-${requests.length}`,
+                type: "message",
+                role: "assistant",
+                status: "completed",
+                content: [{ type: "output_text", text: content }],
+              }]
+            : [],
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
@@ -276,14 +431,26 @@ function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): Op
   } as unknown as OpenAI;
 }
 
-function makeRejectingOpenAIStub(requests: Array<Record<string, unknown>>, error = new Error("forced failure")): OpenAI {
+function makeRejectingOpenAIStub(
+  requests: Array<Record<string, unknown>>,
+  error = new Error("forced failure"),
+  requestOptions?: Array<Record<string, unknown>>,
+): OpenAI {
+  const reject = async (
+    params: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ) => {
+    requests.push(params);
+    if (requestOptions) requestOptions.push(options ?? {});
+    throw error;
+  };
   return {
+    responses: {
+      create: reject,
+    },
     chat: {
       completions: {
-        create: async (params: Record<string, unknown>) => {
-          requests.push(params);
-          throw error;
-        },
+        create: reject,
       },
     },
   } as unknown as OpenAI;
@@ -311,6 +478,24 @@ describe("sealed-elim agent decision surface", () => {
       fallbackReason: null,
     });
     expect(ballot.targetId).not.toBe(agent.id);
+  });
+
+  it("leaves format tool exhaustion for the phase to repair", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeRejectingOpenAIStub(requests),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await expect(agent.getMajorityEliminationBallot(
+      makeContext(Phase.FORMAT_RESOLVE),
+      ["atlas-id", "mira-id", "vera-id"],
+    )).rejects.toBeInstanceOf(ProviderAttemptError);
+    expect(requests).toHaveLength(2);
   });
 
   it("uses a distinct strict Majority Elimination tool and most-votes rule sheet", async () => {
@@ -559,17 +744,17 @@ describe("sealed-elim agent decision surface", () => {
     const evenVotes = await agent.getEvenVotesBallot(context, aliveIds);
 
     expect(majority).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_majority_elimination_target",
     });
     expect(voteBomb).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_vote_bomb_target",
     });
     expect(evenVotes).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_even_votes_target",
     });
@@ -790,7 +975,7 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
-  it("preserves pending reconciliation when a provider failure supplies only a fallback action", async () => {
+  it("leaves provider-exhausted votes to the phase without changing strategy state", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -805,21 +990,111 @@ describe("InfluenceAgent structured output mode", () => {
     agent.onGameStart("game-1", makeContext().alivePlayers);
     agent.markCompactStrategyReconciliationRequired();
 
-    const votes = await agent.getVotes(makeContext(Phase.VOTE));
-    const result = resolveActionStrategyCandidate(
-      agent,
-      votes,
-      votes.strategyGameplayAccepted !== false,
-    );
+    await expect(agent.getVotes(makeContext(Phase.VOTE))).rejects.toThrow("forced failure");
 
     expect(requests).toHaveLength(1);
-    expect(votes.strategyCandidateProposed).toBeUndefined();
-    expect(result).toBeUndefined();
     expect(agent.getCompactStrategyState()).toMatchObject({
       lifecycle: "reconciliation_required",
       baseline: null,
       revision: 1,
     });
+  });
+
+  it("emits the shared typed refusal contract without hidden SDK retries", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const requestOptions: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const error = Object.assign(new Error("request rejected"), {
+      status: 400,
+      request_id: "req-player-invalid-prompt",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-player-invalid-prompt",
+        authorization: "Bearer player-secret",
+      },
+      error: {
+        code: "invalid_prompt",
+        message: "request rejected",
+      },
+    });
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeRejectingOpenAIStub(requests, error, requestOptions),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        structuredCallMaxAttempts: 2,
+        providerExecutionHooks: {
+          onTerminal: (record) => {
+            attempts.push(record);
+          },
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await expect(agent.getVotes(makeContext(Phase.VOTE))).rejects.toThrow("request rejected");
+
+    expect(requests).toHaveLength(1);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      requestId: "req-player-invalid-prompt",
+      outcome: { kind: "refusal", retryable: false },
+      rawResponse: {
+        status: 400,
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": "req-player-invalid-prompt",
+        },
+        body: {
+          code: "invalid_prompt",
+          message: "request rejected",
+        },
+      },
+    });
+    expect(attempts[0]?.preparedRequest.body).toEqual(requests[0]);
+    expect(requestOptions[0]?.maxRetries).toBe(0);
+    expect(requestOptions[0]?.headers).toMatchObject({
+      "x-influence-no-flex-transport-retry": "1",
+    });
+    expect(JSON.stringify(attempts[0])).not.toContain("player-secret");
+  });
+
+  it("reconstructs the same phase-owned provider coordinate without reusing the next boundary", async () => {
+    const run = async (logicalCallOrdinal: number) => {
+      const attempts: ProviderAttemptRecord[] = [];
+      const agent = new InfluenceAgent(
+        "atlas-id",
+        "Atlas",
+        "strategic",
+        makeOpenAIStub([]),
+        "gpt-5-nano",
+        undefined,
+        undefined,
+        {
+          providerExecutionHooks: {
+            onTerminal: (record) => { attempts.push(record); },
+          },
+        },
+      );
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      await agent.getVotes({
+        ...makeContext(Phase.VOTE),
+        providerLogicalCallOrdinal: logicalCallOrdinal,
+      });
+      return attempts[0]!.coordinate;
+    };
+
+    const beforeReconstruction = await run(7);
+    const afterReconstruction = await run(7);
+    const nextBoundary = await run(8);
+
+    expect(afterReconstruction).toEqual(beforeReconstruction);
+    expect(nextBoundary).not.toEqual(beforeReconstruction);
+    expect(nextBoundary.logicalCallOrdinal).toBe(8);
   });
 
   it("uses strict active-format tools and accepts legal decisions with LLM provenance", async () => {
@@ -1107,7 +1382,7 @@ describe("InfluenceAgent structured output mode", () => {
     }
   });
 
-  it("deterministically repairs invalid format tool output with stable provenance", async () => {
+  it("returns invalid format tool output for canonical phase repair", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1167,33 +1442,33 @@ describe("InfluenceAgent structured output mode", () => {
     const tiebreak = await agent.breakFormatEliminationTie(formatContext, ["mira-id", "vera-id"]);
 
     expect(pick).toMatchObject({
-      formatId: "vote_bomb",
+      formatId: "classic",
       decisionSource: "fallback",
       fallbackReason: "invalid_format_choice",
     });
     expect(saveOrEliminate).toMatchObject({
-      polarity: "eliminate",
-      targetId: "mira-id",
+      polarity: "banish",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_save_or_eliminate_ballot",
     });
     expect(voteBomb).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Nobody",
       decisionSource: "fallback",
       fallbackReason: "invalid_vote_bomb_target",
     });
     expect(bouncePointer).toMatchObject({
-      targetId: "vera-id",
+      targetId: "Mira",
       decisionSource: "fallback",
       fallbackReason: "invalid_bounce_pointer",
     });
     expect(safetyVote).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Atlas",
       decisionSource: "fallback",
       fallbackReason: "invalid_safety_bounce_target",
     });
     expect(tiebreak).toMatchObject({
-      targetId: "mira-id",
+      targetId: "Atlas",
       decisionSource: "fallback",
       fallbackReason: "invalid_format_tiebreak_target",
     });
@@ -1235,7 +1510,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(empowerEnum).toContain("Mira");
   });
 
-  it("rejects self-empower and falls back to another living player", async () => {
+  it("returns self-empower unchanged for the vote phase to repair", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1251,8 +1526,9 @@ describe("InfluenceAgent structured output mode", () => {
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
     const votes = await agent.getVotes(makeContext(Phase.VOTE));
-    expect(votes.empowerTarget).not.toBe("atlas-id");
-    expect(["mira-id", "vera-id"]).toContain(votes.empowerTarget);
+    expect(votes.empowerTarget).toBe("Atlas");
+    expect(votes.decisionId).toBeUndefined();
+    expect(votes.strategyGameplayAccepted).toBe(false);
   });
 
   it("keeps pre-pick format guidance contingent and does not invent a locked format", async () => {
@@ -1666,7 +1942,11 @@ describe("InfluenceAgent structured output mode", () => {
       model: { name: "gpt-5-nano" },
       toolName: "cast_votes",
       emittedThinking: "I empower Mira as format chooser.",
-      reasoningContext: "Native hidden reasoning for vote.",
+      providerReasoningSummary: {
+        provider: "openai_responses",
+        mode: "auto",
+        text: "Native hidden reasoning for vote.",
+      },
       strategyCandidate: {
         operation: "delta",
         submittedValue: "Reward Mira and pressure Vera as the next coalition test.",
@@ -1675,17 +1955,16 @@ describe("InfluenceAgent structured output mode", () => {
     expect(trace.prompt.messages).toHaveLength(2);
     expect(trace.prompt.messages[0]).toMatchObject({ role: "system" });
     expect(trace.prompt.messages[1]).toMatchObject({ role: "user" });
-    expect(trace.response.finishReason).toBe("tool_calls");
+    expect(trace.response.finishReason).toBe("completed");
     expect(trace.response.toolCalls?.[0]).toMatchObject({
       id: "call-1",
-      type: "function",
+      type: "function_call",
       name: "cast_votes",
     });
     expect(trace.toolArguments).toMatchObject({
       thinking: "I empower Mira as format chooser.",
       empower: "Mira",
       strategyDelta: "Reward Mira and pressure Vera as the next coalition test.",
-      reasoningContext: "Native hidden reasoning for vote.",
     });
   });
 
@@ -1745,6 +2024,69 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
+  it("keeps Luna tool calls on Responses with configured reasoning", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const luna = modelCatalogEntryById("openai:gpt-5.6-luna");
+    const fallback = modelCatalogEntryById("katana:glm-5-2");
+    if (!luna) throw new Error("Missing OpenAI Luna catalog entry");
+    if (!fallback) throw new Error("Missing GLM catalog entry");
+    const primaryClient = makeOpenAIStub(requests);
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      primaryClient,
+      luna.modelId,
+      undefined,
+      undefined,
+      {
+        providerProfileId: "openai",
+        catalogId: luna.id,
+        modelCapabilities: luna.capabilities,
+        reasoningPolicy: "medium",
+        providerManifest: [
+          {
+            adapter: createProviderAdapter("openai", primaryClient),
+            catalogId: luna.id,
+            providerProfileId: "openai",
+            modelId: luna.modelId,
+            modelCapabilities: luna.capabilities,
+            reasoningPolicy: "medium",
+            toolChoiceMode: "named",
+            openAIReasoningSummary: "auto",
+            position: 0,
+            role: "primary",
+          },
+          {
+            adapter: createProviderAdapter("katana", {} as OpenAI),
+            catalogId: fallback.id,
+            providerProfileId: "katana",
+            modelId: fallback.modelId,
+            modelCapabilities: fallback.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 1,
+            role: "fallback",
+            maxCallsPerGame: 3,
+          },
+        ],
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await agent.getVotes(makeContext(Phase.VOTE));
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.tools).toBeArray();
+    expect(requests[0]?.nativeRequest).toMatchObject({
+      model: luna.modelId,
+      store: false,
+      reasoning: { effort: "medium" },
+    });
+    expect(requests[0]?.nativeRequest).not.toHaveProperty("messages");
+    expect(requests[0]?.nativeRequest).not.toHaveProperty("reasoning_effort");
+  });
+
   it("uses OpenAI Responses reasoning summaries for structured decisions when enabled", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const traces: PrivateDecisionTrace[] = [];
@@ -1791,13 +2133,12 @@ describe("InfluenceAgent structured output mode", () => {
       store: false,
       prompt_cache_key: expect.stringMatching(/^influence:[a-f0-9]{24}$/),
       prompt_cache_options: { ttl: "30m" },
-      text: {
-        format: {
-          type: "json_schema",
-          name: "cast_votes_arguments",
-          strict: true,
-        },
-      },
+      tools: [{
+        type: "function",
+        name: "cast_votes",
+        strict: true,
+      }],
+      tool_choice: { type: "function", name: "cast_votes" },
     });
     expect(requests[0]).not.toHaveProperty("prompt_cache_retention");
     expect(traces).toHaveLength(1);
@@ -1837,7 +2178,6 @@ describe("InfluenceAgent structured output mode", () => {
       undefined,
       {
         promptCacheLineage: "opaque-run-arm-repetition",
-        requireOpenAIResponses: true,
         structuredCallMaxAttempts: 1,
         evaluationFailFast: true,
       },
@@ -1970,7 +2310,7 @@ describe("InfluenceAgent structured output mode", () => {
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
-      { toolChoiceMode: "required" },
+      { providerProfileId: "lm-studio", toolChoiceMode: "required" },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
@@ -2111,7 +2451,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("the wheel randomly chooses");
   });
 
-  it("falls back to a tied candidate when empower-revote tooling fails", async () => {
+  it("leaves empower-revote legality to the phase when provider execution exhausts", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2122,17 +2462,11 @@ describe("InfluenceAgent structured output mode", () => {
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const revote = await agent.getEmpowerRevote(
+    await expect(agent.getEmpowerRevote(
       makeContext(Phase.VOTE),
       ["mira-id", "vera-id"],
       { empowerTarget: "vera-id" },
-    );
-
-    expect(revote).toEqual({
-      empowerTarget: "mira-id",
-      thinking: "fallback empower revote due to error",
-      reasoningContext: undefined,
-    });
+    )).rejects.toThrow("forced failure");
   });
 
   it("preserves private candidate-selection reasoning and eligible-set constraints", async () => {
@@ -3196,7 +3530,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).not.toContain("Standard Vote has two named ballots");
   });
 
-  it("falls back cleanly when Council tool args omit eliminate", async () => {
+  it("returns malformed Council output for the phase to repair", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -3216,7 +3550,7 @@ describe("InfluenceAgent structured output mode", () => {
       councilCandidates: ["mira-id", "vera-id"],
     }, ["mira-id", "vera-id"]);
 
-    expect(["mira-id", "vera-id"]).toContain(result.target);
+    expect(result.target).toBeUndefined();
     expect(result.thinking).toBe("I want to vote, but the choice field is malformed.");
   });
 
@@ -3984,6 +4318,7 @@ describe("InfluenceAgent structured output mode", () => {
     const question = await house.generateQuestion({
       precedingPhase: Phase.COUNCIL,
       round: 6,
+      providerInterviewOrdinal: 1,
       agentName: "Wren",
       alivePlayers: ["Wren", "Vex", "Nyx"],
       activeShieldNames: [],
@@ -4013,6 +4348,7 @@ describe("InfluenceAgent structured output mode", () => {
     const question = await house.generateQuestion({
       precedingPhase: Phase.COUNCIL,
       round: 3,
+      providerInterviewOrdinal: 1,
       agentName: "Finn",
       alivePlayers: ["Arden", "Nyx", "Cyrus", "Mira", "Finn", "Dax"],
       activeShieldNames: [],
@@ -4077,7 +4413,220 @@ describe("InfluenceAgent structured output mode", () => {
     expect(tools[0]!.function.parameters.required).not.toContain("strategyDelta");
   });
 
-  it("uses plain visible messages with the global message token floor in local mode", async () => {
+  it("returns typed absence instead of fabricated speech when optional provider calls exhaust", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeRejectingOpenAIStub(requests),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      { toolChoiceMode: "required" },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
+
+    expect(response).toEqual({
+      thinking: "",
+      message: "",
+      providerAbsence: {
+        kind: "provider_exhausted",
+        outcome: "service_error",
+      },
+    });
+    expect(requests).toHaveLength(2);
+  });
+
+  it("keeps private provider evidence out of exhaustion logs", async () => {
+    const rawRequestSentinel = "PRIVATE_REQUEST_SENTINEL";
+    const rawResponseSentinel = "PRIVATE_RESPONSE_SENTINEL";
+    const providerError = new ProviderAttemptError({
+      coordinate: {
+        gameId: "game-1",
+        ownerEpoch: "owner-1",
+        actor: {
+          id: "atlas-id",
+          name: "Atlas",
+          role: "player",
+        },
+        action: "introduction",
+        phase: Phase.INTRODUCTION,
+        round: 1,
+        logicalCallOrdinal: 1,
+      },
+      attemptOrdinal: 1,
+      attemptId: "attempt-private-evidence",
+      preparedRequest: {
+        transport: "chat_completions",
+        providerProfileId: "katana",
+        model: "private-model",
+        body: { redacted: true },
+      },
+      startedAt: "2026-08-23T00:00:00.000Z",
+      completedAt: "2026-08-23T00:00:01.000Z",
+      latencyMs: 1_000,
+      outcome: {
+        kind: "service_error",
+        message: "Provider request failed",
+        retryable: false,
+      },
+      disposition: "exhausted",
+      rawRequest: {
+        transport: "chat_completions",
+        providerProfileId: "katana",
+        model: "private-model",
+        body: { prompt: rawRequestSentinel },
+      },
+      rawResponse: {
+        status: 500,
+        body: { error: rawResponseSentinel },
+      },
+    } satisfies ProviderAttemptRecord);
+    const requests: Array<Record<string, unknown>> = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(requests),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      {
+        toolChoiceMode: "required",
+        providerExecutionHooks: {
+          onReserve: () => {
+            throw providerError;
+          },
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const originalError = console.error;
+    const loggedError = mock((..._args: unknown[]) => undefined);
+    console.error = loggedError;
+
+    try {
+      expect(await agent.getIntroduction(makeContext(Phase.INTRODUCTION))).toEqual({
+        thinking: "",
+        message: "",
+        providerAbsence: {
+          kind: "provider_exhausted",
+          outcome: "service_error",
+        },
+      });
+    } finally {
+      console.error = originalError;
+    }
+
+    const serializedLogs = JSON.stringify(loggedError.mock.calls);
+    expect(serializedLogs).not.toContain(rawRequestSentinel);
+    expect(serializedLogs).not.toContain(rawResponseSentinel);
+    expect(loggedError.mock.calls).toEqual([
+      [
+        "[Atlas] callLLMWithThinking failed after 2 attempts:",
+        {
+          type: "provider_unavailable",
+          outcome: "service_error",
+          retryable: false,
+          disposition: "exhausted",
+        },
+      ],
+    ]);
+    expect(requests).toHaveLength(0);
+  });
+
+  it("retains full error logging for non-provider faults", async () => {
+    const programmingError = new Error("programming fault sentinel");
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub([]),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      {
+        toolChoiceMode: "required",
+        providerExecutionHooks: {
+          onReserve: () => {
+            throw programmingError;
+          },
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const originalError = console.error;
+    const loggedError = mock((..._args: unknown[]) => undefined);
+    console.error = loggedError;
+
+    try {
+      await expect(
+        agent.getIntroduction(makeContext(Phase.INTRODUCTION)),
+      ).rejects.toBe(programmingError);
+    } finally {
+      console.error = originalError;
+    }
+
+    expect(loggedError.mock.calls).toEqual([
+      [
+        "[Atlas] callLLMWithThinking failed after 2 attempts:",
+        programmingError,
+      ],
+    ]);
+  });
+
+  it("omits optional speech when dispatch is blocked by provider health or budget", async () => {
+    const scenarios = [
+      {
+        outcome: "circuit_open",
+        error: new ProviderCircuitOpenError(
+          "openai:gpt-5.6-luna",
+          "provider:openai",
+          4,
+          true,
+        ),
+      },
+      {
+        outcome: "budget_exhausted",
+        error: new ProviderCallBudgetExhaustedError("katana:grok-4-5", 3, 3),
+      },
+    ] as const;
+
+    for (const scenario of scenarios) {
+      const requests: Array<Record<string, unknown>> = [];
+      const agent = new InfluenceAgent(
+        "atlas-id",
+        "Atlas",
+        "strategic",
+        makeOpenAIStub(requests),
+        "gpt-5.6-luna",
+        undefined,
+        undefined,
+        {
+          toolChoiceMode: "required",
+          providerExecutionHooks: {
+            onReserve: () => { throw scenario.error; },
+          },
+        },
+      );
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+
+      expect(await agent.getIntroduction(makeContext(Phase.INTRODUCTION))).toEqual({
+        thinking: "",
+        message: "",
+        providerAbsence: {
+          kind: "provider_exhausted",
+          outcome: scenario.outcome,
+        },
+      });
+      expect(requests).toHaveLength(0);
+    }
+  });
+
+  it("uses the provider-neutral visible-message schema with the local token floor", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -4098,7 +4647,10 @@ describe("InfluenceAgent structured output mode", () => {
       message: "Glad to meet everyone. I ask too many questions, but I promise most of them are useful.",
     });
     expect(requests[0]?.max_tokens).toBe(4096);
-    expect(requests[0]?.response_format).toBeUndefined();
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { name: "agent_response", strict: true },
+    });
     // We no longer inject the old "LOCAL MODEL OUTPUT RULE" that forbade thinking.
     // Local models are now allowed to think freely on public messages (Master likes thick thinking).
     const messages = requests[0]?.messages as Array<{ content: string }>;
@@ -4135,7 +4687,10 @@ describe("InfluenceAgent structured output mode", () => {
       message: "I notice who dodges questions, and I remember.",
       reasoningContext: "Atlas wants to sound warm while signaling observation.",
     });
-    expect(requests[0]?.response_format).toBeUndefined();
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: { name: "agent_response", strict: true },
+    });
   });
 
   it("retries empty local visible messages with a larger budget", async () => {
@@ -4189,6 +4744,80 @@ describe("InfluenceAgent structured output mode", () => {
       thinking: "I should build rapport while noting Finn's evasiveness.",
       message: "Finn, your stories are always so vivid.",
       reasoningContext: "Deep hidden CoT: Finn is dodging; Vera might be an ally here.",
+    });
+  });
+
+  it("falls through to the next sealed runtime and attributes the accepted trace to that model", async () => {
+    const primaryRequests: Array<Record<string, unknown>> = [];
+    const fallbackRequests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const primary = modelCatalogEntryById("openai:gpt-5.6-luna")!;
+    const fallback = modelCatalogEntryById("katana:glm-5-2")!;
+    const primaryClient = makeRejectingOpenAIStub(primaryRequests);
+    const fallbackClient = makeTextOpenAIStub(
+      fallbackRequests,
+      JSON.stringify({
+        thinking: "The first provider failed, so I will still introduce myself cleanly.",
+        message: "I am Atlas, and I am here to learn how everyone plays.",
+      }),
+    );
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      primaryClient,
+      primary.modelId,
+      undefined,
+      undefined,
+      {
+        providerProfileId: "openai",
+        catalogId: primary.id,
+        modelCapabilities: primary.capabilities,
+        reasoningPolicy: "action-policy",
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+        providerManifest: [
+          {
+            adapter: createProviderAdapter("openai", primaryClient),
+            catalogId: primary.id,
+            providerProfileId: "openai",
+            modelId: primary.modelId,
+            modelCapabilities: primary.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 0,
+            role: "primary",
+          },
+          {
+            adapter: createProviderAdapter("katana", fallbackClient),
+            catalogId: fallback.id,
+            providerProfileId: "katana",
+            modelId: fallback.modelId,
+            modelCapabilities: fallback.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 1,
+            role: "fallback",
+            maxCallsPerGame: 3,
+          },
+        ],
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
+
+    expect(response.message).toContain("I am Atlas");
+    expect(primaryRequests).toHaveLength(2);
+    expect(fallbackRequests).toHaveLength(1);
+    expect(fallbackRequests[0]).toMatchObject({ model: "glm-5-2" });
+    expect(typeof fallbackRequests[0]?.max_tokens).toBe("number");
+    expect(fallbackRequests[0]?.max_completion_tokens).toBeUndefined();
+    expect(traces[0]?.model).toMatchObject({
+      providerProfileId: "katana",
+      catalogId: "katana:glm-5-2",
+      name: "glm-5-2",
     });
   });
 });

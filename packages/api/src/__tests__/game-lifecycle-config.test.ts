@@ -1,8 +1,19 @@
 import { describe, expect, test } from "bun:test";
 import { Phase } from "@influence/engine";
-import { buildEngineConfigFromGameRecord } from "../services/game-lifecycle.js";
+import {
+  buildEngineConfigFromGameRecord,
+  providerRequestTimeoutMs,
+} from "../services/game-lifecycle.js";
 
 describe("game lifecycle engine config", () => {
+  test("bounds API provider request deadlines", () => {
+    expect(providerRequestTimeoutMs({})).toBe(45_000);
+    expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "15000" })).toBe(15_000);
+    expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "1" })).toBe(1_000);
+    expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "600000" })).toBe(300_000);
+    expect(providerRequestTimeoutMs({ INFLUENCE_LLM_REQUEST_TIMEOUT_MS: "invalid" })).toBe(45_000);
+  });
+
   test("hydrates the frozen format manifest and rejects corrupt stored ids", () => {
     expect(buildEngineConfigFromGameRecord({
       formatManifest: ["vote_bomb", "majority_elimination"],

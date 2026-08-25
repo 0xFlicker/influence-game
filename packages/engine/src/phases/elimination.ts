@@ -52,16 +52,17 @@ export function getEndgameEliminationVoterNames(
   );
 }
 
-const HOUSE_ELIMINATION_MESSAGE_FALLBACK: AgentResponse = {
-  thinking: "House fallback after unavailable elimination message.",
-  message: "I have no final words.",
+const ABSENT_ELIMINATION_MESSAGE: AgentResponse = {
+  thinking: "",
+  message: "",
+  providerAbsence: { kind: "provider_exhausted", outcome: "empty_output" },
 };
 
 function normalizedEliminationMessage(response: AgentResponse): AgentResponse {
   const message = response.message.trim();
   return message
     ? { ...response, message }
-    : { ...HOUSE_ELIMINATION_MESSAGE_FALLBACK };
+    : { ...ABSENT_ELIMINATION_MESSAGE };
 }
 
 function requestEliminationMessage(
@@ -75,9 +76,7 @@ function requestEliminationMessage(
   if (agent.getLastMessage) {
     return agent.getLastMessage(context);
   }
-  throw new Error(
-    `Agent ${agent.name} implements neither getEliminationMessage nor deprecated getLastMessage`,
-  );
+  return Promise.resolve({ ...ABSENT_ELIMINATION_MESSAGE });
 }
 
 async function withEliminationMessageTimeout(
@@ -90,9 +89,13 @@ async function withEliminationMessageTimeout(
     requestEliminationMessage(agent, context, signal);
   const timeoutMs = ctx.config.agentActionTimeoutMs;
   if (!timeoutMs || timeoutMs < 1) {
-    return normalizedEliminationMessage(
-      await operation(new AbortController().signal),
-    );
+    try {
+      return normalizedEliminationMessage(
+        await operation(new AbortController().signal),
+      );
+    } catch {
+      return { ...ABSENT_ELIMINATION_MESSAGE };
+    }
   }
 
   const controller = new AbortController();
@@ -107,18 +110,28 @@ async function withEliminationMessageTimeout(
   }>((resolve) => {
     timeout = setTimeout(() => {
       ctx.logger.logSystem(
-        `${agent.name} elimination message timed out after ${timeoutMs}ms; using House fallback.`,
+        `${agent.name} elimination message timed out after ${timeoutMs}ms; omitting optional speech.`,
         phase,
       );
       resolve({
         source: "timeout",
-        value: { ...HOUSE_ELIMINATION_MESSAGE_FALLBACK },
+        value: {
+          thinking: "",
+          message: "",
+          providerAbsence: { kind: "provider_exhausted", outcome: "transport_timeout" },
+        },
       });
       controller.abort();
     }, timeoutMs);
   });
 
-  const result = await Promise.race([operationTagged, timeoutTagged]).finally(
+  const result = await Promise.race([
+    operationTagged.catch(() => ({
+      source: "agent" as const,
+      value: { ...ABSENT_ELIMINATION_MESSAGE },
+    })),
+    timeoutTagged,
+  ]).finally(
     () => {
       if (timeout) clearTimeout(timeout);
     },
@@ -179,6 +192,12 @@ export async function handleElimination(
     eliminatedAgent,
     eliminationMessageContext,
   );
+  if (messageResponse.providerAbsence || !messageResponse.message.trim()) {
+    for (const agent of agents.values()) {
+      agent.removeFromMemory?.(eliminated.name);
+    }
+    return;
+  }
   await assertCanAcceptCommit(ctx);
   gameState.recordEliminationMessage(eliminatedId, messageResponse.message, phase);
 

@@ -64,6 +64,52 @@ describe("API-backed simulation config", () => {
       .toEqual(["vote_bomb", "majority_elimination"]);
     expect(() => parseArgs(["--formats", "vote_bomb,vote_bomb"], {})).toThrow("duplicate");
   });
+
+  it("accepts an ordered provider manifest with adaptive reasoning and fallback caps", () => {
+    const args = parseArgs([
+      "--provider-entry", "openai:gpt-5.6-luna,reasoning=action-policy",
+      "--provider-entry", "katana:grok-4-5,reasoning=medium,max-calls=12",
+      "--provider-entry", "katana:glm-5-2,reasoning=action-policy,max-calls=24",
+    ], {});
+
+    expect(args.providerManifest).toEqual([
+      { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
+      { catalogId: "katana:grok-4-5", reasoningPolicy: "medium", maxCallsPerGame: 12 },
+      { catalogId: "katana:glm-5-2", reasoningPolicy: "action-policy", maxCallsPerGame: 24 },
+    ]);
+    expect(buildGameCreateBody(args).providerManifest).toEqual(args.providerManifest!);
+  });
+
+  it("rejects invalid provider-entry manifests before making an API call", () => {
+    expect(() => parseArgs([
+      "--provider-entry", "openai:gpt-5.6-luna",
+      "--provider-entry", "katana:grok-4-5",
+    ], {})).toThrow("maxCallsPerGame");
+    expect(() => parseArgs([
+      "--provider-entry", "openai:gpt-5.6-luna",
+      "--provider-entry", "openai:gpt-5.6-luna,max-calls=1",
+    ], {})).toThrow("duplicate");
+  });
+
+  it("lets explicit legacy CLI model flags override an environment manifest", () => {
+    const args = parseArgs(["--model-catalog", "openai:gpt-5-nano"], {
+      INFLUENCE_API_SIM_PROVIDER_MANIFEST: JSON.stringify([
+        { catalogId: "katana:grok-4-5" },
+      ]),
+    });
+
+    expect(args.providerManifest).toBeUndefined();
+    expect(buildGameCreateBody(args).providerManifest).toEqual([
+      { catalogId: "openai:gpt-5-nano", reasoningPolicy: "action-policy" },
+    ]);
+  });
+
+  it("rejects mixing provider-entry with legacy model flags", () => {
+    expect(() => parseArgs([
+      "--provider-entry", "openai:gpt-5.6-luna",
+      "--model-catalog", "openai:gpt-5-nano",
+    ], {})).toThrow("Do not combine");
+  });
 });
 
 describe("engine max-round scaling", () => {

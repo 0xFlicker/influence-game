@@ -1905,6 +1905,10 @@ describe("ProductionGameMcpReadModel", () => {
   });
 
   test("reads and searches private trace evidence through DB manifests and storage", async () => {
+    await db.insert(schema.users).values({
+      id: PRODUCER_ACCESS.userId,
+      walletAddress: "0xproducerevidence0000000000000000000000001",
+    });
     const gameId = await insertGame(db, { slug: "mcp-private-trace" });
     const ownerEpoch = await insertOwner(db, gameId);
     const storage = new FakePrivateTraceStorage();

@@ -13,6 +13,7 @@ import { createDB, schema } from "./db/index.js";
 import { calculateMigrationSet, runMigrations } from "./db/migrate.js";
 import { seedRBAC } from "./db/rbac-seed.js";
 import { createGameRoutes } from "./routes/games.js";
+import { createProviderModelRoutes } from "./routes/provider-models.js";
 import {
   createAuthRoutes,
   readManagedAuthMode,
@@ -57,6 +58,11 @@ import {
   validateDeploymentAdmissionActivationFence,
 } from "./services/deployment-admission.js";
 import { runPendingDeploymentRecoveryReconciliation } from "./services/deployment-recovery-reconciliation.js";
+import {
+  finishRuntimeStartupWithProviderAttemptReconciliation,
+  startProviderAttemptReconciliationRuntime,
+} from "./services/provider-call-journal.js";
+import { startProviderHealthProbeRuntime } from "./services/provider-health-probe.js";
 import {
   createRuntimeActivationController,
   readRuntimeStartupMode,
@@ -238,6 +244,35 @@ async function startBackgroundRuntime(context: {
   assertNotAborted();
   await seedRBAC(db);
   assertNotAborted();
+  // startBackgroundRuntime is invoked only for the active process or after a
+  // validation candidate passes durable acceptance. Merely activating a
+  // private candidate never starts this shared-state sweep.
+  const providerAttemptReconciliation =
+    await startProviderAttemptReconciliationRuntime(db, {
+      signal: context.signal,
+    });
+  return finishRuntimeStartupWithProviderAttemptReconciliation(
+    providerAttemptReconciliation,
+    () => finishBackgroundRuntimeStartup(
+      context,
+      activationFence,
+      providerAttemptReconciliation,
+    ),
+  );
+}
+
+async function finishBackgroundRuntimeStartup(
+  context: {
+    fence?: { leaseId: string; fencingToken: number };
+    signal: AbortSignal;
+  },
+  activationFence: { leaseId: string; fencingToken: number } | undefined,
+  providerAttemptReconciliation: Awaited<
+    ReturnType<typeof startProviderAttemptReconciliationRuntime>
+  >,
+) {
+  const assertNotAborted = () => context.signal.throwIfAborted();
+  assertNotAborted();
   try {
     const reconciliation = await reconcileCompletedPostgameMedia(db);
     if (reconciliation.queued > 0 || reconciliation.waitingInputs > 0) {
@@ -292,6 +327,9 @@ async function startBackgroundRuntime(context: {
     }
   }
 
+  const providerHealthProbeRuntime = activationFence
+    ? null
+    : await startProviderHealthProbeRuntime(db);
   const ownerLearningApiKey = process.env.OPENAI_API_KEY?.trim();
   assertNotAborted();
   const ownerLearningWorker = ownerLearningApiKey && ownerLearningGenerationEnabled()
@@ -333,6 +371,8 @@ async function startBackgroundRuntime(context: {
   return {
     async stop() {
       clearInterval(reconciliationTimer);
+      providerHealthProbeRuntime?.stop();
+      await providerAttemptReconciliation.stop();
       await ownerLearningWorker?.stop();
     },
   };
@@ -417,6 +457,9 @@ app.route("/", mcpRoutes);
 // Game routes
 const gameRoutes = createGameRoutes(db);
 app.route("/", gameRoutes);
+
+const providerModelRoutes = createProviderModelRoutes(db);
+app.route("/", providerModelRoutes);
 
 const postgameMediaWorkerRoutes = createPostgameMediaWorkerRoutes(db, {
   canClaimWork: () => runtimeActivation.canClaimWork(),

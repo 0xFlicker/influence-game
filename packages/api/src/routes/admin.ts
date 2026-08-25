@@ -76,8 +76,7 @@ import {
   userEmailProjection,
 } from "../services/user-email-policy.js";
 import {
-  normalizeGameModelSelection,
-  resolveModelSelection,
+  resolveProviderManifestFromGameConfig,
 } from "@influence/engine";
 import {
   getAdminOwnerLearningReview,
@@ -90,6 +89,25 @@ import {
   type DeploymentAdmissionErrorCode,
   type DeploymentAdmissionStatus,
 } from "../services/deployment-admission.js";
+import {
+  DEFAULT_PROVIDER_FAILURE_PAGE_LIMIT,
+  getProviderFailureDetail,
+  getProviderFailureSummaryMap,
+  InvalidProviderFailureCursorError,
+  MAX_PROVIDER_FAILURE_PAGE_LIMIT,
+  type ProviderFailureSummary,
+} from "../services/provider-failure-read-model.js";
+import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
+import {
+  listProviderHealth,
+  projectDailyProviderAdmissionImpact,
+  ProviderHealthOperationError,
+} from "../services/provider-health.js";
+import { resolveDailyFreeProviderManifest } from "../services/daily-provider-manifest.js";
+import {
+  executeProviderHealthProbe,
+  type ProviderHealthProbeResult,
+} from "../services/provider-health-probe.js";
 
 // ---------------------------------------------------------------------------
 // Factory
@@ -99,11 +117,35 @@ export function createAdminRoutes(
   db: DrizzleDB,
   dependencies: {
     completionSettlement?: Parameters<typeof retryCapturedGameCompletionAsOperator>[2];
+    privateTraceReadModel?: Pick<PrivateTraceReadModel, "readProviderAttemptContent">;
+    executeProviderHealthProbe?: typeof executeProviderHealthProbe;
   } = {},
 ) {
   const app = new Hono<AuthEnv>();
 
   const requireAdminRead = requirePermission("view_admin", "manage_roles");
+  const privateTraceReadModel = dependencies.privateTraceReadModel ?? new PrivateTraceReadModel(db);
+  const requireCurrentProviderFailureRead = createMiddleware<AuthEnv>(async (c, next) => {
+    const walletAddress = c.get("user").walletAddress;
+    if (!walletAddress) return c.json({ error: "Insufficient permissions" }, 403);
+    try {
+      const current = await getPermissionsForAddress(db, walletAddress);
+      if (!current.roles.some((role) => role === "admin" || role === "sysop")) {
+        return c.json({ error: "Insufficient permissions" }, 403);
+      }
+      c.set("userRoles", current.roles);
+      c.set("userPermissions", current.permissions);
+      c.header("Cache-Control", "private, no-store");
+      c.header("Pragma", "no-cache");
+      await next();
+    } catch {
+      return c.json({
+        error: "Provider failure permission state is temporarily unavailable",
+        code: "provider_failure_permission_unavailable",
+        retryable: true,
+      }, 503);
+    }
+  });
   const requireRoleManagement = requirePermission("manage_roles");
   const requirePostgameMediaManagement = requirePermission("manage_postgame_media", "manage_roles");
   const requireFreeQueueManagement = requirePermission("schedule_free_game", "manage_roles");
@@ -122,6 +164,44 @@ export function createAdminRoutes(
       return c.json({
         error: "Deployment admission permission state is temporarily unavailable",
         code: "deployment_admission_permission_unavailable",
+        retryable: true,
+      }, 503);
+    }
+  });
+  const requireCurrentProviderHealthRead = createMiddleware<AuthEnv>(async (c, next) => {
+    const walletAddress = c.get("user").walletAddress;
+    if (!walletAddress) return c.json({ error: "Insufficient permissions" }, 403);
+    try {
+      const current = await getPermissionsForAddress(db, walletAddress);
+      if (!current.roles.some((role) => role === "admin" || role === "sysop")) {
+        return c.json({ error: "Insufficient permissions" }, 403);
+      }
+      c.header("Cache-Control", "private, no-store");
+      c.header("Pragma", "no-cache");
+      await next();
+    } catch {
+      return c.json({
+        error: "Provider health permission state is temporarily unavailable",
+        code: "provider_health_permission_unavailable",
+        retryable: true,
+      }, 503);
+    }
+  });
+  const requireCurrentProviderHealthManagement = createMiddleware<AuthEnv>(async (c, next) => {
+    const walletAddress = c.get("user").walletAddress;
+    if (!walletAddress) return c.json({ error: "Insufficient permissions" }, 403);
+    try {
+      const current = await getPermissionsForAddress(db, walletAddress);
+      if (!current.permissions.includes("manage_provider_health")) {
+        return c.json({ error: "Insufficient permissions" }, 403);
+      }
+      c.header("Cache-Control", "private, no-store");
+      c.header("Pragma", "no-cache");
+      await next();
+    } catch {
+      return c.json({
+        error: "Provider health permission state is temporarily unavailable",
+        code: "provider_health_permission_unavailable",
         retryable: true,
       }, 503);
     }
@@ -188,6 +268,57 @@ export function createAdminRoutes(
         leaseId: result.lease.id,
         revision: result.lease.revision,
       });
+    },
+  );
+
+  app.get("/api/admin/provider-health", requireCurrentProviderHealthRead, async (c) => {
+    try {
+      const providers = await listProviderHealth(db);
+      const dailyImpact = projectDailyProviderAdmissionImpact(
+        providers,
+        resolveDailyFreeProviderManifest(),
+      );
+      return c.json({
+        schemaVersion: 1 as const,
+        ...dailyImpact,
+        providers,
+      });
+    } catch {
+      return c.json({
+        error: "Provider health is temporarily unavailable",
+        code: "provider_health_unavailable",
+        retryable: true,
+      }, 503);
+    }
+  });
+
+  app.post(
+    "/api/admin/provider-health/:scopeKey/probe",
+    requireCurrentProviderHealthManagement,
+    async (c) => {
+      const owner = c.get("user").id;
+      try {
+        const runProbe = dependencies.executeProviderHealthProbe ?? executeProviderHealthProbe;
+        const result: ProviderHealthProbeResult = await runProbe(db, {
+          scopeKey: c.req.param("scopeKey"),
+          owner,
+          allowBeforeCooldown: true,
+        });
+        return c.json({ schemaVersion: 1 as const, ...result });
+      } catch (error) {
+        if (error instanceof ProviderHealthOperationError) {
+          return c.json({
+            error: error.message,
+            code: error.code,
+            retryable: true,
+          }, error.code === "not_found" ? 404 : 409);
+        }
+        return c.json({
+          error: "Provider health probe could not be completed",
+          code: "provider_health_probe_unavailable",
+          retryable: true,
+        }, 503);
+      }
     },
   );
 
@@ -726,6 +857,91 @@ export function createAdminRoutes(
     return c.json(result.detail);
   });
 
+  app.get(
+    "/api/admin/games/:idOrSlug/provider-failures",
+    requireCurrentProviderFailureRead,
+    async (c) => {
+      const gameId = await findAdminGameId(c.req.param("idOrSlug"));
+      if (!gameId) return c.json({ error: "Game not found" }, 404);
+      const limit = boundedIntegerQuery(
+        c.req.query("limit"),
+        DEFAULT_PROVIDER_FAILURE_PAGE_LIMIT,
+        1,
+        MAX_PROVIDER_FAILURE_PAGE_LIMIT,
+      );
+      if (limit === null) {
+        return c.json({ error: "Invalid provider failure page limit" }, 400);
+      }
+      try {
+        return c.json(await getProviderFailureDetail(db, gameId, {
+          cursor: c.req.query("cursor"),
+          limit,
+        }));
+      } catch (error) {
+        if (error instanceof InvalidProviderFailureCursorError) {
+          return c.json({ error: error.message }, 400);
+        }
+        return c.json({
+          schemaVersion: 1 as const,
+          gameId,
+          state: "unavailable" as const,
+          error: "Provider failure evidence is temporarily unavailable",
+          retryable: true,
+        }, 503);
+      }
+    },
+  );
+
+  app.get(
+    "/api/admin/games/:idOrSlug/provider-failures/:manifestId/content",
+    requireCurrentProviderFailureRead,
+    async (c) => {
+      const gameId = await findAdminGameId(c.req.param("idOrSlug"));
+      if (!gameId) return c.json({ error: "Game not found" }, 404);
+      const maxBytes = boundedIntegerQuery(c.req.query("maxBytes"), 64 * 1024, 1, 256 * 1024);
+      const offsetBytes = boundedIntegerQuery(c.req.query("offsetBytes"), 0, 0, Number.MAX_SAFE_INTEGER);
+      if (maxBytes === null || offsetBytes === null) {
+        return c.json({ error: "Invalid bounded content range" }, 400);
+      }
+      const result = await privateTraceReadModel.readProviderAttemptContent(
+        c.req.param("manifestId"),
+        {
+          gameId,
+          purpose: "admin_provider_failure_read_content",
+          accessor: {
+            userId: c.get("user").id,
+            roles: c.get("userRoles"),
+            permissions: c.get("userPermissions"),
+          },
+          maxBytes,
+          offsetBytes,
+        },
+      );
+      if (!result.ok) {
+        const status = result.status === "not_found" ? 404
+          : result.status === "denied" ? 403
+            : result.status === "expired" || result.status === "redacted" ? 410
+              : 503;
+        return c.json({
+          schemaVersion: 1 as const,
+          state: "unavailable" as const,
+          status: result.status,
+          error: result.error,
+          retryable: result.status === "storage_error",
+        }, status);
+      }
+      return c.json({
+        schemaVersion: 1 as const,
+        state: result.response.truncated
+          ? "partial" as const
+          : result.response.offsetBytes === 0
+            ? "complete" as const
+            : "final_chunk" as const,
+        ...result.response,
+      });
+    },
+  );
+
   app.get("/api/admin/games/:idOrSlug/postgame/highlights/diagnostics", requireAdminRead, async (c) => {
     const result = await getPostgameHighlightsDiagnostics(db, c.req.param("idOrSlug"));
     if (!result.ok) {
@@ -816,11 +1032,31 @@ export function createAdminRoutes(
   app.get("/api/admin/games", requireAdminRead, async (c) => {
     const rows = await db.select().from(schema.games);
     const gameIds = rows.map((game) => game.id);
-    const [kernelHealthByGameId, costSummaryByGameId, seasonById, settlementByGameId] = await Promise.all([
+    let canReadProviderFailures = false;
+    let providerFailureAccessUnavailable = false;
+    try {
+      const walletAddress = c.get("user").walletAddress;
+      if (walletAddress) {
+        const current = await getPermissionsForAddress(db, walletAddress);
+        canReadProviderFailures = current.roles.some((role) => role === "admin" || role === "sysop");
+      }
+    } catch {
+      providerFailureAccessUnavailable = true;
+    }
+    if (canReadProviderFailures || providerFailureAccessUnavailable) {
+      c.header("Cache-Control", "private, no-store");
+      c.header("Pragma", "no-cache");
+    }
+    const [kernelHealthByGameId, costSummaryByGameId, seasonById, settlementByGameId, providerFailureResult] = await Promise.all([
       getRedactedKernelHealthByGameId(db, gameIds),
       getGameCostSummaryMap(db, gameIds),
       getGameSeasonIdentityMap(db, rows.map((game) => game.seasonId)),
       getGameCompletionSettlementSummaryMap(db, gameIds),
+      canReadProviderFailures
+        ? getProviderFailureSummaryMap(db, gameIds)
+          .then((summaries) => ({ ok: true as const, summaries }))
+          .catch(() => ({ ok: false as const }))
+        : Promise.resolve({ ok: false as const }),
     ]);
 
     const summaries = await Promise.all(rows.map(async (game) => {
@@ -877,6 +1113,16 @@ export function createAdminRoutes(
         kernelHealth: kernelHealthByGameId.get(game.id),
         cost: costSummaryByGameId.get(game.id) ?? null,
         completionSettlement,
+        ...((canReadProviderFailures || providerFailureAccessUnavailable) && {
+          providerFailures: providerFailureResult.ok
+            ? providerFailureResult.summaries.get(game.id) ?? emptyProviderFailureSummary()
+            : {
+                schemaVersion: 1 as const,
+                state: "unavailable" as const,
+                error: "Provider failure summaries are temporarily unavailable",
+                retryable: true,
+              },
+        }),
       };
     }));
 
@@ -1252,18 +1498,27 @@ export function createAdminRoutes(
     let importedConfig: Record<string, unknown>;
     try {
       importedConfig = JSON.parse(importedGame.config as string) as Record<string, unknown>;
-      const selection = normalizeGameModelSelection(importedConfig.modelSelection);
-      const resolved = resolveModelSelection(selection);
-      if (resolved.model.evaluationStatus !== "game-ready") {
-        return c.json({ error: "Imported game model is not game-ready" }, 400);
+      const manifest = resolveProviderManifestFromGameConfig(importedConfig);
+      for (const entry of manifest) {
+        if (entry.model.evaluationStatus !== "game-ready") {
+          return c.json({ error: "Imported game provider manifest contains a model that is not game-ready" }, 400);
+        }
       }
+      const primary = manifest[0]!;
       delete importedConfig.modelTier;
       importedConfig.modelSelection = {
-        catalogId: resolved.catalogId,
-        reasoningPolicy: resolved.reasoningPolicy,
+        catalogId: primary.catalogId,
+        reasoningPolicy: primary.reasoningPolicy,
       };
+      importedConfig.providerManifest = manifest.map((entry) => ({
+        catalogId: entry.catalogId,
+        reasoningPolicy: entry.reasoningPolicy,
+        ...(entry.maxCallsPerGame !== undefined && {
+          maxCallsPerGame: entry.maxCallsPerGame,
+        }),
+      }));
     } catch {
-      return c.json({ error: "Imported game requires a valid modelSelection" }, 400);
+      return c.json({ error: "Imported game requires a valid provider manifest" }, 400);
     }
 
     // Resolve slug collision
@@ -1607,6 +1862,33 @@ export function createAdminRoutes(
   });
 
   return app;
+}
+
+function emptyProviderFailureSummary(): ProviderFailureSummary {
+  return {
+    schemaVersion: 1,
+    state: "empty",
+    failureCount: 0,
+    exactFailureCount: 0,
+    rateLimitCount: 0,
+    recoveredCount: 0,
+    terminalCount: 0,
+    degradedCount: 0,
+    transitionedCount: 0,
+    lastFailureAt: null,
+  };
+}
+
+function boundedIntegerQuery(
+  value: string | undefined,
+  defaultValue: number,
+  minimum: number,
+  maximum: number,
+): number | null {
+  if (value === undefined) return defaultValue;
+  if (!/^\d+$/.test(value)) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= minimum && parsed <= maximum ? parsed : null;
 }
 
 function projectAdminDeploymentAdmissionStatus(status: DeploymentAdmissionStatus) {

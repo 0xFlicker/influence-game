@@ -62,12 +62,11 @@ import {
 } from "../services/queue-enrollment.js";
 import { AgentProfileManagementError } from "../services/agent-profile-management.js";
 import { admitOwnedSeatInTransaction } from "../services/owned-seat-projection.js";
-
-const DAILY_FREE_MODEL = "gpt-5.6-luna";
-const DAILY_FREE_MODEL_SELECTION = {
-  catalogId: `openai:${DAILY_FREE_MODEL}`,
-  reasoningPolicy: "action-policy",
-} as const;
+import {
+  DAILY_FREE_MODEL,
+  DAILY_FREE_MODEL_SELECTION,
+  DAILY_FREE_PROVIDER_MANIFEST,
+} from "../services/daily-provider-manifest.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -289,6 +288,10 @@ export function createFreeQueueRoutes(
       minPlayers,
       maxPlayers,
       modelSelection: DAILY_FREE_MODEL_SELECTION,
+      // Exact Katana qualification measured 0.8 credits for three bounded
+      // Grok calls and 0.4 for three GLM calls. The 12/24 caps keep the two
+      // fallback entries within an approximately equal per-game credit guard.
+      providerManifest: DAILY_FREE_PROVIDER_MANIFEST,
       personaPool: [],
       fillStrategy: "balanced",
       visibility: "public",
@@ -533,8 +536,10 @@ export function createFreeQueueRoutes(
         ...(readiness.code && { code: readiness.code }),
         ...(readiness.retryable !== undefined && { retryable: readiness.retryable }),
       }, readiness.code === "deployment_admission_closed"
+        || readiness.code === "provider_admission_closed"
         ? 409
         : readiness.code === "deployment_admission_unavailable"
+          || readiness.code === "provider_admission_unavailable"
           ? 503
           : 500);
     }

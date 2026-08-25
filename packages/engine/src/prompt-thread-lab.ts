@@ -330,7 +330,6 @@ export async function capturePromptThreadReplay(
         ...(generatedCell
           ? {
               promptCacheLineage: generatedCell.promptCacheKey,
-              requireOpenAIResponses: true,
               evaluationFailFast: true,
               structuredCallMaxAttempts: 1,
             }

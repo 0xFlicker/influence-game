@@ -11,6 +11,7 @@ import {
   acquireRecoveryGameRunOwner,
   markOwnerStartupFailed,
   revokeActiveGameRunOwner,
+  suspendClaimedRecoveryOwner,
 } from "../services/game-ownership.js";
 import { hashCanonicalEvent } from "../services/game-events.js";
 import { createSeason } from "../services/seasons.js";
@@ -25,6 +26,11 @@ import {
   advanceDeploymentAdmissionPhase,
   completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
+import {
+  checkDailyProviderAdmission,
+  recordProviderHealthOutcomeInTransaction,
+} from "../services/provider-health.js";
+import { resolveProviderManifestFromGameConfig } from "@influence/engine";
 
 describe("atomic game owner claim and roster freeze", () => {
   test("serializes update-before-freeze into one coherent new tuple and snapshot", async () => {
@@ -422,6 +428,35 @@ describe("atomic game owner claim and roster freeze", () => {
     expect(await ownedSeatFor(fixture.db, fixture.gameId, fixture.profileA.id)).toEqual(frozenSeat);
   });
 
+  test("cancellation cleanup suspends only the recovery owner it claimed", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const original = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    expect(original.ok).toBeTrue();
+    await revokeActiveGameRunOwner(fixture.db, fixture.gameId, "test suspension");
+    await fixture.db.update(schema.games).set({ status: "suspended" })
+      .where(eq(schema.games.id, fixture.gameId));
+    const recovery = await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0);
+    if (!recovery.ok) throw new Error(recovery.error);
+
+    expect(await suspendClaimedRecoveryOwner(
+      fixture.db,
+      fixture.gameId,
+      "stale-owner",
+      "recovery_cancelled_before_start",
+    )).toBeFalse();
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "in_progress" });
+    expect(await suspendClaimedRecoveryOwner(
+      fixture.db,
+      fixture.gameId,
+      recovery.claim.ownerEpoch,
+      "recovery_cancelled_before_start",
+    )).toBeTrue();
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "suspended" });
+    expect((await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, recovery.claim.ownerEpoch)))[0])
+      .toMatchObject({ status: "expired", failureReason: "recovery_cancelled_before_start" });
+  });
+
   test("suspended recovery obeys the deployment admission fence", async () => {
     const fixture = await createRatedWaitingFixture();
     const owner = await acquireGameRunOwner(fixture.db, fixture.gameId);
@@ -446,6 +481,42 @@ describe("atomic game owner claim and roster freeze", () => {
       statusCode: 409,
     });
     expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "suspended" });
+  });
+
+  test("rechecks Daily provider health inside the owner claim transaction", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const config = {
+      modelSelection: {
+        catalogId: "openai:gpt-5.6-luna",
+        reasoningPolicy: "action-policy",
+      },
+      providerManifest: [{
+        catalogId: "openai:gpt-5.6-luna",
+        reasoningPolicy: "action-policy",
+      }],
+    };
+    await fixture.db.update(schema.games).set({
+      trackType: "free",
+      config: JSON.stringify(config),
+    }).where(eq(schema.games.id, fixture.gameId));
+    expect(await checkDailyProviderAdmission(
+      fixture.db,
+      resolveProviderManifestFromGameConfig(config),
+    )).toEqual({ ok: true });
+
+    await fixture.db.transaction((tx) => recordProviderHealthOutcomeInTransaction(tx, {
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5.6-luna",
+      outcome: { kind: "authentication", message: "expired key", retryable: false },
+    }));
+    expect(await acquireGameRunOwner(fixture.db, fixture.gameId)).toMatchObject({
+      ok: false,
+      code: "provider_admission_closed",
+      statusCode: 409,
+    });
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "waiting" });
+    expect(await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, fixture.gameId))).toHaveLength(0);
   });
 
   test("accepting candidates cannot recover suspended work before terminal host acceptance", async () => {

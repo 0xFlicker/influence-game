@@ -82,7 +82,7 @@ For durable local evaluation, prefer `simulate:api`. It authenticates to the run
 Normal `POST /api/games/:id/fill` requests construct deterministic House persona metadata synchronously and return the completed roster with HTTP 200; they do not call a model. Saved-agent generation remains a separate hosted-model feature.
 API simulator max rounds default to a short player-scaled smoke cap (`6 players -> 7`) unless `--max-rounds` is passed.
 
-Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test router-backed Grok through the shared provider catalog. API games use `games.config.modelSelection` as their sole game model authority. Dynamic text catalog IDs are supported for local/provider evaluation, including `lm-studio:<model-id>` and `katana:<model-id>` such as `katana:deepseek-v4-flash`.
+Simulation model selection supports both legacy `--model <id>` and explicit catalog-backed runs. Use `--model-catalog katana:grok-4-3 --reasoning-policy low|medium|high` to test one router-backed model. API games seal `games.config.providerManifest` as their ordered execution authority; use repeated `--provider-entry <catalog-id>,reasoning=<policy>,max-calls=<n>` arguments to create a primary plus bounded fallbacks. `action-policy` is the Adaptive reasoning choice. Dynamic text catalog IDs remain supported for local/provider evaluation, including `lm-studio:<model-id>` and `katana:<model-id>` such as `katana:deepseek-v4-flash`.
 
 For deployment, the one startup migration maps legacy `budget` / `standard` / `premium` to `openai:gpt-5-nano` / `openai:gpt-5-mini` / `openai:gpt-5.4-mini` with `action-policy` and removes `modelTier`. Keep old API writers stopped while it runs. Rollback is roll-forward. OpenAI `serviceTier` is unrelated.
 
@@ -311,7 +311,8 @@ packages/
       game-state.ts     # Mutable game state + phase transitions
       phase-machine.ts  # xstate v5 FSM for round cycle
       game-runner.ts    # Orchestrates agents through each phase
-      agent.ts          # LLM-backed player (Chat Completions locally, Responses summaries for hosted OpenAI)
+      agent.ts          # Provider-neutral LLM-backed player
+      provider-adapters.ts # Native OpenAI Responses and Katana/local Chat transports
       simulate.ts       # CLI batch simulation runner
       __tests__/        # Unit + integration tests
 
@@ -345,6 +346,7 @@ Hosted-provider secrets are injected via Doppler (`doppler run -- <command>`). L
 | `INFLUENCE_AVATAR_GENERATION_ASSET_HOSTS` | No | `imgnai.com` | Comma-separated HTTPS host allowlist for downloading completed Katana avatar assets before copying them into Influence storage |
 | `INFLUENCE_LLM_PREFLIGHT` | No | enabled | API game start validates selected provider/model metadata before claiming the run; set `off` only for incompatible local providers |
 | `INFLUENCE_LLM_PREFLIGHT_TIMEOUT_MS` | No | `10000` | Timeout for API start provider/model preflight |
+| `INFLUENCE_LLM_REQUEST_TIMEOUT_MS` | No | `45000` | Per-attempt provider request timeout for API games; clamped to 1-300 seconds |
 | `INFLUENCE_LLM_TOOL_CHOICE_MODE` | No | `required` for local base URLs, otherwise `named` | Structured decision-call mode: `named`, `required`, `auto`, or `json_schema` |
 | `INFLUENCE_OPENAI_REASONING_SUMMARY` | No | `auto` for hosted OpenAI, off for local base URLs | Hosted OpenAI Responses reasoning summary mode: `auto`, `concise`, `detailed`, or `off` |
 | `PRIVY_APP_ID` | Yes | -- | Privy app ID for auth |

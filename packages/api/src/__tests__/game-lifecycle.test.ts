@@ -18,6 +18,7 @@ import { setupTestDB } from "./test-utils.js";
 import {
   appendDurableEventsAndPublishWatchState,
   classifyGameRunFailure,
+  preflightProviderManifest,
   preflightSelectedModel,
   reconcilePostgameMediaAfterCompletion,
   serializeTranscriptEntry,
@@ -338,6 +339,87 @@ describe("preflightSelectedModel", () => {
     );
 
     expect(calls).toEqual(["retrieve:gpt-5-nano"]);
+  });
+
+  test("preflights every sealed manifest entry with one request per provider profile", async () => {
+    const calls: string[] = [];
+    const clients: string[] = [];
+    const openai = {
+      id: "openai",
+      displayName: "OpenAI",
+      baseURL: "https://api.openai.com/v1",
+      envKeyVar: "OPENAI_API_KEY",
+      defaultToolChoiceMode: "required",
+    } as const;
+    const katana = {
+      id: "katana",
+      displayName: "Katana",
+      baseURL: "https://api.katana.invalid/v1",
+      envKeyVar: "API_KAT_IMGNAI_KEY",
+      defaultToolChoiceMode: "required",
+    } as const;
+
+    await preflightProviderManifest(
+      [
+        { modelId: "gpt-5.6-luna", providerProfile: openai },
+        { modelId: "grok-4-5", providerProfile: katana },
+        { modelId: "glm-5-2", providerProfile: katana },
+      ] as never,
+      (providerProfileId) => {
+        clients.push(providerProfileId);
+        return {
+          providerLabel: providerProfileId,
+          client: {
+            models: {
+              async list() {
+                calls.push(`${providerProfileId}:list`);
+                return { data: [{ id: "grok-4-5" }, { id: "glm-5-2" }] };
+              },
+              async retrieve(modelId: string) {
+                calls.push(`${providerProfileId}:retrieve:${modelId}`);
+                return { id: modelId };
+              },
+            },
+          },
+        };
+      },
+    );
+
+    expect(clients).toEqual(["openai", "katana"]);
+    expect(calls).toEqual([
+      "openai:retrieve:gpt-5.6-luna",
+      "katana:list",
+    ]);
+  });
+
+  test("rejects a sealed Katana entry missing from the provider catalog", async () => {
+    const katana = {
+      id: "katana",
+      displayName: "Katana",
+      baseURL: "https://api.katana.invalid/v1",
+      envKeyVar: "API_KAT_IMGNAI_KEY",
+      defaultToolChoiceMode: "required",
+    } as const;
+
+    await expect(preflightProviderManifest(
+      [
+        { modelId: "grok-4-5", providerProfile: katana },
+        { modelId: "glm-5-2", providerProfile: katana },
+      ] as never,
+      () => ({
+        providerLabel: "Katana",
+        client: {
+          models: {
+            async list() {
+              return { data: [{ id: "grok-4-5" }] };
+            },
+            async retrieve(modelId: string) {
+              return { id: modelId };
+            },
+          },
+        },
+      }),
+    )).rejects.toThrow("Model glm-5-2 is not available from Katana");
   });
 });
 

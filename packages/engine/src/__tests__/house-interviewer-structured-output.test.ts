@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { APIUserAbortError } from "openai";
 import type OpenAI from "openai";
 import type { ChatCompletion } from "openai/resources/chat/completions";
 import {
@@ -7,6 +8,7 @@ import {
   publicHouseDialogueAttributionsAreSupported,
   publicHousePlayerCountClaimsAreSupported,
   validatePublicHouseSummaryProse,
+  type DiaryRoomContext,
   type HouseAllianceHuddleOutcomeContext,
   type HouseAllianceHuddleScheduleContext,
   type HouseAllianceProposerSelectionContext,
@@ -17,12 +19,15 @@ import { createEmptyHouseNarrativeContinuity } from "../house-summary-frontier";
 import { modelCatalogEntryById } from "../model-catalog";
 import { TokenTracker } from "../token-tracker";
 import { Phase } from "../types";
+import type { ProviderAttemptRecord } from "../provider-execution";
+import { createProviderAdapter, normalizeChatCompletion } from "../provider-adapters";
 
 type StubResponse = {
   content?: string | null;
   finishReason?: string;
   reasoningContext?: string;
   refusal?: string;
+  error?: Error;
 };
 
 type HouseToolCall = {
@@ -49,14 +54,49 @@ function makeHouseSummaryOpenAIStub(
   requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }>,
   responses: HouseStubResponse[],
 ): OpenAI {
+  const nextConfigured = (
+    params: Record<string, unknown>,
+    options?: Record<string, unknown>,
+  ): HouseStubResponse => {
+    requests.push({ params, options });
+    const configured = responses[Math.min(requests.length - 1, responses.length - 1)];
+    if (!configured) throw new Error("No response configured");
+    if (configured.error) throw configured.error;
+    return configured;
+  };
   return {
+    responses: {
+      create: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
+        const configured = nextConfigured(params, options);
+        return {
+          id: configured.id ?? `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output: configured.rawToolCalls ?? configured.toolCalls?.map((call) => ({
+            type: "function_call",
+            call_id: call.id,
+            name: call.name,
+            arguments: typeof call.arguments === "string"
+              ? call.arguments
+              : JSON.stringify(call.arguments),
+          })) ?? [],
+          ...(configured.serviceTier && { service_tier: configured.serviceTier }),
+          ...(configured.usage && {
+            usage: {
+              input_tokens: configured.usage.promptTokens,
+              output_tokens: configured.usage.completionTokens,
+              total_tokens: configured.usage.promptTokens + configured.usage.completionTokens,
+              input_tokens_details: { cached_tokens: configured.usage.cachedTokens ?? 0 },
+              output_tokens_details: { reasoning_tokens: configured.usage.reasoningTokens ?? 0 },
+            },
+          }),
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>, options?: Record<string, unknown>) => {
-          requests.push({ params, options });
-          const configured = responses[Math.min(requests.length - 1, responses.length - 1)];
-          if (!configured) throw new Error("No response configured");
-          if (configured.error) throw configured.error;
+          const configured = nextConfigured(params, options);
           return {
             id: configured.id ?? `response-${requests.length}`,
             choices: [{
@@ -211,17 +251,64 @@ function makeAssignmentContext(): HouseMingleAssignmentContext {
   };
 }
 
+function makeDiaryContext(
+  overrides: Partial<DiaryRoomContext> = {},
+): DiaryRoomContext {
+  return {
+    precedingPhase: Phase.VOTE,
+    round: 2,
+    providerInterviewOrdinal: 1,
+    agentName: "Atlas",
+    alivePlayers: ["Atlas", "Nyx"],
+    activeShieldNames: [],
+    eliminatedPlayers: [],
+    lastEliminated: null,
+    empoweredName: "Nyx",
+    councilCandidates: null,
+    recentMessages: [],
+    ...overrides,
+  };
+}
+
 function makeOpenAIStub(
   requests: Array<Record<string, unknown>>,
   responses: StubResponse[],
 ): OpenAI {
+  const nextResponse = (params: Record<string, unknown>): StubResponse => {
+    requests.push(params);
+    const response = responses[Math.min(requests.length - 1, responses.length - 1)];
+    if (!response) throw new Error("No response configured");
+    if (response.error) throw response.error;
+    return response;
+  };
   return {
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        const response = nextResponse(params);
+        return {
+          id: `response-${requests.length}`,
+          object: "response",
+          status: "completed",
+          output_text: response.content ?? "",
+          output: [{
+            id: `message-${requests.length}`,
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{ type: "output_text", text: response.content ?? "" }],
+          }],
+          usage: {
+            input_tokens: 10,
+            output_tokens: 20,
+            total_tokens: 30,
+          },
+        };
+      },
+    },
     chat: {
       completions: {
         create: async (params: Record<string, unknown>) => {
-          requests.push(params);
-          const response = responses[Math.min(requests.length - 1, responses.length - 1)];
-          if (!response) throw new Error("No response configured");
+          const response = nextResponse(params);
           return {
             choices: [
               {
@@ -703,6 +790,73 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     expect(requests).toHaveLength(1);
   });
 
+  it("emits the same typed refusal contract for House calls", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const requestOptions: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const error = Object.assign(new Error("request rejected"), {
+      status: 400,
+      request_id: "req-house-invalid-prompt",
+      headers: {
+        "content-type": "application/json",
+        "x-request-id": "req-house-invalid-prompt",
+        authorization: "Bearer house-secret",
+      },
+      error: {
+        code: "invalid_prompt",
+        message: "request rejected",
+      },
+    });
+    const openai = {
+      chat: {
+        completions: {
+          create: async (
+            params: Record<string, unknown>,
+            options?: Record<string, unknown>,
+          ) => {
+            requests.push(params);
+            requestOptions.push(options ?? {});
+            throw error;
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const house = new LLMHouseInterviewer(openai, "test-model", {
+      providerExecutionHooks: {
+        onTerminal: (record) => {
+          attempts.push(record);
+        },
+      },
+    });
+
+    const result = await house.assignMingleRooms(makeAssignmentContext());
+
+    expect(result.rooms).toEqual([]);
+    expect(requests).toHaveLength(1);
+    expect(attempts).toHaveLength(1);
+    expect(attempts[0]).toMatchObject({
+      requestId: "req-house-invalid-prompt",
+      outcome: { kind: "refusal", retryable: false },
+      rawResponse: {
+        status: 400,
+        headers: {
+          "content-type": "application/json",
+          "x-request-id": "req-house-invalid-prompt",
+        },
+        body: {
+          code: "invalid_prompt",
+          message: "request rejected",
+        },
+      },
+    });
+    expect(attempts[0]?.preparedRequest.body).toEqual(requests[0]);
+    expect(requestOptions[0]?.maxRetries).toBe(0);
+    expect(requestOptions[0]?.headers).toMatchObject({
+      "x-influence-no-flex-transport-retry": "1",
+    });
+    expect(JSON.stringify(attempts[0])).not.toContain("house-secret");
+  });
+
   it("aborts hung structured requests and falls back", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const house = new LLMHouseInterviewer(
@@ -714,8 +868,125 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     const result = await house.assignMingleRooms(makeAssignmentContext());
 
     expect(result.rooms).toEqual([]);
-    expect(result.rationale).toBe("House assignment failed; deterministic fallback will assign rooms (request_aborted).");
-    expect(requests).toHaveLength(1);
+    expect(result.rationale).toBe(
+      "House assignment failed; deterministic fallback will assign rooms (request_aborted).",
+    );
+    expect(requests).toHaveLength(2);
+  });
+
+  it("classifies the pinned SDK user-abort error as a retryable House transport timeout", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{ error: new APIUserAbortError() }]),
+      "test-model",
+      {
+        providerExecutionHooks: {
+          onTerminal: (record) => { attempts.push(record); },
+        },
+      },
+    );
+
+    const result = await house.assignMingleRooms(makeAssignmentContext());
+
+    expect(result.rooms).toEqual([]);
+    expect(requests).toHaveLength(2);
+    expect(attempts.map((record) => record.outcome)).toEqual([
+      { kind: "transport_timeout", message: "Request was aborted.", retryable: true },
+      { kind: "transport_timeout", message: "Request was aborted.", retryable: true },
+    ]);
+  });
+
+  it("applies action-specific validation to generic House HTTP-200 responses", async () => {
+    const emptyAttempts: ProviderAttemptRecord[] = [];
+    const emptyHouse = new LLMHouseInterviewer(
+      makeOpenAIStub([], [{ content: "" }]),
+      "test-model",
+      { providerExecutionHooks: { onTerminal: (record) => { emptyAttempts.push(record); } } },
+    );
+    await expect(emptyHouse.generateQuestion(makeDiaryContext())).rejects.toThrow("missing_assistant_message");
+    expect(emptyAttempts.map((record) => record.outcome.kind)).toEqual([
+      "empty_output",
+      "empty_output",
+    ]);
+
+    const jsonAttempts: ProviderAttemptRecord[] = [];
+    const malformedJsonHouse = new LLMHouseInterviewer(
+      makeOpenAIStub([], [{ content: "not-json" }]),
+      "test-model",
+      { providerExecutionHooks: { onTerminal: (record) => { jsonAttempts.push(record); } } },
+    );
+    const brief = await malformedJsonHouse.generateProducerBrief(makeDiaryContext(), null);
+    expect(brief.storyRole).toBeDefined();
+    expect(jsonAttempts.map((record) => record.outcome.kind)).toEqual([
+      "malformed_output",
+      "malformed_output",
+    ]);
+
+    const followUpAttempts: ProviderAttemptRecord[] = [];
+    const malformedFollowUpHouse = new LLMHouseInterviewer(
+      makeOpenAIStub([], [{ content: "Ask Atlas about Nyx" }]),
+      "test-model",
+      { providerExecutionHooks: { onTerminal: (record) => { followUpAttempts.push(record); } } },
+    );
+    await expect(
+      malformedFollowUpHouse.generateFollowUpOrClose(makeDiaryContext(), [{
+        question: "Who do you trust?",
+        answer: "Nyx.",
+      }]),
+    ).rejects.toThrow("malformed_house_followup");
+    expect(followUpAttempts.map((record) => record.outcome.kind)).toEqual([
+      "malformed_output",
+      "malformed_output",
+    ]);
+  });
+
+  it("keeps concurrent diary interview coordinates unique and stable across House reconstruction", async () => {
+    const runInterviewCalls = async () => {
+      const attempts: ProviderAttemptRecord[] = [];
+      const house = new LLMHouseInterviewer(
+        makeOpenAIStub([], [{ content: "CLOSE: The House has heard enough." }]),
+        "test-model",
+        { providerExecutionHooks: { onTerminal: (record) => { attempts.push(record); } } },
+      );
+      const contexts = [
+        makeDiaryContext({
+          agentName: "Atlas",
+          providerInterviewOrdinal: 1,
+        }),
+        makeDiaryContext({
+          agentName: "Nyx",
+          providerInterviewOrdinal: 2,
+        }),
+      ];
+
+      await Promise.all(contexts.map(async (context) => {
+        await house.generateProducerBrief(context, null);
+        await house.generateQuestion(context);
+        await house.generateFollowUpOrClose(context, [
+          { question: "Q1", answer: "A1" },
+          { question: "Q2", answer: "A2" },
+        ]);
+      }));
+
+      return Object.fromEntries(
+        ["house-producer-brief", "house-question", "house-followup"].map((action) => [
+          action,
+          attempts
+            .filter((attempt) => attempt.coordinate.action === action)
+            .map((attempt) => attempt.coordinate.logicalCallOrdinal)
+            .sort((left, right) => left - right),
+        ]),
+      );
+    };
+
+    const beforeReconstruction = await runInterviewCalls();
+    const afterReconstruction = await runInterviewCalls();
+
+    expect(new Set(beforeReconstruction["house-producer-brief"])).toHaveLength(2);
+    expect(new Set(beforeReconstruction["house-question"])).toHaveLength(2);
+    expect(new Set(beforeReconstruction["house-followup"])).toHaveLength(2);
+    expect(afterReconstruction).toEqual(beforeReconstruction);
   });
 
   it("applies the global structured token floor when House receives local tool-choice mode", async () => {
@@ -776,9 +1047,175 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
   });
 });
 
+describe("LLMHouseInterviewer sealed provider manifest", () => {
+  it("falls through for House calls and attributes private evidence to the accepted runtime", async () => {
+    const primaryRequests: Array<Record<string, unknown>> = [];
+    const fallbackRequests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const primary = modelCatalogEntryById("openai:gpt-5.6-luna")!;
+    const fallback = modelCatalogEntryById("katana:glm-5-2")!;
+    const primaryClient = makeOpenAIStub(primaryRequests, [
+      { error: Object.assign(new Error("invalid prompt"), { status: 400 }) },
+    ]);
+    const fallbackClient = makeOpenAIStub(fallbackRequests, [
+      { content: "Atlas, who do you trust enough to risk your game for?" },
+    ]);
+    const house = new LLMHouseInterviewer(
+      primaryClient,
+      primary.modelId,
+      {
+        providerProfileId: "openai",
+        catalogId: primary.id,
+        modelCapabilities: primary.capabilities,
+        reasoningPolicy: "action-policy",
+        privateTraceSink: (trace) => {
+          traces.push(trace);
+        },
+        providerManifest: [
+          {
+            adapter: createProviderAdapter("openai", primaryClient),
+            catalogId: primary.id,
+            providerProfileId: "openai",
+            modelId: primary.modelId,
+            modelCapabilities: primary.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 0,
+            role: "primary",
+          },
+          {
+            adapter: createProviderAdapter("katana", fallbackClient),
+            catalogId: fallback.id,
+            providerProfileId: "katana",
+            modelId: fallback.modelId,
+            modelCapabilities: fallback.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 1,
+            role: "fallback",
+            maxCallsPerGame: 3,
+          },
+        ],
+      },
+    );
+
+    expect(await house.generateQuestion(makeDiaryContext())).toContain("who do you trust");
+    expect(primaryRequests).toHaveLength(1);
+    expect(fallbackRequests[0]).toMatchObject({ model: "glm-5-2" });
+    expect(traces[0]?.model).toMatchObject({
+      providerProfileId: "katana",
+      catalogId: "katana:glm-5-2",
+      name: "glm-5-2",
+    });
+  });
+});
+
 describe("LLMHouseInterviewer selective House summary loop", () => {
+  it("keeps Luna House tool calls on Responses with native reasoning", async () => {
+    const requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
+    const luna = modelCatalogEntryById("openai:gpt-5.6-luna");
+    const fallback = modelCatalogEntryById("katana:glm-5-2");
+    if (!luna) throw new Error("Missing OpenAI Luna catalog entry");
+    if (!fallback) throw new Error("Missing GLM catalog entry");
+    const primaryClient = makeHouseSummaryOpenAIStub(requests, [{}]);
+    const house = new LLMHouseInterviewer(
+      primaryClient,
+      luna.modelId,
+      {
+        providerProfileId: "openai",
+        catalogId: luna.id,
+        modelCapabilities: luna.capabilities,
+        reasoningPolicy: "medium",
+        providerManifest: [
+          {
+            adapter: createProviderAdapter("openai", primaryClient),
+            catalogId: luna.id,
+            providerProfileId: "openai",
+            modelId: luna.modelId,
+            modelCapabilities: luna.capabilities,
+            reasoningPolicy: "medium",
+            toolChoiceMode: "named",
+            openAIReasoningSummary: "auto",
+            position: 0,
+            role: "primary",
+          },
+          {
+            adapter: createProviderAdapter("katana", {} as OpenAI),
+            catalogId: fallback.id,
+            providerProfileId: "katana",
+            modelId: fallback.modelId,
+            modelCapabilities: fallback.capabilities,
+            reasoningPolicy: "action-policy",
+            toolChoiceMode: "named",
+            position: 1,
+            role: "fallback",
+            maxCallsPerGame: 3,
+          },
+        ],
+      },
+    );
+
+    await house.generateHouseSummary(makeHouseSummaryContext());
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.params.tools).toBeArray();
+    expect(requests[0]?.params).toMatchObject({
+      model: luna.modelId,
+      store: false,
+      reasoning: { effort: "medium" },
+    });
+    expect(requests[0]?.params).not.toHaveProperty("messages");
+    expect(requests[0]?.params).not.toHaveProperty("reasoning_effort");
+  });
+
+  it("journals empty, malformed, and wrong-tool summary responses through the shared coordinator", async () => {
+    const cases: Array<{
+      response: HouseStubResponse;
+      expectedKind: ProviderAttemptRecord["outcome"]["kind"];
+    }> = [
+      { response: {}, expectedKind: "empty_output" },
+      {
+        response: {
+          rawToolCalls: [{ id: "bad", type: "function", function: { name: "emit_house_summary" } }],
+        },
+        expectedKind: "undecodable_structured_output",
+      },
+      {
+        response: {
+          rawToolCalls: [{
+            id: "wrong",
+            type: "function",
+            function: { name: "not_a_house_summary_tool", arguments: "{}" },
+          }],
+        },
+        expectedKind: "wrong_tool",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const requests: Array<{ params: Record<string, unknown>; options?: Record<string, unknown> }> = [];
+      const attempts: ProviderAttemptRecord[] = [];
+      const house = new LLMHouseInterviewer(
+        makeHouseSummaryOpenAIStub(requests, [testCase.response]),
+        "test-model",
+        {
+          providerExecutionHooks: {
+            onTerminal: (record) => { attempts.push(record); },
+          },
+        },
+      );
+
+      const result = await house.generateHouseSummary(makeHouseSummaryContext());
+
+      expect(result).toMatchObject({ status: "failed", reason: "provider_failure", providerCalls: 1 });
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]?.outcome.kind).toBe(testCase.expectedKind);
+      expect(attempts[0]?.rawResponse?.body).toBeDefined();
+    }
+  });
+
   it("uses one strict provider-usage parser for runtime and evaluation accounting", () => {
-    const parsed = LLMHouseInterviewer.providerUsage({
+    const parsed = LLMHouseInterviewer.providerUsage(normalizeChatCompletion({
       id: "response-alternate-usage",
       service_tier: "future-tier",
       choices: [],
@@ -789,7 +1226,7 @@ describe("LLMHouseInterviewer selective House summary loop", () => {
         input_tokens_details: { cached_tokens: 30, cache_write_tokens: 8 },
         output_tokens_details: { reasoning_tokens: 4 },
       },
-    } as unknown as ChatCompletion, "call-alternate-usage");
+    } as unknown as Parameters<typeof normalizeChatCompletion>[0], "openai.chat_completions"), "call-alternate-usage");
 
     expect(parsed).toMatchObject({
       callId: "call-alternate-usage",
@@ -805,7 +1242,7 @@ describe("LLMHouseInterviewer selective House summary loop", () => {
   });
 
   it("preserves every unreported provider-usage metric as unknown", () => {
-    const parsed = LLMHouseInterviewer.providerUsage({
+    const parsed = LLMHouseInterviewer.providerUsage(normalizeChatCompletion({
       id: "response-partial-usage",
       service_tier: "flex",
       choices: [],
@@ -813,7 +1250,7 @@ describe("LLMHouseInterviewer selective House summary loop", () => {
         prompt_tokens: 90,
         completion_tokens: 14,
       },
-    } as unknown as ChatCompletion, "call-partial-usage");
+    } as unknown as Parameters<typeof normalizeChatCompletion>[0], "openai.chat_completions"), "call-partial-usage");
 
     expect(parsed).toEqual({
       callId: "call-partial-usage",
@@ -1386,7 +1823,7 @@ describe("LLMHouseInterviewer selective House summary loop", () => {
 
       expect(result).toMatchObject({
         status: "failed",
-        reason: "parallel_or_missing_tool_call",
+        reason: "provider_failure",
         providerCalls: 1,
         usage: [{ responseId: "malformed-response", totalTokens: 25 }],
       });

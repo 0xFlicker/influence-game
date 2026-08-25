@@ -245,6 +245,10 @@ function registerMcpResource(
     const response = await params.server.handle(validation.request, auth.context);
     const auditOutcome = classifyJsonRpcResponseForAudit(response);
     const auditedTool = toolName(validation.request);
+    if (auditedTool === "list_trace_manifests" || auditedTool === "read_trace_content") {
+      c.header("Cache-Control", "private, no-store");
+      c.header("Pragma", "no-cache");
+    }
     emitAudit(params.auditLogger, {
       event: "mcp.http.request",
       correlationId,

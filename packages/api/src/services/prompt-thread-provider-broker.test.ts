@@ -121,6 +121,54 @@ describe("PromptThreadProviderBroker", () => {
     });
   });
 
+  it("accepts only strict native Responses function tools for panel cells", async () => {
+    const root = await mkdtemp(join(tmpdir(), "prompt-thread-broker-tools-"));
+    const workspace = await createPrivateWorkspace(root, { gitWorktreeRoots: [] });
+    const broker = new PromptThreadProviderBroker([{ ...cells[0]!, lineage: "opaque-lineage" }]);
+    const request = {
+      model: PROMPT_THREAD_PANEL_MODEL,
+      prompt_cache_key: "opaque-lineage",
+      input: "x".repeat(1_024),
+      tools: [{
+        type: "function",
+        name: "respond_to_mingle",
+        strict: true,
+        parameters: { type: "object", properties: {}, additionalProperties: false },
+      }],
+      tool_choice: { type: "function", name: "respond_to_mingle" },
+      parallel_tool_calls: false,
+    };
+    await withRunMutationLock(workspace, "run-tools", async (lock) => {
+      const result = await broker.dispatch(lock, {
+        cellId: "one",
+        model: PROMPT_THREAD_PANEL_MODEL,
+        request,
+      }, async () => ({
+        id: "response-tools",
+        status: "completed",
+        usage: { input_tokens_details: { cached_tokens: 0 } },
+      }));
+      expect(result.receipt.responseId).toBe("response-tools");
+    });
+
+    const malformed = new PromptThreadProviderBroker([{ ...cells[0]!, lineage: "opaque-lineage" }]);
+    expect(() => malformed.prepare({
+      cellId: "one",
+      model: PROMPT_THREAD_PANEL_MODEL,
+      request: { ...request, tools: [{ type: "function", name: "unsafe" }] },
+    })).not.toThrow();
+    const malformedRoot = await mkdtemp(join(tmpdir(), "prompt-thread-broker-bad-tools-"));
+    const malformedWorkspace = await createPrivateWorkspace(malformedRoot, { gitWorktreeRoots: [] });
+    await withRunMutationLock(malformedWorkspace, "run-bad-tools", async (lock) => {
+      await expect(malformed.dispatch(lock, {
+        cellId: "one",
+        model: PROMPT_THREAD_PANEL_MODEL,
+        request: { ...request, tools: [{ type: "function", name: "unsafe" }] },
+      }, async () => ({ status: "completed" })))
+        .rejects.toThrow(new PromptThreadBrokerError("invalid_request"));
+    });
+  });
+
   it("injects the approved provider envelope and rejects conflicting tiers or ceilings", async () => {
     const root = await mkdtemp(join(tmpdir(), "prompt-thread-broker-envelope-"));
     const workspace = await createPrivateWorkspace(root, { gitWorktreeRoots: [] });

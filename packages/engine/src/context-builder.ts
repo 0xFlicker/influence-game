@@ -810,6 +810,8 @@ export class ContextBuilder {
     },
   ): PhaseContext {
     const player = this.gameState.getPlayer(agentId)!;
+    const providerLogicalCallOrdinal =
+      (this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0) + 1;
 
     const roomAllocations = roomInfo?.includeRoomAllocations && this.currentRoomAllocations.length > 0
       ? this.currentRoomAllocations.map((r) => ({
@@ -827,6 +829,7 @@ export class ContextBuilder {
       gameId: this.gameState.gameId,
       round: this.gameState.round,
       phase,
+      providerLogicalCallOrdinal,
       selfId: agentId,
       selfName: player.name,
       alivePlayers: this.gameState.getAlivePlayers().map((p) => ({ id: p.id, name: p.name, shielded: p.shielded })),

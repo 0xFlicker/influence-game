@@ -13,6 +13,7 @@ import {
   acquireDeploymentAdmissionLease,
   completeDeploymentAdmissionLease,
 } from "../services/deployment-admission.js";
+import { recordProviderHealthOutcomeInTransaction } from "../services/provider-health.js";
 import {
   createCanonicalEventFixture,
   insertCanonicalEventRows,
@@ -92,6 +93,47 @@ describe("free queue season admission", () => {
     expect(await start.json()).toMatchObject({ started: true, gameId: drawn.gameId });
     expect(await db.select().from(schema.legalAcceptances)).toHaveLength(0);
     await abortAllGames();
+  });
+
+  test("Daily start remains waiting when the primary provider circuit opens before claim", async () => {
+    const db = await setupTestDB();
+    const operatorId = await insertUser(db, "provider-health-scheduler");
+    await createQueuedAgent(db, "provider-health-a", "Provider Aster");
+    await createQueuedAgent(db, "provider-health-b", "Provider Maris");
+    const token = await createSessionToken(operatorId, {
+      roles: ["scheduler"],
+      permissions: ["schedule_free_game"],
+      legalAcceptance: null,
+    });
+    const app = new Hono().route("/", createFreeQueueRoutes(db));
+    const draw = await app.request("/api/free-queue/draw", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Idempotency-Key": "daily-free:test:provider-health",
+      },
+    });
+    expect(draw.status).toBe(201);
+    const { gameId } = await draw.json() as { gameId: string };
+    await db.transaction((tx) => recordProviderHealthOutcomeInTransaction(tx, {
+      providerProfileId: "openai",
+      catalogId: "openai:gpt-5.6-luna",
+      outcome: { kind: "authentication", message: "expired key", retryable: false },
+    }));
+
+    const start = await app.request(`/api/free-queue/start?gameId=${gameId}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    expect(start.status).toBe(409);
+    expect(await start.json()).toMatchObject({
+      code: "provider_admission_closed",
+      retryable: true,
+    });
+    expect((await db.select().from(schema.games).where(eq(schema.games.id, gameId)))[0])
+      .toMatchObject({ status: "waiting" });
+    expect(await db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, gameId))).toHaveLength(0);
   });
 
   test("service scheduler endpoints remain forbidden without schedule permission", async () => {
@@ -205,6 +247,19 @@ describe("free queue season admission", () => {
       catalogId: "openai:gpt-5.6-luna",
       reasoningPolicy: "action-policy",
     });
+    expect(gameConfig.providerManifest).toEqual([
+      gameConfig.modelSelection,
+      {
+        catalogId: "katana:glm-5-2",
+        reasoningPolicy: "action-policy",
+        maxCallsPerGame: 24,
+      },
+      {
+        catalogId: "katana:grok-4-5",
+        reasoningPolicy: "action-policy",
+        maxCallsPerGame: 12,
+      },
+    ]);
     expect(gameConfig).not.toHaveProperty("modelTier");
     expect(seats.filter((seat) => seat.userId === null).map((seat) => JSON.parse(seat.agentConfig).model))
       .toEqual(Array(10).fill("gpt-5.6-luna"));

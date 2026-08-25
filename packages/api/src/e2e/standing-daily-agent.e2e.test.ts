@@ -297,7 +297,7 @@ describe("E2E: Standing Daily Agent", () => {
     await playerPage.goto(`${webUrl}/games/free`, { waitUntil: "domcontentloaded" });
     await playerPage.waitForSelector(`a[href='/games/${gameSlug}']`, { timeout: 45_000 });
 
-    const adminPage = await createAuthenticatedPage(browser, adminJwt, `${webUrl}/admin?tab=free-queue`, {
+    const adminPage = await createAuthenticatedPage(browser, adminJwt, `${webUrl}/admin/free-queue`, {
       privateKey: admin.wallet.privateKey,
     });
     await waitForText(adminPage, "Daily Free queue");

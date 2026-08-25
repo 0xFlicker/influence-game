@@ -174,6 +174,18 @@ describe("ContextBuilder", () => {
     expect(ctx.isEliminated).toBe(false);
   });
 
+  it("reconstructs the same phase-owned provider ordinal from the canonical head", () => {
+    const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
+    const before = builder.buildPhaseContext(alice.id, Phase.VOTE);
+    const reconstructed = new ContextBuilder(gs, logger, mingleInbox, 5)
+      .buildPhaseContext(alice.id, Phase.VOTE);
+
+    expect(before.providerLogicalCallOrdinal).toBeGreaterThan(0);
+    expect(reconstructed.providerLogicalCallOrdinal).toBe(
+      before.providerLogicalCallOrdinal,
+    );
+  });
+
   it("buildPhaseContext includes current mingle room inbox (mingleMessages)", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     mingleInbox.set(alice.id, [{ from: "Bob", text: "Secret" }]);

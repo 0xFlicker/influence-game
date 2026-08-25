@@ -152,6 +152,7 @@ const PRODUCER_TOOLS = [
   "list_trace_manifests",
   "read_trace_content",
   "search_reasoning_traces",
+  "read_provider_health",
 ] as const;
 
 export type GameMcpToolName =

@@ -1,8 +1,14 @@
 import OpenAI from "openai";
 import {
   PROVIDER_PROFILES,
+  type ModelReasoningPolicy,
+  type ModelRequestCapabilities,
   type ProviderProfileId,
+  type ResolvedProviderManifestEntry,
 } from "./model-catalog";
+import { createProviderEvidenceFetch } from "./provider-execution";
+import { createProviderAdapter } from "./provider-adapters";
+import type { LlmProviderAdapter } from "./model-invocation";
 
 export type LlmToolChoiceMode = "named" | "required" | "auto" | "json_schema";
 export type OpenAIReasoningSummaryMode = "auto" | "concise" | "detailed";
@@ -21,6 +27,22 @@ export interface LlmClientConfig {
   flexProcessingEnabled: boolean;
   /** Requested game capacity lane. Present only for hosted OpenAI. */
   openAIServiceTier?: OpenAIRequestServiceTier;
+}
+
+/** One credential-free sealed manifest entry paired with its runtime client. */
+export interface LlmProviderRuntime {
+  adapter: LlmProviderAdapter;
+  catalogId: string;
+  providerProfileId: ProviderProfileId;
+  modelId: string;
+  modelCapabilities: ModelRequestCapabilities;
+  reasoningPolicy: ModelReasoningPolicy;
+  toolChoiceMode: LlmToolChoiceMode;
+  openAIReasoningSummary?: OpenAIReasoningSummaryMode;
+  openAIServiceTier?: OpenAIRequestServiceTier;
+  position: number;
+  role: "primary" | "fallback";
+  maxCallsPerGame?: number;
 }
 
 export interface CreateLlmClientOptions {
@@ -358,6 +380,15 @@ export function createLlmClientFromEnv(
       ?? (options.flexProcessing === false ? "auto" : "flex")
     : undefined;
   const flexProcessingEnabled = openAIServiceTier === "flex";
+  const evidenceFetch = createProviderEvidenceFetch(
+    fetch,
+    [apiKey, katanaKey, katanaSecret].filter((value): value is string =>
+      Boolean(value),
+    ),
+  );
+  const providerFetch = flexProcessingEnabled
+    ? createFlexProcessingFetch(evidenceFetch)
+    : evidenceFetch;
 
   return {
     client: new OpenAI({
@@ -365,7 +396,7 @@ export function createLlmClientFromEnv(
       ...(baseURL && { baseURL }),
       ...(options.timeout !== undefined && { timeout: options.timeout }),
       ...(options.maxRetries !== undefined && { maxRetries: options.maxRetries }),
-      ...(flexProcessingEnabled && { fetch: createFlexProcessingFetch() }),
+      fetch: providerFetch,
     }),
     apiKeySource: apiKeyConfig?.key ?? "local-default",
     baseURL,
@@ -377,6 +408,56 @@ export function createLlmClientFromEnv(
     ...(openAIServiceTier && { openAIServiceTier }),
     ...(providerProfileId === "openai" && openAIReasoningSummary && { openAIReasoningSummary }),
   };
+}
+
+/** Resolve one client per provider profile, then bind every sealed entry. */
+export function createLlmProviderRuntimesFromEnv(
+  manifest: readonly ResolvedProviderManifestEntry[],
+  env: NodeJS.ProcessEnv = process.env,
+  options: Omit<CreateLlmClientOptions, "providerProfileId"> = {},
+): LlmProviderRuntime[] | null {
+  const clients = new Map<ProviderProfileId, LlmClientConfig>();
+  const adapters = new Map<ProviderProfileId, LlmProviderAdapter>();
+  const runtimes: LlmProviderRuntime[] = [];
+  for (const entry of manifest) {
+    let config = clients.get(entry.providerProfile.id);
+    if (!config) {
+      config = createLlmClientFromEnv(env, {
+        ...options,
+        maxRetries: 0,
+        providerProfileId: entry.providerProfile.id,
+      }) ?? undefined;
+      if (!config) return null;
+      clients.set(entry.providerProfile.id, config);
+    }
+    let adapter = adapters.get(entry.providerProfile.id);
+    if (!adapter) {
+      adapter = createProviderAdapter(entry.providerProfile.id, config.client);
+      adapters.set(entry.providerProfile.id, adapter);
+    }
+    runtimes.push({
+      adapter,
+      catalogId: entry.catalogId,
+      providerProfileId: entry.providerProfile.id,
+      modelId: entry.modelId,
+      modelCapabilities: entry.model.capabilities,
+      reasoningPolicy: entry.reasoningPolicy,
+      toolChoiceMode:
+        entry.model.preferredToolChoiceMode ?? config.toolChoiceMode,
+      ...(config.openAIReasoningSummary && {
+        openAIReasoningSummary: config.openAIReasoningSummary,
+      }),
+      ...(config.openAIServiceTier && {
+        openAIServiceTier: config.openAIServiceTier,
+      }),
+      position: entry.position,
+      role: entry.role,
+      ...(entry.maxCallsPerGame !== undefined && {
+        maxCallsPerGame: entry.maxCallsPerGame,
+      }),
+    });
+  }
+  return runtimes;
 }
 
 export function describeLlmProvider(config: LlmClientConfig): string {

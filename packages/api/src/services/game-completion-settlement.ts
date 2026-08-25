@@ -905,6 +905,7 @@ export async function settleCapturedGameCompletion(
         status: schema.games.status,
         trackType: schema.games.trackType,
         seasonId: schema.games.seasonId,
+        config: schema.games.config,
       }).from(schema.games)
         .where(eq(schema.games.id, gameId))
         .for("update")
@@ -1087,11 +1088,20 @@ export async function settleCapturedGameCompletion(
         });
       }
 
+      const currentConfig = assertJsonRecord(
+        JSON.parse(game.config) as unknown,
+        `Completion game ${gameId} has an invalid config`,
+      );
+      const completionConfig = { ...envelope.completionConfig };
+      if (currentConfig.providerManifest !== undefined) {
+        completionConfig.providerManifest = currentConfig.providerManifest;
+      }
+
       const completed = await tx.update(schema.games)
         .set({
           status: "completed",
           endedAt: envelope.finishedAt,
-          config: JSON.stringify(envelope.completionConfig),
+          config: JSON.stringify(completionConfig),
         })
         .where(and(
           eq(schema.games.id, gameId),

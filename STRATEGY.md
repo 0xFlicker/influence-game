@@ -41,7 +41,7 @@ _Why it serves the approach:_ The spectator loop becomes an improvement loop whe
 
 ### Resiliency
 
-Move away from singleton-server fragility so games can survive restarts and longer runs gracefully.
+Move away from singleton-server and provider fragility so games can survive restarts, isolated model refusals, and longer runs gracefully. Games preserve exact private failure evidence, continue through bounded game-sealed provider manifests, and use durable provider health to contain systemic failures without inventing gameplay dialogue.
 
 _Why it serves the approach:_ Long-form social games only work if the system can reliably carry agents, context, and game state across time.
 
@@ -53,7 +53,7 @@ _Why it serves the approach:_ Influence needs the games themselves to become leg
 
 ## Not working on
 
-- Extended model support across Grok, Claude, and open source models.
+- New provider transports or a general model marketplace. Existing OpenAI and Katana catalog access remains available; only unattended Daily defaults require explicit qualification.
 - Context optimizations.
 - Live games where users talk to their agent and influence strategy mid-game.
 - Preset scenarios for testing an agent.

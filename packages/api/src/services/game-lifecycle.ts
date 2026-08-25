@@ -15,10 +15,10 @@ import {
   Phase,
   TokenTracker,
   createLlmClientFromEnv,
+  createLlmProviderRuntimesFromEnv,
   estimateCostForKnownModel,
-  normalizeGameModelSelection,
   normalizeOpenAIRequestServiceTier,
-  resolveModelSelection,
+  resolveProviderManifestFromGameConfig,
   resolveFormatManifest,
 } from "@influence/engine";
 import type {
@@ -33,6 +33,7 @@ import type {
   PhaseContext,
   PlayerContinuityCapsule,
   ProviderProfileId,
+  ResolvedProviderManifestEntry,
   PrivateDecisionTrace,
   PrivateTraceSink,
   PowerAction,
@@ -63,11 +64,11 @@ import {
   markGameSuspended,
   markOwnerStartupFailed,
   renewGameRunOwner,
+  suspendClaimedRecoveryOwner,
   type OwnerStartupFailureResult,
 } from "./game-ownership.js";
 import { writePrivateDecisionTrace } from "./private-trace-writer.js";
 import { writeCognitiveArtifactsForTrace } from "./cognitive-artifact-writer.js";
-import { recordProviderSpendForTrace } from "./provider-cost-accounting.js";
 import { recordPromptReuseForTrace } from "./prompt-reuse-accounting.js";
 import {
   findStartupRecoverableGameIds,
@@ -90,6 +91,8 @@ import {
 } from "./game-completion-settlement.js";
 import { serializeTranscriptEntry } from "./transcript-serialization.js";
 import { tryReconcileAcceptedActionCorrelations } from "./accepted-action-correlation.js";
+import { createApiProviderExecutionHooks } from "./provider-call-journal.js";
+import { checkDailyProviderAdmission } from "./provider-health.js";
 
 export { serializeTranscriptEntry } from "./transcript-serialization.js";
 
@@ -163,7 +166,6 @@ function createPrivateTraceSink(
       gameId,
       ownerEpoch,
     };
-    let traceManifestId: string | undefined;
     try {
       const cognitiveResult = await writeCognitiveArtifactsForTrace(db, {
         gameId,
@@ -189,8 +191,6 @@ function createPrivateTraceSink(
       });
       if (!result.ok) {
         console.warn(`[game-lifecycle] Private trace degraded for game ${gameId}: ${result.error}`);
-      } else {
-        traceManifestId = result.manifestId;
       }
     } catch (error) {
       console.warn(`[game-lifecycle] Private trace sink failed for game ${gameId}:`, error);
@@ -202,18 +202,6 @@ function createPrivateTraceSink(
       console.warn(`[game-lifecycle] Prompt reuse capture failed for game ${gameId}:`, error);
     }
 
-    try {
-      await recordProviderSpendForTrace(db, {
-        gameId,
-        ownerEpoch,
-        trace: enrichedTrace,
-        eventSequence: trace.boundary?.finalEventSequence,
-        ...(traceManifestId && { traceManifestId }),
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.warn(`[game-lifecycle] Cost accounting capture failed for game ${gameId}: ${message}`);
-    }
   };
 }
 
@@ -454,9 +442,7 @@ async function captureCompletedGame(
     gameConfig: Record<string, unknown>;
   },
 ): Promise<void> {
-  const resolvedModelSelection = resolveModelSelection(
-    normalizeGameModelSelection(params.gameConfig.modelSelection),
-  );
+  const resolvedModelSelection = resolveProviderManifestFromGameConfig(params.gameConfig)[0]!;
   const model = resolvedModelSelection.modelId;
   const usage = params.tokenTracker.getTotalUsage();
   const cost = estimateCostForKnownModel(usage, model);
@@ -549,6 +535,21 @@ function providerPreflightTimeoutMs(env: NodeJS.ProcessEnv): number {
   return Number.isFinite(configured) && configured > 0 ? configured : 10_000;
 }
 
+const DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS = 45_000;
+const MIN_PROVIDER_REQUEST_TIMEOUT_MS = 1_000;
+const MAX_PROVIDER_REQUEST_TIMEOUT_MS = 5 * 60_000;
+
+export function providerRequestTimeoutMs(env: NodeJS.ProcessEnv): number {
+  const configured = Number(env.INFLUENCE_LLM_REQUEST_TIMEOUT_MS);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_PROVIDER_REQUEST_TIMEOUT_MS;
+  }
+  return Math.max(
+    MIN_PROVIDER_REQUEST_TIMEOUT_MS,
+    Math.min(MAX_PROVIDER_REQUEST_TIMEOUT_MS, Math.floor(configured)),
+  );
+}
+
 function publicProviderStartupError(error: unknown): string {
   if (error instanceof Error && error.message.trim()) {
     return error.message;
@@ -583,13 +584,60 @@ export async function preflightSelectedModel(
   await llmConfig.client.models.retrieve(modelId);
 }
 
+export async function preflightProviderManifest(
+  manifest: readonly ResolvedProviderManifestEntry[],
+  createClient: (providerProfileId: ProviderProfileId) => ModelPreflightClient | null,
+): Promise<void> {
+  const providerEntries = new Map<
+    ProviderProfileId,
+    { client: ModelPreflightClient; modelIds: string[] }
+  >();
+  for (const entry of manifest) {
+    const providerProfileId = entry.providerProfile.id;
+    let provider = providerEntries.get(providerProfileId);
+    if (!provider) {
+      const client = createClient(providerProfileId);
+      if (!client) {
+        throw new Error("LLM provider not configured");
+      }
+      provider = { client, modelIds: [] };
+      providerEntries.set(providerProfileId, provider);
+    }
+    provider.modelIds.push(entry.modelId);
+  }
+
+  await Promise.all([...providerEntries].map(async ([providerProfileId, provider]) => {
+    if (providerProfileId === "katana") {
+      const models = await provider.client.client.models.list();
+      const availableModelIds = new Set(models.data?.map((model) => model.id) ?? []);
+      const unavailableModelId = provider.modelIds.find(
+        (modelId) => !availableModelIds.has(modelId),
+      );
+      if (unavailableModelId) {
+        throw new Error(
+          `Model ${unavailableModelId} is not available from ${provider.client.providerLabel}`,
+        );
+      }
+      return;
+    }
+
+    await Promise.all(provider.modelIds.map(
+      (modelId) => preflightSelectedModel(provider.client, modelId, providerProfileId),
+    ));
+  }));
+}
+
 export async function validateGameStartReadiness(
   db: DrizzleDB,
   gameId: string,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<{
   error?: string;
-  code?: "deployment_admission_closed" | "deployment_admission_unavailable";
+  code?:
+    | "deployment_admission_closed"
+    | "deployment_admission_unavailable"
+    | "provider_admission_closed"
+    | "provider_admission_unavailable";
   retryable?: boolean;
 }> {
   const admission = await checkGameStartAdmission(db);
@@ -611,27 +659,20 @@ export async function validateGameStartReadiness(
     return { error: "Invalid game configuration" };
   }
 
-  let resolvedModelSelection;
+  let resolvedProviderManifest;
   try {
-    resolvedModelSelection = resolveModelSelection(
-      normalizeGameModelSelection(gameConfig.modelSelection),
-    );
+    resolvedProviderManifest = resolveProviderManifestFromGameConfig(gameConfig);
   } catch (error) {
     return { error: publicProviderStartupError(error) };
   }
 
-  if (env.INFLUENCE_API_TEST_MOCK_RUNNER === "true") {
-    return {};
+  if (game.trackType === "free") {
+    const providerAdmission = await checkDailyProviderAdmission(db, resolvedProviderManifest);
+    if (!providerAdmission.ok) return providerAdmission;
   }
 
-  const llmConfig = createLlmClientFromEnv(env, {
-    maxRetries: 0,
-    providerProfileId: resolvedModelSelection.providerProfile.id,
-    timeout: providerPreflightTimeoutMs(env),
-    openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
-  });
-  if (!llmConfig) {
-    return { error: "LLM provider not configured" };
+  if (env.INFLUENCE_API_TEST_MOCK_RUNNER === "true") {
+    return {};
   }
 
   if (!providerPreflightEnabled(env)) {
@@ -639,14 +680,22 @@ export async function validateGameStartReadiness(
   }
 
   try {
-    await preflightSelectedModel(
-      llmConfig,
-      resolvedModelSelection.modelId,
-      resolvedModelSelection.providerProfile.id,
+    await preflightProviderManifest(
+      resolvedProviderManifest,
+      (providerProfileId) => createLlmClientFromEnv(env, {
+        maxRetries: 0,
+        providerProfileId,
+        timeout: providerPreflightTimeoutMs(env),
+        openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
+      }),
     );
   } catch (error) {
+    const message = publicProviderStartupError(error);
+    if (message === "LLM provider not configured") {
+      return { error: message };
+    }
     return {
-      error: `LLM provider preflight failed: ${publicProviderStartupError(error)}`,
+      error: `LLM provider preflight failed: ${message}`,
     };
   }
 
@@ -692,17 +741,20 @@ export async function startGame(
   const gameConfig = JSON.parse(game.config) as Record<string, unknown>;
 
   const useTestMockRunner = process.env.INFLUENCE_API_TEST_MOCK_RUNNER === "true";
-  const resolvedModelSelection = resolveModelSelection(
-    normalizeGameModelSelection(gameConfig.modelSelection),
-  );
+  const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
 
-  const llmConfig = useTestMockRunner
+  const providerRuntimes = useTestMockRunner
     ? null
-    : createLlmClientFromEnv(process.env, {
-        providerProfileId: resolvedModelSelection.providerProfile.id,
-        openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
-      });
-  if (!llmConfig) {
+    : createLlmProviderRuntimesFromEnv(
+        resolveProviderManifestFromGameConfig(gameConfig),
+        process.env,
+        {
+          openAIServiceTier: normalizeOpenAIRequestServiceTier(gameConfig.serviceTier) ?? "flex",
+          timeout: providerRequestTimeoutMs(process.env),
+        },
+      );
+  const primaryRuntime = providerRuntimes?.[0];
+  if (!primaryRuntime) {
     if (!useTestMockRunner) {
       return { error: "LLM provider not configured" };
     }
@@ -713,7 +765,10 @@ export async function startGame(
   const privateTraceSink = ownerEpoch
     ? createPrivateTraceSink(db, gameId, ownerEpoch, game.cognitiveArtifactCaptureVersion)
     : undefined;
-  const toolChoiceMode = resolvedModelSelection.model.preferredToolChoiceMode ?? llmConfig?.toolChoiceMode;
+  const providerExecutionHooks = ownerEpoch
+    ? createApiProviderExecutionHooks(db, { gameId, ownerEpoch })
+    : undefined;
+  const toolChoiceMode = primaryRuntime?.toolChoiceMode;
 
   // Construct agents from player records
   const agents: IAgent[] = players.map((player) => {
@@ -728,7 +783,7 @@ export async function startGame(
       return new ApiTestMockAgent(player.id, persona.name);
     }
 
-    if (!llmConfig) {
+    if (!primaryRuntime || !providerRuntimes) {
       throw new Error("LLM provider not configured");
     }
 
@@ -751,13 +806,13 @@ export async function startGame(
       player.id,
       persona.name,
       personality,
-      llmConfig.client,
+      primaryRuntime.adapter,
       model,
       persona.backstory,
       memoryStore,
       {
         ...(playerToolChoiceMode && { toolChoiceMode: playerToolChoiceMode }),
-        ...(llmConfig.openAIReasoningSummary && { openAIReasoningSummary: llmConfig.openAIReasoningSummary }),
+        ...(primaryRuntime.openAIReasoningSummary && { openAIReasoningSummary: primaryRuntime.openAIReasoningSummary }),
         providerProfileId: resolvedModelSelection.providerProfile.id,
         catalogId: resolvedModelSelection.catalogId,
         modelCapabilities: resolvedModelSelection.model.capabilities,
@@ -766,6 +821,8 @@ export async function startGame(
         ...(player.agentProfileId && persona.strategyHints && { strategyInstructions: persona.strategyHints }),
         ...(agentCfg.temperature !== undefined && { temperature: agentCfg.temperature }),
         ...(privateTraceSink && { privateTraceSink }),
+        ...(providerExecutionHooks && { providerExecutionHooks }),
+        providerManifest: providerRuntimes,
       },
     );
     agent.setTokenTracker(tokenTracker);
@@ -774,9 +831,9 @@ export async function startGame(
 
   const engineConfig = buildEngineConfigFromGameRecord(gameConfig, game.minPlayers, game.maxPlayers);
 
-  const houseInterviewer = !useTestMockRunner && llmConfig
+  const houseInterviewer = !useTestMockRunner && primaryRuntime && providerRuntimes
     ? new LLMHouseInterviewer(
-        llmConfig.client,
+        primaryRuntime.adapter,
         resolvedModelSelection.modelId,
         {
           gameId,
@@ -787,6 +844,8 @@ export async function startGame(
           reasoningPolicy: resolvedModelSelection.reasoningPolicy,
           ...(ownerEpoch && { ownerEpoch }),
           ...(privateTraceSink && { privateTraceSink }),
+          ...(providerExecutionHooks && { providerExecutionHooks }),
+          providerManifest: providerRuntimes,
         },
       )
     : undefined;
@@ -911,7 +970,17 @@ export async function recoverGame(
   if (!owner.ok) {
     return { error: owner.error };
   }
-  options.signal?.throwIfAborted();
+  try {
+    options.signal?.throwIfAborted();
+  } catch (error) {
+    await suspendClaimedRecoveryOwner(
+      db,
+      gameId,
+      owner.claim.ownerEpoch,
+      "recovery_cancelled_before_start",
+    );
+    throw error;
+  }
 
   let startupError: string | undefined;
   try {

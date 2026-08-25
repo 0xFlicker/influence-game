@@ -48,14 +48,14 @@ All surfaces share a common auth layer: **SIWE (Sign-In with Ethereum)** via Rai
 │  PLAYERS                                                              │
 │  ┌──────────────────────────────────────────────────────────────┐    │
 │  │  Player count: [ 6 ] [ 8 ] [10] [12]       (radio)          │    │
-│  │  Slot type:    ○ All AI   ○ Mixed (human + AI fill)           │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                       │
-│  MODEL TIER                                                           │
+│  PROVIDER MANIFEST                                                    │
 │  ┌──────────────────────────────────────────────────────────────┐    │
-│  │  ○ Budget    gpt-4o-mini       ~$0.05/game                    │    │
-│  │  ○ Standard  gpt-4o            ~$0.79/game                    │    │
-│  │  ○ Premium   o1-mini           ~$2.10/game  (est.)            │    │
+│  │  Primary     OpenAI GPT-5.6 Luna          [Adaptive]          │    │
+│  │  Fallback 1  Katana Grok 4.5      [12 calls] [Adaptive]       │    │
+│  │  Fallback 2  Katana GLM 5.2       [24 calls] [Adaptive]       │    │
+│  │  [Add fallback]        [Move up/down] [Remove]                │    │
 │  └──────────────────────────────────────────────────────────────┘    │
 │                                                                       │
 │  PERSONA POOL                                                         │

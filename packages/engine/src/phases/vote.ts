@@ -1,6 +1,12 @@
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import type { TargetDecision } from "../game-runner.types";
+import type { EngineFallbackReason } from "../game-runner.types";
+import { ProviderUnavailableError } from "../provider-execution";
+import {
+  deterministicEngineFallback,
+  engineFallbackMetadata,
+} from "../engine-fallback";
 import {
   assertCanAcceptCommit,
   agentTurnSourcePointer,
@@ -20,34 +26,66 @@ async function withEndgameVoteTimeout(
   ctx: PhaseRunnerContext,
   label: string,
   operation: (signal: AbortSignal) => Promise<TargetDecision>,
-  fallback: () => TargetDecision,
+  fallback: (reason: EngineFallbackReason) => TargetDecision,
 ): Promise<TargetDecision> {
   const timeoutMs = ctx.config.agentActionTimeoutMs;
-  if (!timeoutMs || timeoutMs < 1) return operation(new AbortController().signal);
+  if (!timeoutMs || timeoutMs < 1) {
+    try {
+      return await operation(new AbortController().signal);
+    } catch (error) {
+      if (!(error instanceof ProviderUnavailableError)) throw error;
+      return fallback("provider_exhausted");
+    }
+  }
 
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<TargetDecision>((resolve) => {
     timeout = setTimeout(() => {
       ctx.logger.logSystem(`${label} timed out after ${timeoutMs}ms; using House fallback.`, Phase.VOTE);
-      resolve(fallback());
+      resolve(fallback("action_timed_out"));
       controller.abort();
     }, timeoutMs);
   });
 
-  return Promise.race([operation(controller.signal), timeoutPromise]).finally(() => {
+  return Promise.race([
+    operation(controller.signal).catch((error) => {
+      if (!(error instanceof ProviderUnavailableError)) throw error;
+      return fallback("provider_exhausted");
+    }),
+    timeoutPromise,
+  ]).finally(() => {
     if (timeout) clearTimeout(timeout);
   });
 }
 
-function fallbackEliminationTarget(ctx: PhaseRunnerContext, voterId: UUID): UUID {
-  return ctx.gameState.getAlivePlayerIds().find((id) => id !== voterId) ?? voterId;
-}
-
-function fallbackEliminationDecision(ctx: PhaseRunnerContext, voterId: UUID): TargetDecision {
+function fallbackEliminationDecision(
+  ctx: PhaseRunnerContext,
+  voterId: UUID,
+  legalTargets = ctx.gameState.getAlivePlayerIds().filter((id) => id !== voterId),
+  reason: EngineFallbackReason = "provider_exhausted",
+): TargetDecision {
   return {
-    target: fallbackEliminationTarget(ctx, voterId),
-    thinking: "House fallback after unresolved endgame vote.",
+    target: deterministicEngineFallback(
+      legalTargets,
+      {
+        gameId: ctx.gameState.gameId,
+        round: ctx.gameState.round,
+        phase: Phase.VOTE,
+      },
+      voterId,
+      "endgame-elimination-vote",
+    ),
+    ...engineFallbackMetadata(
+      {
+        gameId: ctx.gameState.gameId,
+        round: ctx.gameState.round,
+        phase: Phase.VOTE,
+      },
+      voterId,
+      "endgame-elimination-vote",
+      reason,
+    ),
   };
 }
 
@@ -91,7 +129,45 @@ export async function runVotePhase(
     alivePlayers.map(async (player) => {
       const agent = agents.get(player.id)!;
       const phaseCtx = prepareAgentPhaseContext(ctx, agent, player.id, Phase.VOTE, "strategic_decision");
-      const votes = await agent.getVotes(phaseCtx);
+      const legalTargets = alivePlayers
+        .filter((candidate) => candidate.id !== player.id)
+        .map((candidate) => candidate.id);
+      let votes;
+      try {
+        votes = await agent.getVotes(phaseCtx);
+      } catch (error) {
+        if (!(error instanceof ProviderUnavailableError)) throw error;
+        votes = {
+          empowerTarget: deterministicEngineFallback(
+            legalTargets,
+            phaseCtx,
+            player.id,
+            "vote",
+          ),
+          ...engineFallbackMetadata(
+            phaseCtx,
+            player.id,
+            "vote",
+            "provider_exhausted",
+          ),
+        };
+      }
+      if (!legalTargets.includes(votes.empowerTarget)) {
+        votes = {
+          empowerTarget: deterministicEngineFallback(
+            legalTargets,
+            phaseCtx,
+            player.id,
+            "vote",
+          ),
+          ...engineFallbackMetadata(
+            phaseCtx,
+            player.id,
+            "vote",
+            "invalid_model_output",
+          ),
+        };
+      }
 
       await assertCanAcceptCommit(ctx);
       // Format kernel: empower-only ballot. exposeTarget intentionally omitted.
@@ -102,7 +178,8 @@ export async function runVotePhase(
           gameState.round,
           Phase.VOTE,
           undefined,
-          votes.decisionId,
+          votes.engineFallback ? undefined : votes.decisionId,
+          votes.engineFallback,
         ),
       ]);
       resolveActionStrategyCandidate(
@@ -112,7 +189,7 @@ export async function runVotePhase(
       );
 
       const empowerName = gameState.getPlayerName(votes.empowerTarget);
-      const transcriptThinking = transcriptThinkingFor(agent, votes.thinking, votes.reasoningContext);
+      const transcriptThinking = transcriptThinkingFor(agent, votes.thinking, votes.reasoningContext, votes);
       logger.logSystem(
         `${player.name} votes: empower=${empowerName}`,
         Phase.VOTE,
@@ -166,9 +243,44 @@ export async function runVotePhase(
           const originalVote = originalVotesByPlayerId.get(player.id) ?? {
             empowerTarget: gameState.currentVoteTally.empowerVotes[player.id] ?? tied[0]!,
           };
-          const revote = await agent.getEmpowerRevote(phaseCtx, tied, originalVote);
+          let revote;
+          try {
+            revote = await agent.getEmpowerRevote(phaseCtx, tied, originalVote);
+          } catch (error) {
+            if (!(error instanceof ProviderUnavailableError)) throw error;
+            revote = {
+              empowerTarget: deterministicEngineFallback(
+                tied,
+                phaseCtx,
+                player.id,
+                "empower-revote",
+              ),
+              ...engineFallbackMetadata(
+                phaseCtx,
+                player.id,
+                "empower-revote",
+                "provider_exhausted",
+              ),
+            };
+          }
           const acceptedDirectly = tied.includes(revote.empowerTarget);
-          const empowerTarget = acceptedDirectly ? revote.empowerTarget : tied[0]!;
+          if (!acceptedDirectly) {
+            revote = {
+              empowerTarget: deterministicEngineFallback(
+                tied,
+                phaseCtx,
+                player.id,
+                "empower-revote",
+              ),
+              ...engineFallbackMetadata(
+                phaseCtx,
+                player.id,
+                "empower-revote",
+                "invalid_model_output",
+              ),
+            };
+          }
+          const empowerTarget = revote.empowerTarget;
           await assertCanAcceptCommit(ctx);
           gameState.recordEmpowerReVote(player.id, empowerTarget, [
             agentTurnSourcePointer(
@@ -177,17 +289,18 @@ export async function runVotePhase(
               gameState.round,
               Phase.VOTE,
               undefined,
-              acceptedDirectly ? revote.decisionId : undefined,
+              revote.engineFallback ? undefined : revote.decisionId,
+              revote.engineFallback,
             ),
           ]);
           resolveActionStrategyCandidate(
             agent,
             revote,
-            acceptedDirectly && revote.strategyGameplayAccepted !== false,
+            !revote.engineFallback && revote.strategyGameplayAccepted !== false,
           );
           revoteTargetsByPlayerId.set(player.id, empowerTarget);
           const empowerName = gameState.getPlayerName(empowerTarget);
-          const transcriptThinking = transcriptThinkingFor(agent, revote.thinking, revote.reasoningContext);
+          const transcriptThinking = transcriptThinkingFor(agent, revote.thinking, revote.reasoningContext, revote);
           logger.logSystem(`${player.name} re-votes: empower=${empowerName}`, Phase.VOTE, transcriptThinking.thinking, transcriptThinking.reasoningContext);
           logger.emitAgentTurn({
             phase: Phase.VOTE,
@@ -303,26 +416,31 @@ export async function runReckoningVote(
         ctx,
         `${player.name} reckoning vote`,
         (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
-        () => fallbackEliminationDecision(ctx, player.id),
+        (reason) => fallbackEliminationDecision(ctx, player.id, undefined, reason),
       );
+      const legalTargets = alivePlayers.filter((candidate) => candidate.id !== player.id).map((candidate) => candidate.id);
+      const acceptedVote = legalTargets.includes(vote.target)
+        ? vote
+        : fallbackEliminationDecision(ctx, player.id, legalTargets, "invalid_model_output");
       await assertCanAcceptCommit(ctx);
-      gameState.recordEndgameEliminationVote(player.id, vote.target, [
+      gameState.recordEndgameEliminationVote(player.id, acceptedVote.target, [
         agentTurnSourcePointer(
           player.id,
           "elimination-vote",
           gameState.round,
           Phase.VOTE,
           undefined,
-          vote.decisionId,
+          acceptedVote.engineFallback ? undefined : acceptedVote.decisionId,
+          acceptedVote.engineFallback,
         ),
       ]);
       resolveActionStrategyCandidate(
         agent,
-        vote,
-        vote.strategyGameplayAccepted !== false,
+        acceptedVote,
+        !acceptedVote.engineFallback && acceptedVote.strategyGameplayAccepted !== false,
       );
-      const targetName = gameState.getPlayerName(vote.target);
-      const transcriptThinking = transcriptThinkingFor(agent, vote.thinking, vote.reasoningContext);
+      const targetName = gameState.getPlayerName(acceptedVote.target);
+      const transcriptThinking = transcriptThinkingFor(agent, acceptedVote.thinking, acceptedVote.reasoningContext, acceptedVote);
       logger.logSystem(
         `${player.name} votes to eliminate: ${targetName}`,
         Phase.VOTE,
@@ -335,12 +453,12 @@ export async function runReckoningVote(
         actor: { id: player.id, name: player.name, role: "player" },
         visibility: "private",
         response: {
-          target: { id: vote.target, name: targetName },
+          target: { id: acceptedVote.target, name: targetName },
           stage: "reckoning",
-          ...strategicDecisionResponse(vote),
+          ...strategicDecisionResponse(acceptedVote),
         },
-        thinking: vote.thinking,
-        reasoningContext: vote.reasoningContext,
+        thinking: acceptedVote.thinking,
+        reasoningContext: acceptedVote.reasoningContext,
         scope: "system",
         text: `${player.name} votes to eliminate: ${targetName}`,
       });
@@ -383,26 +501,31 @@ export async function runTribunalVote(
         ctx,
         `${player.name} tribunal vote`,
         (signal) => agent.getEndgameEliminationVote(phaseCtx, { signal }),
-        () => fallbackEliminationDecision(ctx, player.id),
+        (reason) => fallbackEliminationDecision(ctx, player.id, undefined, reason),
       );
+      const legalTargets = alivePlayers.filter((candidate) => candidate.id !== player.id).map((candidate) => candidate.id);
+      const acceptedVote = legalTargets.includes(vote.target)
+        ? vote
+        : fallbackEliminationDecision(ctx, player.id, legalTargets, "invalid_model_output");
       await assertCanAcceptCommit(ctx);
-      gameState.recordEndgameEliminationVote(player.id, vote.target, [
+      gameState.recordEndgameEliminationVote(player.id, acceptedVote.target, [
         agentTurnSourcePointer(
           player.id,
           "elimination-vote",
           gameState.round,
           Phase.VOTE,
           undefined,
-          vote.decisionId,
+          acceptedVote.engineFallback ? undefined : acceptedVote.decisionId,
+          acceptedVote.engineFallback,
         ),
       ]);
       resolveActionStrategyCandidate(
         agent,
-        vote,
-        vote.strategyGameplayAccepted !== false,
+        acceptedVote,
+        !acceptedVote.engineFallback && acceptedVote.strategyGameplayAccepted !== false,
       );
-      const targetName = gameState.getPlayerName(vote.target);
-      const transcriptThinking = transcriptThinkingFor(agent, vote.thinking, vote.reasoningContext);
+      const targetName = gameState.getPlayerName(acceptedVote.target);
+      const transcriptThinking = transcriptThinkingFor(agent, acceptedVote.thinking, acceptedVote.reasoningContext, acceptedVote);
       logger.logSystem(
         `${player.name} votes to eliminate: ${targetName}`,
         Phase.VOTE,
@@ -415,12 +538,12 @@ export async function runTribunalVote(
         actor: { id: player.id, name: player.name, role: "player" },
         visibility: "private",
         response: {
-          target: { id: vote.target, name: targetName },
+          target: { id: acceptedVote.target, name: targetName },
           stage: "tribunal",
-          ...strategicDecisionResponse(vote),
+          ...strategicDecisionResponse(acceptedVote),
         },
-        thinking: vote.thinking,
-        reasoningContext: vote.reasoningContext,
+        thinking: acceptedVote.thinking,
+        reasoningContext: acceptedVote.reasoningContext,
         scope: "system",
         text: `${player.name} votes to eliminate: ${targetName}`,
       });
@@ -455,10 +578,13 @@ export async function runTribunalVote(
             decisionAction: "tribunal-jury-tiebreaker-vote",
             decisionLabel: "Tribunal Jury Tiebreaker Vote",
           }),
-          () => fallbackEliminationDecision(ctx, juror.playerId),
+          (reason) => fallbackEliminationDecision(ctx, juror.playerId, tribunalTieCandidates, reason),
         );
-        juryTiebreakerVotes[juror.playerId] = vote.target;
-        if (vote.decisionId && tribunalTieCandidates.includes(vote.target)) {
+        const acceptedVote = tribunalTieCandidates.includes(vote.target)
+          ? vote
+          : fallbackEliminationDecision(ctx, juror.playerId, tribunalTieCandidates, "invalid_model_output");
+        juryTiebreakerVotes[juror.playerId] = acceptedVote.target;
+        if (acceptedVote.decisionId || acceptedVote.engineFallback) {
           juryTiebreakerSourcePointers.push(
             agentTurnSourcePointer(
               juror.playerId,
@@ -466,11 +592,12 @@ export async function runTribunalVote(
               gameState.round,
               Phase.VOTE,
               undefined,
-              vote.decisionId,
+              acceptedVote.engineFallback ? undefined : acceptedVote.decisionId,
+              acceptedVote.engineFallback,
             ),
           );
         }
-        const targetName = gameState.getPlayerName(vote.target);
+        const targetName = gameState.getPlayerName(acceptedVote.target);
         await assertCanAcceptCommit(ctx);
         logger.emitAgentTurn({
           phase: Phase.VOTE,
@@ -478,12 +605,12 @@ export async function runTribunalVote(
           actor: { id: juror.playerId, name: juror.playerName, role: "juror" },
           visibility: "private",
           response: {
-            target: { id: vote.target, name: targetName },
+            target: { id: acceptedVote.target, name: targetName },
             stage: "tribunal",
-            ...strategicDecisionResponse(vote),
+            ...strategicDecisionResponse(acceptedVote),
           },
-          thinking: vote.thinking,
-          reasoningContext: vote.reasoningContext,
+          thinking: acceptedVote.thinking,
+          reasoningContext: acceptedVote.reasoningContext,
           scope: "system",
           text: `${juror.playerName} jury tiebreaker vote -> ${targetName}`,
         });

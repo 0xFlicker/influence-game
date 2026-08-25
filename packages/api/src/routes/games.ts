@@ -83,11 +83,13 @@ import {
   MIN_NEW_GAME_PLAYERS,
   getHousePersonaDetails,
   normalizeGameModelSelection,
+  normalizeProviderManifest,
   normalizeOpenAIRequestServiceTier,
   pickAgentNames,
   pickArchetypes,
   resolveFormatManifest,
   resolveModelSelection,
+  resolveProviderManifestFromGameConfig,
 } from "@influence/engine";
 import type { Personality } from "@influence/engine";
 
@@ -129,13 +131,13 @@ export function createGameRoutes(
 
     const {
       playerCount,
+      providerManifest,
       modelSelection,
       personaPool,
       fillStrategy,
       timingPreset,
       maxRounds,
       visibility,
-      slotType,
       viewerMode,
       serviceTier,
       formatManifest,
@@ -206,19 +208,29 @@ export function createGameRoutes(
     if (!normalizedServiceTier) {
       return c.json({ error: "Invalid service tier" }, 400);
     }
-    const normalizedModelSelection = normalizeGameModelSelection(modelSelection);
-    if (!normalizedModelSelection) {
-      return c.json({ error: "Invalid model selection" }, 400);
-    }
-    let resolvedModelSelection;
+    let frozenProviderManifest;
     try {
-      resolvedModelSelection = resolveModelSelection(normalizedModelSelection);
-    } catch {
-      return c.json({ error: "Unknown model selection" }, 400);
+      if (providerManifest !== undefined) {
+        frozenProviderManifest = normalizeProviderManifest(providerManifest);
+      } else {
+        const normalizedModelSelection = normalizeGameModelSelection(modelSelection);
+        if (!normalizedModelSelection) {
+          return c.json({ error: "Invalid model selection" }, 400);
+        }
+        // Preserve the established single-selection error contract while old
+        // clients remain in the bounded blue/green restoration window.
+        const legacyResolvedSelection = resolveModelSelection(normalizedModelSelection);
+        if (legacyResolvedSelection.model.evaluationStatus !== "game-ready") {
+          return c.json({ error: "Model is not game-ready" }, 400);
+        }
+        frozenProviderManifest = normalizeProviderManifest([normalizedModelSelection]);
+      }
+    } catch (error) {
+      return c.json({
+        error: error instanceof Error ? error.message : "Invalid provider manifest",
+      }, 400);
     }
-    if (resolvedModelSelection.model.evaluationStatus !== "game-ready") {
-      return c.json({ error: "Model is not game-ready" }, 400);
-    }
+    const resolvedModelSelection = resolveModelSelection(frozenProviderManifest[0]);
 
     let frozenFormatManifest;
     try {
@@ -238,13 +250,16 @@ export function createGameRoutes(
         catalogId: resolvedModelSelection.catalogId,
         reasoningPolicy: resolvedModelSelection.reasoningPolicy,
       },
-      ...(resolvedModelSelection.model.providerProfileId === "openai" && {
+      providerManifest: frozenProviderManifest,
+      ...(frozenProviderManifest.some((entry) => (
+        resolveModelSelection(entry).model.providerProfileId === "openai"
+      )) && {
         serviceTier: normalizedServiceTier,
       }),
       personaPool: personaPool ?? [],
       fillStrategy: fillStrategy ?? "balanced",
       visibility: visibility ?? "public",
-      slotType: slotType ?? "all_ai",
+      slotType: "all_ai",
       viewerMode: resolvedViewerMode,
       formatManifest: frozenFormatManifest,
     };
@@ -533,9 +548,7 @@ export function createGameRoutes(
     // Resolve model from game config
     // -----------------------------------------------------------------------
     const gameConfig = JSON.parse(game.config);
-    const resolvedModelSelection = resolveModelSelection(
-      normalizeGameModelSelection(gameConfig.modelSelection),
-    );
+    const resolvedModelSelection = resolveProviderManifestFromGameConfig(gameConfig)[0]!;
     const agentModel = resolvedModelSelection.modelId;
 
     const playerId = randomUUID();
@@ -617,9 +630,7 @@ export function createGameRoutes(
     }
 
     const config = JSON.parse(game.config);
-    const resolvedModelSelection = resolveModelSelection(
-      normalizeGameModelSelection(config.modelSelection),
-    );
+    const resolvedModelSelection = resolveProviderManifestFromGameConfig(config)[0]!;
     const agentModel = resolvedModelSelection.modelId;
 
     // Create final House players synchronously from deterministic archetypes.
@@ -742,8 +753,10 @@ export function createGameRoutes(
         ...(readiness.code && { code: readiness.code }),
         ...(readiness.retryable !== undefined && { retryable: readiness.retryable }),
       }, readiness.code === "deployment_admission_closed"
+        || readiness.code === "provider_admission_closed"
         ? 409
         : readiness.code === "deployment_admission_unavailable"
+          || readiness.code === "provider_admission_unavailable"
           ? 503
           : 500);
     }

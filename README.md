@@ -36,7 +36,8 @@ That split makes the system useful to inspect:
 | MCP and OAuth | The deployed `/mcp` surface separates `agents:read`, `agents:write`, `games:read`, and `producer` scopes. `games:read` includes owner match-completeness tools (manifest, authorized transcript, owned cognition). Local helpers support OAuth-gated MCP evaluation. |
 | Identity and permissions | Influence owns durable account/session identity; permanent first-class Privy login and managed Clerk email/password login resolve through provider-neutral credentials. Scoped MCP tokens and current roles protect sensitive tools. |
 | Persistence | PostgreSQL stores API game state and read models; local MinIO/S3-compatible storage is used for private trace-content development; media artifacts are published through API-owned storage paths. |
-| Model/provider abstraction | The engine uses a model catalog and provider profiles for hosted OpenAI, local OpenAI-compatible servers, and Katana/IMGNAI model routes. |
+| Model/provider abstraction | Agent and House code emit provider-neutral invocations. Native adapters compile OpenAI models to Responses and Katana/IMGNAI models to Chat Completions without changing a primary request when fallbacks are added. |
+| Provider resilience | Games seal an ordered provider manifest with bounded fallback-call budgets. Failed non-rate-limit attempts preserve private operator evidence; provider health can pause Daily admission without stopping running games. |
 | Postgame analysis | Completed-game APIs and MCP tools expose game briefs, jury breakdowns, player summaries, turning points, momentum, and structured vote cohorts derived from canonical events. |
 | Frontend, backend, workers | The monorepo includes a Next.js web app, Bun/Hono API, engine package, and House Highlights render worker. |
 | Operations | CI runs typecheck, lint, and tests; Dockerfiles build API, web, and render-worker images; deployment docs cover render-worker health, storage, and smoke tests. |
@@ -51,8 +52,10 @@ flowchart LR
   API --> Engine[Game engine]
   Engine --> Agents[LLM-backed agents]
   Engine --> House[House interviewer / producer]
-  Agents --> Providers[OpenAI, local OpenAI-compatible, Katana routes]
-  House --> Providers
+  Agents --> Coordinator[Retry / budget / fallback coordinator]
+  House --> Coordinator
+  Coordinator --> Adapters[Provider-native adapters]
+  Adapters --> Providers[OpenAI Responses, Katana Chat, local compatible routes]
   Engine --> Events[Canonical game events]
   Events --> DB
   Events --> Reads[Replay and postgame read models]
@@ -79,7 +82,7 @@ flowchart LR
 - **Deterministic runtime, model-authored decisions.** Models decide what agents say and attempt, but phase runners validate and apply those choices against rule-owned state.
 - **The House curates alliance access, not alliance facts.** Once per post-pick alliance window, The House selects `ceil(alive / 4)` living players for proposer opportunities, preferring players underrepresented in active alliances. The engine repairs the access set; selected agents still author or decline their own proposals, and invitee response, consent, and activation remain player-owned and event-authoritative.
 - **Canonical events before presentation.** Accepted facts are recorded as canonical events, then replayed into projections, summaries, timelines, and postgame views.
-- **Private evidence stays scoped.** Reasoning traces, producer evidence, hidden ratings, and competition-quality details are separated from public/player-safe surfaces and require producer scope.
+- **Private evidence stays scoped.** Reasoning traces, provider-failure evidence, hidden ratings, and competition-quality details are separated from public/player-safe surfaces. Producer MCP requires producer scope plus current producer role; the Admin web surface revalidates current admin/sysop authority.
 - **OAuth scopes map to product boundaries.** Agent reads, agent writes, game reads, and producer tools are separate MCP permissions rather than one broad integration token.
 - **Provider selection is explicit.** Game-ready model choices are catalog/profile records instead of scattered model strings.
 - **Simulation and API durability share an event shape.** Local simulations write JSONL artifacts; API games persist comparable canonical events in PostgreSQL.
@@ -116,5 +119,14 @@ bun test
 ```
 
 Some checks require Docker, PostgreSQL, Doppler-provided secrets, or a local/hosted LLM provider. The development guide calls those out where they apply.
+
+An API-backed test game can seal the same fallback order used by Daily:
+
+```bash
+bun run simulate:api -- \
+  --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \
+  --provider-entry katana:grok-4-5,reasoning=action-policy,max-calls=12 \
+  --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24
+```
 
 Real-model simulations are an operator confidence gate, not an implementation-agent completion gate. Implementing agents should emit the bounded recipe above and leave it operator-unverified rather than launching or waiting on a simulation.

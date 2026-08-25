@@ -199,32 +199,22 @@ ${surface.strategyGuidance}
 
 Use the ${surface.toolName} tool.`;
 
-  try {
-    const output = await input.callTool({
-      prompt,
-      tool: buildSealedElimBallotTool(
-        input.formatId,
-        legalTargets.map((player) => player.name),
-      ),
-      traceAction: surface.traceAction,
-    });
-    const metadata = strategicDecisionMetadata(output);
-    const target = findTargetByName(legalTargets, output.target);
-    const accepted = target !== undefined;
-    return {
-      targetId: target?.id ?? fallbackTarget.id,
-      thinking: output.thinking,
-      reasoningContext: output.reasoningContext,
-      ...acceptedActionMetadata(metadata, accepted),
-      ...decisionProvenance(accepted, surface.invalidTargetReason),
-    };
-  } catch (error) {
-    input.onToolFailure?.(error, fallbackTarget);
-    return {
-      targetId: fallbackTarget.id,
-      thinking: surface.fallbackThinking,
-      decisionSource: "fallback",
-      fallbackReason: "tool_call_failed",
-    };
-  }
+  const output = await input.callTool({
+    prompt,
+    tool: buildSealedElimBallotTool(
+      input.formatId,
+      legalTargets.map((player) => player.name),
+    ),
+    traceAction: surface.traceAction,
+  });
+  const metadata = strategicDecisionMetadata(output);
+  const target = findTargetByName(legalTargets, output.target);
+  const accepted = target !== undefined;
+  return {
+    targetId: target?.id ?? (output.target as UUID),
+    thinking: output.thinking,
+    reasoningContext: output.reasoningContext,
+    ...acceptedActionMetadata(metadata, accepted),
+    ...decisionProvenance(accepted, surface.invalidTargetReason),
+  };
 }

@@ -174,6 +174,19 @@ export async function executeMingleTurn(input: {
   }
 
   await assertCanAcceptCommit(ctx);
+  if (resolvedAction.providerAbsence) {
+    return {
+      playerId,
+      fromName,
+      recipientNames,
+      roomId: room.roomId,
+      turn: room.beat,
+      action: resolvedAction,
+      message: null,
+      messageSent: false,
+      turnAction: "no_reply",
+    };
+  }
   const receipt = resolvedAction.coordinationReceipt;
   if (
     receipt
@@ -271,6 +284,7 @@ export function commitMingleTurnMovements(input: {
   const records: MingleTurnExecutionRecord[] = [];
 
   for (const turn of turns) {
+    if (turn.action.providerAbsence) continue;
     const requested = requestedMovements.get(turn.playerId) ?? {
       toRoomId: turn.roomId,
       gotoRoomId: null,

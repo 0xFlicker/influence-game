@@ -1,6 +1,12 @@
 import { createHash, randomUUID } from "crypto";
-import type { PrivateDecisionTrace, PrivateDecisionTraceBoundary } from "@influence/engine";
+import type {
+  PrivateDecisionTrace,
+  PrivateDecisionTraceBoundary,
+  ProviderAttemptRecord,
+} from "@influence/engine";
+import { eq } from "drizzle-orm";
 import type { DrizzleDB } from "../db/index.js";
+import { schema } from "../db/index.js";
 import { assertPrivateContentStoragePointer, createEvidenceManifest, markEvidenceDegraded } from "./game-evidence.js";
 import {
   createPrivateTraceStorageAdapter,
@@ -11,6 +17,7 @@ import {
 } from "./private-trace-storage.js";
 
 export const PRIVATE_TRACE_EVIDENCE_TYPE = "private_decision_trace";
+export const PROVIDER_ATTEMPT_EVIDENCE_TYPE = "provider_attempt_failure";
 
 export interface WritePrivateTraceInput {
   gameId: string;
@@ -23,6 +30,29 @@ export interface WritePrivateTraceInput {
 export interface PrivateTraceWriteOptions {
   storage?: PrivateTraceStorageAdapter;
   now?: () => Date;
+  abortSignal?: AbortSignal;
+}
+
+export interface WriteProviderAttemptEvidenceInput {
+  gameId: string;
+  ownerEpoch: string;
+  logicalCallId: string;
+  attemptJournalId: string;
+  record: ProviderAttemptRecord;
+}
+
+export interface PreparedProviderAttemptEvidence {
+  gameId: string;
+  ownerEpoch: string;
+  logicalCallId: string;
+  attemptJournalId: string;
+  attemptOrdinal: number;
+  body: string;
+  bodySha256: string;
+  byteLength: number;
+  storageKey: string;
+  manifestId: string;
+  metadata: ProviderAttemptManifestMetadata;
 }
 
 export type WritePrivateTraceResult =
@@ -36,6 +66,42 @@ export type WritePrivateTraceResult =
     };
     metadata: PrivateTraceManifestMetadata;
   }
+  | { ok: false; error: string };
+
+export interface ProviderAttemptManifestMetadata {
+  formatVersion: 1;
+  contentType: typeof PRIVATE_TRACE_CONTENT_TYPE;
+  byteLength: number;
+  recordCount: 1;
+  sha256: string;
+  actor: ProviderAttemptRecord["coordinate"]["actor"];
+  action: string;
+  phase?: string;
+  round?: number;
+  model: {
+    name: string;
+    providerProfileId: string;
+    catalogId?: string;
+  };
+  modelName: string;
+  outcomeKind: ProviderAttemptRecord["outcome"]["kind"];
+  disposition: ProviderAttemptRecord["disposition"];
+  attemptOrdinal: number;
+  logicalCallId: string;
+  createdAt: string;
+}
+
+export type WriteProviderAttemptEvidenceResult =
+  | {
+      ok: true;
+      manifestId: string;
+      storage: {
+        provider: typeof PRIVATE_TRACE_STORAGE_PROVIDER;
+        bucket: string;
+        key: string;
+      };
+      metadata: ProviderAttemptManifestMetadata;
+    }
   | { ok: false; error: string };
 
 export interface PrivateTraceManifestMetadata {
@@ -247,4 +313,190 @@ export async function writePrivateDecisionTrace(
     storage,
     metadata,
   };
+}
+
+function providerAttemptStorageKey(
+  gameId: string,
+  logicalCallId: string,
+  attemptOrdinal: number,
+): string {
+  const safeLogicalCallId = logicalCallId.replace(/[^a-zA-Z0-9_-]/g, "-");
+  return `content/${gameId}/provider-attempts/${safeLogicalCallId}/attempt-${attemptOrdinal}.json`;
+}
+
+function providerAttemptManifestId(attemptJournalId: string): string {
+  return `provider-attempt:${createHash("sha256").update(attemptJournalId).digest("hex")}`;
+}
+
+export function prepareProviderAttemptEvidence(
+  input: WriteProviderAttemptEvidenceInput,
+): PreparedProviderAttemptEvidence {
+  const body = JSON.stringify({
+    gameId: input.gameId,
+    ownerEpoch: input.ownerEpoch,
+    logicalCallId: input.logicalCallId,
+    attemptJournalId: input.attemptJournalId,
+    attempt: input.record,
+  }, null, 2);
+  const bodySha256 = sha256Text(body);
+  const byteLength = Buffer.byteLength(body, "utf8");
+  const metadata = {
+    formatVersion: 1,
+    contentType: PRIVATE_TRACE_CONTENT_TYPE,
+    byteLength,
+    recordCount: 1,
+    sha256: bodySha256,
+    actor: input.record.coordinate.actor,
+    action: input.record.coordinate.action,
+    phase: input.record.coordinate.phase,
+    round: input.record.coordinate.round,
+    model: {
+      name: input.record.preparedRequest.model,
+      providerProfileId: input.record.preparedRequest.providerProfileId,
+      catalogId: input.record.preparedRequest.catalogId,
+    },
+    modelName: input.record.preparedRequest.model,
+    outcomeKind: input.record.outcome.kind,
+    disposition: input.record.disposition,
+    attemptOrdinal: input.record.attemptOrdinal,
+    logicalCallId: input.logicalCallId,
+    createdAt: input.record.completedAt,
+  } satisfies ProviderAttemptManifestMetadata;
+  return {
+    gameId: input.gameId,
+    ownerEpoch: input.ownerEpoch,
+    logicalCallId: input.logicalCallId,
+    attemptJournalId: input.attemptJournalId,
+    attemptOrdinal: input.record.attemptOrdinal,
+    body,
+    bodySha256,
+    byteLength,
+    storageKey: providerAttemptStorageKey(
+      input.gameId,
+      input.logicalCallId,
+      input.record.attemptOrdinal,
+    ),
+    manifestId: providerAttemptManifestId(input.attemptJournalId),
+    metadata,
+  };
+}
+
+export async function writePreparedProviderAttemptEvidence(
+  db: DrizzleDB,
+  prepared: PreparedProviderAttemptEvidence,
+  options: PrivateTraceWriteOptions = {},
+): Promise<WriteProviderAttemptEvidenceResult> {
+  const written = await writePreparedProviderAttemptObject(db, prepared, options);
+  if (!written.ok) return written;
+  const manifest = await createEvidenceManifest(db, {
+    manifestId: prepared.manifestId,
+    gameId: prepared.gameId,
+    ownerEpoch: prepared.ownerEpoch,
+    evidenceType: PROVIDER_ATTEMPT_EVIDENCE_TYPE,
+    retentionClass: "debug",
+    accessScope: "producer_admin",
+    storage: written.storage,
+    sourcePointers: [{
+      kind: "provider_attempt_failure",
+      logicalCallId: prepared.logicalCallId,
+      attemptJournalId: prepared.attemptJournalId,
+      attemptOrdinal: prepared.attemptOrdinal,
+    }],
+    metadata: prepared.metadata as unknown as Record<string, unknown>,
+  });
+  if (!manifest.ok) return manifest;
+  return written;
+}
+
+/**
+ * Writes only the deterministic object. The durable provider-attempt outbox
+ * owns manifest creation so it can reconcile after the originating owner is
+ * no longer active.
+ */
+export async function writePreparedProviderAttemptObject(
+  db: DrizzleDB,
+  prepared: PreparedProviderAttemptEvidence,
+  options: PrivateTraceWriteOptions = {},
+): Promise<WriteProviderAttemptEvidenceResult> {
+  const bucket = getPrivateTraceBucket();
+  const storage = {
+    provider: PRIVATE_TRACE_STORAGE_PROVIDER,
+    bucket,
+    key: prepared.storageKey,
+  } as const;
+  const existing = (await db
+    .select({
+      id: schema.gameEvidenceManifests.id,
+      storageProvider: schema.gameEvidenceManifests.storageProvider,
+      storageBucket: schema.gameEvidenceManifests.storageBucket,
+      storageKey: schema.gameEvidenceManifests.storageKey,
+    })
+    .from(schema.gameEvidenceManifests)
+    .where(eq(schema.gameEvidenceManifests.id, prepared.manifestId)))[0];
+  if (existing) {
+    if (
+      existing.storageProvider !== PRIVATE_TRACE_STORAGE_PROVIDER ||
+      !existing.storageBucket ||
+      existing.storageKey !== prepared.storageKey
+    ) {
+      return {
+        ok: false,
+        error: "Provider attempt manifest has conflicting storage identity",
+      };
+    }
+    return {
+      ok: true,
+      manifestId: prepared.manifestId,
+      storage: {
+        provider: PRIVATE_TRACE_STORAGE_PROVIDER,
+        bucket: existing.storageBucket,
+        key: existing.storageKey,
+      },
+      metadata: prepared.metadata,
+    };
+  }
+
+  try {
+    assertPrivateContentStoragePointer(storage);
+    const adapter = options.storage ?? createPrivateTraceStorageAdapter();
+    await adapter.putObject({
+      bucket,
+      key: prepared.storageKey,
+      body: prepared.body,
+      contentType: PRIVATE_TRACE_CONTENT_TYPE,
+      ...(options.abortSignal && { abortSignal: options.abortSignal }),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    await markEvidenceDegraded(
+      db,
+      prepared.gameId,
+      prepared.ownerEpoch,
+      `provider_attempt_storage_failed: ${message}`,
+    ).catch(() => {});
+    return { ok: false, error: message };
+  }
+
+  return {
+    ok: true,
+    manifestId: prepared.manifestId,
+    storage,
+    metadata: prepared.metadata,
+  };
+}
+
+/**
+ * Stores the exact coordinator-sanitized failure envelope. The deterministic
+ * object and manifest identities make terminal-hook replay idempotent.
+ */
+export async function writeProviderAttemptEvidence(
+  db: DrizzleDB,
+  input: WriteProviderAttemptEvidenceInput,
+  options: PrivateTraceWriteOptions = {},
+): Promise<WriteProviderAttemptEvidenceResult> {
+  return writePreparedProviderAttemptEvidence(
+    db,
+    prepareProviderAttemptEvidence(input),
+    options,
+  );
 }

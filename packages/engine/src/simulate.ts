@@ -15,6 +15,9 @@
  *   bun run simulate -- --variant mingle --rich-producer
  *   bun run simulate -- --variant mingle --chatty --reasoning-summary auto
  *   bun run simulate -- --model-catalog katana:grok-4-3 --reasoning-policy high
+ *   bun run simulate -- --provider-entry openai:gpt-5.6-luna,reasoning=action-policy \
+ *     --provider-entry katana:glm-5-2,reasoning=action-policy,max-calls=24 \
+ *     --provider-entry katana:grok-4-5,reasoning=medium,max-calls=12
  *
  * OPERATOR-ONLY format-kernel proof. Implementing agents document these commands
  * but must not run or wait on them. Start from the reported branch/HEAD with a
@@ -71,6 +74,8 @@
  *   evidence across the manifest, actor witness, accumulators, transcript
  *   watermark, token cursor, and continuity capsules; it is not runtime resume.
  * - `game-{N}-prompt-reuse.json`: structural prompt-prefix reuse rollup (hashes/counts only).
+ * - `game-{N}-provider-attempts.json`: exact coordinator-sanitized non-429
+ *   failure envelopes plus compact recovered/exhausted rate-limit aggregates.
  * - `game-{N}-recall-plan.json`: **safe structural Recall Plan receipt aggregate** for
  *   selective-context-recall evaluation (R16/R17). Contains prompt-class counts,
  *   budget token estimates, selected lane/source-class counts, and an actor-authorized
@@ -179,7 +184,7 @@
  */
 
 import type OpenAI from "openai";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { execFileSync } from "child_process";
 import { appendFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
@@ -209,16 +214,34 @@ import {
   type GitMetadata,
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
-import { createLlmClientFromEnv, describeLlmProvider } from "./llm-client";
-import type { LlmToolChoiceMode, OpenAIReasoningSummaryMode } from "./llm-client";
+import {
+  createLlmClientFromEnv,
+  createLlmProviderRuntimesFromEnv,
+  describeLlmProvider,
+} from "./llm-client";
+import type {
+  LlmProviderRuntime,
+  LlmToolChoiceMode,
+  OpenAIReasoningSummaryMode,
+} from "./llm-client";
+import type {
+  ProviderAttemptIntent,
+  ProviderAttemptRecord,
+  ProviderExecutionHooks,
+} from "./provider-execution";
+import { ProviderCallBudgetExhaustedError } from "./provider-execution";
 import {
   DEFAULT_MODEL_ID,
   inferModelCapabilities,
+  normalizeProviderManifest,
   normalizeReasoningPolicy,
+  parseProviderManifestEntry,
   resolveCatalogIdForModel,
   resolveModelSelection,
+  resolveProviderManifest,
   type ModelReasoningPolicy,
   type ModelRequestCapabilities,
+  type GameProviderManifest,
   type ProviderProfileId,
 } from "./model-catalog";
 
@@ -237,6 +260,8 @@ export interface SimArgs {
   personas: string[] | null;
   model: string;
   modelCatalogId?: string;
+  /** Ordered provider route sealed into simulation evidence and used for bounded fallback traversal. */
+  providerManifest?: GameProviderManifest;
   reasoningPolicy?: ModelReasoningPolicy;
   variant: string;
   /**
@@ -296,6 +321,8 @@ function parseReasoningSummaryArg(value: string | undefined): OpenAIReasoningSum
 
 export function parseArgs(argv = process.argv.slice(2)): SimArgs {
   const envGameTimeout = process.env.INFLUENCE_SIM_GAME_TIMEOUT_MS;
+  let sawCliProviderEntry = false;
+  let sawCliLegacyModelSelection = false;
   const args: SimArgs = {
     games: 3,
     players: MIN_NEW_GAME_PLAYERS,
@@ -303,6 +330,9 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
     personas: null,
     model: DEFAULT_MODEL_ID,
     ...(process.env.INFLUENCE_SIM_MODEL_CATALOG_ID && { modelCatalogId: process.env.INFLUENCE_SIM_MODEL_CATALOG_ID }),
+    ...(process.env.INFLUENCE_SIM_PROVIDER_MANIFEST && {
+      providerManifest: parseSimulationProviderManifestEnv(process.env.INFLUENCE_SIM_PROVIDER_MANIFEST),
+    }),
     ...(normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY) && {
       reasoningPolicy: normalizeReasoningPolicy(process.env.INFLUENCE_SIM_REASONING_POLICY)!,
     }),
@@ -337,12 +367,34 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
       args.personas = next.split(",").map((s) => s.trim());
       i++;
     } else if (arg === "--model" && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.model = next;
       i++;
     } else if ((arg === "--model-catalog" || arg === "--model-catalog-id") && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       args.modelCatalogId = next;
       i++;
+    } else if (arg === "--provider-entry" && next) {
+      if (sawCliLegacyModelSelection) {
+        throw new Error("Do not combine --provider-entry with legacy model flags");
+      }
+      if (!sawCliProviderEntry) {
+        args.providerManifest = [];
+        sawCliProviderEntry = true;
+      }
+      args.providerManifest = [
+        ...(args.providerManifest ?? []),
+        parseProviderManifestEntry(next),
+      ];
+      i++;
     } else if ((arg === "--reasoning-policy" || arg === "--thinking-depth") && next) {
+      if (sawCliProviderEntry) throw new Error("Do not combine --provider-entry with legacy model flags");
+      args.providerManifest = undefined;
+      sawCliLegacyModelSelection = true;
       const reasoningPolicy = normalizeReasoningPolicy(next);
       if (reasoningPolicy) {
         args.reasoningPolicy = reasoningPolicy;
@@ -408,6 +460,11 @@ export function parseArgs(argv = process.argv.slice(2)): SimArgs {
 
   if (args.richProducer === true) {
     args.enableDiary = true;
+  }
+  if (args.providerManifest) {
+    args.providerManifest = normalizeProviderManifest(args.providerManifest);
+    args.modelCatalogId = args.providerManifest[0]!.catalogId;
+    args.reasoningPolicy = args.providerManifest[0]!.reasoningPolicy;
   }
 
   if (isNaN(args.games) || args.games < 1) args.games = 3;
@@ -476,6 +533,9 @@ function buildRunMetadata(
       ...(modelRuntime?.reasoningPolicy && { reasoningPolicy: modelRuntime.reasoningPolicy }),
       ...(args.modelCatalogId && { modelCatalogId: args.modelCatalogId }),
       ...(args.reasoningPolicy && { reasoningPolicy: args.reasoningPolicy }),
+      ...(args.providerManifest && {
+        providerManifest: args.providerManifest.map((entry) => ({ ...entry })),
+      }),
       variant: args.variant,
       gameTimeoutMs: args.gameTimeoutMs,
       llmTimeoutMs: args.llmTimeoutMs,
@@ -487,6 +547,16 @@ function buildRunMetadata(
       flex: args.flex,
     },
   };
+}
+
+function parseSimulationProviderManifestEnv(value: string): GameProviderManifest {
+  try {
+    return normalizeProviderManifest(JSON.parse(value));
+  } catch (error) {
+    throw new Error(
+      `INFLUENCE_SIM_PROVIDER_MANIFEST is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 const POWER_LOBBY_VARIANTS = new Set([
@@ -592,6 +662,8 @@ function selectCast(
   toolChoiceMode: LlmToolChoiceMode = "named",
   openAIReasoningSummary?: OpenAIReasoningSummaryMode,
   privateTraceSink?: import("./game-runner").PrivateTraceSink,
+  providerExecutionHooks?: ProviderExecutionHooks,
+  providerManifest?: readonly LlmProviderRuntime[],
 ): InfluenceAgent[] {
   let selected: Array<{ name: string; personality: Personality }>;
 
@@ -623,8 +695,179 @@ function selectCast(
       modelCapabilities: modelRuntime.capabilities,
       reasoningPolicy: modelRuntime.reasoningPolicy,
       privateTraceSink,
+      ...(providerExecutionHooks && { providerExecutionHooks }),
+      ...(providerManifest && { providerManifest }),
     });
   });
+}
+
+export interface LocalProviderAttemptArtifact {
+  formatVersion: 1;
+  gameId: string;
+  ownerEpoch: string;
+  failures: Array<{
+    gameId: string;
+    ownerEpoch: string;
+    logicalCallId: string;
+    attemptJournalId: string;
+    attempt: ProviderAttemptRecord;
+  }>;
+  rateLimits: Array<{
+    logicalCallId: string;
+    count: number;
+    outcome: "pending" | "recovered" | "exhausted";
+    terminalReason?: string;
+  }>;
+}
+
+function stableSimulationJson(value: unknown): string {
+  if (value === undefined) return "null";
+  if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
+  if (Array.isArray(value)) return `[${value.map(stableSimulationJson).join(",")}]`;
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record).filter((key) => record[key] !== undefined).sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSimulationJson(record[key])}`).join(",")}}`;
+}
+
+function simulationHash(value: unknown): string {
+  return `sha256:${createHash("sha256").update(stableSimulationJson(value)).digest("hex")}`;
+}
+
+/** Local counterpart of the API journal: exact sanitized failures, compact 429s. */
+export function createLocalProviderExecutionJournal(input: {
+  gameId: string;
+  ownerEpoch: string;
+  providerManifest?: readonly Pick<
+    LlmProviderRuntime,
+    "catalogId" | "providerProfileId" | "modelId" | "maxCallsPerGame"
+  >[];
+  onChange?: (artifact: LocalProviderAttemptArtifact) => void;
+}): { hooks: ProviderExecutionHooks; snapshot: () => LocalProviderAttemptArtifact } {
+  const reservations = new Map<string, string>();
+  const terminals = new Map<string, string>();
+  const failures: LocalProviderAttemptArtifact["failures"] = [];
+  const rateLimits = new Map<string, LocalProviderAttemptArtifact["rateLimits"][number]>();
+  const usedCallsByCatalog = new Map<string, number>();
+  const logicalId = (intent: ProviderAttemptIntent) => simulationHash({
+    domain: "influence.provider.logical-call.v1",
+    coordinate: {
+      gameId: input.gameId,
+      actor: intent.coordinate.actor,
+      action: intent.coordinate.action,
+      phase: intent.coordinate.phase,
+      round: intent.coordinate.round,
+      logicalCallOrdinal: intent.coordinate.logicalCallOrdinal,
+    },
+  });
+  const attemptId = (intent: ProviderAttemptIntent) => simulationHash({
+    domain: "influence.provider.attempt.v1",
+    logicalCallId: logicalId(intent),
+    attemptOrdinal: intent.attemptOrdinal,
+  });
+  const snapshot = (): LocalProviderAttemptArtifact => ({
+    formatVersion: 1,
+    gameId: input.gameId,
+    ownerEpoch: input.ownerEpoch,
+    failures: [...failures],
+    rateLimits: [...rateLimits.values()],
+  });
+  const publish = () => {
+    try {
+      input.onChange?.(snapshot());
+    } catch (error) {
+      // The in-memory reservation remains authoritative for an uninterrupted
+      // local run; a diagnostics-artifact failure must not alter gameplay.
+      console.warn("Local provider-attempt artifact degraded:", error);
+    }
+  };
+
+  return {
+    hooks: {
+      onReserve(intent) {
+        if (
+          (intent.coordinate.gameId !== undefined && intent.coordinate.gameId !== input.gameId) ||
+          (intent.coordinate.ownerEpoch !== undefined && intent.coordinate.ownerEpoch !== input.ownerEpoch)
+        ) {
+          throw new Error("Local provider attempt is outside this simulation journal");
+        }
+        const id = attemptId(intent);
+        if (reservations.has(id)) throw new Error(`Provider attempt ${id} is already reserved`);
+        if (input.providerManifest) {
+          const catalogId = intent.preparedRequest.catalogId;
+          const entry = input.providerManifest.find(
+            (candidate) => candidate.catalogId === catalogId,
+          );
+          if (!catalogId || !entry) {
+            throw new Error(`Provider entry ${catalogId ?? "<missing>"} is not sealed for this simulation`);
+          }
+          if (
+            entry.providerProfileId !== intent.preparedRequest.providerProfileId
+            || entry.modelId !== intent.preparedRequest.model
+          ) {
+            throw new Error(`Provider entry ${catalogId} does not match its sealed simulation runtime`);
+          }
+          const usedCalls = usedCallsByCatalog.get(catalogId) ?? 0;
+          if (
+            entry.maxCallsPerGame !== undefined
+            && usedCalls >= entry.maxCallsPerGame
+          ) {
+            throw new ProviderCallBudgetExhaustedError(
+              catalogId,
+              usedCalls,
+              entry.maxCallsPerGame,
+            );
+          }
+          usedCallsByCatalog.set(catalogId, usedCalls + 1);
+        }
+        reservations.set(id, simulationHash(intent));
+        publish();
+      },
+      onTerminal(record) {
+        const id = attemptId(record);
+        if (!reservations.has(id)) throw new Error("Provider attempt was not reserved");
+        const terminalHash = simulationHash(record);
+        const existing = terminals.get(id);
+        if (existing && existing !== terminalHash) {
+          throw new Error("Provider attempt terminal facts conflict with the local journal");
+        }
+        if (existing) return;
+        terminals.set(id, terminalHash);
+        const callId = logicalId(record);
+        if (record.outcome.kind === "rate_limit") {
+          const aggregate = rateLimits.get(callId) ?? {
+            logicalCallId: callId,
+            count: 0,
+            outcome: "pending" as const,
+          };
+          aggregate.count += 1;
+          aggregate.outcome = record.disposition === "exhausted" ? "exhausted" : "pending";
+          if (record.disposition === "exhausted") aggregate.terminalReason = record.outcome.message;
+          rateLimits.set(callId, aggregate);
+        } else {
+          const aggregate = rateLimits.get(callId);
+          if (aggregate?.outcome === "pending") {
+            if (record.outcome.kind === "usable") {
+              aggregate.outcome = "recovered";
+            } else if (record.disposition === "exhausted") {
+              aggregate.outcome = "exhausted";
+              aggregate.terminalReason = record.outcome.message;
+            }
+          }
+          if (record.outcome.kind !== "usable") {
+            failures.push({
+              gameId: input.gameId,
+              ownerEpoch: input.ownerEpoch,
+              logicalCallId: callId,
+              attemptJournalId: id,
+              attempt: record,
+            });
+          }
+        }
+        publish();
+      },
+    },
+    snapshot,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -1692,6 +1935,28 @@ async function main() {
     process.exit(1);
   }
 
+  const resolvedProviderManifest = args.providerManifest
+    ? resolveProviderManifest(args.providerManifest)
+    : undefined;
+  const providerRuntimes = resolvedProviderManifest
+    ? createLlmProviderRuntimesFromEnv(
+        resolvedProviderManifest,
+        process.env,
+        {
+          timeout: args.llmTimeoutMs,
+          flexProcessing: args.flex,
+        },
+      )
+    : undefined;
+  if (resolvedProviderManifest && !providerRuntimes) {
+    console.error(
+      "Error: one or more sealed provider manifest entries are not configured.",
+    );
+    process.exit(1);
+  }
+
+  // Agent and House dispatch through providerRuntimes when a manifest is sealed.
+  // The legacy constructor client is used only when no adapter-backed runtime exists.
   const openai = llmConfig.client;
   const modelRuntime = catalogModelRuntime ?? resolveLegacySimulationModel(args, llmConfig.providerProfileId);
   args.model = modelRuntime.modelId;
@@ -1770,9 +2035,21 @@ async function main() {
   for (let g = 1; g <= args.games; g++) {
     console.log(`--- Game ${g}/${args.games} ---`);
     const startTime = Date.now();
+    const localGameId: UUID = randomUUID();
+    const localOwnerEpoch = `local-simulation:${runTimestamp}:${g}`;
+    const providerAttemptsPath = join(batchDir, `game-${g}-provider-attempts.json`);
+    const providerJournal = createLocalProviderExecutionJournal({
+      gameId: localGameId,
+      ownerEpoch: localOwnerEpoch,
+      ...(providerRuntimes && { providerManifest: providerRuntimes }),
+      onChange: (artifact) => writeFileSync(providerAttemptsPath, JSON.stringify(artifact, null, 2)),
+    });
+    writeFileSync(providerAttemptsPath, JSON.stringify(providerJournal.snapshot(), null, 2));
 
     // Create fresh agents for each game
-    const toolChoiceMode = modelRuntime.preferredToolChoiceMode ?? llmConfig.toolChoiceMode;
+    const toolChoiceMode = providerRuntimes?.[0]?.toolChoiceMode
+      ?? modelRuntime.preferredToolChoiceMode
+      ?? llmConfig.toolChoiceMode;
     const promptReuse = new PromptReuseAggregate();
     const recallPlanReceipts = new RecallPlanReceiptAggregate();
     const privateTraceSink: import("./game-runner").PrivateTraceSink = (trace) => {
@@ -1780,7 +2057,17 @@ async function main() {
       // Safe structural aggregate only — never the full private-trace payload (R16/R17).
       recallPlanReceipts.add(trace.recallPlanReceipt);
     };
-    const agents = selectCast(args.players, args.personas, openai, modelRuntime, toolChoiceMode, openAIReasoningSummary, privateTraceSink);
+    const agents = selectCast(
+      args.players,
+      args.personas,
+      openai,
+      modelRuntime,
+      toolChoiceMode,
+      openAIReasoningSummary,
+      privateTraceSink,
+      providerJournal.hooks,
+      providerRuntimes ?? undefined,
+    );
     const playerPersonas: Record<string, string> = {};
     const playerNameById: Record<string, string> = {};
     const gameTracker = new TokenTracker();
@@ -1799,9 +2086,12 @@ async function main() {
       modelCapabilities: modelRuntime.capabilities,
       reasoningPolicy: modelRuntime.reasoningPolicy,
       privateTraceSink,
+      providerExecutionHooks: providerJournal.hooks,
+      ...(providerRuntimes && { providerManifest: providerRuntimes }),
     });
     houseInterviewer.setTokenTracker(gameTracker);
     const runner = new GameRunner(agents, simConfig, houseInterviewer, {
+      gameId: localGameId,
       maxRoundsMode: "exact",
     });
     const transcriptPath = join(batchDir, `game-${g}.txt`);

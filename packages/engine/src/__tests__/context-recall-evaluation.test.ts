@@ -41,25 +41,28 @@ import {
 
 function makeTextOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
   return {
-    chat: {
-      completions: {
-        create: async (params: Record<string, unknown>) => {
-          requests.push(params);
-          return {
-            choices: [
-              {
-                finish_reason: "stop",
-                message: {
-                  role: "assistant",
-                  content: JSON.stringify({
-                    thinking: "Stay with Mira; pressure Vera.",
-                    message: "I ask the jury to remember the pair.",
-                  }),
-                },
-              },
-            ],
-          };
-        },
+    responses: {
+      create: async (params: Record<string, unknown>) => {
+        requests.push(params);
+        return {
+          id: "resp_recall_plan_measurement",
+          object: "response",
+          status: "completed",
+          output: [{
+            id: "msg_recall_plan_measurement",
+            type: "message",
+            role: "assistant",
+            status: "completed",
+            content: [{
+              type: "output_text",
+              text: JSON.stringify({
+                thinking: "Stay with Mira; pressure Vera.",
+                message: "I ask the jury to remember the pair.",
+              }),
+              annotations: [],
+            }],
+          }],
+        };
       },
     },
   } as unknown as OpenAI;
@@ -142,8 +145,11 @@ async function measureCandidateUserContext(
     endgameStage: ctx.endgameStage ?? "reckoning",
   });
 
-  const messages = requests[0]?.messages as Array<{ role: string; content: string }> | undefined;
-  const userMessage = messages?.filter((message) => message.role === "user").at(-1)?.content ?? "";
+  const input = requests[0]?.input;
+  const userMessage = typeof input === "string"
+    ? input
+    : (input as Array<{ role?: string; content?: string }> | undefined)
+      ?.filter((message) => message.role === "user").at(-1)?.content ?? "";
   return {
     characterCount: userMessage.length,
     modelCallCount: requests.length,

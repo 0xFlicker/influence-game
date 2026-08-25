@@ -21,6 +21,8 @@ import {
   checkGameStartAdmissionInTransaction,
   checkRecoveryAdmissionInTransaction,
 } from "./deployment-admission.js";
+import { resolveProviderManifestFromGameConfig } from "@influence/engine";
+import { checkDailyProviderAdmissionInTransaction } from "./provider-health.js";
 
 type DrizzleTransaction = Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0];
 
@@ -34,7 +36,13 @@ export type GameOwnerClaimResult =
     ok: false;
     error: string;
     statusCode: 400 | 404 | 409 | 503;
-    code?: RosterFreezeErrorCode | "stale_owner" | "deployment_admission_closed" | "deployment_admission_unavailable";
+    code?:
+      | RosterFreezeErrorCode
+      | "stale_owner"
+      | "deployment_admission_closed"
+      | "deployment_admission_unavailable"
+      | "provider_admission_closed"
+      | "provider_admission_unavailable";
     reason?: RosterFreezeErrorReason;
     retryable?: boolean;
   };
@@ -92,6 +100,8 @@ export async function acquireGameRunOwner(
           status: schema.games.status,
           transcriptCaptureVersion: schema.games.transcriptCaptureVersion,
           formalSpeechCaptureVersion: schema.games.formalSpeechCaptureVersion,
+          trackType: schema.games.trackType,
+          config: schema.games.config,
         })
         .from(schema.games)
         .where(eq(schema.games.id, gameId))
@@ -107,6 +117,31 @@ export async function acquireGameRunOwner(
             : "Game can only be started from waiting status",
           statusCode: game.status === "in_progress" ? 409 as const : 400 as const,
         };
+      }
+      if (game.trackType === "free") {
+        let manifest;
+        try {
+          manifest = resolveProviderManifestFromGameConfig(
+            JSON.parse(game.config) as Record<string, unknown>,
+          );
+        } catch {
+          return {
+            ok: false as const,
+            error: "Daily game provider configuration is unavailable",
+            statusCode: 503 as const,
+            code: "provider_admission_unavailable" as const,
+            retryable: true,
+          };
+        }
+        const providerAdmission = await checkDailyProviderAdmissionInTransaction(tx, manifest);
+        if (!providerAdmission.ok) {
+          return {
+            ...providerAdmission,
+            statusCode: providerAdmission.code === "provider_admission_unavailable"
+              ? 503 as const
+              : 409 as const,
+          };
+        }
       }
 
       const captureUpgrade = await bootstrapTranscriptCaptureAtFirstStart(tx, gameId, game);
@@ -596,5 +631,38 @@ export async function markGameSuspended(
         endedAt: now,
       })
       .where(and(eq(schema.games.id, gameId), eq(schema.games.status, "in_progress")));
+  });
+}
+
+export async function suspendClaimedRecoveryOwner(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+  reason: string,
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  return db.transaction(async (tx) => {
+    const closed = await tx.update(schema.gameRunOwners)
+      .set({
+        status: "expired",
+        closedAt: now,
+        kernelHealth: "suspended",
+        failureReason: reason,
+      })
+      .where(and(
+        eq(schema.gameRunOwners.gameId, gameId),
+        eq(schema.gameRunOwners.ownerEpoch, ownerEpoch),
+        eq(schema.gameRunOwners.status, "active"),
+      ))
+      .returning({ ownerEpoch: schema.gameRunOwners.ownerEpoch });
+    if (closed.length === 0) return false;
+
+    await tx.update(schema.games)
+      .set({ status: "suspended", endedAt: now })
+      .where(and(
+        eq(schema.games.id, gameId),
+        eq(schema.games.status, "in_progress"),
+      ));
+    return true;
   });
 }
