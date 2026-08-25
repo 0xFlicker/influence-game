@@ -28,6 +28,8 @@ Last synthetic no-response output gap added: 2026-08-21
 
 Last game provider-waterfall gap added: 2026-08-22
 
+Last producer narrative response-contract gap added: 2026-08-25
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -79,6 +81,16 @@ Items are ordered by current priority.
 - Validation path: focused scenario fixtures distinguish material changes from restatements and prove null/omitted deltas leave strategy unchanged. A current-meta API-backed game reports non-null, accepted, rejected, and no-change strategy candidates plus output tokens by action family; human review verifies retained deltas are materially useful without requiring alliance compliance or penalizing valid pivots.
 - Implemented shape: PR #113 tightened shared strategy-delta guidance and schemas, added explicit private `no_change` diagnostics for omitted and exact literal-null deltas, preserved legal gameplay acceptance independently from rejected strategy metadata, and retained the existing state machine and character limits.
 - Remaining proof: the reviewed production game predates literal-null normalization and the merged head. Keep R23 open until one authenticated current-meta API-backed game proves materially useful retained deltas and the exact no-change boundary without strategy leakage or provider retries.
+
+### R31. Make producer match narrative satisfy its declared response schema
+
+- Status: `ready`
+- Priority: **high**
+- Sources: authenticated production evaluation of completed current-meta game `dead-fawn-ice` on 2026-08-25; `packages/api/src/services/match-narrative-compact-v2.ts`, `packages/api/src/services/match-narrative-read-model.ts`, `packages/api/src/game-mcp/contracts.ts`, and the production Game MCP read-model/server tests.
+- Signal: `read_producer_match_narrative` failed before returning the completed game's all-seat narrative with `match narrative result.limitations is required`. The read model computed an empty limitations collection, but the compact v2 encoder omitted the field while the exposed result contract required it. Lower-level producer traces and cognitive artifacts remained readable, but that workaround defeats the intended one-shot grouped narrative surface and blocks its accepted/rejected strategy review.
+- Required direction: make the compact v2 encoder and the declared MCP result contract agree. Successful narrative pages must return an explicit `limitations: []` when there are no limitations and preserve the typed non-empty array when limitations exist. Do not weaken producer authorization, private-lane policy, cursor binding, content-trust labels, or board-authority disclaimers, and do not substitute a client-side merge of lower-level evidence.
+- Validation path: add encoder coverage for empty and non-empty limitations; validate the encoded result against the actual MCP output schema; and exercise `read_producer_match_narrative` through the production MCP server for a completed current-meta producer game across terminal and paginated pages. Retain owner/producer isolation, schema v1 behavior, stable cursors, and existing strategy/thinking privacy coverage.
+- Runtime proof: repeat the authenticated read against a completed current-meta game and receive an `ok: true` grouped all-seat narrative page with explicit limitations, rather than a server-side result-validation error. This is a read-only proof and requires no new provider-backed game.
 
 ### R27. Complete failed-provider request evidence for producer debugging
 
