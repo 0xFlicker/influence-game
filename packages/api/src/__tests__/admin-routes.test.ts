@@ -486,7 +486,56 @@ describe("admin route RBAC", () => {
           },
           { kind: "rate_limit", state: "recovered", count: 2 },
         ],
+        page: { limit: 100, returned: 2, hasMore: false, nextCursor: null },
       });
+    }
+
+    const firstFailurePage = await evidenceApp.request(
+      `/api/admin/games/${gameId}/provider-failures?limit=1`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    expect(firstFailurePage.status).toBe(200);
+    expect(firstFailurePage.headers.get("cache-control")).toContain("no-store");
+    const firstFailurePageBody = (await firstFailurePage.json()) as {
+      failures: Array<{ id: string; occurredAt: string }>;
+      page: { limit: number; returned: number; hasMore: boolean; nextCursor: string | null };
+    };
+    expect(firstFailurePageBody.page).toMatchObject({
+      limit: 1,
+      returned: 1,
+      hasMore: true,
+    });
+    expect(typeof firstFailurePageBody.page.nextCursor).toBe("string");
+    const secondFailurePage = await evidenceApp.request(
+      `/api/admin/games/${gameId}/provider-failures?limit=1&cursor=${encodeURIComponent(firstFailurePageBody.page.nextCursor!)}`,
+      { headers: { Authorization: `Bearer ${adminToken}` } },
+    );
+    expect(secondFailurePage.status).toBe(200);
+    expect(secondFailurePage.headers.get("cache-control")).toContain("no-store");
+    const secondFailurePageBody = (await secondFailurePage.json()) as {
+      failures: Array<{ id: string; occurredAt: string }>;
+      page: { limit: number; returned: number; hasMore: boolean; nextCursor: string | null };
+    };
+    expect(secondFailurePageBody.page).toEqual({
+      limit: 1,
+      returned: 1,
+      hasMore: false,
+      nextCursor: null,
+    });
+    expect(secondFailurePageBody.failures[0]!.id).not.toBe(firstFailurePageBody.failures[0]!.id);
+    expect(
+      Date.parse(secondFailurePageBody.failures[0]!.occurredAt),
+    ).toBeLessThanOrEqual(Date.parse(firstFailurePageBody.failures[0]!.occurredAt));
+
+    for (const path of [
+      `/api/admin/games/${gameId}/provider-failures?limit=201`,
+      `/api/admin/games/${gameId}/provider-failures?cursor=not-a-valid-cursor`,
+    ]) {
+      const invalidPage = await evidenceApp.request(path, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+      });
+      expect(invalidPage.status).toBe(400);
+      expect(invalidPage.headers.get("cache-control")).toContain("no-store");
     }
 
     const viewAdminOnlyToken = await createSessionToken(gamerUserId, {

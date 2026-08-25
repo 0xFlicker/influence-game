@@ -608,6 +608,12 @@ export interface AdminProviderFailureDetail {
   summary: AdminProviderFailureSummary;
   budgets: AdminProviderFailureBudget[];
   failures: Array<AdminProviderFailureAttempt | AdminProviderFailureRateLimit>;
+  page: {
+    limit: number;
+    returned: number;
+    hasMore: boolean;
+    nextCursor: string | null;
+  };
 }
 
 export interface AdminProviderFailureBudget {
@@ -744,8 +750,15 @@ export async function listAdminGames(): Promise<AdminGameSummary[]> {
   return apiFetch("/api/admin/games", { cache: "no-store" });
 }
 
-export async function getAdminProviderFailures(idOrSlug: string): Promise<AdminProviderFailureDetail> {
-  return apiFetch(`/api/admin/games/${encodeURIComponent(idOrSlug)}/provider-failures`, {
+export async function getAdminProviderFailures(
+  idOrSlug: string,
+  options: { cursor?: string; limit?: number } = {},
+): Promise<AdminProviderFailureDetail> {
+  const query = new URLSearchParams();
+  if (options.cursor !== undefined) query.set("cursor", options.cursor);
+  if (options.limit !== undefined) query.set("limit", String(options.limit));
+  const suffix = query.size > 0 ? `?${query}` : "";
+  return apiFetch(`/api/admin/games/${encodeURIComponent(idOrSlug)}/provider-failures${suffix}`, {
     cache: "no-store",
   });
 }

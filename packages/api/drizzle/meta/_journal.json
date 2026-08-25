@@ -442,6 +442,13 @@
       "when": 1787592600000,
       "tag": "0062_provider_native_transports",
       "breakpoints": true
+    },
+    {
+      "idx": 63,
+      "version": "7",
+      "when": 1787615008839,
+      "tag": "0063_provider_call_attempts_game_catalog_index",
+      "breakpoints": true
     }
   ]
 }

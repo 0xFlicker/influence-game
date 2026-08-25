@@ -1,14 +1,4 @@
-import {
-  and,
-  asc,
-  eq,
-  gt,
-  inArray,
-  isNotNull,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { resolveProviderManifestFromGameConfig } from "@influence/engine";
 import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
@@ -97,47 +87,71 @@ export interface ProviderFailureDetail {
   summary: ProviderFailureSummary;
   budgets: ProviderFailureBudgetItem[];
   failures: ProviderFailureItem[];
+  page: ProviderFailurePage;
 }
 
-type LogicalCallRow = Pick<
-  typeof schema.providerLogicalCalls.$inferSelect,
-  | "id"
-  | "gameId"
-  | "actorName"
-  | "actorRole"
-  | "action"
-  | "phase"
-  | "round"
-  | "rateLimitCount"
-  | "rateLimitOutcome"
-  | "rateLimitTerminalReason"
-  | "diagnosticsDegraded"
-  | "createdAt"
-  | "updatedAt"
->;
+export interface ProviderFailurePage {
+  limit: number;
+  returned: number;
+  hasMore: boolean;
+  nextCursor: string | null;
+}
 
-type AttemptRow = Pick<
-  typeof schema.providerCallAttempts.$inferSelect,
-  | "id"
-  | "logicalCallId"
-  | "gameId"
-  | "attemptOrdinal"
-  | "providerProfileId"
-  | "transport"
-  | "catalogId"
-  | "modelName"
-  | "status"
-  | "startedAt"
-  | "completedAt"
-  | "outcomeKind"
-  | "outcomeMessage"
-  | "retryable"
-  | "disposition"
-  | "providerRequestId"
-  | "evidenceState"
-  | "evidenceManifestId"
-  | "evidenceError"
->;
+export const DEFAULT_PROVIDER_FAILURE_PAGE_LIMIT = 100;
+export const MAX_PROVIDER_FAILURE_PAGE_LIMIT = 200;
+
+export class InvalidProviderFailureCursorError extends Error {
+  constructor() {
+    super("Invalid provider failure cursor");
+    this.name = "InvalidProviderFailureCursorError";
+  }
+}
+
+interface ProviderFailureCursor {
+  occurredAt: string;
+  sortKey: string;
+}
+
+interface ProviderFailurePageRow extends Record<string, unknown> {
+  kind: "attempt" | "rate_limit";
+  id: string;
+  sortKey: string;
+  logicalCallId: string;
+  occurredAt: string;
+  state: ProviderFailureState;
+  actorName: string | null;
+  actorRole: string | null;
+  action: string | null;
+  phase: string | null;
+  round: number | null;
+  providerProfileId: string | null;
+  transport: string | null;
+  modelName: string | null;
+  attemptOrdinal: number | null;
+  outcomeKind: string | null;
+  outcomeMessage: string | null;
+  retryable: boolean | null;
+  disposition: string | null;
+  providerRequestId: string | null;
+  evidenceState: string | null;
+  evidenceManifestId: string | null;
+  evidenceError: string | null;
+  rateLimitCount: number | null;
+  rateLimitOutcome: string | null;
+  rateLimitTerminalReason: string | null;
+  hasLogicalCall: boolean;
+}
+
+interface ProviderBudgetAggregateRow extends Record<string, unknown> {
+  catalogId: string;
+  usedCalls: number;
+  callCount: number;
+  actualSourceCount: number;
+  estimatedSourceCount: number;
+  actualCostMicrousd: number;
+  estimatedCostMicrousd: number;
+  unpricedCallCount: number;
+}
 
 export async function getProviderFailureSummaryMap(
   db: Pick<DrizzleDB, "execute">,
@@ -303,94 +317,71 @@ function emptyProviderFailureSummary(): ProviderFailureSummary {
 }
 
 export async function getProviderFailureDetail(
-  db: Pick<DrizzleDB, "select">,
+  db: Pick<DrizzleDB, "execute" | "select">,
   gameId: string,
+  options: { cursor?: string; limit?: number } = {},
 ): Promise<ProviderFailureDetail> {
-  const [{ calls, attempts }, gameRows, spendRows] = await Promise.all([
-    readProviderFailureRows(db, [gameId]),
+  const limit = Math.max(
+    1,
+    Math.min(
+      Math.trunc(options.limit ?? DEFAULT_PROVIDER_FAILURE_PAGE_LIMIT),
+      MAX_PROVIDER_FAILURE_PAGE_LIMIT,
+    ),
+  );
+  const cursor = options.cursor !== undefined
+    ? decodeProviderFailureCursor(options.cursor)
+    : null;
+  const [rows, summaries, gameRows, budgetRows] = await Promise.all([
+    readProviderFailureRows(db, gameId, { cursor, limit }),
+    getProviderFailureSummaryMap(db, [gameId]),
     db.select({ config: schema.games.config }).from(schema.games)
       .where(eq(schema.games.id, gameId)),
-    db.select({
-      catalogId: schema.gameProviderSpendEntries.catalogId,
-      costSource: schema.gameProviderSpendEntries.costSource,
-      actualCostMicrousd: schema.gameProviderSpendEntries.actualCostMicrousd,
-      estimatedCostMicrousd: schema.gameProviderSpendEntries.estimatedCostMicrousd,
-    }).from(schema.gameProviderSpendEntries)
-      .where(eq(schema.gameProviderSpendEntries.gameId, gameId)),
+    readProviderBudgetAggregates(db, gameId),
   ]);
-  const callsById = new Map(calls.map((call) => [call.id, call]));
-  const attemptsByCall = Map.groupBy(attempts, (attempt) => attempt.logicalCallId);
-  const failures: ProviderFailureItem[] = [];
-
-  for (const call of calls) {
-    const callAttempts = attemptsByCall.get(call.id) ?? [];
-    for (const attempt of callAttempts) {
-      if (!isExactFailureAttempt(attempt)) continue;
-      failures.push(providerFailureAttemptItem(call, attempt, callAttempts));
-    }
-    if (call.rateLimitCount > 0 && call.rateLimitOutcome) {
-      failures.push(providerFailureRateLimitItem(call));
-    }
-  }
-
-  // Preserve evidence even if a damaged foreign-key relationship is encountered.
-  for (const attempt of attempts) {
-    if (callsById.has(attempt.logicalCallId) || !isExactFailureAttempt(attempt)) continue;
-    failures.push(orphanedProviderFailureAttemptItem(attempt));
-  }
-
-  failures.sort((left, right) => (
-    Date.parse(left.occurredAt) - Date.parse(right.occurredAt)
-      || left.id.localeCompare(right.id)
-  ));
+  const hasMore = rows.length > limit;
+  const pageRows = rows.slice(0, limit);
+  const last = pageRows[pageRows.length - 1];
+  const failures = pageRows.map(providerFailureItemFromRow).reverse();
 
   return {
     schemaVersion: 1,
     gameId,
-    summary: summarizeProviderFailures(calls, attempts),
-    budgets: providerBudgetItems(gameRows[0]?.config, attempts, spendRows),
+    summary: summaries.get(gameId) ?? emptyProviderFailureSummary(),
+    budgets: providerBudgetItems(gameRows[0]?.config, budgetRows),
     failures,
+    page: {
+      limit,
+      returned: failures.length,
+      hasMore,
+      nextCursor: hasMore && last
+        ? encodeProviderFailureCursor({
+            occurredAt: last.occurredAt,
+            sortKey: last.sortKey,
+          })
+        : null,
+    },
   };
 }
 
 function providerBudgetItems(
   rawConfig: string | undefined,
-  attempts: AttemptRow[],
-  spendRows: Array<{
-    catalogId: string | null;
-    costSource: string;
-    actualCostMicrousd: number | null;
-    estimatedCostMicrousd: number | null;
-  }>,
+  aggregateRows: ProviderBudgetAggregateRow[],
 ): ProviderFailureBudgetItem[] {
   if (!rawConfig) return [];
   const config = JSON.parse(rawConfig) as Record<string, unknown>;
   const manifest = resolveProviderManifestFromGameConfig(config);
+  const aggregateByCatalogId = new Map(
+    aggregateRows.map((row) => [row.catalogId, row]),
+  );
   return manifest.map((entry) => {
-    const usedCalls = attempts.filter(
-      (attempt) => attempt.catalogId === entry.catalogId,
-    ).length;
-    const costs = spendRows.filter((row) => row.catalogId === entry.catalogId);
-    const actualCosts = costs.filter((row) => (
-      row.costSource === "provider_actual"
-      || row.costSource === "router_actual"
-      || row.costSource === "org_reconciled"
-    ));
-    const estimatedCosts = costs.filter((row) => (
-      row.costSource === "catalog_estimate"
-      || row.costSource === "static_estimate"
-    ));
-    const actualCostMicrousd = costs.reduce(
-      (sum, row) => sum + (row.actualCostMicrousd ?? 0),
-      0,
-    );
-    const estimatedCostMicrousd = costs.reduce(
-      (sum, row) => sum + (row.estimatedCostMicrousd ?? 0),
-      0,
-    );
-    const unpricedCallCount = costs.filter(
-      (row) => row.costSource === "unavailable",
-    ).length;
+    const aggregate = aggregateByCatalogId.get(entry.catalogId);
+    const usedCalls = aggregate?.usedCalls ?? 0;
+    const callCount = aggregate?.callCount ?? 0;
+    const actualSourceCount = aggregate?.actualSourceCount ?? 0;
+    const estimatedSourceCount = aggregate?.estimatedSourceCount ?? 0;
+    const actualCostMicrousd = aggregate?.actualCostMicrousd ?? 0;
+    const estimatedCostMicrousd = aggregate?.estimatedCostMicrousd ?? 0;
+    const unpricedCallCount = aggregate?.unpricedCallCount ?? 0;
     const maxCallsPerGame = entry.maxCallsPerGame ?? null;
     const remainingCalls = maxCallsPerGame === null
       ? null
@@ -409,16 +400,16 @@ function providerBudgetItems(
           ? "exhausted"
           : "available",
       cost: {
-        state: costs.length === 0
+        state: callCount === 0
           ? "no_calls"
           : unpricedCallCount > 0
             ? "unavailable"
-            : actualCosts.length > 0
+            : actualSourceCount > 0
               ? "actual"
-              : estimatedCosts.length > 0
+              : estimatedSourceCount > 0
                 ? "estimated"
                 : "unavailable",
-        callCount: costs.length,
+        callCount,
         actualCostMicrousd,
         estimatedCostMicrousd,
         unpricedCallCount,
@@ -428,234 +419,249 @@ function providerBudgetItems(
 }
 
 async function readProviderFailureRows(
-  db: Pick<DrizzleDB, "select">,
-  gameIds: readonly string[],
-  failuresOnly = false,
-): Promise<{ calls: LogicalCallRow[]; attempts: AttemptRow[] }> {
-  const exactFailure = and(
-    isNotNull(schema.providerCallAttempts.outcomeKind),
-    notInArray(schema.providerCallAttempts.outcomeKind, ["usable", "rate_limit"]),
-  );
-  const callHasExactFailure = sql<boolean>`EXISTS (
-    SELECT 1
-    FROM ${schema.providerCallAttempts}
-    WHERE ${schema.providerCallAttempts.logicalCallId} = ${schema.providerLogicalCalls.id}
-      AND ${schema.providerCallAttempts.outcomeKind} IS NOT NULL
-      AND ${schema.providerCallAttempts.outcomeKind} NOT IN ('usable', 'rate_limit')
-  )`;
-  const calls = await db.select({
-      id: schema.providerLogicalCalls.id,
-      gameId: schema.providerLogicalCalls.gameId,
-      actorName: schema.providerLogicalCalls.actorName,
-      actorRole: schema.providerLogicalCalls.actorRole,
-      action: schema.providerLogicalCalls.action,
-      phase: schema.providerLogicalCalls.phase,
-      round: schema.providerLogicalCalls.round,
-      rateLimitCount: schema.providerLogicalCalls.rateLimitCount,
-      rateLimitOutcome: schema.providerLogicalCalls.rateLimitOutcome,
-      rateLimitTerminalReason: schema.providerLogicalCalls.rateLimitTerminalReason,
-      diagnosticsDegraded: schema.providerLogicalCalls.diagnosticsDegraded,
-      createdAt: schema.providerLogicalCalls.createdAt,
-      updatedAt: schema.providerLogicalCalls.updatedAt,
-    }).from(schema.providerLogicalCalls)
-      .where(and(
-        inArray(schema.providerLogicalCalls.gameId, [...gameIds]),
-        failuresOnly
-          ? or(gt(schema.providerLogicalCalls.rateLimitCount, 0), callHasExactFailure)
-          : undefined,
-      ))
-      .orderBy(asc(schema.providerLogicalCalls.createdAt), asc(schema.providerLogicalCalls.id));
-  const callIds = calls.map((call) => call.id);
-  const attempts = await db.select({
-      id: schema.providerCallAttempts.id,
-      logicalCallId: schema.providerCallAttempts.logicalCallId,
-      gameId: schema.providerCallAttempts.gameId,
-      attemptOrdinal: schema.providerCallAttempts.attemptOrdinal,
-      providerProfileId: schema.providerCallAttempts.providerProfileId,
-      transport: schema.providerCallAttempts.transport,
-      catalogId: schema.providerCallAttempts.catalogId,
-      modelName: schema.providerCallAttempts.modelName,
-      status: schema.providerCallAttempts.status,
-      startedAt: schema.providerCallAttempts.startedAt,
-      completedAt: schema.providerCallAttempts.completedAt,
-      outcomeKind: schema.providerCallAttempts.outcomeKind,
-      outcomeMessage: schema.providerCallAttempts.outcomeMessage,
-      retryable: schema.providerCallAttempts.retryable,
-      disposition: schema.providerCallAttempts.disposition,
-      providerRequestId: schema.providerCallAttempts.providerRequestId,
-      evidenceState: schema.providerCallAttempts.evidenceState,
-      evidenceManifestId: schema.providerCallAttempts.evidenceManifestId,
-      evidenceError: schema.providerCallAttempts.evidenceError,
-    }).from(schema.providerCallAttempts)
-      .where(and(
-        inArray(schema.providerCallAttempts.gameId, [...gameIds]),
-        failuresOnly
-          ? or(
-              callIds.length > 0
-                ? inArray(schema.providerCallAttempts.logicalCallId, callIds)
-                : undefined,
-              exactFailure,
-            )
-          : undefined,
-      ))
-      .orderBy(asc(schema.providerCallAttempts.startedAt), asc(schema.providerCallAttempts.id));
-  return { calls, attempts };
+  db: Pick<DrizzleDB, "execute">,
+  gameId: string,
+  options: { cursor: ProviderFailureCursor | null; limit: number },
+): Promise<ProviderFailurePageRow[]> {
+  const cursorCondition = options.cursor
+    ? sql`
+        ("occurredAt" < ${options.cursor.occurredAt})
+        OR ("occurredAt" = ${options.cursor.occurredAt} AND "sortKey" < ${options.cursor.sortKey})
+      `
+    : sql`true`;
+  return db.execute<ProviderFailurePageRow>(sql`
+    WITH failure_rows AS (
+      SELECT
+        'attempt'::text AS "kind",
+        attempt.id AS "id",
+        ('attempt:' || attempt.id) AS "sortKey",
+        attempt.logical_call_id AS "logicalCallId",
+        COALESCE(attempt.completed_at, attempt.started_at) AS "occurredAt",
+        CASE
+          WHEN logical_call.id IS NULL
+            OR attempt.evidence_state = 'degraded'
+            OR logical_call.diagnostics_degraded
+            THEN 'degraded'
+          WHEN EXISTS (
+            SELECT 1
+            FROM provider_call_attempts later
+            WHERE later.logical_call_id = attempt.logical_call_id
+              AND later.attempt_ordinal > attempt.attempt_ordinal
+              AND later.outcome_kind = 'usable'
+              AND later.disposition = 'accepted'
+          ) THEN 'recovered'
+          WHEN attempt.disposition = 'exhausted' THEN 'terminal'
+          ELSE 'transitioned'
+        END AS "state",
+        logical_call.actor_name AS "actorName",
+        logical_call.actor_role AS "actorRole",
+        logical_call.action AS "action",
+        logical_call.phase AS "phase",
+        logical_call.round AS "round",
+        attempt.provider_profile_id AS "providerProfileId",
+        attempt.request_shape AS "transport",
+        attempt.model_name AS "modelName",
+        attempt.attempt_ordinal AS "attemptOrdinal",
+        attempt.outcome_kind AS "outcomeKind",
+        attempt.outcome_message AS "outcomeMessage",
+        attempt.retryable AS "retryable",
+        attempt.disposition AS "disposition",
+        attempt.provider_request_id AS "providerRequestId",
+        attempt.evidence_state AS "evidenceState",
+        attempt.evidence_manifest_id AS "evidenceManifestId",
+        attempt.evidence_error AS "evidenceError",
+        NULL::int AS "rateLimitCount",
+        NULL::text AS "rateLimitOutcome",
+        NULL::text AS "rateLimitTerminalReason",
+        (logical_call.id IS NOT NULL) AS "hasLogicalCall"
+      FROM provider_call_attempts attempt
+      LEFT JOIN provider_logical_calls logical_call
+        ON logical_call.id = attempt.logical_call_id
+        AND logical_call.game_id = attempt.game_id
+      WHERE attempt.game_id = ${gameId}
+        AND attempt.outcome_kind IS NOT NULL
+        AND attempt.outcome_kind NOT IN ('usable', 'rate_limit')
+
+      UNION ALL
+
+      SELECT
+        'rate_limit'::text AS "kind",
+        ('rate-limit:' || logical_call.id) AS "id",
+        ('rate-limit:' || logical_call.id) AS "sortKey",
+        logical_call.id AS "logicalCallId",
+        logical_call.updated_at AS "occurredAt",
+        CASE
+          WHEN logical_call.rate_limit_outcome = 'exhausted' THEN 'terminal'
+          WHEN logical_call.diagnostics_degraded THEN 'degraded'
+          WHEN logical_call.rate_limit_outcome = 'recovered' THEN 'recovered'
+          ELSE 'transitioned'
+        END AS "state",
+        logical_call.actor_name AS "actorName",
+        logical_call.actor_role AS "actorRole",
+        logical_call.action AS "action",
+        logical_call.phase AS "phase",
+        logical_call.round AS "round",
+        NULL::text AS "providerProfileId",
+        NULL::text AS "transport",
+        NULL::text AS "modelName",
+        NULL::int AS "attemptOrdinal",
+        NULL::text AS "outcomeKind",
+        NULL::text AS "outcomeMessage",
+        NULL::boolean AS "retryable",
+        NULL::text AS "disposition",
+        NULL::text AS "providerRequestId",
+        NULL::text AS "evidenceState",
+        NULL::text AS "evidenceManifestId",
+        NULL::text AS "evidenceError",
+        logical_call.rate_limit_count AS "rateLimitCount",
+        logical_call.rate_limit_outcome AS "rateLimitOutcome",
+        logical_call.rate_limit_terminal_reason AS "rateLimitTerminalReason",
+        true AS "hasLogicalCall"
+      FROM provider_logical_calls logical_call
+      WHERE logical_call.game_id = ${gameId}
+        AND logical_call.rate_limit_count > 0
+        AND logical_call.rate_limit_outcome IS NOT NULL
+    )
+    SELECT *
+    FROM failure_rows
+    WHERE ${cursorCondition}
+    ORDER BY "occurredAt" DESC, "sortKey" DESC
+    LIMIT ${options.limit + 1}
+  `);
 }
 
-function summarizeProviderFailures(calls: LogicalCallRow[], attempts: AttemptRow[]): ProviderFailureSummary {
-  const attemptsByCall = Map.groupBy(attempts, (attempt) => attempt.logicalCallId);
-  const callsById = new Map(calls.map((call) => [call.id, call]));
-  const exactFailures = attempts.filter(isExactFailureAttempt);
-  const rateLimitCount = calls.reduce((sum, call) => sum + call.rateLimitCount, 0);
-  const states = [
-    ...exactFailures.map((attempt) => providerFailureState(
-      attempt,
-      attemptsByCall.get(attempt.logicalCallId) ?? [],
-      callsById.get(attempt.logicalCallId)?.diagnosticsDegraded ?? false,
-    )),
-    ...calls.filter((call) => call.rateLimitCount > 0).map(rateLimitState),
-  ];
-  const lastFailureAt = [
-    ...exactFailures.map((attempt) => attempt.completedAt ?? attempt.startedAt),
-    ...calls.filter((call) => call.rateLimitCount > 0).map((call) => call.updatedAt),
-  ].sort((left, right) => Date.parse(right) - Date.parse(left))[0] ?? null;
-  const summary = {
-    schemaVersion: 1 as const,
-    failureCount: exactFailures.length + rateLimitCount,
-    exactFailureCount: exactFailures.length,
-    rateLimitCount,
-    recoveredCount: states.filter((state) => state === "recovered").length,
-    terminalCount: states.filter((state) => state === "terminal").length,
-    degradedCount: exactFailures.filter((attempt) => (
-      attempt.evidenceState === "degraded"
-        || callsById.get(attempt.logicalCallId)?.diagnosticsDegraded
-    )).length + calls.filter((call) => call.rateLimitCount > 0 && call.diagnosticsDegraded).length,
-    transitionedCount: states.filter((state) => state === "transitioned").length,
-    lastFailureAt,
-  };
-  return {
-    ...summary,
-    state: summary.failureCount === 0
-      ? "empty"
-      : summary.terminalCount > 0
-        ? "terminal"
-        : summary.degradedCount > 0
-          ? "degraded"
-          : summary.transitionedCount > 0
-            ? "transitioned"
-            : "recovered",
-  };
+async function readProviderBudgetAggregates(
+  db: Pick<DrizzleDB, "execute">,
+  gameId: string,
+): Promise<ProviderBudgetAggregateRow[]> {
+  return db.execute<ProviderBudgetAggregateRow>(sql`
+    WITH attempt_usage AS (
+      SELECT
+        catalog_id,
+        count(*)::int AS used_calls
+      FROM provider_call_attempts
+      WHERE game_id = ${gameId}
+        AND catalog_id IS NOT NULL
+      GROUP BY catalog_id
+    ), spend_usage AS (
+      SELECT
+        catalog_id,
+        count(*)::int AS call_count,
+        count(*) FILTER (
+          WHERE cost_source IN ('provider_actual', 'router_actual', 'org_reconciled')
+        )::int AS actual_source_count,
+        count(*) FILTER (
+          WHERE cost_source IN ('catalog_estimate', 'static_estimate')
+        )::int AS estimated_source_count,
+        COALESCE(sum(actual_cost_microusd), 0)::int AS actual_cost_microusd,
+        COALESCE(sum(estimated_cost_microusd), 0)::int AS estimated_cost_microusd,
+        count(*) FILTER (WHERE cost_source = 'unavailable')::int AS unpriced_call_count
+      FROM game_provider_spend_entries
+      WHERE game_id = ${gameId}
+        AND catalog_id IS NOT NULL
+      GROUP BY catalog_id
+    )
+    SELECT
+      COALESCE(attempt_usage.catalog_id, spend_usage.catalog_id) AS "catalogId",
+      COALESCE(attempt_usage.used_calls, 0)::int AS "usedCalls",
+      COALESCE(spend_usage.call_count, 0)::int AS "callCount",
+      COALESCE(spend_usage.actual_source_count, 0)::int AS "actualSourceCount",
+      COALESCE(spend_usage.estimated_source_count, 0)::int AS "estimatedSourceCount",
+      COALESCE(spend_usage.actual_cost_microusd, 0)::int AS "actualCostMicrousd",
+      COALESCE(spend_usage.estimated_cost_microusd, 0)::int AS "estimatedCostMicrousd",
+      COALESCE(spend_usage.unpriced_call_count, 0)::int AS "unpricedCallCount"
+    FROM attempt_usage
+    FULL OUTER JOIN spend_usage USING (catalog_id)
+  `);
 }
 
-function providerFailureAttemptItem(
-  call: LogicalCallRow,
-  attempt: AttemptRow,
-  callAttempts: AttemptRow[],
-): ProviderFailureAttemptItem {
-  const evidenceState = attempt.evidenceState === "stored" && attempt.evidenceManifestId
-    ? "available"
-    : attempt.evidenceState === "degraded"
-      ? "degraded"
-      : "unavailable";
+function providerFailureItemFromRow(row: ProviderFailurePageRow): ProviderFailureItem {
+  if (row.kind === "rate_limit") {
+    return {
+      kind: "rate_limit",
+      id: row.id,
+      logicalCallId: row.logicalCallId,
+      occurredAt: row.occurredAt,
+      state: row.state,
+      actorName: row.actorName ?? "Unknown actor",
+      actorRole: row.actorRole ?? "system",
+      action: row.action ?? "unknown",
+      phase: row.phase,
+      round: row.round,
+      count: row.rateLimitCount ?? 0,
+      outcome: row.rateLimitOutcome === "recovered" || row.rateLimitOutcome === "exhausted"
+        ? row.rateLimitOutcome
+        : "pending",
+      terminalReason: row.rateLimitTerminalReason,
+    };
+  }
+
+  const evidenceState = !row.hasLogicalCall
+    ? "degraded"
+    : row.evidenceState === "stored" && row.evidenceManifestId
+      ? "available"
+      : row.evidenceState === "degraded"
+        ? "degraded"
+        : "unavailable";
   return {
     kind: "attempt",
-    id: attempt.id,
-    logicalCallId: attempt.logicalCallId,
-    occurredAt: attempt.completedAt ?? attempt.startedAt,
-    state: providerFailureState(attempt, callAttempts, call.diagnosticsDegraded),
-    actorName: call.actorName,
-    actorRole: call.actorRole,
-    action: call.action,
-    phase: call.phase,
-    round: call.round,
-    providerProfileId: attempt.providerProfileId,
-    transport: attempt.transport,
-    modelName: attempt.modelName,
-    attemptOrdinal: attempt.attemptOrdinal,
-    outcomeKind: attempt.outcomeKind ?? "indeterminate",
-    outcomeMessage: attempt.outcomeMessage,
-    retryable: attempt.retryable,
-    disposition: attempt.disposition,
-    providerRequestId: attempt.providerRequestId,
+    id: row.id,
+    logicalCallId: row.logicalCallId,
+    occurredAt: row.occurredAt,
+    state: row.state,
+    actorName: row.actorName ?? "Unknown actor",
+    actorRole: row.actorRole ?? "system",
+    action: row.action ?? "unknown",
+    phase: row.phase,
+    round: row.round,
+    providerProfileId: row.providerProfileId ?? "unknown",
+    transport: row.transport ?? "unknown",
+    modelName: row.modelName ?? "unknown",
+    attemptOrdinal: row.attemptOrdinal ?? 0,
+    outcomeKind: row.outcomeKind ?? "indeterminate",
+    outcomeMessage: row.outcomeMessage,
+    retryable: row.retryable,
+    disposition: row.disposition,
+    providerRequestId: row.providerRequestId,
     evidence: {
       state: evidenceState,
-      manifestId: evidenceState === "available" ? attempt.evidenceManifestId : null,
-      error: evidenceState === "available" ? null : attempt.evidenceError,
+      manifestId: evidenceState === "available" ? row.evidenceManifestId : null,
+      error: evidenceState === "available"
+        ? null
+        : !row.hasLogicalCall
+          ? "Logical provider call metadata is unavailable"
+          : row.evidenceError,
     },
   };
 }
 
-function orphanedProviderFailureAttemptItem(attempt: AttemptRow): ProviderFailureAttemptItem {
-  return {
-    kind: "attempt",
-    id: attempt.id,
-    logicalCallId: attempt.logicalCallId,
-    occurredAt: attempt.completedAt ?? attempt.startedAt,
-    state: "degraded",
-    actorName: "Unknown actor",
-    actorRole: "system",
-    action: "unknown",
-    phase: null,
-    round: null,
-    providerProfileId: attempt.providerProfileId,
-    transport: attempt.transport,
-    modelName: attempt.modelName,
-    attemptOrdinal: attempt.attemptOrdinal,
-    outcomeKind: attempt.outcomeKind ?? "indeterminate",
-    outcomeMessage: attempt.outcomeMessage,
-    retryable: attempt.retryable,
-    disposition: attempt.disposition,
-    providerRequestId: attempt.providerRequestId,
-    evidence: {
-      state: "degraded",
-      manifestId: null,
-      error: "Logical provider call metadata is unavailable",
-    },
-  };
+function encodeProviderFailureCursor(cursor: ProviderFailureCursor): string {
+  return Buffer.from(JSON.stringify([cursor.occurredAt, cursor.sortKey]), "utf8")
+    .toString("base64url");
 }
 
-function providerFailureRateLimitItem(call: LogicalCallRow): ProviderFailureRateLimitItem {
-  return {
-    kind: "rate_limit",
-    id: `rate-limit:${call.id}`,
-    logicalCallId: call.id,
-    occurredAt: call.updatedAt,
-    state: rateLimitState(call),
-    actorName: call.actorName,
-    actorRole: call.actorRole,
-    action: call.action,
-    phase: call.phase,
-    round: call.round,
-    count: call.rateLimitCount,
-    outcome: call.rateLimitOutcome ?? "pending",
-    terminalReason: call.rateLimitTerminalReason,
-  };
-}
-
-function providerFailureState(
-  attempt: AttemptRow,
-  callAttempts: AttemptRow[],
-  diagnosticsDegraded: boolean,
-): ProviderFailureState {
-  if (diagnosticsDegraded || attempt.evidenceState === "degraded") return "degraded";
-  const recovered = callAttempts.some((candidate) => (
-    candidate.attemptOrdinal > attempt.attemptOrdinal
-      && candidate.outcomeKind === "usable"
-      && candidate.disposition === "accepted"
-  ));
-  if (recovered) return "recovered";
-  return attempt.disposition === "exhausted" ? "terminal" : "transitioned";
-}
-
-function rateLimitState(call: LogicalCallRow): ProviderFailureState {
-  if (call.rateLimitOutcome === "exhausted") return "terminal";
-  if (call.diagnosticsDegraded) return "degraded";
-  if (call.rateLimitOutcome === "recovered") return "recovered";
-  return "transitioned";
-}
-
-function isExactFailureAttempt(attempt: AttemptRow): boolean {
-  return attempt.outcomeKind !== null
-    && attempt.outcomeKind !== "usable"
-    && attempt.outcomeKind !== "rate_limit";
+function decodeProviderFailureCursor(value: string): ProviderFailureCursor {
+  if (value.length === 0 || value.length > 1024) throw new InvalidProviderFailureCursorError();
+  try {
+    const decoded: unknown = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
+    if (!Array.isArray(decoded) || decoded.length !== 2) {
+      throw new InvalidProviderFailureCursorError();
+    }
+    const [occurredAt, sortKey] = decoded;
+    if (
+      typeof occurredAt !== "string"
+      || occurredAt.length === 0
+      || occurredAt.length > 100
+      || !Number.isFinite(Date.parse(occurredAt))
+      || typeof sortKey !== "string"
+      || sortKey.length === 0
+      || sortKey.length > 512
+    ) {
+      throw new InvalidProviderFailureCursorError();
+    }
+    return { occurredAt, sortKey };
+  } catch (error) {
+    if (error instanceof InvalidProviderFailureCursorError) throw error;
+    throw new InvalidProviderFailureCursorError();
+  }
 }

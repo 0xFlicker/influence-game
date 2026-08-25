@@ -145,6 +145,52 @@ describe("admin provider failure evidence", () => {
     expect(mounted.queryByRole("button", { name: "Retry" })).toBeNull();
   });
 
+  test("prepends older pages so the combined evidence remains chronological", async () => {
+    installDom();
+    const first = {
+      ...detailFixture(),
+      page: { limit: 2, returned: 2, hasMore: true, nextCursor: "older-page" },
+    };
+    const older = {
+      ...detailFixture(),
+      failures: [{
+        kind: "rate_limit" as const,
+        id: "rate-limit:older-call",
+        logicalCallId: "older-call",
+        occurredAt: "2026-08-23T11:59:00.000Z",
+        state: "transitioned" as const,
+        actorName: "Older actor",
+        actorRole: "player",
+        action: "deliberate",
+        phase: "MINGLE",
+        round: 1,
+        count: 1,
+        outcome: "pending" as const,
+        terminalReason: null,
+      }],
+      page: { limit: 2, returned: 1, hasMore: false, nextCursor: null },
+    };
+    const urls: string[] = [];
+    globalThis.fetch = (async (request) => {
+      const url = String(request);
+      urls.push(url);
+      return jsonResponse(url.includes("cursor=older-page") ? older : first);
+    }) as typeof fetch;
+
+    const mounted = render(<AdminProviderFailuresPanel game={gameFixture()} onClose={() => {}} />);
+    const loadOlder = await mounted.findByRole("button", { name: "Load older evidence" });
+    fireEvent.click(loadOlder);
+    await waitFor(() => expect(mounted.container.textContent).toContain("Older actor"));
+
+    const list = mounted.getByRole("list", { name: "Chronological provider failure evidence" });
+    const records = [...list.querySelectorAll("li")].map((item) => item.textContent ?? "");
+    expect(records[0]).toContain("Older actor");
+    expect(records[1]).toContain("Atlas");
+    expect(records[2]).toContain("House");
+    expect(urls[1]).toContain("cursor=older-page");
+    expect(mounted.queryByRole("button", { name: "Load older evidence" })).toBeNull();
+  });
+
   test("keeps loading, unavailable, and empty panel states distinct and retryable", async () => {
     installDom();
     let resolveFetch!: (response: Response) => void;
@@ -165,6 +211,7 @@ describe("admin provider failure evidence", () => {
       summary: emptySummary(),
       budgets: [],
       failures: [],
+      page: { limit: 100, returned: 0, hasMore: false, nextCursor: null },
     })) as unknown as typeof fetch;
     const empty = render(<AdminProviderFailuresPanel game={gameFixture()} onClose={() => {}} />);
     await waitFor(() => expect(empty.getAllByText("No provider failures").length).toBe(2));
@@ -269,6 +316,7 @@ function detailFixture() {
         terminalReason: "retry budget exhausted",
       },
     ],
+    page: { limit: 100, returned: 2, hasMore: false, nextCursor: null },
   };
 }
 

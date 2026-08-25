@@ -188,6 +188,10 @@ function fakeSelectDb(
 ) {
   let selectCount = 0;
   let executeCount = 0;
+  const callsById = new Map(calls.map((call) => {
+    const row = call as Record<string, unknown>;
+    return [String(row.id), row];
+  }));
   return {
     get selectCount() {
       return selectCount;
@@ -195,9 +199,196 @@ function fakeSelectDb(
     get executeCount() {
       return executeCount;
     },
-    execute() {
+    execute(query: unknown) {
       executeCount += 1;
-      return Promise.resolve([]);
+      const queryText = readSqlText(query);
+      if (queryText.includes("WITH failure_rows")) {
+        const pageRows = [
+          ...attempts
+            .map((value) => value as Record<string, unknown>)
+            .filter((row) => (
+              row.outcomeKind !== null
+              && row.outcomeKind !== "usable"
+              && row.outcomeKind !== "rate_limit"
+            ))
+            .map((row) => {
+              const call = callsById.get(String(row.logicalCallId));
+              const recovered = attempts.some((candidateValue) => {
+                const candidate = candidateValue as Record<string, unknown>;
+                return candidate.logicalCallId === row.logicalCallId
+                  && Number(candidate.attemptOrdinal) > Number(row.attemptOrdinal)
+                  && candidate.outcomeKind === "usable"
+                  && candidate.disposition === "accepted";
+              });
+              const degraded = !call || row.evidenceState === "degraded" || call.diagnosticsDegraded === true;
+              return {
+                kind: "attempt",
+                id: row.id,
+                sortKey: `attempt:${String(row.id)}`,
+                logicalCallId: row.logicalCallId,
+                occurredAt: row.completedAt ?? row.startedAt,
+                state: degraded ? "degraded" : recovered ? "recovered" : row.disposition === "exhausted" ? "terminal" : "transitioned",
+                actorName: call?.actorName ?? null,
+                actorRole: call?.actorRole ?? null,
+                action: call?.action ?? null,
+                phase: call?.phase ?? null,
+                round: call?.round ?? null,
+                providerProfileId: row.providerProfileId,
+                transport: row.transport,
+                modelName: row.modelName,
+                attemptOrdinal: row.attemptOrdinal,
+                outcomeKind: row.outcomeKind,
+                outcomeMessage: row.outcomeMessage,
+                retryable: row.retryable,
+                disposition: row.disposition,
+                providerRequestId: row.providerRequestId,
+                evidenceState: row.evidenceState,
+                evidenceManifestId: row.evidenceManifestId,
+                evidenceError: row.evidenceError,
+                rateLimitCount: null,
+                rateLimitOutcome: null,
+                rateLimitTerminalReason: null,
+                hasLogicalCall: Boolean(call),
+              };
+            }),
+          ...calls
+            .map((value) => value as Record<string, unknown>)
+            .filter((row) => Number(row.rateLimitCount) > 0 && row.rateLimitOutcome !== null)
+            .map((row) => ({
+              kind: "rate_limit",
+              id: `rate-limit:${String(row.id)}`,
+              sortKey: `rate-limit:${String(row.id)}`,
+              logicalCallId: row.id,
+              occurredAt: row.updatedAt,
+              state: row.rateLimitOutcome === "exhausted"
+                ? "terminal"
+                : row.diagnosticsDegraded === true
+                  ? "degraded"
+                  : row.rateLimitOutcome === "recovered"
+                    ? "recovered"
+                    : "transitioned",
+              actorName: row.actorName,
+              actorRole: row.actorRole,
+              action: row.action,
+              phase: row.phase,
+              round: row.round,
+              providerProfileId: null,
+              transport: null,
+              modelName: null,
+              attemptOrdinal: null,
+              outcomeKind: null,
+              outcomeMessage: null,
+              retryable: null,
+              disposition: null,
+              providerRequestId: null,
+              evidenceState: null,
+              evidenceManifestId: null,
+              evidenceError: null,
+              rateLimitCount: row.rateLimitCount,
+              rateLimitOutcome: row.rateLimitOutcome,
+              rateLimitTerminalReason: row.rateLimitTerminalReason,
+              hasLogicalCall: true,
+            })),
+        ];
+        pageRows.sort((left, right) => (
+          String(right.occurredAt).localeCompare(String(left.occurredAt))
+          || String(right.sortKey).localeCompare(String(left.sortKey))
+        ));
+        return Promise.resolve(pageRows);
+      }
+      if (queryText.includes("WITH attempt_usage")) {
+        const aggregates = new Map<string, {
+          catalogId: string;
+          usedCalls: number;
+          callCount: number;
+          actualSourceCount: number;
+          estimatedSourceCount: number;
+          actualCostMicrousd: number;
+          estimatedCostMicrousd: number;
+          unpricedCallCount: number;
+        }>();
+        const aggregate = (catalogId: string) => {
+          let row = aggregates.get(catalogId);
+          if (!row) {
+            row = {
+              catalogId,
+              usedCalls: 0,
+              callCount: 0,
+              actualSourceCount: 0,
+              estimatedSourceCount: 0,
+              actualCostMicrousd: 0,
+              estimatedCostMicrousd: 0,
+              unpricedCallCount: 0,
+            };
+            aggregates.set(catalogId, row);
+          }
+          return row;
+        };
+        for (const value of attempts) {
+          const row = value as Record<string, unknown>;
+          if (typeof row.catalogId === "string") aggregate(row.catalogId).usedCalls += 1;
+        }
+        for (const value of spendRows) {
+          const row = value as Record<string, unknown>;
+          if (typeof row.catalogId !== "string") continue;
+          const target = aggregate(row.catalogId);
+          target.callCount += 1;
+          if (["provider_actual", "router_actual", "org_reconciled"].includes(String(row.costSource))) {
+            target.actualSourceCount += 1;
+          }
+          if (["catalog_estimate", "static_estimate"].includes(String(row.costSource))) {
+            target.estimatedSourceCount += 1;
+          }
+          if (row.costSource === "unavailable") target.unpricedCallCount += 1;
+          target.actualCostMicrousd += Number(row.actualCostMicrousd ?? 0);
+          target.estimatedCostMicrousd += Number(row.estimatedCostMicrousd ?? 0);
+        }
+        return Promise.resolve([...aggregates.values()]);
+      }
+
+      const exactFailures = attempts
+        .map((value) => value as Record<string, unknown>)
+        .filter((row) => row.outcomeKind !== null && row.outcomeKind !== "usable" && row.outcomeKind !== "rate_limit");
+      const rateLimitCalls = calls
+        .map((value) => value as Record<string, unknown>)
+        .filter((row) => Number(row.rateLimitCount) > 0);
+      if (exactFailures.length === 0 && rateLimitCalls.length === 0) return Promise.resolve([]);
+      const states = [
+        ...exactFailures.map((row) => {
+          const call = callsById.get(String(row.logicalCallId));
+          if (!call || row.evidenceState === "degraded" || call.diagnosticsDegraded === true) return "degraded";
+          const recovered = attempts.some((candidateValue) => {
+            const candidate = candidateValue as Record<string, unknown>;
+            return candidate.logicalCallId === row.logicalCallId
+              && Number(candidate.attemptOrdinal) > Number(row.attemptOrdinal)
+              && candidate.outcomeKind === "usable"
+              && candidate.disposition === "accepted";
+          });
+          if (recovered) return "recovered";
+          return row.disposition === "exhausted" ? "terminal" : "transitioned";
+        }),
+        ...rateLimitCalls.map((row) => row.rateLimitOutcome === "exhausted"
+          ? "terminal"
+          : row.diagnosticsDegraded === true
+            ? "degraded"
+            : row.rateLimitOutcome === "recovered"
+              ? "recovered"
+              : "transitioned"),
+      ];
+      const failureTimes = [
+        ...exactFailures.map((row) => String(row.completedAt ?? row.startedAt)),
+        ...rateLimitCalls.map((row) => String(row.updatedAt)),
+      ].sort((left, right) => right.localeCompare(left));
+      return Promise.resolve([{
+        gameId: "game-1",
+        exactFailureCount: exactFailures.length,
+        rateLimitCount: rateLimitCalls.reduce((sum, row) => sum + Number(row.rateLimitCount), 0),
+        recoveredCount: states.filter((state) => state === "recovered").length,
+        terminalCount: states.filter((state) => state === "terminal").length,
+        degradedCount: states.filter((state) => state === "degraded").length,
+        transitionedCount: states.filter((state) => state === "transitioned").length,
+        lastFailureAt: failureTimes[0] ?? null,
+      }]);
     },
     select(fields: Record<string, unknown>) {
       selectCount += 1;
@@ -230,6 +421,15 @@ function fakeSelectDb(
       };
     },
   };
+}
+
+function readSqlText(value: unknown): string {
+  if (!value || typeof value !== "object") return "";
+  const record = value as { value?: unknown; queryChunks?: unknown[] };
+  const ownValue = Array.isArray(record.value)
+    ? record.value.filter((part): part is string => typeof part === "string").join("")
+    : "";
+  return `${ownValue}${(record.queryChunks ?? []).map(readSqlText).join("")}`;
 }
 
 function logicalCall(overrides: Record<string, unknown> = {}) {

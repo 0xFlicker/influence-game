@@ -90,8 +90,11 @@ import {
   type DeploymentAdmissionStatus,
 } from "../services/deployment-admission.js";
 import {
+  DEFAULT_PROVIDER_FAILURE_PAGE_LIMIT,
   getProviderFailureDetail,
   getProviderFailureSummaryMap,
+  InvalidProviderFailureCursorError,
+  MAX_PROVIDER_FAILURE_PAGE_LIMIT,
   type ProviderFailureSummary,
 } from "../services/provider-failure-read-model.js";
 import { PrivateTraceReadModel } from "../services/private-trace-read-model.js";
@@ -860,9 +863,24 @@ export function createAdminRoutes(
     async (c) => {
       const gameId = await findAdminGameId(c.req.param("idOrSlug"));
       if (!gameId) return c.json({ error: "Game not found" }, 404);
+      const limit = boundedIntegerQuery(
+        c.req.query("limit"),
+        DEFAULT_PROVIDER_FAILURE_PAGE_LIMIT,
+        1,
+        MAX_PROVIDER_FAILURE_PAGE_LIMIT,
+      );
+      if (limit === null) {
+        return c.json({ error: "Invalid provider failure page limit" }, 400);
+      }
       try {
-        return c.json(await getProviderFailureDetail(db, gameId));
-      } catch {
+        return c.json(await getProviderFailureDetail(db, gameId, {
+          cursor: c.req.query("cursor"),
+          limit,
+        }));
+      } catch (error) {
+        if (error instanceof InvalidProviderFailureCursorError) {
+          return c.json({ error: error.message }, 400);
+        }
         return c.json({
           schemaVersion: 1 as const,
           gameId,

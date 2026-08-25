@@ -16,6 +16,10 @@ const NATIVE_TRANSPORT_MIGRATION_PATH = new URL(
   "../../drizzle/0062_provider_native_transports.sql",
   import.meta.url,
 );
+const BUDGET_INDEX_MIGRATION_PATH = new URL(
+  "../../drizzle/0063_provider_call_attempts_game_catalog_index.sql",
+  import.meta.url,
+);
 
 describe("provider call journal migration", () => {
   test("applies over populated pre-U2 game ownership data", async () => {
@@ -100,6 +104,7 @@ describe("provider call journal migration", () => {
 
       await applyScopedMigration(db, testSchema, UPGRADE_MIGRATION_PATH);
       await applyScopedMigration(db, testSchema, NATIVE_TRANSPORT_MIGRATION_PATH);
+      await applyScopedMigration(db, testSchema, BUDGET_INDEX_MIGRATION_PATH);
 
       const transports = await db.execute<{ transport: string }>(sql.raw(`
         SELECT "request_shape" AS "transport"
@@ -182,6 +187,24 @@ describe("provider call journal migration", () => {
       );
       expect([...indexes].map((row) => row.indexname)).toContain(
         "provider_attempt_evidence_outbox_ready_idx",
+      );
+
+      const attemptIndexes = await db.execute<{
+        indexname: string;
+        indexdef: string;
+      }>(
+        sql.raw(`
+        SELECT "indexname", "indexdef"
+        FROM pg_indexes
+        WHERE "schemaname" = '${testSchema}'
+          AND "tablename" = 'provider_call_attempts'
+      `),
+      );
+      const budgetIndex = [...attemptIndexes].find(
+        (row) => row.indexname === "provider_call_attempts_game_catalog_idx",
+      );
+      expect(budgetIndex?.indexdef.replaceAll('"', "")).toContain(
+        "USING btree (game_id, catalog_id)",
       );
 
       await db.execute(

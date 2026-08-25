@@ -1653,6 +1653,8 @@ export const providerCallAttempts = pgTable("provider_call_attempts", {
   uniqueIndex("provider_call_attempts_transport_id_unique")
     .on(table.transportAttemptId),
   index("provider_call_attempts_game_idx").on(table.gameId, table.createdAt),
+  index("provider_call_attempts_game_catalog_idx")
+    .on(table.gameId, table.catalogId),
   index("provider_call_attempts_projection_idx")
     .on(table.spendProjectionState, table.updatedAt),
   index("provider_call_attempts_evidence_idx")

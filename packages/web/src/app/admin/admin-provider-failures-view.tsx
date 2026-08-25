@@ -76,26 +76,46 @@ export function AdminProviderFailuresPanel({
 }) {
   const [detail, setDetail] = useState<AdminProviderFailureDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [rawReads, setRawReads] = useState<Record<string, RawReadState>>({});
   const closeRef = useRef<HTMLButtonElement>(null);
   const requestIdRef = useRef(0);
 
-  const loadDetail = useCallback(() => {
+  const loadDetail = useCallback((cursor?: string) => {
+    const loadingPage = cursor !== undefined;
     const requestId = ++requestIdRef.current;
-    setLoading(true);
-    setError(null);
-    getAdminProviderFailures(game.id)
+    if (loadingPage) {
+      setLoadingMore(true);
+      setPageError(null);
+    } else {
+      setLoading(true);
+      setError(null);
+    }
+    getAdminProviderFailures(game.id, { cursor })
       .then((response) => {
-        if (requestIdRef.current === requestId) setDetail(response);
+        if (requestIdRef.current !== requestId) return;
+        setDetail((current) => loadingPage && current
+          ? {
+              ...response,
+              failures: [...response.failures, ...current.failures],
+            }
+          : response);
       })
       .catch((cause) => {
         if (requestIdRef.current === requestId) {
-          setError(cause instanceof Error ? cause.message : "Provider failure evidence is unavailable.");
+          const message = cause instanceof Error
+            ? cause.message
+            : "Provider failure evidence is unavailable.";
+          if (loadingPage) setPageError(message);
+          else setError(message);
         }
       })
       .finally(() => {
-        if (requestIdRef.current === requestId) setLoading(false);
+        if (requestIdRef.current !== requestId) return;
+        if (loadingPage) setLoadingMore(false);
+        else setLoading(false);
       });
   }, [game.id]);
 
@@ -192,7 +212,13 @@ export function AdminProviderFailuresPanel({
 
         <div className="overflow-y-auto p-5">
           <div role="status" aria-live="polite" className="sr-only">
-            {loading ? "Loading provider failures" : error ? "Provider failures unavailable" : detail?.failures.length === 0 ? "No provider failures" : `${detail?.failures.length ?? 0} provider failure records loaded`}
+            {loading
+              ? "Loading provider failures"
+              : error
+                ? "Provider failures unavailable"
+                : detail?.failures.length === 0
+                  ? "No provider failures"
+                  : `${detail?.failures.length ?? 0} provider failure records loaded${detail?.page.hasMore ? "; older records are available" : ""}`}
           </div>
           {loading ? (
             <PanelState title="Loading evidence…" />
@@ -206,9 +232,24 @@ export function AdminProviderFailuresPanel({
               <FailureSummary summary={detail.summary} />
               {detail.failures.length === 0 ? (
                 <PanelState title="No provider failures" detail="This game has no recorded provider failure evidence." />
-              ) : <ol className="space-y-3" aria-label="Chronological provider failure evidence">
-                {detail.failures.map((failure) => (
-                  <li key={failure.id} className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
+              ) : <>
+                {detail.page.hasMore && detail.page.nextCursor && (
+                  <div className="rounded-lg border border-white/10 bg-white/[0.02] p-3 text-sm text-white/55">
+                    <p>Showing the latest {detail.failures.length.toLocaleString()} records in chronological order. Older evidence is available.</p>
+                    <button
+                      type="button"
+                      disabled={loadingMore}
+                      onClick={() => loadDetail(detail.page.nextCursor ?? undefined)}
+                      className="mt-2 rounded-md border border-white/15 px-3 py-1.5 text-xs text-white/75 hover:bg-white/5 disabled:cursor-wait disabled:opacity-50"
+                    >
+                      {loadingMore ? "Loading older evidence…" : "Load older evidence"}
+                    </button>
+                    {pageError && <p role="alert" className="mt-2 text-xs text-red-300">{pageError}</p>}
+                  </div>
+                )}
+                <ol className="space-y-3" aria-label="Chronological provider failure evidence">
+                  {detail.failures.map((failure) => (
+                    <li key={failure.id} className="rounded-lg border border-white/10 bg-white/[0.025] p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-medium text-white">
@@ -242,9 +283,10 @@ export function AdminProviderFailuresPanel({
                         onLoad={(offset) => loadRaw(failure, offset)}
                       />
                     )}
-                  </li>
-                ))}
-              </ol>}
+                    </li>
+                  ))}
+                </ol>
+              </>}
             </div>
           )}
         </div>
