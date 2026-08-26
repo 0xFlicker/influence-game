@@ -241,6 +241,16 @@ export type FollowUpResult =
   | { type: "question"; question: string }
   | { type: "close"; message: string };
 
+const HOUSE_FOLLOW_UP_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    decision: { type: "string", enum: ["follow_up", "close"] },
+    text: { type: "string", minLength: 1 },
+  },
+  required: ["decision", "text"],
+  additionalProperties: false,
+};
+
 export interface IHouseInterviewer {
   /** Assign initial Mingle rooms from the roster and locked format. The phase validator repairs/finalizes output. */
   assignMingleRooms(context: HouseMingleAssignmentContext): Promise<HouseMingleAssignmentResult>;
@@ -353,8 +363,7 @@ Rules:
 - BANNED generic openers: "what's on your mind?", "what's your strategy?", "how are you feeling?", "what do you think about the game?", "what's your read on things?"
 - BANNED vague prompts: "tell us about...", "walk us through...", "what happened in..."
 - Instead, be SHARP: "You told [name] you'd protect them — was that a lie?", "When [name] said [quote], you flinched — what were you thinking?", "[Name] voted against you last round. Are you going to let that slide?"
-- If you have their previous diary answers, call out a specific contradiction or broken promise
-- Respond with ONLY the question text, nothing else`;
+- If you have their previous diary answers, call out a specific contradiction or broken promise`;
 
 function extractJsonObject(raw: string): Record<string, unknown> | null {
   const trimmed = raw.trim();
@@ -501,6 +510,22 @@ function parseToolArguments(argumentsText: string): Record<string, unknown> | nu
   } catch {
     return null;
   }
+}
+
+function parseHouseFollowUpResult(content: string): FollowUpResult | null {
+  const parsed = parseToolArguments(content);
+  if (!parsed || Object.keys(parsed).length !== 2) return null;
+
+  const text = typeof parsed.text === "string" ? parsed.text.trim() : "";
+  if (!text) return null;
+
+  if (parsed.decision === "follow_up") {
+    return { type: "question", question: text };
+  }
+  if (parsed.decision === "close") {
+    return { type: "close", message: text };
+  }
+  return null;
 }
 
 function contentFreeHouseFailureFields(error: unknown): { status: number | "unknown"; code: string; type: string } {
@@ -1252,10 +1277,7 @@ export class LLMHouseInterviewer implements IHouseInterviewer {
         retryable: true,
       };
     }
-    const separator = content.indexOf(":");
-    const prefix = separator >= 0 ? content.slice(0, separator) : "";
-    const value = separator >= 0 ? content.slice(separator + 1).trim() : "";
-    return (prefix === "FOLLOW_UP" || prefix === "CLOSE") && value
+    return parseHouseFollowUpResult(content)
       ? { status: "usable", value: response }
       : {
           status: "unusable",
@@ -2683,7 +2705,12 @@ Respond with JSON only:
   async generateQuestion(context: DiaryRoomContext): Promise<string> {
     const gameStatePrompt = this.buildGameStatePrompt(context);
     const messages = [
-      { role: "system" as const, content: withInfluenceGamePromptContext(HOUSE_PERSONALITY) },
+      {
+        role: "system" as const,
+        content: withInfluenceGamePromptContext(
+          `${HOUSE_PERSONALITY}\n\nRespond with ONLY the question text, nothing else.`,
+        ),
+      },
       { role: "user" as const, content: gameStatePrompt },
     ];
 
@@ -2747,9 +2774,9 @@ Wrap up if:
 
 Your follow-up MUST reference something specific from their answer — a name they mentioned, a claim they made, an emotion they showed. Never ask a generic follow-up.
 
-Respond with EXACTLY one of these formats:
-FOLLOW_UP: <your next question>
-CLOSE: <your brief closing remark to the player, 1 sentence>`;
+Return the decision and text through the required structured response:
+- Use decision "follow_up" and put the next question in text.
+- Use decision "close" and put a one-sentence closing remark to the player in text.`;
     const messages = [
       { role: "system" as const, content: withInfluenceGamePromptContext(HOUSE_PERSONALITY) },
       { role: "user" as const, content: followUpPrompt },
@@ -2763,8 +2790,13 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
       ),
       this.houseInvocation(
         messages,
-        { kind: "text" },
-        this.applyMessageTokenFloor(
+        {
+          kind: "structured",
+          name: "house_followup",
+          strict: true,
+          schema: HOUSE_FOLLOW_UP_SCHEMA,
+        },
+        this.applyStructuredTokenFloor(
           this.requestedReasoningEffort() ? 4_200 : 200,
         ),
         0.8,
@@ -2774,17 +2806,8 @@ CLOSE: <your brief closing remark to the player, 1 sentence>`;
 
     this.recordUsage("House/followup", response);
 
-    const raw = response.text?.trim() ?? "";
-
-    let output: FollowUpResult;
-    if (raw.startsWith("FOLLOW_UP:")) {
-      output = { type: "question", question: raw.slice("FOLLOW_UP:".length).trim() };
-    } else if (raw.startsWith("CLOSE:")) {
-      output = { type: "close", message: raw.slice("CLOSE:".length).trim() };
-    } else {
-      // If the LLM didn't follow the format, treat as a close
-      output = { type: "close", message: raw || `Thank you, ${context.agentName}. The House sees all.` };
-    }
+    const output = parseHouseFollowUpResult(response.text?.trim() ?? "");
+    if (!output) throw new Error("malformed_house_followup");
 
     await this.emitPrivateDecisionTrace({
       context: this.diaryPrivateTraceContext(

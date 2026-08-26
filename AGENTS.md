@@ -27,6 +27,15 @@
 - Transcript prose may be rendered, searched, filtered, styled, quoted, and used as dialogue or observability. It must never be parsed or reverse-engineered into authoritative game facts, decisions, tallies, phase changes, or replay state.
 - The only grandfathered exception is the existing classic presentation parser at `packages/web/src/app/games/[slug]/components/message-parsing.ts` and its current consumers/tests. It is frozen compatibility debt: do not add parser patterns, do not extend it for format-kernel behavior, and do not route format games through it.
 
+## Model-output structure
+
+- Any model turn whose output affects control flow, game state, continuity, producer evidence, or later model context must use a provider-native tool or an exact strict JSON schema. A schema that merely accepts any object is not a structured contract.
+- Validate the decoded semantic value inside the provider-attempt boundary. Non-empty text, parseable `{}`, missing required fields filled with defaults, fenced JSON, or a JSON object extracted from surrounding prose must never count as a successful structured turn.
+- Structured-output failure must remain typed: retry it under the shared provider policy, apply an explicit rules-legal fallback at the owning phase boundary, or fail clearly. Do not silently reinterpret malformed structured output as dialogue or other agent-authored prose.
+- Prose fields are presentation, even when returned inside a tool call. Do not infer claims, participants, decisions, addressees, phase, history, or simulation state by applying regexes or string conventions to model prose. When downstream code needs those values, return and validate them as separate structured fields or derive them from canonical events/projections, then render prose from that structure.
+- Provider adapters may decode the provider's exact native structured payload into the shared model outcome. They must not introduce permissive compatibility parsing that weakens the invocation's schema or semantic validation.
+- Keep focused malformed-output coverage for every structured turn, including non-JSON text, embedded/fenced JSON, `{}`, missing required fields, extra fields, and exhausted retries. Tests must prove malformed output cannot mutate continuity or masquerade as accepted speech.
+
 ## Local Models
 
 - Local LM Studio experiments are a first-class development lane. Use the OpenAI-compatible provider env vars documented in `docs/local-model-evaluation.md`.
