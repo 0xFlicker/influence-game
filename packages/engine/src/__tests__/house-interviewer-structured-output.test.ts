@@ -941,11 +941,93 @@ describe("LLMHouseInterviewer structured Mingle assignment", () => {
     ]);
   });
 
+  it("requests strict structured output for OpenAI diary follow-up decisions", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const luna = modelCatalogEntryById("openai:gpt-5.6-luna");
+    if (!luna) throw new Error("Missing OpenAI Luna catalog entry");
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{
+        content: JSON.stringify({
+          decision: "follow_up",
+          text: "You called Nyx trustworthy. What did she do to earn that?",
+        }),
+      }]),
+      luna.modelId,
+      {
+        providerProfileId: "openai",
+        catalogId: luna.id,
+        modelCapabilities: luna.capabilities,
+      },
+    );
+
+    const result = await house.generateFollowUpOrClose(makeDiaryContext(), [{
+      question: "Who do you trust?",
+      answer: "Nyx.",
+    }]);
+
+    expect(result).toEqual({
+      type: "question",
+      question: "You called Nyx trustworthy. What did she do to earn that?",
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.text).toEqual({
+      format: {
+        type: "json_schema",
+        name: "house_followup",
+        strict: true,
+        schema: {
+          type: "object",
+          properties: {
+            decision: { type: "string", enum: ["follow_up", "close"] },
+            text: { type: "string", minLength: 1 },
+          },
+          required: ["decision", "text"],
+          additionalProperties: false,
+        },
+      },
+    });
+  });
+
+  it("maps a structured diary close decision to a closing remark", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const house = new LLMHouseInterviewer(
+      makeOpenAIStub(requests, [{
+        content: JSON.stringify({
+          decision: "close",
+          text: "The House has heard enough.",
+        }),
+      }]),
+      "test-model",
+    );
+
+    const result = await house.generateFollowUpOrClose(makeDiaryContext(), [{
+      question: "Who do you trust?",
+      answer: "Nyx.",
+    }]);
+
+    expect(result).toEqual({
+      type: "close",
+      message: "The House has heard enough.",
+    });
+    expect(requests[0]?.response_format).toMatchObject({
+      type: "json_schema",
+      json_schema: {
+        name: "house_followup",
+        strict: true,
+      },
+    });
+  });
+
   it("keeps concurrent diary interview coordinates unique and stable across House reconstruction", async () => {
     const runInterviewCalls = async () => {
       const attempts: ProviderAttemptRecord[] = [];
       const house = new LLMHouseInterviewer(
-        makeOpenAIStub([], [{ content: "CLOSE: The House has heard enough." }]),
+        makeOpenAIStub([], [{
+          content: JSON.stringify({
+            decision: "close",
+            text: "The House has heard enough.",
+          }),
+        }]),
         "test-model",
         { providerExecutionHooks: { onTerminal: (record) => { attempts.push(record); } } },
       );
