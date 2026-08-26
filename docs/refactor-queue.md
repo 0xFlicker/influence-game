@@ -30,6 +30,8 @@ Last game provider-waterfall gap added: 2026-08-22
 
 Last producer narrative response-contract gap added: 2026-08-25
 
+Last model-output structure audit added: 2026-08-26
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -59,6 +61,20 @@ Status legend:
 ## Ready Backlog
 
 Items are ordered by current priority.
+
+### R32. Remove prose-parsing escape hatches from structured model turns
+
+- Status: `ready`
+- Priority: **high**
+- Sources: production `malformed_output: malformed_house_followup` investigation and the 2026-08-26 audit of `packages/engine/src/agent.ts`, `packages/engine/src/house-interviewer.ts`, `packages/engine/src/context-builder.ts`, `packages/engine/src/accepted-formal-speech.ts`, and `packages/engine/src/simulate.ts`.
+- Signal: the House follow-up fix exposed the same architectural leak in several nearby paths: provider-native structure is requested at the turn boundary, but permissive validation or downstream prose parsing can still accept malformed content, manufacture default-filled success, or reconstruct typed facts from display strings. This makes provider failures look like valid agent output and lets presentation conventions quietly become data contracts.
+- Required direction: structured turns must have exact schemas and semantic validation inside the shared provider-attempt boundary. Malformed or semantically incomplete output must retry and then produce a typed failure or explicit owning-phase fallback; it must never be accepted because it is non-empty, contains an embedded JSON object, parses as `{}`, or can be padded with defaults. Prose remains opaque presentation. Any value needed for control flow, continuity, producer evidence, later prompts, or reporting must be returned separately as validated structure or derived from canonical events/projections.
+- Player-response seam: `callLLMWithThinking` already requests the strict AgentResponse schema, but its attempt validator accepts any non-empty text and its post-call fallback reclassifies invalid JSON as plain dialogue. Move AgentResponse parsing and semantic validation into the attempt coordinator, remove the plain-text downgrade, preserve typed refusal/empty/malformed outcomes, and delete the now-unused free-text `callLLM` / `cleanVisibleMessage` compatibility path if confirmed dead. A malformed response must not update compact strategy or appear as accepted player speech.
+- House artifact seams: replace the open `{ type: "object", additionalProperties: true }` schemas for Strategy Bible updates, producer briefs, and long-form summaries with exact strict schemas matching their domain types. Reject `{}`, missing required fields, extra fields, embedded JSON, and prose-only responses rather than silently synthesizing revisions, summaries, arrays, or producer guidance. Preserve the previous Strategy Bible packet on failed updates and keep deterministic fallback ownership explicit.
+- House audience-summary seam: the tool contract currently leaves factual claims inside an opaque `prose` string, then uses expanding regex grammars to infer player-count and dialogue-attribution claims. Replace semantic prose inspection with bounded structured claims/receipts tied to selected source aliases; validate those claims against the fact frontier and render the public beat from accepted structure. Do not weaken current canonical/projection authority, dialogue non-authority, privacy, source limits, or unsupported-claim rejection while removing the regex parser.
+- Canonical-history seams: build Judgment question/answer history and recent-decision context from `judgment.speech_recorded` events, whose structured payload already contains speech kind, speaker, addressee, and raw text, rather than parsing `[QUESTION to ...]` / `[ANSWER to ...]` transcript wrappers. Likewise, make simulation endgame classification use canonical endgame state/events instead of searching House announcement text. Transcript formatting may change without changing either result.
+- Explicit exclusions: keep diary-room question generation and gameplay narration as text because their only consumed value is displayed prose. Do not extend or route new behavior through the grandfathered classic web parser in `packages/web/src/app/games/[slug]/components/message-parsing.ts`; it remains frozen compatibility debt.
+- Validation path: add focused provider-coordinator tests for non-JSON text, fenced/embedded JSON, `{}`, missing and extra fields, refusal, empty output, retry recovery, and retry exhaustion across AgentResponse and each House artifact. Prove failed Strategy Bible updates retain the prior packet; malformed speech cannot mutate strategy or enter the transcript; audience-summary claims are accepted only through typed source receipts; Judgment history is invariant under display-label changes and canonical replay; and simulation classification is invariant under House copy changes. Finish with `bun run test`, `bun run test:postgres`, and `bun run check`; provider-backed comparison is required only if the audience-summary contract or prompt changes materially.
 
 ### R21. Agentic, selective-fact House summaries at phase cadence
 
