@@ -1111,9 +1111,26 @@ export class GameState {
     const alliance = this._alliances.get(outcome.allianceId);
     if (!alliance) throw new Error(`Cannot record huddle outcome for unknown alliance ${outcome.allianceId}`);
     const session = this._allianceHuddleSessions.get(outcome.sessionId);
+    if (!session) {
+      throw new Error(`Cannot record huddle outcome without completed session ${outcome.sessionId}`);
+    }
+    if (
+      session.allianceId !== outcome.allianceId
+      || session.window !== outcome.window
+      || session.round !== outcome.round
+    ) {
+      throw new Error(`Cannot record huddle outcome with mismatched session metadata ${outcome.sessionId}`);
+    }
+    if (outcome.participantPlayerIds.length > 0) {
+      const supplied = [...new Set(outcome.participantPlayerIds)].sort();
+      const recorded = [...new Set(session.speakerIds)].sort();
+      if (supplied.length !== recorded.length || supplied.some((id, index) => id !== recorded[index])) {
+        throw new Error(`Cannot record huddle outcome with mismatched participant snapshot ${outcome.sessionId}`);
+      }
+    }
     const prepared = withParticipantSnapshotFromSession(
       outcome,
-      outcome.participantPlayerIds ?? session?.speakerIds,
+      outcome.participantPlayerIds.length > 0 ? outcome.participantPlayerIds : session?.speakerIds,
     );
     const updatedAlliance: AllianceRecord = {
       ...cloneAllianceRecord(alliance),

@@ -188,15 +188,7 @@ export async function executeMingleTurn(input: {
     };
   }
   const receipt = resolvedAction.coordinationReceipt;
-  if (
-    receipt
-    && (
-      receipt.proposedTarget
-      || receipt.proposedAction
-      || receipt.commitment
-      || receipt.noProposalReason
-    )
-  ) {
+  if (receipt && (receipt.factKind !== null || receipt.noProposal)) {
     gameState.recordMingleCoordinationReceipt({
       id: createUUID(),
       round: gameState.round,
@@ -204,10 +196,10 @@ export async function executeMingleTurn(input: {
       actorId: playerId,
       audiencePlayerIds: [...room.playerIds],
       roomId: room.roomId,
-      proposedTargetName: receipt.proposedTarget,
-      proposedAction: receipt.proposedAction,
-      commitment: receipt.commitment,
-      noProposalReason: receipt.noProposalReason,
+      factKind: receipt.factKind,
+      actionKind: receipt.actionKind,
+      targetPlayerId: receipt.targetPlayerId,
+      noProposal: receipt.noProposal,
       createdAt: new Date().toISOString(),
     });
   }

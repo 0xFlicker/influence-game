@@ -7,7 +7,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { GameRunner } from "../game-runner";
-import type { GameStreamEvent, GameStateSnapshot } from "../game-runner";
+import type { GameCheckpointCapsule, GameStreamEvent, GameStateSnapshot } from "../game-runner";
 import { Phase, type GameConfig } from "../types";
 import { MockAgent } from "./mock-agent";
 import { createUUID } from "../game-state";
@@ -189,11 +189,15 @@ describe("GameRunner stream listener", () => {
 
   it("emits House Strategy Bible and format-round summary records when enabled", async () => {
     const agents = makeAgents(5);
+    const checkpoints: GameCheckpointCapsule[] = [];
     const runner = new GameRunner(agents, {
       ...FAST_CONFIG,
       enableHouseStrategyBible: true,
       enableHouseLongFormSummaries: true,
       mingleSessionsPerRound: 1,
+    }, undefined, {
+      durableEventSink: () => {},
+      durableCheckpointSink: (checkpoint) => { checkpoints.push(checkpoint); },
     });
 
     const events: GameStreamEvent[] = [];
@@ -209,8 +213,8 @@ describe("GameRunner stream listener", () => {
       expect(packet.response).toMatchObject({
         packet: {
           previousRevisionId: null,
-          alliances: [{ name: "Template Watch Pair" }],
-          openQuestions: ["Who will convert social proximity into a vote?"],
+          hypotheses: [],
+          openQuestions: [],
         },
       });
     }
@@ -243,8 +247,23 @@ describe("GameRunner stream listener", () => {
     expect(longForm).toBeDefined();
     if (longForm?.type === "agent_turn") {
       expect(longForm.visibility).toBe("private");
-      expect(longForm.response).toHaveProperty("openQuestions");
+      expect(longForm.response).toHaveProperty("claims");
     }
+    const houseCheckpoint = checkpoints.findLast((checkpoint) => checkpoint.houseContinuityCapsule != null);
+    expect(houseCheckpoint?.houseContinuityCapsule).toMatchObject({
+      hypotheses: [],
+      openQuestions: [],
+    });
+    expect(houseCheckpoint?.houseContinuityCapsule).not.toHaveProperty("interpretation");
+    const narrativeCheckpoint = checkpoints.findLast(
+      (checkpoint) => checkpoint.houseNarrativeContinuityCapsule != null,
+    );
+    expect(narrativeCheckpoint?.houseNarrativeContinuityCapsule).toMatchObject({
+      version: 1,
+      lastArtifactByActorCoordinate: expect.any(Object),
+    });
+    expect(narrativeCheckpoint?.houseNarrativeContinuityCapsule)
+      .not.toHaveProperty("sourceValuesByAlias");
   });
 
   it("emits private House producer briefs before FORMAT_RESOLVE diary questions", async () => {
@@ -271,7 +290,8 @@ describe("GameRunner stream listener", () => {
     if (brief?.type === "agent_turn") {
       expect(brief.visibility).toBe("private");
       expect(brief.response).toHaveProperty("producerBrief");
-      expect(JSON.stringify(brief.response)).toContain("privateDoNotReveal");
+      expect(JSON.stringify(brief.response)).toContain("focusItems");
+      expect(JSON.stringify(brief.response)).not.toContain("privateDoNotReveal");
     }
   });
 

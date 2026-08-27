@@ -8,6 +8,7 @@ import type {
   OpenAIRequestServiceTier,
 } from "./llm-client";
 import type { ProviderAttemptAccountingFacts } from "./provider-execution";
+import type { ExactStructuredOutputArtifact } from "./structured-output";
 
 /** Provider-independent message passed from gameplay to a model adapter. */
 export interface ModelInvocationMessage {
@@ -18,33 +19,24 @@ export interface ModelInvocationMessage {
   toolCalls?: readonly ModelInvocationToolCall[];
 }
 
-/** Provider-independent function definition. */
-export interface ModelInvocationTool {
-  name: string;
-  description?: string;
-  parameters: Record<string, unknown>;
-  strict?: boolean;
-}
-
 export interface ModelInvocationToolCall {
   id?: string;
   name: string;
   arguments: string;
 }
 
-export type ModelInvocationResult =
+export type ModelInvocationResult<TStructuredValue = unknown> =
   | { kind: "text" }
   | {
       kind: "structured";
-      name: string;
-      schema: Record<string, unknown>;
-      strict: boolean;
+      artifact: ExactStructuredOutputArtifact<TStructuredValue>;
     }
   | {
       kind: "tool";
-      tools: readonly ModelInvocationTool[];
+      artifact: ExactStructuredOutputArtifact<TStructuredValue>;
+      description?: string;
       choice: "auto" | "required" | { name: string };
-      allowParallel?: boolean;
+      allowParallel?: false;
     };
 
 /** Provider-neutral request for exposing a bounded reasoning summary. */
@@ -55,9 +47,9 @@ export type ModelReasoningSummaryMode = "auto" | "concise" | "detailed";
  * no SDK request types, endpoint choice, or untyped provider-options escape
  * hatch. Adapters compile this contract independently for each manifest entry.
  */
-export interface ModelInvocation {
+export interface ModelInvocation<TStructuredValue = unknown> {
   messages: readonly ModelInvocationMessage[];
-  result: ModelInvocationResult;
+  result: ModelInvocationResult<TStructuredValue>;
   outputTokenLimit: number;
   reasoning?: {
     effort?: ModelReasoningEffort;

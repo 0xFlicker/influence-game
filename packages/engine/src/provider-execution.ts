@@ -203,6 +203,10 @@ export type ProviderCandidateValidation<T> =
       retryable?: boolean;
     };
 
+export type ProviderAcceptedValueValidation<T> =
+  | { status: "valid"; value: T }
+  | { status: "invalid"; message: string };
+
 export interface ProviderDispatchRequestOptions {
   signal?: AbortSignal;
   maxRetries: 0;
@@ -221,6 +225,7 @@ export interface ExecuteProviderCallOptions<TResponse, TValue> {
     requestOptions: ProviderDispatchRequestOptions;
   }): Promise<TResponse>;
   validate(response: TResponse): ProviderCandidateValidation<TValue>;
+  validateAcceptedValue?(value: unknown): ProviderAcceptedValueValidation<TValue>;
   classifyError?(
     error: unknown,
     signal?: AbortSignal,
@@ -240,6 +245,7 @@ export interface ProviderManifestCallEntry<TResponse, TValue>
 export interface ExecuteProviderManifestCallOptions<TResponse, TValue> {
   entries: readonly ProviderManifestCallEntry<TResponse, TValue>[];
   cancellationSignal?: AbortSignal;
+  validateAcceptedValue?(value: unknown): ProviderAcceptedValueValidation<TValue>;
 }
 
 export interface ProviderManifestCallResult<TValue> {
@@ -365,6 +371,22 @@ export class ProviderEntryIncompatibleError extends ProviderUnavailableError {
   }
 }
 
+/** Durable replay data no longer satisfies the current semantic invocation. */
+export class ProviderAcceptedValueIntegrityError extends Error {
+  constructor(readonly integrityMessage: string) {
+    super(`Accepted provider value failed replay validation: ${integrityMessage}`);
+    this.name = "ProviderAcceptedValueIntegrityError";
+  }
+}
+
+/** Provider exhaustion that an owning phase may legally replace with fallback. */
+export function isProviderFallbackEligible(
+  error: unknown,
+): error is ProviderUnavailableError {
+  return error instanceof ProviderUnavailableError
+    && error.outcome.kind !== "cancellation";
+}
+
 export class ProviderExecutionCoordinator {
   private readonly hooks?: ProviderExecutionHooks;
   private readonly wait: (
@@ -417,7 +439,7 @@ export class ProviderLogicalCallExecution {
       throw new Error("Provider manifest execution requires at least one entry");
     }
 
-    const accepted = await this.readAccepted<TValue>();
+    const accepted = await this.readAccepted<TValue>(options.validateAcceptedValue);
     if (accepted) {
       const manifestPosition = options.entries.findIndex(
         (entry) => entry.catalogId === accepted.catalogId,
@@ -497,15 +519,28 @@ export class ProviderLogicalCallExecution {
   async execute<TResponse, TValue>(
     options: ExecuteProviderCallOptions<TResponse, TValue>,
   ): Promise<TValue> {
-    const accepted = await this.readAccepted<TValue>();
+    const accepted = await this.readAccepted<TValue>(options.validateAcceptedValue);
     if (accepted) return accepted.value;
     return this.executeWithoutAcceptedReplay(options);
   }
 
-  private async readAccepted<TValue>(): Promise<ProviderAcceptedResult<TValue> | undefined> {
+  private async readAccepted<TValue>(
+    validateAcceptedValue?: (value: unknown) => ProviderAcceptedValueValidation<TValue>,
+  ): Promise<ProviderAcceptedResult<TValue> | undefined> {
     const accepted = await this.hooks?.onReadAccepted?.(this.coordinate);
-    this.acceptedResult = accepted;
-    return accepted as ProviderAcceptedResult<TValue> | undefined;
+    if (!accepted) return undefined;
+    const validation = validateAcceptedValue?.(accepted.value);
+    if (validation?.status === "invalid") {
+      throw new ProviderAcceptedValueIntegrityError(validation.message);
+    }
+    const validated = {
+      ...accepted,
+      value: validation?.status === "valid"
+        ? validation.value
+        : accepted.value as TValue,
+    };
+    this.acceptedResult = validated;
+    return validated;
   }
 
   getAcceptedResult(): ProviderAcceptedResult | undefined {

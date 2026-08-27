@@ -279,17 +279,14 @@ export function buildPositiveHouseContinuityCapsule(capsule: GameCheckpointCapsu
     previousRevisionId: null,
     updatedAtRound: capsule.round,
     updatedAtPhase: capsule.phase,
-    summary: "",
-    alliances: [],
-    tensions: [],
-    promises: [],
-    voteBlocs: [],
-    mingleDiscoveries: [],
-    playerTrajectories: [],
-    storyArcs: [],
-    droppedThreads: [],
+    coveredWindow: {
+      fromRound: capsule.round,
+      toRound: capsule.round,
+      fromPhase: capsule.phase,
+      toPhase: capsule.phase,
+    },
+    hypotheses: [],
     openQuestions: [],
-    changedSincePrevious: "",
   };
 }
 

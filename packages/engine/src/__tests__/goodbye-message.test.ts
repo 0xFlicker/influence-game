@@ -531,6 +531,35 @@ describe("goodbye message handling", () => {
     expect(prc.gameState.getPlayer(charlieId)?.lastMessage).toBeUndefined();
   });
 
+  test("handleElimination propagates non-provider message defects instead of treating them as silence", async () => {
+    const aliceId = createUUID();
+    const bobId = createUUID();
+    const charlieId = createUUID();
+    const daveId = createUUID();
+    const agents = [
+      new GoodbyeProbeAgent(aliceId, "Alice", { empowerTarget: bobId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(bobId, "Bob", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+      new GoodbyeProbeAgent(charlieId, "Charlie", { empowerTarget: aliceId, exposeTarget: daveId }, daveId),
+      new GoodbyeProbeAgent(daveId, "Dave", { empowerTarget: aliceId, exposeTarget: charlieId }, charlieId),
+    ];
+    agents[2]!.getEliminationMessage = async () => {
+      throw new TypeError("elimination message invariant failed");
+    };
+    const prc = makePhaseRunnerContext(agents);
+
+    await expect(handleElimination(prc, charlieId, Phase.COUNCIL, {
+      mode: "council",
+      voteDisclosure: {
+        visibility: "public",
+        votesReceived: 1,
+        voterNames: ["Bob"],
+      },
+    })).rejects.toThrow("elimination message invariant failed");
+    expect(prc.logger.transcript.some((entry) =>
+      entry.from === "Charlie" && entry.scope === "public"
+    )).toBe(false);
+  });
+
   test("handleElimination omits optional speech when no message method exists", async () => {
     const aliceId = createUUID();
     const bobId = createUUID();
@@ -1071,8 +1100,8 @@ function getUserPrompt(call: Record<string, unknown> | undefined): string {
     ?.find((message) => message.role === "user")?.content ?? "";
 }
 
-describe("InfluenceAgent tool-call fallbacks", () => {
-  test("sendRoomMessage accepts JSON arguments returned as assistant content", async () => {
+describe("InfluenceAgent exact tool-call boundary", () => {
+  test("sendRoomMessage rejects JSON arguments returned as assistant content", async () => {
     const { openai, calls } = makeOpenAIStub([
       {
         content: JSON.stringify({
@@ -1086,9 +1115,9 @@ describe("InfluenceAgent tool-call fallbacks", () => {
 
     const result = await agent.sendRoomMessage(makeAgentContext(Phase.MINGLE), ["Atlas", "Vera"]);
 
-    expect(result).toEqual({
-      thinking: "Build trust, then steer the next vote.",
-      message: "Vera, I think we can keep heat off each other if we both watch Mira's next move.",
+    expect(result).toMatchObject({
+      message: "",
+      providerAbsence: { outcome: "wrong_tool" },
     });
 
     const tool = (calls[0]?.tools as Array<{
@@ -1105,7 +1134,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     expect(tool?.parameters?.additionalProperties).toBe(false);
   });
 
-  test("getVotes accepts JSON arguments returned as assistant content", async () => {
+  test("getVotes rejects JSON arguments returned as assistant content", async () => {
     const { openai } = makeOpenAIStub([
       {
         content: JSON.stringify({
@@ -1116,13 +1145,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     ]);
     const agent = new InfluenceAgent("atlas-id", "Atlas", "strategic", openai, "gpt-5-nano");
 
-    const votes = await agent.getVotes(makeAgentContext(Phase.VOTE));
-
-    expect(votes).toMatchObject({
-      empowerTarget: "mira-id",
-      thinking: "Empower an ally who will pick a favorable format.",
-    });
-    expect(votes).not.toHaveProperty("exposeTarget");
+    await expect(agent.getVotes(makeAgentContext(Phase.VOTE)))
+      .rejects.toThrow("Tool call missing for cast_votes");
   });
 
   test("getPowerAction retries with more tokens when the forced tool call is incomplete", async () => {
@@ -1134,6 +1158,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
           thinking: "Take the shot before the council can scatter.",
           action: "eliminate",
           target: "Mira",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
     ]);
@@ -1149,7 +1175,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
       target: "mira-id",
       thinking: "Take the shot before the council can scatter.",
       reasoningContext: undefined,
-      strategyCandidateProposed: true,
+      strategyDelta: null,
     });
     expect(calls).toHaveLength(2);
     expect(calls[1]?.max_output_tokens).toBeGreaterThan(calls[0]?.max_output_tokens as number);
@@ -1193,7 +1219,7 @@ describe("InfluenceAgent tool-call fallbacks", () => {
     await expect(agent.getPowerAction(
       makeAgentContext(Phase.POWER),
       ["vera-id", "mira-id"],
-    )).rejects.toThrow("Model refused tool call for use_power");
+    )).rejects.toThrow("model_refusal");
     expect(calls).toHaveLength(1);
   });
 
@@ -1205,6 +1231,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
           thinking: "Let council expose the alliances.",
           action: "pass",
           target: "Vera",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
     ]);
@@ -1233,6 +1261,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
           thinking: "Honor the current public receipt.",
           action: "protect",
           target: "Mira",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
     ]);
@@ -1263,6 +1293,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
           thinking: "Take one direct shot.",
           action: "eliminate",
           target: "Mira",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
       {
@@ -1271,6 +1303,8 @@ describe("InfluenceAgent tool-call fallbacks", () => {
           thinking: "Avoid a second direct shot without a fresh receipt.",
           action: "pass",
           target: "Vera",
+          shieldPullUpCandidates: [],
+          strategyDelta: null,
         }),
       },
     ]);

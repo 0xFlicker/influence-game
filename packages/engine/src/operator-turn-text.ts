@@ -3,7 +3,11 @@
  * These are diagnostic (chatty + turns JSONL), not player-safe surfaces.
  */
 
-import type { AllianceAction } from "./game-runner.types";
+import type {
+  AllianceAction,
+  HouseProducerFocusItem,
+  HouseProducerQuestionAngle,
+} from "./game-runner.types";
 import type { MingleIntentSummary } from "./types";
 
 function clip(value: string, max = 96): string {
@@ -188,20 +192,20 @@ export function formatAllianceHuddleTurnOperatorText(params: {
 
 export function formatAllianceHuddleOutcomeOperatorText(params: {
   allianceName?: string | null;
-  ask: string;
-  plan: string;
-  posture: string;
-  confidence: string | number;
+  factSummaries: readonly string[];
 }): string {
   const name = params.allianceName ? `${params.allianceName}: ` : "";
-  return `House huddle outcome — ${name}posture=${params.posture} conf=${params.confidence} | ask=${clip(params.ask, 64)} | plan=${clip(params.plan, 64)}`;
+  return `House huddle outcome — ${name}${params.factSummaries.join(" | ")}`;
 }
 
 export function formatHouseProducerBriefOperatorText(params: {
   playerName: string;
-  storyRole: string;
-  pressurePoints: readonly string[];
-  questionAngles: readonly string[];
+  focusItems: readonly HouseProducerFocusItem[];
+  questionAngles: readonly HouseProducerQuestionAngle[];
 }): string {
-  return `House brief for ${params.playerName}: role=${clip(params.storyRole, 40)} | pressure=${listOrNone(params.pressurePoints.slice(0, 3))} | angles=${listOrNone(params.questionAngles.slice(0, 2))}`;
+  const focus = params.focusItems.slice(0, 3).map((item) =>
+    `${item.kind}:${item.disclosure}:${item.confidence}`,
+  );
+  const angles = params.questionAngles.slice(0, 2).map((angle) => angle.kind);
+  return `House brief for ${params.playerName}: focus=${listOrNone(focus)} | angles=${listOrNone(angles)}`;
 }

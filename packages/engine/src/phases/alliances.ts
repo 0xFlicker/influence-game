@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Phase } from "../types";
 import type { AllianceAction, AllianceActionOpportunity, AllianceHuddlePromptContext, AllianceHuddleTurnAction } from "../game-runner.types";
 import { createUUID } from "../game-state";
@@ -5,7 +6,7 @@ import type {
   HouseAllianceProposerCandidate,
   HouseAllianceProposerSelectionResult,
 } from "../house-interviewer";
-import type { AllianceHuddleCommitmentFact, AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
+import type { AllianceHuddleFactAtom, AllianceHuddleOutcome, AllianceHuddleScheduleRecord, AllianceHuddleSessionRecord, AllianceHuddleWindow, AllianceRecord, UUID } from "../types";
 import {
   formatAllianceActionOperatorText,
   formatAllianceHuddleOutcomeOperatorText,
@@ -13,6 +14,7 @@ import {
   formatAllianceHuddleTurnOperatorText,
   type AllianceActionOperatorContext,
 } from "../operator-turn-text";
+import { formatAllianceHuddleFacts } from "../alliance-huddle-outcome";
 import {
   agentTurnSourcePointer,
   assertCanAcceptCommit,
@@ -23,9 +25,16 @@ import {
   type PhaseRunnerContext,
 } from "./phase-runner-context";
 import { engineFallbackMetadata } from "../engine-fallback";
-import { ProviderUnavailableError } from "../provider-execution";
+import { isProviderFallbackEligible, ProviderUnavailableError } from "../provider-execution";
 
 const MAX_HUDDLE_SESSIONS_PER_ALLIANCE = 2;
+
+function deterministicHuddleId(coordinate: readonly unknown[]): UUID {
+  const digest = createHash("sha256")
+    .update(JSON.stringify(coordinate))
+    .digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-5${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
 
 function nameKey(value: string): string {
   return value.trim().toLowerCase();
@@ -607,7 +616,17 @@ async function collectAllianceHuddleTurn(
     : huddle.window === "pre_vote"
       ? Phase.PRE_VOTE_HUDDLE
       : Phase.PRE_COUNCIL_HUDDLE;
-  const phaseCtx = prepareAgentPhaseContext(ctx, agent, speakerId, phase, "ordinary_speech");
+  const phaseCtx = prepareAgentPhaseContext(
+    ctx,
+    agent,
+    speakerId,
+    phase,
+    "ordinary_speech",
+    {
+      empoweredId: ctx.gameState.empoweredId ?? undefined,
+      councilCandidates: ctx.gameState.councilCandidates ?? undefined,
+    },
+  );
   try {
     return await agent.getAllianceHuddleTurn(phaseCtx, huddle, conversationHistory);
   } catch (error) {
@@ -615,6 +634,7 @@ async function collectAllianceHuddleTurn(
     return {
       message: null,
       noReply: true,
+      factAtoms: [],
       providerAbsence: {
         kind: "provider_exhausted",
         outcome: error.outcome.kind,
@@ -631,19 +651,29 @@ async function completeHuddleSession(
 ): Promise<void> {
   const speakerIds = schedule.memberIds.filter((memberId) => ctx.gameState.getPlayer(memberId)?.status === "alive");
   const conversationHistory: Array<{ from: string; text: string }> = [];
-  const commitments: AllianceHuddleCommitmentFact[] = [];
+  const facts: AllianceHuddleFactAtom[] = [];
   // Canonical session identity is created before any message so modern huddle
   // rows carry alliance/schedule/session IDs plus exact session-time audience.
-  const sessionId = createUUID();
+  const sessionId = deterministicHuddleId([
+    "alliance-huddle-session-v1",
+    ctx.gameState.gameId,
+    schedule.round,
+    schedule.window,
+    alliance.id,
+    schedule.pass,
+  ]);
   const huddle: AllianceHuddlePromptContext = {
+    sessionId,
     allianceId: alliance.id,
     allianceName: alliance.name,
+    memberIds: [...speakerIds],
     memberNames: allianceMemberNames(ctx, speakerIds),
     purpose: alliance.purpose,
     timebox: alliance.timebox,
     window: schedule.window,
     scheduleId: schedule.id,
     pass: schedule.pass,
+    priorFacts: facts,
   };
   const huddleMessageContext = {
     allianceId: alliance.id,
@@ -652,18 +682,25 @@ async function completeHuddleSession(
     window: schedule.window,
     sessionAudiencePlayerIds: speakerIds,
   };
-  for (const speakerId of speakerIds) {
+  for (const [speakerOrdinal, speakerId] of speakerIds.entries()) {
     const turn = await collectAllianceHuddleTurn(ctx, speakerId, huddle, conversationHistory);
     if (!turn || turn.providerAbsence) continue;
     await assertCanAcceptCommit(ctx);
     const message = turn.noReply ? null : (turn.message?.trim() || null);
-    if (turn.commitment) {
-      commitments.push({
+    facts.push(...turn.factAtoms.map((fact, factOrdinal) => ({
+      ...fact,
+      factId: deterministicHuddleId([
+        "alliance-huddle-fact-v1",
+        sessionId,
         speakerId,
-        speakerName: ctx.gameState.getPlayerName(speakerId),
-        ...turn.commitment,
-      });
-    }
+        speakerOrdinal,
+        factOrdinal,
+        fact.kind,
+        "actionKind" in fact ? fact.actionKind : null,
+        "targetPlayerId" in fact ? fact.targetPlayerId : null,
+      ]),
+      sessionId,
+    })));
     if (message) {
       ctx.logger.logHuddleMessage(
         speakerId,
@@ -733,22 +770,15 @@ async function completeHuddleSession(
       timebox: alliance.timebox,
     },
     transcript: conversationHistory,
-    commitments,
+    facts,
   });
   const outcome: AllianceHuddleOutcome = {
-    id: createUUID(),
+    id: deterministicHuddleId(["alliance-huddle-outcome-v1", sessionId]),
     sessionId: session.id,
     allianceId: alliance.id,
     window: schedule.window,
     round: schedule.round,
-    ask: summary.ask,
-    plan: summary.plan,
-    promises: summary.promises,
-    dissent: summary.dissent,
-    confidence: summary.confidence,
-    posture: summary.posture,
-    leakOrBetrayalClaims: summary.leakOrBetrayalClaims,
-    commitments,
+    facts,
     // Immutable session participant snapshot — not current alliance membership.
     participantPlayerIds: [...speakerIds],
     createdAt: completedAt,
@@ -764,16 +794,25 @@ async function completeHuddleSession(
       sessionId: session.id,
       allianceId: alliance.id,
       outcome,
+      interpretation: {
+        ask: summary.ask,
+        plan: summary.plan,
+        promises: summary.promises,
+        dissent: summary.dissent,
+        confidence: summary.confidence,
+        posture: summary.posture,
+        leakOrBetrayalClaims: summary.leakOrBetrayalClaims,
+      },
     },
     thinking: summary.thinking,
     reasoningContext: summary.reasoningContext,
     scope: "huddle",
     text: formatAllianceHuddleOutcomeOperatorText({
       allianceName: alliance.name,
-      ask: outcome.ask,
-      plan: outcome.plan,
-      posture: outcome.posture,
-      confidence: outcome.confidence,
+      factSummaries: formatAllianceHuddleFacts(
+        outcome.facts,
+        (playerId) => ctx.gameState.getPlayerName(playerId),
+      ),
     }),
   });
 }
@@ -807,6 +846,7 @@ export async function runAllianceFormationPhase(
       candidates,
     });
   } catch (error) {
+    if (!isProviderFallbackEligible(error)) throw error;
     housePlan = {
       selected: [],
       rationale: `House proposer selection failed; deterministic repair applied (${error instanceof Error ? error.message : String(error)}).`,

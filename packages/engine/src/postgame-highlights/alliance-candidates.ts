@@ -21,12 +21,11 @@ export function buildAllianceFormationCandidates(
     .map((alliance, index) => {
       const members = alliance.memberNames.join(", ");
       const setup = `${alliance.name} formed around ${members}.`;
-      const conflict = alliance.latestOutcome?.plan
-        ? `Their recorded plan was: ${alliance.latestOutcome.plan}`
-        : `The pact had to turn ${alliance.purpose.toLowerCase()} into public consequences.`;
-      const payoff = alliance.latestOutcome?.leakOrBetrayalClaims.length
-        ? `The House kept the leak claim on the board before the public vote caught up.`
-        : `The alliance made the later turn legible.`;
+      const conflict = alliance.latestOutcome?.factSummaries[0]
+        ?? `No structured huddle facts were recorded; the pact still had to turn ${alliance.purpose.toLowerCase()} into public consequences.`;
+      const payoff = alliance.latestOutcome && alliance.latestOutcome.facts.length > 0
+        ? `The alliance left typed member receipts that made the later turn legible.`
+        : `The alliance made the later turn legible without inventing a shared plan.`;
       const receiptId = `alliance:${alliance.id}`;
       return {
         id: `alliance-formation:${alliance.id}`,

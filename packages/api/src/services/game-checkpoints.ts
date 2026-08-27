@@ -311,6 +311,7 @@ export async function writeGameCheckpoint(
         boundaryCertificate ||
         params.checkpoint.playerContinuityCapsules ||
         params.checkpoint.houseContinuityCapsule ||
+        params.checkpoint.houseNarrativeContinuityCapsule ||
         params.checkpoint.houseContinuityRequirement
         ? {
             ...legacySnapshot,
@@ -318,6 +319,7 @@ export async function writeGameCheckpoint(
             runtimeSnapshot,
             playerContinuityCapsules: params.checkpoint.playerContinuityCapsules ?? [],
             houseContinuityCapsule: params.checkpoint.houseContinuityCapsule ?? null,
+            houseNarrativeContinuityCapsule: params.checkpoint.houseNarrativeContinuityCapsule ?? null,
             ...(params.checkpoint.houseContinuityRequirement && {
               houseContinuityRequirement: params.checkpoint.houseContinuityRequirement,
             }),

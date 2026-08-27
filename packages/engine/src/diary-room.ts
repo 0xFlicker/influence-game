@@ -22,6 +22,8 @@ import { emptyRecallContinuitySnapshot } from "./context-recall-plan";
 import { formatHouseProducerBriefOperatorText } from "./operator-turn-text";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
 import { pairProviderLogicalCallOrdinals } from "./provider-execution";
+import { isProviderFallbackEligible } from "./provider-execution";
+import type { HouseAudienceSummaryArtifact } from "./house-summary-frontier";
 
 export class DiaryRoom {
   /** Diary room entries: question/answer pairs per agent per phase */
@@ -41,6 +43,7 @@ export class DiaryRoom {
     private readonly getHouseStrategyBible?: () => HouseStrategyBiblePacket | null,
     private readonly getHouseRoundFacts?: () => HouseRoundFacts,
     private readonly beforeAcceptedCommit?: () => Promise<void> | void,
+    private readonly getHouseAudienceSummaryArtifacts?: () => HouseAudienceSummaryArtifact[],
   ) {}
 
   /**
@@ -62,6 +65,7 @@ export class DiaryRoom {
         try {
           await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
         } catch (error) {
+          if (!isProviderFallbackEligible(error)) throw error;
           await this.markFailedReconciliationOpportunity(agent);
           console.error(`[DiaryRoom] Interview failed for ${player.name}, skipping:`, error);
         }
@@ -78,6 +82,7 @@ export class DiaryRoom {
           try {
             await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
           } catch (error) {
+            if (!isProviderFallbackEligible(error)) throw error;
             console.error(`[DiaryRoom] Juror interview failed for ${juror.playerName}, skipping:`, error);
           }
         }),
@@ -103,6 +108,7 @@ export class DiaryRoom {
 
     const diaryContext = this.buildDiaryRoomContext(
       precedingPhase,
+      playerId,
       playerName,
       providerInterviewOrdinal,
     );
@@ -162,6 +168,7 @@ export class DiaryRoom {
     for (let i = 1; i < MAX_QUESTIONS; i++) {
       const updatedContext = this.buildDiaryRoomContext(
         precedingPhase,
+        playerId,
         playerName,
         providerInterviewOrdinal,
       );
@@ -272,6 +279,7 @@ export class DiaryRoom {
    */
   private buildDiaryRoomContext(
     precedingPhase: Phase,
+    agentId: UUID,
     agentName: string,
     providerInterviewOrdinal: number,
   ): DiaryRoomContext {
@@ -293,12 +301,28 @@ export class DiaryRoom {
       .map((m) => ({ text: m.text, phase: m.phase }));
 
     const roundFacts = this.getHouseRoundFacts?.();
+    const playerIdByName = new Map(allPlayers.map((player) => [player.name, player.id]));
+    const recentMessages = this.logger.publicMessages
+      .slice(-8)
+      .flatMap((message) => {
+        const fromPlayerId = playerIdByName.get(message.from);
+        return fromPlayerId
+          ? [{ fromPlayerId, from: message.from, text: message.text, phase: message.phase }]
+          : [];
+      });
 
     return {
       precedingPhase,
       round: this.gameState.round,
       providerInterviewOrdinal,
+      agentId,
       agentName,
+      canonicalHead: this.gameState.getCanonicalEvents().at(-1)?.sequence ?? 0,
+      players: allPlayers.map((player) => ({
+        id: player.id,
+        name: player.name,
+        status: player.status === "alive" ? "alive" : "eliminated",
+      })),
       alivePlayers: alivePlayers.map((p) => p.name),
       activeShieldNames: alivePlayers.filter((p) => p.shielded).map((p) => p.name),
       eliminatedPlayers,
@@ -307,9 +331,12 @@ export class DiaryRoom {
       councilCandidates: candidates
         ? [this.gameState.getPlayerName(candidates[0]), this.gameState.getPlayerName(candidates[1])]
         : null,
-      recentMessages: this.logger.publicMessages.slice(-8),
+      recentMessages,
       previousDiaryEntries,
       playerMessages,
+      audienceSummaryArtifacts: structuredClone(
+        this.getHouseAudienceSummaryArtifacts?.() ?? [],
+      ),
       roundFacts,
       councilRole: roundFacts?.councilRoles.find((role) => role.playerName === agentName) ?? null,
     };
@@ -336,9 +363,8 @@ export class DiaryRoom {
     }
 
     const packet = this.getHouseStrategyBible?.() ?? null;
-    try {
-      const brief = await this.houseInterviewer.generateProducerBrief(context, packet);
-      this.logger.emitAgentTurn({
+    const brief = await this.houseInterviewer.generateProducerBrief(context, packet);
+    this.logger.emitAgentTurn({
         phase: Phase.DIARY_ROOM,
         action: "house-producer-brief",
         actor: { name: "House", role: "house" },
@@ -348,14 +374,12 @@ export class DiaryRoom {
           playerName: context.agentName,
           producerBrief: {
             playerName: brief.playerName,
+            playerId: brief.playerId,
             packetRevisionId: brief.packetRevisionId,
-            storyRole: brief.storyRole,
-            pressurePoints: brief.pressurePoints,
-            relevantAllianceHypotheses: brief.relevantAllianceHypotheses,
-            contradictions: brief.contradictions,
+            focusItems: brief.focusItems,
             questionAngles: brief.questionAngles,
-            safeToReveal: brief.safeToReveal,
-            privateDoNotReveal: brief.privateDoNotReveal,
+            producerNote: brief.producerNote,
+            fallback: brief.fallback,
           },
         },
         thinking: brief.thinking,
@@ -363,15 +387,10 @@ export class DiaryRoom {
         scope: "diary",
         text: formatHouseProducerBriefOperatorText({
           playerName: context.agentName,
-          storyRole: brief.storyRole,
-          pressurePoints: brief.pressurePoints,
+          focusItems: brief.focusItems,
           questionAngles: brief.questionAngles,
         }),
       });
-      return brief;
-    } catch (error) {
-      console.error(`[DiaryRoom] Producer brief failed for ${context.agentName}, continuing:`, error);
-      return null;
-    }
+    return brief;
   }
 }

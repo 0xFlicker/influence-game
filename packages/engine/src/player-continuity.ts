@@ -225,23 +225,78 @@ export function sealHouseContinuityRequirement(params: {
 }
 
 export function isHouseContinuityCapsuleShape(value: unknown): value is HouseContinuityCapsule {
+  const allowedCapsuleKeys = new Set([
+    "revisionId",
+    "previousRevisionId",
+    "updatedAtRound",
+    "updatedAtPhase",
+    "coveredWindow",
+    "hypotheses",
+    "openQuestions",
+  ]);
+  const hypothesisKinds = new Set([
+    "alliance_coordination",
+    "alliance_fracture",
+    "vote_coordination",
+    "promise_or_commitment",
+    "player_trajectory",
+    "strategic_tension",
+    "story_arc",
+  ]);
+  const hypothesisStatuses = new Set(["emerging", "active", "weakening", "resolved", "retired"]);
+  const confidences = new Set(["low", "medium", "high"]);
+  const questionKinds = new Set([
+    "trust_test",
+    "coordination_test",
+    "commitment_test",
+    "conflict_test",
+    "trajectory_test",
+    "consequence_test",
+  ]);
+  const validReceiptArray = (candidate: unknown): candidate is string[] =>
+    isStringArray(candidate) && candidate.length > 0 && new Set(candidate).size === candidate.length;
+  const validPlayerArray = (candidate: unknown, allowEmpty: boolean): candidate is string[] =>
+    isStringArray(candidate)
+    && (allowEmpty || candidate.length > 0)
+    && new Set(candidate).size === candidate.length;
+  const validHypothesis = (candidate: unknown): boolean => {
+    if (!isRecord(candidate) || !hasOnlyKeys(candidate, new Set([
+      "id", "kind", "status", "confidence", "subjectPlayerIds", "relatedPlayerIds", "sourceAliases",
+    ]))) return false;
+    return typeof candidate.id === "string" && candidate.id.length > 0
+      && hypothesisKinds.has(candidate.kind as string)
+      && hypothesisStatuses.has(candidate.status as string)
+      && confidences.has(candidate.confidence as string)
+      && validPlayerArray(candidate.subjectPlayerIds, false)
+      && validPlayerArray(candidate.relatedPlayerIds, true)
+      && validReceiptArray(candidate.sourceAliases);
+  };
+  const validQuestion = (candidate: unknown): boolean => {
+    if (!isRecord(candidate) || !hasOnlyKeys(candidate, new Set([
+      "id", "kind", "subjectPlayerIds", "relatedPlayerIds", "sourceAliases",
+    ]))) return false;
+    return typeof candidate.id === "string" && candidate.id.length > 0
+      && questionKinds.has(candidate.kind as string)
+      && validPlayerArray(candidate.subjectPlayerIds, false)
+      && validPlayerArray(candidate.relatedPlayerIds, true)
+      && validReceiptArray(candidate.sourceAliases);
+  };
+  const coveredWindow = isRecord(value) ? value.coveredWindow : null;
   return isRecord(value) &&
+    hasOnlyKeys(value, allowedCapsuleKeys) &&
     typeof value.revisionId === "string" &&
     value.revisionId.length > 0 &&
     (value.previousRevisionId === null || typeof value.previousRevisionId === "string") &&
     typeof value.updatedAtRound === "number" &&
     typeof value.updatedAtPhase === "string" &&
-    typeof value.summary === "string" &&
-    Array.isArray(value.alliances) &&
-    Array.isArray(value.tensions) &&
-    Array.isArray(value.promises) &&
-    Array.isArray(value.voteBlocs) &&
-    Array.isArray(value.mingleDiscoveries) &&
-    Array.isArray(value.playerTrajectories) &&
-    Array.isArray(value.storyArcs) &&
-    Array.isArray(value.droppedThreads) &&
-    Array.isArray(value.openQuestions) &&
-    typeof value.changedSincePrevious === "string" &&
+    isRecord(coveredWindow) &&
+    hasOnlyKeys(coveredWindow, new Set(["fromRound", "toRound", "fromPhase", "toPhase"])) &&
+    typeof coveredWindow.fromRound === "number" &&
+    typeof coveredWindow.toRound === "number" &&
+    (coveredWindow.fromPhase === undefined || typeof coveredWindow.fromPhase === "string") &&
+    (coveredWindow.toPhase === undefined || typeof coveredWindow.toPhase === "string") &&
+    Array.isArray(value.hypotheses) && value.hypotheses.every(validHypothesis) &&
+    Array.isArray(value.openQuestions) && value.openQuestions.every(validQuestion) &&
     !hasForbiddenPrivateFields(value);
 }
 

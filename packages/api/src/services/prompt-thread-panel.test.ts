@@ -1094,10 +1094,8 @@ function generatedSpeechOutput(message: string) {
     noReply: false,
     gotoRoomId: null,
     gotoPlayerName: null,
-    proposedTarget: null,
-    proposedAction: null,
-    commitment: null,
-    noProposalReason: null,
+    coordinationFact: null,
+    noProposal: true,
     strategyDelta: `Recorded ${message}`,
     thinking: `Thinking about ${message}`,
   };
@@ -1112,14 +1110,11 @@ function generatedProviderResponse(message: string) {
     service_tier: "flex",
     output_text: outputText,
     output: [{
-      id: "real-worker-message",
-      type: "message",
-      role: "assistant",
-      status: "completed",
-      content: [{
-        type: "output_text",
-        text: outputText,
-      }],
+      id: "real-worker-function-call",
+      type: "function_call",
+      call_id: "real-worker-call",
+      name: "mingle_turn",
+      arguments: outputText,
     }],
     usage: {
       input_tokens: 1,

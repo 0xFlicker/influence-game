@@ -1458,6 +1458,21 @@ describe("ProductionGameMcpReadModel", () => {
     await insertGamePlayer(db, { gameId, userId });
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createCanonicalEventFixture(gameId);
+    const legacyOutcome = {
+      id: "outcome-glass",
+      sessionId: "session-glass",
+      allianceId: "alliance-glass",
+      window: "pre_vote" as const,
+      round: 1,
+      ask: "Align before the public Vote.",
+      plan: "Glass Table agrees to keep the plan hidden.",
+      promises: [],
+      dissent: [],
+      confidence: "medium",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      createdAt: "2026-06-11T00:00:10.000Z",
+    };
     const allianceEvent: CanonicalGameEvent = {
       sequence: events.length + 1,
       gameId,
@@ -1470,21 +1485,7 @@ describe("ProductionGameMcpReadModel", () => {
       payloadVersion: 1,
       sourcePointers: [],
       payload: {
-        outcome: {
-          id: "outcome-glass",
-          sessionId: "session-glass",
-          allianceId: "alliance-glass",
-          window: "pre_vote",
-          round: 1,
-          ask: "Align before the public Vote.",
-          plan: "Glass Table agrees to keep the plan hidden.",
-          promises: [],
-          dissent: [],
-          confidence: "medium",
-          posture: "coordinating",
-          leakOrBetrayalClaims: [],
-          createdAt: "2026-06-11T00:00:10.000Z",
-        },
+        outcome: legacyOutcome,
       },
     };
     await appendGameEvents(db, { gameId, ownerEpoch, events: [...events, allianceEvent] });
@@ -1603,25 +1604,16 @@ describe("ProductionGameMcpReadModel", () => {
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: 1,
-      ask: "Vote with Bob.",
-      plan: "Alice and Bob agree to test Cara as the first vote.",
-      promises: ["Alice backs Bob publicly."],
-      dissent: [],
-      confidence: "high",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
-      commitments: [{
-        speakerId: alice,
-        speakerName: "Alice",
-        proposedTargetName: "Cara",
-        noTargetReason: null,
-        proposedAction: "Vote Cara if the active format permits it.",
-        memberCommitments: [{ memberName: "Bob", commitment: "Bob will compare the legal ballot." }],
-        contingency: "Re-evaluate if Cara earns immunity.",
+      facts: [{
+        kind: "commitment",
+        factId: "fact-ab",
+        sessionId: "session-ab",
+        actorPlayerId: alice,
+        actionKind: "council_vote",
+        targetPlayerId: cara,
         confidence: "high",
-        dissent: ["Bob prefers Dax if Cara is unavailable."],
-        alternativePlan: "Vote Dax only if Cara is unavailable.",
       }],
+      participantPlayerIds: [],
       createdAt: "2026-06-14T00:01:05.000Z",
     });
     state.recordAllianceHuddleCompleted({
@@ -1640,13 +1632,16 @@ describe("ProductionGameMcpReadModel", () => {
       allianceId: "alliance-cd",
       window: "pre_vote",
       round: 1,
-      ask: "Keep Alice out.",
-      plan: "Cara and Dax target Alice quietly.",
-      promises: ["Do not tell Alice."],
-      dissent: [],
-      confidence: "medium",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
+      facts: [{
+        kind: "proposal",
+        factId: "fact-cd",
+        sessionId: "session-cd",
+        actorPlayerId: cara,
+        actionKind: "council_vote",
+        targetPlayerId: alice,
+        confidence: "medium",
+      }],
+      participantPlayerIds: [],
       createdAt: "2026-06-14T00:01:15.000Z",
     });
 
@@ -1711,7 +1706,8 @@ describe("ProductionGameMcpReadModel", () => {
       allianceName: "Back Row Pair",
       messageCount: 1,
       outcomeSummary: {
-        plan: "Alice and Bob agree to test Cara as the first vote.",
+        factCount: 1,
+        factSummaries: ["Alice recorded a commitment to a Council vote for Cara (high confidence)."],
       },
     });
     expect(JSON.stringify(result.allianceFacts?.huddles[0])).not.toContain("messages");
@@ -1731,12 +1727,12 @@ describe("ProductionGameMcpReadModel", () => {
         thinking: "I need Bob to feel this was his idea.",
       }],
       outcome: {
-        plan: "Alice and Bob agree to test Cara as the first vote.",
-        commitments: [{
-          proposedTargetName: "Cara",
-          proposedAction: "Vote Cara if the active format permits it.",
-          dissent: ["Bob prefers Dax if Cara is unavailable."],
-        }],
+        facts: [expect.objectContaining({
+          kind: "commitment",
+          actorPlayerId: alice,
+          targetPlayerId: cara,
+        })],
+        factSummaries: ["Alice recorded a commitment to a Council vote for Cara (high confidence)."],
       },
     });
 
@@ -1747,9 +1743,9 @@ describe("ProductionGameMcpReadModel", () => {
     }, PRODUCER_ACCESS);
     expect(producerResult.allianceFacts?.huddles[0]).toMatchObject({
       outcome: {
-        commitments: [expect.objectContaining({
-          proposedTargetName: "Cara",
-          memberCommitments: [{ memberName: "Bob", commitment: "Bob will compare the legal ballot." }],
+        facts: [expect.objectContaining({
+          actorPlayerId: alice,
+          targetPlayerId: cara,
         })],
       },
     });

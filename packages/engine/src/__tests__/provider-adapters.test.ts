@@ -10,28 +10,42 @@ import {
 import type { ModelInvocation } from "../model-invocation";
 import { modelCatalogEntryById } from "../model-catalog";
 import {
+  ProviderAcceptedValueIntegrityError,
+  ProviderAttemptError,
   ProviderExecutionCoordinator,
   type ProviderAttemptRecord,
 } from "../provider-execution";
+import { createExactStructuredOutputArtifact } from "../structured-output";
 
-const invocation: ModelInvocation = {
+const voteArtifact = createExactStructuredOutputArtifact<
+  { target: string },
+  { target: string }
+>({
+  action: "test.cast-vote.v1",
+  name: "cast_vote",
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["target"],
+    properties: { target: { type: "string" } },
+  },
+  acceptedValueUsesProviderSchema: true,
+  decodeProviderPayload: (value) => ({ status: "valid", value }),
+  decodeAcceptedValue: (value) => ({
+    status: "valid",
+    value: value as { target: string },
+  }),
+});
+
+const invocation: ModelInvocation<{ target: string }> = {
   messages: [
     { role: "system", content: "Play Influence." },
     { role: "user", content: "Choose one target." },
   ],
   result: {
     kind: "tool",
-    tools: [{
-      name: "cast_vote",
-      description: "Cast one legal vote.",
-      strict: true,
-      parameters: {
-        type: "object",
-        additionalProperties: false,
-        required: ["target"],
-        properties: { target: { type: "string" } },
-      },
-    }],
+    artifact: voteArtifact,
+    description: "Cast one legal vote.",
     choice: { name: "cast_vote" },
     allowParallel: false,
   },
@@ -39,6 +53,43 @@ const invocation: ModelInvocation = {
   reasoning: { effort: "medium", summary: "auto" },
   temperature: 0.65,
   promptCache: { key: "influence:test", ttl: "30m" },
+};
+
+const targetArtifact = createExactStructuredOutputArtifact<
+  { target: "Atlas" | "Blair" },
+  { targetPlayerId: string }
+>({
+  action: "test.pick-target.v1",
+  name: "pick_target",
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["target"],
+    properties: { target: { type: "string", enum: ["Atlas", "Blair"] } },
+  },
+  decodeProviderPayload: (payload) => ({
+    status: "valid",
+    value: { targetPlayerId: payload.target === "Atlas" ? "atlas-id" : "blair-id" },
+  }),
+  decodeAcceptedValue: (value) => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { status: "invalid", message: "Accepted target must be an object." };
+    }
+    const record = value as Record<string, unknown>;
+    if (
+      Object.keys(record).length !== 1
+      || (record.targetPlayerId !== "atlas-id" && record.targetPlayerId !== "blair-id")
+    ) {
+      return { status: "invalid", message: "Accepted target must contain one legal player id." };
+    }
+    return { status: "valid", value: { targetPlayerId: record.targetPlayerId } };
+  },
+});
+
+const structuredInvocation: ModelInvocation<{ targetPlayerId: string }> = {
+  messages: [{ role: "user", content: "Pick Atlas or Blair." }],
+  result: { kind: "structured", artifact: targetArtifact },
+  outputTokenLimit: 256,
 };
 
 function runtime(
@@ -66,7 +117,345 @@ function runtime(
   };
 }
 
+async function executeVoteInvocation(
+  providerRuntime: LlmProviderRuntime,
+  options?: {
+    maxAttempts?: number;
+    coordinator?: ProviderExecutionCoordinator;
+  },
+): Promise<{ target: string }> {
+  const call = (options?.coordinator ?? new ProviderExecutionCoordinator({ wait: async () => {} }))
+    .startCall({
+      actor: { name: "Dax", role: "player" },
+      action: voteArtifact.action,
+      logicalCallOrdinal: 1,
+    });
+  const result = await executeModelInvocation({
+    call,
+    runtimes: [providerRuntime],
+    invocation,
+    maxAttempts: options?.maxAttempts ?? 1,
+    validate: (_outcome, decoded) => decoded
+      ? { status: "usable", value: decoded }
+      : { status: "unusable", kind: "malformed_output", message: "missing decoded vote" },
+  });
+  return result.value;
+}
+
+async function rejectedProviderAttempt(
+  promise: Promise<unknown>,
+): Promise<ProviderAttemptError> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProviderAttemptError);
+    return error as ProviderAttemptError;
+  }
+  throw new Error("Expected provider attempt rejection");
+}
+
 describe("provider-native adapters", () => {
+  it("decodes the same exact tool arguments through native tools and json_schema compatibility", async () => {
+    const nativeClient = {
+      chat: {
+        completions: {
+          create: async () => ({
+            id: "chat_native",
+            choices: [{
+              finish_reason: "tool_calls",
+              message: {
+                role: "assistant",
+                content: null,
+                tool_calls: [{
+                  id: "call_native",
+                  type: "function",
+                  function: { name: "cast_vote", arguments: '{"target":"Atlas"}' },
+                }],
+              },
+            }],
+          }),
+        },
+      },
+    } as unknown as OpenAI;
+    const jsonSchemaClient = {
+      chat: {
+        completions: {
+          create: async () => ({
+            id: "chat_json_schema",
+            choices: [{
+              finish_reason: "stop",
+              message: { role: "assistant", content: '{"target":"Atlas"}' },
+            }],
+          }),
+        },
+      },
+    } as unknown as OpenAI;
+    const nativeRuntime = runtime("katana:grok-4-5", nativeClient);
+    nativeRuntime.toolChoiceMode = "named";
+    const jsonSchemaRuntime = runtime("katana:glm-5-2", jsonSchemaClient);
+    jsonSchemaRuntime.toolChoiceMode = "json_schema";
+
+    expect(await executeVoteInvocation(nativeRuntime)).toEqual({ target: "Atlas" });
+    expect(await executeVoteInvocation(jsonSchemaRuntime)).toEqual({ target: "Atlas" });
+  });
+
+  it("rejects prose recovery and wrapper envelopes in json_schema compatibility", async () => {
+    const cases = [
+      ["plain text", "undecodable_structured_output"],
+      ["```json\n{\"target\":\"Atlas\"}\n```", "undecodable_structured_output"],
+      ["Before {\"target\":\"Atlas\"} after", "undecodable_structured_output"],
+      ['{"arguments":{"target":"Atlas"}}', "malformed_output"],
+      ['{"toolName":"cast_vote","target":"Atlas"}', "malformed_output"],
+      ["{}", "malformed_output"],
+      ['{"target":"Atlas","extra":true}', "malformed_output"],
+    ] as const;
+
+    for (const [content, expectedKind] of cases) {
+      const client = {
+        chat: {
+          completions: {
+            create: async () => ({
+              id: "chat_invalid_json_schema",
+              choices: [{
+                finish_reason: "stop",
+                message: { role: "assistant", content },
+              }],
+            }),
+          },
+        },
+      } as unknown as OpenAI;
+      const providerRuntime = runtime("katana:glm-5-2", client);
+      providerRuntime.toolChoiceMode = "json_schema";
+
+      const error = await rejectedProviderAttempt(executeVoteInvocation(providerRuntime));
+      expect(error.record.outcome.kind).toBe(expectedKind);
+    }
+  });
+
+  it("keeps native tool envelope failures typed by decode stage", async () => {
+    const cases: Array<{
+      toolCalls: unknown[];
+      expectedKind: "wrong_tool" | "undecodable_structured_output" | "malformed_output";
+    }> = [
+      { toolCalls: [], expectedKind: "wrong_tool" },
+      {
+        toolCalls: [{
+          id: "wrong",
+          type: "function",
+          function: { name: "other_tool", arguments: '{"target":"Atlas"}' },
+        }],
+        expectedKind: "wrong_tool",
+      },
+      {
+        toolCalls: [{
+          id: "truncated",
+          type: "function",
+          function: { name: "cast_vote", arguments: '{"target":' },
+        }],
+        expectedKind: "undecodable_structured_output",
+      },
+      {
+        toolCalls: [{
+          id: "missing",
+          type: "function",
+          function: { name: "cast_vote", arguments: "{}" },
+        }],
+        expectedKind: "malformed_output",
+      },
+      {
+        toolCalls: [{
+          id: "extra",
+          type: "function",
+          function: { name: "cast_vote", arguments: '{"target":"Atlas","extra":true}' },
+        }],
+        expectedKind: "malformed_output",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const client = {
+        chat: {
+          completions: {
+            create: async () => ({
+              id: "chat_invalid_native",
+              choices: [{
+                finish_reason: testCase.toolCalls.length > 0 ? "tool_calls" : "stop",
+                message: {
+                  role: "assistant",
+                  content: null,
+                  tool_calls: testCase.toolCalls,
+                },
+              }],
+            }),
+          },
+        },
+      } as unknown as OpenAI;
+      const providerRuntime = runtime("katana:grok-4-5", client);
+      providerRuntime.toolChoiceMode = "named";
+
+      const error = await rejectedProviderAttempt(executeVoteInvocation(providerRuntime));
+      expect(error.record.outcome.kind).toBe(testCase.expectedKind);
+    }
+  });
+
+  it("retries a malformed native envelope and accepts only the exact recovery", async () => {
+    let attempt = 0;
+    const records: ProviderAttemptRecord[] = [];
+    const client = {
+      chat: {
+        completions: {
+          create: async () => {
+            attempt += 1;
+            return {
+              id: `chat_retry_${attempt}`,
+              choices: [{
+                finish_reason: "tool_calls",
+                message: {
+                  role: "assistant",
+                  content: null,
+                  tool_calls: [{
+                    id: `call_${attempt}`,
+                    type: "function",
+                    function: {
+                      name: "cast_vote",
+                      arguments: attempt === 1
+                        ? '{"target":"Atlas","extra":true}'
+                        : '{"target":"Atlas"}',
+                    },
+                  }],
+                },
+              }],
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const providerRuntime = runtime("katana:grok-4-5", client);
+    providerRuntime.toolChoiceMode = "named";
+    const coordinator = new ProviderExecutionCoordinator({
+      wait: async () => {},
+      hooks: { onTerminal: (record) => { records.push(record); } },
+    });
+
+    expect(await executeVoteInvocation(providerRuntime, {
+      maxAttempts: 2,
+      coordinator,
+    })).toEqual({ target: "Atlas" });
+    expect(records.map((record) => record.outcome.kind)).toEqual([
+      "malformed_output",
+      "usable",
+    ]);
+    expect(records[0]?.acceptedValue).toBeUndefined();
+    expect(records[1]?.acceptedValue).toEqual({ target: "Atlas" });
+  });
+
+  it("rejects an inexact durable tool value without dispatching", async () => {
+    let dispatches = 0;
+    const client = {
+      chat: {
+        completions: {
+          create: async () => {
+            dispatches += 1;
+            throw new Error("dispatch must not run");
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const providerRuntime = runtime("katana:grok-4-5", client);
+    const coordinator = new ProviderExecutionCoordinator({
+      hooks: {
+        onReadAccepted: () => ({
+          attemptOrdinal: 1,
+          value: { target: "Atlas", extra: true },
+        }),
+      },
+    });
+
+    await expect(executeVoteInvocation(providerRuntime, { coordinator }))
+      .rejects.toBeInstanceOf(ProviderAcceptedValueIntegrityError);
+    expect(dispatches).toBe(0);
+  });
+
+  it("compiles and validates the same exact structured artifact across adapters", async () => {
+    const client = {} as OpenAI;
+    const openaiBody = compileOpenAIResponsesRequest(
+      structuredInvocation,
+      runtime("openai:gpt-5.6-luna", client),
+    );
+    const chatBody = compileChatCompletionsRequest(
+      structuredInvocation,
+      runtime("katana:glm-5-2", client),
+    );
+    expect(openaiBody).toMatchObject({
+      text: {
+        format: {
+          type: "json_schema",
+          name: targetArtifact.name,
+          strict: true,
+          schema: targetArtifact.schema,
+        },
+      },
+    });
+    expect(chatBody).toMatchObject({
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: targetArtifact.name,
+          strict: true,
+          schema: targetArtifact.schema,
+        },
+      },
+    });
+
+    const records: ProviderAttemptRecord[] = [];
+    let attempt = 0;
+    const provider = {
+      chat: {
+        completions: {
+          create: async () => {
+            attempt += 1;
+            return {
+              id: `chat_${attempt}`,
+              choices: [{
+                finish_reason: "stop",
+                message: {
+                  role: "assistant",
+                  content: attempt === 1
+                    ? '{"target":"Atlas","extra":true}'
+                    : '{"target":"Blair"}',
+                },
+              }],
+            };
+          },
+        },
+      },
+    } as unknown as OpenAI;
+    const call = new ProviderExecutionCoordinator({
+      wait: async () => {},
+      hooks: { onTerminal: (record) => { records.push(record); } },
+    }).startCall({
+      actor: { name: "House", role: "house" },
+      action: targetArtifact.action,
+      logicalCallOrdinal: 1,
+    });
+    const result = await executeModelInvocation({
+      call,
+      runtimes: [runtime("katana:glm-5-2", provider)],
+      invocation: structuredInvocation,
+      maxAttempts: 2,
+      validate: (_outcome, decoded) => decoded
+        ? { status: "usable", value: decoded }
+        : { status: "unusable", kind: "malformed_output", message: "missing decoded value" },
+    });
+
+    expect(result.value).toEqual({ targetPlayerId: "blair-id" });
+    expect(result.liveOutcome?.responseId).toBe("chat_2");
+    expect(records.map((record) => record.outcome.kind)).toEqual([
+      "malformed_output",
+      "usable",
+    ]);
+  });
+
   it("compiles the identical OpenAI Responses request regardless of fallback presence", () => {
     const client = {} as OpenAI;
     const openai = runtime("openai:gpt-5.6-luna", client);

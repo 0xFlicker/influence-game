@@ -275,6 +275,149 @@ describe("ContextBuilder", () => {
     expect(ctx.publicMessages[0]!.text).toBe("Hello!");
   });
 
+  it("builds Judgment history and recent decisions only from canonical speech events", () => {
+    const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
+
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_question",
+      playerId: bob.id,
+      text: "Why should the jury reward your game?",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: alice.id,
+    });
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_answer",
+      playerId: alice.id,
+      text: "I controlled the decisive votes.",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: bob.id,
+    });
+
+    logger.logPublic(
+      bob.id,
+      "Question pour Charlie : ce display localise ne fait pas autorite.",
+      Phase.JURY_QUESTIONS,
+    );
+    logger.logPublic(
+      alice.id,
+      "[ANSWER to Eve] This malformed display row is not accepted history.",
+      Phase.JURY_QUESTIONS,
+    );
+
+    const aliceContext = builder.buildPhaseContext(alice.id, Phase.JURY_QUESTIONS);
+    const bobContext = builder.buildPhaseContext(bob.id, Phase.JURY_QUESTIONS);
+
+    expect(aliceContext.judgmentQuestionHistory).toEqual([{
+      jurorName: "Bob",
+      finalistName: "Alice",
+      question: "Why should the jury reward your game?",
+      answer: "I controlled the decisive votes.",
+    }]);
+    expect(aliceContext.recentDecisions).toContainEqual({
+      round: 1,
+      phase: Phase.JURY_QUESTIONS,
+      label: "Judgment Answer",
+      detail: 'Your Judgment answer to Bob: "I controlled the decisive votes."',
+    });
+    expect(bobContext.recentDecisions).toContainEqual({
+      round: 1,
+      phase: Phase.JURY_QUESTIONS,
+      label: "Judgment Question",
+      detail: 'Your Judgment question to Alice: "Why should the jury reward your game?"',
+    });
+    expect(
+      aliceContext.recentDecisions?.some((decision) => decision.detail.includes("Eve")),
+    ).toBe(false);
+  });
+
+  it("pairs each Judgment answer with the latest unmatched reciprocal canonical question", () => {
+    const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
+
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_question",
+      playerId: bob.id,
+      text: "First question",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: alice.id,
+    });
+    gs.startRound();
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_question",
+      playerId: bob.id,
+      text: "Second question",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: alice.id,
+    });
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_answer",
+      playerId: alice.id,
+      text: "Second answer",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: bob.id,
+    });
+    gs.startRound();
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_answer",
+      playerId: alice.id,
+      text: "First answer",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: bob.id,
+    });
+
+    expect(
+      builder.buildPhaseContext(alice.id, Phase.JURY_QUESTIONS).judgmentQuestionHistory,
+    ).toEqual([
+      {
+        jurorName: "Bob",
+        finalistName: "Alice",
+        question: "First question",
+        answer: "First answer",
+      },
+      {
+        jurorName: "Bob",
+        finalistName: "Alice",
+        question: "Second question",
+        answer: "Second answer",
+      },
+    ]);
+  });
+
+  it("keeps unanswered canonical Judgment questions and ignores display-only questions", () => {
+    const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
+    const charlie = gs.getAlivePlayers().find((p) => p.name === "Charlie")!;
+
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_question",
+      playerId: bob.id,
+      text: "Unanswered canonical question",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: alice.id,
+    });
+    logger.logPublic(
+      charlie.id,
+      "[QUESTION to Alice] Display-only question",
+      Phase.JURY_QUESTIONS,
+    );
+
+    expect(
+      builder.buildPhaseContext(alice.id, Phase.JURY_QUESTIONS).judgmentQuestionHistory,
+    ).toEqual([{
+      jurorName: "Bob",
+      finalistName: "Alice",
+      question: "Unanswered canonical question",
+    }]);
+  });
+
   it("buildPhaseContext exposes name-rendered public/canonical records for endgame prompts", () => {
     const alice = gs.getAlivePlayers().find((p) => p.name === "Alice")!;
     const bob = gs.getAlivePlayers().find((p) => p.name === "Bob")!;
@@ -283,6 +426,13 @@ describe("ContextBuilder", () => {
     gs.recordVote(alice.id, bob.id, charlie.id);
     logger.logPublic(alice.id, "This should be visible.", Phase.LOBBY);
     logger.logSystem("A public House result.", Phase.VOTE);
+    logger.logSystem(
+      "Viewer-only House narrative beat.",
+      Phase.VOTE,
+      undefined,
+      undefined,
+      "house_summary",
+    );
     logger.logMingleMessage(alice.id, [bob.id], "Private room talk.", 1);
     logger.logDiary("Alice", "Private diary thought.");
     logger.logThinking(alice.id, "Hidden thought.", Phase.VOTE);
@@ -295,6 +445,9 @@ describe("ContextBuilder", () => {
       "This should be visible.",
       "A public House result.",
     ]);
+    expect(ctx.publicMessages.map((entry) => entry.text)).not.toContain(
+      "Viewer-only House narrative beat.",
+    );
   });
 
   it("keeps peer format ballots absent while retaining the acting agent's own sealed receipt", () => {

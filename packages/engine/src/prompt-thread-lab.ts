@@ -937,9 +937,9 @@ function deterministicOpenAIStub(scripts: StoredTrace[]): OpenAI {
   };
   return {
     responses: {
-      create: async () => {
+      create: async (params: Record<string, unknown>) => {
         const script = nextScript();
-        return storedTraceResponse(script);
+        return storedTraceResponse(script, params);
       },
     },
     chat: {
@@ -1011,7 +1011,7 @@ function createGeneratedCellProvider(
               if (!intent) {
                 throw new Error(`Generated replay is missing intent for ${actorId}`);
               }
-              return storedTraceResponse(intent);
+              return storedTraceResponse(intent, params);
             }
             const actorOffset = validated.actorIds.indexOf(actorId);
             if (actorOffset < 0) {
@@ -1041,23 +1041,40 @@ function createGeneratedCellProvider(
   };
 }
 
-function storedTraceResponse(script: StoredTrace): Record<string, unknown> {
+function storedTraceResponse(
+  script: StoredTrace,
+  request?: Record<string, unknown>,
+): Record<string, unknown> {
   const outputText = JSON.stringify(script.output);
+  const choice = request?.tool_choice;
+  const chosenName = choice && typeof choice === "object" && !Array.isArray(choice)
+    && "name" in choice && typeof choice.name === "string"
+    ? choice.name
+    : null;
+  const output = chosenName
+    ? [{
+        id: `function-${script.manifestId}`,
+        type: "function_call",
+        call_id: `call-${script.manifestId}`,
+        name: chosenName,
+        arguments: outputText,
+      }]
+    : [{
+        id: `message-${script.manifestId}`,
+        type: "message",
+        role: "assistant",
+        status: "completed",
+        content: [{
+          type: "output_text",
+          text: outputText,
+        }],
+      }];
   return {
     id: `deterministic-${script.manifestId}`,
     object: "response",
     status: "completed",
     output_text: outputText,
-    output: [{
-      id: `message-${script.manifestId}`,
-      type: "message",
-      role: "assistant",
-      status: "completed",
-      content: [{
-        type: "output_text",
-        text: outputText,
-      }],
-    }],
+    output,
     usage: {
       input_tokens: 0,
       input_tokens_details: { cached_tokens: 0 },

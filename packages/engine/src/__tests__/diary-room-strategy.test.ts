@@ -28,6 +28,7 @@ import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG, Phase, type UUID } from "../types";
 import type { PhaseRunnerContext } from "../phases";
 import { handleElimination } from "../phases/elimination";
+import { ProviderUnavailableError } from "../provider-execution";
 import { MockAgent } from "./mock-agent";
 
 class ScriptedDiaryAgent extends MockAgent {
@@ -464,7 +465,7 @@ describe("post-eviction diary compact strategy", () => {
   it("moves failed post-eviction interviews to repair required without hiding prior strategy", async () => {
     class FailingHouse extends ScriptedHouse {
       override async generateQuestion(): Promise<string> {
-        throw new Error("question unavailable");
+        throw new ProviderUnavailableError("question unavailable", "service_error");
       }
     }
     const house = new FailingHouse();
@@ -488,6 +489,9 @@ describe("post-eviction diary compact strategy", () => {
   it("moves a failed first answer to repair required", async () => {
     const { agent, diary } = createDiaryHarness();
     agent.markCompactStrategyReconciliationRequired();
+    agent.getDiaryEntry = async () => {
+      throw new ProviderUnavailableError("answer unavailable", "service_error");
+    };
     const originalError = console.error;
     console.error = mock(() => undefined);
     try {
@@ -498,6 +502,17 @@ describe("post-eviction diary compact strategy", () => {
 
     expect(agent.boundaries).toEqual(["post_eviction_diary"]);
     expect(agent.getCompactStrategyState().lifecycle).toBe("repair_required");
+  });
+
+  it("propagates non-provider diary defects instead of disguising them as absence", async () => {
+    const { agent, diary } = createDiaryHarness();
+    agent.getDiaryEntry = async () => {
+      throw new TypeError("diary invariant failed");
+    };
+
+    await expect(diary.runDiaryRoom(Phase.FORMAT_RESOLVE))
+      .rejects.toThrow("diary invariant failed");
+    expect(agent.boundaries).toEqual([]);
   });
 
   it("preserves repair and the prior epoch after a failed repair follow-up", async () => {

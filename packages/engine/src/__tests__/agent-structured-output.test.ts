@@ -1,6 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type OpenAI from "openai";
-import { InfluenceAgent } from "../agent";
+import { AGENT_TOOL_SEMANTIC_ACTION_IDS, InfluenceAgent } from "../agent";
 import type { AllianceActionOpportunity as PublicAllianceActionOpportunity } from "../index";
 import { TemplateHouseInterviewer } from "../house-interviewer";
 import type {
@@ -29,6 +29,7 @@ import { resolveActionStrategyCandidate } from "../phases/phase-runner-context";
 import { COMPACT_STRATEGY_LIMITS } from "../strategy-state";
 import { STRATEGY_DELTA_GUIDANCE } from "../formats/agent-surface";
 import {
+  ProviderAcceptedValueIntegrityError,
   ProviderAttemptError,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
@@ -53,6 +54,18 @@ function makeContext(phase: Phase = Phase.VOTE): PhaseContext {
   };
 }
 
+async function rejectedProviderAttempt(
+  promise: Promise<unknown>,
+): Promise<ProviderAttemptError> {
+  try {
+    await promise;
+  } catch (error) {
+    expect(error).toBeInstanceOf(ProviderAttemptError);
+    return error as ProviderAttemptError;
+  }
+  throw new Error("Expected provider attempt rejection");
+}
+
 // U2 execution note: treat prompt rendering as behavior. No-Whisper assertions for current Mingle surfaces.
 describe("Mingle prompt and tool vocabulary guard (no current Whisper leakage)", () => {
   it("current Mingle tool names contain no Whisper terms", () => {
@@ -63,12 +76,42 @@ describe("Mingle prompt and tool vocabulary guard (no current Whisper leakage)",
       expect(toolName.toLowerCase()).not.toContain("whisper");
     }
   });
+
+  it("registers every exact agent tool action once", () => {
+    expect(new Set(AGENT_TOOL_SEMANTIC_ACTION_IDS).size)
+      .toBe(AGENT_TOOL_SEMANTIC_ACTION_IDS.length);
+    expect(AGENT_TOOL_SEMANTIC_ACTION_IDS).toEqual(expect.arrayContaining([
+      "whispers",
+      "mingle-intent",
+      "alliance-action",
+      "alliance-huddle-turn",
+      "mingle-turn",
+      "vote",
+      "candidate-selection",
+      "power",
+      "council-vote",
+      "format-pick",
+      "format-save-or-eliminate-ballot",
+      "format-vote-bomb-ballot",
+      "format-majority-elimination-ballot",
+      "format-even-votes-ballot",
+      "format-restricted-history-ballot",
+      "bounce-pointer",
+      "format-safety-bounce-vote",
+      "format-tiebreak",
+      "elimination-vote",
+      "accusation",
+      "jury-question",
+      "jury-vote",
+    ]));
+  });
 });
 
 function makeOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
   return makeToolOpenAIStub(requests, "cast_votes", {
     thinking: "I empower my ally Mira because she is loyal and a strong format chooser.",
     empower: "Mira",
+    strategyDelta: null,
   });
 }
 
@@ -313,6 +356,7 @@ function makeResponsesOpenAIStub(
   requests: Array<Record<string, unknown>>,
   outputText: string,
   reasoningSummary: string,
+  toolCall?: { name: string; args: Record<string, unknown> },
 ): OpenAI {
   return {
     responses: {
@@ -335,18 +379,25 @@ function makeResponsesOpenAIStub(
                 },
               ],
             },
-            {
-              id: "msg-test",
-              type: "message",
-              role: "assistant",
-              status: "completed",
-              content: [
-                {
-                  type: "output_text",
-                  text: outputText,
-                },
-              ],
-            },
+            ...(toolCall
+              ? [{
+                  type: "function_call",
+                  call_id: "call-test",
+                  name: toolCall.name,
+                  arguments: JSON.stringify(toolCall.args),
+                }]
+              : [{
+                  id: "msg-test",
+                  type: "message",
+                  role: "assistant",
+                  status: "completed",
+                  content: [
+                    {
+                      type: "output_text",
+                      text: outputText,
+                    },
+                  ],
+                }]),
           ],
           usage: {
             input_tokens: 10,
@@ -378,6 +429,7 @@ function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): Op
           : JSON.stringify({
               thinking: "Retry with enough room to choose targets.",
               empower: "Mira",
+              strategyDelta: null,
             });
         return {
           id: `response-${requests.length}`,
@@ -420,7 +472,8 @@ function makeJsonFallbackRetryStub(requests: Array<Record<string, unknown>>): Op
                   content: JSON.stringify({
                     thinking: "Retry with enough room to choose targets.",
                     empower: "Mira",
-                                      }),
+                    strategyDelta: null,
+                  }),
                 },
               },
             ],
@@ -693,7 +746,7 @@ describe("sealed-elim agent decision surface", () => {
     }
   });
 
-  it("repairs illegal sealed-elim targets without claiming model-accept correlation", async () => {
+  it("rejects illegal sealed-elim targets before tracing or phase repair", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const traces: PrivateDecisionTrace[] = [];
     const agent = new InfluenceAgent(
@@ -706,7 +759,6 @@ describe("sealed-elim agent decision surface", () => {
           args: {
             thinking: "Try an illegal target.",
             target: "Nobody",
-            decisionLog: "Attempt a target outside the living cast.",
           },
         },
         {
@@ -714,7 +766,6 @@ describe("sealed-elim agent decision surface", () => {
           args: {
             thinking: "Try an illegal target.",
             target: "Nobody",
-            decisionLog: "Attempt a target outside the living cast.",
           },
         },
         {
@@ -722,7 +773,6 @@ describe("sealed-elim agent decision surface", () => {
           args: {
             thinking: "Try an illegal target.",
             target: "Nobody",
-            decisionLog: "Attempt a target outside the living cast.",
           },
         },
       ]),
@@ -730,6 +780,7 @@ describe("sealed-elim agent decision surface", () => {
       undefined,
       undefined,
       {
+        structuredCallMaxAttempts: 1,
         privateTraceSink: (trace) => {
           traces.push(trace);
         },
@@ -739,35 +790,23 @@ describe("sealed-elim agent decision surface", () => {
     const context = makeContext(Phase.FORMAT_RESOLVE);
     const aliveIds = context.alivePlayers.map((player) => player.id);
 
-    const majority = await agent.getMajorityEliminationBallot(context, aliveIds);
-    const voteBomb = await agent.getVoteBombBallot(context, aliveIds);
-    const evenVotes = await agent.getEvenVotesBallot(context, aliveIds);
+    const errors = [
+      await rejectedProviderAttempt(agent.getMajorityEliminationBallot(context, aliveIds)),
+      await rejectedProviderAttempt(agent.getVoteBombBallot(context, aliveIds)),
+      await rejectedProviderAttempt(agent.getEvenVotesBallot(context, aliveIds)),
+    ];
 
-    expect(majority).toMatchObject({
-      targetId: "Nobody",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_majority_elimination_target",
-    });
-    expect(voteBomb).toMatchObject({
-      targetId: "Nobody",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_vote_bomb_target",
-    });
-    expect(evenVotes).toMatchObject({
-      targetId: "Nobody",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_even_votes_target",
-    });
-    expect(majority.decisionId).toBeUndefined();
-    expect(voteBomb.decisionId).toBeUndefined();
-    expect(evenVotes.decisionId).toBeUndefined();
-    expect(traces).toHaveLength(3);
-    expect(traces.every((trace) => Boolean(trace.decisionId))).toBe(true);
+    expect(errors.map((error) => error.record.outcome.kind)).toEqual([
+      "malformed_output",
+      "malformed_output",
+      "malformed_output",
+    ]);
+    expect(traces).toEqual([]);
   });
 });
 
 describe("InfluenceAgent structured output mode", () => {
-  it("records an omitted ordinary delta as no change", async () => {
+  it("records an explicit null ordinary delta as no change", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -776,6 +815,7 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolOpenAIStub(requests, "cast_votes", {
         thinking: "Mira remains the best chooser, so the current plan still applies.",
         empower: "Mira",
+        strategyDelta: null,
       }),
       "gpt-5-nano",
     );
@@ -785,7 +825,8 @@ describe("InfluenceAgent structured output mode", () => {
     const result = resolveActionStrategyCandidate(agent, votes, true);
 
     expect(votes.empowerTarget).toBe("mira-id");
-    expect(votes.strategyCandidateProposed).toBe(true);
+    expect(votes.strategyDelta).toBeNull();
+    expect(votes.strategyCandidateProposed).toBeUndefined();
     expect(result).toMatchObject({
       status: "no_change",
       reason: "optional_value_absent",
@@ -867,7 +908,7 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
-  it("discards a valid strategy candidate when an illegal action falls back", async () => {
+  it("rejects an illegal action before its strategy candidate can be accepted", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -879,24 +920,15 @@ describe("InfluenceAgent structured output mode", () => {
         strategyDelta: "Keep Mira close while I control the format.",
       }),
       "gpt-5-nano",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const votes = await agent.getVotes(makeContext(Phase.VOTE));
-    const result = resolveActionStrategyCandidate(
-      agent,
-      votes,
-      votes.strategyGameplayAccepted !== false,
-    );
+    const error = await rejectedProviderAttempt(agent.getVotes(makeContext(Phase.VOTE)));
 
-    expect(votes.empowerTarget).not.toBe("atlas-id");
-    expect(votes.decisionId).toBeUndefined();
-    expect(result).toMatchObject({
-      status: "rejected",
-      reason: "action_not_accepted",
-      previousRevision: 0,
-      resultingRevision: 0,
-    });
+    expect(error.record.outcome.kind).toBe("malformed_output");
     expect(agent.getCompactStrategyState().revision).toBe(0);
   });
 
@@ -943,7 +975,7 @@ describe("InfluenceAgent structured output mode", () => {
     });
   });
 
-  it("preserves a legal repair-boundary action when full strategy is missing", async () => {
+  it("rejects a repair-boundary action when full strategy is missing", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -954,24 +986,21 @@ describe("InfluenceAgent structured output mode", () => {
         empower: "Mira",
       }),
       "gpt-5-nano",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
     agent.markCompactStrategyReconciliationRequired();
 
-    const votes = await agent.getVotes(makeContext(Phase.VOTE));
-    const result = resolveActionStrategyCandidate(agent, votes, true);
+    const error = await rejectedProviderAttempt(agent.getVotes(makeContext(Phase.VOTE)));
 
-    expect(votes.empowerTarget).toBe("mira-id");
-    expect(votes.strategyCandidateProposed).toBe(true);
+    expect(error.record.outcome.kind).toBe("malformed_output");
     expect(requests).toHaveLength(1);
-    expect(result).toMatchObject({
-      status: "rejected",
-      reason: "required_value_missing",
-    });
     expect(agent.getCompactStrategyState()).toMatchObject({
-      lifecycle: "repair_required",
+      lifecycle: "reconciliation_required",
       baseline: null,
-      revision: 2,
+      revision: 1,
     });
   });
 
@@ -1095,6 +1124,114 @@ describe("InfluenceAgent structured output mode", () => {
     expect(afterReconstruction).toEqual(beforeReconstruction);
     expect(nextBoundary).not.toEqual(beforeReconstruction);
     expect(nextBoundary.logicalCallOrdinal).toBe(8);
+  });
+
+  it("journals agent-tool player references as domain IDs and replays the same decision receipt", async () => {
+    const attempts: ProviderAttemptRecord[] = [];
+    const liveRequests: Array<Record<string, unknown>> = [];
+    const acceptedAttemptId = "accepted-vote-attempt";
+    const liveAgent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(liveRequests),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        providerExecutionHooks: {
+          onTerminal: (record) => {
+            attempts.push(record);
+            return { acceptedAttemptId };
+          },
+        },
+      },
+    );
+    liveAgent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const live = await liveAgent.getVotes(makeContext(Phase.VOTE));
+    expect(attempts[0]?.acceptedValue).toMatchObject({ empower: "mira-id" });
+    expect(JSON.stringify(attempts[0]?.acceptedValue)).not.toContain('"empower":"Mira"');
+
+    const replayRequests: Array<Record<string, unknown>> = [];
+    const replayAgent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub(replayRequests),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        providerExecutionHooks: {
+          onReadAccepted: () => ({
+            attemptId: acceptedAttemptId,
+            attemptOrdinal: 1,
+            catalogId: attempts[0]!.preparedRequest.catalogId,
+            value: structuredClone(attempts[0]!.acceptedValue),
+          }),
+        },
+      },
+    );
+    replayAgent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const replayed = await replayAgent.getVotes(makeContext(Phase.VOTE));
+    expect(replayed).toEqual(live);
+    expect(replayRequests).toEqual([]);
+  });
+
+  it("rejects provider-shaped names and extra fields from accepted agent journals", async () => {
+    const invalidAcceptedValues = [
+      { thinking: "Replay", empower: "Mira", strategyDelta: null },
+      { thinking: "Replay", empower: "mira-id", strategyDelta: null, extraFact: "Mira won" },
+    ];
+    for (const value of invalidAcceptedValues) {
+      const agent = new InfluenceAgent(
+        "atlas-id",
+        "Atlas",
+        "strategic",
+        makeOpenAIStub([]),
+        "gpt-5-nano",
+        undefined,
+        undefined,
+        {
+          providerExecutionHooks: {
+            onReadAccepted: () => ({ attemptOrdinal: 1, value }),
+          },
+        },
+      );
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      await expect(agent.getVotes(makeContext(Phase.VOTE)))
+        .rejects.toBeInstanceOf(ProviderAcceptedValueIntegrityError);
+    }
+  });
+
+  it("rejects extra fields from accepted AgentResponse journals", async () => {
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub([]),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        providerExecutionHooks: {
+          onReadAccepted: () => ({
+            attemptOrdinal: 1,
+            value: {
+              thinking: "Replay",
+              message: "Hello.",
+              strategyDelta: null,
+              inventedFact: "Mira promised safety.",
+            },
+          }),
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    await expect(agent.getIntroduction(makeContext(Phase.INTRODUCTION)))
+      .rejects.toBeInstanceOf(ProviderAcceptedValueIntegrityError);
   });
 
   it("uses strict active-format tools and accepts legal decisions with LLM provenance", async () => {
@@ -1311,7 +1448,7 @@ describe("InfluenceAgent structured output mode", () => {
           args: {
             thinking: "Use the stated consequence.",
             target: "Vera",
-            decisionLog: "Apply the explicit target classification.",
+            strategyDelta: null,
           },
         },
         {
@@ -1319,7 +1456,7 @@ describe("InfluenceAgent structured output mode", () => {
           args: {
             thinking: "Use the stated consequence.",
             target: "Vera",
-            decisionLog: "Apply the explicit target classification.",
+            strategyDelta: null,
           },
         },
       ]),
@@ -1382,7 +1519,7 @@ describe("InfluenceAgent structured output mode", () => {
     }
   });
 
-  it("returns invalid format tool output for canonical phase repair", async () => {
+  it("rejects invalid format output before canonical phase repair", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1391,30 +1528,33 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolSequenceOpenAIStub(requests, [
         {
           toolName: "pick_round_format",
-          args: { thinking: "Invent a format.", formatId: "classic", decisionLog: null },
+          args: { thinking: "Invent a format.", formatId: "classic" },
         },
         {
           toolName: "save_or_eliminate_ballot",
-          args: { thinking: "Malformed ballot.", polarity: "banish", target: "Nobody", decisionLog: null },
+          args: { thinking: "Malformed ballot.", polarity: "banish", target: "Nobody" },
         },
         {
           toolName: "vote_bomb_ballot",
-          args: { thinking: "Malformed target.", target: "Nobody", decisionLog: null },
+          args: { thinking: "Malformed target.", target: "Nobody" },
         },
         {
           toolName: "bounce_pointer",
-          args: { thinking: "Point to a classified player.", target: "Mira", decisionLog: null },
+          args: { thinking: "Point to a classified player.", target: "Mira" },
         },
         {
           toolName: "safety_bounce_vote",
-          args: { thinking: "Vote outside the pool.", target: "Atlas", decisionLog: null },
+          args: { thinking: "Vote outside the pool.", target: "Atlas" },
         },
         {
           toolName: "format_tiebreak",
-          args: { thinking: "Pick outside the tie.", target: "Atlas", decisionLog: null },
+          args: { thinking: "Pick outside the tie.", target: "Atlas" },
         },
       ]),
       "gpt-5-nano",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
     const formatContext: PhaseContext = {
@@ -1429,49 +1569,23 @@ describe("InfluenceAgent structured output mode", () => {
       },
     };
 
-    const pick = await agent.pickRoundFormat(formatContext, ["vote_bomb", "safety_bounce"]);
-    const saveOrEliminate = await agent.getSaveOrEliminateBallot(formatContext, ["atlas-id", "mira-id", "vera-id"]);
-    const voteBomb = await agent.getVoteBombBallot(formatContext, ["atlas-id", "mira-id", "vera-id"]);
-    const bouncePointer = await agent.getBouncePointer(formatContext, {
-      safe: ["atlas-id"],
-      vulnerable: ["mira-id"],
-      unclassified: ["vera-id"],
-      nextActorId: "atlas-id",
-    });
-    const safetyVote = await agent.getSafetyBounceVote(formatContext, ["mira-id", "vera-id"]);
-    const tiebreak = await agent.breakFormatEliminationTie(formatContext, ["mira-id", "vera-id"]);
+    const errors = [
+      await rejectedProviderAttempt(agent.pickRoundFormat(formatContext, ["vote_bomb", "safety_bounce"])),
+      await rejectedProviderAttempt(agent.getSaveOrEliminateBallot(formatContext, ["atlas-id", "mira-id", "vera-id"])),
+      await rejectedProviderAttempt(agent.getVoteBombBallot(formatContext, ["atlas-id", "mira-id", "vera-id"])),
+      await rejectedProviderAttempt(agent.getBouncePointer(formatContext, {
+        safe: ["atlas-id"],
+        vulnerable: ["mira-id"],
+        unclassified: ["vera-id"],
+        nextActorId: "atlas-id",
+      })),
+      await rejectedProviderAttempt(agent.getSafetyBounceVote(formatContext, ["mira-id", "vera-id"])),
+      await rejectedProviderAttempt(agent.breakFormatEliminationTie(formatContext, ["mira-id", "vera-id"])),
+    ];
 
-    expect(pick).toMatchObject({
-      formatId: "classic",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_format_choice",
-    });
-    expect(saveOrEliminate).toMatchObject({
-      polarity: "banish",
-      targetId: "Nobody",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_save_or_eliminate_ballot",
-    });
-    expect(voteBomb).toMatchObject({
-      targetId: "Nobody",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_vote_bomb_target",
-    });
-    expect(bouncePointer).toMatchObject({
-      targetId: "Mira",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_bounce_pointer",
-    });
-    expect(safetyVote).toMatchObject({
-      targetId: "Atlas",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_safety_bounce_target",
-    });
-    expect(tiebreak).toMatchObject({
-      targetId: "Atlas",
-      decisionSource: "fallback",
-      fallbackReason: "invalid_format_tiebreak_target",
-    });
+    expect(errors.map((error) => error.record.outcome.kind)).toEqual(
+      Array.from({ length: 6 }, () => "malformed_output"),
+    );
   });
 
   it("teaches the format-kernel standard vote without default Power or Council claims", async () => {
@@ -1510,7 +1624,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(empowerEnum).toContain("Mira");
   });
 
-  it("returns self-empower unchanged for the vote phase to repair", async () => {
+  it("rejects self-empower before the vote phase sees a candidate", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -1519,16 +1633,16 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolOpenAIStub(requests, "cast_votes", {
         thinking: "I want the format chooser seat myself.",
         empower: "Atlas",
-        decisionLog: "Illegal self-empower attempt.",
       }),
       "gpt-5-nano",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const votes = await agent.getVotes(makeContext(Phase.VOTE));
-    expect(votes.empowerTarget).toBe("Atlas");
-    expect(votes.decisionId).toBeUndefined();
-    expect(votes.strategyGameplayAccepted).toBe(false);
+    const error = await rejectedProviderAttempt(agent.getVotes(makeContext(Phase.VOTE)));
+    expect(error.record.outcome.kind).toBe("malformed_output");
   });
 
   it("keeps pre-pick format guidance contingent and does not invent a locked format", async () => {
@@ -1540,7 +1654,7 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolOpenAIStub(requests, "pick_round_format", {
         thinking: "Vote Bomb best fits the current coalition.",
         formatId: "vote_bomb",
-        decisionLog: "pick Vote Bomb",
+        strategyDelta: null,
       }),
       "gpt-5-nano",
     );
@@ -1587,7 +1701,9 @@ describe("InfluenceAgent structured output mode", () => {
             noReply: false,
             gotoRoomId: null,
             gotoPlayerName: null,
-            decisionLog: "coordinate under the locked format",
+            coordinationFact: null,
+            noProposal: true,
+            strategyDelta: null,
           },
         })),
       ),
@@ -1672,7 +1788,13 @@ describe("InfluenceAgent structured output mode", () => {
             noReply: false,
             gotoRoomId: null,
             gotoPlayerName: null,
-            decisionLog: "coordinate a legal ballot",
+            coordinationFact: {
+              kind: "commitment",
+              actionKind: "format_ballot",
+              targetPlayerId: "mira-id",
+            },
+            noProposal: false,
+            strategyDelta: null,
           },
         },
         {
@@ -1680,7 +1802,7 @@ describe("InfluenceAgent structured output mode", () => {
           args: {
             thinking: "Vera is unavailable because I targeted her before.",
             target: "Mira",
-            decisionLog: "vote for the only legal target",
+            strategyDelta: null,
           },
         },
       ]),
@@ -1754,9 +1876,8 @@ describe("InfluenceAgent structured output mode", () => {
             memberNames: [],
             purpose: null,
             timebox: null,
-            lineageId: null,
-            versionId: null,
-            decisionLog: "pass",
+            allianceHandle: null,
+            strategyDelta: null,
           },
         },
         {
@@ -1765,7 +1886,14 @@ describe("InfluenceAgent structured output mode", () => {
             thinking: "Coordinate Vote Bomb placement.",
             message: "Load Vera and keep Mira at zero.",
             noReply: false,
-            decisionLog: "coordinate Vote Bomb placement",
+            factAtoms: [{
+              kind: "proposal",
+              actorPlayerId: "atlas-id",
+              actionKind: "council_vote",
+              targetPlayerId: "vera-id",
+              confidence: "medium",
+            }],
+            strategyDelta: null,
           },
         },
       ]),
@@ -1778,6 +1906,7 @@ describe("InfluenceAgent structured output mode", () => {
       {
         ...makeContext(Phase.PRE_COUNCIL_HUDDLE),
         empoweredId: "mira-id",
+        councilCandidates: ["mira-id", "vera-id"],
         formatPressure: {
           empoweredId: "mira-id",
           empoweredName: "Mira",
@@ -1787,13 +1916,16 @@ describe("InfluenceAgent structured output mode", () => {
         },
       },
       {
+        sessionId: "session-1",
         allianceId: "alliance-1",
         allianceName: "Mirror Knives",
+        memberIds: ["atlas-id", "mira-id"],
         memberNames: ["Atlas", "Mira"],
         purpose: "Coordinate format commitments.",
         window: "pre_council",
         scheduleId: "schedule-1",
         pass: 1,
+        priorFacts: [],
       },
       [],
     );
@@ -1855,7 +1987,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(votes).toEqual({
       empowerTarget: "mira-id",
       thinking: expect.any(String),
-      strategyCandidateProposed: true,
+      strategyDelta: null,
     });
     expect(requests[0]?.tool_choice).toEqual({
       type: "function",
@@ -1963,7 +2095,7 @@ describe("InfluenceAgent structured output mode", () => {
     });
     expect(trace.toolArguments).toMatchObject({
       thinking: "I empower Mira as format chooser.",
-      empower: "Mira",
+      empower: "mira-id",
       strategyDelta: "Reward Mira and pressure Vera as the next coalition test.",
     });
   });
@@ -1983,7 +2115,8 @@ describe("InfluenceAgent structured output mode", () => {
         {
           thinking: "I should push Vera now.",
           empower: "Mira",
-                  },
+          strategyDelta: null,
+        },
         "Native Grok reasoning for vote.",
       ),
       grok.modelId,
@@ -2090,16 +2223,23 @@ describe("InfluenceAgent structured output mode", () => {
   it("uses OpenAI Responses reasoning summaries for structured decisions when enabled", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const traces: PrivateDecisionTrace[] = [];
-    const outputText = JSON.stringify({
-      thinking: "Mira is safer to empower and Vera is the pressure target.",
-      empower: "Mira",
-            strategyDelta: "Use vote pressure to test Vera while rewarding Mira.",
-    });
     const agent = new InfluenceAgent(
       "atlas-id",
       "Atlas",
       "strategic",
-      makeResponsesOpenAIStub(requests, outputText, "OpenAI summary: Atlas weighed vote pressure against coalition risk."),
+      makeResponsesOpenAIStub(
+        requests,
+        "",
+        "OpenAI summary: Atlas weighed vote pressure against coalition risk.",
+        {
+          name: "cast_votes",
+          args: {
+          thinking: "Mira is safer to empower and Vera is the pressure target.",
+          empower: "Mira",
+          strategyDelta: "Use vote pressure to test Vera while rewarding Mira.",
+          },
+        },
+      ),
       "gpt-5.6-luna",
       undefined,
       undefined,
@@ -2163,16 +2303,15 @@ describe("InfluenceAgent structured output mode", () => {
 
   it("uses the evaluation Responses lane with a stable opaque lineage and no 5.4 cache options", async () => {
     const requests: Array<Record<string, unknown>> = [];
-    const outputText = JSON.stringify({
-      thinking: "Mira is safer to empower and Vera is the pressure target.",
-      empower: "Mira",
-      decisionLog: "Use vote pressure to test Vera while rewarding Mira.",
-    });
     const agent = new InfluenceAgent(
       "atlas-id",
       "Atlas",
       "strategic",
-      makeResponsesOpenAIStub(requests, outputText, ""),
+      makeToolOpenAIStub(requests, "cast_votes", {
+        thinking: "Mira is safer to empower and Vera is the pressure target.",
+        empower: "Mira",
+        strategyDelta: "Use vote pressure to test Vera while rewarding Mira.",
+      }),
       "gpt-5.4-nano-2026-03-17",
       undefined,
       undefined,
@@ -2259,12 +2398,12 @@ describe("InfluenceAgent structured output mode", () => {
         JSON.stringify({
           thinking: "Atlas can press the vote story now.",
           message: "That vote told me plenty; Mira, I am watching who benefits from keeping Vera comfortable.",
-          decisionLog: null,
+          strategyDelta: null,
         }),
         JSON.stringify({
           thinking: "Atlas needs to make the final lobby pitch now.",
           message: "This is the last lobby beat, so here is my read: Vera is too comfortable and Mira should not let that slide.",
-          decisionLog: "Pressed Vera as too comfortable during the last lobby beat.",
+          strategyDelta: null,
         }),
       ]),
       "gpt-5-nano",
@@ -2319,7 +2458,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(votes).toEqual({
       empowerTarget: "mira-id",
       thinking: expect.any(String),
-      strategyCandidateProposed: true,
+      strategyDelta: null,
     });
     expect(requests[0]?.tool_choice).toBe("required");
     expect(requests[0]?.max_tokens).toBe(8192);
@@ -2359,7 +2498,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(votes).toEqual({
       empowerTarget: "mira-id",
       thinking: "Retry with enough room to choose targets.",
-      strategyCandidateProposed: true,
+      strategyDelta: null,
     });
     expect(requests).toHaveLength(2);
     expect(requests[0]?.response_format).toBeDefined();
@@ -2368,7 +2507,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(requests[1]?.max_tokens).toBe(12288);
   });
 
-  it("does not replay free-form decisionLog prose into the next prompt", async () => {
+  it("rejects free-form decisionLog prose and does not replay it into the next prompt", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2380,7 +2519,7 @@ describe("InfluenceAgent structured output mode", () => {
           args: {
             thinking: "Reward Mira and pressure Vera.",
             empower: "Mira",
-                        decisionLog: "Rewarded Mira and pressured Vera as the current coalition test.",
+            decisionLog: "Rewarded Mira and pressured Vera as the current coalition test.",
           },
         },
         {
@@ -2390,15 +2529,19 @@ describe("InfluenceAgent structured output mode", () => {
             action: "pass",
             target: "Mira",
             shieldPullUpCandidates: [],
-            decisionLog: null,
+            strategyDelta: null,
           },
         },
       ]),
       "gpt-5-nano",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    await agent.getVotes(makeContext(Phase.VOTE));
+    const error = await rejectedProviderAttempt(agent.getVotes(makeContext(Phase.VOTE)));
+    expect(error.record.outcome.kind).toBe("malformed_output");
     await agent.getPowerAction(makeContext(Phase.POWER), ["mira-id", "vera-id"]);
 
     const powerMessages = requests[1]?.messages as Array<{ content: string }>;
@@ -2420,6 +2563,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           thinking: "Mira is the better tie-break because she is less likely to panic.",
           empower: "Mira",
+          strategyDelta: null,
         },
         "Hidden local reasoning for the empower revote.",
       ),
@@ -2440,7 +2584,7 @@ describe("InfluenceAgent structured output mode", () => {
       empowerTarget: "mira-id",
       thinking: "Mira is the better tie-break because she is less likely to panic.",
       reasoningContext: "Hidden local reasoning for the empower revote.",
-      strategyCandidateProposed: true,
+      strategyDelta: null,
     });
     const messages = requests[0]?.messages as Array<{ content: string }>;
     const prompt = messages.at(-1)!.content;
@@ -2481,6 +2625,7 @@ describe("InfluenceAgent structured output mode", () => {
         {
           thinking: "Mira is socially expensive to choose, but the vote tie gives me cover.",
           candidates: ["Mira"],
+          strategyDelta: null,
         },
         "Hidden local reasoning for candidate selection.",
       ),
@@ -2503,7 +2648,7 @@ describe("InfluenceAgent structured output mode", () => {
       selectedCandidateIds: ["mira-id"],
       thinking: "Mira is socially expensive to choose, but the vote tie gives me cover.",
       reasoningContext: "Hidden local reasoning for candidate selection.",
-      strategyCandidateProposed: true,
+      strategyDelta: null,
     });
     expect(requests[0]?.tool_choice).toEqual("required");
     const messages = requests[0]?.messages as Array<{ content: string }>;
@@ -2514,7 +2659,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).toContain("Required selections: 1");
   });
 
-  it("falls back deterministically when candidate selection returns unavailable names", async () => {
+  it("rejects unavailable candidate names before phase-owned fallback", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2523,21 +2668,113 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolOpenAIStub(requests, "select_council_candidates", {
         thinking: "I want Atlas safe, but that is not legal.",
         candidates: ["Atlas", "Nobody"],
+        strategyDelta: null,
       }),
       "gpt-5-nano",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const decision = await agent.getCandidateSelection(makeContext(Phase.VOTE), {
+    const error = await rejectedProviderAttempt(agent.getCandidateSelection(makeContext(Phase.VOTE), {
       lockedCandidateIds: [],
       eligibleCandidateIds: ["mira-id", "vera-id"],
       requiredCount: 2,
       mode: "all_player_fallback",
       fallbackReason: "bench_too_small",
+    }));
+
+    expect(error.outcome.kind).toBe("malformed_output");
+  });
+
+  it("retries a semantic candidate failure and traces only the accepted recovery", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolSequenceOpenAIStub(requests, [
+        {
+          toolName: "select_council_candidates",
+          args: {
+            thinking: "Try an unavailable choice.",
+            candidates: ["Atlas"],
+            strategyDelta: null,
+          },
+        },
+        {
+          toolName: "select_council_candidates",
+          args: {
+            thinking: "Use the legal choice.",
+            candidates: ["Mira"],
+            strategyDelta: null,
+          },
+        },
+      ]),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      { privateTraceSink: (trace) => { traces.push(trace); } },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const decision = await agent.getCandidateSelection(makeContext(Phase.VOTE), {
+      lockedCandidateIds: ["vera-id"],
+      eligibleCandidateIds: ["mira-id"],
+      requiredCount: 1,
+      mode: "one_locked_one_choice",
+      fallbackReason: null,
     });
 
-    expect(decision.selectedCandidateIds).toEqual(["mira-id", "vera-id"]);
-    expect(decision.thinking).toBe("I want Atlas safe, but that is not legal.");
+    expect(decision.selectedCandidateIds).toEqual(["mira-id"]);
+    expect(requests).toHaveLength(2);
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.toolArguments).toMatchObject({ candidates: ["mira-id"] });
+  });
+
+  it("rejects an incomplete bundled Power replacement before tracing", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "use_power", {
+        thinking: "Protect Vera without naming the required replacement.",
+        action: "protect",
+        target: "Vera",
+        shieldPullUpCandidates: [],
+        strategyDelta: null,
+      }),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        structuredCallMaxAttempts: 1,
+        privateTraceSink: (trace) => { traces.push(trace); },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const error = await rejectedProviderAttempt(agent.getPowerAction(
+      makeContext(Phase.POWER),
+      ["mira-id", "vera-id"],
+      {
+        shieldReplacementRequests: [{
+          lockedCandidateIds: ["mira-id"],
+          eligibleCandidateIds: ["mira-id"],
+          requiredCount: 1,
+          mode: "one_locked_one_choice",
+          fallbackReason: null,
+          protectedCandidateId: "vera-id",
+        }],
+      },
+    ));
+
+    expect(error.outcome.kind).toBe("malformed_output");
+    expect(traces).toEqual([]);
   });
 
   it("bundles shield pull-up reasoning into the power action decision", async () => {
@@ -2554,6 +2791,7 @@ describe("InfluenceAgent structured output mode", () => {
           action: "protect",
           target: "Vera",
           shieldPullUpCandidates: ["Mira"],
+          strategyDelta: null,
         },
         "Hidden local reasoning for bundled power action.",
       ),
@@ -2608,6 +2846,7 @@ describe("InfluenceAgent structured output mode", () => {
           openingAsk: "Ask Mira whether Vera's lobby warmth felt rehearsed.",
           strategicLens: "coalition_geometry",
           strategicLensRationale: "Atlas is testing whether Mira will join a Vera pressure lane.",
+          strategyDelta: null,
         },
         "Hidden local reasoning for the Mingle intent.",
       ),
@@ -2636,7 +2875,7 @@ describe("InfluenceAgent structured output mode", () => {
       strategicLensRationale: "Atlas is testing whether Mira will join a Vera pressure lane.",
       thinking: "Mira is useful to compare notes with, while Vera is too slippery to trust yet.",
       reasoningContext: "Hidden local reasoning for the Mingle intent.",
-      strategyCandidateProposed: true,
+      strategyDelta: null,
     });
 
     const messages = requests[0]?.messages as Array<{ content: string }>;
@@ -2666,8 +2905,7 @@ describe("InfluenceAgent structured output mode", () => {
           memberNames: ["Atlas", "Mira"],
           purpose: "Coordinate the first expose vote without overcommitting publicly.",
           timebox: "through council",
-          lineageId: null,
-          versionId: null,
+          allianceHandle: null,
           strategyDelta: "propose a small early vote pact",
         },
         "Hidden local reasoning for the alliance action.",
@@ -2721,9 +2959,6 @@ describe("InfluenceAgent structured output mode", () => {
           memberNames: [],
           purpose: null,
           timebox: null,
-          allianceHandle: null,
-          lineageId: "provider-invented-lineage",
-          versionId: "provider-invented-version",
           strategyDelta: null,
         },
       ),
@@ -2864,7 +3099,7 @@ describe("InfluenceAgent structured output mode", () => {
     ]);
   });
 
-  it("discards strategy when unavailable counter output normalizes to pass", async () => {
+  it("rejects an unavailable counter before strategy or action normalization", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2884,11 +3119,14 @@ describe("InfluenceAgent structured output mode", () => {
         },
       ),
       "gpt-5.6-luna",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     const context = makeContext(Phase.FORMAT_MINGLE);
     agent.onGameStart("game-1", context.alivePlayers);
 
-    const action = await agent.getAllianceAction(context, {
+    const error = await rejectedProviderAttempt(agent.getAllianceAction(context, {
       kind: "response",
       lineageId: "engine-lineage",
       versionId: "engine-version",
@@ -2899,17 +3137,12 @@ describe("InfluenceAgent structured output mode", () => {
         purpose: "Coordinate the next ballot.",
         timebox: "this round",
       },
-    });
+    }));
 
-    expect(action).toMatchObject({
-      action: "pass",
-      strategyDelta: "act as though the rejected counter became official",
-      strategyGameplayAccepted: false,
-    });
-    expect(action).not.toHaveProperty("decisionId");
+    expect(error.record.outcome.kind).toBe("malformed_output");
   });
 
-  it("discards strategy when an unknown alliance action normalizes to pass", async () => {
+  it("rejects an unknown alliance action before strategy or action normalization", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -2930,18 +3163,18 @@ describe("InfluenceAgent structured output mode", () => {
         },
       ),
       "gpt-5.6-luna",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     const context = makeContext(Phase.FORMAT_MINGLE);
     agent.onGameStart("game-1", context.alivePlayers);
 
-    const action = await agent.getAllianceAction(context, { kind: "proposer" });
+    const error = await rejectedProviderAttempt(
+      agent.getAllianceAction(context, { kind: "proposer" }),
+    );
 
-    expect(action).toMatchObject({
-      action: "pass",
-      strategyDelta: "act as though the unsupported action succeeded",
-      strategyGameplayAccepted: false,
-    });
-    expect(action).not.toHaveProperty("decisionId");
+    expect(error.record.outcome.kind).toBe("malformed_output");
   });
 
   it("maps a request-local alliance handle for a legal amendment opportunity", async () => {
@@ -3032,9 +3265,8 @@ describe("InfluenceAgent structured output mode", () => {
           memberNames: [],
           purpose: null,
           timebox: null,
-          lineageId: null,
-          versionId: null,
-          decisionLog: "pass until a better alliance shape appears",
+          allianceHandle: null,
+          strategyDelta: null,
         },
       ),
       "google/gemma-4-26b-a4b-qat",
@@ -3075,14 +3307,31 @@ describe("InfluenceAgent structured output mode", () => {
           thinking: "Mira needs a clean ask before the public vote locks.",
           message: "Mira, hold the empower vote on me and I will keep the expose pressure on Vera.",
           noReply: false,
-          proposedTarget: "Vera",
-          noTargetReason: null,
-          proposedAction: "Empower Atlas, then pressure Vera in the first ballot.",
-          memberCommitments: [{ memberName: "Atlas", commitment: "Keep pressure on Vera." }],
-          contingency: "If Mira will not empower Atlas, compare an alternate empower candidate.",
-          confidence: "medium",
-          dissent: ["Mira has not committed yet."],
-          alternativePlan: "Keep the alliance private and gather one more read.",
+          factAtoms: [
+            {
+              kind: "proposal",
+              actorPlayerId: "atlas-id",
+              actionKind: "empower_vote",
+              targetPlayerId: "mira-id",
+              confidence: "medium",
+            },
+            {
+              kind: "commitment",
+              actorPlayerId: "atlas-id",
+              actionKind: "empower_vote",
+              targetPlayerId: "mira-id",
+              confidence: "high",
+            },
+            {
+              kind: "contingency",
+              actorPlayerId: "atlas-id",
+              conditionKind: "ally_response_changed",
+              conditionPlayerId: "mira-id",
+              effectActionKind: "empower_vote",
+              effectTargetPlayerId: "vera-id",
+              confidence: "low",
+            },
+          ],
           strategyDelta: "ask Mira for a concrete vote alignment inside Glass Table",
         },
         "Hidden local reasoning for the alliance huddle.",
@@ -3097,14 +3346,17 @@ describe("InfluenceAgent structured output mode", () => {
     const turn = await agent.getAllianceHuddleTurn(
       makeContext(Phase.PRE_VOTE_HUDDLE),
       {
+        sessionId: "session-1",
         allianceId: "alliance-glass",
         allianceName: "Glass Table",
+        memberIds: ["atlas-id", "mira-id"],
         memberNames: ["Atlas", "Mira"],
         purpose: "Coordinate the first expose vote.",
         timebox: "through council",
         window: "pre_vote",
         scheduleId: "schedule-1",
         pass: 1,
+        priorFacts: [],
       },
       [],
     );
@@ -3114,16 +3366,31 @@ describe("InfluenceAgent structured output mode", () => {
       reasoningContext: "Hidden local reasoning for the alliance huddle.",
       message: "Mira, hold the empower vote on me and I will keep the expose pressure on Vera.",
       noReply: false,
-      commitment: {
-        proposedTargetName: "Vera",
-        noTargetReason: null,
-        proposedAction: "Empower Atlas, then pressure Vera in the first ballot.",
-        memberCommitments: [{ memberName: "Atlas", commitment: "Keep pressure on Vera." }],
-        contingency: "If Mira will not empower Atlas, compare an alternate empower candidate.",
-        confidence: "medium",
-        dissent: ["Mira has not committed yet."],
-        alternativePlan: "Keep the alliance private and gather one more read.",
-      },
+      factAtoms: [
+        {
+          kind: "proposal",
+          actorPlayerId: "atlas-id",
+          actionKind: "empower_vote",
+          targetPlayerId: "mira-id",
+          confidence: "medium",
+        },
+        {
+          kind: "commitment",
+          actorPlayerId: "atlas-id",
+          actionKind: "empower_vote",
+          targetPlayerId: "mira-id",
+          confidence: "high",
+        },
+        {
+          kind: "contingency",
+          actorPlayerId: "atlas-id",
+          conditionKind: "ally_response_changed",
+          conditionPlayerId: "mira-id",
+          effectActionKind: "empower_vote",
+          effectTargetPlayerId: "vera-id",
+          confidence: "low",
+        },
+      ],
       strategyDelta: "ask Mira for a concrete vote alignment inside Glass Table",
     });
     expect(requests[0]?.tools).toEqual(
@@ -3152,6 +3419,9 @@ describe("InfluenceAgent structured output mode", () => {
           noReply: true,
           gotoRoomId: null,
           gotoPlayerName: null,
+          coordinationFact: null,
+          noProposal: true,
+          strategyDelta: null,
         },
         "Hidden local reasoning for the Mingle turn.",
       ),
@@ -3190,12 +3460,12 @@ describe("InfluenceAgent structured output mode", () => {
       gotoRoomId: null,
       gotoPlayerName: null,
       reasoningContext: "Hidden local reasoning for the Mingle turn.",
-      strategyCandidateProposed: true,
+      strategyDelta: null,
       coordinationReceipt: {
-        proposedTarget: null,
-        proposedAction: null,
-        commitment: null,
-        noProposalReason: null,
+        factKind: null,
+        actionKind: null,
+        targetPlayerId: null,
+        noProposal: true,
       },
     });
     const messages = requests[0]?.messages as Array<{ content: string }>;
@@ -3223,9 +3493,50 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).not.toContain("This is your final Mingle turn this phase.");
     expect(prompt).toContain("You may name a target or ally");
     expect(prompt).toContain("You do not have to name a target");
-    expect(prompt).toContain("gotoPlayerName wins");
+    expect(prompt).toContain("Set at most one of gotoPlayerName and gotoRoomId");
     expect(removedMingleDebugKeys.every((key) => !prompt.includes(key))).toBe(true);
     expect(prompt).toContain("TALK has no audience");
+  });
+
+  it("rejects conflicting Mingle movement fields before tracing", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub(requests, "mingle_turn", {
+        thinking: "Attempt two movements in one turn.",
+        message: null,
+        noReply: true,
+        gotoRoomId: 2,
+        gotoPlayerName: "Mira",
+        coordinationFact: null,
+        noProposal: true,
+        strategyDelta: null,
+      }),
+      "gpt-5-nano",
+      undefined,
+      undefined,
+      {
+        structuredCallMaxAttempts: 1,
+        privateTraceSink: (trace) => { traces.push(trace); },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    const turn = await agent.takeMingleTurn({
+      ...makeContext(Phase.MINGLE),
+      roomCount: 2,
+      currentRoomId: 1,
+    }, ["Atlas", "Mira"], []);
+
+    expect(turn.providerAbsence).toEqual({
+      kind: "provider_exhausted",
+      outcome: "malformed_output",
+    });
+    expect(turn.message).toBeNull();
+    expect(traces).toEqual([]);
   });
 
   it("requires and preserves a concrete receipt in an allied Mingle decision room", async () => {
@@ -3240,11 +3551,13 @@ describe("InfluenceAgent structured output mode", () => {
         noReply: false,
         gotoRoomId: null,
         gotoPlayerName: null,
-        proposedTarget: "Vera",
-        proposedAction: "Empower Mira, then pressure Vera under the locked format.",
-        commitment: "Atlas will support the Vera pressure lane unless the format makes it illegal.",
-        noProposalReason: null,
-        decisionLog: "offer Mira an independent Vera pressure proposal with a format contingency",
+        coordinationFact: {
+          kind: "proposal",
+          actionKind: "empower_vote",
+          targetPlayerId: "mira-id",
+        },
+        noProposal: false,
+        strategyDelta: null,
       }),
       "google/gemma-4-26b-a4b-qat",
       undefined,
@@ -3263,35 +3576,259 @@ describe("InfluenceAgent structured output mode", () => {
     }, ["Atlas", "Mira"], []);
 
     expect(turn.coordinationReceipt).toEqual({
-      proposedTarget: "Vera",
-      proposedAction: "Empower Mira, then pressure Vera under the locked format.",
-      commitment: "Atlas will support the Vera pressure lane unless the format makes it illegal.",
-      noProposalReason: null,
+      factKind: "proposal",
+      actionKind: "empower_vote",
+      targetPlayerId: "mira-id",
+      noProposal: false,
     });
     const prompt = ((requests[0]?.messages as Array<{ content: string }>).at(-1)?.content) ?? "";
     expect(prompt).toContain("## Allied Decision Room");
     expect(prompt).toContain("not a consensus mandate");
   });
 
-  it("rejects invalid huddle targets while retaining a valid no-target reason", async () => {
+  it("rejects a self-authored huddle fact with a self-forbidden target", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id", "Atlas", "strategic",
       makeToolOpenAIStub(requests, "alliance_huddle_turn", {
         thinking: "I cannot legally target myself.", message: "Let's wait for the format.", noReply: false,
-        proposedTarget: "Atlas", noTargetReason: null, proposedAction: "Wait for the locked format.",
-        memberCommitments: [{ memberName: "Atlas", commitment: "Reassess after the format pick." }],
-        contingency: "If Vera is legal under the locked format, revisit Vera.", confidence: "low", dissent: ["Mira prefers more evidence."], alternativePlan: "Gather one more room read.", decisionLog: "reject self target",
+        factAtoms: [{
+          kind: "proposal",
+          actorPlayerId: "atlas-id",
+          actionKind: "empower_vote",
+          targetPlayerId: "atlas-id",
+          confidence: "low",
+        }],
+        strategyDelta: null,
       }),
-      "google/gemma-4-26b-a4b-qat", undefined, undefined, { toolChoiceMode: "required" },
+      "google/gemma-4-26b-a4b-qat", undefined, undefined, {
+        toolChoiceMode: "required",
+        structuredCallMaxAttempts: 1,
+      },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
-    const turn = await agent.getAllianceHuddleTurn(makeContext(Phase.PRE_VOTE_HUDDLE), {
-      allianceId: "glass", allianceName: "Glass Table", memberNames: ["Atlas", "Mira"], purpose: "Coordinate", timebox: null, window: "pre_vote", scheduleId: "schedule", pass: 1,
+    const turn = await agent.getAllianceHuddleTurn(
+      makeContext(Phase.PRE_VOTE_HUDDLE),
+      {
+        sessionId: "session",
+        allianceId: "glass",
+        allianceName: "Glass Table",
+        memberIds: ["atlas-id", "mira-id"],
+        memberNames: ["Atlas", "Mira"],
+        purpose: "Coordinate",
+        timebox: null,
+        window: "pre_vote",
+        scheduleId: "schedule",
+        pass: 1,
+        priorFacts: [],
+      },
+    );
+    expect(turn).toEqual({
+      message: null,
+      noReply: true,
+      factAtoms: [],
+      providerAbsence: {
+        kind: "provider_exhausted",
+        outcome: "malformed_output",
+      },
     });
-    expect(turn.commitment?.proposedTargetName).toBeNull();
-    expect(turn.commitment?.noTargetReason).toContain("Rejected invalid target: Atlas");
-    expect(turn.commitment?.dissent).toEqual(["Mira prefers more evidence."]);
+  });
+
+  it("fails closed on malformed huddle atoms while leaving dialogue non-authoritative", async () => {
+    const malformedAtoms: Array<{ label: string; factAtoms: unknown[] }> = [
+      {
+        label: "prose action",
+        factAtoms: [{
+          kind: "proposal",
+          actorPlayerId: "atlas-id",
+          actionKind: "empower Mira",
+          targetPlayerId: "mira-id",
+          confidence: "medium",
+        }],
+      },
+      {
+        label: "other escape hatch",
+        factAtoms: [{
+          kind: "other",
+          actorPlayerId: "atlas-id",
+          actionKind: "empower_vote",
+          targetPlayerId: "mira-id",
+          confidence: "medium",
+        }],
+      },
+      {
+        label: "different actor",
+        factAtoms: [{
+          kind: "commitment",
+          actorPlayerId: "mira-id",
+          actionKind: "empower_vote",
+          targetPlayerId: "vera-id",
+          confidence: "high",
+        }],
+      },
+      {
+        label: "unknown target",
+        factAtoms: [{
+          kind: "proposal",
+          actorPlayerId: "atlas-id",
+          actionKind: "empower_vote",
+          targetPlayerId: "unknown-id",
+          confidence: "low",
+        }],
+      },
+      {
+        label: "unknown fact reference",
+        factAtoms: [{
+          kind: "response",
+          actorPlayerId: "atlas-id",
+          counterpartFactId: "unknown-fact",
+          stance: "endorse",
+          confidence: "medium",
+        }],
+      },
+      {
+        label: "incomplete counter",
+        factAtoms: [{
+          kind: "response",
+          actorPlayerId: "atlas-id",
+          counterpartFactId: "fact-1",
+          stance: "counter",
+          confidence: "medium",
+        }],
+      },
+      {
+        label: "prose condition",
+        factAtoms: [{
+          kind: "contingency",
+          actorPlayerId: "atlas-id",
+          conditionKind: "if Mira changes her mind",
+          conditionPlayerId: "mira-id",
+          effectActionKind: "empower_vote",
+          effectTargetPlayerId: "vera-id",
+          confidence: "low",
+        }],
+      },
+    ];
+    const priorFact = {
+      kind: "proposal" as const,
+      actorPlayerId: "mira-id",
+      actionKind: "empower_vote" as const,
+      targetPlayerId: "vera-id",
+      confidence: "medium" as const,
+      factId: "fact-1",
+      sessionId: "session",
+    };
+
+    for (const fixture of malformedAtoms) {
+      const traces: PrivateDecisionTrace[] = [];
+      const agent = new InfluenceAgent(
+        "atlas-id",
+        "Atlas",
+        "strategic",
+        makeToolOpenAIStub([], "alliance_huddle_turn", {
+          thinking: fixture.label,
+          message: `Dialogue may say anything about ${fixture.label}.`,
+          noReply: false,
+          factAtoms: fixture.factAtoms,
+          strategyDelta: null,
+        }),
+        "gpt-5-nano",
+        undefined,
+        undefined,
+        {
+          structuredCallMaxAttempts: 1,
+          privateTraceSink: (trace) => { traces.push(trace); },
+        },
+      );
+      agent.onGameStart("game-1", makeContext().alivePlayers);
+      const turn = await agent.getAllianceHuddleTurn(
+        makeContext(Phase.PRE_VOTE_HUDDLE),
+        {
+          sessionId: "session",
+          allianceId: "glass",
+          allianceName: "Glass Table",
+          memberIds: ["atlas-id", "mira-id"],
+          memberNames: ["Atlas", "Mira"],
+          purpose: "Coordinate",
+          timebox: null,
+          window: "pre_vote",
+          scheduleId: "schedule",
+          pass: 1,
+          priorFacts: [priorFact],
+        },
+      );
+      expect(turn.providerAbsence?.outcome, fixture.label).toBe("malformed_output");
+      expect(traces, fixture.label).toEqual([]);
+    }
+
+    const acceptedAgent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeToolOpenAIStub([], "alliance_huddle_turn", {
+        thinking: "Keep presentation separate.",
+        message: "Mira promised me three votes and Vera is definitely leaving.",
+        noReply: false,
+        factAtoms: [],
+        strategyDelta: null,
+      }),
+      "gpt-5-nano",
+    );
+    acceptedAgent.onGameStart("game-1", makeContext().alivePlayers);
+    const accepted = await acceptedAgent.getAllianceHuddleTurn(
+      makeContext(Phase.PRE_VOTE_HUDDLE),
+      {
+        sessionId: "session",
+        allianceId: "glass",
+        allianceName: "Glass Table",
+        memberIds: ["atlas-id", "mira-id"],
+        memberNames: ["Atlas", "Mira"],
+        purpose: "Coordinate",
+        timebox: null,
+        window: "pre_vote",
+        scheduleId: "schedule",
+        pass: 1,
+        priorFacts: [],
+      },
+    );
+    expect(accepted.message).toContain("Mira promised me");
+    expect(accepted.factAtoms).toEqual([]);
+  });
+
+  it("propagates an out-of-session huddle fact as a canonical-context defect", async () => {
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeOpenAIStub([]),
+      "gpt-5-nano",
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+
+    await expect(agent.getAllianceHuddleTurn(
+      makeContext(Phase.PRE_VOTE_HUDDLE),
+      {
+        sessionId: "session",
+        allianceId: "glass",
+        allianceName: "Glass Table",
+        memberIds: ["atlas-id", "mira-id"],
+        memberNames: ["Atlas", "Mira"],
+        purpose: "Coordinate",
+        timebox: null,
+        window: "pre_vote",
+        scheduleId: "schedule",
+        pass: 1,
+        priorFacts: [{
+          kind: "proposal",
+          actorPlayerId: "mira-id",
+          actionKind: "empower_vote",
+          targetPlayerId: "vera-id",
+          confidence: "medium",
+          factId: "fact-1",
+          sessionId: "different-session",
+        }],
+      },
+    )).rejects.toThrow("out-of-session prior fact");
   });
 
   it("warns final Mingle turns not to expect another reply", async () => {
@@ -3309,6 +3846,13 @@ describe("InfluenceAgent structured output mode", () => {
           noReply: false,
           gotoRoomId: 2,
           gotoPlayerName: null,
+          coordinationFact: {
+            kind: "proposal",
+            actionKind: "empower_vote",
+            targetPlayerId: "vera-id",
+          },
+          noProposal: false,
+          strategyDelta: null,
         },
       ),
       "google/gemma-4-26b-a4b-qat",
@@ -3356,6 +3900,13 @@ describe("InfluenceAgent structured output mode", () => {
           noReply: false,
           gotoRoomId: null,
           gotoPlayerName: null,
+          coordinationFact: {
+            kind: "proposal",
+            actionKind: "empower_vote",
+            targetPlayerId: "vera-id",
+          },
+          noProposal: false,
+          strategyDelta: null,
         },
       ),
       "google/gemma-4-26b-a4b-qat",
@@ -3491,6 +4042,7 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolOpenAIStub(requests, "council_vote", {
         thinking: "Mira is the better elimination.",
         eliminate: "Mira",
+        strategyDelta: null,
       }),
       "gpt-5-nano",
     );
@@ -3530,7 +4082,7 @@ describe("InfluenceAgent structured output mode", () => {
     expect(prompt).not.toContain("Standard Vote has two named ballots");
   });
 
-  it("returns malformed Council output for the phase to repair", async () => {
+  it("rejects malformed Council output before the phase sees a candidate", async () => {
     const requests: Array<Record<string, unknown>> = [];
     const agent = new InfluenceAgent(
       "atlas-id",
@@ -3540,18 +4092,20 @@ describe("InfluenceAgent structured output mode", () => {
         thinking: "I want to vote, but the choice field is malformed.",
       }),
       "gpt-5-nano",
+      undefined,
+      undefined,
+      { structuredCallMaxAttempts: 1 },
     );
     agent.onGameStart("game-1", makeContext().alivePlayers);
 
-    const result = await agent.getCouncilVote({
+    const error = await rejectedProviderAttempt(agent.getCouncilVote({
       ...makeContext(Phase.COUNCIL),
       round: 3,
       empoweredId: "atlas-id",
       councilCandidates: ["mira-id", "vera-id"],
-    }, ["mira-id", "vera-id"]);
+    }, ["mira-id", "vera-id"]));
 
-    expect(result.target).toBeUndefined();
-    expect(result.thinking).toBe("I want to vote, but the choice field is malformed.");
+    expect(error.record.outcome.kind).toBe("malformed_output");
   });
 
   it("clarifies that empowerment chooses the format and grants no immunity", async () => {
@@ -3599,6 +4153,13 @@ describe("InfluenceAgent structured output mode", () => {
           noReply: false,
           gotoRoomId: null,
           gotoPlayerName: null,
+          coordinationFact: {
+            kind: "proposal",
+            actionKind: "empower_vote",
+            targetPlayerId: "vera-id",
+          },
+          noProposal: false,
+          strategyDelta: null,
         },
       ),
       "google/gemma-4-26b-a4b-qat",
@@ -4160,6 +4721,7 @@ describe("InfluenceAgent structured output mode", () => {
       makeToolOpenAIStub(requests, "elimination_vote", {
         thinking: "The endgame record points at Vera.",
         eliminate: "Vera",
+        strategyDelta: null,
       }),
       "google/gemma-4-26b-a4b-qat",
       undefined,
@@ -4319,7 +4881,15 @@ describe("InfluenceAgent structured output mode", () => {
       precedingPhase: Phase.COUNCIL,
       round: 6,
       providerInterviewOrdinal: 1,
+      agentId: "wren-id",
       agentName: "Wren",
+      canonicalHead: 40,
+      players: [
+        { id: "wren-id", name: "Wren", status: "alive" },
+        { id: "vex-id", name: "Vex", status: "alive" },
+        { id: "nyx-id", name: "Nyx", status: "alive" },
+        { id: "lyra-id", name: "Lyra", status: "eliminated" },
+      ],
       alivePlayers: ["Wren", "Vex", "Nyx"],
       activeShieldNames: [],
       eliminatedPlayers: ["Lyra"],
@@ -4327,6 +4897,7 @@ describe("InfluenceAgent structured output mode", () => {
       empoweredName: "Nyx",
       councilCandidates: ["Wren", "Lyra"],
       recentMessages: [],
+      audienceSummaryArtifacts: [],
       councilRole: {
         playerName: "Wren",
         role: "candidate",
@@ -4349,7 +4920,19 @@ describe("InfluenceAgent structured output mode", () => {
       precedingPhase: Phase.COUNCIL,
       round: 3,
       providerInterviewOrdinal: 1,
+      agentId: "finn-id",
       agentName: "Finn",
+      canonicalHead: 24,
+      players: [
+        { id: "arden-id", name: "Arden", status: "alive" },
+        { id: "nyx-id", name: "Nyx", status: "eliminated" },
+        { id: "cyrus-id", name: "Cyrus", status: "alive" },
+        { id: "mira-id", name: "Mira", status: "alive" },
+        { id: "finn-id", name: "Finn", status: "alive" },
+        { id: "dax-id", name: "Dax", status: "alive" },
+        { id: "atlas-id", name: "Atlas", status: "eliminated" },
+        { id: "riven-id", name: "Riven", status: "eliminated" },
+      ],
       alivePlayers: ["Arden", "Nyx", "Cyrus", "Mira", "Finn", "Dax"],
       activeShieldNames: [],
       eliminatedPlayers: ["Atlas", "Riven"],
@@ -4357,6 +4940,7 @@ describe("InfluenceAgent structured output mode", () => {
       empoweredName: "Finn",
       councilCandidates: ["Nyx", "Dax"],
       recentMessages: [],
+      audienceSummaryArtifacts: [],
       councilRole: {
         playerName: "Finn",
         role: "empowered_no_tiebreak_needed",
@@ -4438,6 +5022,50 @@ describe("InfluenceAgent structured output mode", () => {
       },
     });
     expect(requests).toHaveLength(2);
+  });
+
+  it("rejects malformed AgentResponse before speech, tracing, or strategy mutation", async () => {
+    const requests: Array<Record<string, unknown>> = [];
+    const traces: PrivateDecisionTrace[] = [];
+    const attempts: ProviderAttemptRecord[] = [];
+    const agent = new InfluenceAgent(
+      "atlas-id",
+      "Atlas",
+      "strategic",
+      makeTextOpenAIStub(requests, JSON.stringify({
+        thinking: "I should pivot toward Mira.",
+        message: "Mira, let us compare notes.",
+        strategyDelta: "Make Mira the primary ally.",
+        extraAuthority: "Mira committed to me.",
+      })),
+      "google/gemma-4-26b-a4b-qat",
+      undefined,
+      undefined,
+      {
+        toolChoiceMode: "required",
+        structuredCallMaxAttempts: 1,
+        privateTraceSink: (trace) => { traces.push(trace); },
+        providerExecutionHooks: {
+          onTerminal: (record) => { attempts.push(record); },
+        },
+      },
+    );
+    agent.onGameStart("game-1", makeContext().alivePlayers);
+    const beforeStrategy = agent.getCompactStrategyState();
+
+    const response = await agent.getIntroduction(makeContext(Phase.INTRODUCTION));
+
+    expect(response).toEqual({
+      thinking: "",
+      message: "",
+      providerAbsence: {
+        kind: "provider_exhausted",
+        outcome: "malformed_output",
+      },
+    });
+    expect(attempts.map((record) => record.outcome.kind)).toEqual(["malformed_output"]);
+    expect(traces).toEqual([]);
+    expect(agent.getCompactStrategyState()).toEqual(beforeStrategy);
   });
 
   it("keeps private provider evidence out of exhaustion logs", async () => {
@@ -4632,7 +5260,11 @@ describe("InfluenceAgent structured output mode", () => {
       "atlas-id",
       "Atlas",
       "strategic",
-      makeTextOpenAIStub(requests, "Glad to meet everyone. I ask too many questions, but I promise most of them are useful."),
+      makeTextOpenAIStub(requests, JSON.stringify({
+        thinking: "",
+        message: "Glad to meet everyone. I ask too many questions, but I promise most of them are useful.",
+        strategyDelta: null,
+      })),
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
@@ -4665,7 +5297,11 @@ describe("InfluenceAgent structured output mode", () => {
       "strategic",
       makeTextSequenceOpenAIStub(requests, [
         {
-          content: "I notice who dodges questions, and I remember.",
+          content: JSON.stringify({
+            thinking: "",
+            message: "I notice who dodges questions, and I remember.",
+            strategyDelta: null,
+          }),
           reasoningContent: "Atlas wants to sound warm while signaling observation.",
         },
       ]),
@@ -4699,7 +5335,11 @@ describe("InfluenceAgent structured output mode", () => {
       "atlas-id",
       "Atlas",
       "strategic",
-      makeTextSequenceOpenAIStub(requests, ["", "Second try, actual words."]),
+      makeTextSequenceOpenAIStub(requests, ["", JSON.stringify({
+        thinking: "",
+        message: "Second try, actual words.",
+        strategyDelta: null,
+      })]),
       "google/gemma-4-26b-a4b-qat",
       undefined,
       undefined,
@@ -4727,6 +5367,7 @@ describe("InfluenceAgent structured output mode", () => {
           content: JSON.stringify({
             thinking: "I should build rapport while noting Finn's evasiveness.",
             message: "Finn, your stories are always so vivid.",
+            strategyDelta: null,
           }),
           reasoningContent: "Deep hidden CoT: Finn is dodging; Vera might be an ally here.",
         },
@@ -4759,6 +5400,7 @@ describe("InfluenceAgent structured output mode", () => {
       JSON.stringify({
         thinking: "The first provider failed, so I will still introduce myself cleanly.",
         message: "I am Atlas, and I am here to learn how everyone plays.",
+        strategyDelta: null,
       }),
     );
     const agent = new InfluenceAgent(
@@ -4948,7 +5590,7 @@ describe("player continuity capsule capture and hydration (R12)", () => {
           args: {
             thinking: "Empower Mira",
             empower: "Mira",
-            decisionLog: "Empower Mira for format control",
+            strategyDelta: null,
           },
         },
         {
@@ -4957,7 +5599,8 @@ describe("player continuity capsule capture and hydration (R12)", () => {
             thinking: "Protect Mira",
             action: "protect",
             target: "Mira",
-            decisionLog: "Protect Mira after public receipt",
+            shieldPullUpCandidates: [],
+            strategyDelta: null,
           },
         },
       ]),
@@ -5250,6 +5893,7 @@ describe("U4 selective context recall rendering", () => {
       makeToolOpenAIStub(requests, "elimination_vote", {
         thinking: "Board says Vera is the live threat.",
         eliminate: "Vera",
+        strategyDelta: null,
       }),
       "google/gemma-4-26b-a4b-qat",
       undefined,
@@ -5319,6 +5963,7 @@ describe("U4 selective context recall rendering", () => {
       makeToolOpenAIStub(requests, "elimination_vote", {
         thinking: "Board overrides stale packet.",
         eliminate: "Vera",
+        strategyDelta: null,
       }),
       "google/gemma-4-26b-a4b-qat",
       undefined,

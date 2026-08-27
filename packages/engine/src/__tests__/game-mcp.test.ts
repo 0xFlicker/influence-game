@@ -244,13 +244,16 @@ describe("game MCP corpus read model", () => {
       allianceId: "alliance-glass",
       window: "pre_vote",
       round: 1,
-      ask: "Align before the public Vote.",
-      plan: "Glass Table agrees to hold empower pressure on Atlas and expose Vera's rival.",
-      promises: ["Atlas promises not to undercut Vera before Council."],
-      dissent: [],
-      confidence: "medium",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
+      facts: [{
+        kind: "commitment",
+        factId: "fact-glass",
+        sessionId: "session-glass",
+        actorPlayerId: "atlas",
+        actionKind: "empower_vote",
+        targetPlayerId: "vera",
+        confidence: "medium",
+      }],
+      participantPlayerIds: ["atlas", "vera"],
       createdAt: "2026-06-11T00:00:04.000Z",
     };
     writeFileSync(
@@ -270,6 +273,7 @@ describe("game MCP corpus read model", () => {
           round: 1,
           phase: Phase.PRE_VOTE_HUDDLE,
           type: "alliance.huddle_outcome_recorded",
+          payloadVersion: 2,
           visibility: "producer",
           sourcePointers: [{ kind: "agent_turn", action: "alliance-huddle-outcome", round: 1, phase: Phase.PRE_VOTE_HUDDLE, sequence: 3 }],
           payload: { outcome: huddleOutcome, alliance },
@@ -291,7 +295,7 @@ describe("game MCP corpus read model", () => {
       expect.arrayContaining(["alliance.activated", "alliance.huddle_outcome_recorded"]),
     );
     expect(readModel.searchLogs({
-      query: "Glass Table agrees",
+      query: "fact-glass",
       sessionId: "batch-alliances",
       gameNumber: 1,
       sources: ["events", "turns"],

@@ -21,7 +21,9 @@ import {
 } from "../house-summary-accounting";
 import {
   createEmptyHouseNarrativeContinuity,
-  retainHouseSummaryAtActorCoordinate,
+  expectedHouseAudienceClaimKind,
+  renderHouseAudienceClaims,
+  retainHouseArtifactAtActorCoordinate,
   type HouseFactRow,
   type HouseNarrativeContinuity,
   type HouseSourceCoordinate,
@@ -281,7 +283,7 @@ function source(
   return { kind: "canonical_event", sequence, type, round: 1, phase };
 }
 
-function formatPickContext(
+export function formatPickContext(
   continuity: HouseNarrativeContinuity,
   gameId: UUID,
 ): HouseSelectiveSummaryContext {
@@ -348,11 +350,38 @@ function formatPickContext(
         source: dialogueSource,
       }],
     },
+    sourceValuesByAlias: new Map([
+      ["S1", {
+        kind: "canonical_event",
+        event: {
+          sequence: 8,
+          gameId,
+          round: 1,
+          phase: Phase.FORMAT_PICK,
+          type: "format.selected",
+          timestamp: "2026-08-27T00:00:00.000Z",
+          source: "phase",
+          visibility: "public",
+          payloadVersion: 1,
+          sourcePointers: [],
+          payload: { empoweredId: FIXTURE_PLAYERS[0][0], formatId: "vote_bomb" },
+        },
+        playerNamesById: { [FIXTURE_PLAYERS[0][0]]: "Ada" },
+      }],
+      ["S2", {
+        kind: "dialogue_non_authoritative",
+        speakerPlayerId: FIXTURE_PLAYERS[0][0],
+        speakerName: "Ada",
+        quote: "I promised Blair safety, and Vote Bomb gives me room to prove it.",
+        anonymous: false,
+        source: dialogueSource,
+      }],
+    ]),
   };
   return { frontier, continuity, factReadAllowed: false };
 }
 
-function formatResolveContext(
+export function formatResolveContext(
   continuity: HouseNarrativeContinuity,
   gameId: UUID,
 ): HouseSelectiveSummaryContext {
@@ -410,11 +439,43 @@ function formatResolveContext(
       player_projection_facts: [],
       audience_dialogue_quotes: [],
     },
+    sourceValuesByAlias: new Map([["S1", {
+      kind: "canonical_event",
+      event: {
+        sequence: 11,
+        gameId,
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        type: "format.resolved",
+        timestamp: "2026-08-27T00:00:01.000Z",
+        source: "phase",
+        visibility: "public",
+        payloadVersion: 2,
+        sourcePointers: [],
+        payload: {
+          formatId: "vote_bomb",
+          empoweredId: FIXTURE_PLAYERS[0][0],
+          eliminatedId: FIXTURE_PLAYERS[1][0],
+          resolutionKind: "clear",
+          tiedPlayerIds: [],
+          tiebreakerId: null,
+          aggregate: {
+            capability: "sealed_elim",
+            totals: { [FIXTURE_PLAYERS[1][0]]: 1 },
+            eligiblePlayerIds: [FIXTURE_PLAYERS[1][0]],
+          },
+        },
+      },
+      playerNamesById: {
+        [FIXTURE_PLAYERS[0][0]]: "Ada",
+        [FIXTURE_PLAYERS[1][0]]: "Blair",
+      },
+    }]]),
   };
   return { frontier, continuity, factReadAllowed: true };
 }
 
-function advanceContinuity(
+export function advanceContinuity(
   previous: HouseNarrativeContinuity,
   result: HouseSummaryAttemptResult,
 ): HouseNarrativeContinuity {
@@ -422,20 +483,59 @@ function advanceContinuity(
   return {
     version: 1,
     lastBoundaryId: result.boundary.id,
-    lastSummary: result.summary,
-    lastSummaryByActorCoordinate: retainHouseSummaryAtActorCoordinate(
-      previous.lastSummaryByActorCoordinate,
+    lastArtifact: structuredClone(result.artifact),
+    lastArtifactByActorCoordinate: retainHouseArtifactAtActorCoordinate(
+      previous.lastArtifactByActorCoordinate,
       result.boundary.actorCoordinate,
-      result.summary,
+      structuredClone(result.artifact),
     ),
-    openQuestions: result.openQuestions,
-    threadIds: result.threadIds,
-    supportingSources: result.sources,
     examinedCanonicalHead: result.boundary.canonicalHead,
     examinedDialogueHead: result.boundary.dialogueHead,
     emittedCanonicalHead: result.boundary.canonicalHead,
     emittedDialogueHead: result.boundary.dialogueHead,
     pendingDeltaCarry: 0,
+  };
+}
+
+/**
+ * Frozen R32 seam-level proving slice. The milestone's factual lineage and
+ * narrative-only prior beat are fixed independently of any generated output.
+ */
+export function createHouseSummaryProvingSlice(gameId: UUID): {
+  ordinary: HouseSelectiveSummaryContext;
+  milestone: HouseSelectiveSummaryContext;
+} {
+  const ordinary = formatPickContext(createEmptyHouseNarrativeContinuity(), gameId);
+  const selectedSource = ordinary.frontier.factStore.canonical_phase_facts[0]?.source;
+  if (!selectedSource) throw new Error("R32 ordinary summary fixture is missing its canonical source.");
+  const milestoneContinuity: HouseNarrativeContinuity = {
+    version: 1,
+    lastBoundaryId: ordinary.frontier.boundary.id,
+    lastArtifact: {
+      version: 1,
+      boundary: structuredClone(ordinary.frontier.boundary),
+      claims: [{ kind: "canonical_event", sourceAlias: "S1" }],
+      sources: [selectedSource],
+      renderedText: "Ada locked Vote Bomb, wagering her promise to Blair.",
+    },
+    lastArtifactByActorCoordinate: {
+      format_pick: {
+        version: 1,
+        boundary: structuredClone(ordinary.frontier.boundary),
+        claims: [{ kind: "canonical_event", sourceAlias: "S1" }],
+        sources: [selectedSource],
+        renderedText: "Ada locked Vote Bomb, wagering her promise to Blair.",
+      },
+    },
+    examinedCanonicalHead: ordinary.frontier.boundary.canonicalHead,
+    examinedDialogueHead: ordinary.frontier.boundary.dialogueHead,
+    emittedCanonicalHead: ordinary.frontier.boundary.canonicalHead,
+    emittedDialogueHead: ordinary.frontier.boundary.dialogueHead,
+    pendingDeltaCarry: 0,
+  };
+  return {
+    ordinary,
+    milestone: formatResolveContext(milestoneContinuity, gameId),
   };
 }
 
@@ -476,6 +576,27 @@ function baselinePromptContext(
   return context;
 }
 
+/**
+ * Evaluation-only reconstruction of the removed prose-summary request. Runtime
+ * House code no longer exposes or consumes this shape.
+ */
+export function renderRemovedHouseGameplaySummaryPrompt(
+  context: HouseGameplaySummaryContext,
+  instruction: string,
+): string {
+  return `${instruction}
+
+Game: ${context.gameId}
+Round: ${context.round}
+Phase: ${context.phase}
+Summary kind: ${context.kind}
+Alive: ${context.alivePlayers.join(", ")}
+Covered window: R${context.coveredWindow.fromRound}-${context.coveredWindow.toRound}
+
+Removed-production packet and producer evidence snapshot:
+${JSON.stringify({ packet: context.packet, evidence: context.evidence })}`;
+}
+
 function allFacts(frontier: HouseSummaryFrontier): HouseFactRow[] {
   return Object.values(frontier.factStore).flat();
 }
@@ -504,205 +625,13 @@ function sourceIsFresh(
   return sourceCoordinate.sequence > continuity.emittedDialogueHead;
 }
 
-function normalizedWordSequence(value: string): string[] {
-  return value.replaceAll("_", " ").toLowerCase().match(/[a-z0-9]+/g) ?? [];
-}
-
-function phraseStarts(words: readonly string[], phrase: readonly string[]): number[] {
-  if (phrase.length === 0 || phrase.length > words.length) return [];
-  const starts: number[] = [];
-  for (let index = 0; index <= words.length - phrase.length; index += 1) {
-    if (phrase.every((word, offset) => words[index + offset] === word)) starts.push(index);
-  }
-  return starts;
-}
-
-const CLAIM_NEGATIONS = new Set(["avoid", "avoided", "deny", "denied", "didnt", "never", "no", "not", "refuse", "refused", "reject", "rejected", "without"]);
-
-function containsPositivePhrase(words: readonly string[], value: unknown): boolean {
-  if (typeof value !== "string") return false;
-  const phrase = normalizedWordSequence(value);
-  return phraseStarts(words, phrase).some((start) => {
-    const nearby = words.slice(Math.max(0, start - 3), start + phrase.length + 3);
-    return !nearby.some((word) => CLAIM_NEGATIONS.has(word));
-  });
-}
-
-function stringField(data: Record<string, unknown>, key: string): string | null {
-  return typeof data[key] === "string" && data[key].trim() ? data[key].trim() : null;
-}
-
-function stringValues(value: unknown): string[] {
-  if (typeof value === "string" && value.trim()) return [value];
-  if (Array.isArray(value)) return value.flatMap(stringValues);
-  if (value && typeof value === "object") return Object.values(value).flatMap(stringValues);
-  return [];
-}
-
-function containsAnyPositivePhrase(words: readonly string[], values: readonly unknown[]): boolean {
-  return values.some((value) => containsPositivePhrase(words, value));
-}
-
-function containsAnyWord(words: readonly string[], values: readonly string[]): boolean {
-  const vocabulary = new Set(words);
-  return values.some((value) => vocabulary.has(value));
-}
-
-const COUNT_WORDS = [
-  "zero",
-  "one",
-  "two",
-  "three",
-  "four",
-  "five",
-  "six",
-  "seven",
-  "eight",
-  "nine",
-  "ten",
-  "eleven",
-  "twelve",
-] as const;
-
-function containsAliveCountClaim(words: readonly string[], aliveCount: number): boolean {
-  const countClaims = [String(aliveCount), COUNT_WORDS[aliveCount]].filter(
-    (value): value is string => typeof value === "string",
-  );
-  return countClaims.some((countClaim) => words.some((word, index) => {
-    if (word !== countClaim) return false;
-    const nearby = words.slice(Math.max(0, index - 4), index + 6);
-    return containsAnyWord(nearby, ["player", "players", "contestant", "contestants", "houseguest", "houseguests", "finalist", "finalists"])
-      && (
-        containsAnyWord(nearby, ["alive", "left", "remain", "remains", "remaining", "stand", "standing"])
-        || (nearby.includes("still") && nearby.includes("in"))
-      );
-  }));
-}
-
-function factClaimSupported(fact: HouseFactRow, summaryWords: readonly string[]): boolean {
-  const data = fact.data;
-  const value = (key: string): string | null => stringField(data, key);
-  const anyValue = (key: string): boolean => containsAnyPositivePhrase(summaryWords, stringValues(data[key]));
-  const semantic = (...words: string[]): boolean => containsAnyWord(summaryWords, words);
-
-  if (fact.category === "audience_dialogue_quotes") {
-    const quoteKeywords = normalizedWordSequence(value("quote") ?? "")
-      .filter((word) => word.length >= 5 && !["about", "after", "before", "could", "every", "house", "their", "there", "these", "those", "would"].includes(word));
-    return containsPositivePhrase(summaryWords, value("speaker"))
-      && quoteKeywords.some((word) => summaryWords.includes(word));
-  }
-
-  if (fact.category === "player_projection_facts") {
-    if (fact.label === "Current public room allocation") {
-      return semantic("room", "rooms", "mingle", "allocation")
-        && containsAnyPositivePhrase(summaryWords, stringValues(data.rooms));
-    }
-    if (fact.label === "Audience-safe alliance projection") {
-      return semantic("alliance", "alliances", "bloc", "coalition", "pact")
-        && containsAnyPositivePhrase(summaryWords, stringValues(data.alliances));
-    }
-    const aliveCount = Array.isArray(data.alive) ? data.alive.length : 0;
-    const countedRosterClaim = aliveCount > 0 && containsAliveCountClaim(summaryWords, aliveCount);
-    const namedBoardClaim = semantic("alive", "eliminated", "empowered", "format", "candidate", "candidates", "endgame", "finalists")
-      && containsAnyPositivePhrase(summaryWords, [
-        ...stringValues(data.eliminated),
-        ...stringValues(data.empowered),
-        ...stringValues(data.selectedFormat),
-        ...stringValues(data.councilCandidates),
-        ...stringValues(data.endgameStage),
-        ...stringValues(data.alive),
-      ]);
-    return countedRosterClaim || namedBoardClaim;
-  }
-
-  switch (fact.label) {
-    case "game.roster_initialized":
-      return semantic("roster", "players", "contestants", "houseguests", "field");
-    case "round.started":
-      return semantic("round")
-        && containsAnyPositivePhrase(summaryWords, [String(data.round)])
-        && semantic("start", "started", "starts", "begin", "begins", "began", "open", "opens", "opened");
-    case "shields.expired":
-      return anyValue("players") && semantic("shield", "shields", "protection", "safety", "expired", "exposed");
-    case "vote.empower_tally_resolved":
-    case "vote.empowered_set":
-      return containsPositivePhrase(summaryWords, value("empowered"))
-        && semantic("empowered", "power", "control", "leverage", "vote", "tally");
-    case "format.menu_offered":
-      return anyValue("offeredFormats") && semantic("format", "formats", "choice", "choices", "menu", "options");
-    case "format.selected":
-      return containsPositivePhrase(summaryWords, value("selectedFormat"))
-        && semantic("select", "selected", "selecting", "choose", "chooses", "choosing", "chose", "choice", "lock", "locks", "locked", "locking", "pick", "picks", "picked", "picking", "opted");
-    case "format.resolved":
-      return containsPositivePhrase(summaryWords, value("selectedFormat"))
-        && containsPositivePhrase(summaryWords, value("eliminated"))
-        && semantic("out", "eliminated", "exit", "exits", "left", "leaves", "resolved", "falls", "fell");
-    case "power.action_set":
-      return containsPositivePhrase(summaryWords, value("action"))
-        && (value("target") === null || containsPositivePhrase(summaryWords, value("target")));
-    case "power.candidates_resolved":
-      return containsAnyPositivePhrase(summaryWords, [
-        ...stringValues(data.candidates),
-        ...stringValues(data.autoEliminated),
-        ...stringValues(data.shieldGranted),
-      ]) && semantic("candidate", "candidates", "danger", "block", "shield", "safe", "out", "eliminated");
-    case "council.elimination_resolved":
-      return containsPositivePhrase(summaryWords, value("eliminated"))
-        && semantic("council", "vote", "voted", "out", "eliminated", "exit", "left");
-    case "player.eliminated":
-      return containsPositivePhrase(summaryWords, value("player"))
-        && semantic("out", "eliminated", "exit", "exits", "left", "leaves", "gone");
-    case "endgame.stage_set":
-      return containsPositivePhrase(summaryWords, value("stage"))
-        && semantic("endgame", "final", "finale", "reckoning", "tribunal", "judgment", "jury", "stage");
-    case "endgame.elimination_resolved":
-      return containsPositivePhrase(summaryWords, value("eliminated"))
-        && semantic("out", "eliminated", "exit", "exits", "left", "leaves", "falls", "fell");
-    case "jury.winner_determined":
-      return containsPositivePhrase(summaryWords, value("winner"))
-        && semantic("win", "wins", "winner", "won", "crowned", "champion");
-    case "round.result_recorded":
-      return containsPositivePhrase(summaryWords, value("eliminated"))
-        && semantic("round", "out", "eliminated", "exit", "left");
-    default:
-      return false;
-  }
-}
-
-const FINALIST_CLOSING_THEME_WORDS = [
-  ["strategic", "strategy", "moves", "play"],
-  ["honest", "honesty", "integrity", "truth"],
-  ["alliance", "alliances", "people", "relationship", "relationships", "social", "trust"],
-  ["appeal", "case", "closing", "pitch", "jury", "vote"],
-] as const;
-
-function finalistClosingGroupClaimSupported(
-  selectedFacts: readonly HouseFactRow[],
-  summaryWords: readonly string[],
-  actorCoordinate: HouseSummaryFrontier["boundary"]["actorCoordinate"],
-): boolean {
-  if (actorCoordinate !== "judgment_closing") return false;
-  const dialogueFacts = selectedFacts.filter((fact) => fact.category === "audience_dialogue_quotes");
-  const speakers = new Set(dialogueFacts.flatMap((fact) => stringValues(fact.data.speaker)));
-  if (dialogueFacts.length < 2 || speakers.size < 2) return false;
-  const collectiveFinalists = phraseStarts(summaryWords, ["both", "finalists"]).length > 0
-    || phraseStarts(summaryWords, ["two", "finalists"]).length > 0;
-  if (!collectiveFinalists) return false;
-
-  const supportedThemes = FINALIST_CLOSING_THEME_WORDS.filter((theme) => dialogueFacts.every((fact) => {
-    const quoteWords = normalizedWordSequence(stringField(fact.data, "quote") ?? "");
-    return containsAnyWord(quoteWords, theme);
-  }));
-  return supportedThemes.filter((theme) => containsAnyWord(summaryWords, theme)).length >= 2;
-}
-
 export function evaluatePhase(attempt: CandidateAttempt, receipt: HouseSummaryPhaseReceipt | null): PhaseEvaluation {
   const { context, result } = attempt;
   if (result.status !== "emitted") {
     return {
       ...attempt,
       receipt,
-      priorNarrativeSeeded: context.continuity.lastSummary !== null,
+      priorNarrativeSeeded: context.continuity.lastArtifact !== null,
       selectedSourcesSupported: false,
       unsupportedSourceAliases: [],
       freshBoundarySupport: false,
@@ -715,31 +644,31 @@ export function evaluatePhase(attempt: CandidateAttempt, receipt: HouseSummaryPh
   const facts = allFacts(context.frontier);
   const factByAlias = new Map(facts.map((fact) => [fact.alias, fact]));
   const frontierSources = new Set(facts.map((fact) => sourceKey(fact.source)));
-  const unsupportedSourceAliases = result.sourceAliases.filter((alias) => !factByAlias.has(alias));
-  const selectedFacts = result.sourceAliases.flatMap((alias) => {
+  const aliases = result.artifact.claims.map((claim) => claim.sourceAlias);
+  const unsupportedSourceAliases = aliases.filter((alias) => !factByAlias.has(alias));
+  const selectedFacts = aliases.flatMap((alias) => {
     const fact = factByAlias.get(alias);
     return fact ? [fact] : [];
   });
   const selectedSourcesSupported = unsupportedSourceAliases.length === 0
-    && result.sources.length === result.sourceAliases.length
-    && result.sources.every((coordinate) => frontierSources.has(sourceKey(coordinate)));
-  const freshBoundarySupport = result.sources.length > 0
-    && result.sources.every((coordinate) => sourceIsFresh(coordinate, context.continuity));
+    && result.artifact.sources.length === aliases.length
+    && result.artifact.sources.every((coordinate) => frontierSources.has(sourceKey(coordinate)))
+    && result.artifact.claims.every((claim) => {
+      const sourceValue = context.frontier.sourceValuesByAlias.get(claim.sourceAlias);
+      return sourceValue !== undefined && expectedHouseAudienceClaimKind(sourceValue) === claim.kind;
+    });
+  const freshBoundarySupport = result.artifact.sources.length > 0
+    && result.artifact.sources.every((coordinate) => sourceIsFresh(coordinate, context.continuity));
   const canonicalFactsAvailable = facts.some((fact) => fact.authority !== "dialogue_non_authoritative");
   const canonicalSupportSatisfied = !canonicalFactsAvailable
     || selectedFacts.some((fact) => fact.authority !== "dialogue_non_authoritative");
-  const summaryWords = normalizedWordSequence(result.summary);
-  const phaseSpecific = selectedFacts.some((fact) => factClaimSupported(fact, summaryWords))
-    || finalistClosingGroupClaimSupported(
-      selectedFacts,
-      summaryWords,
-      context.frontier.boundary.actorCoordinate,
-    );
+  const phaseSpecific = selectedFacts.length > 0
+    && renderHouseAudienceClaims(context.frontier, result.artifact.claims) === result.artifact.renderedText;
 
   return {
     ...attempt,
     receipt,
-    priorNarrativeSeeded: context.continuity.lastSummary !== null,
+    priorNarrativeSeeded: context.continuity.lastArtifact !== null,
     selectedSourcesSupported,
     unsupportedSourceAliases,
     freshBoundarySupport,
@@ -803,7 +732,7 @@ export function repetitionEvidence(phases: readonly PhaseEvaluation[]): {
         actorCoordinate: phase.context.frontier.boundary.actorCoordinate,
         boundaryId: phase.context.frontier.boundary.id,
         round: phase.context.frontier.boundary.round,
-        summary: phase.result.summary,
+        summary: phase.result.artifact.renderedText,
       }]
     : []);
   const normalized = summaries.map(({ summary }) => summary.toLowerCase().replace(/\s+/g, " ").trim());
@@ -831,12 +760,12 @@ export function continuityEvidence(phases: readonly PhaseEvaluation[]): {
   for (const phase of phases) {
     if (latestEmittedSummary !== null) {
       continuityOpportunities += 1;
-      if (phase.context.continuity.lastSummary === latestEmittedSummary) continuityCovered += 1;
+      if (phase.context.continuity.lastArtifact?.renderedText === latestEmittedSummary) continuityCovered += 1;
       else continuityBreaksDetected = true;
-    } else if (phase.context.continuity.lastSummary !== null) {
+    } else if (phase.context.continuity.lastArtifact !== null) {
       continuityBreaksDetected = true;
     }
-    if (phase.result.status === "emitted") latestEmittedSummary = phase.result.summary;
+    if (phase.result.status === "emitted") latestEmittedSummary = phase.result.artifact.renderedText;
   }
   return {
     continuityOpportunities,
@@ -1001,7 +930,7 @@ async function main(): Promise<void> {
     if (baselineFixture) {
       for (const capturedContext of baselineFixture.contexts) {
         const promptContext = baselinePromptContext(capturedContext, priorBaselineSummaries);
-        const prompt = llmHouse.renderGameplaySummaryPrompt(
+        const prompt = renderRemovedHouseGameplaySummaryPrompt(
           promptContext,
           "Generate a concise, watchable 3-5 sentence House MC summary for the audience.",
         );
@@ -1117,7 +1046,7 @@ async function main(): Promise<void> {
     ? 0
     : phaseResults.filter((phase) => phase.specific).length / phaseResults.length;
   const sourceReceiptsPresent = phaseResults.every(
-    (phase) => phase.result.status !== "emitted" || phase.result.sources.length > 0,
+    (phase) => phase.result.status !== "emitted" || phase.result.artifact.sources.length > 0,
   );
   const unsupportedAliasesDetected = phaseResults.some((phase) => phase.unsupportedSourceAliases.length > 0);
   const repetition = repetitionEvidence(phaseResults);

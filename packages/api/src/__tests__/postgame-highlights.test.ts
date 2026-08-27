@@ -693,13 +693,16 @@ function namedAllianceEventsForCut({
     allianceId: alliance.id,
     window: "pre_vote",
     round,
-    ask: `Coordinate the round ${round} vote.`,
-    plan: "Vote together, then deny there was a pact.",
-    promises: ["Keep the pair quiet."],
-    dissent: [],
-    confidence: "medium",
-    posture: "concealed",
-    leakOrBetrayalClaims: [`${cuttingVoter.name} may leak the pair.`],
+    facts: [{
+      kind: "commitment",
+      factId: `fact-smoke-vote-${suffix}`,
+      sessionId,
+      actorPlayerId: cuttingVoter.id,
+      actionKind: "empower_vote",
+      targetPlayerId: eliminated.id,
+      confidence: "medium",
+    }],
+    participantPlayerIds: [eliminated.id, cuttingVoter.id],
     createdAt: timestamp,
   };
   const eventBase = {
@@ -749,6 +752,7 @@ function namedAllianceEventsForCut({
       sequence: sequenceStart + 3,
       phase: Phase.PRE_VOTE_HUDDLE,
       type: "alliance.huddle_outcome_recorded",
+      payloadVersion: 2,
       payload: { outcome, alliance },
     },
   ];

@@ -4,6 +4,7 @@ import {
   GameState,
   isFormatResumeCoordinate,
   mingleInboxSessionForResumeTarget,
+  parseHouseNarrativeContinuity,
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES,
   validateFormatResumePrerequisites,
   validatePlayerContinuitySetForRecovery,
@@ -519,6 +520,15 @@ function evaluateCheckpointIntegrity(params: {
   if (!houseContinuityResult.ok) {
     return { ok: false, reason: houseContinuityResult.reason };
   }
+  const houseNarrativeRaw = isRecord(snapshot)
+    ? snapshot.houseNarrativeContinuityCapsule
+    : null;
+  const houseNarrativeResult = houseNarrativeRaw == null
+    ? null
+    : parseHouseNarrativeContinuity(houseNarrativeRaw);
+  if (houseNarrativeResult?.status === "invalid") {
+    return { ok: false, reason: "malformed_house_narrative_continuity" };
+  }
 
   const shouldReplayMingleInbox =
     hasBlockedMingleInbox(runtimeSnapshot) &&
@@ -537,6 +547,7 @@ function evaluateCheckpointIntegrity(params: {
       mingleInboxReplay: shouldReplayMingleInbox ? mingleInboxReplay : null,
       currentAccusations: accumulatorResult.currentAccusations,
       houseContinuityCapsule: houseContinuityResult.capsule,
+      houseNarrativeContinuityCapsule: houseNarrativeResult?.value ?? null,
       houseContinuityRequirement: houseContinuityResult.requirement,
       playerContinuityCapsules: playerContinuityResult.capsules,
     },

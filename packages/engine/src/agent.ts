@@ -52,12 +52,17 @@ import type {
   FormatDecisionProvenance,
 } from "./game-runner.types";
 import { Phase } from "./types";
-import type { AllianceHuddleCommitmentFact, UUID, PowerAction } from "./types";
+import type {
+  AllianceHuddleActionKind,
+  AllianceHuddleFactAtom,
+  AllianceHuddleFactAtomDraft,
+  UUID,
+  PowerAction,
+} from "./types";
 import {
   displayNameForFormat,
   isLaunchFormatId,
   pickFormatFromMenu,
-  requireSealedElimRegistration,
   type LaunchFormatId,
   type SealedElimFormatId,
 } from "./formats";
@@ -100,6 +105,7 @@ import {
   renderProtectedHuddleOutcomesSection,
   toStructuralRecallPlanReceipt,
 } from "./context-recall-plan";
+import { formatAllianceHuddleFacts } from "./alliance-huddle-outcome";
 import {
   ProviderAttemptError,
   ProviderExecutionCoordinator,
@@ -119,9 +125,14 @@ import type {
   LlmProviderAdapter,
   ModelInvocation,
   ModelInvocationMessage,
-  ModelInvocationTool,
+  ModelInvocationResult,
   ProviderModelOutcome,
 } from "./model-invocation";
+import {
+  createExactStructuredOutputArtifact,
+  validateExactStructuredValue,
+  type StructuredDomainDecodeResult,
+} from "./structured-output";
 
 // ---------------------------------------------------------------------------
 // Personality archetypes
@@ -612,73 +623,153 @@ function allianceActionTool(
   };
 }
 
-interface AllianceTermsResult {
-  name?: unknown;
-  memberNames?: unknown;
-  purpose?: unknown;
-  timebox?: unknown;
-}
-
-function normalizeAllianceTerms(result: AllianceTermsResult): {
-  name: string;
-  memberNames: string[];
-  purpose: string;
-  timebox: string | null;
-} | null {
-  const name = normalizeNullableString(result.name);
-  const memberNames = normalizeStringArray(result.memberNames);
-  const purpose = normalizeNullableString(result.purpose);
-  if (!name || memberNames.length === 0 || !purpose) return null;
-  return {
-    name,
-    memberNames,
-    purpose,
-    timebox: normalizeNullableString(result.timebox),
-  };
-}
-
-const TOOL_ALLIANCE_HUDDLE_TURN: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "alliance_huddle_turn",
-    description: "Take one private speaking opportunity inside a House-scheduled named-alliance huddle.",
-    parameters: {
+function allianceHuddleFactSchema(input: {
+  actorPlayerId: UUID;
+  allianceMemberIds: readonly UUID[];
+  legalActionKinds: readonly AllianceHuddleActionKind[];
+  legalTargetPlayerIds: readonly UUID[];
+  priorFacts: readonly AllianceHuddleFactAtom[];
+}): Record<string, unknown> {
+  const confidence = { type: "string", enum: ["low", "medium", "high"] };
+  const actorPlayerId = { type: "string", enum: [input.actorPlayerId] };
+  const actionKind = { type: "string", enum: [...input.legalActionKinds] };
+  const targetPlayerId = { type: "string", enum: [...input.legalTargetPlayerIds] };
+  const proposalOrCommitment = (kind: "proposal" | "commitment") => ({
+    type: "object",
+    properties: {
+      kind: { type: "string", enum: [kind] },
+      actorPlayerId,
+      actionKind,
+      targetPlayerId,
+      confidence,
+    },
+    required: ["kind", "actorPlayerId", "actionKind", "targetPlayerId", "confidence"],
+    additionalProperties: false,
+  });
+  const variants: Record<string, unknown>[] = [
+    proposalOrCommitment("proposal"),
+    proposalOrCommitment("commitment"),
+  ];
+  const counterpartFactIds = input.priorFacts
+    .filter((fact) => fact.kind === "proposal" || fact.kind === "commitment")
+    .map((fact) => fact.factId);
+  if (counterpartFactIds.length > 0) {
+    variants.push(
+      {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["response"] },
+          actorPlayerId,
+          counterpartFactId: { type: "string", enum: counterpartFactIds },
+          stance: { type: "string", enum: ["endorse", "reject"] },
+          confidence,
+        },
+        required: ["kind", "actorPlayerId", "counterpartFactId", "stance", "confidence"],
+        additionalProperties: false,
+      },
+      {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["response"] },
+          actorPlayerId,
+          counterpartFactId: { type: "string", enum: counterpartFactIds },
+          stance: { type: "string", enum: ["counter"] },
+          replacementActionKind: actionKind,
+          replacementTargetPlayerId: targetPlayerId,
+          confidence,
+        },
+        required: ["kind", "actorPlayerId", "counterpartFactId", "stance", "replacementActionKind", "replacementTargetPlayerId", "confidence"],
+        additionalProperties: false,
+      },
+    );
+  }
+  variants.push(
+    {
       type: "object",
       properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this huddle message (hidden from other players)" },
-        message: {
-          type: ["string", "null"],
-          description: "Your private huddle message to alliance members, or null when passing.",
-        },
-        noReply: {
-          type: "boolean",
-          description: "Set true only when intentionally saying nothing in this huddle opportunity.",
-        },
-        proposedTarget: { type: ["string", "null"], description: "One living target for the current action, or null only with a concrete noTargetReason." },
-        noTargetReason: { type: ["string", "null"], description: "Concrete reason a target cannot yet be proposed; null when proposedTarget is named." },
-        proposedAction: { type: "string", description: "Phase-appropriate proposed action: empower vote, Council vote, or locked-format ballot/pointer commitment." },
-        memberCommitments: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: { memberName: { type: "string" }, commitment: { type: "string" } },
-            required: ["memberName", "commitment"],
-            additionalProperties: false,
-          },
-          description: "Concrete commitments proposed for one or more named alliance members; do not pretend another member accepted unless they said so.",
-        },
-        contingency: { type: "string", description: "What to do if the target, vote count, format action, or ally response changes." },
-        confidence: { type: "string", enum: ["low", "medium", "high"], description: "Your confidence in this proposal, not a claim of group consensus." },
-        dissent: { type: "array", items: { type: "string" }, description: "Explicit objections, alternative targets, or empty when none have been voiced." },
-        alternativePlan: { type: ["string", "null"], description: "A distinct fallback or opposing plan, or null when none exists." },
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+        kind: { type: "string", enum: ["contingency"] },
+        actorPlayerId,
+        conditionKind: { type: "string", enum: ["vote_count_changed", "format_action_changed"] },
+        effectActionKind: actionKind,
+        effectTargetPlayerId: targetPlayerId,
+        confidence,
       },
-      required: ["thinking", "message", "noReply", "proposedTarget", "noTargetReason", "proposedAction", "memberCommitments", "contingency", "confidence", "dissent", "alternativePlan", ...STRATEGIC_DECISION_REQUIRED],
+      required: ["kind", "actorPlayerId", "conditionKind", "effectActionKind", "effectTargetPlayerId", "confidence"],
       additionalProperties: false,
     },
-    strict: true,
-  },
-};
+    {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["contingency"] },
+        actorPlayerId,
+        conditionKind: { type: "string", enum: ["target_ineligible"] },
+        conditionPlayerId: targetPlayerId,
+        effectActionKind: actionKind,
+        effectTargetPlayerId: targetPlayerId,
+        confidence,
+      },
+      required: ["kind", "actorPlayerId", "conditionKind", "conditionPlayerId", "effectActionKind", "effectTargetPlayerId", "confidence"],
+      additionalProperties: false,
+    },
+    {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: ["contingency"] },
+        actorPlayerId,
+        conditionKind: { type: "string", enum: ["ally_response_changed"] },
+        conditionPlayerId: {
+          type: "string",
+          enum: input.allianceMemberIds.filter((playerId) => playerId !== input.actorPlayerId),
+        },
+        effectActionKind: actionKind,
+        effectTargetPlayerId: targetPlayerId,
+        confidence,
+      },
+      required: ["kind", "actorPlayerId", "conditionKind", "conditionPlayerId", "effectActionKind", "effectTargetPlayerId", "confidence"],
+      additionalProperties: false,
+    },
+  );
+  return { oneOf: variants };
+}
+
+function allianceHuddleTurnTool(input: {
+  actorPlayerId: UUID;
+  allianceMemberIds: readonly UUID[];
+  legalActionKinds: readonly AllianceHuddleActionKind[];
+  legalTargetPlayerIds: readonly UUID[];
+  priorFacts: readonly AllianceHuddleFactAtom[];
+}): ChatCompletionTool {
+  return {
+    type: "function",
+    function: {
+      name: "alliance_huddle_turn",
+      description: "Take one private speaking opportunity and optionally author typed facts inside a House-scheduled named-alliance huddle.",
+      parameters: {
+        type: "object",
+        properties: {
+          thinking: { type: "string", description: "Your internal reasoning for this huddle message (hidden from other players)" },
+          message: {
+            type: ["string", "null"],
+            description: "Your private huddle dialogue, or null when intentionally saying nothing. Dialogue never creates a fact atom.",
+          },
+          noReply: {
+            type: "boolean",
+            description: "Set true only when message is null.",
+          },
+          factAtoms: {
+            type: "array",
+            items: allianceHuddleFactSchema(input),
+            description: "Zero or more closed typed facts authored only for yourself. The engine assigns fact identity after acceptance.",
+          },
+          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+        },
+        required: ["thinking", "message", "noReply", "factAtoms", ...STRATEGIC_DECISION_REQUIRED],
+        additionalProperties: false,
+      },
+      strict: true,
+    },
+  };
+}
 
 const TOOL_RUMOR: ChatCompletionTool = {
   type: "function",
@@ -728,43 +819,64 @@ const TOOL_SEND_ROOM_MESSAGE: ChatCompletionTool = {
   },
 };
 
-const TOOL_MINGLE_TURN: ChatCompletionTool = {
-  type: "function",
-  function: {
-    name: "mingle_turn",
-    description: "Take one Mingle turn: TALK, NO_REPLY, and optionally GOTO a room or player next turn",
-    parameters: {
-      type: "object",
-      properties: {
-        thinking: { type: "string", description: "Your internal reasoning for this turn (hidden from other players)" },
-        message: {
-          type: ["string", "null"],
-          description: "TALK message for current room occupants, or null for NO_REPLY",
+function mingleTurnTool(input: {
+  legalActionKinds: readonly AllianceHuddleActionKind[];
+  legalTargetPlayerIds: readonly UUID[];
+}): ChatCompletionTool {
+  return {
+    type: "function",
+    function: {
+      name: "mingle_turn",
+      description: "Take one Mingle turn: talk or no-reply, optionally move, and optionally author one typed self-attributed coordination fact.",
+      parameters: {
+        type: "object",
+        properties: {
+          thinking: { type: "string", description: "Your internal reasoning for this turn (hidden from other players)" },
+          message: {
+            type: ["string", "null"],
+            description: "TALK message for current room occupants, or null for NO_REPLY. Dialogue never creates a coordination fact.",
+          },
+          noReply: {
+            type: "boolean",
+            description: "Set true when you intentionally say nothing this turn.",
+          },
+          gotoRoomId: {
+            type: ["integer", "null"],
+            description: "Optional local room number to enter after this turn, or null.",
+          },
+          gotoPlayerName: {
+            type: ["string", "null"],
+            description: "Optional living non-self player name to follow, or null. Do not set this together with gotoRoomId.",
+          },
+          coordinationFact: {
+            anyOf: [
+              { type: "null" },
+              {
+                type: "object",
+                properties: {
+                  kind: { type: "string", enum: ["proposal", "commitment"] },
+                  actionKind: { type: "string", enum: [...input.legalActionKinds] },
+                  targetPlayerId: { type: "string", enum: [...input.legalTargetPlayerIds] },
+                },
+                required: ["kind", "actionKind", "targetPlayerId"],
+                additionalProperties: false,
+              },
+            ],
+            description: "One closed proposal or self-commitment, or null. The public/private message is separate presentation.",
+          },
+          noProposal: {
+            type: "boolean",
+            description: "True only when intentionally recording that this turn contributed no typed coordination fact.",
+          },
+          ...STRATEGIC_DECISION_TOOL_PROPERTIES,
         },
-        noReply: {
-          type: "boolean",
-          description: "Set true when you intentionally say nothing this turn",
-        },
-        gotoRoomId: {
-          type: ["number", "null"],
-          description: "Optional local room number to enter after this turn, or null to stay or use gotoPlayerName",
-        },
-        gotoPlayerName: {
-          type: ["string", "null"],
-          description: "Optional living player name to follow to their resolved room next turn, or null to stay or use gotoRoomId",
-        },
-        proposedTarget: { type: ["string", "null"], description: "Living target named in a concrete room proposal, or null." },
-        proposedAction: { type: ["string", "null"], description: "Vote, empower, or legal format-action proposal made in the room, or null." },
-        commitment: { type: ["string", "null"], description: "Your concrete commitment or ask to the room, or null." },
-        noProposalReason: { type: ["string", "null"], description: "Required when a decision-relevant room with an official ally has no concrete proposal." },
-        ...STRATEGIC_DECISION_TOOL_PROPERTIES,
+        required: ["thinking", "message", "noReply", "gotoRoomId", "gotoPlayerName", "coordinationFact", "noProposal", ...STRATEGIC_DECISION_REQUIRED],
+        additionalProperties: false,
       },
-      required: ["thinking", "message", "noReply", "gotoRoomId", "gotoPlayerName", "proposedTarget", "proposedAction", "commitment", "noProposalReason", ...STRATEGIC_DECISION_REQUIRED],
-      additionalProperties: false,
+      strict: true,
     },
-    strict: true,
-  },
-};
+  };
+}
 
 /** Empower ballot tool. Legal names are other living players only (no self-empower). */
 function buildCastVotesTool(legalEmpowerNames: readonly string[]): ChatCompletionTool {
@@ -1082,10 +1194,10 @@ const TOOL_JURY_VOTE: ChatCompletionTool = {
 const normalizeName = (s: string): string => s.trim().toLowerCase();
 
 function findByName<T extends { name: string }>(
-  players: T[],
-  name: string | undefined,
+  players: readonly T[],
+  name: unknown,
 ): T | undefined {
-  if (!name) return undefined;
+  if (typeof name !== "string" || !name) return undefined;
   const n = normalizeName(name);
   return players.find((p) => normalizeName(p.name) === n);
 }
@@ -1164,45 +1276,69 @@ function normalizeRequiredString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeLivingTarget(value: unknown, ctx: PhaseContext): string | null {
-  const candidate = normalizeNullableString(value);
-  if (!candidate) return null;
-  return ctx.alivePlayers.find((player) => player.id !== ctx.selfId && normalizeName(player.name) === normalizeName(candidate))?.name ?? null;
+function requireNonEmptyString(value: unknown, field: string): string | null {
+  return typeof value === "string" && value.trim().length > 0
+    ? null
+    : `${field} must be a non-empty string.`;
 }
 
-function normalizeHuddleCommitment(
-  value: Record<string, unknown>,
-  ctx: PhaseContext,
-): Omit<AllianceHuddleCommitmentFact, "speakerId" | "speakerName"> {
-  const proposedTarget = normalizeLivingTarget(value.proposedTarget, ctx);
-  const requestedTarget = normalizeNullableString(value.proposedTarget);
-  const noTargetReason = proposedTarget
+function requireNullableNonEmptyString(value: unknown, field: string): string | null {
+  return value === null || (typeof value === "string" && value.trim().length > 0)
     ? null
-    : normalizeNullableString(value.noTargetReason)
-      ?? (requestedTarget ? `Rejected invalid target: ${requestedTarget}.` : "No target proposed; evidence or legal action is still unclear.");
-  const allowedMembers = new Set((ctx.allianceContext?.activeAlliances ?? [])
-    .flatMap((alliance) => alliance.memberNames)
-    .concat(ctx.selfName)
-    .map(normalizeName));
-  const memberCommitments = Array.isArray(value.memberCommitments)
-    ? value.memberCommitments.flatMap((entry) => {
-      if (!entry || typeof entry !== "object") return [];
-      const record = entry as Record<string, unknown>;
-      const memberName = normalizeNullableString(record.memberName);
-      const commitment = normalizeNullableString(record.commitment);
-      return memberName && commitment && allowedMembers.has(normalizeName(memberName)) ? [{ memberName, commitment }] : [];
-    })
-    : [];
-  return {
-    proposedTargetName: proposedTarget,
-    noTargetReason,
-    proposedAction: normalizeRequiredString(value.proposedAction),
-    memberCommitments,
-    contingency: normalizeRequiredString(value.contingency),
-    confidence: value.confidence === "low" || value.confidence === "high" ? value.confidence : "medium",
-    dissent: normalizeStringArray(value.dissent),
-    alternativePlan: normalizeNullableString(value.alternativePlan),
-  };
+    : `${field} must be null or a non-empty string.`;
+}
+
+function requireExactPlayerName(
+  value: unknown,
+  players: readonly { name: string }[],
+  field: string,
+): string | null {
+  if (typeof value !== "string") return `${field} must name one legal player.`;
+  return findByName([...players], value)
+    ? null
+    : `${field} must name one legal player from the invocation context.`;
+}
+
+function requireExactUniquePlayerNames(
+  value: unknown,
+  players: readonly { name: string }[],
+  requiredCount: number,
+  field: string,
+): string | null {
+  if (!Array.isArray(value) || value.length !== requiredCount) {
+    return `${field} must contain exactly ${requiredCount} selection${requiredCount === 1 ? "" : "s"}.`;
+  }
+  const selected = value.map((entry) =>
+    typeof entry === "string" ? findByName([...players], entry) : undefined,
+  );
+  if (selected.some((player) => player === undefined)) {
+    return `${field} contains a player outside the legal invocation set.`;
+  }
+  const ids = selected.map((player) => normalizeName(player!.name));
+  return new Set(ids).size === ids.length
+    ? null
+    : `${field} must not contain duplicate players.`;
+}
+
+function requireTalkOrPass(
+  message: unknown,
+  pass: unknown,
+  passField: "pass" | "noReply",
+): string | null {
+  const normalizedMessage = normalizeNullableString(message);
+  if (pass === true) {
+    return message === null
+      ? null
+      : `${passField}=true requires message=null.`;
+  }
+  if (pass !== false) return `${passField} must be a boolean.`;
+  return normalizedMessage
+    ? null
+    : `${passField}=false requires a non-empty message.`;
+}
+
+function firstSemanticIssue(...issues: Array<string | null>): string | null {
+  return issues.find((issue): issue is string => issue !== null) ?? null;
 }
 
 function officialAlliesInRoom(ctx: PhaseContext, roomMates: readonly string[]): string[] {
@@ -1280,27 +1416,6 @@ function normalizeStrategicDecisionMetadata(record: Record<string, unknown>): St
   };
 }
 
-function acceptedActionMetadata(
-  metadata: StrategicDecisionMetadata,
-  directModelChoice: boolean,
-): StrategicDecisionMetadata {
-  if (!directModelChoice) {
-    const { decisionId: _decisionId, ...candidate } = metadata;
-    return {
-      ...candidate,
-      strategyGameplayAccepted: false,
-    };
-  }
-  return metadata;
-}
-
-class ToolCallFatalError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "ToolCallFatalError";
-  }
-}
-
 // ---------------------------------------------------------------------------
 // Agent memory
 // ---------------------------------------------------------------------------
@@ -1369,6 +1484,284 @@ type LlmCallOptions = {
   privateTrace?: PrivateDecisionTraceContext;
 };
 
+export const AGENT_TOOL_SEMANTIC_ACTION_IDS = [
+  "whispers",
+  "mingle-intent",
+  "alliance-action",
+  "alliance-huddle-turn",
+  "room-message",
+  "mingle-turn",
+  "rumor",
+  "vote",
+  "empower-revote",
+  "candidate-selection",
+  "power",
+  "council-vote",
+  "format-pick",
+  "format-save-or-eliminate-ballot",
+  "format-vote-bomb-ballot",
+  "format-majority-elimination-ballot",
+  "format-even-votes-ballot",
+  "format-restricted-history-ballot",
+  "bounce-pointer",
+  "format-safety-bounce-vote",
+  "format-tiebreak",
+  "elimination-message",
+  "elimination-vote",
+  "reckoning-vote",
+  "tribunal-vote",
+  "tribunal-jury-tiebreaker-vote",
+  "accusation",
+  "jury-question",
+  "jury-vote",
+] as const;
+
+const AGENT_TOOL_SEMANTIC_ACTION_SET = new Set<string>(
+  AGENT_TOOL_SEMANTIC_ACTION_IDS,
+);
+
+interface AgentToolSemanticDecoder<TProviderValue, TDomainValue> {
+  /** Must equal the private-trace action for this invocation. */
+  action: string;
+  decodeProvider(value: TProviderValue): StructuredDomainDecodeResult<TDomainValue>;
+  decodeAccepted(
+    value: unknown,
+    domainSchema: Readonly<Record<string, unknown>>,
+  ): StructuredDomainDecodeResult<TDomainValue>;
+}
+
+function agentToolSemanticDecoder<TValue>(
+  action: string,
+  validate: (value: TValue) => string | null,
+): AgentToolSemanticDecoder<TValue, TValue> {
+  const decode = (value: TValue): StructuredDomainDecodeResult<TValue> => {
+    const message = validate(value);
+    return message
+      ? { status: "invalid", message }
+      : { status: "valid", value };
+  };
+  return {
+    action,
+    decodeProvider: decode,
+    decodeAccepted: (value, domainSchema) => {
+      const exact = validateExactStructuredValue(
+        domainSchema,
+        value,
+        `Accepted agent tool ${action}`,
+      );
+      if (exact.status === "invalid") return exact;
+      return decode(value as TValue);
+    },
+  };
+}
+
+function mappedAgentToolSemanticDecoder<TProviderValue, TDomainValue>(
+  action: string,
+  decodeProvider: (
+    value: TProviderValue,
+  ) => StructuredDomainDecodeResult<TDomainValue>,
+  decodeAccepted: (
+    value: unknown,
+    domainSchema: Readonly<Record<string, unknown>>,
+  ) => StructuredDomainDecodeResult<TDomainValue>,
+): AgentToolSemanticDecoder<TProviderValue, TDomainValue> {
+  return {
+    action,
+    decodeProvider,
+    decodeAccepted,
+  };
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .filter(([, child]) => child !== undefined)
+      .sort(([left], [right]) => left.localeCompare(right));
+    return `{${entries.map(([key, child]) => `${JSON.stringify(key)}:${canonicalJson(child)}`).join(",")}}`;
+  }
+  return JSON.stringify(value) ?? "null";
+}
+
+function canonicalMappedAcceptedValue<TProviderValue, TDomainValue>(
+  value: unknown,
+  label: string,
+  toProvider: (
+    value: unknown,
+  ) => StructuredDomainDecodeResult<TProviderValue>,
+  decodeProvider: (
+    value: TProviderValue,
+  ) => StructuredDomainDecodeResult<TDomainValue>,
+): StructuredDomainDecodeResult<TDomainValue> {
+  const provider = toProvider(value);
+  if (provider.status === "invalid") return provider;
+  const replayed = decodeProvider(provider.value);
+  if (replayed.status === "invalid") return replayed;
+  return canonicalJson(replayed.value) === canonicalJson(value)
+    ? replayed
+    : { status: "invalid", message: `${label} is not the canonical accepted domain value.` };
+}
+
+type AgentToolPlayerRef = { id: UUID; name: string };
+
+interface AgentToolStrategyFields {
+  thinking?: string;
+  strategy?: unknown;
+  strategyDelta?: unknown;
+  reasoningContext?: string;
+}
+
+type PlayerNameDecision<TField extends string, TExtra extends object = object> =
+  AgentToolStrategyFields & TExtra & Record<TField, string>;
+type PlayerIdDecision<TField extends string, TExtra extends object = object> =
+  AgentToolStrategyFields & TExtra & Record<TField, UUID>;
+type PlayerNamesDecision<TField extends string, TExtra extends object = object> =
+  AgentToolStrategyFields & TExtra & Record<TField, string[]>;
+type PlayerIdsDecision<TField extends string, TExtra extends object = object> =
+  AgentToolStrategyFields & TExtra & Record<TField, UUID[]>;
+
+function schemaWithPlayerIdField(
+  schema: Readonly<Record<string, unknown>>,
+  field: string,
+  players: readonly AgentToolPlayerRef[],
+): Record<string, unknown> {
+  const cloned = structuredClone(schema);
+  const properties = cloned.properties;
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) {
+    throw new Error(`Agent tool domain schema has no properties for ${field}.`);
+  }
+  const property = (properties as Record<string, unknown>)[field];
+  if (!property || typeof property !== "object" || Array.isArray(property)) {
+    throw new Error(`Agent tool domain schema has no ${field} property.`);
+  }
+  (properties as Record<string, unknown>)[field] = {
+    ...(property as Record<string, unknown>),
+    type: "string",
+    enum: players.map((player) => player.id),
+  };
+  return cloned;
+}
+
+function playerIdFieldDecoder<
+  TProviderValue extends object,
+  TField extends keyof TProviderValue & string,
+>(
+  action: string,
+  field: TField,
+  players: readonly AgentToolPlayerRef[],
+  validate: (value: TProviderValue) => string | null,
+): AgentToolSemanticDecoder<
+  TProviderValue,
+  Omit<TProviderValue, TField> & Record<TField, UUID>
+> {
+  type TDomainValue = Omit<TProviderValue, TField> & Record<TField, UUID>;
+  const decodeProvider = (
+    value: TProviderValue,
+  ): StructuredDomainDecodeResult<TDomainValue> => {
+    const message = validate(value);
+    if (message) return { status: "invalid", message };
+    const player = findByName(players, value[field]);
+    if (!player) return { status: "invalid", message: `${field} must resolve to one eligible player.` };
+    return {
+      status: "valid",
+      value: { ...value, [field]: player.id } as TDomainValue,
+    };
+  };
+  return mappedAgentToolSemanticDecoder(
+    action,
+    decodeProvider,
+    (value, providerSchema) => {
+      const domainSchema = schemaWithPlayerIdField(providerSchema, field, players);
+      const exact = validateExactStructuredValue(
+        domainSchema,
+        value,
+        `Accepted agent tool ${action}`,
+      );
+      if (exact.status === "invalid") return exact;
+      const record = value as Record<string, unknown>;
+      const player = players.find((candidate) => candidate.id === record[field]);
+      if (!player) return { status: "invalid", message: `${field} references an ineligible player ID.` };
+      return canonicalMappedAcceptedValue(
+        value,
+        `Accepted agent tool ${action}`,
+        () => ({
+          status: "valid",
+          value: { ...record, [field]: player.name } as TProviderValue,
+        }),
+        decodeProvider,
+      );
+    },
+  );
+}
+
+function playerIdsFieldDecoder<
+  TProviderValue extends object,
+  TField extends keyof TProviderValue & string,
+>(
+  action: string,
+  field: TField,
+  players: readonly AgentToolPlayerRef[],
+  requiredCount: number,
+  validate: (value: TProviderValue) => string | null,
+): AgentToolSemanticDecoder<
+  TProviderValue,
+  Omit<TProviderValue, TField> & Record<TField, UUID[]>
+> {
+  type TDomainValue = Omit<TProviderValue, TField> & Record<TField, UUID[]>;
+  const decodeProvider = (
+    value: TProviderValue,
+  ): StructuredDomainDecodeResult<TDomainValue> => {
+    const message = validate(value);
+    if (message) return { status: "invalid", message };
+    const names = value[field];
+    if (!Array.isArray(names)) return { status: "invalid", message: `${field} must be an array.` };
+    const ids = names.map((name) => findByName(players, name)?.id);
+    if (ids.some((id) => id === undefined)) {
+      return { status: "invalid", message: `${field} must resolve to eligible player IDs.` };
+    }
+    return {
+      status: "valid",
+      value: { ...value, [field]: ids as UUID[] } as TDomainValue,
+    };
+  };
+  return mappedAgentToolSemanticDecoder(
+    action,
+    decodeProvider,
+    (value, providerSchema) => {
+      const domainSchema = structuredClone(providerSchema);
+      const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
+      properties[field] = {
+        ...properties[field],
+        minItems: requiredCount,
+        maxItems: requiredCount,
+        uniqueItems: true,
+        items: { type: "string", enum: players.map((player) => player.id) },
+      };
+      const exact = validateExactStructuredValue(
+        domainSchema,
+        value,
+        `Accepted agent tool ${action}`,
+      );
+      if (exact.status === "invalid") return exact;
+      const record = value as Record<string, unknown>;
+      const ids = record[field] as UUID[];
+      const names = ids.map((id) => players.find((player) => player.id === id)?.name);
+      if (names.some((name) => name === undefined)) {
+        return { status: "invalid", message: `${field} references an ineligible player ID.` };
+      }
+      return canonicalMappedAcceptedValue(
+        value,
+        `Accepted agent tool ${action}`,
+        () => ({
+          status: "valid",
+          value: { ...record, [field]: names as string[] } as TProviderValue,
+        }),
+        decodeProvider,
+      );
+    },
+  );
+}
+
 type ModelCallResponse = ProviderModelOutcome;
 
 // ---------------------------------------------------------------------------
@@ -1399,6 +1792,7 @@ export class InfluenceAgent implements IAgent {
   private readonly providerManifest: readonly LlmProviderRuntime[];
   private readonly responseProviderRuntime = new WeakMap<object, LlmProviderRuntime>();
   private readonly responseProviderAttemptId = new WeakMap<object, string>();
+  private readonly responseProviderOutcome = new WeakMap<object, ProviderModelOutcome>();
   private tokenTracker: TokenTracker | null = null;
   /** Most recent private-decision id minted while emitting a private decision trace. */
   private lastPrivateDecisionId: string | undefined;
@@ -1511,12 +1905,17 @@ export class InfluenceAgent implements IAgent {
     });
   }
 
-  private executeModelCall<T>(params: {
+  private executeModelCall<T, TStructuredValue = unknown>(params: {
     call: ProviderLogicalCallExecution;
-    invocation: ModelInvocation | (() => ModelInvocation);
+    invocation:
+      | ModelInvocation<TStructuredValue>
+      | (() => ModelInvocation<TStructuredValue>);
     options?: LlmCallOptions;
     maxAttempts: number;
-    validate(response: ProviderModelOutcome): ProviderCandidateValidation<T>;
+    validate(
+      response: ProviderModelOutcome,
+      structuredValue: TStructuredValue | undefined,
+    ): ProviderCandidateValidation<T>;
     onRetry?: (record: ProviderAttemptRecord) => void;
   }): Promise<T> {
     return executeModelInvocation({
@@ -1529,18 +1928,35 @@ export class InfluenceAgent implements IAgent {
         cancellationSignal: params.options.signal,
       }),
       ...(params.onRetry && { onRetry: params.onRetry }),
-    }).then(({ value, manifestPosition, acceptedAttemptId }) => {
+    }).then(({ value, manifestPosition, acceptedAttemptId, liveOutcome }) => {
       if (value && typeof value === "object") {
-        this.responseProviderRuntime.set(
+        this.rememberProviderMetadata(
           value as object,
           this.providerManifest[manifestPosition]!,
+          acceptedAttemptId,
+          liveOutcome,
         );
-        if (acceptedAttemptId) {
-          this.responseProviderAttemptId.set(value as object, acceptedAttemptId);
-        }
+      }
+      if (liveOutcome) {
+        this.rememberProviderMetadata(
+          liveOutcome,
+          this.providerManifest[manifestPosition]!,
+          acceptedAttemptId,
+        );
       }
       return value;
     });
+  }
+
+  private rememberProviderMetadata(
+    key: object,
+    runtime: LlmProviderRuntime,
+    attemptId?: string,
+    outcome?: ProviderModelOutcome,
+  ): void {
+    this.responseProviderRuntime.set(key, runtime);
+    if (attemptId) this.responseProviderAttemptId.set(key, attemptId);
+    if (outcome) this.responseProviderOutcome.set(key, outcome);
   }
 
   private requestedReasoningEffortFor(
@@ -1716,9 +2132,10 @@ export class InfluenceAgent implements IAgent {
   }
 
   private strategicDecisionMetadata(
-    record: Record<string, unknown>,
+    value: object,
     action: string,
   ): StrategicDecisionMetadata {
+    const record = value as Record<string, unknown>;
     const metadata = normalizeStrategicDecisionMetadata(record);
     return InfluenceAgent.STRATEGIC_ACTIONS.has(action)
       && !Object.prototype.hasOwnProperty.call(metadata, "strategy")
@@ -2037,25 +2454,87 @@ Available players: ${otherPlayers.map((p) => p.name).join(", ")}
 Use the send_whispers tool to submit your whisper messages. Use player NAMES (not IDs).`;
 
     try {
-      const result = await this.callTool<{ whispers: Array<{ to: string[]; text: string }> }>(
-        prompt, TOOL_SEND_WHISPERS, 400, sys,
+      type WhisperProviderValue = { whispers: Array<{ to: string[]; text: string }> };
+      type WhisperDomainValue = { whispers: Array<{ to: UUID[]; text: string }> };
+      const validateWhispers = (value: WhisperProviderValue): string | null => {
+        if (value.whispers.length < 1 || value.whispers.length > 3) {
+          return "whispers must contain between one and three messages.";
+        }
+        for (const whisper of value.whispers) {
+          if (whisper.to.length < 1 || whisper.to.length > 3) {
+            return "whispers[].to must contain between one and three recipients.";
+          }
+          const recipientIssue = requireExactUniquePlayerNames(
+            whisper.to,
+            otherPlayers,
+            whisper.to.length,
+            "whispers[].to",
+          );
+          if (recipientIssue) return recipientIssue;
+          const textIssue = requireNonEmptyString(whisper.text, "whispers[].text");
+          if (textIssue) return textIssue;
+        }
+        return null;
+      };
+      const decodeWhispers = (
+        value: WhisperProviderValue,
+      ): StructuredDomainDecodeResult<WhisperDomainValue> => {
+        const issue = validateWhispers(value);
+        if (issue) return { status: "invalid", message: issue };
+        return {
+          status: "valid",
+          value: {
+            whispers: value.whispers.map((whisper) => ({
+              to: whisper.to.map((name) => findByName(otherPlayers, name)!.id),
+              text: whisper.text,
+            })),
+          },
+        };
+      };
+      const result = await this.callTool<WhisperProviderValue, WhisperDomainValue>(
+        prompt,
+        TOOL_SEND_WHISPERS,
+        mappedAgentToolSemanticDecoder(
+          "whispers",
+          decodeWhispers,
+          (value, providerSchema) => {
+            const domainSchema = structuredClone(providerSchema) as Record<string, unknown>;
+            const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
+            const whisperItems = properties.whispers!.items as Record<string, unknown>;
+            const whisperProperties = whisperItems.properties as Record<string, Record<string, unknown>>;
+            whisperProperties.to = {
+              ...whisperProperties.to,
+              items: { type: "string", enum: otherPlayers.map((player) => player.id) },
+            };
+            const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool whispers");
+            if (exact.status === "invalid") return exact;
+            return canonicalMappedAcceptedValue(
+              value,
+              "Accepted agent tool whispers",
+              (accepted) => {
+                const domain = accepted as WhisperDomainValue;
+                return {
+                  status: "valid",
+                  value: {
+                    whispers: domain.whispers.map((whisper) => ({
+                      to: whisper.to.map((id) => otherPlayers.find((player) => player.id === id)!.name),
+                      text: whisper.text,
+                    })),
+                  },
+                };
+              },
+              decodeWhispers,
+            );
+          },
+        ),
+        400,
+        sys,
         this.traceOptions(ctx, { action: "whispers", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_HIGH, reasoningEffort: "high" }),
       );
 
-      return (result.whispers ?? [])
-        .filter((w) => w && Array.isArray(w.to) && typeof w.text === "string")
-        .map((w) => {
-          const resolved = w.to.map((name) => {
-            const player = findByName(otherPlayers, name);
-            if (!player) {
-              console.warn(`[vote-fallback] agent="${this.name}" method=getWhispers unmatched recipient="${name}" available=[${otherPlayers.map((p) => p.name).join(", ")}]`);
-            }
-            return player?.id;
-          }).filter((id): id is UUID => id !== undefined);
-          return { to: resolved, text: w.text };
-        })
-        .filter((w) => w.to.length > 0 && w.text.length > 0);
+      return result.whispers;
     } catch (err) {
+      if (!(err instanceof ProviderUnavailableError)) throw err;
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getWhispers error="${err instanceof Error ? err.message : err}" fallback=[]`);
       return [];
     }
@@ -2097,7 +2576,7 @@ ${STRATEGIC_LENS_GUIDANCE}
 Use the form_mingle_intent tool.`;
 
     try {
-      const result = await this.callTool<{
+      type MingleIntentProviderValue = {
         thinking?: string;
         seekPlayers?: unknown;
         avoidPlayers?: unknown;
@@ -2111,17 +2590,129 @@ Use the form_mingle_intent tool.`;
         strategy?: unknown;
         strategyDelta?: unknown;
         reasoningContext?: string;
-      }>(
-        prompt, TOOL_MINGLE_INTENT, 300, sys,
+      };
+      type MingleIntentDomainValue = Omit<
+        MingleIntentProviderValue,
+        "seekPlayers" | "avoidPlayers" | "provisionalTarget"
+      > & {
+        seekPlayers: UUID[];
+        avoidPlayers: UUID[];
+        provisionalTarget: UUID | null;
+      };
+      const eligibleIntentPlayers = ctx.alivePlayers.filter((player) => player.id !== this.id);
+      const decodeMingleIntent = (
+        value: MingleIntentProviderValue,
+      ): StructuredDomainDecodeResult<MingleIntentDomainValue> => {
+        const seekPlayers = normalizeStringArray(value.seekPlayers);
+        const avoidPlayers = normalizeStringArray(value.avoidPlayers);
+        const seekIssue = requireExactUniquePlayerNames(
+          value.seekPlayers,
+          eligibleIntentPlayers,
+          seekPlayers.length,
+          "seekPlayers",
+        );
+        if (seekIssue) return { status: "invalid", message: seekIssue };
+        const avoidIssue = requireExactUniquePlayerNames(
+          value.avoidPlayers,
+          eligibleIntentPlayers,
+          avoidPlayers.length,
+          "avoidPlayers",
+        );
+        if (avoidIssue) return { status: "invalid", message: avoidIssue };
+        const seekSet = new Set(seekPlayers.map(normalizeName));
+        if (avoidPlayers.some((name) => seekSet.has(normalizeName(name)))) {
+          return { status: "invalid", message: "seekPlayers and avoidPlayers must be disjoint." };
+        }
+        const target = value.provisionalTarget;
+        if (target === null) {
+          const reasonIssue = requireNonEmptyString(value.noTargetReason, "noTargetReason");
+          if (reasonIssue) return { status: "invalid", message: reasonIssue };
+        } else if (typeof target === "string") {
+          const targetIssue = requireExactPlayerName(
+            target,
+            eligibleIntentPlayers,
+            "provisionalTarget",
+          );
+          if (targetIssue) return { status: "invalid", message: targetIssue };
+          if (value.noTargetReason !== null) {
+            return { status: "invalid", message: "A provisionalTarget requires noTargetReason=null." };
+          }
+        } else {
+          return { status: "invalid", message: "provisionalTarget must be null or one living player name." };
+        }
+        const issue = firstSemanticIssue(
+          requireNonEmptyString(value.purpose, "purpose"),
+          requireNonEmptyString(value.openingAsk, "openingAsk"),
+          requireNonEmptyString(value.strategicLensRationale, "strategicLensRationale"),
+        );
+        if (issue) return { status: "invalid", message: issue };
+        return {
+          status: "valid",
+          value: {
+            ...value,
+            seekPlayers: seekPlayers.map((name) => findByName(eligibleIntentPlayers, name)!.id),
+            avoidPlayers: avoidPlayers.map((name) => findByName(eligibleIntentPlayers, name)!.id),
+            provisionalTarget: target === null
+              ? null
+              : findByName(eligibleIntentPlayers, target)!.id,
+          },
+        };
+      };
+      const result = await this.callTool<MingleIntentProviderValue, MingleIntentDomainValue>(
+        prompt,
+        TOOL_MINGLE_INTENT,
+        mappedAgentToolSemanticDecoder(
+          "mingle-intent",
+          decodeMingleIntent,
+          (value, providerSchema) => {
+            const domainSchema = structuredClone(providerSchema) as Record<string, unknown>;
+            const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
+            for (const field of ["seekPlayers", "avoidPlayers"] as const) {
+              properties[field] = {
+                ...properties[field],
+                items: { type: "string", enum: eligibleIntentPlayers.map((player) => player.id) },
+              };
+            }
+            properties.provisionalTarget = {
+              ...properties.provisionalTarget,
+              enum: [null, ...eligibleIntentPlayers.map((player) => player.id)],
+            };
+            const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool mingle-intent");
+            if (exact.status === "invalid") return exact;
+            return canonicalMappedAcceptedValue(
+              value,
+              "Accepted agent tool mingle-intent",
+              (accepted) => {
+                const domain = accepted as MingleIntentDomainValue;
+                return {
+                  status: "valid",
+                  value: {
+                    ...domain,
+                    seekPlayers: domain.seekPlayers.map((id) => eligibleIntentPlayers.find((player) => player.id === id)!.name),
+                    avoidPlayers: domain.avoidPlayers.map((id) => eligibleIntentPlayers.find((player) => player.id === id)!.name),
+                    provisionalTarget: domain.provisionalTarget === null
+                      ? null
+                      : eligibleIntentPlayers.find((player) => player.id === domain.provisionalTarget)!.name,
+                  },
+                };
+              },
+              decodeMingleIntent,
+            );
+          },
+        ),
+        300,
+        sys,
         this.traceOptions(ctx, { action: "mingle-intent", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       const metadata = this.strategicDecisionMetadata(result, "mingle-intent");
       return {
-        seekPlayers: normalizeStringArray(result.seekPlayers),
-        avoidPlayers: normalizeStringArray(result.avoidPlayers),
+        seekPlayers: result.seekPlayers.map((id) => eligibleIntentPlayers.find((player) => player.id === id)!.name),
+        avoidPlayers: result.avoidPlayers.map((id) => eligibleIntentPlayers.find((player) => player.id === id)!.name),
         preferredRoomSize: normalizePreferredRoomSize(result.preferredRoomSize),
         purpose: normalizeRequiredString(result.purpose),
-        provisionalTarget: normalizeNullableString(result.provisionalTarget),
+        provisionalTarget: result.provisionalTarget === null
+          ? null
+          : eligibleIntentPlayers.find((player) => player.id === result.provisionalTarget)!.name,
         noTargetReason: normalizeNullableString(result.noTargetReason),
         openingAsk: normalizeRequiredString(result.openingAsk),
         strategicLens: normalizeStrategicLens(result.strategicLens),
@@ -2131,6 +2722,7 @@ Use the form_mingle_intent tool.`;
         ...metadata,
       };
     } catch (err) {
+      if (!(err instanceof ProviderUnavailableError)) throw err;
       console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=getMingleIntent error="${err instanceof Error ? err.message : err}" fallback=skipped`);
       return null;
     }
@@ -2205,7 +2797,7 @@ ${opportunity.kind === "proposer"
         },
       }
       : ctx;
-    const result = await this.callTool<{
+    type AllianceActionProviderValue = {
         thinking?: string;
         action?: unknown;
         name?: unknown;
@@ -2216,29 +2808,145 @@ ${opportunity.kind === "proposer"
         strategy?: unknown;
         strategyDelta?: unknown;
         reasoningContext?: string;
-      }>(
+      };
+    type AllianceActionDomainValue = Omit<AllianceActionProviderValue, "memberNames" | "allianceHandle"> & {
+      memberIds: UUID[];
+      allianceId?: UUID | null;
+    };
+    const validateAllianceAction = (value: AllianceActionProviderValue): string | null => {
+      const action = normalizeAllianceActionKind(value.action);
+      if (!action) return "action must be legal for this alliance opportunity.";
+      const termsAction = action === "propose" || action === "counter" || action === "amend";
+      const memberNames = normalizeStringArray(value.memberNames);
+      if (termsAction) {
+        const termsIssue = firstSemanticIssue(
+          requireNonEmptyString(value.name, "name"),
+          requireNonEmptyString(value.purpose, "purpose"),
+          requireNullableNonEmptyString(value.timebox, "timebox"),
+          memberNames.length >= 2
+            ? null
+            : "memberNames must contain at least two living players.",
+          requireExactUniquePlayerNames(
+            value.memberNames,
+            ctx.alivePlayers,
+            memberNames.length,
+            "memberNames",
+          ),
+          memberNames.some((name) => normalizeName(name) === normalizeName(this.name))
+            ? null
+            : "memberNames must include the current player.",
+        );
+        if (termsIssue) return termsIssue;
+      } else if (
+        value.name !== null
+        || memberNames.length > 0
+        || value.purpose !== null
+        || value.timebox !== null
+      ) {
+        return `${action} must not include replacement alliance terms.`;
+      }
+      if (opportunity.kind === "proposer") {
+        if (action === "amend") {
+          const handle = normalizeNullableString(value.allianceHandle);
+          if (!allianceHandles.some((entry) => entry.handle === handle)) {
+            return "amend requires one legal request-local allianceHandle.";
+          }
+        } else if (value.allianceHandle !== null) {
+          return `${action} requires allianceHandle=null.`;
+        }
+      }
+      return null;
+    };
+    const decodeAllianceAction = (
+      value: AllianceActionProviderValue,
+    ): StructuredDomainDecodeResult<AllianceActionDomainValue> => {
+      const issue = validateAllianceAction(value);
+      if (issue) return { status: "invalid", message: issue };
+      const memberNames = normalizeStringArray(value.memberNames);
+      const { memberNames: _memberNames, allianceHandle: _allianceHandle, ...rest } = value;
+      const handle = normalizeNullableString(value.allianceHandle);
+      return {
+        status: "valid",
+        value: {
+          ...rest,
+          memberIds: memberNames.map((name) => findByName(ctx.alivePlayers, name)!.id),
+          ...(Object.prototype.hasOwnProperty.call(value, "allianceHandle") && {
+            allianceId: handle === null
+              ? null
+              : allianceHandles.find((entry) => entry.handle === handle)!.allianceId,
+          }),
+        },
+      };
+    };
+    const result = await this.callTool<AllianceActionProviderValue, AllianceActionDomainValue>(
         this.buildUserPrompt(promptContext) + openPrompt,
         allianceActionTool(opportunity, allianceHandles, allowedActions),
+        mappedAgentToolSemanticDecoder(
+          "alliance-action",
+          decodeAllianceAction,
+          (value, providerSchema) => {
+            const domainSchema = structuredClone(providerSchema) as Record<string, unknown>;
+            const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
+            properties.memberIds = {
+              ...properties.memberNames,
+              items: { type: "string", enum: ctx.alivePlayers.map((player) => player.id) },
+            };
+            delete properties.memberNames;
+            if (properties.allianceHandle) {
+              properties.allianceId = {
+                ...properties.allianceHandle,
+                enum: [null, ...allianceHandles.map((entry) => entry.allianceId)],
+              };
+              delete properties.allianceHandle;
+            }
+            const required = domainSchema.required as string[];
+            domainSchema.required = required.map((field) => {
+              if (field === "memberNames") return "memberIds";
+              if (field === "allianceHandle") return "allianceId";
+              return field;
+            });
+            const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool alliance-action");
+            if (exact.status === "invalid") return exact;
+            const domain = value as AllianceActionDomainValue;
+            return canonicalMappedAcceptedValue(
+              value,
+              "Accepted agent tool alliance-action",
+              () => {
+                const { memberIds, allianceId, ...rest } = domain;
+                return {
+                  status: "valid",
+                  value: {
+                    ...rest,
+                    memberNames: memberIds.map((id) => ctx.alivePlayers.find((player) => player.id === id)!.name),
+                    ...(Object.prototype.hasOwnProperty.call(domain, "allianceId") && {
+                      allianceHandle: allianceId === null
+                        ? null
+                        : allianceHandles.find((entry) => entry.allianceId === allianceId)!.handle,
+                    }),
+                  },
+                };
+              },
+              decodeAllianceAction,
+            );
+          },
+        ),
         220,
         sys,
         this.traceOptions(ctx, { action: "alliance-action", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       const metadata = this.strategicDecisionMetadata(result, "alliance-action");
-      const action = normalizeAllianceActionKind(result.action);
+      const action = normalizeAllianceActionKind(result.action)!;
       const base = {
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
       };
-      const invalidPass = (): AllianceAction => {
-        const { decisionId: _decisionId, ...candidate } = base;
-        return {
-          action: "pass",
-          ...candidate,
-          strategyGameplayAccepted: false,
-        };
+      const terms = {
+        name: normalizeNullableString(result.name)!,
+        memberNames: result.memberIds.map((id) => ctx.alivePlayers.find((player) => player.id === id)!.name),
+        purpose: normalizeNullableString(result.purpose)!,
+        timebox: normalizeNullableString(result.timebox),
       };
-
       if (opportunity.kind === "response") {
         if (action === "accept" || action === "decline" || action === "defer" || action === "trial") {
           return {
@@ -2250,8 +2958,6 @@ ${opportunity.kind === "proposer"
         }
 
         if (action === "counter" && opportunity.counterAllowed) {
-          const terms = normalizeAllianceTerms(result);
-          if (!terms) return invalidPass();
           return {
             action,
             lineageId: opportunity.lineageId,
@@ -2260,12 +2966,10 @@ ${opportunity.kind === "proposer"
           };
         }
 
-        return action === "pass" ? { action, ...base } : invalidPass();
+        return { action: "pass", ...base };
       }
 
       if (action === "propose") {
-        const terms = normalizeAllianceTerms(result);
-        if (!terms) return invalidPass();
         return {
           action,
           ...terms,
@@ -2274,10 +2978,7 @@ ${opportunity.kind === "proposer"
       }
 
       if (action === "amend") {
-        const handle = normalizeNullableString(result.allianceHandle);
-        const allianceId = allianceHandles.find((entry) => entry.handle === handle)?.allianceId;
-        const terms = normalizeAllianceTerms(result);
-        if (!allianceId || !terms) return invalidPass();
+        const allianceId = result.allianceId!;
         return {
           action,
           allianceId,
@@ -2286,7 +2987,7 @@ ${opportunity.kind === "proposer"
         };
       }
 
-      return action === "pass" ? { action, ...base } : invalidPass();
+      return { action: "pass", ...base };
   }
 
   async getAllianceHuddleTurn(
@@ -2294,14 +2995,38 @@ ${opportunity.kind === "proposer"
     huddle: AllianceHuddlePromptContext,
     conversationHistory?: Array<{ from: string; text: string }>,
   ): Promise<AllianceHuddleTurnAction> {
+    if (!huddle.memberIds.includes(this.id)) {
+      throw new Error(`Alliance huddle ${huddle.sessionId} does not include current speaker ${this.id}.`);
+    }
+    if (huddle.priorFacts.some((fact) => fact.sessionId !== huddle.sessionId)) {
+      throw new Error(`Alliance huddle ${huddle.sessionId} received an out-of-session prior fact.`);
+    }
     const history = conversationHistory ?? [];
     const historyText = history.length > 0
       ? `\n## Huddle So Far\n${history.map((entry) => `${entry.from}: "${entry.text}"`).join("\n")}\n`
       : "";
+    const priorFactsText = huddle.priorFacts.length > 0
+      ? `\n## Eligible Earlier Typed Facts\n${huddle.priorFacts.map((fact) => `- ${fact.factId}: ${fact.kind} by ${fact.actorPlayerId}`).join("\n")}\n`
+      : "\n## Eligible Earlier Typed Facts\n(none; response atoms are unavailable this turn)\n";
     const selectedFormat = ctx.formatPressure?.selectedFormat;
     const selectedFormatName =
       ctx.formatPressure?.selectedFormatName
       ?? (selectedFormat ? displayNameForFormat(selectedFormat) : null);
+    const legalActionKinds: AllianceHuddleActionKind[] = huddle.window === "pre_vote"
+      ? ["empower_vote"]
+      : huddle.window === "pre_council"
+        ? ["council_vote"]
+        : selectedFormat === "safety_bounce"
+          ? ["format_pointer"]
+          : ["format_ballot"];
+    const legalTargetPlayerIds = huddle.window === "pre_council"
+      ? ctx.councilCandidates ?? []
+      : ctx.alivePlayers
+        .filter((player) => player.id !== this.id)
+        .map((player) => player.id);
+    if (legalTargetPlayerIds.length === 0) {
+      throw new Error(`Alliance huddle ${huddle.sessionId} has no legal target set for ${huddle.window}.`);
+    }
     const windowGoal = huddle.window === "pre_vote"
       ? "coordinate people and the empower vote: who you trust, who is a threat, who should get empower, and what first-ballot heat you can name"
       : selectedFormatName
@@ -2319,15 +3044,18 @@ Timebox: ${huddle.timebox ?? "open-ended"}
 Window: ${huddle.window}
 Goal: ${windowGoal}.
 ${historyText}
+${priorFactsText}
 
 Rules:
 - This huddle is private to the listed alliance members.
 - You get exactly one speaking opportunity in this huddle session.
 - Before a format is locked: name people — empower preference, threats, and likely ballot heat. Do not invent format names or speak in coded format theology ("structured/stable option") when House has not offered a pair yet. Format choice is secondary until the menu exists.
 - After a format is locked: ask for legal commitments under that format (sealed ballot placement, public bounce pointer, tiebreak, apology, reaffirmation, leak, denial, or betrayal explanation). Prefer full format names in speech (e.g. Vote Bomb), not snake_case ids.
-- Your structured commitment is the authoritative tactical record. Propose rather than presume: record dissent, alternatives, and contingencies instead of inventing consensus or another member's promise.
+- Only factAtoms are the authoritative tactical record. The separate message is dialogue and never creates a target, commitment, response, contingency, or consensus.
+- Author proposal and commitment atoms only for yourself. Respond to another member only by referencing an eligible earlier fact ID; a counter must include its complete replacement action and target.
+- An empty factAtoms array is valid when this turn contributes dialogue but no structured fact. Never invent another member's promise from what they said.
 - You cannot change official alliance name, roster, purpose, timebox, or status here; formal mutation happened in the structured post-format alliance window.
-- Keep it to 1-3 sentences. Be specific enough that The House can summarize the ask, plan, promises, dissent, and confidence.
+- Keep dialogue to 1-3 sentences. The House may use it for narrative presentation, but factual continuity comes only from the closed atoms.
 
 Use the alliance_huddle_turn tool.`;
 
@@ -2336,33 +3064,34 @@ Use the alliance_huddle_turn tool.`;
         thinking?: string;
         message?: string | null;
         noReply?: boolean;
-        proposedTarget?: unknown;
-        noTargetReason?: unknown;
-        proposedAction?: unknown;
-        memberCommitments?: unknown;
-        contingency?: unknown;
-        confidence?: unknown;
-        dissent?: unknown;
-        alternativePlan?: unknown;
+        factAtoms: AllianceHuddleFactAtomDraft[];
         strategy?: unknown;
         strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt,
-        TOOL_ALLIANCE_HUDDLE_TURN,
+        allianceHuddleTurnTool({
+          actorPlayerId: this.id,
+          allianceMemberIds: huddle.memberIds,
+          legalActionKinds,
+          legalTargetPlayerIds,
+          priorFacts: huddle.priorFacts,
+        }),
+        agentToolSemanticDecoder("alliance-huddle-turn", (value) =>
+          requireTalkOrPass(value.message, value.noReply, "noReply")
+        ),
         280,
         sys,
         this.traceOptions(ctx, { action: "alliance-huddle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       const metadata = this.strategicDecisionMetadata(result, "alliance-huddle-turn");
       const message = result.noReply ? null : (result.message?.trim() || null);
-      const commitment = normalizeHuddleCommitment(result, ctx);
       return {
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         message,
-        noReply: result.noReply || !message,
-        commitment,
+        noReply: result.noReply,
+        factAtoms: result.factAtoms,
         ...metadata,
       };
     } catch (err) {
@@ -2370,6 +3099,7 @@ Use the alliance_huddle_turn tool.`;
         return {
           message: null,
           noReply: true,
+          factAtoms: [],
           providerAbsence: InfluenceAgent.providerAbsentResponse(err).providerAbsence,
         };
       }
@@ -2412,7 +3142,13 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
 
     try {
       const result = await this.callTool<{ thinking?: string; message?: string; pass?: boolean; reasoningContext?: string }>(
-        prompt, TOOL_SEND_ROOM_MESSAGE, 300, sys,
+        prompt,
+        TOOL_SEND_ROOM_MESSAGE,
+        agentToolSemanticDecoder("room-message", (value) =>
+          requireTalkOrPass(value.message, value.pass, "pass")
+        ),
+        300,
+        sys,
         this.traceOptions(ctx, { action: "room-message", reasoningEffort: "medium" }),
       );
       if (result.pass) return null;
@@ -2444,6 +3180,16 @@ Use the send_room_message tool to send your message${!isFirstMessage ? " or pass
       : "";
     const currentRoom = ctx.currentRoomId != null ? `Room ${ctx.currentRoomId}` : "your current room";
     const availableRooms = Array.from({ length: ctx.roomCount ?? 0 }, (_, index) => index + 1);
+    const legalCoordinationActionKinds: AllianceHuddleActionKind[] = ctx.phase === Phase.FORMAT_MINGLE
+      ? ctx.formatPressure?.selectedFormat === "safety_bounce"
+        ? ["format_pointer"]
+        : ["format_ballot"]
+      : ctx.phase === Phase.POST_VOTE_MINGLE
+        ? ["council_vote"]
+        : ["empower_vote"];
+    const legalCoordinationTargetIds = ctx.alivePlayers
+      .filter((player) => player.id !== this.id)
+      .map((player) => player.id);
     const intent = ctx.mingleIntent;
     const intentText = intent
       ? `
@@ -2490,7 +3236,7 @@ ${mingleProgress}
 Nobody outside your current room can hear this turn. You only know exact identities in your current room; other rooms are visible as counts only.
 ${requiresCoordinationReceipt ? `
 ## Allied Decision Room
-You are with trusted or official alliance member(s) ${coordinationPartners.join(", ")} while a decision is pending. This is not a consensus mandate: make an independent concrete proposal or commitment in TALK, OR record a specific noProposalReason in the structured receipt. A proposal must name a living target only when one is legal and warranted; preserve dissent and alternatives rather than pretending agreement.
+You are with trusted or official alliance member(s) ${coordinationPartners.join(", ")} while a decision is pending. This is not a consensus mandate: author one typed proposal or self-commitment, OR set noProposal=true. Dialogue is presentation and never creates the coordination fact.
 ` : ""}
 
 Choose exactly one of:
@@ -2499,7 +3245,7 @@ Choose exactly one of:
 
 ${movementText}
 ${availableRooms.length > 0 ? `Available GOTO rooms: ${availableRooms.map((roomId) => `Room ${roomId}`).join(", ")}.` : ""}
-For GOTO PLAYER, use gotoPlayerName to request one living player by name. The House resolves that player's next room after all players have acted; if the target also moves, you follow their resolved destination. Do not target yourself. If you set both gotoPlayerName and gotoRoomId, gotoPlayerName wins.
+For GOTO PLAYER, use gotoPlayerName to request one living player by name. The House resolves that player's next room after all players have acted; if the target also moves, you follow their resolved destination. Do not target yourself. Set at most one of gotoPlayerName and gotoRoomId.
 
 Guidance:
 - If you are alone, TALK has no audience; use NO_REPLY and consider moving.
@@ -2514,43 +3260,124 @@ ${spreadInformationGuidance}${movingNoticeGuidance}
 Keep TALK to 1-5 sentences. Use the mingle_turn tool.`;
 
     try {
-      const result = await this.callTool<{
+      type MingleTurnProviderValue = {
         thinking?: string;
-        message?: string | null;
-        noReply?: boolean;
-        gotoRoomId?: number | null;
-        gotoPlayerName?: string | null;
-        proposedTarget?: unknown;
-        proposedAction?: unknown;
-        commitment?: unknown;
-        noProposalReason?: unknown;
+        message: string | null;
+        noReply: boolean;
+        gotoRoomId: number | null;
+        gotoPlayerName: string | null;
+        coordinationFact: {
+          kind: "proposal" | "commitment";
+          actionKind: AllianceHuddleActionKind;
+          targetPlayerId: UUID;
+        } | null;
+        noProposal: boolean;
         strategy?: unknown;
         strategyDelta?: unknown;
         reasoningContext?: string;
-      }>(
-        prompt, TOOL_MINGLE_TURN, 300, sys,
+      };
+      type MingleTurnDomainValue = Omit<MingleTurnProviderValue, "gotoPlayerName"> & {
+        gotoPlayerId: UUID | null;
+      };
+      const eligibleGotoPlayers = ctx.alivePlayers.filter((player) => player.id !== this.id);
+      const decodeMingleTurn = (
+        value: MingleTurnProviderValue,
+      ): StructuredDomainDecodeResult<MingleTurnDomainValue> => {
+        const dialogueIssue = requireTalkOrPass(value.message, value.noReply, "noReply");
+        if (dialogueIssue) return { status: "invalid", message: dialogueIssue };
+        if (value.gotoRoomId !== null && value.gotoPlayerName !== null) {
+          return { status: "invalid", message: "gotoRoomId and gotoPlayerName are mutually exclusive." };
+        }
+        if (
+          value.gotoRoomId !== null
+          && (!Number.isInteger(value.gotoRoomId) || !availableRooms.includes(value.gotoRoomId))
+        ) {
+          return { status: "invalid", message: "gotoRoomId must be null or one available room id." };
+        }
+        if (
+          value.gotoPlayerName !== null
+          && requireExactPlayerName(value.gotoPlayerName, eligibleGotoPlayers, "gotoPlayerName")
+        ) {
+          return { status: "invalid", message: "gotoPlayerName must be null or one living non-self player." };
+        }
+        if (value.coordinationFact && value.noProposal) {
+          return { status: "invalid", message: "A typed coordinationFact requires noProposal=false." };
+        }
+        if (!value.coordinationFact && requiresCoordinationReceipt && !value.noProposal) {
+          return { status: "invalid", message: "An allied decision room requires a typed coordinationFact or noProposal=true." };
+        }
+        const { gotoPlayerName, ...rest } = value;
+        return {
+          status: "valid",
+          value: {
+            ...rest,
+            gotoPlayerId: gotoPlayerName === null
+              ? null
+              : findByName(eligibleGotoPlayers, gotoPlayerName)!.id,
+          },
+        };
+      };
+      const result = await this.callTool<MingleTurnProviderValue, MingleTurnDomainValue>(
+        prompt,
+        mingleTurnTool({
+          legalActionKinds: legalCoordinationActionKinds,
+          legalTargetPlayerIds: legalCoordinationTargetIds,
+        }),
+        mappedAgentToolSemanticDecoder(
+          "mingle-turn",
+          decodeMingleTurn,
+          (value, providerSchema) => {
+            const domainSchema = structuredClone(providerSchema) as Record<string, unknown>;
+            const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
+            properties.gotoPlayerId = {
+              ...properties.gotoPlayerName,
+              enum: [null, ...eligibleGotoPlayers.map((player) => player.id)],
+            };
+            delete properties.gotoPlayerName;
+            const required = domainSchema.required as string[];
+            domainSchema.required = required.map((field) => field === "gotoPlayerName" ? "gotoPlayerId" : field);
+            const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool mingle-turn");
+            if (exact.status === "invalid") return exact;
+            const domain = value as MingleTurnDomainValue;
+            return canonicalMappedAcceptedValue(
+              value,
+              "Accepted agent tool mingle-turn",
+              () => {
+                const { gotoPlayerId, ...rest } = domain;
+                return {
+                  status: "valid",
+                  value: {
+                    ...rest,
+                    gotoPlayerName: gotoPlayerId === null
+                      ? null
+                      : eligibleGotoPlayers.find((player) => player.id === gotoPlayerId)!.name,
+                  },
+                };
+              },
+              decodeMingleTurn,
+            );
+          },
+        ),
+        300,
+        sys,
         this.traceOptions(ctx, { action: "mingle-turn", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       const msg = result.noReply ? null : (result.message?.trim() || null);
-      const gotoRoomId = Number.isInteger(result.gotoRoomId) ? result.gotoRoomId : null;
       const metadata = this.strategicDecisionMetadata(result, "mingle-turn");
-      const requestedTarget = normalizeNullableString(result.proposedTarget);
-      const proposedTarget = normalizeLivingTarget(result.proposedTarget, ctx);
       const coordinationReceipt = {
-        proposedTarget,
-        proposedAction: normalizeNullableString(result.proposedAction),
-        commitment: normalizeNullableString(result.commitment),
-        noProposalReason: proposedTarget
-          ? null
-          : normalizeNullableString(result.noProposalReason)
-            ?? (requestedTarget ? `Rejected invalid target: ${requestedTarget}.` : requiresCoordinationReceipt ? "No concrete proposal recorded for this allied decision room." : null),
+        factKind: result.coordinationFact?.kind ?? null,
+        actionKind: result.coordinationFact?.actionKind ?? null,
+        targetPlayerId: result.coordinationFact?.targetPlayerId ?? null,
+        noProposal: result.noProposal,
       };
       return {
         thinking: result.thinking ?? "",
         message: msg,
-        noReply: result.noReply ?? !msg,
-        gotoRoomId,
-        gotoPlayerName: normalizeNullableString(result.gotoPlayerName),
+        noReply: result.noReply,
+        gotoRoomId: result.gotoRoomId,
+        gotoPlayerName: result.gotoPlayerId === null
+          ? null
+          : eligibleGotoPlayers.find((player) => player.id === result.gotoPlayerId)!.name,
         coordinationReceipt,
         reasoningContext: result.reasoningContext,
         ...metadata,
@@ -2625,7 +3452,14 @@ Use the spread_rumor tool.`;
         strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
-        prompt, TOOL_RUMOR, 180, sys,
+        prompt,
+        TOOL_RUMOR,
+        agentToolSemanticDecoder("rumor", (value) => firstSemanticIssue(
+          requireNonEmptyString(value.message, "message"),
+          requireNonEmptyString(value.strategicLensRationale, "strategicLensRationale"),
+        )),
+        180,
+        sys,
         this.traceOptions(ctx, { action: "rumor", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
       // Strip "The shadows whisper: " prefix if the LLM included it.
@@ -2674,22 +3508,22 @@ Cast your empower vote for this round.
 
 Use the cast_votes tool. The empower field must be exactly one name from the legal list above.`;
 
-    const result = await this.callTool<{ thinking?: string; empower: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
+    const result = await this.callTool<
+      PlayerNameDecision<"empower">,
+      PlayerIdDecision<"empower">
+    >(
         prompt,
         buildCastVotesTool(legalEmpowerNames),
+        playerIdFieldDecoder("vote", "empower", others, (value) =>
+          requireExactPlayerName(value.empower, others, "empower")
+        ),
         100,
         sys,
         this.traceOptions(ctx, { action: "vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
 
-      // Reject self even if the model ignores the enum / legal list.
-      const isSelf =
-        typeof result.empower === "string" &&
-        normalizeName(result.empower) === normalizeName(this.name);
-      const empowerPlayer = isSelf ? undefined : findByName(others, result.empower);
-
-      const empowerTarget = empowerPlayer?.id ?? (result.empower as UUID);
-      const empowerName = empowerPlayer?.name ?? result.empower;
+      const empowerTarget = result.empower;
+      const empowerName = others.find((player) => player.id === empowerTarget)!.name;
 
       const voteEntry = {
         round: ctx.round,
@@ -2697,25 +3531,23 @@ Use the cast_votes tool. The empower field must be exactly one name from the leg
           empower: empowerName,
         },
       };
-      if (empowerPlayer) {
-        const existingRoundIndex = this.memory.roundHistory.findIndex((entry) => entry.round === ctx.round);
-        if (existingRoundIndex >= 0) {
-          this.memory.roundHistory[existingRoundIndex] = {
-            ...this.memory.roundHistory[existingRoundIndex]!,
-            ...voteEntry,
-          };
-        } else {
-          this.memory.roundHistory.push(voteEntry);
-        }
-        this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
+      const existingRoundIndex = this.memory.roundHistory.findIndex((entry) => entry.round === ctx.round);
+      if (existingRoundIndex >= 0) {
+        this.memory.roundHistory[existingRoundIndex] = {
+          ...this.memory.roundHistory[existingRoundIndex]!,
+          ...voteEntry,
+        };
+      } else {
+        this.memory.roundHistory.push(voteEntry);
       }
+      this.persistMemory("vote_history", null, JSON.stringify(voteEntry));
 
       const metadata = this.strategicDecisionMetadata(result, "vote");
       return {
         empowerTarget,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...acceptedActionMetadata(metadata, Boolean(empowerPlayer)),
+        ...metadata,
       };
   }
 
@@ -2746,18 +3578,26 @@ Choose exactly one eligible tied candidate to empower. If this revote is still t
 
 Use the cast_empower_revote tool. Return only an empower target from the eligible tied candidates.`;
 
-    const result = await this.callTool<{ thinking?: string; empower: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
-        prompt, TOOL_EMPOWER_REVOTE, 100, sys,
+    const result = await this.callTool<
+      PlayerNameDecision<"empower">,
+      PlayerIdDecision<"empower">
+    >(
+        prompt,
+        TOOL_EMPOWER_REVOTE,
+        playerIdFieldDecoder("empower-revote", "empower", tiedPlayers, (value) =>
+          requireExactPlayerName(value.empower, tiedPlayers, "empower")
+        ),
+        100,
+        sys,
         this.traceOptions(ctx, { action: "empower-revote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
       );
 
-      const empowerPlayer = findByName(tiedPlayers, result.empower);
       const metadata = this.strategicDecisionMetadata(result, "empower-revote");
       return {
-        empowerTarget: empowerPlayer?.id ?? (result.empower as UUID),
+        empowerTarget: result.empower,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...acceptedActionMetadata(metadata, Boolean(empowerPlayer)),
+        ...metadata,
       };
   }
 
@@ -2774,7 +3614,6 @@ Use the cast_empower_revote tool. Return only an empower target from the eligibl
       .filter((player): player is { id: UUID; name: string } => player !== undefined);
     const lockedNames = request.lockedCandidateIds
       .map((id) => ctx.alivePlayers.find((player) => player.id === id)?.name ?? id);
-    const fallbackIds = eligiblePlayers.slice(0, request.requiredCount).map((player) => player.id);
 
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
     const prompt = this.buildUserPrompt(ctx) + `
@@ -2791,25 +3630,25 @@ Choose exactly ${request.requiredCount} player${request.requiredCount === 1 ? ""
 
 Use the select_council_candidates tool.`;
 
-    const result = await this.callTool<{ thinking?: string; candidates: unknown; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
-        prompt, TOOL_CANDIDATE_SELECTION, 120, sys,
+    const result = await this.callTool<
+      PlayerNamesDecision<"candidates">,
+      PlayerIdsDecision<"candidates">
+    >(
+        prompt,
+        TOOL_CANDIDATE_SELECTION,
+        playerIdsFieldDecoder("candidate-selection", "candidates", eligiblePlayers, request.requiredCount, (value) =>
+          requireExactUniquePlayerNames(
+            value.candidates,
+            eligiblePlayers,
+            request.requiredCount,
+            "candidates",
+          )
+        ),
+        120,
+        sys,
         this.traceOptions(ctx, { action: "candidate-selection", reasoningEffort: "medium" }),
       );
-      const selectedCandidateIds: UUID[] = [];
-      for (const name of normalizeStringArray(result.candidates)) {
-        const player = findByName(eligiblePlayers, name);
-        if (player && !selectedCandidateIds.includes(player.id)) {
-          selectedCandidateIds.push(player.id);
-        }
-        if (selectedCandidateIds.length === request.requiredCount) break;
-      }
-      for (const id of fallbackIds) {
-        if (selectedCandidateIds.length === request.requiredCount) break;
-        if (!selectedCandidateIds.includes(id)) selectedCandidateIds.push(id);
-      }
-      if (selectedCandidateIds.length < request.requiredCount) {
-        console.warn(`[vote-fallback] agent="${this.name}" method=getCandidateSelection insufficient eligible choices required=${request.requiredCount} selected=${selectedCandidateIds.length}`);
-      }
+      const selectedCandidateIds = result.candidates;
       const metadata = this.strategicDecisionMetadata(result, "candidate-selection");
       return {
         selectedCandidateIds,
@@ -2945,58 +3784,123 @@ Anti-repeat power guidance:
 Before using the tool, decide what future debt or backlash your action creates. Prefer pass or protect when they create a callable ally, a sharper council fight, or a betrayal hook for later.
 Use the use_power tool to declare your final hidden action.`;
 
-    const result = await this.callTool<{ thinking?: string; action: string; target: string; shieldPullUpCandidates?: unknown; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
-        prompt, TOOL_POWER_ACTION, 100, sys,
-        this.traceOptions(ctx, { action: "power", reasoningEffort: "medium" }),
-      );
-
-      const targetPlayer = findByName(ctx.alivePlayers, result.target);
-
-      const validAction = result.action as PowerAction["action"];
-      const targetId = targetPlayer?.id ?? (result.target as UUID);
-      const replacementRequest = validAction === "protect" ? shieldReplacementByProtectedId.get(targetId) : undefined;
-      let shieldPullUpCandidateIds: UUID[] = [];
-      let shieldSelectionRepaired = false;
-      if (replacementRequest && replacementRequest.requiredCount > 0) {
+    type PowerProviderValue = AgentToolStrategyFields & {
+      action: string;
+      target: string;
+      shieldPullUpCandidates?: unknown;
+    };
+    type PowerDomainValue = AgentToolStrategyFields & {
+      action: string;
+      targetId: UUID;
+      shieldPullUpCandidateIds: UUID[];
+    };
+    const decodePower = (
+      value: PowerProviderValue,
+    ): StructuredDomainDecodeResult<PowerDomainValue> => {
+      const action = value.action as PowerAction["action"];
+      const targetPlayer = findByName(ctx.alivePlayers, value.target);
+      if (!targetPlayer) return { status: "invalid", message: "target must name one living player." };
+      if ((action === "pass" || action === "eliminate") && !candidates.includes(targetPlayer.id)) {
+        return { status: "invalid", message: `${action} target must be one current Council candidate.` };
+      }
+      const replacementRequest = action === "protect"
+        ? shieldReplacementByProtectedId.get(targetPlayer.id)
+        : undefined;
+      const requestedNames = normalizeStringArray(value.shieldPullUpCandidates);
+      if (!replacementRequest || replacementRequest.requiredCount === 0) {
+        if (requestedNames.length !== 0) {
+          return { status: "invalid", message: "shieldPullUpCandidates must be empty when no replacement choice is required." };
+        }
+      } else {
         const eligiblePlayers = replacementRequest.eligibleCandidateIds
           .map((id) => ctx.alivePlayers.find((player) => player.id === id))
           .filter((player): player is { id: UUID; name: string } => player !== undefined);
-        const selectedCandidateIds: UUID[] = [];
-        let invalidSelection = false;
-        for (const name of normalizeStringArray(result.shieldPullUpCandidates)) {
-          const player = findByName(eligiblePlayers, name);
-          if (!player || selectedCandidateIds.includes(player.id)) {
-            invalidSelection = true;
-            continue;
-          }
-          selectedCandidateIds.push(player.id);
-          if (selectedCandidateIds.length === replacementRequest.requiredCount) break;
-        }
-        const missingSelection = selectedCandidateIds.length < replacementRequest.requiredCount;
-        shieldPullUpCandidateIds = selectedCandidateIds;
-        if (invalidSelection || missingSelection) {
-          shieldSelectionRepaired = true;
-          console.warn(`[vote-fallback] agent="${this.name}" method=getPowerAction shieldPullUpCandidates invalidOrMissing required=${replacementRequest.requiredCount} selected=${selectedCandidateIds.length} fallback=[${shieldPullUpCandidateIds.join(",")}]`);
-        }
+        const issue = requireExactUniquePlayerNames(
+          value.shieldPullUpCandidates,
+          eligiblePlayers,
+          replacementRequest.requiredCount,
+          "shieldPullUpCandidates",
+        );
+        if (issue) return { status: "invalid", message: issue };
       }
+      const { target: _target, shieldPullUpCandidates: _shieldPullUpCandidates, ...rest } = value;
+      return {
+        status: "valid",
+        value: {
+          ...rest,
+          targetId: targetPlayer.id,
+          shieldPullUpCandidateIds: requestedNames.map((name) => findByName(ctx.alivePlayers, name)!.id),
+        },
+      };
+    };
+    const result = await this.callTool<PowerProviderValue, PowerDomainValue>(
+        prompt,
+        TOOL_POWER_ACTION,
+        mappedAgentToolSemanticDecoder(
+          "power",
+          decodePower,
+          (value, providerSchema) => {
+            const domainSchema = schemaWithPlayerIdField(providerSchema, "target", ctx.alivePlayers);
+            const properties = domainSchema.properties as Record<string, Record<string, unknown>>;
+            properties.targetId = properties.target!;
+            delete properties.target;
+            properties.shieldPullUpCandidateIds = {
+              ...properties.shieldPullUpCandidates,
+              items: { type: "string", enum: ctx.alivePlayers.map((player) => player.id) },
+            };
+            delete properties.shieldPullUpCandidates;
+            const required = domainSchema.required as string[];
+            domainSchema.required = required.map((field) => {
+              if (field === "target") return "targetId";
+              if (field === "shieldPullUpCandidates") return "shieldPullUpCandidateIds";
+              return field;
+            });
+            const exact = validateExactStructuredValue(domainSchema, value, "Accepted agent tool power");
+            if (exact.status === "invalid") return exact;
+            const domain = value as PowerDomainValue;
+            const targetPlayer = ctx.alivePlayers.find((player) => player.id === domain.targetId);
+            if (!targetPlayer) return { status: "invalid", message: "targetId references an ineligible player." };
+            return canonicalMappedAcceptedValue(
+              value,
+              "Accepted agent tool power",
+              () => {
+                const { targetId: _targetId, shieldPullUpCandidateIds: _ids, ...rest } = domain;
+                return {
+                  status: "valid",
+                  value: {
+                    ...rest,
+                    target: targetPlayer.name,
+                    shieldPullUpCandidates: domain.shieldPullUpCandidateIds.map((id) =>
+                      ctx.alivePlayers.find((player) => player.id === id)!.name
+                    ),
+                  },
+                };
+              },
+              decodePower,
+            );
+          },
+        ),
+        100,
+        sys,
+        this.traceOptions(ctx, { action: "power", reasoningEffort: "medium" }),
+      );
+
+      const validAction = result.action as PowerAction["action"];
+      const targetId = result.targetId;
+      const targetPlayer = ctx.alivePlayers.find((player) => player.id === targetId)!;
+      const shieldPullUpCandidateIds = result.shieldPullUpCandidateIds;
       const metadata = this.strategicDecisionMetadata(result, "power");
-      const directModelChoice =
-        validAction === result.action
-        && (validAction === "pass" || Boolean(targetPlayer))
-        && !shieldSelectionRepaired;
-      if (directModelChoice) {
-        this.memory.powerActions.push({
-          round: ctx.round,
-          action: validAction,
-          target: targetPlayer?.name ?? candidateNames[0] ?? "unknown",
-        });
-      }
+      this.memory.powerActions.push({
+        round: ctx.round,
+        action: validAction,
+        target: targetPlayer.name,
+      });
       return {
         action: validAction,
-        target: targetPlayer?.id ?? (result.target as UUID),
+        target: targetId,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...acceptedActionMetadata(metadata, directModelChoice),
+        ...metadata,
         ...(shieldPullUpCandidateIds.length > 0 ? { shieldPullUpCandidateIds } : {}),
       };
   }
@@ -3024,20 +3928,29 @@ Who should be eliminated? Consider your alliances, threats, and long-term strate
 
 Use the council_vote tool to cast your vote.`;
 
-    const result = await this.callTool<{ thinking?: string; eliminate: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(prompt, TOOL_COUNCIL_VOTE, 80, sys, this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }));
+    const councilCandidates = [
+      { id: c1, name: c1Name },
+      { id: c2, name: c2Name },
+    ];
+    const result = await this.callTool<
+      PlayerNameDecision<"eliminate">,
+      PlayerIdDecision<"eliminate">
+    >(
+      prompt,
+      TOOL_COUNCIL_VOTE,
+      playerIdFieldDecoder("council-vote", "eliminate", councilCandidates, (value) =>
+        requireExactPlayerName(value.eliminate, councilCandidates, "eliminate")
+      ),
+      80,
+      sys,
+      this.traceOptions(ctx, { action: "council-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low" }),
+    );
       const metadata = this.strategicDecisionMetadata(result, "council-vote");
-      const eliminationName = typeof result.eliminate === "string" ? result.eliminate : "";
-      const target = normalizeName(eliminationName) === normalizeName(c1Name) ? c1
-        : normalizeName(eliminationName) === normalizeName(c2Name) ? c2
-        : undefined;
-      if (target) {
-        return { target, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
-      }
       return {
-        target: result.eliminate as UUID,
+        target: result.eliminate,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...acceptedActionMetadata(metadata, false),
+        ...metadata,
       };
   }
 
@@ -3068,13 +3981,18 @@ Use the pick_round_format tool with exactly one offered format id.`;
 
       const result = await this.callTool<{
         thinking?: string;
-        formatId?: unknown;
+        formatId: LaunchFormatId;
         strategy?: unknown;
         strategyDelta?: unknown;
         reasoningContext?: string;
       }>(
         prompt,
         buildPickRoundFormatTool(offeredFormats),
+        agentToolSemanticDecoder("format-pick", (value) =>
+          typeof value.formatId === "string" && pickFormatFromMenu(offeredFormats, value.formatId)
+            ? null
+            : "formatId must be one currently offered format."
+        ),
         120,
         sys,
         this.traceOptions(ctx, {
@@ -3084,15 +4002,13 @@ Use the pick_round_format tool with exactly one offered format id.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result, "format-pick");
-      const selected = typeof result.formatId === "string"
-        ? pickFormatFromMenu(offeredFormats, result.formatId)
-        : null;
+      const selected = pickFormatFromMenu(offeredFormats, result.formatId)!;
       return {
-        formatId: selected ?? String(result.formatId),
+        formatId: selected,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        ...formatDecisionProvenance(Boolean(selected), "invalid_format_choice"),
+        ...formatDecisionProvenance(true, "invalid_format_choice"),
       };
   }
 
@@ -3111,16 +4027,15 @@ Legal targets: ${legalTargets.map((player) => player.name).join(", ")}
 Use the save_or_eliminate_ballot tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-      const result = await this.callTool<{
-        thinking?: string;
-        polarity?: unknown;
-        target?: unknown;
-        strategy?: unknown;
-        strategyDelta?: unknown;
-        reasoningContext?: string;
-      }>(
+      const result = await this.callTool<
+        PlayerNameDecision<"target", { polarity: "save" | "eliminate" }>,
+        PlayerIdDecision<"target", { polarity: "save" | "eliminate" }>
+      >(
         prompt,
         buildSaveOrEliminateBallotTool(legalTargets.map((player) => player.name)),
+        playerIdFieldDecoder("format-save-or-eliminate-ballot", "target", legalTargets, (value) =>
+          requireExactPlayerName(value.target, legalTargets, "target")
+        ),
         120,
         sys,
         this.traceOptions(ctx, {
@@ -3130,21 +4045,13 @@ Use the save_or_eliminate_ballot tool.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result, "format-save-or-eliminate-ballot");
-      const polarity = result.polarity === "save" || result.polarity === "eliminate"
-        ? result.polarity
-        : null;
-      const target = findByName(
-        legalTargets,
-        typeof result.target === "string" ? result.target : undefined,
-      );
-      const accepted = Boolean(polarity && target);
       return {
-        polarity: polarity ?? (String(result.polarity) as "save" | "eliminate"),
-        targetId: target?.id ?? (result.target as UUID),
+        polarity: result.polarity,
+        targetId: result.target,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        ...formatDecisionProvenance(accepted, "invalid_save_or_eliminate_ballot"),
+        ...formatDecisionProvenance(true, "invalid_save_or_eliminate_ballot"),
       };
   }
 
@@ -3161,20 +4068,67 @@ Use the save_or_eliminate_ballot tool.`;
       alivePlayers: ctx.alivePlayers,
       basePrompt: this.buildUserPrompt(ctx),
       ruleSheet: activeFormatRule(ctx, formatId),
-      callTool: ({ prompt, tool, traceAction }) => this.callTool<SealedElimModelOutput>(
-        prompt,
-        tool,
-        120,
-        sys,
-        this.traceOptions(ctx, {
-          action: traceAction,
-          reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
-          reasoningEffort: "low",
-        }),
-      ),
-      onToolFailure: (error, fallbackTarget) => {
-        const method = requireSealedElimRegistration(formatId).decision.agentMethod;
-        console.warn(`[agent-fallback] agent="${this.name}" round=${ctx.round} method=${method} error="${error instanceof Error ? error.message : error}" fallback="${fallbackTarget.name}"`);
+      callTool: ({ prompt, tool, traceAction }) => {
+        const legalTargets = formatPlayersForIds(ctx, aliveIds, { excludeSelf: true });
+        return this.callTool<
+          PlayerNameDecision<"target">,
+          SealedElimModelOutput
+        >(
+          prompt,
+          tool,
+          mappedAgentToolSemanticDecoder(
+            traceAction,
+            (value) => {
+              const issue = requireExactPlayerName(value.target, legalTargets, "target");
+              if (issue) return { status: "invalid", message: issue };
+              const { target: _target, ...rest } = value;
+              return {
+                status: "valid",
+                value: { ...rest, targetId: findByName(legalTargets, value.target)!.id },
+              };
+            },
+            (value, providerSchema) => {
+              const domainSchema = schemaWithPlayerIdField(providerSchema, "target", legalTargets);
+              const properties = domainSchema.properties as Record<string, unknown>;
+              properties.targetId = properties.target;
+              delete properties.target;
+              const required = domainSchema.required as string[];
+              domainSchema.required = required.map((field) => field === "target" ? "targetId" : field);
+              const exact = validateExactStructuredValue(domainSchema, value, `Accepted agent tool ${traceAction}`);
+              if (exact.status === "invalid") return exact;
+              const record = value as unknown as SealedElimModelOutput;
+              const player = legalTargets.find((candidate) => candidate.id === record.targetId);
+              if (!player) return { status: "invalid", message: "targetId references an ineligible player." };
+              return canonicalMappedAcceptedValue(
+                value,
+                `Accepted agent tool ${traceAction}`,
+                () => {
+                  const { targetId: _targetId, ...rest } = record;
+                  return {
+                    status: "valid",
+                    value: { ...rest, target: player.name } as PlayerNameDecision<"target">,
+                  };
+                },
+                (provider) => {
+                  const issue = requireExactPlayerName(provider.target, legalTargets, "target");
+                  if (issue) return { status: "invalid", message: issue };
+                  const { target: _target, ...rest } = provider;
+                  return {
+                    status: "valid",
+                    value: { ...rest, targetId: findByName(legalTargets, provider.target)!.id },
+                  };
+                },
+              );
+            },
+          ),
+          120,
+          sys,
+          this.traceOptions(ctx, {
+            action: traceAction,
+            reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW,
+            reasoningEffort: "low",
+          }),
+        );
       },
     });
   }
@@ -3244,13 +4198,10 @@ Point to exactly one unclassified player based on that exact consequence.
 Use the bounce_pointer tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-      const result = await this.callTool<{
-        thinking?: string;
-        target?: unknown;
-        strategy?: unknown;
-        strategyDelta?: unknown;
-        reasoningContext?: string;
-      }>(
+      const result = await this.callTool<
+        PlayerNameDecision<"target">,
+        PlayerIdDecision<"target">
+      >(
         prompt,
         buildFormatTargetTool({
           name: "bounce_pointer",
@@ -3258,6 +4209,9 @@ Use the bounce_pointer tool.`;
           targetDescription: `One name from the exact unclassified target list; that player will become ${targetStatus}.`,
           legalTargetNames: legalTargets.map((player) => player.name),
         }),
+        playerIdFieldDecoder("bounce-pointer", "target", legalTargets, (value) =>
+          requireExactPlayerName(value.target, legalTargets, "target")
+        ),
         120,
         sys,
         this.traceOptions(ctx, {
@@ -3267,16 +4221,12 @@ Use the bounce_pointer tool.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result, "bounce-pointer");
-      const target = findByName(
-        legalTargets,
-        typeof result.target === "string" ? result.target : undefined,
-      );
       return {
-        targetId: target?.id ?? (result.target as UUID),
+        targetId: result.target,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        ...formatDecisionProvenance(Boolean(target), "invalid_bounce_pointer"),
+        ...formatDecisionProvenance(true, "invalid_bounce_pointer"),
       };
   }
 
@@ -3295,13 +4245,10 @@ Legal vulnerable targets: ${legalTargets.map((player) => player.name).join(", ")
 Use the safety_bounce_vote tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-      const result = await this.callTool<{
-        thinking?: string;
-        target?: unknown;
-        strategy?: unknown;
-        strategyDelta?: unknown;
-        reasoningContext?: string;
-      }>(
+      const result = await this.callTool<
+        PlayerNameDecision<"target">,
+        PlayerIdDecision<"target">
+      >(
         prompt,
         buildFormatTargetTool({
           name: "safety_bounce_vote",
@@ -3309,6 +4256,9 @@ Use the safety_bounce_vote tool.`;
           targetDescription: "One name from the exact vulnerable target list.",
           legalTargetNames: legalTargets.map((player) => player.name),
         }),
+        playerIdFieldDecoder("format-safety-bounce-vote", "target", legalTargets, (value) =>
+          requireExactPlayerName(value.target, legalTargets, "target")
+        ),
         120,
         sys,
         this.traceOptions(ctx, {
@@ -3318,16 +4268,12 @@ Use the safety_bounce_vote tool.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result, "format-safety-bounce-vote");
-      const target = findByName(
-        legalTargets,
-        typeof result.target === "string" ? result.target : undefined,
-      );
       return {
-        targetId: target?.id ?? (result.target as UUID),
+        targetId: result.target,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        ...formatDecisionProvenance(Boolean(target), "invalid_safety_bounce_target"),
+        ...formatDecisionProvenance(true, "invalid_safety_bounce_target"),
       };
   }
 
@@ -3346,13 +4292,10 @@ Legal tied targets: ${legalTargets.map((player) => player.name).join(", ")}
 Use the format_tiebreak tool.`;
     const sys = this.buildSystemPrompt(ctx.phase, ctx.round);
 
-      const result = await this.callTool<{
-        thinking?: string;
-        target?: unknown;
-        strategy?: unknown;
-        strategyDelta?: unknown;
-        reasoningContext?: string;
-      }>(
+      const result = await this.callTool<
+        PlayerNameDecision<"target">,
+        PlayerIdDecision<"target">
+      >(
         prompt,
         buildFormatTargetTool({
           name: "format_tiebreak",
@@ -3360,6 +4303,9 @@ Use the format_tiebreak tool.`;
           targetDescription: "One name from the exact tied target list.",
           legalTargetNames: legalTargets.map((player) => player.name),
         }),
+        playerIdFieldDecoder("format-tiebreak", "target", legalTargets, (value) =>
+          requireExactPlayerName(value.target, legalTargets, "target")
+        ),
         120,
         sys,
         this.traceOptions(ctx, {
@@ -3369,16 +4315,12 @@ Use the format_tiebreak tool.`;
         }),
       );
       const metadata = this.strategicDecisionMetadata(result, "format-tiebreak");
-      const target = findByName(
-        legalTargets,
-        typeof result.target === "string" ? result.target : undefined,
-      );
       return {
-        targetId: target?.id ?? (result.target as UUID),
+        targetId: result.target,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
         ...metadata,
-        ...formatDecisionProvenance(Boolean(target), "invalid_format_tiebreak_target"),
+        ...formatDecisionProvenance(true, "invalid_format_tiebreak_target"),
       };
   }
 
@@ -3436,6 +4378,9 @@ Use the elimination_message tool. Keep the public message to 1-2 sentences.`;
       }>(
         prompt,
         TOOL_ELIMINATION_MESSAGE,
+        agentToolSemanticDecoder("elimination-message", (value) =>
+          requireNonEmptyString(value.message, "message")
+        ),
         120,
         sys,
         this.traceOptions(ctx, {
@@ -3542,15 +4487,25 @@ Who should be eliminated? Consider everything that has happened in the game.
 Use the elimination_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; eliminate: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(prompt, TOOL_ELIMINATION_VOTE, 80, sys, this.traceOptions(ctx, { action: traceAction, reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
+      const result = await this.callTool<
+        PlayerNameDecision<"eliminate">,
+        PlayerIdDecision<"eliminate">
+      >(
+        prompt,
+        TOOL_ELIMINATION_VOTE,
+        playerIdFieldDecoder(traceAction, "eliminate", others, (value) =>
+          requireExactPlayerName(value.eliminate, others, "eliminate")
+        ),
+        80,
+        sys,
+        this.traceOptions(ctx, { action: traceAction, reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }),
+      );
       const metadata = this.strategicDecisionMetadata(result, traceAction);
-      const target = findByName(others, result.eliminate);
-      if (target) return { target: target.id, thinking: result.thinking, reasoningContext: result.reasoningContext, ...metadata };
       return {
-        target: result.eliminate as UUID,
+        target: result.eliminate,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...acceptedActionMetadata(metadata, false),
+        ...metadata,
       };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
@@ -3576,18 +4531,27 @@ Available players: ${others.map((p) => p.name).join(", ")}
 Use the make_accusation tool to submit your accusation.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; target: string; accusation: string; strategy?: unknown; strategyDelta?: unknown; reasoningContext?: string }>(
-        prompt, TOOL_MAKE_ACCUSATION, 200, sys,
+      const result = await this.callTool<
+        PlayerNameDecision<"target", { accusation: string }>,
+        PlayerIdDecision<"target", { accusation: string }>
+      >(
+        prompt,
+        TOOL_MAKE_ACCUSATION,
+        playerIdFieldDecoder("accusation", "target", others, (value) => firstSemanticIssue(
+          requireExactPlayerName(value.target, others, "target"),
+          requireNonEmptyString(value.accusation, "accusation"),
+        )),
+        200,
+        sys,
         this.traceOptions(ctx, { action: "accusation", reasoningEffort: "medium", signal: options?.signal }),
       );
-      const target = findByName(others, result.target);
       const metadata = this.strategicDecisionMetadata(result, "accusation");
       return {
-        targetId: target?.id ?? (result.target as UUID),
-        text: typeof result.accusation === "string" ? result.accusation : "",
+        targetId: result.target,
+        text: result.accusation.trim(),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...acceptedActionMetadata(metadata, Boolean(target)),
+        ...metadata,
       };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
@@ -3650,14 +4614,23 @@ If prior Judgment questions are listed, ask from a distinct angle rather than re
 Use the ask_jury_question tool to submit your question.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; target: string; question: string; reasoningContext?: string }>(
-        prompt, TOOL_ASK_JURY_QUESTION, 4096, sys,
+      const result = await this.callTool<
+        PlayerNameDecision<"target", { question: string }>,
+        PlayerIdDecision<"target", { question: string }>
+      >(
+        prompt,
+        TOOL_ASK_JURY_QUESTION,
+        playerIdFieldDecoder("jury-question", "target", finalists, (value) => firstSemanticIssue(
+          requireExactPlayerName(value.target, finalists, "target"),
+          requireNonEmptyString(value.question, "question"),
+        )),
+        4096,
+        sys,
         this.traceOptions(ctx, { action: "jury-question", reasoningEffort: "medium", signal: options?.signal }),
       );
-      const target = findByName(finalists, result.target);
       return {
-        targetFinalistId: target?.id ?? (result.target as UUID),
-        question: typeof result.question === "string" ? result.question : "",
+        targetFinalistId: result.target,
+        question: result.question.trim(),
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
       };
@@ -3730,14 +4703,25 @@ Consider their gameplay, their answers to the jury, and the full arc of the game
 Use the jury_vote tool to cast your vote.`;
 
     try {
-      const result = await this.callTool<{ thinking?: string; winner: string; reasoningContext?: string }>(prompt, TOOL_JURY_VOTE, 80, sys, this.traceOptions(ctx, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }));
+      const result = await this.callTool<
+        PlayerNameDecision<"winner">,
+        PlayerIdDecision<"winner">
+      >(
+        prompt,
+        TOOL_JURY_VOTE,
+        playerIdFieldDecoder("jury-vote", "winner", finalists, (value) =>
+          requireExactPlayerName(value.winner, finalists, "winner")
+        ),
+        80,
+        sys,
+        this.traceOptions(ctx, { action: "jury-vote", reasoningOverhead: InfluenceAgent.REASONING_OVERHEAD_LOW, reasoningEffort: "low", signal: options?.signal }),
+      );
       const metadata = this.strategicDecisionMetadata(result, "jury-vote");
-      const target = findByName(finalists, result.winner);
       return {
-        target: target?.id ?? (result.winner as UUID),
+        target: result.winner,
         thinking: result.thinking,
         reasoningContext: result.reasoningContext,
-        ...acceptedActionMetadata(metadata, Boolean(target)),
+        ...metadata,
       };
     } catch (err) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(err)) {
@@ -4392,9 +5376,14 @@ This epoch predates the newest canonical elimination. It is evidence to reconcil
   private buildAllianceContextSection(ctx: PhaseContext): string {
     const allianceContext = ctx.allianceContext;
     if (!allianceContext) return "";
+    const playerName = (playerId: UUID): string =>
+      this.allPlayers.find((player) => player.id === playerId)?.name ?? playerId;
     const active = allianceContext.activeAlliances.map((alliance) => {
       const outcomes = alliance.huddleOutcomes.length > 0
-        ? ` outcomes=${alliance.huddleOutcomes.map((outcome) => `R${outcome.round}: ${outcome.plan}`).join(" | ")}`
+        ? ` outcomes=${alliance.huddleOutcomes.flatMap((outcome) =>
+          formatAllianceHuddleFacts(outcome.facts, playerName)
+            .map((fact) => `R${outcome.round}: ${fact}`)
+        ).join(" | ")}`
         : "";
       return `- ${alliance.name}; status=${alliance.status}; members=${alliance.memberNames.join(", ")}; purpose=${alliance.purpose}; timebox=${alliance.timebox ?? "none"}${outcomes}`;
     });
@@ -4429,7 +5418,10 @@ ${history.length > 0 ? `\nProposal history:\n${history.join("\n")}` : ""}`;
     // Protected huddle outcomes from the plan when alliance context did not already expand them.
     const planHuddleSection =
       !ctx.allianceContext || ctx.allianceContext.activeAlliances.every((a) => a.huddleOutcomes.length === 0)
-        ? renderProtectedHuddleOutcomesSection(recallPlan.protected.huddleOutcomes)
+        ? renderProtectedHuddleOutcomesSection(
+          recallPlan.protected.huddleOutcomes,
+          (playerId) => this.allPlayers.find((player) => player.id === playerId)?.name ?? playerId,
+        )
         : "";
 
     // Privacy-safe room context: global counts only, plus identities in the current room.
@@ -4664,6 +5656,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
   private withStrategyCandidateSchema(
     schema: Record<string, unknown>,
     options?: LlmCallOptions,
+    requireStrategy = true,
   ): Record<string, unknown> {
     const fragment = this.strategySchemaFragment(options);
     const currentProperties = schema.properties && typeof schema.properties === "object"
@@ -4683,7 +5676,10 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         ...properties,
         ...(fragment?.properties ?? {}),
       },
-      required: [...required, ...(fragment?.required ?? [])],
+      required: [
+        ...required,
+        ...(requireStrategy ? fragment?.required ?? [] : []),
+      ],
     };
   }
 
@@ -4720,56 +5716,33 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     return options?.reasoningSummary ?? this.openAIReasoningSummary;
   }
 
-  private semanticInvocation(
+  private semanticInvocation<TStructuredValue = unknown>(
     prompt: string,
     effectiveMaxTokens: number,
-    result: ModelInvocation["result"],
+    result: ModelInvocationResult<TStructuredValue>,
     systemPrompt?: string,
     options?: LlmCallOptions,
     temperature = this.temperature,
-  ): ModelInvocation {
+  ): ModelInvocation<TStructuredValue> {
     const messages: ModelInvocationMessage[] = [];
     if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
     messages.push({ role: "user", content: prompt });
-    const effort = options?.reasoningEffort;
-    const summary = this.resolvedReasoningSummaryMode(options);
-    return {
+    return this.semanticInvocationWithMessages(
       messages,
+      effectiveMaxTokens,
       result,
-      outputTokenLimit: effectiveMaxTokens,
-      ...(effort || summary ? {
-        reasoning: {
-          ...(effort && { effort }),
-          ...(summary && { summary }),
-        },
-      } : {}),
+      options,
       temperature,
-      // Adapters that support cache routing may consume this semantic hint.
-      promptCache: {
-        key: this.responsePromptCacheKey(),
-        ttl: "30m",
-      },
-    };
+    );
   }
 
-  private static modelTool(tool: ChatCompletionTool): ModelInvocationTool {
-    return {
-      name: tool.function.name,
-      ...(tool.function.description && { description: tool.function.description }),
-      parameters: (tool.function.parameters ?? {}) as Record<string, unknown>,
-      ...(typeof tool.function.strict === "boolean" && {
-        strict: tool.function.strict,
-      }),
-    };
-  }
-
-  private semanticInvocationWithMessages(
+  private semanticInvocationWithMessages<TStructuredValue = unknown>(
     messages: readonly ModelInvocationMessage[],
     effectiveMaxTokens: number,
-    result: ModelInvocation["result"],
+    result: ModelInvocationResult<TStructuredValue>,
     options?: LlmCallOptions,
     temperature = this.temperature,
-  ): ModelInvocation {
+  ): ModelInvocation<TStructuredValue> {
     const effort = options?.reasoningEffort;
     const summary = this.resolvedReasoningSummaryMode(options);
     return {
@@ -4796,67 +5769,6 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       .update(`${lineage}:${this.id}`)
       .digest("hex")
       .slice(0, 24)}`;
-  }
-
-  private static extractFirstJsonObject(text: string): string | null {
-    const start = text.indexOf("{");
-    if (start === -1) return null;
-
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-
-    for (let i = start; i < text.length; i++) {
-      const char = text[i];
-
-      if (escaped) {
-        escaped = false;
-        continue;
-      }
-      if (char === "\\") {
-        escaped = true;
-        continue;
-      }
-      if (char === "\"") {
-        inString = !inString;
-        continue;
-      }
-      if (inString) continue;
-
-      if (char === "{") depth++;
-      if (char === "}") depth--;
-      if (depth === 0) return text.slice(start, i + 1);
-    }
-
-    return null;
-  }
-
-  private parseToolArgsFromContent<T>(content: string | null | undefined, toolName: string): T | null {
-    const text = content?.trim();
-    if (!text) return null;
-
-    const fencedJson = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
-    const extractedJson = InfluenceAgent.extractFirstJsonObject(text);
-    const candidates = [text, fencedJson, extractedJson].filter((candidate): candidate is string => Boolean(candidate));
-
-    for (const candidate of candidates) {
-      try {
-        const parsed = JSON.parse(candidate) as unknown;
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) continue;
-
-        const record = parsed as Record<string, unknown>;
-        const wrappedArgs = record.arguments ?? record[toolName];
-        if (wrappedArgs && typeof wrappedArgs === "object" && !Array.isArray(wrappedArgs)) {
-          return wrappedArgs as T;
-        }
-
-        return record as T;
-      } catch {
-        // Try the next candidate; models sometimes wrap JSON in markdown or prose.
-      }
-    }
-
-    return null;
   }
 
   private usesLocalStructuredCompatibility(): boolean {
@@ -4912,39 +5824,71 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     };
   }
 
-  private static parseAgentResponseContent(content: string): AgentResponse | null {
-    const candidates = [
-      content,
-      InfluenceAgent.extractFirstJsonObject(content),
-    ].filter((candidate): candidate is string => Boolean(candidate));
-
-    for (const candidate of candidates) {
-      try {
-        const parsed = JSON.parse(candidate) as {
-          thinking?: unknown;
-          message?: unknown;
-          strategy?: unknown;
-          strategyDelta?: unknown;
-        };
-        if (typeof parsed.message === "string" && parsed.message.trim()) {
-          const metadata = normalizeStrategicDecisionMetadata(parsed as Record<string, unknown>);
-          return {
-            thinking: typeof parsed.thinking === "string" ? parsed.thinking : "",
-            message: parsed.message.trim(),
-            ...metadata,
-          };
-        }
-      } catch {
-        // Try the next candidate.
-      }
+  private decodeExactAgentResponsePayload(
+    value: unknown,
+    options?: LlmCallOptions,
+  ): { status: "valid"; value: AgentResponse } | { status: "invalid"; message: string } {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { status: "invalid", message: "AgentResponse must be an object." };
     }
+    const record = value as Record<string, unknown>;
+    if (typeof record.thinking !== "string") {
+      return { status: "invalid", message: "AgentResponse thinking must be a string." };
+    }
+    if (typeof record.message !== "string" || !record.message.trim()) {
+      return { status: "invalid", message: "AgentResponse message must be non-empty." };
+    }
+    const boundary = this.strategyBoundaryForCall(options);
+    if (boundary) {
+      const strategyIssue = boundary === "action_repair"
+        ? requireNonEmptyString(record.strategy, "strategy")
+        : record.strategyDelta === null
+          ? null
+          : requireNonEmptyString(record.strategyDelta, "strategyDelta");
+      if (strategyIssue) return { status: "invalid", message: strategyIssue };
+    }
+    const metadata = normalizeStrategicDecisionMetadata(record);
+    return {
+      status: "valid",
+      value: this.normalizeAgentResponseForCall({
+        thinking: record.thinking,
+        message: record.message.trim(),
+        ...metadata,
+      }, options, metadata),
+    };
+  }
 
-    return null;
+  private decodeAcceptedAgentResponse(
+    value: unknown,
+    options?: LlmCallOptions,
+  ): { status: "valid"; value: AgentResponse } | { status: "invalid"; message: string } {
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return { status: "invalid", message: "Accepted AgentResponse must be an object." };
+    }
+    const record = value as Record<string, unknown>;
+    const boundary = this.strategyBoundaryForCall(options);
+    const allowed = new Set([
+      "thinking",
+      "message",
+      ...(boundary === "action_repair" ? ["strategy"] : boundary ? ["strategyDelta"] : []),
+    ]);
+    const unsupported = Object.keys(record).find((key) => !allowed.has(key));
+    if (unsupported) {
+      return { status: "invalid", message: `Accepted AgentResponse contains unsupported field ${unsupported}.` };
+    }
+    const replayed = this.decodeExactAgentResponsePayload(record, options);
+    if (replayed.status === "invalid") return replayed;
+    return canonicalJson(replayed.value) === canonicalJson(value)
+      ? replayed
+      : { status: "invalid", message: "Accepted AgentResponse is not the canonical domain value." };
   }
 
   private normalizeAgentResponseForCall(
     response: AgentResponse,
     options?: LlmCallOptions,
+    metadata = normalizeStrategicDecisionMetadata(
+      response as unknown as Record<string, unknown>,
+    ),
   ): AgentResponse {
     const {
       strategy: _strategy,
@@ -4956,7 +5900,6 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     if (!this.strategyBoundaryForCall(options)) {
       return base;
     }
-    const metadata = normalizeStrategicDecisionMetadata(response as unknown as Record<string, unknown>);
     return {
       ...base,
       ...metadata,
@@ -4969,111 +5912,6 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
 
   private static readStringField(value: unknown): string {
     return typeof value === "string" ? value.trim() : "";
-  }
-
-  /**
-   * Extract only the *raw hidden reasoning channel* provided by the server
-   * (e.g. `reasoning_content` on local reasoning models via LM Studio etc.).
-   * This must NEVER be used to populate the agent's `thinking` field.
-   * `thinking` is for the reasoning the agent *emits* (structured "thinking" in tool args
-   * or explicit {thinking, message} in free-text content). reasoningContext is the bonus
-   * deep observability trace for --chatty and transcripts.
-   */
-  private static cleanVisibleMessage(content: string): string {
-    const parsed = InfluenceAgent.parseAgentResponseContent(content);
-    if (parsed) return parsed.message;
-
-    const trimmed = content.trim();
-    if (/^\{[\s\S]*"thinking"\s*:/i.test(trimmed)) {
-      return "";
-    }
-    return trimmed.replace(/^message\s*:\s*/i, "").trim();
-  }
-
-
-  /** Free-text LLM call for communication (introductions, lobby, rumor, etc.) */
-  private async callLLM(
-    prompt: string,
-    maxTokens = 200,
-    systemPrompt?: string,
-    options?: LlmCallOptions,
-  ): Promise<string> {
-    const reasoning = this.usesReasoningBudget();
-    const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
-    let effectiveMaxTokens = this.applyMessageTokenFloor(
-      reasoning ? maxTokens + overhead : maxTokens,
-    );
-    const maxAttempts = 2; // 1 initial + 1 retry
-    const sourceKey = options?.action
-      ? `${this.name}/${options.action}`
-      : this.name;
-    const providerCall = this.startProviderCall(options);
-
-    const messages: Array<{ role: "system" | "user"; content: string }> = [];
-    if (systemPrompt) messages.push({ role: "system", content: systemPrompt });
-    messages.push({ role: "user", content: prompt });
-
-    try {
-      const response = await this.executeModelCall({
-        call: providerCall,
-        invocation: () => this.semanticInvocationWithMessages(
-          messages,
-          effectiveMaxTokens,
-          { kind: "text" },
-          options,
-        ),
-        options,
-        maxAttempts,
-        validate: (candidate) => {
-          if (candidate.refusal || candidate.stopReason === "content_filter") {
-            return {
-              status: "unusable",
-              kind: "refusal",
-              message: "Model refused free-text output",
-              retryable: false,
-            };
-          }
-          const text = candidate.text?.trim() ?? "";
-          return text
-            ? { status: "usable", value: candidate }
-            : {
-                status: "unusable",
-                kind: "empty_output",
-                message: "Free-text output was empty",
-              };
-        },
-        onRetry: (record) => {
-          if (
-            record.outcome.kind === "empty_output" &&
-            this.usesLocalStructuredCompatibility()
-          ) {
-            effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 2);
-          }
-          console.warn(
-            `[${this.name}] callLLM attempt ${record.attemptOrdinal} failed, retrying: ${record.outcome.kind}`,
-          );
-        },
-      });
-
-      this.recordTokenUsage(response, sourceKey);
-
-      let text = response.text?.trim() ?? "";
-      // Strip wrapping double quotes that LLMs sometimes add
-      if (text.startsWith('"') && text.endsWith('"') && text.length >= 2) {
-        text = text.slice(1, -1);
-      }
-      return text;
-    } catch (error) {
-      if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
-        throw error;
-      }
-      InfluenceAgent.logProviderFailureOrError(
-        `[${this.name}] callLLM failed after ${maxAttempts} attempts:`,
-        error,
-      );
-      if (this.tokenTracker) this.tokenTracker.recordEmptyResponse(sourceKey);
-      throw error;
-    }
   }
 
   /**
@@ -5091,7 +5929,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     let effectiveMaxTokens = this.applyMessageTokenFloor(
       reasoning ? maxTokens + overhead : maxTokens,
     );
-    const maxAttempts = 2;
+    const maxAttempts = this.structuredCallMaxAttempts ?? 2;
     const sourceKey = options?.action
       ? `${this.name}/${options.action}`
       : this.name;
@@ -5103,39 +5941,38 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
 
     try {
       const responseFormat = this.agentResponseFormat(options);
-      const response = await this.executeModelCall({
+      const responseArtifact = createExactStructuredOutputArtifact<
+        Record<string, unknown>,
+        AgentResponse
+      >({
+        action: `agent-response.${options?.action ?? "message"}.v1`,
+        name: responseFormat.json_schema.name,
+        schema: responseFormat.json_schema.schema,
+        decodeProviderPayload: (payload) =>
+          this.decodeExactAgentResponsePayload(payload, options),
+        decodeAcceptedValue: (value) =>
+          this.decodeAcceptedAgentResponse(value, options),
+      });
+      const output = await this.executeModelCall({
         call: providerCall,
         invocation: () => this.semanticInvocationWithMessages(
           messages,
           effectiveMaxTokens,
           {
             kind: "structured",
-            name: responseFormat.json_schema.name,
-            strict: true,
-            schema: responseFormat.json_schema.schema,
+            artifact: responseArtifact,
           },
           options,
         ),
         options,
         maxAttempts,
-        validate: (candidate) => {
-          if (candidate.refusal || candidate.stopReason === "content_filter") {
-            return {
+        validate: (_candidate, decoded) => decoded
+          ? { status: "usable", value: decoded }
+          : {
               status: "unusable",
-              kind: "refusal",
-              message: "Model refused structured message",
-              retryable: false,
-            };
-          }
-          const content = candidate.text?.trim() ?? "";
-          return content
-            ? { status: "usable", value: candidate }
-            : {
-                status: "unusable",
-                kind: "empty_output",
-                message: "Structured message output was empty",
-              };
-        },
+              kind: "malformed_output",
+              message: "Structured AgentResponse was not decoded.",
+            },
         onRetry: (record) => {
           if (
             record.outcome.kind === "empty_output" ||
@@ -5145,14 +5982,9 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
           }
         },
       });
-
-      this.recordTokenUsage(response, sourceKey);
-
-      const content = response.text?.trim() ?? "";
-
-      const parsed = InfluenceAgent.parseAgentResponseContent(content);
-      if (parsed) {
-        const output = this.normalizeAgentResponseForCall(parsed, options);
+      const response = this.responseProviderOutcome.get(output as object);
+      if (response) {
+        this.recordTokenUsage(response, sourceKey);
         const providerReasoningSummary =
           InfluenceAgent.extractProviderReasoningSummary(response);
         const summaryVisible = InfluenceAgent.withProviderReasoningSummaryDisplay(
@@ -5171,35 +6003,7 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         });
         return visible;
       }
-
-      // Fallback: treat entire content as message (model didn't return valid JSON)
-      console.warn(
-        `[${this.name}] callLLMWithThinking(${options?.action ?? "?"}) returned non-JSON, treating as plain message`,
-      );
-      const output = this.normalizeAgentResponseForCall(
-        {
-          thinking: "",
-          message: content,
-        },
-        options,
-      );
-      const providerReasoningSummary =
-        InfluenceAgent.extractProviderReasoningSummary(response);
-      const summaryVisible = InfluenceAgent.withProviderReasoningSummaryDisplay(
-        output,
-        providerReasoningSummary,
-      );
-      const visible = response.reasoning?.content && !summaryVisible.reasoningContext
-        ? { ...summaryVisible, reasoningContext: response.reasoning.content }
-        : summaryVisible;
-      await this.emitPrivateDecisionTrace({
-        options,
-        messages,
-        response,
-        output,
-        providerReasoningSummary,
-      });
-      return visible;
+      return output;
     } catch (error) {
       if (options?.signal?.aborted || InfluenceAgent.isAbortError(error)) {
         throw error;
@@ -5220,13 +6024,14 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
    * Structured tool-invocation LLM call for agent decisions.
    * Forces the model to invoke the specified tool, returning validated JSON args.
    */
-  private async callTool<T>(
+  private async callTool<TProviderValue, TDomainValue = TProviderValue>(
     prompt: string,
     tool: ChatCompletionTool,
+    semanticDecoder: AgentToolSemanticDecoder<TProviderValue, TDomainValue>,
     maxTokens = 200,
     systemPrompt?: string,
     options?: LlmCallOptions,
-  ): Promise<T & { decisionId?: UUID }> {
+  ): Promise<TDomainValue & { decisionId?: UUID }> {
     const reasoning = this.usesReasoningBudget();
     const overhead = options?.reasoningOverhead ?? InfluenceAgent.REASONING_TOKEN_OVERHEAD;
     let effectiveMaxTokens = this.applyStructuredTokenFloor(
@@ -5235,6 +6040,52 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
     const maxAttempts = this.structuredCallMaxAttempts ?? 2; // 1 initial + 1 retry
     const sourceKey = options?.action ? `${this.name}/${options.action}` : this.name;
     const requestTool = this.toolForStructuredMode(tool, options);
+    const action = options?.action ?? requestTool.function.name;
+    if (!AGENT_TOOL_SEMANTIC_ACTION_SET.has(action)) {
+      throw new Error(`Agent tool action ${action} has no registered semantic decoder family.`);
+    }
+    if (semanticDecoder.action !== action) {
+      throw new Error(
+        `Agent tool semantic decoder ${semanticDecoder.action} does not match invocation action ${action}.`,
+      );
+    }
+    const validateStrategyBoundary = (
+      value: unknown,
+    ): StructuredDomainDecodeResult<unknown> => {
+      const boundary = this.strategyBoundaryForCall(options);
+      if (boundary) {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          return { status: "invalid", message: "Agent tool strategy value must be an object." };
+        }
+        const record = value as Record<string, unknown>;
+        const strategyIssue = boundary === "action_repair"
+          ? requireNonEmptyString(record.strategy, "strategy")
+          : record.strategyDelta === null
+            ? null
+            : requireNonEmptyString(record.strategyDelta, "strategyDelta");
+        if (strategyIssue) return { status: "invalid", message: strategyIssue };
+      }
+      return { status: "valid", value };
+    };
+    const domainSchema = structuredClone(
+      (requestTool.function.parameters ?? {}) as Record<string, unknown>,
+    );
+    const artifact = createExactStructuredOutputArtifact<TProviderValue, TDomainValue>({
+      action: `agent-tool.${action}.v1`,
+      name: requestTool.function.name,
+      schema: (requestTool.function.parameters ?? {}) as Record<string, unknown>,
+      acceptedValueUsesProviderSchema: false,
+      decodeProviderPayload: (value) => {
+        const strategy = validateStrategyBoundary(value);
+        if (strategy.status === "invalid") return strategy;
+        return semanticDecoder.decodeProvider(value);
+      },
+      decodeAcceptedValue: (value) => {
+        const strategy = validateStrategyBoundary(value);
+        if (strategy.status === "invalid") return strategy;
+        return semanticDecoder.decodeAccepted(value, domainSchema);
+      },
+    });
     const providerCall = this.startProviderCall(options);
 
     const messages: Array<{ role: "system" | "user"; content: string }> = [];
@@ -5248,7 +6099,10 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
         effectiveMaxTokens,
         {
           kind: "tool",
-          tools: [InfluenceAgent.modelTool(requestTool)],
+          artifact,
+          ...(requestTool.function.description && {
+            description: requestTool.function.description,
+          }),
           choice: { name: requestTool.function.name },
           allowParallel: false,
         },
@@ -5256,56 +6110,13 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       ),
       options,
       maxAttempts,
-      validate: (candidate) => {
-        if (candidate.refusal || candidate.stopReason === "content_filter") {
-          return {
+      validate: (_candidate, decoded) => decoded
+        ? { status: "usable", value: decoded }
+        : {
             status: "unusable",
-            kind: "refusal",
-            message: `Model refused tool call for ${requestTool.function.name}`,
-            retryable: false,
-          };
-        }
-        if (candidate.stopReason === "length") {
-          return {
-            status: "unusable",
-            kind: "undecodable_structured_output",
-            message: `Tool call incomplete for ${requestTool.function.name}`,
-          };
-        }
-        const toolCall = candidate.toolCalls[0];
-        if (!toolCall) {
-          const parsedContent = this.parseToolArgsFromContent<T>(
-            candidate.text,
-            requestTool.function.name,
-          );
-          return parsedContent
-            ? { status: "usable", value: candidate }
-            : {
-                status: "unusable",
-                kind: "wrong_tool",
-                message: `Tool call missing for ${requestTool.function.name}`,
-                retryable: false,
-              };
-        }
-        if (toolCall.name !== requestTool.function.name) {
-          return {
-            status: "unusable",
-            kind: "wrong_tool",
-            message: `Expected ${requestTool.function.name}, received ${toolCall.name}`,
-            retryable: false,
-          };
-        }
-        try {
-          JSON.parse(toolCall.arguments);
-        } catch {
-          return {
-            status: "unusable",
-            kind: "undecodable_structured_output",
-            message: `Tool arguments were not valid JSON for ${requestTool.function.name}`,
-          };
-        }
-        return { status: "usable", value: candidate };
-      },
+            kind: "malformed_output",
+            message: `Tool arguments were not decoded for ${requestTool.function.name}`,
+          },
       onRetry: (record) => {
         if (record.outcome.kind === "undecodable_structured_output") {
           effectiveMaxTokens = Math.ceil(effectiveMaxTokens * 1.5);
@@ -5316,28 +6127,33 @@ ${hotRoomSection ? `${hotRoomSection}\n` : ""}${roomSection}
       },
     });
 
-    this.recordTokenUsage(response, sourceKey);
-    const toolCall = response.toolCalls[0];
-    const parsed = toolCall
-      ? JSON.parse(toolCall.arguments) as T
-      : this.parseToolArgsFromContent<T>(response.text, requestTool.function.name);
-    if (!parsed) {
-      throw new ToolCallFatalError(
-        `Accepted result had no arguments for ${requestTool.function.name}`,
-      );
+    const liveOutcome = this.responseProviderOutcome.get(response as object);
+    if (!liveOutcome) {
+      const acceptedAttemptId = response && typeof response === "object"
+        ? this.responseProviderAttemptId.get(response as object)
+        : undefined;
+      return {
+        ...response,
+        ...(acceptedAttemptId && {
+          decisionId: providerAcceptedDecisionId(acceptedAttemptId),
+        }),
+      };
     }
-    const args = parsed as T & { reasoningContext?: string };
+
+    this.recordTokenUsage(liveOutcome, sourceKey);
     const providerReasoningSummary =
-      InfluenceAgent.extractProviderReasoningSummary(response);
-    const reasoningContext = response.reasoning?.content ||
+      InfluenceAgent.extractProviderReasoningSummary(liveOutcome);
+    const reasoningContext = liveOutcome.reasoning?.content ||
       (providerReasoningSummary
         ? InfluenceAgent.providerReasoningSummaryDisplay(providerReasoningSummary)
         : undefined);
-    if (reasoningContext) args.reasoningContext = reasoningContext;
+    const args: TDomainValue & { reasoningContext?: string } = reasoningContext
+      ? { ...response, reasoningContext }
+      : response;
     const decisionId = await this.emitPrivateDecisionTrace({
       options,
       messages,
-      response,
+      response: liveOutcome,
       output: args,
       toolName: requestTool.function.name,
       toolArguments: args,

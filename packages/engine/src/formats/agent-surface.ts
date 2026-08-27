@@ -45,7 +45,7 @@ export interface SealedElimTargetPlayer {
 
 export interface SealedElimModelOutput {
   thinking?: string;
-  target?: unknown;
+  targetId: UUID;
   strategyDelta?: unknown;
   strategy?: unknown;
   decisionId?: UUID;
@@ -75,14 +75,6 @@ export interface RunSealedElimTargetDecisionInput {
   callTool: (
     request: SealedElimToolCallRequest,
   ) => Promise<SealedElimModelOutput>;
-  onToolFailure?: (
-    error: unknown,
-    fallbackTarget: SealedElimTargetPlayer,
-  ) => void;
-}
-
-function normalizeName(value: string): string {
-  return value.trim().toLowerCase();
 }
 
 function legalTargetsFor(
@@ -92,15 +84,6 @@ function legalTargetsFor(
     .filter((id) => id !== input.selfId)
     .map((id) => input.alivePlayers.find((player) => player.id === id))
     .filter((player): player is SealedElimTargetPlayer => player !== undefined);
-}
-
-function findTargetByName(
-  legalTargets: readonly SealedElimTargetPlayer[],
-  value: unknown,
-): SealedElimTargetPlayer | undefined {
-  if (typeof value !== "string") return undefined;
-  const normalized = normalizeName(value);
-  return legalTargets.find((player) => normalizeName(player.name) === normalized);
 }
 
 function acceptedActionMetadata(
@@ -175,7 +158,7 @@ export function buildSealedElimBallotTool(
   };
 }
 
-/** Shared validate -> tool call -> deterministic repair -> provenance path. */
+/** Shared validate -> exact tool call -> accepted typed decision path. */
 export async function runSealedElimTargetDecision(
   input: RunSealedElimTargetDecisionInput,
 ): Promise<SealedElimTargetDecision> {
@@ -208,13 +191,11 @@ Use the ${surface.toolName} tool.`;
     traceAction: surface.traceAction,
   });
   const metadata = strategicDecisionMetadata(output);
-  const target = findTargetByName(legalTargets, output.target);
-  const accepted = target !== undefined;
   return {
-    targetId: target?.id ?? (output.target as UUID),
+    targetId: output.targetId,
     thinking: output.thinking,
     reasoningContext: output.reasoningContext,
-    ...acceptedActionMetadata(metadata, accepted),
-    ...decisionProvenance(accepted, surface.invalidTargetReason),
+    ...acceptedActionMetadata(metadata, true),
+    ...decisionProvenance(true, surface.invalidTargetReason),
   };
 }

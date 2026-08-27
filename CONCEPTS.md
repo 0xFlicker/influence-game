@@ -213,15 +213,19 @@ A private producer access decision made once per Format Mingle alliance-action w
 
 ## Selective House beat
 
-A concise audience-visible House narration opportunity scheduled after a meaningful actor-coordinate boundary. The runner decides whether a boundary has an audience-safe material delta before provider I/O. An emitted beat is supported by current-loop source aliases from canonical events, audience-safe projections, or explicitly public player dialogue. A preflight skip, model-selected no-material-change result, or provider failure emits no filler and never blocks canonical gameplay.
+A concise House/producer/human-viewer narration opportunity scheduled after a meaningful actor-coordinate boundary. The runner decides whether a boundary has an audience-safe material delta before provider I/O. The provider selects ordered typed claims over current-loop aliases; it supplies no names, counts, quotes, outcomes, or connective copy. The engine validates each claim against its typed boundary snapshot and renders the visible beat through a fixed renderer registry. A preflight skip, model-selected no-material-change result, or typed provider exhaustion emits no filler and never blocks canonical gameplay. The artifact and rendered beat never enter contestant-agent context.
+
+## House audience summary artifact
+
+The accepted House-owned result of a selective beat: boundary identity, ordered typed claim selections, bounded source coordinates, and engine-rendered text. Claims and coordinates are House/producer receipt lineage. Rendered text is presentation for the human watch/replay transcript and non-authoritative narrative continuity for later House work. It is never a canonical event, result input, contestant memory, Recall Plan candidate, or authority for reconstructing a game fact.
 
 ## House summary frontier
 
-The bounded, server-authored input to a selective House beat: one phase boundary, a compact salience catalog, a read-only typed fact store, and compact prior narrative continuity. Canonical event and projection rows remain game-state authority. Dialogue rows are quotation evidence only and cannot establish a selection, tally, elimination, phase, or result. Private, diary, thinking, huddle, producer, and prior House/system rows are absent rather than merely labeled unavailable.
+The bounded, server-authored input to a selective House beat: one phase boundary, a compact salience catalog, a read-only fact slice, a runner-private discriminated `sourceValuesByAlias` snapshot, and compact prior narrative continuity. The private map is constructed directly from typed canonical events, the boundary-time alive-player projection, and exact accepted public dialogue entries; it is never serialized into provider prompts, accepted receipts, traces, or viewer payloads. Canonical event and projection sources remain game-state authority. Dialogue sources support only exact attributed quotation and cannot establish a selection, tally, elimination, phase, result, or collective position. Private, diary, thinking, huddle, producer, and prior House/system rows are absent rather than merely labeled unavailable.
 
 ## House narrative continuity
 
-Compact versioned in-memory narration state carried between selective House beats. It may remember the last public beat, a bounded open thread at milestone cadence, prior supporting source lineage, and examined/emitted heads. It improves narrative flow but is not canonical game state, a fact source, Strategy Bible state, or checkpoint-resume continuity. A failed beat may carry one unseen delta to the next boundary once; success, skip, or a second failure clears it.
+Compact versioned in-memory narration state carried between selective House beats. It retains bounded accepted artifacts by House actor coordinate plus examined/emitted heads. Later House summary, diary, Strategy Bible, long-form, and producer-brief prompts receive two deliberately separate projections: typed accepted claims/source lineage and prior rendered beats labeled `narrative_non_authoritative`. The House may use the latter to construct arcs, highlight changes, and avoid repetition, but no code or model may recover facts from that copy. Neither projection enters contestant-agent context. A failed beat may carry one unseen delta to the next boundary once; success, skip, or a second failure clears it.
 
 ## House summary phase receipt
 
@@ -249,13 +253,13 @@ A server-authored, deterministic context-selection contract for one agent call. 
 
 **Lanes (render order):**
 
-- **Protected** — Current Board Contract (canonical facts override all memory), compact strategy state, authorized compact official huddle outcomes (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent decisions and revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
+- **Protected** — Current Board Contract (canonical facts override all memory), compact strategy state, authorized typed huddle fact atoms (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent decisions and revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
 - **Hot** — Active-room Mingle conversation for the current turn only. Distinct from historical archive recall.
 - **History** — Bounded public + actor-owned Mingle archive evidence, only for `strategic_decision`. Eligibility uses immutable `speakerPlayerId` / `audiencePlayerIds` before ranking; missing/ambiguous legacy identity fails closed (no display-name fallback). Selected prose is historical evidence only.
 
 Protected material is never truncated to make room for history. When protected truth alone exceeds the nominal envelope, strategic decisions may still use at most 1,200 history characters; ordinary speech keeps no history reserve. This protected-overflow exception is the only way history may extend beyond the nominal prompt-class envelope.
 
-**Privacy and legacy:** Thinking, `reasoningContext`, raw huddle dialogue, diary, whisper, system, sealed, and producer rows are ineligible before candidate counts or diagnostics. Foreign private Mingle must not change another actor's plan, receipt, or event boundary. Older huddle outcomes recover a participant snapshot only from the matching completed-session `speakerIds`; otherwise the outcome is unavailable for recall.
+**Privacy and legacy:** Thinking, `reasoningContext`, raw huddle dialogue, diary, whisper, system, sealed, and producer rows are ineligible before candidate counts or diagnostics. Foreign private Mingle must not change another actor's plan, receipt, or event boundary. A historical payload-v1 huddle outcome preserves only safe session metadata and an optional participant snapshot; its old summary prose contributes `facts: []`. The snapshot may be recovered only from matching completed-session `speakerIds`; otherwise the outcome is unavailable for recall.
 
 **Evaluation artifact:** Simulation batches write `game-N-recall-plan.json` — a producer-only structural aggregate (`coverage: "structural_recall_receipts"`) of prompt-class counts, lane/source-class counts, budget token estimates (`ceil(chars/4)`), and actor-authorized event boundaries. It never stores dialogue, names, entry IDs, rejected counts, prompts, thinking, or reasoning. Full `game-N.json` / private traces remain producer artifacts and are **not** the R13 promotion input; the deterministic gate lives in `context-recall-evaluation.test.ts` against a frozen late-game corpus.
 
@@ -379,15 +383,15 @@ The House's between-round narrative voice. `GameRunner` emits a `house-mc-summar
 
 ## House Strategy Bible Packet
 
-A private producer/debug strategy state The House carries across a game run when enabled. It summarizes named alliance hypotheses, active tensions, broken or pending promises, vote blocs, Mingle discoveries, player trajectory reads, dramatic story arcs, dropped threads, and uncertainties so House MC summaries, House Long-Form Summaries, and diary-room producer briefs share continuous producer memory. It is House-owned analysis, not player-visible dialogue, agent prompt context, or canonical board state. Checkpoints seal a House-continuity requirement (`disabled`, `awaiting_first_valid_update`, or `required`) and, when required, a private House capsule for supported resume; intentional absence is non-blocking only when that sealed contract allows it.
+A private producer/debug strategy state The House carries across a game run when enabled. Its factual continuity is an exact set of typed producer hypotheses and open questions: closed kinds/status/confidence, canonical player IDs, and current producer-evidence aliases. The engine owns revision identity and covered windows. Optional `interpretation` is House narrative framing only; it may shape later House presentation but establishes no fact and is omitted from checkpoint factual continuity and contestant context. Checkpoints seal a House-continuity requirement (`disabled`, `awaiting_first_valid_update`, or `required`) and, when required, only the typed packet fields needed for supported resume. A failed update preserves the preceding packet unchanged.
 
 ## House Producer Brief
 
-A private per-player diary-room setup derived from the House Strategy Bible Packet and current game context. It identifies the player's story role, pressure points, relevant alliance hypotheses, contradictions, and question angles so The House can ask sharper diary questions without revealing hidden producer analysis as player knowledge.
+A private per-player diary-room setup selected from a boundary-time producer evidence catalog. It contains typed focus items with player IDs, confidence, disclosure, and source receipts plus typed question-angle kinds. Only `safe_to_reference` focus backed by viewer-safe receipts can reach the engine-rendered angle instructions in the visible-question prompt. Optional producer-note prose stays in the private producer lane and never enters that prompt or contestant context.
 
 ## House Long-Form Summary
 
-A producer/audience catch-up summary The House emits in rich simulation runs between House Strategy Bible Packet updates. It explains teams forming or weakening, pressure changes, unresolved promises, and the House's open questions about likely next moves. It should be discoverable through simulation artifacts and the local game MCP, while preserving the separation between audience narration, private producer evidence, and player knowledge.
+A producer catch-up artifact The House emits in rich simulation runs between Strategy Bible updates. The model selects ordered typed claim kinds and current evidence aliases; the engine renders factual copy from the runner-private source snapshot. Optional House analysis is explicitly non-authoritative presentation. Provider exhaustion yields a deterministic receipt-backed fallback rather than generic invented copy. The artifact remains discoverable through producer simulation evidence and the local game MCP, while staying outside contestant knowledge.
 
 ## House alliance hypothesis
 
@@ -415,7 +419,7 @@ A House-scheduled coordination scene for an active named alliance before a vote,
 
 ## Alliance huddle outcome
 
-The compact official memory artifact produced after a scheduled alliance huddle. It records ask, plan, promises, dissent, confidence, posture, and leak or betrayal claims where present. It carries alliance context forward for members. Raw huddle transcript remains outside generic public transcript/watch-intelligence surfaces, but the public web/replay alliance projection may show huddle speech as audience evidence without exposing hidden thinking or producer/debug internals.
+The official typed receipt produced after a scheduled alliance huddle. Payload v2 records engine-owned session metadata, an immutable server-private participant snapshot, and the exact accepted `AllianceHuddleFactAtom[]` authored by members. Atoms distinguish proposals, commitments, responses to earlier atom IDs, and contingencies using closed action, stance, condition, confidence, and player-ID fields. The engine renders member prompts, postgame analysis, MCP/API reads, and public web/replay copy from those atoms. Dialogue and optional House interpretation remain presentation evidence: neither can manufacture a target, promise, consensus, dissent, leak, betrayal, or posture. A modern empty huddle records `facts: []`; a historical prose-backed payload-v1 outcome also projects `facts: []`.
 
 ## Universal alliance
 
@@ -426,6 +430,10 @@ A named alliance whose living membership equals all alive players. Before the po
 A durable domain fact accepted by the game engine at the moment game state changes. Canonical game events are emitted by `GameState`, written to simulator `game-N-events.jsonl`, and distinct from transcript entries and `AgentTurnEvent` observability records: they are the replayable source for rebuilding board state, while transcripts and agent turns explain or display what happened.
 
 Judgment public speeches (opening statements, jury questions/answers, and closing arguments) are accepted public speech facts of type `judgment.speech_recorded`. They carry the public speech text and provenance only — not prompts, thinking, or private traces — and stamp the speech phase so MCP `filter_events` can query `CLOSING_ARGUMENTS` and related Judgment phases. Pre-fix Season 0 games may still have complete envelope logs without these speech events; durable-run `finaleIntegrity` surfaces that gap without invalidating `eventLogStatus`.
+
+## Simulation endgame classification
+
+The canonical, presentation-independent label written into simulation results. The latest `endgame.stage_set` event by sequence determines `reckoning`, `tribunal`, or `judgment`; a run with no stage event is `normal`. Simulation stage, accepted jury-question, jury-ballot, and endgame-phase instrumentation also counts canonical events. Transcript/House banners may display those moments but cannot classify or instrument them.
 
 ## Game projection
 

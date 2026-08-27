@@ -33,10 +33,10 @@ describe("canonical event replay", () => {
       actorId: "alice",
       audiencePlayerIds: ["alice", "bob"],
       roomId: 1,
-      proposedTargetName: "Cara",
-      proposedAction: "Empower Bob, then pressure Cara under the locked format.",
-      commitment: "Alice will compare the final legal action with Bob.",
-      noProposalReason: null,
+      factKind: "proposal",
+      actionKind: "empower_vote",
+      targetPlayerId: "bob",
+      noProposal: false,
       createdAt: "2026-07-25T00:00:00.000Z",
     });
 
@@ -47,7 +47,7 @@ describe("canonical event replay", () => {
     const resumed = GameState.fromCanonicalEvents(gs.getCanonicalEvents());
     expect(resumed.getMingleCoordinationReceipts()).toEqual([expect.objectContaining({
       id: "receipt-1",
-      proposedTargetName: "Cara",
+      targetPlayerId: "bob",
     })]);
     expect(replayed.currentVoteTally).toEqual(beforeVotes);
   });
@@ -181,6 +181,59 @@ describe("canonical event replay", () => {
     const invalid = { ...gs.getCanonicalEvents()[0]!, payloadVersion: 2 } as unknown as CanonicalGameEvent;
 
     expect(() => replayCanonicalEvents([invalid])).toThrow("Unsupported canonical event payload version");
+  });
+
+  it("replays prose-backed huddle v1 as safe metadata with no factual atoms", () => {
+    const state = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+      ],
+      { gameId: "legacy-huddle-v1", now: fixedClock() },
+    );
+    const roster = state.getCanonicalEvents()[0]!;
+    const legacyOutcome = {
+      id: "outcome-legacy",
+      sessionId: "session-legacy",
+      allianceId: "alliance-legacy",
+      window: "pre_vote" as const,
+      round: 1,
+      ask: "Target Bob.",
+      plan: "Everyone agreed to target Bob.",
+      promises: ["Alice promised Bob safety."],
+      dissent: ["No dissent."],
+      confidence: "high",
+      posture: "locked",
+      leakOrBetrayalClaims: ["Alice leaked the plan."],
+      createdAt: "2026-08-27T00:00:00.000Z",
+    };
+    const legacyEvent: CanonicalGameEvent = {
+      sequence: 2,
+      gameId: "legacy-huddle-v1",
+      round: 1,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_outcome_recorded",
+      timestamp: "2026-08-27T00:00:00.000Z",
+      source: "replay",
+      visibility: "producer",
+      payloadVersion: 1,
+      sourcePointers: [],
+      payload: { outcome: legacyOutcome },
+    };
+
+    const projection = replayCanonicalEvents([roster, legacyEvent]);
+
+    expect(projection.allianceHuddleOutcomes[legacyOutcome.id]).toEqual({
+      id: legacyOutcome.id,
+      sessionId: legacyOutcome.sessionId,
+      allianceId: legacyOutcome.allianceId,
+      window: legacyOutcome.window,
+      round: legacyOutcome.round,
+      facts: [],
+      participantPlayerIds: [],
+      createdAt: legacyOutcome.createdAt,
+    });
+    expect(JSON.stringify(projection.allianceHuddleOutcomes[legacyOutcome.id])).not.toContain("Target Bob");
   });
 
   it("replays historical version-1 resolution bags for the original format trio", () => {
@@ -387,6 +440,75 @@ describe("canonical event replay", () => {
     expect(
       gs.getCanonicalEvents().filter((e) => e.type === "judgment.speech_recorded"),
     ).toHaveLength(1);
+  });
+
+  it("reconstructs identical Judgment history and recent decisions from canonical speech alone", () => {
+    const gs = new GameState(
+      [
+        { id: "alice", name: "Alice" },
+        { id: "bob", name: "Bob" },
+        { id: "cara", name: "Cara" },
+      ],
+      { gameId: "game-judgment-context-replay", now: fixedClock() },
+    );
+    gs.startRound();
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_question",
+      playerId: "cara",
+      text: "Which move best proves your control?",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: "alice",
+    });
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_answer",
+      playerId: "alice",
+      text: "The final Council vote.",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: "cara",
+    });
+
+    const originalLogger = new TranscriptLogger(gs);
+    originalLogger.logPublic(
+      "bob",
+      "[QUESTION to Alice] This display row was never accepted.",
+      Phase.JURY_QUESTIONS,
+    );
+    const originalContext = new ContextBuilder(
+      gs,
+      originalLogger,
+      new Map(),
+      3,
+    ).buildPhaseContext("alice", Phase.JURY_QUESTIONS);
+
+    const resumed = GameState.fromCanonicalEvents(
+      JSON.parse(JSON.stringify(gs.getCanonicalEvents())),
+      { now: fixedClock() },
+    );
+    const replayedContext = new ContextBuilder(
+      resumed,
+      new TranscriptLogger(resumed),
+      new Map(),
+      3,
+    ).buildPhaseContext("alice", Phase.JURY_QUESTIONS);
+
+    expect(replayedContext.judgmentQuestionHistory).toEqual(
+      originalContext.judgmentQuestionHistory,
+    );
+    expect(replayedContext.recentDecisions).toEqual(originalContext.recentDecisions);
+    expect(replayedContext.judgmentQuestionHistory).toEqual([{
+      jurorName: "Cara",
+      finalistName: "Alice",
+      question: "Which move best proves your control?",
+      answer: "The final Council vote.",
+    }]);
+    expect(replayedContext.recentDecisions).toContainEqual({
+      round: 1,
+      phase: Phase.JURY_QUESTIONS,
+      label: "Judgment Answer",
+      detail: 'Your Judgment answer to Cara: "The final Council vote."',
+    });
   });
 });
 
@@ -654,13 +776,15 @@ describe("GameRunner canonical events", () => {
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: gs.round,
-      ask: "Hold.",
-      plan: "Pressure Cara.",
-      promises: [],
-      dissent: [],
-      confidence: "high",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
+      facts: [{
+        kind: "commitment",
+        factId: "fact-ab",
+        sessionId: "session-ab",
+        actorPlayerId: "alice",
+        actionKind: "council_vote",
+        targetPlayerId: "cara",
+        confidence: "high",
+      }],
       participantPlayerIds: ["alice", "bob"],
       createdAt: "2026-07-26T00:00:01.000Z",
     });

@@ -14,12 +14,23 @@ import type {
   LlmProviderAdapter,
   ModelInvocation,
   ModelInvocationMessage,
-  ModelInvocationTool,
   ProviderModelOutcome,
   ProviderNativeRequest,
   ProviderNormalizedToolCall,
   ProviderRuntimeDescriptor,
 } from "./model-invocation";
+
+interface ProviderFunctionToolDefinition {
+  name: string;
+  description?: string;
+  parameters: Record<string, unknown>;
+  strict?: boolean;
+}
+import {
+  exactStructuredOutputRegistry,
+  type ExactStructuredOutputArtifact,
+  type ExactStructuredOutputResult,
+} from "./structured-output";
 import {
   classifyProviderError,
   classifyResponsesTerminalOutcome,
@@ -35,15 +46,26 @@ interface AdapterBackedRuntime extends ProviderRuntimeDescriptor {
   adapter: LlmProviderAdapter;
 }
 
-export interface ExecuteModelInvocationOptions<TValue> {
+export interface ExecuteModelInvocationOptions<TValue, TStructuredValue = unknown> {
   call: ProviderLogicalCallExecution;
   runtimes: readonly LlmProviderRuntime[];
-  invocation: ModelInvocation | (() => ModelInvocation);
+  invocation:
+    | ModelInvocation<TStructuredValue>
+    | (() => ModelInvocation<TStructuredValue>);
   maxAttempts: number;
   cancellationSignal?: AbortSignal;
   requestSignalFactory?: () => AbortSignal | undefined;
-  validate(outcome: ProviderModelOutcome): ProviderCandidateValidation<TValue>;
+  validate(
+    outcome: ProviderModelOutcome,
+    structuredValue: TStructuredValue | undefined,
+  ): ProviderCandidateValidation<TValue>;
   onRetry?(record: ProviderAttemptRecord): Promise<void> | void;
+}
+
+export interface ModelInvocationExecutionResult<TValue>
+  extends ProviderManifestCallResult<TValue> {
+  /** Present only for a newly dispatched accepted attempt, never durable replay. */
+  liveOutcome?: ProviderModelOutcome;
 }
 
 /**
@@ -51,11 +73,20 @@ export interface ExecuteModelInvocationOptions<TValue> {
  * compiles and dispatches through its own adapter; no native request is reused
  * or rewritten for another provider.
  */
-export async function executeModelInvocation<TValue>(
-  options: ExecuteModelInvocationOptions<TValue>,
-): Promise<ProviderManifestCallResult<TValue>> {
-  const compiledByAttempt = new Map<string, ProviderNativeRequest>();
-  return options.call.executeManifest<ProviderModelOutcome, TValue>({
+export async function executeModelInvocation<TValue, TStructuredValue = unknown>(
+  options: ExecuteModelInvocationOptions<TValue, TStructuredValue>,
+): Promise<ModelInvocationExecutionResult<TValue>> {
+  const compiledByAttempt = new Map<string, {
+    invocation: ModelInvocation<TStructuredValue>;
+    request: ProviderNativeRequest;
+  }>();
+  const invocationByOutcome = new WeakMap<object, {
+    invocation: ModelInvocation<TStructuredValue>;
+    toolUsesJsonSchema: boolean;
+  }>();
+  let liveAcceptedOutcome: ProviderModelOutcome | undefined;
+  let replayInvocation: ModelInvocation<TStructuredValue> | undefined;
+  const result = await options.call.executeManifest<ProviderModelOutcome, TValue>({
     entries: options.runtimes.map((runtime) => {
       const adapterRuntime = runtime as AdapterBackedRuntime;
       const invocation = () =>
@@ -68,7 +99,10 @@ export async function executeModelInvocation<TValue>(
           semanticCall,
           adapterRuntime,
         );
-        compiledByAttempt.set(`${runtime.catalogId}:${attemptOrdinal}`, prepared);
+        compiledByAttempt.set(`${runtime.catalogId}:${attemptOrdinal}`, {
+          invocation: semanticCall,
+          request: prepared,
+        });
         return prepared;
       };
       return {
@@ -86,12 +120,17 @@ export async function executeModelInvocation<TValue>(
           };
         },
         maxAttempts: options.maxAttempts,
-        dispatch: ({ attemptOrdinal, requestOptions }) => {
+        dispatch: async ({ attemptOrdinal, requestOptions }) => {
           const key = `${runtime.catalogId}:${attemptOrdinal}`;
-          const prepared = compiledByAttempt.get(key) ?? compile(attemptOrdinal);
+          const compiled = compiledByAttempt.get(key);
+          const semanticCall = compiled?.invocation ?? invocation();
+          const prepared = compiled?.request ?? adapterRuntime.adapter.compile(
+            semanticCall,
+            adapterRuntime,
+          );
           compiledByAttempt.delete(key);
           const requestSignal = options.requestSignalFactory?.();
-          return adapterRuntime.adapter.dispatch(prepared, {
+          const outcome = await adapterRuntime.adapter.dispatch(prepared, {
             ...requestOptions,
             ...((requestOptions.signal || requestSignal) && {
               signal: requestOptions.signal && requestSignal
@@ -99,8 +138,52 @@ export async function executeModelInvocation<TValue>(
                 : requestOptions.signal ?? requestSignal,
             }),
           });
+          invocationByOutcome.set(outcome, {
+            invocation: semanticCall,
+            toolUsesJsonSchema:
+              semanticCall.result.kind === "tool"
+              && prepared.transport !== "openai.responses"
+              && runtime.toolChoiceMode === "json_schema",
+          });
+          return outcome;
         },
-        validate: options.validate,
+        validate: (outcome) => {
+          const compiledOutcome = invocationByOutcome.get(outcome);
+          if (!compiledOutcome) {
+            throw new Error("Provider outcome is missing its compiled semantic invocation");
+          }
+          const semanticCall = compiledOutcome.invocation;
+          if (semanticCall.result.kind !== "structured") {
+            if (semanticCall.result.kind === "tool") {
+              const terminalFailure = structuredTerminalFailure(outcome, false);
+              if (terminalFailure) return terminalFailure;
+              const decoded = decodeExactToolOutcome(
+                semanticCall.result.artifact,
+                outcome,
+                compiledOutcome.toolUsesJsonSchema,
+              );
+              if (decoded.status === "failure") return decoded.validation;
+              const validation = options.validate(outcome, decoded.value);
+              if (validation.status === "usable") liveAcceptedOutcome = outcome;
+              return validation;
+            }
+            const validation = options.validate(outcome, undefined);
+            if (validation.status === "usable") liveAcceptedOutcome = outcome;
+            return validation;
+          }
+          const terminalFailure = structuredTerminalFailure(outcome, true);
+          if (terminalFailure) return terminalFailure;
+          const decoded = exactStructuredOutputRegistry.decodeJsonDocument(
+            semanticCall.result.artifact,
+            outcome.text!,
+          );
+          if (decoded.status === "invalid") {
+            return structuredValidationFailure(decoded);
+          }
+          const validation = options.validate(outcome, decoded.value);
+          if (validation.status === "usable") liveAcceptedOutcome = outcome;
+          return validation;
+        },
         classifyError: (error, signal) =>
           adapterRuntime.adapter.classifyError(error, signal),
         accounting: (outcome) => outcome.accounting,
@@ -112,7 +195,131 @@ export async function executeModelInvocation<TValue>(
     ...(options.cancellationSignal && {
       cancellationSignal: options.cancellationSignal,
     }),
+    validateAcceptedValue: (value) => {
+      replayInvocation ??= typeof options.invocation === "function"
+        ? options.invocation()
+        : options.invocation;
+      if (
+        replayInvocation.result.kind !== "structured"
+        && replayInvocation.result.kind !== "tool"
+      ) {
+        return { status: "valid", value: value as TValue };
+      }
+      const decoded = exactStructuredOutputRegistry.decodeAcceptedValue(
+        replayInvocation.result.artifact,
+        value,
+      );
+      return decoded.status === "valid"
+        ? { status: "valid", value: decoded.value as unknown as TValue }
+        : { status: "invalid", message: decoded.message };
+    },
   });
+  return {
+    ...result,
+    ...(liveAcceptedOutcome && { liveOutcome: liveAcceptedOutcome }),
+  };
+}
+
+function structuredTerminalFailure(
+  outcome: ProviderModelOutcome,
+  requireText: boolean,
+): ProviderCandidateValidation<never> | undefined {
+  if (outcome.refusal || outcome.stopReason === "content_filter") {
+    return {
+      status: "unusable",
+      kind: "refusal",
+      message: outcome.refusal ? "model_refusal" : "content_filter",
+      retryable: false,
+    };
+  }
+  if (outcome.stopReason === "length" || outcome.status === "incomplete") {
+    return {
+      status: "unusable",
+      kind: "undecodable_structured_output",
+      message: "length",
+    };
+  }
+  if (requireText && !outcome.text?.trim()) {
+    return {
+      status: "unusable",
+      kind: "empty_output",
+      message: "invalid_json",
+    };
+  }
+  return undefined;
+}
+
+function decodeExactToolOutcome<TValue>(
+  artifact: ExactStructuredOutputArtifact<TValue>,
+  outcome: ProviderModelOutcome,
+  usesJsonSchema: boolean,
+):
+  | { status: "decoded"; value: TValue }
+  | { status: "failure"; validation: ProviderCandidateValidation<never> } {
+  if (usesJsonSchema) {
+    if (!outcome.text?.trim()) {
+      return {
+        status: "failure",
+        validation: {
+          status: "unusable",
+          kind: "empty_output",
+          message: `Tool arguments missing for ${artifact.name}`,
+        },
+      };
+    }
+    const decoded = exactStructuredOutputRegistry.decodeJsonDocument(
+      artifact,
+      outcome.text,
+    );
+    return decoded.status === "valid"
+      ? { status: "decoded", value: decoded.value }
+      : { status: "failure", validation: structuredValidationFailure(decoded) };
+  }
+
+  if (outcome.toolCalls.length !== 1) {
+    return {
+      status: "failure",
+      validation: {
+        status: "unusable",
+        kind: "wrong_tool",
+        message: outcome.toolCalls.length === 0
+          ? `Tool call missing for ${artifact.name}`
+          : `Expected one ${artifact.name} tool call, received ${outcome.toolCalls.length}`,
+        retryable: false,
+      },
+    };
+  }
+  const toolCall = outcome.toolCalls[0]!;
+  if (toolCall.name !== artifact.name) {
+    return {
+      status: "failure",
+      validation: {
+        status: "unusable",
+        kind: "wrong_tool",
+        message: `Expected ${artifact.name}, received ${toolCall.name}`,
+        retryable: false,
+      },
+    };
+  }
+  const decoded = exactStructuredOutputRegistry.decodeJsonDocument(
+    artifact,
+    toolCall.arguments,
+  );
+  return decoded.status === "valid"
+    ? { status: "decoded", value: decoded.value }
+    : { status: "failure", validation: structuredValidationFailure(decoded) };
+}
+
+function structuredValidationFailure(
+  result: Extract<ExactStructuredOutputResult<unknown>, { status: "invalid" }>,
+): ProviderCandidateValidation<never> {
+  return {
+    status: "unusable",
+    kind: result.kind === "undecodable_document"
+      ? "undecodable_structured_output"
+      : "malformed_output",
+    message: result.message,
+  };
 }
 
 abstract class OpenAICompatibleAdapter implements LlmProviderAdapter {
@@ -129,8 +336,7 @@ abstract class OpenAICompatibleAdapter implements LlmProviderAdapter {
       !runtime.modelCapabilities.supportsTools &&
       !(
         runtime.toolChoiceMode === "json_schema" &&
-        runtime.modelCapabilities.supportsStructuredOutput &&
-        invocation.result.tools.length === 1
+        runtime.modelCapabilities.supportsStructuredOutput
       )
     ) {
       return { compatible: false, reason: "function tools are unsupported" };
@@ -382,31 +588,45 @@ export function compileOpenAIResponsesRequest(
     body.temperature = invocation.temperature;
   }
   if (invocation.result.kind === "structured") {
+    const artifact = invocation.result.artifact;
     body.text = {
       format: {
         type: "json_schema",
-        name: invocation.result.name,
-        strict: invocation.result.strict,
-        schema: invocation.result.schema,
+        name: artifact.name,
+        strict: true,
+        schema: artifact.schema,
       },
     };
   } else if (invocation.result.kind === "tool") {
-    body.tools = invocation.result.tools.map((tool) => ({
-      type: "function",
-      name: tool.name,
-      ...(tool.description && { description: tool.description }),
-      parameters: tool.parameters,
-      strict: tool.strict ?? true,
-    }));
-    body.tool_choice = invocation.result.choice === "auto" ||
-        invocation.result.choice === "required"
-      ? invocation.result.choice
-      : { type: "function", name: invocation.result.choice.name };
-    if (invocation.result.allowParallel === false) {
-      body.parallel_tool_calls = false;
-    }
+    const artifact = invocation.result.artifact;
+    body.tools = [responsesFunctionTool({
+      name: artifact.name,
+      ...(invocation.result.description && { description: invocation.result.description }),
+      parameters: artifact.schema,
+      strict: true,
+    })];
+    body.tool_choice = responsesToolChoice(invocation.result.choice);
+    body.parallel_tool_calls = false;
   }
   return body as unknown as ResponseCreateParamsNonStreaming;
+}
+
+function responsesFunctionTool(tool: ProviderFunctionToolDefinition): Record<string, unknown> {
+  return {
+    type: "function",
+    name: tool.name,
+    ...(tool.description && { description: tool.description }),
+    parameters: tool.parameters,
+    strict: tool.strict ?? true,
+  };
+}
+
+function responsesToolChoice(
+  choice: "auto" | "required" | { name: string },
+): "auto" | "required" | { type: "function"; name: string } {
+  return choice === "auto" || choice === "required"
+    ? choice
+    : { type: "function", name: choice.name };
 }
 
 export function compileChatCompletionsRequest(
@@ -435,52 +655,53 @@ export function compileChatCompletionsRequest(
   if (reasoningEffort) body.reasoning_effort = reasoningEffort;
 
   if (invocation.result.kind === "structured") {
-    body.response_format = {
-      type: "json_schema",
-      json_schema: {
-        name: invocation.result.name,
-        strict: invocation.result.strict,
-        schema: invocation.result.schema,
-      },
-    };
+    const artifact = invocation.result.artifact;
+    body.response_format = chatJsonSchemaFormat(artifact.name, artifact.schema);
   } else if (invocation.result.kind === "tool") {
     const toolResult = invocation.result;
-    const selectedToolName = typeof toolResult.choice === "object"
-      ? toolResult.choice.name
-      : undefined;
-    const selectedTool = toolResult.choice === "auto" ||
-        toolResult.choice === "required"
-      ? toolResult.tools[0]
-      : toolResult.tools.find((tool) => tool.name === selectedToolName);
-    if (runtime.toolChoiceMode === "json_schema" && selectedTool) {
-      body.response_format = {
-        type: "json_schema",
-        json_schema: {
-          name: `${selectedTool.name}_arguments`,
-          strict: selectedTool.strict ?? true,
-          schema: selectedTool.parameters,
-        },
-      };
+    const artifact = toolResult.artifact;
+    if (runtime.toolChoiceMode === "json_schema") {
+      body.response_format = chatJsonSchemaFormat(
+        `${artifact.name}_arguments`,
+        artifact.schema,
+      );
     } else {
-      body.tools = invocation.result.tools.map(chatTool);
-      body.tool_choice = runtime.toolChoiceMode === "required" ||
-          runtime.toolChoiceMode === "auto"
-        ? runtime.toolChoiceMode
-        : invocation.result.choice === "auto" || invocation.result.choice === "required"
-          ? invocation.result.choice
-          : {
-              type: "function",
-              function: { name: invocation.result.choice.name },
-            };
-      if (
-        invocation.result.allowParallel === false &&
-        (runtime.providerProfileId === "openai" || runtime.providerProfileId === "katana")
-      ) {
+      body.tools = [chatTool({
+        name: artifact.name,
+        ...(toolResult.description && { description: toolResult.description }),
+        parameters: artifact.schema as Record<string, unknown>,
+        strict: true,
+      })];
+      body.tool_choice = chatToolChoice(runtime.toolChoiceMode, toolResult.choice);
+      if (runtime.providerProfileId === "openai" || runtime.providerProfileId === "katana") {
         body.parallel_tool_calls = false;
       }
     }
   }
   return body as unknown as ChatCompletionCreateParamsNonStreaming;
+}
+
+function chatJsonSchemaFormat(
+  name: string,
+  schema: Record<string, unknown>,
+  strict = true,
+): Record<string, unknown> {
+  return {
+    type: "json_schema",
+    json_schema: { name, strict, schema },
+  };
+}
+
+function chatToolChoice(
+  mode: ProviderRuntimeDescriptor["toolChoiceMode"],
+  choice: "auto" | "required" | { name: string },
+): "auto" | "required" | { type: "function"; function: { name: string } } {
+  if (mode === "required" || mode === "auto") return mode;
+  if (choice === "auto" || choice === "required") return choice;
+  return {
+    type: "function",
+    function: { name: choice.name },
+  };
 }
 
 function requestedReasoningEffort(
@@ -501,7 +722,7 @@ function requestedReasoningEffort(
   return invocation.reasoning?.effort;
 }
 
-function chatTool(tool: ModelInvocationTool): ChatCompletionTool {
+function chatTool(tool: ProviderFunctionToolDefinition): ChatCompletionTool {
   return {
     type: "function",
     function: {

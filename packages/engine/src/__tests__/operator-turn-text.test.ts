@@ -1,10 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import {
   formatAllianceActionOperatorText,
+  formatAllianceHuddleOutcomeOperatorText,
+  formatHouseProducerBriefOperatorText,
   formatMingleIntentOperatorText,
   formatMingleRoomAssignmentOperatorText,
   formatMingleTurnOperatorText,
 } from "../operator-turn-text";
+import { formatAllianceHuddleFacts } from "../alliance-huddle-outcome";
 import { formatAgentTurnTrace } from "../simulate";
 import type { AgentTurnEvent } from "../game-runner.types";
 import { Phase } from "../types";
@@ -92,6 +95,55 @@ describe("operator turn text", () => {
       'Vera alliance accept "The Non-Theater Reasoning Pact" #36a7c377 members=Kael,Vera,Rune,Echo,Lyra → recorded',
     );
     expect(text).not.toContain("lineage=");
+  });
+
+  test("huddle outcome text is rendered only from typed atoms and reports an honest empty state", () => {
+    const names = new Map([["alice", "Alice"], ["bob", "Bob"]]);
+    const summaries = formatAllianceHuddleFacts([{
+      kind: "commitment",
+      factId: "fact-ab",
+      sessionId: "session-ab",
+      actorPlayerId: "alice",
+      actionKind: "empower_vote",
+      targetPlayerId: "bob",
+      confidence: "high",
+    }], (playerId) => names.get(playerId) ?? playerId);
+
+    expect(summaries).toEqual([
+      "Alice recorded a commitment to an empower vote for Bob (high confidence).",
+    ]);
+    expect(formatAllianceHuddleOutcomeOperatorText({
+      allianceName: "The Pair",
+      factSummaries: summaries,
+    })).toBe(
+      "House huddle outcome — The Pair: Alice recorded a commitment to an empower vote for Bob (high confidence).",
+    );
+    expect(formatAllianceHuddleFacts([], (playerId) => playerId)).toEqual([
+      "No structured huddle facts were recorded.",
+    ]);
+  });
+
+  test("producer brief operator text exposes typed labels rather than producer prose", () => {
+    const text = formatHouseProducerBriefOperatorText({
+      playerName: "Atlas",
+      focusItems: [{
+        id: "F1",
+        kind: "trust",
+        subjectPlayerId: "atlas-id",
+        relatedPlayerIds: ["nyx-id"],
+        sourceAliases: ["P2"],
+        confidence: "medium",
+        disclosure: "safe_to_reference",
+      }],
+      questionAngles: [{
+        kind: "trust_test",
+        focusItemIds: ["F1"],
+        subjectPlayerId: "atlas-id",
+        relatedPlayerIds: ["nyx-id"],
+      }],
+    });
+
+    expect(text).toBe("House brief for Atlas: focus=trust:safe_to_reference:medium | angles=trust_test");
   });
 
   test("chatty prints operator text even without thinking", () => {

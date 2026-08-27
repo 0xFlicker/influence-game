@@ -18,6 +18,7 @@ import type {
   GameKernel as EngineGameKernel,
   GameKernelContradictionDiagnostic as EngineGameKernelContradictionDiagnostic,
   GameKernelSource as EngineGameKernelSource,
+  AllianceHuddleFactAtom as EngineAllianceHuddleFactAtom,
   LaunchFormatId as EngineLaunchFormatId,
   Phase as EnginePhase,
   RevealedCanonicalFactsStatus as EngineRevealedCanonicalFactsStatus,
@@ -1519,13 +1520,7 @@ export interface PublicAllianceOutcomeRead {
   id: string;
   round: number;
   window: string;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: string;
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  facts: EngineAllianceHuddleFactAtom[];
 }
 
 export interface PublicAllianceConsequenceRead {

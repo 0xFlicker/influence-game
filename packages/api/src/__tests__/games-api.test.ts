@@ -2450,13 +2450,16 @@ describe("Game REST API", () => {
         allianceId: "alliance-late-voters",
         window: "pre_vote",
         round: 1,
-        ask: "Hold together on the first vote.",
-        plan: "Atlas and Echo agree to wait for Mira to expose herself before moving.",
-        promises: ["Atlas warns Echo before changing target."],
-        dissent: [],
-        confidence: "high",
-        posture: "coordinating",
-        leakOrBetrayalClaims: [],
+        facts: [{
+          kind: "commitment",
+          factId: "fact-late-voters",
+          sessionId: "session-late-voters",
+          actorPlayerId: "atlas",
+          actionKind: "empower_vote",
+          targetPlayerId: "echo",
+          confidence: "high",
+        }],
+        participantPlayerIds: [],
         createdAt: "2026-07-03T00:00:05.000Z",
       });
       const ownerEpoch = await insertOwner(db, id);
@@ -2518,7 +2521,11 @@ describe("Game REST API", () => {
         memberNames: ["Atlas", "Echo"],
         huddleOutcomeCount: 1,
         latestOutcome: {
-          plan: "Atlas and Echo agree to wait for Mira to expose herself before moving.",
+          facts: [expect.objectContaining({
+            kind: "commitment",
+            actorPlayerId: "atlas",
+            targetPlayerId: "echo",
+          })],
         },
       });
       expect(body.allianceFacts.huddles[0]).toMatchObject({
@@ -2527,7 +2534,7 @@ describe("Game REST API", () => {
           text: "Echo, wait for Mira to commit before we move.",
         }],
         outcome: {
-          plan: "Atlas and Echo agree to wait for Mira to expose herself before moving.",
+          facts: [expect.objectContaining({ factId: "fact-late-voters" })],
         },
       });
       expect(JSON.stringify(body)).not.toContain("HUDDLE_THINKING_SENTINEL");

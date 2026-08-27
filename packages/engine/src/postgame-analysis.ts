@@ -1,5 +1,6 @@
 import type { CanonicalGameEvent, CanonicalGameEventType } from "./canonical-events";
-import type { AllianceHuddleOutcome, AllianceProposalLineage, AllianceRecord } from "./types";
+import type { AllianceHuddleFactAtom, AllianceHuddleOutcome, AllianceProposalLineage, AllianceRecord } from "./types";
+import { decodeLegacyAllianceHuddleOutcomeV1, formatAllianceHuddleFacts } from "./alliance-huddle-outcome";
 import type {
   CompletedGameResultsElimination,
   CompletedGameResultsJury,
@@ -122,10 +123,8 @@ export interface PostgameAllianceOutcomeSummary {
   allianceId: string;
   round: number;
   window: string;
-  plan: string;
-  confidence: string;
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  facts: AllianceHuddleFactAtom[];
+  factSummaries: string[];
 }
 
 export interface PostgameRoundAllianceActivity {
@@ -291,13 +290,7 @@ export interface PostgamePlayerAllianceArc {
     yourResponse: string | null;
   }>;
   huddlesAttended: number;
-  latestPlans: PostgameAllianceOutcomeSummary[];
-  betrayalOrLeakClaims: Array<{
-    allianceId: string;
-    allianceName: string;
-    round: number;
-    claim: string;
-  }>;
+  latestHuddleOutcomes: PostgameAllianceOutcomeSummary[];
 }
 
 export interface PostgameTurningPoint {
@@ -2046,9 +2039,16 @@ function buildPostgameAllianceIndex(
           alliancesById.set(event.payload.alliance.id, indexedAllianceRecord(event.payload.alliance, playerRefs));
           addRoundAllianceName(activity, event.payload.alliance.name);
         }
-        const outcome = compactPostgameOutcome(event.payload.outcome);
-        const outcomes = outcomesByAllianceId.get(outcomeAllianceId(event.payload.outcome)) ?? [];
-        outcomesByAllianceId.set(outcomeAllianceId(event.payload.outcome), [...outcomes, outcome]);
+        const session = huddleSessions.find((candidate) =>
+          candidate.allianceId === event.payload.outcome.allianceId
+          && candidate.round === event.payload.outcome.round
+        );
+        const canonicalOutcome = event.payloadVersion === 1
+          ? decodeLegacyAllianceHuddleOutcomeV1(event.payload.outcome, session?.speakerIds)
+          : event.payload.outcome;
+        const outcome = compactPostgameOutcome(canonicalOutcome, playerRefs);
+        const outcomes = outcomesByAllianceId.get(outcomeAllianceId(canonicalOutcome)) ?? [];
+        outcomesByAllianceId.set(outcomeAllianceId(canonicalOutcome), [...outcomes, outcome]);
         activity.latestOutcome = latestPostgameOutcome([
           ...(activity.latestOutcome ? [activity.latestOutcome] : []),
           outcome,
@@ -2172,16 +2172,7 @@ function buildPlayerAllianceArc(
     joinedAlliances,
     involvedProposals,
     huddlesAttended: allianceIndex.huddleSessions.filter((session) => session.speakerIds.includes(player.id)).length,
-    latestPlans: outcomes.slice(0, 3),
-    betrayalOrLeakClaims: outcomes.flatMap((outcome) => {
-      const alliance = allianceIndex.alliances.find((entry) => entry.id === outcome.allianceId);
-      return outcome.leakOrBetrayalClaims.map((claim) => ({
-        allianceId: alliance?.id ?? "",
-        allianceName: alliance?.name ?? "Unknown alliance",
-        round: outcome.round,
-        claim,
-      }));
-    }).slice(0, 6),
+    latestHuddleOutcomes: outcomes.slice(0, 3),
   };
 }
 
@@ -2296,16 +2287,20 @@ function indexedAllianceRecord(
   };
 }
 
-function compactPostgameOutcome(outcome: AllianceHuddleOutcome): PostgameAllianceOutcomeSummary {
+function compactPostgameOutcome(
+  outcome: AllianceHuddleOutcome,
+  playerRefs: ReadonlyMap<string, RevealedPlayerRef>,
+): PostgameAllianceOutcomeSummary {
   return {
     id: outcome.id,
     allianceId: outcome.allianceId,
     round: outcome.round,
     window: outcome.window,
-    plan: outcome.plan,
-    confidence: outcome.confidence,
-    posture: outcome.posture,
-    leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+    facts: structuredClone(outcome.facts),
+    factSummaries: formatAllianceHuddleFacts(
+      outcome.facts,
+      (playerId) => playerRefs.get(playerId)?.name ?? playerId,
+    ),
   };
 }
 

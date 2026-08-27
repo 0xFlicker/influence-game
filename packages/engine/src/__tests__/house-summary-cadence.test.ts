@@ -9,6 +9,7 @@ import type {
 import { TemplateHouseInterviewer } from "../house-interviewer";
 import {
   HOUSE_SUMMARY_ACTOR_COORDINATES,
+  expectedHouseAudienceClaimKind,
   type HouseBeatClass,
   type HouseSummaryActorCoordinate,
 } from "../house-summary-frontier";
@@ -53,6 +54,38 @@ function failedSummary(context: HouseSelectiveSummaryContext): HouseSummaryAttem
       reasoningTokens: null,
       totalTokens: null,
     }],
+  };
+}
+
+function emittedSummary(
+  context: HouseSelectiveSummaryContext,
+  alias: string,
+  renderedText: string,
+  options: { forgedBoundary?: boolean; unsupportedAlias?: boolean } = {},
+): HouseSummaryAttemptResult {
+  const selectedAlias = options.unsupportedAlias ? "unsupported-alias" : alias;
+  const sourceValue = context.frontier.sourceValuesByAlias.get(alias);
+  const source = Object.values(context.frontier.factStore).flat()
+    .find((fact) => fact.alias === alias)?.source;
+  if (!sourceValue || !source) throw new Error(`Expected typed source ${alias}`);
+  const boundary = options.forgedBoundary
+    ? { ...context.frontier.boundary, id: `${context.frontier.boundary.id}:forged` }
+    : context.frontier.boundary;
+  return {
+    status: "emitted",
+    artifact: {
+      version: 1,
+      boundary,
+      claims: [{ kind: expectedHouseAudienceClaimKind(sourceValue), sourceAlias: selectedAlias }],
+      sources: [source],
+      renderedText,
+    },
+    boundary,
+    providerCalls: 1,
+    factCalls: 0,
+    requestedCategories: [],
+    returnedBytes: 0,
+    usage: [],
   };
 }
 
@@ -223,17 +256,11 @@ class InvalidPublishingHouse extends TemplateHouseInterviewer {
     const primarySource = context.frontier.catalog[0];
     if (!primarySource) throw new Error("Expected a material FORMAT_PICK frontier");
     return {
-      status: "emitted",
-      summary: "FORMAT LOCKED: forged state authority",
-      boundary: context.frontier.boundary,
+      ...emittedSummary(context, primarySource.alias, "FORMAT LOCKED: forged state authority"),
       providerCalls: 2,
       factCalls: 1,
       requestedCategories: ["canonical_phase_facts"],
       returnedBytes: 42,
-      sourceAliases: [primarySource.alias],
-      sources: [primarySource.source],
-      openQuestions: [],
-      threadIds: [],
       usage: [{
         callId: "invalid-custom-house",
         responseId: "response-invalid-custom-house",
@@ -257,22 +284,10 @@ class InvariantBypassingHouse extends TemplateHouseInterviewer {
     }
     const primarySource = context.frontier.catalog[0];
     if (!primarySource) throw new Error(`Expected a material ${coordinate} frontier`);
-    return {
-      status: "emitted",
-      summary: "A fresh fault line is visible in the group.",
-      boundary: coordinate === "format_pick"
-        ? { ...context.frontier.boundary, id: `${context.frontier.boundary.id}:forged` }
-        : context.frontier.boundary,
-      providerCalls: 1,
-      factCalls: 0,
-      requestedCategories: [],
-      returnedBytes: 0,
-      sourceAliases: coordinate === "format_pick" ? [primarySource.alias] : ["unsupported-alias"],
-      sources: [primarySource.source],
-      openQuestions: [],
-      threadIds: [],
-      usage: [],
-    };
+    return emittedSummary(context, primarySource.alias, "A fresh fault line is visible in the group.", {
+      forgedBoundary: coordinate === "format_pick",
+      unsupportedAlias: coordinate === "format_mingle",
+    });
   }
 }
 
@@ -284,17 +299,12 @@ class UnsupportedPlayerCountHouse extends TemplateHouseInterviewer {
     const canonicalFact = context.frontier.factStore.canonical_phase_facts[0];
     if (!canonicalFact) throw new Error("Expected a canonical FORMAT_PICK fact");
     return {
-      status: "emitted",
-      summary: "Five players remain, and the format has nowhere left to hide its cost.",
-      boundary: context.frontier.boundary,
+      ...emittedSummary(
+        context,
+        canonicalFact.alias,
+        "Five players remain, and the format has nowhere left to hide its cost.",
+      ),
       providerCalls: 1,
-      factCalls: 0,
-      requestedCategories: [],
-      returnedBytes: 0,
-      sourceAliases: [canonicalFact.alias],
-      sources: [canonicalFact.source],
-      openQuestions: [],
-      threadIds: [],
       usage: [{
         callId: "unsupported-player-count",
         responseId: "response-unsupported-player-count",
@@ -320,17 +330,12 @@ class UnsupportedDialogueAttributionHouse extends TemplateHouseInterviewer {
     );
     if (!adaDialogue) throw new Error("Expected Ada introduction dialogue");
     return {
-      status: "emitted",
-      summary: "Ada and Blair entered with matching promises to win.",
-      boundary: context.frontier.boundary,
+      ...emittedSummary(
+        context,
+        adaDialogue.alias,
+        "Ada and Blair entered with matching promises to win.",
+      ),
       providerCalls: 1,
-      factCalls: 0,
-      requestedCategories: [],
-      returnedBytes: 0,
-      sourceAliases: [adaDialogue.alias],
-      sources: [adaDialogue.source],
-      openQuestions: [],
-      threadIds: [],
       usage: [{
         callId: "unsupported-dialogue-attribution",
         responseId: "response-unsupported-dialogue-attribution",
@@ -641,10 +646,11 @@ describe("House summary proving cadence", () => {
     );
     expect(recoveredContext?.frontier.factStore.canonical_phase_facts.map((fact) => fact.label))
       .not.toContain("format.selected");
-    expect(skippedContext?.continuity.lastSummaryByActorCoordinate.format_menu).toEqual(expect.any(String));
-    expect(recoveredContext?.continuity.lastSummaryByActorCoordinate.format_menu)
-      .toBe(skippedContext?.continuity.lastSummaryByActorCoordinate.format_menu);
-    expect(recoveredContext?.continuity.lastSummaryByActorCoordinate).not.toHaveProperty("format_pick");
+    expect(skippedContext?.continuity.lastArtifactByActorCoordinate.format_menu?.renderedText)
+      .toEqual(expect.any(String));
+    expect(recoveredContext?.continuity.lastArtifactByActorCoordinate.format_menu)
+      .toEqual(skippedContext?.continuity.lastArtifactByActorCoordinate.format_menu);
+    expect(recoveredContext?.continuity.lastArtifactByActorCoordinate).not.toHaveProperty("format_pick");
     expect(result.transcript.filter((entry) => (
       entry.dialogueKind === "house_summary" && (
         entry.phase === skippedContext?.frontier.boundary.phase || entry.phase === Phase.FORMAT_PICK
@@ -666,9 +672,9 @@ describe("House summary proving cadence", () => {
     );
     expect(menuContexts).toHaveLength(3);
     expect(menuReceipts.map((receipt) => receipt.status)).toEqual(["emitted", "model_skipped", "emitted"]);
-    const firstSummary = menuContexts[1]?.continuity.lastSummaryByActorCoordinate.format_menu;
-    expect(firstSummary).toEqual(expect.any(String));
-    expect(menuContexts[2]?.continuity.lastSummaryByActorCoordinate.format_menu).toBe(firstSummary);
+    const firstArtifact = menuContexts[1]?.continuity.lastArtifactByActorCoordinate.format_menu;
+    expect(firstArtifact?.renderedText).toEqual(expect.any(String));
+    expect(menuContexts[2]?.continuity.lastArtifactByActorCoordinate.format_menu).toEqual(firstArtifact);
   });
 
   it("uses the inherited House-summary control for the whole proving cadence", async () => {

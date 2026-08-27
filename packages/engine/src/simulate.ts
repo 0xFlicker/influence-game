@@ -181,6 +181,10 @@
  * `--no-house-summaries` to suppress the complete phase-cadence House MC path.
  * House prose is a system transcript row with `dialogueKind: "house_summary"`;
  * canonical events/projections, never that prose, remain game-state authority.
+ * Simulation endgame classification and stage/Judgment instrumentation likewise
+ * consume canonical `endgame.stage_set`, accepted Judgment speech, and jury events.
+ * Changing, translating, duplicating, or omitting a House banner cannot change
+ * the reported endgame type or accepted jury counts.
  */
 
 import type OpenAI from "openai";
@@ -208,10 +212,12 @@ import {
 } from "./token-tracker";
 import {
   aggregateInstrumentation,
+  classifyCanonicalEndgame,
   instrumentGame,
   type BatchInstrumentation,
   type GameInstrumentation,
   type GitMetadata,
+  type SimulationEndgameType,
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
 import {
@@ -881,7 +887,7 @@ export interface GameResult {
   winnerPersona: string | undefined;
   rounds: number;
   eliminationOrder: string[];
-  endgameType: string;
+  endgameType: SimulationEndgameType | "error";
   playerPersonas: Record<string, string>;
   durationMs: number;
   transcriptPath: string;
@@ -932,22 +938,6 @@ export interface AggregateStats {
     flexCostEstimates: CostEstimate[];
   };
   instrumentation: BatchInstrumentation;
-}
-
-// ---------------------------------------------------------------------------
-// Extract data from transcript
-// ---------------------------------------------------------------------------
-
-function extractEndgameType(transcript: readonly TranscriptEntry[]): string {
-  let lastStage = "normal";
-  for (const entry of transcript) {
-    if (entry.scope === "system") {
-      if (entry.text.includes("THE JUDGMENT")) lastStage = "judgment";
-      else if (entry.text.includes("THE TRIBUNAL")) lastStage = "tribunal";
-      else if (entry.text.includes("THE RECKONING")) lastStage = "reckoning";
-    }
-  }
-  return lastStage;
 }
 
 function getSurvivalRound(
@@ -1330,9 +1320,11 @@ export function renderMarkdownSummary(stats: AggregateStats, results: GameResult
   lines.push(`| Reveal phases | ${stats.instrumentation.council.revealPhases} |`);
   lines.push(`| Council phases | ${stats.instrumentation.council.councilPhases} |`);
   lines.push(`| Council votes | ${stats.instrumentation.council.councilVotes} |`);
-  lines.push(`| Reckoning markers | ${stats.instrumentation.endgame.reckoning} |`);
-  lines.push(`| Tribunal markers | ${stats.instrumentation.endgame.tribunal} |`);
-  lines.push(`| Judgment markers | ${stats.instrumentation.endgame.judgment} |`);
+  lines.push(`| Reckoning stage events | ${stats.instrumentation.endgame.reckoning} |`);
+  lines.push(`| Tribunal stage events | ${stats.instrumentation.endgame.tribunal} |`);
+  lines.push(`| Judgment stage events | ${stats.instrumentation.endgame.judgment} |`);
+  lines.push(`| Accepted jury questions | ${stats.instrumentation.endgame.juryQuestions} |`);
+  lines.push(`| Accepted jury ballots | ${stats.instrumentation.endgame.juryVotes} |`);
   lines.push(`| Mingle rooms | ${stats.instrumentation.rooms.totalRooms} |`);
   lines.push(`| Mingle sessions instrumented | ${stats.instrumentation.rooms.mingleSessions.length} |`);
   lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
@@ -2163,7 +2155,8 @@ async function main() {
       const durationMs = Date.now() - startTime;
 
       const eliminationOrder = result.eliminationOrder;
-      const endgameType = extractEndgameType(result.transcript);
+      const canonicalEvents = runner.getCanonicalEvents();
+      const endgameType = classifyCanonicalEndgame(canonicalEvents);
 
       const gameTotalUsage = gameTracker.getTotalUsage();
       const perAgentUsage = gameTracker.getAllUsage();
@@ -2172,6 +2165,7 @@ async function main() {
         perAgentUsage,
         playerNameById,
         runner.houseSummaryPhaseReceipts,
+        canonicalEvents,
       );
       const gameResult: GameResult = {
         gameNumber: g,
@@ -2220,7 +2214,7 @@ async function main() {
             metadata,
             result: gameResult,
             transcript: result.transcript,
-            canonicalEvents: runner.getCanonicalEvents(),
+            canonicalEvents,
           },
           null,
           2,
@@ -2232,12 +2226,14 @@ async function main() {
       const durationMs = Date.now() - startTime;
       console.error(`  Game ${g} FAILED after ${(durationMs / 1000).toFixed(0)}s: ${err}`);
       const transcript = [...runner.transcriptLog];
+      const canonicalEvents = runner.getCanonicalEvents();
       const perAgentUsage = gameTracker.getAllUsage();
       const instrumentation = instrumentGame(
         transcript,
         perAgentUsage,
         playerNameById,
         runner.houseSummaryPhaseReceipts,
+        canonicalEvents,
       );
       const gameResult: GameResult = {
         gameNumber: g,

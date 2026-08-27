@@ -383,7 +383,11 @@ describe("buildPostgameAnalysisProjection", () => {
       memberNames: [firstElimination.player.name, cuttingVoter.name],
       huddleOutcomeCount: 1,
       latestOutcome: {
-        plan: "Vote together, then deny there was a pact.",
+        facts: [expect.objectContaining({
+          kind: "commitment",
+          actorPlayerId: cuttingVoter.id,
+          targetPlayerId: firstElimination.player.id,
+        })],
       },
     });
     expect(projection.roundSummaries.find((round) => round.round === 1)?.allianceActivity).toMatchObject({
@@ -475,13 +479,16 @@ function addNamedAllianceOverlay(
     allianceId: alliance.id,
     window: "pre_vote",
     round: 1,
-    ask: "Coordinate the first vote.",
-    plan: "Vote together, then deny there was a pact.",
-    promises: ["Keep the pair quiet."],
-    dissent: [],
-    confidence: "medium",
-    posture: "concealed",
-    leakOrBetrayalClaims: [`${cuttingVoter.name} may leak the pair.`],
+    facts: [{
+      kind: "commitment",
+      factId: "fact-smoke-vote",
+      sessionId: "session-smoke-vote",
+      actorPlayerId: cuttingVoter.id,
+      actionKind: "empower_vote",
+      targetPlayerId: eliminated.id,
+      confidence: "medium",
+    }],
+    participantPlayerIds: [eliminated.id, cuttingVoter.id],
     createdAt: timestamp,
   };
   const eventBase = {
@@ -532,6 +539,7 @@ function addNamedAllianceOverlay(
       sequence: sequenceStart + 3,
       phase: Phase.PRE_VOTE_HUDDLE,
       type: "alliance.huddle_outcome_recorded",
+      payloadVersion: 2,
       payload: { outcome, alliance },
     },
   ];

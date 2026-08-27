@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { GameState } from "../game-state";
 import { Phase } from "../types";
+import type { AllianceHuddleFactAtom } from "../types";
 
 const PLAYERS = [
   { id: "alice", name: "Alice" },
@@ -16,6 +17,18 @@ function createStartedGame(): GameState {
   });
   gs.startRound();
   return gs;
+}
+
+function commitmentFact(sessionId: string, factId: string): AllianceHuddleFactAtom {
+  return {
+    kind: "commitment",
+    factId,
+    sessionId,
+    actorPlayerId: "alice",
+    actionKind: "council_vote",
+    targetPlayerId: "charlie",
+    confidence: "high",
+  };
 }
 
 describe("named alliance state", () => {
@@ -571,32 +584,20 @@ describe("named alliance state", () => {
       completedAt: "2026-07-03T00:00:00.000Z",
     });
 
-    const longPlan = "P".repeat(800);
-    const longPromises = Array.from({ length: 12 }, (_, i) => `promise-${i}-${"x".repeat(200)}`);
     gs.recordAllianceHuddleOutcome({
       id: "outcome-bound",
       sessionId: "session-bound",
       allianceId: "alliance-bound",
       window: "pre_vote",
       round: gs.round,
-      ask: "A".repeat(400),
-      plan: longPlan,
-      promises: longPromises,
-      dissent: [],
-      confidence: "high",
-      posture: "coordinating-with-extra-detail-that-should-be-clipped-for-compact-memory",
-      leakOrBetrayalClaims: [],
-      // Omitted participantPlayerIds — must backfill from session speakers.
+      facts: [commitmentFact("session-bound", "fact-bound")],
+      participantPlayerIds: [],
       createdAt: "2026-07-03T00:00:01.000Z",
     });
 
     const outcome = gs.getAllianceHuddleOutcomes()[0];
     expect(outcome?.participantPlayerIds).toEqual(["alice", "bob"]);
-    expect(outcome?.ask.length).toBeLessThanOrEqual(200);
-    expect(outcome?.plan.length).toBeLessThanOrEqual(400);
-    expect(outcome?.posture.length).toBeLessThanOrEqual(80);
-    expect(outcome?.promises).toHaveLength(6);
-    expect(outcome?.promises.every((item) => item.length <= 160)).toBe(true);
+    expect(outcome?.facts).toEqual([commitmentFact("session-bound", "fact-bound")]);
   });
 
   it("hydrates participant snapshots from matching completed sessions during canonical replay", () => {
@@ -633,13 +634,7 @@ describe("named alliance state", () => {
       allianceId: "alliance-hydrate",
       window: "pre_vote",
       round: gs.round,
-      ask: "Hold.",
-      plan: "Coordinate.",
-      promises: [],
-      dissent: [],
-      confidence: "medium",
-      posture: "guarded",
-      leakOrBetrayalClaims: [],
+      facts: [commitmentFact("session-hydrate", "fact-hydrate")],
       participantPlayerIds: ["alice", "bob"],
       createdAt: "2026-07-03T00:00:01.000Z",
     });
@@ -652,12 +647,13 @@ describe("named alliance state", () => {
     // Legacy event body without snapshot still recovers from the matching session.
     const events = gs.getCanonicalEvents().map((event) => {
       if (event.type !== "alliance.huddle_outcome_recorded") return event;
-      const { participantPlayerIds: _drop, ...outcomeWithoutSnapshot } = event.payload.outcome;
+      const { id, sessionId, allianceId, window, round, createdAt } = event.payload.outcome;
       return {
         ...event,
+        payloadVersion: 1 as const,
         payload: {
-          ...event.payload,
-          outcome: outcomeWithoutSnapshot,
+          outcome: { id, sessionId, allianceId, window, round, createdAt },
+          ...(event.payload.alliance ? { alliance: event.payload.alliance } : {}),
         },
       };
     });
@@ -685,23 +681,18 @@ describe("named alliance state", () => {
       playerId: "bob",
       response: "accepted",
     });
-    gs.recordAllianceHuddleOutcome({
+    expect(() => gs.recordAllianceHuddleOutcome({
       id: "outcome-orphan",
       sessionId: "session-missing",
       allianceId: "alliance-orphan",
       window: "pre_vote",
       round: gs.round,
-      ask: "Orphan.",
-      plan: "No speakers.",
-      promises: [],
-      dissent: [],
-      confidence: "low",
-      posture: "guarded",
-      leakOrBetrayalClaims: [],
+      facts: [commitmentFact("session-missing", "fact-orphan")],
+      participantPlayerIds: [],
       createdAt: "2026-07-03T00:00:01.000Z",
-    });
+    })).toThrow("without completed session");
 
     const outcome = gs.getAllianceHuddleOutcomes()[0];
-    expect(outcome?.participantPlayerIds).toBeUndefined();
+    expect(outcome).toBeUndefined();
   });
 });

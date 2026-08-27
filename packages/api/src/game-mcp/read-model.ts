@@ -2,11 +2,13 @@ import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import {
   buildRevealedRoundFacts,
   canonicalEventIsVisibleTo,
+  decodeLegacyAllianceHuddleOutcomeV1,
+  formatAllianceHuddleFacts,
   Phase,
   projectViewerDecisionEvent,
   resolveGameKernel,
   type AllianceHuddleOutcome,
-  type AllianceHuddleCommitmentFact,
+  type AllianceHuddleFactAtom,
   type AllianceProposalLineage,
   type AllianceRecord,
   type CanonicalEventQueryMode,
@@ -260,25 +262,16 @@ interface AgentAllianceOutcomeRead {
   id: string;
   round: number;
   window: string;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: string;
-  posture: string;
-  leakOrBetrayalClaims: string[];
-  /** Member-authored tactical facts; shown only in owner/member or producer full reads. */
-  commitments: AllianceHuddleCommitmentFact[];
+  facts: AllianceHuddleFactAtom[];
+  factSummaries: string[];
 }
 
 interface AgentAllianceCompactOutcomeRead {
   id: string;
   round: number;
   window: string;
-  plan: string;
-  confidence: string;
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  factCount: number;
+  factSummaries: string[];
 }
 
 interface AgentAllianceRecordRead extends AgentAllianceTermsRead {
@@ -1486,7 +1479,12 @@ function buildAgentAllianceFacts(params: {
         break;
       }
       case "alliance.huddle_outcome_recorded": {
-        const outcome = outcomeRead(event.payload.outcome);
+        const matchingSession = huddleSessions.find((session) => session.id === event.payload.outcome.sessionId);
+        const canonicalOutcome = event.payloadVersion === 1
+          ? decodeLegacyAllianceHuddleOutcomeV1(event.payload.outcome, matchingSession?.speakerIds)
+          : event.payload.outcome;
+        if (!canonicalOutcome.participantPlayerIds.includes(params.player.id)) break;
+        const outcome = outcomeRead(canonicalOutcome, params.playerNames);
         outcomeBySessionId.set(event.payload.outcome.sessionId, outcome);
         outcomeByAllianceId.set(event.payload.outcome.allianceId, outcome);
         if (event.payload.alliance?.memberIds.includes(params.player.id)) {
@@ -1638,10 +1636,8 @@ function compactOutcome(outcome: AgentAllianceOutcomeRead): AgentAllianceCompact
     id: outcome.id,
     round: outcome.round,
     window: outcome.window,
-    plan: outcome.plan,
-    confidence: outcome.confidence,
-    posture: outcome.posture,
-    leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+    factCount: outcome.facts.length,
+    factSummaries: [...outcome.factSummaries],
   };
 }
 
@@ -1734,23 +1730,17 @@ function allianceRead(
 
 function outcomeRead(
   outcome: AllianceHuddleOutcome,
+  playerNames: Map<string, string>,
 ): AgentAllianceOutcomeRead {
   return {
     id: outcome.id,
     round: outcome.round,
     window: outcome.window,
-    ask: outcome.ask,
-    plan: outcome.plan,
-    promises: [...outcome.promises],
-    dissent: [...outcome.dissent],
-    confidence: outcome.confidence,
-    posture: outcome.posture,
-    leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
-    commitments: (outcome.commitments ?? []).map((commitment) => ({
-      ...commitment,
-      memberCommitments: commitment.memberCommitments.map((item) => ({ ...item })),
-      dissent: [...commitment.dissent],
-    })),
+    facts: structuredClone(outcome.facts),
+    factSummaries: formatAllianceHuddleFacts(
+      outcome.facts,
+      (playerId) => nameForPlayer(playerNames, playerId),
+    ),
   };
 }
 

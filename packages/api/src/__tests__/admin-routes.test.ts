@@ -2243,14 +2243,15 @@ describe("admin route RBAC", () => {
     }));
     capsule.houseContinuityCapsule = {
       ...capsule.houseContinuityCapsule!,
-      summary: privateHouseSummary,
-      alliances: [
+      hypotheses: [
         {
-          name: "test alliance",
-          members: ["Atlas", "Mira"],
-          status: "speculative",
+          id: privateHouseSummary,
+          kind: "alliance_coordination",
+          status: "emerging",
           confidence: "medium",
-          evidence: ["private alliance read"],
+          subjectPlayerIds: [capsule.playerContinuityCapsules![0]!.playerId],
+          relatedPlayerIds: [capsule.playerContinuityCapsules![1]!.playerId],
+          sourceAliases: ["P1"],
         },
       ],
     };

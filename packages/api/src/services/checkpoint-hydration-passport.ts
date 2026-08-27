@@ -13,6 +13,8 @@
 
 import {
   isHouseContinuityRequirement,
+  isHouseContinuityCapsuleShape,
+  parseHouseNarrativeContinuity,
   parsePlayerContinuityCapsule,
   PHASE_BOUNDARY_ACCUMULATOR_IDS,
   PLAYER_CONTINUITY_CAPSULE_VERSION,
@@ -452,23 +454,7 @@ function isPlayerContinuityCapsule(value: unknown): boolean {
 }
 
 function isHouseContinuityCapsule(value: unknown): boolean {
-  return isRecord(value) &&
-    typeof value.revisionId === "string" &&
-    value.revisionId.length > 0 &&
-    (value.previousRevisionId === null || typeof value.previousRevisionId === "string") &&
-    typeof value.updatedAtRound === "number" &&
-    typeof value.updatedAtPhase === "string" &&
-    typeof value.summary === "string" &&
-    Array.isArray(value.alliances) &&
-    Array.isArray(value.tensions) &&
-    Array.isArray(value.promises) &&
-    Array.isArray(value.voteBlocs) &&
-    Array.isArray(value.mingleDiscoveries) &&
-    Array.isArray(value.playerTrajectories) &&
-    Array.isArray(value.storyArcs) &&
-    Array.isArray(value.droppedThreads) &&
-    Array.isArray(value.openQuestions) &&
-    typeof value.changedSincePrevious === "string";
+  return isHouseContinuityCapsuleShape(value);
 }
 
 function classifyHouseContinuityStamp(params: {
@@ -704,11 +690,19 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
     addStamp("playerContinuity", "missing", "no structured player continuity capsules present");
   }
 
+  const houseNarrative = snap?.houseNarrativeContinuityCapsule ?? null;
+  const houseNarrativeResult = houseNarrative == null
+    ? null
+    : parseHouseNarrativeContinuity(houseNarrative);
   const houseStamp = classifyHouseContinuityStamp({
     requirement: snap?.houseContinuityRequirement,
     capsule: hcc,
   });
-  addStamp("houseContinuity", houseStamp.status, houseStamp.reason);
+  if (houseNarrativeResult?.status === "invalid") {
+    addStamp("houseContinuity", "malformed", "House narrative continuity capsule is malformed");
+  } else {
+    addStamp("houseContinuity", houseStamp.status, houseStamp.reason);
+  }
 
   const ownerEpochStatus = hasBoundaryEvidence ? "passed" : "missing";
   addStamp(
@@ -720,6 +714,7 @@ export function deriveHydrationPassport(input: DerivePassportInput): DerivePassp
   const privacyViolation =
     containsForbiddenPrivacyKey(pcs) ||
     containsForbiddenPrivacyKey(hcc) ||
+    containsForbiddenPrivacyKey(houseNarrative) ||
     containsForbiddenPrivacyKey(runtimeSnapshot) ||
     containsForbiddenPrivacyKey(input.transcriptCursor) ||
     containsForbiddenPrivacyKey(input.tokenCostCursor);

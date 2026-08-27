@@ -1,8 +1,9 @@
 import type { TranscriptEntry } from "./game-runner.types";
+import type { CanonicalGameEvent } from "./canonical-events";
 import type { HouseSummaryPhaseReceipt } from "./house-summary-frontier";
 import type { TokenUsage } from "./token-tracker";
 import type { MingleSessionDiagnostics } from "./types";
-import { Phase } from "./types";
+import { Phase, type EndgameStage } from "./types";
 
 interface MingleAssignmentSourceSummary {
   house: number;
@@ -105,13 +106,77 @@ export interface CouncilMarkerInstrumentation {
   candidatePairs: Array<{ round: number; candidates: [string, string] }>;
 }
 
-export interface EndgameMarkerInstrumentation {
+export interface EndgameInstrumentation {
+  /** Counts of accepted canonical `endgame.stage_set` events by stage. */
   reckoning: number;
   tribunal: number;
   judgment: number;
+  /** Accepted canonical Judgment question speeches. */
   juryQuestions: number;
+  /** Accepted canonical jury ballots. */
   juryVotes: number;
+  /** Accepted canonical endgame/Judgment events grouped by their canonical phase. */
   byPhase: Partial<Record<Phase, number>>;
+}
+
+export type SimulationEndgameType = EndgameStage | "normal";
+
+/**
+ * Classify a simulation from accepted canonical stage transitions only.
+ * Transcript/House copy is presentation and cannot change this result.
+ */
+export function classifyCanonicalEndgame(
+  events: readonly CanonicalGameEvent[],
+): SimulationEndgameType {
+  let latest: Extract<CanonicalGameEvent, { type: "endgame.stage_set" }> | undefined;
+  for (const event of events) {
+    if (event.type !== "endgame.stage_set") continue;
+    if (!latest || event.sequence >= latest.sequence) latest = event;
+  }
+  return latest?.payload.stage ?? "normal";
+}
+
+function buildEndgameInstrumentation(
+  events: readonly CanonicalGameEvent[],
+): EndgameInstrumentation {
+  const endgame: EndgameInstrumentation = {
+    reckoning: 0,
+    tribunal: 0,
+    judgment: 0,
+    juryQuestions: 0,
+    juryVotes: 0,
+    byPhase: {},
+  };
+
+  for (const event of events) {
+    let endgameEvent = false;
+    switch (event.type) {
+      case "endgame.stage_set":
+        endgame[event.payload.stage] += 1;
+        endgameEvent = true;
+        break;
+      case "judgment.speech_recorded":
+        if (event.payload.speechKind === "jury_question") endgame.juryQuestions += 1;
+        endgameEvent = true;
+        break;
+      case "jury.vote_cast":
+        endgame.juryVotes += 1;
+        endgameEvent = true;
+        break;
+      case "endgame.elimination_vote_cast":
+      case "endgame.elimination_resolved":
+      case "jury.winner_determined":
+      case "endgame.speech_recorded":
+        endgameEvent = true;
+        break;
+      default:
+        break;
+    }
+
+    if (endgameEvent && event.phase !== null) increment(endgame.byPhase, event.phase);
+  }
+
+  return endgame;
 }
 
 export interface RoomPairObservation {
@@ -231,7 +296,7 @@ export interface GameInstrumentation {
     eliminations: AutoEliminateObservation[];
   };
   council: CouncilMarkerInstrumentation;
-  endgame: EndgameMarkerInstrumentation;
+  endgame: EndgameInstrumentation;
   rooms: RoomInstrumentation;
   actionUsage: ActionUsageInstrumentation;
   houseProducer: HouseProducerInstrumentation;
@@ -243,7 +308,7 @@ export interface BatchInstrumentation {
   powerActions: GameInstrumentation["powerActions"];
   autoEliminations: GameInstrumentation["autoEliminations"];
   council: CouncilMarkerInstrumentation;
-  endgame: EndgameMarkerInstrumentation;
+  endgame: EndgameInstrumentation;
   rooms: RoomInstrumentation;
   actionUsage: ActionUsageInstrumentation;
   houseProducer: HouseProducerInstrumentation;
@@ -631,6 +696,7 @@ export function instrumentGame(
   perSourceUsage: Record<string, TokenUsage>,
   playerNameById: Record<string, string>,
   houseSummaryReceipts: readonly HouseSummaryPhaseReceipt[] = [],
+  canonicalEvents: readonly CanonicalGameEvent[] = [],
 ): GameInstrumentation {
   const powerActions: PowerActionObservation[] = [];
   const autoEliminations: AutoEliminateObservation[] = [];
@@ -641,14 +707,7 @@ export function instrumentGame(
     councilVotes: 0,
     candidatePairs,
   };
-  const endgame: EndgameMarkerInstrumentation = {
-    reckoning: 0,
-    tribunal: 0,
-    judgment: 0,
-    juryQuestions: 0,
-    juryVotes: 0,
-    byPhase: {},
-  };
+  const endgame = buildEndgameInstrumentation(canonicalEvents);
   const participationByPlayer: Record<string, number> = {};
   const exclusionsByPlayer: Record<string, number> = {};
   const pairs: RoomPairObservation[] = [];
@@ -678,36 +737,6 @@ export function instrumentGame(
     }
     if (entry.scope === "system" && /\bcouncil vote ->/.test(entry.text)) {
       council.councilVotes += 1;
-    }
-
-    if (entry.scope === "system") {
-      if (entry.text.includes("THE RECKONING") || entry.text.includes("RECKONING:")) {
-        endgame.reckoning += 1;
-      }
-      if (entry.text.includes("THE TRIBUNAL") || entry.text.includes("TRIBUNAL:")) {
-        endgame.tribunal += 1;
-      }
-      if (entry.text.includes("THE JUDGMENT") || entry.text.includes("JUDGMENT:")) {
-        endgame.judgment += 1;
-      }
-      if (entry.text.includes("JURY QUESTIONS")) {
-        endgame.juryQuestions += 1;
-      }
-      if (entry.text.includes("JURY VOTE")) {
-        endgame.juryVotes += 1;
-      }
-    }
-
-    if (
-      entry.phase === Phase.PLEA ||
-      entry.phase === Phase.ACCUSATION ||
-      entry.phase === Phase.DEFENSE ||
-      entry.phase === Phase.OPENING_STATEMENTS ||
-      entry.phase === Phase.JURY_QUESTIONS ||
-      entry.phase === Phase.CLOSING_ARGUMENTS ||
-      entry.phase === Phase.JURY_VOTE
-    ) {
-      increment(endgame.byPhase, entry.phase);
     }
 
     if (entry.roomMetadata) {
@@ -790,7 +819,7 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
     councilVotes: 0,
     candidatePairs: [],
   };
-  const endgame: EndgameMarkerInstrumentation = {
+  const endgame: EndgameInstrumentation = {
     reckoning: 0,
     tribunal: 0,
     judgment: 0,

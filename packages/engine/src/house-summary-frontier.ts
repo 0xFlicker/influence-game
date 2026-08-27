@@ -1,6 +1,7 @@
 import type { CanonicalGameEvent, CanonicalGameEventType } from "./canonical-events";
 import type { CanonicalGameProjection } from "./game-projection";
 import type { Phase, UUID } from "./types";
+import type { StructuredDomainDecodeResult } from "./structured-output";
 
 export const HOUSE_SUMMARY_FRONTIER_VERSION = 1 as const;
 
@@ -78,6 +79,60 @@ export type HouseSourceCoordinate =
 
 export type HouseFactAuthority = "canonical_event" | "canonical_projection" | "dialogue_non_authoritative";
 
+export type HouseAudienceClaimKind =
+  | "canonical_event"
+  | "projection_alive_count"
+  | "dialogue_quote";
+
+export interface HouseAudienceClaimSelection {
+  kind: HouseAudienceClaimKind;
+  sourceAlias: string;
+}
+
+export const CANONICAL_NARRATION_TYPES = [
+  "game.roster_initialized",
+  "round.started",
+  "shields.expired",
+  "vote.empower_tally_resolved",
+  "vote.empowered_set",
+  "format.menu_offered",
+  "format.selected",
+  "format.resolved",
+  "power.action_set",
+  "power.candidates_resolved",
+  "council.elimination_resolved",
+  "player.eliminated",
+  "endgame.stage_set",
+  "endgame.elimination_resolved",
+  "jury.winner_determined",
+  "round.result_recorded",
+] as const satisfies readonly CanonicalGameEventType[];
+
+export type HouseNarratedCanonicalEvent = Extract<
+  CanonicalGameEvent,
+  { type: (typeof CANONICAL_NARRATION_TYPES)[number] }
+>;
+
+export type HouseSummarySourceValue =
+  | {
+      kind: "canonical_event";
+      event: HouseNarratedCanonicalEvent;
+      playerNamesById: Readonly<Record<UUID, string>>;
+    }
+  | {
+      kind: "canonical_projection";
+      headSequence: number;
+      alivePlayerIds: readonly UUID[];
+    }
+  | {
+      kind: "dialogue_non_authoritative";
+      speakerPlayerId: UUID | null;
+      speakerName: string;
+      quote: string;
+      anonymous: boolean;
+      source: Extract<HouseSourceCoordinate, { kind: "transcript_entry" }>;
+    };
+
 export interface HouseFactRow {
   alias: string;
   category: HouseFactCategory;
@@ -105,20 +160,31 @@ export interface HouseSummaryFrontier {
   categoryCounts: Record<HouseFactCategory, number>;
   /** Runner-private fact bodies. Prompt construction must use catalog, not this store. */
   factStore: Record<HouseFactCategory, HouseFactRow[]>;
+  /**
+   * Runner-private typed source snapshot. It is never serialized into a
+   * provider prompt, accepted receipt, trace output, or viewer payload.
+   */
+  sourceValuesByAlias: ReadonlyMap<string, HouseSummarySourceValue>;
+}
+
+export interface HouseAudienceSummaryArtifact {
+  version: typeof HOUSE_SUMMARY_FRONTIER_VERSION;
+  boundary: HouseSummaryBoundary;
+  claims: HouseAudienceClaimSelection[];
+  sources: HouseSourceCoordinate[];
+  renderedText: string;
 }
 
 export interface HouseNarrativeContinuity {
   version: typeof HOUSE_SUMMARY_FRONTIER_VERSION;
   lastBoundaryId: string | null;
-  lastSummary: string | null;
+  lastArtifact: HouseAudienceSummaryArtifact | null;
   /**
-   * Last emitted prose at each approved cadence coordinate. This is narrative
-   * style context only; it is never authoritative game evidence.
+   * Last accepted artifact at each approved cadence coordinate. Claims and
+   * sources are typed House evidence; renderedText is explicitly
+   * non-authoritative narrative/style context.
    */
-  lastSummaryByActorCoordinate: Partial<Record<HouseSummaryActorCoordinate, string>>;
-  openQuestions: string[];
-  threadIds: string[];
-  supportingSources: HouseSourceCoordinate[];
+  lastArtifactByActorCoordinate: Partial<Record<HouseSummaryActorCoordinate, HouseAudienceSummaryArtifact>>;
   examinedCanonicalHead: number;
   examinedDialogueHead: number;
   emittedCanonicalHead: number;
@@ -197,24 +263,7 @@ export interface HouseFactSliceLimits {
 const MAX_FACT_ROWS_PER_CATEGORY = 24;
 const MAX_FACT_STRING_CHARS = 280;
 
-const CANONICAL_NARRATION_TYPES = new Set<CanonicalGameEventType>([
-  "game.roster_initialized",
-  "round.started",
-  "shields.expired",
-  "vote.empower_tally_resolved",
-  "vote.empowered_set",
-  "format.menu_offered",
-  "format.selected",
-  "format.resolved",
-  "power.action_set",
-  "power.candidates_resolved",
-  "council.elimination_resolved",
-  "player.eliminated",
-  "endgame.stage_set",
-  "endgame.elimination_resolved",
-  "jury.winner_determined",
-  "round.result_recorded",
-]);
+const CANONICAL_NARRATION_TYPE_SET = new Set<CanonicalGameEventType>(CANONICAL_NARRATION_TYPES);
 
 const PROJECTION_TRIGGER_TYPES = new Set<CanonicalGameEventType>([
   "game.roster_initialized",
@@ -350,10 +399,15 @@ function safeEventData(event: CanonicalGameEvent, projection: CanonicalGameProje
   }
 }
 
+interface HouseProjectionRow {
+  row: Omit<HouseFactRow, "alias">;
+  sourceValue: Extract<HouseSummarySourceValue, { kind: "canonical_projection" }>;
+}
+
 function projectionRows(
   events: readonly CanonicalGameEvent[],
   projection: CanonicalGameProjection,
-): Array<Omit<HouseFactRow, "alias">> {
+): HouseProjectionRow[] {
   if (!events.some((event) => PROJECTION_TRIGGER_TYPES.has(event.type))) return [];
   const source: HouseSourceCoordinate = {
     kind: "canonical_projection",
@@ -362,67 +416,37 @@ function projectionRows(
     round: projection.round,
     phase: projection.phase,
   };
-  const alive = projection.playerOrder
+  const alivePlayerIds = projection.playerOrder.filter(
+    (id) => projection.players[id]?.status === "alive",
+  );
+  const alive = alivePlayerIds
     .map((id) => projection.players[id])
-    .filter((player) => player?.status === "alive")
     .map((player) => normalizeProviderString(player!.name, 80));
   const eliminated = projection.playerOrder
     .map((id) => projection.players[id])
     .filter((player) => player?.status === "eliminated")
     .map((player) => normalizeProviderString(player!.name, 80));
-  const rows: Array<Omit<HouseFactRow, "alias">> = [{
-    category: "player_projection_facts",
-    authority: "canonical_projection",
-    label: "Current public player board",
-    data: {
-      alive,
-      eliminated,
-      empowered: playerName(projection, projection.empoweredId),
-      selectedFormat: projection.selectedFormatId,
-      councilCandidates: projection.councilCandidates?.map((id) => playerName(projection, id)) ?? [],
-      endgameStage: projection.endgameStage,
-    },
-    source,
-  }];
-
-  if (events.some((event) => event.type === "mingle.rooms_allocated")) {
-    const allocation = projection.roomAllocations[projection.round];
-    if (allocation) {
-      rows.push({
-        category: "player_projection_facts",
-        authority: "canonical_projection",
-        label: "Current public room allocation",
-        data: {
-          rooms: allocation.rooms.map((room) => ({
-            roomId: room.roomId,
-            players: room.playerIds.map((id) => playerName(projection, id)),
-          })),
-          excluded: allocation.excluded.map((id) => playerName(projection, id)),
-        },
-        source,
-      });
-    }
-  }
-
-  if (events.some((event) => event.type.startsWith("alliance."))) {
-    const alliances = projection.allianceOrder
-      .map((id) => projection.alliances[id])
-      .filter(Boolean)
-      .map((alliance) => ({
-        name: normalizeProviderString(alliance!.name, 100),
-        status: alliance!.status,
-        members: alliance!.memberIds.map((id) => playerName(projection, id)),
-      }));
-    rows.push({
+  return [{
+    row: {
       category: "player_projection_facts",
       authority: "canonical_projection",
-      label: "Audience-safe alliance projection",
-      data: { alliances },
+      label: "Current public player board",
+      data: {
+        alive,
+        eliminated,
+        empowered: playerName(projection, projection.empoweredId),
+        selectedFormat: projection.selectedFormatId,
+        councilCandidates: projection.councilCandidates?.map((id) => playerName(projection, id)) ?? [],
+        endgameStage: projection.endgameStage,
+      },
       source,
-    });
-  }
-
-  return rows;
+    },
+    sourceValue: {
+      kind: "canonical_projection",
+      headSequence: projection.lastSequence,
+      alivePlayerIds,
+    },
+  }];
 }
 
 function nextAlias(index: number): string {
@@ -446,11 +470,8 @@ export function createEmptyHouseNarrativeContinuity(): HouseNarrativeContinuity 
   return {
     version: HOUSE_SUMMARY_FRONTIER_VERSION,
     lastBoundaryId: null,
-    lastSummary: null,
-    lastSummaryByActorCoordinate: {},
-    openQuestions: [],
-    threadIds: [],
-    supportingSources: [],
+    lastArtifact: null,
+    lastArtifactByActorCoordinate: {},
     examinedCanonicalHead: 0,
     examinedDialogueHead: 0,
     emittedCanonicalHead: 0,
@@ -459,21 +480,307 @@ export function createEmptyHouseNarrativeContinuity(): HouseNarrativeContinuity 
   };
 }
 
+function exactRecord(
+  value: unknown,
+  keys: readonly string[],
+): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).every((key) => keys.includes(key)) ? record : null;
+}
+
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function parseHouseSourceCoordinate(value: unknown): HouseSourceCoordinate | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.kind !== "string" || !nonNegativeInteger(candidate.round)) return null;
+  const keys = candidate.kind === "canonical_event"
+    ? ["kind", "sequence", "type", "round", "phase"]
+    : candidate.kind === "canonical_projection"
+      ? ["kind", "headSequence", "projection", "round", "phase"]
+      : candidate.kind === "transcript_entry"
+        ? ["kind", "sequence", "round", "phase", "dialogueKind"]
+        : [];
+  const base = exactRecord(value, keys);
+  if (!base) return null;
+  if (base.kind === "canonical_event") {
+    return nonNegativeInteger(base.sequence)
+      && typeof base.type === "string"
+      && (base.phase === null || typeof base.phase === "string")
+      ? value as HouseSourceCoordinate
+      : null;
+  }
+  if (base.kind === "canonical_projection") {
+    return nonNegativeInteger(base.headSequence)
+      && typeof base.projection === "string"
+      && (base.phase === null || typeof base.phase === "string")
+      ? value as HouseSourceCoordinate
+      : null;
+  }
+  if (base.kind === "transcript_entry") {
+    return nonNegativeInteger(base.sequence)
+      && typeof base.phase === "string"
+      && typeof base.dialogueKind === "string"
+      ? value as HouseSourceCoordinate
+      : null;
+  }
+  return null;
+}
+
+function parseHouseAudienceSummaryArtifact(
+  value: unknown,
+): HouseAudienceSummaryArtifact | null {
+  const artifact = exactRecord(value, ["version", "boundary", "claims", "sources", "renderedText"]);
+  if (!artifact || artifact.version !== HOUSE_SUMMARY_FRONTIER_VERSION) return null;
+  const boundary = exactRecord(artifact.boundary, [
+    "version",
+    "id",
+    "gameId",
+    "actorCoordinate",
+    "round",
+    "phase",
+    "beatClass",
+    "canonicalHead",
+    "dialogueHead",
+  ]);
+  if (
+    !boundary
+    || boundary.version !== HOUSE_SUMMARY_FRONTIER_VERSION
+    || typeof boundary.id !== "string"
+    || !boundary.id
+    || typeof boundary.gameId !== "string"
+    || !HOUSE_SUMMARY_ACTOR_COORDINATES.includes(boundary.actorCoordinate as HouseSummaryActorCoordinate)
+    || !nonNegativeInteger(boundary.round)
+    || typeof boundary.phase !== "string"
+    || (boundary.beatClass !== "ordinary" && boundary.beatClass !== "milestone")
+    || !nonNegativeInteger(boundary.canonicalHead)
+    || !nonNegativeInteger(boundary.dialogueHead)
+  ) return null;
+  if (!Array.isArray(artifact.claims) || artifact.claims.length > 8) return null;
+  const claims = artifact.claims.map((claim) => exactRecord(claim, ["kind", "sourceAlias"]));
+  if (claims.some((claim) => !claim)) return null;
+  const aliases = new Set<string>();
+  for (const claim of claims as Record<string, unknown>[]) {
+    if (
+      !["canonical_event", "projection_alive_count", "dialogue_quote"].includes(String(claim.kind))
+      || typeof claim.sourceAlias !== "string"
+      || !claim.sourceAlias
+      || aliases.has(claim.sourceAlias)
+    ) return null;
+    aliases.add(claim.sourceAlias);
+  }
+  if (!Array.isArray(artifact.sources) || artifact.sources.length !== artifact.claims.length) return null;
+  const sources = artifact.sources.map(parseHouseSourceCoordinate);
+  if (sources.some((source) => source === null)) return null;
+  for (const [index, claim] of (claims as Record<string, unknown>[]).entries()) {
+    const source = sources[index]!;
+    const matches = (claim.kind === "canonical_event" && source!.kind === "canonical_event")
+      || (claim.kind === "projection_alive_count" && source!.kind === "canonical_projection")
+      || (claim.kind === "dialogue_quote" && source!.kind === "transcript_entry");
+    if (!matches) return null;
+  }
+  if (typeof artifact.renderedText !== "string" || artifact.renderedText.length > 8_000) return null;
+  return structuredClone(value) as HouseAudienceSummaryArtifact;
+}
+
+/** Fail-closed parser for checkpointed House/producer/viewer narrative state. */
+export function parseHouseNarrativeContinuity(
+  value: unknown,
+): StructuredDomainDecodeResult<HouseNarrativeContinuity> {
+  const continuity = exactRecord(value, [
+    "version",
+    "lastBoundaryId",
+    "lastArtifact",
+    "lastArtifactByActorCoordinate",
+    "examinedCanonicalHead",
+    "examinedDialogueHead",
+    "emittedCanonicalHead",
+    "emittedDialogueHead",
+    "pendingDeltaCarry",
+  ]);
+  if (!continuity || continuity.version !== HOUSE_SUMMARY_FRONTIER_VERSION) {
+    return { status: "invalid", message: "House narrative continuity version is missing or unsupported." };
+  }
+  if (continuity.lastBoundaryId !== null && typeof continuity.lastBoundaryId !== "string") {
+    return { status: "invalid", message: "House narrative continuity boundary ID is malformed." };
+  }
+  const lastArtifact = continuity.lastArtifact === null
+    ? null
+    : parseHouseAudienceSummaryArtifact(continuity.lastArtifact);
+  if (continuity.lastArtifact !== null && !lastArtifact) {
+    return { status: "invalid", message: "House narrative continuity last artifact is malformed." };
+  }
+  const byCoordinate = exactRecord(
+    continuity.lastArtifactByActorCoordinate,
+    HOUSE_SUMMARY_ACTOR_COORDINATES,
+  );
+  if (!byCoordinate) {
+    return { status: "invalid", message: "House narrative continuity coordinate map is malformed." };
+  }
+  for (const artifact of Object.values(byCoordinate)) {
+    if (!parseHouseAudienceSummaryArtifact(artifact)) {
+      return { status: "invalid", message: "House narrative continuity contains a malformed coordinate artifact." };
+    }
+  }
+  for (const field of [
+    "examinedCanonicalHead",
+    "examinedDialogueHead",
+    "emittedCanonicalHead",
+    "emittedDialogueHead",
+  ] as const) {
+    if (!nonNegativeInteger(continuity[field])) {
+      return { status: "invalid", message: `House narrative continuity ${field} is malformed.` };
+    }
+  }
+  if (continuity.pendingDeltaCarry !== 0 && continuity.pendingDeltaCarry !== 1) {
+    return { status: "invalid", message: "House narrative continuity pending delta is malformed." };
+  }
+  if (
+    (continuity.emittedCanonicalHead as number) > (continuity.examinedCanonicalHead as number)
+    || (continuity.emittedDialogueHead as number) > (continuity.examinedDialogueHead as number)
+  ) {
+    return { status: "invalid", message: "House narrative continuity emitted heads exceed examined heads." };
+  }
+  if ((lastArtifact?.boundary.id ?? null) !== continuity.lastBoundaryId) {
+    return { status: "invalid", message: "House narrative continuity boundary and last artifact disagree." };
+  }
+  return {
+    status: "valid",
+    value: structuredClone(value) as HouseNarrativeContinuity,
+  };
+}
+
 /**
- * Retain one summary per approved cadence coordinate and discard any keys
+ * Retain one artifact per approved cadence coordinate and discard any keys
  * outside the authoritative coordinate tuple.
  */
-export function retainHouseSummaryAtActorCoordinate(
-  previous: HouseNarrativeContinuity["lastSummaryByActorCoordinate"],
+export function retainHouseArtifactAtActorCoordinate(
+  previous: HouseNarrativeContinuity["lastArtifactByActorCoordinate"],
   actorCoordinate: HouseSummaryActorCoordinate,
-  summary: string,
-): HouseNarrativeContinuity["lastSummaryByActorCoordinate"] {
-  const retained: HouseNarrativeContinuity["lastSummaryByActorCoordinate"] = {};
+  artifact: HouseAudienceSummaryArtifact,
+): HouseNarrativeContinuity["lastArtifactByActorCoordinate"] {
+  const retained: HouseNarrativeContinuity["lastArtifactByActorCoordinate"] = {};
   for (const coordinate of HOUSE_SUMMARY_ACTOR_COORDINATES) {
-    const value = coordinate === actorCoordinate ? summary : previous[coordinate];
-    if (typeof value === "string" && value.length > 0) retained[coordinate] = value;
+    const value = coordinate === actorCoordinate ? artifact : previous[coordinate];
+    if (value) retained[coordinate] = value;
   }
   return retained;
+}
+
+type CanonicalNarrationType = (typeof CANONICAL_NARRATION_TYPES)[number];
+type CanonicalEventRendererRegistry = {
+  [TType in CanonicalNarrationType]: (
+    event: Extract<HouseNarratedCanonicalEvent, { type: TType }>,
+    playerNameById: (id: UUID) => string,
+  ) => string;
+};
+
+function displayToken(value: string): string {
+  return value.split("_").join(" ");
+}
+
+function joinedNames(names: readonly string[]): string {
+  if (names.length === 0) return "no players";
+  if (names.length === 1) return names[0]!;
+  if (names.length === 2) return `${names[0]} and ${names[1]}`;
+  return `${names.slice(0, -1).join(", ")}, and ${names.at(-1)}`;
+}
+
+/** Fixed, exhaustive viewer renderer for every canonical summary event kind. */
+export const HOUSE_CANONICAL_EVENT_RENDERERS: CanonicalEventRendererRegistry = {
+  "game.roster_initialized": (event) =>
+    `${joinedNames(event.payload.players.map((player) => player.name))} enter the game.`,
+  "round.started": (event) => `Round ${event.payload.round} begins.`,
+  "shields.expired": (event, name) => event.payload.expiredPlayerIds.length > 0
+    ? `The shields expire for ${joinedNames(event.payload.expiredPlayerIds.map(name))}.`
+    : "No shields carry into this round.",
+  "vote.empower_tally_resolved": (event, name) =>
+    `${name(event.payload.empowered)} wins Empowerment by ${displayToken(event.payload.method)}.`,
+  "vote.empowered_set": (event, name) =>
+    `${name(event.payload.empowered)} is Empowered by ${displayToken(event.payload.method)}.`,
+  "format.menu_offered": (event, name) =>
+    `${name(event.payload.empoweredId)} receives ${joinedNames(event.payload.offeredFormatIds.map(displayToken))} as format options.`,
+  "format.selected": (event, name) =>
+    `${name(event.payload.empoweredId)} selects ${displayToken(event.payload.formatId)}.`,
+  "format.resolved": (event, name) =>
+    `${displayToken(event.payload.formatId)} resolves, eliminating ${name(event.payload.eliminatedId)}.`,
+  "power.action_set": (event, name) => event.payload.action.action === "pass"
+    ? "The Empowered player passes on using the power."
+    : `The Empowered player chooses to ${event.payload.action.action} ${name(event.payload.action.target)}.`,
+  "power.candidates_resolved": (event, name) => event.payload.autoEliminated
+    ? `${name(event.payload.autoEliminated)} is automatically eliminated by ${displayToken(event.payload.method)}.`
+    : event.payload.candidates
+      ? `${joinedNames(event.payload.candidates.map(name))} become the Council candidates.`
+      : `Power resolves by ${displayToken(event.payload.method)} without Council candidates.`,
+  "council.elimination_resolved": (event, name) =>
+    `${name(event.payload.eliminated)} is eliminated by ${displayToken(event.payload.method)} at Council.`,
+  "player.eliminated": (event) =>
+    `${event.payload.playerName} leaves the game in round ${event.payload.eliminatedRound}.`,
+  "endgame.stage_set": (event) =>
+    `The endgame advances to ${displayToken(event.payload.stage)}.`,
+  "endgame.elimination_resolved": (event, name) =>
+    `${name(event.payload.eliminated)} is eliminated from ${displayToken(event.payload.stage ?? "endgame")}.`,
+  "jury.winner_determined": (event, name) => {
+    const winner = event.payload.voteCounts.find((count) => count.id === event.payload.winnerId);
+    return `${name(event.payload.winnerId)} wins Influence${winner ? ` with ${winner.votes} jury vote${winner.votes === 1 ? "" : "s"}` : ""}.`;
+  },
+  "round.result_recorded": (event, name) =>
+    `Round ${event.payload.result.round} ends with ${name(event.payload.result.eliminated)} eliminated.`,
+};
+
+export function expectedHouseAudienceClaimKind(
+  source: HouseSummarySourceValue,
+): HouseAudienceClaimKind {
+  switch (source.kind) {
+    case "canonical_event":
+      return "canonical_event";
+    case "canonical_projection":
+      return "projection_alive_count";
+    case "dialogue_non_authoritative":
+      return "dialogue_quote";
+  }
+}
+
+function renderCanonicalSource(
+  source: Extract<HouseSummarySourceValue, { kind: "canonical_event" }>,
+): string {
+  const name = (id: UUID): string => {
+    const value = source.playerNamesById[id];
+    if (!value) throw new Error(`House summary source is missing player ${id}.`);
+    return value;
+  };
+  const renderer = HOUSE_CANONICAL_EVENT_RENDERERS[source.event.type] as (
+    event: HouseNarratedCanonicalEvent,
+    playerNameById: (id: UUID) => string,
+  ) => string;
+  return renderer(source.event, name);
+}
+
+export function renderHouseAudienceClaims(
+  frontier: HouseSummaryFrontier,
+  claims: readonly HouseAudienceClaimSelection[],
+): string {
+  return claims.map((claim) => {
+    const source = frontier.sourceValuesByAlias.get(claim.sourceAlias);
+    if (!source) throw new Error(`House summary source alias ${claim.sourceAlias} is unavailable.`);
+    if (expectedHouseAudienceClaimKind(source) !== claim.kind) {
+      throw new Error(`House summary claim kind does not match source alias ${claim.sourceAlias}.`);
+    }
+    switch (source.kind) {
+      case "canonical_event":
+        return renderCanonicalSource(source);
+      case "canonical_projection": {
+        const count = source.alivePlayerIds.length;
+        return `${count} player${count === 1 ? " remains" : "s remain"}.`;
+      }
+      case "dialogue_non_authoritative":
+        if (!source.quote.trim()) throw new Error("House summary dialogue source is empty.");
+        return `${source.speakerName}: “${source.quote}”`;
+    }
+  }).join(" ");
 }
 
 export function compileHouseSummaryFrontier(input: CompileHouseSummaryFrontierInput): HouseSummaryFrontier {
@@ -498,11 +805,23 @@ export function compileHouseSummaryFrontier(input: CompileHouseSummaryFrontierIn
     player_projection_facts: [],
     audience_dialogue_quotes: [],
   };
+  const sourceValuesByAlias = new Map<string, HouseSummarySourceValue>();
+  const playerNamesById = Object.fromEntries(
+    input.projection.playerOrder.map((id) => [
+      id,
+      normalizeProviderString(input.projection.players[id]?.name ?? "Unknown player", 80),
+    ]),
+  ) as Record<UUID, string>;
   let nextAliasIndex = 0;
-  const addFact = (row: Omit<HouseFactRow, "alias">): void => {
+  const addFact = (
+    row: Omit<HouseFactRow, "alias">,
+    sourceValue: HouseSummarySourceValue,
+  ): void => {
     const categoryFacts = factStore[row.category];
     if (categoryFacts.length >= MAX_FACT_ROWS_PER_CATEGORY) return;
-    categoryFacts.push({ ...row, alias: nextAlias(nextAliasIndex) });
+    const alias = nextAlias(nextAliasIndex);
+    categoryFacts.push({ ...row, alias });
+    sourceValuesByAlias.set(alias, sourceValue);
     nextAliasIndex += 1;
   };
   const deltaEvents: CanonicalGameEvent[] = [];
@@ -511,19 +830,28 @@ export function compileHouseSummaryFrontier(input: CompileHouseSummaryFrontierIn
     if (event.sequence <= input.afterCanonicalSequence) continue;
     deltaEvents.push(event);
     if (event.visibility !== "public" && event.visibility !== "system") continue;
-    if (!CANONICAL_NARRATION_TYPES.has(event.type)) continue;
+    if (!CANONICAL_NARRATION_TYPE_SET.has(event.type)) continue;
     const data = safeEventData(event, input.projection);
     if (!data) continue;
-    addFact({
-      category: "canonical_phase_facts",
-      authority: "canonical_event",
-      label: event.type,
-      data,
-      source: sourceForEvent(event),
-    });
+    addFact(
+      {
+        category: "canonical_phase_facts",
+        authority: "canonical_event",
+        label: event.type,
+        data,
+        source: sourceForEvent(event),
+      },
+      {
+        kind: "canonical_event",
+        event: structuredClone(event) as HouseNarratedCanonicalEvent,
+        playerNamesById,
+      },
+    );
   }
 
-  for (const row of projectionRows(deltaEvents, input.projection)) addFact(row);
+  for (const projectionRow of projectionRows(deltaEvents, input.projection)) {
+    addFact(projectionRow.row, projectionRow.sourceValue);
+  }
 
   for (const entry of input.transcript) {
     if (
@@ -534,24 +862,36 @@ export function compileHouseSummaryFrontier(input: CompileHouseSummaryFrontierIn
     ) {
       continue;
     }
-    addFact({
-      category: "audience_dialogue_quotes",
-      authority: "dialogue_non_authoritative",
-      label: "Accepted public player dialogue",
-      data: {
-        speaker: entry.anonymous ? "Anonymous" : normalizeProviderString(entry.from, 80),
-        quote: normalizeProviderString(entry.text),
+    const source: Extract<HouseSourceCoordinate, { kind: "transcript_entry" }> = {
+      kind: "transcript_entry",
+      sequence: entry.entrySequence,
+      round: entry.round,
+      phase: entry.phase,
+      dialogueKind: entry.dialogueKind ?? "public_speech",
+    };
+    const speakerName = entry.anonymous ? "Anonymous" : normalizeProviderString(entry.from, 80);
+    addFact(
+      {
+        category: "audience_dialogue_quotes",
+        authority: "dialogue_non_authoritative",
+        label: "Accepted public player dialogue",
+        data: {
+          speaker: speakerName,
+          quote: normalizeProviderString(entry.text),
+          anonymous: entry.anonymous === true,
+          trust: "dialogue_non_authoritative",
+        },
+        source,
+      },
+      {
+        kind: "dialogue_non_authoritative",
+        speakerPlayerId: entry.speakerPlayerId ?? null,
+        speakerName,
+        quote: entry.text,
         anonymous: entry.anonymous === true,
-        trust: "dialogue_non_authoritative",
+        source,
       },
-      source: {
-        kind: "transcript_entry",
-        sequence: entry.entrySequence,
-        round: entry.round,
-        phase: entry.phase,
-        dialogueKind: entry.dialogueKind ?? "public_speech",
-      },
-    });
+    );
   }
 
   const catalogRows = [
@@ -579,6 +919,7 @@ export function compileHouseSummaryFrontier(input: CompileHouseSummaryFrontierIn
       HOUSE_FACT_CATEGORIES.map((category) => [category, factStore[category].length]),
     ) as Record<HouseFactCategory, number>,
     factStore,
+    sourceValuesByAlias,
   };
 }
 

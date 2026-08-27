@@ -2,20 +2,22 @@ import { describe, expect, it } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type OpenAI from "openai";
 import type {
   HouseSelectiveSummaryContext,
   HouseSummaryAttemptResult,
 } from "../game-runner.types";
-import { LLMHouseInterviewer, TemplateHouseInterviewer } from "../house-interviewer";
+import { TemplateHouseInterviewer } from "../house-interviewer";
+import { renderHouseAudienceClaims } from "../house-summary-frontier";
 import {
   attestSavedReport,
   buildRoundOnlyBaselineRequest,
   captureBaselineFixture,
+  createHouseSummaryProvingSlice,
   continuityEvidence,
   evaluatePhase,
   maximumSummaryJaccardPair,
   repetitionEvidence,
+  renderRemovedHouseGameplaySummaryPrompt,
   reviewedQualitySignalsPass,
   runCandidateFixture,
 } from "../scripts/evaluate-house-summary-cadence";
@@ -31,13 +33,17 @@ class RunnerRejectedHouse extends TemplateHouseInterviewer {
     }
     const primary = context.frontier.catalog[0];
     if (!primary) throw new Error("Expected a material format_pick frontier.");
+    const sourceValue = context.frontier.sourceValuesByAlias.get(primary.alias);
+    if (!sourceValue) throw new Error("Expected a typed format_pick source.");
     return {
       status: "emitted",
-      summary: "FORMAT LOCKED: forged publication claim",
-      sourceAliases: [primary.alias],
-      sources: [primary.source],
-      openQuestions: [],
-      threadIds: [],
+      artifact: {
+        version: 1,
+        boundary: context.frontier.boundary,
+        claims: [{ kind: sourceValue.kind === "canonical_event" ? "canonical_event" : "dialogue_quote", sourceAlias: primary.alias }],
+        sources: [primary.source],
+        renderedText: "FORMAT LOCKED: forged publication claim",
+      },
       boundary: context.frontier.boundary,
       providerCalls: 1,
       factCalls: 0,
@@ -72,6 +78,26 @@ function savedFullReport(manualSignals: {
 }
 
 describe("House summary cadence evaluator fixture", () => {
+  it("freezes ordinary and milestone proving inputs without generated-output coupling", () => {
+    const slice = createHouseSummaryProvingSlice(FIXTURE_GAME_ID);
+
+    expect(slice.ordinary.frontier.boundary).toMatchObject({
+      beatClass: "ordinary",
+      actorCoordinate: "format_pick",
+    });
+    expect(slice.ordinary.continuity.lastArtifact).toBeNull();
+    expect(slice.milestone.frontier.boundary).toMatchObject({
+      beatClass: "milestone",
+      actorCoordinate: "format_resolve",
+    });
+    expect(slice.milestone.continuity).toMatchObject({
+      lastArtifact: {
+        renderedText: "Ada locked Vote Bomb, wagering her promise to Blair.",
+        sources: [slice.ordinary.frontier.factStore.canonical_phase_facts[0]!.source],
+      },
+    });
+  });
+
   it("keeps baseline narration-free and holds canonical authority constant", async () => {
     const baseline = await captureBaselineFixture(FIXTURE_GAME_ID);
     const candidate = await runCandidateFixture(FIXTURE_GAME_ID, new TemplateHouseInterviewer());
@@ -97,7 +123,7 @@ describe("House summary cadence evaluator fixture", () => {
     expect(phases.find((phase) => phase.context.frontier.boundary.actorCoordinate === "introduction")?.specific)
       .toBe(true);
     expect(phases.find((phase) => phase.context.frontier.boundary.actorCoordinate === "lobby")?.specific)
-      .toBe(false);
+      .toBe(true);
     expect(continuityEvidence(phases)).toMatchObject({
       continuityBreaksDetected: false,
       continuityCoverageRate: 1,
@@ -110,10 +136,9 @@ describe("House summary cadence evaluator fixture", () => {
     const secondGameId = "00000000-0000-4000-8000-000000000302";
     const first = await captureBaselineFixture(firstGameId);
     const second = await captureBaselineFixture(secondGameId);
-    const house = new LLMHouseInterviewer({} as OpenAI, "gpt-5.6-luna");
     const instruction = "Generate a concise, watchable 3-5 sentence House MC summary for the audience.";
-    const firstPrompt = house.renderGameplaySummaryPrompt(first.contexts[0]!, instruction);
-    const secondPrompt = house.renderGameplaySummaryPrompt(second.contexts[0]!, instruction);
+    const firstPrompt = renderRemovedHouseGameplaySummaryPrompt(first.contexts[0]!, instruction);
+    const secondPrompt = renderRemovedHouseGameplaySummaryPrompt(second.contexts[0]!, instruction);
 
     expect(firstPrompt).toContain(`Game: ${firstGameId}`);
     expect(secondPrompt).toContain(`Game: ${secondGameId}`);
@@ -147,7 +172,7 @@ describe("House summary cadence evaluator fixture", () => {
     });
   });
 
-  it("requires claim-level support instead of accepting a selected player's name", async () => {
+  it("requires the deterministic renderer instead of accepting rewritten factual prose", async () => {
     const candidate = await runCandidateFixture(FIXTURE_GAME_ID, new TemplateHouseInterviewer());
     const attempt = candidate.attempts.find(
       (item) => item.context.frontier.boundary.actorCoordinate === "format_pick",
@@ -157,19 +182,20 @@ describe("House summary cadence evaluator fixture", () => {
     const receipt = candidate.receipts.find(
       (item) => item.boundaryId === emittedResult.boundary.id,
     ) ?? null;
-    const evaluateSummary = (summary: string) => evaluatePhase({
+    const evaluateSummary = (renderedText: string) => evaluatePhase({
       context: attempt.context,
-      result: { ...emittedResult, summary },
+      result: {
+        ...emittedResult,
+        artifact: { ...emittedResult.artifact, renderedText },
+      },
     }, receipt);
 
     expect(evaluateSummary("Ada remains under pressure.").phaseSpecific).toBe(false);
-    expect(evaluateSummary("Ada faces a consequential choice.").phaseSpecific).toBe(false);
     expect(evaluateSummary("Ada rejected Vote Bomb in public.").phaseSpecific).toBe(false);
-    expect(evaluateSummary("Ada locked Vote Bomb, putting every promise under pressure.").phaseSpecific).toBe(true);
-    expect(evaluateSummary("Ada chooses Vote Bomb, putting every promise under pressure.").phaseSpecific).toBe(true);
+    expect(evaluateSummary(emittedResult.artifact.renderedText).phaseSpecific).toBe(true);
   });
 
-  it("accepts exact alive-count projection claims without reopening name-only support", async () => {
+  it("accepts only the exact typed alive-count projection rendering", async () => {
     const candidate = await runCandidateFixture(FIXTURE_GAME_ID, new TemplateHouseInterviewer());
     const attempt = candidate.attempts.find((item) => (
       item.context.frontier.boundary.actorCoordinate === "format_mingle"
@@ -178,20 +204,20 @@ describe("House summary cadence evaluator fixture", () => {
     if (!attempt || attempt.result.status !== "emitted") throw new Error("Expected an emitted round-two format_mingle beat.");
     const emittedResult = attempt.result;
     const receipt = candidate.receipts.find((item) => item.boundaryId === emittedResult.boundary.id) ?? null;
-    const evaluateSummary = (summary: string) => evaluatePhase({
+    const evaluateSummary = (renderedText: string) => evaluatePhase({
       context: attempt.context,
-      result: { ...emittedResult, summary },
+      result: {
+        ...emittedResult,
+        artifact: { ...emittedResult.artifact, renderedText },
+      },
     }, receipt);
 
-    expect(evaluateSummary("Blair’s Vote Bomb is locked in; five players remain in the game.").phaseSpecific)
-      .toBe(true);
-    expect(evaluateSummary("Blair’s Vote Bomb is locked in; all five players are still in.").phaseSpecific)
-      .toBe(true);
+    expect(evaluateSummary(emittedResult.artifact.renderedText).phaseSpecific).toBe(true);
     expect(evaluateSummary("Blair remains under pressure.").phaseSpecific).toBe(false);
     expect(evaluateSummary("Five relationships remain unsettled.").phaseSpecific).toBe(false);
   });
 
-  it("supports a sourced two-finalist closing synthesis but rejects a generic collective claim", async () => {
+  it("renders two finalist dialogue receipts as two exact quotes without collective synthesis", async () => {
     const candidate = await runCandidateFixture(FIXTURE_GAME_ID, new TemplateHouseInterviewer());
     const attempt = candidate.attempts.find(
       (item) => item.context.frontier.boundary.actorCoordinate === "judgment_closing",
@@ -199,20 +225,22 @@ describe("House summary cadence evaluator fixture", () => {
     if (!attempt || attempt.result.status !== "emitted") throw new Error("Expected an emitted judgment_closing beat.");
     const selectedFacts = attempt.context.frontier.factStore.audience_dialogue_quotes;
     expect(selectedFacts).toHaveLength(2);
+    const claims = selectedFacts.map((fact) => ({ kind: "dialogue_quote" as const, sourceAlias: fact.alias }));
     const result = {
       ...attempt.result,
-      sourceAliases: selectedFacts.map((fact) => fact.alias),
-      sources: selectedFacts.map((fact) => fact.source),
+      artifact: {
+        ...attempt.result.artifact,
+        claims,
+        sources: selectedFacts.map((fact) => fact.source),
+      },
     };
     const receipt = candidate.receipts.find((item) => item.boundaryId === result.boundary.id) ?? null;
-    const evaluateSummary = (summary: string) => evaluatePhase({
+    const evaluateSummary = (renderedText: string) => evaluatePhase({
       context: attempt.context,
-      result: { ...result, summary },
+      result: { ...result, artifact: { ...result.artifact, renderedText } },
     }, receipt);
 
-    expect(evaluateSummary(
-      "Both finalists deliver the same closing pitch: strategic play paired with honesty and attention to relationships.",
-    ).phaseSpecific).toBe(true);
+    expect(evaluateSummary(renderHouseAudienceClaims(attempt.context.frontier, claims)).phaseSpecific).toBe(true);
     expect(evaluateSummary("Both finalists spoke.").phaseSpecific).toBe(false);
   });
 

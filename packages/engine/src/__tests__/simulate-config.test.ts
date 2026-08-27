@@ -344,7 +344,7 @@ describe("simulation variant config", () => {
 
     const stats = computeAggregateStats(
       [
-        gameResult({ gameNumber: 1 }),
+        gameResult({ gameNumber: 1, endgameType: "tribunal" }),
         gameResult({
           gameNumber: 2,
           status: "failed",
@@ -379,6 +379,7 @@ describe("simulation variant config", () => {
     expect(stats.totalGames).toBe(1);
     expect(stats.instrumentation.totalGames).toBe(1);
     expect(stats.tokenUsage.total.totalTokens).toBe(15);
+    expect(stats.perEndgameType).toEqual({ tribunal: 1 });
   });
 
   it("separates Flex spend from auto-tier fallbacks and projects Flex costs", () => {
@@ -440,6 +441,9 @@ describe("simulation variant config", () => {
     expect(summary).toContain("- Flex: 1 calls, $0.0006 estimated.");
     expect(summary).toContain("- Auto/default fallback: 1 calls, $0.0003 estimated.");
     expect(summary).toContain("## Cost Estimates");
+    expect(summary).toContain("| Reckoning stage events | 0 |");
+    expect(summary).toContain("| Accepted jury questions | 0 |");
+    expect(summary).toContain("| Accepted jury ballots | 0 |");
     expect(summary).toContain("| gpt-5-mini * | $0.0001 | $0.0006 | $0.0007 |");
     expect(summary).toContain("| grok-4-3 | $0.0016 | $0.0016 | $0.0033 |");
   });

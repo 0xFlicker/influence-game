@@ -208,13 +208,7 @@ export class ContextBuilder {
         return {
           id: compact.id,
           round: compact.round,
-          ask: compact.ask,
-          plan: compact.plan,
-          promises: [...compact.promises],
-          dissent: [...compact.dissent],
-          confidence: compact.confidence,
-          posture: compact.posture,
-          leakOrBetrayalClaims: [...compact.leakOrBetrayalClaims],
+          facts: structuredClone(compact.facts),
         };
       });
   }
@@ -397,7 +391,7 @@ export class ContextBuilder {
       case "alliance.huddle_completed":
         return `${prefix}: Alliance huddle completed for ${event.payload.session.allianceId} in ${event.payload.session.window}.`;
       case "alliance.huddle_outcome_recorded":
-        return `${prefix}: Alliance huddle outcome recorded for ${event.payload.alliance?.name ?? event.payload.outcome.allianceId}: ${event.payload.outcome.plan}`;
+        return `${prefix}: Alliance huddle outcome recorded for ${event.payload.alliance?.name ?? event.payload.outcome.allianceId}: ${event.payloadVersion === 2 ? event.payload.outcome.facts.length : 0} structured facts.`;
       case "council.vote_cast":
         return `${prefix}: ${this.name(event.payload.voterId)} voted at Council to eliminate ${this.name(event.payload.target)}.`;
       case "council.elimination_resolved":
@@ -468,9 +462,9 @@ export class ContextBuilder {
       case "alliance.huddle_completed":
         return false;
       case "alliance.huddle_outcome_recorded": {
-        const alliance = event.payload.alliance
-          ?? this.gameState.getAlliance(event.payload.outcome.allianceId);
-        return alliance ? this.allianceRecordVisibleToAgent(alliance, agentId) : false;
+        const outcome = this.gameState.getDomainProjection()
+          .allianceHuddleOutcomes[event.payload.outcome.id];
+        return outcome ? actorAuthorizedForHuddleOutcome(outcome, agentId) : false;
       }
       default:
         return true;
@@ -561,7 +555,10 @@ export class ContextBuilder {
 
   private buildPublicTranscriptContext(): PublicTranscriptContextEntry[] {
     return this.logger.transcript
-      .filter((entry) => entry.scope === "public" || entry.scope === "system")
+      .filter((entry) =>
+        (entry.scope === "public" || entry.scope === "system")
+        && entry.dialogueKind !== "house_summary",
+      )
       .map((entry) => ({
         round: entry.round,
         phase: entry.phase,
@@ -571,36 +568,50 @@ export class ContextBuilder {
   }
 
   private buildJudgmentQuestionHistory(): JudgmentQuestionHistoryEntry[] {
-    const history: JudgmentQuestionHistoryEntry[] = [];
-    for (const entry of this.logger.transcript) {
-      if (entry.phase !== Phase.JURY_QUESTIONS || entry.scope !== "public") continue;
-      const question = entry.text.match(/^\[QUESTION to (.+?)\] (.+)$/);
-      if (question) {
+    const history: Array<{
+      jurorId: UUID;
+      finalistId: UUID;
+      entry: JudgmentQuestionHistoryEntry;
+    }> = [];
+
+    for (const event of this.gameState.getCanonicalEvents()) {
+      if (event.type !== "judgment.speech_recorded") continue;
+      const { speechKind, playerId, addresseeId, text } = event.payload;
+      if (!addresseeId) continue;
+
+      if (speechKind === "jury_question") {
         history.push({
-          jurorName: entry.from,
-          finalistName: question[1] ?? "unknown",
-          question: question[2] ?? "",
+          jurorId: playerId,
+          finalistId: addresseeId,
+          entry: {
+            jurorName: this.name(playerId),
+            finalistName: this.name(addresseeId),
+            question: text,
+          },
         });
         continue;
       }
-      const answer = entry.text.match(/^\[ANSWER to (.+?)\] (.+)$/);
-      if (answer) {
-        const finalistName = entry.from;
-        for (let index = history.length - 1; index >= 0; index -= 1) {
-          const item = history[index];
-          if (item && item.jurorName === answer[1] && item.finalistName === finalistName && item.answer == null) {
-            item.answer = answer[2] ?? "";
-            break;
-          }
+
+      if (speechKind !== "jury_answer") continue;
+      for (let index = history.length - 1; index >= 0; index -= 1) {
+        const item = history[index];
+        if (
+          item
+          && item.jurorId === addresseeId
+          && item.finalistId === playerId
+          && item.entry.answer == null
+        ) {
+          item.entry.answer = text;
+          break;
         }
       }
     }
-    return history;
+
+    return history.map(({ entry }) => entry);
   }
 
   private buildRecentDecisionHistory(agentId: UUID): RecentDecisionContextEntry[] {
     const decisions: RecentDecisionContextEntry[] = [];
-    const playerName = this.gameState.getPlayerName(agentId);
     const councilResolvedByRound = new Map<number, Extract<CanonicalGameEvent, { type: "council.elimination_resolved" }>>();
 
     for (const event of this.gameState.getCanonicalEvents()) {
@@ -679,6 +690,31 @@ export class ContextBuilder {
             });
           }
           break;
+        case "judgment.speech_recorded":
+          if (
+            event.payload.playerId === agentId
+            && event.payload.addresseeId
+            && event.payload.speechKind === "jury_question"
+          ) {
+            decisions.push({
+              round: event.round,
+              phase: Phase.JURY_QUESTIONS,
+              label: "Judgment Question",
+              detail: `Your Judgment question to ${this.name(event.payload.addresseeId)}: "${event.payload.text}"`,
+            });
+          } else if (
+            event.payload.playerId === agentId
+            && event.payload.addresseeId
+            && event.payload.speechKind === "jury_answer"
+          ) {
+            decisions.push({
+              round: event.round,
+              phase: Phase.JURY_QUESTIONS,
+              label: "Judgment Answer",
+              detail: `Your Judgment answer to ${this.name(event.payload.addresseeId)}: "${event.payload.text}"`,
+            });
+          }
+          break;
         default:
           break;
       }
@@ -722,29 +758,6 @@ export class ContextBuilder {
         label: "Council Candidate",
         detail: `You are a Council candidate this round and do not cast a Council vote. Candidates: ${this.formatPlayerList(currentCandidates)}.`,
       });
-    }
-
-    for (const entry of this.logger.transcript) {
-      if (entry.phase !== Phase.JURY_QUESTIONS || entry.scope !== "public") continue;
-      const question = entry.text.match(/^\[QUESTION to (.+?)\] (.+)$/);
-      if (entry.from === playerName && question) {
-        decisions.push({
-          round: entry.round,
-          phase: Phase.JURY_QUESTIONS,
-          label: "Judgment Question",
-          detail: `Your Judgment question to ${question[1] ?? "unknown"}: "${question[2] ?? ""}"`,
-        });
-        continue;
-      }
-      const answer = entry.text.match(/^\[ANSWER to (.+?)\] (.+)$/);
-      if (entry.from === playerName && answer) {
-        decisions.push({
-          round: entry.round,
-          phase: Phase.JURY_QUESTIONS,
-          label: "Judgment Answer",
-          detail: `Your Judgment answer to ${answer[1] ?? "unknown"}: "${answer[2] ?? ""}"`,
-        });
-      }
     }
 
     return decisions
