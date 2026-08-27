@@ -1,15 +1,7 @@
-/**
- * Producer-only frozen provider-scenario evidence for R32.
- *
- * Typed/canonical semantic inputs live in the private run. Public manifests are
- * built from an explicit whitelist and never inspect generated prose.
- */
+/** Local before/after provider samples for R32. Generated prose stays private. */
 
-import {
-  hashCanonicalJson,
-  type JsonObject,
-  type JsonValue,
-} from "@influence/prompt-lab-protocol";
+import { createHash } from "node:crypto";
+import type { JsonValue } from "@influence/prompt-lab-protocol";
 
 export type ProviderScenarioStage = "before" | "after";
 export type ProviderScenarioSurface =
@@ -25,9 +17,7 @@ export interface FrozenProviderScenarioPackInput {
   semanticInput: JsonValue;
 }
 
-export interface FrozenProviderScenarioPack extends FrozenProviderScenarioPackInput {
-  semanticPackHash: `sha256:${string}`;
-}
+export type FrozenProviderScenarioPack = Readonly<FrozenProviderScenarioPackInput>;
 
 export interface ProviderScenarioRunConfig {
   providerProfileId: string;
@@ -67,7 +57,7 @@ export interface ProviderScenarioSampleAccounting {
   accountingComplete: boolean;
 }
 
-export interface ProviderScenarioTurnReceipt {
+export interface ProviderScenarioTurnTelemetry {
   label: string;
   authority: "presentation_only" | "structured";
   status: "accepted" | "exhausted" | "fallback" | "failed" | "skipped";
@@ -76,17 +66,14 @@ export interface ProviderScenarioTurnReceipt {
 export interface ProviderScenarioPrivateSample {
   scenarioId: string;
   comparisonKey: string;
-  semanticPackHash: `sha256:${string}`;
   sampleOrdinal: number;
   cacheIsolationNonce: string;
   outcome: ProviderScenarioSampleOutcome;
   accounting: ProviderScenarioSampleAccounting;
-  promptFingerprints: Array<`sha256:${string}`>;
-  structuredContractFingerprints: Array<`sha256:${string}`>;
   requestIds: string[];
   responseIds: string[];
   attemptDispositions: string[];
-  turns: ProviderScenarioTurnReceipt[];
+  turns: ProviderScenarioTurnTelemetry[];
   private: {
     semanticInput: JsonValue;
     traces: unknown[];
@@ -111,16 +98,13 @@ export interface ProviderScenarioPrivateRun {
 export interface ProviderScenarioPublicSample {
   scenarioId: string;
   comparisonKey: string;
-  semanticPackHash: `sha256:${string}`;
   sampleOrdinal: number;
   outcome: ProviderScenarioSampleOutcome;
   accounting: ProviderScenarioSampleAccounting;
-  promptFingerprints: Array<`sha256:${string}`>;
-  structuredContractFingerprints: Array<`sha256:${string}`>;
   requestIds: string[];
   responseIds: string[];
   attemptDispositions: string[];
-  turns: ProviderScenarioTurnReceipt[];
+  turns: ProviderScenarioTurnTelemetry[];
 }
 
 export interface ProviderScenarioManifest {
@@ -134,7 +118,7 @@ export interface ProviderScenarioManifest {
   config: ProviderScenarioRunConfig;
   packs: Array<Pick<
     FrozenProviderScenarioPack,
-    "scenarioId" | "comparisonKey" | "surface" | "semanticPackHash"
+    "scenarioId" | "comparisonKey" | "surface"
   >>;
   samples: ProviderScenarioPublicSample[];
 }
@@ -166,10 +150,7 @@ export function freezeProviderScenarioPack(
     surface: input.surface,
     semanticInput,
   } satisfies FrozenProviderScenarioPackInput;
-  return Object.freeze({
-    ...identity,
-    semanticPackHash: hashCanonicalJson(identity),
-  });
+  return Object.freeze(identity);
 }
 
 export function assertProviderScenarioRunConfig(
@@ -200,51 +181,8 @@ export function assertProviderScenarioRunConfig(
     }
     scenarioIds.add(pack.scenarioId);
     comparisonKeys.add(pack.comparisonKey);
-    const expected = freezeProviderScenarioPack(pack).semanticPackHash;
-    if (pack.semanticPackHash !== expected) {
-      throw new Error(`Frozen provider scenario pack ${pack.scenarioId} has a stale semanticPackHash.`);
-    }
   }
   return { ...config, sampleCount: config.sampleCount };
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return value !== null && typeof value === "object" && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : null;
-}
-
-function definedJsonObject(entries: Array<[string, unknown]>): JsonObject {
-  return Object.fromEntries(entries.filter(([, value]) => value !== undefined)) as JsonObject;
-}
-
-/**
- * Fingerprint prompt-bearing and structured-contract request lanes separately.
- * Response controls such as temperature/token caps deliberately affect neither.
- */
-export function fingerprintProviderAttemptRequest(request: unknown): {
-  prompt: `sha256:${string}`;
-  structuredContract: `sha256:${string}` | null;
-} {
-  const root = asRecord(request) ?? {};
-  const body = asRecord(root.body) ?? root;
-  const prompt = definedJsonObject([
-    ["messages", body.messages],
-    ["input", body.input],
-    ["instructions", body.instructions],
-  ]);
-  const structuredContract = definedJsonObject([
-    ["tools", body.tools],
-    ["tool_choice", body.tool_choice],
-    ["response_format", body.response_format],
-    ["text", body.text],
-  ]);
-  return {
-    prompt: hashCanonicalJson(prompt),
-    structuredContract: Object.keys(structuredContract).length > 0
-      ? hashCanonicalJson(structuredContract)
-      : null,
-  };
 }
 
 /** Build the only shareable view by copying an explicit field whitelist. */
@@ -265,17 +203,13 @@ export function createProviderScenarioManifest(
       scenarioId: pack.scenarioId,
       comparisonKey: pack.comparisonKey,
       surface: pack.surface,
-      semanticPackHash: pack.semanticPackHash,
     })),
     samples: run.samples.map((sample) => ({
       scenarioId: sample.scenarioId,
       comparisonKey: sample.comparisonKey,
-      semanticPackHash: sample.semanticPackHash,
       sampleOrdinal: sample.sampleOrdinal,
       outcome: { ...sample.outcome },
       accounting: { ...sample.accounting },
-      promptFingerprints: [...sample.promptFingerprints],
-      structuredContractFingerprints: [...sample.structuredContractFingerprints],
       requestIds: [...sample.requestIds],
       responseIds: [...sample.responseIds],
       attemptDispositions: [...sample.attemptDispositions],
@@ -323,12 +257,9 @@ export interface ProviderScenarioOperationsSummary {
 export interface ProviderScenarioPairedSample {
   scenarioId: string;
   comparisonKey: string;
-  semanticPackHash: `sha256:${string}`;
   sampleOrdinal: number;
-  promptChanged: boolean;
-  structuredContractChanged: boolean;
-  before: Omit<ProviderScenarioPublicSample, "scenarioId" | "comparisonKey" | "semanticPackHash" | "sampleOrdinal">;
-  after: Omit<ProviderScenarioPublicSample, "scenarioId" | "comparisonKey" | "semanticPackHash" | "sampleOrdinal">;
+  before: Omit<ProviderScenarioPublicSample, "scenarioId" | "comparisonKey" | "sampleOrdinal">;
+  after: Omit<ProviderScenarioPublicSample, "scenarioId" | "comparisonKey" | "sampleOrdinal">;
 }
 
 export interface ProviderScenarioPairedReport {
@@ -375,7 +306,6 @@ export interface ProviderScenarioBlindReviewKeyEntry {
   reviewPairId: string;
   scenarioId: string;
   comparisonKey: string;
-  semanticPackHash: `sha256:${string}`;
   sampleOrdinal: number;
   stageBySlot: Record<ProviderScenarioBlindSlot, ProviderScenarioStage>;
 }
@@ -440,10 +370,7 @@ const BLIND_REVIEW_CRITERIA = {
   ],
 } as const satisfies Record<ProviderScenarioSurface, readonly string[]>;
 
-/**
- * Checks causal comparability only. Prompt/schema fingerprints are evidence of
- * the intended implementation change, so they are deliberately allowed to differ.
- */
+/** Checks run configuration and named scenario coverage before pairing samples. */
 export function compareProviderScenarioRuns(
   before: ProviderScenarioManifest,
   after: ProviderScenarioManifest,
@@ -453,15 +380,14 @@ export function compareProviderScenarioRuns(
     if (before.config[key] !== after.config[key]) differences.push(`config.${key}`);
   }
   const packIdentity = (manifest: ProviderScenarioManifest) => manifest.packs
-    .map(({ scenarioId, comparisonKey, surface, semanticPackHash }) => ({
+    .map(({ scenarioId, comparisonKey, surface }) => ({
       scenarioId,
       comparisonKey,
       surface,
-      semanticPackHash,
     }))
     .sort((left, right) => left.scenarioId.localeCompare(right.scenarioId));
-  if (hashCanonicalJson(packIdentity(before)) !== hashCanonicalJson(packIdentity(after))) {
-    differences.push("semanticPacks");
+  if (JSON.stringify(packIdentity(before)) !== JSON.stringify(packIdentity(after))) {
+    differences.push("scenarioPacks");
   }
   return { comparable: differences.length === 0, differences };
 }
@@ -506,8 +432,6 @@ function pairedSampleSide(
   return {
     outcome: { ...sample.outcome },
     accounting: { ...sample.accounting },
-    promptFingerprints: [...sample.promptFingerprints],
-    structuredContractFingerprints: [...sample.structuredContractFingerprints],
     requestIds: [...sample.requestIds],
     responseIds: [...sample.responseIds],
     attemptDispositions: [...sample.attemptDispositions],
@@ -541,18 +465,13 @@ export function createProviderScenarioPairedReport(
   const samples = [...beforeByKey.entries()]
     .map(([key, beforeSample]) => {
       const afterSample = afterByKey.get(key);
-      if (!afterSample || afterSample.semanticPackHash !== beforeSample.semanticPackHash) {
+      if (!afterSample) {
         throw new Error(`Provider scenario sample coordinate is missing or drifted: ${key}`);
       }
       return {
         scenarioId: beforeSample.scenarioId,
         comparisonKey: beforeSample.comparisonKey,
-        semanticPackHash: beforeSample.semanticPackHash,
         sampleOrdinal: beforeSample.sampleOrdinal,
-        promptChanged: hashCanonicalJson(beforeSample.promptFingerprints)
-          !== hashCanonicalJson(afterSample.promptFingerprints),
-        structuredContractChanged: hashCanonicalJson(beforeSample.structuredContractFingerprints)
-          !== hashCanonicalJson(afterSample.structuredContractFingerprints),
         before: pairedSampleSide(beforeSample),
         after: pairedSampleSide(afterSample),
       } satisfies ProviderScenarioPairedSample;
@@ -585,7 +504,7 @@ function privateSampleKey(sample: ProviderScenarioPrivateSample): string {
 }
 
 function blindDigest(seed: string, coordinate: string): string {
-  return hashCanonicalJson({ seed, coordinate });
+  return createHash("sha256").update(JSON.stringify({ seed, coordinate })).digest("hex");
 }
 
 /**
@@ -621,15 +540,10 @@ export function createProviderScenarioBlindReviewArtifacts(
   const rows = [...beforeByKey.entries()].map(([coordinate, beforeSample]) => {
     const afterSample = afterByKey.get(coordinate);
     const pack = packsByScenario.get(beforeSample.scenarioId);
-    if (
-      !afterSample
-      || !pack
-      || afterSample.semanticPackHash !== beforeSample.semanticPackHash
-      || pack.semanticPackHash !== beforeSample.semanticPackHash
-    ) {
+    if (!afterSample || !pack) {
       throw new Error(`Provider scenario blind sample is missing or drifted: ${coordinate}`);
     }
-    const reviewPairId = blindDigest(seed, `pair:${coordinate}`).slice("sha256:".length, 26);
+    const reviewPairId = blindDigest(seed, `pair:${coordinate}`).slice(0, 26);
     const beforeFirst = blindDigest(seed, `slot:${coordinate}`).at(-1)!.charCodeAt(0) % 2 === 0;
     const stageBySlot: ProviderScenarioBlindReviewKeyEntry["stageBySlot"] = beforeFirst
       ? { A: "before", B: "after" }
@@ -653,7 +567,6 @@ export function createProviderScenarioBlindReviewArtifacts(
         reviewPairId,
         scenarioId: beforeSample.scenarioId,
         comparisonKey: beforeSample.comparisonKey,
-        semanticPackHash: beforeSample.semanticPackHash,
         sampleOrdinal: beforeSample.sampleOrdinal,
         stageBySlot,
       },
@@ -662,7 +575,7 @@ export function createProviderScenarioBlindReviewArtifacts(
   const reviewBatchId = blindDigest(
     seed,
     `batch:${before.runId}:${after.runId}`,
-  ).slice("sha256:".length, 26);
+  ).slice(0, 26);
   return {
     bundle: {
       version: 1,

@@ -211,25 +211,21 @@ The producer-side placement of alive agents into initial Format Mingle rooms usi
 
 A private producer access decision made once per Format Mingle alliance-action window. The House selects a scarce set of eligible living players to receive the existing propose, amend, or pass opportunity, preferring players underrepresented in active alliances. The engine validates and repairs the exact access quota; selected agents still own members and terms and may decline, while invitee response and consent remain independent. The plan creates no canonical alliance facts and gives The House no power to create, rewrite, activate, dissolve, or enforce an alliance.
 
-## Selective House beat
+## House narrative beat
 
-A concise House/producer/human-viewer narration opportunity scheduled after a meaningful actor-coordinate boundary. The runner decides whether a boundary has an audience-safe material delta before provider I/O. The provider selects ordered typed claims over current-loop aliases; it supplies no names, counts, quotes, outcomes, or connective copy. The engine validates each claim against its typed boundary snapshot and renders the visible beat through a fixed renderer registry. A preflight skip, model-selected no-material-change result, or typed provider exhaustion emits no filler and never blocks canonical gameplay. The artifact and rendered beat never enter contestant-agent context.
+A House-authored public summary attached to an engine-owned actor-coordinate boundary. It is presentation for human players, viewers, producers, and replay, and is published byte-for-byte after shape, non-empty, control-character, and beat-length validation. It is never a canonical event, result input, contestant memory, Recall Plan candidate, or authority for reconstructing a game fact.
 
-## House audience summary artifact
+## House narration context
 
-The accepted House-owned result of a selective beat: boundary identity, ordered typed claim selections, bounded source coordinates, and engine-rendered text. Claims and coordinates are House/producer receipt lineage. Rendered text is presentation for the human watch/replay transcript and non-authoritative narrative continuity for later House work. It is never a canonical event, result input, contestant memory, Recall Plan candidate, or authority for reconstructing a game fact.
+The bounded omniscient context supplied to a House creative turn. It can contain direct canonical-event and projection data, public dialogue, private conversations and sealed decisions, diary Q&A, recent public House beats, and the private narrative notebook. It contains no source aliases, model-authored claims, receipts, fact-read action, or renderer registry. The House may interpret and reveal this information to human viewers; reducers and AI contestant prompts never derive knowledge or state from the resulting prose.
 
-## House summary frontier
+## House private narrative notebook
 
-The bounded, server-authored input to a selective House beat: one phase boundary, a compact salience catalog, a read-only fact slice, a runner-private discriminated `sourceValuesByAlias` snapshot, and compact prior narrative continuity. The private map is constructed directly from typed canonical events, the boundary-time alive-player projection, and exact accepted public dialogue entries; it is never serialized into provider prompts, accepted receipts, traces, or viewer payloads. Canonical event and projection sources remain game-state authority. Dialogue sources support only exact attributed quotation and cannot establish a selection, tally, elimination, phase, result, or collective position. Private, diary, thinking, huddle, producer, and prior House/system rows are absent rather than merely labeled unavailable.
+One bounded, opaque showrunner snapshot carried inside `HouseNarrativeContinuityV2`. A non-null accepted update replaces the whole notebook; null, malformed output, refusal, or exhaustion preserves the previous snapshot. The notebook may carry private arcs and unresolved narrative threads and feed later House summary and long-form prompts. It never enters viewer payload fields or any AI contestant, diary-interviewer, or Judgment prompt.
 
-## House narrative continuity
+## House summary phase telemetry
 
-Compact versioned in-memory narration state carried between selective House beats. It retains bounded accepted artifacts by House actor coordinate plus examined/emitted heads. Later House summary, diary, Strategy Bible, long-form, and producer-brief prompts receive two deliberately separate projections: typed accepted claims/source lineage and prior rendered beats labeled `narrative_non_authoritative`. The House may use the latter to construct arcs, highlight changes, and avoid repetition, but no code or model may recover facts from that copy. Neither projection enters contestant-agent context. A failed beat may carry one unseen delta to the next boundary once; success, skip, or a second failure clears it.
-
-## House summary phase receipt
-
-A content-free private accounting record for one scheduled House beat. It records boundary/status, provider and fact-call counts, returned-byte and selected-source counts, call identities, and provider-reported usage availability. Exact source coordinates, fact bodies, prompts, tool payloads, outputs, and diagnostics stay in producer-private traces. Simulation instrumentation reconciles receipt call identities and known token subtotals with `TokenTracker`; missing usage, effective tier, or pricing makes realized-cost proof inconclusive rather than zero.
+Engine-generated status and provider accounting for one scheduled House beat: boundary, outcome, provider calls and usage, and pending-delta disposition. It contains no model-authored factual attestation and consumes no model tokens. Simulation instrumentation reconciles its call identities and known token subtotals with `TokenTracker`; missing usage, tier, or pricing remains explicitly unavailable rather than zero.
 
 ## Strategy signal
 
@@ -379,19 +375,11 @@ A per-result season record that connects a completed game to its agent, owner, a
 
 ## House MC
 
-The House's between-round narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a system transcript entry after a normal round resolves. Local simulations print `[House MC]` by default (with the operator action feed), independent of `--chatty`; disable with `--no-house-summaries`.
-
-## House Strategy Bible Packet
-
-A private producer/debug strategy state The House carries across a game run when enabled. Its factual continuity is an exact set of typed producer hypotheses and open questions: closed kinds/status/confidence, canonical player IDs, and current producer-evidence aliases. The engine owns revision identity and covered windows. Optional `interpretation` is House narrative framing only; it may shape later House presentation but establishes no fact and is omitted from checkpoint factual continuity and contestant context. Checkpoints seal a House-continuity requirement (`disabled`, `awaiting_first_valid_update`, or `required`) and, when required, only the typed packet fields needed for supported resume. A failed update preserves the preceding packet unchanged.
-
-## House Producer Brief
-
-A private per-player diary-room setup selected from a boundary-time producer evidence catalog. It contains typed focus items with player IDs, confidence, disclosure, and source receipts plus typed question-angle kinds. Only `safe_to_reference` focus backed by viewer-safe receipts can reach the engine-rendered angle instructions in the visible-question prompt. Optional producer-note prose stays in the private producer lane and never enters that prompt or contestant context.
+The House's viewer-facing narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a system transcript entry after a material cadence boundary. The summary is House-authored prose for human players/viewers, not a deterministic rendering of proof claims. Local simulations print `[House MC]` by default (with the operator action feed), independent of `--chatty`; disable with `--no-house-summaries`.
 
 ## House Long-Form Summary
 
-A producer catch-up artifact The House emits in rich simulation runs between Strategy Bible updates. The model selects ordered typed claim kinds and current evidence aliases; the engine renders factual copy from the runner-private source snapshot. Optional House analysis is explicitly non-authoritative presentation. Provider exhaustion yields a deterministic receipt-backed fallback rather than generic invented copy. The artifact remains discoverable through producer simulation evidence and the local game MCP, while staying outside contestant knowledge.
+A private producer catch-up The House authors in rich simulation runs from the bounded omniscient narration context, recent public beats, and the single private narrative notebook. The engine owns kind and covered-window metadata but does not render or fact-check the prose. Provider exhaustion yields no fabricated fallback. The artifact remains discoverable through producer simulation evidence and the local game MCP while staying outside AI contestant knowledge.
 
 ## House alliance hypothesis
 

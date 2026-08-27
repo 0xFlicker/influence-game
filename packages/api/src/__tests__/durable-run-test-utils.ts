@@ -11,6 +11,7 @@ import {
   accumulatorProof,
   sealBoundaryIdentity,
   createEngineBoundaryPlaceholder,
+  createEmptyHouseNarrativeContinuity,
   requiredPhaseBoundaryAccumulatorIds,
   type CanonicalGameEvent,
   type GameCheckpointCapsule,
@@ -273,21 +274,8 @@ export function buildPositivePlayerContinuityCapsules(_capsule: GameCheckpointCa
   }));
 }
 
-export function buildPositiveHouseContinuityCapsule(capsule: GameCheckpointCapsule) {
-  return {
-    revisionId: "h1",
-    previousRevisionId: null,
-    updatedAtRound: capsule.round,
-    updatedAtPhase: capsule.phase,
-    coveredWindow: {
-      fromRound: capsule.round,
-      toRound: capsule.round,
-      fromPhase: capsule.phase,
-      toPhase: capsule.phase,
-    },
-    hypotheses: [],
-    openQuestions: [],
-  };
+export function buildPositiveHouseNarrativeContinuityCapsule(capsule: GameCheckpointCapsule) {
+  return createEmptyHouseNarrativeContinuity(capsule.gameId);
 }
 
 export function enrichCapsuleForV1Candidate(
@@ -309,11 +297,10 @@ export function enrichCapsuleForV1Candidate(
   });
 
   const playerContinuityCapsules = buildPositivePlayerContinuityCapsules(capsule);
-  const houseContinuityCapsule = buildPositiveHouseContinuityCapsule(capsule);
+  const houseNarrativeContinuityCapsule = buildPositiveHouseNarrativeContinuityCapsule(capsule);
 
   return {
     ...capsule,
-    houseContinuityRequirement: "required" as const,
     boundaryCertificate: {
       gameId: capsule.gameId,
       ownerEpoch: params.ownerEpoch,
@@ -327,7 +314,7 @@ export function enrichCapsuleForV1Candidate(
     },
     runtimeSnapshot,
     playerContinuityCapsules,
-    houseContinuityCapsule,
+    houseNarrativeContinuityCapsule,
     transcriptCursor: {
       entries: runtimeSnapshot.transcriptWatermark.entryCount,
       version: 1,
@@ -382,7 +369,7 @@ export function createCheckpointCapsule(
       noPendingEffectsAsserted: true,
     },
     playerContinuityCapsules: [],
-    houseContinuityCapsule: null,
+    houseNarrativeContinuityCapsule: createEmptyHouseNarrativeContinuity(projection.gameId),
     runtimeSnapshot: null,
     transcriptCursor: {
       entries: 0,

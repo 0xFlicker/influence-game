@@ -130,12 +130,12 @@ describe("daily token-cost savings model", () => {
     // Every selected mock passes, so no proposal exists and no responder/counter
     // demand is created beyond the two proposer calls.
 
-    // Selective House narration has its own exact receipt accounting and is not
-    // part of this historical social-cadence model. Room-assignment and
-    // proposer-selection turns are producer artifacts; each set is backed by
-    // one House request rather than one request per turn.
+    // House narration has its own engine telemetry and is not part of this
+    // historical social-cadence model. Room-assignment and proposer-selection
+    // turns are producer artifacts; each set is backed by one House request
+    // rather than one request per turn.
     const houseCadenceTurns = firstRoundTurns.filter((turn) => (
-      turn.action === "house-mc-summary" || turn.action === "house-summary-phase-receipt"
+      turn.action === "house-mc-summary" || turn.action === "house-summary-phase-telemetry"
     ));
     const compactEnvelopeProviderCalls = firstRoundTurns.length
       - houseCadenceTurns.length

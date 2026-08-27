@@ -1,80 +1,84 @@
 ---
-title: Bound Phase-Cadence Narration With Selective Fact Frontiers
-date: 2026-08-20
+title: Restore House-Authored Narrative Behind an Information Firewall
+date: 2026-08-27
 category: architecture-patterns
-module: House summary cadence
+module: House narrative cadence
 problem_type: architecture_pattern
 component: game_engine
 severity: high
 applies_when:
-  - "increasing model-authored narration cadence without replaying full game history"
-  - "letting a narrator select salient facts while canonical events remain authoritative"
-  - "requiring exact per-call and per-game provider cost evidence"
-tags: [house, narration, canonical-events, selective-context, tool-loop, privacy, cost-accounting]
-related_components: [engine, simulation, token-tracker, documentation]
+  - "letting an omniscient showrunner narrate a canonical event-driven game"
+  - "carrying private narrative threads without exposing them to contestants"
+  - "keeping prose creative while preventing prose-derived game state"
+tags: [house, narration, canonical-events, privacy, structured-output, continuity]
+related_components: [engine, simulation, checkpoint-recovery, documentation]
 ---
 
-# Bound Phase-Cadence Narration With Selective Fact Frontiers
+# Restore House-Authored Narrative Behind an Information Firewall
 
 ## Problem
 
-A once-per-round narrator can tolerate a large prompt containing the accumulated transcript, public messages, diary entries, room allocations, producer strategy, and round facts. Reusing that call shape after most phases multiplies spend and gives non-authoritative prose too much opportunity to compete with canonical truth.
+The selective-fact frontier made House summary prose mechanically provable by asking the model to select claim kinds and source aliases, validating those selections, and rendering copy in the engine. That protected canonical authority, but it also prevented the House from writing summaries, weakened connective narrative, and added prompt/schema/tool overhead for attestations no game-state consumer needed.
 
-Making each call merely shorter is not enough. The scheduler, authorization boundary, source lineage, failure semantics, and accounting all have to remain bounded when call count increases.
+The actual invariant is narrower: game facts must never be derived from prose. It does not require preventing the omniscient House from describing facts in prose.
 
 ## Pattern
 
-At each meaningful actor-coordinate boundary, compile a server-owned frontier from changes after the last examined canonical and eligible-dialogue heads. The provider seed contains only:
+At a material actor-coordinate boundary, compile one bounded omniscient narration context from typed engine data:
 
-- boundary identity and beat class;
-- a compact salience catalog;
-- separately labeled typed prior-claim lineage and non-authoritative narrative continuity; and
-- remaining tool/byte/prose budgets.
+- canonical events since the last examined head;
+- the canonical projection when relevant;
+- accepted public dialogue;
+- milestone-only private dialogue, sealed decisions, and diary Q&A;
+- recent public House beats; and
+- one private House narrative notebook.
 
-Build an in-process, read-only discriminated `sourceValuesByAlias` map directly from boundary-time typed canonical events, the projection snapshot, and accepted transcript entries. Allow one sequential request for a small typed category set, then require the model to select ordered `(claim kind, source alias)` pairs or select no material change. The model supplies no factual values or connective prose. Semantic validation binds each claim kind to its exact source authority, and a fixed exhaustive renderer derives names, counts, outcomes, speakers, and exact quotes from the private snapshot. The human-viewer transcript receives only engine-rendered text; it never receives aliases, coordinates, private values, tool payloads, or diagnostics.
+Make one provider call with an exact schema containing required nullable `publicSummary` and `privateNarrativeNotebook` fields. The schema routes public and private creative output and preserves typed failure; it does not assert that the prose is true.
 
-The current categories deliberately do not overlap:
+Publish a non-null summary exactly as authored after only shape, non-empty, control-character, and existing beat-length validation. A non-null notebook replaces the entire bounded opaque snapshot; null preserves the previous snapshot. Non-JSON, embedded/fenced JSON, `{}`, missing or extra fields, refusal, and exhaustion publish nothing and preserve the notebook. Do not synthesize a fallback summary.
 
-- `canonical_phase_facts` for accepted decisions and outcomes;
-- `player_projection_facts` for the boundary-time alive-player count snapshot; and
-- `audience_dialogue_quotes` for one exact explicitly public player statement labeled non-authoritative.
+## Authority boundary
 
-Prior House/system prose, diary, thinking, private/huddle speech, producer evidence, and sealed or unrevealed facts do not enter the catalog or omission counts. Anonymous dialogue is relabeled `Anonymous` before provider serialization.
+House prose may contain names, counts, strategy, private information, interpretation, and dramatic connective copy. Human viewers may see that omniscient narration. No reducer, projection, tally, eligibility check, decision, result classifier, replay path, Recall Plan, or AI contestant context may parse or inspect it for facts.
 
-## Scheduler and continuity
+Canonical events and projections remain the authority for what happened. Accepted speech records remain participant history. Exact output schemas remain the authority for whether a structured provider turn succeeded. These are independent of the truth or quality of House prose.
 
-Schedule by actor coordinate, not coarse phase enum. This distinguishes normal format work from legacy Council and from Reckoning, Tribunal, and Judgment. Treat accepted elimination, round resolution, and endgame results as milestone beats; keep ordinary speeches, lobby movement, menus, and picks in the smaller envelope. `checkGameOver` and terminal cleanup are not narration boundaries.
+## Information firewall
 
-Preflight skips happen before provider I/O when no allowlisted material changed. Model-selected skips and provider failures emit no fallback prose and remain nonfatal to gameplay. The first failure may carry its unseen delta to the next boundary once. Success, skip, or a second failure clears the carry, so a provider outage cannot create an unbounded retry loop.
+The House and contestant interviewers have different context compilers:
 
-Narrative continuity helps the House connect adjacent beats, but it is never authority or checkpoint state. Keep a bounded set of accepted audience artifacts by actor coordinate plus examined/emitted heads. Project each artifact into two fields for later House summary, diary, Strategy Bible, long-form, and producer-brief prompts: typed accepted claims/source coordinates, and the rendered beat labeled `narrative_non_authoritative`. The first preserves receipt lineage; the second supports arcs, pacing, and repetition avoidance. Never infer facts from the rendered beat, and never place either projection in contestant-agent context or Recall Plan candidates.
+- The House is an omniscient showrunner and may receive private conversations, sealed decisions, diary answers, and its notebook.
+- A diary interviewer receives the subject player's public knowledge, conversations they participated in, their own decisions, and their own prior diary Q&A.
+- Judgment question and answer prompts use the same actor-scoped `PhaseContext` boundary plus canonical speaker/addressee history.
 
-## Bounds and accounting
+House summaries, the notebook, operator traces, other players' diary answers, peer-only private conversations, and peer-owned sealed decisions never enter contestant-facing prompts.
 
-Use separate hard envelopes for ordinary and milestone beats. Both permit at most two explicit provider responses. The runner permits only one fact read for the whole game and offers it only at a milestone. The current ordinary envelope permits two categories, 4,096 returned bytes, two selected claims, 256 completion tokens per response, 180 rendered characters, and 45 seconds. The milestone envelope permits three categories, 8,192 returned bytes, four selected claims, 512 completion tokens per response, 360 rendered characters, and 75 seconds.
+## Continuity and durability
 
-Disable automatic retry/fallback for this call family. Allocate a call identity before each request and retain provider-reported usage, response identity, and effective service tier. A content-free phase receipt records status, call/category/byte/source counts, and usage availability. Simulation instrumentation reconciles receipt call identities and known token subtotals with `TokenTracker`.
+`HouseNarrativeContinuityV2` stores recent public beats, the one private notebook, cadence heads, and pending-delta state. The runner checkpoints an accepted public beat and matching notebook together before releasing the buffered viewer event. Recovery accepts only the exact V2 capsule; deploy only after incompatible active games have drained.
 
-Price every response using its realized tier and the repository's frozen rate card. If any charged attempt lacks usage, response identity, tier, or pricing, return `inconclusive`; never fill missing cost with zero or a token estimate.
+A provider failure remains nonfatal. The existing bounded pending-delta policy may carry an unseen delta once, then clear it after success, explicit skip, or a second failure.
 
-## Validation sequence
+## Long-form and cost
 
-Prove the cheapest claims first:
+Rich producer mode adds private House-authored long-form copy using the same narration context, recent public beats, and notebook. It adds no Strategy Bible, producer brief, evidence catalog, claim selection, fact read, or separate memory call. Provider exhaustion produces typed absence.
 
-1. Pure frontier tests establish canonical authority, boundary-time typed source snapshots, visibility, anonymous identity handling, source coordinates, exhaustive renderers, and byte bounds.
-2. Deterministic fake-provider tests establish finite tool behavior, exact claim/source validation, accepted-replay integrity, continuity projections, and nonfatal skip/typed-exhaustion outcomes.
-3. Runner tests establish the full meaningful actor-coordinate matrix and zero-call preflight skips.
-4. Instrumentation tests establish per-phase/per-game reconciliation and exact versus inconclusive accounting.
-5. A minimal current-model proving slice checks editorial claim selection and the resulting deterministic narration at `FORMAT_PICK` and round resolution.
-6. A full-game current-model comparison decides queue completion; the proving slice alone cannot.
+Keep engine-generated phase telemetry for status, call count, usage, cost, and pending-delta disposition. Name it telemetry, not a factual receipt. Recall Plan and prompt-reuse telemetry remain separate structural accounting.
 
-For R21, the reviewed meaning of “near the round-only budget” is at most `1.25x` the same game's complete round-only realized USD cost. The cache-isolated 2026-08-19 `gpt-5.6-luna` Flex fixture did not meet that bar: 16/23 eligible beats emitted, 14/23 were selected-fact-specific, and candidate cost was `$0.0023335` versus `$0.0017157` for two independent round-only calls (`1.360086x`). It did preserve 21/21 continuity coverage, identical canonical authority, exact accounting, one total fact read, and zero provider calls for the preflight skip. R21 remains open until a later implementation passes both automatic and offline quality review; the earlier reported `1.137215x` result was invalidated by evaluator and review defects.
+## Validation
 
-## Failure lessons
+Deterministic tests should prove:
 
-- A compact prompt can still be expensive when schema and reasoning overhead dominate; measure the complete game, not characters per call.
-- Validating model prose after generation is not a factual contract. Make the model select typed receipts and render presentation from the accepted structure.
-- Tool schemas accepted by one model may be rejected by another. Keep strict schemas minimal and exercise the exact current model after deterministic validation.
-- A catalog alias shown in the seed must be a valid current-loop citation; otherwise the model receives evidence it cannot legally cite.
-- Hidden SDK retry or service-tier fallback breaks finite-loop and cost accounting. Suppress it for this call family and make every request explicit.
-- A successful two-boundary slice proves the architecture, not the cadence outcome. Keep the queue open until the reviewed full scheduler and whole-game economic gate pass.
+1. accepted public summary bytes are unchanged;
+2. notebook-only milestones update private continuity without viewer copy;
+3. malformed/refused/exhausted turns preserve the previous notebook;
+4. checkpoint durability precedes viewer delivery;
+5. changing House prose cannot change canonical state, projection, result, or replay classification;
+6. notebook and private-context canaries never reach contestant prompts or viewer payload fields; and
+7. House creative schemas contain no aliases, claims, receipts, or fact-read action.
+
+Provider evaluation should record visible output, calls, tokens, cost, latency, and failure status, then use human qualitative review for legibility, arc continuity, diary specificity, and player-knowledge compliance. It should not generate semantic hashes, source attestations, or automatic factual grades.
+
+## Superseded lesson
+
+The earlier selective-frontier implementation is useful evidence that over-constraining creative narration can degrade the product even when its proof machinery is internally consistent. Preserve the consumer-side no-prose-facts rule; do not rebuild model-authored evidence systems around presentation text.

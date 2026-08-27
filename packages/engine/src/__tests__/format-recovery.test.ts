@@ -9,6 +9,7 @@ import {
 import type { GameConfig } from "../types";
 import { Phase, type UUID } from "../types";
 import { MockAgent } from "./mock-agent";
+import { createEmptyHouseNarrativeContinuity } from "../house-summary-frontier";
 
 const PLAYERS = [
   { id: "atlas" as UUID, name: "Atlas" },
@@ -370,6 +371,7 @@ describe("multi-round format resume actor round catch-up", () => {
         canonicalEvents: events,
         lastEventSequence: events[events.length - 1]!.sequence,
         transcriptReplay: [],
+        houseNarrativeContinuityCapsule: createEmptyHouseNarrativeContinuity(state.gameId),
         mingleInboxReplay: null,
       },
     });

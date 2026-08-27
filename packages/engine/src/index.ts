@@ -7,10 +7,8 @@
 // Core types
 export * from "./types";
 export {
-  HOUSE_SUMMARY_NEAR_BUDGET_RATIO,
   costHouseProviderUsage,
   costHouseSummaryGame,
-  isHouseSummaryCostWithinEnvelope,
 } from "./house-summary-accounting";
 export type {
   HouseSummaryBoundaryCost,
@@ -395,79 +393,44 @@ export type {
 
 // Game runner
 export { GameRunner } from "./game-runner";
-export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, HouseContinuityRequirement, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan, GameStreamEvent, GameStateSnapshot } from "./game-runner";
+export type { ActorWitnessV1, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan, GameStreamEvent, GameStateSnapshot } from "./game-runner";
 export type {
-  HouseContinuityCapsule,
-  HouseEvidenceBundle,
+  HouseGameplaySummaryContext,
   HouseGameplaySummaryResult,
-  HouseProducerBrief,
-  HouseProducerClaimKind,
-  HouseProducerClaimSelection,
-  HouseProducerDisclosure,
-  HouseProducerFocusItem,
-  HouseProducerFocusKind,
-  HouseProducerHypothesis,
-  HouseProducerHypothesisKind,
-  HouseProducerHypothesisStatus,
-  HouseProducerOpenQuestion,
-  HouseProducerQuestionAngle,
-  HouseProducerQuestionKind,
-  HouseSelectiveSummaryContext,
-  HouseStrategyBiblePacket,
+  HouseNarrativeTurnContext,
   HouseSummaryAttemptResult,
   HouseSummaryEmittedResult,
   HouseSummaryFailedResult,
   HouseSummaryModelSkippedResult,
-} from "./game-runner";
-export type {
-  HouseGameplaySummaryContext,
-  HouseStrategyBibleUpdateContext,
-  HouseStrategyBibleUpdateResult,
 } from "./game-runner.types";
 export {
-  compileHouseDiaryProducerEvidence,
-  compileHouseProducerEvidence,
-  renderHouseProducerClaims,
-  renderHouseProducerQuestionAngles,
-} from "./house-producer-evidence";
-export type {
-  HouseDiaryProducerEvidenceInput,
-  HouseProducerEvidenceAuthority,
-  HouseProducerEvidenceFrontier,
-  HouseProducerEvidenceKind,
-  HouseProducerEvidencePrivacy,
-  HouseProducerEvidenceSource,
-} from "./house-producer-evidence";
-export {
-  HOUSE_FACT_CATEGORIES,
-  HOUSE_SUMMARY_FRONTIER_VERSION,
-  compileHouseSummaryFrontier,
+  HOUSE_NARRATIVE_CONTINUITY_VERSION,
+  HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+  appendRecentHouseNarrativeBeat,
+  compileHouseNarrationContext,
   createEmptyHouseNarrativeContinuity,
-  expectedHouseAudienceClaimKind,
-  isHouseFactCategory,
   parseHouseNarrativeContinuity,
-  readHouseFactSlice,
-  renderHouseAudienceClaims,
-  retainHouseArtifactAtActorCoordinate,
 } from "./house-summary-frontier";
 export type {
-  HouseAudienceClaimKind,
-  HouseAudienceClaimSelection,
-  HouseAudienceSummaryArtifact,
   HouseBeatClass,
   HouseBeatStatus,
-  HouseFactCategory,
-  HouseFactRow,
-  HouseFactSlice,
-  HouseNarrativeContinuity,
+  HouseNarrationCanonicalEvent,
+  HouseNarrationContext,
+  HouseNarrationDiaryEntry,
+  HouseNarrationDialogue,
+  HouseNarrationProjection,
+  HouseNarrativeBeat,
+  HouseNarrativeContinuityV2,
   HouseProviderUsage,
-  HouseSalienceItem,
-  HouseSourceCoordinate,
   HouseSummaryBoundary,
-  HouseSummaryFrontier,
-  HouseSummaryPhaseReceipt,
-  HouseSummarySourceValue,
+  HouseSummaryPhaseTelemetry,
 } from "./house-summary-frontier";
+export {
+  HOUSE_LONG_FORM_SUMMARY_MAX_CHARACTERS,
+  HOUSE_LONG_FORM_SUMMARY_SCHEMA,
+  decodeAcceptedHouseLongForm,
+  decodeHouseLongFormProvider,
+} from "./house-long-form";
 export type {
   CompactStrategyAccepted,
   CompactStrategyApplicationResult,
@@ -483,11 +446,7 @@ export type {
 } from "./game-runner.types";
 export {
   PLAYER_CONTINUITY_CAPSULE_VERSION,
-  admitHouseContinuityForRecovery,
-  isHouseContinuityCapsuleShape,
-  isHouseContinuityRequirement,
   parsePlayerContinuityCapsule,
-  sealHouseContinuityRequirement,
   validatePlayerContinuitySetForRecovery,
 } from "./game-runner";
 export { PromptReuseAggregate, RecallPlanReceiptAggregate } from "./prompt-reuse";

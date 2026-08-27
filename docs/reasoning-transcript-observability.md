@@ -4,7 +4,7 @@ These rules and patterns apply to the game engine (`packages/engine`) for surfac
 
 ## Purpose
 
-Private `thinking` + model-side reasoning evidence are captured so that bounded `--chatty` runs are actually debuggable and enjoyable for the human. Local OpenAI-compatible servers may provide raw native `reasoningContext` such as `reasoning_content`; hosted OpenAI Responses calls may provide provider-generated reasoning summaries that are labeled as OpenAI summaries. Agents' rationale and compact strategy operations for Mingle turns, named-alliance actions, alliance huddle turns, empower votes, empower revotes, format picks, format ballots, Safety Bounce pointers, format tiebreaks, diary answers, direct endgame votes, and jury votes must be visible in local debug artifacts when useful and persisted in structured simulation artifacts. Legacy classic candidate-selection, Power, and Council reasoning remains observable when that lane is deliberately exercised, but it is not the expected default standard-round path. Initial Format Mingle room assignment is one House-authored decision from the living roster and locked rule sheet; live rounds do not request per-player Mingle intent. Each alliance-action window also records one private House `alliance-proposer-selection` decision for `ceil(alive / 4)` access seats, including underrepresentation rationale and engine repair notes. This is producer observability rather than canonical alliance truth. The House also emits private huddle scheduling/outcome artifacts, selective phase-cadence MC summary artifacts by default, and rich producer simulations can add private House Strategy Bible packets, long-form summaries, and diary producer briefs for carry-forward validation.
+Private `thinking` + model-side reasoning evidence are captured so that bounded `--chatty` runs are actually debuggable and enjoyable for the human. Local OpenAI-compatible servers may provide raw native `reasoningContext` such as `reasoning_content`; hosted OpenAI Responses calls may provide provider-generated reasoning summaries that are labeled as OpenAI summaries. Agents' rationale and compact strategy operations for Mingle turns, named-alliance actions, alliance huddle turns, empower votes, empower revotes, format picks, format ballots, Safety Bounce pointers, format tiebreaks, diary answers, direct endgame votes, and jury votes must be visible in local debug artifacts when useful and persisted in structured simulation artifacts. Legacy classic candidate-selection, Power, and Council reasoning remains observable when that lane is deliberately exercised, but it is not the expected default standard-round path. Initial Format Mingle room assignment is one House-authored decision from the living roster and locked rule sheet; live rounds do not request per-player Mingle intent. Each alliance-action window also records one private House `alliance-proposer-selection` decision for `ceil(alive / 4)` access seats, including underrepresentation rationale and engine repair notes. This is producer observability rather than canonical alliance truth. The House also emits private huddle scheduling/outcome artifacts and authored phase-cadence MC summaries by default. Rich producer simulations add private House long-form narration using the same single narrative notebook; they do not add Strategy Bible or per-player producer-brief calls.
 
 This observability layer exists because "master wants to see reasoning for voting as well" and equivalent signals for format decisions. Public player messages stay clean. Player-private cognitive lanes may store the agent's own reasoning and compact strategy state under the same established strategic-thinking visibility scope. Producer-private trace lanes additionally store provider profile, model/catalog IDs, requested reasoning effort, reasoning policy, full prompt request, raw provider response, observed provider reasoning metadata, usage counts, and router billing fields when available. Provider wrappers, prompts, responses, storage keys, source pointers, and private trace manifests stay in producer/debug surfaces. Thinking, reasoning context, strategy operations, and model provenance explain an attempted decision; they are never canonical board facts. Accepted events and replayable projections remain authoritative for what happened.
 
@@ -57,24 +57,22 @@ Phase runners receive the rich result, record only the narrow game-state value w
 - `phases/alliances.ts`: emits exactly one private `alliance-proposer-selection` House turn after post-pick Format Mingle rooms. It records the ceiling budget, finalized access set, House/per-player rationale, and deterministic eligibility/underrepresentation repair notes; it emits no canonical alliance event. The House selects access only and cannot author members or terms, activate, rewrite, dissolve, or enforce alliances. Only finalized players receive proposer `alliance-action` turns, while invited proposal responses/counters remain demand-driven through the unchanged lineage/version consent transaction. The phase binds each response after the model call, generates new counter versions itself, omits counter when the two-counter cap is exhausted, and resolves consented amendments through the same transaction loop. Private `alliance-huddle-schedule` turns carry House grant/skip rationale, and private `alliance-huddle-turn` turns carry authoritative member target/action/commitment/contingency/confidence/dissent facts. `alliance-huddle-outcome` carries those facts forward with a compact House summary; House prose must not invent a target or consensus. Huddle transcript entries use `scope: "huddle"` and must stay hidden from public/player-safe transcript surfaces by default.
 - `diary-room.ts`: after canonical eviction, the first living-player answer commits a full compact-strategy replacement or leaves `repair_required`; optional follow-ups reuse the shared delta envelope or repair with full `strategy`. It emits no reflection-only or strategy-packet turn.
 - The House follow-up-or-close decision uses a strict provider-native `{ decision, text }` schema. Invalid or semantically incomplete responses retain the retryable `malformed_house_followup` outcome instead of being accepted as diary choreography.
-- `diary-room.ts`: emits private `house-producer-brief` agent turns before diary questions when `enableHouseProducerBriefs` is enabled. Brief facts are typed focus items with player IDs, confidence, disclosure, and source aliases. Only viewer-safe `safe_to_reference` focus can produce engine-rendered question-angle instructions. `producerNote` is private presentation and is never copied into the visible-question prompt.
-- `game-runner.ts`: schedules selective House beats after meaningful actor-coordinate boundaries across introductions, normal format and legacy phases, Reckoning, Tribunal, and Judgment. The runner compiles canonical event/projection changes and explicitly public player dialogue into a bounded frontier plus a runner-private typed source snapshot. The provider selects only ordered claim kinds and current aliases; the engine renders every factual slot from that snapshot. `house-mc-summary` records plus clean `dialogueKind: "house_summary"` system transcript text are on by default unless `enableHouseRoundSummaries` is `false`. The accepted artifact remains available to House/producer workflows as typed claim/source lineage plus a separately labeled `narrative_non_authoritative` rendered beat, while contestant prompts and Recall Plans receive neither. Rich producer evidence uses a separate boundary-time catalog over typed projection snapshots and accepted speech/diary rows; `house-strategy-bible` and `house-long-form-summary` remain private producer/debug records gated by rich producer config.
+- `diary-room.ts`: builds the interviewer prompt from the subject player's `PhaseContext` and that player's prior diary Q&A. The prompt may include public state, conversations the subject participated in, the subject's own decisions, and their own diary history. It excludes the House notebook, House summaries, peer-only private conversations, other players' decisions, and other players' diary answers.
+- `game-runner.ts`: schedules authored House beats after meaningful actor-coordinate boundaries across introductions, normal format and legacy phases, Reckoning, Tribunal, and Judgment. One exact-schema provider call returns nullable `publicSummary` and `privateNarrativeNotebook`. Accepted public copy is emitted byte-for-byte after presentation validation; a non-null notebook atomically replaces the bounded private snapshot. The checkpoint containing both is durable before the viewer event is released. `house-mc-summary` records plus clean `dialogueKind: "house_summary"` system transcript text are on by default unless `enableHouseRoundSummaries` is `false`. The House may use omniscient producer context and deliberately reveal it to human viewers, but contestant prompts and Recall Plans receive neither House prose nor the notebook. Rich producer mode adds private `house-long-form-summary` observation output over the same context and notebook.
 - Every phase runner that resolves an agent call also emits an `agent_turn` stream event via `logger.emitAgentTurn(...)` with the normalized response the game used.
 - Decision agent turns can include the submitted strategy candidate plus its accepted/rejected/no-change result and resulting engine revision. No extra inference turn is created for that receipt.
 
-### Rich producer artifact receipts
+### House-authored narrative and telemetry
 
-Strategy Bible, long-form catch-up, and producer-brief turns use exact recursively closed schemas and semantic decoders. Strategy Bible continuity is typed hypotheses/open questions with canonical player IDs and current source aliases; revision IDs and covered windows are engine-owned. Long-form factual copy is rendered deterministically from ordered claim selections and the boundary-time private source map. Producer briefs carry typed focus items and typed angle kinds. Optional `interpretation`, `analysis`, and `producerNote` remain House/producer presentation only.
+House creative turns keep exact schemas for routing and typed failure, not for factual proof. The cadence schema contains exactly two required nullable fields: `publicSummary` and `privateNarrativeNotebook`. Long-form producer output has one authored `summary` plus optional presentation reasoning. These schemas contain no claims, aliases, receipts, source coordinates, or fact-read action.
 
-Malformed, partial, fenced, wrapped, or extra-field outputs retry through the shared provider policy. Strategy Bible exhaustion preserves the preceding packet byte-for-byte. Long-form and brief exhaustion produce explicit engine fallback provenance and only deterministic receipt-backed copy or typed absence. Cancellation, accepted-value replay defects, schema/validator defects, and invalid canonical producer context propagate; they are not converted into ordinary producer absence. Checkpoint House continuity excludes narrative interpretation and carries only typed packet facts.
+The engine validates authored copy only as presentation: expected shape, non-empty strings, control characters, and the existing 180-character ordinary / 360-character milestone beat bounds. It does not grade, rewrite, fact-check, or render the prose. Provider refusal, malformed output, or exhaustion emits no fabricated summary and preserves the prior notebook. Pending delta still follows the bounded carry/drop cadence policy.
 
-### Selective House summary receipts
+`HouseNarrativeContinuityV2` contains recent public beats, one private opaque notebook snapshot, actor-coordinate heads, and pending-delta state. Null notebook output preserves the snapshot; non-null output replaces the whole bounded snapshot. The accepted beat and matching notebook are placed in the same checkpoint before any buffered viewer event is released. Version-1 House continuity is not accepted on recovery; drain active games before deploying an incompatible checkpoint boundary.
 
-Every scheduled House boundary produces one private in-memory `HouseSummaryPhaseReceipt`. Empty material frontiers preflight-skip with zero provider calls. Material frontiers may emit, model-skip, or fail; all three advance attempt state, and failures remain nonfatal to the game. The first failure may carry its unseen delta into the next boundary exactly once. A later success, skip, or second failure clears the carry so the failed boundary cannot loop.
+The omniscient producer context may include canonical events, projection state, private dialogue, sealed decisions, and diary Q&A. That is a producer/showrunner capability, not contestant knowledge. Diary and Judgment prompts are built from an actor-scoped projection and must not contain the House notebook, House summaries, operator traces, or information private to other players.
 
-The provider loop is finite. Ordinary and milestone beats permit at most two explicit provider responses, while the runner permits at most one sequential fact read for the whole game and offers it only at a milestone. Ordinary limits are two categories, 2,048 bytes per category, 4,096 returned bytes, 45 seconds, 256 completion tokens per response, and 180 public characters. Milestones permit three categories, 4,096 bytes per category, 8,192 returned bytes, 75 seconds, 512 completion tokens per response, and 360 public characters. Automatic transport retry/fallback is disabled for this call family so every charged attempt has a server-issued call identity.
-
-Receipts contain status and numeric accounting only: boundary/actor coordinate, provider and fact calls, categories, bytes, selected-source count, usage availability, and returned provider usage. Exact source coordinates, prompts, tool arguments/results, output, and diagnostics remain in producer-private trace messages. `simulation-instrumentation.ts` aggregates receipt counts by actor coordinate and reconciles unique call IDs plus known token subtotals with `TokenTracker`. Missing provider usage, effective tier, model pricing, or response identity stays explicitly inconclusive; it is never treated as a zero-cost call.
+Every scheduled boundary records engine-generated `HouseSummaryPhaseTelemetry`: boundary, status, provider call count, returned usage, and pending-delta disposition. Simulation instrumentation reconciles those calls with `TokenTracker`. This telemetry contains no creative source attestations and costs no model tokens. Recall Plan and prompt-reuse structural telemetry remain separate and unchanged.
 
 `AgentTurnEvent` (game-runner.types.ts) is the structured simulation-analysis shape:
 
@@ -489,19 +487,21 @@ logger.logSystem(
 
 See `formatEntry` above. Yellow House lines + indented bright-white thinking + bright-cyan reasoning.
 
-**Direct House audience-artifact projection (after semantic acceptance):**
+**Direct House-authored viewer projection (after exact-schema acceptance):**
 
 ```ts
 const result = await this.houseInterviewer.generateHouseSummary(summaryContext);
 if (result.status === "emitted") {
+  const publicSummary = result.beat?.publicSummary;
+  if (!publicSummary) return;
   this.logger.emitAgentTurn({
     action: "house-mc-summary",
     visibility: "system",
-    response: { summary: result.artifact.renderedText },
-    text: result.artifact.renderedText,
+    response: { summary: publicSummary },
+    text: publicSummary,
   });
   this.logger.logSystem(
-    result.artifact.renderedText,
+    publicSummary,
     resolvedPhase,
     undefined,
     undefined,
@@ -532,7 +532,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     --variant mingle --chatty --max-rounds 2 --llm-timeout-sec 300
 ```
 
-Use `--diary` when validating survivor post-eviction replacement and optional follow-up refinement. For House carry-forward validation, use `--rich-producer`; this enables the diary surfaces plus private House Strategy Bible packets, long-form summaries, and per-player producer briefs. There is no strategic-reflection flag or reflection-only agent cadence.
+Use `--diary` when validating survivor post-eviction replacement and optional follow-up refinement. For House carry-forward validation, use `--rich-producer`; this enables diary surfaces plus private House long-form summaries over the same single narrative notebook. There is no Strategy Bible, per-player producer brief, strategic-reflection flag, or reflection-only agent cadence.
 
 Format-kernel API and simulator runs use bounded diary sessions after `FORMAT_RESOLVE`. Simulator `--diary` / `--rich-producer` also retains the post-Council boundary for legacy/classic lanes. Diary answers carry the strategy replacement/delta on the same paid call; closing the diary buys no summary or reflection call.
 
@@ -551,7 +551,7 @@ Useful validation queries:
 - `search_logs` over `sources: ["turns"]` for `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, `decisionSource`, or `fallbackReason`
 - For a legacy/classic batch only, `search_logs` over `sources: ["turns"]` for `candidate-selection`, `power-action`, `shieldPullUp`, or `selectedCandidates`
 - `search_logs` over `sources: ["turns", "transcript"]` for `house-mc-summary` or legacy `[House MC]`
-- `search_logs` over `sources: ["turns"]` for `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or a House alliance name
+- `search_logs` over `sources: ["turns"]` for `house-long-form-summary` or a House alliance name
 
 Update simulation batch notes (the dated `.md` next to `results.json` etc.) with observations about the quality of the surfaced reasoning, not just win rates or token counts. When writing scripts, read `game-N-turns.jsonl` for per-turn decisions, `game-N-events.jsonl` for accepted domain facts, and `game-N.json` for full transcript context.
 
@@ -571,11 +571,11 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - When evaluating the two Mingle-intent contexts, is `strategic-probe` treated as zero-provider selection evidence rather than proof of model use or behavior?
 - When the legacy/classic lane is exercised, do Council diary prompts use the interviewee's actual role without inventing a vote?
 - Do Judgment juror question prompts receive questions-only history while finalist answer, closing, and jury-vote prompts can still use full Q&A history?
-- Do House MC summaries lead with consequence, leverage, debt, heat, and next tension without claiming the currently limited `response.roundFacts` carries format proof?
+- Do House MC summaries lead with consequence, leverage, debt, heat, and next tension, while canonical events alone determine the accepted game facts?
 - Does the Strategic Play Menu stay hidden in system prompt context and avoid leaking into public player-visible messages?
 - Do ordinary schemas and prompts make null/omitted `strategyDelta` the expected result for an unchanged plan, and reserve non-null deltas for actionable changes rather than action summaries or baseline restatements?
 - If compact strategy changed, can the private turn/trace show the submitted operation, accepted/rejected/no-change result, and resulting revision without a separate model call?
-- If House producer carry-forward changed, can MCP `search_logs` find `house-strategy-bible`, `house-mc-summary`, `house-long-form-summary`, and `house-producer-brief` records in a rich producer run?
+- If House producer carry-forward changed, can MCP `search_logs` find `house-mc-summary` and `house-long-form-summary`, while notebook canaries remain absent from contestant prompts and viewer payload fields?
 - Are compact strategy prose and diagnostics absent from websocket-visible events and canonical board state?
 - Do API durable events, simulator JSONL records, and replay/projection tests still use the same `CanonicalGameEvent` envelope?
 - Do mocks and tests compile and pass with the new shapes?
@@ -592,6 +592,6 @@ Update simulation batch notes (the dated `.md` next to `results.json` etc.) with
 - `packages/engine/src/game-mcp/` — local read-only MCP/query server over simulation event logs.
 - `packages/engine/src/agent.ts` — `callTool` and the decision methods.
 - `packages/engine/src/transcript-logger.ts` and `game-runner.types.ts` — the transcript and agent-turn data models.
-- `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `Recall Plan`, `reasoningContext`, `chatty` mode, `House MC`, House Strategy Bible packets, producer briefs, long-form summaries, and the `callTool` reasoning augmentation.
+- `CONCEPTS.md` — project vocabulary for `TranscriptEntry`, `Recall Plan`, `reasoningContext`, `chatty` mode, House-authored narrative beats, the private narrative notebook, long-form summaries, and the `callTool` reasoning augmentation.
 - `packages/engine/src/context-recall-plan.ts`, `prompt-reuse.ts` (`RecallPlanReceiptAggregate`) — pure compiler, structural receipts, and safe simulation aggregate.
 - `feat/inf-228-mingle-hardening` branch context: this observability work was driven by the need to debug and enjoy the new Mingle room system + the full decision loop down to 4 players.

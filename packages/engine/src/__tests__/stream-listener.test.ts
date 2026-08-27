@@ -187,12 +187,12 @@ describe("GameRunner stream listener", () => {
     expect(events.some((event) => event.type === "agent_turn" && event.action === "strategy-packet")).toBe(false);
   });
 
-  it("emits House Strategy Bible and format-round summary records when enabled", async () => {
+  it("emits House-authored viewer beats, private long-form copy, and engine telemetry", async () => {
     const agents = makeAgents(5);
     const checkpoints: GameCheckpointCapsule[] = [];
     const runner = new GameRunner(agents, {
       ...FAST_CONFIG,
-      enableHouseStrategyBible: true,
+      enableHouseRoundSummaries: true,
       enableHouseLongFormSummaries: true,
       mingleSessionsPerRound: 1,
     }, undefined, {
@@ -205,20 +205,6 @@ describe("GameRunner stream listener", () => {
 
     await runner.run();
 
-    const packet = events.find((event) => event.type === "agent_turn" && event.action === "house-strategy-bible");
-    expect(packet).toBeDefined();
-    if (packet?.type === "agent_turn") {
-      expect(packet.actor).toMatchObject({ name: "House", role: "house" });
-      expect(packet.visibility).toBe("private");
-      expect(packet.response).toMatchObject({
-        packet: {
-          previousRevisionId: null,
-          hypotheses: [],
-          openQuestions: [],
-        },
-      });
-    }
-
     const summaries = events.filter((event) => event.type === "agent_turn" && event.action === "house-mc-summary");
     expect(summaries.length).toBeGreaterThanOrEqual(2);
     for (const summary of summaries) {
@@ -229,16 +215,16 @@ describe("GameRunner stream listener", () => {
       expect(summary.response.summary).not.toContain("Round facts:");
       expect(summary.response.summary).not.toContain("power=pass;");
     }
-    const receipts = events.filter(
-      (event) => event.type === "agent_turn" && event.action === "house-summary-phase-receipt",
+    const telemetry = events.filter(
+      (event) => event.type === "agent_turn" && event.action === "house-summary-phase-telemetry",
     );
-    expect(receipts.some(
+    expect(telemetry.some(
       (event) => event.type === "agent_turn"
-        && (event.response.receipt as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_pick",
+        && (event.response.telemetry as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_pick",
     )).toBe(true);
-    expect(receipts.some(
+    expect(telemetry.some(
       (event) => event.type === "agent_turn"
-        && (event.response.receipt as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_resolve",
+        && (event.response.telemetry as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_resolve",
     )).toBe(true);
     expect(runner.transcriptLog.some((entry) => entry.text.includes("[House MC]"))).toBe(false);
     expect(runner.transcriptLog.some((entry) => entry.text.includes("Round facts:"))).toBe(false);
@@ -247,31 +233,26 @@ describe("GameRunner stream listener", () => {
     expect(longForm).toBeDefined();
     if (longForm?.type === "agent_turn") {
       expect(longForm.visibility).toBe("private");
-      expect(longForm.response).toHaveProperty("claims");
+      expect(longForm.response).toMatchObject({ summary: expect.any(String), kind: "long-form" });
+      expect(longForm.response).not.toHaveProperty("claims");
+      expect(longForm.response).not.toHaveProperty("packetRevisionId");
     }
-    const houseCheckpoint = checkpoints.findLast((checkpoint) => checkpoint.houseContinuityCapsule != null);
-    expect(houseCheckpoint?.houseContinuityCapsule).toMatchObject({
-      hypotheses: [],
-      openQuestions: [],
-    });
-    expect(houseCheckpoint?.houseContinuityCapsule).not.toHaveProperty("interpretation");
     const narrativeCheckpoint = checkpoints.findLast(
       (checkpoint) => checkpoint.houseNarrativeContinuityCapsule != null,
     );
     expect(narrativeCheckpoint?.houseNarrativeContinuityCapsule).toMatchObject({
-      version: 1,
-      lastArtifactByActorCoordinate: expect.any(Object),
+      version: 2,
+      recentBeats: expect.any(Array),
     });
     expect(narrativeCheckpoint?.houseNarrativeContinuityCapsule)
       .not.toHaveProperty("sourceValuesByAlias");
   });
 
-  it("emits private House producer briefs before FORMAT_RESOLVE diary questions", async () => {
+  it("asks FORMAT_RESOLVE diary questions without a separate producer-brief call", async () => {
     const agents = makeAgents(5);
     const runner = new GameRunner(agents, {
       ...FAST_CONFIG,
-      enableHouseStrategyBible: true,
-      enableHouseProducerBriefs: true,
+      enableHouseRoundSummaries: true,
       diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE],
       maxDiaryFollowUps: 0,
       mingleSessionsPerRound: 1,
@@ -282,17 +263,9 @@ describe("GameRunner stream listener", () => {
 
     await runner.run();
 
-    const briefIndex = events.findIndex((event) => event.type === "agent_turn" && event.action === "house-producer-brief");
     const answerIndex = events.findIndex((event) => event.type === "agent_turn" && event.action === "diary-answer");
-    expect(briefIndex).toBeGreaterThanOrEqual(0);
-    expect(answerIndex).toBeGreaterThan(briefIndex);
-    const brief = events[briefIndex];
-    if (brief?.type === "agent_turn") {
-      expect(brief.visibility).toBe("private");
-      expect(brief.response).toHaveProperty("producerBrief");
-      expect(JSON.stringify(brief.response)).toContain("focusItems");
-      expect(JSON.stringify(brief.response)).not.toContain("privateDoNotReveal");
-    }
+    expect(events.some((event) => event.type === "agent_turn" && event.action === "house-producer-brief")).toBe(false);
+    expect(answerIndex).toBeGreaterThanOrEqual(0);
   });
 
   it("emits a game_over event at the end", async () => {

@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   formatAllianceActionOperatorText,
   formatAllianceHuddleOutcomeOperatorText,
-  formatHouseProducerBriefOperatorText,
   formatMingleIntentOperatorText,
   formatMingleRoomAssignmentOperatorText,
   formatMingleTurnOperatorText,
@@ -121,29 +120,6 @@ describe("operator turn text", () => {
     expect(formatAllianceHuddleFacts([], (playerId) => playerId)).toEqual([
       "No structured huddle facts were recorded.",
     ]);
-  });
-
-  test("producer brief operator text exposes typed labels rather than producer prose", () => {
-    const text = formatHouseProducerBriefOperatorText({
-      playerName: "Atlas",
-      focusItems: [{
-        id: "F1",
-        kind: "trust",
-        subjectPlayerId: "atlas-id",
-        relatedPlayerIds: ["nyx-id"],
-        sourceAliases: ["P2"],
-        confidence: "medium",
-        disclosure: "safe_to_reference",
-      }],
-      questionAngles: [{
-        kind: "trust_test",
-        focusItemIds: ["F1"],
-        subjectPlayerId: "atlas-id",
-        relatedPlayerIds: ["nyx-id"],
-      }],
-    });
-
-    expect(text).toBe("House brief for Atlas: focus=trust:safe_to_reference:medium | angles=trust_test");
   });
 
   test("chatty prints operator text even without thinking", () => {

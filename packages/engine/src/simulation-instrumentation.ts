@@ -1,6 +1,6 @@
 import type { TranscriptEntry } from "./game-runner.types";
 import type { CanonicalGameEvent } from "./canonical-events";
-import type { HouseSummaryPhaseReceipt } from "./house-summary-frontier";
+import type { HouseSummaryPhaseTelemetry } from "./house-summary-frontier";
 import type { TokenUsage } from "./token-tracker";
 import type { MingleSessionDiagnostics } from "./types";
 import { Phase, type EndgameStage } from "./types";
@@ -233,10 +233,8 @@ export interface ActionUsageInstrumentation {
 }
 
 export interface HouseProducerInstrumentation {
-  strategyBibleCalls: number;
   mcSummaryCalls: number;
   longFormSummaryCalls: number;
-  producerBriefCalls: number;
   mcSummaryTranscriptEntries: number;
   totalHouseProducerCalls: number;
 }
@@ -250,9 +248,6 @@ export interface HouseSummaryCadenceInstrumentation {
   failed: number;
   eligibleEmissionRate: number;
   providerCalls: number;
-  factCalls: number;
-  returnedBytes: number;
-  selectedSourceCount: number;
   providerCallIds: string[];
   uniqueProviderCallIds: number;
   knownTokenSubtotal: number;
@@ -270,8 +265,6 @@ export interface HouseSummaryCadenceInstrumentation {
     modelSkipped: number;
     failed: number;
     providerCalls: number;
-    factCalls: number;
-    returnedBytes: number;
   }>;
 }
 
@@ -599,18 +592,14 @@ function buildHouseProducerInstrumentation(
   transcript: readonly TranscriptEntry[],
   perSourceUsage: Record<string, TokenUsage>,
 ): HouseProducerInstrumentation {
-  const strategyBibleCalls = perSourceUsage["House/strategy-bible"]?.callCount ?? 0;
   const mcSummaryCalls = perSourceUsage["House/mc-summary"]?.callCount ?? 0;
   const longFormSummaryCalls = perSourceUsage["House/long-form-summary"]?.callCount ?? 0;
-  const producerBriefCalls = perSourceUsage["House/producer-brief"]?.callCount ?? 0;
   const detectedMcSummaryEntries = transcript.filter(isHouseMcSummaryTranscriptEntry).length;
   return {
-    strategyBibleCalls,
     mcSummaryCalls,
     longFormSummaryCalls,
-    producerBriefCalls,
     mcSummaryTranscriptEntries: Math.max(detectedMcSummaryEntries, mcSummaryCalls),
-    totalHouseProducerCalls: strategyBibleCalls + mcSummaryCalls + longFormSummaryCalls + producerBriefCalls,
+    totalHouseProducerCalls: mcSummaryCalls + longFormSummaryCalls,
   };
 }
 
@@ -623,25 +612,25 @@ function isHouseMcSummaryTranscriptEntry(entry: TranscriptEntry): boolean {
 }
 
 function buildHouseSummaryCadenceInstrumentation(
-  receipts: readonly HouseSummaryPhaseReceipt[],
+  telemetry: readonly HouseSummaryPhaseTelemetry[],
   perSourceUsage: Record<string, TokenUsage>,
 ): HouseSummaryCadenceInstrumentation {
-  const materiallyEligibleBoundaries = receipts.filter((receipt) => receipt.status !== "preflight_skipped").length;
-  const emitted = receipts.filter((receipt) => receipt.status === "emitted").length;
-  const usage = receipts.flatMap((receipt) => receipt.usage);
+  const materiallyEligibleBoundaries = telemetry.filter((entry) => entry.status !== "preflight_skipped").length;
+  const emitted = telemetry.filter((entry) => entry.status === "emitted").length;
+  const usage = telemetry.flatMap((entry) => entry.usage);
   const providerCallIds = usage.map((entry) => entry.callId);
   const uniqueProviderCallIds = new Set(providerCallIds).size;
-  const providerCalls = receipts.reduce((sum, receipt) => sum + receipt.providerCalls, 0);
+  const providerCalls = telemetry.reduce((sum, entry) => sum + entry.providerCalls, 0);
   const knownTokenSubtotal = usage.reduce((sum, entry) => sum + (entry.totalTokens ?? 0), 0);
   const tracker = perSourceUsage["House/mc-summary"] ?? EMPTY_USAGE;
-  const usageAvailable = receipts.every((receipt) => receipt.usageAvailable);
+  const usageAvailable = telemetry.every((entry) => entry.usageAvailable);
   const callIdentitiesReconciled = providerCallIds.length === providerCalls
     && uniqueProviderCallIds === providerCalls;
   const tokenSubtotalReconciled = usageAvailable
     && knownTokenSubtotal === tracker.totalTokens;
   const byActorCoordinate: HouseSummaryCadenceInstrumentation["byActorCoordinate"] = {};
-  for (const receipt of receipts) {
-    const current = byActorCoordinate[receipt.actorCoordinate] ?? {
+  for (const entry of telemetry) {
+    const current = byActorCoordinate[entry.actorCoordinate] ?? {
       boundaries: 0,
       materiallyEligibleBoundaries: 0,
       emitted: 0,
@@ -649,32 +638,25 @@ function buildHouseSummaryCadenceInstrumentation(
       modelSkipped: 0,
       failed: 0,
       providerCalls: 0,
-      factCalls: 0,
-      returnedBytes: 0,
     };
     current.boundaries += 1;
-    if (receipt.status !== "preflight_skipped") current.materiallyEligibleBoundaries += 1;
-    if (receipt.status === "preflight_skipped") current.preflightSkipped += 1;
-    else if (receipt.status === "model_skipped") current.modelSkipped += 1;
-    else if (receipt.status === "failed") current.failed += 1;
+    if (entry.status !== "preflight_skipped") current.materiallyEligibleBoundaries += 1;
+    if (entry.status === "preflight_skipped") current.preflightSkipped += 1;
+    else if (entry.status === "model_skipped") current.modelSkipped += 1;
+    else if (entry.status === "failed") current.failed += 1;
     else current.emitted += 1;
-    current.providerCalls += receipt.providerCalls;
-    current.factCalls += receipt.factCalls;
-    current.returnedBytes += receipt.returnedBytes;
-    byActorCoordinate[receipt.actorCoordinate] = current;
+    current.providerCalls += entry.providerCalls;
+    byActorCoordinate[entry.actorCoordinate] = current;
   }
   return {
-    boundaries: receipts.length,
+    boundaries: telemetry.length,
     materiallyEligibleBoundaries,
     emitted,
-    preflightSkipped: receipts.filter((receipt) => receipt.status === "preflight_skipped").length,
-    modelSkipped: receipts.filter((receipt) => receipt.status === "model_skipped").length,
-    failed: receipts.filter((receipt) => receipt.status === "failed").length,
+    preflightSkipped: telemetry.filter((entry) => entry.status === "preflight_skipped").length,
+    modelSkipped: telemetry.filter((entry) => entry.status === "model_skipped").length,
+    failed: telemetry.filter((entry) => entry.status === "failed").length,
     eligibleEmissionRate: rate(emitted, materiallyEligibleBoundaries),
     providerCalls,
-    factCalls: receipts.reduce((sum, receipt) => sum + receipt.factCalls, 0),
-    returnedBytes: receipts.reduce((sum, receipt) => sum + receipt.returnedBytes, 0),
-    selectedSourceCount: receipts.reduce((sum, receipt) => sum + receipt.selectedSourceCount, 0),
     providerCallIds,
     uniqueProviderCallIds,
     knownTokenSubtotal,
@@ -695,7 +677,7 @@ export function instrumentGame(
   transcript: readonly TranscriptEntry[],
   perSourceUsage: Record<string, TokenUsage>,
   playerNameById: Record<string, string>,
-  houseSummaryReceipts: readonly HouseSummaryPhaseReceipt[] = [],
+  houseSummaryTelemetry: readonly HouseSummaryPhaseTelemetry[] = [],
   canonicalEvents: readonly CanonicalGameEvent[] = [],
 ): GameInstrumentation {
   const powerActions: PowerActionObservation[] = [];
@@ -789,7 +771,7 @@ export function instrumentGame(
     },
     actionUsage: buildActionUsageInstrumentation(perSourceUsage),
     houseProducer: buildHouseProducerInstrumentation(transcript, perSourceUsage),
-    houseSummaryCadence: buildHouseSummaryCadenceInstrumentation(houseSummaryReceipts, perSourceUsage),
+    houseSummaryCadence: buildHouseSummaryCadenceInstrumentation(houseSummaryTelemetry, perSourceUsage),
   };
 }
 
@@ -842,10 +824,8 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
   let totalCalls = 0;
   let totalEmptyResponses = 0;
   const houseProducer: HouseProducerInstrumentation = {
-    strategyBibleCalls: 0,
     mcSummaryCalls: 0,
     longFormSummaryCalls: 0,
-    producerBriefCalls: 0,
     mcSummaryTranscriptEntries: 0,
     totalHouseProducerCalls: 0,
   };
@@ -942,10 +922,8 @@ export function aggregateInstrumentation(games: readonly GameInstrumentation[]):
       repeatedPairTotals.set(key, existing);
     }
 
-    houseProducer.strategyBibleCalls += game.houseProducer.strategyBibleCalls;
     houseProducer.mcSummaryCalls += game.houseProducer.mcSummaryCalls;
     houseProducer.longFormSummaryCalls += game.houseProducer.longFormSummaryCalls;
-    houseProducer.producerBriefCalls += game.houseProducer.producerBriefCalls;
     houseProducer.mcSummaryTranscriptEntries += game.houseProducer.mcSummaryTranscriptEntries;
     houseProducer.totalHouseProducerCalls += game.houseProducer.totalHouseProducerCalls;
 
@@ -1037,8 +1015,6 @@ function aggregateHouseSummaryCadence(
         modelSkipped: 0,
         failed: 0,
         providerCalls: 0,
-        factCalls: 0,
-        returnedBytes: 0,
       };
       for (const key of Object.keys(current) as Array<keyof typeof current>) current[key] += counts[key];
       byActorCoordinate[coordinate] = current;
@@ -1058,9 +1034,6 @@ function aggregateHouseSummaryCadence(
     failed: games.reduce((sum, game) => sum + game.houseSummaryCadence.failed, 0),
     eligibleEmissionRate: rate(emitted, materiallyEligibleBoundaries),
     providerCalls: games.reduce((sum, game) => sum + game.houseSummaryCadence.providerCalls, 0),
-    factCalls: games.reduce((sum, game) => sum + game.houseSummaryCadence.factCalls, 0),
-    returnedBytes: games.reduce((sum, game) => sum + game.houseSummaryCadence.returnedBytes, 0),
-    selectedSourceCount: games.reduce((sum, game) => sum + game.houseSummaryCadence.selectedSourceCount, 0),
     providerCallIds,
     uniqueProviderCallIds: new Set(providerCallIds).size,
     knownTokenSubtotal: games.reduce((sum, game) => sum + game.houseSummaryCadence.knownTokenSubtotal, 0),

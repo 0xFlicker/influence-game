@@ -91,11 +91,6 @@ export {
 } from "./safety-bounce";
 
 export {
-  buildHouseFormatResolutionFacts,
-  type PlayerNameResolver,
-} from "./house-resolution-facts";
-
-export {
   isLegalSealedElimBallot,
   resolveSealedElimRound,
   scoreSealedElimBallots,

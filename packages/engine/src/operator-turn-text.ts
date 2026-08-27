@@ -3,11 +3,7 @@
  * These are diagnostic (chatty + turns JSONL), not player-safe surfaces.
  */
 
-import type {
-  AllianceAction,
-  HouseProducerFocusItem,
-  HouseProducerQuestionAngle,
-} from "./game-runner.types";
+import type { AllianceAction } from "./game-runner.types";
 import type { MingleIntentSummary } from "./types";
 
 function clip(value: string, max = 96): string {
@@ -196,16 +192,4 @@ export function formatAllianceHuddleOutcomeOperatorText(params: {
 }): string {
   const name = params.allianceName ? `${params.allianceName}: ` : "";
   return `House huddle outcome — ${name}${params.factSummaries.join(" | ")}`;
-}
-
-export function formatHouseProducerBriefOperatorText(params: {
-  playerName: string;
-  focusItems: readonly HouseProducerFocusItem[];
-  questionAngles: readonly HouseProducerQuestionAngle[];
-}): string {
-  const focus = params.focusItems.slice(0, 3).map((item) =>
-    `${item.kind}:${item.disclosure}:${item.confidence}`,
-  );
-  const angles = params.questionAngles.slice(0, 2).map((angle) => angle.kind);
-  return `House brief for ${params.playerName}: focus=${listOrNone(focus)} | angles=${listOrNone(angles)}`;
 }

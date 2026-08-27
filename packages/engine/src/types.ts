@@ -679,12 +679,8 @@ export interface GameConfig {
   powerLobbyAfterVote?: boolean;
   /** Emit persisted House MC summary artifacts between completed normal rounds (default true). */
   enableHouseRoundSummaries?: boolean;
-  /** Enable private House Strategy Bible Packet updates for producer/debug carry-forward (default false). */
-  enableHouseStrategyBible?: boolean;
   /** Enable long-form House gameplay summaries for rich producer validation (default false). */
   enableHouseLongFormSummaries?: boolean;
-  /** Enable private House producer briefs before diary-room questions (default false). */
-  enableHouseProducerBriefs?: boolean;
 }
 
 export const DEFAULT_CONFIG: GameConfig = {

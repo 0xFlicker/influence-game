@@ -197,7 +197,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --variant mingle --house-summaries --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Use `--diary` when you need bounded diary sessions after the format kernel resolves; legacy/classic runs also retain the post-Council boundary. Use `--rich-producer` when the run is validating House strategy carry-forward and diary-room production quality. It enables format-resolution diaries, legacy/classic Council diaries where exercised, private `house-strategy-bible` packet updates, `house-long-form-summary` records, and per-player `house-producer-brief` records. The ordinary `house-mc-summary` record and clean House system transcript entry are emitted by default in simulation config so you can follow the game between rounds even without `--chatty`.
+Use `--diary` when you need bounded diary sessions after the format kernel resolves; legacy/classic runs also retain the post-Council boundary. Use `--rich-producer` when the run is validating House narrative carry-forward and diary-room production quality. It enables those diary surfaces plus private `house-long-form-summary` records over the same House narrative notebook. The ordinary `house-mc-summary` record and clean House system transcript entry are emitted by default in simulation config so you can follow the game between rounds even without `--chatty`.
 
 For compact-delta validation, report each exercised action family with total decision calls, non-null strategy candidates, accepted/rejected/no-change strategy results, and provider output tokens. Review retained deltas for future usefulness, not obedience: pivots and betrayals remain valid, alliance prose is not an obligation, and the accepted action/event remains authoritative. Preserve rejected/no-change diagnostics in producer artifacts rather than filtering them out of the evidence set.
 
@@ -207,7 +207,7 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   --variant mingle --chatty --rich-producer --game-timeout-sec 7200 --llm-timeout-sec 300
 ```
 
-Simulation artifacts are written under `packages/engine/docs/simulations/`. For each game, use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for replayable accepted domain facts, `game-N.json` for the full transcript/result bundle (producer artifact — may contain private dialogue and is **not** a safe Recall Plan promotion input), `game-N-progress.jsonl` for lightweight live progress, `game-N.txt` for human-readable transcript review, `game-N-prompt-reuse.json` for structural prompt-prefix reuse, and `game-N-recall-plan.json` for the **safe structural Recall Plan receipt aggregate** (prompt-class counts, protected/hot/history token estimates, lane/source-class counts, actor-authorized event boundary — no dialogue, names, entry IDs, prompts, thinking, or reasoning). `game-N-events.jsonl` uses the same `CanonicalGameEvent` envelope that API-backed games persist in Postgres, but pure local simulations do not create API database rows. Live standard rounds begin with one House room-assignment request rather than per-player `mingle-intent` calls; historical or isolated fixtures may still contain intent records. Each alliance window adds one private House `alliance-proposer-selection` call/turn for exactly `ceil(alive / 4)` access seats. The engine repairs invalid, duplicate, excess, or short results underrepresentation-first; only finalized players receive proposer `alliance-action` calls, while invitee response/counter calls remain demand-driven. House room-assignment, Mingle turn, named-alliance `alliance-action`, House `alliance-huddle-schedule`, member `alliance-huddle-turn`, House `alliance-huddle-outcome`, vote, conditional `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, diary, and `house-mc-summary` records are written when exercised. Eligible decision records carry `thinking`, optional `reasoningContext`, strategy candidate/result metadata, `decisionSource`, and nullable `fallbackReason`; any fallback is diagnostic evidence, not proof of model-authored play. Canonical format events preserve the public board path for durable replay and MCP: `format.menu_offered` (chooser + pair, absent for one-format manifests), `format.selected` (lock), `format.safety_bounce_*` (public bounce), `format.resolved` (aggregates + elimination), and `format.ballot_cast` (a shared sanitized voter-to-target viewer ledger; raw envelope provenance stays producer-only). Historical `format.resolved` payload version 1 carries only the original trio's exclusive bags; new resolutions use version 2 capability aggregates, while every other canonical event remains version 1. Unsupported event/version pairs fail closed. Legacy/classic `candidate-selection`, `power-action`, and Council records may remain readable in old or explicitly classic artifacts, but they are not the expected default standard-round lane. House Strategy Bible, long-form summary, and producer brief records are written when `--rich-producer` is enabled. Their factual fields are exact typed selections over current producer evidence aliases; House `interpretation`, `analysis`, and `producerNote` prose is private presentation only and must not be evaluated as fact continuity.
+Simulation artifacts are written under `packages/engine/docs/simulations/`. For each game, use `game-N-turns.jsonl` for structured per-agent-turn analysis, `game-N-events.jsonl` for replayable accepted domain facts, `game-N.json` for the full transcript/result bundle (producer artifact — may contain private dialogue and is **not** a safe Recall Plan promotion input), `game-N-progress.jsonl` for lightweight live progress, `game-N.txt` for human-readable transcript review, `game-N-prompt-reuse.json` for structural prompt-prefix reuse, and `game-N-recall-plan.json` for the **safe structural Recall Plan receipt aggregate** (prompt-class counts, protected/hot/history token estimates, lane/source-class counts, actor-authorized event boundary — no dialogue, names, entry IDs, prompts, thinking, or reasoning). `game-N-events.jsonl` uses the same `CanonicalGameEvent` envelope that API-backed games persist in Postgres, but pure local simulations do not create API database rows. Live standard rounds begin with one House room-assignment request rather than per-player `mingle-intent` calls; historical or isolated fixtures may still contain intent records. Each alliance window adds one private House `alliance-proposer-selection` call/turn for exactly `ceil(alive / 4)` access seats. The engine repairs invalid, duplicate, excess, or short results underrepresentation-first; only finalized players receive proposer `alliance-action` calls, while invitee response/counter calls remain demand-driven. House room-assignment, Mingle turn, named-alliance `alliance-action`, House `alliance-huddle-schedule`, member `alliance-huddle-turn`, House `alliance-huddle-outcome`, vote, conditional `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, diary, and `house-mc-summary` records are written when exercised. Eligible decision records carry `thinking`, optional `reasoningContext`, strategy candidate/result metadata, `decisionSource`, and nullable `fallbackReason`; any fallback is diagnostic evidence, not proof of model-authored play. Canonical format events preserve the public board path for durable replay and MCP: `format.menu_offered` (chooser + pair, absent for one-format manifests), `format.selected` (lock), `format.safety_bounce_*` (public bounce), `format.resolved` (aggregates + elimination), and `format.ballot_cast` (a shared sanitized voter-to-target viewer ledger; raw envelope provenance stays producer-only). Historical `format.resolved` payload version 1 carries only the original trio's exclusive bags; new resolutions use version 2 capability aggregates, while every other canonical event remains version 1. Unsupported event/version pairs fail closed. Legacy/classic `candidate-selection`, `power-action`, and Council records may remain readable in old or explicitly classic artifacts, but they are not the expected default standard-round lane. `--rich-producer` adds private House-authored long-form summary records. Their prose and the House notebook are producer presentation and never contestant knowledge or canonical continuity.
 
 Treat simulation `endgameType` and endgame/Judgment instrumentation as projections of `game-N-events.jsonl`, not transcript inspection. The latest canonical `endgame.stage_set` sequence determines `reckoning`, `tribunal`, or `judgment`; absence means `normal`. Stage totals count canonical stage events, jury-question totals count accepted `judgment.speech_recorded` questions, and jury-ballot totals count `jury.vote_cast`. House banner copy may be localized, changed, duplicated, or absent without changing those results.
 
@@ -226,7 +226,7 @@ cd packages/engine
 bun run mcp:game -- docs/simulations
 ```
 
-The server is read-only and scans the simulation corpus on demand. It addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and exposes tools for listing sessions/games, reading projections, filtering canonical events, searching logs, reading player timelines, and following source pointers to linked turn records when present. Older batches without event logs remain searchable through turns/progress/transcript artifacts, but projection tools require canonical events. Tool results include `resourceUri` values such as `influence-game://sessions/<sessionId>/games/<gameNumber>/events`; pass those URIs to `resources/read` to pull full events, turns, progress, transcript, or game JSON artifacts through MCP instead of resolving `sourcePath` against the repo filesystem. To validate open strategy choices after a run, use `search_logs` with `sources: ["turns"]` for `mingle-room-assignment`, `mingle-turn`, `alliance-proposer-selection`, `alliance-action`, `alliance-huddle-schedule`, `alliance-huddle-turn`, `alliance-huddle-outcome`, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, `decisionSource`, `fallbackReason`, `strategyCandidate`, `strategyResult`, `strategyDelta`, `strategy`, `strategicLens`, `gotoPlayerName`, `gotoStatus`, or `empower-revote`. Search `mingle-intent`, legacy `candidate-selection`, `power-action`, and `shieldPullUp` only when inspecting isolated or older batches. To validate canonical alliance truth, use `filter_events` for `alliance.proposed`, `alliance.activated`, `alliance.closed`, `alliance.huddle_scheduled`, `alliance.huddle_completed`, and `alliance.huddle_outcome_recorded`. To validate House producer carry-forward, search turns/transcript logs for `house-mc-summary`, legacy `[House MC]`, `house-strategy-bible`, `house-long-form-summary`, `house-producer-brief`, or a named House alliance hypothesis.
+The server is read-only and scans the simulation corpus on demand. It addresses games by `sessionId + gameNumber`, rebuilds projections from `game-N-events.jsonl`, and exposes tools for listing sessions/games, reading projections, filtering canonical events, searching logs, reading player timelines, and following source pointers to linked turn records when present. Older batches without event logs remain searchable through turns/progress/transcript artifacts, but projection tools require canonical events. Tool results include `resourceUri` values such as `influence-game://sessions/<sessionId>/games/<gameNumber>/events`; pass those URIs to `resources/read` to pull full events, turns, progress, transcript, or game JSON artifacts through MCP instead of resolving `sourcePath` against the repo filesystem. To validate open strategy choices after a run, use `search_logs` with `sources: ["turns"]` for `mingle-room-assignment`, `mingle-turn`, `alliance-proposer-selection`, `alliance-action`, `alliance-huddle-schedule`, `alliance-huddle-turn`, `alliance-huddle-outcome`, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, `decisionSource`, `fallbackReason`, `strategyCandidate`, `strategyResult`, `strategyDelta`, `strategy`, `strategicLens`, `gotoPlayerName`, `gotoStatus`, or `empower-revote`. Search `mingle-intent`, legacy `candidate-selection`, `power-action`, and `shieldPullUp` only when inspecting isolated or older batches. To validate canonical alliance truth, use `filter_events` for `alliance.proposed`, `alliance.activated`, `alliance.closed`, `alliance.huddle_scheduled`, `alliance.huddle_completed`, and `alliance.huddle_outcome_recorded`. To validate House producer carry-forward, search turns/transcript logs for `house-mc-summary`, legacy `[House MC]`, `house-long-form-summary`, or a named House alliance hypothesis.
 
 When validating the OAuth-gated path, keep the same corpus but launch the token bridge instead of the direct server. Assign the signed-in wallet the `producer` role, set `INFLUENCE_MCP_INTROSPECTION_SECRET` for both API and bridge, run `bun run mcp:game:login` from `packages/engine`, then run `bun run mcp:game:oauth -- docs/simulations`. The helper saves the one-hour token to `~/.influence-game/mcp-token.json`; set `INFLUENCE_MCP_TOKEN_FILE` if a connected MCP client needs a different path. The bridge uses a producer-capable OAuth token for trusted local validation.
 
@@ -303,100 +303,51 @@ Create a dated note in `docs/simulations/` or near the generated batch artifacts
 - whether action-family counts distinguish non-null, accepted, rejected, and no-change candidates and pair them with output tokens without treating strategy prose as canonical or alliance compliance as a quality metric
 - whether the first diary answer after an eviction reconciles the old epoch and whether an optional follow-up refines rather than replaces that accepted baseline
 - whether House summaries help keep up with teams forming, leverage shifts, and unresolved questions without treating the currently legacy-shaped `roundFacts` payload as format proof
-- when using `--rich-producer`, whether exact Strategy Bible hypotheses/open questions carry typed player IDs and current source receipts forward; whether long-form facts render from selected source aliases; whether viewer-safe typed brief angles sharpen diary questions; and whether `interpretation`, `analysis`, and `producerNote` remain producer-only presentation
+- when using `--rich-producer`, whether House-authored public and long-form copy carries arcs forward through the single private notebook; whether notebook/private canaries stay out of viewer payload fields and contestant prompts; and whether diary/Judgment questions remain specific while using only actor-scoped knowledge
 
-## House summary cadence evaluation
+## House narrative evaluation
 
-### R32 frozen provider-surface comparison
+House narration is a creative provider lane, not a factual proof lane. A material cadence turn makes one exact-schema provider call returning nullable `publicSummary` and `privateNarrativeNotebook` fields. The engine publishes accepted summary bytes unchanged after shape, control-character, and beat-length validation. A non-null notebook replaces the whole bounded private snapshot; null, malformed output, refusal, or exhaustion preserves the previous snapshot. Neither field is parsed into game state.
 
-Before changing structured-turn contracts, capture the five fixed semantic situations for House diary interviews, ordinary and milestone House audience summaries, and Judgment Q&A. This is an opt-in paid evaluation lane, never required CI. Start with the one-sample smoke:
+The narration context is compiled from bounded canonical events, the canonical projection, accepted dialogue, diary Q&A, and private producer context. Milestone turns may receive the omniscient lanes and update the notebook; ordinary turns normally receive the public/canonical delta and preserve the notebook. The context has no evidence aliases, model-authored claims, receipts, source maps, fact-read action, or deterministic renderer. Canonical events and projections remain authoritative because reducers and classifications never consume House prose.
+
+`--rich-producer` enables diary sessions and private House long-form copy. It does not add a Strategy Bible, per-player producer brief, or another House memory call. Diary interviewers and Judgment agents use actor-scoped `PhaseContext` plus that player's own prior diary Q&A. They never receive House summaries, the private notebook, other players' diary answers, peer-only private conversations, or sealed decisions owned by somebody else.
+
+### R32 provider-surface comparison
+
+This opt-in paid lane captures the visible presentation plus engine-generated status, provider calls, latency, usage, and cost for two diary controls, ordinary and milestone summaries, one long-form producer sample, and Judgment Q&A. It generates no semantic pack hashes, prompt fingerprints, source attestations, or automatic factual grades.
 
 ```bash
 doppler run --config dev -- \
   bun run --cwd packages/engine evaluate:r32-provider-surfaces -- \
-    --stage=before \
+    --stage=after \
     --catalog-id=openai:gpt-5.6-luna \
     --reasoning-policy=low \
     --tool-choice-mode=named \
     --service-tier=flex \
     --reasoning-summary=auto \
-    --samples=1 \
-    --output-dir=.local-uploads/r32-provider-surfaces/r32-before-smoke
+    --samples=3 \
+    --output-dir=.local-uploads/r32-provider-surfaces/house-narrative-after
 ```
 
-After confirming the smoke artifact is complete, rerun with `--samples=3` and a new output directory for the meaningful baseline. Use the same bound catalog, profile, service tier, reasoning policy, tool mode, and sample count for `--stage=after`. The harness rejects any other sample count or configuration before it constructs a provider client.
+Raw prompts, provider payloads, reasoning, private narration context, notebook state, and visible outputs stay in the owner-only `private-run.json`. `manifest.json` is a whitelist of scenario coordinates and operational telemetry. Review the before/after visible outputs side by side for summary legibility, arc continuity, diary specificity, and player-knowledge compliance; record qualitative notes as human review, never by parsing prose into asserted game facts.
 
-Build the prose-free paired structural/operations report offline after both three-sample manifests exist:
-
-```bash
-bun run --cwd packages/engine compare:r32-provider-surfaces -- \
-  --before=.local-uploads/r32-provider-surfaces/<before>/manifest.json \
-  --after=.local-uploads/r32-provider-surfaces/<after>/manifest.json \
-  --output=.local-uploads/r32-provider-surfaces/<pair>/paired-report-pending.json \
-  --before-private=.local-uploads/r32-provider-surfaces/<before>/private-run.json \
-  --after-private=.local-uploads/r32-provider-surfaces/<after>/private-run.json \
-  --blind-bundle-output=.local-uploads/r32-provider-surfaces/<pair>/blind-bundle.json \
-  --blind-key-output=.local-uploads/r32-provider-surfaces/<pair>/blind-key.json \
-  --blind-seed=<fresh-private-seed>
-```
-
-The command refuses provider-setting, sample-count, comparison-key, or semantic-pack drift. Prompt and exact structured-contract fingerprints may differ and are reported per sample. The paired report contains typed outcomes, retries/fallbacks, usage, cost availability, and turn authority only; it contains no prompts, reasoning, raw output, or generated prose. The reviewer receives only `blind-bundle.json`; keep `blind-key.json` from the reviewer until every score is locked. Bundle order and A/B assignment are derived from the private seed and contain no run ID, stage, scenario ID, sample ordinal, accounting, or outcome label.
-
-Score every pair from 1–5 for the exact surface criteria: House diary uses `question_specificity` and `follow_up_relevance`; House summary uses `legibility` and `arc_continuity`; Judgment uses `question_specificity`, `question_novelty`, and `answer_responsiveness`. Record an A/B/tie preference and a presentation-only note without promoting the prose to factual authority. Save the complete scorecards under the same private directory, then join them through the withheld key:
+Run the provider-free mechanics first:
 
 ```bash
-bun run --cwd packages/engine compare:r32-provider-surfaces -- \
-  --paired=.local-uploads/r32-provider-surfaces/<pair>/paired-report-pending.json \
-  --blind-bundle=.local-uploads/r32-provider-surfaces/<pair>/blind-bundle.json \
-  --blind-key=.local-uploads/r32-provider-surfaces/<pair>/blind-key.json \
-  --review-scores=.local-uploads/r32-provider-surfaces/<pair>/blind-scores.json \
-  --reviewer=<producer-reviewer-label> \
-  --review-detail-output=.local-uploads/r32-provider-surfaces/<pair>/blind-review-detail.json \
-  --output=.local-uploads/r32-provider-surfaces/<pair>/paired-report-reviewed.json
-```
-
-The join refuses missing, duplicate, wrong-batch, wrong-criterion, or out-of-range scorecards. The reviewed paired report contains only the unblinded preference counts and criterion means; the shuffled presentations, join key, per-pair notes, and detailed rows remain producer-private mode-`0600` artifacts. Until that join succeeds, the structural report remains explicitly `pending_blind_review`.
-
-Each scenario fixes typed/canonical inputs and uses independent fixed inputs for downstream turns, so a generated House question, diary answer, or juror question cannot change the next call's causal situation. Prompt and structured-contract fingerprints are recorded separately because those bytes are expected to change. Raw prompts, provider payloads, reasoning, private source snapshots, and generated prose stay in the mode-`0600` `private-run.json` under `.local-uploads`; `manifest.json` is a whitelist-only structural and accounting view. Neither artifact parses baseline prose into a fact, identity, claim, decision, or canonical event. The smoke normally makes 11–12 first-attempt provider requests; the three-sample baseline normally makes 33–36, with retries increasing that count.
-
-The ordinary and milestone summary packs come from `createHouseSummaryProvingSlice()`. Their live provider prompt exposes only bounded aliases and typed claim choices; the discriminated `sourceValuesByAlias` map remains runner-private. The exact terminal action is `select`: one or more claims requests an engine-rendered beat, while an empty claim array is the typed no-beat result. Accepted claims/source coordinates and prior rendered beats labeled `narrative_non_authoritative` are separate inputs to later House/producer work. The provider never supplies a name, count, quote, outcome, connective sentence, or skip rationale for an audience summary, and no House-summary artifact enters contestant context. Judgment stores canonical speech history separately from its display wrappers, and the juror-question context is questions-only.
-
-House MC narration now uses a selective frontier after meaningful actor-coordinate boundaries rather than replaying the accumulated transcript and round evidence into every concise call. Run the provider-free mechanics first:
-
-```bash
-bun test packages/engine/src/__tests__/house-summary-frontier.test.ts \
-  packages/engine/src/__tests__/house-interviewer-structured-output.test.ts \
-  packages/engine/src/__tests__/house-summary-cadence.test.ts \
-  packages/engine/src/__tests__/house-summary-accounting.test.ts \
-  packages/engine/src/__tests__/evaluate-house-summary-cadence.test.ts
+bun test --config=../../bunfig.toml \
+  ./src/__tests__/house-summary-frontier.test.ts \
+  ./src/__tests__/house-interviewer-structured-output.test.ts \
+  ./src/__tests__/house-summary-cadence.test.ts \
+  ./src/__tests__/house-long-form.test.ts \
+  ./src/__tests__/diary-room-strategy.test.ts \
+  ./src/__tests__/extracted-modules.test.ts \
+  ./src/__tests__/provider-scenario-evaluation.test.ts \
+  --max-concurrency 1
 bun run --cwd packages/engine typecheck
 ```
 
-Those tests prove authorization, exact claim schemas, boundary-time typed rendering, source receipts, continuity, preflight/model/exhaustion paths, actor-coordinate scheduling, viewer projection, contestant-context exclusion, and exact/inconclusive accounting. They do not prove current-model editorial selection quality or realized provider cost.
-
-After the deterministic gate, the opt-in hosted comparison is:
-
-```bash
-cd packages/engine
-doppler run --project social-strategy-agent --config dev -- \
-  bun run src/scripts/evaluate-house-summary-cadence.ts \
-    --scope=full \
-    --output=/tmp/house-summary-cadence-unreviewed.json
-
-# The paid command intentionally exits nonzero until its saved prose is reviewed.
-# This second command is offline and makes no provider calls.
-bun run src/scripts/evaluate-house-summary-cadence.ts \
-  --review-report=/tmp/house-summary-cadence-unreviewed.json \
-  --quality-reviewed \
-  --reviewer=<local-reviewer-id> \
-  --output=/tmp/house-summary-cadence-reviewed.json
-```
-
-This is paid provider validation. Each invocation creates a fresh canonical game UUID and uses it for both the candidate and narration-free baseline, while retaining the fixed seed and player roster. The identity appears near the start of both request families, so an earlier evaluator run cannot supply a cached fixed-ID prompt prefix; the evaluator still requires identical baseline/candidate canonical fingerprints. Real success/failure continuity determines each next frontier, and later baseline prompts carry only earlier baseline outputs. A conclusive result requires returned usage, response identity, effective service tier, and frozen rate-card pricing for every provider response. Its automatic gate requires at least 80% emitted eligible beats, at least 80% fresh selected-fact-specific beats, supported source receipts, continuity coverage, unique/non-repetitive output, reconciled receipts and calls, zero provider calls for preflight skips, and candidate realized cost at or below `1.25x` the same game's round-only baseline. The saved-report review then fails closed on canonical contradiction, unsupported aliases, continuity breaks, repetitive or low-value ordinary beats, milestone regression, and pacing harm. `FORMAT_PICK` plus `FORMAT_RESOLVE` is only the proving slice; it is not the full-cadence gate.
-
-The final cache-isolated 2026-08-19 current-meta Flex comparison did **not** pass R21. The independent round-only baseline made 2 calls, used 11,348 total tokens, had zero cached input tokens, and cost `$0.0017157`. Full runtime cadence made 24 calls for 23 materially eligible boundaries, used 16,720 total tokens, emitted 16/23 beats (`69.57%`), achieved selected-fact specificity on 14/23 (`60.87%`), and cost `$0.0023335`, or `1.360086x` baseline. It preserved identical authority fingerprints, 21/21 continuity coverage, unique prose (maximum pairwise word Jaccard `0.478261`), reconciled receipts, one total fact read, and zero calls for the preflight skip. It nevertheless failed the `1.25x`, 80% emission, and 80% specificity gates. The paid comparison cost `$0.0040492` across baseline and candidate. Offline audit also found unsupported “publicly signal” and “reject Eve's accusations” attributions; deterministic validators were hardened afterward without another provider run. R21 therefore remains open, and this artifact is failure evidence rather than completion proof.
-
-Earlier paid artifacts are retained only as invalid/failed development evidence: the reported `$0.0019694` candidate versus `$0.001731775` baseline (`1.137215x`, 22/22) predated exact baseline/evaluator and manual-review repairs; the `$0.0020805` versus `$0.00169665` run (`1.226240x`, 21/22) failed automatic and human review with factual contradictions and incomplete receipts; and the `$0.002756` versus `$0.001155515` run (`2.385084x`, 20/22) used a cache-hit fixed-ID baseline and failed quality gates. None establishes R21 acceptance. Deterministic tests remain the regression authority for mechanics and privacy.
+The superseded R21 receipt/frontier comparison is retained only in git history. Its low-legibility deterministic summaries and proof-call overhead motivated this simpler authored-narrative contract; its emission, specificity, alias, fact-read, and receipt gates no longer define success.
 
 When running with `--chatty`, the live terminal (and the written `game-*.txt`) will interleave House action lines with high-contrast bright-white `thinking:` and bright-cyan `reasoning:` blocks. For local models, `reasoning:` is raw native metadata such as `reasoning_content`; for hosted OpenAI simulations, it may be a labeled `OpenAI reasoning summary (...)` when summaries are enabled. These are the primary human-readable artifacts for evaluating whether the model is producing legible, producer-visible strategic reasoning. For scripts, MCP inspection, or post-run scoring, read `game-N-turns.jsonl`; it records House room assignment, Mingle turns, named-alliance actions and huddles, votes, empower revotes, `format-pick`, `format-ballot`, `bounce-pointer`, `format-tiebreak`, diary answers, strategy-operation results, and endgame decisions as clean JSON with `thinking`, `reasoningContext`, and producer/debug fields. Reasoning and strategy prose explain an attempted decision; they are never canonical game facts. Use `game-N-events.jsonl` when the question is board state, accepted outcomes, or deterministic replay.
 

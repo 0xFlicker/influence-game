@@ -1,7 +1,7 @@
 import type {
   HouseProviderUsage,
   HouseSummaryActorCoordinate,
-  HouseSummaryPhaseReceipt,
+  HouseSummaryPhaseTelemetry,
 } from "./house-summary-frontier";
 import {
   MODEL_PRICING,
@@ -9,8 +9,6 @@ import {
   estimateCost,
   type TokenUsage,
 } from "./token-tracker";
-
-export const HOUSE_SUMMARY_NEAR_BUDGET_RATIO = 1.25;
 
 export interface HouseSummaryCostLine {
   callId: string;
@@ -48,27 +46,13 @@ export type HouseSummaryCostResult =
 export interface HouseSummaryBoundaryCost {
   boundaryId: string;
   actorCoordinate: HouseSummaryActorCoordinate;
-  status: HouseSummaryPhaseReceipt["status"];
+  status: HouseSummaryPhaseTelemetry["status"];
   accounting: HouseSummaryCostResult;
 }
 
 export interface HouseSummaryGameCost {
   accounting: HouseSummaryCostResult;
   boundaries: HouseSummaryBoundaryCost[];
-}
-
-export function isHouseSummaryCostWithinEnvelope(
-  candidateCostUsd: number,
-  roundOnlyBaselineCostUsd: number,
-  maxRatio = HOUSE_SUMMARY_NEAR_BUDGET_RATIO,
-): boolean {
-  return Number.isFinite(candidateCostUsd)
-    && Number.isFinite(roundOnlyBaselineCostUsd)
-    && Number.isFinite(maxRatio)
-    && candidateCostUsd >= 0
-    && roundOnlyBaselineCostUsd > 0
-    && maxRatio > 0
-    && candidateCostUsd <= roundOnlyBaselineCostUsd * maxRatio;
 }
 
 function exactUsage(entry: HouseProviderUsage): TokenUsage | null {
@@ -161,17 +145,17 @@ export function costHouseProviderUsage(
 }
 
 export function costHouseSummaryGame(
-  receipts: readonly HouseSummaryPhaseReceipt[],
+  telemetry: readonly HouseSummaryPhaseTelemetry[],
   model: string,
 ): HouseSummaryGameCost {
-  const boundaries = receipts.map((receipt) => ({
-    boundaryId: receipt.boundaryId,
-    actorCoordinate: receipt.actorCoordinate,
-    status: receipt.status,
-    accounting: costHouseProviderUsage(receipt.usage, model, receipt.providerCalls),
+  const boundaries = telemetry.map((entry) => ({
+    boundaryId: entry.boundaryId,
+    actorCoordinate: entry.actorCoordinate,
+    status: entry.status,
+    accounting: costHouseProviderUsage(entry.usage, model, entry.providerCalls),
   }));
-  const usage = receipts.flatMap((receipt) => receipt.usage);
-  const expectedProviderCalls = receipts.reduce((sum, receipt) => sum + receipt.providerCalls, 0);
+  const usage = telemetry.flatMap((entry) => entry.usage);
+  const expectedProviderCalls = telemetry.reduce((sum, entry) => sum + entry.providerCalls, 0);
   return {
     accounting: costHouseProviderUsage(usage, model, expectedProviderCalls),
     boundaries,

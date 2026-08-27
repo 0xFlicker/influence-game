@@ -6,7 +6,6 @@ import { Phase } from "../types";
 import { createUUID } from "../game-state";
 import { MockAgent } from "./mock-agent";
 import {
-  buildHouseFormatResolutionFacts,
   LAUNCH_FORMAT_IDS,
   type LaunchFormatId,
 } from "../formats";
@@ -636,7 +635,7 @@ describe("Format kernel integration (MockAgent)", () => {
     ]);
   });
 
-  it("keeps sealed ballots out of public House beats while privately receipting canonical sources", async () => {
+  it("keeps House phase telemetry content-free while canonical sealed decisions remain engine-owned", async () => {
     const agents = ["A", "B", "C", "D", "E"].map((name) => new MockAgent(createUUID(), name));
     for (const agent of agents) {
       agent.pickRoundFormat = async (_ctx, offered) => ({
@@ -668,64 +667,59 @@ describe("Format kernel integration (MockAgent)", () => {
     expect(houseMc.visibility).toBe("system");
     expect(houseMc.response).toEqual({ summary: expect.any(String) });
     expect(houseMc.response).not.toHaveProperty("roundFacts");
-    expect(JSON.stringify(houseMc.response)).not.toContain("ballots");
-    const resolutionReceipt = events.find(
+    const resolutionTelemetry = events.find(
       (event) => event.type === "agent_turn"
-        && event.action === "house-summary-phase-receipt"
-        && (event.response.receipt as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_resolve",
+        && event.action === "house-summary-phase-telemetry"
+        && (event.response.telemetry as { actorCoordinate?: string } | undefined)?.actorCoordinate === "format_resolve",
     );
-    expect(resolutionReceipt).toBeDefined();
-    if (!resolutionReceipt || resolutionReceipt.type !== "agent_turn") throw new Error("expected format_resolve receipt");
-    expect(resolutionReceipt.visibility).toBe("private");
-    expect(resolutionReceipt.response.receipt).toMatchObject({
-      status: "emitted",
-      selectedSourceCount: expect.any(Number),
-    });
-    expect(resolutionReceipt.response.receipt).not.toHaveProperty("sources");
-
-    const resolution = buildHouseFormatResolutionFacts(
-      runner.getCanonicalEvents(),
-      1,
-      (playerId) => runner.getDomainProjection().players[playerId]?.name ?? playerId,
-    );
-    expect(resolution).not.toBeNull();
-    if (!resolution) throw new Error("expected canonical format resolution");
-    expect(["save_or_eliminate", "vote_bomb", "safety_bounce"]).toContain(resolution.formatId);
-    // The canonical producer read can still reconstruct sealed detail without placing it in public narration.
-    const ballotCount = resolution.ballots.length;
-    const bounceCount = resolution.bouncePointers?.length ?? 0;
-    expect(ballotCount + bounceCount).toBeGreaterThan(0);
-    expect(resolution.eliminatedName.length).toBeGreaterThan(0);
-    if (ballotCount > 0) {
-      expect(ballotCount).toBe(5);
-      const voters = new Set(resolution.ballots.map((b) => b.voterName));
-      expect(voters.size).toBe(5);
+    expect(resolutionTelemetry).toBeDefined();
+    if (!resolutionTelemetry || resolutionTelemetry.type !== "agent_turn") {
+      throw new Error("expected format_resolve telemetry");
     }
+    expect(resolutionTelemetry.visibility).toBe("private");
+    expect(resolutionTelemetry.response.telemetry).toMatchObject({
+      status: "emitted",
+      providerCalls: expect.any(Number),
+      usage: expect.any(Array),
+    });
+    expect(resolutionTelemetry.response.telemetry).not.toHaveProperty("sources");
+    expect(resolutionTelemetry.response.telemetry).not.toHaveProperty("claims");
+    expect(resolutionTelemetry.response.telemetry).not.toHaveProperty("selectedSourceCount");
 
-    // The producer facts rebuild from durable events with no in-memory bag.
-    const rebuilt = buildHouseFormatResolutionFacts(
-      runner.getCanonicalEvents(),
-      1,
-      (playerId) => {
-        const player = runner.getDomainProjection().players[playerId];
-        return player?.name ?? playerId;
-      },
+    const canonical = runner.getCanonicalEvents();
+    const resolution = canonical.find(
+      (event) => event.type === "format.resolved" && event.round === 1,
     );
-    expect(rebuilt).not.toBeNull();
-    if (!rebuilt) throw new Error("expected rebuilt formatResolution");
-    expect(rebuilt.formatId).toBe(resolution.formatId);
-    expect(rebuilt.eliminatedName).toBe(resolution.eliminatedName);
-    expect(rebuilt.ballots.length).toBe(resolution.ballots.length);
-    expect(rebuilt.scores.length).toBe(resolution.scores.length);
+    expect(resolution).toBeDefined();
+    if (!resolution || resolution.type !== "format.resolved") {
+      throw new Error("expected canonical format resolution");
+    }
+    expect(["save_or_eliminate", "vote_bomb", "safety_bounce"]).toContain(
+      resolution.payload.formatId,
+    );
+    expect(resolution.payload.eliminatedId).toBeTruthy();
 
-    // Resume-shaped hydration: only the event log, no lastFormatResolution bag.
-    const resumed = GameState.fromCanonicalEvents(runner.getCanonicalEvents());
-    const afterResume = buildHouseFormatResolutionFacts(
-      resumed.getCanonicalEvents(),
-      1,
-      (playerId) => resumed.getPlayerName(playerId),
+    // Canonical events retain every sealed decision independently of whatever
+    // the House chooses to say to viewers.
+    const sealedDecisions = canonical.filter((event) =>
+      event.round === 1
+      && (event.type === "format.ballot_cast" || event.type === "format.safety_bounce_pointer")
     );
-    expect(afterResume).toEqual(rebuilt);
+    expect(sealedDecisions.length).toBeGreaterThan(0);
+    const voters = new Set(sealedDecisions.flatMap((event) => {
+      if (event.type === "format.ballot_cast") return [event.payload.voterId];
+      if (event.type === "format.safety_bounce_pointer") return [event.payload.actorId];
+      return [];
+    }));
+    expect(voters.size).toBe(5);
+
+    // Resume-shaped hydration rebuilds the same authoritative projection from
+    // the event log; no House-specific facts or in-memory bag participates.
+    const resumed = GameState.fromCanonicalEvents(canonical);
+    expect(resumed.getCanonicalEvents()).toEqual(canonical);
+    expect(replayCanonicalEvents(resumed.getCanonicalEvents())).toEqual(
+      replayCanonicalEvents(canonical),
+    );
   });
 
   it("completes a short game using format menu/pick/mingle/resolve without Power or Council", async () => {

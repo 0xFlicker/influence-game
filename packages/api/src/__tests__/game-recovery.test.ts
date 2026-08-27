@@ -61,7 +61,6 @@ const recoveryConfig: GameConfig & Record<string, unknown> = {
   modelSelection: { catalogId: "openai:gpt-5.6-luna", reasoningPolicy: "action-policy" },
   visibility: "private",
   viewerMode: "speedrun",
-  enableHouseStrategyBible: false,
   enableHouseRoundSummaries: false,
   timers: {
     introduction: 0,
@@ -1278,8 +1277,6 @@ describe("game startup recovery", () => {
         actorCoordinate: "vote",
       });
       checkpoint.transcriptReplay = { version: 1, entries: [] };
-      checkpoint.houseContinuityRequirement = "disabled";
-      checkpoint.houseContinuityCapsule = null;
       mutate(checkpoint);
       const write = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
       expect(write.ok).toBeTrue();
@@ -1341,7 +1338,7 @@ describe("game startup recovery", () => {
     expect(valid.ok).toBeTrue();
     if (!valid.ok) throw new Error(valid.reason);
     expect(valid.resumeFrom.playerContinuityCapsules?.length).toBe(4);
-    expect(valid.resumeFrom.houseContinuityRequirement).toBe("disabled");
+    expect(valid.resumeFrom.houseNarrativeContinuityCapsule?.version).toBe(2);
   });
 
   test("historical checkpoint integrity admits retired Mingle evidence without weakening live recovery admission", async () => {
@@ -1380,11 +1377,10 @@ describe("game startup recovery", () => {
     }
   });
 
-  test("startup recovery uses sealed House requirement and ignores incomplete agent_memories rows", async () => {
+  test("startup recovery requires House narrative continuity v2 and ignores incomplete agent_memories rows", async () => {
     async function seedSuspendedVoteCheckpoint(params: {
       gameId: string;
-      houseContinuityRequirement: "disabled" | "awaiting_first_valid_update" | "required";
-      houseContinuityCapsule: ReturnType<typeof enrichCapsuleForV1Candidate>["houseContinuityCapsule"];
+      mutate: (checkpoint: ReturnType<typeof enrichCapsuleForV1Candidate>) => void;
       seedStaleMemory?: boolean;
     }) {
       const gameId = await insertGame(db, {
@@ -1392,7 +1388,7 @@ describe("game startup recovery", () => {
         status: "suspended",
         config: {
           ...recoveryConfig,
-          enableHouseStrategyBible: true,
+          enableHouseRoundSummaries: true,
         },
       });
       const ownerEpoch = await insertOwner(db, gameId);
@@ -1418,36 +1414,32 @@ describe("game startup recovery", () => {
         actorCoordinate: "vote",
       });
       checkpoint.transcriptReplay = { version: 1, entries: [] };
-      checkpoint.houseContinuityRequirement = params.houseContinuityRequirement;
-      checkpoint.houseContinuityCapsule = params.houseContinuityCapsule;
+      params.mutate(checkpoint);
 
       const written = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
       expect(written.ok).toBeTrue();
       return gameId;
     }
 
-    // Bible-enabled game before first valid House packet: intentional absence is allowed.
-    const awaitingId = await seedSuspendedVoteCheckpoint({
-      gameId: "startup-recovery-house-awaiting",
-      houseContinuityRequirement: "awaiting_first_valid_update",
-      houseContinuityCapsule: null,
+    const validId = await seedSuspendedVoteCheckpoint({
+      gameId: "startup-recovery-house-v2",
+      mutate: () => {},
       seedStaleMemory: true,
     });
-    const admitted = await getSupportedRecovery(db, awaitingId);
+    const admitted = await getSupportedRecovery(db, validId);
     expect(admitted.ok).toBeTrue();
     if (!admitted.ok) throw new Error(admitted.reason);
-    expect(admitted.resumeFrom.houseContinuityRequirement).toBe("awaiting_first_valid_update");
-    expect(admitted.resumeFrom.houseContinuityCapsule).toBeNull();
+    expect(admitted.resumeFrom.houseNarrativeContinuityCapsule?.version).toBe(2);
     expect(admitted.resumeFrom.playerContinuityCapsules?.length).toBe(4);
 
-    // Required without a capsule must fail closed.
-    const requiredMissingId = await seedSuspendedVoteCheckpoint({
-      gameId: "startup-recovery-house-required-missing",
-      houseContinuityRequirement: "required",
-      houseContinuityCapsule: null,
+    const missingId = await seedSuspendedVoteCheckpoint({
+      gameId: "startup-recovery-house-v2-missing",
+      mutate: (checkpoint) => {
+        checkpoint.houseNarrativeContinuityCapsule = null;
+      },
     });
-    const blocked = await getSupportedRecovery(db, requiredMissingId);
-    expect(blocked).toMatchObject({ ok: false, reason: "house_continuity_required_missing" });
+    expect(await getSupportedRecovery(db, missingId))
+      .toMatchObject({ ok: false, reason: "missing_house_narrative_continuity_v2" });
   });
 
   test("startup recovery fails closed for blocked accumulator checkpoints", async () => {

@@ -26,12 +26,11 @@ import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
 import type { ModelReasoningEffort, ModelReasoningPolicy, ProviderProfileId } from "./model-catalog";
 import type {
-  HouseAudienceSummaryArtifact,
-  HouseFactCategory,
-  HouseNarrativeContinuity,
+  HouseNarrationContext,
+  HouseNarrativeBeat,
+  HouseNarrativeContinuityV2,
   HouseProviderUsage,
   HouseSummaryBoundary,
-  HouseSummaryFrontier,
 } from "./house-summary-frontier";
 export type { TokenCostCursor };
 export type {
@@ -50,21 +49,18 @@ export type {
   SanitizedProviderResponseEvidence,
 } from "./provider-execution";
 export type {
-  HouseAudienceClaimKind,
-  HouseAudienceClaimSelection,
-  HouseAudienceSummaryArtifact,
   HouseBeatClass,
   HouseBeatStatus,
-  HouseFactCategory,
-  HouseFactRow,
-  HouseFactSlice,
-  HouseNarrativeContinuity,
+  HouseNarrationContext,
+  HouseNarrativeBeat,
+  HouseNarrationCanonicalEvent,
+  HouseNarrationDiaryEntry,
+  HouseNarrationDialogue,
+  HouseNarrationProjection,
+  HouseNarrativeContinuityV2,
   HouseProviderUsage,
-  HouseSalienceItem,
-  HouseSourceCoordinate,
   HouseSummaryBoundary,
-  HouseSummaryFrontier,
-  HouseSummaryPhaseReceipt,
+  HouseSummaryPhaseTelemetry,
 } from "./house-summary-frontier";
 
 export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
@@ -149,10 +145,8 @@ export interface GameRunnerResumeOptions {
   lastEventSequence: number;
   transcriptReplay: readonly TranscriptEntry[];
   tokenCostCursor?: TokenCostCursor | null;
-  houseContinuityCapsule?: HouseContinuityCapsule | null;
-  /** Accepted House audience-summary continuity for producer/viewer narration only. */
-  houseNarrativeContinuityCapsule?: HouseNarrativeContinuity | null;
-  houseContinuityRequirement?: HouseContinuityRequirement;
+  /** Versioned House-authored producer/viewer narrative continuity. */
+  houseNarrativeContinuityCapsule: HouseNarrativeContinuityV2;
   /** Validated active-player private continuity capsules for supported resume hydration. */
   playerContinuityCapsules?: readonly PlayerContinuityCapsule[];
   mingleInboxReplay?: MingleInboxReplay | null;
@@ -309,15 +303,6 @@ export interface RuntimeSnapshotV1 {
  */
 export const PLAYER_CONTINUITY_CAPSULE_VERSION = 2 as const;
 
-/**
- * Checkpoint-time House Strategy Bible continuity contract.
- * Sealed when the checkpoint is written; recovery and passport must not re-read live config.
- */
-export type HouseContinuityRequirement =
-  | "disabled"
-  | "awaiting_first_valid_update"
-  | "required";
-
 export interface PlayerPowerActionMemoryEntry {
   round: number;
   action: "eliminate" | "protect" | "pass";
@@ -343,16 +328,6 @@ export interface PlayerContinuityCapsule {
   roundHistory: PlayerRoundHistoryEntry[];
 }
 
-export interface HouseContinuityCapsule {
-  revisionId: string;
-  previousRevisionId: string | null;
-  updatedAtRound: number;
-  updatedAtPhase: Phase;
-  coveredWindow: HouseCoveredWindow;
-  hypotheses: HouseProducerHypothesis[];
-  openQuestions: HouseProducerOpenQuestion[];
-}
-
 export interface GameCheckpointCapsule {
   gameId: UUID;
   lastEventSequence: number;
@@ -366,15 +341,8 @@ export interface GameCheckpointCapsule {
   /** Boundary safety evidence captured at write time (U3+). */
   boundaryCertificate?: BoundaryCertificate | null;
   playerContinuityCapsules?: PlayerContinuityCapsule[];
-  houseContinuityCapsule?: HouseContinuityCapsule | null;
-  /** Accepted House audience-summary continuity for producer/viewer narration only. */
-  houseNarrativeContinuityCapsule?: HouseNarrativeContinuity | null;
-  /**
-   * Checkpoint-time House continuity contract. Absent on legacy capsules;
-   * recovery fails closed for player continuity without versioned capsules,
-   * and passport treats missing House requirement as the historical strict path.
-   */
-  houseContinuityRequirement?: HouseContinuityRequirement;
+  /** Versioned House-authored producer/viewer narrative continuity. */
+  houseNarrativeContinuityCapsule?: HouseNarrativeContinuityV2 | null;
   transcriptReplay?: {
     /** 1 = legacy safe-entry shape; 2 = normalized dialogue identity fields. */
     version: 1 | 2;
@@ -705,204 +673,11 @@ export interface EngineFallbackProvenance {
   seed: string;
 }
 
-export type HouseConfidence = "low" | "medium" | "high";
-
-export type HouseProducerHypothesisKind =
-  | "alliance_coordination"
-  | "alliance_fracture"
-  | "vote_coordination"
-  | "promise_or_commitment"
-  | "player_trajectory"
-  | "strategic_tension"
-  | "story_arc";
-
-export type HouseProducerHypothesisStatus =
-  | "emerging"
-  | "active"
-  | "weakening"
-  | "resolved"
-  | "retired";
-
-export interface HouseProducerHypothesis {
-  id: string;
-  kind: HouseProducerHypothesisKind;
-  status: HouseProducerHypothesisStatus;
-  confidence: HouseConfidence;
-  subjectPlayerIds: UUID[];
-  relatedPlayerIds: UUID[];
-  sourceAliases: string[];
-}
-
-export type HouseProducerQuestionKind =
-  | "trust_test"
-  | "coordination_test"
-  | "commitment_test"
-  | "conflict_test"
-  | "trajectory_test"
-  | "consequence_test";
-
-export interface HouseProducerOpenQuestion {
-  id: string;
-  kind: HouseProducerQuestionKind;
-  subjectPlayerIds: UUID[];
-  relatedPlayerIds: UUID[];
-  sourceAliases: string[];
-}
-
 export interface HouseCoveredWindow {
   fromRound: number;
   toRound: number;
   fromPhase?: Phase;
   toPhase?: Phase;
-}
-
-export interface HouseVoteCount {
-  playerName: string;
-  votes: number;
-  voters: string[];
-}
-
-/** One sealed format ballot (House/producer omniscient; not player-public until reveal). */
-export interface HouseFormatBallotLine {
-  voterName: string;
-  targetName: string;
-  /** Present for Save-or-Eliminate. */
-  polarity?: "save" | "eliminate";
-}
-
-export interface HouseFormatScoreLine {
-  playerName: string;
-  value: number;
-  /** e.g. zero_safe | positive | net | vulnerable_total */
-  bucket?: string;
-}
-
-export interface HouseFormatBouncePointerLine {
-  actorName: string;
-  targetName: string;
-  classification: "SAFE" | "VULNERABLE";
-}
-
-/**
- * Full format resolution snapshot for House MC / producer.
- * House sees every sealed ballot; player-facing surfaces stay sealed.
- */
-export interface HouseFormatResolutionFacts {
-  round: number;
-  formatId: string;
-  formatName: string;
-  offeredFormatIds: [string, string] | null;
-  offeredFormatNames: [string, string] | null;
-  ballots: HouseFormatBallotLine[];
-  scores: HouseFormatScoreLine[];
-  zeroSafeNames: string[];
-  safeNames: string[];
-  vulnerableNames: string[];
-  bouncePointers: HouseFormatBouncePointerLine[];
-  resolutionKind: string;
-  resolutionSummary: string;
-  eliminatedName: string;
-  tiebreakByEmpoweredName: string | null;
-}
-
-export interface HouseRoundFacts {
-  round: number;
-  empoweredName: string | null;
-  empowerMethod: string | null;
-  empowerVoteCounts: HouseVoteCount[];
-  exposeVoteCounts: HouseVoteCount[];
-  councilCandidates: [string, string] | null;
-  powerAction: { action: PowerAction["action"]; targetName: string | null } | null;
-  shieldGrantedName: string | null;
-  autoEliminatedName: string | null;
-  councilVoteCounts: HouseVoteCount[];
-  councilMethod: string | null;
-  eliminatedName: string | null;
-  councilRoles: HouseCouncilRoleFact[];
-  /** Format-kernel fields (null on classic Power→Council rounds). */
-  selectedFormatId: string | null;
-  selectedFormatName: string | null;
-  offeredFormatIds: [string, string] | null;
-  offeredFormatNames: [string, string] | null;
-  /** How elimination resolved under the format (e.g. format id / method string). */
-  formatMethod: string | null;
-  /** Which elimination spine produced the exit this round. */
-  eliminationPath: "format" | "council" | "power_auto" | "unknown";
-  /**
-   * Omniscient format resolution: every sealed ballot, scoreboard, bounce chain.
-   * Null on classic rounds or before format resolve completes.
-   */
-  formatResolution: HouseFormatResolutionFacts | null;
-}
-
-export type HouseCouncilRole =
-  | "candidate"
-  | "voted_for_eliminated"
-  | "voted_for_survivor"
-  | "empowered_tiebreaker"
-  | "empowered_no_tiebreak_needed"
-  | "non_voter"
-  | "not_applicable";
-
-export interface HouseCouncilRoleFact {
-  playerName: string;
-  role: HouseCouncilRole;
-  candidateNames: [string, string] | null;
-  eliminatedName: string | null;
-  survivingCandidateName: string | null;
-  votedForName: string | null;
-}
-
-export interface HouseStrategyBiblePacket {
-  revisionId: string;
-  previousRevisionId: string | null;
-  updatedAtRound: number;
-  updatedAtPhase: Phase;
-  coveredWindow: HouseCoveredWindow;
-  hypotheses: HouseProducerHypothesis[];
-  openQuestions: HouseProducerOpenQuestion[];
-  /** House/producer narrative framing only; never checkpoint factual continuity. */
-  interpretation?: string;
-}
-
-export interface HouseEvidenceBundle {
-  round: number;
-  phase: Phase;
-  canonicalHead: number;
-  players: Array<{ id: UUID; name: string; status: "alive" | "eliminated" }>;
-  alivePlayers: string[];
-  eliminatedPlayers: string[];
-  activeShieldNames: string[];
-  empoweredName: string | null;
-  councilCandidates: [string, string] | null;
-  recentTranscript: TranscriptEntry[];
-  recentPublicMessages: Array<{ from: string; text: string; phase: Phase; round?: number; anonymous?: boolean }>;
-  recentDiaryEntries: Array<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }>;
-  /**
-   * Accepted House/producer/viewer audience-summary artifacts. Their typed
-   * claims and sources are receipt lineage; renderedText is narrative-only.
-   * These artifacts never enter contestant-agent context.
-   */
-  audienceSummaryArtifacts: HouseAudienceSummaryArtifact[];
-  roomAllocations: Array<{ round: number; text: string; rooms: Array<{ roomId: number; players: string[] }>; excluded: string[] }>;
-  roundFacts: HouseRoundFacts;
-  canonicalEventCount: number;
-}
-
-export interface HouseStrategyBibleUpdateContext {
-  round: number;
-  phase: Phase;
-  previousPacket: HouseStrategyBiblePacket | null;
-  evidence: HouseEvidenceBundle;
-  coveredWindow: HouseCoveredWindow;
-}
-
-export interface HouseStrategyBibleUpdateResult {
-  packet: HouseStrategyBiblePacket | null;
-  rationale?: string;
-  fallback?: { source: "engine"; reason: "provider_exhausted"; providerKind: string };
-  thinking?: string;
-  reasoningContext?: string;
 }
 
 export type HouseSummaryKind = "round" | "phase" | "long-form";
@@ -912,48 +687,28 @@ export interface HouseGameplaySummaryContext {
   round: number;
   phase: Phase;
   kind: HouseSummaryKind;
-  alivePlayers: string[];
-  packet: HouseStrategyBiblePacket | null;
-  evidence: HouseEvidenceBundle;
   coveredWindow: HouseCoveredWindow;
+  narrationContext: HouseNarrationContext;
+  recentPublicBeats: HouseNarrativeBeat[];
+  privateNarrativeNotebook: string | null;
 }
 
 export interface HouseGameplaySummaryResult {
   summary: string;
   kind: HouseSummaryKind;
-  packetRevisionId: string | null;
   coveredWindow: HouseCoveredWindow;
-  claims: HouseProducerClaimSelection[];
-  analysis?: string;
-  fallback?: { source: "engine"; reason: "provider_exhausted"; providerKind: string };
   thinking?: string;
   reasoningContext?: string;
 }
 
-export type HouseProducerClaimKind =
-  | "game_state"
-  | "round_outcome"
-  | "player_statement"
-  | "diary_statement"
-  | "room_assignment";
-
-export interface HouseProducerClaimSelection {
-  kind: HouseProducerClaimKind;
-  sourceAlias: string;
-}
-
-export interface HouseSelectiveSummaryContext {
-  frontier: HouseSummaryFrontier;
-  continuity: HouseNarrativeContinuity;
-  factReadAllowed: boolean;
+export interface HouseNarrativeTurnContext {
+  narrationContext: HouseNarrationContext;
+  continuity: HouseNarrativeContinuityV2;
 }
 
 interface HouseSummaryAttemptBase {
   boundary: HouseSummaryBoundary;
   providerCalls: number;
-  factCalls: number;
-  requestedCategories: HouseFactCategory[];
-  returnedBytes: number;
   usage: HouseProviderUsage[];
   thinking?: string;
   reasoningContext?: string;
@@ -961,7 +716,9 @@ interface HouseSummaryAttemptBase {
 
 export interface HouseSummaryEmittedResult extends HouseSummaryAttemptBase {
   status: "emitted";
-  artifact: HouseAudienceSummaryArtifact;
+  beat: HouseNarrativeBeat | null;
+  /** Non-null replaces the whole notebook; null preserves the prior snapshot. */
+  privateNarrativeNotebook: string | null;
 }
 
 export interface HouseSummaryModelSkippedResult extends HouseSummaryAttemptBase {
@@ -978,46 +735,6 @@ export type HouseSummaryAttemptResult =
   | HouseSummaryEmittedResult
   | HouseSummaryModelSkippedResult
   | HouseSummaryFailedResult;
-
-export type HouseProducerFocusKind =
-  | "trust"
-  | "coordination"
-  | "commitment"
-  | "conflict"
-  | "trajectory"
-  | "consequence";
-
-export type HouseProducerDisclosure = "safe_to_reference" | "private_only";
-
-export interface HouseProducerFocusItem {
-  id: string;
-  kind: HouseProducerFocusKind;
-  subjectPlayerId: UUID;
-  relatedPlayerIds: UUID[];
-  sourceAliases: string[];
-  confidence: HouseConfidence;
-  disclosure: HouseProducerDisclosure;
-}
-
-export interface HouseProducerQuestionAngle {
-  kind: HouseProducerQuestionKind;
-  focusItemIds: string[];
-  subjectPlayerId: UUID;
-  relatedPlayerIds: UUID[];
-}
-
-export interface HouseProducerBrief {
-  playerName: string;
-  playerId: UUID;
-  packetRevisionId: string | null;
-  focusItems: HouseProducerFocusItem[];
-  questionAngles: HouseProducerQuestionAngle[];
-  /** Private producer presentation only; excluded from the visible-question prompt. */
-  producerNote?: string;
-  fallback?: { source: "engine"; reason: "provider_exhausted"; providerKind: string };
-  thinking?: string;
-  reasoningContext?: string;
-}
 
 export type AllianceActionKind =
   | "propose"

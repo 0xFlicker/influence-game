@@ -19,12 +19,20 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import type { JsonValue } from "@influence/prompt-lab-protocol";
 import { InfluenceAgent } from "../agent";
+import type { CanonicalGameEvent } from "../canonical-events";
+import { replayCanonicalEvents } from "../game-projection";
 import type {
   AgentResponse,
-  HouseSelectiveSummaryContext,
+  HouseGameplaySummaryContext,
+  HouseNarrativeTurnContext,
   PhaseContext,
   PrivateDecisionTrace,
 } from "../game-runner.types";
+import {
+  compileHouseNarrationContext,
+  createEmptyHouseNarrativeContinuity,
+  type HouseNarrativeBeat,
+} from "../house-summary-frontier";
 import {
   LLMHouseInterviewer,
   type DiaryRoomContext,
@@ -39,18 +47,16 @@ import type { ProviderAttemptRecord, ProviderExecutionHooks } from "../provider-
 import {
   assertProviderScenarioRunConfig,
   createProviderScenarioManifest,
-  fingerprintProviderAttemptRequest,
   freezeProviderScenarioPack,
   type FrozenProviderScenarioPack,
   type ProviderScenarioPrivateRun,
   type ProviderScenarioPrivateSample,
   type ProviderScenarioRunConfig,
   type ProviderScenarioStage,
-  type ProviderScenarioTurnReceipt,
+  type ProviderScenarioTurnTelemetry,
 } from "../provider-scenario-evaluation";
-import { Phase, type UUID } from "../types";
+import { Phase, PlayerStatus, type UUID } from "../types";
 import { estimateCost, OPENAI_FLEX_MODEL_PRICING } from "../token-tracker";
-import { createHouseSummaryProvingSlice } from "./evaluate-house-summary-cadence";
 
 const DEFAULT_CATALOG_ID = "openai:gpt-5.6-luna";
 const TARGET_FILES = [
@@ -59,7 +65,8 @@ const TARGET_FILES = [
   "packages/engine/src/diary-room.ts",
   "packages/engine/src/phases/endgame.ts",
   "packages/engine/src/context-builder.ts",
-  "packages/engine/src/scripts/evaluate-house-summary-cadence.ts",
+  "packages/engine/src/house-summary-frontier.ts",
+  "packages/engine/src/house-long-form.ts",
 ] as const;
 const HARNESS_FILES = [
   "packages/engine/src/provider-scenario-evaluation.ts",
@@ -107,7 +114,7 @@ interface ScenarioRuntime {
 
 interface ScenarioPresentation {
   turns: Array<{
-    receipt: ProviderScenarioTurnReceipt;
+    telemetry: ProviderScenarioTurnTelemetry;
     value?: unknown;
     error?: { name: string; message: string };
   }>;
@@ -202,31 +209,12 @@ function diaryHouseContext(): DiaryRoomContext {
     providerInterviewOrdinal: 1,
     agentId: PLAYER_IDS.ada,
     agentName: "Ada",
-    canonicalHead: 20,
-    players: [
-      { id: PLAYER_IDS.ada, name: "Ada", status: "alive" },
-      { id: PLAYER_IDS.blair, name: "Blair", status: "alive" },
-      { id: PLAYER_IDS.cleo, name: "Cleo", status: "alive" },
-      { id: PLAYER_IDS.dax, name: "Dax", status: "alive" },
-      { id: PLAYER_IDS.eve, name: "Eve", status: "eliminated" },
-    ],
-    alivePlayers: ["Ada", "Blair", "Cleo", "Dax"],
-    activeShieldNames: ["Dax"],
-    eliminatedPlayers: ["Eve"],
-    lastEliminated: "Eve",
-    empoweredName: "Ada",
-    councilCandidates: ["Blair", "Eve"],
-    recentMessages: [
-      { fromPlayerId: PLAYER_IDS.blair, from: "Blair", text: "Ada promised me safety before Council.", phase: Phase.COUNCIL },
-      { fromPlayerId: PLAYER_IDS.cleo, from: "Cleo", text: "That vote exposed where the room really stands.", phase: Phase.COUNCIL },
-    ],
+    playerKnowledge: diaryAgentContext("cache-isolated-at-runtime"),
     previousDiaryEntries: [{
       round: 1,
       question: "Whose trust matters most?",
       answer: "Blair is the person I most want beside me.",
     }],
-    playerMessages: [{ text: "I will own the consequences of this vote.", phase: Phase.COUNCIL }],
-    audienceSummaryArtifacts: [],
   };
 }
 
@@ -246,11 +234,32 @@ function diaryAgentContext(gameId: UUID): PhaseContext {
     ],
     publicMessages: [
       { from: "Blair", text: "Ada promised me safety before Council.", phase: Phase.COUNCIL, round: 2 },
+      { from: "Cleo", text: "That vote exposed where the room really stands.", phase: Phase.COUNCIL, round: 2 },
+      { from: "Ada", text: "I will own the consequences of this vote.", phase: Phase.COUNCIL, round: 2 },
     ],
-    mingleMessages: [],
+    mingleMessages: [{ from: "Blair", text: "You promised me safety before Council." }],
     empoweredId: PLAYER_IDS.ada,
     councilCandidates: [PLAYER_IDS.blair, PLAYER_IDS.eve],
     latestEliminatedPlayerName: "Eve",
+    gameEventRecord: [
+      "R2/COUNCIL: Council resolved: candidates Blair, Eve; eliminated Eve.",
+    ],
+    publicTranscriptContext: [
+      { round: 2, phase: Phase.COUNCIL, from: "Blair", text: "Ada promised me safety before Council." },
+      { round: 2, phase: Phase.COUNCIL, from: "Cleo", text: "That vote exposed where the room really stands." },
+      { round: 2, phase: Phase.COUNCIL, from: "Ada", text: "I will own the consequences of this vote." },
+    ],
+    recentDecisions: [{
+      round: 2,
+      phase: Phase.COUNCIL,
+      label: "Council Tiebreak Not Needed",
+      detail: "You were empowered, but Council resolved without needing your tiebreaker; Eve was eliminated.",
+    }],
+    allianceContext: {
+      activeAlliances: [],
+      openProposals: [],
+      proposalHistory: [],
+    },
   };
 }
 
@@ -277,19 +286,20 @@ function diarySemanticInput(kind: "substantive" | "evasive"): JsonValue {
       round: houseContext.round,
       providerInterviewOrdinal: houseContext.providerInterviewOrdinal,
       agentName: houseContext.agentName,
-      alivePlayers: houseContext.alivePlayers,
-      activeShieldNames: houseContext.activeShieldNames,
-      eliminatedPlayers: houseContext.eliminatedPlayers,
-      lastEliminated: houseContext.lastEliminated,
-      empoweredName: houseContext.empoweredName,
-      councilCandidates: houseContext.councilCandidates,
-      recentMessages: houseContext.recentMessages.map(({ from, text, phase }) => ({
-        from,
-        text,
-        phase,
-      })),
+      playerKnowledge: {
+        selfId: houseContext.playerKnowledge.selfId,
+        selfName: houseContext.playerKnowledge.selfName,
+        alivePlayers: houseContext.playerKnowledge.alivePlayers,
+        empoweredId: houseContext.playerKnowledge.empoweredId,
+        councilCandidates: houseContext.playerKnowledge.councilCandidates,
+        latestEliminatedPlayerName: houseContext.playerKnowledge.latestEliminatedPlayerName,
+        publicCanonicalRecord: houseContext.playerKnowledge.gameEventRecord,
+        publicTranscriptContext: houseContext.playerKnowledge.publicTranscriptContext,
+        subjectPrivateConversation: houseContext.playerKnowledge.mingleMessages,
+        subjectRecentDecisions: houseContext.playerKnowledge.recentDecisions,
+        subjectAllianceContext: houseContext.playerKnowledge.allianceContext,
+      },
       previousDiaryEntries: houseContext.previousDiaryEntries,
-      playerMessages: houseContext.playerMessages,
     },
     contestantContext: { ...diaryAgentContext("cache-isolated-at-runtime"), gameId: "cache-isolated-at-runtime" },
     fixedInputs: fixture,
@@ -305,29 +315,243 @@ function diarySemanticInput(kind: "substantive" | "evasive"): JsonValue {
   });
 }
 
+function houseSummaryCanonicalEvents(gameId: UUID): CanonicalGameEvent[] {
+  const common = {
+    gameId,
+    round: 1,
+    timestamp: "2026-08-27T00:00:00.000Z",
+    source: "phase" as const,
+    sourcePointers: [],
+  };
+  return [
+    {
+      ...common,
+      sequence: 1,
+      round: 0,
+      phase: Phase.INIT,
+      type: "game.roster_initialized",
+      source: "engine",
+      visibility: "system",
+      payloadVersion: 1,
+      payload: {
+        players: [
+          { id: PLAYER_IDS.ada, name: "Ada", status: PlayerStatus.ALIVE, shielded: false },
+          { id: PLAYER_IDS.blair, name: "Blair", status: PlayerStatus.ALIVE, shielded: false },
+          { id: PLAYER_IDS.cleo, name: "Cleo", status: PlayerStatus.ALIVE, shielded: false },
+          { id: PLAYER_IDS.dax, name: "Dax", status: PlayerStatus.ALIVE, shielded: false },
+          { id: PLAYER_IDS.eve, name: "Eve", status: PlayerStatus.ALIVE, shielded: false },
+        ],
+        formatManifest: ["vote_bomb", "save_or_eliminate"],
+      },
+    },
+    {
+      ...common,
+      sequence: 2,
+      phase: Phase.VOTE,
+      type: "round.started",
+      visibility: "system",
+      payloadVersion: 1,
+      payload: { round: 1 },
+    },
+    {
+      ...common,
+      sequence: 3,
+      phase: Phase.VOTE,
+      type: "vote.empowered_set",
+      visibility: "public",
+      payloadVersion: 1,
+      payload: { empowered: PLAYER_IDS.ada, method: "initial" },
+    },
+    {
+      ...common,
+      sequence: 4,
+      phase: Phase.FORMAT_MENU,
+      type: "format.menu_offered",
+      visibility: "system",
+      payloadVersion: 1,
+      payload: {
+        empoweredId: PLAYER_IDS.ada,
+        offeredFormatIds: ["vote_bomb", "save_or_eliminate"],
+      },
+    },
+    {
+      ...common,
+      sequence: 5,
+      phase: Phase.FORMAT_PICK,
+      type: "format.selected",
+      visibility: "public",
+      payloadVersion: 1,
+      payload: { empoweredId: PLAYER_IDS.ada, formatId: "vote_bomb" },
+    },
+    {
+      ...common,
+      sequence: 6,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "format.ballot_cast",
+      visibility: "producer",
+      payloadVersion: 1,
+      payload: {
+        formatId: "vote_bomb",
+        voterId: PLAYER_IDS.cleo,
+        targetId: PLAYER_IDS.blair,
+        polarity: null,
+      },
+    },
+    {
+      ...common,
+      sequence: 7,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "format.resolved",
+      visibility: "public",
+      payloadVersion: 2,
+      payload: {
+        formatId: "vote_bomb",
+        empoweredId: PLAYER_IDS.ada,
+        eliminatedId: PLAYER_IDS.blair,
+        resolutionKind: "clear",
+        tiedPlayerIds: [],
+        tiebreakerId: null,
+        aggregate: {
+          capability: "sealed_elim",
+          totals: { [PLAYER_IDS.blair]: 3, [PLAYER_IDS.eve]: 1 },
+          eligiblePlayerIds: [PLAYER_IDS.blair, PLAYER_IDS.eve],
+        },
+      },
+    },
+    {
+      ...common,
+      sequence: 8,
+      phase: Phase.FORMAT_RESOLVE,
+      type: "player.eliminated",
+      visibility: "public",
+      payloadVersion: 1,
+      payload: {
+        playerId: PLAYER_IDS.blair,
+        playerName: "Blair",
+        eliminatedRound: 1,
+        juryMember: { playerId: PLAYER_IDS.blair, playerName: "Blair", eliminatedRound: 1 },
+      },
+    },
+  ];
+}
+
+function createHouseNarrationComparisonSlice(gameId: UUID): {
+  ordinary: HouseNarrativeTurnContext;
+  milestone: HouseNarrativeTurnContext;
+} {
+  const allEvents = houseSummaryCanonicalEvents(gameId);
+  const ordinaryEvents = allEvents.slice(0, 5);
+  const ordinaryNarration = compileHouseNarrationContext({
+    actorCoordinate: "format_pick",
+    round: 1,
+    phase: Phase.FORMAT_PICK,
+    beatClass: "ordinary",
+    events: ordinaryEvents,
+    projection: replayCanonicalEvents(ordinaryEvents),
+    transcript: [{
+      round: 1,
+      phase: Phase.FORMAT_PICK,
+      from: "Ada",
+      scope: "public",
+      text: "I promised Blair safety, and Vote Bomb gives me room to prove it.",
+      entrySequence: 12,
+      dialogueKind: "public_speech",
+    }],
+    diaryEntries: [],
+    afterCanonicalSequence: 4,
+    afterDialogueSequence: 11,
+  });
+  const ordinaryBeat: HouseNarrativeBeat = {
+    version: 2,
+    boundary: structuredClone(ordinaryNarration.boundary),
+    publicSummary: "Ada locked Vote Bomb, wagering her promise to Blair.",
+  };
+  const milestoneContinuity = {
+    ...createEmptyHouseNarrativeContinuity(gameId),
+    recentBeats: [ordinaryBeat],
+    privateNarrativeNotebook: "Ada promised Blair safety, but privately treats Blair as expendable. Cleo may expose the contradiction.",
+    examinedCanonicalHead: ordinaryBeat.boundary.canonicalHead,
+    examinedDialogueHead: ordinaryBeat.boundary.dialogueHead,
+  };
+  const milestoneNarration = compileHouseNarrationContext({
+    actorCoordinate: "format_resolve",
+    round: 1,
+    phase: Phase.FORMAT_RESOLVE,
+    beatClass: "milestone",
+    events: allEvents,
+    projection: replayCanonicalEvents(allEvents),
+    transcript: [
+      {
+        round: 1,
+        phase: Phase.FORMAT_PICK,
+        from: "Ada",
+        scope: "public",
+        text: "I promised Blair safety, and Vote Bomb gives me room to prove it.",
+        entrySequence: 12,
+        dialogueKind: "public_speech",
+      },
+      {
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        from: "Ada",
+        scope: "mingle",
+        text: "Blair is useful cover, but I will not spend capital saving him.",
+        entrySequence: 13,
+        dialogueKind: "mingle_message",
+      },
+      {
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        from: "Cleo",
+        scope: "system",
+        text: "Cleo cast a sealed Vote Bomb ballot against Blair.",
+        entrySequence: 14,
+        dialogueKind: "sealed_decision",
+      },
+      {
+        round: 1,
+        phase: Phase.FORMAT_RESOLVE,
+        from: "Blair",
+        scope: "public",
+        text: "Ada made her choice. Everyone else should remember it.",
+        entrySequence: 15,
+        dialogueKind: "elimination_message",
+      },
+    ],
+    diaryEntries: [{
+      round: 1,
+      precedingPhase: Phase.FORMAT_PICK,
+      agentName: "Blair",
+      question: "Do you believe Ada will keep you safe?",
+      answer: "No. She wants my trust until it costs her something.",
+    }],
+    afterCanonicalSequence: ordinaryBeat.boundary.canonicalHead,
+    afterDialogueSequence: ordinaryBeat.boundary.dialogueHead,
+  });
+  return {
+    ordinary: {
+      narrationContext: ordinaryNarration,
+      continuity: createEmptyHouseNarrativeContinuity(gameId),
+    },
+    milestone: {
+      narrationContext: milestoneNarration,
+      continuity: milestoneContinuity,
+    },
+  };
+}
+
 function summarySemanticInput(kind: "ordinary" | "milestone"): JsonValue {
-  const slice = createHouseSummaryProvingSlice("cache-isolated-at-runtime");
+  const slice = createHouseNarrationComparisonSlice("cache-isolated-at-runtime");
   const context = kind === "ordinary" ? slice.ordinary : slice.milestone;
   return jsonValue({
-    contextVersion: 1,
-    boundary: { ...context.frontier.boundary, gameId: "cache-isolated-at-runtime" },
-    selectedCatalog: context.frontier.catalog,
-    // Frozen private semantic evidence, not a provider prompt projection.
-    // It preserves the U12 situation identity while runtime rendering now uses
-    // the discriminated sourceValuesByAlias snapshot instead of this row data.
-    boundaryTimePrivateSourceSnapshot: context.frontier.factStore,
-    priorTypedSourceLineage: context.continuity.lastArtifact?.sources ?? [],
-    priorRenderedBeat: context.continuity.lastArtifact
-      ? { authority: "narrative_non_authoritative", text: context.continuity.lastArtifact.renderedText }
-      : null,
-    continuityControl: {
-      lastBoundaryId: context.continuity.lastBoundaryId,
-      examinedCanonicalHead: context.continuity.examinedCanonicalHead,
-      examinedDialogueHead: context.continuity.examinedDialogueHead,
-      emittedCanonicalHead: context.continuity.emittedCanonicalHead,
-      emittedDialogueHead: context.continuity.emittedDialogueHead,
+    contextVersion: 2,
+    narrationContext: context.narrationContext,
+    continuity: {
+      recentPublicBeats: context.continuity.recentBeats,
+      privateNarrativeNotebook: context.continuity.privateNarrativeNotebook,
+      pendingDeltaCarry: context.continuity.pendingDeltaCarry,
     },
-    factReadAllowed: context.factReadAllowed,
+    authority: "house_prose_is_presentation_only",
     contestantContext: null,
   });
 }
@@ -428,20 +652,20 @@ function judgmentSemanticInput(): JsonValue {
 
 async function captureTurn<T>(
   label: string,
-  authority: ProviderScenarioTurnReceipt["authority"],
+  authority: ProviderScenarioTurnTelemetry["authority"],
   call: () => Promise<T>,
-  classify?: (value: T) => ProviderScenarioTurnReceipt["status"],
+  classify?: (value: T) => ProviderScenarioTurnTelemetry["status"],
 ): Promise<ScenarioPresentation["turns"][number]> {
   try {
     const value = await call();
     return {
-      receipt: { label, authority, status: classify?.(value) ?? "accepted" },
+      telemetry: { label, authority, status: classify?.(value) ?? "accepted" },
       value,
     };
   } catch (error) {
     const name = error instanceof Error ? error.constructor.name : "UnknownError";
     return {
-      receipt: {
+      telemetry: {
         label,
         authority,
         status: name === "ProviderUnavailableError" || name === "ProviderAttemptError"
@@ -453,7 +677,7 @@ async function captureTurn<T>(
   }
 }
 
-function classifyAgentResponse(response: AgentResponse): ProviderScenarioTurnReceipt["status"] {
+function classifyAgentResponse(response: AgentResponse): ProviderScenarioTurnTelemetry["status"] {
   return response.providerAbsence ? "fallback" : "accepted";
 }
 
@@ -523,8 +747,8 @@ function summaryScenario(kind: "ordinary" | "milestone"): RuntimeScenario {
       semanticInput: summarySemanticInput(kind),
     }),
     async run(runtime) {
-      const slice = createHouseSummaryProvingSlice(runtime.gameId);
-      const context: HouseSelectiveSummaryContext = kind === "ordinary" ? slice.ordinary : slice.milestone;
+      const slice = createHouseNarrationComparisonSlice(runtime.gameId);
+      const context: HouseNarrativeTurnContext = kind === "ordinary" ? slice.ordinary : slice.milestone;
       return {
         turns: [await captureTurn(
           "house_audience_summary",
@@ -535,6 +759,52 @@ function summaryScenario(kind: "ordinary" | "milestone"): RuntimeScenario {
             : result.status === "model_skipped"
               ? "skipped"
               : "failed",
+        )],
+      };
+    },
+  };
+}
+
+function longFormContext(gameId: UUID): HouseGameplaySummaryContext {
+  const { milestone } = createHouseNarrationComparisonSlice(gameId);
+  return {
+    gameId,
+    round: 1,
+    phase: Phase.FORMAT_RESOLVE,
+    kind: "long-form",
+    coveredWindow: {
+      fromRound: 1,
+      toRound: 1,
+      fromPhase: Phase.FORMAT_PICK,
+      toPhase: Phase.FORMAT_RESOLVE,
+    },
+    narrationContext: milestone.narrationContext,
+    recentPublicBeats: milestone.continuity.recentBeats,
+    privateNarrativeNotebook: milestone.continuity.privateNarrativeNotebook,
+  };
+}
+
+function longFormScenario(): RuntimeScenario {
+  const scenarioId = "house-long-form";
+  return {
+    pack: freezeProviderScenarioPack({
+      version: 1,
+      scenarioId,
+      comparisonKey: `r32-${scenarioId}-v1`,
+      surface: "house_summary",
+      semanticInput: jsonValue({
+        contextVersion: 2,
+        ...longFormContext("cache-isolated-at-runtime"),
+        gameId: "cache-isolated-at-runtime",
+      }),
+    }),
+    async run(runtime) {
+      return {
+        turns: [await captureTurn(
+          "house_long_form",
+          "presentation_only",
+          () => runtime.house.generateLongFormGameplaySummary(longFormContext(runtime.gameId)),
+          (result) => result === null ? "skipped" : "accepted",
         )],
       };
     },
@@ -586,6 +856,7 @@ export function createR32ProviderScenarios(): RuntimeScenario[] {
     diaryScenario("evasive"),
     summaryScenario("ordinary"),
     summaryScenario("milestone"),
+    longFormScenario(),
     judgmentScenario(),
   ];
 }
@@ -667,7 +938,7 @@ function responseIdFromTrace(trace: PrivateDecisionTrace): string | null {
   return typeof id === "string" ? id : null;
 }
 
-function outcomeFromTurns(turns: readonly ProviderScenarioTurnReceipt[]): ProviderScenarioPrivateSample["outcome"] {
+function outcomeFromTurns(turns: readonly ProviderScenarioTurnTelemetry[]): ProviderScenarioPrivateSample["outcome"] {
   const structured = turns.filter((turn) => turn.authority === "structured");
   const hasFailure = turns.some((turn) => turn.status === "failed");
   const hasExhaustion = turns.some((turn) => turn.status === "exhausted" || turn.status === "fallback");
@@ -784,21 +1055,15 @@ async function runScenarioSample(input: {
     },
   };
   const presentation = await input.scenario.run(runtime);
-  const fingerprints = attempts.map((attempt) => fingerprintProviderAttemptRequest(attempt.preparedRequest));
   const unique = <T>(values: T[]): T[] => [...new Set(values)];
-  const turns = presentation.turns.map((turn) => turn.receipt);
+  const turns = presentation.turns.map((turn) => turn.telemetry);
   return {
     scenarioId: input.scenario.pack.scenarioId,
     comparisonKey: input.scenario.pack.comparisonKey,
-    semanticPackHash: input.scenario.pack.semanticPackHash,
     sampleOrdinal: input.sampleOrdinal,
     cacheIsolationNonce,
     outcome: outcomeFromTurns(turns),
     accounting: summarizeAccounting(attempts, input.config.modelId),
-    promptFingerprints: unique(fingerprints.map((fingerprint) => fingerprint.prompt)),
-    structuredContractFingerprints: unique(fingerprints.flatMap((fingerprint) => (
-      fingerprint.structuredContract ? [fingerprint.structuredContract] : []
-    ))),
     requestIds: unique(attempts.flatMap((attempt) => attempt.requestId ? [attempt.requestId] : [])),
     responseIds: unique([
       ...attempts.flatMap((attempt) => {

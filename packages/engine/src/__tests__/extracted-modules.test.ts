@@ -6,6 +6,7 @@
  */
 
 import { describe, it, expect, beforeEach } from "bun:test";
+import { readFileSync } from "node:fs";
 import { GameState, createUUID } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { ContextBuilder } from "../context-builder";
@@ -14,6 +15,10 @@ import type { UUID, RoomAllocation } from "../types";
 import type { GameStreamEvent } from "../game-runner.types";
 import { computeLobbyMessagesPerPlayer } from "../phases/lobby";
 import { computeRoomCount, allocateRooms } from "../phases/mingle";
+import { runJudgmentJuryQuestions } from "../phases/endgame";
+import type { PhaseActor, PhaseRunnerContext } from "../phases/phase-runner-context";
+import type { PhaseContext } from "../game-runner.types";
+import { MockAgent } from "./mock-agent";
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -331,6 +336,154 @@ describe("ContextBuilder", () => {
     expect(
       aliceContext.recentDecisions?.some((decision) => decision.detail.includes("Eve")),
     ).toBe(false);
+  });
+
+  it("keeps juror-question and finalist-answer contexts player-scoped with canonical identity and history", () => {
+    const alice = gs.getAlivePlayers().find((player) => player.name === "Alice")!;
+    const bob = gs.getAlivePlayers().find((player) => player.name === "Bob")!;
+    const charlie = gs.getAlivePlayers().find((player) => player.name === "Charlie")!;
+
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_question",
+      playerId: bob.id,
+      text: "CANONICAL_JUDGMENT_QUESTION",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: alice.id,
+    });
+    gs.recordJudgmentSpeech({
+      speechKind: "jury_answer",
+      playerId: alice.id,
+      text: "CANONICAL_JUDGMENT_ANSWER",
+      provenance: "agent",
+      phase: Phase.JURY_QUESTIONS,
+      addresseeId: bob.id,
+    });
+    logger.logSystem(
+      "HOUSE_SUMMARY_CANARY",
+      Phase.JURY_QUESTIONS,
+      undefined,
+      undefined,
+      "house_summary",
+    );
+    logger.logDiary("Charlie", "OTHER_DIARY_CANARY");
+    logger.logThinking(charlie.id, "OPERATOR_TRACE_CANARY", Phase.JURY_QUESTIONS);
+    mingleInbox.set(bob.id, [{ from: "Charlie", text: "JUROR_PARTICIPANT_PRIVATE_CANARY" }]);
+    mingleInbox.set(alice.id, [{ from: "Dave", text: "FINALIST_PARTICIPANT_PRIVATE_CANARY" }]);
+
+    const jurorContext = builder.buildPhaseContextForAgentCall({
+      agentId: bob.id,
+      phase: Phase.JURY_QUESTIONS,
+      promptClass: "ordinary_speech",
+      isEliminated: true,
+    });
+    const finalistContext = builder.buildPhaseContextForAgentCall({
+      agentId: alice.id,
+      phase: Phase.JURY_QUESTIONS,
+      promptClass: "ordinary_speech",
+    });
+
+    expect(jurorContext).toMatchObject({ selfId: bob.id, selfName: "Bob", isEliminated: true });
+    expect(finalistContext).toMatchObject({ selfId: alice.id, selfName: "Alice", isEliminated: false });
+    expect(jurorContext.judgmentQuestionHistory).toEqual([{
+      jurorName: "Bob",
+      finalistName: "Alice",
+      question: "CANONICAL_JUDGMENT_QUESTION",
+      answer: "CANONICAL_JUDGMENT_ANSWER",
+    }]);
+    expect(finalistContext.judgmentQuestionHistory).toEqual(jurorContext.judgmentQuestionHistory);
+    expect(JSON.stringify(jurorContext)).toContain("JUROR_PARTICIPANT_PRIVATE_CANARY");
+    expect(JSON.stringify(finalistContext)).toContain("FINALIST_PARTICIPANT_PRIVATE_CANARY");
+    for (const context of [jurorContext, finalistContext]) {
+      const serialized = JSON.stringify(context);
+      expect(serialized).not.toContain("HOUSE_SUMMARY_CANARY");
+      expect(serialized).not.toContain("OTHER_DIARY_CANARY");
+      expect(serialized).not.toContain("OPERATOR_TRACE_CANARY");
+    }
+
+    const endgameSource = readFileSync(
+      new URL("../phases/endgame.ts", import.meta.url),
+      "utf8",
+    );
+    const judgmentStart = endgameSource.indexOf("export async function runJudgmentJuryQuestions");
+    const judgmentEnd = endgameSource.indexOf("export async function runJudgmentClosingArguments");
+    const judgmentSource = endgameSource.slice(judgmentStart, judgmentEnd);
+    expect(judgmentSource).toContain(
+      "const jurorCtx = prepareAgentPhaseContext(ctx, jurorAgent, juror.playerId, Phase.JURY_QUESTIONS",
+    );
+    expect(judgmentSource).toContain(
+      "const finalistCtx = prepareAgentPhaseContext(ctx, finalistAgent, targetFinalistId, Phase.JURY_QUESTIONS",
+    );
+    expect(judgmentSource).not.toMatch(/houseNarrative|houseSummary|notebook/i);
+  });
+
+  it("routes actual Judgment question and answer calls through the player information firewall", async () => {
+    const players = gs.getAlivePlayers();
+    const [alice, bob, charlie, dave, eve] = players;
+    if (!alice || !bob || !charlie || !dave || !eve) throw new Error("expected five players");
+    gs.setEndgameStage("judgment");
+    gs.eliminatePlayer(charlie.id);
+    gs.eliminatePlayer(dave.id);
+    gs.eliminatePlayer(eve.id);
+    logger.logSystem(
+      "HOUSE_SUMMARY_CANARY",
+      Phase.JURY_QUESTIONS,
+      undefined,
+      undefined,
+      "house_summary",
+    );
+    logger.logDiary("Dave", "OTHER_DIARY_CANARY");
+    logger.logThinking(eve.id, "OPERATOR_TRACE_CANARY", Phase.JURY_QUESTIONS);
+    mingleInbox.set(charlie.id, [{ from: "Dave", text: "JUROR_PARTICIPANT_PRIVATE_CANARY" }]);
+    mingleInbox.set(alice.id, [{ from: "Bob", text: "FINALIST_PARTICIPANT_PRIVATE_CANARY" }]);
+
+    const capturedJurorContexts: PhaseContext[] = [];
+    const capturedFinalistContexts: PhaseContext[] = [];
+    const agentList = players.map((player) => new MockAgent(player.id, player.name));
+    for (const agent of agentList) {
+      if ([charlie.id, dave.id, eve.id].includes(agent.id)) {
+        agent.getJuryQuestion = async (context) => {
+          capturedJurorContexts.push(structuredClone(context));
+          return { targetFinalistId: alice.id, question: `Question from ${agent.name}?` };
+        };
+      }
+      if (agent.id === alice.id) {
+        agent.getJuryAnswer = async (context) => {
+          capturedFinalistContexts.push(structuredClone(context));
+          return { message: "My answer.", thinking: "" };
+        };
+      }
+    }
+    const runnerContext = {
+      gameState: gs,
+      agents: new Map(agentList.map((agent) => [agent.id, agent])),
+      config: { agentActionTimeoutMs: 0 },
+      logger,
+      contextBuilder: builder,
+      mingleInbox,
+      formatKernelState: {
+        offeredFormats: null,
+        selectedFormat: null,
+        pressure: null,
+        lastSelectedFormat: null,
+      },
+      eliminationOrder: [charlie.name, dave.name, eve.name],
+      eliminationOrderPlayerIds: [charlie.id, dave.id, eve.id],
+    } as unknown as PhaseRunnerContext;
+    const actor = { send: () => {} } as unknown as PhaseActor;
+
+    await runJudgmentJuryQuestions(runnerContext, actor);
+
+    expect(capturedJurorContexts).toHaveLength(3);
+    expect(capturedFinalistContexts).toHaveLength(3);
+    expect(JSON.stringify(capturedJurorContexts)).toContain("JUROR_PARTICIPANT_PRIVATE_CANARY");
+    expect(JSON.stringify(capturedFinalistContexts)).toContain("FINALIST_PARTICIPANT_PRIVATE_CANARY");
+    for (const context of [...capturedJurorContexts, ...capturedFinalistContexts]) {
+      const serialized = JSON.stringify(context);
+      expect(serialized).not.toContain("HOUSE_SUMMARY_CANARY");
+      expect(serialized).not.toContain("OTHER_DIARY_CANARY");
+      expect(serialized).not.toContain("OPERATOR_TRACE_CANARY");
+    }
   });
 
   it("pairs each Judgment answer with the latest unmatched reciprocal canonical question", () => {

@@ -271,9 +271,7 @@ describe("simulation variant config", () => {
     expect(config.maxDiaryFollowUps).toBeUndefined();
     expect(config.diaryRoomAfterPhases).toEqual([Phase.FORMAT_RESOLVE, Phase.COUNCIL]);
     expect(config.enableHouseRoundSummaries).toBe(true);
-    expect(config.enableHouseStrategyBible).toBe(true);
     expect(config.enableHouseLongFormSummaries).toBe(true);
-    expect(config.enableHouseProducerBriefs).toBe(true);
   });
 
   it("can enable bounded diary sessions without rich producer packets", () => {
@@ -287,9 +285,7 @@ describe("simulation variant config", () => {
     expect(args.richProducer).toBe(false);
     expect(config.diaryRoomAfterPhases).toEqual([Phase.FORMAT_RESOLVE, Phase.COUNCIL]);
     expect(config.enableHouseRoundSummaries).toBe(true);
-    expect(config.enableHouseStrategyBible).toBe(false);
     expect(config.enableHouseLongFormSummaries).toBe(false);
-    expect(config.enableHouseProducerBriefs).toBe(false);
   });
 
   it("does not configure hidden pair cooldown for simulator variants", () => {
