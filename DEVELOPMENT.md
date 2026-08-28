@@ -488,6 +488,8 @@ INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
     # (operator action feed + House MC are on by default; add --chatty for thinking/reasoning)
 
 # Strategy-observability validation uses the paid diary calls for replacement/refinement:
+# Simulations consume only the final persisted Agent Profile Strategy. Unsaved editor drafts and
+# Owner Learning diff presentation do not enter model context.
 INFLUENCE_LLM_BASE_URL=http://127.0.0.1:1234/v1 \
   bun run simulate:local -- --games 1 --players 8 --model <lm-studio-model-id> \
     --variant mingle --chatty --diary --game-timeout-sec 7200 --llm-timeout-sec 300

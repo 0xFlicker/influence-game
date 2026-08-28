@@ -389,6 +389,8 @@ export const agentProfiles = pgTable("agent_profiles", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id),
+  creationRequestId: text("creation_request_id"),
+  creationPayloadFingerprint: text("creation_payload_fingerprint"),
   name: text("name").notNull(),
   backstory: text("backstory"), // Rich character backstory
   personality: text("personality").notNull(), // Personality prompt / description
@@ -411,6 +413,9 @@ export const agentProfiles = pgTable("agent_profiles", {
   index("agent_profiles_name_idx").on(table.name),
   index("agent_profiles_name_id_idx").on(table.name, table.id),
   uniqueIndex("agent_profiles_normalized_name_unique").on(sql`lower(btrim(${table.name}))`),
+  uniqueIndex("agent_profiles_user_creation_request_unique")
+    .on(table.userId, table.creationRequestId)
+    .where(sql`${table.creationRequestId} IS NOT NULL`),
   index("agent_profiles_current_revision_idx").on(table.currentRevisionId),
   check("agent_profiles_name_not_house_reserved", sql`
     lower(btrim(${table.name})) NOT IN (
@@ -463,8 +468,7 @@ export const avatarGenerationRequests = pgTable("avatar_generation_requests", {
   userId: text("user_id")
     .notNull()
     .references(() => users.id),
-  agentProfileId: text("agent_profile_id")
-    .notNull(),
+  agentProfileId: text("agent_profile_id"),
   purpose: text("purpose").notNull().$type<AvatarGenerationPurpose>(),
   status: text("status").notNull().$type<AvatarGenerationStatus>(),
   triggerSource: text("trigger_source").notNull().$type<AvatarGenerationTriggerSource>(),

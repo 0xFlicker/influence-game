@@ -206,6 +206,39 @@ describe("owner learning apply and resolution", () => {
     expect(await db.select().from(schema.agentLearningReviewApplications)).toEqual([]);
   });
 
+  test("replays an identical linked manual update after its response is lost", async () => {
+    const db = await setupTestDB();
+    const fixture = await insertPlayedOwnerLearningAgent(db);
+    const reviewId = await startFixtureOwnerLearningReview(db, fixture);
+    await markReviewReady(db, reviewId);
+    const before = (await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]!;
+    const request = {
+      strategyStyle: "Verify the coalition twice before coordinating the vote.",
+      sourceReviewId: reviewId,
+      expectedRevisionId: before.currentRevisionId,
+    };
+
+    const first = await updateOwnedAgentProfile(
+      db,
+      { userId: fixture.ownerUserId },
+      fixture.agentProfileId,
+      request,
+    );
+    const replay = await updateOwnedAgentProfile(
+      db,
+      { userId: fixture.ownerUserId },
+      fixture.agentProfileId,
+      request,
+    );
+
+    expect(replay.profile.id).toBe(first.profile.id);
+    expect(replay.profile.strategyStyle).toBe(request.strategyStyle);
+    expect((await db.select().from(schema.agentLearningEvents)
+      .where(eq(schema.agentLearningEvents.reviewId, reviewId)))
+      .filter((event) => event.kind === "review_resolved")).toHaveLength(1);
+  });
+
   test("does not let linked edits resolve unfinished or analytically unchanged reviews", async () => {
     const db = await setupTestDB();
     const fixture = await insertPlayedOwnerLearningAgent(db);
@@ -221,13 +254,18 @@ describe("owner learning apply and resolution", () => {
       .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]).toEqual(before);
 
     await markReviewReady(db, reviewId);
-    const presentation = await updateOwnedAgentProfile(
+    await expect(updateOwnedAgentProfile(db, { userId: fixture.ownerUserId }, fixture.agentProfileId, {
+      strategyStyle: "Build explicit reciprocal commitments, verify the bloc, then coordinate the vote.",
+      sourceReviewId: reviewId,
+    })).rejects.toMatchObject({ code: "source_review_conflict" });
+    await expect(updateOwnedAgentProfile(
       db,
       { userId: fixture.ownerUserId },
       fixture.agentProfileId,
       { avatarUrl: "https://cdn.example/review-avatar.png", sourceReviewId: reviewId },
-    );
-    expect(presentation.profileRevision.outcome).toBe("preserved");
+    )).rejects.toMatchObject({ code: "source_review_conflict" });
+    expect((await db.select().from(schema.agentProfiles)
+      .where(eq(schema.agentProfiles.id, fixture.agentProfileId)))[0]).toEqual(before);
     const review = (await db.select().from(schema.agentLearningReviews)
       .where(eq(schema.agentLearningReviews.id, reviewId)))[0]!;
     expect(review.resolution).toBeNull();

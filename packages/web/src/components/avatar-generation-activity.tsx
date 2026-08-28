@@ -21,6 +21,8 @@ const MAX_CONSECUTIVE_POLL_FAILURES = 3;
 
 export function AvatarGenerationActivity() {
   const [notices, setNotices] = useState<Record<string, AvatarGenerationNotice>>({});
+  const [statusUnavailable, setStatusUnavailable] = useState(false);
+  const [pollGeneration, setPollGeneration] = useState(0);
   const pollFailures = useRef(0);
   const hydrationGeneration = useRef(0);
 
@@ -28,6 +30,8 @@ export function AvatarGenerationActivity() {
     function handleGeneration(event: Event) {
       const detail = (event as CustomEvent<AvatarGenerationNotice>).detail;
       if (!detail?.agentId || !detail.completion) return;
+      pollFailures.current = 0;
+      setStatusUnavailable(false);
       setNotices((current) => ({ ...current, [detail.agentId]: detail }));
     }
     window.addEventListener("agent-avatar:generation", handleGeneration);
@@ -79,12 +83,14 @@ export function AvatarGenerationActivity() {
     const handleSessionReady = () => {
       hydrationGeneration.current += 1;
       pollFailures.current = 0;
+      setStatusUnavailable(false);
       setNotices({});
       void hydrate();
     };
     const handleSessionCleared = () => {
       hydrationGeneration.current += 1;
       pollFailures.current = 0;
+      setStatusUnavailable(false);
       setNotices({});
     };
 
@@ -129,19 +135,7 @@ export function AvatarGenerationActivity() {
         pollFailures.current += 1;
         console.warn("[AvatarGenerationActivity] Failed to read portrait status:", error);
         if (pollFailures.current >= MAX_CONSECUTIVE_POLL_FAILURES) {
-          setNotices((current) => Object.fromEntries(Object.entries(current).map(([agentId, notice]) => [
-            agentId,
-            isAvatarCompletionPending(notice.completion)
-              ? {
-                  ...notice,
-                  completion: {
-                    status: "failed" as const,
-                    reason: "Portrait status could not be refreshed.",
-                    retryable: true,
-                  },
-                }
-              : notice,
-          ])));
+          setStatusUnavailable(true);
           return;
         }
       }
@@ -153,7 +147,13 @@ export function AvatarGenerationActivity() {
       cancelled = true;
       if (timer) window.clearTimeout(timer);
     };
-  }, [activeKey]);
+  }, [activeKey, pollGeneration]);
+
+  function refreshStatus() {
+    pollFailures.current = 0;
+    setStatusUnavailable(false);
+    setPollGeneration((generation) => generation + 1);
+  }
 
   const orderedNotices = Object.values(notices);
   if (orderedNotices.length === 0) return null;
@@ -173,18 +173,19 @@ export function AvatarGenerationActivity() {
             className="influence-modal rounded-xl border border-white/10 p-4 shadow-2xl"
           >
             <div className="flex items-start gap-3">
-              {pending ? (
+              {pending && !statusUnavailable ? (
                 <span className="mt-0.5 h-5 w-5 shrink-0 animate-spin rounded-full border-2 border-accent/30 border-t-accent" aria-hidden="true" />
               ) : (
                 <span className="text-accent" aria-hidden="true">{notice.completion.status === "completed" ? "✓" : "!"}</span>
               )}
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-text-primary">
-                  {pending ? "Generating portrait" : notice.completion.status === "completed" ? "Portrait ready" : "Portrait not generated"}
+                  {pending && statusUnavailable ? "Portrait status unavailable" : pending ? "Generating portrait" : notice.completion.status === "completed" ? "Portrait ready" : "Portrait not generated"}
                 </p>
                 <p className="mt-0.5 text-xs influence-copy-muted">
-                  {notice.agentName}: {avatarActivityMessage(notice.completion)}
+                  {notice.agentName}: {pending && statusUnavailable ? "Generation may still finish in the background." : avatarActivityMessage(notice.completion)}
                 </p>
+                {pending && statusUnavailable && <button type="button" onClick={refreshStatus} className="mt-2 text-xs font-medium text-phase hover:text-phase/80">Refresh status</button>}
               </div>
               <button
                 type="button"

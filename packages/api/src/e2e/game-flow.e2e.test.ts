@@ -30,6 +30,7 @@ import { cleanupE2eResources } from "./cleanup.js";
 import type { Browser, Page } from "puppeteer";
 import { mkdirSync } from "fs";
 import path from "path";
+import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 
 // Match JWT_SECRET to what test-server uses
 process.env.JWT_SECRET = "e2e-test-jwt-secret";
@@ -215,11 +216,24 @@ describe("E2E: Full Game Flow", () => {
       "social",
       "aggressive",
     ];
-    const PERSONA_NAMES = ["Atlas", "Finn", "Vera", "Lyra", "Mira", "Rex"];
+    const PERSONA_NAMES = [
+      "Avery North",
+      "Finley West",
+      "Verity Lane",
+      "Lyle Mercer",
+      "Mina Cross",
+      "Reese Calder",
+    ];
 
     // Each player joins via API
     for (let i = 0; i < 6; i++) {
       const player = await createPlayerUser(testDb.db, i);
+      const createdAgent = await createOwnedAgentProfile(testDb.db, { userId: player.userId }, {
+        name: PERSONA_NAMES[i]!,
+        personality: PERSONA_KEYS[i]!,
+        strategyStyle: `${PERSONA_NAMES[i]} deterministic strategy`,
+        personaKey: PERSONA_KEYS[i]!,
+      });
 
       const joinRes = await fetch(
         `${servers.apiUrl}/api/games/${gameId}/join`,
@@ -230,9 +244,7 @@ describe("E2E: Full Game Flow", () => {
             Authorization: `Bearer ${player.jwt}`,
           },
           body: JSON.stringify({
-            agentName: PERSONA_NAMES[i],
-            personality: PERSONA_KEYS[i],
-            personaKey: PERSONA_KEYS[i],
+            agentProfileId: createdAgent.profile.id,
           }),
         },
       );

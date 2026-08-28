@@ -512,6 +512,13 @@
       "when": 1787941200000,
       "tag": "0072_provider_logical_call_ordinal_bigint",
       "breakpoints": true
+    },
+    {
+      "idx": 73,
+      "version": "7",
+      "when": 1787942200263,
+      "tag": "0073_agent_editor_avatar_attachment",
+      "breakpoints": true
     }
   ]
 }

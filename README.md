@@ -88,6 +88,7 @@ flowchart LR
 - **Simulation and API durability share an event shape.** Local simulations write JSONL artifacts; API games persist comparable canonical events in PostgreSQL.
 - **Simulation endgame reporting is canonical.** A simulation's reported endgame type comes from the latest canonical `endgame.stage_set` event, and its stage/Judgment counts come from accepted canonical events. House banner wording is presentation only.
 - **Postgame analysis is derived.** Game briefs, jury breakdowns, turning points, and vote cohorts are derived from game facts and marked when confidence is limited.
+- **Agent Strategy is persisted before play.** Create, edit, and review-linked authoring share one responsive editor. Review edits show the saved/proposed diff, but only the final saved Strategy enters later games or simulations.
 - **Rendering is operationally isolated.** House Highlights media generation runs in a separate worker so API ownership and rendering/ffmpeg work have clear boundaries.
 
 ## Proof and Navigation

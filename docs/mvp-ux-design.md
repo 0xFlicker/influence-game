@@ -297,7 +297,7 @@ After wallet connect + SIWE sign, the page transitions to the Agent Config form.
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**On submit:** `POST /api/games/:id/join` with `{ name, persona, strategyHint }` → 201 created → redirect to `/games/:id` (waiting room view).
+**On submit:** choose an owned saved Agent, or create one in the canonical full-page Agent editor. Then `POST /api/games/:id/join` with `{ agentProfileId }` → 201 created → redirect to `/games/:id` (waiting room view). Inline Agent creation is not supported by the join endpoint.
 
 ---
 
@@ -454,8 +454,9 @@ Player navigates to /games/:id/join
   → GET /api/games/:id → check status === "waiting", slots available
   → Player connects wallet (RainbowKit)
   → SIWE sign → POST /api/auth/siwe → JWT issued, session stored
-  → Player submits form → POST /api/games/:id/join { name, persona, strategyHint }
-  → Server: validate name uniqueness, reserve slot, persist AgentConfig
+  → Player chooses an owned saved Agent, or completes the canonical Agent creation flow
+  → Player submits picker → POST /api/games/:id/join { agentProfileId }
+  → Server: validate Agent ownership, reserve slot, persist the frozen Agent revision
   → Response: { playerId }
   → Redirect → /games/:id (waiting room)
   → On game start: server injects AgentConfig into InfluenceAgent constructor

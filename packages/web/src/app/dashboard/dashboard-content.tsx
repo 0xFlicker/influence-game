@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuthenticatedPublicIdentity } from "@/app/providers";
 import { useAuth } from "@/hooks/use-auth";
 import {
@@ -53,6 +54,8 @@ export function McpSetupCard({ hasHistory }: { hasHistory: boolean }) {
 }
 
 export function DashboardContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const { account, authenticated, openSignIn } = useAuth();
   const publicIdentity = useAuthenticatedPublicIdentity();
   const [joinTarget, setJoinTarget] = useState<{ game: GameSummary } | null>(null);
@@ -70,6 +73,7 @@ export function DashboardContent() {
   const [gamesError, setGamesError] = useState<string | null>(null);
 
   const [queueStatus, setQueueStatus] = useState<FreeQueueStatus | null>(null);
+  const requestedJoinGameId = searchParams.get("joinGameId");
 
   const fetchHistory = useCallback(() => {
     if (!authenticated || !getAuthToken()) {
@@ -183,6 +187,11 @@ export function DashboardContent() {
       }),
     [agents, games, history, queueStatus],
   );
+  const requestedJoinTarget = useMemo(() => {
+    if (!requestedJoinGameId) return null;
+    const requestedGame = games.find((game) => game.id === requestedJoinGameId);
+    return requestedGame ? { game: requestedGame } : null;
+  }, [games, requestedJoinGameId]);
 
   const loading = historyLoading || agentsLoading || gamesLoading;
   const errors = [historyError, agentsError, gamesError].filter((error): error is string => Boolean(error));
@@ -203,16 +212,24 @@ export function DashboardContent() {
 
   function handleJoinSuccess() {
     setJoinTarget(null);
+    if (requestedJoinGameId) router.replace("/dashboard");
     fetchGames();
     fetchHistory();
   }
 
+  function handleJoinClose() {
+    setJoinTarget(null);
+    if (requestedJoinGameId) router.replace("/dashboard");
+  }
+
+  const activeJoinTarget = joinTarget ?? requestedJoinTarget;
+
   return (
     <>
-      {joinTarget && (
+      {activeJoinTarget && (
         <JoinGameModal
-          game={joinTarget.game}
-          onClose={() => setJoinTarget(null)}
+          game={activeJoinTarget.game}
+          onClose={handleJoinClose}
           onSuccess={handleJoinSuccess}
         />
       )}

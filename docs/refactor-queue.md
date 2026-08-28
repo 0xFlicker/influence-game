@@ -32,6 +32,8 @@ Last producer narrative response-contract gap added: 2026-08-25
 
 Last model-output structure audit added: 2026-08-26
 
+Last Agent editor recovery and status work completed: 2026-08-28
+
 Inputs:
 
 - `docs/plans/**/*.md`
@@ -258,23 +260,23 @@ Items are ordered by current priority.
 
 ### R10. Honest avatar-generation status degradation
 
-- Status: `ready`
+- Status: `closed`
 - Consolidates: Standing Daily Agent implementation review finding #9.
 - Sources: `packages/web/src/components/avatar-generation-activity.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`
-- Signal: repeated status-read failures are currently rewritten into a terminal-looking `Portrait not generated` state even when the provider job may still be healthy and complete later. This confuses observability failure with generation failure and stops automatic status refresh.
+- Resolution: repeated status-read failures preserve the last provider status and surface a distinct `Portrait status unavailable` state with manual refresh. They no longer manufacture a terminal generation failure.
 - Concrete seam: avatar completion UI state, activity polling, retry affordances, and provider-versus-status error copy.
 - Validation path: force three consecutive status API failures while the provider request remains pending, then recover the API; verify the UI reports status as temporarily unavailable, never claims generation failed, and eventually displays the completed portrait.
 - Suggested slice: introduce a separate status-unavailable/degraded state with bounded backoff and manual refresh. Preserve the last known provider status instead of manufacturing a terminal failure.
 
 ### R11. Bounded draft-avatar polling and create recovery
 
-- Status: `ready`
+- Status: `closed`
 - Consolidates: Standing Daily Agent implementation review finding #10.
 - Sources: `packages/web/src/app/dashboard/agents/agent-form.tsx`, `packages/web/src/app/dashboard/agents/avatar-completion.ts`, `packages/api/src/routes/agent-profiles.ts`
-- Signal: draft status polling retries every five seconds without a limit while portrait-pending state disables agent creation. A sustained API or auth failure can therefore leave the form retrying forever; upload and cancel exist, but there is no bounded retry or create-without-draft action.
+- Resolution: draft polling uses bounded backoff and a manual status refresh, and portrait generation no longer disables Agent creation or update. A pending draft request attaches to the saved profile transactionally and completes against that profile in the background.
 - Concrete seam: AgentForm draft polling, submit eligibility, retry controls, stale-draft handling, and post-create default portrait generation.
 - Validation path: use fake timers and sustained 401/5xx responses; verify retry count and backoff are bounded, polling stops, the user receives a legible retry or create-without-waiting action, and no failed draft is accidentally consumed or attributed to the created agent.
-- Suggested slice: cap polling retries with backoff and expose an explicit retry/status-refresh path. If creation proceeds without a confirmed completed draft, omit its request ID so normal post-create portrait completion owns recovery.
+- Implemented slice: the editor persists its request ID with the local draft, save attaches that request without waiting, explicit uploads retain precedence, and creation retries reuse a per-owner idempotency key.
 
 ## Future / Watchlist
 

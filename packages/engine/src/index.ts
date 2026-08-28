@@ -16,6 +16,7 @@ export type {
   HouseSummaryCostResult,
   HouseSummaryGameCost,
 } from "./house-summary-accounting";
+export { AGENT_PROFILE_LIMITS } from "./agent-profile-contract";
 export {
   HOUSE_SUMMARY_ACTOR_COORDINATES,
   isHouseSummaryActorCoordinate,

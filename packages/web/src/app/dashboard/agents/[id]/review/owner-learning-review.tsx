@@ -221,7 +221,7 @@ export function OwnerLearningReviewView({
                       href={`/dashboard/agents/${encodeURIComponent(review.agentProfileId)}/edit?sourceReviewId=${encodeURIComponent(review.id)}`}
                       className="olm-button olm-button-secondary"
                       onClick={() => { void recordOwnerLearningManualEditorOpened(review.id); }}
-                    >Edit changes myself</Link>
+                    >Edit suggested strategy</Link>
                     <button
                       type="button"
                       className="olm-button olm-button-quiet"

@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { Browser, Page } from "puppeteer";
 import { createLlmClientFromEnv } from "@influence/engine";
+import { createOwnedAgentProfile } from "../services/agent-profile-management.js";
 import { createAdminUser, createPlayerUser, type AdminUserResult } from "./test-auth.js";
 import { closeBrowser, createAnonymousPage, launchBrowser } from "./test-browser.js";
 import { createIsolatedTestDb, destroyIsolatedTestDb, type TestDB } from "./test-db.js";
@@ -62,9 +63,22 @@ beforeAll(async () => {
     "social",
     "aggressive",
   ];
-  const personaNames = ["Atlas", "Finn", "Vera", "Lyra", "Mira", "Rex"];
+  const personaNames = [
+    "Avery North",
+    "Finley West",
+    "Verity Lane",
+    "Lyle Mercer",
+    "Mina Cross",
+    "Reese Calder",
+  ];
   for (let index = 0; index < personaKeys.length; index += 1) {
     const player = await createPlayerUser(testDb.db, index);
+    const createdAgent = await createOwnedAgentProfile(testDb.db, { userId: player.userId }, {
+      name: personaNames[index]!,
+      personality: personaKeys[index]!,
+      strategyStyle: `${personaNames[index]} live-provider strategy`,
+      personaKey: personaKeys[index]!,
+    });
     const joined = await fetch(`${servers.apiUrl}/api/games/${gameId}/join`, {
       method: "POST",
       headers: {
@@ -72,9 +86,7 @@ beforeAll(async () => {
         Authorization: `Bearer ${player.jwt}`,
       },
       body: JSON.stringify({
-        agentName: personaNames[index],
-        personality: personaKeys[index],
-        personaKey: personaKeys[index],
+        agentProfileId: createdAgent.profile.id,
       }),
     });
     expect(joined.status).toBe(201);

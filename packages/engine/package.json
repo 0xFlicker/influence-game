@@ -8,6 +8,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./alliance-huddle-outcome": "./src/alliance-huddle-outcome.ts",
+    "./agent-profile-contract": "./src/agent-profile-contract.ts",
     "./format-rules": "./src/format-rules.ts",
     "./format-presentation-metadata": "./src/format-presentation-metadata.ts",
     "./prompt-thread-lab": "./src/prompt-thread-lab.ts",
