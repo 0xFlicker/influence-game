@@ -56,16 +56,14 @@ export interface SealedElimDecisionContract<
   handler: "sealed_elim";
   formatId: TId;
   targetPolicy: "alive_non_self" | "restricted_history";
-  publicName: string;
-  ballotHeading: string;
   agentMethod:
     | "getVoteBombBallot"
     | "getMajorityEliminationBallot"
     | "getEvenVotesBallot"
     | "getRestrictedHistoryBallot";
   toolName:
-    | "vote_bomb_ballot"
-    | "majority_elimination_ballot"
+    | "short_list_ballot"
+    | "highest_count_ballot"
     | "even_votes_ballot"
     | "restricted_history_ballot";
   toolDescription: string;
@@ -74,7 +72,6 @@ export interface SealedElimDecisionContract<
     | "format-majority-elimination-ballot"
     | "format-even-votes-ballot"
     | "format-restricted-history-ballot";
-  decisionLabel: string;
   strategyGuidance: string;
   invalidTargetReason:
     | "invalid_vote_bomb_target"
@@ -208,15 +205,12 @@ export const FORMAT_CATALOG: FormatCatalog = {
       handler: "sealed_elim",
       formatId: "vote_bomb",
       targetPolicy: "alive_non_self",
-      publicName: "Vote Bomb",
-      ballotHeading: "Vote Bomb Ballot",
       agentMethod: "getVoteBombBallot",
-      toolName: "vote_bomb_ballot",
-      toolDescription: "Cast one sealed Vote Bomb ballot against a legal non-self target.",
+      toolName: "short_list_ballot",
+      toolDescription: "Cast one sealed The Short List ballot for a remaining non-self contestant.",
       traceAction: "format-vote-bomb-ballot",
-      decisionLabel: "Vote Bomb Ballot",
       strategyGuidance:
-        "Vote Bomb rewards deliberate placement: loading several votes onto one player can leave a different player holding the lethal fewest-positive total, while a single stray vote can put someone on the fewest-positive ledge. Zero votes is safe. Coordinate when useful, but do not assume the room kept its promises.",
+        "The Short List rewards deliberate placement: loading several votes onto one contestant can leave a different contestant holding the fewest-positive total, while a single stray vote can put someone on the fewest-positive ledge. Zero votes is safe. Coordinate when useful, but do not assume the room kept its promises.",
       invalidTargetReason: "invalid_vote_bomb_target",
     },
     aggregate: sealedElimAggregateAdapter,
@@ -248,15 +242,12 @@ export const FORMAT_CATALOG: FormatCatalog = {
       handler: "sealed_elim",
       formatId: "majority_elimination",
       targetPolicy: "alive_non_self",
-      publicName: "Majority Elimination",
-      ballotHeading: "Majority Elimination Ballot",
       agentMethod: "getMajorityEliminationBallot",
-      toolName: "majority_elimination_ballot",
-      toolDescription: "Cast one sealed Majority Elimination ballot against a legal non-self target.",
+      toolName: "highest_count_ballot",
+      toolDescription: "Cast one sealed Highest Count ballot for a remaining non-self contestant.",
       traceAction: "format-majority-elimination-ballot",
-      decisionLabel: "Majority Elimination Ballot",
       strategyGuidance:
-        "Majority Elimination removes the player with the most votes. This is not Vote Bomb: zero votes is not a special safe class, and the fewest-positive rule does not apply. This is not Safety Bounce: every living non-self target is legal, not only a vulnerable pool. All living players, including the empowered player, can receive ballots and be eliminated.",
+        "Highest Count sends out the contestant with the most votes. This is not The Short List: zero votes is not a special safe class, and the fewest-positive rule does not apply. This is not Safety Bounce: every remaining non-self contestant is legal, not only a vulnerable pool. All remaining contestants, including the Empowered contestant, can receive ballots and exit.",
       invalidTargetReason: "invalid_majority_elimination_target",
     },
     aggregate: sealedElimAggregateAdapter,
@@ -277,15 +268,12 @@ export const FORMAT_CATALOG: FormatCatalog = {
       handler: "sealed_elim",
       formatId: "even_votes",
       targetPolicy: "alive_non_self",
-      publicName: "Even Votes",
-      ballotHeading: "Even Votes Ballot",
       agentMethod: "getEvenVotesBallot",
       toolName: "even_votes_ballot",
-      toolDescription: "Cast one sealed Even Votes ballot against a legal non-self target.",
+      toolDescription: "Cast one sealed Even Votes ballot for a remaining non-self contestant.",
       traceAction: "format-even-votes-ballot",
-      decisionLabel: "Even Votes Ballot",
       strategyGuidance:
-        "Even Votes rewards parity control, not simple pile-ons. Only even totals qualify, including zero, and the highest even total is lethal. An odd total is safe unless every living player finishes odd, which hands the empowered player the entire field. Use your ballot to flip a target between odd safety and even danger, and account for how allies or opponents may flip that parity after you.",
+        "Even Votes rewards parity control, not simple pile-ons. Only even totals qualify, including zero, and the highest even total exits. An odd total is safe unless every remaining contestant finishes odd, which hands the Empowered contestant the entire field. Use your ballot to flip a target between odd safety and even danger, and account for how allies or opponents may flip that parity after you.",
       invalidTargetReason: "invalid_even_votes_target",
     },
     aggregate: sealedElimAggregateAdapter,
@@ -306,15 +294,12 @@ export const FORMAT_CATALOG: FormatCatalog = {
       handler: "sealed_elim",
       formatId: "restricted_history",
       targetPolicy: "restricted_history",
-      publicName: "Restricted History",
-      ballotHeading: "Restricted History Ballot",
       agentMethod: "getRestrictedHistoryBallot",
       toolName: "restricted_history_ballot",
-      toolDescription: "Cast one sealed Restricted History ballot against a legal target you have not previously targeted for elimination.",
+      toolDescription: "Cast one sealed Restricted History ballot for a legal contestant you have not previously selected with an EXIT ballot.",
       traceAction: "format-restricted-history-ballot",
-      decisionLabel: "Restricted History Ballot",
       strategyGuidance:
-        "Restricted History removes the player with the most votes, but you cannot target anyone you previously targeted with an elimination-direction format ballot. SAVE ballots do not consume history. Your legal target list is authoritative; if it is empty, your ballot is forfeited without an agent call.",
+        "Restricted History sends out the contestant with the most votes, but you cannot select anyone you previously selected with an EXIT format ballot. SAVE ballots do not consume history. Your legal target list is authoritative; if it is empty, your ballot is forfeited without an agent call.",
       invalidTargetReason: "invalid_restricted_history_target",
     },
     aggregate: sealedElimAggregateAdapter,

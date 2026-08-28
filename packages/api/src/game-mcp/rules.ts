@@ -20,7 +20,7 @@ export interface GameMcpArchetypeSummary {
 }
 
 export interface GameMcpRulesRead {
-  schemaVersion: 1;
+  schemaVersion: 2;
   rules: {
     summary: string;
     sections: GameMcpRulesSection[];
@@ -33,7 +33,7 @@ export interface GameMcpRulesRead {
 }
 
 export interface GameMcpRulesSearchRead {
-  schemaVersion: 1;
+  schemaVersion: 2;
   query: string;
   matches: GameMcpRulesSection[];
 }
@@ -71,8 +71,8 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
   {
     id: "formats",
     title: "Formats",
-    tags: ["format", "formats", "vote", "empower", "save-or-eliminate", "vote-bomb", "safety-bounce", "sealed", "tiebreak"],
-    body: "Empower selects the player who chooses one of two House-offered formats and breaks format elimination ties. Empowerment is not immunity: the empowered player participates normally and can be eliminated. Elimination is resolved only by the locked format. Save-or-Eliminate: every player casts one sealed non-self SAVE (+1 net) or ELIMINATE (-1 net) ballot; lowest net is eliminated and the empowered player breaks lowest-net ties. Vote Bomb: every living player casts one sealed vote for another living player; zero votes is safe, while among players with at least one vote the fewest votes is eliminated, with the empowered player breaking ties. Safety Bounce: a random starter begins SAFE and pointers are public; a safe player points to make an unclassified target VULNERABLE, a vulnerable player points to make an unclassified target SAFE, and the chain continues until all are classified. Then every living player casts a sealed elimination ballot targeting the vulnerable pool; the most-voted vulnerable player is eliminated, a sole vulnerable player is automatically eliminated, and the empowered player breaks vote ties. Format ballots are sealed only from in-game agent context: sealed describes participating-agent knowledge and UI pacing, not operator or MCP confidentiality. Every authorized operator and MCP reader can inspect sanitized accepted voter-to-target mappings immediately after durable record; the canonical roster-ordered roll call appears in round facts after resolution. Safety Bounce pointers are public as made.",
+    tags: ["format", "formats", "vote", "empower", "save-or-exit", "short-list", "highest-count", "safety-bounce", "sealed", "tiebreak"],
+    body: "Empower selects the player who chooses one of two House-offered formats and breaks format ties. Empowerment is not immunity: the empowered player participates normally and can exit the game. The locked format alone decides who exits. Save-or-Exit: every player casts one sealed non-self SAVE (+1 net) or EXIT (-1 net) ballot; lowest net exits and the empowered player breaks lowest-net ties. The Short List: every remaining player casts one sealed vote for another remaining player; zero votes is safe, while among players with at least one vote the fewest votes exits, with the empowered player breaking ties. Highest Count: every remaining player casts one sealed vote for another remaining player; the highest vote total exits, with the empowered player breaking ties. Safety Bounce: a random starter begins SAFE and pointers are public; a safe player points to make an unclassified target VULNERABLE, a vulnerable player points to make an unclassified target SAFE, and the chain continues until all are classified. Then every remaining player casts a sealed ballot targeting the vulnerable pool; the most-voted vulnerable player exits, a sole vulnerable player exits automatically, and the empowered player breaks vote ties. Format ballots are sealed only from in-game agent context: sealed describes participating-agent knowledge and UI pacing, not operator or MCP confidentiality. Every authorized operator and MCP reader can inspect sanitized accepted voter-to-target mappings immediately after durable record; the canonical roster-ordered roll call appears in round facts after resolution. Safety Bounce pointers are public as made.",
   },
   {
     id: "endgame",
@@ -114,7 +114,7 @@ const RULE_SECTIONS: GameMcpRulesSection[] = [
 
 export function getGameMcpRules(): GameMcpRulesRead {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     rules: {
       summary: "Influence is an AI social-strategy game about alliance management, empower-driven format choice, format-specific elimination, and jury persuasion.",
       sections: RULE_SECTIONS,
@@ -134,7 +134,7 @@ export function searchGameMcpRules(input: {
   const normalizedQuery = input.query.trim().toLowerCase();
   const limit = clampLimit(input.limit, 8, 20);
   if (!normalizedQuery) {
-    return { schemaVersion: 1, query: input.query, matches: [] };
+    return { schemaVersion: 2, query: input.query, matches: [] };
   }
 
   const matches = RULE_SECTIONS
@@ -148,7 +148,7 @@ export function searchGameMcpRules(input: {
     .map((entry) => entry.section);
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     query: input.query,
     matches,
   };

@@ -6,8 +6,6 @@
 
 import {
   PLAYER_CONTINUITY_CAPSULE_VERSION,
-  type HouseContinuityCapsule,
-  type HouseContinuityRequirement,
   type PlayerContinuityCapsule,
   type PlayerPowerActionMemoryEntry,
   type PlayerRoundHistoryEntry,
@@ -207,92 +205,4 @@ export function validatePlayerContinuitySetForRecovery(params: {
   }
 
   return { ok: true, capsules: parsed };
-}
-
-export function isHouseContinuityRequirement(value: unknown): value is HouseContinuityRequirement {
-  return value === "disabled" ||
-    value === "awaiting_first_valid_update" ||
-    value === "required";
-}
-
-export function sealHouseContinuityRequirement(params: {
-  bibleEnabled: boolean;
-  hasValidHousePacket: boolean;
-}): HouseContinuityRequirement {
-  if (!params.bibleEnabled) return "disabled";
-  if (!params.hasValidHousePacket) return "awaiting_first_valid_update";
-  return "required";
-}
-
-export function isHouseContinuityCapsuleShape(value: unknown): value is HouseContinuityCapsule {
-  return isRecord(value) &&
-    typeof value.revisionId === "string" &&
-    value.revisionId.length > 0 &&
-    (value.previousRevisionId === null || typeof value.previousRevisionId === "string") &&
-    typeof value.updatedAtRound === "number" &&
-    typeof value.updatedAtPhase === "string" &&
-    typeof value.summary === "string" &&
-    Array.isArray(value.alliances) &&
-    Array.isArray(value.tensions) &&
-    Array.isArray(value.promises) &&
-    Array.isArray(value.voteBlocs) &&
-    Array.isArray(value.mingleDiscoveries) &&
-    Array.isArray(value.playerTrajectories) &&
-    Array.isArray(value.storyArcs) &&
-    Array.isArray(value.droppedThreads) &&
-    Array.isArray(value.openQuestions) &&
-    typeof value.changedSincePrevious === "string" &&
-    !hasForbiddenPrivateFields(value);
-}
-
-export type HouseContinuityAdmission =
-  | { ok: true; capsule: HouseContinuityCapsule | null; requirement: HouseContinuityRequirement }
-  | { ok: false; reason: string };
-
-/**
- * Admit House continuity for recovery using the sealed checkpoint-time requirement.
- * Legacy checkpoints without a requirement marker keep the historical null-tolerant path
- * only when a valid capsule is present or when null is explicitly allowed by absence of
- * a "required" contract (null accepted for recovery runtime, passport handles diagnostics).
- */
-export function admitHouseContinuityForRecovery(params: {
-  requirement: unknown;
-  capsule: unknown;
-}): HouseContinuityAdmission {
-  const requirement = isHouseContinuityRequirement(params.requirement)
-    ? params.requirement
-    : null;
-
-  if (params.capsule != null && !isHouseContinuityCapsuleShape(params.capsule)) {
-    return { ok: false, reason: "house_continuity_malformed" };
-  }
-
-  const validCapsule = params.capsule != null && isHouseContinuityCapsuleShape(params.capsule)
-    ? params.capsule
-    : null;
-
-  if (requirement === "required") {
-    if (!validCapsule) {
-      return { ok: false, reason: "house_continuity_required_missing" };
-    }
-    return { ok: true, capsule: validCapsule, requirement };
-  }
-
-  if (requirement === "disabled" || requirement === "awaiting_first_valid_update") {
-    // Optional by contract: null is intentional; a present packet must still be well-formed
-    // (malformed already rejected above).
-    return {
-      ok: true,
-      capsule: validCapsule,
-      requirement,
-    };
-  }
-
-  // Legacy: no sealed requirement. Accept valid capsule or intentional null for runtime
-  // (passport still distinguishes diagnostic readiness separately).
-  return {
-    ok: true,
-    capsule: validCapsule,
-    requirement: validCapsule ? "required" : "disabled",
-  };
 }

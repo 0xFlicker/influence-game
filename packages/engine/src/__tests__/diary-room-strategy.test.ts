@@ -28,6 +28,7 @@ import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG, Phase, type UUID } from "../types";
 import type { PhaseRunnerContext } from "../phases";
 import { handleElimination } from "../phases/elimination";
+import { ProviderUnavailableError } from "../provider-execution";
 import { MockAgent } from "./mock-agent";
 
 class ScriptedDiaryAgent extends MockAgent {
@@ -119,8 +120,6 @@ function createDiaryHarness(options: {
       maxDiaryFollowUps: options.maxFollowUps ?? 1,
     },
     house,
-    undefined,
-    undefined,
     options.beforeAcceptedCommit,
   );
   diary.lastEliminatedName = "Nova";
@@ -128,6 +127,93 @@ function createDiaryHarness(options: {
 }
 
 describe("post-eviction diary compact strategy", () => {
+  it("limits House questions to the subject player's knowledge projection and prior diary", async () => {
+    const sageId = createUUID();
+    const atlasId = createUUID();
+    const nyxId = createUUID();
+    const gameState = new GameState([
+      { id: sageId, name: "Sage" },
+      { id: atlasId, name: "Atlas" },
+      { id: nyxId, name: "Nyx" },
+    ]);
+    gameState.startRound();
+    gameState.recordVote(sageId, atlasId, nyxId);
+
+    const logger = new TranscriptLogger(gameState);
+    logger.logPublic(atlasId, "PUBLIC_CANARY", Phase.LOBBY);
+    logger.logMingleMessage(atlasId, [sageId], "SUBJECT_HEARD_PRIVATE_CANARY");
+    logger.logMingleMessage(atlasId, [nyxId], "FOREIGN_PRIVATE_CANARY");
+    logger.logSystem("HOUSE_SUMMARY_CANARY", Phase.VOTE, undefined, undefined, "house_summary");
+    logger.logDiary("Nyx", "OTHER_DIARY_CANARY");
+    logger.logThinking(nyxId, "OPERATOR_TRACE_CANARY", Phase.VOTE);
+
+    const mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>([
+      [sageId, [{ from: "Atlas", text: "SUBJECT_HEARD_PRIVATE_CANARY" }]],
+      [atlasId, [{ from: "Nyx", text: "FOREIGN_PRIVATE_CANARY" }]],
+    ]);
+    const contextBuilder = new ContextBuilder(gameState, logger, mingleInbox, 3);
+    const sage = new ScriptedDiaryAgent(sageId, "Sage", ACTIVE_STATE);
+    sage.answers.push({
+      message: "I still trust Atlas.",
+      thinking: "Keep the relationship warm.",
+      strategyDelta: null,
+    });
+    const house = new ScriptedHouse();
+    const diary = new DiaryRoom(
+      gameState,
+      logger,
+      contextBuilder,
+      new Map([[sageId, sage]]),
+      {
+        ...DEFAULT_CONFIG,
+        diaryRoomAfterPhases: [Phase.VOTE],
+        maxDiaryFollowUps: 0,
+      },
+      house,
+    );
+    diary.diaryEntries.push(
+      {
+        round: 1,
+        precedingPhase: Phase.LOBBY,
+        agentId: sageId,
+        agentName: "Sage",
+        question: "OWN_PRIOR_QUESTION_CANARY",
+        answer: "OWN_PRIOR_ANSWER_CANARY",
+      },
+      {
+        round: 1,
+        precedingPhase: Phase.LOBBY,
+        agentId: nyxId,
+        agentName: "Nyx",
+        question: "OTHER_PRIOR_QUESTION_CANARY",
+        answer: "OTHER_PRIOR_ANSWER_CANARY",
+      },
+    );
+
+    await diary.runDiaryRoom(Phase.VOTE);
+
+    expect(house.questionContexts).toHaveLength(1);
+    const questionContext = house.questionContexts[0]!;
+    expect(questionContext.playerKnowledge).toMatchObject({
+      selfId: sageId,
+      selfName: "Sage",
+      phase: Phase.DIARY_ROOM,
+      recallPromptClass: "strategic_decision",
+    });
+    const visibleContext = JSON.stringify(questionContext);
+    expect(visibleContext).toContain("PUBLIC_CANARY");
+    expect(visibleContext).toContain("SUBJECT_HEARD_PRIVATE_CANARY");
+    expect(visibleContext).toContain("Your standard Vote");
+    expect(visibleContext).toContain("OWN_PRIOR_QUESTION_CANARY");
+    expect(visibleContext).toContain("OWN_PRIOR_ANSWER_CANARY");
+    expect(visibleContext).not.toContain("FOREIGN_PRIVATE_CANARY");
+    expect(visibleContext).not.toContain("HOUSE_SUMMARY_CANARY");
+    expect(visibleContext).not.toContain("OTHER_DIARY_CANARY");
+    expect(visibleContext).not.toContain("OTHER_PRIOR_QUESTION_CANARY");
+    expect(visibleContext).not.toContain("OTHER_PRIOR_ANSWER_CANARY");
+    expect(visibleContext).not.toContain("OPERATOR_TRACE_CANARY");
+  });
+
   it("assigns stable distinct interview ordinals across concurrent reconstruction", async () => {
     const players = [
       { id: createUUID(), name: "Atlas" },
@@ -464,7 +550,7 @@ describe("post-eviction diary compact strategy", () => {
   it("moves failed post-eviction interviews to repair required without hiding prior strategy", async () => {
     class FailingHouse extends ScriptedHouse {
       override async generateQuestion(): Promise<string> {
-        throw new Error("question unavailable");
+        throw new ProviderUnavailableError("question unavailable", "service_error");
       }
     }
     const house = new FailingHouse();
@@ -488,6 +574,9 @@ describe("post-eviction diary compact strategy", () => {
   it("moves a failed first answer to repair required", async () => {
     const { agent, diary } = createDiaryHarness();
     agent.markCompactStrategyReconciliationRequired();
+    agent.getDiaryEntry = async () => {
+      throw new ProviderUnavailableError("answer unavailable", "service_error");
+    };
     const originalError = console.error;
     console.error = mock(() => undefined);
     try {
@@ -498,6 +587,17 @@ describe("post-eviction diary compact strategy", () => {
 
     expect(agent.boundaries).toEqual(["post_eviction_diary"]);
     expect(agent.getCompactStrategyState().lifecycle).toBe("repair_required");
+  });
+
+  it("propagates non-provider diary defects instead of disguising them as absence", async () => {
+    const { agent, diary } = createDiaryHarness();
+    agent.getDiaryEntry = async () => {
+      throw new TypeError("diary invariant failed");
+    };
+
+    await expect(diary.runDiaryRoom(Phase.FORMAT_RESOLVE))
+      .rejects.toThrow("diary invariant failed");
+    expect(agent.boundaries).toEqual([]);
   });
 
   it("preserves repair and the prior epoch after a failed repair follow-up", async () => {

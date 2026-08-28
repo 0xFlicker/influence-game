@@ -2241,18 +2241,9 @@ describe("admin route RBAC", () => {
       ],
       roundHistory: [{ round: capsule.round, myVotes: { empower: "Mira" } }],
     }));
-    capsule.houseContinuityCapsule = {
-      ...capsule.houseContinuityCapsule!,
-      summary: privateHouseSummary,
-      alliances: [
-        {
-          name: "test alliance",
-          members: ["Atlas", "Mira"],
-          status: "speculative",
-          confidence: "medium",
-          evidence: ["private alliance read"],
-        },
-      ],
+    capsule.houseNarrativeContinuityCapsule = {
+      ...capsule.houseNarrativeContinuityCapsule!,
+      privateNarrativeNotebook: privateHouseSummary,
     };
     const checkpoint = await writeGameCheckpoint(db, {
       gameId,

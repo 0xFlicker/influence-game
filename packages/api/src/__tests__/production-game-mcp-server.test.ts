@@ -964,7 +964,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(paginatedProducerAnalysisTool.outputSchema)).toContain("traceManifests");
     expect(JSON.stringify(paginatedProducerAnalysisTool.outputSchema)).toContain("nextCursor");
     const producerAnalysisResponse = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       ok: true,
       game: {
         id: "game-1",
@@ -1004,7 +1004,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expectMatchesJsonSchema(producerAnalysisResponse, paginatedProducerAnalysisTool.outputSchema);
     expect(() => expectMatchesJsonSchema({
       ...producerAnalysisResponse,
-      schemaVersion: 1,
+      schemaVersion: 2,
     }, paginatedProducerAnalysisTool.outputSchema)).toThrow("oneOf");
     for (const indexKey of ["cognitiveArtifacts", "traceManifests"] as const) {
       for (const metadataKey of ["pageSize", "totalCount", "nextCursor"] as const) {
@@ -1082,11 +1082,14 @@ describe("ProductionGameMcpJsonRpcServer", () => {
     expect(JSON.stringify(roundFactsTool.outputSchema)).toContain(
       "\"sealed\",\"revealed\",\"not_applicable\",\"unavailable\"",
     );
+    expect(JSON.stringify(roundFactsTool.outputSchema)).toContain(
+      "\"save\",\"exit\"",
+    );
     expect(JSON.stringify(roundFactsTool.outputSchema)).not.toContain("sealedBallots");
     expect(JSON.stringify(roundFactsTool.outputSchema)).not.toContain("sealedBallotAccess");
     expect(roundFactsTool.outputSchema).toMatchObject({
       properties: {
-        schemaVersion: { const: 2 },
+        schemaVersion: { const: 3 },
         game: {
           required: expect.arrayContaining([
             "gameKernel",
@@ -1100,7 +1103,7 @@ describe("ProductionGameMcpJsonRpcServer", () => {
       "stored_kernel_event_contradiction",
     );
     expectMatchesJsonSchema({
-      schemaVersion: 2,
+      schemaVersion: 3,
       game: {
         gameKernel: "classic",
         gameKernelSource: "stored",

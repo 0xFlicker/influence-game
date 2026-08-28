@@ -617,8 +617,7 @@ async function readMaterializedSource(
         roster: canonicalRoster,
         continuity: {
           playerContinuityCapsules: historical.resumeFrom.playerContinuityCapsules ?? [],
-          houseContinuityCapsule: historical.resumeFrom.houseContinuityCapsule,
-          houseContinuityRequirement: historical.resumeFrom.houseContinuityRequirement,
+          houseNarrativeContinuityCapsule: historical.resumeFrom.houseNarrativeContinuityCapsule,
           tokenCostCursor: historical.resumeFrom.tokenCostCursor,
         },
         transcriptReplay: eligibleTranscriptReplay,

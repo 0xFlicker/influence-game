@@ -94,14 +94,14 @@
  *   match, serialized-cost, and terminal-reason diagnostics.
  * - Batch/game instrumentation also includes content-free `houseSummaryCadence`
  *   totals by actor coordinate: eligible/emitted/preflight/model-skip/failure counts,
- *   provider/fact calls, returned bytes, selected sources, unique call identities,
- *   and known-token reconciliation. Exact fact/source payloads remain private traces.
+ *   provider calls and usage, pending-delta disposition, unique call identities,
+ *   and known-token reconciliation. Authored House prose remains presentation.
  *
  * Use JSONL artifacts for post-run analysis instead of parsing ANSI-colored
  * `game-{N}.txt` output.
  *
  * Live standard rounds make one House `mingle-room-assignment` request from the
- * living roster and locked format, then emit one assignment record per player
+ * remaining roster and locked format, then emit one assignment record per player
  * with source/repair metadata. They do not request per-player `mingle-intent`;
  * historical traces and isolated prompt-lab fixtures may still contain it.
  * Named-alliance records are inspectable through both turns and canonical
@@ -109,13 +109,16 @@
  * `ceil(alive / 4)` access set, underrepresentation preference, and engine
  * repair notes without creating alliance facts. Only finalized players receive
  * proposer `alliance-action` calls; invitee response/counter calls remain
- * demand-driven. Each call exposes only its current legal opportunity, selected
- * agents retain propose/amend/pass ownership, and the engine binds proposal/version
- * identity and maps request-local amendment handles. `alliance-huddle-schedule` turns capture private House
+ * demand-driven. Each provider call exposes only its current legal opportunity
+ * through a closed nested decision union, while accepted artifacts retain the
+ * flat canonical ID-based shape. Selected agents retain propose/amend/pass
+ * ownership, and the engine binds proposal/version identity and maps request-local
+ * amendment handles. `alliance-huddle-schedule` turns capture private House
  * grant/skip rationale, `alliance-huddle-turn` records capture member speech
  * plus structured target/action/commitment/contingency/dissent facts, and
  * `alliance-huddle-outcome` records carry those facts forward alongside a
- * compact House summary. Huddle transcript entries use `scope: "huddle"` and
+ * compact House summary. Repeated outcome calls use their one-based position in
+ * the sorted schedule as a stable provider logical-call ordinal. Huddle transcript entries use `scope: "huddle"` and
  * are producer/debug evidence, not public/player-safe live transcript.
  * Modern product-dialogue capture also carries additive normalized actor
  * identity, audience, dialogue kind, and formal-speech correlation context for
@@ -138,6 +141,14 @@
  * is diagnostic evidence, never canonical game fact. Safety Bounce pointer
  * prompts render the acting player's computed status and the exact consequence:
  * SAFE makes the target VULNERABLE; VULNERABLE makes the target SAFE.
+ * Provider requests call the renamed formats Save-or-Exit (`save_or_exit`),
+ * The Short List (`short_list`), and Highest Count (`highest_count`), use
+ * remaining/exited/exit vocabulary, and expose matching provider tool names.
+ * The engine maps those provider values back to canonical
+ * `save_or_eliminate`/`vote_bomb`/`majority_elimination` format IDs and the
+ * canonical `eliminate` action before validation, journaling, checkpointing,
+ * or event emission. Raw simulation events remain canonical evidence; derived
+ * MCP reads translate them to the current surface vocabulary.
  * Specialized
  * `candidate-selection`, `power-action`, and Council records remain readable
  * for legacy/classic runs but are not the expected standard-round lane.
@@ -167,10 +178,9 @@
  * effective analytical revision; simulation comparisons should hold the same
  * snapshot constant rather than relying on a mutable display profile.
  *
- * `--rich-producer` enables private House Strategy Bible Packet updates,
- * packet-backed long-form House summaries, bounded format-resolution diary
- * sessions, legacy Council diary compatibility, and producer-brief records for
- * validating House strategic carry-forward through the local game MCP.
+ * `--rich-producer` enables House-authored private long-form summaries over the
+ * same narrative notebook, bounded format-resolution diary sessions, and legacy
+ * Council diary compatibility. It adds no separate House memory or proof calls.
  * Use `--diary` when you only want those bounded diary sessions without the
  * private rich-producer packet stack.
  * Default console mode (no `--chatty`) prints an **operator action feed**: phase
@@ -181,6 +191,10 @@
  * `--no-house-summaries` to suppress the complete phase-cadence House MC path.
  * House prose is a system transcript row with `dialogueKind: "house_summary"`;
  * canonical events/projections, never that prose, remain game-state authority.
+ * Simulation endgame classification and stage/Judgment instrumentation likewise
+ * consume canonical `endgame.stage_set`, accepted Judgment speech, and jury events.
+ * Changing, translating, duplicating, or omitting a House banner cannot change
+ * the reported endgame type or accepted jury counts.
  */
 
 import type OpenAI from "openai";
@@ -208,10 +222,12 @@ import {
 } from "./token-tracker";
 import {
   aggregateInstrumentation,
+  classifyCanonicalEndgame,
   instrumentGame,
   type BatchInstrumentation,
   type GameInstrumentation,
   type GitMetadata,
+  type SimulationEndgameType,
   type SimulationRunMetadata,
 } from "./simulation-instrumentation";
 import {
@@ -279,7 +295,7 @@ export interface SimArgs {
   operatorFeed: boolean;
   /** Print concise House MC summaries live (default on; independent of chatty). */
   houseSummaries: boolean;
-  /** Enable House Strategy Bible, long-form summaries, producer briefs, and bounded diary validation. */
+  /** Enable House long-form narration and bounded diary validation. */
   richProducer?: boolean;
   /** Enable bounded diary-room sessions in simulation config. */
   enableDiary?: boolean;
@@ -627,9 +643,7 @@ export function buildSimulationConfig(
     mingleSessionsPerRound: mingle ? 3 : DEFAULT_CONFIG.mingleSessionsPerRound,
     agentActionTimeoutMs: options.agentActionTimeoutMs ?? 90_000,
     enableHouseRoundSummaries: true,
-    enableHouseStrategyBible: richProducer,
     enableHouseLongFormSummaries: richProducer,
-    enableHouseProducerBriefs: richProducer,
   };
 }
 
@@ -881,7 +895,7 @@ export interface GameResult {
   winnerPersona: string | undefined;
   rounds: number;
   eliminationOrder: string[];
-  endgameType: string;
+  endgameType: SimulationEndgameType | "error";
   playerPersonas: Record<string, string>;
   durationMs: number;
   transcriptPath: string;
@@ -932,22 +946,6 @@ export interface AggregateStats {
     flexCostEstimates: CostEstimate[];
   };
   instrumentation: BatchInstrumentation;
-}
-
-// ---------------------------------------------------------------------------
-// Extract data from transcript
-// ---------------------------------------------------------------------------
-
-function extractEndgameType(transcript: readonly TranscriptEntry[]): string {
-  let lastStage = "normal";
-  for (const entry of transcript) {
-    if (entry.scope === "system") {
-      if (entry.text.includes("THE JUDGMENT")) lastStage = "judgment";
-      else if (entry.text.includes("THE TRIBUNAL")) lastStage = "tribunal";
-      else if (entry.text.includes("THE RECKONING")) lastStage = "reckoning";
-    }
-  }
-  return lastStage;
 }
 
 function getSurvivalRound(
@@ -1213,8 +1211,6 @@ export function formatAgentTurnTrace(event: AgentTurnEvent): string | null {
 
 /** Actions that are pure producer/debug and skip the default operator action feed. */
 const OPERATOR_FEED_SKIP_ACTIONS = new Set([
-  "house-producer-brief",
-  "house-strategy-bible",
   "house-long-form-summary",
   "diary-answer",
 ]);
@@ -1330,9 +1326,11 @@ export function renderMarkdownSummary(stats: AggregateStats, results: GameResult
   lines.push(`| Reveal phases | ${stats.instrumentation.council.revealPhases} |`);
   lines.push(`| Council phases | ${stats.instrumentation.council.councilPhases} |`);
   lines.push(`| Council votes | ${stats.instrumentation.council.councilVotes} |`);
-  lines.push(`| Reckoning markers | ${stats.instrumentation.endgame.reckoning} |`);
-  lines.push(`| Tribunal markers | ${stats.instrumentation.endgame.tribunal} |`);
-  lines.push(`| Judgment markers | ${stats.instrumentation.endgame.judgment} |`);
+  lines.push(`| Reckoning stage events | ${stats.instrumentation.endgame.reckoning} |`);
+  lines.push(`| Tribunal stage events | ${stats.instrumentation.endgame.tribunal} |`);
+  lines.push(`| Judgment stage events | ${stats.instrumentation.endgame.judgment} |`);
+  lines.push(`| Accepted jury questions | ${stats.instrumentation.endgame.juryQuestions} |`);
+  lines.push(`| Accepted jury ballots | ${stats.instrumentation.endgame.juryVotes} |`);
   lines.push(`| Mingle rooms | ${stats.instrumentation.rooms.totalRooms} |`);
   lines.push(`| Mingle sessions instrumented | ${stats.instrumentation.rooms.mingleSessions.length} |`);
   lines.push(`| Room exclusions | ${stats.instrumentation.rooms.totalExclusions} |`);
@@ -1342,11 +1340,9 @@ export function renderMarkdownSummary(stats: AggregateStats, results: GameResult
   lines.push(`| Fallback room assignments | ${stats.instrumentation.rooms.assignmentSources.fallback} |`);
   lines.push(`| Movement-derived room records | ${stats.instrumentation.rooms.assignmentSources.movement} |`);
   lines.push(`| Room assignment repair notes | ${stats.instrumentation.rooms.assignmentSources.repairNotes} |`);
-  lines.push(`| House Strategy Bible calls | ${stats.instrumentation.houseProducer.strategyBibleCalls} |`);
   lines.push(`| House MC summary calls | ${stats.instrumentation.houseProducer.mcSummaryCalls} |`);
   lines.push(`| House MC transcript entries | ${stats.instrumentation.houseProducer.mcSummaryTranscriptEntries} |`);
   lines.push(`| House long-form summaries | ${stats.instrumentation.houseProducer.longFormSummaryCalls} |`);
-  lines.push(`| House producer briefs | ${stats.instrumentation.houseProducer.producerBriefCalls} |`);
   lines.push(`| Immediate repeat rooms flagged | ${stats.instrumentation.rooms.repeatPairFlags.immediateRepeats} |`);
   lines.push(`| Avoidable consecutive exclusions flagged | ${stats.instrumentation.rooms.exclusionFlags.avoidableConsecutiveExclusions} |`);
   lines.push(`| LLM empty/fallback responses | ${stats.instrumentation.actionUsage.totalEmptyResponses} |`);
@@ -1998,7 +1994,7 @@ async function main() {
   } else {
     console.log("House MC summaries: off.");
   }
-  if (args.richProducer === true) console.log("Rich producer mode enabled: House Strategy Bible, long-form summaries, producer briefs, and bounded diary sessions will be captured.");
+  if (args.richProducer === true) console.log("Rich producer mode enabled: House long-form narration and bounded diary sessions will be captured.");
   else if (args.enableDiary === true) console.log("Diary mode enabled: bounded diary sessions will run in simulation config.");
   console.log(`Git: ${metadata.git.commitShortSha ?? "unknown"} (${metadata.git.branch ?? "unknown branch"}${metadata.git.isDirty ? ", dirty" : ""})`);
   if (args.personas) console.log(`Personas: ${args.personas.join(", ")}`);
@@ -2120,9 +2116,7 @@ async function main() {
       openAIReasoningSummary: openAIReasoningSummary ?? "off",
       houseProducer: {
         enableHouseRoundSummaries: simConfig.enableHouseRoundSummaries ?? true,
-        enableHouseStrategyBible: simConfig.enableHouseStrategyBible ?? false,
         enableHouseLongFormSummaries: simConfig.enableHouseLongFormSummaries ?? false,
-        enableHouseProducerBriefs: simConfig.enableHouseProducerBriefs ?? false,
         diaryRoomAfterPhases: simConfig.diaryRoomAfterPhases ?? [],
       },
       transcriptPath,
@@ -2163,7 +2157,8 @@ async function main() {
       const durationMs = Date.now() - startTime;
 
       const eliminationOrder = result.eliminationOrder;
-      const endgameType = extractEndgameType(result.transcript);
+      const canonicalEvents = runner.getCanonicalEvents();
+      const endgameType = classifyCanonicalEndgame(canonicalEvents);
 
       const gameTotalUsage = gameTracker.getTotalUsage();
       const perAgentUsage = gameTracker.getAllUsage();
@@ -2171,7 +2166,8 @@ async function main() {
         result.transcript,
         perAgentUsage,
         playerNameById,
-        runner.houseSummaryPhaseReceipts,
+        runner.houseSummaryPhaseTelemetry,
+        canonicalEvents,
       );
       const gameResult: GameResult = {
         gameNumber: g,
@@ -2220,7 +2216,7 @@ async function main() {
             metadata,
             result: gameResult,
             transcript: result.transcript,
-            canonicalEvents: runner.getCanonicalEvents(),
+            canonicalEvents,
           },
           null,
           2,
@@ -2232,12 +2228,14 @@ async function main() {
       const durationMs = Date.now() - startTime;
       console.error(`  Game ${g} FAILED after ${(durationMs / 1000).toFixed(0)}s: ${err}`);
       const transcript = [...runner.transcriptLog];
+      const canonicalEvents = runner.getCanonicalEvents();
       const perAgentUsage = gameTracker.getAllUsage();
       const instrumentation = instrumentGame(
         transcript,
         perAgentUsage,
         playerNameById,
-        runner.houseSummaryPhaseReceipts,
+        runner.houseSummaryPhaseTelemetry,
+        canonicalEvents,
       );
       const gameResult: GameResult = {
         gameNumber: g,

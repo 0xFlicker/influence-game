@@ -16,11 +16,19 @@ The owner-only postgame workflow that turns one to three completed Daily Free ga
 
 ## Review credit
 
-An owner-wide, zero-or-one metered entitlement to purchase an Owner Learning review. The published balance is spendable truth: `1` means a review can start now; `0` with `nextAvailableAt` means time alone will make the earned credit spendable; and `0` without a timestamp means another eligible Daily Free completion is required. Credits never stack and may be spent on any owned Agent Profile that has selectable current-strategy-family games. Starting metered analysis consumes the credit and begins the rolling 24-hour start interval in the same transaction. Persisted sysops use explicit `unlimited` mode with no numeric balance and consume neither credits nor the rolling interval. Thin evidence, disabled live generation, input selection, and deterministic preflight consume nothing.
+An owner-wide, zero-or-one metered entitlement to purchase an Owner Learning review. The published balance is spendable truth: `1` means a review can start now; `0` with `nextAvailableAt` means time alone will make the earned credit spendable; and `0` without a timestamp means another eligible Daily Free completion is required. Credits never stack and may be spent on any owned Agent Profile that has selectable current-strategy-family games. Starting metered analysis consumes the credit and begins the rolling 24-hour start interval in the same transaction. The same review may use its one recovery without consuming another entitlement or emitting another `credit_consumed`; any new provider attempt still records its own usage and cost. Persisted sysops use explicit `unlimited` mode with no numeric balance and consume neither credits nor the rolling interval. Thin evidence, disabled live generation, input selection, and deterministic preflight consume nothing.
 
 ## Learning review
 
-A durable Owner Learning analysis addressed by review ID and shared by web and MCP. One owner may have at most one unresolved review. Starting buys the review: owners cannot cancel it or receive a refund after provider failure. They may retry within the lifetime call budget, resolve failed work, keep their current strategy, make a linked manual update, or apply only the exact persisted proposal. Terminal resolutions are `applied`, `manual_update`, `declined`, `no_change`, `failed`, and `superseded`; only the unique application row means the generated proposal was accepted.
+A durable Owner Learning analysis addressed by review ID and shared by web and MCP. One owner may have at most one unresolved review. Starting buys the review: owners cannot cancel it or receive a refund after provider failure. A retryable failure has exactly one no-credit owner recovery that reuses the last validated checkpoint, preserves every earlier diagnostic and accounting receipt, and retries a failed logical turn as attempt 2 at the same ordinal. Owners may close failed work, keep their current strategy, make a linked manual update, or apply only the exact persisted proposal. Terminal resolutions are `applied`, `manual_update`, `declined`, `no_change`, `failed`, and `superseded`; only the unique application row means the generated proposal was accepted.
+
+## Learning review invocation attempt
+
+One append-only provider execution for a logical Owner Learning turn. `ordinal` remains the bounded logical turn 1–4; `attemptOrdinal` distinguishes the original attempt from the one permitted recovery. Before dispatch, the attempt durably stages the exact credential-scrubbed request contract; each raw transport response is appended at observation time, and the decoded provider result is staged before worker validation. An attempt keeps its request identity, provider-turn protocol, transport and response receipts, evidence/diagnostic linkage, token usage, cost, and retry ancestry forever. At most one attempt may succeed for a logical ordinal.
+
+## Learning review failure diagnostic
+
+The append-only, review-scoped record that correlates a terminal failure with its exact worker phase, safe/internal code, fingerprint, attempt/provider coordinates, manifest state, and private evidence envelope. The compact summary is safe for the admin ledger. The credential-scrubbed envelope retains authorized strategy/evidence and raw provider or internal-error evidence under a deterministic non-expiring object prefix. Only a freshly authorized `admin` or `sysop` may read its bounded content; owner REST/web DTOs and production MCP never expose it. A legacy failure whose old worker discarded the original body is explicitly `legacy_unavailable` rather than reconstructed.
 
 ## Strategy Health Check
 
@@ -115,15 +123,15 @@ The durable match-spine identity for a deployed game (for example `classic` for 
 
 ## Format kernel
 
-The standard-round spine in which empower selects an agent who chooses the round’s elimination format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format resolves to elimination. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default elimination path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, Even Votes, and Restricted History.
+The standard-round spine in which empower selects an agent who chooses the round’s exit format from a House-offered menu, agents may mingle under that format’s fixed rules, and the format sends one player out. Under the format kernel, classic Power (eliminate / protect / pass) and two-candidate Council are not the default path. On format-kernel reader surfaces those classic sections are omitted rather than left unresolved. See also game kernel, round format, format catalog, format menu, Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History.
 
 ## Round format
 
-The active elimination (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-eliminate, Vote Bomb, Safety Bounce, Majority Elimination, Even Votes, and Restricted History.
+The active exit (and optional social) ruleset for one standard round after the empowered player’s format pick. A round format has a fixed public rule sheet for that round; The House does not apply a separate post-pick mechanical twist. Default catalog formats include Save-or-Exit, The Short List, Safety Bounce, Highest Count, Even Votes, and Restricted History.
 
 ## Format catalog
 
-The registered set of round formats The House may offer under the format kernel. Catalog membership is code-registered, not invented from free-form config. Sealed single-elim formats that differ only in tally math are expected to share one sealed-ballot resolve path; public-chain, preselection/split-field, and multi-elim formats are separate capability classes. See also round format, format menu, Majority Elimination.
+The registered set of round formats The House may offer under the format kernel. Catalog membership is code-registered, not invented from free-form config. Sealed single-exit formats that differ only in tally math are expected to share one sealed-ballot resolve path; public-chain, preselection/split-field, and multi-exit formats are separate capability classes. See also round format, format menu, Highest Count.
 
 ## Format manifest
 
@@ -133,21 +141,25 @@ The non-empty, duplicate-free subset of registered formats frozen when a game is
 
 The two distinct legal round formats The House offers after empower resolves when at least two manifest cards are admitted for the current round. The empowered agent must pick exactly one. Menu construction filters round-ineligible cards first, then applies soft anti-repeat pressure: exclude last round’s format when at least two other cards remain, otherwise sample two from the available set. Exactly one available card skips the menu and empowered pick without inventing either event. It is not a post-pick parameter twist inside a format. See also format manifest.
 
-## Save-or-eliminate
+## Format surface vocabulary
 
-A launch round format where each alive agent casts one ballot as either a save (+1 net to another living agent) or an eliminate (−1 net to another living agent). Lowest net score is eliminated; ties are broken by the empowered agent.
+Canonical format IDs remain durable engine and event authority. Provider, product, and ordinary MCP boundaries translate them to current surface IDs and names: `save_or_eliminate` → `save_or_exit` / Save-or-Exit, `vote_bomb` → `short_list` / The Short List, and `majority_elimination` → `highest_count` / Highest Count. MCP inputs accept only surface IDs, while old persisted games translate on read. Raw transcript and producer-evidence prose remains historical and is never rewritten.
 
-## Vote Bomb
+## Save-or-Exit
 
-Also called Fewest Votes. A launch round format where each alive agent casts one non-self elimination-direction vote. Agents who receive zero votes are safe. Among agents with at least one vote, fewest votes is eliminated; ties are broken by the empowered agent.
+A launch round format where each remaining agent casts one ballot as either SAVE (+1 net to another remaining agent) or EXIT (−1 net to another remaining agent). Lowest net score exits; ties are broken by the empowered agent. Canonical engine ID: `save_or_eliminate`. Surface ID: `save_or_exit`.
+
+## The Short List
+
+A launch round format where each remaining agent casts one non-self vote. Agents who receive zero votes are safe. Among agents with at least one vote, the fewest votes exits; ties are broken by the empowered agent. Canonical engine ID: `vote_bomb`. Surface ID: `short_list`.
 
 ## Safety Bounce
 
 A launch round format where one random starter begins safe and agents alternate pointing: a safe actor makes their target vulnerable, a vulnerable actor makes their target safe, until every agent is classified. Only the vulnerable pool is eligible for the elimination vote; most votes in that pool is eliminated, with an empowered-agent tie-break. Public order under the format kernel is mingle → bounce → vote.
 
-## Majority Elimination
+## Highest Count
 
-A default catalog round format where each alive agent casts one sealed non-self elimination-direction vote. The player with the most votes is eliminated; ties for the highest total are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from Vote Bomb (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote.
+A default catalog round format where each remaining agent casts one sealed non-self vote. The player with the highest total exits; ties are broken by the empowered agent. Social order is mingle → sealed ballot. It is the pure plurality / pile-on card in the format meta, distinct from The Short List (fewest positive among those with votes) and from Safety Bounce’s vulnerable-pool vote. Canonical engine ID: `majority_elimination`. Surface ID: `highest_count`.
 
 ## Even Votes
 
@@ -189,7 +201,7 @@ reduced-motion timing without changing cue order or canonical outcomes.
 
 ## Elimination message
 
-The eliminated agent's one-time final public statement, requested only after `player.eliminated` commits. It is not pre-generated by the roster. Its prompt receives named voters when the deciding vote is public; for a sealed format ballot it receives counts only (including Save-or-Eliminate count components) and no voter identities. The accepted statement is recorded as `player.elimination_message_recorded`.
+The exited agent's one-time final public statement, requested only after canonical `player.eliminated` commits. It is not pre-generated by the roster. Its prompt receives named voters when the deciding vote is public; for a sealed format ballot it receives counts only (including Save-or-Exit count components) and no voter identities. The accepted statement is recorded canonically as `player.elimination_message_recorded`.
 
 ## Revealed vote ledger
 
@@ -211,21 +223,21 @@ The producer-side placement of alive agents into initial Format Mingle rooms usi
 
 A private producer access decision made once per Format Mingle alliance-action window. The House selects a scarce set of eligible living players to receive the existing propose, amend, or pass opportunity, preferring players underrepresented in active alliances. The engine validates and repairs the exact access quota; selected agents still own members and terms and may decline, while invitee response and consent remain independent. The plan creates no canonical alliance facts and gives The House no power to create, rewrite, activate, dissolve, or enforce an alliance.
 
-## Selective House beat
+## House narrative beat
 
-A concise audience-visible House narration opportunity scheduled after a meaningful actor-coordinate boundary. The runner decides whether a boundary has an audience-safe material delta before provider I/O. An emitted beat is supported by current-loop source aliases from canonical events, audience-safe projections, or explicitly public player dialogue. A preflight skip, model-selected no-material-change result, or provider failure emits no filler and never blocks canonical gameplay.
+A House-authored public summary attached to an engine-owned actor-coordinate boundary. It is presentation for human players, viewers, producers, and replay, and is published byte-for-byte after shape, non-empty, control-character, and beat-length validation. It is never a canonical event, result input, contestant memory, Recall Plan candidate, or authority for reconstructing a game fact.
 
-## House summary frontier
+## House narration context
 
-The bounded, server-authored input to a selective House beat: one phase boundary, a compact salience catalog, a read-only typed fact store, and compact prior narrative continuity. Canonical event and projection rows remain game-state authority. Dialogue rows are quotation evidence only and cannot establish a selection, tally, elimination, phase, or result. Private, diary, thinking, huddle, producer, and prior House/system rows are absent rather than merely labeled unavailable.
+The bounded omniscient context supplied to a House creative turn. It can contain direct canonical-event and projection data, public dialogue, private conversations and sealed decisions, diary Q&A, recent public House beats, and the private narrative notebook. It contains no source aliases, model-authored claims, receipts, fact-read action, or renderer registry. The House may interpret and reveal this information to human viewers; reducers and AI contestant prompts never derive knowledge or state from the resulting prose.
 
-## House narrative continuity
+## House private narrative notebook
 
-Compact versioned in-memory narration state carried between selective House beats. It may remember the last public beat, a bounded open thread at milestone cadence, prior supporting source lineage, and examined/emitted heads. It improves narrative flow but is not canonical game state, a fact source, Strategy Bible state, or checkpoint-resume continuity. A failed beat may carry one unseen delta to the next boundary once; success, skip, or a second failure clears it.
+One bounded, opaque showrunner snapshot carried inside `HouseNarrativeContinuityV2`. A non-null accepted update replaces the whole notebook; null, malformed output, refusal, or exhaustion preserves the previous snapshot. The notebook may carry private arcs and unresolved narrative threads and feed later House summary and long-form prompts. It never enters viewer payload fields or any AI contestant, diary-interviewer, or Judgment prompt.
 
-## House summary phase receipt
+## House summary phase telemetry
 
-A content-free private accounting record for one scheduled House beat. It records boundary/status, provider and fact-call counts, returned-byte and selected-source counts, call identities, and provider-reported usage availability. Exact source coordinates, fact bodies, prompts, tool payloads, outputs, and diagnostics stay in producer-private traces. Simulation instrumentation reconciles receipt call identities and known token subtotals with `TokenTracker`; missing usage, effective tier, or pricing makes realized-cost proof inconclusive rather than zero.
+Engine-generated status and provider accounting for one scheduled House beat: boundary, outcome, provider calls and usage, and pending-delta disposition. It contains no model-authored factual attestation and consumes no model tokens. Simulation instrumentation reconciles its call identities and known token subtotals with `TokenTracker`; missing usage, tier, or pricing remains explicitly unavailable rather than zero.
 
 ## Strategy signal
 
@@ -249,13 +261,13 @@ A server-authored, deterministic context-selection contract for one agent call. 
 
 **Lanes (render order):**
 
-- **Protected** — Current Board Contract (canonical facts override all memory), compact strategy state, authorized compact official huddle outcomes (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent decisions and revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
+- **Protected** — Current Board Contract (canonical facts override all memory), compact strategy state, authorized typed huddle fact atoms (`participantPlayerIds` authorize inclusion server-side but never appear on the member-safe projection), and prompt-required current receipts (recent decisions and revealed vote ledger). Reserved first in the prompt-class budget; never trimmed to free history space.
 - **Hot** — Active-room Mingle conversation for the current turn only. Distinct from historical archive recall.
 - **History** — Bounded public + actor-owned Mingle archive evidence, only for `strategic_decision`. Eligibility uses immutable `speakerPlayerId` / `audiencePlayerIds` before ranking; missing/ambiguous legacy identity fails closed (no display-name fallback). Selected prose is historical evidence only.
 
 Protected material is never truncated to make room for history. When protected truth alone exceeds the nominal envelope, strategic decisions may still use at most 1,200 history characters; ordinary speech keeps no history reserve. This protected-overflow exception is the only way history may extend beyond the nominal prompt-class envelope.
 
-**Privacy and legacy:** Thinking, `reasoningContext`, raw huddle dialogue, diary, whisper, system, sealed, and producer rows are ineligible before candidate counts or diagnostics. Foreign private Mingle must not change another actor's plan, receipt, or event boundary. Older huddle outcomes recover a participant snapshot only from the matching completed-session `speakerIds`; otherwise the outcome is unavailable for recall.
+**Privacy and legacy:** Thinking, `reasoningContext`, raw huddle dialogue, diary, whisper, system, sealed, and producer rows are ineligible before candidate counts or diagnostics. Foreign private Mingle must not change another actor's plan, receipt, or event boundary. A historical payload-v1 huddle outcome preserves only safe session metadata and an optional participant snapshot; its old summary prose contributes `facts: []`. The snapshot may be recovered only from matching completed-session `speakerIds`; otherwise the outcome is unavailable for recall.
 
 **Evaluation artifact:** Simulation batches write `game-N-recall-plan.json` — a producer-only structural aggregate (`coverage: "structural_recall_receipts"`) of prompt-class counts, lane/source-class counts, budget token estimates (`ceil(chars/4)`), and actor-authorized event boundaries. It never stores dialogue, names, entry IDs, rejected counts, prompts, thinking, or reasoning. Full `game-N.json` / private traces remain producer artifacts and are **not** the R13 promotion input; the deterministic gate lives in `context-recall-evaluation.test.ts` against a frozen late-game corpus.
 
@@ -375,19 +387,11 @@ A per-result season record that connects a completed game to its agent, owner, a
 
 ## House MC
 
-The House's between-round narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a system transcript entry after a normal round resolves. Local simulations print `[House MC]` by default (with the operator action feed), independent of `--chatty`; disable with `--no-house-summaries`.
-
-## House Strategy Bible Packet
-
-A private producer/debug strategy state The House carries across a game run when enabled. It summarizes named alliance hypotheses, active tensions, broken or pending promises, vote blocs, Mingle discoveries, player trajectory reads, dramatic story arcs, dropped threads, and uncertainties so House MC summaries, House Long-Form Summaries, and diary-room producer briefs share continuous producer memory. It is House-owned analysis, not player-visible dialogue, agent prompt context, or canonical board state. Checkpoints seal a House-continuity requirement (`disabled`, `awaiting_first_valid_update`, or `required`) and, when required, a private House capsule for supported resume; intentional absence is non-blocking only when that sealed contract allows it.
-
-## House Producer Brief
-
-A private per-player diary-room setup derived from the House Strategy Bible Packet and current game context. It identifies the player's story role, pressure points, relevant alliance hypotheses, contradictions, and question angles so The House can ask sharper diary questions without revealing hidden producer analysis as player knowledge.
+The House's viewer-facing narrative voice. `GameRunner` emits a `house-mc-summary` agent-turn artifact and a system transcript entry after a material cadence boundary. The summary is House-authored prose for human players/viewers, not a deterministic rendering of proof claims. Local simulations print `[House MC]` by default (with the operator action feed), independent of `--chatty`; disable with `--no-house-summaries`.
 
 ## House Long-Form Summary
 
-A producer/audience catch-up summary The House emits in rich simulation runs between House Strategy Bible Packet updates. It explains teams forming or weakening, pressure changes, unresolved promises, and the House's open questions about likely next moves. It should be discoverable through simulation artifacts and the local game MCP, while preserving the separation between audience narration, private producer evidence, and player knowledge.
+A private producer catch-up The House authors in rich simulation runs from the bounded omniscient narration context, recent public beats, and the single private narrative notebook. The engine owns kind and covered-window metadata but does not render or fact-check the prose. Provider exhaustion yields no fabricated fallback. The artifact remains discoverable through producer simulation evidence and the local game MCP while staying outside AI contestant knowledge.
 
 ## House alliance hypothesis
 
@@ -415,7 +419,7 @@ A House-scheduled coordination scene for an active named alliance before a vote,
 
 ## Alliance huddle outcome
 
-The compact official memory artifact produced after a scheduled alliance huddle. It records ask, plan, promises, dissent, confidence, posture, and leak or betrayal claims where present. It carries alliance context forward for members. Raw huddle transcript remains outside generic public transcript/watch-intelligence surfaces, but the public web/replay alliance projection may show huddle speech as audience evidence without exposing hidden thinking or producer/debug internals.
+The official typed receipt produced after a scheduled alliance huddle. Payload v2 records engine-owned session metadata, an immutable server-private participant snapshot, and the exact accepted `AllianceHuddleFactAtom[]` authored by members. Atoms distinguish proposals, commitments, responses to earlier atom IDs, and contingencies using closed action, stance, condition, confidence, and player-ID fields. The engine renders member prompts, postgame analysis, MCP/API reads, and public web/replay copy from those atoms. Dialogue and optional House interpretation remain presentation evidence: neither can manufacture a target, promise, consensus, dissent, leak, betrayal, or posture. A modern empty huddle records `facts: []`; a historical prose-backed payload-v1 outcome also projects `facts: []`.
 
 ## Universal alliance
 
@@ -426,6 +430,10 @@ A named alliance whose living membership equals all alive players. Before the po
 A durable domain fact accepted by the game engine at the moment game state changes. Canonical game events are emitted by `GameState`, written to simulator `game-N-events.jsonl`, and distinct from transcript entries and `AgentTurnEvent` observability records: they are the replayable source for rebuilding board state, while transcripts and agent turns explain or display what happened.
 
 Judgment public speeches (opening statements, jury questions/answers, and closing arguments) are accepted public speech facts of type `judgment.speech_recorded`. They carry the public speech text and provenance only — not prompts, thinking, or private traces — and stamp the speech phase so MCP `filter_events` can query `CLOSING_ARGUMENTS` and related Judgment phases. Pre-fix Season 0 games may still have complete envelope logs without these speech events; durable-run `finaleIntegrity` surfaces that gap without invalidating `eventLogStatus`.
+
+## Simulation endgame classification
+
+The canonical, presentation-independent label written into simulation results. The latest `endgame.stage_set` event by sequence determines `reckoning`, `tribunal`, or `judgment`; a run with no stage event is `normal`. Simulation stage, accepted jury-question, jury-ballot, and endgame-phase instrumentation also counts canonical events. Transcript/House banners may display those moments but cannot classify or instrument them.
 
 ## Game projection
 

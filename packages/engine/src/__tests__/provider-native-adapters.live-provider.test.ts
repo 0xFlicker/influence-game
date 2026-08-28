@@ -9,6 +9,7 @@ import {
   executeModelInvocation,
 } from "../provider-adapters";
 import { ProviderExecutionCoordinator } from "../provider-execution";
+import { createExactStructuredOutputArtifact } from "../structured-output";
 
 const MODEL_TIMEOUT_MS = 120_000;
 
@@ -22,7 +23,22 @@ const voteSchema = {
   additionalProperties: false,
 } as const;
 
-const toolInvocation: ModelInvocation = {
+const voteToolArtifact = createExactStructuredOutputArtifact<
+  { target: "Mira" | "Vera"; rationale: string },
+  { target: "Mira" | "Vera"; rationale: string }
+>({
+  action: "test.provider-native-tool-vote.v1",
+  name: "cast_vote",
+  schema: voteSchema,
+  acceptedValueUsesProviderSchema: true,
+  decodeProviderPayload: (value) => ({ status: "valid", value }),
+  decodeAcceptedValue: (value) => ({
+    status: "valid",
+    value: value as { target: "Mira" | "Vera"; rationale: string },
+  }),
+});
+
+const toolInvocation: ModelInvocation<{ target: "Mira" | "Vera"; rationale: string }> = {
   messages: [{
     role: "user",
     content:
@@ -30,12 +46,8 @@ const toolInvocation: ModelInvocation = {
   }],
   result: {
     kind: "tool",
-    tools: [{
-      name: "cast_vote",
-      description: "Commit one legal Influence vote.",
-      strict: true,
-      parameters: voteSchema,
-    }],
+    artifact: voteToolArtifact,
+    description: "Commit one legal Influence vote.",
     choice: { name: "cast_vote" },
     allowParallel: false,
   },
@@ -52,9 +64,15 @@ const structuredInvocation: ModelInvocation = {
   }],
   result: {
     kind: "structured",
-    name: "influence_vote",
-    schema: voteSchema,
-    strict: true,
+    artifact: createExactStructuredOutputArtifact({
+      action: "test.provider-native-vote.v1",
+      name: "influence_vote",
+      schema: voteSchema,
+      decodeProviderPayload: (value) => ({ status: "valid", value }),
+      decodeAcceptedValue: (value) => value && typeof value === "object" && !Array.isArray(value)
+        ? { status: "valid", value: value as Record<string, unknown> }
+        : { status: "invalid", message: "Accepted vote must be an object." },
+    }),
   },
   outputTokenLimit: 512,
   temperature: 0.2,

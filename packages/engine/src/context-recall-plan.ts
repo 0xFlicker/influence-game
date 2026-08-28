@@ -23,6 +23,11 @@ import {
   cloneCompactStrategyState,
   createOpeningStrategyState,
 } from "./strategy-state";
+import {
+  formatAllianceHuddleFact,
+  formatAllianceHuddleFacts,
+  type AllianceHuddlePlayerName,
+} from "./alliance-huddle-outcome";
 
 // ---------------------------------------------------------------------------
 // Budget envelopes (fixture-calibrated character ceilings per prompt class)
@@ -584,12 +589,19 @@ export function compileRecallSeedTerms(params: {
       }
     }
   }
+  const playerName = (playerId: UUID): string => {
+    const alive = phaseContext.alivePlayers.find((player) => player.id === playerId);
+    if (alive) return alive.name;
+    for (const alliance of phaseContext.allianceContext?.activeAlliances ?? []) {
+      const memberIndex = alliance.memberIds.indexOf(playerId);
+      if (memberIndex >= 0) return alliance.memberNames[memberIndex] ?? playerId;
+    }
+    return playerId;
+  };
   for (const outcome of huddleOutcomes) {
-    addTokens(seeds, outcome.ask);
-    addTokens(seeds, outcome.plan);
-    addTokens(seeds, outcome.posture);
-    for (const promise of outcome.promises) addTokens(seeds, promise);
-    for (const claim of outcome.leakOrBetrayalClaims) addTokens(seeds, claim);
+    for (const fact of outcome.facts) {
+      addTokens(seeds, formatAllianceHuddleFact(fact, playerName));
+    }
   }
 
   // Exact current receipts
@@ -783,13 +795,7 @@ export function projectProtectedHuddleOutcomes(
       out.push({
         id: outcome.id,
         round: outcome.round,
-        ask: outcome.ask,
-        plan: outcome.plan,
-        promises: [...outcome.promises],
-        dissent: [...outcome.dissent],
-        confidence: outcome.confidence,
-        posture: outcome.posture,
-        leakOrBetrayalClaims: [...outcome.leakOrBetrayalClaims],
+        facts: structuredClone(outcome.facts),
       });
     }
   }
@@ -1080,22 +1086,16 @@ export function explainRecallPlanSelectionForPlan(
  */
 export function renderProtectedHuddleOutcomesSection(
   outcomes: readonly RecallProtectedHuddleOutcome[],
+  playerName: AllianceHuddlePlayerName = (playerId) => playerId,
 ): string {
   if (outcomes.length === 0) return "";
-  const lines = outcomes.map((outcome) => {
-    const promises = outcome.promises.length > 0 ? outcome.promises.join("; ") : "none";
-    const dissent = outcome.dissent.length > 0 ? outcome.dissent.join("; ") : "none";
-    const leaks =
-      outcome.leakOrBetrayalClaims.length > 0
-        ? outcome.leakOrBetrayalClaims.join("; ")
-        : "none";
-    return (
-      `- R${outcome.round} [${outcome.confidence}/${outcome.posture}]: ask=${outcome.ask}; ` +
-      `plan=${outcome.plan}; promises=${promises}; dissent=${dissent}; leakClaims=${leaks}`
-    );
-  });
+  const lines = outcomes.flatMap((outcome) =>
+    formatAllianceHuddleFacts(outcome.facts, playerName).map(
+      (factText) => `- R${outcome.round}: ${factText}`,
+    )
+  );
   return `## Official Huddle Outcomes
-Compact member-authorized strategic receipts from alliance huddles you participated in (including later-closed alliances). These are exact protected evidence, not ranked history.
+Member-authorized typed facts from alliance huddles you participated in (including later-closed alliances). These are exact protected evidence, not ranked history or House interpretation.
 ${lines.join("\n")}`;
 }
 

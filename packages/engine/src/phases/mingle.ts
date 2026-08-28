@@ -454,7 +454,7 @@ export async function runMinglePhase(
     round: gameState.round,
     phase,
     roomCount,
-    selectedFormatName: pressure?.selectedFormatName ?? pressure?.selectedFormat ?? null,
+    selectedFormatId: pressure?.selectedFormat ?? null,
     formatRuleSummary: pressure?.ruleSheetSummary ?? null,
     players: alivePlayers.map((player) => ({ id: player.id, name: player.name })),
   });

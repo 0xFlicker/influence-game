@@ -79,7 +79,7 @@ export interface CompletedResultsFormatRecapModel {
   ledger: Array<{
     voterName: string;
     targetName: string;
-    polarity: "Save" | "Eliminate" | null;
+    polarity: "Save" | "Exit" | null;
   }>;
   safetyBounce: {
     starterName: string | null;
@@ -225,9 +225,11 @@ function buildCellLookup(results: CompletedGameResultsRead): Map<string, Omit<Co
         formatRecap.selectedFormatId,
       );
       for (const entry of formatRecap.ballotPresentation.rollCall) {
-        const polarity = entry.polarity
-          ? labelFromToken(entry.polarity)
-          : null;
+        const polarity = entry.polarity === "eliminate"
+          ? "Exit"
+          : entry.polarity
+            ? labelFromToken(entry.polarity)
+            : null;
         setCell(
           cells,
           columnId,
@@ -400,9 +402,11 @@ function buildFormatRecapModel(
     ledger: recap.ballotPresentation.rollCall.map((entry) => ({
       voterName: entry.voter.name,
       targetName: entry.target?.name ?? "FORFEIT",
-      polarity: entry.polarity
-        ? (labelFromToken(entry.polarity) as "Save" | "Eliminate")
-        : null,
+      polarity: entry.polarity === "eliminate"
+        ? "Exit"
+        : entry.polarity
+          ? "Save"
+          : null,
     })),
     safetyBounce: recap.safetyBounce
       ? {
@@ -428,7 +432,7 @@ function formatScoringModel(
   if (!scoring) return null;
   if (scoring.kind === "save_or_eliminate") {
     return {
-      columns: ["Agent", "Saves", "Eliminates", "Net"],
+      columns: ["Agent", "Saves", "Exits", "Net"],
       rows: scoring.rows.map((row) => ({
         playerName: row.player.name,
         values: [

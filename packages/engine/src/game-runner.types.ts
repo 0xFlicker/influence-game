@@ -5,7 +5,8 @@
  */
 
 import type {
-  AllianceHuddleCommitmentFact,
+  AllianceHuddleFactAtom,
+  AllianceHuddleFactAtomDraft,
   UUID,
   PowerAction,
   JuryMember,
@@ -25,12 +26,11 @@ import type { CanonicalGameProjection } from "./game-projection";
 import type { TokenCostCursor, TokenTracker } from "./token-tracker.js";
 import type { ModelReasoningEffort, ModelReasoningPolicy, ProviderProfileId } from "./model-catalog";
 import type {
-  HouseFactCategory,
-  HouseNarrativeContinuity,
+  HouseNarrationContext,
+  HouseNarrativeBeat,
+  HouseNarrativeContinuityV2,
   HouseProviderUsage,
-  HouseSourceCoordinate,
   HouseSummaryBoundary,
-  HouseSummaryFrontier,
 } from "./house-summary-frontier";
 export type { TokenCostCursor };
 export type {
@@ -51,16 +51,16 @@ export type {
 export type {
   HouseBeatClass,
   HouseBeatStatus,
-  HouseFactCategory,
-  HouseFactRow,
-  HouseFactSlice,
-  HouseNarrativeContinuity,
+  HouseNarrationContext,
+  HouseNarrativeBeat,
+  HouseNarrationCanonicalEvent,
+  HouseNarrationDiaryEntry,
+  HouseNarrationDialogue,
+  HouseNarrationProjection,
+  HouseNarrativeContinuityV2,
   HouseProviderUsage,
-  HouseSalienceItem,
-  HouseSourceCoordinate,
   HouseSummaryBoundary,
-  HouseSummaryFrontier,
-  HouseSummaryPhaseReceipt,
+  HouseSummaryPhaseTelemetry,
 } from "./house-summary-frontier";
 
 export type { MingleIntentSummary, MinglePreferredRoomSize, StrategicLens } from "./types";
@@ -145,8 +145,8 @@ export interface GameRunnerResumeOptions {
   lastEventSequence: number;
   transcriptReplay: readonly TranscriptEntry[];
   tokenCostCursor?: TokenCostCursor | null;
-  houseContinuityCapsule?: HouseContinuityCapsule | null;
-  houseContinuityRequirement?: HouseContinuityRequirement;
+  /** Versioned House-authored producer/viewer narrative continuity. */
+  houseNarrativeContinuityCapsule: HouseNarrativeContinuityV2;
   /** Validated active-player private continuity capsules for supported resume hydration. */
   playerContinuityCapsules?: readonly PlayerContinuityCapsule[];
   mingleInboxReplay?: MingleInboxReplay | null;
@@ -303,15 +303,6 @@ export interface RuntimeSnapshotV1 {
  */
 export const PLAYER_CONTINUITY_CAPSULE_VERSION = 2 as const;
 
-/**
- * Checkpoint-time House Strategy Bible continuity contract.
- * Sealed when the checkpoint is written; recovery and passport must not re-read live config.
- */
-export type HouseContinuityRequirement =
-  | "disabled"
-  | "awaiting_first_valid_update"
-  | "required";
-
 export interface PlayerPowerActionMemoryEntry {
   round: number;
   action: "eliminate" | "protect" | "pass";
@@ -337,24 +328,6 @@ export interface PlayerContinuityCapsule {
   roundHistory: PlayerRoundHistoryEntry[];
 }
 
-export interface HouseContinuityCapsule {
-  revisionId: string;
-  previousRevisionId: string | null;
-  updatedAtRound: number;
-  updatedAtPhase: Phase;
-  summary: string;
-  alliances: HouseAllianceHypothesis[];
-  tensions: string[];
-  promises: string[];
-  voteBlocs: string[];
-  mingleDiscoveries: string[];
-  playerTrajectories: HousePlayerTrajectory[];
-  storyArcs: HouseStoryArc[];
-  droppedThreads: string[];
-  openQuestions: string[];
-  changedSincePrevious: string;
-}
-
 export interface GameCheckpointCapsule {
   gameId: UUID;
   lastEventSequence: number;
@@ -368,13 +341,8 @@ export interface GameCheckpointCapsule {
   /** Boundary safety evidence captured at write time (U3+). */
   boundaryCertificate?: BoundaryCertificate | null;
   playerContinuityCapsules?: PlayerContinuityCapsule[];
-  houseContinuityCapsule?: HouseContinuityCapsule | null;
-  /**
-   * Checkpoint-time House continuity contract. Absent on legacy capsules;
-   * recovery fails closed for player continuity without versioned capsules,
-   * and passport treats missing House requirement as the historical strict path.
-   */
-  houseContinuityRequirement?: HouseContinuityRequirement;
+  /** Versioned House-authored producer/viewer narrative continuity. */
+  houseNarrativeContinuityCapsule?: HouseNarrativeContinuityV2 | null;
   transcriptReplay?: {
     /** 1 = legacy safe-entry shape; 2 = normalized dialogue identity fields. */
     version: 1 | 2;
@@ -705,185 +673,11 @@ export interface EngineFallbackProvenance {
   seed: string;
 }
 
-export type HouseAllianceStatus = "speculative" | "forming" | "active" | "fracturing" | "retired";
-export type HouseConfidence = "low" | "medium" | "high";
-
-export interface HouseAllianceHypothesis {
-  name: string;
-  members: string[];
-  status: HouseAllianceStatus;
-  confidence: HouseConfidence;
-  evidence: string[];
-  tension?: string | null;
-  openQuestions?: string[];
-}
-
-export interface HousePlayerTrajectory {
-  playerName: string;
-  currentRead: string;
-  pressurePoints: string[];
-  likelyNextMove?: string | null;
-}
-
-export interface HouseStoryArc {
-  title: string;
-  summary: string;
-  involvedPlayers: string[];
-  status: "emerging" | "active" | "resolved" | "dropped";
-}
-
 export interface HouseCoveredWindow {
   fromRound: number;
   toRound: number;
   fromPhase?: Phase;
   toPhase?: Phase;
-}
-
-export interface HouseVoteCount {
-  playerName: string;
-  votes: number;
-  voters: string[];
-}
-
-/** One sealed format ballot (House/producer omniscient; not player-public until reveal). */
-export interface HouseFormatBallotLine {
-  voterName: string;
-  targetName: string;
-  /** Present for Save-or-Eliminate. */
-  polarity?: "save" | "eliminate";
-}
-
-export interface HouseFormatScoreLine {
-  playerName: string;
-  value: number;
-  /** e.g. zero_safe | positive | net | vulnerable_total */
-  bucket?: string;
-}
-
-export interface HouseFormatBouncePointerLine {
-  actorName: string;
-  targetName: string;
-  classification: "SAFE" | "VULNERABLE";
-}
-
-/**
- * Full format resolution snapshot for House MC / producer.
- * House sees every sealed ballot; player-facing surfaces stay sealed.
- */
-export interface HouseFormatResolutionFacts {
-  round: number;
-  formatId: string;
-  formatName: string;
-  offeredFormatIds: [string, string] | null;
-  offeredFormatNames: [string, string] | null;
-  ballots: HouseFormatBallotLine[];
-  scores: HouseFormatScoreLine[];
-  zeroSafeNames: string[];
-  safeNames: string[];
-  vulnerableNames: string[];
-  bouncePointers: HouseFormatBouncePointerLine[];
-  resolutionKind: string;
-  resolutionSummary: string;
-  eliminatedName: string;
-  tiebreakByEmpoweredName: string | null;
-}
-
-export interface HouseRoundFacts {
-  round: number;
-  empoweredName: string | null;
-  empowerMethod: string | null;
-  empowerVoteCounts: HouseVoteCount[];
-  exposeVoteCounts: HouseVoteCount[];
-  councilCandidates: [string, string] | null;
-  powerAction: { action: PowerAction["action"]; targetName: string | null } | null;
-  shieldGrantedName: string | null;
-  autoEliminatedName: string | null;
-  councilVoteCounts: HouseVoteCount[];
-  councilMethod: string | null;
-  eliminatedName: string | null;
-  councilRoles: HouseCouncilRoleFact[];
-  /** Format-kernel fields (null on classic Power→Council rounds). */
-  selectedFormatId: string | null;
-  selectedFormatName: string | null;
-  offeredFormatIds: [string, string] | null;
-  offeredFormatNames: [string, string] | null;
-  /** How elimination resolved under the format (e.g. format id / method string). */
-  formatMethod: string | null;
-  /** Which elimination spine produced the exit this round. */
-  eliminationPath: "format" | "council" | "power_auto" | "unknown";
-  /**
-   * Omniscient format resolution: every sealed ballot, scoreboard, bounce chain.
-   * Null on classic rounds or before format resolve completes.
-   */
-  formatResolution: HouseFormatResolutionFacts | null;
-}
-
-export type HouseCouncilRole =
-  | "candidate"
-  | "voted_for_eliminated"
-  | "voted_for_survivor"
-  | "empowered_tiebreaker"
-  | "empowered_no_tiebreak_needed"
-  | "non_voter"
-  | "not_applicable";
-
-export interface HouseCouncilRoleFact {
-  playerName: string;
-  role: HouseCouncilRole;
-  candidateNames: [string, string] | null;
-  eliminatedName: string | null;
-  survivingCandidateName: string | null;
-  votedForName: string | null;
-}
-
-export interface HouseStrategyBiblePacket {
-  revisionId: string;
-  previousRevisionId: string | null;
-  updatedAtRound: number;
-  updatedAtPhase: Phase;
-  coveredWindow: HouseCoveredWindow;
-  summary: string;
-  alliances: HouseAllianceHypothesis[];
-  tensions: string[];
-  promises: string[];
-  voteBlocs: string[];
-  mingleDiscoveries: string[];
-  playerTrajectories: HousePlayerTrajectory[];
-  storyArcs: HouseStoryArc[];
-  droppedThreads: string[];
-  openQuestions: string[];
-  changedSincePrevious: string;
-}
-
-export interface HouseEvidenceBundle {
-  round: number;
-  phase: Phase;
-  alivePlayers: string[];
-  eliminatedPlayers: string[];
-  activeShieldNames: string[];
-  empoweredName: string | null;
-  councilCandidates: [string, string] | null;
-  recentTranscript: TranscriptEntry[];
-  recentPublicMessages: Array<{ from: string; text: string; phase: Phase; round?: number; anonymous?: boolean }>;
-  recentDiaryEntries: Array<{ round: number; precedingPhase: Phase; agentName: string; question: string; answer: string }>;
-  roomAllocations: Array<{ round: number; text: string; rooms: Array<{ roomId: number; players: string[] }>; excluded: string[] }>;
-  roundFacts: HouseRoundFacts;
-  canonicalEventCount: number;
-}
-
-export interface HouseStrategyBibleUpdateContext {
-  round: number;
-  phase: Phase;
-  previousPacket: HouseStrategyBiblePacket | null;
-  evidence: HouseEvidenceBundle;
-  coveredWindow: HouseCoveredWindow;
-}
-
-export interface HouseStrategyBibleUpdateResult {
-  packet: HouseStrategyBiblePacket | null;
-  rationale?: string;
-  thinking?: string;
-  reasoningContext?: string;
 }
 
 export type HouseSummaryKind = "round" | "phase" | "long-form";
@@ -893,35 +687,28 @@ export interface HouseGameplaySummaryContext {
   round: number;
   phase: Phase;
   kind: HouseSummaryKind;
-  alivePlayers: string[];
-  packet: HouseStrategyBiblePacket | null;
-  evidence: HouseEvidenceBundle;
   coveredWindow: HouseCoveredWindow;
+  narrationContext: HouseNarrationContext;
+  recentPublicBeats: HouseNarrativeBeat[];
+  privateNarrativeNotebook: string | null;
 }
 
 export interface HouseGameplaySummaryResult {
   summary: string;
   kind: HouseSummaryKind;
-  packetRevisionId: string | null;
   coveredWindow: HouseCoveredWindow;
-  referencedAllianceNames: string[];
-  openQuestions?: string[];
   thinking?: string;
   reasoningContext?: string;
 }
 
-export interface HouseSelectiveSummaryContext {
-  frontier: HouseSummaryFrontier;
-  continuity: HouseNarrativeContinuity;
-  factReadAllowed: boolean;
+export interface HouseNarrativeTurnContext {
+  narrationContext: HouseNarrationContext;
+  continuity: HouseNarrativeContinuityV2;
 }
 
 interface HouseSummaryAttemptBase {
   boundary: HouseSummaryBoundary;
   providerCalls: number;
-  factCalls: number;
-  requestedCategories: HouseFactCategory[];
-  returnedBytes: number;
   usage: HouseProviderUsage[];
   thinking?: string;
   reasoningContext?: string;
@@ -929,11 +716,9 @@ interface HouseSummaryAttemptBase {
 
 export interface HouseSummaryEmittedResult extends HouseSummaryAttemptBase {
   status: "emitted";
-  summary: string;
-  sourceAliases: string[];
-  sources: HouseSourceCoordinate[];
-  openQuestions: string[];
-  threadIds: string[];
+  beat: HouseNarrativeBeat | null;
+  /** Non-null replaces the whole notebook; null preserves the prior snapshot. */
+  privateNarrativeNotebook: string | null;
 }
 
 export interface HouseSummaryModelSkippedResult extends HouseSummaryAttemptBase {
@@ -950,20 +735,6 @@ export type HouseSummaryAttemptResult =
   | HouseSummaryEmittedResult
   | HouseSummaryModelSkippedResult
   | HouseSummaryFailedResult;
-
-export interface HouseProducerBrief {
-  playerName: string;
-  packetRevisionId: string | null;
-  storyRole: string;
-  pressurePoints: string[];
-  relevantAllianceHypotheses: string[];
-  contradictions: string[];
-  questionAngles: string[];
-  safeToReveal: string[];
-  privateDoNotReveal: string[];
-  thinking?: string;
-  reasoningContext?: string;
-}
 
 export type AllianceActionKind =
   | "propose"
@@ -1049,14 +820,18 @@ export type AllianceActionOpportunity =
   };
 
 export interface AllianceHuddlePromptContext {
+  sessionId: UUID;
   allianceId: UUID;
   allianceName: string;
+  memberIds: UUID[];
   memberNames: string[];
   purpose: string;
   timebox?: string | null;
   window: "format" | "pre_vote" | "pre_council";
   scheduleId: UUID;
   pass: number;
+  /** Earlier engine-ID'd facts in this exact session, in acceptance order. */
+  priorFacts: AllianceHuddleFactAtom[];
 }
 
 export interface AllianceHuddleTurnAction extends StrategicDecisionMetadata {
@@ -1066,7 +841,7 @@ export interface AllianceHuddleTurnAction extends StrategicDecisionMetadata {
   reasoningContext?: string;
   message: string | null;
   noReply?: boolean;
-  commitment?: Omit<AllianceHuddleCommitmentFact, "speakerId" | "speakerName">;
+  factAtoms: AllianceHuddleFactAtomDraft[];
 }
 
 export interface MingleTurnAction extends StrategicDecisionMetadata {
@@ -1086,10 +861,10 @@ export interface MingleTurnAction extends StrategicDecisionMetadata {
   reasoningContext?: string;
   /** Private receipt for a concrete proposal made in a decision-relevant allied room. */
   coordinationReceipt?: {
-    proposedTarget: string | null;
-    proposedAction: string | null;
-    commitment: string | null;
-    noProposalReason: string | null;
+    factKind: "proposal" | "commitment" | null;
+    actionKind: import("./types").AllianceHuddleActionKind | null;
+    targetPlayerId: UUID | null;
+    noProposal: boolean;
   };
 }
 
@@ -1407,13 +1182,7 @@ export interface PlayerAllianceContextAlliance extends PlayerAllianceContextTerm
   huddleOutcomes: Array<{
     id: UUID;
     round: number;
-    ask: string;
-    plan: string;
-    promises: string[];
-    dissent: string[];
-    confidence: "low" | "medium" | "high";
-    posture: string;
-    leakOrBetrayalClaims: string[];
+    facts: AllianceHuddleFactAtom[];
   }>;
 }
 
@@ -1704,17 +1473,11 @@ export interface RecallBoardContractFacts {
   isEliminated?: boolean;
 }
 
-/** Compact huddle outcome fields retained in protected recall (no participant snapshot). */
+/** Typed huddle facts retained in protected recall (no participant snapshot or House prose). */
 export interface RecallProtectedHuddleOutcome {
   id: UUID;
   round: number;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: "low" | "medium" | "high";
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  facts: AllianceHuddleFactAtom[];
 }
 
 /** Active-room conversation (hot lane), distinct from historical Mingle archive. */

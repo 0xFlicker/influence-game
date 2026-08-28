@@ -289,7 +289,7 @@ describe("ProductionGameMcpReadModel", () => {
       gameIdOrSlug: EDGE_SMOKE_DUSK_EXPECTED.slug,
       round: 1,
     }, PRODUCER_ACCESS);
-    expect(classicRound.schemaVersion).toBe(2);
+    expect(classicRound.schemaVersion).toBe(3);
     expect(classicRound.game).toMatchObject({
       gameKernel: "classic",
       gameKernelSource: "inferred",
@@ -355,7 +355,8 @@ describe("ProductionGameMcpReadModel", () => {
       id: EDGE_SMOKE_DUSK_EXPECTED.winnerId,
       name: EDGE_SMOKE_DUSK_EXPECTED.winnerName,
     });
-    expect(brief.postgame.schemaVersion).toBe(2);
+    expect(brief.schemaVersion).toBe(2);
+    expect(brief.postgame.schemaVersion).toBe(3);
     expect(brief.postgame.executiveSummary[0]?.text).toBe(
       "Shadowtech controlled power for 3 consecutive rounds.",
     );
@@ -528,7 +529,7 @@ describe("ProductionGameMcpReadModel", () => {
     const traceFirst = asRecord(producer.developerEvidence.traceManifests);
     const cognitiveCursor = cognitiveFirst.nextCursor;
     const traceCursor = traceFirst.nextCursor;
-    expect(producer.schemaVersion).toBe(2);
+    expect(producer.schemaVersion).toBe(3);
     expect(cognitiveFirst).toMatchObject({
       ok: true,
       pageSize: 50,
@@ -583,15 +584,17 @@ describe("ProductionGameMcpReadModel", () => {
   test("persists every launch format through sanitized MCP facts and viewer events", async () => {
     const fixtures = [
       {
-        name: "Save-or-Eliminate",
+        name: "Save-or-Exit",
         formatId: "save_or_eliminate" as const,
+        surfaceId: "save_or_exit" as const,
         ballotCount: 4,
         pointerCount: 0,
         resolutionKind: "clear" as const,
       },
       {
-        name: "Vote Bomb",
+        name: "The Short List",
         formatId: "vote_bomb" as const,
+        surfaceId: "short_list" as const,
         ballotCount: 4,
         pointerCount: 0,
         resolutionKind: "auto" as const,
@@ -599,6 +602,7 @@ describe("ProductionGameMcpReadModel", () => {
       {
         name: "Safety Bounce",
         formatId: "safety_bounce" as const,
+        surfaceId: "safety_bounce" as const,
         ballotCount: 4,
         pointerCount: 3,
         resolutionKind: "clear" as const,
@@ -606,6 +610,7 @@ describe("ProductionGameMcpReadModel", () => {
       {
         name: "Safety Bounce sole vulnerable",
         formatId: "safety_bounce_sole_vulnerable" as const,
+        surfaceId: "safety_bounce" as const,
         ballotCount: 0,
         pointerCount: 2,
         resolutionKind: "auto" as const,
@@ -628,12 +633,11 @@ describe("ProductionGameMcpReadModel", () => {
 
       const roundFacts = await readModel.readRoundFacts({ gameIdOrSlug: gameId, round: 1 }, PRODUCER_ACCESS);
       const format = roundFacts.canonicalGameFacts.roundFacts.format;
+      expect(roundFacts.schemaVersion).toBe(3);
       expect(roundFacts.game).toMatchObject({ gameKernel: "format" });
       expect(format).toMatchObject({
         status: "available",
-        selectedFormatId: fixture.formatId === "safety_bounce_sole_vulnerable"
-          ? "safety_bounce"
-          : fixture.formatId,
+        selectedFormatId: fixture.surfaceId,
         resolutionKind: fixture.resolutionKind,
       });
       expect(format.acceptedBallots).toHaveLength(fixture.ballotCount);
@@ -684,6 +688,7 @@ describe("ProductionGameMcpReadModel", () => {
         eventType: "format.ballot_cast",
         visibilityMode: "public",
       }, PRODUCER_ACCESS);
+      expect(ballots.schemaVersion).toBe(2);
       expect(ballots.canonicalGameFacts.events).toHaveLength(fixture.ballotCount);
       expect(ballots.canonicalGameFacts.events.every((entry) => entry.eventShape === "viewer_decision")).toBe(true);
       expect(ballots.canonicalGameFacts.events.every((entry) => entry.event?.type === "format.ballot_cast")).toBe(true);
@@ -702,6 +707,26 @@ describe("ProductionGameMcpReadModel", () => {
       expect(serialized).not.toContain("thinking");
       expect(serialized).not.toContain("reasoningContext");
       expect(serialized).not.toContain("decisionLog");
+      expect(serialized).not.toContain('"saveOrEliminate"');
+      expect(serialized).not.toContain('"voteBomb"');
+      expect(serialized).not.toContain('"majorityElimination"');
+
+      if (fixture.formatId === "save_or_eliminate") {
+        expect(serialized).toContain('"saveOrExit"');
+      }
+
+      if (fixture.formatId === "vote_bomb") {
+        expect(serialized).toContain('"formatId":"short_list"');
+        expect(serialized).toContain('"shortList"');
+        expect(serialized).not.toContain('"formatId":"vote_bomb"');
+        const storedSelection = (await db
+          .select({ envelope: schema.gameEvents.envelope })
+          .from(schema.gameEvents)
+          .where(eq(schema.gameEvents.gameId, gameId)))
+          .map((row) => asRecord(row.envelope))
+          .find((envelope) => envelope.type === "format.selected");
+        expect(asRecord(storedSelection?.payload).formatId).toBe("vote_bomb");
+      }
     }
   });
 
@@ -1042,7 +1067,7 @@ describe("ProductionGameMcpReadModel", () => {
     const expectedEntry = (ballot: typeof submittedBallots[number]) => ({
       voter: { id: ballot.voterId, name: playerName(ballot.voterId) },
       target: { id: ballot.targetId, name: playerName(ballot.targetId) },
-      polarity: ballot.polarity,
+      polarity: ballot.polarity === "eliminate" ? "exit" as const : ballot.polarity,
     });
 
     for (const ballotCount of [1, 2, 4]) {
@@ -1074,8 +1099,9 @@ describe("ProductionGameMcpReadModel", () => {
       }, ownerAccess);
       expect(prefixEvents.canonicalGameFacts.events.map((entry) => entry.event.payload)).toEqual(
         submittedBallots.slice(0, ballotCount).map((ballot) => ({
-          formatId: "save_or_eliminate",
           ...ballot,
+          formatId: "save_or_exit",
+          polarity: ballot.polarity === "eliminate" ? "exit" : ballot.polarity,
         })),
       );
       expect(JSON.stringify(prefixEvents)).not.toContain("sourcePointers");
@@ -1091,7 +1117,7 @@ describe("ProductionGameMcpReadModel", () => {
       expectedEntry(submittedBallots.find((ballot) => ballot.voterId === player.id)!));
     expect(ownerFormat).toMatchObject({
       status: "available",
-      selectedFormatId: "save_or_eliminate",
+      selectedFormatId: "save_or_exit",
       acceptedBallots: expectedAcceptedBallots,
       ballotPresentation: {
         status: "revealed",
@@ -1153,8 +1179,9 @@ describe("ProductionGameMcpReadModel", () => {
     expect(publicBallots.canonicalGameFacts.events).toHaveLength(4);
     expect(publicBallots.canonicalGameFacts.events.map((entry) => entry.event.payload)).toEqual(
       submittedBallots.map((ballot) => ({
-        formatId: "save_or_eliminate",
         ...ballot,
+        formatId: "save_or_exit",
+        polarity: ballot.polarity === "eliminate" ? "exit" : ballot.polarity,
       })),
     );
     expect(JSON.stringify(publicBallots)).not.toContain("sourcePointers");
@@ -1191,6 +1218,8 @@ describe("ProductionGameMcpReadModel", () => {
     expect(producerBallots.canonicalGameFacts.events.every((entry) => entry.eventShape === "canonical")).toBe(true);
     expect(JSON.stringify(producerBallots)).toContain("sourcePointers");
     expect(JSON.stringify(producerBallots)).toContain(PRIVATE_DECISION_SENTINEL);
+    expect(JSON.stringify(producerBallots)).toContain('"formatId":"save_or_exit"');
+    expect(JSON.stringify(producerBallots)).not.toContain('"formatId":"save_or_eliminate"');
 
     const producerPointerMatch = await readModel.filterEvents({
       gameIdOrSlug: gameId,
@@ -1441,7 +1470,7 @@ describe("ProductionGameMcpReadModel", () => {
       { gameIdOrSlug: gameId, round: 1 },
       PRODUCER_ACCESS,
     );
-    expect(roundFacts.schemaVersion).toBe(2);
+    expect(roundFacts.schemaVersion).toBe(3);
     expect(roundFacts.game.gameKernelDiagnostics).toEqual(
       resolved!.gameKernelDiagnostics,
     );
@@ -1458,6 +1487,21 @@ describe("ProductionGameMcpReadModel", () => {
     await insertGamePlayer(db, { gameId, userId });
     const ownerEpoch = await insertOwner(db, gameId);
     const events = createCanonicalEventFixture(gameId);
+    const legacyOutcome = {
+      id: "outcome-glass",
+      sessionId: "session-glass",
+      allianceId: "alliance-glass",
+      window: "pre_vote" as const,
+      round: 1,
+      ask: "Align before the public Vote.",
+      plan: "Glass Table agrees to keep the plan hidden.",
+      promises: [],
+      dissent: [],
+      confidence: "medium",
+      posture: "coordinating",
+      leakOrBetrayalClaims: [],
+      createdAt: "2026-06-11T00:00:10.000Z",
+    };
     const allianceEvent: CanonicalGameEvent = {
       sequence: events.length + 1,
       gameId,
@@ -1470,21 +1514,7 @@ describe("ProductionGameMcpReadModel", () => {
       payloadVersion: 1,
       sourcePointers: [],
       payload: {
-        outcome: {
-          id: "outcome-glass",
-          sessionId: "session-glass",
-          allianceId: "alliance-glass",
-          window: "pre_vote",
-          round: 1,
-          ask: "Align before the public Vote.",
-          plan: "Glass Table agrees to keep the plan hidden.",
-          promises: [],
-          dissent: [],
-          confidence: "medium",
-          posture: "coordinating",
-          leakOrBetrayalClaims: [],
-          createdAt: "2026-06-11T00:00:10.000Z",
-        },
+        outcome: legacyOutcome,
       },
     };
     await appendGameEvents(db, { gameId, ownerEpoch, events: [...events, allianceEvent] });
@@ -1603,25 +1633,16 @@ describe("ProductionGameMcpReadModel", () => {
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: 1,
-      ask: "Vote with Bob.",
-      plan: "Alice and Bob agree to test Cara as the first vote.",
-      promises: ["Alice backs Bob publicly."],
-      dissent: [],
-      confidence: "high",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
-      commitments: [{
-        speakerId: alice,
-        speakerName: "Alice",
-        proposedTargetName: "Cara",
-        noTargetReason: null,
-        proposedAction: "Vote Cara if the active format permits it.",
-        memberCommitments: [{ memberName: "Bob", commitment: "Bob will compare the legal ballot." }],
-        contingency: "Re-evaluate if Cara earns immunity.",
+      facts: [{
+        kind: "commitment",
+        factId: "fact-ab",
+        sessionId: "session-ab",
+        actorPlayerId: alice,
+        actionKind: "council_vote",
+        targetPlayerId: cara,
         confidence: "high",
-        dissent: ["Bob prefers Dax if Cara is unavailable."],
-        alternativePlan: "Vote Dax only if Cara is unavailable.",
       }],
+      participantPlayerIds: [],
       createdAt: "2026-06-14T00:01:05.000Z",
     });
     state.recordAllianceHuddleCompleted({
@@ -1640,13 +1661,16 @@ describe("ProductionGameMcpReadModel", () => {
       allianceId: "alliance-cd",
       window: "pre_vote",
       round: 1,
-      ask: "Keep Alice out.",
-      plan: "Cara and Dax target Alice quietly.",
-      promises: ["Do not tell Alice."],
-      dissent: [],
-      confidence: "medium",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
+      facts: [{
+        kind: "proposal",
+        factId: "fact-cd",
+        sessionId: "session-cd",
+        actorPlayerId: cara,
+        actionKind: "council_vote",
+        targetPlayerId: alice,
+        confidence: "medium",
+      }],
+      participantPlayerIds: [],
       createdAt: "2026-06-14T00:01:15.000Z",
     });
 
@@ -1711,7 +1735,8 @@ describe("ProductionGameMcpReadModel", () => {
       allianceName: "Back Row Pair",
       messageCount: 1,
       outcomeSummary: {
-        plan: "Alice and Bob agree to test Cara as the first vote.",
+        factCount: 1,
+        factSummaries: ["Alice recorded a commitment to a Council vote for Cara (high confidence)."],
       },
     });
     expect(JSON.stringify(result.allianceFacts?.huddles[0])).not.toContain("messages");
@@ -1731,12 +1756,12 @@ describe("ProductionGameMcpReadModel", () => {
         thinking: "I need Bob to feel this was his idea.",
       }],
       outcome: {
-        plan: "Alice and Bob agree to test Cara as the first vote.",
-        commitments: [{
-          proposedTargetName: "Cara",
-          proposedAction: "Vote Cara if the active format permits it.",
-          dissent: ["Bob prefers Dax if Cara is unavailable."],
-        }],
+        facts: [expect.objectContaining({
+          kind: "commitment",
+          actorPlayerId: alice,
+          targetPlayerId: cara,
+        })],
+        factSummaries: ["Alice recorded a commitment to a Council vote for Cara (high confidence)."],
       },
     });
 
@@ -1747,9 +1772,9 @@ describe("ProductionGameMcpReadModel", () => {
     }, PRODUCER_ACCESS);
     expect(producerResult.allianceFacts?.huddles[0]).toMatchObject({
       outcome: {
-        commitments: [expect.objectContaining({
-          proposedTargetName: "Cara",
-          memberCommitments: [{ memberName: "Bob", commitment: "Bob will compare the legal ballot." }],
+        facts: [expect.objectContaining({
+          actorPlayerId: alice,
+          targetPlayerId: cara,
         })],
       },
     });
@@ -1919,7 +1944,8 @@ describe("ProductionGameMcpReadModel", () => {
       decisionId,
       body: JSON.stringify({
         reasoningContext: "the secret plan is to shield Mira",
-        toolArguments: { expose: "Vera" },
+        toolArguments: { expose: "Vera", formatId: "vote_bomb" },
+        authoredText: "Vote Bomb stays historical in raw evidence.",
       }),
     });
 
@@ -1964,7 +1990,9 @@ describe("ProductionGameMcpReadModel", () => {
       ok: true,
       response: {
         manifest: { id: manifestId, gameId },
-        content: expect.stringContaining("the secret plan"),
+        content: expect.stringMatching(
+          /"formatId":"vote_bomb".*Vote Bomb stays historical in raw evidence\./,
+        ),
         contentType: PRIVATE_TRACE_CONTENT_TYPE,
       },
     });

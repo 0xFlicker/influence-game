@@ -8,6 +8,7 @@ import type {
 } from "../house-interviewer";
 import { runAllianceFormationPhase } from "../phases/alliances";
 import type { PhaseRunnerContext } from "../phases/phase-runner-context";
+import { ProviderUnavailableError } from "../provider-execution";
 import { TranscriptLogger } from "../transcript-logger";
 import { DEFAULT_CONFIG, Phase } from "../types";
 import { MockAgent, ScriptedHouseInterviewer } from "./mock-agent";
@@ -46,7 +47,10 @@ class RejectingHouseInterviewer extends ScriptedHouseInterviewer {
       ...context,
       candidates: context.candidates.map((candidate) => ({ ...candidate })),
     });
-    throw new Error("scripted House selection rejection");
+    throw new ProviderUnavailableError(
+      "scripted House selection rejection",
+      "service_error",
+    );
   }
 }
 
@@ -146,6 +150,22 @@ describe("Format Mingle alliance action runner", () => {
     expect(agents.get("charlie")!.allianceOpportunities).toEqual([]);
     expect(agents.get("dana")!.allianceOpportunities).toEqual([]);
     expect(agents.get("echo")!.allianceOpportunities).toEqual([]);
+  });
+
+  it("propagates non-provider House selection defects before proposer actions", async () => {
+    const house = new ScriptedHouseInterviewer();
+    house.selectAllianceProposers = async () => {
+      throw new TypeError("selection invariant failed");
+    };
+    const { agents, ctx } = createActionHarness({
+      players: FIVE_PLAYERS,
+      house,
+    });
+
+    await expect(runAllianceFormationPhase(ctx))
+      .rejects.toThrow("selection invariant failed");
+    expect([...agents.values()].flatMap((agent) => agent.allianceOpportunities))
+      .toEqual([]);
   });
 
   it("counts overlapping active memberships separately and excludes open or closed records", async () => {

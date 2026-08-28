@@ -85,6 +85,76 @@ describe("canonical event envelope", () => {
     expect(result.errors).toContain("type is unsupported: future.event");
   });
 
+  it("accepts exact huddle outcome v2 atoms and rejects prose or invalid atom authority", () => {
+    const valid = {
+      ...sampleEvent(),
+      round: 1,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_outcome_recorded",
+      visibility: "producer",
+      payloadVersion: 2,
+      payload: {
+        outcome: {
+          id: "outcome-ab",
+          sessionId: "session-ab",
+          allianceId: "alliance-ab",
+          window: "pre_vote",
+          round: 1,
+          facts: [{
+            kind: "commitment",
+            factId: "fact-ab",
+            sessionId: "session-ab",
+            actorPlayerId: "alice",
+            actionKind: "empower_vote",
+            targetPlayerId: "bob",
+            confidence: "high",
+          }],
+          participantPlayerIds: ["alice", "bob"],
+          createdAt: "2026-08-27T00:00:00.000Z",
+        },
+      },
+    };
+
+    expect(validateCanonicalGameEvent(valid)).toEqual({ ok: true, errors: [] });
+
+    const withHousePlan = structuredClone(valid);
+    (withHousePlan.payload.outcome as Record<string, unknown>).plan = "House claims everyone agreed.";
+    expect(validateCanonicalGameEvent(withHousePlan)).toMatchObject({ ok: false });
+
+    const foreignActor = structuredClone(valid);
+    foreignActor.payload.outcome.facts[0]!.actorPlayerId = "charlie";
+    expect(validateCanonicalGameEvent(foreignActor).errors).toContain(
+      "alliance huddle fact actorPlayerId must be a session participant",
+    );
+  });
+
+  it("accepts historical huddle outcome v1 metadata without treating its prose as a v2 contract", () => {
+    const legacy = {
+      ...sampleEvent(),
+      round: 1,
+      phase: Phase.PRE_VOTE_HUDDLE,
+      type: "alliance.huddle_outcome_recorded",
+      visibility: "producer",
+      payloadVersion: 1,
+      payload: {
+        outcome: {
+          id: "outcome-legacy",
+          sessionId: "session-legacy",
+          allianceId: "alliance-legacy",
+          window: "pre_vote",
+          round: 1,
+          ask: "Unsupported ask",
+          plan: "Unsupported shared plan",
+          promises: ["Unsupported promise"],
+          posture: "unsupported_consensus",
+          createdAt: "2026-08-27T00:00:00.000Z",
+        },
+      },
+    };
+
+    expect(validateCanonicalGameEvent(legacy)).toEqual({ ok: true, errors: [] });
+  });
+
   it("accepts v2 only for aggregate-shaped format resolutions", () => {
     const state = new GameState(
       [

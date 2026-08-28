@@ -112,6 +112,13 @@ export function inspectReleaseMigrationSql(
       ),
     ].map((match) => (match[1] ?? match[2]!).toLowerCase()),
   );
+  const replacementIndexes = new Set(
+    [
+      ...policyInput.matchAll(
+        /\bCREATE\s+(?:UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?(?:"([^"]+)"|([a-z_][a-z0-9_]*))/gi,
+      ),
+    ].map((match) => (match[1] ?? match[2]!).toLowerCase()),
+  );
   const violations: ReleaseMigrationPolicyViolation[] = [];
   for (const rule of RELEASE_MIGRATION_RULES) {
     if (rule.rule === "drop-constraint") {
@@ -123,6 +130,25 @@ export function inspectReleaseMigrationSql(
       const unmatched = drops.find(
         (drop) =>
           !replacementCheckConstraints.has((drop[1] ?? drop[2]!).toLowerCase()),
+      );
+      if (drops.length > 0 && !unmatched) continue;
+      if (unmatched) {
+        violations.push({
+          file,
+          rule: rule.rule,
+          evidence: unmatched[0].replace(/\s+/g, " ").trim().slice(0, 160),
+        });
+        continue;
+      }
+    }
+    if (rule.rule === "drop-index") {
+      const drops = [
+        ...policyInput.matchAll(
+          /\bDROP\s+INDEX\s+(?:IF\s+EXISTS\s+)?(?:"([^"]+)"|([a-z_][a-z0-9_]*))/gi,
+        ),
+      ];
+      const unmatched = drops.find(
+        (drop) => !replacementIndexes.has((drop[1] ?? drop[2]!).toLowerCase()),
       );
       if (drops.length > 0 && !unmatched) continue;
       if (unmatched) {

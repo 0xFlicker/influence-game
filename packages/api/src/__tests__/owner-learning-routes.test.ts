@@ -4,9 +4,14 @@ import { eq } from "drizzle-orm";
 import { schema } from "../db/index.js";
 import { createSessionToken } from "../middleware/auth.js";
 import { createOwnerLearningRoutes } from "../routes/owner-learning.js";
+import {
+  persistOwnerLearningFailureEvidence,
+  prepareOwnerLearningFailureEvidence,
+} from "../services/owner-learning-failure-evidence.js";
 import type { OwnerLearningEvidenceProjector } from "../services/owner-learning-review.js";
 import { setupTestDB } from "./test-utils.js";
 import {
+  failFixtureOwnerLearningReview,
   fakeOwnerLearningProjection,
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
@@ -131,6 +136,20 @@ describe("owner learning REST routes", () => {
       leaseTokenHash: "secret-lease",
       checkpointHash: "secret-checkpoint",
     }).where(eq(schema.agentLearningReviews.id, startedBody.reviewId));
+    const privateFailure = prepareOwnerLearningFailureEvidence({
+      reviewId: startedBody.reviewId,
+      phase: "provider_invocation",
+      diagnostic: {
+        diagnosticId: "diagnostic-owner-route-private",
+        failureCode: "provider_error",
+      },
+      error: new Error("PRIVATE_OWNER_DIAGNOSTIC_MESSAGE"),
+      requestEvidence: { input: "PRIVATE_OWNER_DIAGNOSTIC_BODY" },
+    });
+    await persistOwnerLearningFailureEvidence(db, {
+      reviewId: startedBody.reviewId,
+      prepared: privateFailure,
+    });
     const open = await app.request("/api/agent-learning/reviews/open", authGet(token));
     expect((await open.json()) as unknown[]).toHaveLength(1);
     const read = await app.request(
@@ -146,6 +165,10 @@ describe("owner learning REST routes", () => {
       "providerRequestId",
       "actualCostMicrousd",
       "estimatedCostMicrousd",
+      "diagnostic-owner-route-private",
+      "PRIVATE_OWNER_DIAGNOSTIC_MESSAGE",
+      "PRIVATE_OWNER_DIAGNOSTIC_BODY",
+      "evidenceManifestId",
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
@@ -302,25 +325,49 @@ describe("owner learning REST routes", () => {
     const app = new Hono().route("/", createOwnerLearningRoutes(db, {
       now: () => new Date("2026-08-04T04:00:00.000Z"),
     }));
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      stage: "complete",
-      safeFailureCode: "provider_timeout",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "provider_timeout",
       retryable: true,
-      logicalCallCount: 1,
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+      reviewUpdates: { stage: "complete", logicalCallCount: 1 },
+    });
 
-    const retried = await app.request(
-      `/api/agent-learning/reviews/${reviewId}/retry`,
-      authPost(token),
-    );
+    const [retried, duplicateRetry] = await Promise.all([
+      app.request(
+        `/api/agent-learning/reviews/${reviewId}/retry`,
+        authPost(token),
+      ),
+      app.request(
+        `/api/agent-learning/reviews/${reviewId}/retry`,
+        authPost(token),
+      ),
+    ]);
     expect(retried.status).toBe(200);
     expect(await retried.json()).toMatchObject({
       id: reviewId,
-      analysisStatus: "queued",
+      analysisStatus: "retry_queued",
       retryable: false,
+      ownerRetriesRemaining: 0,
       logicalCallCount: 1,
     });
+    expect(duplicateRetry.status).toBe(200);
+    expect(await duplicateRetry.json()).toMatchObject({
+      id: reviewId,
+      analysisStatus: "retry_queued",
+      ownerRetriesRemaining: 0,
+    });
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "provider_timeout",
+      retryable: true,
+      now: new Date("2026-08-04T04:00:01.000Z"),
+    });
+    const secondRecovery = await app.request(
+      `/api/agent-learning/reviews/${reviewId}/retry`,
+      authPost(token),
+    );
+    expect(secondRecovery.status).toBe(409);
+    expect(await secondRecovery.json()).toMatchObject({ code: "review_state_conflict" });
 
     const cancel = await app.request(
       `/api/agent-learning/reviews/${reviewId}/resolve`,

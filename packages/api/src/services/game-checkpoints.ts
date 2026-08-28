@@ -236,48 +236,6 @@ export async function writeGameCheckpoint(
         productEvidence = persistResult.evidence;
       }
 
-      const existing = (await tx
-        .select({
-          id: schema.gameCheckpoints.id,
-          projectionHash: schema.gameCheckpoints.projectionHash,
-          transcriptCursor: schema.gameCheckpoints.transcriptCursor,
-          lastEventSequence: schema.gameCheckpoints.lastEventSequence,
-          eventHeadHash: schema.gameCheckpoints.eventHeadHash,
-        })
-        .from(schema.gameCheckpoints)
-        .where(and(
-          eq(schema.gameCheckpoints.gameId, params.gameId),
-          eq(schema.gameCheckpoints.lastEventSequence, params.checkpoint.lastEventSequence),
-          eq(schema.gameCheckpoints.checkpointKind, params.checkpoint.checkpointKind),
-          eq(schema.gameCheckpoints.actorCoordinate, actorCoordinate),
-        )))[0];
-
-      if (existing) {
-        if (existing.projectionHash !== projectionHash) {
-          throw new Error("conflicting checkpoint projection hash at event boundary");
-        }
-        // Projection equality alone is insufficient: product dialogue evidence must agree.
-        if (currentCapture) {
-          const state = await lockGameTranscriptState(tx, params.gameId);
-          if (!state) {
-            throw new Error("transcript state missing during checkpoint reconcile");
-          }
-          const storedEvidence = parseProductDialogueEvidence(existing.transcriptCursor);
-          if (!storedEvidence || !productEvidence) {
-            throw new Error("checkpoint retry missing product dialogue evidence");
-          }
-          if (
-            !productEvidenceMatchesState(storedEvidence, state) ||
-            !productEvidenceMatchesState(productEvidence, state)
-          ) {
-            throw new Error(
-              "checkpoint retry product dialogue evidence does not match durable transcript state",
-            );
-          }
-        }
-        return;
-      }
-
       // Persist evidence only; the hydration passport derives readiness from these facts on read.
       const legacySnapshot = {
         eventCount: params.checkpoint.eventCount,
@@ -310,17 +268,13 @@ export async function writeGameCheckpoint(
       const snapshotPayload = runtimeSnapshot ||
         boundaryCertificate ||
         params.checkpoint.playerContinuityCapsules ||
-        params.checkpoint.houseContinuityCapsule ||
-        params.checkpoint.houseContinuityRequirement
+        params.checkpoint.houseNarrativeContinuityCapsule
         ? {
             ...legacySnapshot,
             boundaryCertificate,
             runtimeSnapshot,
             playerContinuityCapsules: params.checkpoint.playerContinuityCapsules ?? [],
-            houseContinuityCapsule: params.checkpoint.houseContinuityCapsule ?? null,
-            ...(params.checkpoint.houseContinuityRequirement && {
-              houseContinuityRequirement: params.checkpoint.houseContinuityRequirement,
-            }),
+            houseNarrativeContinuityCapsule: params.checkpoint.houseNarrativeContinuityCapsule ?? null,
             transcriptReplay: params.checkpoint.transcriptReplay ?? null,
             expectedActivePlayerIds: params.checkpoint.state.alivePlayerCount > 0
               ? Object.values(params.checkpoint.projection.players)
@@ -329,6 +283,76 @@ export async function writeGameCheckpoint(
               : [],
           }
         : legacySnapshot;
+      const transcriptCursor = mergeTranscriptCursor(
+        params.checkpoint.transcriptCursor,
+        productEvidence,
+      );
+
+      const existing = (await tx
+        .select({
+          id: schema.gameCheckpoints.id,
+          ownerEpoch: schema.gameCheckpoints.ownerEpoch,
+          projectionHash: schema.gameCheckpoints.projectionHash,
+          transcriptCursor: schema.gameCheckpoints.transcriptCursor,
+          lastEventSequence: schema.gameCheckpoints.lastEventSequence,
+          eventHeadHash: schema.gameCheckpoints.eventHeadHash,
+          snapshot: schema.gameCheckpoints.snapshot,
+        })
+        .from(schema.gameCheckpoints)
+        .where(and(
+          eq(schema.gameCheckpoints.gameId, params.gameId),
+          eq(schema.gameCheckpoints.lastEventSequence, params.checkpoint.lastEventSequence),
+          eq(schema.gameCheckpoints.checkpointKind, params.checkpoint.checkpointKind),
+          eq(schema.gameCheckpoints.actorCoordinate, actorCoordinate),
+        )))[0];
+
+      if (existing) {
+        if (existing.projectionHash !== projectionHash) {
+          throw new Error("conflicting checkpoint projection hash at event boundary");
+        }
+        const existingSnapshot = existing.snapshot as Record<string, unknown> | null;
+        const existingHouseContinuity = existingSnapshot?.houseNarrativeContinuityCapsule ?? null;
+        const incomingHouseContinuity = params.checkpoint.houseNarrativeContinuityCapsule ?? null;
+        if (existing.ownerEpoch === params.ownerEpoch
+            && sha256StableJson(existingHouseContinuity) !== sha256StableJson(incomingHouseContinuity)) {
+          throw new Error("conflicting House narrative continuity at checkpoint boundary");
+        }
+        // Projection equality alone is insufficient: product dialogue evidence must agree.
+        if (currentCapture) {
+          const state = await lockGameTranscriptState(tx, params.gameId);
+          if (!state) {
+            throw new Error("transcript state missing during checkpoint reconcile");
+          }
+          const storedEvidence = parseProductDialogueEvidence(existing.transcriptCursor);
+          if (!storedEvidence || !productEvidence) {
+            throw new Error("checkpoint retry missing product dialogue evidence");
+          }
+          if (
+            !productEvidenceMatchesState(storedEvidence, state) ||
+            !productEvidenceMatchesState(productEvidence, state)
+          ) {
+            throw new Error(
+              "checkpoint retry product dialogue evidence does not match durable transcript state",
+            );
+          }
+        }
+        if (existing.ownerEpoch !== params.ownerEpoch) {
+          // A recovered owner may accept new House copy before canonical state advances.
+          // Replace the whole checkpoint evidence atomically so the released summary,
+          // notebook, transcript watermark, runtime capsule, and token cursor agree.
+          await tx.update(schema.gameCheckpoints)
+            .set({
+              ownerEpoch: params.ownerEpoch,
+              eventHeadHash: eventHead.eventHash,
+              projectionHash,
+              snapshot: snapshotPayload,
+              transcriptCursor,
+              tokenCostCursor: tokenCostCursor as Record<string, unknown> | null | undefined,
+            })
+            .where(eq(schema.gameCheckpoints.id, existing.id));
+        }
+        return;
+      }
 
       // productDialogueProjection is transient write input only — never stored as a player-facing field.
       await tx.insert(schema.gameCheckpoints)
@@ -344,7 +368,7 @@ export async function writeGameCheckpoint(
           eventHeadHash: eventHead.eventHash,
           projectionHash,
           snapshot: snapshotPayload,
-          transcriptCursor: mergeTranscriptCursor(params.checkpoint.transcriptCursor, productEvidence),
+          transcriptCursor,
           tokenCostCursor: tokenCostCursor as Record<string, unknown> | null | undefined,
         });
     });

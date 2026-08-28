@@ -127,8 +127,7 @@ describe("postgame analysis service", () => {
       joinedAlliances: [],
       involvedProposals: [],
       huddlesAttended: 0,
-      latestPlans: [],
-      betrayalOrLeakClaims: [],
+      latestHuddleOutcomes: [],
     });
 
     const eliminatedPlayer = await getPostgamePlayerSummary(

@@ -3,6 +3,7 @@ import type { ResponseCreateParamsNonStreaming } from "openai/resources/response
 import {
   createFlexProcessingFetch,
   type FlexProcessingObserver,
+  type FlexTransportTerminalOutcome,
 } from "@influence/engine";
 import type {
   OwnerLearningCallCostReceipt,
@@ -19,6 +20,8 @@ import {
 } from "./owner-learning-review.js";
 import { priceOwnerLearningTokenReceipt } from "./provider-cost-accounting.js";
 import { stableJson } from "./stable-hash.js";
+import { sha256StableJson } from "./stable-hash.js";
+import { OwnerLearningOutputValidationError } from "./owner-learning-failures.js";
 
 export const OWNER_LEARNING_MAX_OUTPUT_TOKENS = 8_000;
 
@@ -39,13 +42,30 @@ export interface OwnerLearningProviderRequest {
     nextTier: "flex" | "auto";
     initialBackoffMs: number;
   };
+  onResponseObserved?: (observation: OwnerLearningProviderResponseObservation) => Promise<void>;
   signal?: AbortSignal;
 }
 
+export interface OwnerLearningProviderResponseObservation {
+  responseObservedAt: string;
+  responseSha256: string;
+  responseEvidence: unknown;
+  providerResponseId: string | null;
+  redactionCredentialValues?: readonly string[];
+}
+
 export interface OwnerLearningProviderResponse {
-  output: unknown;
+  /** Test providers may supply a decoded value; production decodes outputText in output_validation. */
+  output?: unknown;
+  outputText?: string | null;
   effectiveTier: string;
   providerResponseId: string | null;
+  responseObservedAt?: string;
+  responseSha256?: string;
+  requestEvidence?: unknown;
+  responseEvidence?: unknown;
+  /** Transient values used only by the durable evidence sanitizer. */
+  redactionCredentialValues?: readonly string[];
   tokenReceipt: OwnerLearningTokenReceipt;
   costReceipt: OwnerLearningCallCostReceipt;
 }
@@ -53,6 +73,10 @@ export interface OwnerLearningProviderResponse {
 export interface OwnerLearningProvider {
   invoke(request: OwnerLearningProviderRequest): Promise<OwnerLearningProviderResponse>;
 }
+
+export type OwnerLearningRecoveredProviderOutcome =
+  | { kind: "response"; response: OwnerLearningProviderResponse }
+  | { kind: "error"; error: OwnerLearningProviderError };
 
 export interface OwnerLearningProviderDiagnostic {
   reviewId?: string;
@@ -63,15 +87,38 @@ export interface OwnerLearningProviderDiagnostic {
 }
 
 export class OwnerLearningProviderError extends Error {
+  readonly internalCode: string;
+
   constructor(
     readonly code: OwnerLearningSafeFailureCode,
     readonly retryable: boolean,
     readonly tokenReceipt?: OwnerLearningTokenReceipt,
     readonly costReceipt?: OwnerLearningCallCostReceipt,
     readonly effectiveTier?: string,
+    readonly capture?: Partial<Pick<OwnerLearningProviderResponse,
+      | "providerResponseId"
+      | "responseObservedAt"
+      | "responseSha256"
+      | "requestEvidence"
+      | "responseEvidence"
+      | "redactionCredentialValues"
+    >>,
+    options?: { cause?: unknown; internalCode?: string },
   ) {
-    super(code);
+    super(code, options?.cause === undefined ? undefined : { cause: options.cause });
     this.name = "OwnerLearningProviderError";
+    this.internalCode = options?.internalCode ?? code;
+  }
+}
+
+export class OwnerLearningAttemptPersistenceError extends Error {
+  constructor(
+    readonly capture: NonNullable<OwnerLearningProviderError["capture"]>,
+    cause: unknown,
+    readonly terminalOutcome?: FlexTransportTerminalOutcome,
+  ) {
+    super("Owner learning provider attempt evidence could not be staged", { cause });
+    this.name = "OwnerLearningAttemptPersistenceError";
   }
 }
 
@@ -90,11 +137,112 @@ export function createOwnerLearningOpenAIProvider(options: {
       ) {
         throw new Error("Owner learning provider request violated the internal input budget invariant");
       }
+      const providerRequest = buildOwnerLearningProviderRequest(request);
+      const requestEvidence = providerRequest;
+      let responseCapture: { observedAt: string; evidence: unknown; sha256: string } | null = null;
+      let attemptPersistenceError: OwnerLearningAttemptPersistenceError | undefined;
+      let providerTransportError: OwnerLearningProviderError | undefined;
+      let lastTerminalAttemptedTier: "flex" | "auto" | undefined;
+      const evidenceFetch: ProviderFetch = async (input, init) => {
+        const response = await (options.fetch ?? fetch)(input, init);
+        const observedAt = (options.now?.() ?? new Date()).toISOString();
+        const responseMetadata = {
+          status: response.status,
+          headers: Object.fromEntries(response.headers.entries()),
+        };
+        let body: string;
+        try {
+          body = await response.clone().text();
+        } catch (error) {
+          const evidence = {
+            ...responseMetadata,
+            bodyReadError: providerErrorEvidence(error),
+          };
+          responseCapture = {
+            observedAt,
+            evidence,
+            sha256: sha256StableJson(evidence),
+          };
+          try {
+            await request.onResponseObserved?.({
+              responseObservedAt: responseCapture.observedAt,
+              responseSha256: responseCapture.sha256,
+              responseEvidence: evidence,
+              providerResponseId: null,
+              redactionCredentialValues: [options.apiKey],
+            });
+          } catch (persistenceError) {
+            attemptPersistenceError = new OwnerLearningAttemptPersistenceError(
+              providerCapture(requestEvidence, responseCapture, [options.apiKey]),
+              persistenceError,
+            );
+            throw attemptPersistenceError;
+          }
+          providerTransportError = new OwnerLearningProviderError(
+            "provider_error",
+            true,
+            undefined,
+            undefined,
+            undefined,
+            providerCapture(requestEvidence, responseCapture, [options.apiKey]),
+            { cause: error, internalCode: "response_body_read_failed" },
+          );
+          throw providerTransportError;
+        }
+        const evidence = { ...responseMetadata, body };
+        responseCapture = {
+          observedAt,
+          evidence,
+          sha256: sha256StableJson(evidence),
+        };
+        try {
+          await request.onResponseObserved?.({
+            responseObservedAt: responseCapture.observedAt,
+            responseSha256: responseCapture.sha256,
+            responseEvidence: evidence,
+            providerResponseId: providerResponseIdFromBody(body),
+            redactionCredentialValues: [options.apiKey],
+          });
+        } catch (error) {
+          attemptPersistenceError = new OwnerLearningAttemptPersistenceError(
+            providerCapture(requestEvidence, responseCapture, [options.apiKey]),
+            error,
+          );
+          throw attemptPersistenceError;
+        }
+        return response;
+      };
+      const durableObserver: FlexProcessingObserver = {
+        async onDispatchIntent(event) {
+          try {
+            await request.observer.onDispatchIntent(event);
+          } catch (error) {
+            attemptPersistenceError = new OwnerLearningAttemptPersistenceError(
+              providerCapture(requestEvidence, responseCapture, [options.apiKey]),
+              error,
+            );
+            throw attemptPersistenceError;
+          }
+        },
+        async onTerminalOutcome(event) {
+          lastTerminalAttemptedTier = event.attemptedTier;
+          try {
+            await request.observer.onTerminalOutcome(event);
+          } catch (error) {
+            attemptPersistenceError = new OwnerLearningAttemptPersistenceError(
+              providerCapture(requestEvidence, responseCapture, [options.apiKey]),
+              error,
+              event,
+            );
+            throw attemptPersistenceError;
+          }
+        },
+      };
       const flexFetch = createFlexProcessingFetch(
-        options.fetch ?? fetch,
+        evidenceFetch,
         options.wait,
         {
-          observer: request.observer,
+          observer: durableObserver,
           resume: request.resumeTransport,
         },
       );
@@ -105,27 +253,232 @@ export function createOwnerLearningOpenAIProvider(options: {
       });
       let response: unknown;
       try {
-        response = await client.responses.create(buildProviderRequest(request), {
+        response = await client.responses.create(providerRequest, {
           ...(request.signal ? { signal: request.signal } : {}),
         });
       } catch (error) {
+        if (attemptPersistenceError !== undefined) throw attemptPersistenceError;
+        if (providerTransportError !== undefined) throw providerTransportError;
         if (isAbortError(error)) throw error;
         const diagnostic = ownerLearningProviderDiagnostic(error, request.diagnosticContext);
         (options.onProviderError ?? logOwnerLearningProviderError)(diagnostic);
         const status = numberValue(asRecord(error)?.status);
         if (status === 429) {
-          throw new OwnerLearningProviderError("provider_capacity_exhausted", true);
+          throw new OwnerLearningProviderError(
+            "provider_capacity_exhausted",
+            lastTerminalAttemptedTier !== "auto",
+            undefined,
+            undefined,
+            undefined,
+            providerCapture(requestEvidence, responseCapture, [options.apiKey]),
+            { cause: error },
+          );
         }
         if (isProviderTimeoutError(error)) {
-          throw new OwnerLearningProviderError("provider_timeout", true);
+          throw new OwnerLearningProviderError(
+            "provider_timeout",
+            true,
+            undefined,
+            undefined,
+            undefined,
+            providerCapture(requestEvidence, responseCapture, [options.apiKey]),
+            { cause: error },
+          );
         }
         throw new OwnerLearningProviderError(
-          status != null && status >= 500 ? "provider_error" : "provider_error",
-          true,
+          "provider_error",
+          status == null || status >= 500,
+          undefined,
+          undefined,
+          undefined,
+          providerCapture(requestEvidence, responseCapture, [options.apiKey]),
+          { cause: error },
         );
       }
-      return parseProviderResponse(response, options.now?.() ?? new Date());
+      return parseProviderResponse(
+        response,
+        options.now?.() ?? new Date(),
+        requestEvidence,
+        responseCapture,
+        [options.apiKey],
+      );
     },
+  };
+}
+
+function providerResponseIdFromBody(body: string): string | null {
+  try {
+    return stringValue(asRecord(JSON.parse(body))?.id) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function decodeOwnerLearningProviderOutput(response: OwnerLearningProviderResponse): unknown {
+  if (response.output !== undefined) return response.output;
+  if (!response.outputText) {
+    throw new OwnerLearningOutputValidationError(
+      "invalid_result_contract",
+      "Owner learning provider response did not contain output text",
+    );
+  }
+  try {
+    return JSON.parse(response.outputText);
+  } catch (error) {
+    throw new OwnerLearningOutputValidationError(
+      "invalid_result_contract",
+      "Owner learning provider response was not valid JSON",
+      undefined,
+      { cause: error },
+    );
+  }
+}
+
+export function recoverOwnerLearningProviderResponse(
+  observation: OwnerLearningProviderResponseObservation,
+  requestEvidence: unknown,
+  transport?: { attemptedTier?: "flex" | "auto" },
+): OwnerLearningRecoveredProviderOutcome | null {
+  const envelope = asRecord(observation.responseEvidence);
+  const status = integerValue(envelope?.status);
+  const body = stringValue(envelope?.body);
+  if (status == null) return null;
+  if (envelope?.bodyReadError !== undefined) {
+    return {
+      kind: "error",
+      error: new OwnerLearningProviderError(
+        "provider_error",
+        true,
+        undefined,
+        undefined,
+        undefined,
+        providerCapture(
+          requestEvidence,
+          {
+            observedAt: observation.responseObservedAt,
+            evidence: observation.responseEvidence,
+            sha256: observation.responseSha256,
+          },
+          observation.redactionCredentialValues ?? [],
+        ),
+        {
+          cause: new Error("Owner learning provider response body could not be read"),
+          internalCode: "response_body_read_failed",
+        },
+      ),
+    };
+  }
+  if (status < 200 || status >= 300) {
+    const code: OwnerLearningSafeFailureCode = status === 408
+      ? "provider_timeout"
+      : status === 429 ? "provider_capacity_exhausted" : "provider_error";
+    const retryable = status === 408
+      || status >= 500
+      || (status === 429 && transport?.attemptedTier !== "auto");
+    return {
+      kind: "error",
+      error: new OwnerLearningProviderError(
+        code,
+        retryable,
+        undefined,
+        undefined,
+        undefined,
+        providerCapture(
+          requestEvidence,
+          {
+            observedAt: observation.responseObservedAt,
+            evidence: observation.responseEvidence,
+            sha256: observation.responseSha256,
+          },
+          observation.redactionCredentialValues ?? [],
+        ),
+        {
+          cause: new Error(`Owner learning provider returned HTTP ${status}`),
+          internalCode: `provider_http_${status}`,
+        },
+      ),
+    };
+  }
+  if (body == null) {
+    return {
+      kind: "error",
+      error: new OwnerLearningProviderError(
+        "provider_error",
+        true,
+        undefined,
+        undefined,
+        undefined,
+        providerCapture(
+          requestEvidence,
+          {
+            observedAt: observation.responseObservedAt,
+            evidence: observation.responseEvidence,
+            sha256: observation.responseSha256,
+          },
+          observation.redactionCredentialValues ?? [],
+        ),
+        {
+          cause: new Error("Owner learning provider response body was unavailable"),
+          internalCode: "provider_response_body_unavailable",
+        },
+      ),
+    };
+  }
+  try {
+    const parsed = JSON.parse(body);
+    try {
+      return {
+        kind: "response",
+        response: parseProviderResponse(
+          parsed,
+          new Date(observation.responseObservedAt),
+          requestEvidence,
+          {
+            observedAt: observation.responseObservedAt,
+            evidence: observation.responseEvidence,
+            sha256: observation.responseSha256,
+          },
+          [],
+        ),
+      };
+    } catch (error) {
+      return error instanceof OwnerLearningProviderError
+        ? { kind: "error", error }
+        : null;
+    }
+  } catch (error) {
+    return {
+      kind: "error",
+      error: new OwnerLearningProviderError(
+        "provider_error",
+        true,
+        undefined,
+        undefined,
+        undefined,
+        providerCapture(
+          requestEvidence,
+          {
+            observedAt: observation.responseObservedAt,
+            evidence: observation.responseEvidence,
+            sha256: observation.responseSha256,
+          },
+          observation.redactionCredentialValues ?? [],
+        ),
+        { cause: error, internalCode: "malformed_provider_response" },
+      ),
+    };
+  }
+}
+
+function providerErrorEvidence(error: unknown, seen = new Set<unknown>()): unknown {
+  if (!(error instanceof Error)) return { name: typeof error, message: String(error) };
+  if (seen.has(error)) return { name: error.name, message: "[Circular error cause]" };
+  seen.add(error);
+  return {
+    name: error.name || "Error",
+    message: error.message || String(error),
+    ...(error.stack && { stack: error.stack }),
+    ...(error.cause !== undefined && { cause: providerErrorEvidence(error.cause, seen) }),
   };
 }
 
@@ -150,8 +503,8 @@ function logOwnerLearningProviderError(diagnostic: OwnerLearningProviderDiagnost
   console.error("[owner-learning] provider request rejected", JSON.stringify(diagnostic));
 }
 
-function buildProviderRequest(
-  request: OwnerLearningProviderRequest,
+export function buildOwnerLearningProviderRequest(
+  request: Pick<OwnerLearningProviderRequest, "input" | "responseSchema">,
 ): ResponseCreateParamsNonStreaming {
   return {
     model: OWNER_LEARNING_MODEL_ID,
@@ -184,9 +537,28 @@ function isProviderTimeoutError(error: unknown): boolean {
 function parseProviderResponse(
   value: unknown,
   now: Date,
+  requestEvidence: unknown,
+  responseCapture: { observedAt: string; evidence: unknown; sha256: string } | null,
+  redactionCredentialValues: readonly string[],
 ): OwnerLearningProviderResponse {
   const response = asRecord(value);
-  if (!response) throw new OwnerLearningProviderError("invalid_structured_output", true);
+  const observedAt = responseCapture?.observedAt ?? now.toISOString();
+  const responseEvidence = responseCapture?.evidence ?? value;
+  const responseSha256 = responseCapture?.sha256 ?? sha256StableJson(responseEvidence);
+  if (!response) {
+    return {
+      outputText: null,
+      effectiveTier: "unknown",
+      providerResponseId: null,
+      responseObservedAt: observedAt,
+      responseSha256,
+      requestEvidence,
+      responseEvidence,
+      redactionCredentialValues,
+      tokenReceipt: {},
+      costReceipt: { costSource: "unavailable" },
+    };
+  }
   const effectiveTier = stringValue(response.service_tier) ?? "unknown";
   const tokenReceipt = parseTokenReceipt(response.usage);
   const costReceipt = priceOwnerLearningTokenReceipt({
@@ -202,6 +574,7 @@ function parseProviderResponse(
       tokenReceipt,
       costReceipt,
       effectiveTier,
+      providerCapture(requestEvidence, responseCapture, redactionCredentialValues, response),
     );
   }
   if (response.status !== "completed") {
@@ -211,36 +584,41 @@ function parseProviderResponse(
       tokenReceipt,
       costReceipt,
       effectiveTier,
+      providerCapture(requestEvidence, responseCapture, redactionCredentialValues, response),
     );
   }
   const outputText = extractOutputText(response);
-  if (!outputText) {
-    throw new OwnerLearningProviderError(
-      "invalid_structured_output",
-      true,
-      tokenReceipt,
-      costReceipt,
-      effectiveTier,
-    );
-  }
-  let output: unknown;
-  try {
-    output = JSON.parse(outputText);
-  } catch {
-    throw new OwnerLearningProviderError(
-      "invalid_structured_output",
-      true,
-      tokenReceipt,
-      costReceipt,
-      effectiveTier,
-    );
-  }
   return {
-    output,
+    outputText,
     effectiveTier,
     providerResponseId: stringValue(response.id) ?? null,
+    responseObservedAt: observedAt,
+    responseSha256,
+    requestEvidence,
+    responseEvidence,
+    redactionCredentialValues,
     tokenReceipt,
     costReceipt,
+  };
+}
+
+function providerCapture(
+  requestEvidence: unknown,
+  responseCapture: { observedAt: string; evidence: unknown; sha256: string } | null,
+  redactionCredentialValues: readonly string[],
+  response?: Record<string, unknown>,
+): NonNullable<OwnerLearningProviderError["capture"]> {
+  const capturedBody = stringValue(asRecord(responseCapture?.evidence)?.body);
+  return {
+    requestEvidence,
+    ...(responseCapture && {
+      responseObservedAt: responseCapture.observedAt,
+      responseEvidence: responseCapture.evidence,
+      responseSha256: responseCapture.sha256,
+    }),
+    providerResponseId: stringValue(response?.id)
+      ?? (capturedBody === undefined ? null : providerResponseIdFromBody(capturedBody)),
+    redactionCredentialValues,
   };
 }
 

@@ -28,6 +28,7 @@ export interface PrivateTraceStorageAdapter {
     key: string;
     offsetBytes?: number;
     maxBytes?: number;
+    abortSignal?: AbortSignal;
   }): Promise<{
     body?: string;
     bodyBytes?: Uint8Array;
@@ -35,7 +36,11 @@ export interface PrivateTraceStorageAdapter {
     contentRange?: string;
     contentType?: string;
   }>;
-  headObject(input: { bucket: string; key: string }): Promise<{ contentLength?: number; contentType?: string }>;
+  headObject(input: {
+    bucket: string;
+    key: string;
+    abortSignal?: AbortSignal;
+  }): Promise<{ contentLength?: number; contentType?: string }>;
 }
 
 export interface PrivateTraceStorageConfig {
@@ -120,6 +125,7 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
     key: string;
     offsetBytes?: number;
     maxBytes?: number;
+    abortSignal?: AbortSignal;
   }): Promise<{
     bodyBytes: Uint8Array;
     contentLength?: number;
@@ -137,7 +143,10 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
           : `bytes=${offsetBytes}-${offsetBytes + maxBytes - 1}`,
       }),
     };
-    const response = await this.client.send(new GetObjectCommand(command));
+    const response = await this.client.send(
+      new GetObjectCommand(command),
+      input.abortSignal ? { abortSignal: input.abortSignal } : undefined,
+    );
     const bodyBytes = await response.Body?.transformToByteArray();
     if (bodyBytes === undefined) {
       throw new Error("private trace object body missing");
@@ -150,11 +159,15 @@ export class S3PrivateTraceStorageAdapter implements PrivateTraceStorageAdapter 
     };
   }
 
-  async headObject(input: { bucket: string; key: string }): Promise<{ contentLength?: number; contentType?: string }> {
+  async headObject(input: {
+    bucket: string;
+    key: string;
+    abortSignal?: AbortSignal;
+  }): Promise<{ contentLength?: number; contentType?: string }> {
     const response = await this.client.send(new HeadObjectCommand({
       Bucket: input.bucket,
       Key: input.key,
-    }));
+    }), input.abortSignal ? { abortSignal: input.abortSignal } : undefined);
     return {
       ...(response.ContentLength !== undefined && { contentLength: response.ContentLength }),
       ...(response.ContentType && { contentType: response.ContentType }),

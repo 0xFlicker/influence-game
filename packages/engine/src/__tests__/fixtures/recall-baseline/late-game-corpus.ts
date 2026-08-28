@@ -13,6 +13,7 @@
  */
 
 import { Phase } from "../../../types";
+import type { AllianceHuddleFactAtom } from "../../../types";
 import type {
   PhaseContext,
   RecallContinuitySnapshot,
@@ -40,6 +41,22 @@ export interface RecallBaselineCase {
   readonly phaseContext: PhaseContext;
   readonly continuity: RecallContinuitySnapshot;
   readonly legacy: RecallBaselineLegacyEstimate;
+}
+
+function huddleCommitment(
+  factId: string,
+  actorPlayerId: string,
+  targetPlayerId: string,
+): AllianceHuddleFactAtom {
+  return {
+    kind: "commitment",
+    factId,
+    sessionId: `${factId}-session`,
+    actorPlayerId,
+    actionKind: "empower_vote",
+    targetPlayerId,
+    confidence: "high",
+  };
 }
 
 const COMPACT_STRATEGY: CompactStrategyState = {
@@ -106,35 +123,17 @@ function baseAllianceContext(): NonNullable<PhaseContext["allianceContext"]> {
           {
             id: "outcome-r2-pre-vote",
             round: 2,
-            ask: "Lock empower on Mira and pressure Vera",
-            plan: "Publicly soft-talk Vera then ballot Mira empower",
-            promises: ["Mira covers Atlas if expose heat rises"],
-            dissent: [],
-            confidence: "high",
-            posture: "locked_pair",
-            leakOrBetrayalClaims: [],
+            facts: [huddleCommitment("fact-r2", "atlas-id", "mira-id")],
           },
           {
             id: "outcome-r3-pre-council",
             round: 3,
-            ask: "Survive council without spending eliminate",
-            plan: "Lobby pass; keep pair votes off each other",
-            promises: ["Neither names the other as council target"],
-            dissent: ["Mira worried Nyx will flip"],
-            confidence: "medium",
-            posture: "defensive_pair",
-            leakOrBetrayalClaims: ["Nyx claimed Mira offered a side deal"],
+            facts: [huddleCommitment("fact-r3", "mira-id", "atlas-id")],
           },
           {
             id: "outcome-r4-pre-vote",
             round: 4,
-            ask: "Enter Reckoning with Vera as public threat",
-            plan: "Coordinate direct elimination heat toward Vera",
-            promises: ["Atlas and Mira vote Vera if four remain"],
-            dissent: [],
-            confidence: "high",
-            posture: "endgame_pair",
-            leakOrBetrayalClaims: [],
+            facts: [huddleCommitment("fact-r4", "atlas-id", "vera-id")],
           },
         ],
       },
@@ -150,13 +149,7 @@ function baseAllianceContext(): NonNullable<PhaseContext["allianceContext"]> {
           {
             id: "outcome-r1-echo",
             round: 1,
-            ask: "Share expose reads without formal alliance language",
-            plan: "Atlas signals Vera; Echo softens on Mira",
-            promises: ["No public betrayal this round"],
-            dissent: [],
-            confidence: "low",
-            posture: "info_trade",
-            leakOrBetrayalClaims: [],
+            facts: [huddleCommitment("fact-r1", "atlas-id", "mira-id")],
           },
         ],
       },

@@ -4,13 +4,25 @@ import { compileRecallPlan } from "../context-recall-plan";
 import { GameState } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { Phase } from "../types";
-import type { UUID } from "../types";
+import type { AllianceHuddleFactAtom, UUID } from "../types";
 
 const PLAYERS = [
   { id: "alice", name: "Alice" },
   { id: "bob", name: "Bob" },
   { id: "charlie", name: "Charlie" },
 ];
+
+function commitmentFact(sessionId: string, factId: string): AllianceHuddleFactAtom {
+  return {
+    kind: "commitment",
+    factId,
+    sessionId,
+    actorPlayerId: "alice",
+    actionKind: "council_vote",
+    targetPlayerId: "charlie",
+    confidence: "high",
+  };
+}
 
 function createContextHarness() {
   const gameState = new GameState(PLAYERS, {
@@ -104,13 +116,7 @@ describe("named alliance member-safe context", () => {
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: gameState.round,
-      ask: "Vote together.",
-      plan: "Blindside Charlie at Council.",
-      promises: ["Alice protects Bob."],
-      dissent: [],
-      confidence: "high",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
+      facts: [commitmentFact("session-ab", "fact-ab")],
       participantPlayerIds: ["alice", "bob"],
       createdAt: "2026-07-03T00:00:01.000Z",
     });
@@ -160,13 +166,7 @@ describe("named alliance member-safe context", () => {
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: gameState.round,
-      ask: "Hold the line.",
-      plan: "Vote Charlie at the next public vote.",
-      promises: ["Alice covers Bob."],
-      dissent: [],
-      confidence: "high",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
+      facts: [commitmentFact("session-ab", "fact-ab")],
       participantPlayerIds: ["alice", "bob"],
       createdAt: "2026-07-03T00:00:01.000Z",
     });
@@ -180,7 +180,7 @@ describe("named alliance member-safe context", () => {
         huddleOutcomes: [
           expect.objectContaining({
             id: "outcome-ab",
-            plan: "Vote Charlie at the next public vote.",
+            facts: [commitmentFact("session-ab", "fact-ab")],
           }),
         ],
       }),
@@ -229,13 +229,7 @@ describe("named alliance member-safe context", () => {
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: gameState.round,
-      ask: "Secret ask.",
-      plan: "Secret plan to blindside Charlie.",
-      promises: ["Keep Charlie out of the room."],
-      dissent: [],
-      confidence: "high",
-      posture: "coordinating",
-      leakOrBetrayalClaims: [],
+      facts: [commitmentFact("session-early", "fact-early")],
       participantPlayerIds: ["alice", "bob"],
       createdAt: "2026-07-03T00:00:01.000Z",
     });
@@ -293,22 +287,17 @@ describe("named alliance member-safe context", () => {
       playerId: "bob",
       response: "accepted",
     });
-    // No matching completed session and no participantPlayerIds → unavailable for recall.
-    gameState.recordAllianceHuddleOutcome({
+    // A modern outcome cannot exist without its completed canonical session.
+    expect(() => gameState.recordAllianceHuddleOutcome({
       id: "outcome-orphan",
       sessionId: "session-missing",
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: gameState.round,
-      ask: "Orphan ask.",
-      plan: "Orphan plan.",
-      promises: [],
-      dissent: [],
-      confidence: "low",
-      posture: "guarded",
-      leakOrBetrayalClaims: [],
+      facts: [commitmentFact("session-missing", "fact-orphan")],
+      participantPlayerIds: [],
       createdAt: "2026-07-03T00:00:01.000Z",
-    });
+    })).toThrow("without completed session");
 
     const aliceContext = builder.buildPhaseContext("alice", Phase.VOTE);
     const alliance = aliceContext.allianceContext?.activeAlliances.find((a) => a.id === "alliance-ab");
@@ -367,21 +356,23 @@ describe("named alliance member-safe context", () => {
       allianceId: "alliance-ab",
       window: "pre_vote",
       round: gameState.round,
-      ask: "Hold.",
-      plan: "Coordinate Charlie pressure.",
-      promises: [],
-      dissent: [],
-      confidence: "medium",
-      posture: "guarded",
-      leakOrBetrayalClaims: [],
-      // Snapshot omitted — must recover from session speakers on hydrate.
+      facts: [commitmentFact("session-hydrate-ctx", "fact-hydrate")],
+      participantPlayerIds: [],
+      // Empty snapshot is filled from the completed session before the v2 write.
       createdAt: "2026-07-03T00:00:01.000Z",
     });
 
     const events = gameState.getCanonicalEvents().map((event) => {
       if (event.type !== "alliance.huddle_outcome_recorded") return event;
-      const { participantPlayerIds: _drop, ...withoutSnapshot } = event.payload.outcome;
-      return { ...event, payload: { ...event.payload, outcome: withoutSnapshot } };
+      const { id, sessionId, allianceId, window, round, createdAt } = event.payload.outcome;
+      return {
+        ...event,
+        payloadVersion: 1 as const,
+        payload: {
+          outcome: { id, sessionId, allianceId, window, round, createdAt },
+          ...(event.payload.alliance ? { alliance: event.payload.alliance } : {}),
+        },
+      };
     });
     const resumed = GameState.fromCanonicalEvents(JSON.parse(JSON.stringify(events)), {
       now: () => 1_700_000_000_000,

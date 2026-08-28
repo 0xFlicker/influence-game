@@ -94,7 +94,11 @@ export function stageIndex(stage: OwnerLearningStage): number {
 
 export function isReviewPolling(review: OwnerLearningReviewStatus): boolean {
   return review.resolution == null
-    && (review.analysisStatus === "queued" || review.analysisStatus === "running");
+    && (
+      review.analysisStatus === "queued"
+      || review.analysisStatus === "retry_queued"
+      || review.analysisStatus === "running"
+    );
 }
 
 export function canonicalFacts(value: unknown): OwnerLearningCanonicalFacts {
@@ -262,10 +266,10 @@ function formatBallotLabel(ballot: Record<string, unknown> | null): string | nul
   const target = playerName(ballot.target);
   if (!target) return null;
   if (ballot.polarity === "save") return `Voted to save ${target}`;
-  if (ballot.polarity === "eliminate") return `Voted to eliminate ${target}`;
-  if (ballot.formatId === "vote_bomb") return `Vote Bomb vote against ${target}`;
+  if (ballot.polarity === "eliminate") return `Voted to exit ${target}`;
+  if (ballot.formatId === "vote_bomb") return `The Short List vote against ${target}`;
   if (ballot.formatId === "majority_elimination") {
-    return `Majority Elimination vote against ${target}`;
+    return `Highest Count vote against ${target}`;
   }
   if (ballot.formatId === "even_votes") {
     return `Even Votes vote against ${target}`;

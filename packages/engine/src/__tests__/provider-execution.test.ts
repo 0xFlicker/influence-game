@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { APIUserAbortError } from "openai";
 import {
   ProviderAttemptError,
+  ProviderAcceptedValueIntegrityError,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
   ProviderExecutionCoordinator,
@@ -69,6 +70,101 @@ describe("ProviderExecutionCoordinator", () => {
     });
     expect(allocations).toBe(0);
     expect(dispatches).toBe(0);
+  });
+
+  it("revalidates and decodes a durable accepted value before replay", async () => {
+    let dispatches = 0;
+    const coordinator = new ProviderExecutionCoordinator({
+      hooks: {
+        onReadAccepted: () => ({
+          attemptId: "attempt-accepted",
+          attemptOrdinal: 2,
+          catalogId: "katana:glm-5-2",
+          value: { targetPlayerId: "maya-id" },
+        }),
+      },
+    });
+    const result = await coordinator.startCall(coordinate).executeManifest({
+      entries: [{
+        catalogId: "katana:glm-5-2",
+        preparedRequest: {
+          transport: "chat_completions",
+          providerProfileId: "katana",
+          catalogId: "katana:glm-5-2",
+          model: "glm-5-2",
+          body: {},
+        },
+        maxAttempts: 1,
+        dispatch: async () => {
+          dispatches += 1;
+          return { targetPlayerId: "other-id" };
+        },
+        validate: (value) => ({ status: "usable", value }),
+      }],
+      validateAcceptedValue: (value) => {
+        const targetPlayerId = value && typeof value === "object"
+          ? (value as Record<string, unknown>).targetPlayerId
+          : undefined;
+        return targetPlayerId === "maya-id"
+          ? { status: "valid", value: { targetPlayerId } }
+          : { status: "invalid", message: "accepted target is no longer legal" };
+      },
+    });
+
+    expect(result.value).toEqual({ targetPlayerId: "maya-id" });
+    expect(dispatches).toBe(0);
+  });
+
+  it("fails replay integrity without retry, fallback, terminal hooks, or dispatch", async () => {
+    let allocations = 0;
+    let dispatches = 0;
+    let terminals = 0;
+    let retries = 0;
+    const coordinator = new ProviderExecutionCoordinator({
+      hooks: {
+        onReadAccepted: () => ({
+          attemptOrdinal: 1,
+          catalogId: "openai:primary",
+          value: { targetPlayerId: "eliminated-id" },
+        }),
+        onAllocateAttemptOrdinal: () => {
+          allocations += 1;
+          return 2;
+        },
+        onTerminal: () => { terminals += 1; },
+      },
+    });
+    const entry = (catalogId: string) => ({
+      catalogId,
+      preparedRequest: {
+        transport: "responses",
+        providerProfileId: "openai" as const,
+        catalogId,
+        model: catalogId,
+        body: {},
+      },
+      maxAttempts: 2,
+      dispatch: async () => {
+        dispatches += 1;
+        return { targetPlayerId: "legal-id" };
+      },
+      validate: (value: { targetPlayerId: string }) => ({ status: "usable" as const, value }),
+      onRetry: () => { retries += 1; },
+    });
+
+    await expect(coordinator.startCall(coordinate).executeManifest({
+      entries: [entry("openai:primary"), entry("openai:fallback")],
+      validateAcceptedValue: () => ({
+        status: "invalid",
+        message: "accepted target is no longer legal",
+      }),
+    })).rejects.toBeInstanceOf(ProviderAcceptedValueIntegrityError);
+    expect({ allocations, dispatches, terminals, retries }).toEqual({
+      allocations: 0,
+      dispatches: 0,
+      terminals: 0,
+      retries: 0,
+    });
   });
 
   it("traverses the sealed manifest after refusal and starts the next logical call at primary", async () => {

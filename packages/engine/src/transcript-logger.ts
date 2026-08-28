@@ -78,9 +78,23 @@ export class TranscriptLogger {
   }
 
   flushStreamBuffer(): void {
+    const buffered = this.takeStreamBufferForCheckpoint();
+    if (!buffered) return;
+    this.releaseCheckpointedStreamBuffer(buffered);
+  }
+
+  /**
+   * Detach viewer events while keeping them unreleased. The runner uses this
+   * to persist the matching transcript and House notebook before delivery.
+   */
+  takeStreamBufferForCheckpoint(): GameStreamEvent[] | null {
     const buffered = this.streamBuffer;
     this.streamBuffer = null;
-    if (!buffered) return;
+    return buffered;
+  }
+
+  /** Release events only after the checkpoint containing them is durable. */
+  releaseCheckpointedStreamBuffer(buffered: readonly GameStreamEvent[]): void {
     for (const event of buffered) {
       this.deliverStreamEvent(event);
     }

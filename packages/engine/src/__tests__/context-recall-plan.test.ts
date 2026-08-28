@@ -8,7 +8,7 @@ import { GameState, createUUID } from "../game-state";
 import { TranscriptLogger } from "../transcript-logger";
 import { ContextBuilder } from "../context-builder";
 import { Phase } from "../types";
-import type { UUID } from "../types";
+import type { AllianceHuddleFactAtom, UUID } from "../types";
 import type {
   PhaseContext,
   RecallContinuitySnapshot,
@@ -38,6 +38,18 @@ const ALICE = "alice" as UUID;
 const BOB = "bob" as UUID;
 const CHARLIE = "charlie" as UUID;
 const DANA = "dana" as UUID;
+
+function huddleCommitment(factId: string, targetPlayerId: UUID = BOB): AllianceHuddleFactAtom {
+  return {
+    kind: "commitment",
+    factId,
+    sessionId: "session-ab",
+    actorPlayerId: ALICE,
+    actionKind: "empower_vote",
+    targetPlayerId,
+    confidence: "high",
+  };
+}
 
 function makeStrategyPacket(overrides: Record<string, unknown> = {}): CompactStrategyState {
   const prose = Object.values({
@@ -112,13 +124,7 @@ function basePhaseContext(overrides: Partial<PhaseContext> = {}): PhaseContext {
             {
               id: "outcome-1",
               round: 2,
-              ask: "Lock the pair on Bob empowerment",
-              plan: "Signal commitment in mingle then vote Bob",
-              promises: ["Bob backs Alice if exposed"],
-              dissent: [],
-              confidence: "high",
-              posture: "locked_pair",
-              leakOrBetrayalClaims: [],
+              facts: [huddleCommitment("fact-1")],
             },
           ],
         },
@@ -541,9 +547,6 @@ describe("compileRecallPlan", () => {
   });
 
   it("protected overflow still reserves bounded strategic history, while protected content remains complete", () => {
-    const hugePromises = Array.from({ length: 80 }, (_, i) =>
-      `Promise block ${i}: ${"commitment ".repeat(40)}with Bob empowerment lock`,
-    );
     const phaseContext = basePhaseContext({
       allianceContext: {
         activeAlliances: [
@@ -559,13 +562,7 @@ describe("compileRecallPlan", () => {
               {
                 id: "outcome-huge",
                 round: 2,
-                ask: "Massive protected outcome ask " + "x".repeat(500),
-                plan: "Massive protected outcome plan " + "y".repeat(500),
-                promises: hugePromises,
-                dissent: [],
-                confidence: "high",
-                posture: "locked_pair",
-                leakOrBetrayalClaims: [],
+                facts: [huddleCommitment("fact-huge")],
               },
             ],
           },
@@ -615,7 +612,9 @@ describe("compileRecallPlan", () => {
     );
     // Protected content remains complete
     expect(plan.protected.huddleOutcomes).toHaveLength(1);
-    expect(plan.protected.huddleOutcomes[0]!.promises.length).toBe(hugePromises.length);
+    expect(plan.protected.huddleOutcomes[0]!.facts).toEqual([
+      huddleCommitment("fact-huge"),
+    ]);
     expect(plan.protected.compactStrategy.baseline).toContain(`Alice commitment ${"x".repeat(8_000)}`);
     expect(plan.receipt.protectedOverflow).toBe(true);
     expect(plan.receipt.selectedLaneCounts.history).toBe(1);
@@ -1109,5 +1108,33 @@ describe("ContextBuilder.compileRecallPlan", () => {
     });
     expect(serializeRecallPlan(a)).toBe(serializeRecallPlan(b));
     expect(measureStructuredChars(a.protected)).toBeGreaterThan(0);
+  });
+
+  it("keeps viewer-facing House summaries out of contestant phase context and Recall Plans", () => {
+    const viewerBeat = "Viewer-only House arc: Alice now carries the pressure.";
+    logger.logSystem(
+      viewerBeat,
+      Phase.LOBBY,
+      undefined,
+      undefined,
+      "house_summary",
+    );
+    logger.logPublic(bobId, "Alice, are you still with me?", Phase.LOBBY);
+
+    const phaseContext = builder.buildPhaseContext(aliceId, Phase.VOTE);
+    expect(JSON.stringify(phaseContext.publicTranscriptContext)).not.toContain(viewerBeat);
+    expect(JSON.stringify(phaseContext.publicMessages)).not.toContain(viewerBeat);
+
+    const plan = builder.compileRecallPlan({
+      agentId: aliceId,
+      promptClass: "strategic_decision",
+      continuity: makeContinuity(),
+      phase: Phase.VOTE,
+      phaseContext,
+    });
+    expect(serializeRecallPlan(plan)).not.toContain(viewerBeat);
+    expect(plan.history.dialogueEvidence.some((entry) =>
+      entry.dialogueText.includes("are you still with me"),
+    )).toBe(true);
   });
 });

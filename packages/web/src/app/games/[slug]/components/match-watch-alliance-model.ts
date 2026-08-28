@@ -7,6 +7,7 @@ import type {
   PublicGameAlliancesResponse,
 } from "@/lib/api";
 import type { MatchWatchModel } from "./match-watch-model";
+import { formatAllianceHuddleFacts } from "@influence/engine/alliance-huddle-outcome";
 
 export type AllianceFactsLoadState = "idle" | "loading" | "ready" | "error";
 
@@ -387,7 +388,7 @@ function cardFromEntry(
   const allianceId = record?.id ?? proposal?.allianceId ?? "unknown-alliance";
   const allianceHuddles = huddles
     .filter((huddle) => huddle.allianceId === allianceId)
-    .map(toHuddleModel)
+    .map((huddle) => toHuddleModel(huddle, playerById))
     .sort((left, right) => right.round - left.round || right.pass - left.pass || left.allianceName.localeCompare(right.allianceName));
   const latestOutcome = record?.latestOutcome ?? allianceHuddles.find((huddle) => huddle.outcomeSummary)?.outcomeSummary;
 
@@ -404,7 +405,9 @@ function cardFromEntry(
     updatedRound: record?.updatedRound ?? proposal?.resolvedRound ?? proposal?.proposedRound ?? null,
     proposalCount: proposals.length || 1,
     latestProposalStatus: proposal?.status ?? null,
-    latestOutcomeSummary: typeof latestOutcome === "string" ? latestOutcome : outcomeSummary(latestOutcome ?? undefined),
+    latestOutcomeSummary: typeof latestOutcome === "string"
+      ? latestOutcome
+      : outcomeSummary(latestOutcome ?? undefined, playerById),
     consequences: record?.consequences ?? [],
     huddles: allianceHuddles,
   };
@@ -430,7 +433,10 @@ function buildAllianceMembers(
   });
 }
 
-function toHuddleModel(huddle: PublicAllianceHuddleRead): MatchWatchAllianceHuddleModel {
+function toHuddleModel(
+  huddle: PublicAllianceHuddleRead,
+  playerById: ReadonlyMap<string, GamePlayer>,
+): MatchWatchAllianceHuddleModel {
   return {
     id: `${huddle.allianceId}:${huddle.round}:${huddle.window}:${huddle.pass}`,
     allianceId: huddle.allianceId,
@@ -440,7 +446,7 @@ function toHuddleModel(huddle: PublicAllianceHuddleRead): MatchWatchAllianceHudd
     pass: huddle.pass,
     speakerNames: huddle.speakers.map((speaker) => speaker.name),
     messageCount: huddle.messages.length,
-    outcomeSummary: outcomeSummary(huddle.outcome),
+    outcomeSummary: outcomeSummary(huddle.outcome, playerById),
     messages: huddle.messages.map((message) => ({
       fromName: message.from.name,
       text: message.text,
@@ -484,24 +490,15 @@ function latestProposal(proposals: PublicAllianceProposalRead[] | undefined): Pu
   ))[0];
 }
 
-function outcomeSummary(outcome: PublicAllianceHuddleRead["outcome"] | PublicAllianceRecordRead["latestOutcome"] | undefined): string | null {
+function outcomeSummary(
+  outcome: PublicAllianceHuddleRead["outcome"] | PublicAllianceRecordRead["latestOutcome"] | undefined,
+  playerById: ReadonlyMap<string, GamePlayer>,
+): string | null {
   if (!outcome) return null;
-  const fragments = [
-    outcome.ask ? labeledFragment("Ask", outcome.ask) : null,
-    outcome.plan ? labeledFragment("Plan", outcome.plan) : null,
-    outcome.promises.length > 0 ? labeledFragment("Promises", outcome.promises.join("; ")) : null,
-    outcome.dissent.length > 0 ? labeledFragment("Dissent", outcome.dissent.join("; ")) : null,
-    outcome.leakOrBetrayalClaims.length > 0 ? labeledFragment("Claims", outcome.leakOrBetrayalClaims.join("; ")) : null,
-  ].filter((fragment): fragment is string => Boolean(fragment));
-  return fragments.join(" ");
-}
-
-function labeledFragment(label: string, value: string): string {
-  const trimmed = value.trim();
-  const prefix = `${label}:`;
-  return trimmed.toLocaleLowerCase().startsWith(prefix.toLocaleLowerCase())
-    ? trimmed
-    : `${prefix} ${trimmed}`;
+  return formatAllianceHuddleFacts(
+    outcome.facts,
+    (playerId) => playerById.get(playerId)?.name ?? playerId,
+  ).join(" ");
 }
 
 function compareAllianceCards(left: MatchWatchAllianceCardModel, right: MatchWatchAllianceCardModel): number {

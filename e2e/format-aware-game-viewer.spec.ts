@@ -13,7 +13,6 @@ import {
   displayNameForFormat,
 } from "../packages/engine/src/format-presentation-metadata";
 import {
-  formatResultPattern,
   installDeterministicClassicGame,
   installDeterministicCompletedClassicGame,
   installDeterministicFormatGame,
@@ -36,13 +35,35 @@ const COMPLETED_SHARED_SCENARIO_IDS = [
   "majority_elimination_tie",
   "safety_bounce_tie",
 ] as const satisfies readonly FormatKernelViewerScenarioId[];
-const SHARED_FORMAT_NAMES = COMPLETED_SHARED_SCENARIO_IDS.map((scenarioId) => {
+
+function formatNameForScenario(
+  scenarioId: FormatKernelViewerScenarioId,
+): string {
   const selectedFormatId = createFormatKernelViewerScenario(
     scenarioId,
   ).expected.selectedFormatId;
   if (!selectedFormatId) throw new Error(`Missing selected format for ${scenarioId}`);
   return displayNameForFormat(selectedFormatId);
-});
+}
+
+function formatBrowserEntry(
+  scenarioId: FormatKernelViewerScenarioId,
+  slug: string,
+): {
+  scenarioId: FormatKernelViewerScenarioId;
+  slug: string;
+  formatName: string;
+} {
+  return {
+    scenarioId,
+    slug,
+    formatName: formatNameForScenario(scenarioId),
+  };
+}
+
+const SHARED_FORMAT_NAMES = COMPLETED_SHARED_SCENARIO_IDS.map(
+  formatNameForScenario,
+);
 const COMPLETED_FORMAT_FIXTURES = [
   {
     slug: "dark-coral-horn",
@@ -54,40 +75,28 @@ const COMPLETED_FORMAT_FIXTURES = [
   },
   {
     slug: "young-ruby-isle",
-    formats: ["Save-or-Eliminate", "Safety Bounce"],
+    formats: [
+      formatNameForScenario("save_or_eliminate_clear"),
+      formatNameForScenario("safety_bounce_tie"),
+    ],
   },
 ] as const;
 const FORMAT_BROWSER_MATRIX = [
-  {
-    scenarioId: "save_or_eliminate_clear",
-    slug: "deterministic-save-or-eliminate",
-    formatName: "Save-or-Eliminate",
-  },
-  {
-    scenarioId: "vote_bomb_clear",
-    slug: "deterministic-vote-bomb",
-    formatName: "Vote Bomb",
-  },
-  {
-    scenarioId: "majority_elimination_clear",
-    slug: "deterministic-majority-elimination-clear",
-    formatName: "Majority Elimination",
-  },
-  {
-    scenarioId: "majority_elimination_tie",
-    slug: "deterministic-majority-elimination-tie",
-    formatName: "Majority Elimination",
-  },
-  {
-    scenarioId: "safety_bounce_tie",
-    slug: "deterministic-safety-bounce",
-    formatName: "Safety Bounce",
-  },
-] as const satisfies readonly {
-  scenarioId: FormatKernelViewerScenarioId;
-  slug: string;
-  formatName: string;
-}[];
+  formatBrowserEntry(
+    "save_or_eliminate_clear",
+    "deterministic-save-or-eliminate",
+  ),
+  formatBrowserEntry("vote_bomb_clear", "deterministic-vote-bomb"),
+  formatBrowserEntry(
+    "majority_elimination_clear",
+    "deterministic-majority-elimination-clear",
+  ),
+  formatBrowserEntry(
+    "majority_elimination_tie",
+    "deterministic-majority-elimination-tie",
+  ),
+  formatBrowserEntry("safety_bounce_tie", "deterministic-safety-bounce"),
+] as const;
 
 interface LocalFormatViewerHarness {
   webUrl: string;
@@ -183,7 +192,10 @@ test.describe("format-aware game viewer", () => {
       });
       const results = page.getByTestId("completed-results-review");
       await expect(results).toBeVisible();
-      await expect(results.getByText(formatResultPattern(entry.formatName)).first())
+      await expect(results.getByRole("heading", {
+        name: entry.formatName,
+        exact: true,
+      }).first())
         .toBeVisible();
     });
   }
@@ -432,7 +444,10 @@ test.describe("format-aware game viewer", () => {
       const review = page.getByTestId("completed-results-review");
       await expect(review).toBeVisible();
       for (const formatName of fixture.formats) {
-        await expect(review.getByText(formatResultPattern(formatName)).first())
+        await expect(review.getByRole("heading", {
+          name: formatName,
+          exact: true,
+        }).first())
           .toBeVisible();
       }
       await expect(review.locator("[data-format-recap-status]")).not.toHaveCount(0);

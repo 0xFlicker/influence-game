@@ -169,8 +169,24 @@ export async function resolveOwnedOwnerLearningReview(
   },
 ): Promise<void> {
   const nowIso = (input.now ?? new Date()).toISOString();
+  const identity = (await db.select({
+    agentProfileId: schema.agentLearningReviews.agentProfileId,
+  }).from(schema.agentLearningReviews).where(and(
+    eq(schema.agentLearningReviews.id, input.reviewId),
+    eq(schema.agentLearningReviews.ownerUserId, input.ownerUserId),
+  )).limit(1))[0];
+  if (!identity) throw new OwnerLearningResolutionError("review_not_found", 404);
   await db.transaction(async (tx) => {
+    await tx.execute(sql`
+      SELECT id
+      FROM agent_profiles
+      WHERE id = ${identity.agentProfileId}
+      FOR UPDATE
+    `);
     const review = await lockOwnedOwnerLearningReview(tx, input);
+    if (review.agentProfileId !== identity.agentProfileId) {
+      throw new OwnerLearningResolutionError("review_state_conflict", 409);
+    }
     const expectedStatus = input.resolution === "declined" ? "ready" : "failed";
     if (review.resolvedAt != null && review.resolution === input.resolution) return;
     if (review.resolvedAt != null || review.analysisStatus !== expectedStatus) {

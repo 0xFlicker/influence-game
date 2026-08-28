@@ -44,6 +44,12 @@ function makeTextOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
     responses: {
       create: async (params: Record<string, unknown>) => {
         requests.push(params);
+        const responseSchema = (
+          params.text as {
+            format?: { schema?: { properties?: Record<string, unknown> } };
+          } | undefined
+        )?.format?.schema;
+        const properties = responseSchema?.properties ?? {};
         return {
           id: "resp_recall_plan_measurement",
           object: "response",
@@ -58,6 +64,12 @@ function makeTextOpenAIStub(requests: Array<Record<string, unknown>>): OpenAI {
               text: JSON.stringify({
                 thinking: "Stay with Mira; pressure Vera.",
                 message: "I ask the jury to remember the pair.",
+                ...(Object.prototype.hasOwnProperty.call(properties, "strategy")
+                  ? { strategy: "Keep Mira close and make Vera the accountable endgame threat." }
+                  : {}),
+                ...(Object.prototype.hasOwnProperty.call(properties, "strategyDelta")
+                  ? { strategyDelta: null }
+                  : {}),
               }),
               annotations: [],
             }],
@@ -266,9 +278,13 @@ describe("U5 late-game promotion gate (frozen corpus)", () => {
         "Survive Reckoning with Mira as the closest partner while treating Vera as the public threat and Nyx as flexible.",
       );
       expect(measured.prompt).toContain("Official Alliance Context");
-      // Compact huddle plan text from member-safe alliance context (protected lane source).
-      expect(measured.prompt).toContain("Publicly soft-talk Vera then ballot Mira empower");
-      expect(measured.prompt).toContain("Coordinate direct elimination heat toward Vera");
+      // Typed huddle fact rendered from the member-safe protected lane.
+      expect(measured.prompt).toContain(
+        "Atlas recorded a commitment to an empower vote for Mira",
+      );
+      expect(measured.prompt).toContain(
+        "Atlas recorded a commitment to an empower vote for Vera",
+      );
       // Plan-level protected records also cover closed-alliance outcomes.
       expect(plan.protected.huddleOutcomes.map((o) => o.id).sort()).toEqual(
         [

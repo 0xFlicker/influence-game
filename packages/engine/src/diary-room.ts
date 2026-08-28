@@ -13,15 +13,14 @@ import { Phase } from "./types";
 import type {
   CompactStrategyApplicationResult,
   CompactStrategyDecisionBoundary,
-  HouseProducerBrief,
-  HouseRoundFacts,
-  HouseStrategyBiblePacket,
   IAgent,
+  PhaseContext,
+  RecallPromptClass,
 } from "./game-runner.types";
 import { emptyRecallContinuitySnapshot } from "./context-recall-plan";
-import { formatHouseProducerBriefOperatorText } from "./operator-turn-text";
 import { transcriptThinkingFor } from "./phases/phase-runner-context";
 import { pairProviderLogicalCallOrdinals } from "./provider-execution";
+import { isProviderFallbackEligible } from "./provider-execution";
 
 export class DiaryRoom {
   /** Diary room entries: question/answer pairs per agent per phase */
@@ -38,8 +37,6 @@ export class DiaryRoom {
     private readonly agents: Map<UUID, IAgent>,
     private readonly config: GameConfig,
     private readonly houseInterviewer: IHouseInterviewer,
-    private readonly getHouseStrategyBible?: () => HouseStrategyBiblePacket | null,
-    private readonly getHouseRoundFacts?: () => HouseRoundFacts,
     private readonly beforeAcceptedCommit?: () => Promise<void> | void,
   ) {}
 
@@ -62,6 +59,7 @@ export class DiaryRoom {
         try {
           await this.runDiaryInterview(precedingPhase, player.id, player.name, false);
         } catch (error) {
+          if (!isProviderFallbackEligible(error)) throw error;
           await this.markFailedReconciliationOpportunity(agent);
           console.error(`[DiaryRoom] Interview failed for ${player.name}, skipping:`, error);
         }
@@ -78,6 +76,7 @@ export class DiaryRoom {
           try {
             await this.runDiaryInterview(precedingPhase, juror.playerId, juror.playerName, true);
           } catch (error) {
+            if (!isProviderFallbackEligible(error)) throw error;
             console.error(`[DiaryRoom] Juror interview failed for ${juror.playerName}, skipping:`, error);
           }
         }),
@@ -100,23 +99,33 @@ export class DiaryRoom {
     const label = isJuror ? `${playerName} (juror)` : playerName;
     const houseLabel = isJuror ? `House -> ${playerName} (juror)` : `House -> ${playerName}`;
     const providerInterviewOrdinal = this.providerInterviewOrdinal(playerId);
+    const phaseContext = this.contextBuilder.buildPhaseContext(
+      playerId,
+      Phase.DIARY_ROOM,
+      undefined,
+      isJuror || undefined,
+    );
+    const previousDiaryEntries = this.diaryEntries
+      .filter((entry) => entry.agentId === playerId)
+      .map((entry) => ({ round: entry.round, question: entry.question, answer: entry.answer }));
 
     const diaryContext = this.buildDiaryRoomContext(
       precedingPhase,
+      playerId,
       playerName,
       providerInterviewOrdinal,
+      agent,
+      isJuror,
+      phaseContext,
+      previousDiaryEntries,
     );
     const sessionExchanges: Array<{ question: string; answer: string }> = [];
-    const producerBrief = await this.generateProducerBrief(diaryContext);
-    if (producerBrief) {
-      diaryContext.producerBrief = producerBrief;
-    }
 
     // First question
     const firstQuestion = await this.houseInterviewer.generateQuestion(diaryContext);
     this.logger.logDiary(houseLabel, firstQuestion);
 
-    const ctx = this.buildAgentDiaryContext(agent, playerId, isJuror);
+    const ctx = this.buildAgentDiaryContext(agent, playerId, isJuror, phaseContext);
     ctx.providerLogicalCallOrdinal = 1;
     const firstResponse = await agent.getDiaryEntry(ctx, firstQuestion, sessionExchanges);
     if (firstResponse.providerAbsence) return;
@@ -160,12 +169,7 @@ export class DiaryRoom {
 
     // Follow-up loop
     for (let i = 1; i < MAX_QUESTIONS; i++) {
-      const updatedContext = this.buildDiaryRoomContext(
-        precedingPhase,
-        playerName,
-        providerInterviewOrdinal,
-      );
-      const result = await this.houseInterviewer.generateFollowUpOrClose(updatedContext, sessionExchanges);
+      const result = await this.houseInterviewer.generateFollowUpOrClose(diaryContext, sessionExchanges);
 
       if (result.type === "close") {
         break;
@@ -173,7 +177,7 @@ export class DiaryRoom {
 
       this.logger.logDiary(houseLabel, result.question);
 
-      const followUpContext = this.buildAgentDiaryContext(agent, playerId, isJuror);
+      const followUpContext = this.buildAgentDiaryContext(agent, playerId, isJuror, phaseContext);
       followUpContext.providerLogicalCallOrdinal = i + 1;
       const followUpResponse = await agent.getDiaryEntry(followUpContext, result.question, sessionExchanges);
       if (followUpResponse.providerAbsence) break;
@@ -221,14 +225,32 @@ export class DiaryRoom {
     agent: IAgent,
     playerId: UUID,
     isJuror: boolean,
+    phaseContext: PhaseContext,
   ) {
+    return this.buildDiaryPhaseContext(
+      agent,
+      playerId,
+      isJuror ? "ordinary_speech" : "strategic_decision",
+      isJuror,
+      phaseContext,
+    );
+  }
+
+  private buildDiaryPhaseContext(
+    agent: IAgent,
+    playerId: UUID,
+    promptClass: RecallPromptClass,
+    isJuror: boolean,
+    phaseContext: PhaseContext,
+  ): PhaseContext {
     const continuity = agent.getRecallContinuitySnapshot?.() ?? emptyRecallContinuitySnapshot();
     return this.contextBuilder.buildPhaseContextForAgentCall({
       agentId: playerId,
       phase: Phase.DIARY_ROOM,
-      promptClass: isJuror ? "ordinary_speech" : "strategic_decision",
+      promptClass,
       continuity,
       isEliminated: isJuror || undefined,
+      phaseContext,
     });
   }
 
@@ -272,46 +294,30 @@ export class DiaryRoom {
    */
   private buildDiaryRoomContext(
     precedingPhase: Phase,
+    agentId: UUID,
     agentName: string,
     providerInterviewOrdinal: number,
+    agent: IAgent,
+    isJuror: boolean,
+    phaseContext: PhaseContext,
+    previousDiaryEntries: DiaryRoomContext["previousDiaryEntries"],
   ): DiaryRoomContext {
-    const allPlayers = this.gameState.getAllPlayers();
-    const alivePlayers = this.gameState.getAlivePlayers();
-    const eliminatedPlayers = allPlayers
-      .filter((p) => p.status === "eliminated")
-      .map((p) => p.name);
-    const candidates = this.gameState.councilCandidates;
-    const empoweredId = this.gameState.empoweredId;
-
-    const previousDiaryEntries = this.diaryEntries
-      .filter((d) => d.agentName === agentName)
-      .map((d) => ({ round: d.round, question: d.question, answer: d.answer }));
-
-    const playerMessages = this.logger.publicMessages
-      .filter((m) => m.from === agentName)
-      .slice(-5)
-      .map((m) => ({ text: m.text, phase: m.phase }));
-
-    const roundFacts = this.getHouseRoundFacts?.();
+    const playerKnowledge = this.buildDiaryPhaseContext(
+      agent,
+      agentId,
+      "strategic_decision",
+      isJuror,
+      phaseContext,
+    );
 
     return {
       precedingPhase,
       round: this.gameState.round,
       providerInterviewOrdinal,
+      agentId,
       agentName,
-      alivePlayers: alivePlayers.map((p) => p.name),
-      activeShieldNames: alivePlayers.filter((p) => p.shielded).map((p) => p.name),
-      eliminatedPlayers,
-      lastEliminated: this.lastEliminatedName,
-      empoweredName: empoweredId ? this.gameState.getPlayerName(empoweredId) : null,
-      councilCandidates: candidates
-        ? [this.gameState.getPlayerName(candidates[0]), this.gameState.getPlayerName(candidates[1])]
-        : null,
-      recentMessages: this.logger.publicMessages.slice(-8),
+      playerKnowledge,
       previousDiaryEntries,
-      playerMessages,
-      roundFacts,
-      councilRole: roundFacts?.councilRoles.find((role) => role.playerName === agentName) ?? null,
     };
   }
 
@@ -330,48 +336,4 @@ export class DiaryRoom {
     );
   }
 
-  private async generateProducerBrief(context: DiaryRoomContext): Promise<HouseProducerBrief | null> {
-    if (this.config.enableHouseProducerBriefs !== true) {
-      return null;
-    }
-
-    const packet = this.getHouseStrategyBible?.() ?? null;
-    try {
-      const brief = await this.houseInterviewer.generateProducerBrief(context, packet);
-      this.logger.emitAgentTurn({
-        phase: Phase.DIARY_ROOM,
-        action: "house-producer-brief",
-        actor: { name: "House", role: "house" },
-        visibility: "private",
-        response: {
-          precedingPhase: context.precedingPhase,
-          playerName: context.agentName,
-          producerBrief: {
-            playerName: brief.playerName,
-            packetRevisionId: brief.packetRevisionId,
-            storyRole: brief.storyRole,
-            pressurePoints: brief.pressurePoints,
-            relevantAllianceHypotheses: brief.relevantAllianceHypotheses,
-            contradictions: brief.contradictions,
-            questionAngles: brief.questionAngles,
-            safeToReveal: brief.safeToReveal,
-            privateDoNotReveal: brief.privateDoNotReveal,
-          },
-        },
-        thinking: brief.thinking,
-        reasoningContext: brief.reasoningContext,
-        scope: "diary",
-        text: formatHouseProducerBriefOperatorText({
-          playerName: context.agentName,
-          storyRole: brief.storyRole,
-          pressurePoints: brief.pressurePoints,
-          questionAngles: brief.questionAngles,
-        }),
-      });
-      return brief;
-    } catch (error) {
-      console.error(`[DiaryRoom] Producer brief failed for ${context.agentName}, continuing:`, error);
-      return null;
-    }
-  }
 }

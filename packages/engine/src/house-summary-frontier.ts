@@ -1,48 +1,27 @@
 import type { CanonicalGameEvent, CanonicalGameEventType } from "./canonical-events";
+import { displayNameForFormat } from "./format-presentation-metadata";
+import { formatSurfaceId, type FormatSurfaceId } from "./format-vocabulary";
 import type { CanonicalGameProjection } from "./game-projection";
-import type { Phase, UUID } from "./types";
+import type { StructuredDomainDecodeResult } from "./structured-output";
+import { Phase, type UUID } from "./types";
 
-export const HOUSE_SUMMARY_FRONTIER_VERSION = 1 as const;
-
-export const HOUSE_FACT_CATEGORIES = [
-  "canonical_phase_facts",
-  "player_projection_facts",
-  "audience_dialogue_quotes",
-] as const;
+/** House narrative state is presentation continuity, never game-state authority. */
+export const HOUSE_NARRATIVE_CONTINUITY_VERSION = 2 as const;
 
 export const HOUSE_SUMMARY_ACTOR_COORDINATES = [
-  "introduction",
-  "lobby",
-  "vote",
-  "format_menu",
-  "format_pick",
-  "format_mingle",
-  "format_resolve",
-  "post_vote_mingle",
-  "power",
-  "reveal",
-  "pre_council_huddle",
-  "council",
-  "reckoning_lobby",
-  "reckoning_plea",
-  "reckoning_vote",
-  "tribunal_lobby",
-  "tribunal_accusation",
-  "tribunal_defense",
-  "tribunal_vote",
-  "judgment_opening",
-  "judgment_jury_questions",
-  "judgment_closing",
-  "judgment_jury_vote",
+  "introduction", "lobby", "vote", "format_menu", "format_pick", "format_mingle",
+  "format_resolve", "post_vote_mingle", "power", "reveal", "pre_council_huddle",
+  "council", "reckoning_lobby", "reckoning_plea", "reckoning_vote", "tribunal_lobby",
+  "tribunal_accusation", "tribunal_defense", "tribunal_vote", "judgment_opening",
+  "judgment_jury_questions", "judgment_closing", "judgment_jury_vote",
 ] as const;
 
-export type HouseFactCategory = (typeof HOUSE_FACT_CATEGORIES)[number];
 export type HouseSummaryActorCoordinate = (typeof HOUSE_SUMMARY_ACTOR_COORDINATES)[number];
 export type HouseBeatClass = "ordinary" | "milestone";
 export type HouseBeatStatus = "emitted" | "preflight_skipped" | "model_skipped" | "failed";
 
 export interface HouseSummaryBoundary {
-  version: typeof HOUSE_SUMMARY_FRONTIER_VERSION;
+  version: typeof HOUSE_NARRATIVE_CONTINUITY_VERSION;
   id: string;
   gameId: UUID;
   actorCoordinate: HouseSummaryActorCoordinate;
@@ -53,76 +32,22 @@ export interface HouseSummaryBoundary {
   dialogueHead: number;
 }
 
-export type HouseSourceCoordinate =
-  | {
-      kind: "canonical_event";
-      sequence: number;
-      type: CanonicalGameEventType;
-      round: number;
-      phase: Phase | null;
-    }
-  | {
-      kind: "canonical_projection";
-      headSequence: number;
-      projection: string;
-      round: number;
-      phase: Phase | null;
-    }
-  | {
-      kind: "transcript_entry";
-      sequence: number;
-      round: number;
-      phase: Phase;
-      dialogueKind: string;
-    };
-
-export type HouseFactAuthority = "canonical_event" | "canonical_projection" | "dialogue_non_authoritative";
-
-export interface HouseFactRow {
-  alias: string;
-  category: HouseFactCategory;
-  authority: HouseFactAuthority;
-  label: string;
-  data: Record<string, unknown>;
-  source: HouseSourceCoordinate;
-}
-
-export interface HouseSalienceItem {
-  alias: string;
-  category: HouseFactCategory;
-  authority: HouseFactAuthority;
-  label: string;
-  /** Bounded audience-safe headline; fuller typed rows remain requestable. */
-  data?: Record<string, unknown>;
-  source: HouseSourceCoordinate;
-}
-
-export interface HouseSummaryFrontier {
-  version: typeof HOUSE_SUMMARY_FRONTIER_VERSION;
+export interface HouseNarrativeBeat {
+  version: typeof HOUSE_NARRATIVE_CONTINUITY_VERSION;
   boundary: HouseSummaryBoundary;
-  material: boolean;
-  catalog: HouseSalienceItem[];
-  categoryCounts: Record<HouseFactCategory, number>;
-  /** Runner-private fact bodies. Prompt construction must use catalog, not this store. */
-  factStore: Record<HouseFactCategory, HouseFactRow[]>;
+  /** House-authored viewer copy. Presentation only; never parse for game facts. */
+  publicSummary: string;
 }
 
-export interface HouseNarrativeContinuity {
-  version: typeof HOUSE_SUMMARY_FRONTIER_VERSION;
-  lastBoundaryId: string | null;
-  lastSummary: string | null;
-  /**
-   * Last emitted prose at each approved cadence coordinate. This is narrative
-   * style context only; it is never authoritative game evidence.
-   */
-  lastSummaryByActorCoordinate: Partial<Record<HouseSummaryActorCoordinate, string>>;
-  openQuestions: string[];
-  threadIds: string[];
-  supportingSources: HouseSourceCoordinate[];
+export interface HouseNarrativeContinuityV2 {
+  version: typeof HOUSE_NARRATIVE_CONTINUITY_VERSION;
+  /** Binds the opaque producer notebook and every retained beat to one game. */
+  gameId: UUID;
+  recentBeats: HouseNarrativeBeat[];
+  /** Opaque House-only showrunner notes. Never expose to contestants or parse for facts. */
+  privateNarrativeNotebook: string | null;
   examinedCanonicalHead: number;
   examinedDialogueHead: number;
-  emittedCanonicalHead: number;
-  emittedDialogueHead: number;
   pendingDeltaCarry: 0 | 1;
 }
 
@@ -138,8 +63,9 @@ export interface HouseProviderUsage {
   totalTokens: number | null;
 }
 
-export interface HouseSummaryPhaseReceipt {
-  version: typeof HOUSE_SUMMARY_FRONTIER_VERSION;
+/** Engine-generated provider/cadence telemetry. It is not a model-authored receipt. */
+export interface HouseSummaryPhaseTelemetry {
+  version: typeof HOUSE_NARRATIVE_CONTINUITY_VERSION;
   boundaryId: string;
   actorCoordinate: HouseSummaryActorCoordinate;
   round: number;
@@ -147,24 +73,12 @@ export interface HouseSummaryPhaseReceipt {
   beatClass: HouseBeatClass;
   status: HouseBeatStatus;
   providerCalls: number;
-  factCalls: number;
-  requestedCategories: HouseFactCategory[];
-  returnedBytes: number;
-  selectedSourceCount: number;
   usageAvailable: boolean;
   usage: HouseProviderUsage[];
   pendingDelta: "none" | "carried" | "dropped";
 }
 
-export interface HouseFactSlice {
-  status: "ok" | "too_large";
-  categories: HouseFactCategory[];
-  facts: HouseFactRow[];
-  returnedBytes: number;
-  omittedCounts: Partial<Record<HouseFactCategory, number>>;
-}
-
-export interface HouseFrontierDialogueEntry {
+export interface HouseNarrationTranscriptEntry {
   round: number;
   phase: Phase;
   from: string;
@@ -176,78 +90,144 @@ export interface HouseFrontierDialogueEntry {
   dialogueKind?: string;
 }
 
-export interface CompileHouseSummaryFrontierInput {
+export interface HouseNarrationCanonicalEvent {
+  sequence: number;
+  type: HouseNarrationEventKind;
+  round: number;
+  phase: Phase | null;
+  data: Record<string, unknown>;
+}
+
+export type HouseNarrationEventKind =
+  | "game.roster_initialized"
+  | "round.started"
+  | "shields.expired"
+  | "vote.empower_tally_resolved"
+  | "vote.empowered_set"
+  | "format.menu_offered"
+  | "format.selected"
+  | "format.ballot_cast"
+  | "format.ballot_forfeited"
+  | "format.resolved"
+  | "power.action_set"
+  | "power.candidates_resolved"
+  | "council.exit_resolved"
+  | "player.exited"
+  | "endgame.stage_set"
+  | "endgame.exit_resolved"
+  | "jury.winner_determined"
+  | "round.result_recorded";
+
+export interface HouseNarrationFormat {
+  id: FormatSurfaceId;
+  name: string;
+}
+
+export interface HouseNarrationProjection {
+  headSequence: number;
+  round: number;
+  phase: Phase | null;
+  remainingPlayers: string[];
+  exitedPlayers: string[];
+  empowered: string | null;
+  selectedFormat: HouseNarrationFormat | null;
+  councilCandidates: string[];
+  endgameStage: string | null;
+}
+
+export interface HouseNarrationDialogue {
+  sequence: number;
+  round: number;
+  phase: Phase;
+  speaker: string;
+  text: string;
+  anonymous: boolean;
+  dialogueKind: string;
+}
+
+export interface HouseNarrationDiaryEntry {
+  round: number;
+  precedingPhase: Phase;
+  player: string;
+  question: string;
+  answer: string;
+}
+
+/** Direct, bounded creative context. No aliases, source maps, claims, or fact reads. */
+export interface HouseNarrationContext {
+  version: typeof HOUSE_NARRATIVE_CONTINUITY_VERSION;
+  boundary: HouseSummaryBoundary;
+  material: boolean;
+  /** One roster lookup for any canonical payload fields that still carry player IDs. */
+  playerNamesById: Record<string, string>;
+  canonicalEvents: HouseNarrationCanonicalEvent[];
+  projection: HouseNarrationProjection | null;
+  publicDialogue: HouseNarrationDialogue[];
+  /** Omniscient producer context, supplied to milestone House turns only. */
+  privateDialogueAndDecisions: HouseNarrationDialogue[];
+  diaryEntries: HouseNarrationDiaryEntry[];
+}
+
+export interface CompileHouseNarrationContextInput {
   actorCoordinate: HouseSummaryActorCoordinate;
   round: number;
   phase: Phase;
   beatClass: HouseBeatClass;
   events: readonly CanonicalGameEvent[];
   projection: CanonicalGameProjection;
-  transcript: readonly HouseFrontierDialogueEntry[];
+  transcript: readonly HouseNarrationTranscriptEntry[];
+  diaryEntries: readonly {
+    round: number;
+    precedingPhase: Phase;
+    agentName: string;
+    question: string;
+    answer: string;
+  }[];
   afterCanonicalSequence: number;
   afterDialogueSequence: number;
 }
 
-export interface HouseFactSliceLimits {
-  maxCategories: number;
-  maxBytesPerCategory: number;
-  maxTotalBytes: number;
+const MAX_EVENT_ROWS = 24;
+const MAX_DIALOGUE_ROWS = 12;
+const MAX_CONTEXT_LABEL_CHARS = 80;
+const MAX_RECENT_BEATS = 8;
+export const HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS = 1_200;
+
+export function houseSummaryCharacterLimit(beatClass: HouseBeatClass): number {
+  return beatClass === "ordinary" ? 180 : 360;
 }
 
-const MAX_FACT_ROWS_PER_CATEGORY = 24;
-const MAX_FACT_STRING_CHARS = 280;
-
-const CANONICAL_NARRATION_TYPES = new Set<CanonicalGameEventType>([
-  "game.roster_initialized",
-  "round.started",
-  "shields.expired",
-  "vote.empower_tally_resolved",
-  "vote.empowered_set",
-  "format.menu_offered",
-  "format.selected",
-  "format.resolved",
-  "power.action_set",
-  "power.candidates_resolved",
-  "council.elimination_resolved",
-  "player.eliminated",
-  "endgame.stage_set",
-  "endgame.elimination_resolved",
-  "jury.winner_determined",
-  "round.result_recorded",
-]);
+export function isBoundedHouseAuthoredText(
+  value: unknown,
+  maxCharacters: number,
+): value is string {
+  return typeof value === "string"
+    && value.trim().length > 0
+    && value.length <= maxCharacters
+    && !/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/u.test(value);
+}
 
 const PROJECTION_TRIGGER_TYPES = new Set<CanonicalGameEventType>([
-  "game.roster_initialized",
-  "mingle.rooms_allocated",
-  "vote.empowered_set",
-  "format.menu_offered",
-  "format.selected",
-  "format.resolved",
-  "power.action_set",
-  "power.candidates_resolved",
-  "alliance.activated",
-  "alliance.amendment_resolved",
-  "alliance.closed",
-  "alliance.archived",
-  "council.elimination_resolved",
-  "player.eliminated",
-  "endgame.stage_set",
-  "endgame.elimination_resolved",
+  "game.roster_initialized", "mingle.rooms_allocated", "vote.empowered_set",
+  "format.menu_offered", "format.selected", "format.resolved", "power.action_set",
+  "power.candidates_resolved", "alliance.activated", "alliance.amendment_resolved",
+  "alliance.closed", "alliance.archived", "council.elimination_resolved",
+  "player.eliminated", "endgame.stage_set", "endgame.elimination_resolved",
   "jury.winner_determined",
 ]);
 
-function normalizeProviderString(value: string, maxChars = MAX_FACT_STRING_CHARS): string {
+function normalizeContextLabel(value: string): string {
   return value
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, " ")
     .replace(/\s+/g, " ")
     .trim()
-    .slice(0, maxChars);
+    .slice(0, MAX_CONTEXT_LABEL_CHARS);
 }
 
 function playerName(projection: CanonicalGameProjection, id: string | null | undefined): string | null {
   if (!id) return null;
   const name = projection.players[id]?.name;
-  return name ? normalizeProviderString(name, 80) : "Unknown player";
+  return name ? normalizeContextLabel(name) : "Unknown player";
 }
 
 function namedCounts(projection: CanonicalGameProjection, counts: Record<string, number>): Array<{ player: string; value: number }> {
@@ -256,235 +236,324 @@ function namedCounts(projection: CanonicalGameProjection, counts: Record<string,
     .sort((left, right) => left.player.localeCompare(right.player));
 }
 
-function sourceForEvent(event: CanonicalGameEvent): HouseSourceCoordinate {
+function narrationFormat(formatId: Parameters<typeof formatSurfaceId>[0]): HouseNarrationFormat {
   return {
-    kind: "canonical_event",
-    sequence: event.sequence,
-    type: event.type,
-    round: event.round,
-    phase: event.phase,
+    id: formatSurfaceId(formatId),
+    name: displayNameForFormat(formatId),
   };
 }
 
-function safeEventData(event: CanonicalGameEvent, projection: CanonicalGameProjection): Record<string, unknown> | null {
+function providerPowerAction(action: string): string {
+  return action === "eliminate" ? "exit" : action;
+}
+
+function providerResolutionMethod(method: string): string {
+  return method === "auto_eliminate" ? "automatic_exit" : method;
+}
+
+/**
+ * Explicit producer projection. Canonical payloads never cross the provider
+ * boundary by default; an event is either mapped here or omitted.
+ */
+function narrationEvent(
+  event: CanonicalGameEvent,
+  projection: CanonicalGameProjection,
+): HouseNarrationCanonicalEvent | null {
+  const base = {
+    sequence: event.sequence,
+    round: event.round,
+    phase: event.phase,
+  };
   switch (event.type) {
-    case "game.roster_initialized":
-      return { players: event.payload.players.map((player) => normalizeProviderString(player.name, 80)) };
-    case "round.started":
-      return { round: event.payload.round };
-    case "shields.expired":
-      return { players: event.payload.expiredPlayerIds.map((id) => playerName(projection, id)) };
-    case "vote.empower_tally_resolved":
-      return {
+    case "game.roster_initialized": return {
+      ...base,
+      type: "game.roster_initialized",
+      data: { players: event.payload.players.map((player) => normalizeContextLabel(player.name)) },
+    };
+    case "round.started": return { ...base, type: "round.started", data: { round: event.payload.round } };
+    case "shields.expired": return {
+      ...base,
+      type: "shields.expired",
+      data: { players: event.payload.expiredPlayerIds.map((id) => playerName(projection, id)) },
+    };
+    case "vote.empower_tally_resolved": return {
+      ...base,
+      type: "vote.empower_tally_resolved",
+      data: {
         counts: namedCounts(projection, event.payload.counts),
         empowered: playerName(projection, event.payload.empowered),
         tied: event.payload.tied?.map((id) => playerName(projection, id)) ?? [],
         method: event.payload.method,
-      };
-    case "vote.empowered_set":
-      return { empowered: playerName(projection, event.payload.empowered), method: event.payload.method };
-    case "format.menu_offered":
-      return {
+      },
+    };
+    case "vote.empowered_set": return {
+      ...base,
+      type: "vote.empowered_set",
+      data: { empowered: playerName(projection, event.payload.empowered), method: event.payload.method },
+    };
+    case "format.menu_offered": return {
+      ...base,
+      type: "format.menu_offered",
+      data: {
         empowered: playerName(projection, event.payload.empoweredId),
-        offeredFormats: [...event.payload.offeredFormatIds],
-      };
-    case "format.selected":
-      return {
+        offeredFormats: event.payload.offeredFormatIds.map(narrationFormat),
+      },
+    };
+    case "format.selected": return {
+      ...base,
+      type: "format.selected",
+      data: {
         empowered: playerName(projection, event.payload.empoweredId),
-        selectedFormat: event.payload.formatId,
-      };
-    case "format.resolved":
-      return {
-        selectedFormat: event.payload.formatId,
+        selectedFormat: narrationFormat(event.payload.formatId),
+      },
+    };
+    case "format.ballot_cast": return {
+      ...base,
+      type: "format.ballot_cast",
+      data: {
+        format: narrationFormat(event.payload.formatId),
+        voter: playerName(projection, event.payload.voterId),
+        target: playerName(projection, event.payload.targetId),
+        polarity: event.payload.polarity === "eliminate" ? "exit" : event.payload.polarity,
+      },
+    };
+    case "format.ballot_forfeited": return {
+      ...base,
+      type: "format.ballot_forfeited",
+      data: {
+        format: narrationFormat(event.payload.formatId),
+        voter: playerName(projection, event.payload.voterId),
+        reason: event.payload.reason,
+      },
+    };
+    case "format.resolved": return {
+      ...base,
+      type: "format.resolved",
+      data: {
+        selectedFormat: narrationFormat(event.payload.formatId),
         empowered: playerName(projection, event.payload.empoweredId),
-        eliminated: playerName(projection, event.payload.eliminatedId),
+        exitedPlayer: playerName(projection, event.payload.eliminatedId),
         resolutionKind: event.payload.resolutionKind,
         tied: event.payload.tiedPlayerIds.map((id) => playerName(projection, id)),
         tiebreaker: playerName(projection, event.payload.tiebreakerId),
-      };
-    case "power.action_set":
-      return {
-        action: event.payload.action.action,
+      },
+    };
+    case "power.action_set": return {
+      ...base,
+      type: "power.action_set",
+      data: {
+        action: providerPowerAction(event.payload.action.action),
         target: playerName(projection, event.payload.action.target),
-      };
-    case "power.candidates_resolved":
-      return {
+      },
+    };
+    case "power.candidates_resolved": return {
+      ...base,
+      type: "power.candidates_resolved",
+      data: {
         candidates: event.payload.candidates?.map((id) => playerName(projection, id)) ?? [],
-        autoEliminated: playerName(projection, event.payload.autoEliminated),
+        automaticExit: playerName(projection, event.payload.autoEliminated),
         shieldGranted: playerName(projection, event.payload.shieldGranted),
-        method: event.payload.method,
-      };
-    case "council.elimination_resolved":
-      return {
+        method: providerResolutionMethod(event.payload.method),
+      },
+    };
+    case "council.elimination_resolved": return {
+      ...base,
+      type: "council.exit_resolved",
+      data: {
         candidates: event.payload.candidates.map((id) => playerName(projection, id)),
-        eliminated: playerName(projection, event.payload.eliminated),
+        exitedPlayer: playerName(projection, event.payload.eliminated),
         method: event.payload.method,
-      };
-    case "player.eliminated":
-      return { player: normalizeProviderString(event.payload.playerName, 80), eliminatedRound: event.payload.eliminatedRound };
-    case "endgame.stage_set":
-      return { stage: event.payload.stage };
-    case "endgame.elimination_resolved":
-      return {
+      },
+    };
+    case "player.eliminated": return {
+      ...base,
+      type: "player.exited",
+      data: {
+        exitedPlayer: normalizeContextLabel(event.payload.playerName),
+        exitRound: event.payload.eliminatedRound,
+      },
+    };
+    case "endgame.stage_set": return {
+      ...base,
+      type: "endgame.stage_set",
+      data: { stage: event.payload.stage },
+    };
+    case "endgame.elimination_resolved": return {
+      ...base,
+      type: "endgame.exit_resolved",
+      data: {
         stage: event.payload.stage,
-        eliminated: playerName(projection, event.payload.eliminated),
+        exitedPlayer: playerName(projection, event.payload.eliminated),
         method: event.payload.method,
-      };
-    case "jury.winner_determined":
-      return {
+      },
+    };
+    case "jury.winner_determined": return {
+      ...base,
+      type: "jury.winner_determined",
+      data: {
         winner: playerName(projection, event.payload.winnerId),
         voteCounts: event.payload.voteCounts.map((count) => ({
-          player: normalizeProviderString(count.name, 80),
+          player: normalizeContextLabel(count.name),
           votes: count.votes,
         })),
         method: event.payload.method,
-      };
-    case "round.result_recorded":
-      return {
+      },
+    };
+    case "round.result_recorded": return {
+      ...base,
+      type: "round.result_recorded",
+      data: {
         round: event.payload.result.round,
-        eliminated: playerName(projection, event.payload.result.eliminated),
+        exitedPlayer: playerName(projection, event.payload.result.eliminated),
         empowered: playerName(projection, event.payload.result.empoweredId),
-      };
-    default:
-      return null;
+      },
+    };
+    default: return null;
   }
 }
 
-function projectionRows(
-  events: readonly CanonicalGameEvent[],
-  projection: CanonicalGameProjection,
-): Array<Omit<HouseFactRow, "alias">> {
-  if (!events.some((event) => PROJECTION_TRIGGER_TYPES.has(event.type))) return [];
-  const source: HouseSourceCoordinate = {
-    kind: "canonical_projection",
+function compileProjection(projection: CanonicalGameProjection): HouseNarrationProjection {
+  const remainingPlayers = projection.playerOrder.map((id) => projection.players[id])
+    .filter((player) => player?.status === "alive")
+    .map((player) => normalizeContextLabel(player!.name));
+  const exitedPlayers = projection.playerOrder.map((id) => projection.players[id])
+    .filter((player) => player?.status === "eliminated")
+    .map((player) => normalizeContextLabel(player!.name));
+  return {
     headSequence: projection.lastSequence,
-    projection: "public_house_frontier_v1",
     round: projection.round,
     phase: projection.phase,
-  };
-  const alive = projection.playerOrder
-    .map((id) => projection.players[id])
-    .filter((player) => player?.status === "alive")
-    .map((player) => normalizeProviderString(player!.name, 80));
-  const eliminated = projection.playerOrder
-    .map((id) => projection.players[id])
-    .filter((player) => player?.status === "eliminated")
-    .map((player) => normalizeProviderString(player!.name, 80));
-  const rows: Array<Omit<HouseFactRow, "alias">> = [{
-    category: "player_projection_facts",
-    authority: "canonical_projection",
-    label: "Current public player board",
-    data: {
-      alive,
-      eliminated,
-      empowered: playerName(projection, projection.empoweredId),
-      selectedFormat: projection.selectedFormatId,
-      councilCandidates: projection.councilCandidates?.map((id) => playerName(projection, id)) ?? [],
-      endgameStage: projection.endgameStage,
-    },
-    source,
-  }];
-
-  if (events.some((event) => event.type === "mingle.rooms_allocated")) {
-    const allocation = projection.roomAllocations[projection.round];
-    if (allocation) {
-      rows.push({
-        category: "player_projection_facts",
-        authority: "canonical_projection",
-        label: "Current public room allocation",
-        data: {
-          rooms: allocation.rooms.map((room) => ({
-            roomId: room.roomId,
-            players: room.playerIds.map((id) => playerName(projection, id)),
-          })),
-          excluded: allocation.excluded.map((id) => playerName(projection, id)),
-        },
-        source,
-      });
-    }
-  }
-
-  if (events.some((event) => event.type.startsWith("alliance."))) {
-    const alliances = projection.allianceOrder
-      .map((id) => projection.alliances[id])
-      .filter(Boolean)
-      .map((alliance) => ({
-        name: normalizeProviderString(alliance!.name, 100),
-        status: alliance!.status,
-        members: alliance!.memberIds.map((id) => playerName(projection, id)),
-      }));
-    rows.push({
-      category: "player_projection_facts",
-      authority: "canonical_projection",
-      label: "Audience-safe alliance projection",
-      data: { alliances },
-      source,
-    });
-  }
-
-  return rows;
-}
-
-function nextAlias(index: number): string {
-  return `S${index + 1}`;
-}
-
-function bytes(value: unknown): number {
-  return new TextEncoder().encode(JSON.stringify(value)).byteLength;
-}
-
-function salienceData(row: HouseFactRow): Record<string, unknown> {
-  if (row.authority !== "dialogue_non_authoritative") return row.data;
-  return {
-    speaker: row.data.speaker,
-    excerpt: typeof row.data.quote === "string" ? row.data.quote.slice(0, 160) : "",
-    anonymous: row.data.anonymous,
+    remainingPlayers,
+    exitedPlayers,
+    empowered: playerName(projection, projection.empoweredId),
+    selectedFormat: projection.selectedFormatId === null
+      ? null
+      : narrationFormat(projection.selectedFormatId),
+    councilCandidates: projection.councilCandidates?.map((id) => playerName(projection, id) ?? "Unknown player") ?? [],
+    endgameStage: projection.endgameStage,
   };
 }
 
-export function createEmptyHouseNarrativeContinuity(): HouseNarrativeContinuity {
+export function createEmptyHouseNarrativeContinuity(gameId: UUID): HouseNarrativeContinuityV2 {
   return {
-    version: HOUSE_SUMMARY_FRONTIER_VERSION,
-    lastBoundaryId: null,
-    lastSummary: null,
-    lastSummaryByActorCoordinate: {},
-    openQuestions: [],
-    threadIds: [],
-    supportingSources: [],
+    version: 2,
+    gameId,
+    recentBeats: [],
+    privateNarrativeNotebook: null,
     examinedCanonicalHead: 0,
     examinedDialogueHead: 0,
-    emittedCanonicalHead: 0,
-    emittedDialogueHead: 0,
     pendingDeltaCarry: 0,
   };
 }
 
-/**
- * Retain one summary per approved cadence coordinate and discard any keys
- * outside the authoritative coordinate tuple.
- */
-export function retainHouseSummaryAtActorCoordinate(
-  previous: HouseNarrativeContinuity["lastSummaryByActorCoordinate"],
-  actorCoordinate: HouseSummaryActorCoordinate,
-  summary: string,
-): HouseNarrativeContinuity["lastSummaryByActorCoordinate"] {
-  const retained: HouseNarrativeContinuity["lastSummaryByActorCoordinate"] = {};
-  for (const coordinate of HOUSE_SUMMARY_ACTOR_COORDINATES) {
-    const value = coordinate === actorCoordinate ? summary : previous[coordinate];
-    if (typeof value === "string" && value.length > 0) retained[coordinate] = value;
-  }
-  return retained;
+function exactRecord(value: unknown, keys: readonly string[]): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return Object.keys(record).every((key) => keys.includes(key)) ? record : null;
 }
 
-export function compileHouseSummaryFrontier(input: CompileHouseSummaryFrontierInput): HouseSummaryFrontier {
+function nonNegativeInteger(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+function parseBoundary(value: unknown): HouseSummaryBoundary | null {
+  const boundary = exactRecord(value, ["version", "id", "gameId", "actorCoordinate", "round", "phase", "beatClass", "canonicalHead", "dialogueHead"]);
+  if (!boundary || boundary.version !== 2 || typeof boundary.id !== "string" || !boundary.id
+    || typeof boundary.gameId !== "string"
+    || !HOUSE_SUMMARY_ACTOR_COORDINATES.includes(boundary.actorCoordinate as HouseSummaryActorCoordinate)
+    || !nonNegativeInteger(boundary.round) || !Object.values(Phase).includes(boundary.phase as Phase)
+    || (boundary.beatClass !== "ordinary" && boundary.beatClass !== "milestone")
+    || !nonNegativeInteger(boundary.canonicalHead) || !nonNegativeInteger(boundary.dialogueHead)) return null;
+  return structuredClone(value) as HouseSummaryBoundary;
+}
+
+function parseBeat(value: unknown): HouseNarrativeBeat | null {
+  const beat = exactRecord(value, ["version", "boundary", "publicSummary"]);
+  const boundary = beat ? parseBoundary(beat.boundary) : null;
+  if (!beat || beat.version !== 2 || !boundary
+    || !isBoundedHouseAuthoredText(beat.publicSummary, houseSummaryCharacterLimit(boundary.beatClass))) return null;
+  return structuredClone(value) as HouseNarrativeBeat;
+}
+
+/** Fail-closed parser. The superseded version-1 narrative state is intentionally unsupported. */
+export function parseHouseNarrativeContinuity(value: unknown): StructuredDomainDecodeResult<HouseNarrativeContinuityV2> {
+  const continuity = exactRecord(value, [
+    "version", "gameId", "recentBeats",
+    "privateNarrativeNotebook", "examinedCanonicalHead", "examinedDialogueHead",
+    "pendingDeltaCarry",
+  ]);
+  if (!continuity || continuity.version !== 2) return { status: "invalid", message: "House narrative continuity version is missing or unsupported." };
+  if (typeof continuity.gameId !== "string" || !continuity.gameId) {
+    return { status: "invalid", message: "House narrative continuity game ID is malformed." };
+  }
+  if (continuity.privateNarrativeNotebook !== null
+      && !isBoundedHouseAuthoredText(
+        continuity.privateNarrativeNotebook,
+        HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+      )) {
+    return { status: "invalid", message: "House private narrative notebook is malformed." };
+  }
+  if (!Array.isArray(continuity.recentBeats) || continuity.recentBeats.length > MAX_RECENT_BEATS) {
+    return { status: "invalid", message: "House recent narrative beats are malformed." };
+  }
+  const recentBeats = continuity.recentBeats.map(parseBeat);
+  if (recentBeats.some((beat) => beat === null)) {
+    return { status: "invalid", message: "House recent narrative beats are malformed." };
+  }
+  const parsedRecentBeats = recentBeats as HouseNarrativeBeat[];
+  if (parsedRecentBeats.some((beat) => beat.boundary.gameId !== continuity.gameId)) {
+    return { status: "invalid", message: "House recent narrative beats belong to another game." };
+  }
+  const ids = parsedRecentBeats.map((beat) => beat.boundary.id);
+  if (new Set(ids).size !== ids.length) return { status: "invalid", message: "House recent narrative beats contain duplicate boundaries." };
+  for (const field of ["examinedCanonicalHead", "examinedDialogueHead"] as const) {
+    if (!nonNegativeInteger(continuity[field])) return { status: "invalid", message: `House narrative continuity ${field} is malformed.` };
+  }
+  if (continuity.pendingDeltaCarry !== 0 && continuity.pendingDeltaCarry !== 1) return { status: "invalid", message: "House narrative continuity pending delta is malformed." };
+  return {
+    status: "valid",
+    value: {
+      ...structuredClone(value) as HouseNarrativeContinuityV2,
+      recentBeats: parsedRecentBeats,
+    },
+  };
+}
+
+export function appendRecentHouseNarrativeBeat(previous: readonly HouseNarrativeBeat[], beat: HouseNarrativeBeat): HouseNarrativeBeat[] {
+  return [...previous.filter((entry) => entry.boundary.id !== beat.boundary.id), beat]
+    .slice(-MAX_RECENT_BEATS)
+    .map((entry) => structuredClone(entry));
+}
+
+function toNarrationDialogue(
+  entry: HouseNarrationTranscriptEntry & { entrySequence: number },
+  fallbackKind: string,
+): HouseNarrationDialogue {
+  return {
+    sequence: entry.entrySequence,
+    round: entry.round,
+    phase: entry.phase,
+    speaker: entry.anonymous ? "Anonymous" : normalizeContextLabel(entry.from),
+    text: entry.text,
+    anonymous: entry.anonymous === true,
+    dialogueKind: entry.dialogueKind === "system_elimination"
+      ? "system_exit"
+      : entry.dialogueKind ?? fallbackKind,
+  };
+}
+
+function hasDialogueSequence(
+  entry: HouseNarrationTranscriptEntry,
+): entry is HouseNarrationTranscriptEntry & { entrySequence: number } {
+  return typeof entry.entrySequence === "number";
+}
+
+export function compileHouseNarrationContext(input: CompileHouseNarrationContextInput): HouseNarrationContext {
   const canonicalHead = input.events.at(-1)?.sequence ?? input.projection.lastSequence;
-  const dialogueHead = input.transcript.reduce(
-    (head, entry) => Math.max(head, entry.entrySequence ?? 0),
-    input.afterDialogueSequence,
-  );
+  const dialogueHead = input.transcript.reduce((head, entry) => Math.max(head, entry.entrySequence ?? 0), input.afterDialogueSequence);
   const boundary: HouseSummaryBoundary = {
-    version: HOUSE_SUMMARY_FRONTIER_VERSION,
-    id: `house-beat/v1:${input.round}:${input.actorCoordinate}:${canonicalHead}:${dialogueHead}`,
+    version: 2,
+    id: `house-beat/v2:${input.round}:${input.actorCoordinate}:${canonicalHead}:${dialogueHead}`,
     gameId: input.projection.gameId,
     actorCoordinate: input.actorCoordinate,
     round: input.round,
@@ -493,127 +562,48 @@ export function compileHouseSummaryFrontier(input: CompileHouseSummaryFrontierIn
     canonicalHead,
     dialogueHead,
   };
-  const factStore: Record<HouseFactCategory, HouseFactRow[]> = {
-    canonical_phase_facts: [],
-    player_projection_facts: [],
-    audience_dialogue_quotes: [],
-  };
-  let nextAliasIndex = 0;
-  const addFact = (row: Omit<HouseFactRow, "alias">): void => {
-    const categoryFacts = factStore[row.category];
-    if (categoryFacts.length >= MAX_FACT_ROWS_PER_CATEGORY) return;
-    categoryFacts.push({ ...row, alias: nextAlias(nextAliasIndex) });
-    nextAliasIndex += 1;
-  };
-  const deltaEvents: CanonicalGameEvent[] = [];
-
-  for (const event of input.events) {
-    if (event.sequence <= input.afterCanonicalSequence) continue;
-    deltaEvents.push(event);
-    if (event.visibility !== "public" && event.visibility !== "system") continue;
-    if (!CANONICAL_NARRATION_TYPES.has(event.type)) continue;
-    const data = safeEventData(event, input.projection);
-    if (!data) continue;
-    addFact({
-      category: "canonical_phase_facts",
-      authority: "canonical_event",
-      label: event.type,
-      data,
-      source: sourceForEvent(event),
-    });
-  }
-
-  for (const row of projectionRows(deltaEvents, input.projection)) addFact(row);
-
-  for (const entry of input.transcript) {
-    if (
-      entry.scope !== "public"
-      || typeof entry.entrySequence !== "number"
-      || entry.entrySequence <= input.afterDialogueSequence
-      || entry.from === "House"
-    ) {
-      continue;
-    }
-    addFact({
-      category: "audience_dialogue_quotes",
-      authority: "dialogue_non_authoritative",
-      label: "Accepted public player dialogue",
-      data: {
-        speaker: entry.anonymous ? "Anonymous" : normalizeProviderString(entry.from, 80),
-        quote: normalizeProviderString(entry.text),
-        anonymous: entry.anonymous === true,
-        trust: "dialogue_non_authoritative",
-      },
-      source: {
-        kind: "transcript_entry",
-        sequence: entry.entrySequence,
+  const playerNamesById = Object.fromEntries(
+    input.projection.playerOrder.map((id) => [id, playerName(input.projection, id) ?? "Unknown player"]),
+  );
+  const deltaEvents = input.events.filter((event) => event.sequence > input.afterCanonicalSequence);
+  const canonicalEvents = deltaEvents
+    .map((event) => narrationEvent(event, input.projection))
+    .filter((event): event is HouseNarrationCanonicalEvent => event !== null)
+    .slice(-MAX_EVENT_ROWS);
+  const publicDialogue = input.transcript.filter((entry): entry is HouseNarrationTranscriptEntry & { entrySequence: number } => entry.scope === "public"
+      && hasDialogueSequence(entry) && entry.entrySequence > input.afterDialogueSequence
+      && entry.from !== "House" && entry.dialogueKind !== "house_summary")
+    .slice(-MAX_DIALOGUE_ROWS)
+    .map((entry) => toNarrationDialogue(entry, "public_speech"));
+  const privateDialogueAndDecisions = input.beatClass === "milestone"
+    ? input.transcript.filter((entry): entry is HouseNarrationTranscriptEntry & { entrySequence: number } => entry.scope !== "public"
+        && hasDialogueSequence(entry) && entry.entrySequence > input.afterDialogueSequence
+        && entry.from !== "House" && entry.dialogueKind !== "house_summary")
+      .slice(-MAX_DIALOGUE_ROWS)
+      .map((entry) => toNarrationDialogue(entry, entry.scope))
+    : [];
+  const diaryEntries = input.beatClass === "milestone"
+    ? input.diaryEntries.slice(-8).map((entry): HouseNarrationDiaryEntry => ({
         round: entry.round,
-        phase: entry.phase,
-        dialogueKind: entry.dialogueKind ?? "public_speech",
-      },
-    });
-  }
-
-  const catalogRows = [
-    ...factStore.canonical_phase_facts,
-    ...(factStore.canonical_phase_facts.length === 0
-      || factStore.canonical_phase_facts.some((fact) => fact.label === "endgame.stage_set")
-      ? factStore.player_projection_facts.slice(0, 1)
-      : []),
-    ...factStore.audience_dialogue_quotes.slice(0, 2),
-  ];
-  const catalog = catalogRows.map((row) => ({
-    alias: row.alias,
-    category: row.category,
-    authority: row.authority,
-    label: row.label,
-    data: salienceData(row),
-    source: row.source,
-  }));
+        precedingPhase: entry.precedingPhase,
+        player: normalizeContextLabel(entry.agentName),
+        question: entry.question,
+        answer: entry.answer,
+      }))
+    : [];
+  const projection = deltaEvents.some((event) => PROJECTION_TRIGGER_TYPES.has(event.type)) ? compileProjection(input.projection) : null;
   return {
-    version: HOUSE_SUMMARY_FRONTIER_VERSION,
+    version: 2,
     boundary,
-    material: catalog.length > 0,
-    catalog,
-    categoryCounts: Object.fromEntries(
-      HOUSE_FACT_CATEGORIES.map((category) => [category, factStore[category].length]),
-    ) as Record<HouseFactCategory, number>,
-    factStore,
+    material: canonicalEvents.length > 0 || projection !== null || publicDialogue.length > 0
+      || privateDialogueAndDecisions.length > 0 || diaryEntries.length > 0,
+    playerNamesById,
+    canonicalEvents,
+    projection,
+    publicDialogue,
+    privateDialogueAndDecisions,
+    diaryEntries,
   };
-}
-
-export function readHouseFactSlice(
-  frontier: HouseSummaryFrontier,
-  requestedCategories: readonly HouseFactCategory[],
-  limits: HouseFactSliceLimits,
-): HouseFactSlice {
-  const categories = [...new Set(requestedCategories)].slice(0, limits.maxCategories);
-  const facts: HouseFactRow[] = [];
-  const omittedCounts: Partial<Record<HouseFactCategory, number>> = {};
-  let returnedBytes = 0;
-
-  for (const category of categories) {
-    const categoryFacts = frontier.factStore[category];
-    const categoryBytes = bytes(categoryFacts);
-    if (categoryBytes > limits.maxBytesPerCategory || returnedBytes + categoryBytes > limits.maxTotalBytes) {
-      omittedCounts[category] = categoryFacts.length;
-      continue;
-    }
-    facts.push(...categoryFacts);
-    returnedBytes += categoryBytes;
-  }
-
-  return {
-    status: Object.keys(omittedCounts).length > 0 ? "too_large" : "ok",
-    categories,
-    facts,
-    returnedBytes,
-    omittedCounts,
-  };
-}
-
-export function isHouseFactCategory(value: unknown): value is HouseFactCategory {
-  return typeof value === "string" && (HOUSE_FACT_CATEGORIES as readonly string[]).includes(value);
 }
 
 export function isHouseSummaryActorCoordinate(value: unknown): value is HouseSummaryActorCoordinate {

@@ -467,6 +467,7 @@ const ownerLearningReviewSchema = closedObject(
     "proposalFingerprint",
     "safeFailureCode",
     "retryable",
+    "ownerRetriesRemaining",
     "logicalCallCount",
     "diveCount",
     "applyDisposition",
@@ -483,7 +484,7 @@ const ownerLearningReviewSchema = closedObject(
     reviewedRevisionId: { type: "string" },
     selectedGameIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
     analysisTrack: { type: "string", enum: ["awaiting_evidence", "evidence_rich", "strategy_health_check"] },
-    analysisStatus: { type: "string", enum: ["queued", "running", "ready", "no_change", "failed"] },
+    analysisStatus: { type: "string", enum: ["queued", "retry_queued", "running", "ready", "no_change", "failed"] },
     stage: {
       type: "string",
       enum: ["evidence_ready", "scanning_narratives", "investigating_moments", "drafting_recommendations", "complete"],
@@ -510,9 +511,11 @@ const ownerLearningReviewSchema = closedObject(
         "logical_call_budget_exhausted",
         "evidence_unavailable",
         "worker_interrupted",
+        "internal_error",
       ],
     }),
     retryable: { type: "boolean" },
+    ownerRetriesRemaining: { type: "number", enum: [0, 1] },
     logicalCallCount: { type: "number" },
     diveCount: { type: "number" },
     applyDisposition: {
@@ -553,7 +556,7 @@ const ownerLearningOpenSummarySchema = closedObject(
   {
     id: { type: "string" },
     agentProfileId: { type: "string" },
-    analysisStatus: { type: "string", enum: ["queued", "running", "ready", "no_change", "failed"] },
+    analysisStatus: { type: "string", enum: ["queued", "retry_queued", "running", "ready", "no_change", "failed"] },
     stage: {
       type: "string",
       enum: ["evidence_ready", "scanning_narratives", "investigating_moments", "drafting_recommendations", "complete"],

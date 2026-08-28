@@ -4,6 +4,7 @@ import type {
   IAgent,
   PhaseContext,
 } from "../game-runner.types";
+import { isProviderFallbackEligible } from "../provider-execution";
 import type { UUID } from "../types";
 import { Phase } from "../types";
 import { emptyRecallContinuitySnapshot } from "../context-recall-plan";
@@ -93,17 +94,26 @@ async function withEliminationMessageTimeout(
       return normalizedEliminationMessage(
         await operation(new AbortController().signal),
       );
-    } catch {
+    } catch (error) {
+      if (!isProviderFallbackEligible(error)) throw error;
       return { ...ABSENT_ELIMINATION_MESSAGE };
     }
   }
 
   const controller = new AbortController();
   let timeout: ReturnType<typeof setTimeout> | undefined;
-  const operationTagged = operation(controller.signal).then((value) => ({
-    source: "agent" as const,
-    value,
-  }));
+  const operationTagged = operation(controller.signal)
+    .then((value) => ({
+      source: "agent" as const,
+      value,
+    }))
+    .catch((error) => {
+      if (!isProviderFallbackEligible(error)) throw error;
+      return {
+        source: "agent" as const,
+        value: { ...ABSENT_ELIMINATION_MESSAGE },
+      };
+    });
   const timeoutTagged = new Promise<{
     source: "timeout";
     value: AgentResponse;
@@ -126,10 +136,7 @@ async function withEliminationMessageTimeout(
   });
 
   const result = await Promise.race([
-    operationTagged.catch(() => ({
-      source: "agent" as const,
-      value: { ...ABSENT_ELIMINATION_MESSAGE },
-    })),
+    operationTagged,
     timeoutTagged,
   ]).finally(
     () => {

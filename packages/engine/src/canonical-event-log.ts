@@ -59,7 +59,10 @@ export class CanonicalEventLog {
     TType extends CanonicalGameEventType,
     TPayload extends object,
   >(draft: CanonicalEventDraft<TType, TPayload>): CanonicalGameEvent {
-    const payloadVersion = draft.type === "format.resolved" ? 2 : 1;
+    const payloadVersion = draft.type === "format.resolved"
+      || draft.type === "alliance.huddle_outcome_recorded"
+      ? 2
+      : 1;
     const event = {
       sequence: this.nextSequence,
       gameId: draft.gameId,

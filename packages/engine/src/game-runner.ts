@@ -17,12 +17,7 @@ import type { CanonicalEventListener } from "./canonical-event-log";
 import type { CanonicalGameEvent } from "./canonical-events";
 import type { CanonicalGameProjection } from "./game-projection";
 import { createPhaseMachine } from "./phase-machine";
-import {
-  TemplateHouseInterviewer,
-  publicHouseDialogueAttributionsAreSupported,
-  publicHousePlayerCountClaimsAreSupported,
-  validatePublicHouseSummaryProse,
-} from "./house-interviewer";
+import { TemplateHouseInterviewer } from "./house-interviewer";
 import type { IHouseInterviewer } from "./house-interviewer";
 import type { UUID, GameConfig } from "./types";
 import { Phase, PlayerStatus, computeMaxRounds } from "./types";
@@ -33,17 +28,12 @@ import {
   resolveEmpoweredIdForRound,
   validateFormatResumePrerequisites,
 } from "./format-recovery";
-import {
-  buildHouseFormatResolutionFacts,
-  displayNameForFormat,
-  resolveFormatManifest,
-  type LaunchFormatId,
-} from "./formats";
+import { resolveFormatManifest } from "./formats";
 
 // Re-export types from the extracted module for backward compatibility
-export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseAllianceHypothesis, HouseContinuityCapsule, HouseContinuityRequirement, HouseCouncilRole, HouseCouncilRoleFact, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseProducerBrief, HouseRoundFacts, HouseStrategyBiblePacket, HouseVoteCount, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan } from "./game-runner.types";
+export type { ActorWitnessV1, AgentCallOptions, AgentResponse, AgentTurnEvent, AllianceAction, AllianceActionBase, AllianceActionKind, AllianceActionOpportunity, AllianceActionOpportunityTerms, AllianceAmendAction, AllianceCounterAction, AllianceHuddlePromptContext, AllianceHuddleTurnAction, AlliancePassAction, AllianceProposalAction, AllianceProposalResponseAction, BoundaryCertificate, CandidateChoiceRequest, CandidateSelectionDecision, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, EliminationContext, EliminationVoteDisclosure, EmpowerRevoteAction, FormatDecisionFallbackReason, FormatDecisionProvenance, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameStreamEvent, GameStateSnapshot, HouseGameplaySummaryContext, HouseGameplaySummaryResult, HouseSummaryKind, IAgent, MingleInboxReplay, MingleIntentAction, MingleIntentSummary, MinglePreferredRoomSize, MingleTurnAction, PhaseAccumulatorRegistryV1, PhaseContext, PlayerAllianceContext, PlayerAllianceContextAlliance, PlayerAllianceContextProposal, PlayerAllianceContextTerms, PlayerContinuityCapsule, PlayerPowerActionMemoryEntry, PlayerRoundHistoryEntry, PowerActionDecision, PowerActionOptions, PowerLobbyExposure, PrivateDecisionTrace, PrivateDecisionTraceActor, PrivateDecisionTraceActorRole, PrivateDecisionTraceBoundary, PrivateDecisionTraceContext, PrivateDecisionTraceMessage, PrivateDecisionTraceToolCall, PrivateTraceSink, PromptReuseReceipt, ProviderReasoningSummary, ProviderReasoningSummaryMode, RecentDecisionContextEntry, RuntimeSnapshotV1, StrategicLens, StrategicDecisionMetadata, TargetDecision, TokenCostCursor, TranscriptDialogueContext, TranscriptDialogueContextV1, TranscriptDialogueKind, TranscriptEntry, TranscriptWatermarkV1, RecallPromptClass, RecallContinuitySnapshot, RecallBoardContractFacts, RecallProtectedHuddleOutcome, RecallHotMessage, RecallHistoryDialogueEvidence, RecallPlanBudgetLedger, RecallPlanProtectedLane, RecallPlanHotLane, RecallPlanHistoryLane, RecallPlanReceipt, RecallPlan } from "./game-runner.types";
 export type {
-  HouseSelectiveSummaryContext,
+  HouseNarrativeTurnContext,
   HouseSummaryAttemptResult,
   HouseSummaryEmittedResult,
   HouseSummaryFailedResult,
@@ -51,52 +41,44 @@ export type {
 } from "./game-runner.types";
 export { PLAYER_CONTINUITY_CAPSULE_VERSION } from "./game-runner.types";
 export {
-  HOUSE_FACT_CATEGORIES,
-  HOUSE_SUMMARY_FRONTIER_VERSION,
-  compileHouseSummaryFrontier,
+  HOUSE_NARRATIVE_CONTINUITY_VERSION,
+  HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+  appendRecentHouseNarrativeBeat,
+  compileHouseNarrationContext,
   createEmptyHouseNarrativeContinuity,
-  isHouseFactCategory,
   isHouseSummaryActorCoordinate,
-  readHouseFactSlice,
 } from "./house-summary-frontier";
 export type {
   HouseBeatClass,
   HouseBeatStatus,
-  HouseFactCategory,
-  HouseFactRow,
-  HouseFactSlice,
-  HouseNarrativeContinuity,
+  HouseNarrationContext,
+  HouseNarrativeBeat,
+  HouseNarrativeContinuityV2,
   HouseProviderUsage,
-  HouseSalienceItem,
-  HouseSourceCoordinate,
   HouseSummaryBoundary,
-  HouseSummaryFrontier,
-  HouseSummaryPhaseReceipt,
+  HouseSummaryPhaseTelemetry,
   HouseSummaryActorCoordinate,
 } from "./house-summary-frontier";
 export {
-  admitHouseContinuityForRecovery,
-  isHouseContinuityCapsuleShape,
-  isHouseContinuityRequirement,
   parsePlayerContinuityCapsule,
-  sealHouseContinuityRequirement,
   validatePlayerContinuitySetForRecovery,
 } from "./player-continuity";
-import type { AccumulatorEntryV1, BoundaryCertificate, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseContinuityCapsule, HouseCouncilRoleFact, HouseCoveredWindow, HouseEvidenceBundle, HouseGameplaySummaryResult, HouseRoundFacts, HouseStrategyBiblePacket, HouseSummaryAttemptResult, HouseVoteCount, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
-import { sealHouseContinuityRequirement } from "./player-continuity";
+import type { AccumulatorEntryV1, BoundaryCertificate, CheckpointBoundaryIdentityV1, CurrentAccusationRecordV1, CurrentAccusationsAccumulatorV1, GameCheckpointCapsule, GameCheckpointKind, GameRunnerOptions, GameRunnerResumeActorCoordinate, GameStreamEvent, GameStateSnapshot, HouseCoveredWindow, HouseSummaryAttemptResult, IAgent, PlayerContinuityCapsule, RuntimeSnapshotV1, TranscriptEntry } from "./game-runner.types";
 import type { TokenTracker } from "./token-tracker";
 import {
-  compileHouseSummaryFrontier,
+  HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+  appendRecentHouseNarrativeBeat,
+  compileHouseNarrationContext,
   createEmptyHouseNarrativeContinuity,
+  houseSummaryCharacterLimit,
   isHouseSummaryActorCoordinate,
-  retainHouseSummaryAtActorCoordinate,
+  isBoundedHouseAuthoredText,
+  parseHouseNarrativeContinuity,
   type HouseBeatClass,
-  type HouseFactRow,
-  type HouseNarrativeContinuity,
+  type HouseNarrativeContinuityV2,
   type HouseSummaryActorCoordinate,
-  type HouseSourceCoordinate,
   type HouseSummaryBoundary,
-  type HouseSummaryPhaseReceipt,
+  type HouseSummaryPhaseTelemetry,
 } from "./house-summary-frontier";
 import {
   accumulatorProof,
@@ -132,8 +114,6 @@ import {
 // Game Runner
 // ---------------------------------------------------------------------------
 
-const HOUSE_SUMMARY_GAME_MAX_FACT_CALLS = 1;
-
 function houseSummaryBoundariesEqual(
   left: HouseSummaryBoundary,
   right: HouseSummaryBoundary,
@@ -147,32 +127,6 @@ function houseSummaryBoundariesEqual(
     && left.beatClass === right.beatClass
     && left.canonicalHead === right.canonicalHead
     && left.dialogueHead === right.dialogueHead;
-}
-
-function houseSourceCoordinatesEqual(
-  left: HouseSourceCoordinate,
-  right: HouseSourceCoordinate,
-): boolean {
-  if (left.kind !== right.kind) return false;
-  if (left.kind === "canonical_event" && right.kind === "canonical_event") {
-    return left.sequence === right.sequence
-      && left.type === right.type
-      && left.round === right.round
-      && left.phase === right.phase;
-  }
-  if (left.kind === "canonical_projection" && right.kind === "canonical_projection") {
-    return left.headSequence === right.headSequence
-      && left.projection === right.projection
-      && left.round === right.round
-      && left.phase === right.phase;
-  }
-  if (left.kind === "transcript_entry" && right.kind === "transcript_entry") {
-    return left.sequence === right.sequence
-      && left.round === right.round
-      && left.phase === right.phase
-      && left.dialogueKind === right.dialogueKind;
-  }
-  return false;
 }
 
 export class GameRunner {
@@ -201,12 +155,10 @@ export class GameRunner {
   private terminalStreamReleased = false;
   private terminalOutcomeDurablyAccepted = false;
   private readonly writtenCheckpointKeys = new Set<string>();
-  private houseStrategyBible: HouseStrategyBiblePacket | null = null;
   private readonly completedHouseRoundMilestones = new Set<number>();
   private readonly attemptedHouseSummaryBoundaries = new Set<string>();
-  private readonly houseSummaryReceipts: HouseSummaryPhaseReceipt[] = [];
-  private houseSummaryFactCallsUsed = 0;
-  private houseNarrativeContinuity: HouseNarrativeContinuity = createEmptyHouseNarrativeContinuity();
+  private readonly houseSummaryTelemetry: HouseSummaryPhaseTelemetry[] = [];
+  private houseNarrativeContinuity: HouseNarrativeContinuityV2;
   /** Mingle room messages keyed by recipient */
   private mingleInbox = new Map<UUID, Array<{ from: string; text: string }>>();
   /** Ordered list of eliminated player names */
@@ -240,6 +192,7 @@ export class GameRunner {
           ...gameStateOptions,
           formatManifest: resolveFormatManifest(config.formatManifest),
         });
+    this.houseNarrativeContinuity = createEmptyHouseNarrativeContinuity(this.gameState.gameId);
     this.config = {
       ...config,
       maxRounds,
@@ -267,17 +220,14 @@ export class GameRunner {
       this.flushedCanonicalSequence = this.resumeFrom.lastEventSequence;
       this.writtenCheckpointKeys.add(`initial:${this.flushedCanonicalSequence}`);
       this.writtenCheckpointKeys.add(`phase_boundary:${this.flushedCanonicalSequence}`);
-      if (this.resumeFrom.houseContinuityCapsule) {
-        this.houseStrategyBible = {
-          ...this.resumeFrom.houseContinuityCapsule,
-          coveredWindow: {
-            fromRound: this.resumeFrom.houseContinuityCapsule.updatedAtRound,
-            toRound: this.resumeFrom.houseContinuityCapsule.updatedAtRound,
-            fromPhase: this.resumeFrom.houseContinuityCapsule.updatedAtPhase,
-            toPhase: this.resumeFrom.houseContinuityCapsule.updatedAtPhase,
-          },
-        };
+      const parsedHouseContinuity = parseHouseNarrativeContinuity(
+        this.resumeFrom.houseNarrativeContinuityCapsule,
+      );
+      if (parsedHouseContinuity.status !== "valid"
+          || parsedHouseContinuity.value.gameId !== this.gameState.gameId) {
+        throw new Error("Resume House narrative continuity is invalid or belongs to another game.");
       }
+      this.houseNarrativeContinuity = parsedHouseContinuity.value;
       if (this.resumeFrom.tokenCostCursor) {
         this.tokenTracker?.loadCursor(this.resumeFrom.tokenCostCursor);
       }
@@ -296,8 +246,14 @@ export class GameRunner {
         (head, entry) => Math.max(head, entry.entrySequence ?? 0),
         0,
       );
-      this.houseNarrativeContinuity.examinedCanonicalHead = canonicalHead;
-      this.houseNarrativeContinuity.examinedDialogueHead = dialogueHead;
+      this.houseNarrativeContinuity.examinedCanonicalHead = Math.max(
+        this.houseNarrativeContinuity.examinedCanonicalHead,
+        canonicalHead,
+      );
+      this.houseNarrativeContinuity.examinedDialogueHead = Math.max(
+        this.houseNarrativeContinuity.examinedDialogueHead,
+        dialogueHead,
+      );
     }
     this.contextBuilder = new ContextBuilder(
       this.gameState,
@@ -317,8 +273,6 @@ export class GameRunner {
       this.agents,
       this.config,
       this.houseInterviewer,
-      () => this.houseStrategyBible,
-      () => this.buildHouseRoundFacts(this.gameState.round),
       this.beforeAcceptedCommit,
     );
     if (this.durableEventSink) {
@@ -330,9 +284,9 @@ export class GameRunner {
     return this.logger.transcript;
   }
 
-  /** Content-free per-boundary House summary receipts for simulation/accounting. */
-  get houseSummaryPhaseReceipts(): readonly HouseSummaryPhaseReceipt[] {
-    return this.houseSummaryReceipts;
+  /** Content-free per-boundary House summary provider/cadence telemetry. */
+  get houseSummaryPhaseTelemetry(): readonly HouseSummaryPhaseTelemetry[] {
+    return this.houseSummaryTelemetry;
   }
 
   get diaryLog(): ReadonlyArray<{ round: number; precedingPhase: Phase; agentId: UUID; agentName: string; question: string; answer: string }> {
@@ -552,11 +506,18 @@ export class GameRunner {
           this.terminalOutcomeDurablyAccepted = true;
         }
       }
-      if (releaseStream) {
-        this.logger.flushStreamBuffer();
-      }
+      const checkpointedStreamBuffer = releaseStream && options.checkpointKind
+        ? this.logger.takeStreamBufferForCheckpoint()
+        : null;
       if (options.checkpointKind) {
         await this.writeCheckpoint(options.checkpointKind, options.phase, options.phaseActor);
+      }
+      if (releaseStream) {
+        if (checkpointedStreamBuffer) {
+          this.logger.releaseCheckpointedStreamBuffer(checkpointedStreamBuffer);
+        } else {
+          this.logger.flushStreamBuffer();
+        }
       }
       if (options.continueBuffering && releaseStream) {
         this.logger.beginStreamBuffering();
@@ -785,14 +746,6 @@ export class GameRunner {
         });
       }
     }
-    const houseContinuityCapsule: HouseContinuityCapsule | null = this.houseStrategyBible
-      ? { ...this.houseStrategyBible }
-      : null;
-    const houseContinuityRequirement = sealHouseContinuityRequirement({
-      bibleEnabled: this.houseStrategyBibleEnabled(),
-      hasValidHousePacket: houseContinuityCapsule != null,
-    });
-
     let tokenCursor = this.tokenTracker?.toCursor() ?? null;
     const transcriptEntryCount = this.logger.transcript.length;
     const hasRuntimeSnapshot = phaseActor != null && kind === "phase_boundary";
@@ -881,8 +834,7 @@ export class GameRunner {
       },
       boundaryCertificate,
       playerContinuityCapsules,
-      houseContinuityCapsule,
-      houseContinuityRequirement,
+      houseNarrativeContinuityCapsule: structuredClone(this.houseNarrativeContinuity),
       transcriptReplay: hasRuntimeSnapshot ? this.buildTranscriptReplay() : null,
       // Transient write input for API product-dialogue watermark; not player-facing.
       productDialogueProjection: this.buildProductDialogueProjection(),
@@ -1010,11 +962,7 @@ export class GameRunner {
       }
       await this.flushDurableEvents({
         continueBuffering: true,
-        checkpointKind: "phase_boundary",
-        phase: this.phaseForActorCoordinate(String(actor.getSnapshot().value))
-          ?? this.gameState.getCanonicalEvents().at(-1)?.phase
-          ?? Phase.INIT,
-        phaseActor: actor,
+        releaseStream: false,
       });
 
       const houseBeat = this.houseBeatForActorCoordinate(state);
@@ -1025,8 +973,15 @@ export class GameRunner {
           houseBeat.beatClass,
           houseBeat.roundMilestone,
         );
-        await this.flushDurableEvents({ continueBuffering: true });
       }
+      await this.flushDurableEvents({
+        continueBuffering: true,
+        checkpointKind: "phase_boundary",
+        phase: this.phaseForActorCoordinate(String(actor.getSnapshot().value))
+          ?? this.gameState.getCanonicalEvents().at(-1)?.phase
+          ?? Phase.INIT,
+        phaseActor: actor,
+      });
     }
 
     if (!this._aborted) {
@@ -1311,10 +1266,6 @@ export class GameRunner {
     return this.config.enableHouseRoundSummaries !== false;
   }
 
-  private houseStrategyBibleEnabled(): boolean {
-    return this.config.enableHouseStrategyBible === true;
-  }
-
   private houseLongFormSummariesEnabled(): boolean {
     return this.config.enableHouseLongFormSummaries === true;
   }
@@ -1351,24 +1302,24 @@ export class GameRunner {
     };
   }
 
-  private emitHousePhaseReceipt(receipt: HouseSummaryPhaseReceipt): void {
-    this.houseSummaryReceipts.push(receipt);
+  private emitHousePhaseTelemetry(telemetry: HouseSummaryPhaseTelemetry): void {
+    this.houseSummaryTelemetry.push(telemetry);
     this.logger.emitAgentTurn({
-      phase: receipt.phase,
-      action: "house-summary-phase-receipt",
+      phase: telemetry.phase,
+      action: "house-summary-phase-telemetry",
       actor: { name: "House", role: "house" },
       visibility: "private",
-      response: { receipt },
+      response: { telemetry },
       scope: "thinking",
     });
   }
 
-  private buildHousePhaseReceipt(
+  private buildHousePhaseTelemetry(
     result: HouseSummaryAttemptResult,
-    pendingDelta: HouseSummaryPhaseReceipt["pendingDelta"],
-  ): HouseSummaryPhaseReceipt {
+    pendingDelta: HouseSummaryPhaseTelemetry["pendingDelta"],
+  ): HouseSummaryPhaseTelemetry {
     return {
-      version: 1,
+      version: 2,
       boundaryId: result.boundary.id,
       actorCoordinate: result.boundary.actorCoordinate,
       round: result.boundary.round,
@@ -1376,10 +1327,6 @@ export class GameRunner {
       beatClass: result.boundary.beatClass,
       status: result.status,
       providerCalls: result.providerCalls,
-      factCalls: result.factCalls,
-      requestedCategories: [...result.requestedCategories],
-      returnedBytes: result.returnedBytes,
-      selectedSourceCount: result.status === "emitted" ? result.sources.length : 0,
       usageAvailable: result.usage.every((entry) => (
         entry.responseId !== null
         && entry.serviceTier !== null
@@ -1409,7 +1356,7 @@ export class GameRunner {
     const events = this.gameState.getCanonicalEventsAfter(
       this.houseNarrativeContinuity.examinedCanonicalHead,
     );
-    const frontier = compileHouseSummaryFrontier({
+    const narrationContext = compileHouseNarrationContext({
       actorCoordinate,
       round,
       phase,
@@ -1419,28 +1366,25 @@ export class GameRunner {
       transcript: this.logger.dialogueEntriesAfter(
         this.houseNarrativeContinuity.examinedDialogueHead,
       ),
+      diaryEntries: this.diaryRoom.diaryEntries,
       afterCanonicalSequence: this.houseNarrativeContinuity.examinedCanonicalHead,
       afterDialogueSequence: this.houseNarrativeContinuity.examinedDialogueHead,
     });
-    if (this.attemptedHouseSummaryBoundaries.has(frontier.boundary.id)) return;
-    this.attemptedHouseSummaryBoundaries.add(frontier.boundary.id);
+    if (this.attemptedHouseSummaryBoundaries.has(narrationContext.boundary.id)) return;
+    this.attemptedHouseSummaryBoundaries.add(narrationContext.boundary.id);
 
-    if (!frontier.material) {
-      this.houseNarrativeContinuity.examinedCanonicalHead = frontier.boundary.canonicalHead;
-      this.houseNarrativeContinuity.examinedDialogueHead = frontier.boundary.dialogueHead;
-      this.emitHousePhaseReceipt({
-        version: 1,
-        boundaryId: frontier.boundary.id,
+    if (!narrationContext.material) {
+      this.houseNarrativeContinuity.examinedCanonicalHead = narrationContext.boundary.canonicalHead;
+      this.houseNarrativeContinuity.examinedDialogueHead = narrationContext.boundary.dialogueHead;
+      this.emitHousePhaseTelemetry({
+        version: 2,
+        boundaryId: narrationContext.boundary.id,
         actorCoordinate,
         round,
         phase,
         beatClass,
         status: "preflight_skipped",
         providerCalls: 0,
-        factCalls: 0,
-        requestedCategories: [],
-        returnedBytes: 0,
-        selectedSourceCount: 0,
         usageAvailable: true,
         usage: [],
         pendingDelta: "none",
@@ -1450,503 +1394,131 @@ export class GameRunner {
 
     const isFirstRoundMilestone = roundMilestone && !this.completedHouseRoundMilestones.has(round);
     if (isFirstRoundMilestone) this.completedHouseRoundMilestones.add(round);
-    const coveredWindow = isFirstRoundMilestone ? this.buildHouseCoveredWindow(phase) : null;
-    const evidence = isFirstRoundMilestone && (this.houseStrategyBibleEnabled() || this.houseLongFormSummariesEnabled())
-      ? this.buildHouseEvidenceBundle(phase)
-      : null;
-
-    if (isFirstRoundMilestone && this.houseStrategyBibleEnabled() && evidence && coveredWindow) {
-      try {
-        const update = await this.houseInterviewer.updateStrategyBible({
-          round,
-          phase,
-          previousPacket: this.houseStrategyBible,
-          evidence,
-          coveredWindow,
-        });
-        if (update.packet) {
-          this.houseStrategyBible = update.packet;
-          this.logger.emitAgentTurn({
-            phase,
-            action: "house-strategy-bible",
-            actor: { name: "House", role: "house" },
-            visibility: "private",
-            response: {
-              packet: update.packet,
-              rationale: update.rationale,
-            },
-            thinking: update.thinking,
-            reasoningContext: update.reasoningContext,
-            scope: "thinking",
-          });
-        }
-      } catch {
-        // House packet generation is producer/debug work; never break the game loop.
-      }
-    }
     const hadPendingDelta = this.houseNarrativeContinuity.pendingDeltaCarry === 1;
-    const factReadAllowed = beatClass === "milestone"
-      && this.houseSummaryFactCallsUsed < HOUSE_SUMMARY_GAME_MAX_FACT_CALLS;
-    let result: HouseSummaryAttemptResult;
-    try {
-      result = await this.houseInterviewer.generateHouseSummary({
-        frontier,
-        continuity: this.houseNarrativeContinuity,
-        factReadAllowed,
-      });
-    } catch {
-      result = {
-        status: "failed",
-        reason: "house_interviewer_threw",
-        boundary: frontier.boundary,
-        providerCalls: 0,
-        factCalls: 0,
-        requestedCategories: [],
-        returnedBytes: 0,
-        usage: [],
-      };
-    }
-
-    const reportedFactCalls = Number.isInteger(result.factCalls) && result.factCalls >= 0
-      ? result.factCalls
-      : 0;
-    this.houseSummaryFactCallsUsed += reportedFactCalls;
-    const factBudgetExceeded = reportedFactCalls !== result.factCalls
-      || result.factCalls > (factReadAllowed ? 1 : 0)
-      || this.houseSummaryFactCallsUsed > HOUSE_SUMMARY_GAME_MAX_FACT_CALLS;
-    if (factBudgetExceeded) {
-      result = {
-        status: "failed",
-        reason: "house_summary_fact_budget_exceeded",
-        boundary: frontier.boundary,
-        providerCalls: result.providerCalls,
-        factCalls: result.factCalls,
-        requestedCategories: [...result.requestedCategories],
-        returnedBytes: result.returnedBytes,
-        usage: result.usage.map((entry) => ({ ...entry })),
-        ...(result.thinking ? { thinking: result.thinking } : {}),
-        ...(result.reasoningContext ? { reasoningContext: result.reasoningContext } : {}),
-      };
-    }
+    let result: HouseSummaryAttemptResult = await this.houseInterviewer.generateHouseSummary({
+      narrationContext,
+      continuity: this.houseNarrativeContinuity,
+    });
 
     if (result.status === "emitted") {
-      const validatedSummary = validatePublicHouseSummaryProse(result.summary, beatClass);
-      const supportedSourceByAlias = new Map<string, HouseSourceCoordinate>();
-      const supportedFactByAlias = new Map<string, HouseFactRow>();
-      for (const item of frontier.catalog) supportedSourceByAlias.set(item.alias, item.source);
-      for (const rows of Object.values(frontier.factStore)) {
-        for (const row of rows) {
-          supportedSourceByAlias.set(row.alias, row.source);
-          supportedFactByAlias.set(row.alias, row);
-        }
-      }
-      const hasSupportedSources = result.sourceAliases.length > 0
-        && result.sourceAliases.length === result.sources.length
-        && new Set(result.sourceAliases).size === result.sourceAliases.length
-        && result.sourceAliases.every((alias, index) => {
-          const expectedSource = supportedSourceByAlias.get(alias);
-          const actualSource = result.status === "emitted" ? result.sources[index] : undefined;
-          return expectedSource !== undefined
-            && actualSource !== undefined
-            && houseSourceCoordinatesEqual(expectedSource, actualSource);
-        });
-      const selectedFacts = result.sourceAliases.flatMap((alias) => {
-        const fact = supportedFactByAlias.get(alias);
-        return fact ? [fact] : [];
-      });
-      const failureReason = validatedSummary === null
-        ? "public_house_summary_validation_failed"
-        : !houseSummaryBoundariesEqual(result.boundary, frontier.boundary)
-          ? "house_summary_boundary_mismatch"
-          : !hasSupportedSources
-            ? "unsupported_house_summary_sources"
-            : !publicHousePlayerCountClaimsAreSupported(result.summary, selectedFacts)
-              ? "unsupported_house_summary_player_count"
-              : !publicHouseDialogueAttributionsAreSupported(
-                  result.summary,
-                  selectedFacts,
-                  [...supportedFactByAlias.values()],
-                )
-                ? "unsupported_house_summary_dialogue_attribution"
-                : null;
+      const maxSummaryCharacters = houseSummaryCharacterLimit(beatClass);
+      const validSummary = result.beat === null || (
+        houseSummaryBoundariesEqual(result.beat.boundary, narrationContext.boundary)
+        && result.beat.version === 2
+        && isBoundedHouseAuthoredText(result.beat.publicSummary, maxSummaryCharacters)
+      );
+      const validNotebook = result.privateNarrativeNotebook === null
+        || isBoundedHouseAuthoredText(
+          result.privateNarrativeNotebook,
+          HOUSE_PRIVATE_NARRATIVE_NOTEBOOK_MAX_CHARACTERS,
+        );
+      const failureReason = !houseSummaryBoundariesEqual(result.boundary, narrationContext.boundary)
+        ? "house_summary_boundary_mismatch"
+        : result.beat === null && result.privateNarrativeNotebook === null
+          ? "empty_house_narrative_update"
+          : !validSummary
+            ? "house_summary_presentation_invalid"
+            : !validNotebook
+              ? "house_notebook_presentation_invalid"
+              : null;
       if (failureReason !== null) {
         result = {
           status: "failed",
           reason: failureReason,
-          boundary: frontier.boundary,
+          boundary: narrationContext.boundary,
           providerCalls: result.providerCalls,
-          factCalls: result.factCalls,
-          requestedCategories: [...result.requestedCategories],
-          returnedBytes: result.returnedBytes,
           usage: result.usage.map((entry) => ({ ...entry })),
           ...(result.thinking ? { thinking: result.thinking } : {}),
           ...(result.reasoningContext ? { reasoningContext: result.reasoningContext } : {}),
         };
-      } else if (validatedSummary !== null && validatedSummary !== result.summary) {
-        result = { ...result, summary: validatedSummary };
       }
     }
 
-    let pendingDelta: HouseSummaryPhaseReceipt["pendingDelta"] = "none";
+    let pendingDelta: HouseSummaryPhaseTelemetry["pendingDelta"] = "none";
     if (result.status === "emitted") {
-      this.logger.emitAgentTurn({
-        phase,
-        action: "house-mc-summary",
-        actor: { name: "House", role: "house" },
-        visibility: "system",
-        response: { summary: result.summary },
-        scope: "system",
-        text: result.summary,
-      });
-      this.logger.logSystem(result.summary, phase, undefined, undefined, "house_summary");
+      if (result.beat) {
+        const publicSummary = result.beat.publicSummary;
+        this.logger.emitAgentTurn({
+          phase,
+          action: "house-mc-summary",
+          actor: { name: "House", role: "house" },
+          visibility: "system",
+          response: { summary: publicSummary },
+          scope: "system",
+          text: publicSummary,
+        });
+        this.logger.logSystem(publicSummary, phase, undefined, undefined, "house_summary");
+      }
+      const acceptedBeat = result.beat ? structuredClone(result.beat) : null;
       this.houseNarrativeContinuity = {
-        version: 1,
-        lastBoundaryId: frontier.boundary.id,
-        lastSummary: result.summary,
-        lastSummaryByActorCoordinate: retainHouseSummaryAtActorCoordinate(
-          this.houseNarrativeContinuity.lastSummaryByActorCoordinate,
-          frontier.boundary.actorCoordinate,
-          result.summary,
-        ),
-        openQuestions: result.openQuestions.slice(0, 3),
-        threadIds: result.threadIds.slice(0, 3),
-        supportingSources: result.sources.slice(0, 8),
-        examinedCanonicalHead: frontier.boundary.canonicalHead,
+        version: 2,
+        gameId: this.gameState.gameId,
+        recentBeats: acceptedBeat
+          ? appendRecentHouseNarrativeBeat(this.houseNarrativeContinuity.recentBeats, acceptedBeat)
+          : this.houseNarrativeContinuity.recentBeats.map((beat) => structuredClone(beat)),
+        privateNarrativeNotebook: result.privateNarrativeNotebook
+          ?? this.houseNarrativeContinuity.privateNarrativeNotebook,
+        examinedCanonicalHead: narrationContext.boundary.canonicalHead,
         examinedDialogueHead: this.logger.dialogueHead,
-        emittedCanonicalHead: frontier.boundary.canonicalHead,
-        emittedDialogueHead: frontier.boundary.dialogueHead,
         pendingDeltaCarry: 0,
       };
       pendingDelta = hadPendingDelta ? "carried" : "none";
     } else if (result.status === "model_skipped") {
-      this.houseNarrativeContinuity.examinedCanonicalHead = frontier.boundary.canonicalHead;
-      this.houseNarrativeContinuity.examinedDialogueHead = frontier.boundary.dialogueHead;
+      this.houseNarrativeContinuity.examinedCanonicalHead = narrationContext.boundary.canonicalHead;
+      this.houseNarrativeContinuity.examinedDialogueHead = narrationContext.boundary.dialogueHead;
       this.houseNarrativeContinuity.pendingDeltaCarry = 0;
       pendingDelta = hadPendingDelta ? "dropped" : "none";
     } else if (hadPendingDelta) {
-      this.houseNarrativeContinuity.examinedCanonicalHead = frontier.boundary.canonicalHead;
-      this.houseNarrativeContinuity.examinedDialogueHead = frontier.boundary.dialogueHead;
+      this.houseNarrativeContinuity.examinedCanonicalHead = narrationContext.boundary.canonicalHead;
+      this.houseNarrativeContinuity.examinedDialogueHead = narrationContext.boundary.dialogueHead;
       this.houseNarrativeContinuity.pendingDeltaCarry = 0;
       pendingDelta = "dropped";
     } else {
       this.houseNarrativeContinuity.pendingDeltaCarry = 1;
       pendingDelta = "carried";
     }
-    this.emitHousePhaseReceipt(this.buildHousePhaseReceipt(result, pendingDelta));
+    this.emitHousePhaseTelemetry(this.buildHousePhaseTelemetry(result, pendingDelta));
 
-    if (isFirstRoundMilestone && this.houseLongFormSummariesEnabled() && evidence && coveredWindow) {
-      try {
-        const longForm = await this.houseInterviewer.generateLongFormGameplaySummary({
-          gameId: this.gameState.gameId,
-          round,
-          phase,
-          kind: "long-form",
-          alivePlayers: this.gameState.getAlivePlayers().map((player) => player.name),
-          packet: this.houseStrategyBible,
-          evidence,
-          coveredWindow,
-        });
-        this.emitHouseSummaryTurn("house-long-form-summary", phase, longForm, "private", evidence.roundFacts);
-      } catch {
-        // non-fatal for producer catch-up generation
-      }
+    if (isFirstRoundMilestone && this.houseLongFormSummariesEnabled()) {
+      await this.emitHouseLongFormSummary(phase, narrationContext);
     }
   }
 
-  private emitHouseSummaryTurn(
-    action: "house-mc-summary" | "house-long-form-summary",
+  private async emitHouseLongFormSummary(
     phase: Phase,
-    summary: HouseGameplaySummaryResult,
-    visibility: "private" | "system",
-    facts?: HouseRoundFacts,
-  ): void {
+    narrationContext: import("./house-summary-frontier").HouseNarrationContext,
+  ): Promise<void> {
+    const coveredWindow: HouseCoveredWindow = {
+      fromRound: 1,
+      toRound: this.gameState.round,
+      toPhase: phase,
+    };
+    const summary = await this.houseInterviewer.generateLongFormGameplaySummary({
+      gameId: this.gameState.gameId,
+      round: this.gameState.round,
+      phase,
+      kind: "long-form",
+      coveredWindow,
+      narrationContext,
+      recentPublicBeats: this.houseNarrativeContinuity.recentBeats.map((beat) => structuredClone(beat)),
+      privateNarrativeNotebook: this.houseNarrativeContinuity.privateNarrativeNotebook,
+    });
+    if (!summary) return;
     this.logger.emitAgentTurn({
       phase,
-      action,
+      action: "house-long-form-summary",
       actor: { name: "House", role: "house" },
-      visibility,
+      visibility: "private",
       response: {
         summary: summary.summary,
         kind: summary.kind,
-        packetRevisionId: summary.packetRevisionId,
         coveredWindow: summary.coveredWindow,
-        referencedAllianceNames: summary.referencedAllianceNames,
-        openQuestions: summary.openQuestions ?? [],
-        ...(facts ? { roundFacts: facts } : {}),
       },
       thinking: summary.thinking,
       reasoningContext: summary.reasoningContext,
       scope: "system",
       text: summary.summary,
     });
-  }
-
-  private buildHouseCoveredWindow(toPhase: Phase): HouseCoveredWindow {
-    return {
-      fromRound: this.houseStrategyBible?.updatedAtRound ?? 1,
-      toRound: this.gameState.round,
-      ...(this.houseStrategyBible?.updatedAtPhase && { fromPhase: this.houseStrategyBible.updatedAtPhase }),
-      toPhase,
-    };
-  }
-
-  private buildHouseCouncilRoles(
-    councilCandidates: [UUID, UUID] | null,
-    councilResolved: Extract<CanonicalGameEvent, { type: "council.elimination_resolved" }> | null,
-  ): HouseCouncilRoleFact[] {
-    const candidateNames = councilCandidates
-      ? [this.gameState.getPlayerName(councilCandidates[0]), this.gameState.getPlayerName(councilCandidates[1])] as [string, string]
-      : null;
-    const eliminatedId = councilResolved?.payload.eliminated ?? null;
-    const eliminatedName = eliminatedId ? this.gameState.getPlayerName(eliminatedId) : null;
-    const survivingCandidateId = councilCandidates?.find((id) => id !== eliminatedId) ?? null;
-    const survivingCandidateName = survivingCandidateId ? this.gameState.getPlayerName(survivingCandidateId) : null;
-    const votes = councilResolved?.payload.tally.votes ?? this.gameState.currentCouncilTally.votes;
-    const empoweredId = councilResolved?.payload.empoweredId ?? this.gameState.empoweredId ?? null;
-
-    return this.gameState.getAllPlayers().map((player) => {
-      const votedForId = votes[player.id];
-      const votedForName = votedForId ? this.gameState.getPlayerName(votedForId) : null;
-      if (!councilCandidates) {
-        return {
-          playerName: player.name,
-          role: "not_applicable",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName,
-        };
-      }
-      if (councilCandidates.includes(player.id)) {
-        return {
-          playerName: player.name,
-          role: "candidate",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName: null,
-        };
-      }
-      if (votedForId && player.id === empoweredId) {
-        return {
-          playerName: player.name,
-          role: "empowered_tiebreaker",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName,
-        };
-      }
-      if (player.id === empoweredId && councilResolved?.payload.method === "plurality") {
-        return {
-          playerName: player.name,
-          role: "empowered_no_tiebreak_needed",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName: null,
-        };
-      }
-      if (votedForId && votedForId === eliminatedId) {
-        return {
-          playerName: player.name,
-          role: "voted_for_eliminated",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName,
-        };
-      }
-      if (votedForId) {
-        return {
-          playerName: player.name,
-          role: "voted_for_survivor",
-          candidateNames,
-          eliminatedName,
-          survivingCandidateName,
-          votedForName,
-        };
-      }
-      return {
-        playerName: player.name,
-        role: "non_voter",
-        candidateNames,
-        eliminatedName,
-        survivingCandidateName,
-        votedForName,
-      };
-    });
-  }
-
-  private buildHouseRoundFacts(round: number): HouseRoundFacts {
-    const events = this.gameState.getCanonicalEvents().filter((event) => event.round === round);
-    const empowerTally = this.latestRoundEvent(events, "vote.empower_tally_resolved");
-    const empoweredSet = this.latestRoundEvent(events, "vote.empowered_set");
-    const powerAction = this.latestRoundEvent(events, "power.action_set");
-    const candidatesResolved = this.latestRoundEvent(events, "power.candidates_resolved");
-    const councilResolved = this.latestRoundEvent(events, "council.elimination_resolved");
-    const playerEliminated = this.latestRoundEvent(events, "player.eliminated");
-    const roundResult = this.latestRoundEvent(events, "round.result_recorded");
-
-    const councilCandidates = councilResolved?.payload.candidates
-      ?? candidatesResolved?.payload.candidates
-      ?? this.gameState.councilCandidates;
-    const empoweredId = empoweredSet?.payload.empowered
-      ?? councilResolved?.payload.empoweredId
-      ?? this.gameState.empoweredId;
-
-    // Always derive omniscient format facts from durable events (R14 option A).
-    const formatResolution = buildHouseFormatResolutionFacts(
-      this.gameState.getCanonicalEvents(),
-      round,
-      (playerId) => this.gameState.getPlayerName(playerId),
-    );
-    const selectedFormatId =
-      formatResolution?.formatId
-      ?? roundResult?.payload.result.formatId
-      ?? this.formatKernelState.selectedFormat
-      ?? this.formatKernelState.lastSelectedFormat
-      ?? null;
-    const offeredFormatIds =
-      (formatResolution?.offeredFormatIds as [LaunchFormatId, LaunchFormatId] | null)
-      ?? this.formatKernelState.offeredFormats;
-    const formatMethod =
-      formatResolution?.resolutionKind
-      ?? roundResult?.payload.result.formatMethod
-      ?? selectedFormatId;
-    const eliminationPath: HouseRoundFacts["eliminationPath"] =
-      formatResolution || selectedFormatId || playerEliminated?.phase === "FORMAT_RESOLVE"
-        ? "format"
-        : councilResolved
-          ? "council"
-          : candidatesResolved?.payload.autoEliminated
-            ? "power_auto"
-            : "unknown";
-
-    return {
-      round,
-      empoweredName: empoweredId ? this.gameState.getPlayerName(empoweredId) : null,
-      empowerMethod: empoweredSet?.payload.method ?? empowerTally?.payload.method ?? null,
-      empowerVoteCounts: this.buildVoteCounts(this.gameState.currentVoteTally.empowerVotes),
-      exposeVoteCounts: this.buildVoteCounts(this.gameState.currentVoteTally.exposeVotes),
-      councilCandidates: councilCandidates
-        ? [this.gameState.getPlayerName(councilCandidates[0]), this.gameState.getPlayerName(councilCandidates[1])]
-        : null,
-      powerAction: powerAction
-        ? {
-            action: powerAction.payload.action.action,
-            targetName: powerAction.payload.action.action === "pass"
-              ? null
-              : this.gameState.getPlayerName(powerAction.payload.action.target),
-          }
-        : null,
-      shieldGrantedName: candidatesResolved?.payload.shieldGranted
-        ? this.gameState.getPlayerName(candidatesResolved.payload.shieldGranted)
-        : null,
-      autoEliminatedName: candidatesResolved?.payload.autoEliminated
-        ? this.gameState.getPlayerName(candidatesResolved.payload.autoEliminated)
-        : null,
-      councilVoteCounts: councilCandidates
-        ? this.buildVoteCounts(
-            councilResolved?.payload.tally.votes ?? this.gameState.currentCouncilTally.votes,
-            [...councilCandidates],
-            councilResolved?.payload.empoweredId ?? this.gameState.empoweredId ?? undefined,
-          )
-        : [],
-      councilMethod: councilResolved?.payload.method ?? null,
-      eliminatedName: playerEliminated?.payload.playerName
-        ?? formatResolution?.eliminatedName
-        ?? (councilResolved?.payload.eliminated ? this.gameState.getPlayerName(councilResolved.payload.eliminated) : null),
-      councilRoles: this.buildHouseCouncilRoles(councilCandidates, councilResolved),
-      selectedFormatId,
-      selectedFormatName: selectedFormatId ? displayNameForFormat(selectedFormatId) : null,
-      offeredFormatIds: offeredFormatIds ? [...offeredFormatIds] : null,
-      offeredFormatNames: offeredFormatIds
-        ? [displayNameForFormat(offeredFormatIds[0]), displayNameForFormat(offeredFormatIds[1])]
-        : null,
-      formatMethod: formatMethod ?? null,
-      eliminationPath,
-      formatResolution,
-    };
-  }
-
-  private latestRoundEvent<TType extends CanonicalGameEvent["type"]>(
-    events: readonly CanonicalGameEvent[],
-    type: TType,
-  ): Extract<CanonicalGameEvent, { type: TType }> | null {
-    for (let index = events.length - 1; index >= 0; index -= 1) {
-      const event = events[index];
-      if (event?.type === type) {
-        return event as Extract<CanonicalGameEvent, { type: TType }>;
-      }
-    }
-    return null;
-  }
-
-  private buildVoteCounts(
-    votes: Record<UUID, UUID>,
-    knownTargets: UUID[] = [],
-    excludedVoterId?: UUID,
-  ): HouseVoteCount[] {
-    const counts = new Map<UUID, { votes: number; voters: string[]; knownIndex: number }>();
-    for (const [index, targetId] of knownTargets.entries()) {
-      counts.set(targetId, { votes: 0, voters: [], knownIndex: index });
-    }
-
-    for (const [voterId, targetId] of Object.entries(votes) as Array<[UUID, UUID]>) {
-      if (voterId === excludedVoterId) continue;
-      if (knownTargets.length > 0 && !knownTargets.includes(targetId)) continue;
-      const current = counts.get(targetId) ?? { votes: 0, voters: [], knownIndex: Number.MAX_SAFE_INTEGER };
-      current.votes += 1;
-      current.voters.push(this.gameState.getPlayerName(voterId));
-      counts.set(targetId, current);
-    }
-
-    return Array.from(counts.entries())
-      .filter(([, count]) => count.votes > 0 || count.knownIndex !== Number.MAX_SAFE_INTEGER)
-      .sort(([, a], [, b]) => b.votes - a.votes || a.knownIndex - b.knownIndex)
-      .map(([playerId, count]) => ({
-        playerName: this.gameState.getPlayerName(playerId),
-        votes: count.votes,
-        voters: count.voters,
-      }));
-  }
-
-  private buildHouseEvidenceBundle(phase: Phase): HouseEvidenceBundle {
-    const allPlayers = this.gameState.getAllPlayers();
-    const alivePlayers = this.gameState.getAlivePlayers();
-    const roomAllocations = this.logger.transcript
-      .filter((entry) => entry.roomMetadata)
-      .map((entry) => ({
-        round: entry.round,
-        text: entry.text,
-        rooms: entry.roomMetadata?.rooms.map((room) => ({
-          roomId: room.roomId,
-          players: room.playerIds.map((playerId) => this.gameState.getPlayerName(playerId)),
-        })) ?? [],
-        excluded: entry.roomMetadata?.excluded ?? [],
-      }));
-
-    const candidates = this.gameState.councilCandidates;
-    return {
-      round: this.gameState.round,
-      phase,
-      alivePlayers: alivePlayers.map((player) => player.name),
-      eliminatedPlayers: allPlayers
-        .filter((player) => player.status === PlayerStatus.ELIMINATED)
-        .map((player) => player.name),
-      activeShieldNames: alivePlayers.filter((player) => player.shielded).map((player) => player.name),
-      empoweredName: this.gameState.empoweredId ? this.gameState.getPlayerName(this.gameState.empoweredId) : null,
-      councilCandidates: candidates
-        ? [this.gameState.getPlayerName(candidates[0]), this.gameState.getPlayerName(candidates[1])]
-        : null,
-      recentTranscript: [...this.logger.transcript],
-      recentPublicMessages: [...this.logger.publicMessages],
-      recentDiaryEntries: [...this.diaryRoom.diaryEntries],
-      roomAllocations,
-      roundFacts: this.buildHouseRoundFacts(this.gameState.round),
-      canonicalEventCount: this.gameState.getCanonicalEvents().length,
-    };
   }
 
   private async runConfiguredDiaryRoom(phase: Phase): Promise<void> {

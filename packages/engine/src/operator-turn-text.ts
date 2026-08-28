@@ -188,20 +188,8 @@ export function formatAllianceHuddleTurnOperatorText(params: {
 
 export function formatAllianceHuddleOutcomeOperatorText(params: {
   allianceName?: string | null;
-  ask: string;
-  plan: string;
-  posture: string;
-  confidence: string | number;
+  factSummaries: readonly string[];
 }): string {
   const name = params.allianceName ? `${params.allianceName}: ` : "";
-  return `House huddle outcome — ${name}posture=${params.posture} conf=${params.confidence} | ask=${clip(params.ask, 64)} | plan=${clip(params.plan, 64)}`;
-}
-
-export function formatHouseProducerBriefOperatorText(params: {
-  playerName: string;
-  storyRole: string;
-  pressurePoints: readonly string[];
-  questionAngles: readonly string[];
-}): string {
-  return `House brief for ${params.playerName}: role=${clip(params.storyRole, 40)} | pressure=${listOrNone(params.pressurePoints.slice(0, 3))} | angles=${listOrNone(params.questionAngles.slice(0, 2))}`;
+  return `House huddle outcome — ${name}${params.factSummaries.join(" | ")}`;
 }

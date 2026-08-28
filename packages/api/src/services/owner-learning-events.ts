@@ -4,6 +4,7 @@ import type {
   OwnerLearningSafeFailureCode,
   OwnerLearningStage,
 } from "./owner-learning-contracts.js";
+import type { OwnerLearningFailureDiagnosticSummary } from "./owner-learning-failures.js";
 
 export interface OwnerLearningEventPayloads {
   prompt_impression: { threshold: 1 | 3; completionWatermark: string };
@@ -13,8 +14,19 @@ export interface OwnerLearningEventPayloads {
   credit_consumed: Record<string, never>;
   stage_reached: { stage: OwnerLearningStage; logicalCallCount: number; diveCount: number };
   capacity_fallback_started: { callOrdinal: number; flex429Count: 3 };
-  review_failed: { failureCode: OwnerLearningSafeFailureCode; retryable: boolean };
-  review_retried: { logicalCallCount: number; diveCount: number };
+  review_failed: {
+    failureCode: OwnerLearningSafeFailureCode;
+    retryable: boolean;
+    diagnostic: OwnerLearningFailureDiagnosticSummary;
+  };
+  review_retried: {
+    logicalCallCount: number;
+    diveCount: number;
+    ownerRetryCount: 1;
+    targetCallOrdinal: number | null;
+    targetAttemptOrdinal: number | null;
+    providerTurnProtocol: string;
+  };
   review_declined: Record<string, never>;
   review_superseded: { source: "unlinked_profile_update" };
   review_resolved: { resolution: OwnerLearningResolution };

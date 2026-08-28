@@ -1,11 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
-  HOUSE_SUMMARY_NEAR_BUDGET_RATIO,
   costHouseProviderUsage,
   costHouseSummaryGame,
-  isHouseSummaryCostWithinEnvelope,
 } from "../house-summary-accounting";
-import type { HouseProviderUsage, HouseSummaryPhaseReceipt } from "../house-summary-frontier";
+import type { HouseProviderUsage, HouseSummaryPhaseTelemetry } from "../house-summary-frontier";
 import { Phase } from "../types";
 
 function usage(overrides: Partial<HouseProviderUsage> = {}): HouseProviderUsage {
@@ -23,9 +21,9 @@ function usage(overrides: Partial<HouseProviderUsage> = {}): HouseProviderUsage 
   };
 }
 
-function receipt(overrides: Partial<HouseSummaryPhaseReceipt> = {}): HouseSummaryPhaseReceipt {
+function telemetry(overrides: Partial<HouseSummaryPhaseTelemetry> = {}): HouseSummaryPhaseTelemetry {
   return {
-    version: 1,
+    version: 2,
     boundaryId: "1:format_pick:10:2",
     actorCoordinate: "format_pick",
     round: 1,
@@ -33,10 +31,6 @@ function receipt(overrides: Partial<HouseSummaryPhaseReceipt> = {}): HouseSummar
     beatClass: "ordinary",
     status: "emitted",
     providerCalls: 1,
-    factCalls: 0,
-    requestedCategories: [],
-    returnedBytes: 0,
-    selectedSourceCount: 1,
     usageAvailable: true,
     usage: [usage()],
     pendingDelta: "none",
@@ -45,13 +39,6 @@ function receipt(overrides: Partial<HouseSummaryPhaseReceipt> = {}): HouseSummar
 }
 
 describe("House summary cost accounting", () => {
-  it("defines the near-budget envelope as no more than 1.25x round-only cost", () => {
-    expect(HOUSE_SUMMARY_NEAR_BUDGET_RATIO).toBe(1.25);
-    expect(isHouseSummaryCostWithinEnvelope(0.0017892, 0.00145)).toBe(true);
-    expect(isHouseSummaryCostWithinEnvelope(0.00182, 0.00145)).toBe(false);
-    expect(isHouseSummaryCostWithinEnvelope(0, 0)).toBe(false);
-  });
-
   it("prices every returned call by its realized service tier", () => {
     const result = costHouseProviderUsage([
       usage(),
@@ -90,10 +77,10 @@ describe("House summary cost accounting", () => {
     }
   });
 
-  it("reconciles receipt call counts per boundary and per game", () => {
+  it("reconciles telemetry call counts per boundary and per game", () => {
     const game = costHouseSummaryGame([
-      receipt(),
-      receipt({
+      telemetry(),
+      telemetry({
         boundaryId: "1:format_resolve:14:2",
         actorCoordinate: "format_resolve",
         usage: [],

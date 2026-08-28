@@ -435,7 +435,7 @@ export async function runFormatResolvePhase(
   );
 
   logger.logSystem(
-    `Format ${displayNameForFormat(formatId)} eliminated ${gameState.getPlayerName(eliminatedId)}`,
+    `${gameState.getPlayerName(eliminatedId)} exited under ${displayNameForFormat(formatId)}`,
     Phase.FORMAT_RESOLVE,
   );
 
@@ -462,7 +462,7 @@ async function resolveSaveOrEliminateRound(
   const ballots: SaveOrEliminateBallot[] = [];
 
   for (const player of alive) {
-    const agent = requireAgent(ctx, player.id, "save-or-eliminate ballot");
+    const agent = requireAgent(ctx, player.id, "Save-or-Exit ballot");
     const phaseCtx = prepareAgentPhaseContext(
       ctx,
       agent,
@@ -495,7 +495,7 @@ async function resolveSaveOrEliminateRound(
       const result = await withFormatAgentTimeout(
         ctx,
         Phase.FORMAT_RESOLVE,
-        `Save-or-eliminate ballot (${player.name})`,
+        `Save-or-Exit ballot (${player.name})`,
         () => ballotFn(phaseCtx, aliveIds),
         (reason) => ({
           polarity: "eliminate" as const,
@@ -586,12 +586,12 @@ async function resolveSaveOrEliminateRound(
       reasoningContext,
       scope: "system",
       // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
-      text: `${player.name} sealed ballot: ${polarity.toUpperCase()} → ${targetName}`,
+      text: `${player.name} sealed ballot: ${polarity === "save" ? "SAVE" : "EXIT"} → ${targetName}`,
     });
   }
 
   if (ballots.length !== aliveIds.length) {
-    throw new Error(`Save-or-eliminate incomplete ballots: ${ballots.length}/${aliveIds.length}`);
+    throw new Error(`Save-or-Exit incomplete ballots: ${ballots.length}/${aliveIds.length}`);
   }
 
   await assertCanAcceptCommit(ctx);
@@ -605,10 +605,10 @@ async function resolveSaveOrEliminateRound(
   }
 
   logger.logSystem(
-    `Save-or-eliminate ballots: ${ballots
+    `Save-or-Exit ballots: ${ballots
       .map(
         (b) =>
-          `${gameState.getPlayerName(b.voterId)}→${b.polarity}:${gameState.getPlayerName(b.targetId)}`,
+          `${gameState.getPlayerName(b.voterId)}→${b.polarity === "save" ? "SAVE" : "EXIT"}:${gameState.getPlayerName(b.targetId)}`,
       )
       .join("; ")}`,
     Phase.FORMAT_RESOLVE,
@@ -616,12 +616,12 @@ async function resolveSaveOrEliminateRound(
   const netSummary = aliveIds
     .map((id) => `${gameState.getPlayerName(id)}=${nets.nets[id] ?? 0}`)
     .join(", ");
-  logger.logSystem(`Save-or-eliminate nets: ${netSummary}`, Phase.FORMAT_RESOLVE);
-  const resolutionSummary = formatEliminationReason(gameState, resolution, "lowest net");
+  logger.logSystem(`Save-or-Exit nets: ${netSummary}`, Phase.FORMAT_RESOLVE);
+  const resolutionSummary = formatExitReason(gameState, resolution, "lowest net");
   logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
-    throw new Error("Save-or-eliminate failed to resolve elimination");
+    throw new Error("Save-or-Exit failed to resolve a player exit");
   }
   const eliminatedId = resolution.eliminatedId;
   return {
@@ -667,6 +667,7 @@ async function resolveSealedElimFormatRound(
   registration: SealedElimRegistration,
 ): Promise<FormatRoundElimination> {
   const { gameState, logger } = ctx;
+  const publicName = displayNameForFormat(registration.id);
   const alive = gameState.getAlivePlayers();
   const aliveIds = alive.map((p) => p.id);
   const historicalBallots = gameState.getCanonicalEvents().flatMap((event) =>
@@ -698,7 +699,7 @@ async function resolveSealedElimFormatRound(
       const agent = requireAgent(
         ctx,
         player.id,
-        `${registration.decision.publicName} ballot`,
+        `${publicName} ballot`,
       );
       const phaseCtx = prepareAgentPhaseContext(
         ctx,
@@ -730,7 +731,7 @@ async function resolveSealedElimFormatRound(
         const result = await withFormatAgentTimeout(
           ctx,
           Phase.FORMAT_RESOLVE,
-          `${registration.decision.publicName} ballot (${player.name})`,
+          `${publicName} ballot (${player.name})`,
           () => ballotFn(phaseCtx, [...legalTargetIds]),
           (reason) => ({
             targetId,
@@ -844,7 +845,7 @@ async function resolveSealedElimFormatRound(
         thinking: decision.thinking,
         reasoningContext: decision.reasoningContext,
         scope: "system",
-        text: `${player.name} sealed ballot: eliminate → ${targetName}`,
+        text: `${player.name} sealed ballot: EXIT → ${targetName}`,
       });
     },
     recordForfeitedBallot: async (player) => {
@@ -870,7 +871,7 @@ async function resolveSealedElimFormatRound(
   const resolutionSourcePointers = resolved.tieEvidence ?? [];
 
   logger.logSystem(
-    `${registration.decision.publicName} ballots: ${resolved.ballots
+    `${publicName} ballots: ${resolved.ballots
       .map((b) => `${gameState.getPlayerName(b.voterId)}→${gameState.getPlayerName(b.targetId)}`)
       .concat(resolved.forfeitedVoterIds.map((id) => `${gameState.getPlayerName(id)}→FORFEIT`))
       .join("; ")}`,
@@ -891,7 +892,7 @@ async function resolveSealedElimFormatRound(
       .filter((id) => !eligibleIds.has(id))
       .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
     logger.logSystem(
-      `${registration.decision.publicName} tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      `${publicName} tally: SAFE(zero)=[${zeroSafe}]; positive totals: ${scoreSummary || "none"} (${criterion} exits)`,
       Phase.FORMAT_RESOLVE,
     );
   } else if (registration.presentation.scoring === "highest_even") {
@@ -902,21 +903,21 @@ async function resolveSealedElimFormatRound(
       .map((id) => gameState.getPlayerName(id)).join(", ") || "none";
     logger.logSystem(
       allOdd
-        ? `${registration.decision.publicName} tally: every total is odd; the entire living field goes to the empowered tiebreak`
-        : `${registration.decision.publicName} tally: SAFE(odd)=[${oddSafe}]; even totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+        ? `${publicName} tally: every total is odd; the entire remaining field goes to the empowered tiebreak`
+        : `${publicName} tally: SAFE(odd)=[${oddSafe}]; even totals: ${scoreSummary || "none"} (${criterion} exits)`,
       Phase.FORMAT_RESOLVE,
     );
   } else {
     logger.logSystem(
-      `${registration.decision.publicName} tally: totals: ${scoreSummary || "none"} (${criterion} is eliminated)`,
+      `${publicName} tally: totals: ${scoreSummary || "none"} (${criterion} exits)`,
       Phase.FORMAT_RESOLVE,
     );
   }
-  const resolutionSummary = formatEliminationReason(gameState, resolution, criterion);
+  const resolutionSummary = formatExitReason(gameState, resolution, criterion);
   logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
-    throw new Error(`${registration.decision.publicName} failed to resolve elimination`);
+    throw new Error(`${publicName} failed to resolve a player exit`);
   }
   const eliminatedId = resolution.eliminatedId;
   return {
@@ -1248,7 +1249,7 @@ async function resolveSafetyBounceRound(
       reasoningContext,
       scope: "system",
       // Operator/sim visibility: sealed is player-facing only; chatty traces show the ballot.
-      text: `${player.name} sealed ballot: eliminate → ${targetName}`,
+      text: `${player.name} sealed ballot: EXIT → ${targetName}`,
     });
   }
 
@@ -1274,10 +1275,10 @@ async function resolveSafetyBounceRound(
   logger.logSystem(
     `Safety Bounce vote reveal: ${Object.entries(voteTotals)
       .map(([id, n]) => `${gameState.getPlayerName(id as UUID)}=${n}`)
-      .join(", ")} (most votes among vulnerable is eliminated)`,
+      .join(", ")} (highest total among vulnerable exits)`,
     Phase.FORMAT_RESOLVE,
   );
-  const resolutionSummary = formatEliminationReason(gameState, resolution, "most votes in vulnerable pool");
+  const resolutionSummary = formatExitReason(gameState, resolution, "highest total in vulnerable pool");
   logger.logSystem(resolutionSummary, Phase.FORMAT_RESOLVE);
 
   if (!resolution.eliminatedId) {
@@ -1309,24 +1310,24 @@ async function resolveSafetyBounceRound(
   };
 }
 
-/** Human-readable elimination outcome for chatty/transcript (includes sole vs tiebreak). */
-function formatEliminationReason(
+/** Human-readable exit outcome for chatty/transcript (includes sole vs tiebreak). */
+function formatExitReason(
   gameState: PhaseRunnerContext["gameState"],
   resolution: FormatEliminationResolution,
   criterion: string,
 ): string {
   if (!resolution.eliminatedId) {
-    return `Format elimination unresolved under ${criterion}.`;
+    return `Format exit unresolved under ${criterion}.`;
   }
   const name = gameState.getPlayerName(resolution.eliminatedId);
   if (resolution.kind === "auto") {
-    return `Elimination: ${name} alone had ${criterion} (${resolution.reason}) — no empowered tiebreak.`;
+    return `Exit: ${name} alone had ${criterion} (${resolution.reason}) — no empowered tiebreak.`;
   }
   if (resolution.kind === "clear" && resolution.tiedSet.length > 1) {
     const tied = resolution.tiedSet.map((id) => gameState.getPlayerName(id)).join(", ");
-    return `Elimination: ${name} chosen by empowered tiebreak among tied set [${tied}] on ${criterion}.`;
+    return `Exit: ${name} chosen by empowered tiebreak among tied set [${tied}] on ${criterion}.`;
   }
-  return `Elimination: ${name} under ${criterion}.`;
+  return `Exit: ${name} under ${criterion}.`;
 }
 
 function updateBounceBoardPressure(

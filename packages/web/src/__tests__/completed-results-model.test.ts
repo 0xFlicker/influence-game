@@ -251,7 +251,7 @@ describe("completed results model", () => {
     expect(model.voteMatrix.rows.find((row) => row.player.id === "alice")?.cells[0]?.targetName).toBe("Bob");
   });
 
-  it("adds format ballots with Save-or-Eliminate polarity without changing classic columns", () => {
+  it("adds format ballots with Save-or-Exit polarity without changing classic columns", () => {
     const fixture = resultsFixture();
     const round = fixture.rounds[0]!;
     const formatResults = {
@@ -300,14 +300,14 @@ describe("completed results model", () => {
     ]);
     const alice = model.voteMatrix.rows.find((row) => row.player.id === "alice");
     const cara = model.voteMatrix.rows.find((row) => row.player.id === "cara");
-    expect(alice?.cells[3]).toMatchObject({ targetName: "Eliminate Dax" });
+    expect(alice?.cells[3]).toMatchObject({ targetName: "Exit Dax" });
     expect(cara?.cells[3]).toMatchObject({ targetName: "Save Bob" });
     expect(model.agentCards.find((card) => card.player.id === "alice")?.votesCast).toBe(4);
     expect(model.formatRecaps[0]).toMatchObject({
       round: 1,
-      selectedFormat: "Save-or-Eliminate",
+      selectedFormat: "Save-or-Exit",
       scoring: {
-        columns: ["Agent", "Saves", "Eliminates", "Net"],
+        columns: ["Agent", "Saves", "Exits", "Net"],
         rows: [
           { playerName: "Alice", values: ["0", "0", "0"] },
           { playerName: "Bob", values: ["1", "0", "+1"] },
@@ -316,15 +316,15 @@ describe("completed results model", () => {
         ],
       },
       ledger: [
-        { voterName: "Alice", targetName: "Dax", polarity: "Eliminate" },
-        { voterName: "Bob", targetName: "Dax", polarity: "Eliminate" },
+        { voterName: "Alice", targetName: "Dax", polarity: "Exit" },
+        { voterName: "Bob", targetName: "Dax", polarity: "Exit" },
         { voterName: "Cara", targetName: "Bob", polarity: "Save" },
         { voterName: "Dax", targetName: "Bob", polarity: "Save" },
       ],
     });
   });
 
-  it("labels Majority Elimination completed scoring as highest-total plurality", () => {
+  it("labels Highest Count completed scoring as highest-total plurality", () => {
     const fixture = resultsFixture();
     const round = fixture.rounds[0]!;
     const majorityResults = {
@@ -365,7 +365,7 @@ describe("completed results model", () => {
     const model = buildCompletedResultsReviewModel(majorityResults);
 
     expect(model.formatRecaps[0]).toMatchObject({
-      selectedFormat: "Majority Elimination",
+      selectedFormat: "Highest Count",
       eliminatedName: "Dax",
       scoring: {
         columns: ["Agent", "Votes", "Plurality status"],

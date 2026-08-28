@@ -1,9 +1,9 @@
 import {
-  admitHouseContinuityForRecovery,
   buildMingleInboxReplayFromTranscript,
   GameState,
   isFormatResumeCoordinate,
   mingleInboxSessionForResumeTarget,
+  parseHouseNarrativeContinuity,
   PHASE_BOUNDARY_RESUME_ACTOR_COORDINATES,
   validateFormatResumePrerequisites,
   validatePlayerContinuitySetForRecovery,
@@ -512,12 +512,15 @@ function evaluateCheckpointIntegrity(params: {
     return { ok: false, reason: playerContinuityResult.reason };
   }
 
-  const houseContinuityResult = admitHouseContinuityForRecovery({
-    requirement: isRecord(snapshot) ? snapshot.houseContinuityRequirement : undefined,
-    capsule: isRecord(snapshot) ? snapshot.houseContinuityCapsule : null,
-  });
-  if (!houseContinuityResult.ok) {
-    return { ok: false, reason: houseContinuityResult.reason };
+  const houseNarrativeRaw = isRecord(snapshot)
+    ? snapshot.houseNarrativeContinuityCapsule
+    : null;
+  if (houseNarrativeRaw == null) {
+    return { ok: false, reason: "missing_house_narrative_continuity_v2" };
+  }
+  const houseNarrativeResult = parseHouseNarrativeContinuity(houseNarrativeRaw);
+  if (houseNarrativeResult.status === "invalid") {
+    return { ok: false, reason: "malformed_house_narrative_continuity" };
   }
 
   const shouldReplayMingleInbox =
@@ -536,8 +539,7 @@ function evaluateCheckpointIntegrity(params: {
       tokenCostCursor,
       mingleInboxReplay: shouldReplayMingleInbox ? mingleInboxReplay : null,
       currentAccusations: accumulatorResult.currentAccusations,
-      houseContinuityCapsule: houseContinuityResult.capsule,
-      houseContinuityRequirement: houseContinuityResult.requirement,
+      houseNarrativeContinuityCapsule: houseNarrativeResult.value,
       playerContinuityCapsules: playerContinuityResult.capsules,
     },
   };

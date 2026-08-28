@@ -18,6 +18,7 @@ import type {
   GameKernel as EngineGameKernel,
   GameKernelContradictionDiagnostic as EngineGameKernelContradictionDiagnostic,
   GameKernelSource as EngineGameKernelSource,
+  AllianceHuddleFactAtom as EngineAllianceHuddleFactAtom,
   LaunchFormatId as EngineLaunchFormatId,
   Phase as EnginePhase,
   RevealedCanonicalFactsStatus as EngineRevealedCanonicalFactsStatus,
@@ -1519,13 +1520,7 @@ export interface PublicAllianceOutcomeRead {
   id: string;
   round: number;
   window: string;
-  ask: string;
-  plan: string;
-  promises: string[];
-  dissent: string[];
-  confidence: string;
-  posture: string;
-  leakOrBetrayalClaims: string[];
+  facts: EngineAllianceHuddleFactAtom[];
 }
 
 export interface PublicAllianceConsequenceRead {
@@ -2034,7 +2029,7 @@ export type OwnerLearningAnalysisTrack =
   | "evidence_rich"
   | "strategy_health_check";
 
-export type OwnerLearningAnalysisStatus = "queued" | "running" | "ready" | "no_change" | "failed";
+export type OwnerLearningAnalysisStatus = "queued" | "retry_queued" | "running" | "ready" | "no_change" | "failed";
 export type OwnerLearningStage =
   | "evidence_ready"
   | "scanning_narratives"
@@ -2159,6 +2154,7 @@ export interface OwnerLearningReview {
   proposalFingerprint: string | null;
   safeFailureCode: string | null;
   retryable: boolean;
+  ownerRetriesRemaining: 0 | 1;
   logicalCallCount: number;
   diveCount: number;
   applyDisposition: OwnerLearningApplyDisposition;
@@ -2195,6 +2191,7 @@ export type OwnerLearningReviewStatus = Pick<
   | "proposalFingerprint"
   | "safeFailureCode"
   | "retryable"
+  | "ownerRetriesRemaining"
   | "logicalCallCount"
   | "diveCount"
   | "applyDisposition"
@@ -2765,6 +2762,30 @@ export interface AdminOwnerLearningCostTotals {
   unavailableCallCount: number;
 }
 
+export interface AdminOwnerLearningFailureDiagnostic {
+  id: string;
+  phase: "selection" | "evidence_projection" | "materialization" | "call_reservation" | "provider_invocation" | "output_validation" | "checkpoint_persistence" | "finalization" | null;
+  safeFailureCode: string;
+  errorClass: string;
+  errorCode: string | null;
+  message: string;
+  firstApplicationStackFrame: string | null;
+  fingerprint: string;
+  callId: string | null;
+  callOrdinal: number | null;
+  attemptOrdinal: number | null;
+  providerRequestId: string | null;
+  providerResponseId: string | null;
+  occurredAt: string;
+  evidence: {
+    manifestId: string;
+    state: "pending" | "stored" | "degraded" | "legacy_unavailable";
+    byteLength: number | null;
+    sha256: string | null;
+    lastStorageError: string | null;
+  };
+}
+
 export interface AdminOwnerLearningReviewSummary {
   id: string;
   owner: { userId: string; displayName: string | null; handle: string | null };
@@ -2779,6 +2800,7 @@ export interface AdminOwnerLearningReviewSummary {
   acceptance: AdminOwnerLearningAcceptance;
   logicalCallCount: number;
   diveCount: number;
+  failure: AdminOwnerLearningFailureDiagnostic | null;
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   createdAt: string;
@@ -2818,10 +2840,14 @@ export interface AdminOwnerLearningReviewDetail {
     track: "evidence_rich" | "strategy_health_check";
     status: OwnerLearningAnalysisStatus;
     stage: OwnerLearningStage;
+    executionPhase: AdminOwnerLearningFailureDiagnostic["phase"];
     capacitySubstatus: string | null;
     resolution: OwnerLearningResolution | null;
     safeFailureCode: string | null;
     retryable: boolean;
+    ownerRetryCount: number;
+    ownerRetriesRemaining: 0 | 1;
+    retryTargetAttemptId: string | null;
     logicalCallCount: number;
     diveCount: number;
     createdAt: string;
@@ -2833,7 +2859,14 @@ export interface AdminOwnerLearningReviewDetail {
   disposition: AdminOwnerLearningDisposition;
   acceptance: AdminOwnerLearningAcceptance;
   calls: Array<{
+    id: string;
     ordinal: number;
+    attemptOrdinal: number;
+    retryOfAttemptId: string | null;
+    executionKind: "provider_invocation" | "local_recovery";
+    providerTurnProtocol: string;
+    executionFingerprint: string;
+    retryOfExecutionFingerprint: string | null;
     state: string;
     stage: string;
     requestedTier: string;
@@ -2843,6 +2876,13 @@ export interface AdminOwnerLearningReviewDetail {
     flex429Count: number;
     terminalHttpStatus: number | null;
     providerRequestId: string | null;
+    providerResponseId: string | null;
+    providerResponseObservedAt: string | null;
+    providerResponseSha256: string | null;
+    requestEvidence: { sha256: string | null; byteLength: number | null };
+    responseEvidence: { sha256: string | null; byteLength: number | null };
+    evidenceState: string;
+    failureDiagnosticId: string | null;
     safeFailureCode: string | null;
     latencyMs: number | null;
     tokens: {
@@ -2862,6 +2902,7 @@ export interface AdminOwnerLearningReviewDetail {
     dispatchedAt: string | null;
     completedAt: string | null;
   }>;
+  diagnostics: AdminOwnerLearningFailureDiagnostic[];
   tokens: AdminOwnerLearningTokenTotals;
   cost: AdminOwnerLearningCostTotals;
   application: null | {
@@ -2894,6 +2935,62 @@ export async function getAdminOwnerLearningReview(
   reviewId: string,
 ): Promise<AdminOwnerLearningReviewDetail> {
   return apiFetch(`/api/admin/owner-learning-reviews/${encodeURIComponent(reviewId)}`);
+}
+
+export type AdminOwnerLearningFailureContent = {
+  schemaVersion: 1;
+  state: "complete" | "partial" | "final_chunk";
+  diagnostic: Omit<AdminOwnerLearningFailureDiagnostic, "evidence">;
+  manifest: {
+    id: string;
+    state: "stored";
+    contentType: string;
+    byteLength: number;
+    sha256: string;
+    metadata: Record<string, unknown>;
+  };
+  content: string;
+  contentBase64: string;
+  offsetBytes: number;
+  returnedByteLength: number;
+  totalByteLength: number;
+  nextOffsetBytes?: number;
+  truncated: boolean;
+  sha256: string;
+  hashScope: "complete_object" | "chunk";
+} | {
+  schemaVersion: 1;
+  state: "pending" | "degraded" | "legacy_unavailable" | "integrity_mismatch" | "storage_error";
+  error: string;
+  retryable: boolean;
+};
+
+export async function getAdminOwnerLearningFailureContent(
+  reviewId: string,
+  diagnosticId: string,
+  options: { offsetBytes?: number; maxBytes?: number } = {},
+): Promise<AdminOwnerLearningFailureContent> {
+  const params = new URLSearchParams();
+  if (options.offsetBytes !== undefined) params.set("offsetBytes", String(options.offsetBytes));
+  if (options.maxBytes !== undefined) params.set("maxBytes", String(options.maxBytes));
+  const query = params.toString();
+  try {
+    return await apiFetch(
+      `/api/admin/owner-learning-reviews/${encodeURIComponent(reviewId)}/diagnostics/${encodeURIComponent(diagnosticId)}/content${query ? `?${query}` : ""}`,
+    );
+  } catch (error) {
+    if (
+      error instanceof ApiError
+      && error.status === 503
+      && error.payload?.schemaVersion === 1
+      && (error.payload.state === "integrity_mismatch" || error.payload.state === "storage_error")
+      && typeof error.payload.error === "string"
+      && typeof error.payload.retryable === "boolean"
+    ) {
+      return error.payload as AdminOwnerLearningFailureContent;
+    }
+    throw error;
+  }
 }
 
 export interface AdminAgent {

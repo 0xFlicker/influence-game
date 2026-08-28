@@ -508,19 +508,12 @@ export function buildEngineConfigFromGameRecord(
       mingle: roomPhaseTimer,
     },
     diaryRoomAfterPhases: [Phase.FORMAT_RESOLVE, Phase.COUNCIL],
-    // Preserve House Strategy Bible / summary contracts sealed into the game record so
-    // checkpoint-time House continuity requirements match the runtime that produced them.
+    // Preserve House narration configuration sealed into the game record.
     ...(typeof gameConfig.enableHouseRoundSummaries === "boolean" && {
       enableHouseRoundSummaries: gameConfig.enableHouseRoundSummaries,
     }),
-    ...(typeof gameConfig.enableHouseStrategyBible === "boolean" && {
-      enableHouseStrategyBible: gameConfig.enableHouseStrategyBible,
-    }),
     ...(typeof gameConfig.enableHouseLongFormSummaries === "boolean" && {
       enableHouseLongFormSummaries: gameConfig.enableHouseLongFormSummaries,
-    }),
-    ...(typeof gameConfig.enableHouseProducerBriefs === "boolean" && {
-      enableHouseProducerBriefs: gameConfig.enableHouseProducerBriefs,
     }),
   };
 }
@@ -862,7 +855,7 @@ export async function startGame(
       durableCheckpointSink: async (checkpoint) => {
         const result = await writeGameCheckpoint(db, { gameId, ownerEpoch, checkpoint });
         if (!result.ok) {
-          console.warn(`[game-lifecycle] Checkpoint degraded for game ${gameId}: ${result.error}`);
+          throw new Error(`Checkpoint rejected for game ${gameId}: ${result.error}`);
         }
       },
       beforeAcceptedCommit: () => assertOwnerActive(db, gameId, ownerEpoch),

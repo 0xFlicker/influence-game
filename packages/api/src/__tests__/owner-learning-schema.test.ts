@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { schema, type DrizzleDB } from "../db/index.js";
+import { failFixtureOwnerLearningReview } from "./owner-learning-test-utils.js";
 import { setupTestDB } from "./test-utils.js";
 
 describe("owner learning schema", () => {
@@ -26,13 +27,16 @@ describe("owner learning schema", () => {
       idempotencyKey: "start-2",
     }));
 
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      resolution: "failed",
-      resolvedAt: "2026-08-04T00:10:00.000Z",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId: firstReviewId,
+      failureCode: "provider_error",
       retryable: false,
-      safeFailureCode: "provider_error",
-    }).where(eq(schema.agentLearningReviews.id, firstReviewId));
+      now: new Date("2026-08-04T00:10:00.000Z"),
+      reviewUpdates: {
+        resolution: "failed",
+        resolvedAt: "2026-08-04T00:10:00.000Z",
+      },
+    });
 
     await insertReview(db, {
       id: randomUUID(),
@@ -122,7 +126,7 @@ describe("owner learning schema", () => {
     }));
   });
 
-  test("contains only typed evidence and generated-result storage lanes", async () => {
+  test("contains typed evidence plus review-scoped private failure storage lanes", async () => {
     const db = await setupTestDB();
     const rows = await db.execute<{ table_name: string; column_name: string }>(sql`
       SELECT table_name, column_name
@@ -138,11 +142,15 @@ describe("owner learning schema", () => {
       "agent_learning_review_applications",
       "agent_learning_review_calls",
       "agent_learning_review_entitlements",
+      "agent_learning_review_failure_diagnostics",
+      "agent_learning_review_failure_evidence_outbox",
+      "agent_learning_review_failure_manifest_reads",
+      "agent_learning_review_failure_manifests",
       "agent_learning_review_games",
       "agent_learning_reviews",
     ]));
     const forbidden = rows.filter((row) =>
-      /(raw_|transcript|cognition|prompt_body|provider_response)/.test(row.column_name)
+      /(raw_|transcript|cognition|prompt_body)/.test(row.column_name)
     );
     expect(forbidden).toEqual([]);
   });

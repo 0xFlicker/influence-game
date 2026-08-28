@@ -18,6 +18,7 @@ import type {
   UUID,
 } from "./types";
 import type { LaunchFormatId } from "./formats";
+import type { LegacyAllianceHuddleOutcomeV1Metadata } from "./alliance-huddle-outcome";
 import {
   getFormatRegistration,
   isRegisteredFormatId,
@@ -477,7 +478,7 @@ export type FormatBallotPayload = {
   formatId: LaunchFormatId;
   voterId: UUID;
   targetId: UUID;
-  /** Present for Save-or-Eliminate only. */
+  /** Present for canonical Save-or-Exit rounds only. */
   polarity: "save" | "eliminate" | null;
 };
 
@@ -594,9 +595,18 @@ export type CanonicalGameEvent =
   | CanonicalEventEnvelope<
       "alliance.huddle_outcome_recorded",
       {
+        outcome: LegacyAllianceHuddleOutcomeV1Metadata;
+        alliance?: AllianceRecord;
+      },
+      1
+    >
+  | CanonicalEventEnvelope<
+      "alliance.huddle_outcome_recorded",
+      {
         outcome: AllianceHuddleOutcome;
         alliance?: AllianceRecord;
-      }
+      },
+      2
     >
   | CanonicalEventEnvelope<"council.vote_cast", { voterId: UUID; target: UUID }>
   | CanonicalEventEnvelope<
@@ -712,11 +722,181 @@ function isSourcePointer(value: unknown): value is CanonicalSourcePointer {
   );
 }
 
+function hasExactKeys(
+  value: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[] = [],
+): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => Object.hasOwn(value, key))
+    && Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every(isNonEmptyString);
+}
+
+function isHuddleWindow(value: unknown): boolean {
+  return value === "format" || value === "pre_vote" || value === "pre_council";
+}
+
+function validateHuddleOutcomeMetadata(outcome: unknown): string[] {
+  if (!isRecord(outcome)) return ["alliance huddle outcome must be an object"];
+  const errors: string[] = [];
+  for (const key of ["id", "sessionId", "allianceId", "createdAt"] as const) {
+    if (!isNonEmptyString(outcome[key])) errors.push(`alliance huddle outcome ${key} is required`);
+  }
+  if (!isHuddleWindow(outcome.window)) errors.push("alliance huddle outcome window is invalid");
+  if (!Number.isInteger(outcome.round) || Number(outcome.round) < 0) {
+    errors.push("alliance huddle outcome round must be a non-negative integer");
+  }
+  return errors;
+}
+
+const HUDDLE_ACTION_KINDS = new Set([
+  "empower_vote",
+  "council_vote",
+  "format_ballot",
+  "format_pointer",
+]);
+const HUDDLE_CONFIDENCES = new Set(["low", "medium", "high"]);
+
+function validateHuddleFactAtom(
+  value: unknown,
+  sessionId: string,
+  participantPlayerIds: ReadonlySet<string>,
+  priorFactIds: ReadonlySet<string>,
+): string[] {
+  if (!isRecord(value)) return ["alliance huddle fact must be an object"];
+  const baseRequired = ["kind", "factId", "sessionId", "actorPlayerId", "confidence"];
+  let required: string[];
+  let optional: string[] = [];
+  switch (value.kind) {
+    case "proposal":
+    case "commitment":
+      required = [...baseRequired, "actionKind", "targetPlayerId"];
+      break;
+    case "response":
+      required = [...baseRequired, "counterpartFactId", "stance"];
+      if (value.stance === "counter") {
+        required.push("replacementActionKind", "replacementTargetPlayerId");
+      }
+      break;
+    case "contingency":
+      required = [...baseRequired, "conditionKind", "effectActionKind", "effectTargetPlayerId"];
+      optional = ["conditionPlayerId"];
+      break;
+    default:
+      return [`alliance huddle fact kind is invalid: ${String(value.kind)}`];
+  }
+  const errors: string[] = [];
+  if (!hasExactKeys(value, required, optional)) {
+    errors.push(`alliance huddle ${String(value.kind)} fact fields are not exact`);
+  }
+  if (!isNonEmptyString(value.factId)) errors.push("alliance huddle factId is required");
+  if (value.sessionId !== sessionId) errors.push("alliance huddle fact sessionId must match outcome sessionId");
+  if (!isNonEmptyString(value.actorPlayerId) || !participantPlayerIds.has(value.actorPlayerId)) {
+    errors.push("alliance huddle fact actorPlayerId must be a session participant");
+  }
+  if (!HUDDLE_CONFIDENCES.has(String(value.confidence))) {
+    errors.push("alliance huddle fact confidence is invalid");
+  }
+  if (value.kind === "proposal" || value.kind === "commitment") {
+    if (!HUDDLE_ACTION_KINDS.has(String(value.actionKind))) errors.push("alliance huddle fact actionKind is invalid");
+    if (!isNonEmptyString(value.targetPlayerId)) errors.push("alliance huddle fact targetPlayerId is required");
+  }
+  if (value.kind === "response") {
+    if (!isNonEmptyString(value.counterpartFactId) || !priorFactIds.has(value.counterpartFactId)) {
+      errors.push("alliance huddle response must reference an earlier fact");
+    }
+    if (value.stance !== "endorse" && value.stance !== "reject" && value.stance !== "counter") {
+      errors.push("alliance huddle response stance is invalid");
+    }
+    if (value.stance === "counter") {
+      if (!HUDDLE_ACTION_KINDS.has(String(value.replacementActionKind))) {
+        errors.push("alliance huddle counter replacementActionKind is invalid");
+      }
+      if (!isNonEmptyString(value.replacementTargetPlayerId)) {
+        errors.push("alliance huddle counter replacementTargetPlayerId is required");
+      }
+    }
+  }
+  if (value.kind === "contingency") {
+    if (
+      value.conditionKind !== "target_ineligible"
+      && value.conditionKind !== "vote_count_changed"
+      && value.conditionKind !== "format_action_changed"
+      && value.conditionKind !== "ally_response_changed"
+    ) {
+      errors.push("alliance huddle contingency conditionKind is invalid");
+    }
+    if (value.conditionPlayerId !== undefined && !isNonEmptyString(value.conditionPlayerId)) {
+      errors.push("alliance huddle contingency conditionPlayerId is invalid");
+    }
+    if (!HUDDLE_ACTION_KINDS.has(String(value.effectActionKind))) {
+      errors.push("alliance huddle contingency effectActionKind is invalid");
+    }
+    if (!isNonEmptyString(value.effectTargetPlayerId)) {
+      errors.push("alliance huddle contingency effectTargetPlayerId is required");
+    }
+  }
+  return errors;
+}
+
+function validateHuddleOutcomeV1(payload: unknown): string[] {
+  if (!isRecord(payload) || !isRecord(payload.outcome)) {
+    return ["alliance.huddle_outcome_recorded v1 payload.outcome must be an object"];
+  }
+  return validateHuddleOutcomeMetadata(payload.outcome);
+}
+
+function validateHuddleOutcomeV2(payload: unknown): string[] {
+  if (!isRecord(payload) || !isRecord(payload.outcome)) {
+    return ["alliance.huddle_outcome_recorded v2 payload.outcome must be an object"];
+  }
+  const errors = validateHuddleOutcomeMetadata(payload.outcome);
+  if (!hasExactKeys(payload, ["outcome"], ["alliance"])) {
+    errors.push("alliance.huddle_outcome_recorded v2 payload fields are not exact");
+  }
+  if (!hasExactKeys(
+    payload.outcome,
+    ["id", "sessionId", "allianceId", "window", "round", "facts", "participantPlayerIds", "createdAt"],
+  )) {
+    errors.push("alliance huddle outcome v2 fields are not exact");
+  }
+  if (!isStringArray(payload.outcome.participantPlayerIds)) {
+    errors.push("alliance huddle outcome v2 participantPlayerIds must be an array of IDs");
+  }
+  if (!Array.isArray(payload.outcome.facts)) {
+    errors.push("alliance huddle outcome v2 facts must be an array");
+    return errors;
+  }
+  const sessionId = typeof payload.outcome.sessionId === "string" ? payload.outcome.sessionId : "";
+  const participants = new Set(
+    isStringArray(payload.outcome.participantPlayerIds)
+      ? payload.outcome.participantPlayerIds
+      : [],
+  );
+  const factIds = new Set<string>();
+  for (const fact of payload.outcome.facts) {
+    errors.push(...validateHuddleFactAtom(fact, sessionId, participants, factIds));
+    if (isRecord(fact) && isNonEmptyString(fact.factId)) {
+      if (factIds.has(fact.factId)) errors.push(`duplicate alliance huddle factId ${fact.factId}`);
+      factIds.add(fact.factId);
+    }
+  }
+  return errors;
+}
+
 export function isSupportedCanonicalPayloadVersion(
   eventType: unknown,
   payloadVersion: unknown,
 ): payloadVersion is 1 | 2 {
-  return eventType === "format.resolved"
+  return eventType === "format.resolved" || eventType === "alliance.huddle_outcome_recorded"
     ? payloadVersion === 1 || payloadVersion === 2
     : payloadVersion === 1;
 }
@@ -887,8 +1067,8 @@ export function validateCanonicalGameEvent(value: unknown): CanonicalEventValida
   }
   if (!isSupportedCanonicalPayloadVersion(value.type, value.payloadVersion)) {
     errors.push(
-      value.type === "format.resolved"
-        ? `payloadVersion for format.resolved must be 1 or 2, got ${String(value.payloadVersion)}`
+      value.type === "format.resolved" || value.type === "alliance.huddle_outcome_recorded"
+        ? `payloadVersion for ${value.type} must be 1 or 2, got ${String(value.payloadVersion)}`
         : `payloadVersion for ${String(value.type)} must be 1, got ${String(value.payloadVersion)}`,
     );
   } else if (value.type === "format.resolved") {
@@ -896,6 +1076,12 @@ export function validateCanonicalGameEvent(value: unknown): CanonicalEventValida
       ...(value.payloadVersion === 1
         ? validateFormatResolutionV1(value.payload)
         : validateFormatResolutionV2(value.payload)),
+    );
+  } else if (value.type === "alliance.huddle_outcome_recorded") {
+    errors.push(
+      ...(value.payloadVersion === 1
+        ? validateHuddleOutcomeV1(value.payload)
+        : validateHuddleOutcomeV2(value.payload)),
     );
   }
   if (!Array.isArray(value.sourcePointers) || !value.sourcePointers.every(isSourcePointer)) {

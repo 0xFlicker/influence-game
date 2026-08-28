@@ -15,7 +15,10 @@ import {
   type ProductionGameMcpPostgameOptions,
   type ProductionGameMcpRoundFactsOptions,
 } from "./read-model.js";
-import type { CanonicalEventQueryMode } from "@influence/engine";
+import {
+  MCP_FORMAT_FACT_TYPES,
+  type CanonicalEventQueryMode,
+} from "@influence/engine";
 import type {
   CognitiveArtifactActorRole,
   CognitiveArtifactType,
@@ -130,6 +133,7 @@ import {
   type OwnerLearningMcpDependencies,
 } from "./owner-learning.js";
 import { ownerLearningGenerationEnabled } from "../services/owner-learning-public.js";
+import { OwnerLearningRetryError } from "../services/owner-learning-retry.js";
 import {
   OWNER_LEARNING_MCP_READ_SCOPES,
   OWNER_LEARNING_MCP_WRITE_SCOPES,
@@ -859,7 +863,7 @@ function productionGameMcpTools(
     }),
     tool({
       name: "read_projection",
-      description: "Replay persisted canonical events into the projection summary for one accessible game ID or slug.",
+      description: "Replay persisted canonical events into the projection summary for one accessible game ID or slug. Format identifiers use the current MCP vocabulary.",
       properties: {
         gameIdOrSlug: { type: "string" },
       },
@@ -900,7 +904,7 @@ function productionGameMcpTools(
     tool({
       name: "filter_events",
       description: includeProducerVariant
-        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Public/player reads expose sanitized format.ballot_cast and format.ballot_forfeited decisions immediately after durable record with eventShape: viewer_decision; producer mode retains raw canonical envelopes and provenance."
+        ? "Filter persisted canonical events by game, type, phase, actor, sequence range, visibility mode, or limit. Public/player reads expose sanitized format.ballot_cast and format.ballot_forfeited decisions immediately after durable record with eventShape: viewer_decision; producer mode retains raw canonical envelopes and provenance. Format identifiers use the current MCP vocabulary."
         : "Filter viewer-safe canonical decisions by game, type, phase, actor, sequence range, or limit. Rows mark the sanitized decision shape with eventShape: viewer_decision, including sanitized format.ballot_cast and format.ballot_forfeited decisions immediately after durable record.",
       properties: {
         gameIdOrSlug: { type: "string" },
@@ -922,7 +926,7 @@ function productionGameMcpTools(
     tool({
       name: "player_timeline",
       description: includeProducerVariant
-        ? "Return canonical events that mention a player ID or name."
+        ? "Return canonical event shapes that mention a player ID or name, using current MCP format identifiers."
         : "Return player-visible canonical events that mention a player ID or name in an accessible game.",
       properties: {
         gameIdOrSlug: { type: "string" },
@@ -1354,7 +1358,7 @@ function ownerLearningTools(): GameMcpToolDescriptor[] {
     }),
     tool({
       name: RETRY_LEARNING_REVIEW_TOOL,
-      description: "Retry the same owned failed learning review by reviewId when it is retryable and its lifetime logical-call budget remains. Replays for already queued/running work return the same review and never reset counters. Requires agents:read, games:read, and agents:write.",
+      description: "Use the owner's single recovery allowance to retry the same failed learning review from its saved checkpoint without consuming another review credit. Replays for already queued/running work return the same review and never reset logical-call counters. Requires agents:read, games:read, and agents:write.",
       inputSchema: RETRY_LEARNING_REVIEW_INPUT_SCHEMA,
       outputSchema: RETRY_LEARNING_REVIEW_OUTPUT_SCHEMA,
       scopes: OWNER_LEARNING_MCP_WRITE_SCOPES,
@@ -1532,7 +1536,7 @@ function roundFactsOutputSchema(): Record<string, unknown> {
       target: playerRefOutputSchema,
       polarity: nullableSchema({
         type: "string",
-        enum: ["save", "eliminate"],
+        enum: ["save", "exit"],
       }),
     },
     additionalProperties: true,
@@ -1542,7 +1546,7 @@ function roundFactsOutputSchema(): Record<string, unknown> {
     type: "object",
     required: ["schemaVersion", "game", "canonicalGameFacts"],
     properties: {
-      schemaVersion: { type: "number", const: 2 },
+      schemaVersion: { type: "number", const: 3 },
       game: {
         type: "object",
         required: ["gameKernel", "gameKernelSource", "gameKernelDiagnostics"],
@@ -1913,9 +1917,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
           "format_chooser_survived",
           "format_chooser_eliminated",
           "format_tiebreak",
-          "format_soe_elim_with_saves",
-          "format_vote_bomb_clear_stack",
-          "format_vote_bomb_unanimous_target",
+          ...Object.values(MCP_FORMAT_FACT_TYPES),
           "format_bounce_alliance_vulnerable",
         ],
       },
@@ -2092,7 +2094,7 @@ function postgameOutputSchema(kind: string): Record<string, unknown> {
     producerAnalysis: {
       required: ["schemaVersion", "ok", "game", "producerAnalysis", "developerEvidence"],
       properties: {
-        schemaVersion: { type: "number", const: 2 },
+        schemaVersion: { type: "number", const: 3 },
         producerAnalysis: {
           type: "object",
           required: ["executiveSummary", "gameMomentum", "derivedVoteCohorts", "inferredAlliances", "juryManagementAnalysis", "playerByPlayerStrategicGrades"],
@@ -2245,6 +2247,15 @@ function publicPlayerProfileContent(value: unknown): {
 }
 
 function jsonRpcErrorData(error: unknown): { data?: unknown } {
+  if (error instanceof OwnerLearningRetryError) {
+    return {
+      data: {
+        code: error.code,
+        statusCode: error.code === "review_unavailable" ? 404 : 409,
+        retryable: false,
+      },
+    };
+  }
   if (error instanceof AgentProfileManagementError || error instanceof QueueEnrollmentError) {
     return {
       data: {
