@@ -11,6 +11,7 @@ import {
 import type { OwnerLearningEvidenceProjector } from "../services/owner-learning-review.js";
 import { setupTestDB } from "./test-utils.js";
 import {
+  failFixtureOwnerLearningReview,
   fakeOwnerLearningProjection,
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
@@ -324,13 +325,12 @@ describe("owner learning REST routes", () => {
     const app = new Hono().route("/", createOwnerLearningRoutes(db, {
       now: () => new Date("2026-08-04T04:00:00.000Z"),
     }));
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      stage: "complete",
-      safeFailureCode: "provider_timeout",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "provider_timeout",
       retryable: true,
-      logicalCallCount: 1,
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+      reviewUpdates: { stage: "complete", logicalCallCount: 1 },
+    });
 
     const [retried, duplicateRetry] = await Promise.all([
       app.request(
@@ -356,11 +356,12 @@ describe("owner learning REST routes", () => {
       analysisStatus: "retry_queued",
       ownerRetriesRemaining: 0,
     });
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      safeFailureCode: "provider_timeout",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId,
+      failureCode: "provider_timeout",
       retryable: true,
-    }).where(eq(schema.agentLearningReviews.id, reviewId));
+      now: new Date("2026-08-04T04:00:01.000Z"),
+    });
     const secondRecovery = await app.request(
       `/api/agent-learning/reviews/${reviewId}/retry`,
       authPost(token),

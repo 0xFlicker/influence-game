@@ -12,6 +12,7 @@ import {
   resolveOwnedOwnerLearningReview,
 } from "../services/owner-learning-resolution.js";
 import {
+  failFixtureOwnerLearningReview,
   insertPlayedOwnerLearningAgent,
   startFixtureOwnerLearningReview,
 } from "./owner-learning-test-utils.js";
@@ -309,11 +310,11 @@ describe("owner learning apply and resolution", () => {
 
     const failedFixture = await insertPlayedOwnerLearningAgent(db);
     const failedReviewId = await startFixtureOwnerLearningReview(db, failedFixture);
-    await db.update(schema.agentLearningReviews).set({
-      analysisStatus: "failed",
-      safeFailureCode: "provider_error",
+    await failFixtureOwnerLearningReview(db, {
+      reviewId: failedReviewId,
+      failureCode: "provider_error",
       retryable: false,
-    }).where(eq(schema.agentLearningReviews.id, failedReviewId));
+    });
     const failedProfile = (await db.select().from(schema.agentProfiles)
       .where(eq(schema.agentProfiles.id, failedFixture.agentProfileId)))[0]!;
     await resolveOwnedOwnerLearningReview(db, {
