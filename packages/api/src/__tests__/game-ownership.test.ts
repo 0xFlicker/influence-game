@@ -7,9 +7,11 @@ import {
   updateOwnedAgentProfile,
 } from "../services/agent-profile-management.js";
 import {
+  adoptDurableGameRunOwner,
   acquireGameRunOwner,
   acquireRecoveryGameRunOwner,
   markOwnerStartupFailed,
+  relinquishDurableGameRunOwner,
   revokeActiveGameRunOwner,
   suspendClaimedRecoveryOwner,
 } from "../services/game-ownership.js";
@@ -31,6 +33,7 @@ import {
   recordProviderHealthOutcomeInTransaction,
 } from "../services/provider-health.js";
 import { resolveProviderManifestFromGameConfig } from "@influence/engine";
+import { tryReturnZeroEventOwnerFailureToWaiting } from "../services/game-lifecycle.js";
 
 describe("atomic game owner claim and roster freeze", () => {
   test("serializes update-before-freeze into one coherent new tuple and snapshot", async () => {
@@ -340,6 +343,44 @@ describe("atomic game owner claim and roster freeze", () => {
     expect(await fixture.db.select().from(schema.competitionRatingSnapshots)).toEqual(snapshotsBefore);
   });
 
+  test("retains a partially initialized durable game for automatic restart", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const owner = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    expect(owner.ok).toBeTrue();
+    if (!owner.ok) throw new Error(owner.error);
+    await fixture.db.insert(schema.gameExecutionStates).values({
+      gameId: fixture.gameId,
+      ownerEpoch: owner.claim.ownerEpoch,
+      status: "ready",
+      committedTurnSequence: 0,
+      xstateSnapshot: { value: "introduction" },
+      executionCursor: { version: 1, kind: "phase_enter", actor: "introduction" },
+      playerContinuityCapsules: [],
+      houseNarrativeContinuity: null,
+      retryState: null,
+    });
+
+    expect(await tryReturnZeroEventOwnerFailureToWaiting(
+      fixture.db,
+      fixture.gameId,
+      owner.claim.ownerEpoch,
+      "startup failed after execution initialization",
+    )).toEqual({ outcome: "retained_for_resume" });
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({
+      status: "in_progress",
+    });
+    expect((await fixture.db.select().from(schema.gameExecutionStates)
+      .where(eq(schema.gameExecutionStates.gameId, fixture.gameId)))[0]).toMatchObject({
+      ownerEpoch: owner.claim.ownerEpoch,
+      status: "ready",
+    });
+    expect((await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.ownerEpoch, owner.claim.ownerEpoch)))[0]).toMatchObject({
+      status: "expired",
+      failureReason: "startup_failed_after_durable_initialization",
+    });
+  });
+
   test("atomically rejects startup teardown when durable events or a sealed settlement exist", async () => {
     const eventFixture = await createRatedWaitingFixture();
     const eventOwner = await acquireGameRunOwner(eventFixture.db, eventFixture.gameId);
@@ -560,7 +601,100 @@ describe("atomic game owner claim and roster freeze", () => {
     expect(completed.ok).toBeTrue();
     expect((await acquireRecoveryGameRunOwner(fixture.db, fixture.gameId, 0)).ok).toBeTrue();
   });
+
+  test("adopts the committed execution cursor without suspending the game", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const original = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    expect(original.ok).toBeTrue();
+    if (!original.ok) throw new Error(original.error);
+    await insertExecutionState(fixture.db, fixture.gameId, original.claim.ownerEpoch);
+
+    const adopted = await adoptDurableGameRunOwner(fixture.db, fixture.gameId, {
+      processId: "reloaded-api",
+    });
+
+    expect(adopted.ok).toBeTrue();
+    if (!adopted.ok) throw new Error(adopted.error);
+    expect(adopted.claim.ownerEpoch).not.toBe(original.claim.ownerEpoch);
+    expect(adopted.claim.executionState).toMatchObject({
+      gameId: fixture.gameId,
+      ownerEpoch: adopted.claim.ownerEpoch,
+      status: "ready",
+      heads: {
+        turnSequence: 0,
+        eventSequence: 0,
+        dialogueSequence: 0,
+        publicationSequence: 0,
+      },
+      cursor: { kind: "phase_enter", actor: "introduction" },
+    });
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({
+      status: "in_progress",
+      endedAt: null,
+    });
+    const owners = await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, fixture.gameId));
+    expect(owners.find((owner) => owner.ownerEpoch === original.claim.ownerEpoch)?.status)
+      .toBe("expired");
+    expect(owners.find((owner) => owner.ownerEpoch === adopted.claim.ownerEpoch))
+      .toMatchObject({ status: "active", processId: "reloaded-api" });
+  });
+
+  test("relinquishes after a committed turn and remains adoptable in progress", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const original = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    expect(original.ok).toBeTrue();
+    if (!original.ok) throw new Error(original.error);
+    await insertExecutionState(fixture.db, fixture.gameId, original.claim.ownerEpoch);
+
+    expect(await relinquishDurableGameRunOwner(
+      fixture.db,
+      fixture.gameId,
+      original.claim.ownerEpoch,
+    )).toBeTrue();
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "in_progress" });
+
+    const adopted = await adoptDurableGameRunOwner(fixture.db, fixture.gameId);
+    expect(adopted.ok).toBeTrue();
+    if (!adopted.ok) throw new Error(adopted.error);
+    expect(adopted.claim.executionState.ownerEpoch).toBe(adopted.claim.ownerEpoch);
+  });
+
+  test("refuses adoption without a committed execution contract", async () => {
+    const fixture = await createRatedWaitingFixture();
+    const original = await acquireGameRunOwner(fixture.db, fixture.gameId);
+    expect(original.ok).toBeTrue();
+    if (!original.ok) throw new Error(original.error);
+
+    expect(await adoptDurableGameRunOwner(fixture.db, fixture.gameId)).toMatchObject({
+      ok: false,
+      code: "missing_execution_state",
+    });
+    const active = await fixture.db.select().from(schema.gameRunOwners)
+      .where(eq(schema.gameRunOwners.gameId, fixture.gameId));
+    expect(active).toContainEqual(expect.objectContaining({
+      ownerEpoch: original.claim.ownerEpoch,
+      status: "active",
+    }));
+    expect(await gameRow(fixture.db, fixture.gameId)).toMatchObject({ status: "in_progress" });
+  });
 });
+
+async function insertExecutionState(
+  db: DrizzleDB,
+  gameId: string,
+  ownerEpoch: string,
+): Promise<void> {
+  await db.insert(schema.gameExecutionStates).values({
+    gameId,
+    ownerEpoch,
+    xstateSnapshot: {},
+    executionCursor: { version: 1, kind: "phase_enter", actor: "introduction" },
+    playerContinuityCapsules: [],
+    houseNarrativeContinuity: null,
+    retryState: null,
+  });
+}
 
 async function createRatedWaitingFixture() {
   const db = await setupTestDB();

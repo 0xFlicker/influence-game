@@ -36,6 +36,7 @@ import {
   summarizeAcceptedActionCorrelations,
   type AcceptedActionCorrelationSummary,
 } from "./accepted-action-correlation.js";
+import type { GameExecutionCursorV1 } from "@influence/engine";
 
 type DurableRunReadDB = Pick<DrizzleDB, "select">;
 
@@ -149,14 +150,102 @@ export interface DurableRunFinaleIntegrity {
   findings: FinaleIntegrityFinding[];
 }
 
+export type DurableRunExecutionCursorSummary =
+  | { kind: "phase_enter"; coordinate: string }
+  | { kind: "parallel_batch"; coordinate: string }
+  | {
+      kind: "serial_actor";
+      coordinate: string;
+      actorIndex: number;
+      actorCount: number;
+      pass: number | null;
+    }
+  | {
+      kind: "mingle";
+      coordinate: string;
+      currentBeat: number;
+      totalBeats: number;
+      roomIndex: number;
+      speakerIndex: number;
+    }
+  | {
+      kind: "alliance";
+      proposerIndex: number;
+      proposerCount: number;
+      actionOrdinal: number;
+    }
+  | {
+      kind: "huddle";
+      scheduleIndex: number;
+      scheduleCount: number;
+      speakerIndex: number;
+      speakerCount: number;
+      sessionActive: boolean;
+    }
+  | {
+      kind: "format";
+      stage: string;
+      selectedFormatId: string | null;
+    }
+  | {
+      kind: "diary";
+      precedingPhase: string;
+      interviewCount: number;
+      questionCount: number;
+      openInterviewCount: number;
+    }
+  | { kind: "rules"; coordinate: string }
+  | { kind: "house"; coordinate: string }
+  | { kind: "terminal"; coordinate: "commit_game" };
+
+export interface DurableRunExecutionSummary {
+  authority: {
+    contractVersion: number;
+    status: string;
+    heads: {
+      turnSequence: number;
+      eventSequence: number;
+      eventHash: string | null;
+      dialogueSequence: number;
+      publicationSequence: number;
+    };
+    lastPresentationPhase: string | null;
+    nextPublicationAvailableAt: string | null;
+    cursor: DurableRunExecutionCursorSummary;
+    retry: {
+      attempt: number;
+      retryReadyAt: string;
+      safeCode: string;
+    } | null;
+    updatedAt: string;
+  } | null;
+  plannedTurn: {
+    turnSequence: number;
+    branchKind: string;
+    action: string;
+    providerSubcallCount: number;
+    plannedAt: string;
+  } | null;
+  publications: {
+    totalCount: number;
+    dueCount: number;
+    scheduledCount: number;
+    heldCount: number;
+    firstDueSequence: number | null;
+    firstHeldSequence: number | null;
+  };
+}
+
 export interface DurableRunInspectionResponse {
-  schemaVersion: 2;
+  schemaVersion: 3;
   game: DurableRunGameIdentity;
   completionSettlement: GameCompletionSettlementSummary;
   kernel: {
     health: RedactedKernelHealth;
     owner: DurableRunOwnerSummary | null;
   };
+  /** Safe structural progress only; excludes snapshots, continuity, intent participants, and prose. */
+  execution: DurableRunExecutionSummary;
   eventLog: DurableRunEventLogSummary;
   projection: DurableRunProjectionSummary;
   checkpoints: {
@@ -249,6 +338,7 @@ function addCount(target: Record<string, number>, key: string, count: number): v
 
 function toCount(value: unknown): number {
   if (typeof value === "number") return value;
+  if (typeof value === "bigint") return Number(value);
   if (typeof value === "string") {
     const parsed = Number.parseInt(value, 10);
     return Number.isFinite(parsed) ? parsed : 0;
@@ -536,6 +626,165 @@ function summarizeOwnerAtInspection(
   };
 }
 
+function summarizeExecutionCursor(
+  cursor: GameExecutionCursorV1,
+): DurableRunExecutionCursorSummary {
+  switch (cursor.kind) {
+    case "phase_enter":
+      return { kind: cursor.kind, coordinate: cursor.actor };
+    case "parallel_batch":
+      return { kind: cursor.kind, coordinate: cursor.batch };
+    case "serial_actor":
+      return {
+        kind: cursor.kind,
+        coordinate: cursor.lane,
+        actorIndex: cursor.actorIndex,
+        actorCount: cursor.actorIds.length,
+        pass: cursor.pass ?? null,
+      };
+    case "mingle":
+      return {
+        kind: cursor.kind,
+        coordinate: cursor.progress.phase,
+        currentBeat: cursor.progress.currentBeat,
+        totalBeats: cursor.progress.totalBeats,
+        roomIndex: cursor.progress.roomIndex,
+        speakerIndex: cursor.progress.speakerIndex,
+      };
+    case "alliance":
+      return {
+        kind: cursor.kind,
+        proposerIndex: cursor.progress.proposerIndex,
+        proposerCount: cursor.progress.proposerIds.length,
+        actionOrdinal: cursor.progress.actionOrdinal,
+      };
+    case "huddle":
+      return {
+        kind: cursor.kind,
+        scheduleIndex: cursor.progress.scheduleIndex,
+        scheduleCount: cursor.progress.scheduleIds.length,
+        speakerIndex: cursor.progress.speakerIndex,
+        speakerCount: cursor.progress.speakerIds.length,
+        sessionActive: cursor.progress.sessionId !== null,
+      };
+    case "format":
+      return {
+        kind: cursor.kind,
+        stage: cursor.progress.stage,
+        selectedFormatId: cursor.progress.selectedFormatId,
+      };
+    case "diary":
+      return {
+        kind: cursor.kind,
+        precedingPhase: cursor.progress.precedingPhase,
+        interviewCount: cursor.progress.interviews.length,
+        questionCount: cursor.progress.interviews.reduce(
+          (total, interview) => total + interview.exchanges.length,
+          0,
+        ),
+        openInterviewCount: cursor.progress.interviews.filter(
+          (interview) => interview.status !== "closed",
+        ).length,
+      };
+    case "rules":
+      return { kind: cursor.kind, coordinate: cursor.operation };
+    case "house":
+      return { kind: cursor.kind, coordinate: cursor.operation };
+    case "terminal":
+      return { kind: cursor.kind, coordinate: cursor.stage };
+  }
+}
+
+async function getDurableExecutionSummary(
+  db: DurableRunReadDB,
+  gameId: string,
+): Promise<DurableRunExecutionSummary> {
+  const authority = (await db.select({
+    contractVersion: schema.gameExecutionStates.contractVersion,
+    status: schema.gameExecutionStates.status,
+    committedTurnSequence: schema.gameExecutionStates.committedTurnSequence,
+    eventHeadSequence: schema.gameExecutionStates.eventHeadSequence,
+    eventHeadHash: schema.gameExecutionStates.eventHeadHash,
+    dialogueHeadSequence: schema.gameExecutionStates.dialogueHeadSequence,
+    publicationHeadSequence: schema.gameExecutionStates.publicationHeadSequence,
+    lastPresentationPhase: schema.gameExecutionStates.lastPresentationPhase,
+    nextPublicationAvailableAt: schema.gameExecutionStates.nextPublicationAvailableAt,
+    executionCursor: schema.gameExecutionStates.executionCursor,
+    retryState: schema.gameExecutionStates.retryState,
+    updatedAt: schema.gameExecutionStates.updatedAt,
+  }).from(schema.gameExecutionStates)
+    .where(eq(schema.gameExecutionStates.gameId, gameId))
+    .limit(1))[0] ?? null;
+  const plannedTurn = (await db.select({
+    turnSequence: schema.gameTurns.turnSequence,
+    intent: schema.gameTurns.intent,
+    plannedAt: schema.gameTurns.plannedAt,
+  }).from(schema.gameTurns).where(and(
+    eq(schema.gameTurns.gameId, gameId),
+    eq(schema.gameTurns.status, "planned"),
+  )).limit(1))[0] ?? null;
+  const publicationCounts = (await db.select({
+    totalCount: sql<number>`count(*)::int`,
+    dueCount: sql<number>`count(*) filter (
+      where ${schema.gamePublications.availableAt} is not null
+      and ${schema.gamePublications.availableAt}::timestamptz <= now()
+    )::int`,
+    scheduledCount: sql<number>`count(*) filter (
+      where ${schema.gamePublications.availableAt} is not null
+      and ${schema.gamePublications.availableAt}::timestamptz > now()
+    )::int`,
+    heldCount: sql<number>`count(*) filter (
+      where ${schema.gamePublications.availableAt} is null
+    )::int`,
+    firstDueSequence: sql<number | null>`min(${schema.gamePublications.publicationSequence}) filter (
+      where ${schema.gamePublications.availableAt} is not null
+      and ${schema.gamePublications.availableAt}::timestamptz <= now()
+    )::int`,
+    firstHeldSequence: sql<number | null>`min(${schema.gamePublications.publicationSequence}) filter (
+      where ${schema.gamePublications.availableAt} is null
+    )::int`,
+  }).from(schema.gamePublications)
+    .where(eq(schema.gamePublications.gameId, gameId)))[0];
+
+  return {
+    authority: authority ? {
+      contractVersion: authority.contractVersion,
+      status: authority.status,
+      heads: {
+        turnSequence: authority.committedTurnSequence,
+        eventSequence: authority.eventHeadSequence,
+        eventHash: authority.eventHeadHash,
+        dialogueSequence: authority.dialogueHeadSequence,
+        publicationSequence: authority.publicationHeadSequence,
+      },
+      lastPresentationPhase: authority.lastPresentationPhase,
+      nextPublicationAvailableAt: authority.nextPublicationAvailableAt,
+      cursor: summarizeExecutionCursor(authority.executionCursor),
+      retry: authority.retryState === null ? null : {
+        attempt: authority.retryState.attempt,
+        retryReadyAt: authority.retryState.retryReadyAt,
+        safeCode: authority.retryState.safeCode,
+      },
+      updatedAt: authority.updatedAt,
+    } : null,
+    plannedTurn: plannedTurn ? {
+      turnSequence: plannedTurn.turnSequence,
+      branchKind: plannedTurn.intent.branch.kind,
+      action: plannedTurn.intent.branch.action,
+      providerSubcallCount: plannedTurn.intent.providerSubcalls.length,
+      plannedAt: plannedTurn.plannedAt,
+    } : null,
+    publications: {
+      totalCount: toCount(publicationCounts?.totalCount),
+      dueCount: toCount(publicationCounts?.dueCount),
+      scheduledCount: toCount(publicationCounts?.scheduledCount),
+      heldCount: toCount(publicationCounts?.heldCount),
+      firstDueSequence: nullableCount(publicationCounts?.firstDueSequence) ?? null,
+      firstHeldSequence: nullableCount(publicationCounts?.firstHeldSequence) ?? null,
+    },
+  };
+}
+
 export async function getDurableRunInspection(
   db: DrizzleDB,
   idOrSlug: string,
@@ -550,6 +799,7 @@ export async function getDurableRunInspection(
     }
 
     const completionSettlement = await getGameCompletionSettlementSummary(tx, game.id);
+    const execution = await getDurableExecutionSummary(tx, game.id);
     const persistedEvents = await getPersistedGameEvents(tx, game.id);
     const owner = (await tx
       .select({
@@ -677,7 +927,7 @@ export async function getDurableRunInspection(
     return {
       ok: true,
       response: {
-        schemaVersion: 2,
+        schemaVersion: 3,
         game: {
           id: game.id,
           slug: game.slug,
@@ -692,6 +942,7 @@ export async function getDurableRunInspection(
           health: kernelHealth,
           owner: ownerSummary.owner,
         },
+        execution,
         eventLog: {
           status: persistedEvents.status,
           rowCount: persistedEvents.eventCount,

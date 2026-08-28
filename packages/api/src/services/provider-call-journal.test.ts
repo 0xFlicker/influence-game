@@ -8,6 +8,7 @@ import {
   ProviderExecutionCoordinator,
   createProviderEvidenceFetch,
   providerAcceptedDecisionId,
+  type GameTurnIntentV1,
   type ProviderAttemptIntent,
   type ProviderAttemptRecord,
 } from "@influence/engine";
@@ -34,6 +35,7 @@ import {
 } from "./provider-call-journal.js";
 import { backfillGameCostAccounting } from "./provider-cost-accounting.js";
 import { appendGameEvents } from "./game-events.js";
+import { sha256StableJson } from "./stable-hash.js";
 
 class FakeProviderEvidenceStorage implements PrivateTraceStorageAdapter {
   readonly puts: PrivateTracePutObjectInput[] = [];
@@ -148,6 +150,69 @@ function makeRecord(
   return record;
 }
 
+async function insertPlannedDurableTurn(
+  db: DrizzleDB,
+  input: {
+    gameId: string;
+    ownerEpoch: string;
+    turnId?: string;
+    logicalCallId?: string;
+  },
+): Promise<NonNullable<ProviderAttemptIntent["coordinate"]["durableTurn"]>> {
+  const turnId = input.turnId ?? `turn:${input.gameId}`;
+  const logicalCallId = input.logicalCallId ?? `logical:${input.gameId}`;
+  const intent: GameTurnIntentV1 = {
+    version: 1,
+    gameId: input.gameId,
+    turnId,
+    turnSequence: 1,
+    seed: `seed:${turnId}`,
+    baseHeads: {
+      version: 1,
+      turnSequence: 0,
+      eventSequence: 0,
+      eventHash: null,
+      dialogueSequence: 0,
+      publicationSequence: 0,
+    },
+    branch: { version: 1, kind: "single_provider", action: "vote" },
+    actorIds: ["atlas-id"],
+    targetIds: [],
+    handles: [],
+    participantIds: ["atlas-id"],
+    providerSubcalls: [{
+      version: 1,
+      slot: 1,
+      logicalCallId,
+      actorId: "atlas-id",
+      action: "vote",
+      contractId: "agent-vote-v1",
+    }],
+  };
+  await db.insert(schema.gameTurns).values({
+    id: turnId,
+    gameId: input.gameId,
+    turnSequence: 1,
+    plannedOwnerEpoch: input.ownerEpoch,
+    baseEventSequence: 0,
+    baseDialogueSequence: 0,
+    basePublicationSequence: 0,
+    intent,
+    intentHash: sha256StableJson(intent),
+  });
+  return { turnId, subcallSlot: 1, logicalCallId };
+}
+
+function bindDurableTurn(
+  intent: ProviderAttemptIntent,
+  durableTurn: NonNullable<ProviderAttemptIntent["coordinate"]["durableTurn"]>,
+): ProviderAttemptIntent {
+  return {
+    ...intent,
+    coordinate: { ...intent.coordinate, durableTurn },
+  };
+}
+
 async function allocateAndReserve(
   hooks: ReturnType<typeof createApiProviderExecutionHooks>,
   intent: ProviderAttemptIntent,
@@ -194,6 +259,121 @@ describe("provider call journal", () => {
       transportAttemptId: `transport-${gameId}-1`,
       status: "reserved",
     });
+  });
+
+  test("persists the exact planned durable subcall binding before dispatch", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const durableTurn = await insertPlannedDurableTurn(db, { gameId, ownerEpoch });
+    const intent = bindDurableTurn(makeIntent(gameId, ownerEpoch), durableTurn);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+
+    expect(await hooks.onAllocateAttemptOrdinal?.(intent.coordinate)).toBe(1);
+    expect((await db.select().from(schema.providerLogicalCalls))[0]).toMatchObject({
+      id: durableTurn.logicalCallId,
+      gameId,
+      actorId: "atlas-id",
+      action: "vote",
+      gameTurnId: durableTurn.turnId,
+      gameTurnSubcallSlot: 1,
+    });
+    await hooks.onReserve?.(intent);
+    expect((await db.select().from(schema.providerCallAttempts))[0]).toMatchObject({
+      logicalCallId: durableTurn.logicalCallId,
+      status: "reserved",
+    });
+  });
+
+  test("rejects any durable coordinate or reservation outside the planned subcall", async () => {
+    const gameId = await insertGame(db);
+    const ownerEpoch = await insertOwner(db, gameId);
+    const durableTurn = await insertPlannedDurableTurn(db, { gameId, ownerEpoch });
+    const intent = bindDurableTurn(makeIntent(gameId, ownerEpoch), durableTurn);
+    const hooks = createApiProviderExecutionHooks(db, { gameId, ownerEpoch });
+    const invalidCoordinates = [{
+      ...intent.coordinate,
+      actor: { ...intent.coordinate.actor, id: "maya-id" },
+    }, {
+      ...intent.coordinate,
+      action: "lobby",
+    }, {
+      ...intent.coordinate,
+      durableTurn: { ...durableTurn, subcallSlot: 2 },
+    }, {
+      ...intent.coordinate,
+      durableTurn: { ...durableTurn, logicalCallId: "logical:unplanned" },
+    }];
+    for (const coordinate of invalidCoordinates) {
+      await expect(hooks.onAllocateAttemptOrdinal?.(coordinate)).rejects.toThrow(
+        "does not match its planned intent",
+      );
+    }
+    expect(await db.select().from(schema.providerLogicalCalls)).toHaveLength(0);
+
+    expect(await hooks.onAllocateAttemptOrdinal?.(intent.coordinate)).toBe(1);
+    await expect(hooks.onReserve?.({
+      ...intent,
+      coordinate: { ...intent.coordinate, action: "lobby" },
+    })).rejects.toThrow("does not match its planned intent");
+    expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(0);
+  });
+
+  test("replays a durable accepted value after the planned turn is adopted", async () => {
+    const gameId = await insertGame(db);
+    const firstOwnerEpoch = await insertOwner(db, gameId);
+    const durableTurn = await insertPlannedDurableTurn(db, {
+      gameId,
+      ownerEpoch: firstOwnerEpoch,
+    });
+    const firstIntent = bindDurableTurn(
+      makeIntent(gameId, firstOwnerEpoch),
+      durableTurn,
+    );
+    let dispatches = 0;
+    const execute = (
+      hooks: ReturnType<typeof createApiProviderExecutionHooks>,
+      intent: ProviderAttemptIntent,
+    ) => new ProviderExecutionCoordinator({ hooks }).startCall(intent.coordinate).execute({
+      preparedRequest: intent.preparedRequest,
+      maxAttempts: 1,
+      dispatch: async () => {
+        dispatches += 1;
+        return { target: "maya", rationale: "best move" };
+      },
+      validate: (response) => ({ status: "usable", value: response }),
+    });
+
+    expect(await execute(
+      createApiProviderExecutionHooks(db, { gameId, ownerEpoch: firstOwnerEpoch }),
+      firstIntent,
+    )).toEqual({ target: "maya", rationale: "best move" });
+    expect(dispatches).toBe(1);
+
+    await db.update(schema.gameRunOwners).set({ status: "closed" }).where(and(
+      eq(schema.gameRunOwners.gameId, gameId),
+      eq(schema.gameRunOwners.ownerEpoch, firstOwnerEpoch),
+    ));
+    const secondOwnerEpoch = await insertOwner(db, gameId);
+    const recoveredIntent = bindDurableTurn(
+      makeIntent(gameId, secondOwnerEpoch),
+      durableTurn,
+    );
+    const recoveredHooks = createApiProviderExecutionHooks(db, {
+      gameId,
+      ownerEpoch: secondOwnerEpoch,
+    });
+    await expect(execute(recoveredHooks, recoveredIntent)).rejects.toThrow(
+      "was not adopted by the active owner",
+    );
+
+    await db.update(schema.gameTurns).set({ plannedOwnerEpoch: secondOwnerEpoch })
+      .where(eq(schema.gameTurns.id, durableTurn.turnId));
+    expect(await execute(recoveredHooks, recoveredIntent)).toEqual({
+      target: "maya",
+      rationale: "best move",
+    });
+    expect(dispatches).toBe(1);
+    expect(await db.select().from(schema.providerCallAttempts)).toHaveLength(1);
   });
 
   test("keeps reservation identity immutable while transport evidence captures the exact HTTP request", async () => {

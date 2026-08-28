@@ -26,10 +26,14 @@ import {
   requirePermission,
   type AuthEnv,
 } from "../middleware/auth.js";
-import { abortGame, startGame, validateGameStartReadiness } from "../services/game-lifecycle.js";
+import {
+  abortGame,
+  startGame,
+  tryReturnZeroEventOwnerFailureToWaiting,
+  validateGameStartReadiness,
+} from "../services/game-lifecycle.js";
 import {
   acquireGameRunOwner,
-  markOwnerStartupFailed,
 } from "../services/game-ownership.js";
 import {
   currentCaptureVersionFields,
@@ -778,11 +782,16 @@ export function createGameRoutes(
       startupError = error instanceof Error ? error.message : String(error);
     }
     if (startupError) {
-      const cleanup = await markOwnerStartupFailed(db, gameId, owner.claim.ownerEpoch, startupError);
-      if (cleanup.rosterDisposition === "repair_required") {
+      const cleanup = await tryReturnZeroEventOwnerFailureToWaiting(
+        db,
+        gameId,
+        owner.claim.ownerEpoch,
+        startupError,
+      );
+      if (cleanup.outcome === "returned_to_waiting" && cleanup.cleanup.rosterDisposition === "repair_required") {
         console.warn("[games] Startup failure roster requires repair", {
           gameId,
-          ...cleanup.reconciliationError,
+          ...cleanup.cleanup.reconciliationError,
         });
       }
       await tryRefreshGameWatchStateSummary(db, gameId, "startup_failed");

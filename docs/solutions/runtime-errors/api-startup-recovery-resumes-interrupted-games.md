@@ -1,163 +1,114 @@
 ---
-title: API Startup Recovery Resumes Interrupted Games
-date: 2026-06-30
+title: Durable Logical Turns Survive Ordinary API Reloads
+date: 2026-08-28
 category: runtime-errors
-module: api game lifecycle and durable event recovery
+module: api game lifecycle and engine execution
 problem_type: runtime_error
 component: service_object
 symptoms:
-  - "API restart left pre-existing in_progress games without an in-memory GameRunner"
-  - "Interrupted games stayed suspended or uncompleted even when durable events and checkpoints existed"
-  - "Recovery readiness could overclaim resume support unless tied to an implemented startup recovery path"
-root_cause: missing_workflow_step
-resolution_type: code_fix
+  - "Normal API reloads stranded in_progress games at unsupported phase coordinates"
+  - "Checkpoint recovery could discard already visible phase work or repeat provider calls"
+  - "Startup performed a can-or-cannot-resume classification instead of continuing the committed program"
+root_cause: non_atomic_workflow
+resolution_type: architecture_change
 severity: high
-tags: [startup-recovery, durable-events, game-resume, owner-epochs, phase-boundary, canonical-events, suspended-games, api-lifecycle]
-related_components: [game-lifecycle, game-recovery, game-ownership, game-runner, durable-run-inspection]
+tags: [durable-turns, startup-adoption, game-resume, owner-epochs, canonical-events, xstate, postgres]
+related_components: [game-lifecycle, game-ownership, game-runner, provider-call-journal, game-publications]
 ---
 
-# API Startup Recovery Resumes Interrupted Games
+# Durable Logical Turns Survive Ordinary API Reloads
 
 ## Problem
 
-Influence had durable evidence for interrupted API-backed games, but evidence did not equal recovery. If the API process died while a game was running, the live `GameRunner` disappeared; the best the system could do was preserve a suspended game with diagnostic checkpoints and canonical events.
+The previous recovery path persisted canonical events and phase-boundary checkpoints, then tried to decide which stopped actor coordinates were safe to hydrate. That was the wrong unit of durability. A phase could emit accepted events or viewer output before its checkpoint existed, and the next process then had to choose between replaying work, throwing it away, or leaving the game suspended.
 
-The product bug was the gap between "this checkpoint looks hydrateable" and "startup can resume this same game, append post-restart canonical events, and finish through the normal completion path." Recovery now also has to distinguish two adjacent cases that must not enter gameplay resume: a failed start with no accepted event, and gameplay that already crossed a sealed completion boundary. The current support remains intentionally bounded: it resumes from implemented completed phase-boundary coordinates only, not arbitrary mid-phase failures or in-flight model calls.
+This produced an expanding allowlist of “resumable” phases even though a recovery inside one phase had the same fundamental problem: some work could already have been observed while other in-memory state had not committed.
 
-## Symptoms
+## Root cause
 
-- API process restart lost the in-memory runner held in `activeGames`, while the database could still show a game as `in_progress`.
-- Startup had to treat pre-existing `in_progress` rows as orphaned because the replacement process had no local runner for them.
-- Durable-run inspection could report a checkpoint as a `hydration_candidate`, but that was readiness evidence, not executable recovery.
-- A user-visible game could remain incomplete even though canonical events, checkpoints, and private evidence were present.
-- Unsupported coordinates and unsafe accumulators were tempting to revive, but best-effort resume there would risk duplicate events, skipped phase effects, or corrupted results.
+The engine treated a long-lived in-memory runner as execution authority and treated checkpoints as recovery evidence after the fact. Canonical facts, transcript, XState cursor, player continuity, House continuity, provider acceptance, and viewer delivery were not one atomic commit.
 
-## What Didn't Work
-
-- Proof-only artifacts were not enough. Hydration passports, runtime snapshots, and boundary receipts made checkpoints inspectable, but they did not create a fresh owner or run the game forward.
-- An admin-gated recovery button was the wrong primary acceptance path for interrupted gameplay. In the current deployment shape, the API process is also the worker, so supported phase-boundary gameplay resumes during startup. A terminal completion settlement is different: its redrive is deliberately human-gated because gameplay is already sealed and the operator is publishing financial/competitive side effects.
-- Jumping straight to arbitrary `GameRunner.fromCheckpoint()` recovery was too broad. Mid-phase model calls and partial accumulators still require more durable state than this slice persists.
-- A grace window for recent `in_progress` games was fake safety. On startup, the new API process has no live runner regardless of age, so every row must be classified immediately; only the exact zero-event failed-start shape returns directly to `waiting`.
-- Treating transcript prose or private evidence as game truth would have made recovery easier to fake and harder to trust. Accepted canonical events remain the authority.
+Checkpoint completeness could reduce risk, but it could not answer the only durable question that matters after a reload: which exact logical turn committed?
 
 ## Solution
 
-Classify restart evidence before choosing an action:
+Make a logical game turn the transaction boundary:
 
-| Durable evidence | Restart branch | Behavior |
-|---|---|---|
-| Zero accepted events, no completion settlement, and one exact active owner at head zero | Failed start | Close the failed owner and atomically return the roster to `waiting`. Ambiguous ownership or failed cleanup suspends instead. |
-| One or more accepted events and no sealed completion | Interrupted gameplay | Suspend, select a supported event-head phase boundary, claim a fresh recovery owner, and resume the same game. Unsupported evidence remains suspended. |
-| A sealed completion settlement | Finished gameplay | Exclude the game from gameplay recovery. Completed settlement stays terminal; transient pending settlement waits for an authorized, audited operator retry; contradictory evidence stays `repair_required`. |
+1. Persist the exact next intent and deterministic seed before planned remote work.
+2. Reconstruct the turn from the last committed XState snapshot and typed cursor.
+3. Execute against scratch `GameState`, transcript, continuity, and phase actor.
+4. Atomically commit canonical events, transcript rows, player continuity, House notebook/public beat, next snapshot/cursor, accepted provider links, and viewer publications.
+5. Publish only the committed result.
 
-Startup is allowed to prove that a prior runner is absent and open a pending settlement's retry-ready gate. It never performs the settlement retry automatically, and Production Game MCP exposes no lifecycle mutation for it.
+If the process stops before step 4, the scratch work is discarded and the same planned turn is reconstructed. If it stops after step 4, the replacement runtime installs the committed result. An ambiguous commit response rereads the turn row instead of repeating effects.
 
-### Interrupted gameplay
+### Startup adoption
 
-After successfully claiming the API listener, add a startup recovery path that turns a safe suspended checkpoint into a real resumed run:
+Startup now scans current `in_progress` games after the API listener is owned. It expires the prior process owner, acquires a fresh owner epoch, points `game_execution_states.owner_epoch` at that owner, and starts the runner from the unchanged committed cursor.
 
-1. The process binds its HTTP/WebSocket listener. A competing process that cannot bind exits before ownership-changing startup work.
-2. Startup classifies pre-existing `in_progress` rows; the durable-gameplay branch is suspended before recovery.
-3. Recovery scans suspended games.
-4. The recovery selector loads the latest phase-boundary checkpoint, persisted canonical events, transcript replay, Runtime Snapshot payload, token cursor, and actor coordinate.
-5. Only implemented boundaries pass; unsupported states return a diagnostic skip reason and remain suspended.
-6. A fresh recovery owner claims the game at the checkpoint event head.
-7. `startGame` constructs a normal API-backed runner with `resumeFrom`.
-8. The runner hydrates game state, transcript replay, token cursor, Mingle inbox replay when needed, House continuity, and the phase actor coordinate.
-9. The same game appends contiguous events under the new owner and completes through the existing result/watch-state path.
+There is no phase-coordinate resume selector in the active lifecycle. `ready`, `waiting_retry`, and `terminal` execution states are work. `repair_required` is contradictory authority and is not gameplay work.
 
-The startup wiring claims the listener before runtime activation; runtime activation then runs orphan classification before recovery:
+The one empty-frontier exception closes the owner-claim-to-runner-initialization crash window. Startup may adopt it only when there is no execution row, no canonical event, no durable dialogue, no completion settlement, and the transcript state is empty. `prepareDurableExecution()` then commits the roster bootstrap before background execution begins.
 
-```ts
-const server = Bun.serve({ ... });
+For an `in_progress` game created before logical-turn authority existed, startup also supports a one-time exact cutover from a validated phase-boundary runtime snapshot. It requires the checkpoint to match the canonical head, projection hash, owner head, transcript watermark, token cursor, and structured continuity. The cutover creates one synthetic committed turn containing the already-durable frontier, assigns the validated transcript rows to it, and installs `game_execution_states` without appending or discarding canonical events. From then on the game uses only logical-turn authority. An incomplete or contradictory historical checkpoint is left untouched rather than guessed from prose.
 
-const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
+### Provider calls
 
-const startupRecoveryDisabled =
-  process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
-if (!startupRecoveryDisabled) {
-  const recovery = await recoverGamesOnStartup(db);
-}
-```
+Stable logical-call coordinates preserve validated accepted values in the provider journal. When a process dies after provider acceptance but before turn commit, the adopted runner revalidates and reuses that accepted value. Provider calls explicitly listed in a turn intent are also fenced to that planned turn and cannot dispatch after it commits.
 
-The recovery selector stays strict. A checkpoint must be attached to a suspended game, be a `phase_boundary`, carry Runtime Snapshot v1 evidence, target a supported actor coordinate, and sit exactly at the durable event head:
+A transport request that disappears before a terminal attempt record can be established may be retried and spend twice. It still cannot create two accepted game effects.
 
-```ts
-if (params.gameStatus !== "suspended") return { ok: false, reason: ... };
-if (params.checkpoint.checkpointKind !== "phase_boundary") return { ok: false, reason: ... };
-if (!isRuntimeSnapshotV1(runtimeSnapshot)) return { ok: false, reason: "missing_runtime_snapshot" };
-if (!isSupportedActorCoordinate(actorCoordinate)) return { ok: false, reason: ... };
-if (params.persistedEvents.lastTrustedSequence !== params.checkpoint.lastEventSequence) {
-  return { ok: false, reason: "checkpoint_not_at_event_head" };
-}
-```
+### House and contestant continuity
 
-It also requires transcript replay, token cursor, safe accumulator state, actor-specific prerequisites, a complete versioned active-player continuity set, and exact `HouseNarrativeContinuityV2`. Supported coordinates currently cover the original pre-round lobby boundary; normal-round `vote`; format-kernel phase-entry coordinates `format_menu`, `format_pick`, `format_mingle`, and `format_resolve` (when current-round menu/selection/allocation prerequisites validate); Reckoning plea/vote; Tribunal accusation/defense/vote; and Judgment through the final jury vote. The retired pre-format `mingle_i` / `pre_vote_huddle` and classic Power→Council coordinates remain fail-closed. Accumulator-heavy coordinates pass only when their structured runtime capsule validates. Format recovery reconstructs menu/selection/pressure exclusively from canonical events and scopes Mingle-inbox replay to the delivery session live execution would retain at the target. Private player Strategy Thread continuity is restored only from versioned checkpoint capsules (never transcript prose or `PgMemoryStore` rows). House recovery restores one game-bound V2 capsule containing recent public beats and the opaque private narrative notebook; superseded House capsule versions have no compatibility parser, so incompatible active games must drain before deployment.
+House cadence runs inside the phase scratch turn. Byte-exact public House copy, its transcript row, recent beat history, and the opaque private narrative notebook commit together before viewer delivery. No claims, aliases, receipts, or prose parsing are involved.
 
-Recovery ownership uses a separate claim path instead of overloading normal game start. `acquireRecoveryGameRunOwner` requires a suspended source game, rejects an already active owner, moves the game back to `in_progress`, clears `endedAt`, and seeds `lastPersistedEventSequence` to the checkpoint boundary.
+Diary Q&A and player strategy continuity are reconstructed from their typed durable inputs. Tribunal defense reconstructs accusations only from typed canonical `endgame.speech_recorded` events, never transcript text. Judgment retains typed participants and question/answer history without exposing the House notebook.
 
-`recoverGame` then calls the normal lifecycle start path with the validated resume input:
+### Viewer publications
 
-```ts
-const candidate = await getSupportedRecovery(db, gameId);
-const owner = await acquireRecoveryGameRunOwner(
-  db,
-  gameId,
-  candidate.resumeFrom.lastEventSequence,
-);
-const result = await startGame(db, gameId, owner.claim.ownerEpoch, {
-  resumeFrom: candidate.resumeFrom,
-});
-```
+Turn commit creates a contiguous game-local publication sequence and persists its pacing timestamps. WebSocket reconnect catches up from the client sequence; the web client buffers out-of-order envelopes and deduplicates repeats. Public diary entries use this same feed. Private huddles, thinking, House notebook state, and producer traces do not. The final turn holds completion until settlement finishes, preventing a viewer from seeing a winner before completed read models exist.
 
-The engine constructor handles resume setup by rebuilding `GameState` from canonical events, setting the flushed canonical sequence to the checkpoint head, seeding checkpoint keys so old boundaries are not rewritten, loading the token cursor, seeding `TranscriptLogger`, hydrating Mingle inbox replay if present, and requiring a valid House narrative capsule bound to the same game. After `onGameStart()` roster initialization and before the resumed phase actor can issue an LLM call, the runner hydrates each active agent from its validated player continuity capsule and scrubs eliminated players from actionable private state.
+### Terminal settlement
 
-Phase actor hydration is explicit rather than magical. The runner advances the phase machine through only the prerequisite transitions needed for the target coordinate and asserts the final actor state. For example, `vote` requires a started round, `mingle` requires resolved empowered state, `power` requires room allocation, `reveal` requires candidate resolution, and `reckoning_lobby` requires the first supported endgame-entry shape.
+Terminal settlement no longer depends on the stopped runner's return object. It reconstructs the result from canonical events, transcript from durable rows, usage from provider accounting, and model/config from the sealed game record. The settlement transaction writes the completed result and side effects, closes the owner, and releases the held completion publication.
 
-Durable inspection now derives `resumeAvailable` from the same implemented support predicate used by startup recovery. A passport can still be useful readiness evidence without becoming marketing copy for unsupported resume.
+Reload between terminal commit and settlement is therefore an ordinary terminal adoption, not a special manual retry workflow.
 
-### Failed starts and sealed completions
+## Why this works
 
-The zero-event branch is intentionally narrower than gameplay recovery. Startup returns a game to `waiting` only when there is no settlement, no accepted event, exactly one active owner, that owner reports event head zero, and roster reconciliation succeeds atomically. Any owner ambiguity, event/head disagreement, or cleanup conflict suspends the game with diagnostic evidence.
+The design persists a program counter, not a guess about replay safety. The committed XState snapshot and typed cursor decide what runs next; canonical events decide what happened. Scratch state can be thrown away because it was never authority.
 
-When the engine finishes, the lifecycle captures a strict private terminal envelope tied to the exact final event sequence/hash and owner epoch before attempting settlement. The settlement transaction is idempotent by game and atomically publishes results, transcript, season receipts, hidden ratings, profile/account counters, postgame initialization, and owner closure. A transient failure leaves the game suspended with a `pending` settlement. Only after the exact owner is expired can startup or runner exit mark it retry-ready; an authenticated admin with `retry_game_settlement` permission must then provide a reason and explicitly retry it. Requested, denied, succeeded, already-completed, failed, invalid-state, and repair-blocked outcomes are recorded without exposing the private envelope.
+The owner epoch remains the single-writer fence. A stale process cannot plan, dispatch a turn-bound provider call, commit effects, or settle after adoption. A replacement owner may settle a terminal turn written by the old owner only when the execution head and canonical hash still match exactly.
 
-If the sealed event identity, result hash, or immutable settlement evidence is missing or contradictory, the state becomes `repair_required`. That is not a retry hint. The system blocks gameplay replay and ordinary redrive so an operator can investigate without manufacturing a second ending.
+The information boundary stays clean: game facts are typed canonical state, while House/player prose is presentation and context. Durability never creates an excuse to reverse-engineer facts from text.
 
-## Why This Works
+## Prevention rules
 
-The fix treats gameplay recovery as a new owner-backed continuation, not a replay artifact. Canonical events remain the source of accepted game truth; checkpoint payloads supply only the runtime inputs needed to continue from a completed boundary. Completion settlement is separately one-way: once its terminal envelope is sealed, recovery can publish that exact ending or stop for repair, but cannot run the game again.
+- Put every new phase mutation inside a durable logical turn. Do not append an event and promise to checkpoint later.
+- Reserve stable provider identity before dispatch. Revalidate accepted replay values under the same exact schema and semantic decoder.
+- Use a deterministic turn seed for every rules-owned random path.
+- Commit House public copy and notebook state in the same turn; never release either from scratch state.
+- Keep private huddles, thinking, notebook, and producer-trace data out of viewer publications; publish accepted diary entries through the ordered viewer feed.
+- Derive recovery-time facts from canonical events or typed continuity only. Never parse transcript prose.
+- Keep startup adoption listener-first and owner-fenced. A process that failed to bind must not touch game ownership.
+- Treat checkpoint capsules and hydration passports as historical/forensic artifacts, not current runtime selectors.
+- Prove reload from normal phase, format, endgame, terminal, and initial-start boundaries, plus same-game API adoption to completion.
+- Keep corrupt or contradictory authority explicit as `repair_required`; do not manufacture a cursor or ending.
 
-The system preserves single-writer durability. Recovery owner rows start at the checkpoint event sequence, and existing owner checks still guard accepted commits. A recovered run can append sequence `checkpoint + 1`, while stale owners cannot keep writing through the normal owner path.
+## Verification
 
-Fail-closed gating is the other half of the design. A checkpoint must be latest-at-head, phase-boundary, Runtime Snapshot v1-backed, transcript-replay-backed, token-cursor-backed, accumulator-safe, and targeted at an implemented actor coordinate. If any of those are missing, startup recovery reports a skip reason and leaves the game suspended instead of manufacturing a corrupted completion.
+The regression suite covers:
 
-The acceptance proof exercises the product seam. It is DB-backed and API-lifecycle-backed, not a pure engine unit test: interrupt after a durable phase-boundary checkpoint, run startup recovery, assert the same game completes, assert event sequences stay contiguous, assert post-interruption rows use exactly one fresh owner, and assert completed results are written once. For phase-boundary lifecycle hardening, it also waits for the recovered owner to cross the next lobby, rejects a competing listener before orphan classification can run, and proves the healthy owner continues to the next round and terminal completion without duplicate resolution/elimination events.
+- plan-before-dispatch and exact turn-intent replay;
+- crash before commit and ambiguous commit response;
+- committed mid-Lobby, Format Mingle/Resolve, Reckoning, Tribunal defense, and Judgment reconstruction;
+- typed accusation recovery with a transcript-prose canary;
+- House public-summary/private-notebook atomicity and no notebook leakage;
+- provider accepted-value replay and turn fencing;
+- API interruption, owner adoption, same game ID, contiguous turns, one roster initialization, and normal completion;
+- terminal reconstruction and held completion release;
+- sequenced websocket catch-up and client deduplication.
 
-## Prevention
+Producer durable-run inspection reports the safe structural execution cursor, committed heads, any planned turn, and due/scheduled/held publication counts. It deliberately excludes XState snapshots, continuity bodies, intent participants, provider payloads, and prose.
 
-- Keep `resumeAvailable` tied to the implemented recovery selector, not to `hydration_candidate`. A passport verdict is evidence readiness; implemented resume support is a runtime contract.
-- Add a DB-backed recovery matrix test before enabling any new actor coordinate. The test must interrupt at that boundary, run startup recovery, assert contiguous post-restart events under a new owner, and reach normal completed results.
-- Include actor coordinate in phase-boundary checkpoint identity. Several endgame phases are transcript-only, so multiple distinct actor boundaries can share one canonical event head.
-- Keep unsupported boundaries suspended with diagnostic evidence. Do not repair by replaying transcript text, skipping phase effects, or synthesizing terminal results.
-- Accusation Capsule V1 is now the pattern for accumulator-heavy phase-boundary resume: persist structured runtime state, seal it to the checkpoint boundary, validate IDs/names/content, and hydrate runner-local maps from that payload. Do not reconstruct accumulator truth from transcript prose or private trace text.
-- When a durability TODO lands, update `docs/statefulness-plan.md`, `docs/refactor-queue.md`, and any touched plan or solution note in the same branch so the queue points at the next real risk.
-- Preserve startup orphaning semantics in the single-API-process deployment, but run them only after the process owns the API listener. Once a fresh listening process starts runtime activation, old `in_progress` means no local runner exists there; durable evidence, not age, selects the failed-start, interrupted-gameplay, or sealed-completion branch. A process that loses listener contention must never classify another process's live runner.
-- Keep recovery owner claim separate from normal waiting-game start. Recovery has different invariants: suspended source state, checkpoint event head, no active owner, and `lastPersistedEventSequence` seeded to the boundary.
-- Treat current support as phase-boundary startup resume only. Mid-phase interruption, in-flight model call recovery, arbitrary historical repair, and multi-worker or spot-fleet coordination are still unsupported.
-- Keep the three restart branches mutually exclusive in DB-backed tests: exact zero-event cleanup returns to waiting, durable gameplay uses supported checkpoint resume, and sealed completion never re-enters gameplay.
-- Keep settlement retry human-gated and audit-first. Startup may open readiness only after the exact owner is expired; it must never auto-redrive competitive or financial side effects.
-- Enforce the sealed boundary in the database, not only in service code: immutable envelope fields reject updates, while each operator request and its correlated terminal disposition remain separate append-only audit receipts.
-- Assert exact-once settlement under injected failure, concurrent/repeated retries, and deterministic evidence conflicts. Points, ratings, receipts, results, counters, transcript, and postgame initialization must commit together or not at all.
-
-## Related Issues
-
-- `docs/statefulness-plan.md` is the current operating map for durable game state, supported recovery, known gaps, and next slices.
-- `docs/plans/2026-06-29-002-feat-generic-phase-boundary-recovery-plan.md` is the generic phase-boundary recovery plan that expanded the supported boundary set.
-- `docs/plans/2026-06-30-002-feat-endgame-phase-boundary-recovery-plan.md` is the historical implementation-ready plan for staged endgame boundary expansion; Accusation Capsule V1 later retired its follow-up TODO.
-- `docs/plans/2026-06-29-001-feat-one-boundary-resume-to-completion-plan.md` is the predecessor plan that set the right acceptance bar: same-game resume to completed results, not another proof artifact.
-- `docs/refactor-queue.md` tracks the remaining refactor backlog and future multi-worker orchestration work.
-- `CONCEPTS.md` defines the recovery vocabulary: canonical game event, durable game-run kernel, checkpoint capsule, hydration passport, phase-boundary startup resume, owner epoch, completion settlement, and completion settlement retry.
-- `packages/api/src/__tests__/game-recovery.test.ts` is the focused DB-backed same-game recovery suite.
-- `packages/api/src/__tests__/startup-orphaned-games.test.ts` protects startup orphan classification semantics.
-- `packages/api/src/__tests__/game-completion-settlement.test.ts` protects capture, atomicity, exact-once settlement, retry readiness, and repair behavior.
+See `docs/statefulness-plan.md` for the current operating contract and remaining multi-process limits.

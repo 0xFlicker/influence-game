@@ -1,6 +1,7 @@
 import { and, eq, inArray, isNull, lte, ne, or, sql } from "drizzle-orm";
 import { createHash, randomUUID } from "crypto";
 import {
+  assertGameTurnIntentV1,
   ProviderCallBudgetExhaustedError,
   ProviderCircuitOpenError,
   resolveProviderManifestFromGameConfig,
@@ -95,6 +96,7 @@ function logicalCallId(
   coordinate: ProviderLogicalCallCoordinate,
   options: Pick<CreateApiProviderExecutionHooksOptions, "gameId">,
 ): string {
+  if (coordinate.durableTurn) return coordinate.durableTurn.logicalCallId;
   return sha256StableJson({
     domain: "influence.provider.logical-call.v1",
     coordinate: {
@@ -139,6 +141,16 @@ function assertCoordinate(
   if (intent.coordinate.ownerEpoch !== undefined && intent.coordinate.ownerEpoch !== options.ownerEpoch) {
     throw new Error("Provider attempt owner epoch does not match journal authority");
   }
+  const durableTurn = intent.coordinate.durableTurn;
+  if (!durableTurn) return;
+  if (
+    durableTurn.turnId.trim().length === 0
+    || durableTurn.logicalCallId.trim().length === 0
+    || !Number.isSafeInteger(durableTurn.subcallSlot)
+    || durableTurn.subcallSlot < 1
+  ) {
+    throw new Error("Provider durable turn coordinate is invalid");
+  }
 }
 
 function logicalCallIdentity(
@@ -154,7 +166,60 @@ function logicalCallIdentity(
     phase: coordinate.phase,
     round: coordinate.round,
     logicalCallOrdinal: coordinate.logicalCallOrdinal,
+    gameTurnId: coordinate.durableTurn?.turnId,
+    gameTurnSubcallSlot: coordinate.durableTurn?.subcallSlot,
   };
+}
+
+async function assertDurableTurnSubcall(
+  tx: Parameters<Parameters<DrizzleDB["transaction"]>[0]>[0],
+  options: CreateApiProviderExecutionHooksOptions,
+  coordinate: ProviderLogicalCallCoordinate,
+  access: "dispatch" | "replay",
+): Promise<void> {
+  const binding = coordinate.durableTurn;
+  if (!binding) return;
+  const turn = (await tx.select({
+    gameId: schema.gameTurns.gameId,
+    turnSequence: schema.gameTurns.turnSequence,
+    status: schema.gameTurns.status,
+    plannedOwnerEpoch: schema.gameTurns.plannedOwnerEpoch,
+    intent: schema.gameTurns.intent,
+    intentHash: schema.gameTurns.intentHash,
+  }).from(schema.gameTurns).where(and(
+    eq(schema.gameTurns.id, binding.turnId),
+    eq(schema.gameTurns.gameId, options.gameId),
+  )).for("update"))[0];
+  if (!turn) throw new Error("Provider durable turn was not planned");
+  assertGameTurnIntentV1(turn.intent);
+  if (
+    turn.intent.gameId !== options.gameId
+    || turn.intent.turnId !== binding.turnId
+    || turn.intent.turnSequence !== turn.turnSequence
+    || sha256StableJson(turn.intent) !== turn.intentHash
+  ) {
+    throw new Error("Provider durable turn intent failed its integrity check");
+  }
+  const subcall = turn.intent.providerSubcalls.find((entry) => entry.slot === binding.subcallSlot);
+  if (
+    !subcall
+    || subcall.logicalCallId !== binding.logicalCallId
+    || subcall.actorId !== (coordinate.actor.id ?? null)
+    || subcall.action !== coordinate.action
+  ) {
+    throw new Error("Provider durable turn subcall does not match its planned intent");
+  }
+  if (turn.status === "planned") {
+    if (turn.plannedOwnerEpoch !== options.ownerEpoch) {
+      throw new Error("Provider durable turn was not adopted by the active owner");
+    }
+    return;
+  }
+  if (turn.status === "committed" && access === "replay") return;
+  if (turn.status === "committed") {
+    throw new Error("Provider durable turn is already committed and cannot dispatch");
+  }
+  throw new Error("Provider durable turn is not executable");
 }
 
 async function assertActiveOwner(
@@ -250,6 +315,7 @@ async function allocateAttemptOrdinal(
   const now = new Date().toISOString();
   return db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
+    await assertDurableTurnSubcall(tx, options, coordinate, "dispatch");
     await tx.insert(schema.providerLogicalCalls).values({
       id: callId,
       gameId: options.gameId,
@@ -260,6 +326,8 @@ async function allocateAttemptOrdinal(
       phase: coordinate.phase,
       round: coordinate.round,
       logicalCallOrdinal: coordinate.logicalCallOrdinal,
+      gameTurnId: coordinate.durableTurn?.turnId,
+      gameTurnSubcallSlot: coordinate.durableTurn?.subcallSlot,
       updatedAt: now,
     }).onConflictDoNothing({ target: schema.providerLogicalCalls.id });
 
@@ -274,6 +342,8 @@ async function allocateAttemptOrdinal(
       phase: existing.phase ?? undefined,
       round: existing.round ?? undefined,
       logicalCallOrdinal: existing.logicalCallOrdinal,
+      gameTurnId: existing.gameTurnId ?? undefined,
+      gameTurnSubcallSlot: existing.gameTurnSubcallSlot ?? undefined,
     }) !== stableJson(logicalCallIdentity(coordinate, options.gameId))) {
       throw new Error("Provider logical call id has conflicting immutable identity");
     }
@@ -315,6 +385,7 @@ async function reserveAttempt(
 
   await db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
+    await assertDurableTurnSubcall(tx, options, intent.coordinate, "dispatch");
     await assertProviderDispatchPolicy(tx, options, intent);
     const existingCall = (await tx.select().from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId)))[0];
@@ -323,6 +394,20 @@ async function reserveAttempt(
     }
     if (intent.attemptOrdinal >= existingCall.nextAttemptOrdinal) {
       throw new Error("Provider attempt ordinal was not durably allocated");
+    }
+    if (stableJson({
+      gameId: existingCall.gameId,
+      actorId: existingCall.actorId ?? undefined,
+      actorName: existingCall.actorName,
+      actorRole: existingCall.actorRole,
+      action: existingCall.action,
+      phase: existingCall.phase ?? undefined,
+      round: existingCall.round ?? undefined,
+      logicalCallOrdinal: existingCall.logicalCallOrdinal,
+      gameTurnId: existingCall.gameTurnId ?? undefined,
+      gameTurnSubcallSlot: existingCall.gameTurnSubcallSlot ?? undefined,
+    }) !== stableJson(logicalCallIdentity(intent.coordinate, options.gameId))) {
+      throw new Error("Provider attempt coordinate conflicts with its logical call identity");
     }
 
     const inserted = await tx.insert(schema.providerCallAttempts).values({
@@ -361,6 +446,7 @@ async function readAcceptedResult(
   const callId = logicalCallId(coordinate, options);
   return db.transaction(async (tx) => {
     await assertActiveOwner(tx, options);
+    await assertDurableTurnSubcall(tx, options, coordinate, "replay");
     const call = (await tx.select().from(schema.providerLogicalCalls)
       .where(eq(schema.providerLogicalCalls.id, callId)))[0];
     if (!call?.acceptedAttemptId) return undefined;

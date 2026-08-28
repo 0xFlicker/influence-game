@@ -38,7 +38,55 @@ export class DiaryRoom {
     private readonly config: GameConfig,
     private readonly houseInterviewer: IHouseInterviewer,
     private readonly beforeAcceptedCommit?: () => Promise<void> | void,
-  ) {}
+  ) {
+    this.hydrateAcceptedDiaryHistory();
+  }
+
+  /**
+   * Restore accepted Q&A from typed transcript coordinates. Questions carry an
+   * engine-written recipient ID; answers carry the speaker player ID. The text
+   * remains opaque presentation and is never inspected for game facts.
+   */
+  private hydrateAcceptedDiaryHistory(): void {
+    const pendingQuestions = new Map<UUID, {
+      round: number;
+      precedingPhase: Phase;
+      question: string;
+    }>();
+    let precedingPhase = Phase.INIT;
+    for (const entry of this.logger.transcript) {
+      if (entry.phase !== Phase.DIARY_ROOM) {
+        precedingPhase = entry.phase;
+        continue;
+      }
+      if (entry.scope !== "diary") continue;
+      const recipientId = entry.speakerPlayerId == null && entry.to?.length === 1
+        ? entry.to[0]
+        : undefined;
+      if (recipientId && this.agents.has(recipientId)) {
+        pendingQuestions.set(recipientId, {
+          round: entry.round,
+          precedingPhase,
+          question: entry.text,
+        });
+        continue;
+      }
+      const playerId = entry.speakerPlayerId;
+      if (!playerId) continue;
+      const question = pendingQuestions.get(playerId);
+      const agent = this.agents.get(playerId);
+      if (!question || !agent) continue;
+      this.diaryEntries.push({
+        round: question.round,
+        precedingPhase: question.precedingPhase,
+        agentId: playerId,
+        agentName: agent.name,
+        question: question.question,
+        answer: entry.text,
+      });
+      pendingQuestions.delete(playerId);
+    }
+  }
 
   /**
    * Run a diary room session after a game phase completes.
@@ -123,7 +171,7 @@ export class DiaryRoom {
 
     // First question
     const firstQuestion = await this.houseInterviewer.generateQuestion(diaryContext);
-    this.logger.logDiary(houseLabel, firstQuestion);
+    this.logger.logDiary(houseLabel, firstQuestion, undefined, undefined, playerId);
 
     const ctx = this.buildAgentDiaryContext(agent, playerId, isJuror, phaseContext);
     ctx.providerLogicalCallOrdinal = 1;
@@ -175,7 +223,7 @@ export class DiaryRoom {
         break;
       }
 
-      this.logger.logDiary(houseLabel, result.question);
+      this.logger.logDiary(houseLabel, result.question, undefined, undefined, playerId);
 
       const followUpContext = this.buildAgentDiaryContext(agent, playerId, isJuror, phaseContext);
       followUpContext.providerLogicalCallOrdinal = i + 1;

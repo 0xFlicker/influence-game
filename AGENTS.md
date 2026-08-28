@@ -18,7 +18,7 @@
 
 ## Known Risks
 
-- Statefulness is the major operational risk. If the server resets in the middle of a game run, the active game can be corrupted. Do not describe active game execution as crash-safe until checkpoint/resume work lands.
+- Current API games execute as atomic durable logical turns. A normal process reload adopts the committed XState cursor and continues the same game; planned provider calls replay accepted values and uncommitted scratch effects are discarded. Do not extend this claim to corrupt durable rows, historical runs without logical-turn authority, or multi-worker execution without the owner-epoch fence.
 - Staging is real QA infrastructure. `influence-staging` updates from `main`; `influence-production` requires manual approval.
 
 ## Event authority

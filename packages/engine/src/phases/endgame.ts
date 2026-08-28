@@ -777,7 +777,7 @@ export async function runJudgmentJuryVote(
   }
 
   await assertCanAcceptCommit(ctx);
-  const { winnerId, method, voteCounts } = gameState.tallyJuryVotes();
+  const { winnerId, method, voteCounts } = gameState.tallyJuryVotes(ctx.random);
   const winnerName = gameState.getPlayerName(winnerId);
 
   for (const vc of voteCounts) {

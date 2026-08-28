@@ -43,6 +43,12 @@ export interface ProviderLogicalCallCoordinate {
   round?: number;
   /** Phase-owned ordinal for calls sharing the same actor/action boundary. */
   logicalCallOrdinal: number;
+  /** Planned durable turn identity. Present only while a turn-scoped call is active. */
+  durableTurn?: {
+    turnId: string;
+    subcallSlot: number;
+    logicalCallId: string;
+  };
 }
 
 export function pairProviderLogicalCallOrdinals(

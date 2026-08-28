@@ -71,6 +71,8 @@ describe("release migration identity", () => {
       "0060_provider_health.sql",
       "0061_provider_resilience_runtime_upgrade.sql",
       "0062_provider_native_transports.sql",
+      "0070_durable_game_turns.sql",
+      "0071_durable_game_turn_pacing.sql",
     ].map((file) => path.resolve(import.meta.dir, "../../drizzle", file));
     for (const migration of migrations) {
       expect(readFileSync(migration, "utf8").length).toBeGreaterThan(0);

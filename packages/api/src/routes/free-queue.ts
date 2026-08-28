@@ -39,10 +39,13 @@ import {
   pickAgentNames,
   pickArchetypes,
 } from "@influence/engine";
-import { startGame, validateGameStartReadiness } from "../services/game-lifecycle.js";
+import {
+  startGame,
+  tryReturnZeroEventOwnerFailureToWaiting,
+  validateGameStartReadiness,
+} from "../services/game-lifecycle.js";
 import {
   acquireGameRunOwner,
-  markOwnerStartupFailed,
 } from "../services/game-ownership.js";
 import {
   currentCaptureVersionFields,
@@ -558,16 +561,16 @@ export function createFreeQueueRoutes(
       startupError = error instanceof Error ? error.message : String(error);
     }
     if (startupError) {
-      const cleanup = await markOwnerStartupFailed(
+      const cleanup = await tryReturnZeroEventOwnerFailureToWaiting(
         db,
         game.id,
         owner.claim.ownerEpoch,
         startupError,
       );
-      if (cleanup.rosterDisposition === "repair_required") {
+      if (cleanup.outcome === "returned_to_waiting" && cleanup.cleanup.rosterDisposition === "repair_required") {
         console.warn("[free-queue] Startup failure roster requires repair", {
           gameId: game.id,
-          ...cleanup.reconciliationError,
+          ...cleanup.cleanup.reconciliationError,
         });
       }
       await tryRefreshGameWatchStateSummary(db, game.id, "free_queue_startup_failed");

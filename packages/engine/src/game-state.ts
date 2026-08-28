@@ -407,6 +407,21 @@ export class GameState {
     return new Date(this.now()).toISOString();
   }
 
+  /** Record the accepted phase boundary used by viewer/replay choreography. */
+  recordPhaseEntered(phase: Phase): void {
+    this.appendCanonicalEvent("game.phase_entered", {
+      phase,
+      remainingPlayers: this.getAlivePlayers().map((player) => ({
+        id: player.id,
+        name: player.name,
+      })),
+    }, {
+      phase,
+      visibility: "public",
+      source: "engine",
+    });
+  }
+
   private assertAllianceMutationPhase(options: AllianceMutationOptions): Phase {
     const phase = options.phase ?? Phase.FORMAT_MINGLE;
     if (phase !== Phase.MINGLE_I && phase !== Phase.FORMAT_MINGLE) {
@@ -1880,7 +1895,7 @@ export class GameState {
    * Tie -> broken by lastEmpoweredFromRegularRounds (they choose).
    * Returns the eliminated player's ID.
    */
-  tallyEndgameEliminationVotes(): UUID {
+  tallyEndgameEliminationVotes(random: () => number = Math.random): UUID {
     const alive = this.getAlivePlayerIds();
     const counts: Record<UUID, number> = {};
     for (const id of alive) counts[id] = 0;
@@ -1892,7 +1907,7 @@ export class GameState {
     const maxVotes = Math.max(...Object.values(counts), 0);
     if (maxVotes === 0) {
       // No votes cast — random elimination
-      const randomTarget = alive[Math.floor(Math.random() * alive.length)];
+      const randomTarget = alive[Math.floor(random() * alive.length)];
       if (!randomTarget) throw new Error("No alive players to eliminate");
       this.appendCanonicalEvent("endgame.elimination_resolved", {
         stage: this._endgameStage,
@@ -1965,6 +1980,7 @@ export class GameState {
   tallyTribunalVotes(
     juryTiebreakerVotes?: Record<UUID, UUID>,
     juryTiebreakerSourcePointers: CanonicalSourcePointer[] = [],
+    random: () => number = Math.random,
   ): UUID {
     const alive = this.getAlivePlayerIds();
     const counts: Record<UUID, number> = {};
@@ -1976,7 +1992,7 @@ export class GameState {
 
     const maxVotes = Math.max(...Object.values(counts), 0);
     if (maxVotes === 0) {
-      const randomTarget = alive[Math.floor(Math.random() * alive.length)];
+      const randomTarget = alive[Math.floor(random() * alive.length)];
       if (!randomTarget) throw new Error("No alive players to eliminate in tribunal");
       this.appendCanonicalEvent("endgame.elimination_resolved", {
         stage: this._endgameStage,
@@ -2089,7 +2105,7 @@ export class GameState {
    * Majority wins. Tie -> finalist with more cumulative empower votes wins.
    * Returns the winner's ID and how the result was determined.
    */
-  tallyJuryVotes(): { winnerId: UUID; method: "majority" | "empower_tiebreaker" | "random_tiebreaker"; voteCounts: { id: UUID; name: string; votes: number }[] } {
+  tallyJuryVotes(random: () => number = Math.random): { winnerId: UUID; method: "majority" | "empower_tiebreaker" | "random_tiebreaker"; voteCounts: { id: UUID; name: string; votes: number }[] } {
     const finalists = this.getAlivePlayerIds();
     if (finalists.length !== 2) throw new Error("Judgment requires exactly 2 finalists");
 
@@ -2165,7 +2181,7 @@ export class GameState {
     }
 
     // Ultimate fallback: random
-    const winnerId = Math.random() < 0.5 ? f1 : f2;
+    const winnerId = random() < 0.5 ? f1 : f2;
     this.appendCanonicalEvent("jury.winner_determined", {
       tally: { votes: { ...this._juryVoteTally.votes } },
       winnerId,

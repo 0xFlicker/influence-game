@@ -67,12 +67,13 @@
  *   API-backed runs reconcile trace/cognition/prompt-reuse rows only after the
  *   durable append assigns the final sequence. CLI JSONL does not perform that
  *   API-side reconciliation or historical backfill.
- *   API-backed durable checkpoints may expose a status-only hydration passport
- *   through admin inspection, but private player/House continuity capsules and
- *   model reasoning remain outside public transcript, websocket, and canonical
- *   event output. A candidate passport requires sealed checkpoint-boundary
- *   evidence across the manifest, actor witness, accumulators, transcript
- *   watermark, token cursor, and continuity capsules; it is not runtime resume.
+ *   API-backed games commit canonical events, transcript rows, private
+ *   continuity, the native XState cursor, accepted provider links, and viewer
+ *   publications as one durable logical turn. CLI simulation JSONL is not that
+ *   crash-resume authority. Checkpoints and hydration passports remain
+ *   historical inspection artifacts, except for the one-time validated cutover
+ *   of an active pre-logical-turn game. Diary entries are viewer publications;
+ *   private huddles, thinking, House notebook state, and model reasoning are not.
  * - `game-{N}-prompt-reuse.json`: structural prompt-prefix reuse rollup (hashes/counts only).
  * - `game-{N}-provider-attempts.json`: exact coordinator-sanitized non-429
  *   failure envelopes plus compact recovered/exhausted rate-limit aggregates.

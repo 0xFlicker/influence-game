@@ -3,6 +3,7 @@ import type { DrizzleDB } from "../db/index.js";
 import { schema } from "../db/index.js";
 import { getPersistedGameEvents } from "./game-event-read-model.js";
 import {
+  evaluateDurableActiveGameUpgrade,
   evaluateSupportedRecovery,
   type SupportedRecoveryResumeInput,
 } from "./game-recovery-support.js";
@@ -65,7 +66,9 @@ export async function findStartupRecoverableGameIds(db: DrizzleDB): Promise<stri
 export async function getSupportedRecovery(
   db: DrizzleDB,
   gameId: string,
+  options: { requiredStatus?: "suspended" | "in_progress" } = {},
 ): Promise<SupportedRecoveryResult> {
+  const requiredStatus = options.requiredStatus ?? "suspended";
   const game = (await db
     .select({ status: schema.games.status })
     .from(schema.games)
@@ -74,7 +77,7 @@ export async function getSupportedRecovery(
   if (!game) {
     return { ok: false, gameId, reason: "game_not_found" };
   }
-  if (game.status !== "suspended") {
+  if (game.status !== requiredStatus) {
     return { ok: false, gameId, reason: `unsupported_game_status:${game.status}` };
   }
 
@@ -154,11 +157,17 @@ export async function getSupportedRecovery(
       }
     }
 
-    const evaluated = evaluateSupportedRecovery({
-      gameStatus: game.status,
-      checkpoint,
-      persistedEvents: persisted,
-    });
+    const evaluated = requiredStatus === "in_progress"
+      ? evaluateDurableActiveGameUpgrade({
+          gameStatus: game.status,
+          checkpoint,
+          persistedEvents: persisted,
+        })
+      : evaluateSupportedRecovery({
+          gameStatus: game.status,
+          checkpoint,
+          persistedEvents: persisted,
+        });
     if (!evaluated.ok) {
       firstFailureReason ??= evaluated.reason;
       continue;
@@ -173,6 +182,14 @@ export async function getSupportedRecovery(
   }
 
   return { ok: false, gameId, reason: firstFailureReason ?? "missing_supported_checkpoint" };
+}
+
+/** Exact, one-time cutover input for a pre-logical-turn active game. */
+export function getSupportedDurableActiveGameUpgrade(
+  db: DrizzleDB,
+  gameId: string,
+): Promise<SupportedRecoveryResult> {
+  return getSupportedRecovery(db, gameId, { requiredStatus: "in_progress" });
 }
 
 /**

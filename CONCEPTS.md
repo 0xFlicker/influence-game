@@ -56,7 +56,7 @@ The versioned API contract a production candidate exposes through health evidenc
 
 ## Accepted-runtime recovery reconciliation
 
-The durable, single-flight application process that resumes suspended games after a fenced deployment becomes terminally accepted. Candidate validation never performs this recovery; lease completion records reconciliation pending, and the accepted runtime may claim it only after deployment admission is open and no later drain is active. Normal startup outside a deployment continues to recover directly.
+The durable, single-flight application process that adopts unfinished `in_progress` logical-turn games after a fenced deployment becomes terminally accepted. Candidate validation never claims game ownership; lease completion records reconciliation pending, and the accepted runtime may adopt committed cursors only after deployment admission reopens. Normal startup outside a deployment performs the same adoption directly.
 
 ## Render-worker generation
 
@@ -285,7 +285,7 @@ A provider-generated summary from hosted OpenAI's Responses API reasoning summar
 
 ## Cognitive artifact
 
-A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or checkpoint resume state. Reasoning artifacts may contain raw native `reasoningContext` or provider-generated summary text as `reasoningSummary`; provider debug wrappers such as `parts` and `outputItemIds` stay out of user-facing payloads. User-facing access is artifact-specific: reasoning is owner-only, ordinary thinking and strategy are available to the owner plus same-game participants, alliance-huddle thinking and strategy are subject-owner-only unless the accessor has producer/admin access, and producer/admin surfaces may read all split artifacts directly.
+A first-class product read-model record for an agent's reasoning, thinking, or strategy in new games. Cognitive artifacts are captured at decision time from structured trace inputs but are not sanitized views over producer private traces, canonical game truth, or logical-turn execution state. Reasoning artifacts may contain raw native `reasoningContext` or provider-generated summary text as `reasoningSummary`; provider debug wrappers such as `parts` and `outputItemIds` stay out of user-facing payloads. User-facing access is artifact-specific: reasoning is owner-only, ordinary thinking and strategy are available to the owner plus same-game participants, alliance-huddle thinking and strategy are subject-owner-only unless the accessor has producer/admin access, and producer/admin surfaces may read all split artifacts directly.
 
 ## Player-private reasoning lane
 
@@ -443,7 +443,7 @@ The local game MCP is a corpus-level projection host over simulation artifacts. 
 
 ## GameWatchState
 
-A viewer-safe web read model for live and completed games, derived from persisted canonical events and canonical projection. It supplies shell-level facts such as round, phase, alive/out status, shield state when known, winner/final state, event head, and projection availability. GameWatchState replaces runtime `GameStateSnapshot` websocket payloads as the product watch authority; it is not raw canonical event envelopes, checkpoint payload, transcript prose, private reasoning, producer evidence, or a claim of crash-safe resume.
+A viewer-safe web read model for live and completed games, derived from persisted canonical events and canonical projection. It supplies shell-level facts such as round, phase, active/out status, shield state when known, winner/final state, event head, and projection availability. GameWatchState replaces runtime `GameStateSnapshot` websocket payloads as the product watch authority; it is not raw canonical event envelopes, execution cursors, transcript prose, private reasoning, or producer evidence.
 
 ## GameWatchState summary
 
@@ -451,7 +451,7 @@ A compact persisted viewer-safe summary of `GameWatchState` for game list reads.
 
 ## MatchWatchShell
 
-The default web watch surface for live in-progress games and completed replays. It should consume GameWatchState for authoritative shell-level match facts while reusing phase theaters and replay controls for display. Richer audience-omniscient context, durable receipts, relationship edges, and checkpoint-shaped thought/strategy summaries belong to later data-load slices. It is a viewer product surface, not a claim that active game execution is crash-safe or resumable.
+The default web watch surface for live in-progress games and completed replays. It consumes GameWatchState for authoritative shell-level match facts and a sequenced durable publication feed for presentation choreography. Richer audience-omniscient context, relationship edges, and thought/strategy summaries belong to separate data-load lanes.
 
 ## Completed game results review
 
@@ -585,27 +585,31 @@ Provider-packaged MCP Apps can have host-owned OAuth callbacks and host-specific
 
 ## Durable game-run kernel
 
-The first durable API runtime layer for live game execution. It binds API game identity into canonical events, persists ordered accepted-domain facts, enforces single-writer ownership, and defines checkpoint/evidence boundaries. It is not itself a claim that stopped games can resume; resume depends on later checkpoint hydration.
+The API runtime authority for live game execution. Before provider dispatch it reserves an immutable logical-turn intent. It executes that turn against scratch `GameState`, transcript, continuity, and a native XState snapshot, then atomically commits canonical events, dialogue, private continuity, the next typed cursor, accepted provider-call links, and viewer publications. A replacement runtime adopts that committed frontier under a fresh owner epoch; it never asks whether an actor coordinate is resume-capable.
+
+## Durable logical turn
+
+The smallest restartable game transaction. A turn has one immutable intent and deterministic seed, zero or more provider subcalls, scratch effects, and one atomic commit. A crash before commit discards the scratch effects; a crash after commit loads the committed result. Accepted provider values can replay into the same planned turn without another dispatch. Canonical events remain game-fact authority, while the cursor and XState snapshot decide only what work runs next.
 
 ## Durable truth read model
 
-An API-side inspection model that reads persisted durable kernel rows, validates canonical event integrity, replays events into the canonical game projection, and reports checkpoint/evidence readiness. It explains what the durable log proves about a run, but it does not resume execution or expose private raw evidence.
+An API-side inspection model that reads persisted durable kernel rows, validates canonical event integrity, replays events into the canonical game projection, and reports safe structural execution, planned-turn, publication-backlog, checkpoint, and evidence state. It explains what the durable log proves about a run, but it does not resume execution or expose XState snapshots, continuity bodies, intent participants, provider payloads, or prose.
 
 ## Checkpoint capsule
 
-A persisted phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. Durable-kernel capsules store replay/projection data, transcript cursors, Runtime Snapshot evidence, and private continuity references; the hydration passport derives whether a checkpoint has enough evidence for recovery consideration. A checkpoint becomes a safe resume boundary only when runner reconstruction exists for that exact actor coordinate.
+A historical phase-boundary diagnostic artifact keyed to the latest canonical event sequence it covers. Capsules and hydration passports remain useful for inspecting older runs, but current game execution does not select or resume from them; `game_execution_states` plus committed logical turns are the runtime authority.
 
 ## Phase-Boundary Runtime Snapshot
 
-A v1 checkpoint payload that proves hydration readiness at a completed phase boundary without resuming execution. It attaches minimal runtime evidence to the checkpoint capsule: an API-sealed boundary receipt, XState actor witness, accumulator registry, transcript boundary watermark, token cursor, and structured player/House continuity capsules. It is Postgres-resident resume input; bulky raw prompts, hidden reasoning, and debug evidence may live elsewhere but do not define hydration candidacy.
+A v1 checkpoint payload that proves hydration readiness at a completed phase boundary. It attaches minimal runtime evidence to the checkpoint capsule: an API-sealed boundary receipt, XState actor witness, accumulator registry, transcript boundary watermark, token cursor, and structured player/House continuity capsules. Current logical-turn games do not select it at reload; it is accepted once as cutover input only for a supported active pre-logical-turn game whose complete frontier validates exactly. Bulky raw prompts, hidden reasoning, and debug evidence may live elsewhere but do not define hydration candidacy.
 
 ## Hydration passport
 
 A validator-derived readiness record for a checkpoint capsule. It reports stamp-level status for event/projection truth, boundary safety, Runtime Snapshot evidence, transcript and token cursors, agent continuity, House continuity, privacy boundaries, and the overall verdict such as forensic-only, blocked, or `hydration_candidate`. House continuity is conditional on the sealed checkpoint-time requirement: intentional absence may pass when the Bible is disabled or still awaiting its first valid update, while missing or malformed required House continuity blocks readiness. Passport output is structural status only — never capsule content, prompts, or reasoning. A hydration passport is not a resume action.
 
-## Phase-boundary startup resume
+## Startup logical-turn adoption
 
-The supported API recovery behavior for interrupted live games at implemented completed phase boundaries. A suspended game whose newest resume-capable phase-boundary checkpoint is at the durable event head and has a supported actor coordinate can be claimed by a fresh owner on API startup, hydrated into a new runner from canonical events plus checkpoint payload (including validated private player continuity capsules and optional House continuity under the sealed requirement), append post-restart canonical events, and complete under the same game ID. Suspensions marked `competition_settlement_repair_required` are excluded because replay cannot repair missing or contradictory immutable settlement evidence. Current support covers the original pre-round lobby boundary; normal-round `mingle_i`, `pre_vote_huddle`, and `vote`; format-kernel phase-entry coordinates; Reckoning; Tribunal with a validated Accusation Capsule for defense; and Judgment through jury vote. It is not a promise of mid-phase recovery, in-flight LLM recovery, arbitrary old-game repair, or automatic serverless orchestration.
+The normal API behavior for unfinished games. Startup atomically expires the prior process owner, assigns a fresh owner epoch to the unchanged execution frontier, and starts the same game from its committed typed cursor. A genesis-only path closes the owner-claim-to-initialization gap when no canonical event, durable dialogue, execution state, or completion exists. A supported active pre-logical-turn game may also install one synthetic committed turn from an exact validated checkpoint without changing its canonical log. Corrupt or contradictory authority becomes `repair_required`; current logical-turn actor coordinates are not classified as resumable or unresumable.
 
 ## Boundary certificate
 
@@ -617,7 +621,7 @@ The checkpoint packing list that names which runtime subsystems are represented 
 
 ## Continuity capsule
 
-Structured private runtime state used by supported resume paths or future resume work to preserve strategic behavior. Agent continuity capsules are scoped per player and carry subjective strategy/memory state; the House continuity capsule is scoped per game and carries privileged producer context. Raw prompts, hidden reasoning, and private evidence can link to a capsule but are not themselves continuity state.
+Structured private runtime state committed with each logical turn. Agent continuity capsules are scoped per player and carry subjective strategy/memory state; the House continuity capsule is scoped per game and carries privileged producer context. Raw prompts, hidden reasoning, and private evidence can link to a capsule but are not themselves continuity state.
 
 ## Owner epoch
 
@@ -625,11 +629,11 @@ The durable single-writer ownership marker for a live game run. An owner epoch l
 
 ## Completion settlement
 
-The one-way durable boundary between finished gameplay and published results. Before settlement begins, the API seals a strict private terminal envelope to the exact final canonical event sequence, hash, game ID, and owner epoch; a database trigger prevents later mutation of those sealed identity and payload fields. Settlement then atomically writes the completed game/result, transcript, competition receipts and ratings, profile/account counters, postgame initialization, and owner closure. Its state is `pending`, `completed`, or `repair_required`: a sealed completion is never sent back through gameplay recovery, and player or producer read surfaces expose only a redacted status summary rather than the terminal envelope, prompts, model identity, token usage, or private trace content.
+The one-way durable boundary between finished gameplay and published results. Terminal execution is reconstructed from committed canonical events, durable transcript rows, provider accounting, and the sealed game config, even when a replacement owner performs settlement after reload. Settlement atomically writes the completed game/result, competition receipts and ratings, profile/account counters, postgame initialization, owner closure, and release of the held terminal viewer publication. Its state is `pending`, `completed`, or `repair_required`; transient failure is retried by normal terminal adoption, while contradictory evidence remains blocked.
 
 ## Completion settlement retry
 
-An authenticated human-operator redrive of a captured `pending` completion settlement. It is eligible only after the game is suspended, the exact originating owner is expired with a transient settlement failure, and the retry-ready gate has opened. The admin action requires dedicated permission, an explicit reason, and append-only request plus correlated terminal audit receipts; it reuses the idempotent settlement transaction and never replays gameplay. Startup may make an abandoned pending settlement retry-ready, but it does not execute the retry. `repair_required` evidence conflicts remain blocked for investigation, and Production Game MCP stays read-only.
+An authenticated human-operator redrive of a captured `pending` completion settlement. It is an exceptional path for a settlement that normal terminal adoption did not complete, not the ordinary reload mechanism. The admin action requires dedicated permission, an explicit reason, and append-only request plus correlated terminal audit receipts; it reuses the idempotent settlement transaction and never replays gameplay. Normal startup adopts a matching terminal execution and attempts idempotent settlement automatically. `repair_required` evidence conflicts remain blocked for investigation, and Production Game MCP stays read-only.
 
 ## Private evidence manifest
 
@@ -645,7 +649,7 @@ A bounded, newest-first page over authorized cognitive-artifact metadata or priv
 
 ## Private trace content
 
-The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, checkpoint resume authority, or unsanitized player-private product data.
+The raw JSON/JSONL producer evidence addressed by a private evidence manifest, such as full prompt requests, model responses, `thinking`, `reasoningContext`, provider reasoning summaries, tool arguments, action names, actor context, phase, round, provider metadata, usage or billing metadata, and canonical event boundary. Private trace content is producer private trace data for local producer/debug inspection and must not become public transcript, canonical board truth, logical-turn execution authority, or unsanitized player-private product data.
 
 ## Provider attempt evidence
 

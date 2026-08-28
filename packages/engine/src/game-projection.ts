@@ -226,6 +226,9 @@ export function applyCanonicalEvent(
   projection.phase = event.phase;
 
   switch (event.type) {
+    case "game.phase_entered": {
+      break;
+    }
     case "game.roster_initialized": {
       projection.formatManifest = event.payload.formatManifest === undefined
         ? [...LEGACY_FORMAT_MANIFEST]

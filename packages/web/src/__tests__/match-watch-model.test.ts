@@ -5,7 +5,7 @@ import type {
   GameWatchState,
   PhaseKey,
   TranscriptEntry,
-  WsGameEvent,
+  WsViewerEvent,
 } from "../lib/api";
 import { createEdgeSmokeDuskEvents, Phase, projectViewerDecisionEvent } from "@influence/engine";
 import {
@@ -249,7 +249,7 @@ describe("match watch model", () => {
   });
 
   it("accepts v3 replay frames and live format decision events", () => {
-    const liveEvent: Extract<WsGameEvent, { type: "viewer_decision_event" }> = {
+    const liveEvent: Extract<WsViewerEvent, { type: "viewer_decision_event" }> = {
       type: "viewer_decision_event",
       gameId: "game-1",
       event: {

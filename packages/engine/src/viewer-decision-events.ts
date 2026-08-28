@@ -32,6 +32,8 @@ export interface ViewerDecisionEventBase<
 }
 
 export type ViewerDecisionEventType =
+  | "game.phase_entered"
+  | "player.eliminated"
   | "vote.cast"
   | "vote.empower_tally_resolved"
   | "vote.empower_revote_cast"
@@ -50,6 +52,14 @@ export type ViewerDecisionEventType =
   | "council.elimination_resolved";
 
 export type ViewerDecisionEvent =
+  | ViewerDecisionEventBase<
+      "game.phase_entered",
+      { phase: Phase; remainingPlayers: Array<{ id: UUID; name: string }> }
+    >
+  | ViewerDecisionEventBase<
+      "player.eliminated",
+      { playerId: UUID; playerName: string }
+    >
   | ViewerDecisionEventBase<
       "vote.cast",
       { voterId: UUID; empowerTarget: UUID; exposeTarget?: UUID | null }
@@ -119,6 +129,8 @@ export type ViewerDecisionEvent =
     >;
 
 const VIEWER_DECISION_EVENT_TYPES = new Set<string>([
+  "game.phase_entered",
+  "player.eliminated",
   "vote.cast",
   "vote.empower_tally_resolved",
   "vote.empower_revote_cast",
@@ -193,6 +205,24 @@ export function projectViewerDecisionEvent(
   const base = viewerEventBase(event);
 
   switch (event.type) {
+    case "game.phase_entered":
+      return {
+        ...base,
+        type: event.type,
+        payload: {
+          phase: event.payload.phase,
+          remainingPlayers: event.payload.remainingPlayers.map((player) => ({ ...player })),
+        },
+      };
+    case "player.eliminated":
+      return {
+        ...base,
+        type: event.type,
+        payload: {
+          playerId: event.payload.playerId,
+          playerName: event.payload.playerName,
+        },
+      };
     case "vote.cast":
       return {
         ...base,

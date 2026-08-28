@@ -76,6 +76,7 @@ export interface AcceptedActionRegistryEntry {
 
 export type CanonicalGameEventType =
   | "game.roster_initialized"
+  | "game.phase_entered"
   | "round.started"
   | "shields.expired"
   | "mingle.rooms_allocated"
@@ -335,6 +336,7 @@ export type FormalSpeechProvenance = JudgmentSpeechProvenance;
 
 const CANONICAL_GAME_EVENT_TYPES = new Set<string>([
   "game.roster_initialized",
+  "game.phase_entered",
   "round.started",
   "shields.expired",
   "mingle.rooms_allocated",
@@ -495,6 +497,13 @@ export type CanonicalGameEvent =
         players: Array<{ id: UUID; name: string; status: PlayerStatus; shielded: boolean }>;
         /** Frozen legal formats. Absent only on historical launch-trio games. */
         formatManifest?: LaunchFormatId[];
+      }
+    >
+  | CanonicalEventEnvelope<
+      "game.phase_entered",
+      {
+        phase: Phase;
+        remainingPlayers: Array<{ id: UUID; name: string }>;
       }
     >
   | CanonicalEventEnvelope<"round.started", { round: number }>

@@ -36,18 +36,26 @@ import { createPublicPlayerRoutes } from "./routes/public-players.js";
 import { createDeploymentControlRoutes } from "./routes/deployment-control.js";
 import { getStorageStatus } from "./lib/storage.js";
 import { getGameWatchState } from "./services/game-watch-state.js";
-import { recoverGamesOnStartup } from "./services/game-lifecycle.js";
-import { suspendOrphanedInProgressGamesOnStartup } from "./services/startup-orphaned-games.js";
+import { isGameRunning, startGame } from "./services/game-lifecycle.js";
+import { adoptInProgressDurableGamesOnStartup } from "./services/startup-durable-games.js";
 import { preparePendingCompletionSettlementsOnStartup } from "./services/game-completion-settlement.js";
 import { reconcileCompletedPostgameMedia } from "./services/postgame-media-coordinator.js";
 import { assertRuntimeDeploymentSha } from "./services/legal-acceptance.js";
 import {
+  broadcastGamePublication,
   setServer,
   handleOpen,
   handleClose,
+  parseAfterPublicationSequence,
+  sendGamePublication,
   sendWatchState,
   type WsConnectionData,
 } from "./services/ws-manager.js";
+import {
+  getDueGamePublicationHead,
+  readDueGamePublicationSuffix,
+  startDueGamePublicationRuntime,
+} from "./services/game-publications.js";
 import { createOwnerLearningOpenAIProvider } from "./services/owner-learning-provider.js";
 import {
   startOwnerLearningFailureReconciliationLoop,
@@ -290,23 +298,28 @@ async function finishBackgroundRuntimeStartup(
   // classify, claim, or recover durable game ownership. Lease completion
   // atomically enqueues the same DB-backed recovery reconciliation consumed
   // below after admission reopens.
+  const adoptDurableGames = async () => {
+    const result = await adoptInProgressDurableGamesOnStartup(db, {
+      signal: context.signal,
+      isAlreadyRunning: isGameRunning,
+      start: async ({ gameId, ownerEpoch, upgradeFrom }) => {
+        const started = await startGame(db, gameId, ownerEpoch, {
+          ...(upgradeFrom && { durableUpgradeFrom: upgradeFrom }),
+        });
+        if (started.error) throw new Error(started.error);
+      },
+    });
+    return {
+      attempted: result.scanned,
+      recovered: result.adopted.length,
+      skipped: result.skipped.map((entry) => ({
+        gameId: entry.gameId,
+        reason: entry.detail ? `${entry.reason}: ${entry.detail}` : entry.reason,
+      })),
+    };
+  };
   if (!activationFence) {
     assertNotAborted();
-    const startupOrphans = await suspendOrphanedInProgressGamesOnStartup(db);
-    assertNotAborted();
-    for (const orphan of startupOrphans.returnedToWaiting) {
-      console.info(`[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting`);
-    }
-    for (const orphan of startupOrphans.repairRequired) {
-      console.warn(
-        `[startup] Returned zero-event orphaned game ${orphan.gameId} to waiting; roster repair is required`,
-      );
-    }
-    for (const orphan of startupOrphans.suspended) {
-      const age = orphan.ageMs === null ? "unknown age" : `started ${Math.round(orphan.ageMs / 1000)}s ago`;
-      console.warn(`[startup] Suspended orphaned game ${orphan.gameId} (${age}; ${orphan.reason})`);
-    }
-
     const pendingSettlements = await preparePendingCompletionSettlementsOnStartup(db);
     assertNotAborted();
     if (pendingSettlements.readyGameIds.length > 0) {
@@ -315,17 +328,14 @@ async function finishBackgroundRuntimeStartup(
       );
     }
 
-    const startupRecoveryDisabled = process.env.INFLUENCE_API_STARTUP_RECOVERY?.toLowerCase() === "false";
-    if (!startupRecoveryDisabled) {
-      const recovery = await recoverGamesOnStartup(db, { signal: context.signal });
-      assertNotAborted();
-      if (recovery.attempted > 0) {
-        console.info(
-          `[startup] Recovery attempted ${recovery.attempted} suspended game(s); recovered ${recovery.recovered}; skipped ${recovery.skipped.length}`,
-        );
-        for (const skipped of recovery.skipped) {
-          console.warn(`[startup] Recovery skipped ${skipped.gameId}: ${skipped.reason}`);
-        }
+    const recovery = await adoptDurableGames();
+    assertNotAborted();
+    if (recovery.attempted > 0) {
+      console.info(
+        `[startup] Durable restart scanned ${recovery.attempted} in-progress game(s); adopted ${recovery.recovered}; skipped ${recovery.skipped.length}`,
+      );
+      for (const skipped of recovery.skipped) {
+        console.warn(`[startup] Durable restart skipped ${skipped.gameId}: ${skipped.reason}`);
       }
     }
   }
@@ -356,7 +366,7 @@ async function finishBackgroundRuntimeStartup(
     try {
       const result = await runPendingDeploymentRecoveryReconciliation(
         db,
-        () => recoverGamesOnStartup(db, { signal: context.signal }),
+        adoptDurableGames,
         context.signal,
       );
       if (result.outcome === "succeeded") {
@@ -372,6 +382,9 @@ async function finishBackgroundRuntimeStartup(
   };
   await reconcilePendingRecovery();
   assertNotAborted();
+  const gamePublicationRuntime = await startDueGamePublicationRuntime(db, {
+    broadcast: broadcastGamePublication,
+  });
   const reconciliationTimer = setInterval(() => {
     void reconcilePendingRecovery();
   }, 5_000);
@@ -381,6 +394,7 @@ async function finishBackgroundRuntimeStartup(
     async stop() {
       clearInterval(reconciliationTimer);
       providerHealthProbeRuntime?.stop();
+      await gamePublicationRuntime.stop();
       await providerAttemptReconciliation.stop();
       await ownerLearningFailureReconciliation.stop();
       await ownerLearningWorker?.stop();
@@ -572,8 +586,20 @@ const server = await listenBeforeRuntimeInitialization({
 
         const gameId = gameRow.id;
 
+        let afterPublicationSequence: number;
+        try {
+          afterPublicationSequence = parseAfterPublicationSequence(
+            url.searchParams.get("afterPublicationSequence"),
+          );
+        } catch {
+          return new Response(
+            "afterPublicationSequence must be a non-negative safe integer",
+            { status: 400 },
+          );
+        }
+
         const upgraded = server.upgrade(req, {
-          data: { gameId },
+          data: { gameId, afterPublicationSequence },
         });
         if (upgraded) {
           return undefined as unknown as Response; // Bun handles the rest
@@ -593,16 +619,29 @@ const server = await listenBeforeRuntimeInitialization({
         }
         handleOpen(ws);
 
-        // Send persisted viewer-safe watch state for catch-up.
-        const { gameId } = ws.data;
-        void getGameWatchState(db, gameId)
-          .then((state) => {
-            if (state) sendWatchState(ws, state);
+        // Subscribe first, then send the durable suffix. Live/catch-up overlap is
+        // intentional and the client publication cursor removes duplicates.
+        const { gameId, afterPublicationSequence = 0 } = ws.data;
+        void Promise.all([
+          getGameWatchState(db, gameId),
+          readDueGamePublicationSuffix(db, gameId, {
+            afterPublicationSequence,
+          }),
+          getDueGamePublicationHead(db, gameId),
+        ])
+          .then(([state, publications, dueHead]) => {
+            if (afterPublicationSequence > dueHead) {
+              throw new Error("Publication cursor is ahead of the durable feed");
+            }
+            for (const publication of publications) {
+              sendGamePublication(ws, publication);
+            }
+            if (state) sendWatchState(ws, state, dueHead);
           })
           .catch((error) => {
             const message = error instanceof Error ? error.message : String(error);
-            console.warn(`[ws] Failed to send watch-state catch-up for ${gameId}:`, message);
-            ws.close(1011, "Watch state is unavailable");
+            console.warn(`[ws] Failed to send publication catch-up for ${gameId}:`, message);
+            ws.close(1011, "Game publications are unavailable");
           });
       },
       close(ws) {

@@ -55,7 +55,7 @@ House summaries, the notebook, operator traces, other players' diary answers, pe
 
 ## Continuity and durability
 
-`HouseNarrativeContinuityV2` stores recent public beats, the one private notebook, cadence heads, and pending-delta state. The runner checkpoints an accepted public beat and matching notebook together before releasing the buffered viewer event. Recovery accepts only the exact V2 capsule; deploy only after incompatible active games have drained.
+`HouseNarrativeContinuityV2` stores recent public beats, the one private notebook, cadence heads, and pending-delta state. The runner commits an accepted public beat and matching notebook in the same durable logical turn before releasing its viewer publication. Startup loads that exact committed V2 state; current-contract games require no deployment drain for an ordinary process replacement.
 
 A provider failure remains nonfatal. The existing bounded pending-delta policy may carry an unseen delta once, then clear it after success, explicit skip, or a second failure.
 

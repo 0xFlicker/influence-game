@@ -127,6 +127,35 @@ function createDiaryHarness(options: {
 }
 
 describe("post-eviction diary compact strategy", () => {
+  it("rehydrates accepted prior Q&A from typed transcript coordinates", () => {
+    const playerId = createUUID();
+    const agent = new ScriptedDiaryAgent(playerId, "Sage", ACTIVE_STATE);
+    const gameState = new GameState([{ id: playerId, name: agent.name }]);
+    const logger = new TranscriptLogger(gameState);
+    logger.logSystem("Lobby complete", Phase.LOBBY);
+    logger.logDiary("House -> Sage", "What shifted?", undefined, undefined, playerId);
+    logger.logDiary("Sage", "I stopped trusting Atlas.");
+    const contextBuilder = new ContextBuilder(gameState, logger, new Map(), 1);
+
+    const diary = new DiaryRoom(
+      gameState,
+      logger,
+      contextBuilder,
+      new Map([[playerId, agent]]),
+      { ...DEFAULT_CONFIG, diaryRoomAfterPhases: [Phase.LOBBY] },
+      new ScriptedHouse(),
+    );
+
+    expect(diary.diaryEntries).toEqual([{
+      round: 0,
+      precedingPhase: Phase.LOBBY,
+      agentId: playerId,
+      agentName: "Sage",
+      question: "What shifted?",
+      answer: "I stopped trusting Atlas.",
+    }]);
+  });
+
   it("limits House questions to the subject player's knowledge projection and prior diary", async () => {
     const sageId = createUUID();
     const atlasId = createUUID();
