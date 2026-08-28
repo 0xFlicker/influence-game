@@ -280,7 +280,7 @@ export function AgentForm({
     };
   }, [draftAvatarCompletion?.generationRequestId, portraitPending, portraitStatusUnavailable]);
 
-  function restoreDraft() {
+  function applyDraft() {
     if (!pendingRestore) return;
     setName(pendingRestore.current.name);
     setBackstory(pendingRestore.current.backstory);
@@ -296,7 +296,7 @@ export function AgentForm({
     setDraftReady(true);
   }
 
-  function discardStoredDraft() {
+  function clearStoredDraft() {
     if (draftStorageKey && !removeEditorStorage(draftStorageKey)) {
       setDraftStorageError("The local draft could not be cleared. Browser storage may be unavailable.");
       return;
@@ -434,7 +434,6 @@ export function AgentForm({
     || profileGenerating
     || portraitStarting
     || uploading
-    || Boolean(pendingRestore)
     || requiredStrategyChangeMissing;
 
   return (
@@ -445,11 +444,11 @@ export function AgentForm({
             {restoreConflict ? "A local draft was saved from an earlier Agent version." : "A local draft is available."}
           </p>
           <p className="mt-1 text-xs leading-5 text-white/55">
-            Saved {new Date(pendingRestore.savedAt).toLocaleString()}. Restore it or keep the current saved version.
+            Saved {new Date(pendingRestore.savedAt).toLocaleString()}. Apply it to the editor, or clear it to keep working from this version.
           </p>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={restoreDraft} className="influence-button-primary min-h-11 rounded-lg px-4 text-sm font-semibold">Restore draft</button>
-            <button type="button" onClick={discardStoredDraft} className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm">Keep saved version</button>
+            <button type="button" onClick={applyDraft} className="influence-button-primary min-h-11 rounded-lg px-4 text-sm font-semibold">Apply draft</button>
+            <button type="button" onClick={clearStoredDraft} className="influence-button-secondary min-h-11 rounded-lg px-4 text-sm">Clear draft</button>
           </div>
         </section>
       )}
@@ -541,7 +540,13 @@ export function AgentForm({
               {strategyComparison && <div className="order-2 min-w-0 xl:order-1"><StrategyDiff baseline={strategyComparison.baseline} working={strategyStyle} baselineLabel={strategyComparison.baselineLabel} className="xl:h-[40rem] xl:overflow-hidden" /></div>}
               <div className="order-1 xl:order-2">
                 <GrowingTextarea id="agent-strategyStyle" value={strategyStyle} onChange={(event) => { setStrategyStyle(event.target.value); setValidationErrors((current) => ({ ...current, strategyStyle: "" })); }} placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot." maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-invalid={Boolean(validationErrors.strategyStyle)} aria-describedby={validationErrors.strategyStyle ? "agent-strategy-error" : "agent-strategy-help"} className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${strategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`} />
-                {requiredStrategyChangeMissing && <p className="mt-2 text-xs leading-5 text-white/45">Edit the suggestion to save a custom Strategy update.</p>}
+                {strategyComparison?.requireChange && (
+                  <p className="mt-2 min-h-5 text-xs leading-5 text-white/45" aria-live="polite">
+                    {requiredStrategyChangeMissing
+                      ? "Edit the suggestion to save a custom Strategy update."
+                      : "Custom Strategy change ready to save."}
+                  </p>
+                )}
                 {validationErrors.strategyStyle && <p id="agent-strategy-error" className="mt-2 text-sm text-red-300">{validationErrors.strategyStyle}</p>}
               </div>
             </div>
