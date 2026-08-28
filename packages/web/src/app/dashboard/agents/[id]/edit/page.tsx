@@ -19,7 +19,7 @@ export default async function AgentEditPage({
   return (
     <div className="min-h-screen flex flex-col">
       <Nav />
-      <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-7 sm:px-6 sm:py-10">
+      <main className="mx-auto w-full max-w-[90rem] flex-1 px-4 py-7 sm:px-6 sm:py-10 lg:px-8">
         <AuthGate>
           <AgentEditContent agentId={id} sourceReviewId={sourceReviewId} />
         </AuthGate>

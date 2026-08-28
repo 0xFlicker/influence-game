@@ -94,6 +94,9 @@ describe("AgentForm", () => {
 
     expect(html).toContain("Live changes");
     expect(html).toContain("Strategy changes from Current strategy");
+    expect(html).toContain("xl:grid-cols-2");
+    expect(html).toContain("xl:h-[40rem]");
+    expect(html).toContain("xl:!h-[40rem]");
     expect(html).toContain(">Collect</span>");
     expect(html).toContain("Build one voting bloc, then commit.");
     expect(html).toContain(">Build one voting bloc, then commit.</textarea>");

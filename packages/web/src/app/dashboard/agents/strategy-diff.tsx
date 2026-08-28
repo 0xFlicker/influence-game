@@ -7,10 +7,12 @@ export function StrategyDiff({
   baseline,
   working,
   baselineLabel,
+  className = "",
 }: {
   baseline: string;
   working: string;
   baselineLabel: string;
+  className?: string;
 }) {
   const changes = useMemo(
     () => diffWordsWithSpace(baseline, working),
@@ -21,9 +23,9 @@ export function StrategyDiff({
   return (
     <aside
       aria-label={`Strategy changes from ${baselineLabel}`}
-      className="rounded-xl bg-black/20 p-4 sm:p-5"
+      className={`flex flex-col rounded-xl bg-black/20 p-4 sm:p-5 ${className}`}
     >
-      <div className="mb-3 flex items-center justify-between gap-3">
+      <div className="mb-3 flex shrink-0 items-center justify-between gap-3">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/45">Live changes</p>
           <p className="mt-1 text-xs text-white/35">Compared with {baselineLabel.toLowerCase()}.</p>
@@ -33,7 +35,7 @@ export function StrategyDiff({
         </span>
       </div>
       {changed ? (
-        <p className="whitespace-pre-wrap text-sm leading-7 text-white/55">
+        <p className="min-h-0 whitespace-pre-wrap text-sm leading-7 text-white/55 xl:flex-1 xl:overflow-y-auto xl:pr-2">
           {changes.map((part, index) => (
             <span
               key={`${index}:${part.value}`}

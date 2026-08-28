@@ -454,7 +454,7 @@ export function AgentForm({
         </section>
       )}
 
-      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.65fr)] lg:items-start lg:gap-8">
+      <div className="flex flex-col gap-6 lg:grid lg:grid-cols-[18rem_minmax(0,1fr)] lg:items-start lg:gap-8 xl:grid-cols-[19rem_minmax(0,1fr)]">
         <aside className="influence-panel order-2 rounded-2xl p-5 sm:p-6 lg:order-none lg:sticky lg:top-24">
           <div className="flex flex-col items-center">
             <AvatarUpload currentUrl={avatarUrl} persona={previewPersona} name={name || "Agent"} onUploaded={setExplicitAvatarUrl} onUploadingChange={setUploading} size="32" />
@@ -537,10 +537,10 @@ export function AgentForm({
               <div><label htmlFor="agent-strategyStyle" className="text-lg font-semibold tracking-tight text-text-primary">Strategy</label><p id="agent-strategy-help" className="mt-1 max-w-2xl text-sm leading-6 text-white/50">How this Agent builds alliances, handles votes, protects itself, and changes course.</p></div>
               <span className="shrink-0 font-mono text-xs tabular-nums text-white/40">{strategyStyle.length}/{AGENT_PROFILE_LIMITS.strategyStyle}</span>
             </div>
-            <div className={strategyComparison ? "grid items-start gap-4 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]" : ""}>
-              {strategyComparison && <div className="order-2 xl:order-1"><StrategyDiff baseline={strategyComparison.baseline} working={strategyStyle} baselineLabel={strategyComparison.baselineLabel} /></div>}
+            <div className={strategyComparison ? "grid items-start gap-4 xl:grid-cols-2 xl:items-stretch" : ""}>
+              {strategyComparison && <div className="order-2 min-w-0 xl:order-1"><StrategyDiff baseline={strategyComparison.baseline} working={strategyStyle} baselineLabel={strategyComparison.baselineLabel} className="xl:h-[40rem] xl:overflow-hidden" /></div>}
               <div className="order-1 xl:order-2">
-                <GrowingTextarea id="agent-strategyStyle" value={strategyStyle} onChange={(event) => { setStrategyStyle(event.target.value); setValidationErrors((current) => ({ ...current, strategyStyle: "" })); }} placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot." maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-invalid={Boolean(validationErrors.strategyStyle)} aria-describedby={validationErrors.strategyStyle ? "agent-strategy-error" : "agent-strategy-help"} className="influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80" />
+                <GrowingTextarea id="agent-strategyStyle" value={strategyStyle} onChange={(event) => { setStrategyStyle(event.target.value); setValidationErrors((current) => ({ ...current, strategyStyle: "" })); }} placeholder="Describe concrete priorities, alliance tactics, voting plans, fallback moves, and when to pivot." maxLength={AGENT_PROFILE_LIMITS.strategyStyle} aria-invalid={Boolean(validationErrors.strategyStyle)} aria-describedby={validationErrors.strategyStyle ? "agent-strategy-error" : "agent-strategy-help"} className={`influence-field min-h-56 w-full rounded-xl px-4 py-4 text-base leading-7 lg:min-h-80 ${strategyComparison ? "xl:!h-[40rem] xl:!overflow-y-auto xl:resize-none" : ""}`} />
                 {requiredStrategyChangeMissing && <p className="mt-2 text-xs leading-5 text-white/45">Edit the suggestion to save a custom Strategy update.</p>}
                 {validationErrors.strategyStyle && <p id="agent-strategy-error" className="mt-2 text-sm text-red-300">{validationErrors.strategyStyle}</p>}
               </div>
@@ -564,7 +564,7 @@ export function AgentForm({
       {draftStorageError && <p role="status" className="mt-4 rounded-xl border border-amber-300/25 bg-amber-300/10 px-4 py-3 text-sm text-amber-100/80">{draftStorageError}</p>}
 
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-white/10 bg-background/90 pb-[env(safe-area-inset-bottom)] backdrop-blur-xl">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex w-full max-w-[90rem] items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
           <div className="hidden min-w-0 text-xs text-white/40 sm:block">{uploading ? "Uploading portrait…" : profileGenerating ? "Generating profile text…" : portraitPending ? "Portrait will finish after save." : dirty ? draftPersisted ? "Local draft saved in this tab." : "Unsaved changes." : "No unsaved changes."}</div>
           <div className="ml-auto flex w-full gap-3 sm:w-auto"><button type="button" onClick={requestCancel} className="influence-button-secondary min-h-11 flex-1 rounded-lg px-5 text-sm sm:flex-none">Cancel</button><button type="submit" disabled={submitDisabled} className="influence-button-primary min-h-11 flex-[1.35] rounded-lg px-6 text-sm font-semibold sm:flex-none">{submitting ? isEditing ? "Saving…" : "Creating…" : submitLabel}</button></div>
         </div>
