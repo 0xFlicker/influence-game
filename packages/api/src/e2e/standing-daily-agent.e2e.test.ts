@@ -165,7 +165,7 @@ describe("E2E: Standing Daily Agent", () => {
     expect(suppressionMs).toBeGreaterThan(Date.now() + (71 * 60 * 60 * 1000));
     expect(suppressionMs).toBeLessThan(Date.now() + (73 * 60 * 60 * 1000));
 
-    const status = await reloadAndReadQueueStatus(page);
+    const status = await reloadAndReadQueueStatus(page, singleAgentPlayer.jwt);
     expect(status.promptEligible).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 3_200));
     expect(await pageText(page)).not.toContain("Play for Free");
@@ -310,7 +310,7 @@ describe("E2E: Standing Daily Agent", () => {
     await surfacePage.goto(`${webUrl}/games/${gameSlug}/replay`, { waitUntil: "domcontentloaded" });
     await waitForPrompt(surfacePage);
     await waitForText(surfacePage, "Enter Surface Delta");
-    const terminalStatus = await reloadAndReadQueueStatus(playerPage);
+    const terminalStatus = await reloadAndReadQueueStatus(playerPage, player.jwt);
     expect(terminalStatus.eligibility).toBe("eligible");
     expect(terminalStatus.relevantGame).toBeNull();
     await waitForText(playerPage, "Leave queue");
@@ -353,7 +353,7 @@ describe("E2E: Standing Daily Agent", () => {
     await closeSeason(testDb.db, seasonId);
     expect(await testDb.db.select().from(schema.freeGameQueue)).toEqual([]);
     expect(await testDb.db.select().from(schema.freeQueuePromptSuppressions)).toEqual([]);
-    const closedStatus = await reloadAndReadQueueStatus(playerPage);
+    const closedStatus = await reloadAndReadQueueStatus(playerPage, player.jwt);
     expect(closedStatus.promptEligible).toBe(false);
     await new Promise((resolve) => setTimeout(resolve, 3_200));
     expect(await pageText(playerPage)).not.toContain("Play for Free");
@@ -421,17 +421,15 @@ async function waitForSuppression(userId: string, timeout = 10_000) {
   throw new Error(`Prompt suppression for ${userId} was not created.`);
 }
 
-async function reloadAndReadQueueStatus(page: Page): Promise<QueueStatusResponse> {
-  const [queueStatus] = await Promise.all([
-    page.waitForResponse((response) => {
-      const url = new URL(response.url());
-      return url.pathname === "/api/free-queue" && response.request().method() === "GET";
-    }, { timeout: 30_000 }).then(async (response) => (
-      await response.json()
-    ) as QueueStatusResponse),
-    page.reload({ waitUntil: "domcontentloaded" }),
-  ]);
-  return queueStatus;
+async function reloadAndReadQueueStatus(page: Page, jwt: string): Promise<QueueStatusResponse> {
+  await page.reload({ waitUntil: "domcontentloaded" });
+  const response = await fetch(`${servers.apiUrl}/api/free-queue`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+  });
+  if (!response.ok) {
+    throw new Error(`Queue status returned ${response.status}.`);
+  }
+  return await response.json() as QueueStatusResponse;
 }
 
 async function reloadAndMeasurePrompt(page: Page): Promise<number> {
